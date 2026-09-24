@@ -70,7 +70,21 @@
       "depends_on": [],
       "write_scope": [
         "docs/2026-09-24-monkeyhub-ui-reality-and-hub-architecture.md",
-        "docs/mapping/planning/GH-234-hub-ui-round.md"
+        "docs/mapping/planning/GH-234-hub-ui-round.md",
+        "apps/monkeyhub/web/workspaces/src/app/App.tsx",
+        "apps/monkeyhub/web/workspaces/src/app/useSession.ts",
+        "apps/monkeyhub/web/workspaces/src/app/modelHistory.ts",
+        "apps/monkeyhub/web/workspaces/src/features/stage/Stage.tsx",
+        "apps/monkeyhub/web/workspaces/src/features/stage/VersionsStrip.tsx",
+        "apps/monkeyhub/web/workspaces/src/features/conversation/Conversation.tsx",
+        "apps/monkeyhub/web/workspaces/src/features/conversation/cards/ProposalCard.tsx",
+        "apps/monkeyhub/web/workspaces/src/styles.css",
+        "apps/monkeyhub/web/src/i18n/messages.en.ts",
+        "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
+        "apps/monkeyhub/web/workspaces/test/intentViewSource.browser.mjs",
+        "apps/monkeyhub/web/workspaces/test/candidatePreview.browser.mjs",
+        "apps/monkeyhub/web/workspaces/test/workingCopy.browser.mjs",
+        "apps/monkeyhub/web/workspaces/test/modelHistory.test.ts"
       ],
       "card": "docs/mapping/planning/GH-234-hub-ui-round.md",
       "acceptance": [
@@ -94,6 +108,38 @@
           "write_scope": [
             "docs/2026-09-24-monkeyhub-ui-reality-and-hub-architecture.md",
             "docs/mapping/planning/GH-234-hub-ui-round.md"
+          ],
+          "depends_on": [],
+          "status": "active",
+          "blocked_reason": null
+        },
+        {
+          "id": "view-base",
+          "issue": "https://github.com/cogco1/MonkeyHub/issues/234",
+          "branch": "codex/234-view-base",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-234-view-base",
+          "base_ref": "ca4c8e89",
+          "contributor": "Claude",
+          "reviewer": "Claude root task",
+          "handoff": "Root task codex/234-ui-round reviews, integrates and re-runs the complete view/continue/undo flow.",
+          "modules": [
+            "hub.shell"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/web/workspaces/src/app/App.tsx",
+            "apps/monkeyhub/web/workspaces/src/app/useSession.ts",
+            "apps/monkeyhub/web/workspaces/src/app/modelHistory.ts",
+            "apps/monkeyhub/web/workspaces/src/features/stage/Stage.tsx",
+            "apps/monkeyhub/web/workspaces/src/features/stage/VersionsStrip.tsx",
+            "apps/monkeyhub/web/workspaces/src/features/conversation/Conversation.tsx",
+            "apps/monkeyhub/web/workspaces/src/features/conversation/cards/ProposalCard.tsx",
+            "apps/monkeyhub/web/workspaces/src/styles.css",
+            "apps/monkeyhub/web/src/i18n/messages.en.ts",
+            "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
+            "apps/monkeyhub/web/workspaces/test/intentViewSource.browser.mjs",
+            "apps/monkeyhub/web/workspaces/test/candidatePreview.browser.mjs",
+            "apps/monkeyhub/web/workspaces/test/workingCopy.browser.mjs",
+            "apps/monkeyhub/web/workspaces/test/modelHistory.test.ts"
           ],
           "depends_on": [],
           "status": "active",
