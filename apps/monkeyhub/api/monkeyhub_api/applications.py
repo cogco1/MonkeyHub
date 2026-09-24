@@ -23,6 +23,7 @@ APPS = {
     "monkeyarch": ("MonkeyArch", "studio"),
     "monkeymonitor": ("MonkeyMonitor", "monitor"),
     "monkeyboard": ("MonkeyBoard", "studio"),
+    "monkeyrender": ("Render", "studio"),
     "monkeyfab": ("MonkeyFab", "hub"),
 }
 
@@ -119,7 +120,7 @@ class Applications:
                 url = child.url
                 if service == "studio":
                     runtime_id = str(uuid5(NAMESPACE_URL, f"{child.project_id}:{self._project_key(child.project_dir)}"))
-                    query = urlencode({"view": "board" if app_id == "monkeyboard" else "arch", "runtimeId": runtime_id})
+                    query = urlencode({"view": "board" if app_id == "monkeyboard" else "render" if app_id == "monkeyrender" else "arch", "runtimeId": runtime_id})
                     url = f"http://127.0.0.1:{self.hub_port}/?{query}"
             return AppStatus(
                 appId=app_id, title=title, serviceId=service, state=state,
@@ -178,6 +179,7 @@ class Applications:
     def _command(self, service: str, settings: ApplicationSettingsDto) -> tuple[list[str], dict[str, str]]:
         args = [sys.executable, str(self.source_root / "apps/monkeyhub/run.py"), "--service", service]
         environ = os.environ.copy()
+        render_key = environ.pop("MONKEYHUB_RENDER_API_KEY", None)
         diagnostics = self.runtime_root / "diagnostics" / "monkeymonitor"
         if service == "monitor":
             return args + ["serve", "--data-dir", str(diagnostics), "--codex-bindings-url",
@@ -206,6 +208,14 @@ class Applications:
             environ["ARCHFLOW_STUDIO_INTENT_MODEL"] = preferences.intent_model
         if preferences.intent_timeout_s is not None:
             environ["ARCHFLOW_STUDIO_INTENT_TIMEOUT_S"] = str(preferences.intent_timeout_s)
+        if preferences.render_provider == "gemini":
+            environ["ARCHFLOW_STUDIO_RENDER_PROVIDER"] = "gemini"
+            if preferences.render_model:
+                environ["ARCHFLOW_STUDIO_RENDER_MODEL"] = preferences.render_model
+            if preferences.render_timeout_s is not None:
+                environ["ARCHFLOW_STUDIO_RENDER_TIMEOUT_S"] = str(preferences.render_timeout_s)
+            if render_key:
+                environ["ARCHFLOW_STUDIO_RENDER_API_KEY"] = render_key
         return args + ["--host", "127.0.0.1"], environ
 
     def stop(self, app_id: AppId, *, project_dir: str | None = None) -> AppStatus:

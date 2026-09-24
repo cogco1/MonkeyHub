@@ -23,6 +23,7 @@ from . import (
     projects,
     protocol,
     proposals,
+    rendering,
     runtime,
     settings,
     state,
@@ -43,6 +44,7 @@ router.include_router(state.router)
 router.include_router(program.router)
 router.include_router(artifacts.router)
 router.include_router(model_exports.router)
+router.include_router(rendering.router)
 router.include_router(boards.router)
 router.include_router(decisions.router)
 router.include_router(drawings.router)

@@ -27,15 +27,16 @@ type Props = {
 };
 type ToolTab = { id: AppId; url: string; revision: number; projectDir?: string; projectId?: string; runtimeId?: string; candidate?: string };
 type SavedTool = { id: AppId; candidate?: string };
-type ProjectPreparation = { promise: Promise<AppStatus[]>; apps: AppStatus[] | null };
+type ProjectPreparation = { promise: Promise<AppStatus[]>; apps: AppStatus[] | null; modeling?: Promise<unknown> };
 const VIEW_KEY = "monkeyhub.chat-view.v1";
 /** The rail is always on screen; the conversation never shrinks past this. */
 const RAIL_WIDTH = 76, RESIZER_WIDTH = 5, CHAT_MIN_WIDTH = 360;
 import { chatCopyCatalog as words } from "./i18n/catalogs";
 /** The rail's two kinds of entry: places you work in this project, and the
     tools that report on the machine rather than on the design. */
-const tools: { id: AppId; label: "model" | "diagram" | "board" | "fab" | "monitor"; icon: string; group: "workspace" | "system" }[] = [
+const tools: { id: AppId; label: "model" | "diagram" | "board" | "render" | "fab" | "monitor"; icon: string; group: "workspace" | "system" }[] = [
   { id: "monkeyarch", label: "model", icon: "cube", group: "workspace" },
+  { id: "monkeyrender", label: "render", icon: "render", group: "workspace" },
   { id: "drawing", label: "diagram", icon: "drawing", group: "workspace" },
   { id: "monkeyboard", label: "board", icon: "board", group: "workspace" }, { id: "monkeyfab", label: "fab", icon: "fab", group: "workspace" },
   { id: "monkeymonitor", label: "monitor", icon: "chart", group: "system" },
@@ -44,6 +45,7 @@ const railGroups = [{ id: "workspace", caption: "railWorkspaces" }, { id: "syste
 
 function Icon({ name }: { name: string }) {
   const paths: Record<string, ReactNode> = {
+    render: <><rect x="3" y="4" width="18" height="16" rx="2" /><circle cx="8" cy="9" r="1.5" /><path d="m4 18 5-5 3 3 4-6 4 8" /></>,
     drawing: <><path d="M5 3h10l4 4v14H5ZM15 3v5h4M8 11h8v5H8Z" /><path d="M8 19h8M8 18v2m8-2v2" /></>,
     plus: <path d="M12 5v14M5 12h14" />, panel: <><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M15 4v16" /></>,
     sidebar: <><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M9 4v16" /></>, close: <path d="m6 6 12 12M6 18 18 6" />,
@@ -387,7 +389,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
     else { const view = tabs.find((tab) => tab.projectDir === item.projectDir); setProjectDir(item.projectDir); setChatId(null); setActiveTool(view?.id ?? null); setPanel(Boolean(view)); }
   };
 
-  const startTool = async (appId: AppId, target?: string) => {
+  const startTool = useCallback(async (appId: AppId, target?: string) => {
     const query = target ? `?${new URLSearchParams({ projectDir: target })}` : "";
     let status = await request<AppStatus>(`/api/apps/${appId}/start${query}`, {});
     const deadline = Date.now() + 60000;
@@ -400,10 +402,10 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
       status = (await request<AppStatus[]>(`/api/apps${query}`)).find((item) => item.appId === appId)!;
     }
     return status.url;
-  };
+  }, []);
 
-  /** One preparation per managed Studio, shared by navigation, send and project workspaces. */
-  const ensureProject = useCallback(async (target: string, projectId: string, appId: AppId = "monkeyarch") => {
+  /** Runtime attachment is read-only for project content; only an explicit Arch entry seeds modeling. */
+  const ensureProject = useCallback(async (target: string, projectId: string, appId?: AppId) => {
     let preparation = projectPreparations.current.get(target);
     if (!preparation) {
       const query = new URLSearchParams({ projectDir: target });
@@ -413,14 +415,16 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
         // snapshot may update worker state or supersede an event already read.
         receiveRuntime(await request<HubRuntimeDto>("/api/runtime"));
         const attached = runtimeRef.current?.projects.find((item) => item.runtimeId === opened.runtimeId);
-        if (!attached) throw new Error("The project runtime is no longer attached.");
+        if (!attached || attached.projectId !== projectId || opened.projectId !== projectId) throw new Error("The project runtime is no longer attached to this project.");
         const worker = attached.workers?.find((item) => item.serviceId === "studio");
         if (worker?.state === "crashed" || (worker?.state === "unavailable" && worker.processId)) {
           throw Object.assign(new Error("The project service needs recovery."), { failure: worker.error ?? { code: "WORKER_NEEDS_RECOVERY", detail: "The project service exited. Recover it to read saved results." } });
         }
-        if (!worker?.healthy || attached.projection !== "ready") await request(`/api/project/modeling?${query}`, { projectId });
+        if (!worker?.healthy) await startTool("monkeyrender", target);
         const statuses = await request<AppStatus[]>(`/api/apps?${query}`);
         if (!statuses.some((item) => item.appId === "monkeyarch" && item.state === "running" && item.url)) throw new Error("The project service did not become ready.");
+        const binding = await request<{ projectId: string }>(`/api/runtime/projects/${opened.runtimeId}/studio/api/project`);
+        if (binding.projectId !== projectId) throw new Error("The running application belongs to a different project.");
         return statuses;
       })() };
       preparation = entry;
@@ -429,15 +433,19 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
     try {
       const statuses = await preparation.promise;
       preparation.apps = statuses;
+      if (appId === "monkeyarch" && runtimeAttachments.current.get(target)?.projection !== "ready") {
+        preparation.modeling ??= request(`/api/project/modeling?${new URLSearchParams({ projectDir: target })}`, { projectId });
+        await preparation.modeling;
+      }
       if (selection.current.projectDir === target) setProjectApps({ projectDir: target, apps: statuses });
-      const url = statuses.find((item) => item.appId === (appId === "drawing" ? "monkeyarch" : appId) && item.state === "running")?.url;
+      const url = statuses.find((item) => item.appId === (!appId || appId === "drawing" ? "monkeyarch" : appId) && item.state === "running")?.url;
       if (!url) throw new Error("The project workspace is unavailable.");
       return url;
     } catch (cause) {
       if (projectPreparations.current.get(target) === preparation) projectPreparations.current.delete(target);
       throw cause;
     }
-  }, [receiveRuntime]);
+  }, [receiveRuntime, startTool]);
   useEffect(() => {
     if (!project) return;
     let cancelled = false;
@@ -637,10 +645,10 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
     // An explicit system-page choice supersedes even a stale project link.
     if (id === "monkeymonitor") routeRestored.current = true;
     const existing = tabs.find((item) => needsProject ? item.projectDir === projectDir : item.id === id);
-    if (existing) {
+    if (existing && id !== "monkeyarch") {
       setTabs((items) => items.map((item) => item === existing ? { ...item, id,
         candidate: view?.candidate ?? item.candidate,
-        url: needsProject ? `${window.location.origin}/?${new URLSearchParams({ runtimeId: item.runtimeId!, view: id === "monkeyboard" ? "board" : id === "drawing" ? "drawing" : "arch" })}` : item.url } : item));
+        url: needsProject ? `${window.location.origin}/?${new URLSearchParams({ runtimeId: item.runtimeId!, view: id === "monkeyboard" ? "board" : id === "drawing" ? "drawing" : id === "monkeyrender" ? "render" : "arch" })}` : item.url } : item));
       setPanel(true); setActiveTool(id); setError(null);
       return true;
     }
@@ -663,8 +671,8 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
       if (needsProject) {
         const attached = runtimeAttachments.current.get(target!);
         if (!attached || attached.projectId !== project!.projectId) throw new Error("The project runtime has not been attached.");
-        tab = { id, projectDir: target!, projectId: attached.projectId, runtimeId: attached.runtimeId, candidate: view?.candidate, revision: 0,
-          url: `${window.location.origin}/?${new URLSearchParams({ runtimeId: attached.runtimeId, view: id === "monkeyboard" ? "board" : id === "drawing" ? "drawing" : "arch" })}` };
+        tab = { id, projectDir: target!, projectId: attached.projectId, runtimeId: attached.runtimeId, candidate: view?.candidate ?? existing?.candidate, revision: existing?.revision ?? 0,
+          url: `${window.location.origin}/?${new URLSearchParams({ runtimeId: attached.runtimeId, view: id === "monkeyboard" ? "board" : id === "drawing" ? "drawing" : id === "monkeyrender" ? "render" : "arch" })}` };
       } else {
         tab = { id, url: applicationUrl(location, preferences), revision: 0 };
       }
@@ -696,7 +704,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
     if (!match) return;
     if (projectDir !== match.projectDir) { selectProject(match); return; }
     if (actionLock.current || busy || toolBusy || !attached.workers?.some((worker) => worker.serviceId === "studio" && worker.healthy)) return;
-    const id = query.get("view") === "board" ? "monkeyboard" : query.get("view") === "drawing" ? "drawing" : "monkeyarch";
+    const id = query.get("view") === "board" ? "monkeyboard" : query.get("view") === "drawing" ? "drawing" : query.get("view") === "render" ? "monkeyrender" : "monkeyarch";
     const saved = initial.projectDir === match.projectDir && initial.activeTool === id
       ? initial.tools.find((item) => item.id === id) : undefined;
     void openTool(id, saved?.candidate ? { candidate: saved.candidate } : undefined)
@@ -711,10 +719,10 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
       url.searchParams.set("view", "monitor");
     } else if (selectedTab?.runtimeId) {
       url.searchParams.set("runtimeId", selectedTab.runtimeId);
-      url.searchParams.set("view", selectedTab.id === "monkeyboard" ? "board" : selectedTab.id === "drawing" ? "drawing" : "arch");
+      url.searchParams.set("view", selectedTab.id === "monkeyboard" ? "board" : selectedTab.id === "drawing" ? "drawing" : selectedTab.id === "monkeyrender" ? "render" : "arch");
     } else {
       url.searchParams.delete("runtimeId");
-      if (["arch", "board", "drawing", "monitor"].includes(url.searchParams.get("view") ?? "")) url.searchParams.delete("view");
+      if (["arch", "board", "drawing", "render", "monitor"].includes(url.searchParams.get("view") ?? "")) url.searchParams.delete("view");
     }
     window.history.replaceState(null, "", url);
   }, [selectedTab?.runtimeId, selectedTab?.id, projectDir, panel]);
@@ -961,11 +969,11 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
         if (item.runtimeId) return <div className="chat-project-workspace project-workspace" key={item.runtimeId} hidden={!visible} inert={!visible}>
           <ProjectRuntimeProvider baseUrl={`${window.location.origin}/api/runtime/projects/${item.runtimeId}/studio`}>
             <ErrorBoundary label={t.tools}><Suspense fallback={<div role="status">{t.working}</div>}>
-              <ProjectWorkspace workspace={item.id === "monkeyboard" ? "board" : item.id === "drawing" ? "drawing" : "arch"} active={visible}
+              <ProjectWorkspace workspace={item.id === "monkeyboard" ? "board" : item.id === "drawing" ? "drawing" : item.id === "monkeyrender" ? "render" : "arch"} active={visible}
                 expectedProjectId={item.projectId} candidateRunId={item.candidate} refreshKey={item.revision} onChatRequest={focusConversation}
                 documentRequest={item.projectDir ? documentRequests[item.projectDir] : undefined}
                 onDesignContextChange={workspaceContextCallback(item.runtimeId)}
-                onWorkspaceChange={(workspace) => { const id = workspace === "board" ? "monkeyboard" : workspace === "drawing" ? "drawing" : "monkeyarch";
+                onWorkspaceChange={(workspace) => { const id = workspace === "board" ? "monkeyboard" : workspace === "drawing" ? "drawing" : workspace === "render" ? "monkeyrender" : "monkeyarch";
                   setTabs((items) => items.map((tab) => tab.runtimeId === item.runtimeId ? { ...tab, id,
                     url: `${window.location.origin}/?${new URLSearchParams({ runtimeId: item.runtimeId!, view: workspace })}` } : tab));
                   if (selection.current.projectDir === item.projectDir) setActiveTool(id);

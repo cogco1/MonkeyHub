@@ -1,3 +1,4 @@
+import type { RenderView } from "../workspaces/monkeyarch/viewer/renderView";
 /**
  * The studio shell: one conversation beside one model, and everything the
  * server said one click behind.
@@ -224,7 +225,8 @@ export type WorkspaceDesignContext = {
   unavailableReason: "unsaved" | "loading" | "unavailable" | null;
 };
 
-export default function App({ server, expectedProjectId, initialDocumentIntent, initialSketchRequest, initialDrawingRequest, initialRunId, documentSource = null, active = true, refreshKey = 0, onReturnToBoard, onOpenBoard, onChatRequest, onDesignContextChange }: {
+export default function App({ server, expectedProjectId, initialDocumentIntent, initialSketchRequest, initialDrawingRequest, initialRunId, documentSource = null, active = true, refreshKey = 0, onReturnToBoard, onOpenBoard, onChatRequest, onDesignContextChange, onRenderReader }: {
+  onRenderReader?: (reader: (() => RenderView | null) | null) => void;
   server: ServerIdentity; initialDocumentIntent?: BoardDesignRequest;
   expectedProjectId?: string;
   /** One calibrated board sketch frame, to be run as a sketch proposal once the session is ready. */
@@ -342,6 +344,10 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
   );
 
   const viewportRef = useRef<ViewportController>(null);
+  useEffect(() => {
+    onRenderReader?.(() => viewportRef.current?.renderView() ?? null);
+    return () => onRenderReader?.(null);
+  }, [onRenderReader]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [inspection, setInspection] = useState<SceneInspection | null>(null);
   const [viewerMessage, setViewerMessage] = useState("");

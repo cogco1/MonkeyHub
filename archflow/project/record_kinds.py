@@ -101,6 +101,7 @@ STUDIO_CANDIDATE_ENVELOPE = "studio-candidate-envelope"
 INTENT_COMPILATION = "intent-compilation"
 DELIBERATION_EPISODE = "deliberation-episode"
 STUDIO_SOURCE_DOCUMENT = "studio-source-document"
+STUDIO_RENDER_JOB = "studio-render-job"
 STUDIO_DOCUMENT_ANNOTATIONS = "studio-document-annotations"
 STUDIO_DOCUMENT_COMMENT = "studio-document-comment"
 STUDIO_MODEL_ASSET = "studio-model-asset"
@@ -142,6 +143,12 @@ _RUN_BRANCH = PersistenceArea.RUN_BRANCH.value
 
 _TABLE: tuple[RecordKind, ...] = (
     RecordKind("studio-model-export", "StudioModelExport@1", _RUN_RECORD, "Conversion job lifecycle, original source provenance and validated output; never canonical state."),
+    RecordKind(
+        STUDIO_RENDER_JOB,
+        "StudioRenderJob@2",
+        _RUN_RECORD,
+        "Immutable image-attempt transitions, exact source pages and provider outcomes; independent of Design HEAD and candidate acceptance.",
+    ),
     RecordKind(
         STUDIO_BOARD_SCENE,
         "StudioBoardScene@1",
