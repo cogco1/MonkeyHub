@@ -4668,6 +4668,51 @@ export type ModelSourceDto = {
 };
 
 /**
+ * ModelSourceIndexDto
+ *
+ * Native metadata only; no geometry validation or semantic admission.
+ */
+export type ModelSourceIndexDto = {
+    modelSource: ModelSourceDto;
+    /**
+     * Filename
+     */
+    fileName: string;
+    /**
+     * Archiveversion
+     */
+    archiveVersion: number;
+    /**
+     * Units
+     */
+    units: {
+        [key: string]: unknown;
+    };
+    /**
+     * Objectcount
+     */
+    objectCount: number;
+    /**
+     * Matchedcount
+     */
+    matchedCount: number;
+    /**
+     * Objects
+     */
+    objects: Array<{
+        [key: string]: unknown;
+    }>;
+    /**
+     * Offset
+     */
+    offset: number;
+    /**
+     * Nextoffset
+     */
+    nextOffset: number | null;
+};
+
+/**
  * ModelUpload
  */
 export type ModelUpload = {
@@ -10188,6 +10233,67 @@ export type ReadSemanticsApiSemanticsGetResponses = {
 };
 
 export type ReadSemanticsApiSemanticsGetResponse = ReadSemanticsApiSemanticsGetResponses[keyof ReadSemanticsApiSemanticsGetResponses];
+
+export type ReadNativeModelIndexApiModelAssetsAssetSha256IndexGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path: {
+        /**
+         * Asset Sha256
+         */
+        asset_sha256: string;
+    };
+    query: {
+        /**
+         * Runid
+         */
+        runId: string;
+        /**
+         * Statedigest
+         */
+        stateDigest: string;
+        /**
+         * Objectid
+         */
+        objectId?: Array<string>;
+        /**
+         * Offset
+         */
+        offset?: number;
+        /**
+         * Limit
+         */
+        limit?: number;
+    };
+    url: '/api/model-assets/{asset_sha256}/index';
+};
+
+export type ReadNativeModelIndexApiModelAssetsAssetSha256IndexGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadNativeModelIndexApiModelAssetsAssetSha256IndexGetError = ReadNativeModelIndexApiModelAssetsAssetSha256IndexGetErrors[keyof ReadNativeModelIndexApiModelAssetsAssetSha256IndexGetErrors];
+
+export type ReadNativeModelIndexApiModelAssetsAssetSha256IndexGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: ModelSourceIndexDto;
+};
+
+export type ReadNativeModelIndexApiModelAssetsAssetSha256IndexGetResponse = ReadNativeModelIndexApiModelAssetsAssetSha256IndexGetResponses[keyof ReadNativeModelIndexApiModelAssetsAssetSha256IndexGetResponses];
 
 export type CreateModelAssetApiModelAssetsPostData = {
     body: ModelAssetRequestDto;

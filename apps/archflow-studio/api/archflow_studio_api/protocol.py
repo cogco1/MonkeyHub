@@ -55,6 +55,7 @@ BASE_CAPABILITIES: tuple[str, ...] = (
     "intents",
     "model-annotations",
     "model-asset-registration",
+    "model-source-index",
     "pick",
     "program",
     "projection",

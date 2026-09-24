@@ -4036,6 +4036,8 @@ def patch_composed_three_dm(
     native block instance is refused, never silently stripped of its definition.
     Preserved block instances in the base need no reconstruction. This is a
     display-model composition, not an exact STEP export of the imported assets.
+    Rebuilt logical objects retain their source GUIDs. New objects cannot take
+    any source object's identity, including an object retired by this patch.
     A replacement without a native material keeps the existing object's native
     material, or a new object's unambiguous component material. Explicit donor
     materials take precedence; inherited materials retain their PBR and textures.
@@ -4101,7 +4103,16 @@ def patch_composed_three_dm(
         raise CadPatchError(f"native replacement is missing patch objects: {sorted(missing)}")
     require_native_identity(donor_objects, replacement_names, "native replacement")
     replacements = [item for name in sorted(replacement_names) for item in donor_objects[name]]
+    source_ids = {item.Attributes.Id for item in base.Objects}
+    replacement_ids = {}
     for item in replacements:
+        name = item.Attributes.Name
+        if name in prior_names:
+            replacement_ids[name] = base_objects[name][0].Attributes.Id
+        else:
+            if item.Attributes.Id in source_ids:
+                raise CadPatchError(f"new native object GUID collides with source identity: {name}")
+            replacement_ids[name] = item.Attributes.Id
         if isinstance(item.Geometry, rhino3dm.InstanceReference):
             raise CadPatchError(f"native replacement block needs its definition: {item.Attributes.Name}")
         if not item.Geometry.IsValid:
@@ -4208,6 +4219,7 @@ def patch_composed_three_dm(
     imported = set()
     for item in replacements:
         attributes = item.Attributes
+        attributes.Id = replacement_ids[attributes.Name]
         donor_material = native_material_index(donor, attributes)
         attributes.LayerIndex = copy_layer(attributes.LayerIndex)
         inherited = inherited_materials.get(attributes.Name)
@@ -4231,7 +4243,10 @@ def patch_composed_three_dm(
         geometry = item.Geometry.Duplicate()
         if unit_scale != 1.0 and not geometry.Transform(scale_transform):
             raise CadPatchError(f"native replacement could not be converted to the base unit: {attributes.Name}")
-        imported.add(base.Objects.Add(geometry, attributes))
+        inserted_id = base.Objects.Add(geometry, attributes)
+        if inserted_id != replacement_ids[attributes.Name]:
+            raise CadPatchError(f"native replacement did not retain its expected GUID: {attributes.Name}")
+        imported.add(inserted_id)
 
     encoded = base64.b64decode(base.Encode())
     reopened = read(encoded, "composed result")
@@ -4242,6 +4257,9 @@ def patch_composed_three_dm(
         name in result_objects for name in prior_names - new_names
     ):
         raise CadPatchError("composed result does not contain the native patch outputs")
+    for name, expected_id in replacement_ids.items():
+        if len(result_objects[name]) != 1 or result_objects[name][0].Attributes.Id != expected_id:
+            raise CadPatchError(f"composed result changed native object identity: {name}")
     return encoded
 
 

@@ -53,6 +53,21 @@ class ModelAssetRequestDto(BaseModel):
     content_base64: str = Field(alias="contentBase64", min_length=1)
 
 
+class ModelSourceIndexDto(BaseModel):
+    """Native metadata only; no geometry validation or semantic admission."""
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
+    model_source: ModelSourceDto = Field(alias="modelSource")
+    file_name: str = Field(alias="fileName")
+    archive_version: int = Field(alias="archiveVersion")
+    units: dict[str, Any]
+    object_count: int = Field(alias="objectCount")
+    matched_count: int = Field(alias="matchedCount")
+    objects: list[dict[str, Any]]
+    offset: int
+    next_offset: int | None = Field(alias="nextOffset")
+
+
 class DocumentModelSourceRequestDto(BaseModel):
     model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
 

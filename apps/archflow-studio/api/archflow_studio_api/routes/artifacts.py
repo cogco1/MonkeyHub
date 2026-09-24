@@ -5,7 +5,9 @@ from __future__ import annotations
 from datetime import datetime, timezone
 import hashlib
 import json
+import re
 from urllib.parse import quote
+from uuid import UUID
 
 from fastapi import APIRouter, Query
 from fastapi.responses import Response
@@ -23,6 +25,7 @@ from ..application.artifacts import (
     open_document_work_copy,
     save_document,
     register_model_asset,
+    read_model_source_index,
     require_model_source,
     save_viewport_capture,
 )
@@ -34,6 +37,8 @@ from ..transport.artifacts import (
     DocumentWorkCopyDto,
     DocumentWorkCopyRequestDto,
     ModelAssetRequestDto,
+    ModelSourceDto,
+    ModelSourceIndexDto,
     DocumentModelSourceRequestDto,
     ProjectArtifactDto,
     RhinoWorkExportRequestDto,
@@ -53,6 +58,23 @@ from ..transport.artifacts import (
 from ..transport.errors import StudioError
 
 router = APIRouter(tags=["artifacts"])
+
+
+@router.get("/model-assets/{asset_sha256}/index", response_model=ModelSourceIndexDto, response_model_by_alias=True)
+def read_native_model_index(
+    request: Request, asset_sha256: str,
+    run_id: str = Query(alias="runId", min_length=1),
+    state_digest: str = Query(alias="stateDigest", pattern=r"^[0-9a-f]{64}$"),
+    object_ids: list[UUID] = Query(default=[], alias="objectId", max_length=200),
+    offset: int = Query(default=0, ge=0), limit: int = Query(default=50, ge=1, le=200),
+) -> ModelSourceIndexDto:
+    if not re.fullmatch(r"[0-9a-f]{64}", asset_sha256):
+        raise StudioError(422, "MODEL_SOURCE_INVALID", "Use the exact model asset SHA-256.")
+    source = model_source_from(ModelSourceDto(run_id=run_id, state_digest=state_digest, asset_sha256=asset_sha256))
+    return ModelSourceIndexDto(**read_model_source_index(
+        bound_project(request.app.state), source,
+        object_ids=tuple(str(value) for value in object_ids), offset=offset, limit=limit,
+    ))
 
 
 @router.post("/model-assets", response_model=ProjectArtifactDto, response_model_by_alias=True, status_code=201)

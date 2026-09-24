@@ -378,7 +378,8 @@
         "the common result preserves native success/readback evidence and validates exact binding, semantic identity, workspace containment and artifact bytes; it is not a new retained receipt or write authority",
         "Blender supports positive solids and straight extrusions of simple planar profiles in the initial slice; all other operations fail before host execution or workspace writes. Complete rebuilds preserve source artifacts; cached exact requests verify retained proof and bytes without starting a host",
         "retained polyline curves are verified from cold STEP and native 3DM readback against all authored points, endpoints and length; curve delivery claims no face or solid, and existing solid/surface receipt fields retain their meaning",
-        "Blender projection consumes OCCT tessellation without architectural reconstruction; full rebuild preserves source IDs and explicit presentation settings. Geometry edits require MonkeyHub reconcile, never blend-file promotion."
+        "Blender projection consumes OCCT tessellation without architectural reconstruction; full rebuild preserves source IDs and explicit presentation settings. Geometry edits require MonkeyHub reconcile, never blend-file promotion.",
+        "composed-model replacement retains the source GUID for each rebuilt logical object; newly added objects cannot reuse any source GUID, including retired ones; saved readback verifies the expected identity"
       ],
       "status": "canonical",
       "tests": [
@@ -598,7 +599,8 @@
         "native material and render-material tables and each object's material binding",
         "per-object encoded-geometry digests and morphology analysis (planarity, curve sampling and exact native polyline vertices/length)",
         "the typed, fail-closed inspection error codes",
-        "reading original 3dm container bytes, geometry encodings, user strings, block definitions/references and material tables without claiming geometric validity or bounds; invalid geometry object ids remain explicit"
+        "reading original 3dm container bytes, geometry encodings, user strings, block definitions/references and material tables without claiming geometric validity or bounds; invalid geometry object ids remain explicit",
+        "lightweight native identity, layer, block/reference and raw user-string indexing from exact 3dm bytes, without per-object geometry encoding or validation"
       ],
       "does_not_own": [
         "producing the file - adapters.cad_execution",
@@ -610,7 +612,8 @@
         ".3dm file path or bytes"
       ],
       "outputs": [
-        "ThreeDmInspection (ThreeDmInspection@N)"
+        "ThreeDmInspection (ThreeDmInspection@N)",
+        "Plain native source index value; no persisted record or semantic classification"
       ],
       "public_api": [
         "inspect_three_dm",
@@ -619,7 +622,8 @@
         "ThreeDmInspectionErrorCode",
         "REQUIRED_INSPECTION_KEYS",
         "SUPPORTED_INSPECTION_SCHEMAS",
-        "inspect_three_dm_contents"
+        "inspect_three_dm_contents",
+        "inspect_three_dm_index"
       ],
       "depends_on": [
         "contracts.canonical",
@@ -3880,7 +3884,8 @@
         "the explicitly requested editable work model: POST /api/artifacts/{sha256}/rhino-export takes the exact STEP of one named run, imports it through the existing supervised Rhino host, retains the ordinary Rhino execution receipt with the source STEP digest and receipt it was made from, and answers with the work model's own artifact row; the layers, material declarations and colours come from that export's own retained preview inspection, and a copy that cannot reproduce them is refused rather than moved or recoloured",
         "the explicitly requested editable work copy of one registered document (PDF, PNG or JPEG): POST /api/documents/{asset_sha256}/work-copy seeds one P036 run-workspace file under studio-documents/work/<origin sha256>/ from the page that registration currently answers for, returns the copy already there untouched when asked again, and never overwrites it; which copies exist is derived from the registered documents plus that one path, with no second store and no workspace scan; one derivation decides whether a document can have a single editable file and carries the reason it cannot on the row itself, so opening a copy and listing the copies never disagree and a file already on disk is never dropped out of sight",
         "one horizontal cut-plan revision over the existing SourceDocument and DrawingProjectionReceipt: retained scale, pens, hatch, semantic rectangular empty-door dimensions and explicit rebuild against a named exact source or the original Stage branch head",
-        "Model conversion orchestration using the existing job pool, original source objects and noncanonical P036 export runs; retained progress, failure and validated-download reports."
+        "Model conversion orchestration using the existing job pool, original source objects and noncanonical P036 export runs; retained progress, failure and validated-download reports.",
+        "read-only paged native-object lookup by exact ModelSource and GUID; no architectural-role inference or edit admission"
       ],
       "does_not_own": [
         "producing the export or its receipt - adapters.cad_execution through runtime.project_runner",
@@ -3961,7 +3966,9 @@
         "POST /api/exports",
         "GET /api/exports/capabilities",
         "GET /api/exports/{export_id}",
-        "GET /api/exports/{export_id}/bytes"
+        "GET /api/exports/{export_id}/bytes",
+        "GET /api/model-assets/{asset_sha256}/index",
+        "read_model_source_index"
       ],
       "depends_on": [
         "adapters.cad_execution",
@@ -4035,7 +4042,8 @@
         "apps/archflow-studio/api/tests/test_drawings.py",
         "apps/archflow-studio/api/tests/test_drawing_plans.py",
         "apps/archflow-studio/api/tests/test_drawing_dimensions.py",
-        "apps/archflow-studio/api/tests/test_model_exports.py"
+        "apps/archflow-studio/api/tests/test_model_exports.py",
+        "apps/archflow-studio/api/tests/test_model_source_index.py"
       ],
       "notes": "The viewer's only source of model bytes; digests are the identity, filenames are not.",
       "files": [
@@ -4452,7 +4460,8 @@
         "Candidate service timing begins at worker entry and includes nested geometry export; browser load timing is separately marked client_wait and validates the project, run and optional retained source",
         "configured Runtime acceptance delegates to its shared service and then pulls the retained result; shared acceptance records the authenticated actor in existing accepted_by; older records retain their original attribution",
         "Runtime inspection never starts a worker, replays a change, executes CAD or writes project records; a live job or an incomplete retained candidate cannot prove successful execution or a committed Stage",
-        "candidate ownership continues the selected source run through its retained seat round and discipline-seat refs; only explicitly deleted Component roots retire, legacy sources without a seat schedule keep authored-pack behavior, and missing or ambiguous retained ownership is refused"
+        "candidate ownership continues the selected source run through its retained seat round and discipline-seat refs; only explicitly deleted Component roots retire, legacy sources without a seat schedule keep authored-pack behavior, and missing or ambiguous retained ownership is refused",
+        "changed-component coverage is checked before composed-model registration and on cold candidate reads from the existing retained operator and runner receipt; a run that did not build its own changed components is not recovered as a succeeded candidate"
       ],
       "status": "canonical",
       "tests": [
@@ -6356,7 +6365,8 @@
         "User-selected local desktop patch preparation, idle restart admission, owned host trial activation and startup rollback; update files and transaction state live only under the explicitly supplied nonproject runtime/updates directory and sibling application versions.",
         "Forwarding explicitly selected Study revisions into prepared task context and exposing the existing project-bound Study read for exact evidence reopening; no Study mutation tool.",
         "Drawing as a project-bound page in the same Hub: retained cut-plan revisions and representation controls, explicit source comparison/rebuild, and exact-source dimension proposal handoff into the existing Modeling candidate flow",
-        "Conversational model export/convert tool routing, exact session attachment transfer, clarification for conflicting sources and verified result download links."
+        "Conversational model export/convert tool routing, exact session attachment transfer, clarification for conflicting sources and verified result download links.",
+        "project-bound chat read access to exact native source indexes through the existing studio_request tool"
       ],
       "does_not_own": [
         "Building project state, geometry, drawing algorithms, model gateways, provider credentials or project creation",
