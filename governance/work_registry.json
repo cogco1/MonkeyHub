@@ -653,10 +653,11 @@
       "id": "GH-58",
       "stream": "planning",
       "status": "active",
-      "goal": "Diagnose the Windows CI installer activation failure without weakening the real PowerShell regression.",
+      "goal": "Repair Windows Unicode shortcut activation while retaining exact source binding and foreign-shortcut protection.",
       "depends_on": [],
       "write_scope": [
-        "apps/monkeyhub/api/tests/test_updates.py"
+        "apps/monkeyhub/api/tests/test_updates.py",
+        "apps/monkeyhub/installer/install.ps1"
       ],
       "issue": "https://github.com/cogco1/MonkeyHub/issues/58",
       "branch": "codex/fix-update-path-activation",
