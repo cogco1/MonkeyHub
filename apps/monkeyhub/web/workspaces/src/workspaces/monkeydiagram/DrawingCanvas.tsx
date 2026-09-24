@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useStudio } from "../../api/ProjectRuntimeContext";
 import { asStudioApiError, type StudioApiError } from "../../api/client";
-import type { DesignStageDto, ModelSourceDto, PlanDimensionChoicesDto, PlanStatusDto, ProposalDto, SourceDocumentDto } from "../../api/generated";
+import type { DesignStageDto, ModelSourceDto, PlanDimensionChoicesDto, PlanStatusDto, PlanVectorDto, PlanDressingDto, ProposalDto, SourceDocumentDto } from "../../api/generated";
 import { ErrorPanel } from "../../app/ErrorPanel";
 import { usePreferences } from "../../features/settings/preferences";
 import { DocumentSurface } from "./DocumentCanvas";
 import { defaultPlanForm, drawingDocumentKey, planFormFromDocument, type PlanForm } from "./drawingPlan";
+import { DressingControls, DressingOverlay } from "./DrawingDressing";
 import "./DrawingCanvas.css";
 
 export interface DrawingDesignRequest {
@@ -44,12 +45,25 @@ const copy = {
     statusError: "无法读取来源状态，请刷新重试。", loading: "正在读取图纸…" },
 } as const;
 
-function PlanPreview({ source, file }: { source: SourceDocumentDto; file: File }) {
+function PlanPreview({ source, file, vector, objects, selected, onSelect, onChange, disabled }: {
+  source: SourceDocumentDto; file: File; vector: PlanVectorDto | null; objects: PlanDressingDto[];
+  selected: string; onSelect(id: string): void; onChange(objects: PlanDressingDto[]): void; disabled: boolean;
+}) {
   const { language } = usePreferences(), text = copy[language];
   const viewport = useRef<HTMLDivElement>(null);
   const [bounds, setBounds] = useState({ width: 600, height: 500 });
   const [zoom, setZoom] = useState(1), [ready, setReady] = useState(false);
   const onReady = useCallback((value: boolean) => setReady(value), []);
+  const [baseImage, setBaseImage] = useState<string | null>(null);
+  useEffect(() => {
+    if (!vector) { setBaseImage(null); return; }
+    const svg = new DOMParser().parseFromString(vector.svg, "image/svg+xml");
+    svg.querySelector('[id="dressing"]')?.remove();
+    const url = URL.createObjectURL(new Blob([new XMLSerializer().serializeToString(svg)], { type: "image/svg+xml" }));
+    setReady(false); setBaseImage(url); return () => URL.revokeObjectURL(url);
+  }, [vector]);
+  const recipeFrame = source.viewRecipe?.frame as { crop_uv?: number[] } | undefined;
+  const crop = recipeFrame?.crop_uv;
   useEffect(() => {
     const node = viewport.current;
     if (!node) return;
@@ -68,7 +82,10 @@ function PlanPreview({ source, file }: { source: SourceDocumentDto; file: File }
     </div>
     <div className="drawing-preview__viewport" ref={viewport} tabIndex={0} data-ready={ready}>
       <div className="drawing-preview__paper" style={{ width: page.width * scale, height: page.height * scale }}>
-        <DocumentSurface file={file} page={page} scale={scale} onReady={onReady} />
+        {baseImage ? <img className="drawing-vector-base" src={baseImage} alt={source.fileName} onLoad={() => setReady(true)} />
+          : <DocumentSurface file={file} page={page} scale={scale} onReady={onReady} />}
+        {baseImage && vector && crop && <DressingOverlay objects={objects} vector={vector} crop={crop} selected={selected}
+          onSelect={onSelect} onChange={onChange} language={language} disabled={disabled} />}
       </div>
     </div>
   </section>;
@@ -88,6 +105,7 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
   const [choices, setChoices] = useState<PlanDimensionChoicesDto | null>(null), [door, setDoor] = useState("");
   const [status, setStatus] = useState<PlanStatusDto | null>(null), [statusLoading, setStatusLoading] = useState(false);
   const [file, setFile] = useState<File | null>(null), [loading, setLoading] = useState(true);
+  const [vector, setVector] = useState<PlanVectorDto | null>(null), [selectedDressing, setSelectedDressing] = useState("");
   const [error, setError] = useState<StudioApiError | null>(null), [busy, setBusy] = useState(false);
   const [refresh, setRefresh] = useState(0), [widths, setWidths] = useState<Record<string, string>>({});
   const source = documents.find(document => drawingDocumentKey(document) === selected) ?? null;
@@ -126,9 +144,11 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
     return () => { cancelled = true; };
   }, [studio, projectId, stage?.stageRef, active, refresh]);
   useEffect(() => {
-    setFile(null); setStatus(null); setAutomaticTarget(null); setWidths({});
+    setFile(null); setVector(null); setSelectedDressing(""); setStatus(null); setAutomaticTarget(null); setWidths({});
     if (!source) { setStatusLoading(false); return; }
     let cancelled = false;
+    if (source.revisionRef) void studio.drawingPlanVector({ runId: source.runId, assetSha256: source.assetSha256, revisionRef: source.revisionRef })
+      .then(value => { if (!cancelled) setVector(value); }).catch(cause => { if (!cancelled) setError(asStudioApiError(cause)); });
     void studio.documentFile(source.runId, source.assetSha256, source.fileName, source.revisionRef).then(value => {
       if (!cancelled) setFile(value);
     }).catch(cause => { if (!cancelled) setError(asStudioApiError(cause)); });
@@ -223,7 +243,8 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
           <button type="button" disabled={!stage || busy || statusLoading} onClick={() => void generate(true)}>{text.rebuild}</button>
         </section>}
         </div>
-        <div className="drawing-canvas">{source && file ? <PlanPreview key={selected} source={source} file={file} />
+        <div className="drawing-canvas">{source && file ? <PlanPreview key={selected} source={source} file={file} vector={vector} objects={form.dressing} selected={selectedDressing}
+          onSelect={setSelectedDressing} onChange={dressing => update({ dressing })} disabled={busy || !active} />
           : <div className="drawing-empty" role="status">{loading || source ? text.loading : stages.length ? text.empty : text.noModel}</div>}</div>
       </div>
       <form ref={controls} className="drawing-controls" aria-label={text.settings} onSubmit={event => { event.preventDefault(); void generate(!source); }}>
@@ -235,6 +256,9 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
           {numeric("scaleDenominator", text.scale, 1, "1")}
           <details><summary>{text.graphics}</summary>{numeric("cutLineMm", text.cutLine, 0.01)}{numeric("visibleLineMm", text.visibleLine, 0.01)}{numeric("hatchSpacingMm", text.hatch, 0.1)}</details>
         </fieldset>
+        {source && vector && form.cropUv && <DressingControls objects={form.dressing} vector={vector} crop={form.cropUv}
+          selected={selectedDressing} onSelect={setSelectedDressing} onChange={dressing => update({ dressing })}
+          disabled={busy || !active} language={language} unit={lengthUnit} status={status} />}
         <fieldset disabled={busy || !active}><legend>{text.dimensions}</legend>
           <label className="drawing-field">{text.chooseDoor}<select value={door} onChange={event => setDoor(event.target.value)}>
             <option value="">{text.chooseDoor}</option>{choices?.dimensions.filter(item => !dimensions.some(d => d.entityRef === item.entityRef && d.openingId === item.openingId)).map(item =>

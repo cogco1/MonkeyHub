@@ -30,6 +30,7 @@ from .render_contract import (
     ImageRenderAdapter, RenderImage, RenderInput, RenderOutputOptions,
     RenderPageRef, RenderProviderError,
 )
+from .drawing_plans import plan_status
 
 
 def _now():
@@ -62,15 +63,54 @@ def _snapshot(document):
 
 
 def _freshness(binding, request, snapshots):
+    """Follow retained inputs, without rebinding outputs or writing a global graph.
+
+    A Render result can itself be a later Render's source/reference. Its inherited
+    Stage is too broad for a cut plan and too narrow for its image references;
+    inspect the actual retained request instead.
+    """
     try:
-        pages = [request.source, *request.references]
-        for page in pages:
-            _resolve_page(binding, page)
         documents = list_documents(binding)
         replaced = {_page_key(page) for doc in documents for page in doc.replaces_pages}
-        if any(_page_key(page) in replaced for page in pages):
-            return "outdated", "A source or reference page has a newer registered replacement."
-        for snapshot in snapshots:
+        checked = set()
+
+        def visit(page, snapshot, active):
+            key = _page_key(page)
+            identity = (key, canonical_json(snapshot))
+            if key in active or len(active) >= 128:
+                raise ValueError("Unverifiable render input chain")
+            if identity in checked:
+                return "current", None
+            document, _ = _resolve_page(binding, page)
+            if key in replaced:
+                return "outdated", "A source or reference page has a newer registered replacement."
+            recipe = snapshot.get("viewRecipe") or {}
+            if recipe.get("kind") == "ai-render":
+                upstream = RenderRequestDto.model_validate(recipe["request"])
+                if upstream.project_id != binding.project_id or recipe["jobId"] != document.run_id:
+                    raise ValueError("Render input belongs to another binding")
+                for source, source_snapshot in zip(
+                    [upstream.source, *upstream.references], recipe["sourceSnapshots"], strict=True,
+                ):
+                    state, reason = visit(source, source_snapshot, active | {key})
+                    if state != "current":
+                        return state, reason
+            elif recipe.get("kind") == "cut-plan":
+                # Drawing owns its geometric read-set and semantic anchors. A
+                # change outside this crop must not invalidate its render too.
+                target = {} if document.source_stage_ref else {"target_model_source": document.model_source}
+                status = plan_status(binding, run_id=document.run_id, asset_sha256=document.asset_sha256,
+                                     revision_ref=document.revision_ref, **target)
+                if status["status"] != "current":
+                    return ("outdated" if status["status"] == "outdated" else "unavailable"), status["detail"]
+            else:
+                state, reason = model_freshness(snapshot)
+                if state != "current":
+                    return state, reason
+            checked.add(identity)
+            return "current", None
+
+        def model_freshness(snapshot):
             if snapshot["modelSource"]:
                 require_model_source(binding, ModelSource.from_dict(snapshot["modelSource"]))
             if snapshot["sourceStageRef"]:
@@ -81,8 +121,14 @@ def _freshness(binding, request, snapshots):
                     return "unavailable", "The source model's design branch is unavailable."
                 if ProjectRecordRef.from_dict(branch["head_stage"]) != ref:
                     return "outdated", "The source model's design branch has advanced."
+            return "current", None
+
+        for page, snapshot in zip([request.source, *request.references], snapshots, strict=True):
+            state, reason = visit(page, snapshot, frozenset())
+            if state != "current":
+                return state, reason
         return "current", None
-    except (StudioError, ProjectRepositoryError, OSError, ValueError):
+    except (StudioError, ProjectRepositoryError, OSError, KeyError, TypeError, ValueError):
         return "unavailable", "An exact source image, reference or declared model can no longer be resolved."
 
 

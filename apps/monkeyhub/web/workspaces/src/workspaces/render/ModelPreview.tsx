@@ -54,7 +54,7 @@ export default function ModelPreview({ active, readView, onModeling, zh }: {
   return <section className="render-model-preview" aria-label={zh ? "建模视角" : "Modeling view"}>
     <header><strong>{zh ? "建模视角 · 实时预览" : "Modeling view · Live preview"}</strong>
       <button type="button" onClick={onModeling}>{zh ? "前往建模调整视角" : "Adjust view in Modeling"}</button></header>
-    <div ref={host} className="render-model-canvas" />
+    <div ref={host} className="render-model-canvas" hidden={!available || failed} />
     {(!available || failed) && <p role="status">{failed
       ? (zh ? "预览暂时不可用，请返回建模后重试。" : "Preview unavailable. Return to Modeling and try again.")
       : (zh ? "先在建模中打开模型并调整视角，再进入渲染。" : "Open a model and set its view in Modeling, then enter Render.")}</p>}

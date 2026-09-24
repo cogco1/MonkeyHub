@@ -54,6 +54,9 @@
 .render-image p { color: var(--muted); font-size: 12px; text-align: center; }
 .render-detail footer { padding: 12px; border-top: 1px solid var(--line); overflow: auto; overflow-wrap: anywhere; max-height: 38%; font-size: 12px; }
 .render-detail footer p { margin: 0 0 8px; }
+.render-metadata { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 12px; margin: 0 0 12px; }
+.render-metadata dt { color: var(--muted); }
+.render-metadata dd { margin: 0; overflow-wrap: anywhere; }
 .render-detail footer details { margin-top: 8px; }
 .render-detail summary { cursor: pointer; color: var(--muted); }
 .render-detail pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 180px; overflow: auto; font-size: 11px; }

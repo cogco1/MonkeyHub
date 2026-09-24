@@ -30,13 +30,18 @@ async function freePort() {
   const port = probe.address().port; await new Promise((resolve) => probe.close(resolve)); return port;
 }
 const pythonSource = `
-import sys, threading, time
+import sys, threading, time, base64
+from uuid import uuid4
 from pathlib import Path
 from io import BytesIO
 from PIL import Image, ImageDraw
 from starlette.responses import Response
 import uvicorn
 from archflow.project.repository import FilesystemProjectRepository
+from archflow.project.ports import PersistenceArea, PersistenceDestination
+from archflow.project.record_kinds import STUDIO_RENDER_JOB
+from archflow_studio_api.application.binding import bound_project
+from archflow_studio_api.application.artifacts import save_document
 from archflow_studio_api.main import create_app
 from archflow_studio_api.settings import StudioSettings
 from archflow_studio_api.application.render_contract import RenderCapability, RenderOutput, RenderProviderError
@@ -68,6 +73,14 @@ def source_image(color: str='white'): return Response(image(color), media_type='
 def metrics(): return {'calls':adapter.calls,'head':repr(repo.read_head())}
 @app.post('/fixture/release')
 def release(): adapter.release.set(); return {'ok':True}
+@app.post('/fixture/legacy')
+def legacy():
+    job_id='render-'+uuid4().hex; run=repo.create_run(job_id)
+    document=save_document(bound_project(app.state),job_id,'retained-native.png','image/png',base64.b64encode(image('#948ed1')).decode())
+    repo.put_json(run=run,destination=PersistenceDestination(PersistenceArea.RUN_RECORD,run_id=job_id),record_kind=STUDIO_RENDER_JOB,payload={
+        'schema':'StudioRenderJob@1','projectId':project_id,'jobId':job_id,'instance':'retired-runtime','sequence':1,'status':'succeeded',
+        'createdAt':'2026-09-21T00:00:00Z','renderer':'monkeyhub-three-webgl2-v1','documentSha256':document.asset_sha256})
+    return {'jobId':job_id,'fileName':document.file_name}
 uvicorn.run(app,host='127.0.0.1',port=port,log_level='warning')
 `;
 // Real Hub and its managed Runtime, with private settings and no CLI discovery.
@@ -201,9 +214,25 @@ try {
     await workspace().getByRole("button", { name: "Zoom in", exact: true }).click();
     assert.equal(await workspace().locator('.render-image img').first().evaluate((el) => el.style.width), "125%");
     await workspace().getByRole("button", { name: "Fit", exact: true }).click();
+    assert.match(await workspace().locator('.render-metadata').innerText(), /source.png/);
+    assert.match(await workspace().locator('.render-metadata').innerText(), /No model association/);
     const download = page.waitForEvent("download"); await workspace().getByRole("link", { name: "Download", exact: true }).click();
     assert.equal((await download).suggestedFilename(), first.document.fileName);
     await page.screenshot({ path: path.join(temporary, "render-wide.png"), fullPage: true });
+  });
+  await step("zoomed result can be dragged and Fit resets the image viewport", async () => {
+    await workspace().getByRole("button", { name: "Result", exact: true }).click();
+    for (let i = 0; i < 5; i++) await workspace().getByRole("button", { name: "Zoom in", exact: true }).click();
+    const pane = workspace().locator('.render-image');
+    const box = await pane.boundingBox();
+    await page.mouse.move(box.x + box.width * .8, box.y + box.height * .7);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width * .3, box.y + box.height * .3, { steps: 6 });
+    await page.mouse.up();
+    assert.ok(await pane.evaluate((el) => el.scrollLeft > 0 && el.scrollTop > 0), 'drag moves both image axes');
+    await workspace().getByRole("button", { name: "Fit", exact: true }).click();
+    await until(() => pane.evaluate((el) => [el.scrollLeft, el.scrollTop]), (p) => p[0] === 0 && p[1] === 0, 'fit resets pan');
+    assert.equal(await workspace().locator('.render-model-canvas').isVisible(), false, 'no blank canvas when no model is loaded');
   });
   await step("project and workspace switches preserve inputs, stop hidden polling and do not cancel or resend", async () => {
     await direction().fill("SLOW afternoon"); await generate().click();
@@ -222,6 +251,35 @@ try {
     await page.getByRole("button", { name: "drawing", exact: true }).click();
     await page.getByRole("button", { name: "render", exact: true }).click();
     assert.equal(await direction().inputValue(), "SLOW afternoon");
+  });
+  await step("selected-image loading, HTTP failure and corrupt bytes recover by read without generating", async () => {
+    const firstButton = () => history().filter({ hasText: "Soft morning light" });
+    const secondButton = () => history().filter({ hasText: "SLOW afternoon" });
+    const firstBytes = (url) => url.pathname.includes('/api/documents/') && url.pathname.endsWith('/bytes') && url.searchParams.get('runId') === first.document.runId;
+    let release;
+    const gate = new Promise((resolve) => { release = resolve; });
+    await page.route(firstBytes, async (route) => { await gate; await route.continue(); });
+    await firstButton().click();
+    await workspace().getByText('Loading image…', { exact: true }).waitFor();
+    assert.equal(await workspace().locator('.render-image img').count(), 0, 'previous result is not shown under the new selection');
+    release();
+    await until(() => workspace().locator('.render-image img').count(), (n) => n === 1, 'selected bytes loaded');
+    await page.unroute(firstBytes);
+    for (const response of [
+      { status: 503, contentType: 'application/json', body: JSON.stringify({ detail: 'Temporary image read failure' }) },
+      { status: 200, contentType: 'image/png', body: 'not a valid image' },
+    ]) {
+      await secondButton().click();
+      await until(() => workspace().locator('.render-image img').count(), (n) => n === 1, 'second result ready');
+      await page.route(firstBytes, (route) => route.fulfill(response));
+      await firstButton().click();
+      await workspace().getByRole('button', { name: 'Reload image', exact: true }).waitFor();
+      assert.equal(await workspace().locator('.render-image img').count(), 0, 'broken bytes are not displayed as a usable image');
+      await page.unroute(firstBytes);
+      await workspace().getByRole('button', { name: 'Reload image', exact: true }).click();
+      await until(() => workspace().locator('.render-image img').count(), (n) => n === 1, 'read retry recovers image');
+    }
+    assert.equal((await api('project-a', '/fixture/metrics')).calls.length, 2, 'image recovery never calls the generation adapter');
   });
   await step("failure preserves old image; unknown and refresh never replay the provider", async () => {
     await history().filter({ hasText: "SLOW afternoon" }).click();
@@ -315,6 +373,28 @@ try {
     assert.equal((await api('project-a', '/fixture/metrics')).calls.length, 5);
     assert.equal((await api('project-a', '/fixture/metrics')).head, headBefore);
     await page.unroute('**/project-a/api/render/jobs');
+  });
+  await step("retained native result reopens in its own project without invented source or paid replay", async () => {
+    const native = await api('project-b', '/fixture/legacy', 'POST');
+    await page.getByRole('button', { name: 'Project B', exact: true }).click();
+    await until(() => history().count(), (n) => n === 1, 'native history visible');
+    await until(() => workspace().locator('.render-image img').count(), (n) => n === 1, 'native image read');
+    assert.match(await workspace().locator('.render-metadata').innerText(), /retained-native.png/);
+    assert.equal(await workspace().getByRole('button', { name: 'Source', exact: true }).isDisabled(), true);
+    assert.equal(await workspace().getByRole('button', { name: 'Compare', exact: true }).isDisabled(), true);
+    assert.equal(await workspace().getByRole('button', { name: 'Use these inputs', exact: true }).isDisabled(), true);
+    const download = page.waitForEvent('download');
+    await workspace().getByRole('link', { name: 'Download', exact: true }).click();
+    assert.equal((await download).suggestedFilename(), native.fileName);
+    await page.screenshot({ path: path.join(temporary, 'render-native-history.png'), fullPage: true });
+    await page.reload();
+    await page.getByRole('button', { name: 'Project B', exact: true }).click();
+    await until(() => workspace().locator('.render-image img').count(), (n) => n === 1, 'native result survives reload');
+    assert.equal((await api('project-b', '/fixture/metrics')).calls.length, 0);
+    assert.equal((await api('project-b', '/api/render/jobs')).jobs[0].jobId, native.jobId);
+    await page.getByRole('button', { name: 'Project A', exact: true }).click();
+    await until(() => history().count(), (n) => n === 5, 'project A keeps only its five attempts');
+    assert.equal(await history().filter({ hasText: native.fileName }).count(), 0);
   });
   await step("cold real Hub Render leaves every project content file unchanged; entering Arch seeds only then", async () => {
     const ports = [await freePort(), await freePort(), await freePort()];

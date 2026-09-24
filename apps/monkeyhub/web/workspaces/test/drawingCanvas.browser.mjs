@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { createServer } from "vite";
 
@@ -9,6 +10,7 @@ import { createServer } from "vite";
 const root = fileURLToPath(new URL("..", import.meta.url)).replaceAll("\\", "/").replace(/\/$/, "");
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE ? pathToFileURL(process.env.PLAYWRIGHT_MODULE).href : "playwright");
 const screenshots = await mkdtemp(join(tmpdir(), "archflow-drawing-canvas-"));
+const assets = JSON.parse(execFileSync(process.env.PYTHON ?? "python", ["-c", "import json; from monkeydiagram.drawing_svg import dressing_assets; print(json.dumps(dressing_assets()))"], { cwd: resolve(root, "../../../.."), encoding: "utf8" }));
 const modelA = { runId: "model-A", stateDigest: "a".repeat(64), assetSha256: "b".repeat(64) };
 const modelB = { runId: "model-B", stateDigest: "c".repeat(64), assetSha256: "d".repeat(64) };
 const fixture = `
@@ -84,9 +86,15 @@ try {
       viewRecipe: { kind: "cut-plan", frame: { origin: [0, 0, body.cutHeight], far_depth: body.cutHeight - body.bottom,
         scale: `1:${body.scaleDenominator}`, crop_uv: body.cropUv ?? [0, 0, 10, 6] },
         graphics: { cutLineMm: body.cutLineMm, visibleLineMm: body.visibleLineMm, hatchSpacingMm: body.hatchSpacingMm },
-        hiddenObjectIds: body.hiddenObjectIds ?? [], dimensions: body.dimensions } };
+        hiddenObjectIds: body.hiddenObjectIds ?? [], dimensions: body.dimensions, dressing: body.dressing ?? [] } };
     await page.evaluate(result => window.drawingFixture.documents.push(result), result);
     await route.fulfill({ status: 201, json: result });
+  });
+  await page.route("**/api/drawings/plans/vector?*", async route => {
+    const revisionRef = new URL(route.request().url()).searchParams.get("revisionRef");
+    const doc = await page.evaluate(ref => window.drawingFixture.documents.find(d => d.revisionRef === ref), revisionRef);
+    return route.fulfill({ json: { svg: '<svg xmlns="http://www.w3.org/2000/svg" width="600" height="400" viewBox="0 0 10 6"><rect x="1" y="1" width="8" height="4" fill="none" stroke="black" stroke-width="0.04"/><g id="dressing"/></svg>', assets,
+      anchors: [{ objectId: "obj-wall", positionUv: [5, 1] }] } });
   });
   await page.route("**/api/drawings/plans/status", async route => {
     const body = route.request().postDataJSON(); statusRequests.push(body);
@@ -205,6 +213,40 @@ try {
     assert.equal(requests.length, before);
     assert.equal(await page.getByLabel("Cut height (meter)", { exact: true }).evaluate(node => node.validity.valueMissing), true);
     await page.getByLabel("Cut height (meter)", { exact: true }).fill("1.2");
+  });
+  await step("SVG people and trees remain independently editable through drag, keyboard, mirror, save and reopen", async () => {
+    await page.getByRole("button", { name: "Add person", exact: true }).click();
+    const object = page.locator('[data-dressing-id]').first();
+    await object.waitFor();
+    const id = await object.getAttribute("data-dressing-id");
+    await page.getByLabel("Symbol size (meter)", { exact: true }).fill("1.2");
+    await page.getByRole("button", { name: "Mirror horizontally", exact: true }).click();
+    await object.focus(); await page.keyboard.press("ArrowRight");
+    assert.ok(Number(await page.getByLabel("Horizontal position / offset (meter)", { exact: true }).inputValue()) > 5);
+    const bounds = await object.boundingBox();
+    await page.mouse.move(bounds.x+bounds.width/2, bounds.y+bounds.height/2); await page.mouse.down();
+    await page.mouse.move(bounds.x+bounds.width/2+35, bounds.y+bounds.height/2-20, { steps: 5 }); await page.mouse.up();
+    assert.ok(Number(await page.getByLabel("Vertical position / offset (meter)", { exact: true }).inputValue()) > 3);
+    await page.getByRole("button", { name: "Add tree", exact: true }).click();
+    assert.equal(await page.locator('[data-dressing-id]').count(), 2);
+    await page.getByLabel("Position follows", { exact: true }).selectOption("obj-wall");
+    const old = await revision().inputValue();
+    await page.getByRole("button", { name: "Save appearance as a revision", exact: true }).click();
+    await until(() => revision().inputValue(), value => value !== old, "dressing revision");
+    const newRevision = await revision().inputValue();
+    assert.equal(requests.at(-1).dressing.length, 2);
+    assert.equal(requests.at(-1).dressing[0].id, id); assert.equal(requests.at(-1).dressing[0].flipped, true);
+    assert.equal(requests.at(-1).dressing[1].anchorObjectId, "obj-wall");
+    await revision().selectOption(old); await until(() => page.locator('[data-dressing-id]').count(), value => value === 0, "old recipe remains intact");
+    await revision().selectOption(newRevision); await until(() => page.locator('[data-dressing-id]').count(), value => value === 2, "reopened SVG objects");
+    await page.getByLabel("Selected object", { exact: true }).selectOption(id);
+    await page.getByRole("button", { name: "Delete object", exact: true }).click();
+    assert.equal(await page.locator('[data-dressing-id]').count(), 1);
+    await page.getByRole("button", { name: "Save appearance as a revision", exact: true }).click();
+    await until(() => revision().inputValue(), value => value !== newRevision, "deletion retained");
+    assert.equal(requests.at(-1).dressing.length, 1);
+    await page.waitForFunction(() => { const image = document.querySelector(".drawing-vector-base"); return image?.complete && image.naturalWidth > 0; });
+    assert.equal(drives.length, 1, "dressing never invokes a design proposal");
   });
   await step("keyboard controls and English/Chinese narrow layouts keep the drawing usable", async () => {
     await page.setViewportSize({ width: 390, height: 844 });

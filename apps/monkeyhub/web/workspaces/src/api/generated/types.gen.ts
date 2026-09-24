@@ -5314,6 +5314,163 @@ export type PlanDimensionReadDto = {
 };
 
 /**
+ * PlanDressingAnchorDto
+ */
+export type PlanDressingAnchorDto = {
+    /**
+     * Objectid
+     */
+    objectId: string;
+    /**
+     * Positionuv
+     */
+    positionUv: [
+        number,
+        number
+    ];
+};
+
+/**
+ * PlanDressingAssetDto
+ */
+export type PlanDressingAssetDto = {
+    /**
+     * Id
+     */
+    id: 'person-plan' | 'tree-plan';
+    /**
+     * Polylines
+     */
+    polylines: Array<Array<[
+        number,
+        number
+    ]>>;
+};
+
+/**
+ * PlanDressingDto
+ *
+ * Representation-only SVG from the built-in plan symbols, in source view units.
+ */
+export type PlanDressingDto = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Assetid
+     */
+    assetId: 'person-plan' | 'tree-plan';
+    /**
+     * Positionuv
+     *
+     * View coordinates, or an offset from anchorObjectId's projected bounding-box centre.
+     */
+    positionUv: [
+        number,
+        number
+    ];
+    /**
+     * Size
+     *
+     * Symbol extent in exact source length units.
+     */
+    size: number;
+    /**
+     * Flipped
+     */
+    flipped?: boolean;
+    /**
+     * Anchorobjectid
+     */
+    anchorObjectId?: string | null;
+};
+
+/**
+ * PlanDressingOperationDto
+ *
+ * A bounded edit to an independently identified representation object.
+ */
+export type PlanDressingOperationDto = {
+    /**
+     * Op
+     */
+    op: 'insert' | 'move' | 'scale' | 'flip' | 'delete';
+    /**
+     * Id
+     */
+    id: string;
+    object?: PlanDressingDto | null;
+    /**
+     * Positionuv
+     */
+    positionUv?: [
+        number,
+        number
+    ] | null;
+    /**
+     * Size
+     */
+    size?: number | null;
+    /**
+     * Flipped
+     */
+    flipped?: boolean | null;
+};
+
+/**
+ * PlanDressingReadDto
+ */
+export type PlanDressingReadDto = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Assetid
+     */
+    assetId: 'person-plan' | 'tree-plan';
+    /**
+     * Positionuv
+     *
+     * View coordinates, or an offset from anchorObjectId's projected bounding-box centre.
+     */
+    positionUv: [
+        number,
+        number
+    ];
+    /**
+     * Size
+     *
+     * Symbol extent in exact source length units.
+     */
+    size: number;
+    /**
+     * Flipped
+     */
+    flipped?: boolean;
+    /**
+     * Anchorobjectid
+     */
+    anchorObjectId?: string | null;
+    /**
+     * Status
+     */
+    status: 'resolved' | 'missing' | 'outside-view';
+    /**
+     * Resolveduv
+     */
+    resolvedUv?: [
+        number,
+        number
+    ] | null;
+    /**
+     * Detail
+     */
+    detail?: string | null;
+};
+
+/**
  * PlanRequestDto
  */
 export type PlanRequestDto = {
@@ -5377,6 +5534,14 @@ export type PlanRequestDto = {
      * Dimensions
      */
     dimensions?: Array<PlanDimensionDto> | null;
+    /**
+     * Dressing
+     */
+    dressing?: Array<PlanDressingDto> | null;
+    /**
+     * Dressingoperations
+     */
+    dressingOperations?: Array<PlanDressingOperationDto> | null;
 };
 
 /**
@@ -5412,6 +5577,10 @@ export type PlanStatusDto = {
      * Unresolvedobjectids
      */
     unresolvedObjectIds?: Array<string>;
+    /**
+     * Dressing
+     */
+    dressing?: Array<PlanDressingReadDto>;
 };
 
 /**
@@ -5435,6 +5604,24 @@ export type PlanStatusRequestDto = {
      * Targetstageref
      */
     targetStageRef?: string | null;
+};
+
+/**
+ * PlanVectorDto
+ */
+export type PlanVectorDto = {
+    /**
+     * Svg
+     */
+    svg: string;
+    /**
+     * Assets
+     */
+    assets: Array<PlanDressingAssetDto>;
+    /**
+     * Anchors
+     */
+    anchors: Array<PlanDressingAnchorDto>;
 };
 
 /**
@@ -6246,6 +6433,199 @@ export type ProposeStudyRequestDto = {
      * Action
      */
     action: 'trace' | 'reason';
+};
+
+/**
+ * PublicationBoardRequestDto
+ */
+export type PublicationBoardRequestDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Baserevisionsha256
+     */
+    baseRevisionSha256: string | null;
+    /**
+     * Boardrevisionsha256
+     */
+    boardRevisionSha256: string;
+    /**
+     * Elementids
+     */
+    elementIds: Array<string>;
+};
+
+/**
+ * PublicationDto
+ */
+export type PublicationDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Revisionsha256
+     */
+    revisionSha256: string | null;
+    /**
+     * Title
+     */
+    title: string;
+    spec: PublicationSpecDto;
+    /**
+     * Pages
+     */
+    pages: Array<PublicationPageDto>;
+    /**
+     * Sources
+     */
+    sources: Array<PublicationSourceStatusDto>;
+};
+
+/**
+ * PublicationElementDto
+ */
+export type PublicationElementDto = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Kind
+     */
+    kind: 'text' | 'image';
+    /**
+     * X
+     */
+    x: number;
+    /**
+     * Y
+     */
+    y: number;
+    /**
+     * Width
+     */
+    width: number;
+    /**
+     * Height
+     */
+    height: number;
+    /**
+     * Text
+     */
+    text?: string;
+    /**
+     * Fontsize
+     */
+    fontSize?: number;
+    source?: BoardExportPageDto | null;
+    /**
+     * Frozen
+     */
+    frozen?: boolean;
+    /**
+     * Crop
+     */
+    crop?: [
+        number,
+        number,
+        number,
+        number
+    ];
+};
+
+/**
+ * PublicationExportRequestDto
+ */
+export type PublicationExportRequestDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Revisionsha256
+     */
+    revisionSha256: string;
+    /**
+     * Format
+     */
+    format: 'pdf' | 'pptx';
+};
+
+/**
+ * PublicationPageDto
+ */
+export type PublicationPageDto = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Elements
+     */
+    elements: Array<PublicationElementDto>;
+};
+
+/**
+ * PublicationRequestDto
+ */
+export type PublicationRequestDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Baserevisionsha256
+     */
+    baseRevisionSha256: string | null;
+    /**
+     * Title
+     */
+    title: string;
+    spec?: PublicationSpecDto;
+    /**
+     * Pages
+     */
+    pages: Array<PublicationPageDto>;
+};
+
+/**
+ * PublicationSourceStatusDto
+ */
+export type PublicationSourceStatusDto = {
+    /**
+     * Elementid
+     */
+    elementId: string;
+    /**
+     * Status
+     */
+    status: 'current' | 'frozen' | 'stale' | 'missing';
+    /**
+     * Detail
+     */
+    detail?: string;
+    replacement?: BoardExportPageDto | null;
+};
+
+/**
+ * PublicationSpecDto
+ */
+export type PublicationSpecDto = {
+    /**
+     * Width
+     */
+    width?: number;
+    /**
+     * Height
+     */
+    height?: number;
+    /**
+     * Template
+     */
+    template?: 'hero';
 };
 
 /**
@@ -11224,6 +11604,149 @@ export type GetRenderJobApiRenderJobsJobIdGetResponses = {
 
 export type GetRenderJobApiRenderJobsJobIdGetResponse = GetRenderJobApiRenderJobsJobIdGetResponses[keyof GetRenderJobApiRenderJobsJobIdGetResponses];
 
+export type ReadPublicationApiPublicationGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Revision
+         */
+        revision?: string | null;
+    };
+    url: '/api/publication';
+};
+
+export type ReadPublicationApiPublicationGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadPublicationApiPublicationGetError = ReadPublicationApiPublicationGetErrors[keyof ReadPublicationApiPublicationGetErrors];
+
+export type ReadPublicationApiPublicationGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: PublicationDto;
+};
+
+export type ReadPublicationApiPublicationGetResponse = ReadPublicationApiPublicationGetResponses[keyof ReadPublicationApiPublicationGetResponses];
+
+export type SavePublicationApiPublicationPutData = {
+    body: PublicationRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/publication';
+};
+
+export type SavePublicationApiPublicationPutErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type SavePublicationApiPublicationPutError = SavePublicationApiPublicationPutErrors[keyof SavePublicationApiPublicationPutErrors];
+
+export type SavePublicationApiPublicationPutResponses = {
+    /**
+     * Successful Response
+     */
+    200: PublicationDto;
+};
+
+export type SavePublicationApiPublicationPutResponse = SavePublicationApiPublicationPutResponses[keyof SavePublicationApiPublicationPutResponses];
+
+export type PublicationFromBoardApiPublicationFromBoardPostData = {
+    body: PublicationBoardRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/publication/from-board';
+};
+
+export type PublicationFromBoardApiPublicationFromBoardPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type PublicationFromBoardApiPublicationFromBoardPostError = PublicationFromBoardApiPublicationFromBoardPostErrors[keyof PublicationFromBoardApiPublicationFromBoardPostErrors];
+
+export type PublicationFromBoardApiPublicationFromBoardPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: PublicationDto;
+};
+
+export type PublicationFromBoardApiPublicationFromBoardPostResponse = PublicationFromBoardApiPublicationFromBoardPostResponses[keyof PublicationFromBoardApiPublicationFromBoardPostResponses];
+
+export type ExportApiPublicationExportPostData = {
+    body: PublicationExportRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/publication/export';
+};
+
+export type ExportApiPublicationExportPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ExportApiPublicationExportPostError = ExportApiPublicationExportPostErrors[keyof ExportApiPublicationExportPostErrors];
+
+export type ExportApiPublicationExportPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
 export type ReadBoardApiBoardGetData = {
     body?: never;
     headers?: {
@@ -11511,6 +12034,54 @@ export type CreatePlanApiDrawingsPlansPostResponses = {
 };
 
 export type CreatePlanApiDrawingsPlansPostResponse = CreatePlanApiDrawingsPlansPostResponses[keyof CreatePlanApiDrawingsPlansPostResponses];
+
+export type ReadPlanVectorApiDrawingsPlansVectorGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query: {
+        /**
+         * Runid
+         */
+        runId: string;
+        /**
+         * Assetsha256
+         */
+        assetSha256: string;
+        /**
+         * Revisionref
+         */
+        revisionRef: string;
+    };
+    url: '/api/drawings/plans/vector';
+};
+
+export type ReadPlanVectorApiDrawingsPlansVectorGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadPlanVectorApiDrawingsPlansVectorGetError = ReadPlanVectorApiDrawingsPlansVectorGetErrors[keyof ReadPlanVectorApiDrawingsPlansVectorGetErrors];
+
+export type ReadPlanVectorApiDrawingsPlansVectorGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: PlanVectorDto;
+};
+
+export type ReadPlanVectorApiDrawingsPlansVectorGetResponse = ReadPlanVectorApiDrawingsPlansVectorGetResponses[keyof ReadPlanVectorApiDrawingsPlansVectorGetResponses];
 
 export type ReadPlanStatusApiDrawingsPlansStatusPostData = {
     body: PlanStatusRequestDto;
