@@ -648,50 +648,6 @@
       "notes": [
         "2026-09-08 rule alignment: Awaiting the first concrete evidence consumer and a check of existing Reading/source references. The earlier proposed ledger and private Atlas field superset are not a mandate to add a core record."
       ]
-    },
-    {
-      "id": "GH-234",
-      "stream": "planning",
-      "status": "active",
-      "goal": "Integrate the already validated GH-234 UI slice with GH-255, resolving only the shared translation catalogs and nullable continuation interface.",
-      "depends_on": [],
-      "write_scope": [
-        "apps/monkeyhub/web/src/i18n/messages.en.ts",
-        "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
-        "governance/work_registry.json",
-        "docs/mapping/planning/GH-234-workspace-ui-closeout.md"
-      ],
-      "card": "docs/mapping/planning/GH-234-workspace-ui-closeout.md",
-      "acceptance": [
-        "Historical candidates show their own source Stage, while viewing does not change the editing base.",
-        "Board source identity and linked-model state match its selected drawing.",
-        "Drawing revision/model context remains distinct from appearance settings at wide and narrow widths.",
-        "Affected browser checks, typecheck, unit suite and archcheck pass."
-      ],
-      "lanes": [
-        {
-          "id": "workspace-ui",
-          "issue": "https://github.com/cogco1/MonkeyHub/issues/234",
-          "branch": "codex/workspace-ui-closeout",
-          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-workspace-handoff-ui",
-          "base_ref": "5144e1d5",
-          "contributor": "Codex",
-          "reviewer": null,
-          "handoff": "Root task reviews and integrates this slice.",
-          "modules": [
-            "hub.shell"
-          ],
-          "write_scope": [
-            "apps/monkeyhub/web/src/i18n/messages.en.ts",
-            "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
-            "governance/work_registry.json",
-            "docs/mapping/planning/GH-234-workspace-ui-closeout.md"
-          ],
-          "depends_on": [],
-          "status": "active",
-          "blocked_reason": null
-        }
-      ]
     }
   ]
 }
