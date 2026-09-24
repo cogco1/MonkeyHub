@@ -132,7 +132,7 @@ const archiveSummaryFor = (projectId, projectDir, archivePath) => ({
   omissions: archiveOmissions, externalDependencies: [],
   archivePath, archiveBytes: 5242880, archiveSha256: "c".repeat(64), verified: true, projectDir,
 });
-const apps = ["monkeyarch", "monkeyboard", "monkeyfab", "monkeymonitor"].map((appId) => ({ appId, title: appId, serviceId: appId === "monkeyfab" ? "hub" : appId === "monkeymonitor" ? "monitor" : "studio", state: "running", processId: 1234, available: true, url: `${origin}/tool?app=${appId}` }));
+const apps = ["monkeyarch", "monkeyboard", "monkeyrender", "monkeyfab", "monkeymonitor"].map((appId) => ({ appId, title: appId, serviceId: appId === "monkeyfab" ? "hub" : appId === "monkeymonitor" ? "monitor" : "studio", state: "running", processId: 1234, available: true, url: `${origin}/tool?app=${appId}` }));
 // Exercise the actual Hub Monitor page, including its navigation and effects.
 // A static /tool fixture concealed Monitor's former top-window redirect loop.
 Object.assign(apps.find((app) => app.appId === "monkeymonitor"), { url: `${origin}/?view=monitor`, apiUrl: `${origin}/` });
@@ -214,7 +214,7 @@ await page.route((url) => url.pathname.startsWith("/api/"), async (route) => {
   if (url.pathname === "/api/runtime/projects/open") {
     const body = data(), project = projects.find((item) => item.projectDir === body.projectDir && item.projectId === body.projectId);
     assert.ok(project, "runtime attachment needs the exact project");
-    if (!runtimes.has(body.projectDir)) runtimes.set(body.projectDir, { runtimeId: randomUUID(), ...body, state: "open", operations: [], retained: null, projection: "ready", clients: 1, error: null });
+    if (!runtimes.has(body.projectDir)) runtimes.set(body.projectDir, { runtimeId: randomUUID(), ...body, state: "open", operations: [], retained: null, projection: project.projectId === "needs-review" ? "unknown" : "ready", clients: 1, error: null });
     if (runtimeOpenGate) {
       const reply = structuredClone(runtimeSnapshot().projects.find((item) => item.projectDir === body.projectDir)), gate = runtimeOpenGate;
       runtimeOpenGate = null;
@@ -267,7 +267,15 @@ await page.route((url) => url.pathname.startsWith("/api/"), async (route) => {
     const currentApps = url.searchParams.has("projectDir") ? appsFor(url.searchParams.get("projectDir")) : apps;
     const app = currentApps.find((item) => item.appId === id);
     if (!app.available) return json(app);
-    for (const item of currentApps.filter((item) => item.serviceId === app.serviceId)) { item.state = action === "start" ? "running" : "stopped"; item.processId = action === "start" ? 1234 : null; }
+    for (const item of currentApps.filter((item) => item.serviceId === app.serviceId)) {
+      item.state = action === "start" ? "running" : "stopped";
+      item.processId = action === "start" ? (app.serviceId === "studio" ? 2000 + [...projectApps.keys()].indexOf(url.searchParams.get("projectDir")) : 1234) : null;
+      if (app.serviceId === "studio") {
+        const runtimeId = runtimes.get(url.searchParams.get("projectDir")).runtimeId;
+        item.url = `${origin}/?view=${item.appId === "monkeyboard" ? "board" : item.appId === "monkeyrender" ? "render" : "arch"}&runtimeId=${runtimeId}`;
+        item.apiUrl = `${origin}/api/runtime/projects/${runtimeId}/studio/`;
+      }
+    }
     return json(app);
   }
   if (url.pathname === "/api/chat/providers") {
@@ -398,7 +406,7 @@ const activityRows = (expected) => page.waitForFunction(
 const visibleWorkspace = () => page.locator('.chat-project-workspace:not([hidden])');
 const waitWorkspace = async (kind = "arch") => {
   await visibleWorkspace().locator(`[data-project-surface="${kind}"]:not([hidden])`).waitFor();
-  await visibleWorkspace().locator(kind === "board" ? ".monkeyboard-canvas canvas" : kind === "drawing" ? ".drawing-workspace" : ".stage canvas").first().waitFor();
+  await visibleWorkspace().locator(kind === "board" ? ".monkeyboard-canvas canvas" : kind === "drawing" ? ".drawing-workspace" : kind === "render" ? ".render-workspace" : ".stage canvas").first().waitFor();
   assert.equal(await page.locator(".chat-project-workspace iframe").count(), 0, "project workspaces mount directly in the Hub");
 };
 const waitCandidate = async (runId) => {
@@ -463,10 +471,10 @@ try {
   assert.equal(workspaceFixture.requests.some((row) => row.name.endsWith("/bytes")), false,
     "initial chat reads its editing state without loading model files");
   await studioReady();
-  assert.equal(writes.filter(([, pathname, , target]) => pathname === "/api/project/modeling" && target === "D:\\fixture\\A").length, 1,
-    "entering the configured project prepares one Studio before the first workspace click or chat");
+  assert.equal(writes.filter(([, pathname, , target]) => pathname === "/api/project/modeling" && target === "D:\\fixture\\A").length, 0,
+    "selecting a project starts its Runtime without seeding modeling");
   assert.ok(!writes.some(([, pathname]) => /\/api\/apps\/monkey(arch|diagram|board)\/start$/.test(pathname)),
-    "project preparation owns Studio startup without a second frontend start call");
+    "project preparation starts the shared Runtime through Render without seeding Arch");
 
   // A new project is made in the workspace and opens straight into a chat.
   await page.getByRole("button", { name: "New project", exact: true }).first().click();
@@ -484,11 +492,11 @@ try {
   assert.equal(sessions[0].projectDir, "D:\\fixture\\harbour-study");
   assert.equal(sessions[0].provider, "codex", "a new conversation takes the saved default connection");
   await studioReady();
-  assert.equal(writes.filter(([, pathname, body]) => pathname === "/api/project/modeling" && body.projectId === "harbour-study").length, 1);
+  assert.equal(writes.filter(([, pathname, body]) => pathname === "/api/project/modeling" && body.projectId === "harbour-study").length, 0);
   await page.getByRole("button", { name: "Fabrication", exact: true }).click();
   await page.waitForFunction(() => document.querySelector("iframe:not([hidden])")?.src.includes("app=monkeyfab"));
-  assert.ok(writes.some(([, pathname, body]) => pathname === "/api/project/modeling" && body.projectId === "harbour-study"),
-    "new-project creation prepares the first modeling base before the first message");
+  assert.ok(!writes.some(([, pathname]) => pathname === "/api/project/modeling"),
+    "new-project creation and independent tools leave modeling inputs alone");
   await page.getByRole("button", { name: "Project A", exact: true }).first().click();
   const beforeIndependent = writes.length;
   const beforeIndependentProject = settings.projectDir;
@@ -585,10 +593,10 @@ try {
   const firstContext = writes.filter(([, pathname]) => pathname.endsWith("/messages")).at(-1)[2].designContext;
   assert.equal(firstContext.sourceRunId, "home-A", "the first task is bound before the architect opens any modeling workspace");
   assert.equal(firstContext.stateDigest, workspaceFixture.projects.get("A").assets.get("home-A").dto.designStateDigest);
-  assert.ok(writes.some(([, pathname, body]) => pathname === "/api/project/modeling" && body.projectId === "A"),
-    "selecting an existing project prepares its base before its first task connects");
-  assert.equal(writes.filter(([, pathname, body]) => pathname === "/api/project/modeling" && body.projectId === "A").length, 1,
-    "returning to a prepared project and sending a message share the original preparation");
+  assert.ok(!writes.some(([, pathname, body]) => pathname === "/api/project/modeling" && body.projectId === "A"),
+    "an already readable modeling base needs no initialization write");
+  assert.equal(writes.filter(([, pathname, body]) => pathname === "/api/project/modeling" && body.projectId === "A").length, 0,
+    "returning and sending a message do not initialize an existing modeling base");
   assert.equal(sessions[0].provider, "codex", "a new chat takes the saved default connection");
   // The composer names the connection and lets this conversation pick a model;
   // the connection itself is still chosen once, in Hub settings.
@@ -848,6 +856,10 @@ try {
   await dialog.getByText("This CLI offers no model list; a model id can be entered by hand.").waitFor();
   await page.locator("#default-chat-model").selectOption("__custom__");
   await page.locator("#default-chat-model-custom").fill("claude-opus-5");
+  await page.locator("#render-provider").selectOption("gemini");
+  await page.locator("#render-model").fill("gemini-3.1-flash-image");
+  await page.locator("#render-timeout").fill("75");
+  assert.equal(await page.locator('input[type="password"]').count(), 0, "render credentials never enter settings UI");
   const rechecks = providerReads.filter((value) => value === "true").length;
   await page.locator("#recheck-connections").click();
   await page.waitForFunction((count) => true, rechecks);
@@ -860,6 +872,9 @@ try {
   assert.equal(savedPreferences[2].chatProvider, "claude");
   assert.equal(savedPreferences[2].chatModel, "claude-opus-5");
   assert.equal(savedPreferences[2].theme, "light", "appearance is saved in the same document");
+  assert.equal(savedPreferences[2].renderProvider, "gemini");
+  assert.equal(savedPreferences[2].renderModel, "gemini-3.1-flash-image");
+  assert.equal(savedPreferences[2].renderTimeoutS, 75);
 
   // The existing conversation keeps the connection it was created with.
   await page.locator(".chat-connection").filter({ hasText: "Codex CLI" }).waitFor();
@@ -905,7 +920,7 @@ try {
   assert.equal(settings.projectDir, "D:\\fixture\\A", "cross-project chat leaves the default project unchanged");
   assert.equal(runningA.status, "running", "A continues while B starts its own turn");
   assert.ok(!writes.slice(beforeSwitchWrites).some(([method, pathname]) => pathname.endsWith("/stop") || (method === "PUT" && pathname === "/api/settings/apps")), "switching never stops A or rewrites its configuration");
-  assert.equal(writes.slice(beforeSwitchWrites).filter(([, pathname, , target]) => pathname === "/api/project/modeling" && target === "D:\\fixture\\B").length, 1);
+  assert.equal(writes.slice(beforeSwitchWrites).filter(([, pathname, , target]) => pathname === "/api/apps/monkeyrender/start" && target === "D:\\fixture\\B").length, 1);
 
   // C — the gear follows the conversation's project rather than keeping the old one.
   await page.getByRole("button", { name: /Project B/ }).last().click();
@@ -930,6 +945,16 @@ try {
   await waitWorkspace("board");
   assert.equal(await visibleWorkspace().getByLabel("Board title", { exact: true }).inputValue(), "Board B retained");
   assert.equal(runningA.status, "running", "Board navigation does not interrupt another project's task");
+  const modelReadsBeforeRender = workspaceFixture.requests.filter((row) => /\/api\/artifacts/.test(row.name)).length;
+  await page.getByRole("button", { name: "Render", exact: true }).click(); await waitWorkspace("render");
+  await visibleWorkspace().getByRole("textbox", { name: "Visual direction", exact: true }).fill("Keep this Render draft");
+  await page.getByRole("button", { name: "Board", exact: true }).click(); await waitWorkspace("board");
+  assert.equal(await visibleWorkspace().getByLabel("Board title", { exact: true }).inputValue(), "Board B retained");
+  await page.getByRole("button", { name: "Render", exact: true }).click(); await waitWorkspace("render");
+  assert.equal(await visibleWorkspace().getByRole("textbox", { name: "Visual direction", exact: true }).inputValue(), "Keep this Render draft");
+  assert.equal(workspaceFixture.requests.filter((row) => /\/api\/artifacts/.test(row.name)).length, modelReadsBeforeRender, "Render and Board switches keep the loaded model");
+  assert.equal(await page.locator('.chat-project-workspace:not([hidden])').count(), 1);
+  await page.getByRole("button", { name: "Board", exact: true }).click(); await waitWorkspace("board");
   assert.deepEqual(new Set(workspaceFixture.requests.filter((row) => row.name === "/api/board").map((row) => row.projectId)), new Set(["A", "B"]));
   await page.screenshot({ path: path.join(temporary, "hub-board.png") });
   await page.getByRole("button", { name: "Modeling", exact: true }).click();
@@ -1240,14 +1265,18 @@ try {
   await page.screenshot({ path: path.join(temporary, "mobile.png"), fullPage: true });
   assert.ok(await railWidth() > 40, "the rail survives a phone-sized window");
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
-  // A prepared project can be refused by Studio without losing the project
-  // or leaving the creation dialog inviting a duplicate creation attempt.
+  // Modeling refusal occurs only on explicit Arch entry; project creation
+  // and the first Render visit remain usable without modeling inputs.
   await page.setViewportSize({ width: 1440, height: 960 });
   await page.getByRole("button", { name: "Show projects", exact: true }).first().click();
   modelingFailure = { code: "PROJECT_INPUTS_CONFLICT", detail: "Existing inputs need review." };
   await page.getByRole("button", { name: "New project", exact: true }).first().click();
   await page.locator("#new-project-name").fill("needs-review");
   await create.getByRole("button", { name: "Create and start chatting" }).click();
+  await studioReady();
+  await page.getByRole("button", { name: "Render", exact: true }).click(); await waitWorkspace("render");
+  assert.equal(writes.filter(([, pathname, body]) => pathname === "/api/project/modeling" && body.projectId === "needs-review").length, 0);
+  await page.getByRole("button", { name: "Modeling", exact: true }).click();
   await page.locator(".chat-error").filter({ hasText: "Existing inputs need review." }).waitFor();
   assert.equal(await create.isVisible(), false);
   assert.equal(projects.filter((item) => item.projectId === "needs-review").length, 1);
@@ -1258,7 +1287,7 @@ try {
   let releaseModeling;
   modelingResponseGate = new Promise((resolve) => { releaseModeling = resolve; });
   const delayedStart = page.waitForRequest((req) => req.url().includes("/api/project/modeling"));
-  await page.getByRole("button", { name: "Board", exact: true }).click();
+  await page.getByRole("button", { name: "Modeling", exact: true }).click();
   await delayedStart;
   await page.locator(".chat-new").getByText("New chat", { exact: true }).click();
   releaseModeling(); modelingResponseGate = Promise.resolve();
@@ -1312,10 +1341,11 @@ try {
   await add.getByRole("button", { name: "Add project", exact: true }).click();
   await page.getByRole("button", { name: "Project C", exact: true }).first().waitFor();
   await studioReady();
-  assert.equal(writes.slice(beforeAdd).filter(([, pathname, , target]) => pathname === "/api/project/modeling" && target === "D:\\fixture\\C").length, 1);
-  assert.ok(!writes.slice(beforeAdd).some(([, pathname]) => pathname === "/api/chat/projects" || pathname.endsWith("/start")));
+  assert.equal(writes.slice(beforeAdd).filter(([, pathname, , target]) => pathname === "/api/project/modeling" && target === "D:\\fixture\\C").length, 0);
+  assert.ok(!writes.slice(beforeAdd).some(([, pathname]) => pathname === "/api/chat/projects" || pathname === "/api/project/modeling"));
   assert.equal(await page.locator("iframe").count(), 0, "prepared services do not eagerly mount three expensive pages");
   for (const item of appsFor("D:\\fixture\\C").filter(item => item.serviceId === "studio")) { item.state = "stopped"; item.processId = null; }
+  runtimes.get("D:\\fixture\\C").projection = "unknown";
   emitRuntime();
   await page.waitForFunction(() => document.querySelector('.chat-rail__tool[aria-label="Modeling"]')?.dataset.state === "stopped");
   const beforeReopen = writes.length;
@@ -1349,7 +1379,7 @@ try {
   assert.equal(sessions.filter(item => item.projectId === "provider-recovery").length, 1);
   assert.equal(writes.filter(([, pathname, body]) => pathname === "/api/chat/projects" && body.name === "provider-recovery").length, 1,
     "retrying the connection never repeats project creation");
-  assert.equal(writes.filter(([, pathname, body]) => pathname === "/api/project/modeling" && body.projectId === "provider-recovery").length, 1);
+  assert.equal(writes.filter(([, pathname, body]) => pathname === "/api/project/modeling" && body.projectId === "provider-recovery").length, 0);
   // Attachments stay in the selected draft until its message is sent. Every
   // file here is synthetic; these routes never call a provider or model.
   await page.getByRole("button", { name: "Stop", exact: true }).click();

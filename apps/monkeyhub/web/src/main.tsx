@@ -17,6 +17,9 @@ const hubClient = createClient({ baseUrl: window.location.origin });
 const initialLaunch: ApplicationSettingsDto = { projectDir: null, referenceRun: null, cadExport: "occt", studioPort: 8789, monitorPort: 8788 };
 type ChatDefaults = { chatProvider: UserSettingsDto["chatProvider"]; chatModel: string | null };
 const NO_CHAT_DEFAULTS: ChatDefaults = { chatProvider: null, chatModel: null };
+type RenderDefaults = Pick<UserSettingsDto, "renderProvider" | "renderModel" | "renderTimeoutS">;
+const renderDefaults = (settings?: UserSettingsDto): RenderDefaults => ({ renderProvider: settings?.renderProvider ?? "off",
+  renderModel: settings?.renderModel ?? null, renderTimeoutS: settings?.renderTimeoutS ?? null });
 import { hubCopyCatalog as copy } from "./i18n/catalogs";
 type CopyKey = keyof typeof copy.en;
 const knownErrors: Record<string, string> = {
@@ -76,6 +79,8 @@ function App() {
   // What a new conversation starts with, and what is actually saved for it.
   const [chatDraft, setChatDraft] = useState<ChatDefaults>(NO_CHAT_DEFAULTS);
   const [savedChatDefaults, setSavedChatDefaults] = useState<ChatDefaults>(NO_CHAT_DEFAULTS);
+  const [renderDraft, setRenderDraft] = useState<RenderDefaults>(() => renderDefaults());
+  const [savedRenderDefaults, setSavedRenderDefaults] = useState<RenderDefaults>(() => renderDefaults());
   const [chatProviders, setChatProviders] = useState<readonly ChatProvider[]>([]);
   const [defaultModelCustom, setDefaultModelCustom] = useState<string | null>(null);
   const [workspace, setWorkspace] = useState<ChatWorkspace | null>(null);
@@ -94,7 +99,7 @@ function App() {
   const actionLocks = useRef(new Set<string>());
   const t = (key: CopyKey) => translateMessage(copy[preferences.language], key);
   const appearanceDirty = JSON.stringify(preferences) !== JSON.stringify(savedAppearance) ||
-    JSON.stringify(chatDraft) !== JSON.stringify(savedChatDefaults);
+    JSON.stringify(chatDraft) !== JSON.stringify(savedChatDefaults) || JSON.stringify(renderDraft) !== JSON.stringify(savedRenderDefaults);
   const launchDirty = JSON.stringify(launchDraft) !== JSON.stringify(savedLaunch);
   const connected = apps !== null && statusIssue === null;
   useEffect(() => applyAppearance(preferences), [preferences]);
@@ -120,9 +125,10 @@ function App() {
       setUserSettings(appearance.value); const resolved = resolveAppearance(appearance.value); setSavedAppearance(resolved);
       const savedChat: ChatDefaults = { chatProvider: appearance.value.chatProvider ?? null, chatModel: appearance.value.chatModel ?? null };
       setSavedChatDefaults(savedChat);
+      const savedRender = renderDefaults(appearance.value); setSavedRenderDefaults(savedRender);
       // Checking the connections again re-reads what is installed, not what is
       // being edited: an unsaved choice stays where the person left it.
-      if (appearanceEdits.current === appearanceRevision && !refreshConnections) { setPreferences(hostedView ? appearanceFromSearch(window.location.search, resolved) : resolved); setChatDraft(savedChat); }
+      if (appearanceEdits.current === appearanceRevision && !refreshConnections) { setPreferences(hostedView ? appearanceFromSearch(window.location.search, resolved) : resolved); setChatDraft(savedChat); setRenderDraft(savedRender); }
       setAppearanceIssue(null);
     } else setAppearanceIssue(issueOf(appearance.reason));
     if (connections.status === "fulfilled") setChatProviders(connections.value);
@@ -154,11 +160,12 @@ function App() {
     const revision = appearanceEdits.current; setSavingAppearance(true); setAppearanceIssue(null);
     try {
       const current = await responseData<UserSettingsDto>(getUserSettingsApiSettingsUserGet({ client: hubClient }));
-      const saved = await responseData<UserSettingsDto>(putUserSettingsApiSettingsUserPut({ client: hubClient, body: { ...current, ...preferences, ...chatDraft } }));
+      const saved = await responseData<UserSettingsDto>(putUserSettingsApiSettingsUserPut({ client: hubClient, body: { ...current, ...preferences, ...chatDraft, ...renderDraft } }));
       const resolved = resolveAppearance(saved); setUserSettings(saved); setSavedAppearance(resolved);
       const savedChat: ChatDefaults = { chatProvider: saved.chatProvider ?? null, chatModel: saved.chatModel ?? null };
       setSavedChatDefaults(savedChat);
-      if (appearanceEdits.current === revision) { setPreferences(resolved); setChatDraft(savedChat); }
+      const savedRender = renderDefaults(saved); setSavedRenderDefaults(savedRender);
+      if (appearanceEdits.current === revision) { setPreferences(resolved); setChatDraft(savedChat); setRenderDraft(savedRender); }
     } catch (cause) { setAppearanceIssue(issueOf(cause)); }
     finally { setSavingAppearance(false); }
   };
@@ -238,6 +245,22 @@ function App() {
           ? <>{selectedConnection.label} · {connectionWords(selectedConnection)}{catalogWords(selectedConnection) ? ` · ${catalogWords(selectedConnection)}` : ""}</>
           : t("checking")}</p>
         <p className="help">{t("chatDefaultsHelp")}</p>
+      </div>
+
+      <div className="settings-section">
+        <h2>{t("renderSettings")}</h2>
+        <div className="settings-fields">
+          <label>{t("renderProvider")}<select id="render-provider" value={renderDraft.renderProvider ?? "off"} onChange={(event) => {
+            appearanceEdits.current += 1; setAppearanceIssue(null); setRenderDraft((value) => ({ ...value, renderProvider: event.target.value as RenderDefaults["renderProvider"] }));
+          }}><option value="off">{t("renderOff")}</option><option value="gemini">Gemini</option></select></label>
+          <label>{t("renderModel")}<input id="render-model" value={renderDraft.renderModel ?? ""} placeholder="gemini-3.1-flash-image" onChange={(event) => {
+            appearanceEdits.current += 1; setAppearanceIssue(null); setRenderDraft((value) => ({ ...value, renderModel: event.target.value.trim() || null }));
+          }} /></label>
+          <label>{t("renderTimeout")}<input id="render-timeout" type="number" min="1" max="300" value={renderDraft.renderTimeoutS ?? ""} placeholder={t("runtimeDefault")} onChange={(event) => {
+            appearanceEdits.current += 1; setAppearanceIssue(null); setRenderDraft((value) => ({ ...value, renderTimeoutS: event.target.value === "" ? null : Number(event.target.value) }));
+          }} /></label>
+        </div>
+        <p className="help">{t("renderSettingsHelp")}</p>
       </div>
 
       <div className="settings-section">

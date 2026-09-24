@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from ipaddress import ip_address
 import os
+import math
 from pathlib import Path
 import tempfile
 from typing import Mapping
@@ -37,6 +38,10 @@ BIND_ENV = "ARCHFLOW_STUDIO_BIND"
 TOKEN_ENV = "ARCHFLOW_STUDIO_TOKEN"
 ORIGINS_ENV = "ARCHFLOW_STUDIO_ORIGINS"
 MONITOR_DIR_ENV = "MONKEYMONITOR_DATA_DIR"
+RENDER_PROVIDER_ENV = "ARCHFLOW_STUDIO_RENDER_PROVIDER"
+RENDER_MODEL_ENV = "ARCHFLOW_STUDIO_RENDER_MODEL"
+RENDER_API_KEY_ENV = "ARCHFLOW_STUDIO_RENDER_API_KEY"
+RENDER_TIMEOUT_ENV = "ARCHFLOW_STUDIO_RENDER_TIMEOUT_S"
 
 # The two modes of the protocol boundary. ``local`` is the pair the launcher
 # starts on this machine: one loopback listener, one user, no token. ``remote``
@@ -133,6 +138,10 @@ class StudioSettings:
     sync_url: str | None = None
     sync_token: str | None = field(default=None, repr=False)
     sync_project_id: str | None = None
+    render_provider: str = "off"
+    render_model: str | None = None
+    render_api_key: str | None = field(default=None, repr=False)
+    render_timeout_s: float = 120.0
 
     def __post_init__(self) -> None:
         """Local listeners stay on loopback; remote listeners need credentials.
@@ -142,6 +151,10 @@ class StudioSettings:
         settings directly all pass through this one constructor.
         """
 
+        if self.render_provider not in ("off", "gemini"):
+            raise SettingsError(f"{RENDER_PROVIDER_ENV} must be off or gemini.")
+        if not math.isfinite(self.render_timeout_s) or not 1 <= self.render_timeout_s <= 300:
+            raise SettingsError(f"{RENDER_TIMEOUT_ENV} must be between 1 and 300 seconds.")
         if type(self.intent_context_budget_tokens) is not int or self.intent_context_budget_tokens < 1:
             raise SettingsError(f"{CONTEXT_BUDGET_ENV} must be a positive whole number.")
         if self.cad_export not in CAD_EXPORTS:
@@ -255,8 +268,16 @@ class StudioSettings:
             context_budget = int(os.environ.get(CONTEXT_BUDGET_ENV, "").strip() or "16000")
         except ValueError as exc:
             raise SettingsError(f"{CONTEXT_BUDGET_ENV} must be a positive whole number.") from exc
+        try:
+            render_timeout = float(os.environ.get(RENDER_TIMEOUT_ENV, "").strip() or "120")
+        except ValueError as exc:
+            raise SettingsError(f"{RENDER_TIMEOUT_ENV} must be a number of seconds.") from exc
         return cls(
             project_dir=Path(project_dir),
+            render_provider=os.environ.get(RENDER_PROVIDER_ENV, "").strip() or "off",
+            render_model=os.environ.get(RENDER_MODEL_ENV, "").strip() or None,
+            render_api_key=os.environ.get(RENDER_API_KEY_ENV, "").strip() or None,
+            render_timeout_s=render_timeout,
             cad_export=cad_export_from_env(os.environ),
             powershell=Path(powershell) if powershell else None,
             reference_run=reference_run or None,

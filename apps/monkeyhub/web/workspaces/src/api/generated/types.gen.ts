@@ -6317,6 +6317,216 @@ export type RelationChecksDto = {
 };
 
 /**
+ * RenderCapabilitiesDto
+ */
+export type RenderCapabilitiesDto = {
+    /**
+     * Providers
+     */
+    providers: Array<RenderCapabilityDto>;
+};
+
+/**
+ * RenderCapabilityDto
+ */
+export type RenderCapabilityDto = {
+    /**
+     * Providerid
+     */
+    providerId: string;
+    /**
+     * Label
+     */
+    label: string;
+    /**
+     * Model
+     */
+    model: string | null;
+    /**
+     * Available
+     */
+    available: boolean;
+    /**
+     * Unavailablereason
+     */
+    unavailableReason: string | null;
+    /**
+     * Execution
+     */
+    execution: 'server-image' | 'browser-native' | 'host';
+    /**
+     * Sizes
+     */
+    sizes: Array<string>;
+    /**
+     * Aspectratios
+     */
+    aspectRatios: Array<string>;
+    /**
+     * Maxreferences
+     */
+    maxReferences: number;
+};
+
+/**
+ * RenderJobDto
+ */
+export type RenderJobDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Jobid
+     */
+    jobId: string;
+    /**
+     * Requestid
+     */
+    requestId: string;
+    /**
+     * Status
+     */
+    status: 'queued' | 'running' | 'succeeded' | 'failed' | 'unknown';
+    /**
+     * Execution
+     */
+    execution: 'server-image' | 'browser-native' | 'host';
+    /**
+     * Providerid
+     */
+    providerId: string;
+    /**
+     * Model
+     */
+    model: string | null;
+    request: RenderRequestDto | null;
+    /**
+     * Createdat
+     */
+    createdAt: string;
+    /**
+     * Finishedat
+     */
+    finishedAt?: string | null;
+    /**
+     * Error
+     */
+    error?: string | null;
+    /**
+     * Errorcode
+     */
+    errorCode?: string | null;
+    /**
+     * Sourcestate
+     */
+    sourceState: 'current' | 'outdated' | 'unavailable';
+    /**
+     * Sourcestatereason
+     */
+    sourceStateReason?: string | null;
+    document?: SourceDocumentDto | null;
+    /**
+     * Resultavailable
+     */
+    resultAvailable?: boolean;
+    /**
+     * Providerrequestid
+     */
+    providerRequestId?: string | null;
+    /**
+     * Inputtokens
+     */
+    inputTokens?: number | null;
+    /**
+     * Outputtokens
+     */
+    outputTokens?: number | null;
+    /**
+     * Costusd
+     */
+    costUsd?: number | null;
+};
+
+/**
+ * RenderJobListDto
+ */
+export type RenderJobListDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Jobs
+     */
+    jobs: Array<RenderJobDto>;
+};
+
+/**
+ * RenderOutputOptionsDto
+ */
+export type RenderOutputOptionsDto = {
+    /**
+     * Size
+     */
+    size?: string;
+    /**
+     * Aspectratio
+     */
+    aspectRatio?: string;
+};
+
+/**
+ * RenderPageRefDto
+ */
+export type RenderPageRefDto = {
+    /**
+     * Runid
+     */
+    runId: string;
+    /**
+     * Assetsha256
+     */
+    assetSha256: string;
+    /**
+     * Pageindex
+     */
+    pageIndex: number;
+    /**
+     * Revisionref
+     */
+    revisionRef?: string | null;
+};
+
+/**
+ * RenderRequestDto
+ */
+export type RenderRequestDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Requestid
+     */
+    requestId: string;
+    /**
+     * Providerid
+     */
+    providerId: string;
+    source: RenderPageRefDto;
+    /**
+     * References
+     */
+    references?: Array<RenderPageRefDto>;
+    /**
+     * Direction
+     */
+    direction: string;
+    output?: RenderOutputOptionsDto;
+};
+
+/**
  * RhinoWorkExportRequestDto
  *
  * Which run's export is being made editable.
@@ -9080,6 +9290,18 @@ export type UserSettingsDto = {
      */
     intentTimeoutS?: number | null;
     /**
+     * Renderprovider
+     */
+    renderProvider?: 'off' | 'gemini' | null;
+    /**
+     * Rendermodel
+     */
+    renderModel?: string | null;
+    /**
+     * Rendertimeouts
+     */
+    renderTimeoutS?: number | null;
+    /**
      * Chatprovider
      */
     chatProvider?: 'codex' | 'claude' | 'coding-plan' | null;
@@ -10662,6 +10884,151 @@ export type ReadArtifactBytesApiArtifactsSha256BytesGetResponses = {
      */
     200: unknown;
 };
+
+export type RenderCapabilitiesApiRenderCapabilitiesGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/render/capabilities';
+};
+
+export type RenderCapabilitiesApiRenderCapabilitiesGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RenderCapabilitiesApiRenderCapabilitiesGetError = RenderCapabilitiesApiRenderCapabilitiesGetErrors[keyof RenderCapabilitiesApiRenderCapabilitiesGetErrors];
+
+export type RenderCapabilitiesApiRenderCapabilitiesGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: RenderCapabilitiesDto;
+};
+
+export type RenderCapabilitiesApiRenderCapabilitiesGetResponse = RenderCapabilitiesApiRenderCapabilitiesGetResponses[keyof RenderCapabilitiesApiRenderCapabilitiesGetResponses];
+
+export type ListRenderJobsApiRenderJobsGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/render/jobs';
+};
+
+export type ListRenderJobsApiRenderJobsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ListRenderJobsApiRenderJobsGetError = ListRenderJobsApiRenderJobsGetErrors[keyof ListRenderJobsApiRenderJobsGetErrors];
+
+export type ListRenderJobsApiRenderJobsGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: RenderJobListDto;
+};
+
+export type ListRenderJobsApiRenderJobsGetResponse = ListRenderJobsApiRenderJobsGetResponses[keyof ListRenderJobsApiRenderJobsGetResponses];
+
+export type CreateRenderJobApiRenderJobsPostData = {
+    body: RenderRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/render/jobs';
+};
+
+export type CreateRenderJobApiRenderJobsPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CreateRenderJobApiRenderJobsPostError = CreateRenderJobApiRenderJobsPostErrors[keyof CreateRenderJobApiRenderJobsPostErrors];
+
+export type CreateRenderJobApiRenderJobsPostResponses = {
+    /**
+     * Successful Response
+     */
+    202: RenderJobDto;
+};
+
+export type CreateRenderJobApiRenderJobsPostResponse = CreateRenderJobApiRenderJobsPostResponses[keyof CreateRenderJobApiRenderJobsPostResponses];
+
+export type GetRenderJobApiRenderJobsJobIdGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path: {
+        /**
+         * Job Id
+         */
+        job_id: string;
+    };
+    query?: never;
+    url: '/api/render/jobs/{job_id}';
+};
+
+export type GetRenderJobApiRenderJobsJobIdGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetRenderJobApiRenderJobsJobIdGetError = GetRenderJobApiRenderJobsJobIdGetErrors[keyof GetRenderJobApiRenderJobsJobIdGetErrors];
+
+export type GetRenderJobApiRenderJobsJobIdGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: RenderJobDto;
+};
+
+export type GetRenderJobApiRenderJobsJobIdGetResponse = GetRenderJobApiRenderJobsJobIdGetResponses[keyof GetRenderJobApiRenderJobsJobIdGetResponses];
 
 export type ReadBoardApiBoardGetData = {
     body?: never;
