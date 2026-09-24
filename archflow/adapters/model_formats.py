@@ -120,6 +120,8 @@ class GLB:
             raise ConversionError("Invalid GLB 2 signature or length.")
         chunks, cursor = [], 12
         while cursor < len(data):
+            if cursor + 8 > len(data):
+                raise ConversionError("Invalid GLB chunk header.")
             size, kind = struct.unpack_from("<I4s", data, cursor)
             cursor += 8
             if size % 4 or cursor + size > len(data):
@@ -131,41 +133,62 @@ class GLB:
         doc, binary = json.loads(chunks[0][1]), chunks[1][1]
         if doc.get("asset", {}).get("version") != "2.0" or doc.get("extensionsRequired") or doc.get("animations") or doc.get("skins"):
             raise ConversionError("GLB extensions, animation or skinning require another adapter.")
+
+        def integer(value, field, minimum=0, maximum=None):
+            if type(value) is not int or value < minimum or (maximum is not None and value > maximum):
+                raise ConversionError("Invalid GLB " + field + ".")
+            return value
+
+        def reference(collection, index):
+            values = doc[collection]
+            if not isinstance(values, list):
+                raise ConversionError("Invalid GLB " + collection + " array.")
+            return values[integer(index, collection + " index", maximum=len(values)-1)]
+
         buffers = doc.get("buffers", [])
-        if len(buffers) != 1 or "uri" in buffers[0] or buffers[0]["byteLength"] > len(binary):
+        if not isinstance(buffers, list) or len(buffers) != 1 or "uri" in buffers[0]:
             raise ConversionError("External or invalid GLB buffers are unsupported.")
+        buffer_length = integer(buffers[0]["byteLength"], "buffer byteLength", 1, len(binary))
+        if len(binary) - buffer_length > 3:
+            raise ConversionError("Invalid GLB buffer padding.")
 
         def accessor(index, position=False):
-            a = doc["accessors"][index]
+            a = reference("accessors", index)
             expected = "VEC3" if position else "SCALAR"
             types = {5126: ("f", 4), 5125: ("I", 4), 5123: ("H", 2), 5121: ("B", 1)}
-            if a.get("sparse") or a.get("normalized") or a["type"] != expected or a["componentType"] not in types:
+            component = integer(a["componentType"], "accessor componentType")
+            if a.get("sparse") or a.get("normalized") or a["type"] != expected or component not in types:
                 raise ConversionError("Unsupported GLB accessor.")
-            if position != (a["componentType"] == 5126):
+            if position != (component == 5126):
                 raise ConversionError("Positions must be floats and indices unsigned integers.")
-            view = doc["bufferViews"][a["bufferView"]]
-            if view.get("buffer", 0) != 0:
-                raise ConversionError("Invalid GLB buffer reference.")
-            fmt, width = types[a["componentType"]]
-            width *= 3 if position else 1
-            stride = view.get("byteStride", width)
-            start = view.get("byteOffset", 0) + a.get("byteOffset", 0)
-            end = view.get("byteOffset", 0) + view["byteLength"]
-            if a["count"] < 1 or stride < width or start < 0 or end > len(binary) or start + (a["count"] - 1) * stride + width > end:
+            view = reference("bufferViews", a["bufferView"])
+            reference("buffers", view.get("buffer", 0))
+            fmt, component_width = types[component]
+            width = component_width * (3 if position else 1)
+            stride = integer(view.get("byteStride", width), "bufferView byteStride", width, 252)
+            view_offset = integer(view.get("byteOffset", 0), "bufferView byteOffset", maximum=buffer_length)
+            view_length = integer(view["byteLength"], "bufferView byteLength", 1, buffer_length-view_offset)
+            offset = integer(a.get("byteOffset", 0), "accessor byteOffset", maximum=view_length)
+            count = integer(a["count"], "accessor count", 1)
+            start, end = view_offset + offset, view_offset + view_length
+            if (offset % component_width or start % component_width
+                    or ("byteStride" in view and stride % 4)):
+                raise ConversionError("Invalid GLB accessor alignment.")
+            if start + (count - 1) * stride + width > end:
                 raise ConversionError("GLB accessor exceeds its buffer.")
-            return [struct.unpack_from("<" + fmt * (3 if position else 1), binary, start + i * stride) for i in range(a["count"])]
+            return [struct.unpack_from("<" + fmt * (3 if position else 1), binary, start + i * stride) for i in range(count)]
 
         meshes = []
         def visit(index, parents):
+            node = reference("nodes", index)
             if index in parents:
                 raise ConversionError("GLB node hierarchy contains a cycle.")
-            node = doc["nodes"][index]
             # Fail closed until transform composition is supplied by a verified adapter.
             if any(key in node for key in ("matrix", "rotation", "translation", "scale", "weights", "skin")):
                 raise ConversionError("Transformed or deformed GLB nodes are not supported by this adapter; bake transforms first.")
             if "mesh" in node:
-                for primitive in doc["meshes"][node["mesh"]]["primitives"]:
-                    if primitive.get("mode", 4) != 4 or primitive.get("targets") or primitive.get("extensions"):
+                for primitive in reference("meshes", node["mesh"])["primitives"]:
+                    if integer(primitive.get("mode", 4), "primitive mode") != 4 or primitive.get("targets") or primitive.get("extensions"):
                         raise ConversionError("Only uncompressed triangle primitives are supported.")
                     vertices = [(x, -z, y) for x, y, z in accessor(primitive["attributes"]["POSITION"], True)]
                     indices = [v[0] for v in accessor(primitive["indices"])] if "indices" in primitive else list(range(len(vertices)))
@@ -174,7 +197,7 @@ class GLB:
                     meshes.append(Mesh(node.get("name", "Mesh"), vertices, [tuple(indices[i:i+3]) for i in range(0, len(indices), 3)]))
             for child in node.get("children", []):
                 visit(child, parents + [index])
-        for root in doc["scenes"][doc.get("scene", 0)].get("nodes", []):
+        for root in reference("scenes", doc.get("scene", 0)).get("nodes", []):
             visit(root, [])
         scene = Scene(meshes, "Meters", ["Mesh geometry only: no CAD solids reconstructed. Materials, textures and normals are omitted; hierarchy and instances are flattened."])
         scene.metrics()

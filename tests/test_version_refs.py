@@ -106,6 +106,7 @@ NO_VERSION_IDENTITY = {
     "StudioLocalDraft@1": "local commands bound to a state content digest and retained source refs; no canonical version",
     "StudioModelAnnotations@1": "annotations on a model; no base",
     "StudioModelAsset@1": "an asset by digest; no base",
+    "StudioModelExport@1": "source/output artifact hashes and an optional source run/state content digest; no canonical version",
     "StudioScopedDecision@1": "a scoped judgement: it names content digests, run ids and record "
     "refs, and embeds no canonical version; its fixed run manifest owns that base",
     "StudioSourceDocument@1": "an uploaded document by digest; no base",
