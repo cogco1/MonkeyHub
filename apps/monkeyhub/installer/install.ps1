@@ -389,6 +389,78 @@ function Test-InstalledHubEntry([string]$Target, [string]$Entry) {
     } catch { return $false }
 }
 
+function Import-ShortcutInterop {
+    if ('MonkeyHub.InstallerShortcut' -as [type]) { return }
+    # WScript.Shell's TargetPath setter rejects characters outside the system
+    # ANSI code page. Use Windows' Unicode Shell link interface for the same link.
+    Add-Type -TypeDefinition @'
+using System;
+using System.IO;
+using System.Runtime.InteropServices;
+using System.Runtime.InteropServices.ComTypes;
+using System.Text;
+
+namespace MonkeyHub {
+    [ComImport, Guid("000214F9-0000-0000-C000-000000000046"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    interface IShellLinkW {
+        void GetPath([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder path, int count, IntPtr findData, uint flags);
+        void GetIDList(out IntPtr idList);
+        void SetIDList(IntPtr idList);
+        void GetDescription([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder description, int count);
+        void SetDescription([MarshalAs(UnmanagedType.LPWStr)] string description);
+        void GetWorkingDirectory([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder directory, int count);
+        void SetWorkingDirectory([MarshalAs(UnmanagedType.LPWStr)] string directory);
+        void GetArguments([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder arguments, int count);
+        void SetArguments([MarshalAs(UnmanagedType.LPWStr)] string arguments);
+        void GetHotkey(out short hotkey);
+        void SetHotkey(short hotkey);
+        void GetShowCmd(out int command);
+        void SetShowCmd(int command);
+        void GetIconLocation([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder path, int count, out int index);
+        void SetIconLocation([MarshalAs(UnmanagedType.LPWStr)] string path, int index);
+        void SetRelativePath([MarshalAs(UnmanagedType.LPWStr)] string path, uint reserved);
+        void Resolve(IntPtr window, uint flags);
+        void SetPath([MarshalAs(UnmanagedType.LPWStr)] string path);
+    }
+
+    public sealed class InstallerShortcut {
+        public string TargetPath;
+        public string WorkingDirectory;
+
+        private static IShellLinkW Create() {
+            return (IShellLinkW)Activator.CreateInstance(Type.GetTypeFromCLSID(
+                new Guid("00021401-0000-0000-C000-000000000046")));
+        }
+
+        public static InstallerShortcut Read(string path) {
+            IShellLinkW link = Create();
+            try {
+                ((IPersistFile)link).Load(path, 0);
+                StringBuilder target = new StringBuilder(32768), directory = new StringBuilder(32768);
+                link.GetPath(target, target.Capacity, IntPtr.Zero, 4); // SLGP_RAWPATH
+                link.GetWorkingDirectory(directory, directory.Capacity);
+                return new InstallerShortcut { TargetPath = target.ToString(), WorkingDirectory = directory.ToString() };
+            } finally { Marshal.FinalReleaseComObject(link); }
+        }
+
+        public static void Write(string path, string target, string directory, string icon, int windowStyle) {
+            IShellLinkW link = Create();
+            try {
+                if (File.Exists(path)) { ((IPersistFile)link).Load(path, 2); }
+                link.SetPath(target);
+                link.SetArguments("");
+                link.SetWorkingDirectory(directory);
+                link.SetDescription("Open MonkeyHub and its local applications");
+                link.SetIconLocation(icon, 0);
+                link.SetShowCmd(windowStyle);
+                ((IPersistFile)link).Save(path, true);
+            } finally { Marshal.FinalReleaseComObject(link); }
+        }
+    }
+}
+'@
+}
+
 function Complete-Installation([string]$Directory) {
     $entry = Join-Path $Directory $entryName
     $makeShortcut = $CreateDesktopShortcut.IsPresent
@@ -404,8 +476,7 @@ function Complete-Installation([string]$Directory) {
         if (-not [IO.Path]::IsPathRooted($desktop) -or -not (Test-Path -LiteralPath $desktop -PathType Container)) {
             throw 'The desktop shortcut directory must be an existing absolute directory.'
         }
-        # WScript.Shell writes the shortcut; the launch surface itself is launch-hub.ps1 or the desktop window.
-        $shell = New-Object -ComObject WScript.Shell
+        Import-ShortcutInterop
         # The native package has one app shortcut; its browser launcher remains in the bundle.
         $entries = if ($desktopBuild) {
             @(@{ Link = 'MonkeyHub.lnk'; Entry = 'MonkeyHub.exe'; WindowStyle = 1 })
@@ -414,8 +485,8 @@ function Complete-Installation([string]$Directory) {
         }
         foreach ($item in $entries) {
             $link = Join-Path $desktop $item.Link
-            $shortcut = $shell.CreateShortcut($link)
             if (Test-Path -LiteralPath $link) {
+                $shortcut = [MonkeyHub.InstallerShortcut]::Read($link)
                 $ownedEntry = Test-InstalledHubEntry $shortcut.TargetPath $item.Entry
                 $oldBrowser = $desktopBuild -and (Test-InstalledHubEntry $shortcut.TargetPath 'OPEN_MONKEYHUB.cmd')
                 if (-not $ownedEntry -and -not $oldBrowser) {
@@ -424,14 +495,9 @@ function Complete-Installation([string]$Directory) {
                 }
             }
             $target = Join-Path $Directory $item.Entry
-            $shortcut.TargetPath = $target
-            $shortcut.Arguments = ''
-            $shortcut.WorkingDirectory = $Directory
-            $shortcut.Description = 'Open MonkeyHub and its local applications'
-            $shortcut.IconLocation = (Join-Path $Directory 'apps\archflow-studio\assets\monkeyarch.ico') + ',0'
-            $shortcut.WindowStyle = $item.WindowStyle
-            $shortcut.Save()
-            $written = $shell.CreateShortcut($link)
+            [MonkeyHub.InstallerShortcut]::Write($link, $target, $Directory,
+                (Join-Path $Directory 'apps\archflow-studio\assets\monkeyarch.ico'), $item.WindowStyle)
+            $written = [MonkeyHub.InstallerShortcut]::Read($link)
             if ($written.TargetPath -ne $target -or $written.WorkingDirectory -ne $Directory) {
                 throw "The desktop shortcut does not point to this installation: $link"
             }
@@ -439,7 +505,7 @@ function Complete-Installation([string]$Directory) {
             if ($desktopBuild) {
                 $legacyLink = Join-Path $desktop 'MonkeyArch.lnk'
                 if (Test-Path -LiteralPath $legacyLink -PathType Leaf) {
-                    $legacyTarget = $shell.CreateShortcut($legacyLink).TargetPath
+                    $legacyTarget = [MonkeyHub.InstallerShortcut]::Read($legacyLink).TargetPath
                     if (Test-InstalledHubEntry $legacyTarget 'MonkeyArch.exe') {
                         Remove-Item -LiteralPath $legacyLink
                     }

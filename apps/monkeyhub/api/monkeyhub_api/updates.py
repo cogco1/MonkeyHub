@@ -229,10 +229,17 @@ class DesktopUpdates:
             return {"targetCommit": self._restart_commit}
 
     def _activate(self) -> None:
-        script = self.source_root / "apps/monkeyhub/installer/install.ps1"
+        script = str(self.source_root / "apps/monkeyhub/installer/install.ps1")
+        # Windows PowerShell's FileSystem provider cannot use the desktop's
+        # verbatim source path. Adapt only its command argument, as for Node.
+        if os.name == "nt":
+            if script.lower().startswith("\\\\?\\unc\\"):
+                script = "\\\\" + script[8:]
+            elif re.match(r"^\\\\\?\\[a-zA-Z]:\\", script):
+                script = script[4:]
         try:
             result = subprocess.run(
-                ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(script),
+                ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script,
                  "-ActivateInstalled", "-CreateDesktopShortcut"],
                 capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60,
                 creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,

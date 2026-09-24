@@ -165,6 +165,10 @@ jobs:
       - name: Install API and test dependencies
         run: python -m pip install -e ".[cad-inspection]" -r apps/archflow-studio/api/requirements.txt -r apps/monkeyhub/api/requirements.txt httpx2
 
+      - name: Desktop update activation checks
+        if: runner.os == 'Windows'
+        run: python -m unittest discover -s apps/monkeyhub/api/tests -p test_updates.py -v
+
       - name: API binding, protocol and candidate checks
         working-directory: apps/archflow-studio/api
         run: python -m unittest tests.test_health tests.test_protocol tests.test_candidate
