@@ -224,7 +224,7 @@ print(json.dumps({"models": models, "pdf": base64.b64encode(two_page_pdf()).deco
   await savedWhere((value) => active(value, "arrow").length === 1, "Native arrow gesture did not persist");
   await selectAll();
   await page.locator(".monkeyboard-context").waitFor();
-  await page.locator(".monkeyboard-context").getByRole("link", { name: /MonkeyDiagram/ }).waitFor();
+  await page.locator(".monkeyboard-context").getByRole("button", { name: "Link model in MonkeyDiagram", exact: true }).waitFor();
   assert.equal(submissions.length, 0);
   // Associate the uploaded source through the existing API, then rediscover it.
   const bound = await call("POST", `/api/documents/${firstDocument.assetSha256}/model-source`, {
@@ -235,7 +235,7 @@ print(json.dumps({"models": models, "pdf": base64.b64encode(two_page_pdf()).deco
   await fit(); await selectAll();
   const feedback = () => page.locator(".monkeyboard-context").getByRole("button", { name: "Send design feedback", exact: true });
   await feedback().waitFor(); assert.equal(await feedback().isEnabled(), true);
-  assert.equal(await page.locator(".monkeyboard-context").getByRole("link", { name: /MonkeyDiagram/ }).count(), 0);
+  assert.equal(await page.locator(".monkeyboard-context").getByRole("button", { name: "Link model in MonkeyDiagram", exact: true }).count(), 0);
   await setMore(true);
   await page.locator(".monkeyboard-actions-panel").getByRole("button", { name: "Send design feedback", exact: true }).click();
   await page.getByRole("dialog", { name: "Discuss this drawing", exact: true }).waitFor();
@@ -486,9 +486,11 @@ assert image.getextrema() == ((199, 199), (221, 221), (237, 237)), image.getextr
   assert.equal(await page.getByRole("textbox", { name: "Board title", exact: true }).inputValue(), "My unsent board title");
   assert.deepEqual(await board(), winner, "A CAS conflict must never overwrite the winning saved revision");
   assert.ok(requests.some((request) => request.path === "/api/board" && request.status === 409));
-  const savedTabReady = context.waitForEvent("page");
-  await page.getByRole("link", { name: "Open saved board", exact: true }).click();
-  const savedTab = await savedTabReady;
+  // Hub embeds Board; the retired Studio "Open saved board" external link is
+  // no longer a navigation contract. A second reader must still see the winner
+  // without replacing the first reader's unsaved draft.
+  const savedTab = await context.newPage();
+  await savedTab.goto(page.url(), { waitUntil: "domcontentloaded" });
   await savedTab.getByRole("textbox", { name: "Board title", exact: true }).waitFor();
   await savedTab.locator(".monkeyboard-initializing").waitFor({ state: "hidden" });
   assert.equal(await savedTab.getByRole("textbox", { name: "Board title", exact: true }).inputValue(), "Other saved version");
@@ -506,7 +508,7 @@ assert image.getextrema() == ((199, 199), (221, 221), (237, 237)), image.getextr
   assert.deepEqual(requests.filter((request) => /\/api\/(intents|proposals|jobs|model-annotations|candidates)/.test(request.path)), [],
     "Ordinary board actions must never enter a model or agent path");
   assert.deepEqual(errors, []);
-  console.log(JSON.stringify({ passed: "real isolated Board PNG/PDF drop, rotated PDF page intake, file-upload/file-clipboard-paste, native gestures and undo/redo, ordered selected/bound/outside text, editable feedback without duplication, source/model-change refusal, clean export, real source replacement and undone reopen, hidden-panel discovery, reload and CAS saved-tab comparison", requests: requests.length, submissions: submissions.length }));
+  console.log(JSON.stringify({ passed: "real isolated Board PNG/PDF drop, rotated PDF page intake, file-upload/file-clipboard-paste, native gestures and undo/redo, ordered selected/bound/outside text, editable feedback without duplication, source/model-change refusal, clean export, real source replacement and undone reopen, hidden-panel discovery, reload and CAS second-reader comparison", requests: requests.length, submissions: submissions.length }));
 } catch (error) {
   if (page && !page.isClosed()) {
     if (process.env.BOARD_SCREENSHOT) await page.screenshot({ path: process.env.BOARD_SCREENSHOT });

@@ -744,7 +744,9 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
   }, [project, projectDir, studioWorker, busy, toolBusy, initial]);
 
   useEffect(() => {
-    if (!runtime || !restoredTools.current || actionLock.current) return;
+    // openTool releases its ref lock before React commits the restored tab.
+    // Wait for that render before observing a delivery against its candidate.
+    if (!runtime || !restoredTools.current || actionLock.current || toolBusy) return;
     const updates = new Map<string, { tab: ToolTab; previous?: string; candidate: string }>();
     // A headless delivery can arrive before the architect opens any tool.
     // Promote the already prepared workspace instead of mounting another one.

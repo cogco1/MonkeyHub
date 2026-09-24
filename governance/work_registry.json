@@ -648,6 +648,28 @@
       "notes": [
         "2026-09-08 rule alignment: Awaiting the first concrete evidence consumer and a check of existing Reading/source references. The earlier proposed ledger and private Atlas field superset are not a mandate to add a core record."
       ]
+    },
+    {
+      "id": "GH-234",
+      "stream": "planning",
+      "status": "active",
+      "goal": "Complete release UI acceptance and fix the reproduced cold-reopen race that drops the latest retained candidate.",
+      "depends_on": [],
+      "write_scope": [
+        "apps/monkeyhub/web/test/chatShell.browser.mjs",
+        "apps/monkeyhub/web/workspaces/test/boardWhiteboard.browser.mjs",
+        "apps/monkeyhub/web/src/ChatShell.tsx"
+      ],
+      "issue": "https://github.com/cogco1/MonkeyHub/issues/234",
+      "branch": "codex/attachment-toolbar",
+      "worktree": "D:/MONKEYHUB_DEV/workspace/worktrees/codex-attachment-toolbar",
+      "base_ref": "80767ab0d566bff71d340c82190f54f93bb9db68",
+      "contributor": "Codex",
+      "reviewer": null,
+      "handoff": "Root owns release and acceptance; pr259_cleanup owns ChatShell.tsx and chatShell.browser.mjs; independent reviewer owns Board browser test.",
+      "acceptance": [
+        "Complete chat and Board browser paths reflect actual current behavior and pass without disabling checks."
+      ]
     }
   ]
 }

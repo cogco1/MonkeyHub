@@ -1137,6 +1137,28 @@ try {
   await waitWorkspace();
   await waitCandidate(newJob.candidateId);
 
+  // A delivery arriving while the saved historical tab is being restored is
+  // still consumed after attachment completes, without any project mutation.
+  await page.locator(".chat-activity").filter({ hasText: "Final checkpoint completed" }).getByRole("button", { name: "Open this candidate on the right" }).click();
+  await waitCandidate("cand-B-final");
+  let releaseColdRestore;
+  runtimeOpenGate = new Promise((resolve) => { releaseColdRestore = resolve; });
+  const coldRestoreReady = new Promise((resolve) => { runtimeOpenCaptured = resolve; });
+  const beforeColdRestore = writes.length;
+  await Promise.all([coldRestoreReady, page.reload()]);
+  const coldJob = headlessJob("cand-B-headless-during-restore", 25);
+  projectBFixture.artifact(coldJob.candidateId);
+  runtimeB.retained.candidates.push(headlessCandidate(coldJob));
+  runtimeB.operations.push(headlessOperation(coldJob));
+  const coldDeliveryRead = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/runtime");
+  emitRuntime();
+  await coldDeliveryRead;
+  releaseColdRestore();
+  await waitWorkspace();
+  await waitCandidate(coldJob.candidateId);
+  assert.ok(writes.slice(beforeColdRestore).every(([, pathname]) => pathname === "/api/runtime/projects/open"),
+    "restoring the latest delivery only reattaches its existing project runtime");
+
   // Slow older requests and unordered completion observations do not guess a
   // new winner. The projected journal order works without in-memory job times.
   const slowOldJob = headlessJob("cand-B-headless-slow-old", 15);
