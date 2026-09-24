@@ -1,6 +1,15 @@
 # P115 — 能力总索引与逐项整理
 
-## 2026-09-13：当前排期与第一批 Claude 工作
+**当前状态：blocked（2026-09-24 校准），没有执行 lane，也不保留源码写入范围。**
+历史能力整理与已交付切片不再作为当前开发任务。C06、C08–C10、C12 等未勾选项及真实项目验收尚未逐项取得关闭证据，
+因此保留本卡，等待具体任务／验收输入；不据此批量重开旧需求或要求全部前端开发等待。
+新任务先读当前 GitHub Issue／PR，再用 `python tools/devctl.py work` 核对实际源码并发，用 `module` 查软件归口。
+
+以下按日期保留历史盘点、排期和实现记录；其中的“当前”“今晚”“active”、旧路径、测试数量和分支操作授权只对应当次记录。
+“六组交互扩展暂停”仅约束当时未选择的扩展，不是所有后续 UI 工作的暂停令；新的明确用户请求按其自身范围执行。
+本卡不再承担全产品当前能力表、任务总入口或源码归属表；已合并内容以 Git 历史和实际实现为准。
+
+## 2026-09-13：历史排期与第一批 Claude 工作
 
 GitHub issue 保留完整需求，顶部的执行安排限定下一片工作。#49 按重复项并入 #50，
 原研究仍可追溯；TripoSG-scribble、Step1X-3D、随机种子、峰值显存与原始失败样本的要求已保留。
@@ -622,11 +631,11 @@ Hub 折叠面板保留工作区，隐藏 iframe 保持尺寸，首次打开同�
 
 **2026-09-11 主线整合验证。** 本轮合并保留当前 Hub 原生会话、显式阶段和项目绑定，并重新通过项目传递、身份权限、三进程真实 HTTP／OCCT 与相关项目／Stage 检查。测试初态改为使用其实际 harness 声明的阶段；生产投影继续要求显式阶段。传递和接受仍不推进正式 HEAD，现有安装包与其他工作目录中的未提交实验保留原样。
 
-**状态：active。** 先完成现有与计划能力的分类，再按本卡逐项整理；不是全部重写，也不同时启动所有计划。
+**2026-09-06 当时状态：active，现已由页首状态取代。** 当次先完成现有与计划能力的分类，再按本卡逐项整理；不是全部重写，也不同时启动所有计划。
 **核对基线：** 2026-09-06，盘点时 `main` 为 `fe182a1`；执行期间并发治理提交推进到 `a587156`，保留其变更及本轮已存在的未提交修改。
 **请求：** 把功能分成容易记住的职责，包含计划中的模块；使用 P 卡索引，整理一项就标记一项，后续不靠会话记忆重新开工。
 
-本卡是这次整理的唯一执行清单。已有能力的契约仍以
+本卡曾是这次整理的执行清单。已有能力的契约仍以
 [module registry](../../../governance/module_registry.json)／[SYSTEM_MAP](../../SYSTEM_MAP.md) 为准；
 已有工作仍回到原 P 卡，不复制验收。总入口由
 [work registry](../../../governance/work_registry.json) 生成到 [planning INDEX](INDEX.md)。
@@ -1307,7 +1316,7 @@ diffuse (82,52,74)，玻璃 diffuse (150,200,225)、透明度 0.6。来源不动
 | 实际命令入口（7） | `tools.freeze_project_stage_workflow`、`tools.open_stage_run`、`tools.run_project`、`tools.issue_project`、`tools.verify_state_record`、`tools.reindex_project`、`tools.create_project` |
 | 运行观测与研发支撑（5） | `monkeymonitor`、`tools.archcheck`、`tools.devctl`、`tools.package_monkeyapps`、`tools.workspace` |
 
-## 7. 本卡边界与检查
+## 7. 历史切片的边界与检查
 
 2026-09-21 `headless-delivery` 继续处理大项目候选完成后的状态刷新：沿 `hub.shell` 的 retained 观测和 Studio 精确 `candidateId` 读取，将最近运行窗口分页读取，每次重新验证，避免冻结旧完成状态。`project.repository` 允许按精确记录类别选择，`studio.binding` 据此只读选择参考运行所需的 runner receipts，选中 StateRecord 仍完整校验。验证冷启动、同 run 完成、产物晚到、删除恢复与 worker 实例变化。候选详情的 `changedVsProjection` 保持当前项目投影的公开比较含义；不以扩大超时替代刷新修复。
 
