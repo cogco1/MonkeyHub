@@ -2767,6 +2767,38 @@ export type ReadChatAttachmentApiChatSessionsSessionIdAttachmentsAttachmentIdGet
     200: unknown;
 };
 
+export type ReadChatModelSourceApiChatSessionsSessionIdAttachmentsAttachmentIdModelSourceGetData = {
+    body?: never;
+    path: {
+        /**
+         * Session Id
+         */
+        session_id: string;
+        /**
+         * Attachment Id
+         */
+        attachment_id: string;
+    };
+    query?: never;
+    url: '/api/chat/sessions/{session_id}/attachments/{attachment_id}/model-source';
+};
+
+export type ReadChatModelSourceApiChatSessionsSessionIdAttachmentsAttachmentIdModelSourceGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadChatModelSourceApiChatSessionsSessionIdAttachmentsAttachmentIdModelSourceGetError = ReadChatModelSourceApiChatSessionsSessionIdAttachmentsAttachmentIdModelSourceGetErrors[keyof ReadChatModelSourceApiChatSessionsSessionIdAttachmentsAttachmentIdModelSourceGetErrors];
+
+export type ReadChatModelSourceApiChatSessionsSessionIdAttachmentsAttachmentIdModelSourceGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
 export type ReadChatAttachmentContentApiChatSessionsSessionIdAttachmentsAttachmentIdReadGetData = {
     body?: never;
     path: {

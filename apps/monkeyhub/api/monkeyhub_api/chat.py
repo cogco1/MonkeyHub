@@ -2015,8 +2015,8 @@ def _stop_process(process: subprocess.Popen) -> None:
             process.kill()
 
 
-_READ = re.compile(r"^/api/(project|state(?:/frame|/volumes)?|semantics|program|options|board|artifacts|documents|document-annotations|studies/[A-Za-z0-9][A-Za-z0-9._-]{0,79}|decisions(?:/[A-Za-z0-9_-]+)?|drawings/(?:styles|model-view)|capabilities(?:/[A-Za-z0-9_.-]+)?|proposals/[A-Za-z0-9_-]+|jobs/[A-Za-z0-9_-]+|candidates/[A-Za-z0-9_-]+(?:/compare)?)$")
-_POST = re.compile(r"^/api/(project/modeling|intents/context|board/export|decisions(?:/[A-Za-z0-9_-]+/revisions)?|state/closure|capabilities/[A-Za-z0-9_.-]+/run|proposals|proposals/(sketch|transform|push-pull|delete|elevation)|proposals/[A-Za-z0-9_-]+/candidate|program|options|options/[A-Za-z0-9_-]+/select|candidates/combine|drawings/(elevations|sheets))$")
+_READ = re.compile(r"^/api/(exports(?:/[A-Za-z0-9_-]+)?|project|state(?:/frame|/volumes)?|semantics|program|options|board|artifacts|documents|document-annotations|studies/[A-Za-z0-9][A-Za-z0-9._-]{0,79}|decisions(?:/[A-Za-z0-9_-]+)?|drawings/(?:styles|model-view)|capabilities(?:/[A-Za-z0-9_.-]+)?|proposals/[A-Za-z0-9_-]+|jobs/[A-Za-z0-9_-]+|candidates/[A-Za-z0-9_-]+(?:/compare)?)$")
+_POST = re.compile(r"^/api/(exports|project/modeling|intents/context|board/export|decisions(?:/[A-Za-z0-9_-]+/revisions)?|state/closure|capabilities/[A-Za-z0-9_.-]+/run|proposals|proposals/(sketch|transform|push-pull|delete|elevation)|proposals/[A-Za-z0-9_-]+/candidate|program|options|options/[A-Za-z0-9_-]+/select|candidates/combine|drawings/(elevations|sheets))$")
 _WRITE = re.compile(r"^/api/(board|document-annotations)$")
 _PAGE_IMAGE_MAX_EDGE = 2048
 _PAGE_IMAGE_MAX_BYTES = 4 * 1024 * 1024
@@ -2572,6 +2572,14 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
         operation = document["paths"].get(template, {}).get(method.lower())
         if operation is None:
             raise HubFailure(422, "CHAT_TOOL_UNAVAILABLE", "The running Studio has no matching action.")
+        if method == "POST" and parsed.path == "/api/exports":
+            reference = operation["requestBody"]["content"]["application/json"]["schema"]["$ref"]
+            schema = document["components"]["schemas"][reference.rsplit("/", 1)[-1]]
+            schema["properties"].pop("upload", None)
+            schema["properties"]["attachmentId"] = {
+                "type": "string", "format": "uuid",
+                "description": "Exact attachment ID from this conversation. Choose this OR projectRevision OR sourceArtifactId; Hub transfers the bytes.",
+            }
         if method == "POST" and parsed.path.startswith("/api/decisions"):
             # Expose the Runtime's real schema, narrowed to the chat capability;
             # provenance is supplied by this adapter, never by the provider.
@@ -2648,6 +2656,12 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
             raise HubFailure(409, "CHAT_PROJECT_MISMATCH", "A tool cannot select another project.")
         if parsed.path in {"/api/proposals", "/api/board/export"}:
             body["projectId"] = session["projectId"]
+    if method == "POST" and parsed.path == "/api/exports" and isinstance(body, dict):
+        attachment_id = body.pop("attachmentId", None)
+        if attachment_id is not None:
+            if any(body.get(key) is not None for key in ("upload", "projectRevision", "sourceArtifactId")):
+                raise HubFailure(422, "EXPORT_SOURCE_AMBIGUOUS", "Choose the project revision or one attachment, not both.")
+            body["upload"] = _request_json(hub, f"/api/chat/sessions/{_identifier(chat_id)}/attachments/{_identifier(attachment_id)}/model-source")
     comparison = body or {}
     if method == "POST" and parsed.path.startswith("/api/decisions"):
         if parsed.query or not isinstance(body, dict):
@@ -2672,6 +2686,9 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
                                 headers={"Idempotency-Key": operation_id, "X-Monkey-Chat": chat_id})
     else:
         started = _request_json(base, path, method, body)
+    if isinstance(started, dict) and method == "GET" and parsed.path.startswith("/api/exports/"):
+        if started.get("status") == "succeeded" and started.get("downloadPath") == parsed.path + "/bytes":
+            started = started | {"downloadUrl": base + started["downloadPath"]}
     if wait is None:
         if method == "POST" and parsed.path in {
             "/api/proposals", "/api/proposals/sketch", "/api/proposals/transform",
@@ -2814,6 +2831,7 @@ def _mcp(hub: str, chat_id: str | None, external: ChatPresentationBindRequest | 
         "COMPOSE / OBSERVE / CONTINUE:",
         "Chain known edits in memory by passing the last proposalId as sourceProposalId; keep stateDigest at the chain's original baseStateDigest.",
         "sourceRunId/sourceStageRef are inherited. GET /api/proposals/{id} reads accumulated changes; inspect conflicts before executing.",
+        "MODEL CONVERSION: When asked to export/convert a model to 3DM, SKP, GLB or DWG, use POST /api/exports via studio_request. Do not use an export button or write a converter in the shell. Body: {targetFormat: 'glb', attachmentId: '<exact chat attachment id>'} for an upload, or {targetFormat: 'glb', projectRevision: {runId, stateDigest, assetSha256}} for the exact current project model. Read current project state/artifacts first; never substitute an upload for project state. If 'this model' could mean the project or an upload, or multiple uploads match, ask which model. Do not guess by filename or newest file. Read GET /api/exports/capabilities for supported routes. Submission returns jobId/statusPath; poll that statusPath with GET, report queued/running progress, and only on succeeded return its downloadUrl as a Markdown link with warnings. On failed/interrupted report failureReason, never invent a file link. For SKP/DWG without an available verified executor, say 当前没有配置可用的执行器; never describe the format as permanently unsupported. Installed software does not establish conversion capability. The backend chooses providers; users do not need to choose software. Same-format validated delivery is not a conversion. Do not use awaitSeconds on exports.",
         "At a useful design decision point, POST /api/proposals/{id}/candidate with no body and awaitSeconds: 60 beside method/path.",
         "This materializes a reversible, unaccepted candidate. Multiple observation and revision cycles can occur within the same Stage.",
         "After observing it, start further changes from GET /api/state?run=<candidateId>, using that stateDigest and sourceRunId;",

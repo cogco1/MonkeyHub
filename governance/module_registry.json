@@ -244,7 +244,8 @@
         "read-only discovery of the PowerShell that supervises a host export when the caller configured none (discover_powershell); an explicit executable always wins and nothing is launched by discovery",
         "one process-wide Rhino host lock: a candidate's export and an explicitly requested work export are the same machine resource and take the same lock",
         "Blender solid and straight-extrusion meshes, explicit speculative .blend save in one background process, fresh-process geometry/semantic/binding readback, and the native retained receipt reader; no backend-specific project state",
-        "Full Blender visualization rebuild from verified OCCT STEP, stable source IDs, explicit presentation settings, independent saved-scene render and source-bound artifact receipt; no geometry authoring"
+        "Full Blender visualization rebuild from verified OCCT STEP, stable source IDs, explicit presentation settings, independent saved-scene render and source-bound artifact receipt; no geometry authoring",
+        "Bounded 3DM/GLB mesh format adapters and conversion readback; runtime-qualified provider selection and discovery-only native SKP/DWG executors with no project writes."
       ],
       "does_not_own": [
         "translating the program into a script - adapters.cad_program",
@@ -323,7 +324,8 @@
         "BlenderBackend",
         "BlenderPresentation",
         "execute_blender_projection",
-        "verify_projection_artifacts"
+        "verify_projection_artifacts",
+        "archflow.adapters.model_formats.convert"
       ],
       "depends_on": [
         "adapters.cad_patch",
@@ -385,7 +387,10 @@
         "tests/test_occt_execution.py",
         "tests/test_cad_backend_contract.py",
         "tests/test_blender_cad.py",
-        "tests/test_blender_projection.py"
+        "tests/test_blender_projection.py",
+        "tests/test_model_formats.py",
+        "tests/model_export_glb_reader.mjs",
+        "tests/test_model_providers.py"
       ],
       "notes": "P115 #13: Phase 0 contract merged in PR15 and Phase 1 lanes in PR17. Blender extends the same registration and request/result protocol; its runner-written receipt uses the existing P036 kind table. No runner dispatch, compiler, State, Stage or Hub/App Server mechanism is added.",
       "files": [
@@ -394,7 +399,10 @@
         "archflow/adapters/cad_backend.py",
         "archflow/adapters/blender_cad.py",
         "archflow/adapters/blender_worker.py",
-        "archflow/adapters/blender_projection.py"
+        "archflow/adapters/blender_projection.py",
+        "archflow/adapters/model_formats.py",
+        "archflow/adapters/model_providers.py",
+        "archflow/adapters/local_cad_discovery.py"
       ]
     },
     {
@@ -3871,7 +3879,8 @@
         "optional candidate sourceStageRef on GET /api/artifacts, read once per run from its verified retained delta, runner and committed Stage without projecting complete states",
         "the explicitly requested editable work model: POST /api/artifacts/{sha256}/rhino-export takes the exact STEP of one named run, imports it through the existing supervised Rhino host, retains the ordinary Rhino execution receipt with the source STEP digest and receipt it was made from, and answers with the work model's own artifact row; the layers, material declarations and colours come from that export's own retained preview inspection, and a copy that cannot reproduce them is refused rather than moved or recoloured",
         "the explicitly requested editable work copy of one registered document (PDF, PNG or JPEG): POST /api/documents/{asset_sha256}/work-copy seeds one P036 run-workspace file under studio-documents/work/<origin sha256>/ from the page that registration currently answers for, returns the copy already there untouched when asked again, and never overwrites it; which copies exist is derived from the registered documents plus that one path, with no second store and no workspace scan; one derivation decides whether a document can have a single editable file and carries the reason it cannot on the row itself, so opening a copy and listing the copies never disagree and a file already on disk is never dropped out of sight",
-        "one horizontal cut-plan revision over the existing SourceDocument and DrawingProjectionReceipt: retained scale, pens, hatch, semantic rectangular empty-door dimensions and explicit rebuild against a named exact source or the original Stage branch head"
+        "one horizontal cut-plan revision over the existing SourceDocument and DrawingProjectionReceipt: retained scale, pens, hatch, semantic rectangular empty-door dimensions and explicit rebuild against a named exact source or the original Stage branch head",
+        "Model conversion orchestration using the existing job pool, original source objects and noncanonical P036 export runs; retained progress, failure and validated-download reports."
       ],
       "does_not_own": [
         "producing the export or its receipt - adapters.cad_execution through runtime.project_runner",
@@ -3948,7 +3957,11 @@
         "generate_plan",
         "plan_status",
         "plan_dimension_choices",
-        "dimension_proposal"
+        "dimension_proposal",
+        "POST /api/exports",
+        "GET /api/exports/capabilities",
+        "GET /api/exports/{export_id}",
+        "GET /api/exports/{export_id}/bytes"
       ],
       "depends_on": [
         "adapters.cad_execution",
@@ -3976,7 +3989,9 @@
         "adapters.cad_patch",
         "capabilities.reference_resolver",
         "state.design_portfolio",
-        "state.record"
+        "state.record",
+        "archflow.adapters.model_formats",
+        "archflow.adapters.model_providers"
       ],
       "used_by": [
         "apps/archflow-studio/api/archflow_studio_api/application/candidate.py",
@@ -4019,7 +4034,8 @@
         "apps/archflow-studio/api/tests/test_working_copies.py",
         "apps/archflow-studio/api/tests/test_drawings.py",
         "apps/archflow-studio/api/tests/test_drawing_plans.py",
-        "apps/archflow-studio/api/tests/test_drawing_dimensions.py"
+        "apps/archflow-studio/api/tests/test_drawing_dimensions.py",
+        "apps/archflow-studio/api/tests/test_model_exports.py"
       ],
       "notes": "The viewer's only source of model bytes; digests are the identity, filenames are not.",
       "files": [
@@ -4030,7 +4046,9 @@
         "apps/archflow-studio/api/archflow_studio_api/routes/drawings.py",
         "apps/archflow-studio/api/archflow_studio_api/transport/drawings.py",
         "apps/archflow-studio/api/archflow_studio_api/application/drawing_plans.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/drawing_dimensions.py"
+        "apps/archflow-studio/api/archflow_studio_api/application/drawing_dimensions.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/model_exports.py",
+        "apps/archflow-studio/api/archflow_studio_api/routes/model_exports.py"
       ]
     },
     {
@@ -6337,7 +6355,8 @@
         "A narrow ordinary-chat feedback capability over studio.intent decisions: current user wording/message provenance is bound by Hub, interpreted avoid/keep fields stay attributed to the agent, and revocation verifies the original project/message without exposing lock, supersede or Stage acceptance.",
         "User-selected local desktop patch preparation, idle restart admission, owned host trial activation and startup rollback; update files and transaction state live only under the explicitly supplied nonproject runtime/updates directory and sibling application versions.",
         "Forwarding explicitly selected Study revisions into prepared task context and exposing the existing project-bound Study read for exact evidence reopening; no Study mutation tool.",
-        "Drawing as a project-bound page in the same Hub: retained cut-plan revisions and representation controls, explicit source comparison/rebuild, and exact-source dimension proposal handoff into the existing Modeling candidate flow"
+        "Drawing as a project-bound page in the same Hub: retained cut-plan revisions and representation controls, explicit source comparison/rebuild, and exact-source dimension proposal handoff into the existing Modeling candidate flow",
+        "Conversational model export/convert tool routing, exact session attachment transfer, clarification for conflicting sources and verified result download links."
       ],
       "does_not_own": [
         "Building project state, geometry, drawing algorithms, model gateways, provider credentials or project creation",
@@ -6436,7 +6455,8 @@
         "POST /api/updates/prepare",
         "POST /api/updates/apply",
         "POST /api/updates/complete",
-        "POST /api/updates/rollback"
+        "POST /api/updates/rollback",
+        "GET /api/chat/sessions/{session_id}/attachments/{attachment_id}/model-source"
       ],
       "invariants": [
         "Hub construction never fabricates a Studio project or relaxes StudioSettings.project_dir",
@@ -6560,7 +6580,8 @@
         "apps/monkeyhub/desktop/tests/test_update_handoff.py",
         "apps/monkeyhub/web/workspaces/test/drawingPlan.test.ts",
         "apps/monkeyhub/web/workspaces/test/drawingCanvas.browser.mjs",
-        "apps/monkeyhub/web/workspaces/test/candidatePreview.browser.mjs"
+        "apps/monkeyhub/web/workspaces/test/candidatePreview.browser.mjs",
+        "apps/monkeyhub/api/tests/test_model_export_chat.py"
       ],
       "depends_on": [
         "project.repository",

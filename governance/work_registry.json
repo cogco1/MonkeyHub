@@ -648,6 +648,91 @@
       "notes": [
         "2026-09-08 rule alignment: Awaiting the first concrete evidence consumer and a check of existing Reading/source references. The earlier proposed ledger and private Atlas field superset are not a mandate to add a core record."
       ]
+    },
+    {
+      "id": "GH-256",
+      "stream": "implementation",
+      "status": "active",
+      "goal": "Close out PR #259 bounded conversational 3DM/GLB conversion with regenerated clients, preserved provenance and verified checks. SKP/DWG executors remain out of scope.",
+      "depends_on": [],
+      "write_scope": [
+        "apps/archflow-studio/api/archflow_studio_api/application/jobs.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/model_exports.py",
+        "apps/archflow-studio/api/archflow_studio_api/routes/__init__.py",
+        "apps/archflow-studio/api/archflow_studio_api/routes/model_exports.py",
+        "apps/archflow-studio/api/tests/test_model_exports.py",
+        "apps/monkeyhub/api/monkeyhub_api/chat.py",
+        "apps/monkeyhub/api/monkeyhub_api/main.py",
+        "apps/monkeyhub/api/tests/test_model_export_chat.py",
+        "archflow/adapters/local_cad_discovery.py",
+        "archflow/adapters/model_formats.py",
+        "archflow/adapters/model_providers.py",
+        "archflow/project/record_kinds.py",
+        "docs/MODEL_CONVERSION.md",
+        "docs/MODEL_PROVIDER_RESEARCH.md",
+        "docs/SYSTEM_MAP.md",
+        "governance/module_registry.json",
+        "tests/model_export_glb_reader.mjs",
+        "tests/test_model_formats.py",
+        "tests/test_model_providers.py",
+        "apps/monkeyhub/web/src/api/generated/index.ts",
+        "apps/monkeyhub/web/src/api/generated/sdk.gen.ts",
+        "apps/monkeyhub/web/src/api/generated/types.gen.ts",
+        "apps/monkeyhub/web/workspaces/src/api/generated/index.ts",
+        "apps/monkeyhub/web/workspaces/src/api/generated/sdk.gen.ts",
+        "apps/monkeyhub/web/workspaces/src/api/generated/types.gen.ts",
+        "docs/PROTOCOL.md"
+      ],
+      "lanes": [
+        {
+          "id": "conversion-closeout",
+          "issue": "https://github.com/cogco1/MonkeyHub/issues/256",
+          "branch": "codex/256-conversion-closeout",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-256-conversion-closeout",
+          "base_ref": "77fa6c5a48678a8751c7fd3d885b618890ba6cdb",
+          "contributor": "cogco1",
+          "reviewer": null,
+          "handoff": "Root task reviews and integrates the replacement PR. Preserve PR #259 and keep issues #256 and #53 open.",
+          "modules": [
+            "adapters.cad_execution",
+            "studio.artifacts",
+            "studio.shell",
+            "hub.shell",
+            "project.record_kinds"
+          ],
+          "write_scope": [
+            "apps/archflow-studio/api/archflow_studio_api/application/jobs.py",
+            "apps/archflow-studio/api/archflow_studio_api/application/model_exports.py",
+            "apps/archflow-studio/api/archflow_studio_api/routes/__init__.py",
+            "apps/archflow-studio/api/archflow_studio_api/routes/model_exports.py",
+            "apps/archflow-studio/api/tests/test_model_exports.py",
+            "apps/monkeyhub/api/monkeyhub_api/chat.py",
+            "apps/monkeyhub/api/monkeyhub_api/main.py",
+            "apps/monkeyhub/api/tests/test_model_export_chat.py",
+            "archflow/adapters/local_cad_discovery.py",
+            "archflow/adapters/model_formats.py",
+            "archflow/adapters/model_providers.py",
+            "archflow/project/record_kinds.py",
+            "docs/MODEL_CONVERSION.md",
+            "docs/MODEL_PROVIDER_RESEARCH.md",
+            "docs/SYSTEM_MAP.md",
+            "governance/module_registry.json",
+            "tests/model_export_glb_reader.mjs",
+            "tests/test_model_formats.py",
+            "tests/test_model_providers.py",
+            "apps/monkeyhub/web/src/api/generated/index.ts",
+            "apps/monkeyhub/web/src/api/generated/sdk.gen.ts",
+            "apps/monkeyhub/web/src/api/generated/types.gen.ts",
+            "apps/monkeyhub/web/workspaces/src/api/generated/index.ts",
+            "apps/monkeyhub/web/workspaces/src/api/generated/sdk.gen.ts",
+            "apps/monkeyhub/web/workspaces/src/api/generated/types.gen.ts",
+            "docs/PROTOCOL.md"
+          ],
+          "depends_on": [],
+          "status": "active",
+          "blocked_reason": null
+        }
+      ]
     }
   ]
 }
