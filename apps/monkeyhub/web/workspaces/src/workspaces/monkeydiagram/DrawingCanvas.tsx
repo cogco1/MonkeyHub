@@ -27,7 +27,8 @@ const copy = {
     design: "Change design width", width: "New width", drive: "Create design candidate", driving: "Preparing candidate…", driveHint: "Changes the model through a proposal and opens the candidate in Modeling.",
     broken: "Unresolved anchor", outsideView: "Dimension falls outside the drawing. Adjust its paper offset and save appearance.", unsavedDrive: "Save appearance before changing the design.", empty: "Choose a model and generate a cut plan.",
     zoomOut: "Zoom out", zoomIn: "Zoom in", fit: "Fit page", saved: "Saved revision", sourceOfPage: "This drawing's source", noDrive: "This dimension cannot drive the design.",
-    statusError: "Source status could not be read. Refresh to try again.", loading: "Loading drawing…", old: "Earlier revisions remain available in the revision list." },
+    targetHint: "The drawing changes only when you rebuild it.", settings: "Drawing settings",
+    statusError: "Source status could not be read. Refresh to try again.", loading: "Loading drawing…" },
   "zh-CN": { title: "Drawing · 图纸", intro: "与保留模型关联的剖切平面。", source: "出图模型", revision: "图纸版本", fresh: "新建剖切平面",
     noModel: "请先在建模页面接受一个模型 Stage，再生成剖切平面。", automaticSource: "图纸来源分支的最新 Stage", refresh: "刷新来源", generating: "正在生成…", generate: "生成剖切平面",
     rebuild: "基于所选模型重建", representation: "图纸表达", cutHeight: "剖切高度", bottom: "视图底部", scale: "比例分母（1 : n）",
@@ -39,7 +40,8 @@ const copy = {
     design: "修改设计门宽", width: "新门宽", drive: "生成设计候选", driving: "正在准备候选…", driveHint: "通过设计提案修改模型，并在建模页面打开候选。",
     broken: "锚点未解析", outsideView: "标注超出图框，请调整纸面偏移后保存表达。", unsavedDrive: "请先保存表达，再修改设计尺寸。", empty: "选择模型并生成剖切平面。",
     zoomOut: "缩小", zoomIn: "放大", fit: "适合页面", saved: "已保存版本", sourceOfPage: "此图来源", noDrive: "此尺寸不能驱动设计。",
-    statusError: "无法读取来源状态，请刷新重试。", loading: "正在读取图纸…", old: "旧版本仍保留在图纸版本列表中。" },
+    targetHint: "点击重建后，才会更新此图。", settings: "图纸设置",
+    statusError: "无法读取来源状态，请刷新重试。", loading: "正在读取图纸…" },
 } as const;
 
 function PlanPreview({ source, file }: { source: SourceDocumentDto; file: File }) {
@@ -199,22 +201,34 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
     <header className="drawing-header"><div><h1>{text.title}</h1><p>{text.intro}</p></div>
       <button type="button" disabled={busy || loading} onClick={() => setRefresh(value => value + 1)}>{text.refresh}</button></header>
     <div className="drawing-body">
-      <form ref={controls} className="drawing-controls" onSubmit={event => { event.preventDefault(); void generate(!source); }}>
+      <div className="drawing-main">
+        <div className="drawing-context">
+        <div className="drawing-context__fields">
         <label className="drawing-field">{text.revision}<select value={selected} disabled={busy} onChange={event => chooseDocument(event.target.value)}>
           <option value="">{text.fresh}</option>{documents.map(item => <option key={drawingDocumentKey(item)} value={drawingDocumentKey(item)}>
             {item.fileName} · {item.generatedAt ?? item.revisionRef?.split("/").at(-1)?.slice(0, 8)}</option>)}</select></label>
-        <label className="drawing-field">{text.source}<select value={selectedTargetValue} disabled={busy || loading || statusLoading} onChange={event => { setTarget(event.target.value); setExplicitTarget(true); setError(null); }}>
+        <div className="drawing-context__target"><label className="drawing-field">{text.source}<select value={selectedTargetValue} disabled={busy || loading || statusLoading} onChange={event => { setTarget(event.target.value); setExplicitTarget(true); setError(null); }}>
           <option value="" disabled>{source ? text.checking : text.noModel}</option>
           {source && !explicitTarget && automaticTarget?.stageRef && !stages.some(item => item.stageRef === automaticTarget.stageRef) &&
             <option value={automaticTarget.stageRef}>{text.automaticSource}</option>}
           {stages.map(item => <option key={item.stageRef} value={item.stageRef}>{item.label} · {item.branchId}</option>)}</select></label>
-        {source && <p className="drawing-source">{text.sourceOfPage}: {stages.find(item => item.stageRef === source.sourceStageRef)?.label ?? source.modelSource?.runId}</p>}
-        <p className="drawing-unit">{lengthUnit ? `${text.sourceHint} ${lengthUnit}` : text.unitUnknown}</p>
+          {source && <p className="drawing-field__hint">{text.targetHint}</p>}</div>
+        </div>
         {source && <section className="drawing-status" aria-label={text.status} data-status={status?.status ?? "unknown"}>
-          <strong role="status">{statusLoading ? text.checking : text[status?.status ?? "unknown"]}</strong>
-          <p>{status?.detail ?? (!statusLoading ? text.statusError : "")}</p>
+          <div className="drawing-status__summary">
+            <span className="drawing-source">{text.sourceOfPage}: <b>{stages.find(item => item.stageRef === source.sourceStageRef)?.label ?? source.modelSource?.runId}</b></span>
+            <strong role="status">{statusLoading ? text.checking : text[status?.status ?? "unknown"]}</strong>
+            <p>{status?.detail ?? (!statusLoading ? text.statusError : "")}</p>
+          </div>
           <button type="button" disabled={!stage || busy || statusLoading} onClick={() => void generate(true)}>{text.rebuild}</button>
         </section>}
+        </div>
+        <div className="drawing-canvas">{source && file ? <PlanPreview key={selected} source={source} file={file} />
+          : <div className="drawing-empty" role="status">{loading || source ? text.loading : stages.length ? text.empty : text.noModel}</div>}</div>
+      </div>
+      <form ref={controls} className="drawing-controls" aria-label={text.settings} onSubmit={event => { event.preventDefault(); void generate(!source); }}>
+        <div className="drawing-controls__fields">
+        <p className="drawing-unit">{lengthUnit ? `${text.sourceHint} ${lengthUnit}` : text.unitUnknown}</p>
         <fieldset disabled={busy || !active || !lengthUnit}><legend>{text.representation}</legend>
           {numeric("cutHeight", `${text.cutHeight} (${lengthUnit || "…"})`)}
           {numeric("bottom", `${text.bottom} (${lengthUnit || "…"})`)}
@@ -246,14 +260,14 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
             </div>;
           })}
         </fieldset>
+        </div>
+        <div className="drawing-actions">
         {dirty && <p role="status">{text.dirty}</p>}
         <button className="btn btn--accent" type="submit" disabled={busy || loading || !lengthUnit || (!source && !stage) || Boolean(source && !source.modelSource)}>
           {busy ? text.generating : source ? text.apply : text.generate}</button>
-        {source && <p>{text.old}</p>}
         {error && <ErrorPanel error={error} what={text.title} />}
+        </div>
       </form>
-      <div className="drawing-main">{source && file ? <PlanPreview key={selected} source={source} file={file} />
-        : <div className="drawing-empty" role="status">{loading || source ? text.loading : stages.length ? text.empty : text.noModel}</div>}</div>
     </div>
   </div>;
 }

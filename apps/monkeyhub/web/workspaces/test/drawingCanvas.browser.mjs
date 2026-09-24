@@ -210,12 +210,14 @@ try {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.evaluate(() => window.drawingFixture.setLanguage("zh-CN"));
     await page.getByRole("button", { name: "保存表达新版本", exact: true }).waitFor();
-    await page.evaluate(() => { document.querySelector('.drawing-body').scrollTop = 0; document.querySelector('.drawing-controls').scrollTop = 0; });
+    await page.evaluate(() => { document.querySelector('.drawing-body').scrollTop = 0; document.querySelector('.drawing-controls__fields').scrollTop = 0; });
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
     await page.screenshot({ path: join(screenshots, "drawing-narrow.png"), fullPage: true });
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.evaluate(() => { window.drawingFixture.setLanguage("en"); window.drawingFixture.setTheme("dark"); });
-    await page.evaluate(() => { document.querySelector('.drawing-body').scrollTop = 0; document.querySelector('.drawing-controls').scrollTop = 0; });
+    await page.evaluate(() => { document.querySelector('.drawing-body').scrollTop = 0; document.querySelector('.drawing-controls__fields').scrollTop = 0; });
+    const saveBounds = await page.getByRole("button", { name: "Save appearance as a revision", exact: true }).boundingBox();
+    assert.ok(saveBounds && saveBounds.y >= 0 && saveBounds.y + saveBounds.height <= 900, "Save stays visible beside the drawing while settings scroll");
     await page.screenshot({ path: join(screenshots, "drawing-wide-dark.png"), fullPage: true });
     await source().focus(); await page.keyboard.press("ArrowUp"); await page.keyboard.press("Enter");
     assert.equal(await source().inputValue(), "stage-A");

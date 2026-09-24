@@ -261,7 +261,7 @@ export function Stage({
   changingBase: boolean;
   baseError: StudioApiError | null;
   baseActionBusy: boolean;
-  onContinue(runId: string): void;
+  onContinue: ((runId: string) => void) | null;
   onDefaultBase(): void;
   onCompareVersion(artifact: ProjectArtifactDto): void;
   /** A cross-fade in progress: before is the loaded run, after the candidate. */
@@ -1129,7 +1129,7 @@ export function Stage({
     editingModelSource.runId === viewedModelSource.runId &&
     editingModelSource.stateDigest === viewedModelSource.stateDigest &&
     editingModelSource.assetSha256 === viewedModelSource.assetSha256;
-  const editingLabel = editingBaseLabel ?? versions.find((group) => group.runId === editingBaseRunId)?.exports[0]?.artifact.fileName ?? editingBaseRunId;
+  const editingLabel = editingBaseLabel ?? versions.find((group) => group.runId === editingBaseRunId)?.exports[0]?.artifact.fileName ?? t("stage.base.savedSource");
   const versionCount = designHistory ? designHistory.history?.stages.length ?? 0 : new Set([
     ...versions.flatMap((group) => group.exports.filter(({ artifact }) => artifact.format === "3dm" && artifact.sha256 !== null)
       .map(({ artifact }) => `${group.runId}:${artifact.sha256}`)),
@@ -1138,22 +1138,22 @@ export function Stage({
   const loadedOptionLabel = workingCopies.flatMap((copy) => copy.options)
     .find((option) => option.modelSource.runId === loadedRunId && loadedShas.includes(option.modelSource.assetSha256))?.label;
   const acceptedStage = designHistory?.history?.stages.find((stage) => stage.modelSource.runId === loadedRunId && loadedShas.includes(stage.modelSource.assetSha256));
-  const contextLabel = designHistory?.workingDraft?.current?.runId === loadedRunId ? "当前工作草稿" : designHistory ? acceptedStage?.label ?? (designHistory.candidates.some((candidate) => candidate.modelSource.runId === loadedRunId)
-    ? `${designHistory.history?.stages.find((stage) => stage.stageRef === designHistory.currentStageRef)?.label ?? "历史 Stage"} · 候选未提交` : "尚未确认 Stage") : loadedOptionLabel;
-  const sessionStatus = <>
-    {editingBaseRunId !== null && (
+  const viewedCandidate = designHistory?.candidates.find((candidate) => candidate.modelSource.runId === loadedRunId && loadedShas.includes(candidate.modelSource.assetSha256));
+  const contextLabel = designHistory?.workingDraft?.current?.runId === loadedRunId ? t("stage.context.workingDraft") : designHistory ? acceptedStage?.label ?? (viewedCandidate
+    ? `${designHistory.history?.stages.find((stage) => stage.stageRef === viewedCandidate.sourceStageRef)?.label ?? t("stage.context.historyStage")} · ${t("stage.context.candidate")}` : t("stage.context.noStage")) : loadedOptionLabel;
+  const editingStatus = editingBaseRunId !== null && (
       <div className="editing-base" data-source-match={sameSource ? "same" : "different"}>
         <span role="status" aria-live="polite">
           {changingBase ? t("stage.base.loading") : sameSource ? t("stage.base.sameSource") : t("stage.base.current")}
           {!sameSource && <strong className="editing-base__name" title={editingLabel ?? undefined}> {editingLabel}</strong>}
         </span>
-        {loadedRunId !== null && !sameSource && (
+        {loadedRunId !== null && !sameSource && (viewedModelSource !== null || onContinue !== null) && (
           <button
             type="button"
             className="btn btn--small"
             disabled={changingBase || baseActionBusy || loadingSha !== null || status === "loading" || blend !== null}
             title={t("stage.base.continueTitle")}
-            onClick={() => viewedModelSource ? void onContinueModelSource(viewedModelSource) : onContinue(loadedRunId)}
+            onClick={() => viewedModelSource ? void onContinueModelSource(viewedModelSource) : onContinue?.(loadedRunId)}
           >
             {t("stage.base.continue")}
           </button>
@@ -1165,7 +1165,19 @@ export function Stage({
         )}
         {baseError && <ErrorPanel error={baseError} what="GET /api/state" />}
       </div>
-    )}
+    );
+  const pickedStatus = picked && (
+    <div className="picked" title={developerMode ? t("stage.picked.title", {
+      status: picked.status, sourceState: picked.sourceState,
+    }) : designObjectLabel(picked.elementId ?? picked.componentId) ?? undefined}>
+      <span className="label">{t("stage.picked.label")}</span>
+      <span className="picked__name">{developerMode
+        ? picked.elementId ?? picked.componentId ?? t("stage.picked.none")
+        : designObjectLabel(picked.elementId ?? picked.componentId) ?? t("stage.picked.unresolved")}</span>
+      {developerMode && picked.status !== "resolved" && <span className="picked__meta">{picked.status}</span>}
+    </div>
+  );
+  const sessionStatus = <>
     {modelAnnotations && <div className="stage-annotations-status" data-model-annotations-status={modelAnnotations.error ? "error" :
       !modelAnnotations.ready ? "loading" : modelAnnotations.saving || modelAnnotations.dirty ? "saving" : "saved"}>
       {!modelAnnotations.error && <span role="status">{t(!modelAnnotations.ready ? "stage.annotations.loading" :
@@ -1183,25 +1195,8 @@ export function Stage({
     <section ref={stageElement} className="stage" data-footer="true" aria-label={t("stage.ariaLabel")}
       onPointerDownCapture={() => modelKeysRef.current?.onInteraction?.()}
       onKeyDownCapture={() => modelKeysRef.current?.onInteraction?.()}>
-      {(picked !== null || onReturnToBoard) && <div className="stage-mode-switch" role="group" aria-label={t("workspace.switcher")}>
-        {(onReturnToBoard || onOpenBoard) && <button type="button" onClick={onReturnToBoard ?? onOpenBoard}>{t("workspace.monkeyboard")}</button>}
-        {picked && (
-          <div
-            className="picked"
-            title={developerMode ? t("stage.picked.title", {
-              status: picked.status,
-              sourceState: picked.sourceState,
-            }) : designObjectLabel(picked.elementId ?? picked.componentId) ?? undefined}
-          >
-            <span className="label">{t("stage.picked.label")}</span>
-            <span className="picked__name">
-              {developerMode
-                ? picked.elementId ?? picked.componentId ?? t("stage.picked.none")
-                : designObjectLabel(picked.elementId ?? picked.componentId) ?? t("stage.picked.unresolved")}
-            </span>
-            {developerMode && picked.status !== "resolved" && <span className="picked__meta">{picked.status}</span>}
-          </div>
-        )}
+      {onReturnToBoard && <div className="stage-mode-switch" role="group" aria-label={t("workspace.switcher")}>
+        <button type="button" onClick={onReturnToBoard}>{t("workspace.monkeyboard")}</button>
       </div>}
       <div ref={workspaceElement} className="stage-workspace">
       <div className={`stage-model${documentOpen ? " stage-model--hidden" : ""}`} inert={documentOpen} aria-hidden={documentOpen}
@@ -2010,12 +2005,20 @@ export function Stage({
       </div>
       <div ref={footerElement} className="stage__foot">
         <div className="stage__versions">
-          <button type="button" className="btn stage__versions-toggle" aria-expanded={versionsOpen} aria-controls="stage-versions-panel"
-            onClick={() => { if (!versionsOpen) onVersionsOpen?.(); setVersionsOpen((open) => !open); setAnnotationToolsOpen(false); setViewToolsOpen(false); setParameterLocksOpen(false); }}>
-            {t("stage.versions.open")} <span className="quiet">{versionCount}</span>
-            {contextLabel && <span className="stage__versions-current">{contextLabel}</span>}
-            {hasNewVersions && <span className="stage__versions-new" role="status">{t("stage.versions.new")}</span>}
-          </button>
+          <div className="stage__context">
+            <div className="stage__context-summary">
+              <button type="button" className="btn stage__versions-toggle" aria-expanded={versionsOpen} aria-controls="stage-versions-panel"
+                onClick={() => { if (!versionsOpen) onVersionsOpen?.(); setVersionsOpen((open) => !open); setAnnotationToolsOpen(false); setViewToolsOpen(false); setParameterLocksOpen(false); }}>
+                {t("stage.versions.open")} <span className="quiet">{versionCount}</span>
+                {!documentOpen && hasModel && contextLabel && <span className="stage__versions-current"><span className="quiet">{t("stage.context.viewing")} </span>{contextLabel}</span>}
+                {hasNewVersions && <span className="stage__versions-new" role="status">{t("stage.versions.new")}</span>}
+              </button>
+              {!documentOpen && pickedStatus}
+              {!onReturnToBoard && picked && onOpenBoard && <button type="button" className="btn btn--small"
+                onClick={onOpenBoard}>{t("workspace.monkeyboard")}</button>}
+            </div>
+            {editingStatus}
+          </div>
           {versionsOpen && <div id="stage-versions-panel" className="stage__versions-panel" role="region" aria-label={t("stage.versions.ariaLabel")}>
             <div className="stage__versions-head"><strong>{t("stage.versions.ariaLabel")}</strong>
               <button type="button" className="btn btn--small" onClick={() => setVersionsOpen(false)}>{t("stage.versions.close")}</button>
