@@ -452,6 +452,58 @@ const waitMonitor = async () => {
   assert.equal(await page.getByRole("navigation", { name: "Project tools" }).isVisible(), true);
 };
 try {
+  if (process.env.MONKEYHUB_UI_FOCUS === "attachments") {
+    const restoredFocus = [];
+    for (const theme of ["dark", "light"]) {
+      preferences.theme = theme;
+      await page.goto(origin);
+      await page.waitForFunction(() => document.querySelector("#chat-input") && !document.querySelector("#chat-input").disabled);
+      if (await page.getByRole("button", { name: "Hide projects", exact: true }).first().isVisible()) {
+        await page.getByRole("button", { name: "Hide projects", exact: true }).first().click();
+      }
+      for (const width of [1440, 900, 375]) {
+        await page.setViewportSize({ width, height: 960 });
+        const composer = page.locator(".chat-composer");
+        const attach = page.getByRole("button", { name: "Add attachments", exact: true });
+        await composer.screenshot({ path: path.join(temporary, `composer-${theme}-${width}.png`) });
+        await attach.focus();
+        await page.keyboard.press("Tab");
+        await page.keyboard.press("Shift+Tab");
+        assert.ok(await attach.evaluate((node) => node === document.activeElement && node.matches(":focus-visible") && getComputedStyle(node).outlineStyle !== "none"));
+        const chooser = page.waitForEvent("filechooser");
+        await page.keyboard.press("Enter");
+        await (await chooser).setFiles([
+          { name: "roof-section-review-with-a-very-long-file-name.pdf", mimeType: "application/pdf", buffer: Buffer.from("Synthetic attachment") },
+          { name: "notes.txt", mimeType: "text/plain", buffer: Buffer.from("Review notes") },
+        ]);
+        assert.equal(await composer.locator(".chat-attachments li").count(), 2);
+        assert.equal(await composer.locator(".chat-attachment__name").first().getAttribute("title"), "roof-section-review-with-a-very-long-file-name.pdf");
+        const layout = await composer.evaluate((node) => {
+          const bounds = node.getBoundingClientRect();
+          const tools = [...node.querySelectorAll(".chat-composer__bottom button, .chat-composer__bottom select")];
+          return { overflow: node.scrollWidth > node.clientWidth + 1,
+            clipped: tools.some((tool) => { const b = tool.getBoundingClientRect(); return b.left < bounds.left || b.right > bounds.right; }),
+            attachmentOverflow: [...node.querySelectorAll(".chat-attachments, .chat-attachments li")].some((item) => item.scrollWidth > item.clientWidth + 1) };
+        });
+        assert.deepEqual(layout, { overflow: false, clipped: false, attachmentOverflow: false }, `${theme} at ${width}px`);
+        await composer.screenshot({ path: path.join(temporary, `attachments-${theme}-${width}.png`) });
+        const remove = page.getByRole("button", { name: "Remove attachment: notes.txt", exact: true });
+        await remove.focus();
+        await page.keyboard.press("Enter");
+        assert.equal(await composer.locator(".chat-attachments li").count(), 1);
+        restoredFocus.push(await page.locator("#chat-input").evaluate((node) => node === document.activeElement));
+        await composer.getByRole("button", { name: "Remove attachment: roof-section-review-with-a-very-long-file-name.pdf", exact: true }).click();
+        assert.equal(await composer.locator(".chat-attachments li").count(), 0);
+      }
+    }
+    assert.ok(restoredFocus.every(Boolean), "removing an attachment returns keyboard focus to the draft");
+    assert.equal(writes.filter(([, route]) => route.endsWith("/messages")).length, 0, "picking and removing attachments never sends a message");
+    preferences = { ...preferences, language: "zh", theme: "dark" };
+    await page.setViewportSize({ width: 1440, height: 960 });
+    await page.goto(origin);
+    await page.getByRole("button", { name: "添加附件", exact: true }).waitFor();
+    await page.locator(".chat-composer").screenshot({ path: path.join(temporary, "composer-zh.png") });
+  } else {
   if (process.env.MONKEYHUB_UI_FOCUS !== "updates") {
   await page.goto(origin);
   await page.getByRole("heading", { name: "Start a project conversation" }).waitFor();
@@ -1395,6 +1447,7 @@ try {
   ]);
   await page.getByRole("button", { name: "Remove attachment: remove-me.txt", exact: true }).click();
   assert.equal(await page.locator(".chat-composer .chat-attachments li").count(), 1);
+  assert.ok(await page.locator("#chat-input").evaluate((node) => node === document.activeElement));
   await page.getByRole("button", { name: "Project B", exact: true }).first().click();
   await page.locator(".chat-new").getByText("New chat", { exact: true }).click();
   assert.equal(await page.locator(".chat-composer .chat-attachments li").count(), 0);
@@ -1938,6 +1991,7 @@ try {
   updateApplyResponse = "normal";
   await page.keyboard.press("Escape");
   await page.getByRole("dialog").waitFor({ state: "hidden" });
+  }
   assert.deepEqual(errors, []);
   console.log(JSON.stringify({ passed: true, sessions: sessions.length, writes: writes.length, screenshots: temporary }));
 } catch (error) { console.error(JSON.stringify({ screenshots: temporary, errors, workspaceRequests: workspaceFixture.requests.slice(-15) }));

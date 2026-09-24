@@ -648,6 +648,30 @@
       "notes": [
         "2026-09-08 rule alignment: Awaiting the first concrete evidence consumer and a check of existing Reading/source references. The earlier proposed ledger and private Atlas field superset are not a mandate to add a core record."
       ]
+    },
+    {
+      "id": "GH-234",
+      "stream": "planning",
+      "status": "active",
+      "goal": "Apply the requested attachment/composer UI cleanup: quiet attachment entry, balanced toolbar spacing, readable pending-file cards and keyboard focus after removal.",
+      "depends_on": [],
+      "write_scope": [
+        "apps/monkeyhub/web/src/ChatShell.tsx",
+        "apps/monkeyhub/web/src/ChatShell.css",
+        "apps/monkeyhub/web/test/chatShell.browser.mjs"
+      ],
+      "issue": "https://github.com/cogco1/MonkeyHub/issues/234",
+      "branch": "codex/attachment-toolbar",
+      "worktree": "D:/MONKEYHUB_DEV/workspace/worktrees/codex-attachment-toolbar",
+      "base_ref": "6a072b358301f3333668e34e696bca2661955886",
+      "contributor": "Codex",
+      "reviewer": "Codex independent UI review",
+      "handoff": "Review and integrate this bounded UI slice; #234 remains open for the broader audit. Installed desktop is unchanged by source validation.",
+      "acceptance": [
+        "Choose and remove attachments with mouse and keyboard without sending a message; return focus to the draft after removal.",
+        "No clipped toolbar or pending-file cards in dark/light themes at wide, medium and narrow widths.",
+        "Build/typecheck, focused browser regression, archcheck and scoped diff pass."
+      ]
     }
   ]
 }

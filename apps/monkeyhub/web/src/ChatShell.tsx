@@ -920,9 +920,12 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
           onDrop={(event) => { if (event.dataTransfer.files.length) { event.preventDefault(); addAttachments(Array.from(event.dataTransfer.files)); } setDraggingFiles(false); }}
           onPaste={(event) => { if (event.clipboardData.files.length) { event.preventDefault(); addAttachments(Array.from(event.clipboardData.files)); } }}>
           {draggingFiles && <p className="chat-attachment-drop" role="status">{t.dropFiles}</p>}
-          {Boolean(attachments.length) && <ul className="chat-attachments" aria-label={t.attachments}>{attachments.map((file, index) => <li key={`${index}:${file.name}`}>
-            <Icon name="file" /><span className="chat-attachment__name" title={file.name}>{file.name}</span><span className="chat-attachment__size">{fileSize(file.size)}</span>
-            <button type="button" className="chat-icon" aria-label={`${t.removeAttachment}: ${file.name}`} disabled={busy} onClick={() => setDraftAttachments((value) => ({ ...value, [draftKey]: value[draftKey]!.filter((_, position) => position !== index) }))}><Icon name="close" /></button>
+          {Boolean(attachments.length) && <ul className="chat-attachments chat-attachments--draft" aria-label={t.attachments}>{attachments.map((file, index) => <li key={`${index}:${file.name}`}>
+            <Icon name="file" /><span className="chat-attachment__details"><span className="chat-attachment__name" title={file.name}>{file.name}</span><span className="chat-attachment__size">{fileSize(file.size)}</span></span>
+            <button type="button" className="chat-icon" aria-label={`${t.removeAttachment}: ${file.name}`} disabled={busy} onClick={() => {
+              setDraftAttachments((value) => ({ ...value, [draftKey]: value[draftKey]!.filter((_, position) => position !== index) }));
+              input.current?.focus();
+            }}><Icon name="close" /></button>
           </li>)}</ul>}
           <label className="sr-only" htmlFor="chat-input">{t.placeholder}</label><textarea id="chat-input" ref={input} value={draft} placeholder={project ? t.placeholder : t.projectRequired} disabled={!project || busy}
             onChange={(event) => setDrafts((value) => ({ ...value, [draftKey]: event.target.value }))} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); if (!running) void send(); } }} />
@@ -934,7 +937,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
           </label>
           {(!designContext || contextMode === "project") && <p className="chat-muted" role="status">{designContext ? t.contextProjectHint : contextUnavailable}</p>}
           {designContext && contextMode !== "project" && <p className="chat-muted">{t.contextStageHint}</p>}
-          <div className="chat-composer__bottom"><button type="button" className="chat-icon chat-attach" aria-label={t.attach} title={t.attach} disabled={!project || busy} onClick={() => fileInput.current?.click()}><Icon name="plus" /><span>{t.attach}</span></button><div className="chat-connection" title={running ? t.modelRunning : t.connectionHint}>
+          <div className="chat-composer__bottom"><button type="button" className="chat-icon chat-attach" aria-label={t.attach} title={t.attach} disabled={!project || busy} onClick={() => fileInput.current?.click()}><Icon name="plus" /></button><div className="chat-connection" title={running ? t.modelRunning : t.connectionHint}>
             <span className="chat-connection__name">{providers.find((item) => item.id === connection.provider)?.label ?? connection.provider}</span>
             <label className="sr-only" htmlFor="chat-model">{t.modelLabel}</label>
             <select id="chat-model" className="chat-connection__model" value={customModel !== null ? "__custom__" : chosenModel ?? ""} disabled={running || modelBusy || busy}
