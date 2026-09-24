@@ -219,7 +219,14 @@ class DesktopUpdateTests(unittest.TestCase):
         for root in (self.base, self.target):
             script = root / "apps/monkeyhub/installer/install.ps1"
             script.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(ROOT / "apps/monkeyhub/installer/install.ps1", script)
+            installer = (ROOT / "apps/monkeyhub/installer/install.ps1").read_text(encoding="ascii")
+            # Preserve the real activation path while locating any host-specific
+            # failure that the installer's outer catch would otherwise obscure.
+            refusal = '    Write-Host "Refused: $($_.Exception.Message)"'
+            self.assertEqual(installer.count(refusal), 1)
+            script.write_text(installer.replace(refusal,
+                '    Write-Host ("Activation fixture failure: " + $_.ScriptStackTrace + "`n" + $_.InvocationInfo.PositionMessage)\n' + refusal),
+                encoding="ascii")
         self.zip.unlink()
         create_patch(self.base, self.target, self.zip)
         self.updates = self.controller(Path("\\\\?\\" + str(self.base)))
