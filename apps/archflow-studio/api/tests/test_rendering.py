@@ -114,6 +114,41 @@ def test_same_request_only_dispatches_once_and_conflicts_on_any_change(setup):
     assert len(adapter.calls) == 1
 
 
+def test_history_read_waits_for_a_concurrent_attempt_registration(setup, monkeypatch):
+    from archflow.project import repository as project_repository
+
+    client, _, _, adapter = setup
+    payload = request(upload(client))
+    job_id = "render-" + payload["requestId"].replace("-", "")
+    entered, release = threading.Event(), threading.Event()
+    write_immutable = project_repository._write_immutable
+
+    def pause_manifest(path, data):
+        if path.name == "run.json" and path.parent.name == job_id:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            entered.set()
+            assert release.wait(5), "test did not release run registration"
+        return write_immutable(path, data)
+
+    monkeypatch.setattr(project_repository, "_write_immutable", pause_manifest)
+    with ThreadPoolExecutor(2) as pool:
+        creating = pool.submit(submit, client, payload)
+        assert entered.wait(2)
+        listing = pool.submit(client.get, "/api/render/jobs")
+        try:
+            listing.result(timeout=0.2)
+        except TimeoutError:
+            pass
+        finally:
+            release.set()
+        job = creating.result()
+        history = listing.result()
+    assert history.status_code == 200, history.text
+    assert [row["jobId"] for row in history.json()["jobs"]] == [job_id]
+    assert finished(client, job)["status"] == "succeeded"
+    assert len(adapter.calls) == 1
+
+
 def test_same_pixels_have_distinct_runs_documents_and_head_is_unchanged(setup):
     client, app, repository, adapter = setup
     source = upload(client)

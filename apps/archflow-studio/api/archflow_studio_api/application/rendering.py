@@ -193,9 +193,13 @@ class RenderJobRecords:
         )
 
     def list(self, binding):
-        jobs = [self.get(binding, run_id) for run_id in binding.run_ids()
-                if re.fullmatch(r"render-[0-9a-f]{32}", run_id)
-                and any(ref.record_kind == STUDIO_RENDER_JOB for ref in binding.record_refs(run_id))]
+        # A concurrent submit may have created the run directory before its
+        # manifest and first job record are visible. Share its registration lock.
+        with self.lock:
+            run_ids = [run_id for run_id in binding.run_ids()
+                       if re.fullmatch(r"render-[0-9a-f]{32}", run_id)
+                       and any(ref.record_kind == STUDIO_RENDER_JOB for ref in binding.record_refs(run_id))]
+        jobs = [self.get(binding, run_id) for run_id in run_ids]
         return sorted(jobs, key=lambda job: (job.created_at, job.job_id), reverse=True)
 
     def submit(self, binding, payload):

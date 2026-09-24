@@ -175,7 +175,7 @@ try {
   await step("Render starts without model initialization; capability defaults and ordered original uploads", async () => {
     await direction().waitFor();
     assert.equal(requests.some((r) => /\/api\/(state|artifacts|project\/modeling)/.test(r.url)), false);
-    assert.equal(await workspace().getByRole("combobox", { name: "Size", exact: true }).inputValue(), "2K");
+    await until(() => workspace().getByRole("combobox", { name: "Size", exact: true }).inputValue(), (value) => value === "2K", "provider default size loaded");
     const image = async (color) => Buffer.from(await (await fetch(origins["project-a"] + `/fixture/image?color=${color}`)).arrayBuffer());
     await workspace().getByLabel("Upload source", { exact: true }).setInputFiles({ name: "source.png", mimeType: "image/png", buffer: await image("white") });
     await until(() => workspace().getByRole("combobox", { name: "Source image", exact: true }).inputValue(), Boolean, "source saved");
