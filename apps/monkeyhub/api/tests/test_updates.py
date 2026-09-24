@@ -213,7 +213,7 @@ class DesktopUpdateTests(unittest.TestCase):
     def test_complete_and_rollback_activate_extended_path_with_real_powershell(self):
         # Use the actual installer and Windows PowerShell -File in a private
         # version tree. Only the shortcut destination is redirected for safety.
-        versions = self.root / "desktop 安装 path" / "versions"
+        versions = self.root / "desktop 安装 \U0001f333 path" / "versions"
         versions.mkdir(parents=True)
         self.base = Path(shutil.move(self.base, versions / self.base.name))
         for root in (self.base, self.target):
@@ -234,7 +234,7 @@ class DesktopUpdateTests(unittest.TestCase):
         self.updates.apply()
         before = {path.relative_to(versions): path.read_bytes()
                   for path in versions.rglob("*") if path.is_file()}
-        desktop = self.root / "private-desktop"
+        desktop = self.root / "private-desktop 桌面 \U0001f333"
         desktop.mkdir()
         actual_run = subprocess.run
         activations = []
@@ -245,8 +245,9 @@ class DesktopUpdateTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             link = actual_run([
                 "powershell.exe", "-NoProfile", "-Command",
-                "$link = (New-Object -ComObject WScript.Shell).CreateShortcut($env:MONKEYHUB_TEST_LINK); "
-                "[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($link.TargetPath))",
+                "$folder = (New-Object -ComObject Shell.Application).NameSpace((Split-Path -Parent $env:MONKEYHUB_TEST_LINK)); "
+                "$link = $folder.ParseName('MonkeyHub.lnk').GetLink; "
+                "[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($link.Path))",
             ], capture_output=True, text=True, timeout=10, creationflags=subprocess.CREATE_NO_WINDOW,
                 env={**os.environ, "MONKEYHUB_TEST_LINK": str(desktop / "MonkeyHub.lnk")})
             self.assertEqual(link.returncode, 0, link.stderr)

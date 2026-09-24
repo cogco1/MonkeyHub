@@ -648,27 +648,6 @@
       "notes": [
         "2026-09-08 rule alignment: Awaiting the first concrete evidence consumer and a check of existing Reading/source references. The earlier proposed ledger and private Atlas field superset are not a mandate to add a core record."
       ]
-    },
-    {
-      "id": "GH-58",
-      "stream": "planning",
-      "status": "active",
-      "goal": "Repair Windows Unicode shortcut activation while retaining exact source binding and foreign-shortcut protection.",
-      "depends_on": [],
-      "write_scope": [
-        "apps/monkeyhub/api/tests/test_updates.py",
-        "apps/monkeyhub/installer/install.ps1"
-      ],
-      "issue": "https://github.com/cogco1/MonkeyHub/issues/58",
-      "branch": "codex/fix-update-path-activation",
-      "worktree": "D:/MONKEYHUB_DEV/workspace/worktrees/codex-attachment-toolbar",
-      "base_ref": "f28f3c791de433eb98c895ca9fe93fbe3885370e",
-      "contributor": "Codex",
-      "reviewer": null,
-      "handoff": "Root reviews and owns PR, release and installed-client acceptance.",
-      "acceptance": [
-        "Real Windows PowerShell activation works from an extended desktop source path for completion and rollback; source identity is unchanged."
-      ]
     }
   ]
 }
