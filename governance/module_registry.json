@@ -4053,7 +4053,8 @@
         "mapping one explicitly selected edit drawing and its board marks to page coordinates, then handing its exact saved annotations, user feedback and up to three explicitly connected reference pages to the existing Studio intent workflow",
         "receiving explicitly mapped PDF/image revisions into the existing board image ids, frames and geometry while preserving all other live scene edits; source histories remain registered documents",
         "opening an exact registered Board page in the existing document editor and returning with saved annotations, viewport and selection, without discarding unsynced model work",
-        "reading one exact retained scene revision by name, so an older revision can answer as evidence without changing the board's current revision"
+        "reading one exact retained scene revision by name, so an older revision can answer as evidence without changing the board's current revision",
+        "An explicit BoardPageRequest source focuses that exact registered page or reinstates only that intentionally removed page through the existing insertion path, preserving the current scene draft"
       ],
       "does_not_own": [
         "original PDF/image upload or drawing generation (studio.artifacts and runtime.drawing_elevation)",
@@ -4065,7 +4066,8 @@
         "project id, title, Excalidraw scene elements, seen-document identities and expected scene revision",
         "one selected registered edit drawing or frame, selected board marks and text, optional registered reference pages joined by explicit selected connectors, and an explicitly reviewed design comment",
         "Caller-ordered exact registered document pages and export format; optional maxEdge (1-2048) bounds transient PNG/JPEG previews without changing ordinary export defaults",
-        "an optional exact scene revision sha256 to read instead of the latest"
+        "an optional exact scene revision sha256 to read instead of the latest",
+        "Optional explicit exact-page navigation request and transient requestId from the Render workspace"
       ],
       "outputs": [
         "BoardDto",
@@ -4082,7 +4084,8 @@
         "export_board_pages",
         "web: createBoardFeedback",
         "web: prepareBoardDesignRequest",
-        "read_board(binding, revision_sha256=None)"
+        "read_board(binding, revision_sha256=None)",
+        "web: BoardPageRequest"
       ],
       "depends_on": [
         "studio.artifacts",
@@ -4108,7 +4111,8 @@
         "returning board marks merges their own stable groups into the current Diagram page under its existing CAS rule, preserving unrelated ink and unfinished page comment",
         "feedback reaches the existing intent, clarification and candidate controls once; no board action accepts a Stage or issues a project version",
         "Page export verifies the exact registered revision, including null versus a generated revision, and source digest before rendering; bounded previews preserve visible PDF crop/rotation and image orientation without persisting derived output",
-        "a named scene revision is read from the same validated chain the latest one comes from, and reading one changes nothing; the board's run is asked for by name, and a damaged board run refuses rather than reading as an empty board"
+        "a named scene revision is read from the same validated chain the latest one comes from, and reading one changes nothing; the board's run is asked for by name, and a damaged board run refuses rather than reading as an empty board",
+        "Explicit Render handoff does not resurrect every previously removed image or replace the live scene with a stale saved scene"
       ],
       "status": "canonical",
       "tests": [
@@ -4123,7 +4127,8 @@
         "apps/monkeyhub/web/workspaces/test/boardNavigation.test.ts",
         "apps/monkeyhub/web/workspaces/test/boardDocumentOpen.browser.mjs",
         "apps/monkeyhub/web/workspaces/test/boardConceptFeedback.test.ts",
-        "apps/monkeyhub/web/workspaces/test/boundWorkCopy.browser.mjs"
+        "apps/monkeyhub/web/workspaces/test/boundWorkCopy.browser.mjs",
+        "apps/monkeyhub/web/workspaces/test/renderWorkspace.browser.mjs"
       ],
       "notes": "CREATE: existing artifacts owns originals and intent owns page annotations; neither owns a persistent multi-image presentation canvas. This single requested consumer needs a scene value and uses the existing project repository and document APIs."
     },
@@ -4846,10 +4851,86 @@
       ]
     },
     {
+      "module_id": "studio.render",
+      "owner_path": "apps/archflow-studio/api/archflow_studio_api/application/rendering.py",
+      "purpose": "Retain and execute independent image attempts in the existing project Runtime. CREATE: candidate jobs require proposals and design runs; artifacts owns saving, not paid image execution.",
+      "status": "canonical",
+      "owns": [
+        "Exact registered image-page resolution, ordered references and immutable per-request attempts",
+        "P036 RenderJobRecords history and restart readback without paid replay",
+        "ImageRenderAdapter values, server-image dispatch and safe unknown versus failed outcomes",
+        "Derived source replacement or declared Stage branch freshness; no inferred model source",
+        "One configured Gemini image HTTP attempt with bounded inputs, final-image validation and measured usage; no retry, redirect or model fallback",
+        "Read-only PR #235 native history; no fabricated AI recipe or resumed native executor"
+      ],
+      "does_not_own": [
+        "SourceDocument persistence and bytes: studio.artifacts",
+        "Design geometry, Stage acceptance or HEAD advancement",
+        "Browser-native or external host execution",
+        "Hub navigation and application lifecycle"
+      ],
+      "public_api": [
+        "GET /api/render/capabilities",
+        "POST /api/render/jobs",
+        "GET /api/render/jobs/{job_id}",
+        "GET /api/render/jobs",
+        "RenderJobRecords",
+        "ImageRenderAdapter",
+        "RenderInput",
+        "RenderOutput",
+        "RenderProviderError",
+        "RenderCapability",
+        "GeminiImageRenderAdapter",
+        "adapter_from_settings"
+      ],
+      "depends_on": [
+        "studio.artifacts",
+        "studio.binding",
+        "studio.shell",
+        "project.ports",
+        "project.record_kinds",
+        "project.refs",
+        "project.repository",
+        "contracts.canonical",
+        "monkeymonitor"
+      ],
+      "files": [
+        "apps/archflow-studio/api/archflow_studio_api/application/rendering.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/render_contract.py",
+        "apps/archflow-studio/api/archflow_studio_api/routes/rendering.py",
+        "apps/archflow-studio/api/archflow_studio_api/transport/rendering.py",
+        "apps/archflow-studio/api/archflow_studio_api/render_adapters/__init__.py",
+        "apps/archflow-studio/api/archflow_studio_api/render_adapters/gemini.py"
+      ],
+      "tests": [
+        "apps/archflow-studio/api/tests/test_rendering.py",
+        "apps/archflow-studio/api/tests/test_render_gemini_adapter.py",
+        "apps/monkeyhub/web/workspaces/test/renderWorkspace.browser.mjs"
+      ],
+      "inputs": [
+        "Exact SourceDocument runId/assetSha256/revisionRef/pageIndex, ordered references, direction and output options",
+        "Explicitly injected image adapter and optional StudioMonitor"
+      ],
+      "outputs": [
+        "Project-scoped immutable render-job transitions and SourceDocument result references",
+        "Adapter-derived capability availability; nullable actual usage and cost"
+      ],
+      "invariants": [
+        "Each requestId has one immutable request and at most one dispatch; changed parameters conflict",
+        "Every attempt has its own P036 run, including identical output bytes from different requests",
+        "Restart or uncertain provider response yields unknown and never causes automatic replay",
+        "No adapter receives a project path or writer; all result persistence uses save_document",
+        "Uploaded images without models are valid and never acquire fabricated modelSource",
+        "Source freshness is derived from registered replacements and a declared Stage branch, never filenames or current UI selection",
+        "No render action changes Design HEAD or accepts a Stage; hidden UI does not cancel a running attempt"
+      ]
+    },
+    {
       "module_id": "studio.shell",
       "owner_path": "apps/archflow-studio/api/archflow_studio_api/main.py",
       "purpose": "The Project Runtime: assemble the project-scoped FastAPI boundary MonkeyHub starts once per open project, read its configuration only from the environment the Hub resolved, and serve the settings routes the Hub mounts (contract: docs/PROJECT_RUNTIME.md).",
       "owns": [
+        "Render provider/model/timeout preferences remain in UserSettingsDto; explicit launch environment supplies the secret only to the configured Runtime adapter, with no project or HTTP key field",
         "create_app and the uvicorn entry point, and the lifespan that lets a running candidate finish",
         "StudioSettings and every environment variable the process reads (project dir, cad_export occt/rhino/off with legacy rhino_export read-in, workers, powershell, reference run, mode, bind host, token, origins)",
         "the two modes of the boundary: local is unauthenticated, and a remote process without a token and without allowed origins is refused at construction",
@@ -6318,9 +6399,9 @@
       "status": "canonical",
       "purpose": "Own project runtime attachments, managed workers, idempotent Studio request admission and recovery observations, alongside existing project-bound CLI conversations and local tools; P036 retains all design authority.",
       "owns": [
-        "The single MonkeyHub frontend, application settings and language catalogs; Board and Arch render directly as project-bound workspace modules, and Diagram is the Board page editor. ProjectRuntimeProvider gives each open project its own API client, protocol identity and pending requests.",
+        "The single MonkeyHub frontend, application settings and language catalogs; Board, Arch and Render render directly as project-bound workspace modules, and Diagram is the Board page editor. ProjectRuntimeProvider gives each open project its own API client, protocol identity and pending requests.",
         "Hub FastAPI, project/chat navigation including existing projects in the configured workspace, persistent CLI conversation transcripts and attachments with recoverable archive/restore and direct project workspaces and hosted Monitor/Fab pages; successful candidate readback opens the model during the turn, and repeated opens reuse its existing workspace",
-        "One owned Project Runtime process per project, shared by Arch, Board and its Diagram page editor; Monitor remains an independent Hub-owned process.",
+        "One owned Project Runtime process per project, shared by Arch, Board, Render and the Diagram page editor; Monitor remains an independent Hub-owned process.",
         "The built-in Fab page invokes the installed independent MonkeyFab CLI for profiles, preparation and upload; no separate long-running Fab service",
         "Loopback origin boundary, app start serialization, actual source/instance/process health verification, owned stdin shutdown and application logs under the explicit nonproject runtime root",
         "Hub CLI, the browser-mode Windows launcher (launch-hub.ps1: launch window, port lock, health-verified owned child, tray, logs) and the desktop window; both production entries start only the Hub",
@@ -6347,7 +6428,11 @@
         "User-selected local desktop patch preparation, idle restart admission, owned host trial activation and startup rollback; update files and transaction state live only under the explicitly supplied nonproject runtime/updates directory and sibling application versions.",
         "Forwarding explicitly selected Study revisions into prepared task context and exposing the existing project-bound Study read for exact evidence reopening; no Study mutation tool.",
         "Drawing as a project-bound page in the same Hub: retained cut-plan revisions and representation controls, explicit source comparison/rebuild, and exact-source dimension proposal handoff into the existing Modeling candidate flow",
-        "project-bound chat read access to exact native source indexes through the existing studio_request tool"
+        "project-bound chat read access to exact native source indexes through the existing studio_request tool",
+        "Render as a peer project workspace with lazy first mount and preserved per-project inputs/history; hidden views suspend polling without cancelling image attempts",
+        "Explicit Render result handoff to the existing Board using its exact SourceDocument page identity",
+        "Nonsecret Render preferences through existing Hub settings; only MONKEYHUB_RENDER_API_KEY is mapped to the configured Gemini Runtime, never exposed over HTTP",
+        "Read-only Modeling-to-Render preview borrows the mounted project scene and copies its active camera including projection, target, lens, aspect and clipping; no second model store."
       ],
       "does_not_own": [
         "Building project state, geometry, drawing algorithms, model gateways, provider credentials or project creation",
@@ -6474,7 +6559,10 @@
         "Chat designContext is supplied per turn by the verified editing projection, never a browsed candidate or unsaved local draft. Explicit project context starts a fresh provider session only after the exact state read succeeds; visible chat and prior usage identities remain retained.",
         "Automatic Stage context starts only from confirmedStage.isSource after an exact successful read; a persisted providerStageRef prevents repeated resets across restart, and inherited candidate Stage references never trigger a handoff",
         "External presentation cannot launch a provider or write project state; mutations require loopback plus the exact source/project capability, images use bounded session attachments or verified retained document references, and progress is never saved or replayed as model context.",
-        "Updates do not overwrite the running application or alter project data. Restart blocks active requests, running conversations/jobs, unsent drafts, attachments and unsynchronized model edits. A trial desktop cannot open the working UI before exact owned-Hub health and activation succeed; failed trials drain before the old host reopens. This startup rollback does not authorize later project-format downgrades."
+        "Updates do not overwrite the running application or alter project data. Restart blocks active requests, running conversations/jobs, unsent drafts, attachments and unsynchronized model edits. A trial desktop cannot open the working UI before exact owned-Hub health and activation succeed; failed trials drain before the old host reopens. This startup rollback does not authorize later project-format downgrades.",
+        "Render, Board and Arch share one project Runtime; image execution and persistence remain studio.render and studio.artifacts, with no Render process or store",
+        "A new Render attempt gets a new requestId; status refresh and workspace/project switches never resend an uncertain paid call",
+        "Automatic project selection, chat and first Render entry attach and verify the Runtime without seeding authored modeling inputs; explicit Arch entry initializes only when the modeling projection is not ready, including after Render-first navigation"
       ],
       "used_by": [
         "apps/monkeyhub/run.py",
@@ -6536,7 +6624,12 @@
         "apps/monkeyhub/web/src/SoftwareUpdateSettings.tsx",
         "apps/monkeyhub/web/workspaces/src/workspaces/monkeydiagram/DrawingCanvas.tsx",
         "apps/monkeyhub/web/workspaces/src/workspaces/monkeydiagram/DrawingCanvas.css",
-        "apps/monkeyhub/web/workspaces/src/workspaces/monkeydiagram/drawingPlan.ts"
+        "apps/monkeyhub/web/workspaces/src/workspaces/monkeydiagram/drawingPlan.ts",
+        "apps/monkeyhub/web/workspaces/src/workspaces/render/RenderWorkspace.tsx",
+        "apps/monkeyhub/web/workspaces/src/workspaces/render/RenderResults.tsx",
+        "apps/monkeyhub/web/workspaces/src/workspaces/render/render.css",
+        "apps/monkeyhub/web/workspaces/src/workspaces/render/ModelPreview.tsx",
+        "apps/monkeyhub/web/workspaces/src/workspaces/monkeyarch/viewer/renderView.ts"
       ],
       "tests": [
         "apps/monkeyhub/api/tests/test_monkeyhub_lifecycle.py",
@@ -6570,7 +6663,9 @@
         "apps/monkeyhub/desktop/tests/test_update_handoff.py",
         "apps/monkeyhub/web/workspaces/test/drawingPlan.test.ts",
         "apps/monkeyhub/web/workspaces/test/drawingCanvas.browser.mjs",
-        "apps/monkeyhub/web/workspaces/test/candidatePreview.browser.mjs"
+        "apps/monkeyhub/web/workspaces/test/candidatePreview.browser.mjs",
+        "apps/monkeyhub/web/workspaces/test/renderWorkspace.browser.mjs",
+        "apps/monkeyhub/web/workspaces/test/renderView.test.ts"
       ],
       "depends_on": [
         "project.repository",

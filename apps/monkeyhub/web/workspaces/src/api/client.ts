@@ -5,6 +5,8 @@
  */
 
 import type { ServerConnection } from "./connection";
+import { renderCapabilitiesApiRenderCapabilitiesGet, listRenderJobsApiRenderJobsGet, createRenderJobApiRenderJobsPost } from "./generated";
+import type { RenderCapabilitiesDto, RenderJobListDto, RenderJobDto, RenderRequestDto } from "./generated";
 import type { ElevationEditRequestDto } from "./generated";
 import type { SaveStudyRequestDto, StudyViewDto, ProposeStudyRequestDto } from "./generated";
 import type { PlanRequestDto, PlanStatusRequestDto, PlanStatusDto, PlanDimensionProposalRequestDto, PlanDimensionChoicesDto } from "./generated";
@@ -385,6 +387,19 @@ export const createStudioClient = (connection: ServerConnection) => ({
 
   documents(runId?: string | null): Promise<SourceDocumentListDto> {
     return call("GET /api/documents", readDocumentsApiDocumentsGet({ client: connection.client, query: { runId } }));
+  },
+
+  renderCapabilities(): Promise<RenderCapabilitiesDto> {
+    return call("GET /api/render/capabilities", renderCapabilitiesApiRenderCapabilitiesGet({ client: connection.client }));
+  },
+
+  renderJobs(): Promise<RenderJobListDto> {
+    return call("GET /api/render/jobs", listRenderJobsApiRenderJobsGet({ client: connection.client }));
+  },
+
+  /** Only an explicit generation action submits; recovery reads renderJobs. */
+  createRender(body: RenderRequestDto): Promise<RenderJobDto> {
+    return call("POST /api/render/jobs", createRenderJobApiRenderJobsPost({ client: connection.client, body }));
   },
 
   /**

@@ -1,3 +1,4 @@
+import { captureRenderView } from "./renderView";
 import {
   forwardRef,
   useCallback,
@@ -209,6 +210,8 @@ export interface ViewportLoadOptions {
 }
 
 export interface ViewportController {
+  /** Borrow the current scene for a read-only Render preview; never dispose its assets. */
+  renderView(): import("./renderView").RenderView | null;
   openFile(file: File, sourceLabel?: string, options?: ViewportLoadOptions): Promise<void>;
   /**
    * Put several exports on the stage as one picture — a whole run rather than
@@ -1865,6 +1868,12 @@ export const ThreeDmViewport = forwardRef<
       sketchPreview,
       draftPreview,
       elevationGuide,
+      renderView: () => {
+        const runtime = runtimeRef.current;
+        if (!runtime || (!runtime.model && !runtime.draftObjects.size)) return null;
+        return captureRenderView(runtime.scene, runtime.camera, runtime.controls.target,
+          runtime.perspectiveCamera.fov, runtime.renderer.toneMappingExposure);
+      },
       camera: cameraState,
       unprojectOnPlane,
       loadSecondary,
@@ -2063,6 +2072,7 @@ export const ThreeDmViewport = forwardRef<
     controls.addEventListener("start", startCameraInteraction);
 
     const resize = () => {
+      if (!host.clientWidth || !host.clientHeight) return;
       clearHover(false);
       const width = Math.max(host.clientWidth, 1);
       const height = Math.max(host.clientHeight, 1);

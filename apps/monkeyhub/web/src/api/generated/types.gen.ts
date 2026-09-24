@@ -55,7 +55,7 @@ export type AppStatus = {
     /**
      * Appid
      */
-    appId: 'monkeyarch' | 'monkeymonitor' | 'monkeyboard' | 'monkeyfab';
+    appId: 'monkeyarch' | 'monkeymonitor' | 'monkeyboard' | 'monkeyrender' | 'monkeyfab';
     /**
      * Title
      */
@@ -1798,6 +1798,18 @@ export type UserSettingsDto = {
      */
     intentTimeoutS?: number | null;
     /**
+     * Renderprovider
+     */
+    renderProvider?: 'off' | 'gemini' | null;
+    /**
+     * Rendermodel
+     */
+    renderModel?: string | null;
+    /**
+     * Rendertimeouts
+     */
+    renderTimeoutS?: number | null;
+    /**
      * Chatprovider
      */
     chatProvider?: 'codex' | 'claude' | 'coding-plan' | null;
@@ -2084,7 +2096,7 @@ export type StartAppApiAppsAppIdStartPostData = {
         /**
          * App Id
          */
-        app_id: 'monkeyarch' | 'monkeymonitor' | 'monkeyboard' | 'monkeyfab';
+        app_id: 'monkeyarch' | 'monkeymonitor' | 'monkeyboard' | 'monkeyrender' | 'monkeyfab';
     };
     query?: {
         /**
@@ -2127,7 +2139,7 @@ export type StopAppApiAppsAppIdStopPostData = {
         /**
          * App Id
          */
-        app_id: 'monkeyarch' | 'monkeymonitor' | 'monkeyboard' | 'monkeyfab';
+        app_id: 'monkeyarch' | 'monkeymonitor' | 'monkeyboard' | 'monkeyrender' | 'monkeyfab';
     };
     query?: {
         /**

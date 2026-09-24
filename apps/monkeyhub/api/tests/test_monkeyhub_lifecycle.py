@@ -178,7 +178,7 @@ class HubApiLifecycleTests(LocalHubCase):
                 if project == project_b:
                     self.assertNotEqual(binding["referenceRun"]["runId"], fixture.REFERENCE_RUN_ID)
                 alias = project.parent / "." / project.name / ".." / project.name
-                for tool in ("monkeyarch", "monkeyboard"):
+                for tool in ("monkeyarch", "monkeyboard", "monkeyrender"):
                     response = client.post(f"/api/apps/{tool}/start", params={"projectDir": str(alias)})
                     self.assertEqual(response.status_code, 202, response.text)
                     self.assertEqual(response.json()["processId"], expected["processId"])
@@ -192,7 +192,7 @@ class HubApiLifecycleTests(LocalHubCase):
 
             stopped = client.post("/api/apps/monkeyboard/stop", params={"projectDir": str(project_b)})
             self.assertEqual(stopped.status_code, 202, stopped.text)
-            for tool in ("monkeyarch", "monkeyboard"):
+            for tool in ("monkeyarch", "monkeyboard", "monkeyrender"):
                 self.wait_state(client, tool, "stopped", project_dir=project_b)
             self.assertEqual(self.wait_state(client, "monkeyarch", "running")["processId"], a["processId"])
             self.assertEqual(http_json(a["apiUrl"] + "api/project")["projectId"], fixture.PROJECT_ID)
@@ -219,14 +219,14 @@ class HubApiLifecycleTests(LocalHubCase):
         )), self.hub() as client:
             self.assertEqual(client.get("/api/health").json()["service"], "monkeyhub-api")
             rows = {row["appId"]: row for row in client.get("/api/apps").json()}
-            self.assertEqual(set(rows), {"monkeyarch", "monkeymonitor", "monkeyboard", "monkeyfab"})
+            self.assertEqual(set(rows), {"monkeyarch", "monkeymonitor", "monkeyboard", "monkeyrender", "monkeyfab"})
             self.assertEqual(rows["monkeyboard"]["state"], "stopped")
             self.assertEqual(rows["monkeyboard"]["serviceId"], "studio")
             self.assertIn(rows["monkeymonitor"]["state"], {"starting", "running"})
             self.assertIsNotNone(rows["monkeymonitor"]["processId"])
             self.assertIsNone(client.get("/api/settings/apps").json()["projectDir"])
             self.configure(client)
-            for app_id in ("monkeyarch", "monkeyboard"):
+            for app_id in ("monkeyarch", "monkeyboard", "monkeyrender"):
                 response = client.post(f"/api/apps/{app_id}/start")
                 self.assertEqual(response.status_code, 409, response.text)
                 self.assertEqual(response.json()["code"], "PROJECT_REQUIRED")
@@ -376,6 +376,7 @@ class HubApiLifecycleTests(LocalHubCase):
             for first_card, other_card, stop_card in (
                 ("monkeyboard", "monkeyarch", "monkeyarch"),
                 ("monkeyarch", "monkeyboard", "monkeyboard"),
+                ("monkeyrender", "monkeyarch", "monkeyrender"),
             ):
                 with self.subTest(first_card=first_card):
                     first = client.post(f"/api/apps/{first_card}/start")
@@ -385,6 +386,10 @@ class HubApiLifecycleTests(LocalHubCase):
                     self.assertEqual(first.json()["processId"], second.json()["processId"])
                     arch = self.wait_state(client, "monkeyarch", "running")
                     board = self.wait_state(client, "monkeyboard", "running")
+                    render = self.wait_state(client, "monkeyrender", "running")
+                    self.assertEqual(render["processId"], arch["processId"])
+                    self.assertEqual(render["serviceId"], "studio")
+                    self.assertIn("view=render", render["url"])
                     self.assertEqual(arch["processId"], board["processId"])
                     self.assertEqual(board["serviceId"], "studio")
                     self.assertTrue(arch["url"].startswith(self.base_url + "/?view=arch&runtimeId="))

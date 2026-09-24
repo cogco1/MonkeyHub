@@ -117,3 +117,19 @@ test("initial and explicitly requested Fit still frame the model after a layout 
     assert.deepEqual(h.camera.up.toArray(), [0, 0, 1]);
   } finally { h.dispose(); }
 });
+
+test("hiding Modeling for Render preserves the last visible aspect and projection", () => {
+  const h = viewportFixture();
+  try {
+    h.fit(); h.resize();
+    const pose = h.pose(), matrix = h.camera.projectionMatrix.clone(), aspect = h.camera.aspect;
+    const count = h.renderCount();
+    h.host.clientWidth = 0; h.host.clientHeight = 0; h.resize();
+    assert.deepEqual(h.pose(), pose);
+    assert.equal(h.camera.aspect, aspect);
+    assert.deepEqual(h.camera.projectionMatrix, matrix);
+    assert.equal(h.renderCount(), count);
+    h.host.clientWidth = 900; h.host.clientHeight = 600; h.resize();
+    assert.deepEqual(h.pose(), pose);
+  } finally { h.dispose(); }
+});
