@@ -4043,7 +4043,9 @@
         "apps/archflow-studio/api/tests/test_drawing_plans.py",
         "apps/archflow-studio/api/tests/test_drawing_dimensions.py",
         "apps/archflow-studio/api/tests/test_model_exports.py",
-        "apps/archflow-studio/api/tests/test_model_source_index.py"
+        "apps/archflow-studio/api/tests/test_model_source_index.py",
+        "apps/archflow-studio/api/tests/test_model_load_monitoring.py",
+        "apps/monkeyhub/web/workspaces/test/externalModelImport.browser.mjs"
       ],
       "notes": "The viewer's only source of model bytes; digests are the identity, filenames are not.",
       "files": [

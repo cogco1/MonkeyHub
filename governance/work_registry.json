@@ -648,51 +648,6 @@
       "notes": [
         "2026-09-08 rule alignment: Awaiting the first concrete evidence consumer and a check of existing Reading/source references. The earlier proposed ledger and private Atlas field superset are not a mandate to add a core record."
       ]
-    },
-    {
-      "id": "GH-255",
-      "stream": "planning",
-      "status": "active",
-      "goal": "Integrate exact external Rhino import and measured reopen on current main.",
-      "depends_on": [],
-      "write_scope": [
-        "apps/archflow-studio/api/archflow_studio_api/application/artifacts.py",
-        "apps/archflow-studio/api/archflow_studio_api/routes/artifacts.py",
-        "apps/archflow-studio/api/archflow_studio_api/transport/artifacts.py",
-        "apps/archflow-studio/api/tests/profile_model_ingest.py",
-        "apps/archflow-studio/api/tests/test_model_load_monitoring.py",
-        "apps/monkeyhub/web/src/i18n/messages.en.ts",
-        "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
-        "apps/monkeyhub/web/workspaces/src/api/client.ts",
-        "apps/monkeyhub/web/workspaces/src/api/generated/types.gen.ts",
-        "apps/monkeyhub/web/workspaces/src/app/App.tsx",
-        "apps/monkeyhub/web/workspaces/src/features/artifacts/artifactLabels.ts",
-        "apps/monkeyhub/web/workspaces/src/features/artifacts/artifactSelection.ts",
-        "apps/monkeyhub/web/workspaces/src/features/stage/VersionsStrip.tsx",
-        "apps/monkeyhub/web/workspaces/test/artifactSelection.test.ts",
-        "apps/monkeyhub/web/workspaces/test/documentApi.test.ts",
-        "docs/EXTERNAL_MODEL_INGEST_BASELINE.md",
-        "governance/module_registry.json",
-        "docs/PROTOCOL.md",
-        "docs/SYSTEM_MAP.md",
-        "docs/DYNAMIC_MAP.md",
-        "docs/mapping/planning/INDEX.md",
-        "governance/work_registry.json",
-        "docs/mapping/planning/GH-255-ingest-closeout.md",
-        "apps/monkeyhub/web/workspaces/test/externalModelImport.browser.mjs",
-        "archflow/project/record_kinds.py",
-        "archflow/project/repository.py",
-        "tests/test_project_working_draft.py",
-        "apps/monkeyhub/web/workspaces/src/features/stage/Stage.tsx"
-      ],
-      "card": "docs/mapping/planning/GH-255-ingest-closeout.md",
-      "acceptance": [
-        "External 3DM imports retain exact bytes, cold reopen and previous revisions without inventing modelSource or moving HEAD.",
-        "Measure first/repeated imports and visible browser load; focused API/browser/architecture checks and independent review pass."
-      ],
-      "notes": [
-        "Integration from dfe0505d by YNNAP-HelloWorld. SKP and full Board/Render MVP acceptance remain open."
-      ]
     }
   ]
 }
