@@ -3,6 +3,105 @@
   "phase": "Namespace migration and local Stage/Branch/Candidate implementation are complete. Existing live cards retain their remaining architectural and product acceptance; P115 continues only its unfinished consolidation items. Real project acceptance and formal issue are explicit user actions.",
   "items": [
     {
+      "id": "GH-60",
+      "stream": "planning",
+      "status": "active",
+      "goal": "Close out the P108 and P115 registrations so historical cards and broad write scopes are not read as current locks; point live-work lookup and onboarding at GitHub Issues and active lanes.",
+      "depends_on": [],
+      "write_scope": [
+        "governance/work_registry.json",
+        "docs/mapping/planning/GH-60-legacy-card-closeout.md",
+        "docs/mapping/planning/P108-vibe-modeling-frontend.md",
+        "docs/mapping/planning/P115-capability-consolidation.md",
+        "docs/WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.md",
+        "docs/TEAM_ONBOARDING.md",
+        "CONTRIBUTING.md",
+        "README.md",
+        "AGENTS.md",
+        ".github/pull_request_template.md",
+        "tools/devctl.py",
+        "tests/"
+      ],
+      "card": "docs/mapping/planning/GH-60-legacy-card-closeout.md",
+      "acceptance": [
+        "devctl status and devctl work agree on what is live; a card without active or review lanes is not presented as occupying paths.",
+        "Delivered P108/P115 execution scope is released; still-valid product acceptance points to the Issue that carries it; obsolete waits and pauses are removed; unknowns are stated briefly.",
+        "Onboarding no longer derives current tasks from P115, and historical commit scope checks still pass.",
+        "archcheck passes and the generated maps match the registry."
+      ],
+      "lanes": [
+        {
+          "id": "legacy-closeout",
+          "issue": "https://github.com/cogco1/MonkeyHub/issues/60",
+          "branch": "codex/60-legacy-card-closeout",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-60-legacy-card-closeout",
+          "base_ref": "04e719617d6aa20507b5c1846de3059b5c57a451",
+          "contributor": "Claude",
+          "reviewer": null,
+          "handoff": "Root task codex/234-ui-round reviews and integrates this lane.",
+          "modules": [
+            "tools.devctl"
+          ],
+          "write_scope": [
+            "governance/work_registry.json",
+            "docs/mapping/planning/GH-60-legacy-card-closeout.md",
+            "docs/mapping/planning/P108-vibe-modeling-frontend.md",
+            "docs/mapping/planning/P115-capability-consolidation.md",
+            "docs/WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.md",
+            "docs/TEAM_ONBOARDING.md",
+            "CONTRIBUTING.md",
+            "README.md",
+            "AGENTS.md",
+            ".github/pull_request_template.md",
+            "tools/devctl.py",
+            "tests/"
+          ],
+          "depends_on": [],
+          "status": "active",
+          "blocked_reason": null
+        }
+      ]
+    },
+    {
+      "id": "GH-234",
+      "stream": "planning",
+      "status": "active",
+      "goal": "Record the current MonkeyHub UI reality and its functional contradictions, propose the Hub-level interaction architecture for the expanded workspace set, and deliver bounded fixes for proven contradictions outside files claimed by other live work.",
+      "depends_on": [],
+      "write_scope": [
+        "docs/2026-09-24-monkeyhub-ui-reality-and-hub-architecture.md",
+        "docs/mapping/planning/GH-234-hub-ui-round.md"
+      ],
+      "card": "docs/mapping/planning/GH-234-hub-ui-round.md",
+      "acceptance": [
+        "The reality matrix classifies current UI behaviour with file-level evidence; every functional contradiction states the expected semantics, the actual behaviour and a user scenario.",
+        "The Hub-level architecture states how workspaces share project, source and edit-base context, and how chat, Modeling, Board and Drawing, Render, Monitor and Fab are entered and left.",
+        "Each delivered fix is verified through the complete user action it repairs; affected tests, typecheck and archcheck pass."
+      ],
+      "lanes": [
+        {
+          "id": "ui-audit",
+          "issue": "https://github.com/cogco1/MonkeyHub/issues/234",
+          "branch": "codex/234-ui-round",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-234-ui-round",
+          "base_ref": "04e719617d6aa20507b5c1846de3059b5c57a451",
+          "contributor": "Claude",
+          "reviewer": null,
+          "handoff": "Root task integrates all lanes; the user reviews before any push.",
+          "modules": [
+            "hub.shell"
+          ],
+          "write_scope": [
+            "docs/2026-09-24-monkeyhub-ui-reality-and-hub-architecture.md",
+            "docs/mapping/planning/GH-234-hub-ui-round.md"
+          ],
+          "depends_on": [],
+          "status": "active",
+          "blocked_reason": null
+        }
+      ]
+    },
+    {
       "id": "P115",
       "stream": "planning",
       "status": "active",
