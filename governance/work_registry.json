@@ -648,27 +648,6 @@
       "notes": [
         "2026-09-08 rule alignment: Awaiting the first concrete evidence consumer and a check of existing Reading/source references. The earlier proposed ledger and private Atlas field superset are not a mandate to add a core record."
       ]
-    },
-    {
-      "id": "GH-58",
-      "stream": "planning",
-      "status": "active",
-      "goal": "Repair PowerShell activation of extended Windows desktop paths for update completion and rollback.",
-      "depends_on": [],
-      "write_scope": [
-        "apps/monkeyhub/api/monkeyhub_api/updates.py",
-        "apps/monkeyhub/api/tests/test_updates.py"
-      ],
-      "issue": "https://github.com/cogco1/MonkeyHub/issues/58",
-      "branch": "codex/fix-update-path-activation",
-      "worktree": "D:/MONKEYHUB_DEV/workspace/worktrees/codex-attachment-toolbar",
-      "base_ref": "b4abf9d04b66ca3ba8147c4ed3154867136d3196",
-      "contributor": "Codex",
-      "reviewer": null,
-      "handoff": "Root reviews and owns PR, release and installed-client acceptance.",
-      "acceptance": [
-        "Real Windows PowerShell activation works from an extended desktop source path for completion and rollback; source identity is unchanged."
-      ]
     }
   ]
 }

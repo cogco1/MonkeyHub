@@ -1,9 +1,11 @@
 """Desktop patches use private version/runtime roots; no real shortcut is touched."""
+import base64
 import hashlib
 import json
 import os
 from pathlib import Path
 import shutil
+import subprocess
 import sys
 import tempfile
 from types import SimpleNamespace
@@ -189,6 +191,76 @@ class DesktopUpdateTests(unittest.TestCase):
         old = self.controller(self.base)
         with patch.object(old, "_activate"):
             self.assertEqual(old.rollback(BASE, TARGET).state, "failed")
+
+    @unittest.skipUnless(os.name == "nt", "Windows desktop source paths")
+    def test_activation_command_preserves_drive_and_unc_locations(self):
+        for source, expected in (
+            (r"\\?\E:\MonkeyHub 安装", r"E:\MonkeyHub 安装"),
+            (r"\\?\UNC\server\share\MonkeyHub", r"\\server\share\MonkeyHub"),
+            (r"E:\MonkeyHub 安装", r"E:\MonkeyHub 安装"),
+            (r"\\server\share\MonkeyHub", r"\\server\share\MonkeyHub"),
+        ):
+            with self.subTest(source=source):
+                self.updates.source_root = Path(source)
+                with patch("monkeyhub_api.updates.subprocess.run", return_value=SimpleNamespace(returncode=0)) as run:
+                    self.updates._activate()
+                command = run.call_args.args[0]
+                self.assertEqual(command[command.index("-File") + 1],
+                                 str(Path(expected) / "apps/monkeyhub/installer/install.ps1"))
+                self.assertEqual(self.updates.source_root, Path(source), "the source identity is not rewritten")
+
+    @unittest.skipUnless(os.name == "nt" and shutil.which("powershell.exe"), "Windows PowerShell activation")
+    def test_complete_and_rollback_activate_extended_path_with_real_powershell(self):
+        # Use the actual installer and Windows PowerShell -File in a private
+        # version tree. Only the shortcut destination is redirected for safety.
+        versions = self.root / "desktop 安装 path" / "versions"
+        versions.mkdir(parents=True)
+        self.base = Path(shutil.move(self.base, versions / self.base.name))
+        for root in (self.base, self.target):
+            script = root / "apps/monkeyhub/installer/install.ps1"
+            script.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(ROOT / "apps/monkeyhub/installer/install.ps1", script)
+        self.zip.unlink()
+        create_patch(self.base, self.target, self.zip)
+        self.updates = self.controller(Path("\\\\?\\" + str(self.base)))
+        target = self.prepare()
+        self.updates.apply()
+        before = {path.relative_to(versions): path.read_bytes()
+                  for path in versions.rglob("*") if path.is_file()}
+        desktop = self.root / "private-desktop"
+        desktop.mkdir()
+        actual_run = subprocess.run
+        activations = []
+
+        def activate_in_fixture(command, **kwargs):
+            self.assertEqual(command[0], "powershell.exe")
+            result = actual_run([*command, "-DesktopDirectory", str(desktop)], **kwargs)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            link = actual_run([
+                "powershell.exe", "-NoProfile", "-Command",
+                "$link = (New-Object -ComObject WScript.Shell).CreateShortcut($env:MONKEYHUB_TEST_LINK); "
+                "[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($link.TargetPath))",
+            ], capture_output=True, text=True, timeout=10, creationflags=subprocess.CREATE_NO_WINDOW,
+                env={**os.environ, "MONKEYHUB_TEST_LINK": str(desktop / "MonkeyHub.lnk")})
+            self.assertEqual(link.returncode, 0, link.stderr)
+            expected = (target if not activations else self.base) / "MonkeyHub.exe"
+            self.assertEqual(Path(base64.b64decode(link.stdout.strip()).decode("utf-8")), expected)
+            activations.append(result.stdout)
+            return result
+
+        trial = self.controller(Path("\\\\?\\" + str(target)))
+        old = self.controller(Path("\\\\?\\" + str(self.base)))
+        with patch("monkeyhub_api.updates.subprocess.run", side_effect=activate_in_fixture):
+            self.assertEqual(trial.complete(BASE).state, "idle")
+            self.assertEqual(old.rollback(BASE, TARGET).error.code, "UPDATE_ROLLED_BACK")
+        self.assertEqual(trial.source_root, Path("\\\\?\\" + str(target)))
+        self.assertEqual(old.source_root, Path("\\\\?\\" + str(self.base)))
+        self.assertEqual(len(activations), 2)
+        self.assertIn("Activated installed MonkeyHub source " + TARGET, activations[0])
+        self.assertIn("Activated installed MonkeyHub source " + BASE, activations[1])
+        self.assertTrue((desktop / "MonkeyHub.lnk").is_file())
+        self.assertEqual(before, {path.relative_to(versions): path.read_bytes()
+                                  for path in versions.rglob("*") if path.is_file()})
 
     def test_invalid_upload_cleanup_cannot_delete_an_unrelated_directory(self):
         protected = self.root / "other" / "private.txt"
