@@ -25,12 +25,15 @@ from archflow.state.state_record import StateRecord
 from archflow_studio_api.application.binding import ProjectBinding, bound_project
 from archflow_studio_api.application.decisions import (
     DECISIONS_RUN_ID,
+    RECIPE_KEYS,
     compile_scoped_decisions,
     decision_context_for,
     focus_refs,
 )
 from archflow_studio_api.main import create_app
 from archflow_studio_api.settings import StudioSettings
+from archflow_studio_api.transport.decisions import RecipeGraphicsDto
+from archflow_studio_api.transport.drawings import PlanRequestDto
 
 from .support import (
     PROJECT_ID,
@@ -328,6 +331,8 @@ class DecisionPersistenceTests(DecisionFixture):
         self.save(source=board_source(revision, "wall-outline"))
         self.save(rawLanguage=COPY_WORDS, targetRef="copy:style",
                   scope={"domain": "copy", "extent": "project"}, source=document_source(document, 1))
+        self.save(rawLanguage="剖面填充都用 3 mm", disposition="require", source=document_source(document),
+                  typedBinding={"kind": "recipe", "graphics": {"hatchSpacingMm": 3}})
         keep = self.save(rawLanguage=KEEP_WORDS, disposition="keep", strength="hard",
                          targetRef="parameter:module", source=self.design_source(),
                          scope={"domain": "design", "extent": "project"},
@@ -339,7 +344,7 @@ class DecisionPersistenceTests(DecisionFixture):
         payloads = [self.repository.load_json(ref) for ref in self.repository.list_json(
             run=run, destination=PersistenceDestination(PersistenceArea.RUN_REVIEW, run_id=DECISIONS_RUN_ID),
             record_kind=STUDIO_SCOPED_DECISION)]
-        self.assertEqual(len(payloads), 4)
+        self.assertEqual(len(payloads), 5)
         # Remap both the project's canonical base and the design state one of
         # these decisions names, so a content digest that survives is a content
         # digest nothing mistook for a project version.
@@ -672,6 +677,141 @@ class DecisionContextTests(DecisionFixture):
         })
         self.assertEqual(response.status_code, 201, response.text)
         return response.json()
+
+
+HATCH_RECIPE_WORDS = "以后的剖面填充都用 3 mm 间距"
+LINE_RECIPE_WORDS = "剖切线 0.5,看线 0.25,整个项目都这样"
+
+
+class DecisionRecipeTests(DecisionFixture):
+    """A confirmed correction becomes the project recipe: a decision, not a second memory."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.page = self.upload(two_page_pdf())
+
+    def recipe(self, expect: int = 201, *, graphics: dict | None = None, **overrides) -> dict:
+        body = {"rawLanguage": HATCH_RECIPE_WORDS, "disposition": "require", "strength": "strong_preference",
+                "targetRef": "drawing:hatch", "scope": {"domain": "drawing", "extent": "project"},
+                "source": document_source(self.page),
+                "typedBinding": {"kind": "recipe",
+                                 "graphics": {"hatchSpacingMm": 3} if graphics is None else graphics}}
+        body.update(overrides)
+        return self.save(expect, **body)
+
+    def revise(self, current: dict, *, action: str, expect: int = 201, **body) -> dict:
+        response = self.client.post(f"/api/decisions/{current['decisionId']}/revisions", json={
+            "projectId": PROJECT_ID, "expectedRevisionRef": current["revisionRef"], "action": action, **body})
+        self.assertEqual(response.status_code, expect, response.text)
+        return response.json()
+
+    def test_a_recipe_decision_retains_exactly_the_values_the_person_set(self) -> None:
+        head, branches = self.repository.read_head(), self.repository.read_design_branches()
+        hatch = self.recipe()
+        self.assertEqual(hatch["typedBinding"], {"kind": "recipe", "graphics": {
+            "cutLineMm": None, "visibleLineMm": None, "hatchSpacingMm": 3.0}})
+        self.assertEqual((hatch["disposition"], hatch["status"], hatch["sourceKind"]),
+                         ("require", "active", "human"))
+        lines = self.recipe(rawLanguage=LINE_RECIPE_WORDS, targetRef="drawing:lineweight", strength="soft_preference",
+                            graphics={"cutLineMm": 0.5, "visibleLineMm": 0.25}, messageSource=message(2))
+        run = self.repository.load_run(DECISIONS_RUN_ID)
+        retained = [self.repository.load_json(ref) for ref in self.repository.list_json(
+            run=run, destination=PersistenceDestination(PersistenceArea.RUN_REVIEW, run_id=DECISIONS_RUN_ID),
+            record_kind=STUDIO_SCOPED_DECISION)]
+        self.assertEqual({row["decisionId"]: row["typedBinding"] for row in retained}, {
+            hatch["decisionId"]: {"kind": "recipe", "graphics": {"hatchSpacingMm": 3.0}},
+            lines["decisionId"]: {"kind": "recipe", "graphics": {"cutLineMm": 0.5, "visibleLineMm": 0.25}}})
+        cold = self.new_client()
+        self.assertEqual(self.decisions(cold), [hatch, lines])
+        drawn = self.context(cold, decisionContext={"domain": "drawing", "source": document_source(self.page)})
+        self.assertEqual(drawn["scopedDecisions"], [hatch, lines])
+        self.assertEqual(self.repository.read_head(), head)
+        self.assertEqual(self.repository.read_design_branches(), branches)
+
+    def test_a_recipe_binding_outside_the_closed_key_set_is_refused(self) -> None:
+        board = board_source(self.save_board("section-a"), "section-a")
+        for status, overrides in (
+            # The key set is closed, and each value is bounded as a drawing request bounds it.
+            (422, {"graphics": {"hatchSpacingMm": 3, "hatchAngleDeg": 30}}),
+            (422, {"graphics": {"hiddenObjectIds": ["wall-1"]}}),
+            (422, {"graphics": {"hatchSpacingMm": 0.4}}),
+            (422, {"graphics": {"hatchSpacingMm": 25}}),
+            (422, {"graphics": {"cutLineMm": 0}, "targetRef": "drawing:lineweight"}),
+            (422, {"graphics": {"cutLineMm": 2.5}, "targetRef": "drawing:lineweight"}),
+            (422, {"graphics": {}}),
+            (422, {"graphics": {"hatchSpacingMm": None}}),
+            # Each value sits under the one target it belongs to.
+            (422, {"graphics": {"cutLineMm": 0.5}}),
+            (422, {"graphics": {"hatchSpacingMm": 3, "cutLineMm": 0.5}, "targetRef": "drawing:lineweight"}),
+            (422, {"targetRef": "drawing:entourage"}),
+            (422, {"targetRef": "drawing:shading"}),
+            # Only a person promotes a correction. What the Hub's chat can send -
+            # avoid/keep with sourceKind fixed to agent - never retains a recipe.
+            (422, {"sourceKind": "agent"}),
+            (422, {"sourceKind": "agent", "disposition": "keep"}),
+            (422, {"sourceKind": "evaluator"}),
+            (422, {"sourceKind": "deterministic-rule"}),
+            # A recipe is a lasting require in the drawing domain, applying by scope,
+            # evidenced by the page it was confirmed on.
+            (422, {"disposition": "avoid"}),
+            (422, {"disposition": "defer"}),
+            (422, {"strength": "temporary"}),
+            (422, {"applicability": "exact-source"}),
+            (422, {"source": board}),
+            (422, {"targetRef": "copy:style", "scope": {"domain": "copy", "extent": "project"}}),
+            (422, {"targetRef": "parameter:module", "scope": {"domain": "design", "extent": "project"},
+                   "source": self.design_source()}),
+        ):
+            with self.subTest(overrides=overrides):
+                self.recipe(status, **overrides)
+        self.assertEqual(self.decisions(), [])
+        self.assertFalse(self.repository.layout.run(DECISIONS_RUN_ID).root.exists())
+
+    def test_the_closed_target_set_keeps_representation_words_without_a_recipe(self) -> None:
+        # Every drawing target takes the architect's words; only some take values.
+        saved = [self.save(rawLanguage=f"{target} 这样处理", disposition="avoid", targetRef=target,
+                           source=document_source(self.page), messageSource=message(index))
+                 for index, target in enumerate(("drawing:hatch", "drawing:lineweight", "drawing:beyond",
+                                                 "drawing:entourage", "drawing:poche"))]
+        self.assertEqual([row["typedBinding"] for row in saved], [None] * 5)
+        drawn = self.context(self.new_client(), decisionContext={"domain": "drawing"})
+        self.assertEqual({row["targetRef"] for row in drawn["scopedDecisions"]},
+                         {"drawing:hatch", "drawing:lineweight", "drawing:beyond", "drawing:entourage",
+                          "drawing:poche"})
+
+    def test_one_value_per_key_hold_and_reach_and_changing_a_recipe_supersedes_it(self) -> None:
+        strong = self.recipe()
+        # A second value of the same hold and reach would leave a new drawing to
+        # choose by age: it is refused, and changing a recipe is a supersession.
+        refused = self.recipe(409, rawLanguage="还是 4 mm 吧", graphics={"hatchSpacingMm": 4})
+        self.assertEqual(refused["code"], "DECISION_RECIPE_CONFLICT")
+        self.assertIn(strong["decisionId"], refused["detail"])
+        # A standard beside the recipe is a different hold, not a conflict.
+        self.recipe(rawLanguage="事务所标准:填充 4 mm", strength="hard", messageSource=message(2),
+                    graphics={"hatchSpacingMm": 4})
+
+        # Superseding restates the recipe without conflicting with itself;
+        # superseding another decision into the same value and reach does not.
+        replacement = self.spec(rawLanguage="项目填充改成 2.5 mm", disposition="require",
+                                source=document_source(self.page), messageSource=message(3),
+                                typedBinding={"kind": "recipe", "graphics": {"hatchSpacingMm": 2.5}})
+        words = self.save(rawLanguage=HATCH_WORDS, targetRef="drawing:hatch", source=document_source(self.page))
+        clash = self.revise(words, action="supersede", replacement=replacement, reason="改成 recipe", expect=409)
+        self.assertEqual(clash["code"], "DECISION_RECIPE_CONFLICT")
+        changed = self.revise(strong, action="supersede", replacement=replacement, reason="讨论后改口")
+        self.assertEqual(changed["typedBinding"]["graphics"]["hatchSpacingMm"], 2.5)
+        # A revoked recipe keeps what it said and no longer holds the value.
+        revoked = self.revise(changed, action="revoke", reason="回到默认")
+        self.assertEqual(revoked["typedBinding"], changed["typedBinding"])
+        self.recipe(rawLanguage="重新定为 3 mm", messageSource=message(4))
+
+    def test_the_recipe_keys_are_the_drawing_requests_own(self) -> None:
+        recipe = RecipeGraphicsDto.model_json_schema(by_alias=True)["properties"]
+        plan = PlanRequestDto.model_json_schema(by_alias=True)["properties"]
+        self.assertEqual(list(recipe), list(RECIPE_KEYS))
+        for key in RECIPE_KEYS:
+            with self.subTest(key=key):
+                self.assertEqual(recipe[key]["anyOf"], plan[key]["anyOf"])
 
 
 class DecisionStageScopeTests(DesignHistoryFixture):

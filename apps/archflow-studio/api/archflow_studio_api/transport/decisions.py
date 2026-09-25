@@ -4,7 +4,9 @@ Everything a decision claims is stated, never inferred: what was said, what
 kind of judgement it is, how strongly it is held, what it is about, how far it
 reaches, and the exact evidence it was said against. The server adds only what
 it can vouch for itself — the decision's identity, its revision chain, who
-asked for it through which surface, and the parameter value it read.
+asked for it through which surface, and the parameter value it read. A
+project recipe's paper-space values are the one binding the caller states:
+they are what the person chose.
 """
 
 from __future__ import annotations
@@ -14,6 +16,7 @@ from typing import Annotated, Any, Literal, Mapping, Union
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from ..application.decisions import DecisionRevision
+from .drawings import PlanRequestDto
 
 SHA256 = r"^[0-9a-f]{64}$"
 
@@ -88,14 +91,59 @@ class DecisionScopeDto(_Frozen):
     )
 
 
-class TypedBindingRequestDto(_Frozen):
+class ParameterBindingRequestDto(_Frozen):
     """The parameter a decision is bound to; the server reads its value itself."""
 
     kind: Literal["parameter"]
     parameter_key: str = Field(alias="parameterKey", min_length=1, max_length=128)
 
 
-class DecisionTypedBindingDto(_Frozen):
+# A drawing request's own bounds on the same paper-space values, so a recipe
+# never holds a value a drawing request would refuse.
+_PLAN = PlanRequestDto.model_fields
+_CutLineMm = Annotated[float, *_PLAN["cut_line_mm"].metadata]
+_VisibleLineMm = Annotated[float, *_PLAN["visible_line_mm"].metadata]
+_HatchSpacingMm = Annotated[float, *_PLAN["hatch_spacing_mm"].metadata]
+
+
+class RecipeGraphicsDto(_Frozen):
+    """The paper-space values one project recipe sets; a key it leaves out is null.
+
+    Closed to the drawing's own graphics keys, each bounded exactly as a cut-plan
+    request bounds it. No object, material or model is looked up: a recipe is
+    what a new drawing starts from, not a claim about one model.
+    """
+
+    cut_line_mm: _CutLineMm | None = Field(
+        alias="cutLineMm", default=None, description="cut line weight on paper; set under drawing:lineweight")
+    visible_line_mm: _VisibleLineMm | None = Field(
+        alias="visibleLineMm", default=None, description="visible line weight on paper; set under drawing:lineweight")
+    hatch_spacing_mm: _HatchSpacingMm | None = Field(
+        alias="hatchSpacingMm", default=None, description="section hatch spacing on paper; set under drawing:hatch")
+
+
+class RecipeBindingRequestDto(_Frozen):
+    """The project recipe: paper-space values a new drawing starts from.
+
+    Retained only for a person's explicit confirmation (sourceKind 'human') of a
+    'require' decision in the drawing domain, held hard, strong_preference or
+    soft_preference, applying by 'scope' to the project or one Stage, and
+    evidenced by the exact document page it was confirmed on. Every value sits
+    under its own targetRef. One key has one active value per strength and reach;
+    supersede the decision to change it.
+    """
+
+    kind: Literal["recipe"]
+    graphics: RecipeGraphicsDto
+
+
+TypedBindingRequestDto = Annotated[
+    Union[ParameterBindingRequestDto, RecipeBindingRequestDto],
+    Field(discriminator="kind"),
+]
+
+
+class DecisionParameterBindingDto(_Frozen):
     """What the record said about that parameter when the decision was made."""
 
     kind: Literal["parameter"]
@@ -107,6 +155,19 @@ class DecisionTypedBindingDto(_Frozen):
         alias="lockAuthority",
         description="the existing lock this decision records; a decision never takes or releases one",
     )
+
+
+class DecisionRecipeBindingDto(_Frozen):
+    """The paper-space values this project recipe sets, as the person confirmed them."""
+
+    kind: Literal["recipe"]
+    graphics: RecipeGraphicsDto
+
+
+DecisionTypedBindingDto = Annotated[
+    Union[DecisionParameterBindingDto, DecisionRecipeBindingDto],
+    Field(discriminator="kind"),
+]
 
 
 class DecisionRequestDto(_Frozen):
@@ -138,7 +199,12 @@ class DecisionRequestDto(_Frozen):
         "an agent interpreted any of those fields from the words: 'human' does not mean a person "
         "typed the sentence, it means a person settled every field the decision now claims",
     )
-    typed_binding: TypedBindingRequestDto | None = Field(alias="typedBinding", default=None)
+    typed_binding: TypedBindingRequestDto | None = Field(
+        alias="typedBinding", default=None,
+        description="'parameter' names a design parameter whose value, unit and lock the server reads "
+        "itself; 'recipe' carries a project recipe's paper-space values, retained only for a person's "
+        "confirmed 'require' decision in the drawing domain",
+    )
 
 
 class DecisionAttributionDto(_Frozen):
@@ -254,8 +320,7 @@ def decision_dto(revision: DecisionRevision, *, status: str | None = None) -> De
         source=payload["source"],
         applicability=payload["applicability"],
         sourceKind=payload["sourceKind"],
-        typedBinding=(None if payload["typedBinding"] is None
-                      else DecisionTypedBindingDto(**payload["typedBinding"])),
+        typedBinding=payload["typedBinding"],
         attribution=DecisionAttributionDto(**payload["attribution"]),
         createdAt=payload["createdAt"],
         reason=payload["reason"],
