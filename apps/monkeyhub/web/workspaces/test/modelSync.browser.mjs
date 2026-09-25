@@ -75,7 +75,8 @@ api.stderr.on("data", (chunk) => { const line = String(chunk); if (line.includes
 const apiOrigin = `http://127.0.0.1:${apiPort}`;
 
 async function apiReady() {
-  for (let attempt = 0; attempt < 200; attempt += 1) {
+  // Importing the API with OCCT can take most of a minute on a busy machine.
+  for (let attempt = 0; attempt < 900; attempt += 1) {
     try {
       const answer = await fetch(`${apiOrigin}/api/health`);
       if (answer.ok) return true;
@@ -286,6 +287,8 @@ await context.addInitScript(()=>{
   window.EventSource=class {constructor(){queueMicrotask(()=>this.onopen?.());}addEventListener(){}removeEventListener(){}close(){}};
 });
 page=await context.newPage(); page.setDefaultTimeout(15000);
+// Only navigation waits longer: the first one also waits out Vite's dependency scan.
+page.setDefaultNavigationTimeout(180000);
 page.on('pageerror',error=>{errors.push(error.message);console.error('PAGE',error.message);});
 const networkTimings=[],timedRequests=new Map(),timingReads=[];
 page.on('request',request=>{
