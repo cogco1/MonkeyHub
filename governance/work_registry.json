@@ -19,7 +19,8 @@
         "apps/monkeyhub/web/workspaces/src/features/stage/VersionsStrip.tsx",
         "apps/monkeyhub/web/workspaces/test/modelSync.browser.mjs",
         "apps/monkeyhub/web/workspaces/test/connection.test.ts",
-        "apps/monkeyhub/README.md"
+        "apps/monkeyhub/README.md",
+        "apps/monkeyhub/web/workspaces/test/documentTracing.browser.mjs"
       ],
       "card": "docs/mapping/planning/GH-234-hub-ui-round.md",
       "acceptance": [
@@ -69,7 +70,8 @@
             "apps/monkeyhub/web/workspaces/src/features/stage/VersionsStrip.tsx",
             "apps/monkeyhub/web/workspaces/test/modelSync.browser.mjs",
             "apps/monkeyhub/web/workspaces/test/connection.test.ts",
-            "apps/monkeyhub/README.md"
+            "apps/monkeyhub/README.md",
+            "apps/monkeyhub/web/workspaces/test/documentTracing.browser.mjs"
           ],
           "depends_on": [],
           "status": "active",
