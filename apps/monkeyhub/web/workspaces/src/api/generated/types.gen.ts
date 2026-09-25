@@ -7756,7 +7756,7 @@ export type SectionPerspectiveRequestDto = {
      */
     section: SectionLineDto | SectionPlaneDto;
     /**
-     * Omit for the default one-point perspective: the eye on the removed side 1.6 m above the lowest cut point, centred on the cut, at the distance that fits the cut's width in a 55 degree field of view, looking straight through the cut. The picture plane is always the section plane, so the cut is true to scale.
+     * Omit for the default one-point perspective: the eye on the removed side 1.6 m above the lowest cut point, centred on the cut, at the distance that fits the cut's width in a 55 degree field of view, the cut's centre as target; the frame is the cut with a 5% margin. The picture plane is always the section plane, so the cut is true to scale and lines along the view axis converge at the eye's foot on it. The target centres the frame; to move only the vanishing point, move the eye and keep the target at the cut's centre.
      */
     camera?: SectionCameraDto | null;
     /**

@@ -260,8 +260,10 @@ class SectionPerspectiveRequestDto(BaseModel):
     camera: SectionCameraDto | None = Field(
         default=None, description=(
             "Omit for the default one-point perspective: the eye on the removed side 1.6 m above the lowest cut point, "
-            "centred on the cut, at the distance that fits the cut's width in a 55 degree field of view, looking "
-            "straight through the cut. The picture plane is always the section plane, so the cut is true to scale."))
+            "centred on the cut, at the distance that fits the cut's width in a 55 degree field of view, the cut's centre "
+            "as target; the frame is the cut with a 5% margin. The picture plane is always the section plane, so the cut "
+            "is true to scale and lines along the view axis converge at the eye's foot on it. The target centres the "
+            "frame; to move only the vanishing point, move the eye and keep the target at the cut's centre."))
     depth: float | None = Field(default=None, description="Keep only this far behind the section plane, in the STEP unit.")
     hidden_object_ids: list[str] = Field(alias="hiddenObjectIds", default_factory=list, max_length=10000,
                                          description="Exact physical object ids left out of the cut and the view.")

@@ -757,12 +757,15 @@ class SectionPerspectiveView:
     default one-point perspective, ``None`` or ``{"eyeHeight"?, "fovDeg"?,
     "up"?}``: the eye on the removed side ``eyeHeight`` (1.6 m) above the
     lowest cut point, centred on the cut, at the distance that fits the cut's
-    width in the horizontal field of view (55 degrees), looking along the
-    opposite of the normal.  ``up`` (+Z) sets the picture's up within the
-    plane.  The picture plane is always the section plane, so the cut is true
-    to scale at 1:``scale_denominator``; the target centres the frame, whose
-    width is the field of view at the plane and which always holds the whole
-    cut's height.  ``depth`` bounds what is kept behind the plane.
+    width in the horizontal field of view (55 degrees), with the cut's centre
+    as target.  ``up`` (+Z) sets the picture's up within the plane.  The
+    picture plane is always the section plane, so the cut is true to scale at
+    1:``scale_denominator`` and lines along the normal converge at the eye's
+    foot, wherever the target is.  The target's image centres the frame,
+    whose width is the field of view at the plane and whose height keeps the
+    cut's proportions; the default frame is the cut with a 5% margin, and
+    moving only the eye moves the vanishing point, not the frame.  ``depth``
+    bounds what is kept behind the plane.
     """
 
     name: str
@@ -975,26 +978,31 @@ def project_section_perspective(
             u0, u1 = min(p[0] for p in points), max(p[0] for p in points)
             v0, v1 = min(p[1] for p in points), max(p[1] for p in points)
             margin = _SECTION_MARGIN * max(u1 - u0, v1 - v0)
+            # The frame keeps the cut's proportions, margin included, whatever its width.
+            aspect = (v1 - v0 + 2.0 * margin) / (u1 - u0 + 2.0 * margin)
             camera = dict(view.camera or {})
             fov = camera.get("fovDeg", DEFAULT_SECTION_FOV_DEG)
             half = math.tan(math.radians(fov) / 2.0)
             if "eye" in camera:
                 placement, eye, target = "explicit", tuple(camera["eye"]), tuple(camera["target"])
             else:
+                # One-point perspective: the eye's foot is centred on the cut at eye height, and the target is
+                # the cut's centre, so the frame is the cut with its margin.
                 placement = "default"
                 height = camera.get("eyeHeight", DEFAULT_SECTION_EYE_HEIGHT_M / _UNIT_METRES[unit])
-                centre = ((u0 + u1) / 2.0, v0 + height)
                 distance = ((u1 - u0) / 2.0 + margin) / half
-                target = tuple(o + centre[0] * r + centre[1] * w for o, r, w in zip(origin, right, up))
-                eye = tuple(t + distance * n for t, n in zip(target, normal))
+                eye = tuple(o + (u0 + u1) / 2.0 * r + (v0 + height) * w + distance * n
+                            for o, r, w, n in zip(origin, right, up, normal))
+                target = tuple(o + (u0 + u1) / 2.0 * r + (v0 + v1) / 2.0 * w for o, r, w in zip(origin, right, up))
             perspective = project_occt_section_perspective(
                 entries, object_ids=tuple(object_ids), origin=origin, right=right, up=up, eye=eye,
                 linear_deflection=view.linear_deflection, depth=view.depth,
             )
             observation["emitted_object_ids"] = sorted({line.object_id for line in perspective.lines})
         width = 2.0 * perspective.focus * half
-        centre_u = _perspective_image(target, frame, eye, perspective.focus)[0]
-        crop = (centre_u - width / 2.0, v0 - margin, centre_u + width / 2.0, v1 + margin)
+        centre = _perspective_image(target, frame, eye, perspective.focus)
+        crop = (centre[0] - width / 2.0, centre[1] - width * aspect / 2.0,
+                centre[0] + width / 2.0, centre[1] + width * aspect / 2.0)
         resolved = {
             "kind": SECTION_PERSPECTIVE_KIND,
             "name": view.name,

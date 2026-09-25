@@ -147,7 +147,7 @@ class SectionPerspectiveGeometryTests(unittest.TestCase):
                                 length_unit="meter")
         cls.entries = occt_backend.read_step(path, length_unit="meter")
         cls.default = cls.project()
-        cls.moved = cls.project(camera={"eye": [4.5, 4.0 - FOCUS, 1.3], "target": [4.5, 4.0, 1.3]})
+        cls.moved = cls.project(camera={"eye": [4.5, 4.0 - FOCUS, 1.3], "target": [3.0, 4.0, 1.5]})
 
     @classmethod
     def project(cls, **changes):
@@ -218,10 +218,21 @@ class SectionPerspectiveGeometryTests(unittest.TestCase):
         self.assertEqual(self.moved.perspective.principal_point, (4.5, 1.3))
         self.assertNotEqual(self.default.svg, self.moved.svg)
         self.assertEqual(self.moved.view["camera"]["placement"], "explicit")
-        # The target centres the frame; the frame's width is the field of view at the cut.
-        crop = self.moved.view["crop_uv"]
-        self.assertAlmostEqual((crop[0] + crop[2]) / 2, 4.5, places=9)
-        self.assertAlmostEqual(crop[2] - crop[0], 6.6, places=9)
+        # Same target, same distance, same field of view: the frame stays on the cut.
+        for moved, default in zip(self.moved.view["crop_uv"], self.default.view["crop_uv"]):
+            self.assertAlmostEqual(moved, default, places=9)
+
+    def test_the_target_centres_a_frame_as_wide_as_the_field_of_view(self) -> None:
+        eye = (3.0, 4.0 - FOCUS, 1.3)
+        door = (3.0, 7.7, 1.05)
+        zoomed = self.project(camera={"eye": list(eye), "target": list(door), "fovDeg": 30})
+        centre = _image(door, eye)
+        crop = zoomed.view["crop_uv"]
+        self.assertAlmostEqual((crop[0] + crop[2]) / 2, centre[0], places=9)
+        self.assertAlmostEqual((crop[1] + crop[3]) / 2, centre[1], places=9)
+        self.assertAlmostEqual(crop[2] - crop[0], 2 * FOCUS * math.tan(math.radians(15)), places=9)
+        self.assertAlmostEqual((crop[3] - crop[1]) / (crop[2] - crop[0]), 4.2 / 6.6, places=9, msg="the cut's proportions")
+        self.assertEqual(zoomed.perspective.principal_point, self.default.perspective.principal_point)
 
     def test_hidden_back_faces_and_curved_silhouettes_are_exact(self) -> None:
         """Regression for HLRBRep's perspective with a non-identity projector frame (see _perspective_camera)."""
@@ -357,7 +368,7 @@ class FreezeSectionPerspectiveTests(unittest.TestCase):
         self.assertEqual((view["origin"], view["right"], view["up"]), ([0.0, 4.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]))
         camera = view["camera"]
         self.assertEqual((camera["placement"], camera["up"], camera["fov_deg"]), ("default", [0.0, 0.0, 1.0], 55.0))
-        for actual, expected in zip(camera["eye"] + camera["target"], [3.0, 4.0 - FOCUS, 1.3, 3.0, 4.0, 1.3]):
+        for actual, expected in zip(camera["eye"] + camera["target"], [3.0, 4.0 - FOCUS, 1.3, 3.0, 4.0, 1.5]):
             self.assertAlmostEqual(actual, expected, places=12)
         for actual, expected in zip(view["crop_uv"], (-0.3, -0.6, 6.3, 3.6)):
             self.assertAlmostEqual(actual, expected, places=12)
