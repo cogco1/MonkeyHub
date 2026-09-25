@@ -597,6 +597,19 @@ SVG `data-dressing` groups remain independently editable and do not claim the
 architectural `data-object` identity used by projected model vectors. The PNG and
 SVG share one rendering input. This read does not regenerate or create a revision.
 
+Cut-plan pens and hatch are paper values in `viewRecipe.graphics`: `cutLineMm`,
+`visibleLineMm` and `hatchSpacingMm`, and, optionally, `hatch` and `beyond`, which
+the request names in the same form. `hatch: {byMaterial: {<material>: {spacingMm?,
+angleDeg?, poche?}}}` draws the cut of each named model material with its own hatch
+(spacing 0.5–20 mm, angle 0–180 degrees) or solid poché; a rule is stored complete,
+an omitted spacing taking the revision's `hatchSpacingMm` and an omitted angle 45
+degrees, and a material without a rule keeps `hatchSpacingMm` at 45 degrees.
+`beyond: {fade}` (0–1) greys the lines below the cut. A request without them keeps
+the previous revision's; an empty `byMaterial` or a zero `fade` removes them, and a
+recipe without them is exactly the recipe it was before they existed, so it keeps
+its retained drawing and bytes. Paper values do not change with the scale. Imported
+models carry no material semantics, so their cuts keep the general hatch.
+
 `POST /api/drawings/plans/status` and `GET /api/drawings/plans/vector` also return
 `cleanup`: the deterministic line cleanup the projection owner retained with that
 revision's receipt (per-rule counts and input/output line counts), passed through

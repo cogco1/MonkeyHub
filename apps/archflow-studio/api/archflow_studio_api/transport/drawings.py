@@ -90,6 +90,38 @@ class PlanVectorDto(BaseModel):
     cleanup: dict[str, Any] | None = Field(default=None, description=CLEANUP_REPORT)
 
 
+class PlanHatchRuleDto(BaseModel):
+    """How the cut of one material is drawn, in paper units."""
+    model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
+    spacing_mm: float | None = Field(alias="spacingMm", default=None, ge=0.5, le=20, allow_inf_nan=False,
+                                     description="Perpendicular hatch spacing on paper, mm. Omitted takes this revision's hatchSpacingMm.")
+    angle_deg: float | None = Field(alias="angleDeg", default=None, ge=0, lt=180, allow_inf_nan=False,
+                                    description="Hatch direction, degrees anticlockwise from the sheet's x axis. Omitted is 45.")
+    poche: bool = Field(default=False, description="Fill this material's cut solid (poché) instead of hatching it.")
+
+
+class PlanHatchDto(BaseModel):
+    """Material-keyed hatch and poché for cut solids; a material without a rule keeps hatchSpacingMm at 45 degrees."""
+    model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
+    by_material: dict[Annotated[str, Field(min_length=1, max_length=100)], PlanHatchRuleDto] = Field(
+        alias="byMaterial", max_length=100,
+        description="Rules by the model's material name. Each is stored complete; an empty map removes every rule.")
+
+    @model_validator(mode="after")
+    def printable_names(self):
+        if any(ord(char) < 32 or ord(char) == 127 for name in self.by_material for char in name):
+            raise ValueError("material names cannot contain control characters")
+        return self
+
+
+class PlanBeyondDto(BaseModel):
+    """How lines below the cut plane read against the cut."""
+    model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
+    fade: float = Field(ge=0, le=1, allow_inf_nan=False,
+                        description="Grey level of the lines below the cut: 0 draws them black like visible lines "
+                                    "(and removes the rule), 1 fades them out.")
+
+
 class DrawingAssetSourceDto(BaseModel):
     model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
     run_id: str = Field(alias="runId", min_length=1)
@@ -122,6 +154,11 @@ class PlanRequestDto(DrawingSourceRequestDto):
     cut_line_mm: float | None = Field(alias="cutLineMm", default=None, gt=0, le=2, allow_inf_nan=False)
     visible_line_mm: float | None = Field(alias="visibleLineMm", default=None, gt=0, le=2, allow_inf_nan=False)
     hatch_spacing_mm: float | None = Field(alias="hatchSpacingMm", default=None, ge=0.5, le=20, allow_inf_nan=False)
+    hatch: PlanHatchDto | None = Field(default=None, description=(
+        "Material hatch and poché rules on paper, beside the pens and hatchSpacingMm. Omitted keeps the previous "
+        "revision's rules; an empty byMaterial removes them."))
+    beyond: PlanBeyondDto | None = Field(default=None, description=(
+        "Fading of the lines below the cut. Omitted keeps the previous revision's; fade 0 removes it."))
     hidden_object_ids: list[str] | None = Field(alias="hiddenObjectIds", default=None, max_length=10000)
     dimensions: list[PlanDimensionDto] | None = Field(default=None, max_length=100)
     dressing: list[PlanDressingDto] | None = Field(default=None, max_length=100)

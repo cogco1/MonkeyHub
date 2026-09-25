@@ -78,6 +78,10 @@ class NativeDrawingTests(unittest.TestCase):
         vector = self.client.get("/api/drawings/plans/vector", params=ref)
         self.assertEqual(vector.status_code, 200, vector.text)
         self.assertIn("<svg", vector.json()["svg"])
+        # An imported model has no semantics: its lines name only their source object.
+        self.assertIn("data-object=", vector.json()["svg"])
+        self.assertNotIn("data-component=", vector.json()["svg"])
+        self.assertNotIn("data-material=", vector.json()["svg"])
         updated = self.generate(asset, previousRevisionRef=drawing["revisionRef"], hatchSpacingMm=3)
         self.assertEqual(updated["drawingId"], drawing["drawingId"])
         self.assertNotEqual(updated["revisionRef"], drawing["revisionRef"])

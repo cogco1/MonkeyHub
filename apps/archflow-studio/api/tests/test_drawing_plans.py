@@ -551,3 +551,41 @@ class CutPlanTests(CandidateTestCase):
             self.assertNotIn("cleanup", document["viewRecipe"]["graphics"])
         with patch("archflow_studio_api.application.drawing_plans.freeze_cut_plan", side_effect=AssertionError("cache must not project")):
             self.assertEqual(self.generate(previousRevisionRef=cleaned["revisionRef"]), cleaned)
+
+    def test_graphics_rules_are_paper_space_and_old_recipes_render_byte_identical(self):
+        not_projected = patch("archflow_studio_api.application.drawing_plans.freeze_cut_plan",
+                              side_effect=AssertionError("cache must not project"))
+        first = self.generate()
+        self.assertEqual(set(first["viewRecipe"]["graphics"]), {"cutLineMm", "visibleLineMm", "hatchSpacingMm"})
+        with not_projected:
+            self.assertEqual(self.generate(), first)
+        ruled = self.generate(previousRevisionRef=first["revisionRef"], beyond={"fade": .4}, hatch={"byMaterial": {
+            "timber": {"spacingMm": 3, "angleDeg": 135}, "concrete": {"poche": True}}})
+        # Each material rule is stored complete, in paper millimetres and degrees.
+        rules = {"hatch": {"byMaterial": {"concrete": {"spacingMm": 2.0, "angleDeg": 45.0, "poche": True},
+                                          "timber": {"spacingMm": 3.0, "angleDeg": 135.0, "poche": False}}},
+                 "beyond": {"fade": .4}}
+        self.assertEqual(ruled["viewRecipe"]["graphics"], {**first["viewRecipe"]["graphics"], **rules})
+        self.assertEqual(ruled["replacesPages"], [replacing(first)])
+        # Paper values do not follow the scale, and a revision that names no rule keeps them.
+        rescaled = self.generate(previousRevisionRef=ruled["revisionRef"], scaleDenominator=100)
+        self.assertEqual(rescaled["viewRecipe"]["frame"]["scale"], "1:100")
+        self.assertEqual({key: rescaled["viewRecipe"]["graphics"][key] for key in rules}, rules)
+        dense = self.generate(previousRevisionRef=rescaled["revisionRef"], hatch={"byMaterial": {"timber": {"spacingMm": 1}}})
+        self.assertEqual(dense["viewRecipe"]["graphics"]["hatch"],
+                         {"byMaterial": {"timber": {"spacingMm": 1.0, "angleDeg": 45.0, "poche": False}}})
+        self.assertEqual(dense["viewRecipe"]["graphics"]["beyond"], {"fade": .4})
+        self.assertEqual(self.repository.read_head(), self.head)
+        self.assertEqual(self.repository.read_design_branches(), self.branches)
+        # Removing the rules is the old recipe again: its retained drawing, not a redraw.
+        with not_projected:
+            cleared = self.generate(previousRevisionRef=dense["revisionRef"], hatch={"byMaterial": {}}, beyond={"fade": 0})
+        self.assertEqual(cleared, first)
+        before = self.client.get("/api/documents").json()
+        for changes in ({"hatch": {"byMaterial": {"concrete": {"spacingMm": .1}}}}, {"beyond": {"fade": 1.5}},
+                        {"hatch": {"byMaterial": {"": {"poche": True}}}}, {"hatch": {"byMaterial": {"stone": {"angleDeg": 180}}}},
+                        {"hatch": {"byMaterial": {"stone": {"colour": "grey"}}}}):
+            response = self.client.post("/api/drawings/plans", json={"projectId": PROJECT_ID,
+                "sourceStageRef": self.stage["stageRef"], "previousRevisionRef": first["revisionRef"], **changes})
+            self.assertEqual(response.status_code, 422, response.text)
+        self.assertEqual(self.client.get("/api/documents").json(), before)
