@@ -169,6 +169,45 @@ class NativeDrawingTests(unittest.TestCase):
             "sourceAsset": {"runId": asset["runId"], "assetSha256": asset["sha256"]}, "sourceStageRef": "fake"})
         self.assertEqual(mixed.status_code, 422)
 
+    def assert_section_perspective_retains_source(self, asset, section):
+        source = {"runId": asset["runId"], "assetSha256": asset["sha256"]}
+        body = {"projectId": PROJECT_ID, "sourceAsset": source,
+                "section": section, "scaleDenominator": 100}
+        response = self.client.post("/api/drawings/section-perspectives", json=body)
+        self.assertEqual(response.status_code, 201, response.text)
+        document = response.json()
+        self.assertIsNone(document["modelSource"])
+        self.assertIsNone(document["sourceStageRef"])
+        self.assertEqual(document["viewRecipe"]["sourceAsset"], source)
+        self.assertEqual(document["viewRecipe"]["follow"], "frozen")
+        self.assertEqual(document["viewRecipe"]["kind"], "section-perspective")
+        receipt = self.repository.load_json(record_ref_from_uri(document["revisionRef"], PROJECT_ID))
+        self.assertEqual(receipt["source"]["model"]["sha256"], asset["sha256"])
+        self.assertEqual(receipt["view"], document["viewRecipe"])
+        self.assertNotIn("step", receipt["source"])
+        if asset.get("sourceImport"):
+            self.assertEqual(receipt["source"]["sourceImport"], asset["sourceImport"])
+        with TestClient(create_app(self.settings)) as reopened:
+            repeated = reopened.post("/api/drawings/section-perspectives", json=body)
+            self.assertEqual(repeated.status_code, 201, repeated.text)
+            self.assertEqual(repeated.json(), document)
+            listed = reopened.get("/api/documents", params={"runId": asset["runId"]})
+            self.assertIn(document, listed.json()["documents"])
+            image = reopened.get(f"/api/documents/{document['assetSha256']}/bytes", params={
+                "runId": document["runId"], "revisionRef": document["revisionRef"]})
+            self.assertEqual(image.status_code, 200, image.text[:200] if image.status_code != 200 else "")
+            self.assertEqual(hashlib.sha256(image.content).hexdigest(), document["assetSha256"])
+        self.assertFalse(list((self.root / PROJECT_ID).rglob("*.step")))
+        self.assertEqual(self.repository.read_head(), self.head)
+
+    def test_external_three_dm_section_perspective_is_frozen_and_reused(self):
+        asset = self.upload()
+        self.assert_section_perspective_retains_source(asset, {"line": [[0, 1], [9, 1]], "keep": "right"})
+        ambiguous = self.client.post("/api/drawings/section-perspectives", json={
+            "projectId": PROJECT_ID, "sourceAsset": {"runId": asset["runId"], "assetSha256": asset["sha256"]},
+            "sourceStageRef": "fake", "section": {"line": [[0, 1], [9, 1]], "keep": "right"}})
+        self.assertEqual(ambiguous.status_code, 422)
+
     def test_real_skp_upload_keeps_original_and_draws_without_step(self):
         from archflow.adapters import sketchup_reader
         from archflow.adapters.model_formats import ConversionError
@@ -212,6 +251,8 @@ class NativeDrawingTests(unittest.TestCase):
         self.assertEqual(receipt["source"]["sourceImport"],
                          {key: registration[key] for key in ("sourceArtifact", "sourceFileName", "conversion")})
         self.assertTrue(receipt["source"]["sourceImport"]["conversion"]["warnings"])
+        self.assert_section_perspective_retains_source(asset, {
+            "line": [[-1.143, .127], [2.159, 4.826]], "keep": "right"})
         self.assertFalse(list((self.root / PROJECT_ID).rglob("*.step")))
         self.assertEqual(self.repository.read_head(), self.head)
 

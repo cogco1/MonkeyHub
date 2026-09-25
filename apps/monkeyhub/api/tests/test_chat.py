@@ -1133,7 +1133,8 @@ class ChatTests(unittest.TestCase):
                        "GET /api/documents?runId=", "MonkeyDiagram's documents list",
                         "/api/document-annotations", "baseRevisionSha256",
                         "GET /api/drawings/styles", "POST /api/drawings/sheets",
-                        "/api/proposals/elevation"):
+                        "/api/proposals/elevation", "POST /api/drawings/section-perspectives", "剖透视",
+                        "keep: 'left'|'right'", "POST /api/board/export"):
             self.assertIn(stated, request_tool["description"], stated)
         self.assertIn("clarify a field or correct a request", schema_tool["description"])
 
@@ -1202,6 +1203,16 @@ class ChatTests(unittest.TestCase):
             sheet = chat.call_tool(self.store.hub_url, session.id, "studio_request", {
                 "method": "POST", "path": "/api/drawings/sheets", "body": sheet_body})
             self.assertEqual(sheet["body"], sheet_body)
+            section_body = {"projectId": session.projectId, "section": {"line": [[0, 2], [6, 2]], "keep": "left"},
+                            "modelSource": {"runId": "studio-candidate", "stateDigest": "d" * 64, "assetSha256": "e" * 64}}
+            section = chat.call_tool(self.store.hub_url, session.id, "studio_request", {
+                "method": "POST", "path": "/api/drawings/section-perspectives", "body": section_body})
+            self.assertEqual((section["path"], section["body"]), ("/api/drawings/section-perspectives", section_body))
+            with self.assertRaises(HubFailure) as other_project_section:
+                chat.call_tool(self.store.hub_url, session.id, "studio_request", {
+                    "method": "POST", "path": "/api/drawings/section-perspectives",
+                    "body": {**section_body, "projectId": "other"}})
+            self.assertEqual(other_project_section.exception.error.code, "CHAT_PROJECT_MISMATCH")
             annotation_body = {"projectId": session.projectId, "runId": "studio-drawing-1",
                                "assetSha256": "b" * 64, "pageIndex": 0,
                                "drawingRevisionRef": "retained-drawing", "baseRevisionSha256": "c" * 64,

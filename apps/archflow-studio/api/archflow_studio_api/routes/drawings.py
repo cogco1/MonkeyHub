@@ -7,13 +7,13 @@ from fastapi import APIRouter, Query
 from starlette.requests import Request
 
 from ..application.binding import bound_project
-from ..application.drawings import generate_elevation, generate_sheet, model_view
+from ..application.drawings import generate_elevation, generate_section_perspective, generate_sheet, model_view
 from ..application.drawing_plans import generate_plan, plan_status, plan_dimension_choices, dimension_proposal, plan_vector
 from ..transport.artifacts import ModelSourceDto, SourceDocumentDto, document_dto, model_source_from
 from ..transport.drawings import (
     DrawingStylesDto, ElevationRequestDto, ModelViewDto, SheetRequestDto,
     PlanRequestDto, PlanStatusRequestDto, PlanStatusDto,
-    PlanDimensionChoicesDto, PlanDimensionProposalRequestDto, PlanVectorDto,
+    PlanDimensionChoicesDto, PlanDimensionProposalRequestDto, PlanVectorDto, SectionPerspectiveRequestDto,
 )
 from ..transport.errors import StudioError
 from ..transport.proposal import ProposalDto, to_dto as proposal_dto
@@ -119,6 +119,39 @@ def create_sheet(request: Request, payload: SheetRequestDto) -> SourceDocumentDt
         style_id=payload.style_id, scale_denominator=payload.scale_denominator,
         hidden_object_ids=tuple(payload.hidden_object_ids), outline_object_ids=tuple(payload.outline_object_ids),
         notes=tuple(payload.notes), monitor=request.app.state.monitor,
+    ))
+
+
+@router.post("/drawings/section-perspectives", response_model=SourceDocumentDto, response_model_by_alias=True, status_code=201)
+def create_section_perspective(request: Request, payload: SectionPerspectiveRequestDto) -> SourceDocumentDto:
+    """Retain a true section perspective (剖透视) of an exact model and register it in the documents list.
+
+    The section plane cuts the retained STEP or registered native model; the side away from the eye
+    is drawn in exact perspective with visible lines only, and the cut is
+    filled (poché). The picture plane is the section plane, so the cut is true
+    to scale at 1:scaleDenominator and lines perpendicular to it converge at
+    the eye's foot on the plane. The minimal request is a plan line and the
+    kept side; the default camera looks straight through the cut. Coordinates
+    use the source model's CAD frame and length unit (X/Y plan, Z up). Refusals
+    are named: SECTION_PLANE_MISSES_MODEL, SECTION_EYE_ON_KEPT_SIDE,
+    SECTION_EYE_ON_PLANE, SECTION_CAMERA_DEGENERATE, SECTION_LINE_DEGENERATE,
+    SECTION_NORMAL_DEGENERATE, SECTION_DEPTH_INVALID, SECTION_VALUE_NOT_FINITE,
+    SECTION_REQUEST_INVALID, DRAWING_OBJECT_UNKNOWN and DRAWING_EMPTY.
+    """
+
+    binding = bound_project(request.app.state)
+    if payload.project_id != binding.project_id:
+        raise StudioError(403, "PROJECT_MISMATCH", "The drawing names another project.")
+    graphics = {key: value for key, value in (("cutLineMm", payload.cut_line_mm), ("visibleLineMm", payload.visible_line_mm),
+                                              ("hatchSpacingMm", payload.hatch_spacing_mm)) if value is not None}
+    return document_dto(generate_section_perspective(
+        binding, source_stage_ref=payload.source_stage_ref,
+        source_asset=None if payload.source_asset is None else payload.source_asset.model_dump(by_alias=True),
+        model_source=None if payload.model_source is None else model_source_from(payload.model_source),
+        section=payload.section.model_dump(by_alias=True),
+        camera=None if payload.camera is None else payload.camera.model_dump(by_alias=True, exclude_none=True),
+        depth=payload.depth, hidden_object_ids=tuple(payload.hidden_object_ids), drawing_id=payload.drawing_id,
+        scale_denominator=payload.scale_denominator, graphics=graphics or None, monitor=request.app.state.monitor,
     ))
 
 

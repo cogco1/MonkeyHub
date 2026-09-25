@@ -48,7 +48,7 @@ module registry 管软件归口与公开契约，work registry 只管未完成�
 这些检查服务于现有编译对象的续改；导入文件里出现一个 GUID 本身不构成修改许可，
 也不证明已有依赖图包含用户需要保护的全部对象。
 
-Drawing 可直接选择已注册的 3DM，或上传 3DM / SKP 后生成剖切平面；也可经现有
+Drawing 可直接选择已注册的 3DM，或上传 3DM / SKP 后生成剖切平面、剖透视；也可经现有
 `/api/drawings/elevations` 和 `/api/drawings/sheets` 输出立面与 PDF/DXF 图纸。
 外部文件使用 `sourceAsset: {runId, assetSha256}`，无设计状态时不填写 `modelSource`。
 图纸固定引用导入版本；修改表达、关闭重开均保留此来源，不能据此驱动未绑定的设计参数。

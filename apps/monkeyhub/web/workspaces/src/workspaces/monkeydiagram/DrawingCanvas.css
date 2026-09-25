@@ -51,6 +51,11 @@
 .drawing-actions > .drawing-download { width: 100%; margin-top: 8px; }
 .drawing-save-state { min-height: 1.4em; margin: 0 0 4px; color: var(--muted); font-size: var(--text-caption); }
 .drawing-controls input:invalid { border-color: var(--violated); }
+.drawing-section { margin-top: 12px; border-top: 1px solid var(--line); }
+.drawing-section > summary { font-weight: 600; }
+.drawing-section > fieldset { margin-top: 0; padding-top: 0; border-top: 0; }
+.drawing-section .drawing-field__hint { margin: 0 0 12px; }
+.drawing-section button[type="submit"] { width: 100%; background: var(--accent-soft); border-color: var(--accent); }
 @container drawing (max-width: 900px) {
   .drawing-body { flex-direction: column; overflow: auto; }
   .drawing-controls { flex: none; overflow: visible; border-left: 0; border-top: 1px solid var(--line); }
