@@ -20,7 +20,10 @@
         "AGENTS.md",
         ".github/pull_request_template.md",
         "tools/devctl.py",
-        "tests/"
+        "tests/",
+        "docs/ARCHITECTURE.md",
+        "docs/STAGE_BRANCH_CANDIDATE_PLAN.md",
+        "apps/archflow-studio/README.md"
       ],
       "card": "docs/mapping/planning/GH-60-legacy-card-closeout.md",
       "acceptance": [
@@ -54,7 +57,10 @@
             "AGENTS.md",
             ".github/pull_request_template.md",
             "tools/devctl.py",
-            "tests/"
+            "tests/",
+            "docs/ARCHITECTURE.md",
+            "docs/STAGE_BRANCH_CANDIDATE_PLAN.md",
+            "apps/archflow-studio/README.md"
           ],
           "depends_on": [],
           "status": "active",
