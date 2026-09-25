@@ -1,0 +1,24 @@
+<!doctype html>
+<!--
+  GH-284 Candidate Graph: DEV PROTOTYPE on fixture data, not production.
+  Static page: open this file directly (file://). No build step, no network.
+  #state=1..6 opens a review state, #theme=light|dark|system sets the theme,
+  #data=<name> loads data/<name>.js (default: issue-fixture).
+-->
+<html lang="en" data-theme="system">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Candidate Graph · dev prototype</title>
+  <link rel="stylesheet" href="prototype.css">
+  <script src="data/datasets.js"></script>
+  <script src="prototype.js" defer></script>
+</head>
+<body>
+  <div id="app" aria-live="off">
+    <p class="boot-note">DEV PROTOTYPE · fixture data · not production. Loading the fixture…</p>
+  </div>
+  <noscript>This dev prototype needs JavaScript. It reads only local fixture files.</noscript>
+</body>
+</html>
