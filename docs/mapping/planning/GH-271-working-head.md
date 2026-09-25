@@ -37,7 +37,7 @@ Class: **a** required explicit choice, **b** should auto-follow the Working Head
 | Pin restored from localStorage on cold start | `ChatShell.tsx:94-111, 740` | b | A stale pin can no longer override the head |
 | "Open this candidate" (chat result, project card, operations) | `ChatShell.tsx:886, 1022-1030` | c | Kept as explicit view-only comparison; raw id list replaced by Worktree Graph rows |
 | "Continue from this version" / "Viewing only" chat gate | `features/stage/Stage.tsx:1144-1160`, `app/App.tsx:3057-3072` | b | Needed only when a person deliberately views another line; routine Agent results no longer land view-only |
-| Home fallback "last export listed" | `app/App.tsx:1332-1341` | b | Uses the resolver's head model |
+| Home fallback "last export listed" | `app/App.tsx:1332-1341` | b | Kept: it applies only when the followed head has no model of its own and names the run it shows |
 | Versions "New" badge, branch select, Stage buttons, A/B, combine, accept, fork, save | `features/stage/VersionsStrip.tsx` | a / c | Unchanged; they remain the history/decision entry |
 | Editing base only re-read on cold open | `app/useSession.ts:95-121, 186-196` | b | Session follows the server head after candidate events, activation and refresh |
 
@@ -80,6 +80,25 @@ Class: **a** required explicit choice, **b** should auto-follow the Working Head
 | 4 Intentional fork | Graph test: a forked branch is its own line; the head stays unambiguous |
 | 5 Concurrent non-conflicting | Graph test: second result from the same base is `diverged`, `can-combine` |
 | 6 Real conflict | Graph test: overlapping writes are `conflict` with the shared refs; nothing merges |
+
+## Result (2026-09-24)
+
+- Server: `GET /api/working-source` and `GET /api/worktrees`; drawing status, drawing-driven design
+  changes, render and publication freshness compare with the Working Head. Stage-less cut plans are
+  no longer exempt from freshness because the default target no longer needs a Stage.
+- Modeling follows the head after candidate events, activation and refresh; delivered and restored
+  Hub pins follow the head, explicit opens stay view-only comparisons.
+- Drawing opens the newest drawing LIVE, rebuilds once per moved head, freezes earlier revisions and
+  explicitly chosen versions, and states a head it cannot draw.
+- Render names current/earlier models instead of run ids; "Use updated source" follows a LIVE drawing.
+- The Hub project card shows the current project, Modeling/Drawing/Render status, background work and
+  the Worktree Graph rows with owners, reconcile state and plain conflicting names.
+- Checks: Studio API suite 1262 passed / 3 skipped; Hub web 21 + workspace 339 unit tests; Drawing 13,
+  Render 13 and Hub chat-shell browser scenarios; generated clients, typecheck, build, archcheck scopes.
+- Live Hub on a disposable demo project: two successive headless Agent edits were shown and edited
+  without choosing a candidate; a cold browser opened on the head although the Hub's delivery pin
+  named a newer concurrent result; three concurrent results appeared as one combinable and two
+  conflicting lines with the element names; a visible LIVE cut plan rebuilt itself on a moved head.
 
 ## Limits of this slice
 
