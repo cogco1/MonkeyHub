@@ -27,21 +27,33 @@ export function createModelDraftSyncAttempt(requestId: string = crypto.randomUUI
   return { requestId, nextCommand: 0, sourceProposalId: null, finalProposalId: null };
 }
 
-/** The local-draft witness belongs to this editor, not whichever window wrote last. */
+/**
+ * The local-draft witness belongs to this editor, not whichever window wrote last.
+ * The revision is only a concurrency token: a position that moved between the
+ * read and the write is read again, up to three attempts, and the witness and
+ * the server's expected source still guard the content (GH-293).
+ */
 export function createLocalDraftWriter(api: Pick<StudioClient, "workingDraft" | "retainLocalDraft">, initial: WorkingDraftDto) {
   let observed = JSON.stringify(initial.localDraft ?? null);
   let queue: Promise<unknown> = Promise.resolve();
   return (draft: LocalDraftInputDto | null, expectedSource?: LocalDraftSourceDto): Promise<WorkingDraftDto> => {
     const frozen = draft === null ? null : JSON.parse(JSON.stringify(draft)) as LocalDraftInputDto;
     const next = queue.catch(() => {}).then(async () => {
-      const current = await api.workingDraft();
-      if (current.projectId !== initial.projectId || JSON.stringify(current.localDraft ?? null) !== observed) {
-        throw new Error("另一窗口已更新工作草稿。当前修改仍在本窗口；请先保留修改，再重新打开项目读取最新草稿。");
+      for (let attempt = 1; ; attempt += 1) {
+        const current = await api.workingDraft();
+        if (current.projectId !== initial.projectId || JSON.stringify(current.localDraft ?? null) !== observed) {
+          throw new Error("另一窗口已更新工作草稿。当前修改仍在本窗口；请先保留修改，再重新打开项目读取最新草稿。");
+        }
+        try {
+          const result = await api.retainLocalDraft({ projectId: initial.projectId,
+            baseRevisionSha256: current.revisionSha256 ?? null, draft: frozen, expectedSource });
+          observed = JSON.stringify(result.localDraft ?? null);
+          return result;
+        } catch (error) {
+          // A candidate's result, or the Agent's Continue, may land between the read and the write.
+          if (errorCode(error) !== "WORKING_DRAFT_STALE" || attempt >= 3) throw error;
+        }
       }
-      const result = await api.retainLocalDraft({ projectId: initial.projectId,
-        baseRevisionSha256: current.revisionSha256 ?? null, draft: frozen, expectedSource });
-      observed = JSON.stringify(result.localDraft ?? null);
-      return result;
     });
     queue = next;
     return next;
