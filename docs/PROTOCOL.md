@@ -597,6 +597,13 @@ SVG `data-dressing` groups remain independently editable and do not claim the
 architectural `data-object` identity used by projected model vectors. The PNG and
 SVG share one rendering input. This read does not regenerate or create a revision.
 
+`POST /api/drawings/plans/status` and `GET /api/drawings/plans/vector` also return
+`cleanup`: the deterministic line cleanup the projection owner retained with that
+revision's receipt (per-rule counts and input/output line counts), passed through
+unchanged, or null for a revision drawn before cleanup existed. It is kept in the
+receipt only, never in `viewRecipe`, so it never decides which revision a request
+reuses.
+
 Servers advertising `drawing-elevations` accept `{projectId, sourceStageRef, view}`
 or an exact candidate `modelSource` instead of `sourceStageRef`. Views are front,
 back, left and right. An optional `drawingId` groups revisions; the response's

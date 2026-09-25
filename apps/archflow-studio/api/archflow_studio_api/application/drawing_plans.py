@@ -99,13 +99,22 @@ def _edit_dressing(objects, operations):
 
 
 def plan_vector(binding, *, run_id, asset_sha256, revision_ref):
-    """Retained SVG and its exact-source anchor choices; no regeneration or write."""
+    """Retained SVG, its exact-source anchor choices and cleanup report; no regeneration or write."""
     from monkeydiagram.drawing_svg import dressing_assets
     document = _plan_document(binding, run_id, asset_sha256, revision_ref)
     drawing = read_model_axis_elevation(binding.repository, record_ref_from_uri(revision_ref, binding.project_id))
     _, receipt = _complete_source(binding, _document_source(document), None if document.source_stage_ref is None else record_ref_from_uri(document.source_stage_ref, binding.project_id))
     return {"svg": drawing.svg.decode("utf-8"), "assets": dressing_assets(),
-            "anchors": plan_dressing_anchors(receipt)}
+            "anchors": plan_dressing_anchors(receipt), "cleanup": drawing.receipt.get("cleanup")}
+
+
+def _cleanup_report(binding, revision_ref):
+    """The projection owner's cleanup report, exactly as this revision's receipt retains it.
+
+    Only the receipt holds it, never the recipe, so it never decides which
+    revision a request reuses; a revision drawn before cleanup has none.
+    """
+    return binding.repository.load_json(record_ref_from_uri(revision_ref, binding.project_id)).get("cleanup")
 
 
 @retained_sources
@@ -280,8 +289,10 @@ def plan_status(binding, *, run_id, asset_sha256, revision_ref, target_model_sou
                 working: WorkingSources | None = None):
     document = _plan_document(binding, run_id, asset_sha256, revision_ref)
     result = {"status": "unknown", "detail": "The exact target could not be verified.", "dimensions": [],
-              "targetModelSource": None, "targetStageRef": target_stage_ref, "lengthUnit": None, "bindingChanged": False}
+              "targetModelSource": None, "targetStageRef": target_stage_ref, "lengthUnit": None, "bindingChanged": False,
+              "cleanup": None}
     try:
+        result["cleanup"] = _cleanup_report(binding, revision_ref)
         imported = _document_source(document)
         if isinstance(imported, DrawingAssetSource):
             _, receipt = _complete_source(binding, imported, None)

@@ -2,11 +2,17 @@
 
 from __future__ import annotations
 
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .artifacts import ModelSourceDto
+
+
+CLEANUP_REPORT = (
+    "The deterministic cleanup the projection owner applied to this revision's lines - per-rule counts and "
+    "input/output line counts - exactly as the revision's receipt retains it; null for a revision drawn before "
+    "cleanup existed. It is never part of viewRecipe.")
 
 
 class PlanDimensionPlacementDto(BaseModel):
@@ -81,6 +87,7 @@ class PlanVectorDto(BaseModel):
     svg: str
     assets: list[PlanDressingAssetDto]
     anchors: list[PlanDressingAnchorDto]
+    cleanup: dict[str, Any] | None = Field(default=None, description=CLEANUP_REPORT)
 
 
 class DrawingAssetSourceDto(BaseModel):
@@ -181,6 +188,7 @@ class PlanStatusDto(BaseModel):
     dimensions: list[PlanDimensionReadDto] = Field(default_factory=list)
     unresolved_object_ids: list[str] = Field(alias="unresolvedObjectIds", default_factory=list)
     dressing: list[PlanDressingReadDto] = Field(default_factory=list)
+    cleanup: dict[str, Any] | None = Field(default=None, description=CLEANUP_REPORT)
 
 
 class PlanDimensionChoicesDto(BaseModel):
