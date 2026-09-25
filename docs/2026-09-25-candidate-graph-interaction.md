@@ -41,9 +41,9 @@ Paths: `ChatShell` = `apps/monkeyhub/web/src/ChatShell.tsx`; `Stage`, `VersionsS
 | Hub header, `ChatShell:881` | The project name and the chat title. | No Stage and no Current. Below 900 px the tool panel covers it (`ChatShell.css:93`). |
 | Rail, `ChatShell:42-50, 1018-1111` | "Workspaces": Modeling, Render, Drawings, Publish, Board, Fab. "System": Monitor. At the bottom, "This project". | It is visible at every width (`ChatShell.css:93-94`), but every entry is a surface or tool (#295). The `drawing` entry borrows the `diagram` label key, which reads "Drawings" (`ChatShell:45`, `messages.en.ts:936`), so "Diagram" has no entry of its own yet. |
 | Project card (#277), `ChatShell:1037-1101` | Stage (`:1043`), Current and whether it is accepted (`:1045`), background tasks (`:1053`), and "Work in progress" rows, each with "Open this candidate" (`:1056-1069`). | It is a popover off the rail's last button (`ChatShell.css:72`). The graph is read only while the card is open (`ChatShell:287-289`), so the rest of the UI has no indicator. The rows are flat, sorted by kind (`worktreeGraph.ts:77-88`), and built from every retained working run (`runtime.py:337-379`, capped at 50 at `:197`), which is the legacy mistake #294 removes. They have no Stage or Study grouping and no preview. |
-| Agent result, `ChatShell:909-910` | One "Open this candidate on the right" button (`messages.en.ts:940`) per tool message that carries a candidate. | Five schemes plus the internal runs give scattered buttons with no letter, summary or thumbnail. Only the turn's last result opens, view-only (`ChatShell:838-851`). Headless results promote the newest one (`:769-836`). |
+| Agent result, `ChatShell:909-910` | One "Open this candidate on the right" button (`messages.en.ts:940`) per tool message that carries a candidate. | Five schemes plus the internal runs give scattered buttons with no letter, summary or thumbnail. During the turn the viewport jumps to each newest result, view-only, and ends on the last one (`ChatShell:838-851`). Headless results promote the newest one (`:769-836`). |
 | Modeling footer, `Stage:2040-2067` | "Versions N", where N is the number of Stages (`Stage:1158`), plus "Viewing …", "new" (`:2044-2048`) and the editing-base row with Continue (`:1176-1201`). | Arch-only. Drawing, Render and Board never show it. |
-| Versions panel, `VersionsStrip:86-168` | Drafts, a branch `<select>` showing raw IDs (`:121-123`), Stage rows (`:127-134`), a Git-style branch-name form (`:135-140`), Explorations (`:141-143`), and Candidates folded inside `<details>` (`:144-163`). | It overlays the model at up to 720 px × 55 vh (`styles.css:1281-1297`). The Candidates are every unaccepted source (`App:653-661`). Clicking a Stage changes the editing base (`App:2191-2193`), which breaks "an old Stage opens read-only". |
+| Versions panel, `VersionsStrip:86-168` | Drafts, a branch `<select>` showing raw IDs (`:121-123`), Stage rows (`:127-134`), a Git-style branch-name form (`:135-140`), Explorations (`:141-143`), and Candidates folded inside `<details>` (`:144-163`). | It overlays the model at up to 720 × 480 px (`styles.css:1281-1297`). The Candidates are every unaccepted source (`App:653-661`). Clicking a Stage changes the editing base (`App:2191-2193`), which breaks "an old Stage opens read-only". |
 | Drawing, `DrawingCanvas.tsx:284-304` | "Source of page …" with Live or Frozen, and a Stage picker labelled `label · branchId` (`:287`). | This is where "which lineage does this sheet follow?" naturally arises, but it doesn't link to the tree. |
 
 **Answers to the issue's six questions:**
@@ -137,11 +137,11 @@ What we don't take: a commit graph as the main view, merge UI, branch naming, ha
 
 | Workflow or constraint | P1 chip | P2 rail/drawer | P3 contextual | P4 tray |
 |---|---|---|---|---|
-| Five schemes just finished | ~ the count changes, but the user is looking at chat | ~ only a badge | ✓ the card is where they look | ✓ it appears by itself |
-| "I need last week's rejected option" | ✓ chip → tree → Archived | ✓ | ✗ the card is buried in an old or archived chat | ✗ current Study only |
-| In Drawing: which lineage does this sheet follow? | ✓ the chip over Tools says `S2 · Current` | ~ open the tree and search | ✓ if the source label links to the tree | ✗ |
-| Back to S1 to start a new direction | ✓ chip → tree → S1 → Continue | ✓ | ✗ | ✗ |
-| Three Agent worktrees still running | ✓ `2 running` shows in the chip | ~ badge | ~ only while chat is open | ~ current Study only |
+| W1 · Five schemes just finished | ~ the count changes, but the user is looking at chat | ~ only a badge | ✓ the card is where they look | ✓ it appears by itself |
+| W2 · "I need last week's rejected option" | ✓ chip → tree → Archived | ✓ | ✗ the card is buried in an old or archived chat | ✗ current Study only |
+| W3 · In Drawing: which lineage does this sheet follow? | ✓ the chip over Tools says `S2 · Current` | ~ open the tree and search | ✓ if the source label links to the tree | ✗ |
+| W4 · Back to S1 to start a new direction | ✓ chip → tree → S1 → Continue | ✓ | ✗ | ✗ |
+| W5 · Three Agent worktrees still running | ✓ `2 running` shows in the chip | ~ badge | ~ only while chat is open | ~ current Study only |
 | Narrow screens | ✓ shrinks to `S2 ▾ ●3` | ✓ the rail survives | ~ the card survives, but notices get missed | ✗ takes viewport height |
 | Doesn't read as another app | ✓ it is project chrome | ✗ a rail peer of surfaces and tools (#295) | ✓ | ✓ |
 | Works with chat closed | ✓ | ✓ | ✗ | ✓ |
@@ -305,7 +305,7 @@ The smallest real slices, after review:
    - raw branch IDs in Drawing's source picker (`DrawingCanvas.tsx:287`).
 
    Update [plan §7](STAGE_BRANCH_CANDIDATE_PLAN.md), which still names VersionsStrip as the only version entry.
-5. **Chat.** Show one Study card per request instead of a button per run (`ChatShell:909-910`), and auto-open only the first ready Candidate, view-only (`ChatShell:838-851`).
+5. **Chat.** Show one Study card per request instead of a button per run (`ChatShell:909-910`). Auto-open only the first ready Candidate, view-only, instead of jumping to every newest result (`ChatShell:838-851`).
 6. **Project bar.** One bar shared by Arch, Diagram and Tools (the 09-24 proposal §5). Coordinate with #295, which moves Drawing to Tools and has to untangle the `diagram` label key the Drawing entry now uses (`ChatShell:45`). Add a "Locate in Design Tree" action to Drawing's source label (`DrawingCanvas.tsx:292-304`).
 7. **Compare.** An N-up viewer with linked cameras, using the ReviewContext from #271 once it exists.
 8. **Checks.** Both i18n catalogs, no raw IDs in the main copy, a browser scenario for the #284 V0 demo and the fork test, and `archcheck`.
