@@ -44,6 +44,12 @@ async function runtime(request, response, url, body) {
     if (method === "GET" && name === "/api/working-source") return json(fixture.workingSource(url.searchParams.get("workspace") ?? "modeling"));
     if (method === "GET" && name === "/api/design-history") return json(fixture.designHistory(url.searchParams.get("branchId") ?? "main"));
     if (method === "GET" && name === "/api/worktrees") return json(fixture.worktrees());
+    // The project's event stream, which other workspace code subscribes to; the fixture has no events to send.
+    if (method === "GET" && name === "/api/events") {
+      response.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" });
+      response.write(": fixture\n\n");
+      return;
+    }
     if (method === "GET" && name === "/api/working-draft") return json(fixture.workingDraft());
     if (method === "PUT" && name === "/api/working-draft") { writes.push({ method, name, body }); return json(fixture.selectWorkingDraft(body)); }
     const accept = name.match(/^\/api\/candidates\/([^/]+)\/accept$/);
