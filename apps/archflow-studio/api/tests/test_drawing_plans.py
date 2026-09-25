@@ -326,6 +326,8 @@ class CutPlanTests(CandidateTestCase):
         self.assertEqual(self.finished(job["jobId"])["status"], "succeeded")
         candidate = self.client.get(f"/api/candidates/{job['candidateId']}").json()
         model = next(row["modelSource"] for row in candidate["artifacts"] if row["format"] == "3dm")
+        # The architect continues from the unaccepted candidate; only its editing base may drive a change.
+        adopt(self.client, job["candidateId"])
         document = self.generate(sourceStageRef=None, modelSource=model)
         self.assertIsNone(document["sourceStageRef"])
         payload = {"projectId": PROJECT_ID, "runId": document["runId"], "assetSha256": document["assetSha256"],
