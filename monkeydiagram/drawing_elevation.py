@@ -50,7 +50,7 @@ import math
 import re
 from copy import deepcopy
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, is_dataclass
 from datetime import datetime, timezone
 from io import BytesIO
 from pathlib import PurePosixPath
@@ -412,6 +412,18 @@ class ElevationDrawing:
 
         return self.receipt.get("cleanup")
 
+    @property
+    def attribution(self) -> Mapping[str, Any] | None:
+        """Who asked for this revision, as the application stated it; None when it was not recorded."""
+
+        return self.receipt.get("attribution")
+
+    @property
+    def reason(self) -> str | None:
+        """Why this revision was asked for; None when no reason was recorded."""
+
+        return self.receipt.get("reason")
+
 
 @dataclass(frozen=True, slots=True)
 class VerifiedElevationSource:
@@ -587,8 +599,39 @@ def _source_binding(source, verified):
             "object_identity": "STEP shape name = CAD receipt physical object id"}
 
 
+def _revision_provenance(attribution, reason) -> dict[str, Any]:
+    """Who asked for a drawing revision and why, as the application states them; checked before anything is drawn.
+
+    ``attribution`` is a flat mapping of JSON values, such as the Studio's
+    ``{"actorId", "authenticated", "origin"}``, or a dataclass of them, whose
+    field names are then written in camelCase.  ``reason`` is the words the
+    revision was asked with.  Neither is interpreted here.  What is not
+    given is not written, so an earlier receipt and a revision without them
+    both read as None.
+    """
+
+    provenance: dict[str, Any] = {}
+    if attribution is not None:
+        if is_dataclass(attribution) and not isinstance(attribution, type):
+            attribution = {re.sub(r"_([a-z])", lambda match: match.group(1).upper(), key): value
+                           for key, value in asdict(attribution).items()}
+        if (not isinstance(attribution, Mapping) or not attribution
+                or any(not isinstance(key, str) or not key for key in attribution)
+                or any(not (value is None or isinstance(value, (str, bool))
+                            or (isinstance(value, (int, float)) and math.isfinite(value)))
+                       for value in attribution.values())):
+            raise DrawingElevationError("attribution must be a flat mapping of names to text, true/false or numbers")
+        provenance["attribution"] = dict(attribution)
+    if reason is not None:
+        if not isinstance(reason, str):
+            raise DrawingElevationError("reason must be text")
+        if reason.strip():
+            provenance["reason"] = reason
+    return provenance
+
+
 def _retain_projection(repository, *, source, verified, projection, view, name, drawing_run_id,
-                       backend, head_before, projection_details=None, previous_revision_ref=None):
+                       backend, head_before, projection_details=None, previous_revision_ref=None, provenance=None):
     """The one receipt/artifact boundary for elevation, cut-plan and section-perspective projections."""
     if isinstance(source, NativeModelSource) and verified.receipt.get("modelSource") is None:
         view = {**view, "sourceAsset": {"runId": source.run_id, "assetSha256": source.artifact.sha256}, "follow": "frozen"}
@@ -627,6 +670,7 @@ def _retain_projection(repository, *, source, verified, projection, view, name, 
             payload["cleanup"] = projection.cleanup.to_dict()
         if previous_revision_ref is not None:
             payload["previousRevisionRef"] = previous_revision_ref
+        payload.update(provenance or {})
         receipt_ref = repository.put_json(
             run=run, destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=run.run_id),
             record_kind=DRAWING_PROJECTION_RECEIPT, payload=payload,
@@ -683,15 +727,18 @@ def resolve_plan_dressing(recipe: Mapping, receipt: Mapping) -> list[dict]:
 def freeze_cut_plan(
     repository: FilesystemProjectRepository, *, source: ElevationSource | NativeModelSource, recipe: Mapping,
     drawing_run_id: str, dimensions: tuple[Mapping, ...] = (), previous_revision_ref: str | None = None,
+    attribution: Mapping[str, Any] | None = None, reason: str | None = None,
 ) -> ElevationDrawing:
     """Retain a horizontal section and the exact below-cut visibility in the existing drawing envelope.
 
     ``recipe`` retains representation intent; ``dimensions`` contains the application's resolved
     source measurements or explicit unresolved statuses. Neither can change the source model.
     Coordinates are the verified STEP's CAD Z-up frame and length unit, never Program Y-up.
+    ``attribution`` and ``reason`` say who asked for this revision and why (``_revision_provenance``).
     """
     if not isinstance(repository, FilesystemProjectRepository):
         raise TypeError("repository must be FilesystemProjectRepository")
+    provenance = _revision_provenance(attribution, reason)
     try:
         recipe = deepcopy(dict(recipe))
         _require(recipe.get("kind") == CUT_PLAN_KIND, "the view recipe must be a cut-plan")
@@ -759,14 +806,14 @@ def freeze_cut_plan(
             "selected_object_ids": list(selected), "section_polylines": len(sections),
             "section_regions": len(regions), "dimensions": resolved, "unresolvedObjectIds": unresolved_objects,
             **({"dressing": dressing} if "dressing" in recipe else {}),
-        }, previous_revision_ref=previous_revision_ref,
+        }, previous_revision_ref=previous_revision_ref, provenance=provenance,
     )
 
 
 def freeze_model_axis_elevation(
     repository: FilesystemProjectRepository, *, source: ElevationSource | NativeModelSource, view: ElevationView, drawing_run_id: str,
     operation_observer: Callable[[Mapping[str, Any]], None] | None = None,
-    parent_event_id: str | None = None,
+    parent_event_id: str | None = None, attribution: Mapping[str, Any] | None = None, reason: str | None = None,
 ) -> ElevationDrawing:
     """Project retained STEP or native 3DM and retain SVG, PNG and receipt in the drawing run.
 
@@ -774,12 +821,14 @@ def freeze_model_axis_elevation(
     inconsistent, or the drawing run exists with another base.  A repeat
     with the same source and view writes the same bytes to the same paths
     (the repository accepts identical content) and returns the same refs.
+    ``attribution`` and ``reason`` say who asked and why (``_revision_provenance``).
     """
 
     if not isinstance(repository, FilesystemProjectRepository):
         raise TypeError("repository must be FilesystemProjectRepository")
     if not isinstance(view, ElevationView):
         raise TypeError("view must be ElevationView")
+    provenance = _revision_provenance(attribution, reason)
     identity = {"view_recipe": {key: value for key, value in view.to_dict().items()
                                 if key not in {"uv_definition", "depth_definition"}}}
     if isinstance(source, ElevationSource):
@@ -802,7 +851,7 @@ def freeze_model_axis_elevation(
     with _observed_stage(observer, "drawing.persist", parent_event_id=parent_event_id) as observation:
         drawing = _retain_projection(
             repository, source=source, verified=verified, projection=projection, view=view.to_dict(), name=view.name,
-            drawing_run_id=drawing_run_id, backend=backend, head_before=head_before,
+            drawing_run_id=drawing_run_id, backend=backend, head_before=head_before, provenance=provenance,
         )
         observation["output_refs"] = [drawing.receipt_ref.uri, drawing.svg_ref.uri, drawing.png_ref.uri]
     return drawing
@@ -1201,7 +1250,7 @@ def section_perspective_objects(verified: VerifiedElevationSource, hidden_object
 def freeze_section_perspective(
     repository: FilesystemProjectRepository, *, source: ElevationSource | NativeModelSource, view: SectionPerspectiveView,
     drawing_run_id: str, operation_observer: Callable[[Mapping[str, Any]], None] | None = None,
-    parent_event_id: str | None = None,
+    parent_event_id: str | None = None, attribution: Mapping[str, Any] | None = None, reason: str | None = None,
 ) -> ElevationDrawing:
     """Draw a section perspective of verified STEP or native geometry and retain SVG, PNG and receipt.
 
@@ -1210,12 +1259,14 @@ def freeze_section_perspective(
     projection and both renderings succeeded, and ``_retain_projection``
     retains the receipt with the exact plane and camera.  A repeat with the
     same source and view writes the same bytes and returns the same refs.
+    ``attribution`` and ``reason`` say who asked and why (``_revision_provenance``).
     """
 
     if not isinstance(repository, FilesystemProjectRepository):
         raise TypeError("repository must be FilesystemProjectRepository")
     if not isinstance(view, SectionPerspectiveView):
         raise TypeError("view must be SectionPerspectiveView")
+    provenance = _revision_provenance(attribution, reason)
     identity = {"view_recipe": view.request()}
     if isinstance(source, ElevationSource):
         identity["step_sha256"] = source.step_sha256
@@ -1241,7 +1292,7 @@ def freeze_section_perspective(
         drawing = _retain_projection(
             repository, source=source, verified=verified, projection=projection, view=dict(projection.view),
             name=view.name, drawing_run_id=drawing_run_id, backend=backend, head_before=head_before,
-            projection_details=projection.details(selected),
+            projection_details=projection.details(selected), provenance=provenance,
         )
         observation["output_refs"] = [drawing.receipt_ref.uri, drawing.svg_ref.uri, drawing.png_ref.uri]
     return drawing
