@@ -743,6 +743,20 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
     if (item.projectDir !== projectDir) { const view = tabs.find((tab) => tab.projectDir === item.projectDir); setActiveTool(view?.id ?? null); setPanel(Boolean(view)); }
     setArchivedView(Boolean(item.archived)); setProjectDir(item.projectDir); setChatId(item.id);
   };
+  // GH-300: a notice's 查看 opens its chat here, in place (src/notifications/openChat.ts).
+  const openFromNotice = useRef<(chatId: string, projectDir: string) => void>(() => undefined);
+  openFromNotice.current = (chatId, projectDir) =>
+    selectChat(sessions.find((item) => item.id === chatId) ?? ({ id: chatId, projectDir, archived: false } as ChatSummary));
+  useEffect(() => {
+    const open = (event: Event) => {
+      const detail = (event as CustomEvent<{ chatId?: unknown; projectDir?: unknown }>).detail;
+      if (typeof detail?.chatId !== "string" || typeof detail.projectDir !== "string") return;
+      event.preventDefault();
+      openFromNotice.current(detail.chatId, detail.projectDir);
+    };
+    window.addEventListener("monkeyhub:open-chat", open);
+    return () => window.removeEventListener("monkeyhub:open-chat", open);
+  }, []);
   const openTask = (task: SidebarTask) => {
     if (task.chat) { selectChat(task.chat); return; }
     const target = projects.find((item) => item.projectDir === task.projectDir && item.projectId === task.projectId);
