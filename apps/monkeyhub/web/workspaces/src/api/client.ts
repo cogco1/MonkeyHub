@@ -12,6 +12,8 @@ import type { SaveStudyRequestDto, StudyViewDto, ProposeStudyRequestDto } from "
 import type { PlanRequestDto, PlanStatusRequestDto, PlanStatusDto, PlanDimensionProposalRequestDto, PlanDimensionChoicesDto, PlanVectorDto } from "./generated";
 import { createPlanApiDrawingsPlansPost, readPlanStatusApiDrawingsPlansStatusPost, readPlanVectorApiDrawingsPlansVectorGet,
   readPlanDimensionChoicesApiDrawingsPlansDimensionsGet, createPlanDimensionProposalApiDrawingsPlansDimensionProposalPost } from "./generated";
+import { createSectionPerspectiveApiDrawingsSectionPerspectivesPost } from "./generated";
+import type { SectionPerspectiveRequestDto } from "./generated";
 import { retainStudyApiStudiesPost, discoverStudiesApiStudiesGet,
   proposeStudyApiStudiesProposePost } from "./generated";
 import {
@@ -239,6 +241,9 @@ export const createStudioClient = (connection: ServerConnection) => ({
   },
   drawingPlan(body: PlanRequestDto): Promise<SourceDocumentDto> {
     return call("POST /api/drawings/plans", createPlanApiDrawingsPlansPost({ client: connection.client, body }));
+  },
+  drawingSectionPerspective(body: SectionPerspectiveRequestDto): Promise<SourceDocumentDto> {
+    return call("POST /api/drawings/section-perspectives", createSectionPerspectiveApiDrawingsSectionPerspectivesPost({ client: connection.client, body }));
   },
   drawingPlanVector(source: { runId: string; assetSha256: string; revisionRef: string }): Promise<PlanVectorDto> {
     return call("GET /api/drawings/plans/vector", readPlanVectorApiDrawingsPlansVectorGet({ client: connection.client, query: source }));
