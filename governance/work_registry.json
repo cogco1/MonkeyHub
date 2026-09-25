@@ -263,6 +263,7 @@
         "apps/monkeyhub/web/test/chatProcess.test.ts",
         "apps/monkeyhub/web/test/chatShell.browser.mjs",
         "apps/monkeyhub/web/test/projectWorkspaceFixture.mjs",
+        "apps/monkeyhub/web/workspaces/src/app/ProjectWorkspace.tsx",
         "docs/mapping/planning/GH-285-composer.md"
       ],
       "card": "docs/mapping/planning/GH-285-composer.md",
@@ -291,6 +292,7 @@
             "apps/monkeyhub/web/test/chatShell.browser.mjs",
             "apps/monkeyhub/web/test/chatProcess.test.ts",
             "apps/monkeyhub/web/test/projectWorkspaceFixture.mjs",
+            "apps/monkeyhub/web/workspaces/src/app/ProjectWorkspace.tsx",
             "apps/monkeyhub/api/monkeyhub_api/main.py",
             "apps/monkeyhub/api/monkeyhub_api/runtime.py",
             "apps/monkeyhub/api/monkeyhub_api/runtime_models.py",
