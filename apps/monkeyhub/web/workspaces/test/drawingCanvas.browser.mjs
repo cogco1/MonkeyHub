@@ -167,7 +167,7 @@ try {
     assert.equal(await saveButton().count(), 0, "appearance has no Save button, only a retry after a refusal");
     await page.getByLabel("Scale denominator (1 : n)", { exact: true }).fill("50");
     await page.getByLabel("Label offset (paper mm)", { exact: true }).fill("16");
-    await page.getByText("Generating…", { exact: true }).waitFor();
+    await page.getByText("Saving appearance…", { exact: true }).waitFor();
     await until(() => revision().inputValue(), value => value !== oldRevision, "the edits saved themselves as a new revision");
     assert.equal(requests.length, 2, "two edits inside one pause make one revision");
     assert.equal(requests[1].previousRevisionRef, legacyDocument.revisionRef); assert.equal(requests[1].drawingId, "floor-plan");
