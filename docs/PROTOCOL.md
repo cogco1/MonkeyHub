@@ -656,6 +656,18 @@ recipe without them is exactly the recipe it was before they existed, so it keep
 its retained drawing and bytes. Paper values do not change with the scale. Imported
 models carry no material semantics, so their cuts keep the general hatch.
 
+A projected vector (`polyline` or poché `polygon`) names its physical object in
+`data-object` and, for a model compiled from design state, its `data-component` and
+`data-material` (the CAD program's `archflow:component` / `archflow:material`); an
+imported native model names objects only. The group is the role: `section` is the cut
+and a cut plan's `visible` lies beyond it. A poché is one stroke-free even-odd `polygon`
+in `g#section-hatch`. Before the SVG, a deterministic cleanup at 0.05 mm on the sheet
+drops strokes shorter than that, projected edges lying on the cut and hidden lines under
+visible ones or inside the cut, and joins an object's collinear pieces. The drawing
+receipt keeps its per-rule counts under `cleanup` (never in the recipe) and, when the
+application gives them, the revision's `attribution` and `reason`; receipts retained
+earlier have none.
+
 `POST /api/drawings/plans/status` and `GET /api/drawings/plans/vector` also return
 `cleanup`: the deterministic line cleanup the projection owner retained with that
 revision's receipt (per-rule counts and input/output line counts), passed through

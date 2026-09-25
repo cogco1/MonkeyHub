@@ -293,6 +293,44 @@ class OcctDrawingTests(unittest.TestCase):
         self.assertEqual(section_occt_regions(self.entries, object_ids=("panel",),
                                               **{**self.frame, "origin": (10, 3, 4)}), ())
 
+    def test_material_hatch_and_poche_leave_the_real_hole_open(self) -> None:
+        from io import BytesIO
+        from xml.etree import ElementTree
+
+        from PIL import Image
+
+        from monkeydiagram.drawing_svg import drawing_svg, render_svg_png
+
+        frame = {**self.frame, "origin": (3, 3, 4)}
+        (region,) = section_occt_regions(self.entries, object_ids=("panel",), **frame)
+        lines = section_occt_lines(self.entries, object_ids=("panel",), **frame)
+        centre, radius, crop = (-2.0, 1.5), 0.4, (-4.5, -0.5, 0.5, 3.5)
+        graphics = {"cutLineMm": 0.35, "visibleLineMm": 0.18, "hatchSpacingMm": 2}
+        namespace = "{http://www.w3.org/2000/svg}"
+
+        def draw(rule):
+            return drawing_svg(lines, crop_uv=crop, unit="meter", scale_denominator=50, hidden_lines=False,
+                               title="panel", regions=(region,), graphics={**graphics, "hatch": {"byMaterial": {"steel": rule}}},
+                               semantics={"panel": {"component": "panel", "material": "steel"}})
+
+        for angle in (0, 30, 45, 90, 135):
+            with self.subTest(angle=angle):
+                strokes = [[(float(x) + crop[0], crop[3] - float(y)) for x, y in (pair.split(",") for pair in line.get("points").split())]
+                           for line in ElementTree.fromstring(draw({"spacingMm": 1, "angleDeg": angle}))
+                           .findall(f"{namespace}g[@id='section-hatch']/{namespace}polyline")]
+                self.assertGreater(len(strokes), 50)
+                for a, b in strokes:
+                    for t in (0.0, 0.25, 0.5, 0.75, 1.0):
+                        point = (a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1]))
+                        # The loop is the circle within its chord deflection; the SVG keeps 0.1 mm.
+                        self.assertGreaterEqual(math.dist(point, centre), radius - 3e-4, "a hatch stroke fills the hole")
+        with Image.open(BytesIO(render_svg_png(draw({"poche": True}), dots_per_inch=254))) as image:
+            pixel = lambda u, v: image.getpixel((round((u - crop[0]) * 200), round((crop[3] - v) * 200)))  # noqa: E731
+            self.assertEqual(pixel(*centre), 255, "the through hole stays open under poché")
+            self.assertEqual(pixel(-2.0, 1.5 + 0.3), 255)
+            self.assertEqual(pixel(-0.5, 0.5), 0, "the panel's material is filled")
+            self.assertEqual(pixel(-2.0, 1.5 + 0.6), 0)
+
     def test_section_regions_preserve_disconnected_cuts_of_one_solid(self) -> None:
         from OCP.BRepAlgoAPI import BRepAlgoAPI_Cut
         from OCP.BRepPrimAPI import BRepPrimAPI_MakeBox

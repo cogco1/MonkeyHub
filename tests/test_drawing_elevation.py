@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import math
 import tempfile
 import unittest
 from dataclasses import replace
@@ -16,7 +17,7 @@ from xml.etree import ElementTree
 
 from archflow.adapters import occt_backend
 from monkeydiagram import drawing_elevation
-from monkeydiagram.drawing_svg import svg_objects
+from monkeydiagram.drawing_svg import render_svg_png, svg_objects
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import DRAWING_PROJECTION_RECEIPT, SEAT_OCCT_EXECUTION
 from archflow.project.repository import FilesystemProjectRepository
@@ -58,6 +59,30 @@ def _shapes() -> dict[str, object]:
         "far": BRepPrimAPI_MakeBox(gp_Pnt(1, 20, 4), 1, 1, 1).Shape(),
         "skin": BRepBuilderAPI_MakeFace(polygon.Wire(), True).Face(),
     }
+
+
+SVG_NS = "{http://www.w3.org/2000/svg}"
+
+
+def _group_lines(svg: bytes, group: str) -> list[tuple[str, list[tuple[float, float]]]]:
+    """Each polyline of one SVG group: its object and points, in SVG user units."""
+
+    root = ElementTree.fromstring(svg)
+    return [(line.get("data-object"), [tuple(float(v) for v in pair.split(",")) for pair in line.get("points").split()])
+            for line in root.findall(f"{SVG_NS}g[@id='{group}']/{SVG_NS}polyline")]
+
+
+def _lies_on(points, segments, tolerance: float) -> bool:
+    """Independently of the cleanup: every sampled point of the line is within the tolerance of some segment."""
+
+    def distance(p, a, b):
+        dx, dy = b[0] - a[0], b[1] - a[1]
+        t = max(0.0, min(1.0, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / (dx * dx + dy * dy or 1.0)))
+        return math.dist(p, (a[0] + t * dx, a[1] + t * dy))
+
+    samples = [(a[0] + (b[0] - a[0]) * i / 40, a[1] + (b[1] - a[1]) * i / 40)
+               for a, b in zip(points, points[1:]) for i in range(41)]
+    return all(any(distance(p, a, b) <= tolerance for a, b in segments) for p in samples)
 
 
 def _view(**overrides) -> ElevationView:
@@ -278,10 +303,19 @@ class FreezeElevationTests(unittest.TestCase):
         first = freeze_model_axis_elevation(self.repository, source=self.source, view=_view(), drawing_run_id="drawing-run")
         second = freeze_model_axis_elevation(
             self.repository, source=self.source, view=_view(name="model-minus-y-elevation-hidden", hidden_lines=True),
-            drawing_run_id="drawing-run",
+            drawing_run_id="drawing-run", attribution={"actorId": "local", "authenticated": False, "origin": "studio"},
+            reason="Show what the wall hides",
         )
+        self.assertEqual((first.attribution, first.reason), (None, None))
+        self.assertEqual((second.attribution["origin"], second.reason), ("studio", "Show what the wall hides"))
         self.assertEqual(svg_objects(second.svg), ("far", "rear", "skin", "wall"))
         self.assertIs(second.receipt["view"]["hidden_lines"], True)
+        # A box's back edges lie under its front edges: drawn once, as visible. Undrawn hidden lines are not cleaned.
+        self.assertGreater(second.cleanup["duplicate"], 0)
+        self.assertEqual(first.cleanup["duplicate"], 0)
+        visible = [segment for _, points in _group_lines(second.svg, "visible") for segment in zip(points, points[1:])]
+        for object_id, points in _group_lines(second.svg, "hidden"):
+            self.assertFalse(_lies_on(points, visible, drawing_elevation.CLEANUP_TOLERANCE_MM * 100 / 1000), object_id)
         self.assertEqual(len(list_model_axis_elevations(self.repository, "drawing-run")), 2)
         self.assertNotEqual(first.svg_ref.relative_path, second.svg_ref.relative_path)
 
@@ -332,8 +366,11 @@ class FreezeElevationTests(unittest.TestCase):
             read_model_axis_elevation(FilesystemProjectRepository.open(self.root), drawing.receipt_ref)
 
 
-def _room_plan_source(root, *, hidden_witnesses=False):
-    """A retained exact room with a real door cut; also used for visual inspection."""
+def _room_plan_source(root, *, hidden_witnesses=False, user_text=None):
+    """A retained exact room with a real door cut; also used for visual inspection.
+
+    ``user_text`` gives objects the ``archflow:`` user text a CAD program writes (component, material).
+    """
     from OCP.BRepAlgoAPI import BRepAlgoAPI_Cut
     from OCP.BRepPrimAPI import BRepPrimAPI_MakeBox
     from OCP.gp import gp_Pnt
@@ -373,7 +410,9 @@ def _room_plan_source(root, *, hidden_witnesses=False):
             "exact_artifact": {"relative_path": STEP_NAME, "sha256": digest, "exact_brep": True,
                                "deliveries": {name: "closed_solid" for name in shapes}},
             "physical_object_ids": sorted(shapes),
-            "expected_semantics": {"objects": {name: {"visible": name not in witnesses} for name in shapes}},
+            "expected_semantics": {"objects": {
+                name: {"visible": name not in witnesses, **({"user_text": user_text[name]} if name in (user_text or {}) else {})}
+                for name in shapes}},
         },
     )
     source = ElevationSource(SOURCE_RUN, f"runs/{SOURCE_RUN}/workspaces/{WORKSPACE}/{STEP_NAME}", digest,
@@ -417,12 +456,132 @@ class CutPlanTests(unittest.TestCase):
         self.assertIn(b"1000 mm", drawing.svg)
         self.assertEqual(drawing.run.base, self.repository.load_run(SOURCE_RUN).base)
         self.assertEqual(self.repository.read_head(), self.head)
+        # The cut edge is drawn once, by the section: no visible line lies on it within 0.05 mm on the sheet.
+        tolerance = drawing_elevation.CLEANUP_TOLERANCE_MM * 50 / 1000
+        section = [segment for _, points in _group_lines(drawing.svg, "section") for segment in zip(points, points[1:])]
+        for object_id, points in _group_lines(drawing.svg, "visible"):
+            self.assertFalse(_lies_on(points, section, tolerance), (object_id, points))
+        cleanup = drawing.receipt["cleanup"]
+        self.assertEqual(drawing.cleanup, cleanup)
+        self.assertEqual(cleanup["tolerance"], tolerance)
+        self.assertGreater(cleanup["cut_precedence"], 0)
+        self.assertEqual(cleanup["input_lines"] - cleanup["output_lines"],
+                         sum(cleanup[rule] for rule in ("micro", "collinear", "cut_precedence", "duplicate", "hidden_under_cut")))
+        self.assertNotIn("cleanup", drawing.receipt["view"], "the cleanup describes the drawing, not its recipe")
         reopened = FilesystemProjectRepository.open(self.root)
         cold = read_model_axis_elevation(reopened, drawing.receipt_ref)
         self.assertEqual((drawing.receipt, drawing.svg, drawing.png), (cold.receipt, cold.svg, cold.png))
         repeated = freeze_cut_plan(reopened, source=self.source, recipe=self.recipe,
                                    drawing_run_id="plan-run", dimensions=(self.dimension,))
         self.assertEqual(repeated.receipt_ref, drawing.receipt_ref)
+
+    def test_the_cleaned_plan_draws_the_cut_once_and_only_the_floor_seen_through_the_door(self):
+        drawing = freeze_cut_plan(self.repository, source=self.source, recipe=self.recipe,
+                                  drawing_run_id="plan-run", dimensions=(self.dimension,))
+        solved = drawing.receipt["projection"]["visible_polylines"]
+        visible = _group_lines(drawing.svg, "visible")
+        # Every wall's clipped top edge lay on its own cut; only the floor edge in the door opening is beyond it.
+        self.assertLess(len(visible), solved)
+        self.assertEqual(drawing.receipt["cleanup"]["cut_precedence"], solved - len(visible))
+        self.assertEqual({object_id for object_id, _ in visible}, {"floor"})
+        for _, points in visible:
+            # In the crop (-1, -1, 5, 4) SVG x = u + 1 and y = 4 - v: the door spans u 1..2 at v = 0.
+            self.assertTrue(all(2 - 1e-4 <= x <= 3 + 1e-4 and abs(y - 4) <= 1e-4 for x, y in points), points)
+        # The cut itself is drawn as solved.
+        self.assertEqual(drawing.receipt["projection"]["section_polylines"], len(_group_lines(drawing.svg, "section")))
+        # The PNG is rendered from these SVG bytes and nothing else.
+        self.assertEqual(drawing.png, render_svg_png(drawing.svg))
+
+    def test_a_receipt_retained_before_cleanup_still_reads_cold(self):
+        drawing = freeze_cut_plan(self.repository, source=self.source, recipe=self.recipe,
+                                  drawing_run_id="plan-run", dimensions=(self.dimension,))
+        earlier = {key: value for key, value in drawing.receipt.items() if key != "cleanup"}
+        ref = self.repository.put_json(
+            run=drawing.run, destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=drawing.run.run_id),
+            record_kind=DRAWING_PROJECTION_RECEIPT, payload=earlier)
+        cold = read_model_axis_elevation(FilesystemProjectRepository.open(self.root), ref)
+        self.assertIsNone(cold.cleanup)
+        self.assertEqual((cold.receipt, cold.svg, cold.png), (earlier, drawing.svg, drawing.png))
+
+    def test_a_revision_records_who_asked_and_why_and_older_receipts_read_as_unknown(self):
+        from dataclasses import dataclass
+
+        first = freeze_cut_plan(self.repository, source=self.source, recipe=self.recipe,
+                                drawing_run_id="plan-run", dimensions=(self.dimension,))
+        self.assertFalse({"attribution", "reason"} & set(first.receipt), "nothing is written that was not given")
+        self.assertEqual((first.attribution, first.reason), (None, None))
+        who = {"actorId": "local", "authenticated": False, "origin": "hub"}
+        second = freeze_cut_plan(self.repository, source=self.source, recipe=self.recipe, drawing_run_id="plan-rebuild",
+                                 dimensions=(self.dimension,), previous_revision_ref=first.receipt_ref.uri,
+                                 attribution=who, reason="Lighter hatch, as asked")
+        self.assertEqual((second.receipt["attribution"], second.receipt["reason"]), (who, "Lighter hatch, as asked"))
+        self.assertEqual(second.receipt["previousRevisionRef"], first.receipt_ref.uri)
+        self.assertEqual(second.receipt["view"], self.recipe, "who and why belong to the revision, not the recipe")
+        self.assertEqual((second.svg, second.png), (first.svg, first.png), "they change the receipt, not the drawing")
+        cold = read_model_axis_elevation(FilesystemProjectRepository.open(self.root), second.receipt_ref)
+        self.assertEqual((cold.attribution, cold.reason), (who, "Lighter hatch, as asked"))
+
+        @dataclass(frozen=True)
+        class Actor:
+            actor_id: str
+            authenticated: bool
+            origin: str
+
+        # A dataclass such as the Studio's ActorAttribution is written with camelCase names; a blank reason is none.
+        third = freeze_cut_plan(self.repository, source=self.source, recipe=self.recipe, drawing_run_id="plan-third",
+                                dimensions=(self.dimension,), attribution=Actor("kaiwen", True, "studio"), reason="  ")
+        self.assertEqual((third.attribution, third.reason),
+                         ({"actorId": "kaiwen", "authenticated": True, "origin": "studio"}, None))
+        for attribution, reason in (("local", None), ({}, None), ({"actor": {"id": "local"}}, None),
+                                    ({"weight": float("nan")}, None), ({1: "local"}, None), (None, 7),
+                                    # Text a receipt cannot hold is refused before a file is written, not after.
+                                    (None, "hatch \ud800"), ({"actorId": "\udfff"}, None)):
+            with self.subTest(attribution=attribution, reason=reason), self.assertRaises(DrawingElevationError):
+                freeze_cut_plan(self.repository, source=self.source, recipe=self.recipe, drawing_run_id="refused-plan",
+                                dimensions=(self.dimension,), attribution=attribution, reason=reason)
+        self.assertFalse(self.repository.layout.run("refused-plan").manifest.exists())
+        self.assertEqual(self.repository.read_head(), self.head)
+
+    def test_the_plan_names_components_and_materials_and_draws_their_hatch_poche_and_fade(self):
+        from PIL import Image
+
+        text = {name: {"archflow:component": name, "archflow:material": "brick", "archflow:producer_op": "wall"}
+                for name in ("north-wall", "west-wall", "east-wall")}
+        text["south-wall"] = {"archflow:component": "south-wall", "archflow:material": "concrete"}
+        text["floor"] = {"archflow:component": "ground-slab"}
+        repository, source, recipe, dimension = _room_plan_source(self.root.parent / "semantic-room", user_text=text)
+        recipe = {**recipe, "graphics": {**recipe["graphics"], "hatch": {"byMaterial": {"concrete": {"poche": True}}},
+                                         "beyond": {"fade": 0.5}}}
+        drawing = freeze_cut_plan(repository, source=source, recipe=recipe, drawing_run_id="plan-run", dimensions=(dimension,))
+        self.assertEqual(drawing.receipt["view"], recipe, "graphics rules are representation intent, retained as given")
+        root = ElementTree.fromstring(drawing.svg)
+        named = [element for element in root.iter() if element.get("data-object") is not None]
+        self.assertTrue(named)
+        for element in named:
+            row = text.get(element.get("data-object"), {})
+            self.assertEqual((element.get("data-component"), element.get("data-material")),
+                             (row.get("archflow:component"), row.get("archflow:material")), element.attrib)
+        # Concrete is filled: one even-odd polygon for the south wall's two pieces either side of the door;
+        # brick keeps the default hatch strokes; nothing below the cut is either.
+        material = root.find(f"{SVG_NS}g[@id='section-hatch']")
+        self.assertEqual([(p.get("data-object"), p.get("fill-rule")) for p in material.findall(f"{SVG_NS}polygon")],
+                         [("south-wall", "evenodd")])
+        self.assertEqual({line.get("data-object") for line in material.findall(f"{SVG_NS}polyline")},
+                         {"north-wall", "west-wall", "east-wall"})
+        self.assertEqual(root.find(f"{SVG_NS}g[@id='visible']").get("stroke"), "#808080")
+        self.assertEqual(root.find(f"{SVG_NS}g[@id='section']").get("stroke"), "#000")
+        self.assertEqual(drawing.png, render_svg_png(drawing.svg))
+        with Image.open(BytesIO(render_svg_png(drawing.svg, dots_per_inch=254))) as image:
+            # 1:50 at 254 dpi: 200 pixels per metre, from the crop's corner (-1, 4).
+            pixel = lambda x, y: image.getpixel((round((x + 1) * 200), round((4 - y) * 200)))  # noqa: E731
+            self.assertEqual(pixel(0.5, 0.1), 0, "the concrete south wall is poché")
+            self.assertEqual(pixel(3.0, 0.1), 0)
+            self.assertEqual(pixel(1.5, 0.1), 255, "the door between its two pieces stays open")
+            self.assertEqual(pixel(2.0, 1.5), 255, "the room is empty")
+            # Inside the north wall (x 0.5..3.5, y 2.8..3.0), clear of its cut outline.
+            north = image.crop((300, 205, 900, 235))
+            self.assertLess(north.getextrema()[0], 128, "the brick north wall keeps its hatch")
+            self.assertGreater(north.getextrema()[1], 128)
 
     def test_revision_preserves_recipe_intent_and_explicit_missing_dimension_without_a_number(self):
         first = freeze_cut_plan(self.repository, source=self.source, recipe=self.recipe,
