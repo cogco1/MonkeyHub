@@ -121,6 +121,8 @@ let runtimeReadGate = null;
 let settings = { projectDir: "D:\\fixture\\A", referenceRun: null, cadExport: "off", studioPort: 18789, monitorPort: server.address().port };
 // The one saved preferences document: appearance and the new-conversation defaults.
 let preferences = { language: "en", theme: "light", fontScale: 1 };
+// GH-302: settings save themselves; a test holds one write to see what waits for it.
+let settingsWriteGate = null;
 const projects = [
   { projectId: "A", projectDir: "D:\\fixture\\A", name: "Project A", chatCount: 0, version: 3, stage: "S2" },
   { projectId: "B", projectDir: "D:\\fixture\\B", name: "Project B", chatCount: 0, version: 0, stage: null },
@@ -229,7 +231,10 @@ await page.route((url) => url.pathname.startsWith("/api/"), async (route) => {
     return json({ paths: ["D:\\fixture\\usage.jsonl"] });
   }
   if (url.pathname === "/api/settings/apps") { if (method === "PUT") settings = data(); return json(settings); }
-  if (url.pathname === "/api/settings/user") { if (method === "PUT") preferences = data(); return json(preferences); }
+  if (url.pathname === "/api/settings/user") {
+    if (method === "PUT") { const body = data(); if (settingsWriteGate) await settingsWriteGate; preferences = body; }
+    return json(preferences);
+  }
   if (url.pathname === "/api/apps") return json(url.searchParams.has("projectDir") ? appsFor(url.searchParams.get("projectDir")) : apps);
   if (url.pathname === "/api/runtime") { runtimeReads++; if (runtimeReadGate) await runtimeReadGate; return json(runtimeSnapshot()); }
   if (url.pathname === "/api/runtime/projects/open") {
@@ -428,6 +433,8 @@ await page.route((url) => url.pathname.startsWith("/api/"), async (route) => {
   errors.push(`Unexpected request: ${method} ${url.pathname}`); return json({ detail: "Unexpected fixture request" }, 404);
 });
 const railWidth = () => page.evaluate(() => document.querySelector(".chat-rail").getBoundingClientRect().width);
+// GH-302: Hub settings have no Save button; each change saves itself and the status line says Saved.
+const settingsSaved = () => page.waitForFunction(() => document.querySelector("#settings-save-state")?.dataset.state === "saved");
 const boxOf = (selector) => page.evaluate((value) => {
   const node = document.querySelector(value);
   return node ? node.getBoundingClientRect().width : 0;
@@ -1186,8 +1193,9 @@ try {
   const rechecks = providerReads.filter((value) => value === "true").length;
   await page.locator("#recheck-connections").click();
   await page.waitForFunction((count) => true, rechecks);
-  await page.locator("#save-appearance").click();
-  await page.waitForFunction(() => document.querySelector("#save-appearance")?.disabled === true);
+  assert.equal(await page.locator("#save-appearance, #save-launch").count(), 0, "Hub settings have no Save buttons");
+  await page.waitForFunction(() => document.querySelector("#render-timeout")?.value === "75");
+  await settingsSaved();
   await dialog.getByRole("button", { name: "Close", exact: true }).click();
   assert.ok(providerReads.filter((value) => value === "true").length > rechecks, "checking again asks the CLIs again");
   assert.ok(providerReads.filter((value) => value !== "true").length > 3, "the polling path never asks for a new check");
@@ -2463,29 +2471,33 @@ try {
   await page.getByText("fixture-next-desktop", { exact: true }).waitFor();
   assert.equal(patchUploads.length, 1); assert.deepEqual(patchUploads[0], patchBytes);
   assert.ok(patchPolls >= 2); await page.getByText("1.0 MiB", { exact: true }).waitFor();
-  await page.locator("#theme").selectOption("dark");
-  await page.getByText("Save your settings changes before restarting.", { exact: true }).waitFor();
+  let releaseSettings; settingsWriteGate = new Promise((resolve) => { releaseSettings = resolve; });
+  // Every earlier choice in this test saved itself, so the theme may already be dark.
+  await page.locator("#theme").selectOption(await page.locator("#theme").inputValue() === "dark" ? "light" : "dark");
+  await page.getByText("A settings change is still being saved or could not be saved. Wait, or fix the marked setting, before restarting.", { exact: true }).waitFor();
   assert.equal(await page.getByRole("button", { name: "Restart to update", exact: true }).isDisabled(), true);
-  await page.locator("#save-appearance").click();
+  settingsWriteGate = null; releaseSettings();
+  await settingsSaved();
+  await page.locator("#theme").selectOption("dark"); await settingsSaved();
   await page.waitForFunction(() => ![...document.querySelectorAll("button")].find((button) => button.textContent === "Restart to update")?.disabled);
   // The desktop dialog is usable at a small viewport, in dark mode, with
   // larger text and reduced motion, without horizontal clipping.
   await page.locator("#font-scale").selectOption("1.1");
-  await page.locator("#save-appearance").click();
+  await settingsSaved();
   await page.emulateMedia({ reducedMotion: "reduce" }); await page.setViewportSize({ width: 390, height: 844 });
   await page.locator(".software-update").scrollIntoViewIfNeeded();
   assert.equal(await page.locator(".software-update").evaluate((node) => node.scrollWidth <= node.clientWidth + 1), true);
   assert.equal(await page.getByRole("dialog").evaluate((node) => node.scrollWidth <= node.clientWidth + 1), true);
   for (const button of await page.locator(".software-update__actions button").all()) assert.ok((await button.boundingBox()).height >= 44);
   await page.getByRole("dialog").screenshot({ path: path.join(temporary, "software-update-small-dark.png") });
-  await page.locator("#language").selectOption("zh-CN"); await page.locator("#save-appearance").click();
+  await page.locator("#language").selectOption("zh-CN"); await settingsSaved();
   await page.getByRole("heading", { name: "软件更新", exact: true }).waitFor();
   await page.getByText("自动更新：开 · 未签名预发布通道", { exact: true }).waitFor();
   await page.locator(".software-update").scrollIntoViewIfNeeded();
   await page.getByRole("dialog").screenshot({ path: path.join(temporary, "software-update-small-zh.png") });
   await page.setViewportSize({ width: 1440, height: 960 });
   await page.getByRole("dialog").screenshot({ path: path.join(temporary, "software-update-wide-zh.png") });
-  await page.locator("#language").selectOption("en"); await page.locator("#save-appearance").click();
+  await page.locator("#language").selectOption("en"); await settingsSaved();
   updateApplyFailure = true;
   await page.getByRole("button", { name: "Restart to update", exact: true }).click();
   await page.getByText("A task started before restart. Wait and retry.", { exact: true }).waitFor();

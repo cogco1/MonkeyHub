@@ -201,7 +201,8 @@ async function drawingReady(readStart = 0) {
   assert.equal(await page.locator(".document-header > select").inputValue(), JSON.stringify([oldEditingRun, drawingSha, null]));
   assert.equal(await page.locator(".document-pages select").inputValue(), "0");
   assert.equal(await page.locator(".document-model-source").getAttribute("data-model-source-status"), "unknown");
-  await until(() => page.getByRole("button", { name: "Save page", exact: true }).isEnabled(), Boolean, "The existing L6 page must remain saveable");
+  // GH-302: the page saves itself; there is no Save page button.
+  await until(() => page.locator("#document-comment").isEditable(), Boolean, "The existing L6 page must remain editable");
   const read = await until(() => documentReads.slice(readStart).find((entry) =>
     entry.response.runId === oldEditingRun && entry.response.assetSha256 === drawingSha && entry.response.pageIndex === 0),
   Boolean, "The browser must read L6 from its original storage run");
@@ -364,8 +365,7 @@ try {
     assert.equal(await editingRun(), oldEditingRun);
     assert.deepEqual(await editingBases(), existingEditingBases);
     assert.equal(modelWrites.length + selectionWrites.length, 0);
-    await page.getByRole("button", { name: "Save page", exact: true }).click();
-    await page.locator(".document-notes").getByRole("status").filter({ hasText: /^Saved$/ }).waitFor();
+    await page.locator(".document-save-state").filter({ hasText: /^Saved$/ }).waitFor();
     assert.deepEqual(await getJson("/api/document-annotations", { runId: oldEditingRun, assetSha256: drawingSha, pageIndex: 0 }), drawingBaseline,
       "Saving an unchanged L6 page must retain its existing revision");
     assert.equal(requests.filter((request) => !["GET", "HEAD", "OPTIONS"].includes(request.method)).length, 0);

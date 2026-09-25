@@ -1031,7 +1031,7 @@ export const hubCopy = {
     updateZipRequired: "Choose a patch ZIP file.", updateTooLarge: "The patch exceeds 256 MiB. Choose a smaller patch ZIP.",
     updateDraftsBlocked: "A conversation has unsent text or attachments. Send or remove them before restarting.",
     updateModelBlocked: "A model draft is still being saved. Wait a moment before restarting.",
-    updateSettingsBlocked: "Save your settings changes before restarting.",
+    updateSettingsBlocked: "A settings change is still being saved or could not be saved. Wait, or fix the marked setting, before restarting.",
     updateBusyBlocked: "Wait for current work and workspace loading to finish before restarting.",
     updateRecovery: "Projects, conversations and settings are kept. The previous app version remains available if the update fails.",
     apps: "Workspaces", settings: "Settings", refresh: "Refresh", connected: "Hub connected", connecting: "Connecting", disconnected: "Cannot read workspace status",
