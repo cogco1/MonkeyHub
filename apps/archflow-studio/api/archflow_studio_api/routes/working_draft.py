@@ -4,6 +4,7 @@ from fastapi import APIRouter, Query
 from starlette.requests import Request
 
 from ..application.artifacts import ModelSource
+from ..application.authentication import request_attribution
 from ..application.binding import bound_project
 from ..application.working_draft import (
     read_working_draft, resolve_working_source, retain_local_draft, save_working_draft, select_working_draft,
@@ -32,9 +33,13 @@ def read_working_revision(request: Request) -> WorkingRevisionDto:
 
 @router.put("/working-draft", response_model=WorkingDraftDto)
 def select_current_working_draft(request: Request, payload: WorkingDraftSelectionDto) -> WorkingDraftDto:
+    """Continue: the Working Head follows at once, and a move onto a run records who made it."""
     binding = bound_project(request.app.state)
     _require_bound_project(binding, payload.projectId)
-    return select_working_draft(binding, payload.runId, payload.baseRevisionSha256, payload.branchId)
+    message = None if payload.messageSource is None else payload.messageSource.model_dump(by_alias=True)
+    return select_working_draft(binding, payload.runId, payload.baseRevisionSha256, payload.branchId,
+                                attribution=request_attribution(request), message_source=message,
+                                raw_language=payload.rawLanguage)
 
 
 @router.post("/working-draft/save", response_model=WorkingDraftDto)

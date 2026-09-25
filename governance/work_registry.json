@@ -334,11 +334,16 @@
         "apps/archflow-studio/api/archflow_studio_api/application/working_draft.py",
         "apps/archflow-studio/api/archflow_studio_api/protocol.py",
         "apps/archflow-studio/api/archflow_studio_api/routes/episodes.py",
+        "apps/archflow-studio/api/archflow_studio_api/routes/working_draft.py",
         "apps/archflow-studio/api/archflow_studio_api/transport/design_history.py",
         "apps/archflow-studio/api/archflow_studio_api/transport/proposal.py",
         "apps/archflow-studio/api/archflow_studio_api/transport/runtime.py",
+        "apps/archflow-studio/api/archflow_studio_api/transport/working_draft.py",
+        "apps/archflow-studio/api/tests/test_attributed_continue.py",
         "apps/archflow-studio/api/tests/test_candidate_admission.py",
         "apps/archflow-studio/api/tests/test_working_copies.py",
+        "apps/monkeyhub/api/monkeyhub_api/chat.py",
+        "apps/monkeyhub/api/tests/test_chat_admission.py",
         "apps/monkeyhub/web/workspaces/src/api/generated/",
         "archflow/project/record_kinds.py",
         "docs/DYNAMIC_MAP.md",
@@ -349,7 +354,8 @@
         "docs/mapping/planning/INDEX.md",
         "governance/module_registry.json",
         "governance/work_registry.json",
-        "tests/test_record_kinds.py"
+        "tests/test_record_kinds.py",
+        "tests/test_version_refs.py"
       ],
       "card": "docs/mapping/planning/GH-294-admission-record.md",
       "acceptance": [
@@ -367,7 +373,7 @@
           "base_ref": "e183a69a",
           "contributor": "Claude",
           "reviewer": "Claude root task",
-          "handoff": "S1 and S2 backend; the #284 Design Tree UI lane (codex/284-design-tree-ui) consumes the design-history candidates and studies DTO. S3 (Hub Agent contract) and S4 (attributed Continue) are not in this lane.",
+          "handoff": "Delivered S1 and S2 in f0b44082, 4844129c and 1e56cd3d, merged onto batch A in 7cc3aef9; the #284 Design Tree UI lane (codex/284-design-tree-ui) consumes the design-history candidates and studies DTO. S3 and S4 continue in GH-294/agent-admission.",
           "modules": [
             "studio.intent",
             "project.record_kinds",
@@ -402,6 +408,45 @@
           ],
           "depends_on": [],
           "status": "done",
+          "blocked_reason": null
+        },
+        {
+          "id": "agent-admission",
+          "issue": "https://github.com/cogco1/MonkeyHub/issues/294",
+          "branch": "codex/294-agent-admission",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-294-agent-admission",
+          "base_ref": "7cc3aef9",
+          "contributor": "Claude (sub-agent P)",
+          "reviewer": "Claude root task",
+          "handoff": "S3 and S4: the Hub Agent's hub-chat admissions and its Continue on the user's bound words through studio_request, the prompt contract, and an attributed design.continued event for every Continue. The ChatShell half of the audit's S3 row (auto-open only admitted results, 'open result' wording) is not in this lane. Root task reviews and publishes; not pushed.",
+          "modules": [
+            "hub.shell",
+            "studio.binding",
+            "studio.intent",
+            "studio.shell"
+          ],
+          "write_scope": [
+            "apps/archflow-studio/api/archflow_studio_api/application/authentication.py",
+            "apps/archflow-studio/api/archflow_studio_api/application/design_history.py",
+            "apps/archflow-studio/api/archflow_studio_api/application/working_draft.py",
+            "apps/archflow-studio/api/archflow_studio_api/routes/working_draft.py",
+            "apps/archflow-studio/api/archflow_studio_api/transport/working_draft.py",
+            "apps/archflow-studio/api/tests/test_attributed_continue.py",
+            "apps/monkeyhub/api/monkeyhub_api/chat.py",
+            "apps/monkeyhub/api/tests/test_chat_admission.py",
+            "apps/monkeyhub/web/workspaces/src/api/generated/sdk.gen.ts",
+            "apps/monkeyhub/web/workspaces/src/api/generated/types.gen.ts",
+            "docs/DYNAMIC_MAP.md",
+            "docs/PROTOCOL.md",
+            "docs/SYSTEM_MAP.md",
+            "docs/mapping/planning/GH-294-admission-record.md",
+            "docs/mapping/planning/INDEX.md",
+            "governance/module_registry.json",
+            "governance/work_registry.json",
+            "tests/test_version_refs.py"
+          ],
+          "depends_on": [],
+          "status": "active",
           "blocked_reason": null
         }
       ]

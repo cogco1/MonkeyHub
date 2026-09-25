@@ -10698,6 +10698,11 @@ export type WorkingDraftSaveDto = {
 
 /**
  * WorkingDraftSelectionDto
+ *
+ * Continue on a run (the Working Head follows it at once), or return to the default with none.
+ *
+ * Who moved the head is read from the request boundary. The two optional fields
+ * mark the Hub Agent continuing on the user's own words, as the Hub binds them.
  */
 export type WorkingDraftSelectionDto = {
     /**
@@ -10716,6 +10721,16 @@ export type WorkingDraftSelectionDto = {
      * Branchid
      */
     branchId?: string | null;
+    /**
+     * The chat message the Hub Agent continued on, as the Hub binds it; provenance, never a credential. Only a Hub-managed Runtime takes it, and the architect's own Continue has none.
+     */
+    messageSource?: MessageSourceDto | null;
+    /**
+     * Rawlanguage
+     *
+     * The user's own words in that message that ask for this Continue; required with messageSource. The retained design.continued event names the message by id, not these words.
+     */
+    rawLanguage?: string | null;
 };
 
 /**

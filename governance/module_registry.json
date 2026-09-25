@@ -4188,7 +4188,7 @@
         "explicitly preparing an empty project for its first modeling candidate through P036 initial-input persistence: a modeling root, zero level, setup basis and seat; existing authored or retained design and Board assets are preserved",
         "Projecting a checked in-memory proposed StateRecord for another edit without writing or claiming a retained candidate",
         "Read-only element elevation facts and their actual base/top references, plus named Level datums, projected from the exact StateRecord for contextual Stage 1 editing.",
-        "The current project working position (moved only by an explicit selection, never by recording a generated candidate), the automatic recovery listing of every unlabelled generated candidate however old, independent explicit saved versions and exact-source local command recovery through the P036 working-draft port; readback never executes a recovered request.",
+        "The current project working position (moved only by an explicit selection, never by recording a generated candidate), the automatic recovery listing of every unlabelled generated candidate however old, independent explicit saved versions and exact-source local command recovery through the P036 working-draft port; readback never executes a recovered request; every selection onto a run retains who made it as an AuditEvent@1 design.continued beside that run, ids only (actor, origin, previous head run, target run, chat message ids), and a selection whose event cannot be retained is undone.",
         "Resolving the Working Head for ordinary work: the readable retained working position, else the main line's accepted head, else the reference run, and each workspace's compatible exact source under a LIVE or FROZEN policy; resolving writes nothing; a live rejection of the working position is reported as a warning and never moves it"
       ],
       "does_not_own": [
@@ -4324,7 +4324,7 @@
         "the catalog derives; it never writes: an object no element names stays MODEL_VISIBLE_CATALOG_MISSING, and no neighbouring element's field is offered in its place",
         "all actionable projections retain exact record and runner binding; historical canonical bases require a verified committed Stage source",
         "main head Stage is the default when design history exists; a successful harness run alone never becomes a default committed Stage",
-        "the Working Head is the architect's editing base, read from retained facts and never guessed from the newest file; a generated candidate is recorded and shown but never moves it, viewing history never moves it, and only the explicit working-draft selection (Continue, or adopting the architect's own Sync) does; a recorded continuation keeps its source position's branch"
+        "the Working Head is the architect's editing base, read from retained facts and never guessed from the newest file; a generated candidate is recorded and shown but never moves it, viewing history never moves it, and only the explicit working-draft selection (Continue, adopting the architect's own Sync, or the Hub Agent's Continue on the user's bound words through a Hub-managed Runtime) does; every selection onto a run is retained as an attributed design.continued event and admits no Candidate; a recorded continuation keeps its source position's branch"
       ],
       "status": "canonical",
       "tests": [
@@ -4337,7 +4337,8 @@
         "apps/archflow-studio/api/tests/test_collaboration_http.py",
         "apps/archflow-studio/api/tests/test_boards.py",
         "apps/archflow-studio/api/tests/test_working_draft.py",
-        "apps/archflow-studio/api/tests/test_working_source.py"
+        "apps/archflow-studio/api/tests/test_working_source.py",
+        "apps/archflow-studio/api/tests/test_attributed_continue.py"
       ],
       "notes": "Every other Studio concern reads the project through this one binding.",
       "files": [
@@ -6529,6 +6530,7 @@
         "External source-bound conversation presentation through the existing chat store and stdio adapter: transient public progress, revisioned result upserts, session-scoped raster previews and exact retained document review; native CLI/ACP remains the provider owner.",
         "Scheduling project working-draft cleanup along the existing project watcher; it expires only superseded local recovery and never asks P036 to remove a run.",
         "A narrow ordinary-chat feedback capability over studio.intent decisions: current user wording/message provenance is bound by Hub, interpreted avoid/keep fields stay attributed to the agent, and revocation verifies the original project/message without exposing lock, supersede or Stage acceptance.",
+        "The Agent's closed-loop admissions and Continue through the existing studio_request tool: POST /api/admissions fixed to task kind hub-chat and PUT /api/working-draft, each bound by Hub to the last user message the Agent was given, with the user's exact words where they carry the decision (a quoted passage, a rejection, every Continue); provider-supplied provenance, other task kinds and a Continue without the user's message or words are refused, and the Hub prompt asks for one admission per completed loop with its Study and superseded attempts.",
         "User-selected local desktop patch preparation, idle restart admission, owned host trial activation and startup rollback; update files and transaction state live only under the explicitly supplied nonproject runtime/updates directory and sibling application versions.",
         "Automatic desktop updates over the unsigned prerelease channel: packaged desktop only, about 30 s after start and every 6 h while the 自动更新 user setting is on (default on), an unauthenticated ETag read of this repository's public GitHub releases picks the newest greater prerelease; its update index, ReleaseManifest@1 and the patch for the exact installed commit are size-capped and SHA-256-checked, then staged and preflighted through the same prepare path. A normal quit switches the desktop entry to the ready version; that version finishes the transaction on its own start (health, full verification, entry) or restores the previous entry.",
         "Forwarding explicitly selected Study revisions into prepared task context and exposing the existing project-bound Study read for exact evidence reopening; no Study mutation tool.",
@@ -6634,6 +6636,7 @@
         "GET /api/chat/sessions/{id}/documents/{messageId}/{index}",
         "presentation_bind and chat_present: local MCP binding and result presentation without provider invocation",
         "studio_request /api/decisions: GET latest/history, POST current-user avoid/keep feedback and POST feedback-only revoke through existing Runtime authorization; studio_schema derives the narrowed inputs from Runtime OpenAPI",
+        "studio_request POST /api/admissions (hub-chat, message-bound) and PUT /api/working-draft (a Continue on the user's bound words), with GET /api/admissions, /api/working-source and /api/working-draft/revision; studio_schema hides the bound fields",
         "GET /api/updates/status",
         "GET /api/updates/restart",
         "POST /api/updates/prepare",
@@ -6800,7 +6803,8 @@
         "apps/monkeyhub/web/workspaces/test/workingHead.test.ts",
         "apps/monkeyhub/web/test/worktreeGraph.test.ts",
         "apps/monkeyhub/web/workspaces/test/designTree.test.ts",
-        "apps/monkeyhub/web/workspaces/test/designTree.browser.mjs"
+        "apps/monkeyhub/web/workspaces/test/designTree.browser.mjs",
+        "apps/monkeyhub/api/tests/test_chat_admission.py"
       ],
       "depends_on": [
         "project.repository",

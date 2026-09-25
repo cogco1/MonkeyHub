@@ -59,7 +59,7 @@ from .artifacts import (
     require_complete_model,
     require_model_source,
 )
-from .authentication import ActorAttribution, LOCAL_ACTOR_ID, ORIGIN_HUB, ORIGIN_STUDIO
+from .authentication import ActorAttribution, LOCAL_ACTOR_ID, ORIGIN_HUB, ORIGIN_HUB_AGENT, ORIGIN_STUDIO
 from .binding import retained_sources
 from .binding import ProjectBinding, ReferenceRun, record_kind
 from .candidate import CandidateRun, describe, read_candidate_delta, replay_candidate
@@ -1065,7 +1065,6 @@ TASK_UI = "ui"
 TASK_HUB_CHAT = "hub-chat"
 TASK_RETROACTIVE = "retroactive"
 TASK_KINDS = (TASK_UI, TASK_HUB_CHAT, TASK_RETROACTIVE)
-ORIGIN_HUB_AGENT = "hub-agent"
 ORIGIN_RETROACTIVE = "retroactive"
 LEGACY_STAGE = "stage"
 LEGACY_WORKING_COPY = "working-copy"

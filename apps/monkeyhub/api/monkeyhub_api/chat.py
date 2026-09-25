@@ -1911,7 +1911,11 @@ class ChatStore:
                     "Develop the user's design through reversible candidates. Batch steps whose outcome is already clear; "
                     "generate and inspect a candidate when the next design decision depends on its result, then revise as needed. "
                     "Check the actual result against the user's spatial intent before reporting completion; distinguish "
-                    "geometry readback from visual inspection. Choose suitable modeling methods and reasonable reversible "
+                    "geometry readback from visual inspection. Close each completed loop with one admission that lists the "
+                    "attempts each result superseded, such as a redone first try; for a request for several alternatives, "
+                    "declare its Study with an id and label from the request and admit each finished alternative. Never "
+                    "admit intermediate runs. Reject a result, or continue from one, only when the user's own words say so; "
+                    "the chat binds them to that message. Choose suitable modeling methods and reasonable reversible "
                     "defaults, stating material assumptions. Ask when a design choice needs the user's judgment. "
                     "Use the connected monkeyhub tools for project queries and changes: studio_request lists entry points "
                     "and studio_schema supplies their contracts on demand. Refresh evidence when it has changed or is unclear. "
@@ -2352,9 +2356,12 @@ def _stop_process(process: subprocess.Popen) -> None:
             process.kill()
 
 
-_READ = re.compile(r"^/api/(exports(?:/[A-Za-z0-9_-]+)?|project|state(?:/frame|/volumes)?|semantics|program|options|board|artifacts|model-assets/[0-9a-f]{64}/index|documents|document-annotations|studies/[A-Za-z0-9][A-Za-z0-9._-]{0,79}|decisions(?:/[A-Za-z0-9_-]+)?|drawings/(?:styles|model-view)|capabilities(?:/[A-Za-z0-9_.-]+)?|proposals/[A-Za-z0-9_-]+|jobs/[A-Za-z0-9_-]+|candidates/[A-Za-z0-9_-]+(?:/compare)?)$")
-_POST = re.compile(r"^/api/(exports|project/modeling|intents/context|board/export|decisions(?:/[A-Za-z0-9_-]+/revisions)?|state/closure|capabilities/[A-Za-z0-9_.-]+/run|proposals|proposals/(sketch|transform|push-pull|delete|elevation)|proposals/[A-Za-z0-9_-]+/candidate|program|options|options/[A-Za-z0-9_-]+/select|candidates/combine|drawings/(elevations|sheets))$")
-_WRITE = re.compile(r"^/api/(board|document-annotations)$")
+_READ = re.compile(r"^/api/(exports(?:/[A-Za-z0-9_-]+)?|project|state(?:/frame|/volumes)?|semantics|program|options|board|artifacts|model-assets/[0-9a-f]{64}/index|documents|document-annotations|studies/[A-Za-z0-9][A-Za-z0-9._-]{0,79}|decisions(?:/[A-Za-z0-9_-]+)?|drawings/(?:styles|model-view)|capabilities(?:/[A-Za-z0-9_.-]+)?|proposals/[A-Za-z0-9_-]+|jobs/[A-Za-z0-9_-]+|candidates/[A-Za-z0-9_-]+(?:/compare)?|admissions|working-source|working-draft/revision)$")
+_POST = re.compile(r"^/api/(exports|project/modeling|intents/context|board/export|decisions(?:/[A-Za-z0-9_-]+/revisions)?|state/closure|capabilities/[A-Za-z0-9_.-]+/run|proposals|proposals/(sketch|transform|push-pull|delete|elevation)|proposals/[A-Za-z0-9_-]+/candidate|program|options|options/[A-Za-z0-9_-]+/select|candidates/combine|drawings/(elevations|sheets)|admissions)$")
+_WRITE = re.compile(r"^/api/(board|document-annotations|working-draft)$")
+# Besides retained feedback, the Agent's judgments Hub binds to the user's own
+# message (#294 Q3): a closed loop's admission, and a Continue on the user's words.
+_BOUND_WORDS = {("POST", "/api/admissions"), ("PUT", "/api/working-draft")}
 _PAGE_IMAGE_MAX_EDGE = 2048
 _PAGE_IMAGE_MAX_BYTES = 4 * 1024 * 1024
 
@@ -2785,17 +2792,33 @@ def call_tool(hub: str, chat_id: str, name: str, arguments: dict):
         _trace_headers.reset(token)
 
 
-def _feedback_body(hub: str, base: str, chat_id: str, session: dict, path: str, body: dict,
-                   quote: str | None = None) -> dict:
-    """Bind ordinary feedback to real user words, not a model's claimed authorship.
+def _binds_words(method: str, path: str) -> bool:
+    """Whether this request is a judgment Hub binds to the user's own message."""
+    return (method == "POST" and path.startswith("/api/decisions")) or (method, path) in _BOUND_WORDS
 
-    The Runtime still owns the decision contract, source validation, CAS and
-    authorization. This adapter only narrows what a chat can ask it to write.
+
+def _user_message(chat_id: str, session: dict, purpose: str) -> dict:
+    """The user message the Agent is acting on: the last one it has been given.
+
+    An interjection still waiting for the Agent's next step (#301) is nothing it
+    could have acted on yet, so it binds no judgment until it is delivered.
     """
-    message = next((row for row in reversed(session.get("messages", [])) if row.get("role") == "user"), None)
-    if session.get("id") != chat_id or not message or not message.get("id") or not message.get("content", "").strip():
-        raise HubFailure(409, "CHAT_FEEDBACK_SOURCE", "Feedback needs this conversation's current user message.")
-    wording = message["content"]
+    message = next((row for row in reversed(session.get("messages", [])) if row.get("role") == "user"
+                    and row.get("interjection") in (None, "delivered", "restarted")), None)
+    if session.get("id") != chat_id or not message or not message.get("id"):
+        raise HubFailure(409, "CHAT_FEEDBACK_SOURCE", f"{purpose} needs this conversation's current user message.")
+    return message
+
+
+def _user_words(message: dict, quote: str | None, purpose: str) -> str:
+    """The user's own words in that message: all of it, or one exact passage it holds once.
+
+    Hub extracts them itself; a provider only points at them, so it can neither
+    invent nor rewrite what the user said.
+    """
+    wording = message.get("content") or ""
+    if not wording.strip():
+        raise HubFailure(409, "CHAT_FEEDBACK_SOURCE", f"{purpose} needs the user's own words, and the current user message has none.")
     if quote is not None:
         if not isinstance(quote, str) or not quote.strip():
             raise HubFailure(422, "CHAT_FEEDBACK_QUOTE", "feedbackQuote must select a nonempty exact passage from this user message.")
@@ -2804,7 +2827,55 @@ def _feedback_body(hub: str, base: str, chat_id: str, session: dict, path: str, 
             raise HubFailure(422, "CHAT_FEEDBACK_QUOTE", "feedbackQuote must occur exactly once, unchanged, in this user message. Include enough surrounding words to identify it.")
         wording = wording[start:start + len(quote)]
     if len(wording) > 2000:
-        raise HubFailure(422, "CHAT_FEEDBACK_TOO_LONG", "Select the feedback's exact passage with feedbackQuote beside method/path/body (at most 2000 characters); the user need not repeat the message.")
+        raise HubFailure(422, "CHAT_FEEDBACK_TOO_LONG", "Select the exact passage of the user's words with feedbackQuote beside method/path/body (at most 2000 characters); the user need not repeat the message.")
+    return wording
+
+
+def _admission_body(chat_id: str, session: dict, body: dict, quote: str | None = None) -> dict:
+    """Close one chat task's loop in the Agent's name, bound to the message it answers.
+
+    The task is always ``hub-chat``. The user's words are bound only where they
+    carry the decision: a selected passage, or the message itself for a
+    rejection, since the Agent rejects only on what the user said (Q3).
+    """
+    if {"messageSource", "message_source", "rawLanguage", "raw_language"}.intersection(body):
+        raise HubFailure(422, "CHAT_ADMISSION_INVALID", "The chat fills messageSource and rawLanguage from this user turn; never supply them.")
+    task = body.get("task", {"kind": "hub-chat"})
+    if not isinstance(task, dict) or task.get("kind", "hub-chat") != "hub-chat":
+        raise HubFailure(422, "CHAT_ADMISSION_INVALID", "A chat closes its own task as kind hub-chat; the ui and retroactive kinds are a person's act.")
+    message = _user_message(chat_id, session, "An admission")
+    rejects = any(isinstance(row, dict) and row.get("outcome") == "rejected" for row in body.get("results") or ())
+    bound = {**body, "projectId": session["projectId"], "task": {**task, "kind": "hub-chat"},
+             "messageSource": {"sessionId": chat_id, "messageId": message["id"]}}
+    if quote is not None or rejects:
+        bound["rawLanguage"] = _user_words(message, quote, "A rejection" if rejects else "An admission")
+    return bound
+
+
+def _continue_body(chat_id: str, session: dict, body: dict, quote: str | None = None) -> dict:
+    """Move the Working Head only on the user's own words, bound to their message (Q3).
+
+    The Runtime still owns the exact-run check, the position's CAS and the
+    retained event; this adapter refuses a Continue no user message asks for.
+    """
+    if set(body) - {"projectId", "runId", "baseRevisionSha256", "branchId"}:
+        raise HubFailure(422, "CHAT_CONTINUE_INVALID", "A Continue from chat takes runId, baseRevisionSha256 and optional branchId; the chat binds the user's message and words.")
+    if not isinstance(body.get("runId"), str) or not body["runId"]:
+        raise HubFailure(422, "CHAT_CONTINUE_INVALID", "Name the result to continue on; returning to the default is the architect's own action.")
+    message = _user_message(chat_id, session, "A Continue")
+    return {**body, "projectId": session["projectId"], "rawLanguage": _user_words(message, quote, "A Continue"),
+            "messageSource": {"sessionId": chat_id, "messageId": message["id"]}}
+
+
+def _feedback_body(hub: str, base: str, chat_id: str, session: dict, path: str, body: dict,
+                   quote: str | None = None) -> dict:
+    """Bind ordinary feedback to real user words, not a model's claimed authorship.
+
+    The Runtime still owns the decision contract, source validation, CAS and
+    authorization. This adapter only narrows what a chat can ask it to write.
+    """
+    message = _user_message(chat_id, session, "Feedback")
+    wording = _user_words(message, quote, "Feedback")
     provenance = {"sessionId": chat_id, "messageId": message["id"]}
     if path == "/api/decisions":
         reserved = {"rawLanguage", "raw_language", "messageSource", "message_source", "sourceKind", "source_kind"}
@@ -2864,9 +2935,9 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
     method, path = str(arguments.get("method", "GET")).upper(), arguments.get("path", "")
     parsed = urlsplit(path)
     allowed = {"GET": _READ, "POST": _POST, "PUT": _WRITE}
-    if "feedbackQuote" in arguments and (name != "studio_request" or method != "POST"
-            or not parsed.path.startswith("/api/decisions") or not isinstance(arguments["feedbackQuote"], str)):
-        raise HubFailure(422, "CHAT_FEEDBACK_QUOTE", "feedbackQuote only selects source words for a feedback save or revocation.")
+    if "feedbackQuote" in arguments and (name != "studio_request" or not _binds_words(method, parsed.path)
+                                         or not isinstance(arguments["feedbackQuote"], str)):
+        raise HubFailure(422, "CHAT_FEEDBACK_QUOTE", "feedbackQuote only selects the user's words for feedback, an admission or a Continue.")
     if "producer" in arguments and name != "studio_schema":
         raise HubFailure(422, "CHAT_TOOL_INVALID", "producer selects an authoring schema; it belongs to studio_schema.")
     if "operationId" in arguments and (name != "studio_request" or method == "GET"
@@ -2927,6 +2998,16 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
             schema["properties"] = {key: value for key, value in schema["properties"].items() if key not in hidden}
             schema["required"] = [key for key in schema.get("required", []) if key not in hidden]
             schema["properties"]["disposition" if creating else "action"]["enum"] = ["avoid", "keep"] if creating else ["revoke"]
+        if (method, parsed.path) in _BOUND_WORDS:
+            # Hub binds the user's message and words; the provider supplies neither.
+            reference = operation["requestBody"]["content"]["application/json"]["schema"]["$ref"]
+            schema = document["components"]["schemas"][reference.rsplit("/", 1)[-1]]
+            hidden = {"messageSource", "rawLanguage"}
+            schema["properties"] = {key: value for key, value in schema["properties"].items() if key not in hidden}
+            schema["required"] = [key for key in schema.get("required", []) if key not in hidden]
+            if method == "POST":
+                task = document["components"]["schemas"]["AdmissionTaskDto"]["properties"]
+                task["kind"] = {**task["kind"], "enum": ["hub-chat"]}
         producer = arguments.get("producer")
         if producer is not None:
             if method != "POST" or parsed.path != "/api/proposals" or not isinstance(producer, str):
@@ -3004,6 +3085,11 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
         if parsed.query or not isinstance(body, dict):
             raise HubFailure(422, "CHAT_FEEDBACK_INVALID", "Feedback takes its scope and exact source in the body, without query parameters.")
         body = _feedback_body(hub, base, chat_id, session, parsed.path, body, arguments.get("feedbackQuote"))
+    if (method, parsed.path) in _BOUND_WORDS:
+        if parsed.query or not isinstance(body, dict):
+            raise HubFailure(422, "CHAT_TOOL_INVALID", f"{method} {parsed.path} takes its whole request in the body, without query parameters.")
+        bind = _admission_body if method == "POST" else _continue_body
+        body = bind(chat_id, session, body, arguments.get("feedbackQuote"))
     if method == "POST" and parsed.path == "/api/board/export":
         if parsed.query:
             raise HubFailure(422, "CHAT_TOOL_INVALID", "The registered page read takes its source in the body, without query parameters.")
@@ -3047,6 +3133,11 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
                     started[section] = {**started[section], field: values[:100],
                                         f"{field}Count": len(values), f"{field}Omitted": len(values) - 100}
                     started["detailsPath"] = f"/api/proposals/{started['proposalId']}"
+        if method == "PUT" and parsed.path == "/api/working-draft" and isinstance(started, dict):
+            # The position also lists every recovery row and any local recovery
+            # draft. The Continue needs only where the head now is and the
+            # revision a later Continue compares against.
+            started = {key: started.get(key) for key in ("projectId", "revisionSha256", "current")}
         return started
     # One POST has happened. From here on this call only reads.
     return _finish(base, started, comparison, time.monotonic() + wait)
@@ -3122,7 +3213,7 @@ def _mcp(hub: str, chat_id: str | None, external: ChatPresentationBindRequest | 
         "type": "object", "properties": {
             **request_fields,
             "operationId": {"type": "string", "format": "uuid", "description": "Optional stable identity for this mutation. Reusing it returns the same admission/result and never executes the request twice. Different requests must use different ids."},
-            "feedbackQuote": {"type": "string", "minLength": 1, "maxLength": 2000, "description": "Only for POST /api/decisions or /api/decisions/{id}/revisions: select one exact, unique, continuous passage in the current user's message. Hub extracts these unedited words itself and retains the original message identity. Use for long messages; invented, rewritten or ambiguous passages are refused. Omit to retain the entire message when it fits."},
+            "feedbackQuote": {"type": "string", "minLength": 1, "maxLength": 2000, "description": "Only for POST /api/decisions, /api/decisions/{id}/revisions, /api/admissions or PUT /api/working-draft: select one exact, unique, continuous passage in the current user's message that carries the decision. Hub extracts these unedited words itself and retains the original message identity. Use for long messages; invented, rewritten or ambiguous passages are refused. Omit to retain the entire message when it fits."},
             "awaitSeconds": {
                 "type": "integer", "minimum": 1, "maximum": _AWAIT_MAX_S,
                 "description": "Wait for one submitted change, in seconds; 60 suits an ordinary change. "
@@ -3183,6 +3274,15 @@ def _mcp(hub: str, chat_id: str | None, external: ChatPresentationBindRequest | 
         "Object bounds and successful checks are not visual inspection or proof of the user's spatial intent; inspect relevant views when available and report gaps.",
         "For invalid input, use the named schema to correct it. For stale state/conflicts, refresh the exact source and reconcile the change while preserving keep conditions.",
         "A refused request made no model. Distinguish unsupported operations from correctable inputs; report unresolved limits without inventing success.",
+        "",
+        "ADMIT: when a task's loop is complete, POST /api/admissions once: {task: {kind: 'hub-chat'}, study: {id, label, baseRunId}",
+        "(id an ASCII slug) for several alternatives built from one run, results: [{runId, outcome: 'admitted', supersedes: [attempt runIds it replaced], label}]}.",
+        "outcome 'rejected' only where the user's words reject that result; add feedbackQuote with their exact passage.",
+        "The chat fills messageSource and rawLanguage; never supply them. A refusal names each failing clause per run; an identical",
+        "retry returns the same record. GET /api/admissions?include=rejected lists what is already admitted or tried.",
+        "CONTINUE: only when the user's words ask to continue from a result, PUT /api/working-draft {runId, baseRevisionSha256}",
+        "with revisionSha256 from GET /api/working-source, and feedbackQuote for their exact passage. It moves the Working Head",
+        "and admits nothing; generating a result never moves it.",
         "",
         "OTHER READS: GET /api/project, /api/state/volumes, /api/program, /api/options, /api/board,",
         "/api/artifacts, /api/documents, /api/document-annotations, /api/jobs/{id}.",

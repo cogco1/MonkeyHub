@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from .artifacts import ModelSourceDto, model_source_dto
+from .decisions import MessageSourceDto
 
 if TYPE_CHECKING:
     from ..application.working_draft import WorkingSource
@@ -52,11 +53,25 @@ class WorkingDraftDto(BaseModel):
 
 
 class WorkingDraftSelectionDto(BaseModel):
+    """Continue on a run (the Working Head follows it at once), or return to the default with none.
+
+    Who moved the head is read from the request boundary. The two optional fields
+    mark the Hub Agent continuing on the user's own words, as the Hub binds them.
+    """
+
     model_config = ConfigDict(extra="forbid")
     projectId: str
     baseRevisionSha256: str | None
     runId: str | None
     branchId: str | None = None
+    messageSource: MessageSourceDto | None = Field(
+        default=None,
+        description="The chat message the Hub Agent continued on, as the Hub binds it; provenance, never a "
+        "credential. Only a Hub-managed Runtime takes it, and the architect's own Continue has none.")
+    rawLanguage: str | None = Field(
+        default=None, min_length=1, max_length=2000,
+        description="The user's own words in that message that ask for this Continue; required with "
+        "messageSource. The retained design.continued event names the message by id, not these words.")
 
 
 class WorkingDraftSaveDto(BaseModel):
