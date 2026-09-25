@@ -2,7 +2,6 @@
 
 from contextlib import contextmanager
 from copy import deepcopy
-import inspect
 import unittest
 from unittest.mock import patch
 
@@ -11,7 +10,6 @@ from fastapi.testclient import TestClient
 from archflow.adapters.occt_backend import occt_available
 from archflow.project.record_kinds import DRAWING_PROJECTION_RECEIPT
 from archflow.project.refs import record_ref_from_uri
-from monkeydiagram import drawing_elevation
 from monkeydiagram.drawing_elevation import read_model_axis_elevation
 from archflow_studio_api.application import drawing_plans
 from archflow_studio_api.application.artifacts import _chain_head, _page_replacements, list_documents, replacement_cause
@@ -87,30 +85,10 @@ def receipt_fields(**fields):
         yield
 
 
-def stand_in_for_the_projection_receipt(test):
-    """Retain who asked and why in the cut-plan receipt the way GH-244/drawing-projection will.
-
-    That lane's ``freeze_cut_plan`` takes ``attribution`` and ``reason`` into
-    its receipt (05 3.2(A)); this branch's does not yet. Once it does, this
-    stands in for nothing and the tests read the real receipt; delete it then.
-    """
-    if {"attribution", "reason"} & set(inspect.signature(drawing_elevation.freeze_cut_plan).parameters):
-        return
-
-    def retaining(repository, *, attribution=None, reason=None, **kwargs):
-        return _freeze_retaining(drawing_elevation.freeze_cut_plan, repository,
-                                 {"attribution": attribution, "reason": reason}, kwargs)
-
-    stand_in = patch.object(drawing_plans, "freeze_cut_plan", retaining)
-    stand_in.start()
-    test.addCleanup(stand_in.stop)
-
-
 @unittest.skipUnless(occt_available(), "cadquery-ocp is not installed")
 class CutPlanTests(CandidateTestCase):
     def setUp(self):
         super().setUp()
-        stand_in_for_the_projection_receipt(self)
         self.client.close()
         self.settings = StudioSettings(project_dir=self.root / PROJECT_ID, cad_export="occt")
         self.app = create_app(self.settings)
