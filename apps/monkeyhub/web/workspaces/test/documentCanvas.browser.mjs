@@ -331,9 +331,11 @@ try {
   const comment = `检查旋转裁切页上的箭头与入口标记 ${nonce}`;
   let submittedRef;
   await step("page comment and intent submit the exact persisted document revision without 3D gestures", async () => {
+    // GH-302: there is no Save button; the comment saves itself after its typing pause.
+    assert.equal(await page.getByRole("button", { name: "保存本页", exact: true }).count(), 0);
     await page.locator("#document-comment").fill(comment);
-    await page.getByRole("button", { name: "保存本页", exact: true }).click();
-    page1Snapshot = await until(() => snapshot(1), (value) => value.comment === comment, "comment persisted");
+    await page.locator(".document-save-state").filter({ hasText: "已保存" }).waitFor();
+    page1Snapshot = await until(() => snapshot(1), (value) => value.comment === comment, "comment autosaved");
     await page.screenshot({ path: screenshotPath, fullPage: true });
     const intentResponse = page.waitForResponse((response) => response.url().endsWith("/api/intents") && response.request().method() === "POST");
     await page.getByRole("button", { name: "提交本页意见", exact: true }).click();

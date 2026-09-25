@@ -295,7 +295,7 @@ try {
   await step("an unknown drawing remains annotatable and saveable, but cannot submit a model change", async () => {
     assert.equal(await status(), "unknown");
     assert.equal(await submitButton().isDisabled(), true);
-    assert.equal(await page.getByRole("button", { name: "保存本页", exact: true }).isEnabled(), true);
+    assert.equal(await page.locator("#document-comment").isEditable(), true, "the page stays editable and saves itself");
     await page.locator(".document-tools").getByRole("button", { name: "画笔", exact: true }).click();
     await page.mouse.move(...await at([0.2, 0.55])); await page.mouse.down();
     await page.mouse.move(...await at([0.4, 0.6])); await page.mouse.up();
@@ -355,7 +355,7 @@ try {
       await until(status, (value) => value === "mismatch", "one differing identity field blocks submission");
       assert.equal(await submitButton().isDisabled(), true);
       assert.equal(await page.locator(".document-tools").getByRole("button", { name: "画笔", exact: true }).isEnabled(), true);
-      assert.equal(await page.getByRole("button", { name: "保存本页", exact: true }).isEnabled(), true);
+      assert.equal(await page.locator("#document-comment").isEditable(), true, "the page stays editable and saves itself");
     }
     await page.evaluate((source) => window.modelFixture.setEditing(source), modelA);
     await until(status, (value) => value === "ready", "exact model identity matches");
@@ -396,7 +396,7 @@ try {
     await page.evaluate(() => window.modelFixture.setVisualAvailable(false));
     assert.equal(await submitButton().isDisabled(), true);
     await page.locator(".document-visual-unavailable").waitFor();
-    assert.equal(await page.getByRole("button", { name: "保存本页", exact: true }).isEnabled(), true);
+    assert.equal(await page.locator("#document-comment").isEditable(), true, "the page stays editable and saves itself");
     assert.equal((await snapshot()).intents.length, before.intents.length);
     await page.evaluate(() => window.modelFixture.setVisualAvailable(true));
     assert.equal(await submitButton().isEnabled(), true);

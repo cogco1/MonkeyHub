@@ -315,7 +315,8 @@ print(json.dumps({"unit": str(model.Settings.ModelUnitSystem), "objects": object
   assert.equal(await strokePath(), localPath, "Unsaved vertex correction remains visible after save refusal");
   assert.equal(await page.locator(".document-viewport").getAttribute("aria-label"), pageIdentity);
   faults.save = false;
-  await page.getByRole("button", { name: "Save page", exact: true }).click();
+  // GH-302: a refused autosave keeps the edit and waits for Retry, never retrying in a loop.
+  await page.locator(".document-error").getByRole("button", { name: "Retry saving", exact: true }).click();
   const secondPage = await saved();
   assert.notEqual(secondPage.revisionSha256, calibrated.revisionSha256);
   assert.deepEqual(secondPage.tracingCalibration, calibrated.tracingCalibration);

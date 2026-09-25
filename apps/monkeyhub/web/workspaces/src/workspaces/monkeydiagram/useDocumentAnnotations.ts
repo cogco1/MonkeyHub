@@ -35,6 +35,8 @@ export interface DocumentAnnotationsHandle extends PageSnapshot {
   setTracingCalibration(value: DocumentTracingCalibrationDto | null): void;
   undo(): void;
   redo(): void;
+  /** Queues a comment still inside its typing pause now; a refused save stays refused until `save`. */
+  flush(): void;
   save(): Promise<DocumentAnnotationRefDto>;
   reload(): Promise<void>;
 }
@@ -248,6 +250,9 @@ function createPage(studio: StudioClient, scope: DocumentAnnotationsOptions) {
       publish();
       enqueue(present());
     },
+    flush() {
+      if (ready && !readOnly && finishTyping()) enqueue(present());
+    },
     async save(): Promise<DocumentAnnotationRefDto> {
       if (readOnly) throw unavailable("Select a current document page before saving; historical revisions are read-only.");
       if (reading && ready) throw unavailable("Wait for the page reload to finish before saving its annotations.");
@@ -296,6 +301,6 @@ export function useDocumentAnnotations(
   useEffect(() => { void page.load(); }, [page]);
   return {
     ...snapshot, changeAnnotations: page.changeAnnotations, setComment: page.setComment, setTracingCalibration: page.setTracingCalibration,
-    undo: page.undo, redo: page.redo, save: page.save, reload: page.reload,
+    undo: page.undo, redo: page.redo, flush: page.flush, save: page.save, reload: page.reload,
   };
 }
