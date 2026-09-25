@@ -37,6 +37,21 @@ I ran three browser tests on the built UI with synthetic fixtures:
 **Priority:** P0 blocks daily use or contradicts a principle · P1 friction · P2 polish.
 **Effort:** S ≤ 1 day · M ≤ 3 days · L longer.
 
+## 0. Owner decisions (Kaiwen, 2026-09-25)
+
+The owner asked for the review's open questions to be settled on the recommendations below. Slices from §4 follow these.
+
+| Question | Decision |
+| --- | --- |
+| Surfaces and tools on the rail | Surfaces: 建模 · 画板 · 状态树 (Design Tree). Tools: 图纸 · 渲染 · 制作 · 用量. 排版 (Publish) becomes a 画板 \| 排版 mode inside Board. |
+| Position word | **当前 / Current**, as in the chip "S2 · 当前". Explanatory copy says "从这里继续修改". 修改起点 leaves the main copy. |
+| Name for Sync | **记录 / Record**: "记录这一版"; status "有未记录的修改 · 已自动保存". Edits always autosave, so Sync is never "save". |
+| Board auto-receive vs "Send to Board" | Keep auto-receive and retire the explicit send buttons. New items land in a Board inbox with a count and never move the viewer. |
+| One chat or two | One chat: the Hub conversation. MonkeyArch's deterministic chat panel is not a second chat; its cards merge into Hub result cards, and intent compilation stays as a capability. |
+| Fabrication | A Tool. |
+| Design Tree list view | Kept as a secondary view (accessibility and narrow screens). The canvas is the default. |
+| Software updates | Fully automatic: the new version takes effect on next launch (#58 reordered). |
+
 ## 1. Summary: the five changes that matter most
 
 1. **One “where am I” on every surface.** Add the project bar and Stage chip (#284), and make the Design Tree the only history entry. In the same PRs, retire three parallel entries: the Modeling footer rows, the VersionsStrip design section and the rail project card (IA-1, MC-1, MC-2, R1–R4).
