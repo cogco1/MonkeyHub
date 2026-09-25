@@ -217,6 +217,133 @@
         "2026-09-24: #273 merged the GH-66 integration. On the repository owner's instruction the Drawing, Render, Hub and shared client paths it also claimed are handed to GH-271 (#271, Working Head); GH-66 keeps its Publish paths and the broader #66 acceptance.",
         "2026-09-25: the cut-plan request DTO (transport/drawings.py) is handed to GH-271 as well, for the drawing follow choice found in the #277 review; GH-66 keeps its Publish paths."
       ]
+    },
+    {
+      "id": "GH-285",
+      "stream": "planning",
+      "status": "active",
+      "goal": "Fold each Agent turn's tool calls into one plain-language process row so the Agent's answer, results, permission prompts and errors stay readable, and open conversations at their latest message.",
+      "depends_on": [],
+      "issue": "https://github.com/cogco1/MonkeyHub/issues/285",
+      "write_scope": [
+        "apps/monkeyhub/web/src/ChatShell.tsx",
+        "apps/monkeyhub/web/src/ChatShell.css",
+        "apps/monkeyhub/web/src/chatProcess.ts",
+        "apps/monkeyhub/web/test/chatProcess.test.ts",
+        "apps/monkeyhub/web/src/i18n/messages.en.ts",
+        "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
+        "apps/monkeyhub/web/test/chatShell.browser.mjs",
+        "apps/monkeyhub/README.md",
+        "docs/mapping/planning/GH-285-process-fold.md"
+      ],
+      "card": "docs/mapping/planning/GH-285-process-fold.md",
+      "acceptance": [
+        "A completed turn shows one folded 'Worked <time> · N steps' row above its Agent text and result actions; failed steps are counted without expanding it.",
+        "Expanded steps read in plain language (zh and en); raw request lines appear only under that row's Technical details.",
+        "A running turn's row shows its elapsed time and current step; the fold is remembered per turn only while the chat stays open.",
+        "A chat opens at its latest message, follows streaming only while already at the bottom, and offers a round jump-to-latest button with the count of new messages; folding never moves the view."
+      ],
+      "lanes": [
+        {
+          "id": "process-fold",
+          "issue": "https://github.com/cogco1/MonkeyHub/issues/285",
+          "branch": "codex/300-sidebar-process-fold",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-300-sidebar-process-fold",
+          "base_ref": "e183a69a",
+          "contributor": "Claude",
+          "reviewer": "Claude root task",
+          "handoff": "Process fold and chat scrolling in ChatShell (#285 section 6.1 'process fold' only; result cards, the composer target label and the project panel stay open). Hands the shared chat files to GH-300/sidebar on this branch; root task reviews and publishes both. GH-234/autosave-restart owns the restartBlocker lines and the updateModelBlocked copy; rebase after it merges.",
+          "modules": [
+            "hub.shell"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/web/src/ChatShell.tsx",
+            "apps/monkeyhub/web/src/ChatShell.css",
+            "apps/monkeyhub/web/src/chatProcess.ts",
+            "apps/monkeyhub/web/test/chatProcess.test.ts",
+            "apps/monkeyhub/web/src/i18n/messages.en.ts",
+            "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
+            "apps/monkeyhub/web/test/chatShell.browser.mjs",
+            "apps/monkeyhub/README.md"
+          ],
+          "depends_on": [],
+          "status": "active",
+          "blocked_reason": null
+        }
+      ]
+    },
+    {
+      "id": "GH-300",
+      "stream": "planning",
+      "status": "active",
+      "goal": "Give the Hub sidebar its first cross-project entries: 7-day usage from Monitor and a ready update in the footer, a Tasks list of running and queued Agent work with running badges on project rows, and the approved rail groups with Layout as a Board mode.",
+      "depends_on": [],
+      "issue": "https://github.com/cogco1/MonkeyHub/issues/300",
+      "write_scope": [
+        "apps/monkeyhub/web/src/ChatShell.tsx",
+        "apps/monkeyhub/web/src/ChatShell.css",
+        "apps/monkeyhub/web/src/sidebarTasks.ts",
+        "apps/monkeyhub/web/test/sidebarTasks.test.ts",
+        "apps/monkeyhub/web/src/monitorData.ts",
+        "apps/monkeyhub/web/test/monitorData.test.ts",
+        "apps/monkeyhub/web/src/MonitorPage.tsx",
+        "apps/monkeyhub/web/src/i18n/messages.en.ts",
+        "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
+        "apps/monkeyhub/web/test/chatShell.browser.mjs",
+        "apps/monkeyhub/web/test/projectWorkspaceFixture.mjs",
+        "apps/monkeyhub/web/workspaces/src/app/ProjectWorkspace.tsx",
+        "apps/monkeyhub/web/workspaces/src/app/BoardModeSwitch.tsx",
+        "apps/monkeyhub/web/workspaces/src/app/boardModeSwitch.css",
+        "apps/monkeyhub/README.md",
+        "docs/WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.md",
+        "docs/2026-09-24-monkeyhub-interaction-proposal.md",
+        "docs/mapping/planning/GH-300-sidebar.md"
+      ],
+      "card": "docs/mapping/planning/GH-300-sidebar.md",
+      "acceptance": [
+        "The sidebar footer shows the last 7 days of model usage read from Monitor and, when /api/updates/status is ready, 'New version ready', which opens Software Update; Settings and Archived chats stay.",
+        "Tasks lists running and queued Agent work across open projects without raw ids and opens that project and chat; project rows show a running badge; the new-schemes badge is a marked hook awaiting #294 data.",
+        "The rail groups are Surfaces (Modeling, Board) and Tools (Drawings, Render, Fabrication, Usage); Layout is reached from a Board | Layout switch, keeps both surfaces mounted, and view=publish links still open it."
+      ],
+      "lanes": [
+        {
+          "id": "sidebar",
+          "issue": "https://github.com/cogco1/MonkeyHub/issues/300",
+          "branch": "codex/300-sidebar-process-fold",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-300-sidebar-process-fold",
+          "base_ref": "e183a69a",
+          "contributor": "Claude",
+          "reviewer": "Claude root task",
+          "handoff": "Sidebar slices 1-2 of #300 plus the owner's rail regrouping (Surfaces: Modeling, Board; Tools: Drawings, Render, Fabrication, Usage) and the Board | Layout switch. Starts on this branch once GH-285/process-fold hands over the shared chat files; root task reviews and publishes both. Board.tsx, PublishWorkspace.tsx and publish.css stay with GH-66; SoftwareUpdateSettings.tsx stays with the auto-update lane.",
+          "modules": [
+            "hub.shell"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/web/src/ChatShell.tsx",
+            "apps/monkeyhub/web/src/ChatShell.css",
+            "apps/monkeyhub/web/src/sidebarTasks.ts",
+            "apps/monkeyhub/web/test/sidebarTasks.test.ts",
+            "apps/monkeyhub/web/src/monitorData.ts",
+            "apps/monkeyhub/web/test/monitorData.test.ts",
+            "apps/monkeyhub/web/src/MonitorPage.tsx",
+            "apps/monkeyhub/web/src/i18n/messages.en.ts",
+            "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
+            "apps/monkeyhub/web/test/chatShell.browser.mjs",
+            "apps/monkeyhub/web/test/projectWorkspaceFixture.mjs",
+            "apps/monkeyhub/web/workspaces/src/app/ProjectWorkspace.tsx",
+            "apps/monkeyhub/web/workspaces/src/app/BoardModeSwitch.tsx",
+            "apps/monkeyhub/web/workspaces/src/app/boardModeSwitch.css",
+            "apps/monkeyhub/README.md",
+            "docs/WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.md",
+            "docs/2026-09-24-monkeyhub-interaction-proposal.md"
+          ],
+          "depends_on": [
+            "GH-285/process-fold"
+          ],
+          "status": "blocked",
+          "blocked_reason": "Waits for GH-285/process-fold on the same branch and worktree: both edit ChatShell.tsx, its CSS, the chat catalogs, the chat browser test and the Hub README."
+        }
+      ]
     }
   ]
 }
