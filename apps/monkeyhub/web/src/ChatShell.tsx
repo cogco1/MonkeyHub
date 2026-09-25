@@ -1254,6 +1254,8 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
     : { connect: s.stepConnect, service: s.stepService, model: s.stepModel }[preparing[skeleton.projectDir] ?? "connect"];
   /** The rail entry whose content is on screen: the skeleton's while one shows. */
   const railShown = skeleton ? skeleton.id : panel && selectedTab ? activeTool : null;
+  /** NA-2: the Stage chip's words for the chat header, unless a project surface with its own chip is on screen. */
+  const headerChip = position?.chip && !(panel && !skeleton && selectedTab?.runtimeId) ? position.chip : null;
 
   const initialRuntimeRoute = useRef(new URLSearchParams(window.location.search).get("runtimeId")).current;
   const initialMonitorRoute = useRef(new URLSearchParams(window.location.search).get("view") === "monitor").current;
@@ -1413,7 +1415,11 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
       </div>
     </aside>
     <main className="chat-main">
-      <header className="chat-header"><button className="chat-icon mobile-project-toggle" aria-label={sidebar ? t.collapse : t.expand} onClick={() => setSidebar(!sidebar)}><Icon name="sidebar" /></button><div><span className="chat-header__project">{project?.name ?? "MonkeyHub"}</span><h1>{chat?.id === chatId ? chat.title : t.newChat}{external && <small className="chat-external-badge">{t.externalChat}</small>}</h1></div></header>
+      <header className="chat-header"><button className="chat-icon mobile-project-toggle" aria-label={sidebar ? t.collapse : t.expand} onClick={() => setSidebar(!sidebar)}><Icon name="sidebar" /></button><div className="chat-header__text"><span className="chat-header__project">{project?.name ?? "MonkeyHub"}</span><h1>{chat?.id === chatId ? chat.title : t.newChat}{external && <small className="chat-external-badge">{t.externalChat}</small>}</h1></div>
+        {/* NA-2: below 900 px this header stays above an open panel. It carries the Stage chip whenever no
+            project surface, whose bar has the chip, is on screen, so exactly one chip shows. */}
+        {headerChip && <button type="button" className="chat-header__chip" aria-description={t.openInTree} title={t.openInTree}
+          onClick={() => void openTool("tree")}><Icon name="tree" /><span>{headerChip}</span></button>}</header>
       {(!eventsConnected || crashed || recovering || workCopyRefusal) && <div className="chat-runtime" role="status" aria-live="polite">
         <div>{!eventsConnected && <p>{t.reconnecting}</p>}
           {(crashed || recovering) && <><p>{recovering ? t.recovering : t.workerCrashed}</p><small>{t.recoveryHint}</small></>}

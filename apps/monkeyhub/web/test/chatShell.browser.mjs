@@ -2789,6 +2789,51 @@ try {
   await page.waitForFunction(() => document.querySelector('.chat-rail__tool[aria-label="建模"]')?.dataset.state === "running");
   await modelingZh.click();
   await waitWorkspace();
+
+  // NA-2: below 900 px the chat header stays above an open panel and names the project; the Stage chip
+  // is in whichever header is on top: the project surface's own bar when one is open, else this header.
+  await page.getByRole("button", { name: "Tree project", exact: true }).first().click();
+  const onTop = (locator) => locator.evaluate((node) => {
+    const box = node.getBoundingClientRect();
+    if (!box.width || !box.height) return false;
+    const hit = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
+    return Boolean(hit) && (hit === node || node.contains(hit));
+  });
+  const headerProject = page.locator(".chat-header__project"), headerChipZh = page.locator(".chat-header__chip");
+  const barChip = visibleWorkspace().locator(".stage-chip");
+  for (const [width, height] of [[800, 900], [390, 844]]) {
+    await page.setViewportSize({ width, height });
+    if (await page.locator(".chat-sidebar").isVisible()) await page.getByRole("button", { name: "收起项目栏", exact: true }).first().click();
+    if (await page.locator(".chat-shell").getAttribute("data-panel") === "true") await page.getByRole("button", { name: "收起工具", exact: true }).click();
+    await headerChipZh.waitFor();
+    assert.equal(await headerProject.innerText(), "Tree project");
+    const chipWords = await headerChipZh.innerText();
+    assert.match(chipWords, /^S2\b.* · 当前$/);
+    assert.ok(await onTop(headerProject) && await onTop(headerChipZh), `${width} px: the conversation's header names the project and carries the chip`);
+    if (width === 390) await page.screenshot({ path: path.join(temporary, "narrow-chat-390-zh.png") });
+    await page.getByRole("button", { name: "建模", exact: true }).click();
+    await waitWorkspace();
+    await barChip.waitFor();
+    assert.equal(await headerChipZh.count(), 0, `${width} px: one chip on screen`);
+    assert.equal(await barChip.locator(".stage-chip__position").innerText(), chipWords, "the header says what the chip says");
+    assert.ok(await onTop(headerProject), `${width} px: the project stays in view over Modeling`);
+    assert.ok(await onTop(barChip), `${width} px: the Stage chip stays in view over Modeling`);
+    await page.screenshot({ path: path.join(temporary, `narrow-modeling-${width}-zh.png`) });
+    // Over a Tool without a project bar the chip is back in the header; IA-6 then returns to Modeling.
+    await page.getByRole("button", { name: "用量", exact: true }).click();
+    await page.locator(".chat-browser .monitor-page").waitFor();
+    await headerChipZh.waitFor();
+    assert.ok(await onTop(headerProject) && await onTop(headerChipZh), `${width} px: over Usage the chip is in the header`);
+    await page.getByRole("button", { name: "用量", exact: true }).click();
+    await waitWorkspace();
+    await page.getByRole("button", { name: "收起工具", exact: true }).click();
+  }
+  // The header's chip opens the Design Tree, as the chip does.
+  await headerChipZh.click();
+  await visibleWorkspace().locator('[data-project-surface="tree"]:not([hidden])').waitFor();
+  assert.equal(await page.getByRole("button", { name: "状态树", exact: true }).getAttribute("aria-pressed"), "true");
+  await page.setViewportSize({ width: 1440, height: 960 });
+  await page.getByRole("button", { name: "展开项目栏", exact: true }).first().click();
   await page.getByRole("button", { name: "Hub 设置", exact: true }).click();
   await page.locator("#language").selectOption("en");
   await page.getByRole("dialog").getByRole("button", { name: "Close", exact: true }).click();
