@@ -13,6 +13,11 @@ those files, opens the archive to check the build-info.json and SBOM copies it
 carries against the digests the manifest binds them to, and reports every miss.
 Nothing here is signed: the manifest records candidate-unsigned, and a verified
 release proves only that the files match that manifest, never who produced it.
+
+On the release path, --update-index turns the published releases the workflow
+downloaded into delta patches to the new release (the same create_patch that
+--patch-from runs) plus one MonkeyHubUpdateIndex@1, which the installed Hub
+reads to update itself; --verify-update-index rechecks that set before publishing.
 """
 from __future__ import annotations
 
@@ -53,7 +58,11 @@ if str(SOURCE_ROOT) not in sys.path:
 from tools.workspace import (
     WORKSPACE_CONFIG_KEY, configured_root, configure_root, task_name, task_paths, validate_root,
 )
-from apps.monkeyhub.installer.patch import create_patch
+from apps.monkeyhub.installer.patch import PatchError, create_patch, describe_patch
+# The installed Hub's automatic update reads this index; see update_index().
+UPDATE_INDEX_SCHEMA = "MonkeyHubUpdateIndex@1"
+UPDATE_CHANNEL = "unsigned-prerelease"
+RELEASE_VERSION = re.compile(r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$")
 # Git, rather than the working directory, supplies these files. User runtime
 # configuration, projects, credentials, caches and local WIP never enter a ZIP.
 SOURCE_PATHS = (
@@ -798,6 +807,222 @@ def verify_bound_metadata(directory: Path, document: dict, listed: dict[str, dic
     return problems
 
 
+def release_version(value: object) -> tuple[int, int, int]:
+    """A published release's MAJOR.MINOR.PATCH, compared as numbers."""
+    match = RELEASE_VERSION.fullmatch(value) if isinstance(value, str) else None
+    if match is None:
+        raise ValueError(f"Not a release version: {value!r}")
+    return int(match[1]), int(match[2]), int(match[3])
+
+
+def _verified_release(manifest: Path) -> dict:
+    problems = verify_release(manifest)
+    if problems:
+        raise ValueError(f"{manifest.name} does not verify: " + "; ".join(problems))
+    document = json.loads(manifest.read_text(encoding="utf-8"))
+    release_version(document["release"]["version"])
+    return document
+
+
+def _unpacked_release(document: dict, directory: Path, destination: Path) -> Path:
+    """Extract a verified candidate archive; its one top folder is the bundle."""
+    prefix = document["artifactPrefix"]
+    with zipfile.ZipFile(directory / document["archive"]) as archive:
+        for name in archive.namelist():
+            if not name.startswith(prefix + "/") or ".." in name.split("/"):
+                raise ValueError(f"{document['archive']}: {name} is outside {prefix}/")
+        destination.mkdir(parents=True)
+        archive.extractall(destination)
+    return destination / prefix
+
+
+def update_index(manifest: Path, bases: Iterable[Path], output: Path, work: Path,
+                 promoted_commit: str | None = None) -> Path:
+    """Write delta patches from earlier published releases to one release, and their index.
+
+    ``manifest`` is the new release's ReleaseManifest@1 beside its candidate
+    ZIP. Each directory in ``bases`` holds one earlier release as published
+    (ZIP, checksum, SBOM and manifest). Every release is verified before its
+    archive is extracted under ``work``; each patch is the create_patch that
+    --patch-from/--patch-to/--patch-output runs, from the extracted earlier
+    bundle to the extracted new one. ``output`` receives
+    MonkeyHub-<version>-from-<base>.patch.zip per base and
+    MonkeyHub-<version>-update-index.json: the version, the promoted source
+    commit (the release-candidate head, when given) and the release commit the
+    installation reports, the release manifest, the full candidate ZIP as the
+    fallback, and per patch its base commit, base version, size and SHA-256.
+    Nothing is signed; the index carries exactly the release manifest's trust.
+    """
+    release = _verified_release(manifest)
+    version, commit = release["release"]["version"], release["release"]["sourceCommit"]
+    if promoted_commit is not None and not re.fullmatch(r"[0-9a-f]{40}", promoted_commit):
+        raise ValueError("--promoted-commit must be a full lowercase Git commit.")
+    output.mkdir(parents=True, exist_ok=True)
+    index = output / f"MonkeyHub-{version}-update-index.json"
+    if index.exists():
+        raise ValueError(f"An update index for {version} already exists: {index}")
+    work.mkdir(parents=True, exist_ok=True)
+    # Short names: extracted bundles must stay within legacy Windows path limits.
+    scratch = Path(tempfile.mkdtemp(prefix="u", dir=work))
+    patches = []
+    try:
+        target = _unpacked_release(release, manifest.parent, scratch / "t")
+        for number, directory in enumerate(bases):
+            manifests = sorted(directory.glob("*.release-manifest.json"))
+            if len(manifests) != 1:
+                raise ValueError(f"{directory}: expected exactly one published release manifest")
+            base = _verified_release(manifests[0])
+            base_version = base["release"]["version"]
+            if release_version(base_version) >= release_version(version):
+                raise ValueError(f"Base release {base_version} is not older than {version}")
+            if any(row["baseVersion"] == base_version for row in patches):
+                raise ValueError(f"Base release {base_version} was given twice")
+            extracted = scratch / f"b{number}"
+            name = f"MonkeyHub-{version}-from-{base_version}.patch.zip"
+            summary = create_patch(_unpacked_release(base, directory, extracted), target, output / name)
+            if summary["baseCommit"] != base["release"]["sourceCommit"] or summary["targetCommit"] != commit:
+                raise ValueError(f"{name} does not connect the two releases it is named after")
+            shutil.rmtree(extracted)
+            patches.append({
+                "name": name, "size": (output / name).stat().st_size, "sha256": sha256(output / name),
+                "baseVersion": base_version, "baseCommit": summary["baseCommit"],
+                "changedFiles": summary["changedFiles"], "removedFiles": summary["removedFiles"],
+                "payloadBytes": summary["payloadBytes"],
+            })
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+    archive = manifest.parent / release["archive"]
+    document = {
+        "schema": UPDATE_INDEX_SCHEMA,
+        "channel": UPDATE_CHANNEL,
+        "trust": {
+            "status": release["trust"]["status"], "signed": False,
+            "statement": "Unsigned prerelease channel. Each SHA-256 detects a changed or truncated "
+                         "download of a file this index names; it does not establish who published it.",
+        },
+        "version": version,
+        "sourceCommit": promoted_commit,
+        "releaseCommit": commit,
+        "releaseManifest": {"name": manifest.name, "size": manifest.stat().st_size, "sha256": sha256(manifest)},
+        "full": {"name": archive.name, "size": archive.stat().st_size, "sha256": sha256(archive)},
+        "patches": sorted(patches, key=lambda row: release_version(row["baseVersion"]), reverse=True),
+    }
+    index.write_text(json.dumps(document, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    problems = verify_update_index(index, manifest.parent)
+    if problems:
+        raise ValueError("The update index does not match its own files: " + "; ".join(problems))
+    return index
+
+
+def verify_update_index(index: Path, release_dir: Path | None = None) -> list[str]:
+    """Check an update index against the files it names; report every miss.
+
+    Patches sit beside the index. The release manifest and candidate ZIP are
+    read from ``release_dir`` (default: the same directory). Every named file
+    must match its size and SHA-256, every patch must name this release's
+    commit as its target and a distinct earlier release as its base, and the
+    build-info.json each patch reconstructs must be the one the release
+    manifest binds. No unlisted patch for this version may sit beside it.
+    """
+    try:
+        document = json.loads(index.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+        return [f"{index.name}: unreadable update index: {error}"]
+    if not isinstance(document, dict) or document.get("schema") != UPDATE_INDEX_SCHEMA:
+        return [f"{index.name}: not a {UPDATE_INDEX_SCHEMA} document"]
+    version = document.get("version")
+    try:
+        ordered = release_version(version)
+    except ValueError as error:
+        return [f"{index.name}: {error}"]
+    problems: list[str] = []
+    if index.name != f"MonkeyHub-{version}-update-index.json":
+        problems.append(f"{index.name}: an index for {version} must be named MonkeyHub-{version}-update-index.json")
+    commit = document.get("releaseCommit")
+    if not isinstance(commit, str) or not re.fullmatch(r"[0-9a-f]{40}", commit):
+        problems.append("releaseCommit must be a full lowercase Git commit")
+    promoted = document.get("sourceCommit")
+    if promoted is not None and (not isinstance(promoted, str) or not re.fullmatch(r"[0-9a-f]{40}", promoted)):
+        problems.append("sourceCommit must be null or a full lowercase Git commit")
+    if document.get("channel") != UPDATE_CHANNEL:
+        problems.append(f"channel must be {UPDATE_CHANNEL}")
+    release_dir = release_dir or index.parent
+
+    def named_file(entry: object, expected: str | None, directory: Path, label: str) -> Path | None:
+        if not isinstance(entry, dict) or set(entry) - {"name", "size", "sha256", "baseVersion", "baseCommit",
+                                                       "changedFiles", "removedFiles", "payloadBytes"}:
+            problems.append(f"{label}: must be an object with name, size and sha256")
+            return None
+        name, size, digest = entry.get("name"), entry.get("size"), entry.get("sha256")
+        if unsafe_name(name) or (expected is not None and name != expected):
+            problems.append(f"{label}: name must be {expected or 'one plain file name'}, not {name!r}")
+            return None
+        if type(size) is not int or size < 0 or not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest):
+            problems.append(f"{name}: size must be a byte count and sha256 a lowercase SHA-256")
+            return None
+        path = directory / str(name)
+        if not path.is_file():
+            problems.append(f"{name}: named by the index but not present")
+            return None
+        if path.stat().st_size != size or sha256(path) != digest:
+            problems.append(f"{name}: size or SHA-256 differs from the index")
+            return None
+        return path
+
+    prefix = f"MonkeyHub-{version}-windows-x64"
+    manifest = named_file(document.get("releaseManifest"), f"{prefix}-candidate.zip.release-manifest.json",
+                          release_dir, "releaseManifest")
+    named_file(document.get("full"), f"{prefix}-candidate.zip", release_dir, "full")
+    bound_build_info = None
+    if manifest is not None:
+        try:
+            release = json.loads(manifest.read_text(encoding="utf-8"))
+            if (release["release"]["version"] != version or release["release"]["sourceCommit"] != commit
+                    or release["archive"] != f"{prefix}-candidate.zip"):
+                problems.append(f"{manifest.name}: describes another release than this index")
+            bound_build_info = release["buildInfo"]["sha256"]
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError, KeyError, TypeError) as error:
+            problems.append(f"{manifest.name}: unreadable release manifest: {error}")
+    rows = document.get("patches")
+    if not isinstance(rows, list):
+        return problems + ["patches must be a list"]
+    listed, bases = set(), set()
+    for number, entry in enumerate(rows):
+        label = f"patches[{number}]"
+        base_version = entry.get("baseVersion") if isinstance(entry, dict) else None
+        try:
+            if release_version(base_version) >= ordered:
+                problems.append(f"{label}: base {base_version} is not older than {version}")
+        except ValueError as error:
+            problems.append(f"{label}: {error}")
+            continue
+        base_commit = entry.get("baseCommit")
+        if not isinstance(base_commit, str) or not re.fullmatch(r"[0-9a-f]{40}", base_commit):
+            problems.append(f"{label}: baseCommit must be a full lowercase Git commit")
+            continue
+        if base_version in bases or base_commit in bases:
+            problems.append(f"{label}: base {base_version} is listed twice")
+        bases.update((base_version, base_commit))
+        path = named_file(entry, f"MonkeyHub-{version}-from-{base_version}.patch.zip", index.parent, label)
+        if path is None:
+            continue
+        listed.add(path.name)
+        try:
+            summary = describe_patch(path)
+        except PatchError as error:
+            problems.append(f"{path.name}: {error}")
+            continue
+        if summary["baseCommit"] != base_commit or summary["targetCommit"] != commit:
+            problems.append(f"{path.name}: patches {summary['baseCommit']} to {summary['targetCommit']}, "
+                            f"not {base_commit} to {commit}")
+        if bound_build_info is not None and summary["targetBuildInfoSha256"] != bound_build_info:
+            problems.append(f"{path.name}: does not reconstruct the build-info.json the release manifest binds")
+    for path in sorted(index.parent.glob(f"MonkeyHub-{version}-from-*.patch.zip")):
+        if path.name not in listed:
+            problems.append(f"{path.name}: a patch for this release that the index does not list")
+    return problems
+
+
 def package(source_root: Path, source_ref: str, staging: Path, output: Path,
             cache: Path, node: Path, npm_cli: Path,
             *, desktop: bool = False, cargo: Path | None = None) -> Path:
@@ -892,6 +1117,20 @@ def main(argv: list[str] | None = None) -> int:
                         help="build a local developer delta from two complete desktop bundles; builds no runtimes")
     parser.add_argument("--patch-to", type=Path, metavar="TARGET_DIRECTORY")
     parser.add_argument("--patch-output", type=Path, metavar="PATCH_ZIP")
+    action.add_argument("--update-index", type=Path, metavar="RELEASE_MANIFEST",
+                        help="release path: write a delta patch from each --update-base release to this release, "
+                             "and its MonkeyHubUpdateIndex@1, into --update-output")
+    action.add_argument("--verify-update-index", type=Path, metavar="UPDATE_INDEX",
+                        help="check an update index and every file it names, then exit; builds nothing")
+    parser.add_argument("--update-base", type=Path, action="append", default=[], metavar="RELEASE_DIRECTORY",
+                        help="one earlier published release as downloaded; repeat per base")
+    parser.add_argument("--update-output", type=Path, metavar="DIRECTORY")
+    parser.add_argument("--update-work", type=Path, metavar="DIRECTORY",
+                        help="external scratch directory for the extracted releases")
+    parser.add_argument("--promoted-commit", metavar="COMMIT",
+                        help="the release-candidate head the release commit was made on, recorded in the index")
+    parser.add_argument("--release-dir", type=Path, metavar="DIRECTORY",
+                        help="with --verify-update-index: the release manifest and candidate ZIP, if not beside it")
     parser.add_argument("--task", help="task directory name; defaults to the current branch")
     parser.add_argument("--staging-dir", type=Path, help="overrides <workspace-root>/temp/package-monkeyapps/<task>")
     parser.add_argument("--output-dir", type=Path, help="overrides <workspace-root>/packages/<task>")
@@ -914,6 +1153,27 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.patch_to is not None or args.patch_output is not None:
             raise ValueError("--patch-to and --patch-output require --patch-from.")
+        if args.update_index is not None:
+            if args.update_output is None or args.update_work is None:
+                raise ValueError("--update-index requires --update-output and --update-work.")
+            source = args.source_root.resolve()
+            index = update_index(args.update_index.resolve(), [path.resolve() for path in args.update_base],
+                                 external(args.update_output, source), external(args.update_work, source),
+                                 args.promoted_commit)
+            print(json.dumps(json.loads(index.read_text(encoding="utf-8")), ensure_ascii=False, indent=2))
+            return 0
+        if args.update_base or args.update_output or args.update_work or args.promoted_commit:
+            raise ValueError("--update-base, --update-output, --update-work and --promoted-commit require --update-index.")
+        if args.verify_update_index is not None:
+            problems = verify_update_index(args.verify_update_index.resolve(),
+                                           args.release_dir.resolve() if args.release_dir else None)
+            for problem in problems:
+                print(problem)
+            print("Update index verification: " + ("FAIL" if problems else
+                  "PASS (files match this index; the index itself is unsigned)"), flush=True)
+            return 1 if problems else 0
+        if args.release_dir is not None:
+            raise ValueError("--release-dir requires --verify-update-index.")
         if args.verify is not None:
             problems = verify_release(args.verify.resolve())
             for problem in problems:

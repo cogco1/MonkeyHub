@@ -303,6 +303,55 @@ class DesktopPatchTests(unittest.TestCase):
         finally:
             junction.rmdir()  # Only this fixture junction, never the complete target.
 
+    def test_summary_names_the_build_info_a_release_manifest_binds(self):
+        self.assertEqual(self.summary["targetBuildInfoSha256"],
+                         hashlib.sha256((self.target / "build-info.json").read_bytes()).hexdigest())
+        self.assertEqual(patch.describe_patch(self.output), self.summary)
+
+    def test_stopping_staging_removes_only_its_own_temporary_copy(self):
+        for allowed in (3, len(patch.REQUIRED_FILES) + 12):
+            calls = []
+
+            def cancelled():
+                calls.append(1)
+                return len(calls) > allowed
+
+            with self.subTest(allowed=allowed), self.assertRaises(patch.PatchCancelled):
+                patch.stage_patch(self.output, self.base, self.versions, cancelled=cancelled)
+            self.assertEqual(list(self.versions.iterdir()), [self.base])
+            self.assertEqual(self.snapshot(self.base), self.before)
+        installed = patch.stage_patch(self.output, self.base, self.versions)
+        with self.assertRaises(patch.PatchCancelled):
+            patch.verify_target(self.output, installed, cancelled=lambda: True)
+
+    def test_layout_recheck_reads_identity_files_and_named_scripts_only(self):
+        installed = patch.stage_patch(self.output, self.base, self.versions)
+        script = "apps/monkeyhub/run.py"
+        self.assertEqual(patch.verify_target_layout(self.output, installed, exact=(script,)), self.summary)
+        # Same size, other bytes: a layout recheck states that it does not
+        # rehash every file; verify_target does.
+        dependency = installed / "_runtime/dependency.dat"
+        dependency.write_bytes(bytes(byte ^ 1 for byte in dependency.read_bytes()))
+        patch.verify_target_layout(self.output, installed)
+        with self.assertRaisesRegex(patch.PatchError, "Prepared version files changed"):
+            patch.verify_target(self.output, installed)
+        (installed / script).write_bytes(bytes(byte ^ 1 for byte in (installed / script).read_bytes()))
+        with self.assertRaisesRegex(patch.PatchError, "run.py"):
+            patch.verify_target_layout(self.output, installed, exact=(script,))
+        changes = {
+            "an added file": lambda root: self.write(root / "extra.txt", b"new"),
+            "a resized file": lambda root: (root / "app.txt").write_bytes(b"different size\n"),
+            "a same-size executable": lambda root: (root / "MonkeyHub.exe").write_bytes(b"new desktop exf\n"),
+        }
+        for number, (label, change) in enumerate(changes.items()):
+            with self.subTest(label):
+                copy = self.root / f"layout-{number}"
+                shutil.copytree(self.target, copy)
+                patch.verify_target_layout(self.output, copy)
+                change(copy)
+                with self.assertRaises(patch.PatchError):
+                    patch.verify_target_layout(self.output, copy)
+
     def test_builder_cli_uses_existing_complete_bundles_without_build_tools(self):
         destination = self.root / "cli-update.zip"
         output = io.StringIO()
@@ -313,6 +362,144 @@ class DesktopPatchTests(unittest.TestCase):
             ]), 0)
         self.assertEqual(json.loads(output.getvalue())["targetCommit"], "b" * 40)
         self.assertEqual(patch.inspect_patch(destination, self.base), self.summary)
+
+
+class ReleaseUpdateIndexTests(unittest.TestCase):
+    """The release path's delta patches and index, from small published fixtures."""
+
+    RELEASES = (("0.1.1", "a" * 40), ("0.1.2", "c" * 40), ("0.1.3", "b" * 40))
+
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory(prefix="mh-index-")
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name).resolve()
+        self.published = {version: self.publish(version, commit) for version, commit in self.RELEASES}
+        self.output, self.work = self.root / "updates", self.root / "work"
+
+    def publish(self, version, commit):
+        """One complete desktop bundle, released the way the workflow does it."""
+        bundle = self.root / "bundles" / version
+        for name in patch.REQUIRED_FILES:
+            DesktopPatchTests.write(bundle / name, (name + "\n").encode())
+        DesktopPatchTests.write(bundle / "MonkeyHub.exe", f"desktop {version}\n".encode())
+        DesktopPatchTests.write(bundle / "_runtime/dependency.dat", b"shared dependency\n" * 4096)
+        DesktopPatchTests.write(bundle / "apps/monkeyhub/api/monkeyhub_api/updates.py", f"# {version}\n".encode())
+        (bundle / "source-version.txt").write_text(commit, encoding="utf-8")
+        build_info = {
+            "sourceCommit": commit, "target": "windows-x64", "channel": "candidate", "releaseVersion": version,
+            "desktop": {"sourceCommit": commit, "version": version,
+                        "executableSha256": hashlib.sha256((bundle / "MonkeyHub.exe").read_bytes()).hexdigest()},
+            "pythonVersion": builder.PYTHON_VERSION, "pythonUrl": builder.PYTHON_URL, "pythonSha256": builder.PYTHON_SHA256,
+            "runtimeInventory": {"nodeVersion": "v24.14.0", "acpAdapter": {"name": "fixture", "version": "1"},
+                                 "pythonRequirements": {"path": "_runtime/requirements-lock.txt", "sha256": "0" * 64}},
+        }
+        info = bundle / "build-info.json"
+        info.write_text(json.dumps(build_info), encoding="utf-8")
+        (bundle / builder.SBOM_NAME).write_text(json.dumps({"fixture": version}), encoding="utf-8")
+        prefix = f"MonkeyHub-{version}-windows-x64"
+        directory = self.root / "published" / version
+        directory.mkdir(parents=True)
+        archive = directory / f"{prefix}-candidate.zip"
+        with zipfile.ZipFile(archive, "x", zipfile.ZIP_DEFLATED) as opened:
+            for path in sorted(bundle.rglob("*")):
+                if path.is_file():
+                    opened.write(path, f"{prefix}/{path.relative_to(bundle).as_posix()}")
+        checksum = directory / f"{archive.name}.sha256"
+        checksum.write_text(f"{builder.sha256(archive)}  {archive.name}\n", encoding="utf-8")
+        sbom = directory / f"{prefix}.cyclonedx.json"
+        shutil.copy2(bundle / builder.SBOM_NAME, sbom)
+        manifest = directory / f"{archive.name}.release-manifest.json"
+        manifest.write_text(json.dumps(builder.release_manifest(
+            build_info, version, prefix, info, archive, (archive, checksum, sbom), sbom)), encoding="utf-8")
+        self.assertEqual(builder.verify_release(manifest), [])
+        return manifest
+
+    def build(self, *bases):
+        return builder.update_index(self.published["0.1.3"], [self.published[v].parent for v in bases],
+                                    self.output, self.work, "d" * 40)
+
+    def test_each_published_base_gets_a_patch_that_rebuilds_the_new_release(self):
+        index = self.build("0.1.2", "0.1.1")
+        self.assertEqual(index.name, "MonkeyHub-0.1.3-update-index.json")
+        document = json.loads(index.read_text(encoding="utf-8"))
+        self.assertEqual((document["schema"], document["channel"], document["version"]),
+                         ("MonkeyHubUpdateIndex@1", "unsigned-prerelease", "0.1.3"))
+        self.assertEqual((document["sourceCommit"], document["releaseCommit"]), ("d" * 40, "b" * 40))
+        self.assertIs(document["trust"]["signed"], False)
+        manifest = self.published["0.1.3"]
+        self.assertEqual(document["releaseManifest"], {
+            "name": manifest.name, "size": manifest.stat().st_size, "sha256": builder.sha256(manifest)})
+        full = manifest.parent / "MonkeyHub-0.1.3-windows-x64-candidate.zip"
+        self.assertEqual(document["full"], {"name": full.name, "size": full.stat().st_size, "sha256": builder.sha256(full)})
+        self.assertEqual([(row["baseVersion"], row["baseCommit"]) for row in document["patches"]],
+                         [("0.1.2", "c" * 40), ("0.1.1", "a" * 40)])
+        self.assertEqual({path.name for path in self.output.iterdir()},
+                         {index.name, *(row["name"] for row in document["patches"])})
+        self.assertFalse(any(self.work.iterdir()), "extracted releases are removed")
+        self.assertEqual(builder.verify_update_index(index, manifest.parent), [])
+        # The published base, installed as its ZIP extracts, is rebuilt into
+        # exactly the files the new release's ZIP carries.
+        with zipfile.ZipFile(full) as opened:
+            expected = {name.split("/", 1)[1]: opened.read(name) for name in opened.namelist()}
+        for row in document["patches"]:
+            with self.subTest(base=row["baseVersion"]):
+                self.assertEqual((self.output / row["name"]).stat().st_size, row["size"])
+                self.assertEqual(builder.sha256(self.output / row["name"]), row["sha256"])
+                versions = self.root / "installed" / row["baseVersion"] / "versions"
+                base = versions / (row["baseCommit"][:12] + "-desktop")
+                with zipfile.ZipFile(self.published[row["baseVersion"]].parent /
+                                     f"MonkeyHub-{row['baseVersion']}-windows-x64-candidate.zip") as opened:
+                    for name in opened.namelist():
+                        DesktopPatchTests.write(base / name.split("/", 1)[1], opened.read(name))
+                staged = patch.stage_patch(self.output / row["name"], base, versions)
+                self.assertEqual(staged.name, "b" * 12 + "-desktop")
+                self.assertEqual({path.relative_to(staged).as_posix(): path.read_bytes()
+                                  for path in staged.rglob("*") if path.is_file()}, expected)
+
+    def test_changed_unlisted_or_misnamed_files_fail_verification(self):
+        index = self.build("0.1.2")
+        release_dir = self.published["0.1.3"].parent
+        document = json.loads(index.read_text(encoding="utf-8"))
+        patch_file = self.output / document["patches"][0]["name"]
+        original = patch_file.read_bytes()
+        patch_file.write_bytes(original[:-1] + bytes([original[-1] ^ 1]))
+        self.assertTrue(any("differs from the index" in row for row in builder.verify_update_index(index, release_dir)))
+        patch_file.write_bytes(original)
+        stray = self.output / "MonkeyHub-0.1.3-from-0.1.0.patch.zip"
+        stray.write_bytes(original)
+        self.assertTrue(any("does not list" in row for row in builder.verify_update_index(index, release_dir)))
+        stray.unlink()
+        document["patches"][0]["baseVersion"] = "0.1.4"
+        index.write_text(json.dumps(document), encoding="utf-8")
+        problems = builder.verify_update_index(index, release_dir)
+        self.assertTrue(any("not older" in row for row in problems), problems)
+
+    def test_a_base_that_is_not_older_or_does_not_verify_is_refused(self):
+        with self.assertRaisesRegex(ValueError, "not older"):
+            builder.update_index(self.published["0.1.3"], [self.published["0.1.3"].parent], self.output, self.work)
+        archive = self.published["0.1.1"].parent / "MonkeyHub-0.1.1-windows-x64-candidate.zip"
+        archive.write_bytes(archive.read_bytes() + b"x")
+        with self.assertRaisesRegex(ValueError, "does not verify"):
+            self.build("0.1.1")
+        self.assertFalse((self.output / "MonkeyHub-0.1.3-update-index.json").exists())
+
+    def test_builder_cli_writes_and_verifies_the_index_without_build_tools(self):
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            self.assertEqual(builder.main([
+                "--update-index", str(self.published["0.1.3"]), "--update-base", str(self.published["0.1.1"].parent),
+                "--update-output", str(self.output), "--update-work", str(self.work),
+                "--promoted-commit", "d" * 40, "--node", str(self.root / "missing-node.exe"),
+            ]), 0)
+        self.assertEqual(json.loads(output.getvalue())["patches"][0]["baseVersion"], "0.1.1")
+        index = self.output / "MonkeyHub-0.1.3-update-index.json"
+        with contextlib.redirect_stdout(io.StringIO()) as verified:
+            self.assertEqual(builder.main(["--verify-update-index", str(index),
+                                           "--release-dir", str(self.published["0.1.3"].parent)]), 0)
+        self.assertIn("PASS", verified.getvalue())
+        with contextlib.redirect_stdout(io.StringIO()) as refused:
+            self.assertEqual(builder.main(["--verify-update-index", str(index)]), 1)
+        self.assertIn("not present", refused.getvalue())
 
 
 if __name__ == "__main__":
