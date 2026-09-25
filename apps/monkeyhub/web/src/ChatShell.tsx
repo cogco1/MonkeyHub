@@ -33,10 +33,11 @@ type Props = {
 // followHead: the tab was restored on a cold start, not opened to inspect that exact
 // candidate; the workspace shows the architect's editing base instead (#271). An opened
 // result is view-only, and only Continue makes it the base (GH-234 Q1/Q2).
-// returnTo: the primary surface this project's Drawing tool was opened from (#295).
+// returnTo: the surface a Tool steps back to when pressed again: the one on screen when it
+// opened (#295, IA-6). Fabrication and Usage keep it on their own tab, with its project.
 // focus: the options a Study card asked the Design Tree to show, once per request (#302).
 type ToolTab = { id: AppId; url: string; revision: number; projectDir?: string; projectId?: string; runtimeId?: string; candidate?: string; followHead?: boolean;
-  returnTo?: AppId; focus?: { runIds: string[]; request: number } };
+  returnTo?: AppId; returnProject?: string; focus?: { runIds: string[]; request: number } };
 type SavedTool = { id: AppId; candidate?: string };
 type ProjectPreparation = { promise: Promise<AppStatus[]>; apps: AppStatus[] | null; modeling?: Promise<unknown> };
 /**
@@ -113,8 +114,13 @@ const tools: { id: AppId; label: "model" | "drawing" | "board" | "render" | "pub
 ];
 const railGroups = [{ id: "workspace", caption: "railSurfaces" }, { id: "tools", caption: "railTools" }] as const;
 const labelOf = (id: AppId) => tools.find((tool) => tool.id === id)!.label;
-/** Project tools that open over a surface and hand the panel back to it when pressed again (#295). */
-const returnsToSurface = (id: AppId | undefined) => id === "drawing" || id === "monkeyrender";
+/**
+ * IA-6: the rail's Tools open over a surface and, pressed again, hand the panel back to it
+ * (#295); a surface pressed again leaves the panel. Layout is Board's mode, so a surface.
+ */
+const isTool = (id: AppId | undefined) => id === "drawing" || id === "monkeyrender" || id === "monkeyfab" || id === "monkeymonitor";
+/** The surface under what a tab shows: its own, or the one the Tool on it steps back to. */
+const surfaceUnder = (tab: ToolTab | undefined) => !tab ? undefined : isTool(tab.id) ? tab.returnTo : tab.id;
 
 function Icon({ name }: { name: string }) {
   const paths: Record<string, ReactNode> = {
@@ -1084,13 +1090,15 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
     const focus = view?.focus ? { runIds: view.focus.split(","), request: ++focusRequests.current } : undefined;
     const needsProject = id !== "monkeyfab" && id !== "monkeymonitor";
     if (needsProject && !projectDir) return false;
+    // IA-6: a Tool steps back to the surface on screen when it opened, through another Tool on screen then.
+    const shown = panel ? selectedTab : undefined;
+    const under = isTool(id) && (shown?.projectDir ?? shown?.returnProject) === projectDir ? surfaceUnder(shown) : undefined;
+    const returnProject = !needsProject && under ? projectDir ?? undefined : undefined;
     // An explicit system-page choice supersedes even a stale project link.
     if (id === "monkeymonitor") routeRestored.current = true;
     const existing = tabs.find((item) => needsProject ? item.projectDir === projectDir : item.id === id);
     if (existing && id !== "monkeyarch") {
-      setTabs((items) => items.map((item) => item === existing ? { ...item, id,
-        // Drawing and Render open over the surface already shown, in this same project workspace.
-        returnTo: !returnsToSurface(id) ? undefined : returnsToSurface(item.id) ? item.returnTo : item.id,
+      setTabs((items) => items.map((item) => item === existing ? { ...item, id, returnTo: under, returnProject,
         candidate: view?.candidate ?? item.candidate, followHead: view?.candidate ? view.follow === "head" : item.followHead, focus: focus ?? item.focus,
         url: needsProject ? `${window.location.origin}/?${new URLSearchParams({ runtimeId: item.runtimeId!, view: id === "monkeyboard" ? "board" : id === "publish" ? "publish" : id === "drawing" ? "drawing" : id === "monkeyrender" ? "render" : id === "tree" ? "tree" : "arch" })}` : item.url } : item));
       setPanel(true); setActiveTool(id); setError(null);
@@ -1100,7 +1108,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
     // service cannot replace application navigation or prevent leaving the page.
     if (id === "monkeymonitor") {
       setTabs((items) => [...items.filter((item) => item.id !== id), { id,
-        url: `${window.location.origin}/?view=monitor`, revision: 0 }]);
+        url: `${window.location.origin}/?view=monitor`, revision: 0, returnTo: under, returnProject }]);
       setPanel(true); setActiveTool(id); setError(null);
       return true;
     }
@@ -1117,9 +1125,10 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
         if (!attached || attached.projectId !== project!.projectId) throw new Error("The project runtime has not been attached.");
         tab = { id, projectDir: target!, projectId: attached.projectId, runtimeId: attached.runtimeId, candidate: view?.candidate ?? existing?.candidate,
           followHead: view?.candidate ? view.follow === "head" : existing?.followHead, focus: focus ?? existing?.focus, revision: existing?.revision ?? 0,
+          returnTo: under,
           url: `${window.location.origin}/?${new URLSearchParams({ runtimeId: attached.runtimeId, view: id === "monkeyboard" ? "board" : id === "publish" ? "publish" : id === "drawing" ? "drawing" : id === "monkeyrender" ? "render" : id === "tree" ? "tree" : "arch" })}` };
       } else {
-        tab = { id, url: applicationUrl(location, preferences), revision: 0 };
+        tab = { id, url: applicationUrl(location, preferences), revision: 0, returnTo: under, returnProject };
       }
       // A late result remains attached to the project that requested it.
       setTabs((items) => [...items.filter((item) => needsProject ? item.projectDir !== target : item.id !== id), tab]);
@@ -1131,11 +1140,17 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
     }
     finally { actionLock.current = false; setToolBusy(null); }
   };
-  /** Leaving the Drawing tool goes back to the surface it was opened over, in the
-      same mounted project workspace. Opened straight from the conversation, it
-      closes the panel again. The project, its editing base and drawings stay. */
-  const toolReturn = returnsToSurface(selectedTab?.id) ? selectedTab!.returnTo : undefined;
-  const leaveTool = () => { if (toolReturn) void openTool(toolReturn); else setPanel(false); };
+  /**
+   * IA-6: pressing the entry on screen steps back one level. A Tool returns to the surface
+   * it was opened over, in the same mounted workspace, while this project still has it;
+   * a surface, and a Tool opened straight from the conversation, leave the panel. The
+   * project, its editing base and what each surface holds stay as they are.
+   */
+  const back = panel && selectedTab && isTool(selectedTab.id) && selectedTab.returnTo
+    && (selectedTab.projectDir ?? selectedTab.returnProject) === projectDir && currentTabs.some((tab) => tab.runtimeId) ? selectedTab.returnTo : undefined;
+  const stepBack = () => { if (back) void openTool(back); else setPanel(false); };
+  /** The rail entry whose content is on screen. */
+  const railShown = panel && selectedTab ? activeTool : null;
 
   const initialRuntimeRoute = useRef(new URLSearchParams(window.location.search).get("runtimeId")).current;
   const initialMonitorRoute = useRef(new URLSearchParams(window.location.search).get("view") === "monitor").current;
@@ -1486,14 +1501,14 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
           const stateText = state === "unavailable" ? t.toolUnavailable : state === "error" ? t.toolError
             : state === "starting" ? t.toolStarting : state === "stopping" ? t.toolStopping
             : state === "running" || state === "stopped" ? undefined : t.toolUnknown;
-          // Pressing an open Drawing or Render again leaves it for the surface it was opened over (#295).
-          const leaves = returnsToSurface(item.id) && panel && activeTool === item.id && selectedTab?.id === item.id;
-          const leaveText = !leaves ? undefined : toolReturn ? t.toolReturn(t[item.label], t[labelOf(toolReturn)]) : t.toolClose(t[item.label]);
-          // Board stays pressed in its Layout mode.
-          const pressed = panel && (item.id === activeTool || (item.id === "monkeyboard" && activeTool === "publish"));
+          // Pressed is what is on screen; Board stays pressed in its Layout mode.
+          const pressed = item.id === railShown || (item.id === "monkeyboard" && railShown === "publish");
+          // IA-6: pressing the entry on screen steps back one level.
+          const hint = !pressed ? undefined : isTool(item.id) && back ? t.toolReturn(t[item.label], t[labelOf(back)]) : t.toolClose(t[item.label]);
           return <button key={item.id} className="chat-rail__tool" aria-label={t[item.label]} aria-pressed={pressed}
-            title={status?.error?.detail ?? stateText ?? leaveText} data-state={state} disabled={(needsProject && !project) || (!currentTabs.some((tab) => tab.runtimeId || tab.id === item.id) && (busy || Boolean(toolBusy)))}
-            onClick={() => { if (leaves) leaveTool(); else void openTool(item.id); }}><Icon name={item.icon} /><span>{t[item.label]}</span>{stateText && <small aria-hidden="true">{stateText}</small>}</button>;
+            aria-description={hint} title={status?.error?.detail ?? stateText ?? hint} data-state={state}
+            disabled={(needsProject && !project) || (!currentTabs.some((tab) => tab.runtimeId || tab.id === item.id) && (busy || Boolean(toolBusy)))}
+            onClick={() => { if (pressed) stepBack(); else void openTool(item.id); }}><Icon name={item.icon} /><span>{t[item.label]}</span>{stateText && <small aria-hidden="true">{stateText}</small>}</button>;
         })}
       </div>)}
       <div className="chat-rail__spacer" />

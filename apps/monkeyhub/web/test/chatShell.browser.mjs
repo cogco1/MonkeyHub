@@ -475,9 +475,24 @@ const waitWorkspace = async (kind = "arch") => {
   await visibleWorkspace().locator(kind === "board" ? ".monkeyboard-canvas canvas" : kind === "drawing" ? ".drawing-workspace" : kind === "render" ? ".render-workspace" : ".stage canvas").first().waitFor();
   assert.equal(await page.locator(".chat-project-workspace iframe").count(), 0, "project workspaces mount directly in the Hub");
 };
+/**
+ * IA-6: pressing the rail entry on screen steps back, so a walk that only needs an entry on
+ * screen presses it when it is not. A restore that lands just before the press makes it the
+ * entry on screen, which the press then closes; one more press brings it back.
+ */
+const showEntry = async (name) => {
+  const entry = page.getByRole("button", { name, exact: true });
+  await page.waitForFunction((label) => {
+    const node = document.querySelector(`.chat-rail__tool[aria-label="${label}"]`);
+    return node && !node.disabled && !node.hasAttribute("aria-busy");
+  }, name);
+  if (await entry.getAttribute("aria-pressed") === "true") return;
+  await entry.click();
+  if (await page.locator(".chat-shell").getAttribute("data-panel") === "false") await entry.click();
+};
 /** The architect opens a result read-only from Modeling's Versions: results never open themselves (#302). */
 const viewCandidate = async (runId) => {
-  await page.getByRole("button", { name: "Modeling", exact: true }).click();
+  await showEntry("Modeling");
   await waitWorkspace();
   await page.waitForFunction(() => !document.querySelector('.chat-project-workspace:not([hidden]) .boot'));
   const toggle = visibleWorkspace().locator(".stage__versions-toggle");
@@ -1190,6 +1205,64 @@ try {
   await waitWorkspace();
   assert.equal(await visibleWorkspace().evaluate((element) => element.collapseMarker), "retained");
 
+  // IA-6: pressing the entry on screen steps back one level. A surface leaves the panel and keeps its
+  // workspace; a Tool returns to the surface it was opened over, or leaves the panel when it was
+  // opened from the conversation. The keyboard does the same, and says what a press will do.
+  const entry = (name) => page.getByRole("button", { name, exact: true });
+  const panelClosed = () => page.waitForFunction(() => document.querySelector(".chat-shell")?.dataset.panel === "false");
+  const treeShown = () => visibleWorkspace().locator('[data-project-surface="tree"]:not([hidden])').waitFor();
+  assert.equal(await entry("Modeling").getAttribute("aria-description"), "Close Modeling");
+  await entry("Modeling").click();
+  await panelClosed();
+  assert.equal(await entry("Modeling").getAttribute("aria-pressed"), "false");
+  assert.equal(await entry("Modeling").getAttribute("aria-description"), null);
+  assert.equal(await page.locator(".chat-project-workspace").count(), mountedProjects, "stepping out keeps the workspace");
+  await entry("Modeling").click();
+  await waitWorkspace();
+  assert.equal(await visibleWorkspace().evaluate((element) => element.collapseMarker), "retained");
+  for (const [label, shownNow] of [["Design tree", treeShown], ["Board", () => waitWorkspace("board")]]) {
+    await entry(label).click();
+    await shownNow();
+    await entry(label).focus();
+    await page.keyboard.press("Enter");
+    await panelClosed();
+    assert.equal(await entry(label).getAttribute("aria-pressed"), "false", `${label} steps out of the panel`);
+    assert.ok(await entry(label).evaluate((node) => node === document.activeElement), "focus stays on the entry");
+    await page.keyboard.press("Enter");
+    await shownNow();
+    assert.equal(await entry(label).getAttribute("aria-pressed"), "true", `${label} comes back from the keyboard`);
+  }
+  // Board is on screen: Usage over it returns to it.
+  await entry("Usage").click();
+  await waitMonitor();
+  assert.equal(await entry("Usage").getAttribute("aria-description"), "Close Usage and return to Board");
+  assert.equal(await entry("Usage").getAttribute("title"), "Close Usage and return to Board");
+  await entry("Usage").focus();
+  await page.keyboard.press("Space");
+  await waitWorkspace("board");
+  assert.equal(await entry("Board").getAttribute("aria-pressed"), "true");
+  assert.equal(await entry("Usage").getAttribute("aria-pressed"), "false");
+  // A Tool opened over another Tool returns to the surface under both.
+  await entry("Drawings").click();
+  await waitWorkspace("drawing");
+  await entry("Fabrication").click();
+  await page.waitForFunction(() => document.querySelector("iframe:not([hidden])")?.src.includes("app=monkeyfab"));
+  assert.equal(await entry("Fabrication").getAttribute("aria-description"), "Close Fabrication and return to Board");
+  await entry("Fabrication").click();
+  await waitWorkspace("board");
+  assert.equal(await entry("Board").getAttribute("aria-pressed"), "true");
+  // Opened from the conversation, a Tool leaves the panel again.
+  await entry("Board").click();
+  await panelClosed();
+  await entry("Usage").click();
+  await waitMonitor();
+  assert.equal(await entry("Usage").getAttribute("aria-description"), "Close Usage");
+  await entry("Usage").click();
+  await panelClosed();
+  assert.equal(await entry("Usage").getAttribute("aria-pressed"), "false");
+  await entry("Modeling").click();
+  await waitWorkspace();
+
   // C — the project gear answers for the bound project, not for the tools.
   await page.getByRole("button", { name: /Project A/ }).last().click();
   const card = page.getByRole("dialog", { name: "Project" });
@@ -1320,7 +1393,8 @@ try {
   await waitWorkspace("board");
   assert.equal(await visibleWorkspace().getByLabel("Board title", { exact: true }).inputValue(), "Board A retained");
   await page.getByRole("button", { name: "Project B", exact: true }).first().click();
-  await page.getByRole("button", { name: "Board", exact: true }).click();
+  // Back in B, its Board is on screen again; pressing it now would step out of the panel (IA-6).
+  await showEntry("Board");
   await waitWorkspace("board");
   assert.equal(await visibleWorkspace().getByLabel("Board title", { exact: true }).inputValue(), "Board B retained");
   assert.equal(runningA.status, "running", "Board navigation does not interrupt another project's task");
@@ -1616,7 +1690,7 @@ try {
   await page.screenshot({ path: path.join(temporary, "failure.png") });
 
   // Workspaces share the host document and have no second settings surface.
-  await page.getByRole("button", { name: "Modeling", exact: true }).click();
+  await showEntry("Modeling");
   await waitWorkspace();
   assert.equal(await page.getByRole("button", { name: "Hub settings", exact: true }).count(), 1);
   assert.equal(workspaceFixture.requests.filter((row) => row.name === "/api/settings/user").length, 0);
