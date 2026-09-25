@@ -454,6 +454,97 @@ const waitMonitor = async () => {
     "Monitor mounts in the Hub panel without a second application document");
   assert.equal(await page.getByRole("navigation", { name: "Project tools" }).isVisible(), true);
 };
+// GH-234: model edits the project's working draft already holds come back after
+// an update restart, so they never block "Restart to update"; edits whose
+// autosave is still being written, or was refused, do. Either way chat still
+// asks for a Sync before it starts from project state.
+const autosavedModelRestart = async () => {
+  // Explicit fixture reset: no conversation is running, and the reload below
+  // empties every composer, so only the model edits can hold the restart.
+  for (const session of sessions) if (session.status === "running") session.status = "interrupted";
+  projects.push({ projectId: "D", projectDir: "D:\\fixture\\D", name: "Project D", chatCount: 0, version: 0, stage: null });
+  // What autosave retained seconds before the update: a drawn mass and two push/pulls.
+  const commands = [
+    { kind: "sketch", elementId: "local-mass", componentId: "fixture-mass", action: { profile: [[0, 0], [3, 0], [3, 2], [0, 2]], height: 1.5, base: 0 } },
+    { kind: "direct", elementId: "local-mass", action: { kind: "pushPull", distance: 0.5, normal: [0, 0, 1] } },
+    { kind: "direct", elementId: "local-mass", action: { kind: "pushPull", distance: 0.25, normal: [0, 0, 1] } },
+  ];
+  const draft = { revisionSha256: "a".repeat(64), current: null, writes: [], hold: null, failure: null, localDraft: {
+    source: { projectId: "D", stateDigest: workspaceFixture.stateDigestOf("D", "home-D"), sourceRunId: "home-D", sourceStageRef: null },
+    commands, attempt: { syncedCommands: [], pending: null }, updatedAt: "2026-09-25T00:00:00Z" } };
+  workspaceFixture.workingDrafts.set("D", draft);
+  updateStatus = { ...updateStatus, state: "ready", prepared: preparedPatch, canApply: true };
+  const until = async (done, message) => {
+    for (const end = Date.now() + 12000; !done(); await page.waitForTimeout(50)) if (Date.now() > end) assert.fail(message);
+  };
+  const blocker = "A model draft is still being saved. Wait a moment before restarting.";
+  const restart = page.getByRole("button", { name: "Restart to update", exact: true });
+  const openSettings = () => page.getByRole("button", { name: "Hub settings", exact: true }).click();
+  const closeSettings = () => page.getByRole("dialog").getByRole("button", { name: "Close", exact: true }).click();
+  const restartAllowed = async (message) => {
+    await page.waitForFunction(() => [...document.querySelectorAll("button")].find((button) => button.textContent === "Restart to update")?.disabled === false);
+    assert.equal(await page.locator("#software-update-blocker").count(), 0, message);
+  };
+  const restartBlocked = async (message) => {
+    await page.getByText(blocker, { exact: true }).waitFor();
+    assert.equal(await restart.isDisabled(), true, message);
+  };
+
+  await page.evaluate(() => localStorage.removeItem("monkeyhub.chat-view.v1"));
+  await page.reload();
+  await page.getByRole("button", { name: "Project D", exact: true }).first().click();
+  await studioReady();
+  await page.getByRole("button", { name: "Modeling", exact: true }).click();
+  await waitWorkspace();
+  const status = visibleWorkspace().locator(".model-tools__sync-status");
+  await status.filter({ hasText: /^Draft saved automatically$/ }).waitFor();
+  // Reopening restored the retained commands and saved them back unchanged.
+  await until(() => draft.writes.length === 1, "the restored draft was never retained again");
+  assert.deepEqual(draft.writes[0].draft.commands, commands);
+  assert.deepEqual(draft.writes[0].draft.source, draft.localDraft.source);
+  assert.equal(await visibleWorkspace().getByRole("button", { name: "Sync", exact: true }).isEnabled(), true);
+  // Restored edits are still not a candidate: chat asks for a Sync first.
+  const contextOption = page.locator(".chat-context-option input");
+  await page.waitForFunction(() => document.querySelector(".chat-context-option input")?.getAttribute("aria-description")?.startsWith("Model edits have not been synced"));
+  assert.equal(await contextOption.getAttribute("aria-description"), "Model edits have not been synced to a candidate. Sync or undo them in Modeling before starting a new context from project state. You can still continue this conversation.");
+  assert.equal(await contextOption.isDisabled(), true, "restored edits keep project state out of a new chat context");
+  await openSettings();
+  await restartAllowed("edits the working draft already holds do not block the update restart");
+  await closeSettings();
+
+  // An autosave still being written holds the restart until it lands.
+  let releaseSave;
+  draft.hold = new Promise((resolve) => { releaseSave = resolve; });
+  await visibleWorkspace().getByRole("button", { name: "Undo model", exact: true }).click();
+  await until(() => draft.writes.length === 2, "undoing a push/pull was not autosaved");
+  await openSettings();
+  await restartBlocked("an autosave still being written blocks the update restart");
+  releaseSave();
+  await page.getByText(blocker, { exact: true }).waitFor({ state: "hidden" });
+  await restartAllowed("the landed autosave releases the update restart");
+  assert.deepEqual(draft.localDraft.commands, commands.slice(0, 2));
+  await closeSettings();
+
+  // A refused autosave holds it too, and the next accepted save releases it.
+  draft.failure = "Fixture working draft is unavailable.";
+  await visibleWorkspace().getByRole("button", { name: "Redo model", exact: true }).click();
+  await status.filter({ hasText: "Fixture working draft is unavailable." }).waitFor();
+  await openSettings();
+  await restartBlocked("a refused autosave blocks the update restart");
+  await closeSettings();
+  draft.failure = null;
+  await visibleWorkspace().getByRole("button", { name: "Undo model", exact: true }).click();
+  await visibleWorkspace().getByRole("button", { name: "Redo model", exact: true }).click();
+  await until(() => draft.localDraft.commands.length === commands.length, "the redone push/pull was not autosaved");
+  await status.filter({ hasText: /^Draft saved automatically$/ }).waitFor();
+  assert.deepEqual(draft.localDraft.commands, commands);
+  await openSettings();
+  await restartAllowed("the next accepted autosave releases the update restart");
+  assert.equal(appliedPatches, 0, "checking the restart never applies the patch");
+  await closeSettings();
+  updateStatus = { ...updateStatus, state: "idle", prepared: null, canApply: false };
+  await page.evaluate(() => localStorage.removeItem("monkeyhub.chat-view.v1"));
+};
 try {
   if (process.env.MONKEYHUB_UI_FOCUS === "attachments") {
     const restoredFocus = [];
@@ -1935,6 +2026,7 @@ try {
   await page.getByRole("button", { name: "Project B", exact: true }).first().click();
   await page.locator(".chat-external-notice").waitFor();
   assert.equal(writes.filter(([, name]) => /\/(messages|stop|model)$/.test(name)).length, beforeExternalTurns);
+  await autosavedModelRestart();
 
   // With no building project, machine tools remain available and report a
   // missing dependency directly instead of asking the person to bind Studio.
@@ -1959,6 +2051,9 @@ try {
     "restoring the system Monitor panel does not require or invent a project");
   } else {
     await page.goto(origin);
+    await autosavedModelRestart();
+    await page.reload();
+    await page.getByRole("button", { name: "Project A", exact: true }).first().click();
     await page.waitForFunction(() => document.querySelector("#chat-input") && !document.querySelector("#chat-input").disabled);
     await page.locator("#chat-input").fill("Keep this hidden project draft");
     await page.locator('.chat-composer input[type="file"]').setInputFiles({ name: "keep.txt", mimeType: "text/plain", buffer: Buffer.from("Retain these exact draft bytes") });
