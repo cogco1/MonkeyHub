@@ -811,34 +811,16 @@ class ProjectRuntimeManager:
         return registered
 
     def _clean_working_draft(self, runtime: ProjectRuntime) -> tuple[str, ...]:
-        """The Hub schedules maintenance; only P036 can remove project files."""
-        with runtime.operations._lock:
-            if runtime.binding.repository.read_working_draft()[1] is None:
-                return ()
-            operations = runtime.operations.records()
-            # Admission and this scan share the journal lock. A newly admitted
-            # proposal has no source yet; wait until its read/dispatch settles.
-            if any(row.status in _ACTIVE for row in operations):
-                return ()
-            if any(row.status == "needs_recovery" and row.sourceRunId is None
-                   and (not row.candidateId or row.candidateId not in runtime.binding.run_ids())
-                   for row in operations):
-                return ()
-            protected = {run_id for row in operations
-                         if row.status in _ACTIVE | {"needs_recovery"}
-                         for run_id in (row.candidateId, row.sourceRunId) if run_id}
-            # Conversations may retain exact document pages or explicit candidate
-            # links independently of the open workspace, including archived chats.
-            for archived in (False, True):
-                for summary in self.chats.list(runtime.project_id, archived=archived):
-                    if project_key(summary.projectDir) != project_key(runtime.project_dir):
-                        continue
-                    for message in self.chats.get(summary.id).messages:
-                        if message.candidateId:
-                            protected.add(message.candidateId)
-                        protected.update(document.runId for document in message.documents)
-            return runtime.binding.repository.prune_working_draft(
-                now=datetime.now(timezone.utc).isoformat(), protected_run_ids=tuple(sorted(protected)))
+        """The Hub schedules maintenance; only P036 can remove project files.
+
+        What P036 removes is superseded local recovery: crash-recovery copies
+        of unsynced edits that nothing reads back. It never removes a run, so
+        no operation or conversation has to protect a candidate from it.
+        """
+        repository = runtime.binding.repository
+        if repository.read_working_draft()[1] is None:
+            return ()
+        return repository.prune_working_draft(now=datetime.now(timezone.utc).isoformat())
 
     def _watch(self, runtime: ProjectRuntime):
         next_retained_read = 0.0
@@ -885,11 +867,11 @@ class ProjectRuntimeManager:
             if time.monotonic() >= runtime.next_working_cleanup:
                 runtime.next_working_cleanup = time.monotonic() + _WORKING_CLEANUP_INTERVAL_S
                 try:
-                    if self._clean_working_draft(runtime):
-                        runtime.wake.set()
-                        self.emit("artifact/updated", runtime.runtime_id)
-                except (StudioError, ProjectRepositoryError, OSError, ValueError, KeyError, TypeError) as exc:
-                    # An unreadable reference graph refuses deletion while the
+                    # No client lists superseded recovery, so removing it is
+                    # not an artifact change and wakes nobody.
+                    self._clean_working_draft(runtime)
+                except (ProjectRepositoryError, OSError, ValueError, KeyError, TypeError) as exc:
+                    # An inconsistent recovery snapshot refuses expiry while the
                     # existing project remains available for inspection.
                     with runtime.lock:
                         runtime.error = HubError(code="WORKING_CLEANUP_REFUSED", detail=str(exc)[:1200])

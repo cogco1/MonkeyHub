@@ -645,22 +645,24 @@ class DecisionContextTests(DecisionFixture):
                 included, _ = compile_scoped_decisions(binding, context, record)
                 self.assertEqual([row.decision_id for row in included], [expected["decisionId"]])
 
-    def test_a_referenced_automatic_source_run_survives_collection(self) -> None:
+    def test_cleanup_keeps_a_cited_and_an_unreferenced_automatic_run(self) -> None:
         kept, job = self.run_candidate("set height to 2.2", elementId="portico-base")
         self.assertEqual(job["status"], "succeeded", job)
-        dropped, job = self.run_candidate("set height to 2.4", elementId="portico-base")
+        unreferenced, job = self.run_candidate("set height to 2.4", elementId="portico-base")
         self.assertEqual(job["status"], "succeeded", job)
         digest = self.client.get("/api/state", params={"run": kept["candidateId"]}).json()["stateDigest"]
         self.design(rawLanguage="这一版的柱距就按这个来", targetRef="entity:portico-base",
                     source=self.design_source(kept["candidateId"], digest))
         value, revision = self.repository.read_working_draft()
         value["current"] = None
-        for run_id in (kept["candidateId"], dropped["candidateId"]):
+        for run_id in (kept["candidateId"], unreferenced["candidateId"]):
             value["runs"][run_id]["updatedAt"] = "2020-01-01T00:00:00+00:00"
         self.repository.compare_and_swap_working_draft(expected_revision=revision, value=value)
-        removed = self.repository.prune_working_draft(now="2026-09-20T00:00:00+00:00")
-        self.assertEqual(removed, (dropped["candidateId"],))
-        self.assertTrue(self.repository.layout.run(kept["candidateId"]).root.is_dir())
+        # GH-234 Q3: cleanup removes no run. The candidate a decision cites and
+        # an expired one that nothing refers to both stay.
+        self.assertEqual(self.repository.prune_working_draft(now="2026-09-20T00:00:00+00:00"), ())
+        for run_id in (kept["candidateId"], unreferenced["candidateId"]):
+            self.assertTrue(self.repository.layout.run(run_id).root.is_dir())
         self.assertEqual(len(self.decisions(self.new_client())), 1)
 
     def revise(self, current: dict, *, action: str, reason: str | None = None) -> dict:
