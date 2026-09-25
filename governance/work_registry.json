@@ -9,22 +9,26 @@
       "goal": "Let an already autosaved local model draft pass Settings > Software Update: only edits whose automatic save is still being written, failed or unavailable hold the restart, while the project-state chat context still asks for a sync.",
       "depends_on": [],
       "write_scope": [
-        "apps/monkeyhub/web/workspaces/src/app/App.tsx",
+        "apps/monkeyhub/README.md",
         "apps/monkeyhub/web/src/ChatShell.tsx",
         "apps/monkeyhub/web/src/i18n/messages.en.ts",
         "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
         "apps/monkeyhub/web/test/chatShell.browser.mjs",
         "apps/monkeyhub/web/test/projectWorkspaceFixture.mjs",
-        "apps/monkeyhub/web/workspaces/test/modelSync.browser.mjs",
+        "apps/monkeyhub/web/workspaces/src/app/App.tsx",
         "apps/monkeyhub/web/workspaces/test/boardDocumentOpen.browser.mjs",
-        "apps/monkeyhub/README.md",
+        "apps/monkeyhub/web/workspaces/test/modelSync.browser.mjs",
+        "docs/2026-09-25-monkeyhub-ux-review.md",
         "docs/mapping/planning/GH-234-autosave-restart.md"
       ],
       "card": "docs/mapping/planning/GH-234-autosave-restart.md",
       "acceptance": [
         "Unsynced local model edits that the project's working draft already holds report 'unsynced'; edits whose autosave is being written, failed or is unavailable report 'unsaved'.",
         "Only 'unsaved' blocks Restart to update, and its copy asks to wait while the draft is saved; both reasons keep the project-state chat context unavailable with the existing sync message.",
-        "Browser scenarios show an autosaved draft not blocking the restart, in-flight and failed autosaves blocking it, and a reloaded draft restored with the chat context still asking for a sync."
+        "Browser scenarios show an autosaved draft not blocking the restart, in-flight and failed autosaves blocking it, and a reloaded draft restored with the chat context still asking for a sync.",
+        "Every finding cites a file:line or a screenshot actually read, and carries a priority, an effort and an existing issue or 'new'.",
+        "The review lists parallel entries and old copy to retire, with file:line, and a slice order that does not conflict with #294 S1-S2, #284 Design Tree UI, #234 autosave-restart and #300 sidebar slices 1-2.",
+        "Documentation only: no product code, record or API changes."
       ],
       "lanes": [
         {
@@ -50,6 +54,25 @@
             "apps/monkeyhub/web/workspaces/test/modelSync.browser.mjs",
             "apps/monkeyhub/web/workspaces/test/boardDocumentOpen.browser.mjs",
             "apps/monkeyhub/README.md"
+          ],
+          "depends_on": [],
+          "status": "active",
+          "blocked_reason": null
+        },
+        {
+          "id": "ux-review",
+          "issue": "https://github.com/cogco1/MonkeyHub/issues/234",
+          "branch": "codex/234-ux-review",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-234-ux-review",
+          "base_ref": "e183a69a",
+          "contributor": "Claude (sub-agent I)",
+          "reviewer": "Claude root task",
+          "handoff": "Documentation only. The root task reviews; the owner decides which findings become slices. Not pushed.",
+          "modules": [
+            "hub.shell"
+          ],
+          "write_scope": [
+            "docs/2026-09-25-monkeyhub-ux-review.md"
           ],
           "depends_on": [],
           "status": "active",
