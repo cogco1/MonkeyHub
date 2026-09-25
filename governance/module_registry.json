@@ -4581,7 +4581,8 @@
         "Read-only confirmedStage projection in ContextPack from committed DesignStage and exact StateRecord content; compare declared dependencies and retained conditions to flag changed downstream work for review",
         "scoped project decisions: one architect judgement with its raw wording, disposition, strength, target, explicit scope, applicability and the exact source evidence it was said against, as an immutable revision chain in the fixed explicit studio-decisions P036 run",
         "compiling the decisions that still apply to one next turn - same domain, exact Stage, intersection with relevant task targets, applicability and current parameter binding - into the existing ContextPack",
-        "Composing explicitly selected exact Study evidence revisions into ContextPack separately from design facts and applicable decisions; no implicit Study scan, acceptance or project write."
+        "Composing explicitly selected exact Study evidence revisions into ContextPack separately from design facts and applicable decisions; no implicit Study scan, acceptance or project write.",
+        "the source-bound, read-only visual observation channel (GH-303 V0): VisualReviewRequest over exact model or registered-page sources, EvidenceFrame values taken from the model-view and page-export owners' own answers, the strict VisualObservation answer and its validation, the VisualObservationProvider seam with the configured Studio model transport as its implementation, and the Harness review allowance VisualReviewBudget"
       ],
       "does_not_own": [
         "running the proposal - studio.candidate",
@@ -4591,7 +4592,8 @@
         "the request and receipt contracts themselves - ports.model",
         "the HTTP error body and the DTOs - studio.shell",
         "acquiring, releasing or verifying anything about a parameter lock beyond recording the lock the record already carries (state.record owns locks; state.decision_operator changes them)",
-        "the provider tool, chat surface and product loop that saves or revokes a decision from a real conversation, and the message identities it claims (GH-183)"
+        "the provider tool, chat surface and product loop that saves or revokes a decision from a real conversation, and the message identities it claims (GH-183)",
+        "rendering the images a visual review reads (studio.artifacts model-view, studio.board page export, studio.render results) and deciding what a visual finding means for the task, a Candidate or its admission (the evaluator, the Agent and GH-294)"
       ],
       "inputs": [
         "utterance text",
@@ -4608,7 +4610,8 @@
         "DocumentTracingRequestDto on POST /api/proposals/sketch names exact saved run/asset/drawing revision/page/annotation revision and selected line or polyline ids, a target component, base and height; scale and direction come only from the saved two-point calibration",
         "ModelInvocationRequest and structured schema/images from Study for the existing configured transport",
         "One scoped decision as the caller states it: rawLanguage, optional messageSource claim, disposition, strength, targetRef, scope, exact source evidence union (board revision + live element ids / document run+asset+revision+page / design run+stateDigest+optional Stage), applicability, sourceKind and an optional parameter typedBinding",
-        "Optional decisionContext on POST /api/intents/context: the domain this turn is about, and for a drawing or copy turn its own representation evidence"
+        "Optional decisionContext on POST /api/intents/context: the domain this turn is about, and for a drawing or copy turn its own representation evidence",
+        "VisualReviewRequest with exact SourceRef values, criteria, preserve conditions and the Harness allowance, and owner-produced EvidenceFrame PNGs (model-view answers, registered page exports)"
       ],
       "outputs": [
         "ParsedIntent",
@@ -4622,7 +4625,8 @@
         "retained document comment reference",
         "working_copy.option_added event identifying the added option source run when an event sink is supplied",
         "retained StudioScopedDecision@1 revisions and their DTOs",
-        "scopedDecisions on ContextPack@1: the applicable decisions in the architect's own words with their exact provenance, never a transcript"
+        "scopedDecisions on ContextPack@1: the applicable decisions in the architect's own words with their exact provenance, never a transcript",
+        "VisualObservation bound to the frames actually sent, with ObservationUsage and a visual_observation MonkeyMonitor span over the provider's model_request row"
       ],
       "public_api": [
         "POST /api/intents",
@@ -4741,7 +4745,18 @@
         "decision_context_for",
         "focus_refs",
         "DecisionRevision",
-        "DecisionContext"
+        "DecisionContext",
+        "SourceRef",
+        "EvidenceFrame",
+        "VisualReviewRequest",
+        "VisualObservation",
+        "VisualObservationProvider",
+        "StudioModelVisualProvider",
+        "VisualReviewBudget",
+        "bind_frames",
+        "model_view_frame",
+        "page_frame",
+        "observe_frames"
       ],
       "depends_on": [
         "contracts.canonical",
@@ -4830,7 +4845,10 @@
         "applicability 'scope' survives later revisions inside its scope; 'exact-source' applies only while the caller supplies the same source identity. A target that is gone, a parameter value or unit that moved and a released lock are derived stale at read time, and revoked, superseded and deferred decisions are never injected as requirements",
         "sourceKind and messageSource are the caller's own provenance claims, kept apart from the boundary's resolved attribution; neither is a credential and neither grants an action",
         "every applicable decision is returned without a decision-count cutoff; a target scope applies when any of its members intersects the task's relevant targets, so changing one end of a kept relation does not discard that decision",
-        "decision focus includes declared upstream reads across retained Stages, with effective instance bindings instead of overridden Type defaults; it does not follow shared inputs into other consumers, include unrelated locks, widen writes or alter decision scope, strength and applicability"
+        "decision focus includes declared upstream reads across retained Stages, with effective instance bindings instead of overridden Type defaults; it does not follow shared inputs into other consumers, include unrelated locks, widen writes or alter decision scope, strength and applicability",
+        "a visual review refuses, before any provider call, a frame whose source is not exactly one of the request's source refs; the provider never states which source it saw, the channel binds its answer to the frames it sent",
+        "the Harness allowance gives a deterministic edit no visual review, a spatial or formal task one review plus at most one follow-up after a repair that names a finding of the last review, and only an explicit polish request 1-4 reviews; a refusal spends nothing and an admitted review stays spent when the call fails",
+        "a visual observation writes nothing and carries no State, Stage or Candidate authority and no provider reasoning; its findings point only at the request's own criterion and preserve refs"
       ],
       "status": "canonical",
       "tests": [
@@ -4864,7 +4882,8 @@
         "apps/archflow-studio/api/tests/test_elevation.py",
         "apps/monkeyhub/web/workspaces/test/elevation.browser.mjs",
         "apps/archflow-studio/api/tests/test_decisions.py",
-        "tests/test_nonadjacent_stage_context.py"
+        "tests/test_nonadjacent_stage_context.py",
+        "apps/archflow-studio/api/tests/test_visual_observation.py"
       ],
       "notes": "CANONICAL_SPINE 2.1 makes this the door live-model authoring re-enters by: typed intent, then record, then runner. clarification.py retired require_grammatical: the same two refusals, in the same words, with the target the agent had just worked out kept instead of thrown away.",
       "files": [
@@ -4899,7 +4918,9 @@
         "apps/monkeyhub/web/workspaces/src/features/stage/ElevationPanel.css",
         "apps/archflow-studio/api/archflow_studio_api/application/decisions.py",
         "apps/archflow-studio/api/archflow_studio_api/routes/decisions.py",
-        "apps/archflow-studio/api/archflow_studio_api/transport/decisions.py"
+        "apps/archflow-studio/api/archflow_studio_api/transport/decisions.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/visual_observation.py",
+        "tools/benchmark_visual_observation.py"
       ]
     },
     {

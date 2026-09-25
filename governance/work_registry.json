@@ -171,6 +171,7 @@
         "docs/mapping/planning/INDEX.md",
         "governance/module_registry.json",
         "governance/work_registry.json",
+        "monkeymonitor/trace.py",
         "tools/benchmark_visual_observation.py"
       ],
       "card": "docs/mapping/planning/GH-303-visual-observation.md",
@@ -192,7 +193,8 @@
           "handoff": "V0 contract, policy and Codex-backed prototype with a dev benchmark tool; no production chat, route or Hub tool. The next slice (a runtime route or Hub tool that the Agent's task loop calls, and an axon view in the model-view projection owner) needs the owner's placement decision recorded in the audit document.",
           "modules": [
             "studio.intent",
-            "ports.model"
+            "ports.model",
+            "monkeymonitor"
           ],
           "write_scope": [
             "apps/archflow-studio/api/archflow_studio_api/application/visual_observation.py",
@@ -205,6 +207,7 @@
             "docs/mapping/planning/INDEX.md",
             "governance/module_registry.json",
             "governance/work_registry.json",
+            "monkeymonitor/trace.py",
             "tools/benchmark_visual_observation.py"
           ],
           "depends_on": [],
