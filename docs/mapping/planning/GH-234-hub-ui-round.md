@@ -7,7 +7,7 @@ EXTEND existing owners only. Record the current UI reality and the functional co
 
 Files claimed by the open Publish integration (GH-66, PR #270) are not edited in this round; Drawing and Render findings in that area are reported to that work instead. The 2026-09-04 workbench research remains the MonkeyArch baseline this round extends.
 
-Lane `view-base`: viewing a model never moves the editing base. Undo/Redo steps only through editing-base changes, and a refused or unsaved base switch is reported where the architect asked for it.
+Lane `view-base`: viewing a model never moves the editing base. Undo/Redo steps only through editing-base changes, and a refused or unsaved base switch is reported where the architect asked for it. Editing a viewed model that is not the editing base is refused until the architect continues from it (user decision Q1, 2026-09-24).
 
 Lane `ui-audit`: `docs/2026-09-24-monkeyhub-ui-reality-audit.md` records the current UI reality and the functional contradictions, with evidence and verification status.
 
