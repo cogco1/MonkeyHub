@@ -117,10 +117,33 @@ def _cleanup_report(binding, revision_ref):
     return binding.repository.load_json(record_ref_from_uri(revision_ref, binding.project_id)).get("cleanup")
 
 
+def _paper_rules(retained, hatch, beyond, spacing_mm):
+    """Material hatch/poché and the fading of lines beyond the cut, in paper units (03 C3).
+
+    Each rule is the request's, else the previous revision's. A material rule
+    is stored complete - an omitted spacing is this revision's hatchSpacingMm,
+    an omitted angle 45 degrees - so the recipe alone says how each material is
+    drawn. No rule, an empty ``byMaterial`` or a zero fade is an absent key: a
+    recipe without them is exactly the recipe it was before they existed.
+    """
+    rules = {}
+    by_material = deepcopy(retained.get("hatch", {}).get("byMaterial", {})) if hatch is None else {
+        material: {"spacingMm": float(spacing_mm if rule.get("spacingMm") is None else rule["spacingMm"]),
+                   "angleDeg": float(45 if rule.get("angleDeg") is None else rule["angleDeg"]),
+                   "poche": bool(rule.get("poche", False))}
+        for material, rule in sorted(hatch["byMaterial"].items())}
+    if by_material:
+        rules["hatch"] = {"byMaterial": by_material}
+    fade = retained.get("beyond", {}).get("fade", 0) if beyond is None else beyond["fade"]
+    if fade:
+        rules["beyond"] = {"fade": float(fade)}
+    return rules
+
+
 @retained_sources
 def generate_plan(binding, *, source_stage_ref=None, model_source=None, drawing_id=None,
                   previous_revision_ref=None, cut_height=None, bottom=None, scale_denominator=None,
-                  crop_uv=None, cut_line_mm=None, visible_line_mm=None, hatch_spacing_mm=None,
+                  crop_uv=None, cut_line_mm=None, visible_line_mm=None, hatch_spacing_mm=None, hatch=None, beyond=None,
                   hidden_object_ids=None, dimensions=None, dressing=None, dressing_operations=None, follow=None, source_asset=None):
     previous = None if previous_revision_ref is None else _previous_plan(binding, previous_revision_ref)
     old = {} if previous is None else previous.view_recipe
@@ -154,10 +177,11 @@ def generate_plan(binding, *, source_stage_ref=None, model_source=None, drawing_
             x0, y0, x1, y1 = frame.crop_uv
             frame = replace(frame, crop_uv=(x0-margin, y0-margin, x1+margin, y1+margin))
         graphics = old.get("graphics", {})
+        spacing = hatch_spacing_mm if hatch_spacing_mm is not None else graphics.get("hatchSpacingMm", 2)
         recipe = {"kind": "cut-plan", "name": drawing_id, "frame": frame.to_dict(), "graphics": {
             "cutLineMm": cut_line_mm if cut_line_mm is not None else graphics.get("cutLineMm", .35),
             "visibleLineMm": visible_line_mm if visible_line_mm is not None else graphics.get("visibleLineMm", .18),
-            "hatchSpacingMm": hatch_spacing_mm if hatch_spacing_mm is not None else graphics.get("hatchSpacingMm", 2),
+            "hatchSpacingMm": spacing, **_paper_rules(graphics, hatch, beyond, spacing),
         }, "hiddenObjectIds": sorted(set(hidden_object_ids if hidden_object_ids is not None else old.get("hiddenObjectIds", []))),
             "dimensions": list(dimensions if dimensions is not None else old.get("dimensions", []))}
         # A drawing made from a chosen version stays on it until a person rebuilds

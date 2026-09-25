@@ -26,8 +26,11 @@ def create_plan(request: Request, payload: PlanRequestDto) -> SourceDocumentDto:
     binding = bound_project(request.app.state)
     if payload.project_id != binding.project_id:
         raise StudioError(403, "PROJECT_MISMATCH", "The drawing names another project.")
-    values = payload.model_dump(exclude={"project_id", "model_source", "source_asset", "dimensions", "dressing", "dressing_operations"})
+    values = payload.model_dump(exclude={"project_id", "model_source", "source_asset", "dimensions", "dressing", "dressing_operations",
+                                         "hatch", "beyond"})
     return document_dto(generate_plan(binding, **values,
+        hatch=None if payload.hatch is None else payload.hatch.model_dump(by_alias=True),
+        beyond=None if payload.beyond is None else payload.beyond.model_dump(by_alias=True),
         source_asset=None if payload.source_asset is None else payload.source_asset.model_dump(by_alias=True),
         model_source=None if payload.model_source is None else model_source_from(payload.model_source),
         dimensions=None if payload.dimensions is None else [row.model_dump(by_alias=True) for row in payload.dimensions],

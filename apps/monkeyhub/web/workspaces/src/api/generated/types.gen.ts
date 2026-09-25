@@ -5583,6 +5583,20 @@ export type PickResolutionDto = {
 };
 
 /**
+ * PlanBeyondDto
+ *
+ * How lines below the cut plane read against the cut.
+ */
+export type PlanBeyondDto = {
+    /**
+     * Fade
+     *
+     * Grey level of the lines below the cut: 0 draws them black like visible lines (and removes the rule), 1 fades them out.
+     */
+    fade: number;
+};
+
+/**
  * PlanDimensionChoiceDto
  */
 export type PlanDimensionChoiceDto = {
@@ -5924,6 +5938,48 @@ export type PlanDressingReadDto = {
 };
 
 /**
+ * PlanHatchDto
+ *
+ * Material-keyed hatch and poché for cut solids; a material without a rule keeps hatchSpacingMm at 45 degrees.
+ */
+export type PlanHatchDto = {
+    /**
+     * Bymaterial
+     *
+     * Rules by the model's material name. Each is stored complete; an empty map removes every rule.
+     */
+    byMaterial: {
+        [key: string]: PlanHatchRuleDto;
+    };
+};
+
+/**
+ * PlanHatchRuleDto
+ *
+ * How the cut of one material is drawn, in paper units.
+ */
+export type PlanHatchRuleDto = {
+    /**
+     * Spacingmm
+     *
+     * Perpendicular hatch spacing on paper, mm. Omitted takes this revision's hatchSpacingMm.
+     */
+    spacingMm?: number | null;
+    /**
+     * Angledeg
+     *
+     * Hatch direction, degrees anticlockwise from the sheet's x axis. Omitted is 45.
+     */
+    angleDeg?: number | null;
+    /**
+     * Poche
+     *
+     * Fill this material's cut solid (poché) instead of hatching it.
+     */
+    poche?: boolean;
+};
+
+/**
  * PlanRequestDto
  */
 export type PlanRequestDto = {
@@ -5980,6 +6036,14 @@ export type PlanRequestDto = {
      * Hatchspacingmm
      */
     hatchSpacingMm?: number | null;
+    /**
+     * Material hatch and poché rules on paper, beside the pens and hatchSpacingMm. Omitted keeps the previous revision's rules; an empty byMaterial removes them.
+     */
+    hatch?: PlanHatchDto | null;
+    /**
+     * Fading of the lines below the cut. Omitted keeps the previous revision's; fade 0 removes it.
+     */
+    beyond?: PlanBeyondDto | null;
     /**
      * Hiddenobjectids
      */
