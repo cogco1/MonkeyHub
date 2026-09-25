@@ -12,7 +12,7 @@ import { ChatMarkdown, ChatMessageFiles, type ChatDocument } from "./ChatMessage
 import type { PageSource } from "../workspaces/src/workspaces/monkeyboard/boardScene";
 const ProjectWorkspace = lazy(() => import("../workspaces/src/app/ProjectWorkspace").then((module) => ({ default: module.ProjectWorkspace })));
 import { presentFailure } from "./chatError";
-import { clock, currentStep, describeCall, describeStep, operationStep, rawDetail, rawLine, resultCandidates, stepText, turnsOf, unfinishedOperations, workedSeconds, type ProcessTurn, type ProcessWords } from "./chatProcess";
+import { clock, currentStep, describeCall, describeStep, dismissible, operationStep, rawDetail, rawLine, resultCandidates, stepText, turnsOf, unfinishedOperations, unrecoverable, workedSeconds, type ProcessTurn, type ProcessWords } from "./chatProcess";
 import { recentUsage, serialMonitorRead, type MonitorEvent, type RecentUsage } from "./monitorData";
 import { activeWork, newSchemes, sidebarTasks, type SidebarTask } from "./sidebarTasks";
 import { SoftwareUpdateSettings, type RestartBlocker } from "./SoftwareUpdateSettings";
@@ -39,8 +39,11 @@ type ToolTab = { id: AppId; url: string; revision: number; projectDir?: string; 
   returnTo?: AppId; focus?: { runIds: string[]; request: number } };
 type SavedTool = { id: AppId; candidate?: string };
 type ProjectPreparation = { promise: Promise<AppStatus[]>; apps: AppStatus[] | null; modeling?: Promise<unknown> };
-/** GH-285: the admission time and dismissal the Hub now reports, until the generated client carries them. */
-type OperationRow = OperationRecord & { createdAt?: string | null; acknowledgedAt?: string | null };
+/**
+ * GH-285: the admission time and dismissal the Hub now reports; GH-58: whether an operation that
+ * needs recovery can be recovered at all. Read here until the generated client carries them.
+ */
+type OperationRow = OperationRecord & { createdAt?: string | null; acknowledgedAt?: string | null; recoverable?: boolean | null };
 /** "25 Sep, 14:02" in the reader's language; nothing for a record that kept no readable time. */
 const operationTime = (value: string | null | undefined, language: string) => {
   const date = value ? new Date(value) : null;
@@ -74,6 +77,18 @@ const composerWords = {
     operationOpenChat: "Open chat", operationDismiss: "Dismiss",
     operationMore: (count: number) => `${count} more`,
     targetViewing: (name: string) => `Viewing ${name}; this message still changes Current`,
+  },
+} as const;
+/**
+ * GH-300 (batch F): an operation that cannot be recovered. Local for the same reason
+ * as composerWords.
+ */
+const shellWords = {
+  "zh-CN": {
+    operationUnrecoverable: "无法自动恢复",
+  },
+  en: {
+    operationUnrecoverable: "Cannot be recovered automatically",
   },
 } as const;
 /** The rail's two kinds of entry (#295, regrouped by the owner for #300): the
@@ -330,7 +345,7 @@ function ProcessRow({ turn, running, open, t, onToggle }: {
 }
 
 export function ChatShell({ preferences, settings, settingsDirty = false, configuredProject, defaults, workspace, apps }: Props) {
-  const t = words[preferences.language], w = composerWords[preferences.language];
+  const t = words[preferences.language], w = composerWords[preferences.language], s = shellWords[preferences.language];
   const [initial] = useState(readView);
   const [projects, setProjects] = useState<ChatProject[]>([]);
   const [sessions, setSessions] = useState<ChatSummary[]>([]);
@@ -1272,7 +1287,8 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
       </div>}
       {unfinishedOperation && (() => {
         // #285: which operation did not finish, when, and the chat that asked for it. A failed or
-        // stale one can be dismissed; one that needs recovery stays until it is recovered.
+        // stale one can be dismissed; one that needs recovery stays until it is recovered, unless
+        // the Hub says it cannot be (GH-58).
         const operation = unfinishedOperation;
         const step = operationStep(operation.kind);
         const source = operation.sessionId ? projectRuntime?.sessions?.find((row) => row.id === operation.sessionId) : undefined;
@@ -1284,7 +1300,10 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
           <div className="chat-runtime__actions">
             {source && source.id !== chatId && <button type="button" className="chat-activity__open" title={source.title}
               aria-label={`${w.operationOpenChat}: ${source.title}`} onClick={() => selectChat(source)}><Icon name="chat" />{w.operationOpenChat}</button>}
-            {operation.status !== "needs_recovery" && <button type="button" className="chat-activity__open" disabled={dismissing !== null}
+            {/* GH-58: one that needs recovery the Hub cannot give it says so, and can be dismissed like a failure. */}
+            {unrecoverable(operation) && <span className="chat-runtime__note" id="chat-operation-unrecoverable">{s.operationUnrecoverable}</span>}
+            {dismissible(operation) && <button type="button" className="chat-activity__open" disabled={dismissing !== null}
+              aria-describedby={unrecoverable(operation) ? "chat-operation-unrecoverable" : undefined}
               aria-busy={dismissing === operation.operationId} onClick={() => void dismissOperation(operation)}>{w.operationDismiss}</button>}
           </div>
         </div>;

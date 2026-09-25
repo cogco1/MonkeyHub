@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import type { ChatMessage } from "../src/api/generated";
-import { clock, currentStep, describeCall, describeStep, operationStep, resultCandidates, stepText, turnsOf, unfinishedOperations, workedSeconds, type ProcessWords } from "../src/chatProcess.ts";
+import { clock, currentStep, describeCall, describeStep, dismissible, operationStep, resultCandidates, stepText, turnsOf, unfinishedOperations, unrecoverable, workedSeconds, type ProcessWords } from "../src/chatProcess.ts";
 import { chatCopy as en } from "../src/i18n/messages.en.ts";
 import { chatCopy as zh } from "../src/i18n/messages.zh-CN.ts";
 
@@ -157,4 +157,21 @@ test("the notice stands for undismissed failures, newest first, then what needs 
     ["stale", "old-failure", "candidate:old-run", "recovering-later", "waiting"]);
   assert.deepEqual(operations.map((item) => item.operationId).slice(0, 2), ["old-failure", "waiting"], "the records themselves are not reordered");
   assert.deepEqual(unfinishedOperations([]), []);
+});
+
+test("GH-58: one the Hub cannot recover can be dismissed and then leaves; one that says nothing stays as before", () => {
+  const row = (operationId: string, status: string, admissionSequence: number, extra: { recoverable?: boolean; acknowledgedAt?: string } = {}) =>
+    ({ operationId, kind: "POST /api/proposals/p/candidate", status, admissionSequence, acknowledgedAt: null, ...extra });
+  const lost = row("lost", "needs_recovery", 3, { recoverable: false });
+  const waiting = row("waiting", "needs_recovery", 2, { recoverable: true });
+  const silent = row("silent", "needs_recovery", 1);
+  const failed = row("failed", "failed", 4);
+  assert.deepEqual([lost, waiting, silent, failed].map(unrecoverable), [true, false, false, false]);
+  assert.deepEqual([lost, waiting, silent, failed].map(dismissible), [true, false, false, true], "a Hub that says nothing keeps today's rule");
+  assert.deepEqual(unfinishedOperations([silent, waiting, lost, failed]).map((item) => item.operationId), ["failed", "lost", "waiting", "silent"]);
+  const dismissed = { ...lost, acknowledgedAt: "2026-09-25T10:00:00Z" };
+  assert.deepEqual(unfinishedOperations([silent, waiting, dismissed]).map((item) => item.operationId), ["waiting", "silent"],
+    "a dismissed unrecoverable operation leaves the notice");
+  assert.deepEqual(unfinishedOperations([{ ...waiting, acknowledgedAt: "2026-09-25T10:00:00Z" }, { ...silent, acknowledgedAt: "2026-09-25T10:00:00Z" }])
+    .map((item) => item.operationId), ["waiting", "silent"], "one that can still be recovered stays whatever its record says");
 });

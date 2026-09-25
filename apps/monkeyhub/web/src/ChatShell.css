@@ -178,3 +178,6 @@
 .chat-shell .chat-topic__remove svg{width:13px;height:13px}
 .chat-topic-refusal{margin:0 2px 8px}.chat-topic-refusal>.chat-muted{margin:0}
 @media(max-width:900px){.chat-composer-menu__item{min-height:44px}.chat-topic__remove{width:32px;height:32px}}
+
+/* GH-58: why an operation that needs recovery can still be dismissed. */
+.chat-runtime__note{color:var(--muted);font-size:var(--text-caption)}

@@ -258,8 +258,11 @@ await page.route((url) => url.pathname.startsWith("/api/"), async (route) => {
     assert.equal(data().projectId, runtime?.projectId, "a dismissal names its runtime and that runtime's project");
     const operation = runtime.operations.find((item) => item.operationId === decodeURIComponent(dismissal[1]));
     if (!operation) return json({ code: "OPERATION_NOT_FOUND", detail: "This project runtime has no operation with that id." }, 404);
-    if (!["failed", "stale"].includes(operation.status)) return json({ code: "OPERATION_NOT_ACKNOWLEDGEABLE",
-      detail: "Only a failed or stale operation can be dismissed. An operation that needs recovery stays until it is recovered." }, 409);
+    // GH-58: one that needs recovery can be dismissed only when the Hub marks it unrecoverable.
+    if (!["failed", "stale"].includes(operation.status) && !(operation.status === "needs_recovery" && operation.recoverable === false)) {
+      return json({ code: "OPERATION_NOT_ACKNOWLEDGEABLE",
+        detail: "Only a failed or stale operation can be dismissed. An operation that needs recovery stays until it is recovered." }, 409);
+    }
     operation.acknowledgedAt ??= new Date().toISOString();
     return json(operation);
   }
@@ -2513,6 +2516,23 @@ try {
     .toLocaleString("en", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }))}`);
   assert.equal(await notice.getByRole("button", { name: "Dismiss", exact: true }).count(), 0, "one that needs recovery cannot be dismissed");
   assert.ok(runtimeT.operations.filter((row) => row.status !== "needs_recovery").every((row) => row.acknowledgedAt));
+  // GH-58: one the Hub marks unrecoverable says so beside Dismiss, and once dismissed it leaves; the
+  // one that can still be recovered stays without Dismiss. Rows that say nothing keep today's rule.
+  runtimeT.operations.push({ operationId: "candidate-lost", projectId: "T", kind: "POST /api/proposals/prop-2/candidate", source: "chat",
+    status: "needs_recovery", recoverable: false, committed: false, admissionSequence: 5, createdAt: sheetAskedAt });
+  emitRuntime();
+  const unrecoverableNote = notice.getByText("Cannot be recovered automatically", { exact: true });
+  await unrecoverableNote.waitFor();
+  assert.equal(await notice.locator("p").innerText(), "An operation needs recovery review");
+  const dismissLost = notice.getByRole("button", { name: "Dismiss", exact: true });
+  assert.equal(await dismissLost.getAttribute("aria-describedby"), await unrecoverableNote.getAttribute("id"), "Dismiss is described by why");
+  const beforeLost = writes.length;
+  await dismissLost.click();
+  await unrecoverableNote.waitFor({ state: "detached" });
+  assert.deepEqual(writes.slice(beforeLost).filter(([, pathname]) => pathname.includes("/acknowledge")).map(([, pathname]) => pathname),
+    ["/api/runtime/operations/candidate-lost/acknowledge"]);
+  await notice.locator("p").filter({ hasText: "An operation needs recovery review" }).waitFor();
+  assert.equal(await notice.getByRole("button", { name: "Dismiss", exact: true }).count(), 0, "the one that can still be recovered stays");
 
   // The same composer states and notice in Chinese, for review.
   await page.getByRole("button", { name: "Hub settings", exact: true }).click();
@@ -2565,6 +2585,17 @@ try {
   await page.getByRole("button", { name: "停止", exact: true }).waitFor();
   await page.getByRole("button", { name: "停止", exact: true }).click();
   runtimeT.operations = []; emitRuntime();
+  await notice.waitFor({ state: "detached" });
+
+  // GH-300 batch F, in Chinese for review. GH-58: an operation that needs recovery the Hub cannot
+  // give it says so beside 知道了, and can be dismissed.
+  runtimeT.operations = [{ operationId: "candidate-lost-zh", projectId: "T", kind: "POST /api/proposals/prop-6/candidate", source: "chat",
+    status: "needs_recovery", recoverable: false, committed: false, admissionSequence: 9, createdAt: sheetAskedAt }];
+  emitRuntime();
+  await notice.getByText("无法自动恢复", { exact: true }).waitFor();
+  assert.equal(await notice.locator("p").innerText(), "有操作需要检查恢复结果");
+  await page.locator(".chat-main").screenshot({ path: path.join(temporary, "operation-unrecoverable-zh.png") });
+  await notice.getByRole("button", { name: "知道了", exact: true }).click();
   await notice.waitFor({ state: "detached" });
   await page.getByRole("button", { name: "Hub 设置", exact: true }).click();
   await page.locator("#language").selectOption("en");
