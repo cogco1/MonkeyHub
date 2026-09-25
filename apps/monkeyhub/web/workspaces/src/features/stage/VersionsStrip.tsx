@@ -102,10 +102,10 @@ export function VersionsStrip({
       return <div className="vcard" role="listitem" key={`${label}:${row.runId}`} data-working-draft={row.runId}>
         <div className="vcard__head"><strong>{label}</strong><time>{new Date(row.updatedAt).toLocaleString()}</time></div>
         <div className="vcard__exports"><button className="btn btn--small" disabled={design.busy} aria-pressed={selected}
-          onClick={() => design.onRestoreDraft?.(row.runId)}>打开并继续修改</button>
+          onClick={() => design.onRestoreDraft?.(row.runId)}>{t("stage.base.continue")}</button>
           {selected && branch && design.currentStageRef === branch.headStageRef &&
             !history?.stages.some((stage) => stage.modelSource.runId === row.runId) &&
-            <button className="btn btn--small" disabled={design.busy} onClick={() => design.onAccept(row.runId)}>确认下一 Stage</button>}
+            <button className="btn btn--small" disabled={design.busy} onClick={() => design.onAccept(row.runId)}>{t("designTree.action.acceptNext")}</button>}
         </div>
         {save && <form className="vcard__exports" onSubmit={(event) => { event.preventDefault(); design.onSaveDraft?.(row.runId, saveName.trim()); }}>
           <input aria-label="重点版本名称" placeholder="重点版本名称（可选）" value={saveName} onChange={(event) => setSaveName(event.target.value)} />
@@ -125,7 +125,7 @@ export function VersionsStrip({
         <div className="vcard__exports">
           <button type="button" className="btn btn--small" onClick={onOpenTree}>{t("stage.tree.open")}</button>
           {history?.branches.length === 0 && <button className="btn btn--small" disabled={design.busy || !design.currentModelSource}
-            onClick={design.onInitialize}>确认当前模型为 S0</button>}
+            onClick={design.onInitialize}>{t("designTree.action.accept", { stage: "S0" })}</button>}
         </div>{design.error && <p role="alert">{design.error}</p>}
       </div> : <>
       <div className="vcard"><div className="vcard__head"><strong>设计历史</strong>
@@ -133,7 +133,7 @@ export function VersionsStrip({
           onChange={(event) => design.onBranch(event.target.value)}>{history.branches.map((item) =>
             <option key={item.branchId} value={item.branchId}>{item.branchId}</option>)}</select>}
         {history?.branches.length === 0 && <button className="btn btn--small" disabled={design.busy || !design.currentModelSource}
-          onClick={design.onInitialize}>确认当前模型为 S0</button>}
+          onClick={design.onInitialize}>{t("designTree.action.accept", { stage: "S0" })}</button>}
       </div>{design.error && <p role="alert">{design.error}</p>}</div>
       {history?.stages.map((stage) => <div key={stage.stageRef} className="vcard" role="listitem" data-design-stage={stage.label}>
         <div className="vcard__head"><button className="btn btn--small" disabled={design.busy} onClick={() => design.onStage(stage)}
@@ -165,9 +165,9 @@ export function VersionsStrip({
             disabled={design.busy || (commonSource !== undefined && sourceStageRef !== commonSource && !combineIds.includes(modelSource.runId))}
             onChange={(event) => setCombineIds((current) => event.target.checked ? [...current, modelSource.runId] : current.filter((id) => id !== modelSource.runId))} />候选 · 未提交</label><strong>{label}</strong></div>
           <div className="vcard__exports"><button className="btn btn--small" aria-pressed={selected} disabled={design.busy}
-            onClick={() => design.onCandidate(modelSource)}>预览并继续修改</button>
+            onClick={() => design.onCandidate(modelSource)}>{t("stage.base.continue")}</button>
             {selected && branch && <button className="btn btn--small" disabled={design.busy || design.currentStageRef !== branch.headStageRef}
-              onClick={() => design.onAccept(modelSource.runId)}>接受为下一 Stage</button>}
+              onClick={() => design.onAccept(modelSource.runId)}>{t("designTree.action.acceptNext")}</button>}
             {selected && branch && design.currentStageRef !== branch.headStageRef && <span className="quiet">此候选来自历史阶段，请先从该阶段新建分支。</span>}
           </div></div>;
       })}

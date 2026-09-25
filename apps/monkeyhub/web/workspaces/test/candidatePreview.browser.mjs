@@ -1249,7 +1249,7 @@ try {
   await step("S0 requires one explicit confirmation and cold reopen restores the committed head", async () => {
     assert.equal(stages.size, 0);
     assert.equal(await page.getByText("已有模型与历史运行 · 尚未归入 Stage", { exact: true }).count(), 1);
-    await page.getByRole("button", { name: "确认当前模型为 S0", exact: true }).click();
+    await page.getByRole("button", { name: "Accept as S0", exact: true }).click();
     await until(snapshot, (value) => value.history?.stages.length === 1, "S0 was not confirmed");
     s0 = [...stages.values()][0];
     assert.deepEqual(s0.modelSource, currentHome.modelSource);
@@ -1266,7 +1266,7 @@ try {
     await stageAsBase("S0", "S0 · 当前提交", currentHome.runId);
     const continueReadStart = requests.length;
     await openVersions();
-    await page.locator('[data-preview-candidate="history-a"]').getByRole("button", { name: "预览并继续修改", exact: true }).click();
+    await page.locator('[data-preview-candidate="history-a"]').getByRole("button", { name: "Continue from here", exact: true }).click();
     await rendered(historyA.candidateId);
     await until(snapshot, (value) => value.editingRunId === historyA.candidateId && !value.changingBase,
       "Continuing the retained candidate did not finish switching its editing context");
@@ -1282,7 +1282,7 @@ try {
   });
 
   await step("failed acceptance preserves the preview; successful acceptance appends S1 on main", async () => {
-    const accept = page.getByRole("button", { name: "接受为下一 Stage", exact: true });
+    const accept = page.getByRole("button", { name: "Accept as next Stage", exact: true });
     await accept.waitFor(); acceptFailure = true; await accept.click();
     await until(snapshot, (value) => value.historyError?.includes("Candidate kept"), "Acceptance failure was hidden");
     await rendered(historyA.candidateId); assert.equal(stages.size, 1);

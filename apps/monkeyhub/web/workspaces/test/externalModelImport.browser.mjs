@@ -161,7 +161,7 @@ try {
     assert.equal(await continuing.count()===0 || await continuing.isDisabled(),true,'external source must not offer an exact-state continuation');
     assert.equal(await surface().getByRole('button',{name:'Undo model',exact:true}).isDisabled(),true);
     assert.equal(await surface().getByRole('button',{name:'Redo model',exact:true}).isDisabled(),true);
-    const s0=panel.getByRole('button',{name:'确认当前模型为 S0',exact:true}); if(await s0.count()) assert.equal(await s0.isDisabled(),true);
+    const s0=panel.getByRole('button',{name:'Accept as S0',exact:true}); if(await s0.count()) assert.equal(await s0.isDisabled(),true);
     const context=await page.evaluate(()=>window.externalImportContext);
     assert.ok(context?.designContext===null || context?.designContext?.sourceRunId===beforeContext?.designContext?.sourceRunId);
     assert.equal((await api('/fixture/metrics')).head,head);
