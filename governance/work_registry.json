@@ -288,7 +288,8 @@
         "archflow/state/state_record.py",
         "apps/archflow-studio/api/archflow_studio_api/application/publications.py",
         "apps/archflow-studio/api/archflow_studio_api/application/artifacts.py",
-        "apps/archflow-studio/api/archflow_studio_api/transport/artifacts.py"
+        "apps/archflow-studio/api/archflow_studio_api/transport/artifacts.py",
+        "apps/monkeyhub/web/test/projectWorkspaceFixture.mjs"
       ],
       "card": "docs/mapping/planning/GH-271-working-head.md",
       "acceptance": [
@@ -354,7 +355,8 @@
             "archflow/state/state_record.py",
             "apps/archflow-studio/api/archflow_studio_api/application/publications.py",
             "apps/archflow-studio/api/archflow_studio_api/application/artifacts.py",
-            "apps/archflow-studio/api/archflow_studio_api/transport/artifacts.py"
+            "apps/archflow-studio/api/archflow_studio_api/transport/artifacts.py",
+            "apps/monkeyhub/web/test/projectWorkspaceFixture.mjs"
           ],
           "depends_on": [],
           "status": "active",

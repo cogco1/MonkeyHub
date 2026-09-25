@@ -892,8 +892,11 @@ try {
   await card.getByText("D:\\fixture\\A").waitFor();
   await card.getByText("Version 3").waitFor();
   await card.getByText("S2", { exact: true }).waitFor();
-  await card.getByText("cand-A-1").waitFor();
-  await card.getByText("Candidate — not endorsed, not issued").waitFor();
+  // #271: the card speaks about the current project and its work, never candidate ids.
+  await card.getByText("Modeling follows the current project").waitFor();
+  await card.getByText(/Finished result/).first().waitFor();
+  await card.getByText(/can be combined/).first().waitFor();
+  assert.equal(await card.getByText("cand-A-1").count(), 0, "candidate ids stay internal to the Worktree Graph");
   assert.equal(await card.getByRole("button", { name: /Accept|Issue|Endorse/ }).count(), 0);
   await card.getByRole("button", { name: "Close" }).click();
 
@@ -1246,6 +1249,8 @@ try {
   assert.ok(writes.slice(beforeCrash).every(([, pathname]) => pathname === "/api/runtime/projects/open" || pathname.endsWith("/recover")));
   await page.screenshot({ path: path.join(temporary, "runtime-recovered.png") });
   await page.getByRole("button", { name: /Project B/ }).last().click();
+  // Completed operations are recovery details, disclosed on request (#271).
+  await page.getByRole("dialog", { name: "Project", exact: true }).getByText("Recovery details", { exact: true }).click();
   await page.getByRole("dialog", { name: "Project", exact: true }).getByText("Committed", { exact: true }).waitFor();
   await page.getByRole("dialog", { name: "Project", exact: true }).getByRole("button", { name: "Close", exact: true }).click();
   const beforeReconnect = writes.length;

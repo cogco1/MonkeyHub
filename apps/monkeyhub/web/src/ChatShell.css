@@ -97,3 +97,13 @@
 @media(max-width:500px){.chat-runtime{align-items:flex-start;flex-direction:column;padding-inline:16px}}
 
 .chat-project-workspace{position:absolute;inset:0;min-width:0;min-height:0;overflow:hidden}.chat-project-workspace[hidden]{display:block;visibility:hidden;pointer-events:none}
+.chat-project-card__head-line small { display: block; color: var(--muted); font-size: var(--text-caption); }
+.chat-project-card__status { margin: 0; padding: 0; list-style: none; display: grid; gap: 2px; }
+.chat-project-card__status li::before { content: "✓ "; color: var(--muted); }
+.chat-project-card__status li[data-state="stale"]::before { content: "⚠ "; color: var(--accent); }
+.chat-project-card__status li[data-state="running"]::before { content: "↻ "; }
+.chat-project-card__work { display: grid; gap: 6px; }
+.chat-project-card__line { display: grid; gap: 2px; padding: 6px 8px; border: 1px solid var(--line); border-radius: var(--radius-sm, 6px); }
+.chat-project-card__line small { color: var(--muted); font-size: var(--text-caption); }
+.chat-project-card__line[data-reconcile="conflict"] { border-left: 3px solid var(--accent); }
+.chat-project-card__conflict { color: var(--text); }
