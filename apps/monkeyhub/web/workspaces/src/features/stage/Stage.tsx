@@ -40,6 +40,7 @@ import { ParameterLocksPanel, type ParameterLockControls } from "./ParameterLock
 import { ElevationPanel, type ElevationControls } from "./ElevationPanel";
 import { ModelToolButton } from "./ModelToolButton";
 import { preparePushPull } from "./pushPull";
+import "./stageNotices.css";
 import type { NormalDragController } from "../../workspaces/monkeyarch/viewer/normalDrag";
 import { constrainedTranslation, type TranslationConstraint } from "../../workspaces/monkeyarch/viewer/translationGizmo";
 import { draftTransformCenter, previewDirectModel, specFromDrawnShape } from "./modelDraft";
@@ -116,6 +117,7 @@ export function Stage({
   active = true,
   onOpenBoard,
   onChatRequest,
+  onOpenTree,
   viewportRef,
   message,
   status,
@@ -179,6 +181,8 @@ export function Stage({
   changingBase,
   baseError,
   baseNotice = null,
+  baseRecord = null,
+  baseChoice = null,
   baseNotSaved = false,
   baseActionBusy,
   onContinue,
@@ -194,6 +198,13 @@ export function Stage({
   onEvidence,
 }: {
   viewportRef: RefObject<ViewportController | null>;
+  /**
+   * Opens the project's Design Tree. When there is one, it is the only entry to the
+   * design history (#302): the footer's Stage count, viewing label and "new" badge,
+   * and the Versions panel's Stages, lines, explorations and candidates give way to
+   * one link to it. Versions keeps the working draft, recovery points and files.
+   */
+  onOpenTree?: () => void;
   message: string;
   status: ViewportStatus;
   artifactError: StudioApiError | null;
@@ -264,6 +275,19 @@ export function Stage({
   baseError: StudioApiError | null;
   /** The shell's answer to the last refused base action, shown in the editing-base row. */
   baseNotice?: string | null;
+  /**
+   * Record edits and continue (#302), beside a base switch refused only because
+   * the model's edits are not recorded yet: it records them and asks again.
+   */
+  baseRecord?: { busy: boolean; onRecord(): void } | null;
+  /**
+   * A Board note made on another model version, asking before the base moves
+   * (#302): only look at that version (the default), or continue from it and
+   * submit the note. While unrecorded edits hold the note back, `notice` says so
+   * and `onRecord` records them, then continues.
+   */
+  baseChoice?: { model: string | null; notice?: string | null; busy: boolean; recording?: boolean;
+    onView(): void; onContinue(): void; onRecord?(): void } | null;
   /** The chosen editing base applies to this tab only: the browser could not save it. */
   baseNotSaved?: boolean;
   baseActionBusy: boolean;
@@ -1171,6 +1195,8 @@ export function Stage({
   // where it was asked, beside the Continue that usually resolves it.
   const baseNotices = <>
     {baseNotice && <p className="editing-base__notice" role="alert">{baseNotice}</p>}
+    {baseRecord && <button type="button" className="btn btn--small btn--primary" disabled={baseRecord.busy}
+      onClick={baseRecord.onRecord}>{t(baseRecord.busy ? "stage.record.busy" : "stage.record.continue")}</button>}
     {baseNotSaved && <p className="editing-base__notice" role="status">{t("stage.base.notSaved")}</p>}
   </>;
   const editingStatus = editingBaseRunId !== null ? (
@@ -1198,7 +1224,7 @@ export function Stage({
         {baseNotices}
         {baseError && <ErrorPanel error={baseError} what="GET /api/state" />}
       </div>
-    ) : baseNotice || baseNotSaved ? <div className="editing-base">{baseNotices}</div> : null;
+    ) : baseNotice || baseRecord || baseNotSaved ? <div className="editing-base">{baseNotices}</div> : null;
   const pickedStatus = picked && (
     <div className="picked" title={developerMode ? t("stage.picked.title", {
       status: picked.status, sourceState: picked.sourceState,
@@ -2040,13 +2066,30 @@ export function Stage({
       <div ref={footerElement} className="stage__foot">
         <div className="stage__versions">
           <div className="stage__context">
+            {baseChoice && <div className="base-choice" role="group" aria-label={t("board.feedback.choice")}>
+              {baseChoice.model !== null && <p className="base-choice__text">{t("board.feedback.otherBase", { model: baseChoice.model })}</p>}
+              {baseChoice.notice && <p className="base-choice__text" role="alert">{baseChoice.notice}</p>}
+              <div className="base-choice__actions">
+                {baseChoice.onRecord && <button type="button" className="btn btn--small btn--primary" disabled={baseChoice.busy}
+                  onClick={baseChoice.onRecord}>{t(baseChoice.recording ? "stage.record.busy" : "stage.record.continue")}</button>}
+                {/* Only looking is the default: it is first, primary and focused. */}
+                <button type="button" className={`btn btn--small${baseChoice.onRecord ? "" : " btn--primary"}`} autoFocus disabled={baseChoice.busy}
+                  onClick={baseChoice.onView}>{t("board.feedback.viewOnly")}</button>
+                {!baseChoice.onRecord && <button type="button" className="btn btn--small" disabled={baseChoice.busy}
+                  onClick={baseChoice.onContinue}>{t("stage.base.continue")}</button>}
+              </div>
+            </div>}
             <div className="stage__context-summary">
               <button type="button" className="btn stage__versions-toggle" aria-expanded={versionsOpen} aria-controls="stage-versions-panel"
                 onClick={() => { if (!versionsOpen) onVersionsOpen?.(); setVersionsOpen((open) => !open); setAnnotationToolsOpen(false); setViewToolsOpen(false); setParameterLocksOpen(false); }}>
-                {t("stage.versions.open")} <span className="quiet">{versionCount}</span>
-                {!documentOpen && hasModel && contextLabel && <span className="stage__versions-current"><span className="quiet">{t("stage.context.viewing")} </span>{contextLabel}</span>}
-                {hasNewVersions && <span className="stage__versions-new" role="status">{t("stage.versions.new")}</span>}
+                {t("stage.versions.open")}
+                {!onOpenTree && <>
+                  <span className="quiet">{versionCount}</span>
+                  {!documentOpen && hasModel && contextLabel && <span className="stage__versions-current"><span className="quiet">{t("stage.context.viewing")} </span>{contextLabel}</span>}
+                  {hasNewVersions && <span className="stage__versions-new" role="status">{t("stage.versions.new")}</span>}
+                </>}
               </button>
+              {onOpenTree && <button type="button" className="btn btn--small stage__tree-link" onClick={onOpenTree}>{t("stage.tree.open")}</button>}
               {!documentOpen && pickedStatus}
               {!onReturnToBoard && picked && onOpenBoard && <button type="button" className="btn btn--small"
                 onClick={onOpenBoard}>{t("workspace.monkeyboard")}</button>}
@@ -2059,7 +2102,7 @@ export function Stage({
             </div>
             <div className="stage__versions-session">{sessionStatus}</div>
             <VersionsStrip
-              design={designHistory}
+              design={designHistory} onOpenTree={onOpenTree}
               workingCopies={workingCopies} onOpenWorkingOption={onOpenWorkingOption}
               groups={versions} loadingSha={loadingSha} loadedShas={loadedShas} loadedRunId={loadedRunId}
               onOpen={onOpenVersion} onOpenRun={onOpenRun} onCompare={onCompareVersion}

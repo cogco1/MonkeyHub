@@ -176,7 +176,7 @@ try {
         await page.locator(".refusal__card").waitFor({ state: "hidden" });
         await page.getByRole("button", { name: "MonkeyDiagram · Drawings", exact: true }).click();
         await page.locator(".document-header").waitFor();
-        await page.getByRole("button", { name: "Continue from this model", exact: true }).waitFor({ state: "hidden" });
+        await page.getByRole("button", { name: "Continue from here", exact: true }).waitFor({ state: "hidden" });
         assert.equal(await page.locator(".composer input").inputValue(), handoff.utterance);
         assert.equal(await page.locator(".card--refusal").count(), 1, "Recovery must not duplicate the refusal");
         assert.deepEqual(intents, []); assert.deepEqual(mutations, []);

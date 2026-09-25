@@ -421,7 +421,7 @@ if (autosaveOnly) {
     await route.continue();
   };
   await page.route('**/api/working-draft/local',delayClear);
-  await button('Sync').evaluate(node=>{node.click();node.click();});
+  await button('Record').evaluate(node=>{node.click();node.click();});
   const completed=await wait(s=>!s.syncBusy&&!s.dirty&&s.candidates.length===1&&
     s.loaded===s.candidates[0]&&s.base===s.candidates[0],'quiet Sync did not adopt the completed candidate',120000);
   assert.equal(candidateCalls().length,1,'repeated Sync clicks must reuse one candidate request');
@@ -432,6 +432,12 @@ if (autosaveOnly) {
   assert.ok((await exported(current)).has('obj-'+object),'retained candidate must contain the restored geometry');
 
   await page.locator('.stage__versions-toggle').click();
+  // #302: this runtime has a Design Tree, so Versions keeps the working draft, recovery and files
+  // while its design history is one link to the tree, like the footer's.
+  await page.locator('.versions [data-design-tree-link]').waitFor();
+  assert.equal(await page.locator('.versions [data-design-stage], .versions [data-preview-candidate]').count(),0,'no second list of Stages or candidates beside the Design Tree');
+  assert.equal(await page.locator('.stage__versions-current, .stage__versions-new').count(),0,'the footer leaves position and new options to the Stage chip');
+  assert.equal(await page.getByRole('button',{name:'Open in Design tree',exact:true}).count(),2,'the footer and Versions each offer the one link');
   const recovery=page.locator('.versions details').filter({has:page.locator('summary').filter({hasText:'自动恢复点'})});
   assert.equal(await recovery.evaluate(node=>node.open),false,'automatic recovery starts collapsed');
   assert.equal(await page.locator('[data-working-draft]:visible').count(),1,'only current is expanded before saving a milestone');
@@ -452,7 +458,7 @@ if (autosaveOnly) {
   await page.reload();
   await wait(s=>s.status==='ready'&&s.loaded===current&&!s.busy,'source for incompatible recovery',30000);
   await page.locator('.stage__versions-toggle').click();
-  await page.getByRole('alert').filter({hasText:'草稿恢复失败'}).waitFor();
+  await page.getByRole('alert').filter({hasText:'The draft could not be restored; its saved record is kept'}).waitFor();
   await delay(700);
   assert.deepEqual((await readDraft()).localDraft?.commands,invalid.commands,'failed replay must not clear retained recovery');
   assert.equal(draftWrites.filter(row=>row.body?.draft===null).length,clearsBeforeInvalid,'failed replay must not even submit an automatic clear');
@@ -497,7 +503,7 @@ if (autosaveOnly) {
     const response=await route.fetch();assert.equal(response.status(),201);firstReady();await releasedFirst;await route.fulfill({response});
   },{times:1});
   const beforeSyncRequests=requests.length;
-  const syncStart=Date.now();await button('Sync').click();
+  const syncStart=Date.now();await button('Record').click();
   if(authoredInput){
     await within(firstHeld,15000,'first authored-only proposal was not held');const whileHeld=sent.length;
     assert.equal((await snap()).syncBusy,true);assert.equal((await snap()).busy,false);
@@ -636,7 +642,7 @@ if (autosaveOnly) {
   console.log('S4 · frozen Sync saves the first two scales while later local Y scaling survives');
   let release,ready;const released=new Promise(resolve=>release=resolve),held=new Promise(resolve=>ready=resolve);
   await page.route('**/api/proposals/transform',async route=>{const response=await route.fetch();assert.equal(response.status(),201);ready();await released;await route.fulfill({response});},{times:1});
-  await button('Sync').click();await within(held,15000,'Scale Sync transform held');const heldWrites=sent.length;
+  await button('Record').click();await within(held,15000,'Scale Sync transform held');const heldWrites=sent.length;
   assert.equal((await snap()).syncBusy,true);assert.equal((await snap()).busy,false);
   const late=await arm(secondResult,'y'),lateResult=scaled(secondResult,late.pivot,[1,1.2,1]);
   const latePoint=await aim(target(late,1.2));await page.mouse.click(latePoint.x,latePoint.y);
@@ -740,7 +746,7 @@ if (autosaveOnly) {
   console.log('R4 · frozen Sync saves both rotations once while a later X rotation remains local');
   let release,ready;const released=new Promise(resolve=>release=resolve),held=new Promise(resolve=>ready=resolve);
   await page.route('**/api/proposals/transform',async route=>{const response=await route.fetch();assert.equal(response.status(),201);ready();await released;await route.fulfill({response});},{times:1});
-  await button('Sync').click();await within(held,15000,'Rotate Sync transform was not held');
+  await button('Record').click();await within(held,15000,'Rotate Sync transform was not held');
   const heldWrites=sent.length;assert.equal((await snap()).syncBusy,true);assert.equal((await snap()).busy,false);
   const late=await arm(secondResult,'x'),lateAngle=19,lateResult=rotated(secondResult,late.pivot,late.normal,lateAngle);
   const latePoint=await aim(rotated([late.reference],late.pivot,late.normal,lateAngle)[0]);await page.mouse.click(latePoint.x,latePoint.y);
@@ -874,7 +880,7 @@ if (autosaveOnly) {
   console.log('M4 · Sync freezes both objects; a later pointer Move survives while one real candidate is produced');
   const frozen=await snap();let release,ready;const released=new Promise(resolve=>release=resolve),held=new Promise(resolve=>ready=resolve);
   await page.route('**/api/proposals/sketch',async route=>{const response=await route.fetch();assert.equal(response.status(),201);ready();await released;await route.fulfill({response});},{times:1});
-  await button('Sync').click();await within(held,15000,'Move/Copy Sync proposal was not held');
+  await button('Record').click();await within(held,15000,'Move/Copy Sync proposal was not held');
   const heldWrites=sent.length;assert.equal((await snap()).syncBusy,true);assert.equal((await snap()).busy,false);
   const late=await arm(block,'move',false,false),lateDelta=[0,-2,1];const latePoint=await movePointer(late.anchor,lateDelta);await page.mouse.click(latePoint.x,latePoint.y);
   state=await wait(s=>s.index===late.before.index+1&&!s.gesture.move,'Move during Sync did not finish');
@@ -955,8 +961,8 @@ assert.equal(sent.length,beforeWrites);assert.deepEqual(await runIds(),originalR
 console.log('4 · one delayed Sync captures its snapshot while later local edits remain usable');
 let release,heldResolve,heldAt;const released=new Promise(resolve=>release=resolve),held=new Promise(resolve=>heldResolve=resolve);
 const hold=async route=>{const response=await route.fetch();assert.equal(response.status(),201);heldAt=performance.now();heldResolve();await released;await route.fulfill({response});};
-await page.route('**/api/proposals/sketch',hold,{times:1});const syncStart=performance.now(),heldSyncWall=Date.now();await button('Sync').click();await within(held,15000,'sketch response was not held');
-state=await snap();assert.equal(state.syncBusy,true);assert.equal(state.busy,false);assert.equal(await button('Sync').isDisabled(),true);
+await page.route('**/api/proposals/sketch',hold,{times:1});const syncStart=performance.now(),heldSyncWall=Date.now();await button('Record').click();await within(held,15000,'sketch response was not held');
+state=await snap();assert.equal(state.syncBusy,true);assert.equal(state.busy,false);assert.equal(await button('Record').isDisabled(),true);
 const later=await rectangle(1.1,.8);await pick(later);await page.keyboard.press('Delete');await wait(s=>!s.view.drafts.some(o=>o.id===later),'delete during Sync');
 await page.keyboard.press('Control+z');await wait(s=>s.view.drafts.some(o=>o.id===later),'undo during Sync');
 const artificialHoldMs=performance.now()-heldAt;release();await wait(s=>!s.syncBusy&&s.candidates.length===1,'first Sync did not finish',120000);
@@ -967,7 +973,7 @@ assert.equal(candidateCalls().length,1);const saved=await exported(state.candida
 assert.ok(saved.has('obj-'+block));assert.ok(saved.has('obj-'+curve));assert.ok(!saved.has('obj-'+later),'late object leaked into frozen Sync');
 assert.equal(saved.get('obj-'+block).z,2);
 console.log('5 · without further input Sync shows its completed candidate automatically');
-const quietSyncStart=performance.now(),quietSyncWall=Date.now();await button('Sync').click();await wait(s=>!s.syncBusy&&!s.dirty&&s.candidates.length===2&&s.loaded===s.candidates[1]&&s.base===s.candidates[1],
+const quietSyncStart=performance.now(),quietSyncWall=Date.now();await button('Record').click();await wait(s=>!s.syncBusy&&!s.dirty&&s.candidates.length===2&&s.loaded===s.candidates[1]&&s.base===s.candidates[1],
   'second Sync did not show the completed model',120000);
 console.log('TIMING quiet Sync click → visible candidate',Math.round(performance.now()-quietSyncStart),'ms (no artificial hold)');
 await stages(quietSyncWall,'quiet auto display');
@@ -984,11 +990,11 @@ await page.route('**/api/proposals/sketch',async route=>{
   failureReady();await failureReleased;
   await route.fulfill({status:422,contentType:'application/json',body:JSON.stringify({code:'INVALID_SKETCH',detail:'Fixture rejected the captured drawing.'})});
 },{times:1});
-await button('Sync').click();await within(failureHeld,15000,'failure was not held');await page.keyboard.press('Control+z');
+await button('Record').click();await within(failureHeld,15000,'failure was not held');await page.keyboard.press('Control+z');
 await wait(s=>!s.view.drafts.some(o=>o.id===failedObject),'Undo while rejected request is held');releaseFailure();
 await wait(s=>!s.syncBusy&&Boolean(s.error),'422 did not release Sync');
 assert.equal(candidateCalls().length,2,'a refused snapshot cannot start a candidate');
-const corrected=await rectangle(1.2,.7);await button('Sync').click();
+const corrected=await rectangle(1.2,.7);await button('Record').click();
 await wait(s=>!s.syncBusy&&s.candidates.length===3&&s.loaded===s.candidates[2]&&s.base===s.candidates[2],'corrected Sync did not finish',120000);
 state=await snap();const correctedExport=await exported(state.candidates[2]);
 assert.ok(correctedExport.has('obj-'+corrected));assert.ok(!correctedExport.has('obj-'+failedObject));
@@ -1015,7 +1021,7 @@ await page.route('**/api/artifacts/*/bytes',async route=>{
   const response=await route.fetch();assert.equal(response.status(),200);downloadReady();await downloadReleased;
   await route.fulfill({response});downloadDone();
 },{times:1});
-await button('Sync').click();await within(downloadHeld,120000,'background download did not start');
+await button('Record').click();await within(downloadHeld,120000,'background download did not start');
 state=await snap();assert.equal(state.loaded,beforeDownload.loaded);assert.equal(state.status,'ready');assert.equal(state.busy,false);
 await page.evaluate(()=>document.activeElement?.blur());const bodyKeyEpoch=(await snap()).interactionEpoch;await page.keyboard.press('l');
 assert.equal((await snap()).interactionEpoch,bodyKeyEpoch+1,'global shortcut after Sync lost focus must invalidate background adoption');
@@ -1030,9 +1036,9 @@ let failedReads=0;
 await page.route('**/api/jobs/*',async route=>{
   failedReads++;await route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({code:'TEMPORARY_READ_FAILURE',detail:'Fixture job status is temporarily unavailable.'})});
 });
-await button('Sync').click();await wait(s=>!s.syncBusy&&Boolean(s.error),'job-read failure did not release Sync',60000);
+await button('Record').click();await wait(s=>!s.syncBusy&&Boolean(s.error),'job-read failure did not release Sync',60000);
 assert.ok(failedReads>=3);assert.equal(candidateCalls().length,5);const retryCalls=sent.length;
-await page.unroute('**/api/jobs/*');await button('Sync').click();await wait(s=>!s.syncBusy&&!s.error,'job reconnect did not settle',60000);
+await page.unroute('**/api/jobs/*');await button('Record').click();await wait(s=>!s.syncBusy&&!s.error,'job reconnect did not settle',60000);
 assert.equal(candidateCalls().length,5);assert.equal(sent.length,retryCalls,'job reconnect wrote another proposal/candidate');
 console.log('TIMING local actions (automation observation, 100 ms polling maximum)',JSON.stringify(localTimings));
 const qa=path.join(root,'qa');await mkdir(qa,{recursive:true});await deselect();await button('Line').hover();await delay(400);

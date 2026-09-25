@@ -610,6 +610,19 @@ export function DocumentCanvas({ projectId, runId, controller, busy, onSubmit, m
   const saveStudyIfDirty = async () => { if (study.ready && study.dirty) await study.save(); };
   const latestDraft = useRef(draft);
   latestDraft.current = draft;
+  // Every mark saves itself; a comment after its typing pause. Leaving this
+  // page, hiding the window or closing the editor saves a pending comment now.
+  const flushDraft = draft.flush;
+  useEffect(() => {
+    const hidden = () => { if (window.document.hidden) flushDraft(); };
+    window.document.addEventListener("visibilitychange", hidden);
+    window.addEventListener("pagehide", flushDraft);
+    return () => {
+      window.document.removeEventListener("visibilitychange", hidden);
+      window.removeEventListener("pagehide", flushDraft);
+      flushDraft();
+    };
+  }, [flushDraft]);
   useEffect(() => {
     onBeforeLeave?.(async () => {
       if (study.busy || (studyMode && uploading)) throw new Error(language === "en" ? "Wait for the Study operation before leaving." : "请等待本次研究操作完成后再离开。");
@@ -928,9 +941,8 @@ export function DocumentCanvas({ projectId, runId, controller, busy, onSubmit, m
         </section>}
         <label htmlFor="document-comment">{t("document.comment")}</label>
         <textarea id="document-comment" value={review?.text ?? draft.comment} readOnly={draft.readOnly} disabled={!draft.ready || sending}
-          onChange={(event) => draft.setComment(event.target.value)} placeholder={t("document.commentHint")} />
-        <div className="document-note-actions"><button type="button" disabled={!draft.ready || draft.readOnly || sending || draft.saving}
-          onClick={() => void draft.save().then(() => { setError(null); setFeedback(t("document.saved")); }).catch((cause: unknown) => setError(asStudioApiError(cause)))}>{t("document.save")}</button>
+          onChange={(event) => draft.setComment(event.target.value)} onBlur={draft.flush} placeholder={t("document.commentHint")} />
+        <div className="document-note-actions">
           <button type="button" className="btn btn--accent" disabled={!documentVisualInputAvailable || !draft.ready || draft.readOnly || !draft.comment.trim() || !file || busy || sending || !modelMatches}
             onClick={() => void submit()}>{t(sending ? "document.submitting" : "document.submit")}</button></div>
         {!documentVisualInputAvailable && <p className="document-visual-unavailable" role="status">{t("document.visualUnavailable")}</p>}

@@ -64,6 +64,8 @@ export interface DesignTreeFixtureState {
   branchHead: string;
   head: string;
   revision: number;
+  /** Modeling's edits the working draft holds and no candidate has recorded yet; they hold Continue back. */
+  localDraft: WorkingDraftDto["localDraft"];
 }
 
 export class FixtureRefusal extends Error {
@@ -126,6 +128,7 @@ export function riversideLibraryFacts(): DesignTreeFixtureState {
     branchHead: S2,
     head: "run-s2-layout",
     revision: 1,
+    localDraft: null,
   };
 }
 
@@ -211,7 +214,7 @@ export function createDesignTreeFixture(state: DesignTreeFixtureState = riversid
     workingDraft(): WorkingDraftDto {
       const current = head();
       return { projectId: FIXTURE_PROJECT, revisionSha256: revision(), current: { runId: state.head, sourceStageRef: current.sourceStageRef ?? null,
-        branchId: "main", updatedAt: "2026-09-25T22:00:00Z", label: null }, recovery: [], saved: [], managedRunIds: [], localDraft: null };
+        branchId: "main", updatedAt: "2026-09-25T22:00:00Z", label: null }, recovery: [], saved: [], managedRunIds: [], localDraft: state.localDraft };
     },
     /** PUT /api/working-draft: the Working Head moves to an exact finished run. */
     selectWorkingDraft(body: { projectId: string; runId: string | null; baseRevisionSha256: string | null; branchId?: string | null }): WorkingDraftDto {

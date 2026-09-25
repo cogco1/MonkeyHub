@@ -298,7 +298,7 @@ print(json.dumps({"unit": str(model.Settings.ModelUnitSystem), "objects": object
   await tracing().getByText("Viewing only.", { exact: false }).waitFor();
   assert.equal(await generate().isEnabled(), false, "Tracing does not build on a candidate that is only being viewed");
   // The recovery step is offered where the refusal is read, and the page stays open.
-  await tracing().getByRole("button", { name: "Continue from this version", exact: true }).click();
+  await tracing().getByRole("button", { name: "Continue from here", exact: true }).click();
   await until(() => generate().isEnabled(), Boolean, "Tracing stayed blocked after continuing from the candidate");
   await editor();
   const pageIdentity = await page.locator(".document-viewport").getAttribute("aria-label");
@@ -315,7 +315,8 @@ print(json.dumps({"unit": str(model.Settings.ModelUnitSystem), "objects": object
   assert.equal(await strokePath(), localPath, "Unsaved vertex correction remains visible after save refusal");
   assert.equal(await page.locator(".document-viewport").getAttribute("aria-label"), pageIdentity);
   faults.save = false;
-  await page.getByRole("button", { name: "Save page", exact: true }).click();
+  // GH-302: a refused autosave keeps the edit and waits for Retry, never retrying in a loop.
+  await page.locator(".document-error").getByRole("button", { name: "Retry saving", exact: true }).click();
   const secondPage = await saved();
   assert.notEqual(secondPage.revisionSha256, calibrated.revisionSha256);
   assert.deepEqual(secondPage.tracingCalibration, calibrated.tracingCalibration);
@@ -360,7 +361,7 @@ print(json.dumps({"unit": str(model.Settings.ModelUnitSystem), "objects": object
   // the view-only reason until the architect continues from it explicitly.
   await tracing().getByText("Viewing only.", { exact: false }).waitFor();
   assert.equal(await generate().isEnabled(), false, "Tracing does not build on the regenerated candidate before Continue");
-  await tracing().getByRole("button", { name: "Continue from this version", exact: true }).click();
+  await tracing().getByRole("button", { name: "Continue from here", exact: true }).click();
   await until(() => generate().isEnabled(), Boolean, "The second candidate left the page busy");
   await tracing().getByRole("button", { name: "View model and progress", exact: true }).click();
   await page.locator(".stage-model").waitFor({ state: "visible" });

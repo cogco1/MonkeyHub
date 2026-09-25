@@ -47,6 +47,8 @@
 .drawing-actions { flex: none; border-top: 1px solid var(--line); padding: 12px 14px; }
 .drawing-actions > .btn--accent { width: 100%; background: var(--accent-soft); border-color: var(--accent); }
 .drawing-actions > .drawing-download { width: 100%; margin-top: 8px; }
+.drawing-save-state { min-height: 1.4em; margin: 0 0 4px; color: var(--muted); font-size: var(--text-caption); }
+.drawing-controls input:invalid { border-color: var(--violated); }
 @container drawing (max-width: 900px) {
   .drawing-body { flex-direction: column; overflow: auto; }
   .drawing-controls { flex: none; overflow: visible; border-left: 0; border-top: 1px solid var(--line); }

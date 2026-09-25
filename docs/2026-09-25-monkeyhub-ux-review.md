@@ -226,3 +226,20 @@ Most of these touch `ChatShell.tsx`, `ChatShell.css` or the catalogs. The order 
 - **Measurements.** Load times (PP-1, PP-4) and colour contrast were not measured.
 - **Publish at the default panel width** was not rechecked after the audit.
 - **Scope of the evidence.** All screenshots come from fixtures. No real Hub, provider, packaged build or real project was used.
+
+## 7. Follow-up status: #302 `view-not-base` (2026-09-25)
+
+What the lane landed, by finding:
+
+- **SS-7, SS-8, DC-6.** A Stage row opens that Stage read-only; Continue from here moves the base. A Board note on another model version asks first, with View only as the default. The catalogs use one verb per act: 查看 · 从这里继续 · 接受为下一 Stage.
+- **SS-5 (name), SS-6.** Sync reads 记录 / Record. Each "sync first" refusal now offers 记录修改并继续 / Record edits and continue, which records the edits and retries the refused action. The restart prompt stays with #234.
+- **FN-1, DC-2, R5.** A result no longer switches the surface, opens the panel or replaces the model. Each request gets one Study card whose View opens the Design Tree. The Stage chip shows "N 个方案就绪 · 查看".
+- **R4 (work rows only), R13 (catalog names).** The project card's work lines are now one Open in Design tree link. The catalogs call the Board 画板.
+- **R1, R3 (with a Design Tree), FN-3.** Where the runtime has a Design Tree, the footer's Stage count, viewing label and "new" badge become one Open in Design tree link. So do the Versions panel's Stages, lines, explorations and candidates. Versions keeps the working draft, recovery points, the first-Stage button and the files.
+
+Still open:
+
+- **R2.** The editing-base row stays: it carries Continue from here and Record edits and continue for a viewed model. The chip's viewing state offers only Back to Current.
+- **Combine.** With a Design Tree, manual Combine has no entry until the tree offers it. The API and the Agent's combine step are unchanged.
+- **R3 without a Design Tree.** Runtimes without `working-source` keep the old design section.
+- **Board.tsx and ModelPreview.tsx.** Their hard-coded 画布, 图墙 and 同步 copy belongs to GH-66.

@@ -392,11 +392,11 @@ try {
       });
       assert.ok(layout.left >= 0 && layout.right <= width + 1 && layout.bottom <= 900 && !layout.overflow && !layout.overlap,
         `Source context must remain visible without covering modeling controls: ${JSON.stringify(layout)}`);
-      assert.equal(await editingBase().getByRole("button", { name: "Continue from this version", exact: true }).isVisible(), true);
+      assert.equal(await editingBase().getByRole("button", { name: "Continue from here", exact: true }).isVisible(), true);
       await page.screenshot({ path: path.join(screenshots, `context-${width}.png`) });
     }
     await page.setViewportSize({ width: 1440, height: 900 });
-    await editingBase().getByRole("button", { name: "Continue from this version", exact: true }).click();
+    await editingBase().getByRole("button", { name: "Continue from here", exact: true }).click();
     await until(() => editingBase().getAttribute("data-source-match"), (value) => value === "same", "Continue B did not bind B");
     await ready(optionB); assert.equal(group.selectedOptionId, "B"); assert.equal(selections.length, 1);
   });
@@ -568,7 +568,7 @@ try {
     assert.ok(await inactiveNotes.count() > 0, "The earlier proposals must be in the conversation");
     assert.deepEqual([...new Set(await inactiveNotes.evaluateAll((nodes) => nodes.map((node) => node.dataset.inactiveReason)))], ["viewing"]);
     assert.equal(await inactiveNotes.first().innerText(), "This proposal applies to the editing base, not to the version on screen. " +
-      "Return to the editing base to apply it, or continue from this version and propose again.");
+      "Return to the editing base to apply it, or continue from here and propose again.");
     assert.equal(await page.locator(".card--proposal").first().getByRole("button", { name: "Apply", exact: true }).isDisabled(), true,
       "Viewing C keeps B's proposals disabled");
     await until(() => frameReads.at(-1), (run) => run === sourceC.runId,
@@ -604,7 +604,7 @@ try {
     // Keep the document question open, then explicitly change just the asset
     // SHA within the original run/state. The old B token must not migrate to A.
     await view(optionA);
-    await editingBase().getByRole("button", { name: "Continue from this version", exact: true }).click();
+    await editingBase().getByRole("button", { name: "Continue from here", exact: true }).click();
     await until(() => editingBase().getAttribute("data-source-match"), (value) => value === "same", "Continue A did not finish");
     await ready(optionA);
     assert.equal(group.selectedOptionId, "A"); assert.equal(selections.length, 2);

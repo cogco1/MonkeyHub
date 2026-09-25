@@ -1,5 +1,7 @@
 import { useState } from "react";
+import { asStudioApiError } from "../../api/client";
 import type { ParameterDto } from "../../api/generated";
+import { useT } from "../../i18n/useT";
 import { usePreferences } from "../settings/preferences";
 import "./ModelEditPanel.css";
 import "./ParameterLocksPanel.css";
@@ -11,6 +13,8 @@ export interface ParameterLockControls {
   disabledReason: string | null;
   error: string | null;
   onApply(keys: string[], action: "lock" | "unlock"): void;
+  /** Record the model's unrecorded edits, the one reason above the panel can clear itself (#302). */
+  record?: (() => Promise<void>) | null;
 }
 
 /** Shows the saved parameter projection; only the server changes lock state. */
@@ -19,8 +23,18 @@ export function ParameterLocksPanel({ controls, onClose }: {
   onClose(): void;
 }) {
   const { language } = usePreferences();
+  const t = useT();
   const zh = language === "zh-CN";
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
+  const [recording, setRecording] = useState(false);
+  const [recordError, setRecordError] = useState<string | null>(null);
+  const record = async () => {
+    if (!controls.record || recording) return;
+    setRecording(true); setRecordError(null);
+    try { await controls.record(); }
+    catch (cause) { setRecordError(t("stage.record.failed", { reason: asStudioApiError(cause).detail })); }
+    finally { setRecording(false); }
+  };
   const keysFor = (action: "lock" | "unlock") => controls.parameters
     .filter((parameter) => selected.has(parameter.key) && (action === "lock" ? !parameter.lockAuthority : !!parameter.lockAuthority))
     .map((parameter) => parameter.key);
@@ -48,6 +62,10 @@ export function ParameterLocksPanel({ controls, onClose }: {
         </label>)}
       </div>}
     {controls.disabledReason && <p role="status">{controls.disabledReason}</p>}
+    {/* Once recorded, the locks are free to apply: the selection above is kept for them. */}
+    {controls.disabledReason && controls.record && <button type="button" className="btn btn--small" disabled={recording}
+      onClick={() => void record()}>{t(recording ? "stage.record.busy" : "stage.record.continue")}</button>}
+    {recordError && <p className="model-edit-panel__error" role="alert">{recordError}</p>}
     {controls.busy && <p role="status">{zh ? "正在保存…" : "Saving…"}</p>}
     {controls.error && <p className="model-edit-panel__error" role="alert">{controls.error}</p>}
     <div className="parameter-locks__actions">

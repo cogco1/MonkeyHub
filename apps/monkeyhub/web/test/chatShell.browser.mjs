@@ -121,6 +121,8 @@ let runtimeReadGate = null;
 let settings = { projectDir: "D:\\fixture\\A", referenceRun: null, cadExport: "off", studioPort: 18789, monitorPort: server.address().port };
 // The one saved preferences document: appearance and the new-conversation defaults.
 let preferences = { language: "en", theme: "light", fontScale: 1 };
+// GH-302: settings save themselves; a test holds one write to see what waits for it.
+let settingsWriteGate = null;
 const projects = [
   { projectId: "A", projectDir: "D:\\fixture\\A", name: "Project A", chatCount: 0, version: 3, stage: "S2" },
   { projectId: "B", projectDir: "D:\\fixture\\B", name: "Project B", chatCount: 0, version: 0, stage: null },
@@ -229,7 +231,10 @@ await page.route((url) => url.pathname.startsWith("/api/"), async (route) => {
     return json({ paths: ["D:\\fixture\\usage.jsonl"] });
   }
   if (url.pathname === "/api/settings/apps") { if (method === "PUT") settings = data(); return json(settings); }
-  if (url.pathname === "/api/settings/user") { if (method === "PUT") preferences = data(); return json(preferences); }
+  if (url.pathname === "/api/settings/user") {
+    if (method === "PUT") { const body = data(); if (settingsWriteGate) await settingsWriteGate; preferences = body; }
+    return json(preferences);
+  }
   if (url.pathname === "/api/apps") return json(url.searchParams.has("projectDir") ? appsFor(url.searchParams.get("projectDir")) : apps);
   if (url.pathname === "/api/runtime") { runtimeReads++; if (runtimeReadGate) await runtimeReadGate; return json(runtimeSnapshot()); }
   if (url.pathname === "/api/runtime/projects/open") {
@@ -428,6 +433,8 @@ await page.route((url) => url.pathname.startsWith("/api/"), async (route) => {
   errors.push(`Unexpected request: ${method} ${url.pathname}`); return json({ detail: "Unexpected fixture request" }, 404);
 });
 const railWidth = () => page.evaluate(() => document.querySelector(".chat-rail").getBoundingClientRect().width);
+// GH-302: Hub settings have no Save button; each change saves itself and the status line says Saved.
+const settingsSaved = () => page.waitForFunction(() => document.querySelector("#settings-save-state")?.dataset.state === "saved");
 const boxOf = (selector) => page.evaluate((value) => {
   const node = document.querySelector(value);
   return node ? node.getBoundingClientRect().width : 0;
@@ -435,12 +442,22 @@ const boxOf = (selector) => page.evaluate((value) => {
 // #285: a turn's calls fold into one process row that states how many there were.
 const activityRows = (expected) => page.waitForFunction((count) => [...document.querySelectorAll(".chat-process__row")]
   .some((row) => row.textContent.includes(`${count} steps`)), expected);
-const resultButton = (candidate) => page.locator(`.chat-activity__result button[title="${candidate}"]`);
 const visibleWorkspace = () => page.locator('.chat-project-workspace:not([hidden])');
 const waitWorkspace = async (kind = "arch") => {
   await visibleWorkspace().locator(`[data-project-surface="${kind}"]:not([hidden])`).waitFor();
   await visibleWorkspace().locator(kind === "board" ? ".monkeyboard-canvas canvas" : kind === "drawing" ? ".drawing-workspace" : kind === "render" ? ".render-workspace" : ".stage canvas").first().waitFor();
   assert.equal(await page.locator(".chat-project-workspace iframe").count(), 0, "project workspaces mount directly in the Hub");
+};
+/** The architect opens a result read-only from Modeling's Versions: results never open themselves (#302). */
+const viewCandidate = async (runId) => {
+  await page.getByRole("button", { name: "Modeling", exact: true }).click();
+  await waitWorkspace();
+  await page.waitForFunction(() => !document.querySelector('.chat-project-workspace:not([hidden]) .boot'));
+  const toggle = visibleWorkspace().locator(".stage__versions-toggle");
+  if (await toggle.getAttribute("aria-expanded") !== "true") await toggle.click();
+  await visibleWorkspace().locator(".vcard__export").filter({ hasText: `${runId}.3dm` }).first().click();
+  await toggle.click();
+  await waitCandidate(runId);
 };
 const waitCandidate = async (runId) => {
   await waitWorkspace();
@@ -487,7 +504,7 @@ const waitMonitor = async () => {
 // GH-234: model edits the project's working draft already holds come back after
 // an update restart, so they never block "Restart to update"; edits whose
 // autosave is still being written, or was refused, do. Either way chat still
-// asks for a Sync before it starts from project state.
+// asks for them to be recorded (#302: Record, formerly Sync) before it starts from project state.
 const autosavedModelRestart = async () => {
   // Explicit fixture reset: no conversation is running, and the reload below
   // empties every composer, so only the model edits can hold the restart.
@@ -527,17 +544,23 @@ const autosavedModelRestart = async () => {
   await page.getByRole("button", { name: "Modeling", exact: true }).click();
   await waitWorkspace();
   const status = visibleWorkspace().locator(".model-tools__sync-status");
-  await status.filter({ hasText: /^Draft saved automatically$/ }).waitFor();
+  await status.filter({ hasText: /^Unrecorded edits · saved automatically$/ }).waitFor();
   // Reopening restored the retained commands and saved them back unchanged.
   await until(() => draft.writes.length === 1, "the restored draft was never retained again");
   assert.deepEqual(draft.writes[0].draft.commands, commands);
   assert.deepEqual(draft.writes[0].draft.source, draft.localDraft.source);
-  assert.equal(await visibleWorkspace().getByRole("button", { name: "Sync", exact: true }).isEnabled(), true);
-  // Restored edits are still not a candidate: chat asks for a Sync first.
+  assert.equal(await visibleWorkspace().getByRole("button", { name: "Record", exact: true }).isEnabled(), true);
+  // Restored edits are still not a candidate: chat asks for them to be recorded first,
+  // and offers the one click that does it (#302) instead of a dead end.
   const contextOption = page.locator(".chat-context-option input");
-  await page.waitForFunction(() => document.querySelector(".chat-context-option input")?.getAttribute("aria-description")?.startsWith("Model edits have not been synced"));
-  assert.equal(await contextOption.getAttribute("aria-description"), "Model edits have not been synced to a candidate. Sync or undo them in Modeling before starting a new context from project state. You can still continue this conversation.");
-  assert.equal(await contextOption.isDisabled(), true, "restored edits keep project state out of a new chat context");
+  await page.waitForFunction(() => document.querySelector(".chat-context-option input")?.getAttribute("aria-description")?.startsWith("Model edits are not recorded"));
+  assert.equal(await contextOption.getAttribute("aria-description"), "Model edits are not recorded yet. Record them to start a new context from project state, or undo them in Modeling. You can still continue this conversation.");
+  await contextOption.check();
+  const recordOffer = page.locator(".chat-composer .chat-record");
+  assert.equal(await recordOffer.innerText(), "Record edits and continue", "the refused new context offers Record edits and continue");
+  assert.equal(await page.locator(".chat-composer [role=status]").filter({ hasText: "Model edits are not recorded yet." }).count(), 1);
+  await contextOption.uncheck();
+  await recordOffer.waitFor({ state: "detached" });
   await openSettings();
   await restartAllowed("edits the working draft already holds do not block the update restart");
   await closeSettings();
@@ -566,7 +589,7 @@ const autosavedModelRestart = async () => {
   await visibleWorkspace().getByRole("button", { name: "Undo model", exact: true }).click();
   await visibleWorkspace().getByRole("button", { name: "Redo model", exact: true }).click();
   await until(() => draft.localDraft.commands.length === commands.length, "the redone push/pull was not autosaved");
-  await status.filter({ hasText: /^Draft saved automatically$/ }).waitFor();
+  await status.filter({ hasText: /^Unrecorded edits · saved automatically$/ }).waitFor();
   assert.deepEqual(draft.localDraft.commands, commands);
   await openSettings();
   await restartAllowed("the next accepted autosave releases the update restart");
@@ -785,6 +808,12 @@ try {
   // Back to the first project's conversation for the rest of this walk.
   await page.getByRole("button", { name: "Project A", exact: true }).first().click();
 
+  // #302: the architect is marking up on Board when the Agent's result arrives.
+  await page.getByRole("button", { name: "Board", exact: true }).click();
+  await waitWorkspace("board");
+  const surfaceNow = () => page.evaluate(() => ({ panel: document.querySelector(".chat-shell")?.dataset.panel,
+    pressed: [...document.querySelectorAll(".chat-rail__tool[aria-pressed=true]")].map((node) => node.getAttribute("aria-label")) }));
+  const surfaceBeforeResult = await surfaceNow();
   await page.getByRole("textbox", { name: "What would you like to do in this project?" }).fill("Widen the courtyard");
   await page.getByRole("button", { name: "Send", exact: true }).click();
   await page.getByRole("button", { name: "Stop", exact: true }).waitFor();
@@ -835,6 +864,20 @@ try {
   // plain words; the failed call is counted, not hidden, and the raw request
   // lines are technical detail under that row.
   await activityRows(3);
+  // #302: the result the turn read back takes nothing on screen. The request's one
+  // Study card lists it instead of a button per result.
+  const study = page.locator(".chat-study");
+  await study.waitFor();
+  await page.waitForTimeout(600);
+  assert.equal(await study.count(), 1, "one Study card for the request");
+  assert.equal(await study.getAttribute("data-candidates"), "cand-A-1");
+  assert.equal(await study.locator(".chat-study__text").innerText(), "This request · 1 option ready");
+  assert.equal(await page.locator(".chat-activity__result").count(), 0, "no per-result button remains");
+  assert.deepEqual(await surfaceNow(), surfaceBeforeResult, "a result arriving never switches the surface or the panel");
+  await visibleWorkspace().locator('[data-project-surface="board"]:not([hidden])').waitFor();
+  assert.ok(!workspaceFixture.requests.some((row) => row.name.endsWith("/bytes") && row.runId === "cand-A-1"),
+    "a result arriving never loads its model on its own");
+  await page.screenshot({ path: path.join(temporary, "result-keeps-board.png") });
   const firstProcess = page.locator(".chat-process").last();
   assert.equal(await page.locator(".chat-process").count(), 1, "one process row for the turn");
   await firstProcess.locator(".chat-process__current").filter({ hasText: "Prepare to read the model state" }).waitFor();
@@ -899,10 +942,13 @@ try {
   emitRuntime();
   await choices.waitFor({ state: "hidden" });
 
-  // The candidate that step produced opens beside the conversation, which the
-  // panel keeps as it was.
-  await page.getByRole("button", { name: "Open this candidate on the right" }).first().click();
-  await waitCandidate("cand-A-1");
+  // The Study card's View opens the Design Tree on the request's options; the
+  // option itself opens read-only when the architect chooses it.
+  await study.getByRole("button", { name: "View", exact: true }).click();
+  await visibleWorkspace().locator('[data-project-surface="tree"]:not([hidden])').waitFor();
+  assert.equal(await page.getByRole("button", { name: "Design tree", exact: true }).getAttribute("aria-pressed"), "true");
+  assert.equal(new URL(page.url()).searchParams.get("view"), "tree");
+  await viewCandidate("cand-A-1");
   const originalPanelWidth = Number(await page.locator('.chat-resizer').getAttribute('aria-valuenow'));
   await page.setViewportSize({ width: 1920, height: 960 });
   const resizePanel = async (width) => {
@@ -1105,11 +1151,16 @@ try {
   await card.getByText("S2", { exact: true }).waitFor();
   // #271: the card speaks about the current project and its work, never candidate ids.
   await card.getByText("Modeling follows the current project").waitFor();
-  await card.getByText(/Finished result/).first().waitFor();
-  await card.getByText(/can be combined/).first().waitFor();
   assert.equal(await card.getByText("cand-A-1").count(), 0, "candidate ids stay internal to the Worktree Graph");
   assert.equal(await card.getByRole("button", { name: /Accept|Issue|Endorse/ }).count(), 0);
-  await card.getByRole("button", { name: "Close" }).click();
+  // #302: the card's work lines retired behind one link to the Design Tree, the one history entry.
+  assert.equal(await card.getByText(/Finished result|can be combined/).count(), 0, "no second list of work beside the Design Tree");
+  await card.getByRole("button", { name: "Open in Design tree", exact: true }).click();
+  await card.waitFor({ state: "detached" });
+  await visibleWorkspace().locator('[data-project-surface="tree"]:not([hidden])').waitFor();
+  assert.equal(await page.getByRole("button", { name: "Design tree", exact: true }).getAttribute("aria-pressed"), "true");
+  await page.getByRole("button", { name: "Modeling", exact: true }).click();
+  await waitWorkspace();
 
   // The saved frame comes back after a reload, with the conversation.
   const savedWidth = await boxOf(".chat-browser");
@@ -1142,8 +1193,9 @@ try {
   const rechecks = providerReads.filter((value) => value === "true").length;
   await page.locator("#recheck-connections").click();
   await page.waitForFunction((count) => true, rechecks);
-  await page.locator("#save-appearance").click();
-  await page.waitForFunction(() => document.querySelector("#save-appearance")?.disabled === true);
+  assert.equal(await page.locator("#save-appearance, #save-launch").count(), 0, "Hub settings have no Save buttons");
+  await page.waitForFunction(() => document.querySelector("#render-timeout")?.value === "75");
+  await settingsSaved();
   await dialog.getByRole("button", { name: "Close", exact: true }).click();
   assert.ok(providerReads.filter((value) => value === "true").length > rechecks, "checking again asks the CLIs again");
   assert.ok(providerReads.filter((value) => value !== "true").length > 3, "the polling path never asks for a new check");
@@ -1260,24 +1312,30 @@ try {
   await page.getByRole("button", { name: "Modeling", exact: true }).click();
   await waitWorkspace();
 
-  // A successful candidate opens immediately while the same turn continues
-  // working. Neither repeated clicks nor terminal-state polling reload it.
+  // #302: a result read back while the same turn keeps working takes nothing on
+  // screen either; the request's Study card lists it. Neither polling nor the turn
+  // ending loads it. The architect opens it, in the same mounted workspace.
   const completing = sessions[0];
   const beforeReadbackStarts = writes.filter(([, pathname]) => pathname.endsWith("/start")).length;
+  const bytesBeforeResult = workspaceFixture.requests.filter((row) => row.name.endsWith("/bytes")).length;
+  await visibleWorkspace().evaluate((element) => { element.completionMarker = "once"; });
   completing.messages.push({ id: "final-checkpoint", role: "tool", status: "complete", candidateId: "cand-B-final", content: "Final checkpoint completed" });
   emitRuntime();
   assert.equal(completing.status, "running");
-  await waitCandidate("cand-B-final");
-  await waitWorkspace();
-  await visibleWorkspace().evaluate((element) => { element.completionMarker = "once"; });
-  await page.waitForTimeout(1600);
-  assert.equal(await visibleWorkspace().evaluate((element) => element.completionMarker), "once", "later transcript polls do not reload the completed checkpoint");
-  await resultButton("cand-B-final").click();
-  assert.equal(await visibleWorkspace().evaluate((element) => element.completionMarker), "once", "clicking the same candidate preserves the mounted model");
+  await page.locator('.chat-study[data-candidates~="cand-B-final"]').waitFor();
+  const resultLeftViewAlone = async (message) => {
+    await page.waitForTimeout(800);
+    assert.equal(workspaceFixture.requests.filter((row) => row.name.endsWith("/bytes")).length, bytesBeforeResult, message);
+    assert.equal(await page.getByRole("button", { name: "Modeling", exact: true }).getAttribute("aria-pressed"), "true", message);
+    assert.equal(await visibleWorkspace().evaluate((element) => element.completionMarker), "once", message);
+  };
+  await resultLeftViewAlone("a result read back during the turn loads and switches nothing");
   completing.status = "idle";
   emitRuntime();
   await page.getByRole("button", { name: "Send", exact: true }).waitFor();
-  assert.equal(await visibleWorkspace().evaluate((element) => element.completionMarker), "once", "finishing the chat does not reload the candidate");
+  await resultLeftViewAlone("finishing the turn does not open its result either");
+  await viewCandidate("cand-B-final");
+  assert.equal(await visibleWorkspace().evaluate((element) => element.completionMarker), "once", "opening the result keeps the mounted workspace");
   assert.equal(writes.filter(([, pathname]) => pathname.endsWith("/start")).length, beforeReadbackStarts, "showing a candidate in its existing project never starts the app again");
 
   // Refreshing a completed readback preserves the user's later camera view.
@@ -1302,8 +1360,9 @@ try {
   assert.deepEqual(await visibleWorkspace().locator(".stage canvas").first().screenshot(), beforeRefreshCanvas,
     "refreshing keeps the camera chosen after the candidate appeared");
 
-  // Headless API jobs have no chat message. Their completed results update the
-  // mounted project's candidate without taking the architect out of the Board.
+  // #302: headless API jobs have no chat message, and their completed results take
+  // nothing on screen either: no surface, panel, pinned candidate or model load.
+  // The Board and its marks stay exactly as they were.
   const runtimeB = runtimes.get("D:\\fixture\\B");
   const headlessJob = (candidateId, minute, status = "succeeded") => ({ jobId: `job-${candidateId}`, candidateId,
     proposalId: `proposal-${candidateId}`, status, createdAt: `2026-09-20T01:${String(minute).padStart(2, "0")}:00Z` });
@@ -1324,96 +1383,49 @@ try {
   await visibleWorkspace().evaluate((element) => { element.headlessBoardMarker = "retained"; });
   const boardBeforeHeadless = structuredClone(projectBFixture.board);
   const writesBeforeHeadless = workspaceFixture.requests.filter((row) => row.method !== "GET").length;
+  const headlessBytes = () => workspaceFixture.requests.filter((row) => row.name.endsWith("/bytes") && row.runId?.startsWith("cand-B-headless")).length;
+  const headlessPinned = () => page.evaluate(() => (JSON.parse(localStorage.getItem("monkeyhub.chat-view.v1"))?.tools ?? [])
+    .some((tool) => tool.candidate?.startsWith("cand-B-headless")));
   runtimeB.retained = { projectId: "B", projectDir: runtimeB.projectDir, jobs: [pendingJob, oldJob, failedJob, newJob],
     candidates: [pendingJob, oldJob, failedJob, newJob].map((job) => headlessCandidate(job)) };
   runtimeB.operations = [headlessOperation(newJob), headlessOperation(oldJob), headlessOperation(pendingJob),
     headlessOperation(failedJob, { status: "completed" }),
     headlessOperation(headlessJob("cand-A-wrong-project", 40), { projectId: "A" })];
   emitRuntime();
-  await page.waitForFunction(() => JSON.parse(localStorage.getItem("monkeyhub.chat-view.v1"))?.tools
-    .some((tool) => tool.candidate === "cand-B-headless-new"));
-  assert.equal(await page.getByRole("button", { name: "Board", exact: true }).getAttribute("aria-pressed"), "true");
+  await page.waitForTimeout(1000);
+  assert.equal(await page.getByRole("button", { name: "Board", exact: true }).getAttribute("aria-pressed"), "true",
+    "a headless result never switches the surface");
   assert.equal(await visibleWorkspace().evaluate((element) => element.headlessBoardMarker), "retained");
   assert.equal(await visibleWorkspace().getByLabel("Board title", { exact: true }).inputValue(), "Board B retained");
   assert.deepEqual(projectBFixture.board, boardBeforeHeadless, "model completion preserves the Board and its marks");
   assert.equal(workspaceFixture.requests.filter((row) => row.method !== "GET").length, writesBeforeHeadless,
-    "automatic preview makes no project write or editing-base change");
-  await page.getByRole("button", { name: "Modeling", exact: true }).click();
-  await waitCandidate(newJob.candidateId);
-  assert.ok(!workspaceFixture.requests.some((row) => row.name.endsWith("/bytes") && row.runId === pendingJob.candidateId),
-    "a later unfinished job cannot become the displayed candidate");
+    "a result arriving makes no project write or editing-base change");
+  assert.equal(headlessBytes(), 0, "a headless result never loads its model");
+  assert.equal(await headlessPinned(), false, "a headless result never pins itself to the workspace");
+  await page.screenshot({ path: path.join(temporary, "headless-keeps-board.png") });
 
-  // A headless result is also visible when no tool tab was ever saved. The
-  // hidden chat-context workspace becomes the real tab without another worker.
+  // Nor does a retained headless result open a closed panel after a reload.
   await page.evaluate(() => {
     const key = "monkeyhub.chat-view.v1", view = JSON.parse(localStorage.getItem(key));
     localStorage.setItem(key, JSON.stringify({ ...view, tools: [], activeTool: null, panel: false }));
   });
   const beforeHeadlessReopen = writes.length;
-  await page.reload();
-  await waitWorkspace();
-  await waitCandidate(newJob.candidateId);
-  assert.equal(await page.locator(".chat-shell").getAttribute("data-panel"), "true",
-    "a retained headless delivery opens its project panel without a saved tool tab");
-  assert.equal(await page.getByRole("button", { name: "Modeling", exact: true }).getAttribute("aria-pressed"), "true");
-  assert.deepEqual(projectBFixture.board, boardBeforeHeadless, "automatic navigation keeps all Board marks");
-  assert.ok(writes.slice(beforeHeadlessReopen).every(([, pathname]) => pathname === "/api/runtime/projects/open"),
-    "showing the retained delivery only reattaches its existing project runtime");
-
-  // A manual historical preview survives repeated snapshots. Reopening the app
-  // starts at the newest reliably ordered headless result, even with an old tab.
-  await resultButton("cand-B-final").click();
-  await waitCandidate("cand-B-final");
-  const manualBytes = workspaceFixture.requests.filter((row) => row.name.endsWith("/bytes")).length;
-  emitRuntime(); emitRuntime();
-  await page.waitForTimeout(600);
-  assert.equal(workspaceFixture.requests.filter((row) => row.name.endsWith("/bytes")).length, manualBytes,
-    "polling does not steal the architect's explicit historical preview");
-  runtimeB.retained.jobs = [];
-  await page.reload();
-  await waitWorkspace();
-  await waitCandidate(newJob.candidateId);
-
-  // A delivery arriving while the saved historical tab is being restored is
-  // still consumed after attachment completes, without any project mutation.
-  await resultButton("cand-B-final").click();
-  await waitCandidate("cand-B-final");
-  let releaseColdRestore;
-  runtimeOpenGate = new Promise((resolve) => { releaseColdRestore = resolve; });
-  const coldRestoreReady = new Promise((resolve) => { runtimeOpenCaptured = resolve; });
-  const beforeColdRestore = writes.length;
-  await Promise.all([coldRestoreReady, page.reload()]);
-  const coldJob = headlessJob("cand-B-headless-during-restore", 25);
-  projectBFixture.artifact(coldJob.candidateId);
-  runtimeB.retained.candidates.push(headlessCandidate(coldJob));
-  runtimeB.operations.push(headlessOperation(coldJob));
-  const coldDeliveryRead = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/runtime");
+  // Reopen on the conversation alone: no workspace link in the address asks for the panel.
+  const reopened = new URL(page.url());
+  reopened.searchParams.delete("runtimeId"); reopened.searchParams.delete("view");
+  await page.goto(reopened.href);
+  await page.locator(".chat-study").first().waitFor();
   emitRuntime();
-  await coldDeliveryRead;
-  releaseColdRestore();
-  await waitWorkspace();
-  await waitCandidate(coldJob.candidateId);
-  assert.ok(writes.slice(beforeColdRestore).every(([, pathname]) => pathname === "/api/runtime/projects/open"),
-    "restoring the latest delivery only reattaches its existing project runtime");
-
-  // Slow older requests and unordered completion observations do not guess a
-  // new winner. The projected journal order works without in-memory job times.
-  const slowOldJob = headlessJob("cand-B-headless-slow-old", 15);
-  const tiedJobs = [headlessJob("cand-B-headless-tie-a", 35), headlessJob("cand-B-headless-tie-b", 35)];
-  const unordered = headlessJob("cand-B-headless-unordered", 45);
-  for (const job of [slowOldJob, ...tiedJobs, unordered]) projectBFixture.artifact(job.candidateId);
-  const stableBytes = workspaceFixture.requests.filter((row) => row.name.endsWith("/bytes")).length;
-  runtimeB.retained.candidates.push(headlessCandidate(slowOldJob)); runtimeB.operations.push(headlessOperation(slowOldJob)); emitRuntime();
-  await page.waitForTimeout(400);
-  runtimeB.retained.candidates.push(...tiedJobs.map((job) => headlessCandidate(job))); runtimeB.operations.push(...tiedJobs.map((job) => headlessOperation(job))); emitRuntime();
-  await page.waitForTimeout(400);
-  runtimeB.retained.candidates.push(headlessCandidate(unordered)); runtimeB.operations.push(headlessOperation(unordered, { admissionSequence: null })); emitRuntime();
-  await page.waitForTimeout(400);
-  assert.equal(workspaceFixture.requests.filter((row) => row.name.endsWith("/bytes")).length, stableBytes,
-    "older, tied, or unordered results never replace the known latest candidate");
+  await page.waitForTimeout(1000);
+  assert.equal(await page.locator(".chat-shell").getAttribute("data-panel"), "false",
+    "a retained headless result never opens the closed panel");
+  assert.equal(headlessBytes(), 0);
+  assert.equal(await headlessPinned(), false);
+  assert.deepEqual(projectBFixture.board, boardBeforeHeadless, "reopening keeps all Board marks");
+  assert.ok(writes.slice(beforeHeadlessReopen).every(([, pathname]) => pathname === "/api/runtime/projects/open"),
+    "reopening only reattaches the existing project runtime");
   runtimeB.operations = []; runtimeB.retained = null; emitRuntime();
-  await resultButton("cand-B-final").click();
-  await waitCandidate("cand-B-final");
+  await viewCandidate("cand-B-final");
   await visibleWorkspace().evaluate((element) => { element.completionMarker = "once"; });
 
   // Refresh and reconnect read the retained operation, without replaying a
@@ -1449,8 +1461,7 @@ try {
   await page.locator(".chat-error").waitFor();
   await page.getByRole("button", { name: "Recover project service", exact: true }).click();
   await studioReady();
-  await resultButton("cand-B-final").click();
-  await waitCandidate("cand-B-final");
+  await viewCandidate("cand-B-final");
   const beforeCrash = writes.length;
   for (const app of appsFor(runtimeB.projectDir).filter((app) => app.serviceId === "studio")) {
     app.state = "error"; app.error = { code: "WORKER_EXITED", detail: "Fixture worker exited unexpectedly." };
@@ -1462,8 +1473,7 @@ try {
   await page.getByRole("button", { name: "Recover project service", exact: true }).waitFor();
   assert.ok(writes.slice(beforeCrash).every(([, pathname]) => pathname === "/api/runtime/projects/open"), "refreshing a crashed project only reattaches it");
   await page.getByRole("button", { name: "Recover project service", exact: true }).click();
-  await waitCandidate("cand-B-final");
-  await waitWorkspace();
+  await viewCandidate("cand-B-final");
   assert.ok(workspaceFixture.requests.some((row) => row.runtimeId === runtimeB.runtimeId && row.name === "/api/protocol"), "restored workspace uses the same project runtime prefix");
   assert.equal(writes.slice(beforeCrash).filter(([, pathname]) => pathname.endsWith("/recover")).length, 1);
   assert.ok(writes.slice(beforeCrash).every(([, pathname]) => pathname === "/api/runtime/projects/open" || pathname.endsWith("/recover")),
@@ -1916,10 +1926,10 @@ try {
   runtimeB.operations = [headlessOperation(newJob)];
   await page.goto(`${origin}/?view=monitor`);
   await waitMonitor();
-  await page.waitForFunction(() => JSON.parse(localStorage.getItem("monkeyhub.chat-view.v1"))?.tools
-    .some((tool) => tool.candidate === "cand-B-headless-new"));
+  emitRuntime();
+  await page.waitForTimeout(600);
   assert.equal(await page.getByRole("button", { name: "Usage", exact: true }).getAttribute("aria-pressed"), "true",
-    "automatic candidate delivery must not override an explicit Monitor deep link");
+    "a retained headless result never overrides an explicit Monitor deep link");
   runtimeB.retained = null; runtimeB.operations = []; emitRuntime();
   assert.equal(await page.getByRole("textbox", { name: "What would you like to do in this project?" }).isVisible(), true,
     "a legacy Monitor deep link opens a panel without replacing the conversation");
@@ -2001,7 +2011,7 @@ try {
   await page.locator(".chat-message--user").getByText("Project context", { exact: true }).waitFor();
   await page.getByRole("button", { name: "Stop", exact: true }).click();
   await visibleWorkspace().locator(".stage__versions-toggle").click();
-  await visibleWorkspace().getByRole("button", { name: "Continue from this version", exact: true }).click();
+  await visibleWorkspace().getByRole("button", { name: "Continue from here", exact: true }).click();
   await page.waitForFunction(() => document.querySelector('.chat-project-workspace:not([hidden]) .editing-base')?.dataset.sourceMatch === "same");
   await visibleWorkspace().locator(".stage__versions-toggle").click();
   assert.equal(await projectContext.isChecked(), false, "the new-context option applies to one message");
@@ -2461,29 +2471,33 @@ try {
   await page.getByText("fixture-next-desktop", { exact: true }).waitFor();
   assert.equal(patchUploads.length, 1); assert.deepEqual(patchUploads[0], patchBytes);
   assert.ok(patchPolls >= 2); await page.getByText("1.0 MiB", { exact: true }).waitFor();
-  await page.locator("#theme").selectOption("dark");
-  await page.getByText("Save your settings changes before restarting.", { exact: true }).waitFor();
+  let releaseSettings; settingsWriteGate = new Promise((resolve) => { releaseSettings = resolve; });
+  // Every earlier choice in this test saved itself, so the theme may already be dark.
+  await page.locator("#theme").selectOption(await page.locator("#theme").inputValue() === "dark" ? "light" : "dark");
+  await page.getByText("A settings change is still being saved or could not be saved. Wait, or fix the marked setting, before restarting.", { exact: true }).waitFor();
   assert.equal(await page.getByRole("button", { name: "Restart to update", exact: true }).isDisabled(), true);
-  await page.locator("#save-appearance").click();
+  settingsWriteGate = null; releaseSettings();
+  await settingsSaved();
+  await page.locator("#theme").selectOption("dark"); await settingsSaved();
   await page.waitForFunction(() => ![...document.querySelectorAll("button")].find((button) => button.textContent === "Restart to update")?.disabled);
   // The desktop dialog is usable at a small viewport, in dark mode, with
   // larger text and reduced motion, without horizontal clipping.
   await page.locator("#font-scale").selectOption("1.1");
-  await page.locator("#save-appearance").click();
+  await settingsSaved();
   await page.emulateMedia({ reducedMotion: "reduce" }); await page.setViewportSize({ width: 390, height: 844 });
   await page.locator(".software-update").scrollIntoViewIfNeeded();
   assert.equal(await page.locator(".software-update").evaluate((node) => node.scrollWidth <= node.clientWidth + 1), true);
   assert.equal(await page.getByRole("dialog").evaluate((node) => node.scrollWidth <= node.clientWidth + 1), true);
   for (const button of await page.locator(".software-update__actions button").all()) assert.ok((await button.boundingBox()).height >= 44);
   await page.getByRole("dialog").screenshot({ path: path.join(temporary, "software-update-small-dark.png") });
-  await page.locator("#language").selectOption("zh-CN"); await page.locator("#save-appearance").click();
+  await page.locator("#language").selectOption("zh-CN"); await settingsSaved();
   await page.getByRole("heading", { name: "软件更新", exact: true }).waitFor();
   await page.getByText("自动更新：开 · 未签名预发布通道", { exact: true }).waitFor();
   await page.locator(".software-update").scrollIntoViewIfNeeded();
   await page.getByRole("dialog").screenshot({ path: path.join(temporary, "software-update-small-zh.png") });
   await page.setViewportSize({ width: 1440, height: 960 });
   await page.getByRole("dialog").screenshot({ path: path.join(temporary, "software-update-wide-zh.png") });
-  await page.locator("#language").selectOption("en"); await page.locator("#save-appearance").click();
+  await page.locator("#language").selectOption("en"); await settingsSaved();
   updateApplyFailure = true;
   await page.getByRole("button", { name: "Restart to update", exact: true }).click();
   await page.getByText("A task started before restart. Wait and retry.", { exact: true }).waitFor();

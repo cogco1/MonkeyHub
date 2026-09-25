@@ -1,4 +1,4 @@
-import { useContext, useState } from "react";
+import { useContext, useEffect, useState } from "react";
 import { asStudioApiError } from "../../api/client";
 import { useT } from "../../i18n/useT";
 import type { DocumentAnnotationsHandle } from "./useDocumentAnnotations";
@@ -18,6 +18,14 @@ export function DocumentTracingPanel({ draft, disabled, onSendingChange }: {
   const [error, setError] = useState<string | null>(null);
   const [submitted, setSubmitted] = useState(false);
   const [continuing, setContinuing] = useState(false);
+  const [recording, setRecording] = useState(false);
+  // After Record edits and continue, the generation the edits held back runs once they are recorded.
+  const [generateAfterRecord, setGenerateAfterRecord] = useState(false);
+  useEffect(() => {
+    if (!generateAfterRecord || !modeling) return;
+    setGenerateAfterRecord(false);
+    if (!modeling.blockedReason) void generate();
+  });
   if (!modeling) return null;
   const lines = draft.annotations.filter(mark => mark.kind === "line" && mark.points.length === 2);
   const shapes = draft.annotations.filter(mark => mark.kind === "polyline" || mark.kind === "line");
@@ -47,6 +55,13 @@ export function DocumentTracingPanel({ draft, disabled, onSendingChange }: {
       setSubmitted(true);
     } catch (cause) { setError(asStudioApiError(cause).detail); }
     finally { onSendingChange(false); }
+  };
+  const recordEdits = async () => {
+    if (!modeling.recordEdits || recording) return;
+    setRecording(true); setError(null);
+    try { await modeling.recordEdits(); setGenerateAfterRecord(true); }
+    catch (cause) { setError(t("stage.record.failed", { reason: asStudioApiError(cause).detail })); }
+    finally { setRecording(false); }
   };
   const continueViewed = async () => {
     if (!modeling.continueViewed || continuing) return;
@@ -94,6 +109,8 @@ export function DocumentTracingPanel({ draft, disabled, onSendingChange }: {
     {modeling.blockedReason && <p role="status">{modeling.blockedReason}</p>}
     {modeling.blockedReason && modeling.continueViewed && <button type="button" className="btn" disabled={disabled || continuing}
       onClick={() => void continueViewed()}>{t(continuing ? "document.modelSource.continuing" : "stage.base.continue")}</button>}
+    {modeling.blockedReason && modeling.recordEdits && <button type="button" className="btn" disabled={locked || recording}
+      onClick={() => void recordEdits()}>{t(recording ? "stage.record.busy" : "stage.record.continue")}</button>}
     <button type="button" className="btn btn--accent" disabled={locked || !!modeling.blockedReason || !draft.tracingCalibration || selected.length === 0}
       onClick={() => void generate()}>{t(disabled ? "document.trace.generating" : "document.trace.generate")}</button>
     {submitted && <p role="status">{t("document.trace.submitted")}</p>}

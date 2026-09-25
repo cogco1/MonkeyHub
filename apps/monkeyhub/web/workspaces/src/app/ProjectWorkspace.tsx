@@ -29,6 +29,8 @@ export interface ProjectWorkspaceProps {
   candidateRunId?: string | null;
   /** The pin is a delivery or restore hint; a runtime that knows its Working Head shows the head. */
   candidateFollowsHead?: boolean;
+  /** Options a chat Study card asked to see: the Design Tree opens on them, once per request (#302). */
+  treeFocus?: { runIds: readonly string[]; request: number } | null;
   active?: boolean;
   refreshKey?: number;
   documentRequest?: { source: PageSource; requestId: number } | null;
@@ -38,7 +40,7 @@ export interface ProjectWorkspaceProps {
 }
 
 /** One mounted project: the Board, its page editor and the same local model draft. */
-export function ProjectWorkspace({ workspace, expectedProjectId, candidateRunId = null, candidateFollowsHead = false, active = true, refreshKey = 0, documentRequest = null,
+export function ProjectWorkspace({ workspace, expectedProjectId, candidateRunId = null, candidateFollowsHead = false, treeFocus = null, active = true, refreshKey = 0, documentRequest = null,
   onWorkspaceChange, onChatRequest, onDesignContextChange }: ProjectWorkspaceProps) {
   const renderReader = useRef<(() => RenderView | null) | null>(null);
   const registerRenderReader = useCallback((reader: (() => RenderView | null) | null) => { renderReader.current = reader; }, []);
@@ -82,10 +84,44 @@ export function ProjectWorkspace({ workspace, expectedProjectId, candidateRunId 
   useEffect(() => { if (workspace === "tree") setTreeVisited(true); else treeReturn.current = workspace; }, [workspace]);
   // A newer host pin, such as a delivered result, replaces what the tree opened.
   useEffect(() => { setTreeView(null); }, [candidateRunId]);
+  /**
+   * The one View path (#284, #302): the run opens read-only in Modeling and the
+   * chip names it. Modeling asks for it from where it already is on screen, such
+   * as a Board page, so only the other surfaces switch to it.
+   */
+  const [viewRequest, setViewRequest] = useState(0);
+  const viewRun = useCallback((view: DesignTreeView | null, fromModeling = false) => {
+    setTreeView(view); setViewRequest((value) => value + 1);
+    if (!fromModeling) onWorkspaceChange("arch");
+  }, [onWorkspaceChange]);
+  // The run Modeling edits from, as it reports it: a view that became the base is no longer only viewed.
+  const [editingRunId, setEditingRunId] = useState<string | null>(null);
+  // Modeling's Record edits and continue, for the tree's Continue refused by unrecorded edits (#302).
+  const [recordEdits, setRecordEdits] = useState<(() => Promise<void>) | null>(null);
+  const registerRecorder = useCallback((record: (() => Promise<void>) | null) => setRecordEdits(() => record), []);
+  const designContextChanged = useCallback((context: WorkspaceDesignContext | null) => {
+    if (context?.designContext) setEditingRunId(context.designContext.sourceRunId);
+    onDesignContextChange?.(context);
+  }, [onDesignContextChange]);
   const treeProject = server.status === "ready" ? boundProjectId.current : null;
   const seenCandidates = useSeenCandidates(treeProject);
   const designTree = useDesignTree({ studio, capabilities: server.status === "ready" ? server.value.capabilities : null,
     projectId: treeProject, active, refreshKey: refreshKey + attempt, onHeadMoved: () => setHeadMoves((value) => value + 1) });
+  // The node the tree opens on (#302): the chip's ready options, or a chat Study card's.
+  const [treeNodeFocus, setTreeNodeFocus] = useState<{ node: string; request: number } | null>(null);
+  const focusRequests = useRef(0);
+  const showReady = useCallback((node: string) => {
+    setTreeNodeFocus({ node, request: ++focusRequests.current });
+    onWorkspaceChange("tree");
+  }, [onWorkspaceChange]);
+  const studyFocused = useRef(0);
+  useEffect(() => {
+    const tree = designTree.tree;
+    if (!treeFocus || studyFocused.current === treeFocus.request || !tree) return;
+    studyFocused.current = treeFocus.request;
+    const node = [...tree.nodes.values()].find((item) => item.kind === "candidate" && item.runId !== null && treeFocus.runIds.includes(item.runId));
+    if (node) setTreeNodeFocus({ node: node.id, request: ++focusRequests.current });
+  }, [treeFocus, designTree.tree]);
   useEffect(() => {
     let live = true;
     setRefreshError(null);
@@ -133,17 +169,20 @@ export function ProjectWorkspace({ workspace, expectedProjectId, candidateRunId 
   return <div className="project-workspace" style={{ height: "100%", minHeight: 0 }}>
     {/* The project's position over every surface: the Stage chip opens the Design Tree. */}
     {designTree.available && <DesignTreeBar data={designTree} seen={seenCandidates.seen} open={workspace === "tree"}
-      viewing={treeView && !treeView.back ? treeView : null}
+      viewing={treeView && !treeView.back && treeView.runId !== editingRunId ? treeView : null}
       onToggle={() => onWorkspaceChange(workspace === "tree" ? treeReturn.current : "tree")}
-      onBackToCurrent={() => { setTreeView(currentView(designTree)); onWorkspaceChange("arch"); }} />}
+      onBackToCurrent={() => viewRun(currentView(designTree))} onShowReady={showReady} />}
     {refreshError && <ErrorPanel error={refreshError} what="GET /api/protocol" />}
     {(archVisited || modelVisible) && <div data-project-surface="arch" hidden={!modelVisible} inert={!active || !modelVisible}
       style={{ height: "100%", minHeight: 0, display: modelVisible ? "block" : "none" }}>
       <App server={server.value} expectedProjectId={boundProjectId.current} initialRunId={treeView?.runId ?? candidateRunId}
+        initialRunAsset={treeView?.assetSha256 ?? null} initialRunRequest={viewRequest}
         initialRunFollowsHead={treeView ? false : candidateFollowsHead} documentSource={pageOpen ? visit.source : null}
         initialDocumentIntent={documentIntent} initialSketchRequest={sketchRequest}
         active={active && modelVisible} refreshKey={refreshKey + attempt + headMoves} onReturnToBoard={openBoard} onOpenBoard={openBoard} onChatRequest={onChatRequest}
-        onDesignContextChange={onDesignContextChange} onRenderReader={registerRenderReader} />
+        onDesignContextChange={designContextChanged} onRenderReader={registerRenderReader}
+        onView={(view) => viewRun({ ...view, back: false }, true)} onRecorder={registerRecorder}
+        onOpenTree={designTree.available ? () => onWorkspaceChange("tree") : undefined} />
     </div>}
     {/* #300: Board and its Layout mode share one rail entry; this switch moves between the two
         mounted surfaces, and view=publish links still land on Layout. */}
@@ -178,7 +217,7 @@ export function ProjectWorkspace({ workspace, expectedProjectId, candidateRunId 
       style={{ height: "100%", minHeight: 0, display: workspace === "tree" ? "block" : "none" }}>
       <Suspense fallback={<LoadingOverlay mode="boot" status="Design tree" />}>
         <DesignTreeSurface data={designTree} markSeen={seenCandidates.markSeen} active={active && workspace === "tree"} returnTo={treeReturn.current}
-          onLeave={() => onWorkspaceChange(treeReturn.current)} onView={(view) => { setTreeView(view); onWorkspaceChange("arch"); }} />
+          onLeave={() => onWorkspaceChange(treeReturn.current)} onView={viewRun} onRecordEdits={recordEdits} focus={treeNodeFocus} />
       </Suspense>
     </div>}
   </div>;

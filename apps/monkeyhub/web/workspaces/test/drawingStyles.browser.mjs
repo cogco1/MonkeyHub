@@ -199,7 +199,7 @@ try {
     assert.equal(await page.locator(".document-model-source").getAttribute("data-model-source-status"), "mismatch");
     await page.getByLabel("对此页的意见", { exact: true }).fill("Review the latest drawing without changing my starting model.");
     assert.equal(await page.getByRole("button", { name: "提交本页意见", exact: true }).isDisabled(), true);
-    assert.equal(await page.getByRole("button", { name: "从此模型继续", exact: true }).isEnabled(), true);
+    assert.equal(await page.getByRole("button", { name: "从这里继续", exact: true }).isEnabled(), true);
     assert.deepEqual(await page.evaluate(() => window.drawingFixture.editing), rootSource);
     assert.deepEqual(await page.evaluate(() => window.drawingFixture.continues), []);
     assert.equal(await opened(), 2);

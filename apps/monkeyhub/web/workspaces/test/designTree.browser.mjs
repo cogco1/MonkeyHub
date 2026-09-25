@@ -22,6 +22,7 @@ const cacheDir = await mkdtemp(path.join(tmpdir(), "design-tree-"));
 const shots = process.env.DESIGN_TREE_SCREENSHOTS ? path.resolve(process.env.DESIGN_TREE_SCREENSHOTS) : null;
 const serveOnly = process.argv.includes("--serve");
 const errors = [], unexpected = [], external = [], writes = [];
+let recorded = 0;
 const http = createHttpServer();
 let vite, browser, fixture, fixtureModule, runtimeId = null;
 const PROJECT = "riverside-library";
@@ -51,6 +52,8 @@ async function runtime(request, response, url, body) {
       return;
     }
     if (method === "GET" && name === "/api/working-draft") return json(fixture.workingDraft());
+    // What Modeling's Record edits and continue does to the working draft here: its edits become recorded.
+    if (method === "POST" && name === "/api/fixture/record") { recorded += 1; fixture.state.localDraft = null; return json({}); }
     if (method === "PUT" && name === "/api/working-draft") { writes.push({ method, name, body }); return json(fixture.selectWorkingDraft(body)); }
     const accept = name.match(/^\/api\/candidates\/([^/]+)\/accept$/);
     if (method === "POST" && accept) { writes.push({ method, name, body }); return json(fixture.accept(decodeURIComponent(accept[1]), body)); }
@@ -110,8 +113,14 @@ try {
     plugins: [{ name: "design-tree-fixture", enforce: "pre", transform(source, id) {
       const file = slash(id.split("?")[0]), root = slash(workspacesRoot);
       if (file === `${root}/src/app/App.tsx`) return { code: `
+        import { useEffect } from "react";
         export default function App(props) {
           window.__arch = { initialRunId: props.initialRunId ?? null, followsHead: Boolean(props.initialRunFollowsHead), refreshKey: props.refreshKey, active: props.active };
+          // Modeling hands the host its Record edits and continue (#302).
+          useEffect(() => {
+            props.onRecorder?.(() => fetch("/api/fixture/record", { method: "POST" }).then(() => undefined));
+            return () => props.onRecorder?.(null);
+          }, [props.onRecorder]);
           return <div data-testid="arch-stub" style={{ padding: 24 }}>Modeling · {props.initialRunId ?? "Working Head"}</div>;
         }`, map: null };
       if (file === `${root}/src/workspaces/monkeyboard/Board.tsx`) return { code: `export default function Board() { return <div data-testid="board-stub">Board</div>; }`, map: null };
@@ -180,17 +189,41 @@ try {
   await chip.waitFor({ timeout: 120_000 });
   await tab.getByTestId("arch-stub").waitFor();
   await tab.waitForFunction(() => /S2 · Layout — Current/.test(document.querySelector(".stage-chip")?.textContent ?? ""));
-  assert.equal((await chip.innerText()).replace(/\s+/g, " ").trim(), "S2 · Layout — Current · 1 new · 2 running", "the chip reads Stage, position and attention");
+  assert.equal((await chip.innerText()).replace(/\s+/g, " ").trim(), "S2 · Layout — Current · 2 running", "the chip reads Stage, position and running work");
+  const ready = tab.locator(".stage-chip__ready");
+  assert.equal((await ready.innerText()).replace(/\s+/g, " ").trim(), "1 option ready · View", "options nobody opened are the chip's notice");
   assert.equal(await chip.getAttribute("aria-pressed"), "false");
   assert.ok(!loaded.some((url) => /excalidraw/i.test(url)), "Excalidraw is not loaded until the tree opens");
   assert.equal(await tab.locator(".chat-rail").count(), 0, "the entry is project chrome, not a rail of its own here");
   await shoot(tab, "01-chip-over-modeling");
+
+  // #302: the notice's View opens the tree on the ready option's Study, with its side card.
+  const inChinese = async (name) => {
+    await tab.evaluate(() => window.__workspaceFixture.setLanguage("zh-CN"));
+    await tab.waitForFunction(() => (document.querySelector(".stage-chip")?.textContent ?? "").includes("当前"));
+    await shoot(tab, name);
+    await tab.evaluate(() => window.__workspaceFixture.setLanguage("en"));
+    await tab.waitForFunction(() => (document.querySelector(".stage-chip")?.textContent ?? "").includes("Current"));
+  };
+  if (shots) await inChinese("01a-ready-notice-zh");
+  await ready.click();
+  await tab.locator('[data-project-surface="tree"] .design-tree-card[data-node="candidate:run-entrance-a"]').waitFor();
+  assert.equal(await chip.getAttribute("aria-pressed"), "true");
+  await shoot(tab, "01b-ready-notice-opens-study");
+  if (shots) await inChinese("01c-ready-notice-opens-study-zh");
+  await tab.locator('[data-project-surface="tree"]').getByRole("button", { name: "Back to Modeling" }).click();
+  await tab.getByTestId("arch-stub").waitFor();
+  assert.equal(await ready.count(), 0, "an option that was opened is no longer new");
 
   // The chip opens the tree surface and keeps itself.
   await chip.click();
   const surface = tab.locator('[data-project-surface="tree"]');
   await surface.locator(".design-tree__canvas canvas").first().waitFor();
   await tab.waitForFunction(() => window.__treeApi?.getSceneElements().length > 20);
+  // The notice left the canvas centred on the ready option; Fit shows the whole tree again.
+  await surface.getByRole("button", { name: "Fit", exact: true }).click();
+  await tab.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(resolve)))));
+  await tab.waitForFunction(() => document.querySelector(".design-tree__canvas")?.dataset.level === "mid");
   assert.equal(await chip.getAttribute("aria-pressed"), "true");
   assert.equal(await tab.getByTestId("arch-stub").isVisible(), false, "the tree replaces the view, it is not drawn over it");
   assert.ok(loaded.some((url) => /excalidraw/i.test(url)), "the canvas loads with the tree");
@@ -331,12 +364,21 @@ try {
   await tab.waitForFunction(() => window.__arch.initialRunId === "run-s2-layout");
   assert.equal(await tab.locator(".stage-chip__viewing").count(), 0);
 
-  // Continue moves the Working Head through PUT /api/working-draft, and the trunk re-roots.
+  // Continue moves the Working Head through PUT /api/working-draft, and the trunk re-roots. Unrecorded
+  // Modeling edits refuse it first, beside one click that records them and continues (#302).
   await chip.click();
   card = await clickNode("candidate:run-massing-d");
   const archRefresh = await tab.evaluate(() => window.__arch.refreshKey);
+  fixture.state.localDraft = { source: { projectId: PROJECT, stateDigest: "d".repeat(64), sourceRunId: "run-s2-layout", sourceStageRef: null },
+    commands: [], attempt: null, updatedAt: "2026-09-25T22:00:00Z" };
   await card.getByRole("button", { name: "Continue from here", exact: true }).click();
+  await card.getByText("Model edits in Modeling are not recorded yet; they are kept. Record them and continue, or undo them in Modeling.").waitFor();
+  assert.equal(fixture.state.head, headBefore, "a Continue refused by unrecorded edits moves nothing");
+  assert.equal(writes.length, 0);
+  await shoot(tab, "06b-record-and-continue");
+  await card.locator('[data-action="record"]').click();
   await card.getByText("Current now continues from D · Terraced wedge. Nothing was accepted.").waitFor();
+  assert.equal(recorded, 1, "Record edits and continue records the edits once, then continues");
   assert.deepEqual(writes.at(-1), { method: "PUT", name: "/api/working-draft",
     body: { projectId: PROJECT, runId: "run-massing-d", baseRevisionSha256: "rev-0001", branchId: null } });
   assert.equal(fixture.state.head, "run-massing-d");
@@ -345,7 +387,8 @@ try {
   checkTree(view, [S0, "candidate:run-massing-d", "current"], { "study-massing": 4 });
   assert.ok(view.elements.find((element) => element.id === `${S2}:card`).opacity < 100, "the future left behind stays, faded");
   assert.ok(await tab.evaluate((before) => window.__arch.refreshKey > before, archRefresh), "Modeling re-reads the moved head");
-  assert.equal((await chip.innerText()).replace(/\s+/g, " ").trim(), "S0 · Site — Current · 3 new · 2 running");
+  assert.equal((await chip.innerText()).replace(/\s+/g, " ").trim(), "S0 · Site — Current · 2 running");
+  assert.equal((await ready.innerText()).replace(/\s+/g, " ").trim(), "3 options ready · View");
   card = await clickNode("current");
   assert.equal(await card.locator('[data-action="accept"]').isDisabled(), true);
   assert.match(await card.innerText(), /Current comes from S0 · Site, but this line's newest Stage is S2 · Layout/);
@@ -355,7 +398,7 @@ try {
   card = await clickNode("candidate:run-entrance-a");
   assert.match(await card.innerText(), /Study\s+Study from S2 · Layout/, "a Study without a name is named after where it started");
   await card.getByRole("button", { name: "Continue from here", exact: true }).click();
-  await card.getByText(/Current now continues from A · Courtyard gate/).waitFor();
+  await card.getByText(/Current now continues from Courtyard gate on the south bar/).waitFor();
   await tab.waitForFunction(() => window.__treeApi.getSceneElements().find((element) => element.customData?.tree?.role === "trunk")?.points.length === 7);
   checkTree(await scene(), [S0, "candidate:run-massing-c", S1, "candidate:run-facade-b", S2, "candidate:run-entrance-a", "current"], { "study-massing": 4, "study-facade": 2 });
   card = await clickNode("current");

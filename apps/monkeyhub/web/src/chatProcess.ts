@@ -205,6 +205,14 @@ export function turnsOf(messages: readonly ChatMessage[], running: boolean): Pro
   return turns;
 }
 
+/**
+ * The options one request produced, each once, in the order they were read back:
+ * what that request's single Study card lists (#302). Chat never opens them on its own.
+ */
+export function resultCandidates(turn: ProcessTurn): string[] {
+  return [...new Set(turn.results.flatMap((message) => message.candidateId ? [message.candidateId] : []))];
+}
+
 /** The step a running turn is on: the latest call still under way, else the latest call. */
 export const currentStep = (turn: ProcessTurn) => turn.steps.findLast((step) => step.status === "streaming") ?? turn.steps.at(-1) ?? null;
 

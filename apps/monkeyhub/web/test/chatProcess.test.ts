@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import type { ChatMessage } from "../src/api/generated";
-import { clock, currentStep, describeCall, describeStep, stepText, turnsOf, workedSeconds, type ProcessWords } from "../src/chatProcess.ts";
+import { clock, currentStep, describeCall, describeStep, resultCandidates, stepText, turnsOf, workedSeconds, type ProcessWords } from "../src/chatProcess.ts";
 import { chatCopy as en } from "../src/i18n/messages.en.ts";
 import { chatCopy as zh } from "../src/i18n/messages.zh-CN.ts";
 
@@ -99,6 +99,23 @@ test("an interjection the running turn takes in stays inside that turn; a restar
   assert.deepEqual(turns[0]!.steps.map((row) => row.id), ["u-0:t1", "u-0:t2"], "calls on both sides of the interjection fold into one row");
   assert.deepEqual(turns[0]!.visible.map((row) => row.id), ["u-1"], "the interjection shows inline in its turn");
   assert.equal(turns[1]!.key, "u-2");
+});
+
+test("one request's results make one Study card: each option once, in the order it was read back", () => {
+  const turns = turnsOf([
+    message({ id: "u-1", role: "user", content: "Give me three entrance options" }),
+    message({ id: "t-1", role: "tool", content: "studio_request · GET /api/jobs/job-a · completed", candidateId: "cand-a" }),
+    message({ id: "t-2", role: "tool", content: "studio_request · GET /api/jobs/job-b · completed", candidateId: "cand-b" }),
+    message({ id: "t-3", role: "tool", content: "studio_request · GET /api/candidates/cand-a · completed", candidateId: "cand-a" }),
+    message({ id: "t-4", role: "tool", content: "studio_request · GET /api/state · completed" }),
+    message({ id: "a-1", role: "assistant", content: "Two options are ready." }),
+    message({ id: "u-2", role: "user", content: "Thanks" }),
+  ], false);
+  assert.deepEqual(turns.map(resultCandidates), [["cand-a", "cand-b"], []]);
+  assert.equal(en.studyReady(2), "This request · 2 options ready");
+  assert.equal(en.studyReady(1), "This request · 1 option ready");
+  assert.equal(zh.studyReady(2), "本次请求 · 2 个方案就绪");
+  assert.deepEqual([en.studyView, zh.studyView], ["View", "查看"]);
 });
 
 test("elapsed time reads naturally and unreadable times are not guessed", () => {
