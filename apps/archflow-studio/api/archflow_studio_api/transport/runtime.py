@@ -83,6 +83,11 @@ class WorktreeLineDto(BaseModel):
     conflicts: list[str]
     detail: str | None
     updated_at: str | None = Field(alias="updatedAt")
+    admission: Literal["admitted", "rejected", "superseded", "none"] = Field(
+        description="The line's retained verdict: an admitted Candidate (legacy Stage, Exploration and accepted-episode "
+        "facts count), a result the architect turned down, an attempt a closed loop replaced, or none yet. "
+        "Running work is always none.")
+    study_id: str | None = Field(alias="studyId", description="The Study that verdict grouped the run into, if any.")
 
 
 class RepresentationStateDto(BaseModel):
@@ -115,6 +120,7 @@ def worktree_graph_dto(value: WorktreeGraph) -> WorktreeGraphDto:
             base_run_id=line.base_run_id, base_stage_ref=line.base_stage_ref, branch_id=line.branch_id,
             status=line.status, relation=line.relation, reads=list(line.reads), writes=list(line.writes),
             reconcile=line.reconcile, conflicts=list(line.conflicts), detail=line.detail, updated_at=line.updated_at,
+            admission=line.admission, study_id=line.study_id,
         ) for line in value.lines],
         representations=[RepresentationStateDto(
             kind=row.kind, item_id=row.item_id, label=row.label, state=row.state,
