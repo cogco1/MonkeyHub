@@ -358,10 +358,10 @@ def list_documents(binding: ProjectBinding, run_id: str | None = None) -> tuple[
             document for source_run in binding.run_ids() for document in list_documents(binding, source_run)
         )
 
+    # Only the two document kinds are read: a run's other records can be most
+    # of the project's bytes, and every listing would read them all (#314).
     documents: dict[str, SourceDocument] = {}
-    for ref in binding.record_refs(run_id):
-        if record_kind(ref) != STUDIO_SOURCE_DOCUMENT:
-            continue
+    for ref in binding.record_refs(run_id, kind=STUDIO_SOURCE_DOCUMENT):
         payload = binding.repository.load_json(ref)
         if payload.get("schema") != "StudioSourceDocument@1" or (
             payload.get("project_id"), payload.get("run_id")
@@ -391,9 +391,7 @@ def list_documents(binding: ProjectBinding, run_id: str | None = None) -> tuple[
             if previous.model_source is None:
                 documents[key] = replace(previous, model_source=document.model_source,
                                                            model_source_binding_ref=document.model_source_binding_ref)
-    for ref in binding.record_refs(run_id):
-        if record_kind(ref) != STUDIO_DOCUMENT_MODEL_SOURCE:
-            continue
+    for ref in binding.record_refs(run_id, kind=STUDIO_DOCUMENT_MODEL_SOURCE):
         payload = binding.repository.load_json(ref)
         if payload.get("schema") != "StudioDocumentModelSource@1" or (payload.get("projectId"), payload.get("runId")) != (binding.project_id, run_id):
             raise StudioError(409, "DOCUMENT_SOURCE_CONFLICT", "The saved model association belongs to another document run.")

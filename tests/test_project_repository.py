@@ -368,6 +368,25 @@ class ProjectRepositoryTests(unittest.TestCase):
         with self.assertRaisesRegex(ProjectIntegrityError, "record digest mismatch"):
             self.repository.list_json(run=run, destination=destination, record_kind=STATE_RECORD)
 
+    def test_listing_every_kind_reads_each_record_once(self) -> None:
+        run = self.repository.create_run("read-once")
+        destination = PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=run.run_id)
+        written = [self.repository.put_json(run=run, destination=destination, record_kind=kind, payload=payload)
+                   for kind, payload in ((STATE_RECORD, {"schema": "StateRecord@1", "value": 1}),
+                                         (DESIGN_STAGE, {"schema": "DesignStage@1", "value": 2}))]
+        names = sorted(self.repository.layout.resolve_record(ref).name for ref in written)
+        read_bytes, read = Path.read_bytes, []
+
+        def recorded(path: Path) -> bytes:
+            read.append(path.name)
+            return read_bytes(path)
+
+        with patch.object(Path, "read_bytes", autospec=True, side_effect=recorded):
+            listed = self.repository.list_json(run=run, destination=destination)
+        self.assertEqual(sorted(ref.relative_path for ref in listed), sorted(ref.relative_path for ref in written))
+        # The digest is the one the bytes have, so they are parsed as read, not read again (#314).
+        self.assertEqual(sorted(name for name in read if name in names), names)
+
     def test_workspace_binary_lands_only_in_the_assigned_run_and_leaves_head_unchanged(
         self,
     ) -> None:
