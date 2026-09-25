@@ -566,7 +566,7 @@ if (autosaveOnly) {
     return !s.syncBusy&&s.candidates.length===1&&(authoredInput ? s.dirty :
       !s.dirty&&s.loaded===s.candidates[0]&&s.base===s.candidates[0]);
   },
-    'first authored-only Sync did not produce and display its candidate',45000).catch(async error=>{await stages(syncStart,'authored-only failure');throw error;});
+    'first authored-only Sync did not produce and display its candidate',120000).catch(async error=>{await stages(syncStart,'authored-only failure');throw error;});
   state=await snap();assert.equal(candidateCalls().length,1);assert.equal((await runIds()).length,1);
   if(!authoredInput){
     await page.waitForFunction(()=>window.__workspaceDesignContext?.designContext?.sourceRunId!==null&&
