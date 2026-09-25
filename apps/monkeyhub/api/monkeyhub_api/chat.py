@@ -1463,11 +1463,14 @@ class ChatStore:
                 cancel = None
                 with self._lock:
                     session = self._sessions[session_id]
-                    if running.waiting and running.waiting[0][0] == identifier:
-                        running.waiting.pop(0)
+                    queued = any(waiting == identifier for waiting, _ in running.waiting)
+                    running.waiting = [row for row in running.waiting if row[0] != identifier]
                     if outcome == "injected":
                         self._delivered(session, identifier)
                         continue
+                    if not queued:
+                        # The turn's end took it for the next prompt before it left.
+                        return
                     if identifier in running.turns:
                         running.turns.remove(identifier)
                     message = next((row for row in session.messages if row.id == identifier), None)
@@ -1501,11 +1504,19 @@ class ChatStore:
                     cancel()
                 return
 
-    def _handing(self, session_id: str, running: _Running, identifier: str) -> None:
-        """Called on the adapter's thread as a steer leaves: what follows answers it."""
+    def _handing(self, session_id: str, running: _Running, identifier: str) -> bool:
+        """Called on the adapter's thread as a steer is about to leave.
+
+        From here what the Agent says answers the message. A turn that has
+        already ended, or stopped, or taken the message for its next prompt,
+        keeps it from leaving at all, so it can never arrive twice.
+        """
         with self._lock:
-            if self._running.get(session_id) is running and not running.stop.is_set():
-                self._delivered(self._sessions[session_id], identifier)
+            if (self._running.get(session_id) is not running or running.stop.is_set() or running.redirected
+                    or not any(waiting == identifier for waiting, _ in running.waiting)):
+                return False
+            self._delivered(self._sessions[session_id], identifier)
+            return True
 
     def _delivered(self, session: _SavedChat, identifier: str) -> None:
         """The Agent has this interjection; what it says next answers it. The lock is held."""
@@ -2103,6 +2114,9 @@ class ChatStore:
                 follow = [] if stopped or error or self._closing else [
                     (identifier, text) for identifier, text in running.waiting if identifier not in handed]
                 following = {identifier for identifier, _ in follow}
+                # Taken here, a message is never routed again by a steer that
+                # finishes late; one handed over is left for that steer to settle.
+                running.waiting = [row for row in running.waiting if row[0] in handed]
                 for message in session.messages:
                     if message.interjection == "pending" and message.id not in following:
                         message.interjection = "undelivered"

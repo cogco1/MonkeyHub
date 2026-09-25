@@ -308,7 +308,7 @@ class CodexAcpSession:
             return RequestPermissionResponse(outcome={"outcome": "cancelled"})
         return RequestPermissionResponse(outcome={"outcome": "selected", "optionId": selected})
 
-    def steer(self, text: str, on_sending: Callable[[], None] | None = None) -> str:
+    def steer(self, text: str, on_sending: Callable[[], bool] | None = None) -> str:
         """Send text into the running turn through the adapter's steering extension.
 
         Returns "injected" when the turn took it, "startedNewTurn" when the turn
@@ -317,7 +317,8 @@ class CodexAcpSession:
         steering, and "failed" otherwise. It is never sent as a prompt of its
         own here; the caller decides what follows. on_sending runs on this
         adapter's thread just before the request leaves, so every update the
-        adapter sends after it is seen after it.
+        adapter sends after it is seen after it; returning False keeps the
+        request from leaving ("idle").
         """
         with self._lifecycle_lock:
             if self._closed or not self._prompt_lock.locked():
@@ -330,7 +331,7 @@ class CodexAcpSession:
         except Exception:  # noqa: BLE001 - any failure leaves the caller's fallback
             return "failed"
 
-    async def _steer(self, text: str, on_sending: Callable[[], None] | None) -> str:
+    async def _steer(self, text: str, on_sending: Callable[[], bool] | None) -> str:
         turn, live = self._turn_task, self._turn_live
         if turn is None or live is None:
             return "idle"
@@ -350,8 +351,8 @@ class CodexAcpSession:
             # turn's own activity above implies.
             return "unsupported"
         self._touch_activity(self._session_id)
-        if on_sending is not None:
-            on_sending()
+        if on_sending is not None and not on_sending():
+            return "idle"
         try:
             response = await asyncio.wait_for(self._connection.ext_method(
                 "session/steering", {"sessionId": self._session_id, "prompt": [{"type": "text", "text": text}]},
