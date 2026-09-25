@@ -52,14 +52,14 @@ const composerWords = {
   "zh-CN": {
     composerMenu: "附件与新话题", newTopic: "新话题", newTopicDetail: "下一条消息从项目状态开始，不带之前的对话",
     newTopicRemove: "移除新话题",
-    target: "将修改：当前", targetUnrecorded: "未记录的修改不包括在内",
+    target: "将修改：当前", targetUnrecorded: "未记录的修改不包括在内", sending: "发送中…",
     targetViewing: (name: string) => `正在查看 ${name}，这条消息仍会修改当前`,
   },
   en: {
     composerMenu: "Attachments and new topic", newTopic: "New topic",
     newTopicDetail: "The next message starts from the project state, without this conversation's context",
     newTopicRemove: "Remove New topic",
-    target: "Changes: Current", targetUnrecorded: "unrecorded edits not included",
+    target: "Changes: Current", targetUnrecorded: "unrecorded edits not included", sending: "Sending…",
     targetViewing: (name: string) => `Viewing ${name}; this message still changes Current`,
   },
 } as const;
@@ -330,6 +330,8 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
   const [error, setError] = useState<HubError | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  // PP-3: a send says Sending… once its project is connected; connecting it keeps its own words.
+  const [sending, setSending] = useState<"connecting" | "posting" | null>(null);
   const [sidebar, setSidebar] = useState(() => initial.sidebar ?? window.innerWidth > 900);
   const [panel, setPanel] = useState(() => initial.panel ?? false);
   const [tabs, setTabs] = useState<ToolTab[]>([]);
@@ -801,7 +803,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
       // stay in the draft for the next turn. The composer stays open.
       if (!draft.trim()) return;
       const target = chat.id, content = draft.trim(), key = draftKey;
-      actionLock.current = true; setError(null);
+      actionLock.current = true; setError(null); setSending("posting");
       setDrafts((value) => ({ ...value, [key]: "" }));
       try {
         const body: ChatPostRequest = { content, projectId: chat.projectId };
@@ -809,7 +811,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
         if (selection.current.chatId === target) setChat(posted);
         requestAnimationFrame(() => { if (messages.current) messages.current.scrollTop = messages.current.scrollHeight; });
       } catch (cause) { setDrafts((value) => ({ ...value, [key]: value[key] || content })); setError(asFailure(cause)); }
-      finally { actionLock.current = false; }
+      finally { actionLock.current = false; setSending(null); }
       return;
     }
     const target = projectDir, content = draft.trim(), key = draftKey, files = attachments;
@@ -817,7 +819,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
     if (requestedContextMode === "project" && !requestedContext) {
       setError({ code: "CHAT_CONTEXT_UNAVAILABLE", detail: contextUnavailable }); return;
     }
-    actionLock.current = true; setBusy(true); setError(null);
+    actionLock.current = true; setBusy(true); setSending("connecting"); setError(null);
     try {
       let current = chat?.id === chatId ? chat : chatId ? await request<ChatDetail>(`/api/chat/sessions/${encodeURIComponent(chatId)}`) : null;
       if (!current) {
@@ -838,6 +840,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
         if (!body.designContext) throw new Error(t.contextOpenProject);
         body.contextMode = "project";
       }
+      setSending("posting");
       if (files.length) body.attachments = await Promise.all(files.map(async (file) => ({ name: file.name, mimeType: file.type || "application/octet-stream", data: await fileData(file, t.attachmentRead) })));
       const posted = await request<ChatDetail>(`/api/chat/sessions/${current.id}/messages`, body);
       if (selection.current.projectDir === target && (selection.current.chatId === chatId || selection.current.chatId === current.id)) { setChatId(posted.id); setChat(posted); }
@@ -849,7 +852,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
       followLatest.current = true; setLatest({ away: false, unseen: 0 });
       requestAnimationFrame(() => toLatest());
     } catch (cause) { setError(asFailure(cause)); void refresh(); }
-    finally { actionLock.current = false; setBusy(false); }
+    finally { actionLock.current = false; setBusy(false); setSending(null); }
   };
   /** Record the edits that keep project state out of chat; the new context the architect chose then starts. */
   const recordForContext = async () => {
@@ -1290,7 +1293,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
           <button type="submit" className="btn">{t.modelApply}</button>
           <button type="button" className="btn" onClick={() => setCustomModel(null)}>{t.cancel}</button>
         </form>}
-        <p className="chat-composer-note" role="status">{busy || toolBusy ? t.working : !availableProvider?.available && !chatId ? availableProvider?.detail ?? (loading ? "" : t.noProvider) : ""}</p>
+        <p className="chat-composer-note" role="status">{sending === "posting" ? w.sending : busy || toolBusy ? t.working : !availableProvider?.available && !chatId ? availableProvider?.detail ?? (loading ? "" : t.noProvider) : ""}</p>
       </div>
     </main>
     {panel && <div className="chat-resizer" role="separator" aria-label={t.resize} aria-orientation="vertical" aria-valuemin={320} aria-valuemax={Math.max(320, window.innerWidth - 400)} aria-valuenow={panelWidth} tabIndex={0}

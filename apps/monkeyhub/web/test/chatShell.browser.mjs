@@ -2430,6 +2430,18 @@ try {
   await visibleWorkspace().getByRole("button", { name: "Back to Current", exact: true }).click();
   await target.locator(".chat-target__viewing").waitFor({ state: "detached" });
   assert.equal(await target.getAttribute("data-viewing"), "false");
+  // PP-3: a send says Sending… while its message is on the way; connecting a project keeps its own words.
+  let releaseSend;
+  chatMessageResponseGate = new Promise((resolve) => { releaseSend = resolve; });
+  await page.locator("#chat-input").fill("Widen the reading room by one bay");
+  const heldSend = page.waitForRequest((req) => req.method() === "POST" && new URL(req.url()).pathname.endsWith("/messages"));
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  await heldSend;
+  await page.waitForFunction(() => document.querySelector(".chat-composer-note")?.textContent === "Sending…");
+  releaseSend(); chatMessageResponseGate = Promise.resolve();
+  await page.getByRole("button", { name: "Stop", exact: true }).waitFor();
+  await page.waitForFunction(() => document.querySelector(".chat-composer-note")?.textContent === "");
+  await page.getByRole("button", { name: "Stop", exact: true }).click();
 
   // With no building project, machine tools remain available and report a
   // missing dependency directly instead of asking the person to bind Studio.
