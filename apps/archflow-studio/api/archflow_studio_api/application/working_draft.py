@@ -1,16 +1,24 @@
-"""Working positions use P036; generation, acceptance and issue keep their owners."""
+"""Working positions use P036; generation, acceptance and issue keep their owners.
 
+The current position is also the project's **Working Head**: the latest valid
+working state ordinary Modeling, Drawing and Render work follows (#271). It is
+read here from the retained position, never guessed from the newest file.
+"""
+
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
 from archflow.contracts.canonical import canonical_json
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import STUDIO_LOCAL_DRAFT
-from archflow.project.refs import ProjectRecordRef
-from archflow.project.repository import StaleWorkingDraft
+from archflow.project.refs import ProjectRecordRef, record_ref_from_uri
+from archflow.project.repository import ProjectRepositoryError, StaleWorkingDraft
+from archflow.state.design_portfolio import DesignBranch
 
+from .artifacts import FORMAT_3DM, ModelSource, list_artifacts, require_complete_model, require_model_source
 from .binding import retained_sources
 from .binding import ProjectBinding
-from .projection import project_state
+from .projection import StateProjection, project_state
 from ..transport.errors import StudioError
 from ..transport.working_draft import LocalDraftDto, LocalDraftInputDto, LocalDraftSourceDto, WorkingDraftDto, WorkingDraftEntryDto
 
@@ -146,3 +154,239 @@ def retain_local_draft(binding: ProjectBinding, draft: LocalDraftInputDto | None
         value["localDraftRef"] = ref.to_dict()
     _write(binding, value, revision)
     return read_working_draft(binding)
+
+
+# ---- The Working Head (#271) -------------------------------------------------
+
+WORKSPACES = ("modeling", "drawing", "render", "board")
+LIVE = "live"
+FROZEN = "frozen"
+_LINEAGE_LIMIT = 64
+_UNREADABLE = (StudioError, ProjectRepositoryError, KeyError, TypeError, ValueError, OSError)
+
+
+@dataclass(frozen=True, slots=True)
+class WorkingHead:
+    """The project's current valid working state, as its retained facts state it."""
+
+    run_id: str
+    state_digest: str
+    record_digest: str
+    # The accepted Stage this state is, or the one it was continued from.
+    source_stage_ref: str | None
+    branch_id: str | None
+    # True only when the head run is exactly that Stage's accepted model run.
+    accepted: bool
+    # working-position | branch-head | reference: which retained fact answered.
+    origin: str
+    label: str | None
+    # The one complete viewable model of this exact state, when it has one.
+    model_source: ModelSource | None
+    # The head run first, then each exact retained parent it continued.
+    lineage: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class WorkingSource:
+    """What one workspace should show and continue from, under one policy."""
+
+    project_id: str
+    workspace: str
+    policy: str
+    # The retained position's revision; it changes whenever the head moves.
+    revision_sha256: str | None
+    head: WorkingHead | None
+    compatible: bool
+    source: ModelSource | None
+    # Set only when ``source`` is exactly an accepted Stage's pinned model.
+    stage_ref: str | None
+    reason: str | None
+    warnings: tuple[str, ...]
+
+
+def _detail(exc: Exception) -> str:
+    return exc.detail if isinstance(exc, StudioError) else str(exc) or type(exc).__name__
+
+
+def _lineage(binding: ProjectBinding, run_id: str) -> tuple[str, ...]:
+    """The run and the exact retained sources it continued, newest first."""
+
+    runs = [run_id]
+    while len(runs) < _LINEAGE_LIMIT:
+        try:
+            delta = binding.candidate_delta(runs[-1])
+            parent = None if delta is None else delta["source_run_ref"]["run_id"]
+        except _UNREADABLE:
+            break
+        if parent is None or parent in runs:
+            break
+        runs.append(parent)
+    return tuple(runs)
+
+
+def _complete_model(binding: ProjectBinding, projection: StateProjection, stage) -> ModelSource | None:
+    """The single complete model of this exact state; several are not chosen between."""
+
+    run_id, digest = projection.run.run_id, projection.state_digest
+    if stage is not None and stage.candidate_id == run_id:
+        return ModelSource(run_id, digest, stage.model_sha256)
+    rows = [row for row in list_artifacts(binding, run_id=run_id).artifacts
+            if row.run_id == run_id and row.design_state_digest == digest and row.format == FORMAT_3DM
+            and row.available and row.model_source is not None]
+    composed = {row.model_source for row in rows if row.representation == "composed"}
+    if composed:
+        return next(iter(composed)) if len(composed) == 1 else None
+    complete = set()
+    for row in rows:
+        try:
+            require_complete_model(row, projection.reference.receipt or {})
+        except StudioError:
+            continue
+        complete.add(row.model_source)
+    return next(iter(complete)) if len(complete) == 1 else None
+
+
+def _head_at(binding: ProjectBinding, run_id: str, *, branch_id: str | None, origin: str,
+             label: str | None) -> WorkingHead:
+    stage_ref = None
+    if branch_id is not None and branch_id in binding.repository.read_design_branches():
+        # A run accepted into several lines answers as the Stage of its own line.
+        stage_ref = next((ref for ref, stage in binding.design_history(branch_id) if stage.candidate_id == run_id), None)
+    projection = project_state(binding, run_id=run_id, source_stage_ref=stage_ref)
+    if projection.run.run_id != run_id or not projection.reference_state_exact or projection.state_digest is None:
+        raise StudioError(409, "WORKING_SOURCE_UNAVAILABLE", f"Run {run_id} has no exact finished state.")
+    stage = None if projection.source_stage_ref is None else binding.design_stage(projection.source_stage_ref)
+    accepted = stage is not None and stage.candidate_id == run_id
+    return WorkingHead(
+        run_id=run_id, state_digest=projection.state_digest, record_digest=projection.record_digest,
+        source_stage_ref=None if projection.source_stage_ref is None else projection.source_stage_ref.uri,
+        branch_id=stage.branch_id if stage is not None else branch_id, accepted=accepted, origin=origin,
+        label=label or (stage.label if accepted else None),
+        model_source=_complete_model(binding, projection, stage if accepted else None),
+        lineage=_lineage(binding, run_id),
+    )
+
+
+def _fallback_head(binding: ProjectBinding, warnings: list[str]) -> WorkingHead | None:
+    """Without a readable position: the main line's accepted head, then the reference run."""
+
+    try:
+        branches = binding.repository.read_design_branches()
+        if branches:
+            branch_id = "main" if "main" in branches else sorted(branches)[0]
+            stage = binding.design_stage(DesignBranch.from_dict(branches[branch_id]).head_stage)
+            return _head_at(binding, stage.candidate_id, branch_id=branch_id, origin="branch-head", label=None)
+    except _UNREADABLE as exc:
+        warnings.append(f"The accepted design head could not be read: {_detail(exc)}")
+    try:
+        reference = binding.reference_run()
+        if reference.source == "none":
+            return None
+        return _head_at(binding, reference.run.run_id, branch_id=None, origin="reference", label=None)
+    except _UNREADABLE as exc:
+        warnings.append(f"The project's reference run could not be read: {_detail(exc)}")
+    return None
+
+
+def _stage_of_model(binding: ProjectBinding, model: ModelSource) -> str | None:
+    matches = {ref.uri for branch_id in binding.repository.read_design_branches()
+               for ref, stage in binding.design_history(branch_id)
+               if stage.candidate_id == model.run_id and stage.model_sha256 == model.asset_sha256}
+    return next(iter(matches)) if len(matches) == 1 else None
+
+
+def _drawable(binding: ProjectBinding, head: WorkingHead) -> tuple[ModelSource | None, str | None, str | None]:
+    """The head's first model the drawing owner can cut exactly, or why none can be."""
+
+    from .drawings import _complete_source  # the drawing owner decides what it can draw
+
+    stage_ref = record_ref_from_uri(head.source_stage_ref, binding.project_id) if head.accepted else None
+    models = [] if head.model_source is None else [head.model_source]
+    for row in list_artifacts(binding, run_id=head.run_id).artifacts:
+        if (row.run_id == head.run_id and row.design_state_digest == head.state_digest and row.format == FORMAT_3DM
+                and row.available and row.model_source is not None and row.model_source not in models):
+            models.append(row.model_source)
+    reason = "The current working version has no complete model to draw from yet."
+    for model in models:
+        pinned = stage_ref if stage_ref is not None and model == head.model_source else None
+        try:
+            _complete_source(binding, model, pinned)
+        except _UNREADABLE as exc:
+            reason = _detail(exc)
+            continue
+        return model, None if pinned is None else pinned.uri, None
+    return None, None, reason
+
+
+def _record_digest_of(binding: ProjectBinding, run_id: str, state_digest: str) -> str | None:
+    try:
+        newest = binding.newest_runner_receipt(run_id)
+    except _UNREADABLE:
+        return None
+    if newest is None or newest[1].get("design_state_digest") != state_digest:
+        return None
+    digest = newest[1].get("state_record_digest")
+    return digest if isinstance(digest, str) else None
+
+
+def model_is_current(binding: ProjectBinding, run_id: str, state_digest: str, *,
+                     head: WorkingHead | None = None) -> tuple[str, str | None]:
+    """Whether an exact model state still is the Working Head's design content."""
+
+    if head is None:
+        head = resolve_working_source(binding).head
+    if head is None:
+        return "unavailable", "The project has no current working state to compare with."
+    if (run_id, state_digest) == (head.run_id, head.state_digest):
+        return "current", None
+    if _record_digest_of(binding, run_id, state_digest) == head.record_digest:
+        return "current", None
+    return "outdated", "The project model has changed since this was made."
+
+
+@retained_sources
+def resolve_working_source(binding: ProjectBinding, workspace: str = "modeling", *, policy: str = LIVE,
+                           pinned: ModelSource | None = None) -> WorkingSource:
+    """Resolve the current working source for one workspace from retained facts only.
+
+    LIVE answers the head's compatible exact source; FROZEN keeps an exact pinned
+    model and says whether the head has moved past it. Nothing is written.
+    """
+
+    if workspace not in WORKSPACES:
+        raise StudioError(422, "WORKSPACE_INVALID", f"Choose one of {', '.join(WORKSPACES)}.")
+    if policy not in (LIVE, FROZEN) or (policy == FROZEN) != (pinned is not None):
+        raise StudioError(422, "SOURCE_POLICY_INVALID", "Use live, or frozen with one exact pinned model.")
+    value, revision = binding.repository.read_working_draft()
+    warnings: list[str] = []
+    head = None
+    current = value["current"]
+    if current is not None:
+        row = value["runs"][current]
+        try:
+            head = _head_at(binding, current, branch_id=row["branchId"], origin="working-position", label=row["label"])
+        except _UNREADABLE as exc:
+            warnings.append(f"The saved working position {current} could not be read: {_detail(exc)}")
+    if head is None:
+        head = _fallback_head(binding, warnings)
+
+    def answer(compatible, source, stage_ref, reason):
+        return WorkingSource(binding.project_id, workspace, policy, revision, head, compatible, source, stage_ref,
+                             reason, tuple(warnings))
+
+    if policy == FROZEN:
+        require_model_source(binding, pinned)
+        state, reason = model_is_current(binding, pinned.run_id, pinned.state_digest, head=head)
+        return answer(True, pinned, _stage_of_model(binding, pinned), None if state == "current" else reason)
+    if head is None:
+        return answer(False, None, None, "This project has no retained working state yet.")
+    if workspace == "drawing":
+        source, stage_ref, reason = _drawable(binding, head)
+        return answer(source is not None, source, stage_ref, reason)
+    source = head.model_source
+    stage_ref = head.source_stage_ref if head.accepted and source is not None else None
+    if workspace == "board":
+        # Board follows its pages' own replacement links; any head is compatible.
+        return answer(True, source, stage_ref, None)
+    return answer(source is not None, source, stage_ref,
+                  None if source is not None else "The current working version has no complete model to show yet.")
