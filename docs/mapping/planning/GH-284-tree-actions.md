@@ -34,7 +34,8 @@ Batch E (2026-09-25 afternoon), parallel with batch D; none touches App.tsx, Cha
   - the Accept toast without Undo;
   - hover keeps the toast, and it fades once released;
   - no toast on a refused Continue, from the card or the chip;
-  - the chip's viewing state offering both actions, with its Continue and Undo.
+  - the chip's viewing state offering both actions, with its Continue and Undo;
+  - the chip's Record edits and continue. The harness passes Modeling's recorder to the chip, doing the hand-off below; the transform is a no-op once ProjectWorkspace does it.
 
 ## Hand-off (outside this lane's scope)
 

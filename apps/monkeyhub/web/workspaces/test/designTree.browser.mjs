@@ -124,6 +124,15 @@ try {
           return <div data-testid="arch-stub" style={{ padding: 24 }}>Modeling · {props.initialRunId ?? "Working Head"}</div>;
         }`, map: null };
       if (file === `${root}/src/workspaces/monkeyboard/Board.tsx`) return { code: `export default function Board() { return <div data-testid="board-stub">Board</div>; }`, map: null };
+      // The hand-off GH-284 leaves ProjectWorkspace (its planning card): the chip gets Modeling's recorder, as the
+      // tree's side card does. The test wires it until ProjectWorkspace passes it itself; then this is a no-op.
+      if (file === `${root}/src/app/ProjectWorkspace.tsx`) {
+        const bar = source.match(/<DesignTreeBar\b[\s\S]*?\/>/)?.[0];
+        assert.ok(bar, "ProjectWorkspace mounts the Stage chip");
+        if (!bar.includes("onRecordEdits=")) {
+          return { code: source.replace(bar, bar.replace("<DesignTreeBar", "<DesignTreeBar onRecordEdits={recordEdits}")), map: null };
+        }
+      }
       if (file === `${root}/src/features/designTree/DesignTreeCanvas.tsx`) {
         const callback = "excalidrawAPI={(api) => { canvas.current = api; setReady(true); }}";
         assert.equal(source.split(callback).length, 2, "the test reads the tree canvas through its one Excalidraw callback");
@@ -485,10 +494,12 @@ try {
   assert.equal(writes.length, beforeRefusal);
   assert.equal(fixture.state.head, "run-entrance-a");
   await shoot(tab, "09b-chip-refusal");
-  fixture.state.localDraft = null;
+  // Record edits and continue behaves here as in the side card: Modeling records the edits once, then the same Continue.
   revision = fixture.state.revision;
-  await chipContinue.click();
+  const recordedBefore = recorded;
+  await tab.locator('.design-tree-bar__refusal [data-action="record"]').click();
   await toast.filter({ hasText: "Current is now “B · Twin towers on a podium”" }).waitFor();
+  assert.equal(recorded, recordedBefore + 1, "the chip records the edits once, then continues");
   assert.deepEqual(writes.at(-1), { method: "PUT", name: "/api/working-draft",
     body: { projectId: PROJECT, runId: "run-massing-b", baseRevisionSha256: rev(revision), branchId: null } });
   await viewingState.waitFor({ state: "detached" });
