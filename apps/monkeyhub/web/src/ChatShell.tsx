@@ -1,10 +1,10 @@
 import "../workspaces/src/styles.css";
 import { ErrorBoundary } from "../workspaces/src/app/ErrorBoundary";
-import { lazy, Suspense, useCallback, useEffect, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from "react";
+import { Fragment, lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from "react";
 import { applicationUrl, type AppearancePreferences } from "../../../shared-web/src/appearance.js";
 import type { WorktreeGraphDto } from "../workspaces/src/api/generated";
 import { projectStatus, refLabel, workRows } from "./worktreeGraph";
-import type { AppStatus, ChatArchiveRequest, ChatCreateRequest, ChatDetail, ChatPostRequest, ChatProject, ChatProvider, ChatSummary, ChatWorkspace, HubError, HubRuntimeDto, ProjectArchiveExportRequest, ProjectArchiveRestoreRequest, ProjectArchiveRestoreResult, ProjectArchiveSummary, ProjectRuntimeDto, RuntimeEvent } from "./api/generated";
+import type { AppStatus, ChatArchiveRequest, ChatCreateRequest, ChatDetail, ChatMessage, ChatPostRequest, ChatProject, ChatProvider, ChatSummary, ChatWorkspace, HubError, HubRuntimeDto, ProjectArchiveExportRequest, ProjectArchiveRestoreRequest, ProjectArchiveRestoreResult, ProjectArchiveSummary, ProjectRuntimeDto, RuntimeEvent } from "./api/generated";
 import { ProjectRuntimeProvider } from "../workspaces/src/api/ProjectRuntimeContext";
 import type { WorkspaceDesignContext } from "../workspaces/src/app/ProjectWorkspace";
 import { MonitorPage } from "./MonitorPage";
@@ -12,6 +12,7 @@ import { ChatMarkdown, ChatMessageFiles, type ChatDocument } from "./ChatMessage
 import type { PageSource } from "../workspaces/src/workspaces/monkeyboard/boardScene";
 const ProjectWorkspace = lazy(() => import("../workspaces/src/app/ProjectWorkspace").then((module) => ({ default: module.ProjectWorkspace })));
 import { presentFailure } from "./chatError";
+import { clock, currentStep, describeStep, rawDetail, rawLine, stepText, turnsOf, workedSeconds, type ProcessTurn, type ProcessWords } from "./chatProcess";
 import { SoftwareUpdateSettings, type RestartBlocker } from "./SoftwareUpdateSettings";
 import "./ChatShell.css";
 
@@ -59,6 +60,7 @@ function Icon({ name }: { name: string }) {
     plus: <path d="M12 5v14M5 12h14" />, panel: <><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M15 4v16" /></>,
     sidebar: <><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M9 4v16" /></>, close: <path d="m6 6 12 12M6 18 18 6" />,
     send: <path d="M12 19V5m-6 6 6-6 6 6" />, stop: <rect x="6" y="6" width="12" height="12" rx="2" />,
+    down: <path d="M12 5v14m-6-6 6 6 6-6" />,
     attach: <path d="m8 13 7-7a3 3 0 0 1 4 4L9 20a5 5 0 0 1-7-7L13 2m-5 11 7-7" />,
     folder: <path d="M3 6h7l2 2h9v11H3Z" />, chat: <path d="M4 4h16v13H9l-5 4Z" />,
     archive: <><path d="M4 8h16v13H4ZM3 3h18v5H3ZM9 12h6" /></>,
@@ -119,10 +121,6 @@ function readView(): { chatId: string | null; projectDir: string | null; sidebar
   } catch { return empty; }
 }
 
-/** One saved activity: its first line is the summary, the rest the diagnostics. */
-const activityLine = (content: string) => content.split("\n")[0] ?? "";
-const activityDetail = (content: string) => content.split("\n").slice(1).join("\n");
-
 /**
  * One failure, told twice: a line the reader can act on, and the original text
  * underneath for whoever has to diagnose it. Nothing here is ever applied to a
@@ -146,6 +144,66 @@ function Failure({ failure, language, labels, connection, onClose, onChangeModel
       <details className="chat-error__details" key={shown.technical}><summary>{labels.errorDetails}</summary><pre lang="en" translate="no">{shown.technical}</pre></details>
     </div>
     {onClose && <button className="chat-icon" aria-label={labels.close} onClick={onClose}><Icon name="close" /></button>}
+  </div>;
+}
+
+type ChatWords = (typeof words)[keyof typeof words];
+const processWords = (t: ChatWords): ProcessWords => ({ steps: t.processStep, prepare: t.processPrepare,
+  webSearch: t.processWebSearch, desktop: t.processDesktop, permission: t.processPermission });
+/** The wall clock while `active`; a finished turn needs no ticking. */
+function useNow(active: boolean) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!active) return;
+    setNow(Date.now());
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [active]);
+  return now;
+}
+const stepMark = (status: string | undefined) => status === "failed" ? "✕" : status === "streaming" ? "•" : status === "interrupted" ? "–" : "✓";
+
+/**
+ * One turn's tool calls as a single row (#285): "Worked 1m 18s · 12 steps",
+ * or while the turn runs, its clock and the step it is on. Opened, it lists
+ * the steps in plain words; the lines the CLI reported stay under Technical
+ * details. It starts folded, and folding leaves no space behind.
+ */
+function ProcessRow({ turn, running, open, t, onToggle }: {
+  turn: ProcessTurn; running: boolean; open: boolean; t: ChatWords; onToggle: (row: HTMLElement) => void;
+}) {
+  const now = useNow(running);
+  const names = processWords(t);
+  const count = turn.steps.length;
+  const worked = running ? null : workedSeconds(turn);
+  const current = running ? currentStep(turn) : null;
+  const body = `chat-process-${turn.key}`;
+  return <div className="chat-process" data-turn={turn.key} data-running={running}>
+    <button type="button" className="chat-process__row" aria-expanded={open} aria-controls={open ? body : undefined} onClick={(event) => onToggle(event.currentTarget)}>
+      {running && <span className="chat-thread__dot" data-status="running" />}
+      <span className="chat-process__summary">{running ? <>
+        {t.processWorking}
+        {/* The ticking clock is for the eye; announcing it every second would drown the log. */}
+        {turn.startedAt !== null && <span aria-hidden="true"> · {clock((now - turn.startedAt) / 1000)}</span>}
+        {current && <> · <span className="chat-process__current">{stepText(describeStep(current), names)}…</span></>}
+        {` · ${t.processStepCount(count)}`}
+      </> : worked !== null ? t.processWorked(t.elapsed(worked), count) : t.processSteps(count)}</span>
+      {turn.failed > 0 && <span className="chat-process__failed">{"\u00a0· "}{t.processFailed(turn.failed)}</span>}
+      <svg className="chat-process__chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6" /></svg>
+    </button>
+    {open && <div className="chat-process__body" id={body}>
+      <ol className="chat-process__steps">{turn.steps.map((step) => <li key={step.id} data-status={step.status}>
+        <span className="chat-process__mark" aria-hidden="true">{stepMark(step.status)}</span>
+        <span>{stepText(describeStep(step), names)}{step.status === "failed" && <span className="chat-process__step-failed"> · {t.processStepFailed}</span>}</span>
+      </li>)}</ol>
+      <details className="chat-process__technical">
+        <summary>{t.processTechnical}</summary>
+        <ol>{turn.steps.map((step) => <li key={step.id}>
+          <code lang="en" translate="no">{rawLine(step)}</code>
+          {rawDetail(step) && <pre lang="en" translate="no">{rawDetail(step)}</pre>}
+        </li>)}</ol>
+      </details>
+    </div>}
   </div>;
 }
 
@@ -253,6 +311,19 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
   const contextUnavailable = workspaceContext?.unavailableReason === "unsaved" ? t.contextUnsaved
     : workspaceContext?.unavailableReason === "loading" ? t.contextLoading : t.contextOpenProject;
   const running = chat?.id === chatId && chat.status === "running";
+  // #285: a turn's tool calls fold into one process row; the Agent's text,
+  // results, permission prompts and errors stay in the conversation.
+  const shownMessages = chat?.id === chatId ? chat.messages : undefined;
+  const turns = useMemo(() => turnsOf(shownMessages ?? [], running), [shownMessages, running]);
+  const [expandedTurns, setExpandedTurns] = useState<ReadonlySet<string>>(() => new Set());
+  // A conversation opens at its latest message and follows new output only
+  // while the reader is already there; a reader who scrolled up is never moved.
+  const followLatest = useRef(true);
+  const jumping = useRef(false);
+  const openingChat = useRef<string | null>(initial.chatId);
+  const seenEntries = useRef<{ chatId: string | null; ids: ReadonlySet<string> }>({ chatId: null, ids: new Set() });
+  const foldAnchor = useRef<{ key: string; top: number } | null>(null);
+  const [latest, setLatest] = useState({ away: false, unseen: 0 });
   // Include hidden conversations and mounted project workspaces: a restart
   // would lose their in-memory drafts just as it would the visible composer.
   const restartBlocker: RestartBlocker = Object.values(drafts).some((text) => Boolean(text.trim())) || Object.values(draftAttachments).some((files) => files.length)
@@ -385,7 +456,13 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
     const timer = window.setInterval(() => { void request<ChatProvider[]>("/api/chat/providers").then(setProviders).catch(() => {}); }, 5000);
     return () => window.clearInterval(timer);
   }, [providers]);
-  useEffect(() => { setChat(null); setError(null); void refresh(); }, [chatId, refresh]);
+  useEffect(() => {
+    setChat(null); setError(null);
+    // Reopening a chat shows its turns folded and lands at its latest message.
+    setExpandedTurns(new Set()); openingChat.current = chatId; followLatest.current = true; jumping.current = false;
+    setLatest({ away: false, unseen: 0 });
+    void refresh();
+  }, [chatId, refresh]);
   useEffect(() => { void refresh(); }, [archivedView, refresh]);
   useEffect(() => { if (!chatId) { setDraftModel(defaults.model); setCustomModel(null); } }, [chatId, defaults.model]);
   useEffect(() => {
@@ -396,7 +473,62 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
   useEffect(() => { try { localStorage.setItem(VIEW_KEY, JSON.stringify({ chatId, projectDir, sidebar, panel, panelWidth, activeTool,
     tools: !restoredTools.current && initial.projectDir === projectDir ? initial.tools : currentTabs.map((item) => ({ id: item.id, candidate: item.candidate })),
   })); } catch { /* Navigation stays in this page. */ } }, [chatId, projectDir, sidebar, panel, panelWidth, tabs, activeTool, initial]);
-  useEffect(() => { if (messages.current && messages.current.scrollHeight - messages.current.scrollTop - messages.current.clientHeight < 220) messages.current.scrollTop = messages.current.scrollHeight; }, [chat?.messages]);
+  const nearLatest = (node: HTMLElement) => node.scrollHeight - node.scrollTop - node.clientHeight <= 80;
+  // The list scrolls smoothly by its own style; following output must not lag behind it.
+  const toLatest = (behavior: ScrollBehavior = "instant") => { messages.current?.scrollTo({ top: messages.current.scrollHeight, behavior }); };
+  useLayoutEffect(() => {
+    const node = messages.current, list = shownMessages ?? [];
+    // What a reader would count as new: entries in the conversation, not each folded step.
+    const ids = new Set(list.filter((message) => message.role !== "tool" || message.id.includes(":progress:") || message.candidateId || message.permission).map((message) => message.id));
+    const seen = seenEntries.current;
+    const fresh = seen.chatId === chatId ? [...ids].filter((id) => !seen.ids.has(id)).length : 0;
+    seenEntries.current = { chatId, ids };
+    if (!node || !list.length) return;
+    if (openingChat.current === chatId) { openingChat.current = null; followLatest.current = true; toLatest(); return; }
+    if (followLatest.current) toLatest();
+    else if (fresh) setLatest((value) => ({ away: true, unseen: value.unseen + fresh }));
+  }, [shownMessages, chatId]);
+  useEffect(() => {
+    // Images and documents finish loading after the text: keep a following reader at the end.
+    const node = messages.current;
+    if (!node || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => { if (followLatest.current && !jumping.current) toLatest(); });
+    observer.observe(node);
+    for (const child of node.children) observer.observe(child);
+    return () => observer.disconnect();
+  }, [Boolean(shownMessages?.length), chatId]);
+  const readPosition = () => {
+    const node = messages.current;
+    if (!node) return;
+    const at = nearLatest(node);
+    if (jumping.current) { if (!at) return; jumping.current = false; }
+    followLatest.current = at;
+    setLatest((value) => at ? (value.away || value.unseen ? { away: false, unseen: 0 } : value) : value.away ? value : { ...value, away: true });
+  };
+  const jumpToLatest = () => {
+    const node = messages.current;
+    if (!node) return;
+    jumping.current = true; followLatest.current = true; setLatest({ away: false, unseen: 0 });
+    toLatest(window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth");
+    // A reader who takes the wheel mid-scroll is reading again.
+    window.setTimeout(() => { jumping.current = false; }, 1200);
+  };
+  const toggleTurn = (key: string, row: HTMLElement) => {
+    foldAnchor.current = { key, top: row.getBoundingClientRect().top };
+    followLatest.current = false;
+    setExpandedTurns((current) => { const next = new Set(current); if (next.has(key)) next.delete(key); else next.add(key); return next; });
+  };
+  useLayoutEffect(() => {
+    // Keep the row that was pressed where it was on screen; only the space below it changes.
+    const anchor = foldAnchor.current, node = messages.current;
+    if (!anchor || !node) return;
+    foldAnchor.current = null;
+    const row = [...node.querySelectorAll<HTMLElement>(".chat-process")].find((item) => item.dataset.turn === anchor.key)?.querySelector("button");
+    if (row) node.scrollBy({ top: row.getBoundingClientRect().top - anchor.top, behavior: "instant" });
+    const at = nearLatest(node);
+    followLatest.current = at;
+    setLatest((value) => at ? { away: false, unseen: 0 } : { ...value, away: true });
+  }, [expandedTurns]);
   useEffect(() => { if (input.current) { input.current.style.height = "auto"; input.current.style.height = `${Math.min(input.current.scrollHeight, 180)}px`; } }, [draft]);
   const focusConversation = () => {
     setDrafts((value) => ({ ...value, [draftKey]: value[draftKey]?.trim() ? value[draftKey]! : t.startingDraft }));
@@ -552,7 +684,9 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
       setDraftAttachments((value) => ({ ...value, [key]: [], [posted.id]: [] }));
       setContextModes((value) => ({ ...value, [key]: "continue", [posted.id]: "continue" }));
       await refresh();
-      requestAnimationFrame(() => { if (messages.current) messages.current.scrollTop = messages.current.scrollHeight; });
+      // Whoever just sent follows the reply.
+      followLatest.current = true; setLatest({ away: false, unseen: 0 });
+      requestAnimationFrame(() => toLatest());
     } catch (cause) { setError(asFailure(cause)); void refresh(); }
     finally { actionLock.current = false; setBusy(false); }
   };
@@ -862,6 +996,24 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
   // The tool panel may take everything except the rail and a usable conversation.
   const clampWidth = (width: number) => Math.max(320, Math.min(width, window.innerWidth - (sidebar ? 244 : 60) - RAIL_WIDTH - RESIZER_WIDTH - CHAT_MIN_WIDTH));
 
+  /** The user's words and the Agent's answer, with their files: never folded. */
+  const messageEntry = (message: ChatMessage) => <article className={`chat-message chat-message--${message.role}`} key={message.id}>
+    {message.role === "user" && message.contextMode === "project" && <p className="chat-muted">{t.contextProjectMessage}</p>}
+    {message.role === "user" && message.contextMode === "stage" && <p className="chat-muted">{t.contextStageMessage}: {message.confirmedStageLabel}</p>}
+    <ChatMarkdown text={message.content} />
+    <ChatMessageFiles sessionId={chat!.id} messageId={message.id} attachments={message.attachments} documents={message.documents} labels={t}
+      documentBusy={busy || Boolean(toolBusy)} onOpenDocument={project && project.projectId === chat!.projectId ? (document: ChatDocument) => {
+        // Capture the project before preparation; changing chats while it
+        // starts must never open this document in the new project.
+        const target = project.projectDir;
+        const requestId = ++documentRequestSequence.current;
+        setDocumentRequests((current) => ({ ...current, [target]: { source: {
+          runId: document.runId, assetSha256: document.assetSha256,
+          revisionRef: document.revisionRef ?? null, pageIndex: document.pageIndex ?? 0,
+        }, requestId } }));
+        void openTool("monkeyboard");
+      } : undefined} />
+    {message.status === "failed" || message.status === "interrupted" ? <p className="chat-muted">{t[message.status]}</p> : null}</article>;
   return <div className="chat-shell" data-sidebar={sidebar} data-panel={panel} style={{ "--browser-width": `${panelWidth}px` } as CSSProperties}>
     <aside className="chat-sidebar" aria-label={t.projects}>
       <div className="chat-sidebar__top"><strong className="wordmark">MonkeyHub</strong><button className="chat-icon" aria-label={sidebar ? t.collapse : t.expand} onClick={() => setSidebar(!sidebar)}><Icon name="sidebar" /></button></div>
@@ -897,48 +1049,38 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
         </div>
         {crashed && <button type="button" className="chat-activity__open" disabled={recovering || busy || Boolean(toolBusy)} onClick={() => void recoverWorker()}><Icon name="refresh" />{recovering ? t.recovering : t.recoverWorker}</button>}
       </div>}
-      <div className="chat-messages" ref={messages} role="log" aria-live="polite" aria-relevant="additions text">
-        {!chat?.messages?.length ? <div className="chat-welcome"><div className="chat-welcome__mark"><Icon name="chat" /></div><h2>{project ? t.empty : t.noProject}</h2><p>{t.emptyHint}</p>{!project && <div className="chat-welcome__actions"><button className="btn btn--primary" onClick={() => { setDialogError(null); newDialog.current?.showModal(); }}>{t.newProject}</button><button className="btn" onClick={() => { setDialogError(null); addDialog.current?.showModal(); }}>{t.addExisting}</button></div>}</div>
-          : <div className="chat-message-list">{(chat?.messages ?? []).map((message) => message.role === "tool" && message.id.includes(":progress:")
-            ? <article className="chat-progress" key={message.id} data-status={message.status}>
+      <div className="chat-messages" ref={messages} role="log" aria-live="polite" aria-relevant="additions text" onScroll={readPosition}
+        onWheel={() => { jumping.current = false; }} onTouchStart={() => { jumping.current = false; }}>
+        {!shownMessages?.length ? <div className="chat-welcome"><div className="chat-welcome__mark"><Icon name="chat" /></div><h2>{project ? t.empty : t.noProject}</h2><p>{t.emptyHint}</p>{!project && <div className="chat-welcome__actions"><button className="btn btn--primary" onClick={() => { setDialogError(null); newDialog.current?.showModal(); }}>{t.newProject}</button><button className="btn" onClick={() => { setDialogError(null); addDialog.current?.showModal(); }}>{t.addExisting}</button></div>}</div>
+          : <div className="chat-message-list">{turns.map((turn, index) => <Fragment key={turn.key}>
+            {turn.user && messageEntry(turn.user)}
+            {turn.steps.length > 0 && <ProcessRow turn={turn} running={running && index === turns.length - 1} open={expandedTurns.has(turn.key)} t={t}
+              onToggle={(row) => toggleTurn(turn.key, row)} />}
+            {turn.visible.map((message) => message.role !== "tool" ? messageEntry(message)
+              : message.id.includes(":progress:") ? <article className="chat-progress" key={message.id} data-status={message.status}>
                 <div className="chat-progress__heading"><span className="chat-thread__dot" data-status={message.status === "streaming" ? "running" : message.status === "failed" ? "failed" : "idle"} />{t.progress}</div>
                 <ChatMarkdown text={message.content} />
                 {(message.status === "failed" || message.status === "interrupted") && <p className="chat-muted">{t[message.status]}</p>}
               </article>
-            : message.role === "tool"
-            ? <div className="chat-activity" key={message.id} data-status={message.status}>
-                <details><summary><span className="chat-thread__dot" data-status={message.status === "streaming" ? "running" : message.status === "failed" ? "failed" : "idle"} /><span className="chat-activity__line">{activityLine(message.content).slice(0, 160) || t.toolActivity}</span></summary>
-                  {activityDetail(message.content) ? <pre>{activityDetail(message.content)}</pre> : <p className="chat-muted">{t.activityEmpty}</p>}</details>
-                {running && message.permission && <div className="chat-permission" role="group" aria-label={message.permission.title} aria-busy={permissionBusy === message.permission.id}>
-                  <p>{message.permission.title}</p>
-                  <div className="chat-permission__actions">{message.permission.options.map((option) => <button key={option.optionId} type="button" className="chat-activity__open" disabled={permissionBusy !== null}
+              : <div className="chat-activity chat-activity--permission" key={message.id} data-status={message.status}>
+                <div className="chat-permission" role="group" aria-label={message.permission!.title} aria-busy={permissionBusy === message.permission!.id}>
+                  <p>{message.permission!.title}</p>
+                  <div className="chat-permission__actions">{message.permission!.options.map((option) => <button key={option.optionId} type="button" className="chat-activity__open" disabled={permissionBusy !== null}
                     onClick={() => void choosePermission(message.permission!.id, option.optionId)}>{option.name}</button>)}
                     <button type="button" className="chat-activity__open" disabled={permissionBusy !== null} onClick={() => void choosePermission(message.permission!.id, null)}>{t.cancel}</button>
                   </div>
-                </div>}
-                {message.candidateId ? <div className="chat-activity__result"><button type="button" className="chat-activity__open" title={message.candidateId} disabled={!project || Boolean(toolBusy)}
-                  onClick={() => void openTool("monkeyarch", { candidate: message.candidateId! })}><Icon name="cube" /><span>{t.openCandidate}</span></button><span className="chat-muted">{t.candidateHint}</span></div> : null}
-              </div>
-            : <article className={`chat-message chat-message--${message.role}`} key={message.id}>
-              {message.role === "user" && message.contextMode === "project" && <p className="chat-muted">{t.contextProjectMessage}</p>}
-              {message.role === "user" && message.contextMode === "stage" && <p className="chat-muted">{t.contextStageMessage}: {message.confirmedStageLabel}</p>}
-              <ChatMarkdown text={message.content} />
-              <ChatMessageFiles sessionId={chat!.id} messageId={message.id} attachments={message.attachments} documents={message.documents} labels={t}
-                documentBusy={busy || Boolean(toolBusy)} onOpenDocument={project && project.projectId === chat!.projectId ? (document: ChatDocument) => {
-                  // Capture the project before preparation; changing chats while it
-                  // starts must never open this document in the new project.
-                  const target = project.projectDir;
-                  const requestId = ++documentRequestSequence.current;
-                  setDocumentRequests((current) => ({ ...current, [target]: { source: {
-                    runId: document.runId, assetSha256: document.assetSha256,
-                    revisionRef: document.revisionRef ?? null, pageIndex: document.pageIndex ?? 0,
-                  }, requestId } }));
-                  void openTool("monkeyboard");
-                } : undefined} />
-              {message.status === "failed" || message.status === "interrupted" ? <p className="chat-muted">{t[message.status]}</p> : null}</article>)}</div>}
-        {running && <div className="chat-thinking" role="status"><span className="chat-thread__dot" data-status="running" />{t.thinking}</div>}
+                </div>
+              </div>)}
+            {turn.results.map((message) => <div className="chat-activity__result" key={`${message.id}:result`}><button type="button" className="chat-activity__open" title={message.candidateId ?? undefined} disabled={!project || Boolean(toolBusy)}
+                  onClick={() => void openTool("monkeyarch", { candidate: message.candidateId! })}><Icon name="cube" /><span>{t.openCandidate}</span></button><span className="chat-muted">{t.candidateHint}</span></div>)}
+          </Fragment>)}</div>}
+        {running && !turns.at(-1)?.steps.length && <div className="chat-thinking" role="status"><span className="chat-thread__dot" data-status="running" />{t.thinking}</div>}
       </div>
       <div className="chat-composer-wrap">
+        {latest.away && Boolean(shownMessages?.length) && <button type="button" className="chat-jump" onClick={jumpToLatest}
+          aria-label={latest.unseen ? t.jumpLatestNew(latest.unseen) : t.jumpLatest} title={latest.unseen ? t.jumpLatestNew(latest.unseen) : t.jumpLatest}>
+          <Icon name="down" />{latest.unseen > 0 && <span className="chat-jump__count" aria-hidden="true">{latest.unseen > 99 ? "99+" : latest.unseen}</span>}
+        </button>}
         {(error ?? (chat?.id === chatId ? chat?.error : null)) && <Failure failure={(error ?? chat!.error)!} language={preferences.language} labels={t} connection={connectionName}
           onClose={error ? () => setError(null) : undefined}
           onChangeModel={running || archived || external ? undefined : () => {

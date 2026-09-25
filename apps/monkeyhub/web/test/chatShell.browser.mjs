@@ -361,17 +361,19 @@ await page.route((url) => url.pathname.startsWith("/api/"), async (route) => {
       });
       const stageHandoff = data().contextMode === "stage" && confirmedStageForChat
         && data().designContext?.sourceRunId === confirmedStageForChat.runId;
-      session.messages.push({ id: `u-${session.messages.length}`, role: "user", content: data().content, status: "complete", attachments,
+      // Saved times as the Hub writes them: the turn's calls follow its message.
+      const turnStart = Date.now(), at = (seconds) => new Date(turnStart + seconds * 1000).toISOString();
+      session.messages.push({ id: `u-${session.messages.length}`, role: "user", content: data().content, status: "complete", attachments, createdAt: at(0),
         contextMode: stageHandoff ? "stage" : data().contextMode === "project" ? "project" : "continue",
         ...(stageHandoff ? { confirmedStageRef: confirmedStageForChat.stageRef, confirmedStageLabel: confirmedStageForChat.label } : {}) });
       session.title = session.messages[0].content || session.messages[0].attachments?.[0]?.name; session.status = "running";
       // What the API saves while the CLI works: one row per MCP call, a failed
       // one, and the finished candidate that call reported.
-      session.messages.push({ id: `t-${session.messages.length}`, role: "tool", status: "streaming",
+      session.messages.push({ id: `t-${session.messages.length}`, role: "tool", status: "streaming", createdAt: at(2),
         content: "studio_schema · GET /api/state · in_progress" });
-      session.messages.push({ id: `t-${session.messages.length}`, role: "tool", status: "failed",
+      session.messages.push({ id: `t-${session.messages.length}`, role: "tool", status: "failed", createdAt: at(20),
         content: "studio_request · POST /api/issue · failed\nHubFailure(422): This action is not exposed to the chat." });
-      session.messages.push({ id: `t-${session.messages.length}`, role: "tool", status: "complete",
+      session.messages.push({ id: `t-${session.messages.length}`, role: "tool", status: "complete", createdAt: at(78),
         candidateId: `cand-${session.projectId}-1`,
         content: "studio_request · GET /api/jobs/job-1 · completed\ncandidateId: cand-" + session.projectId + "-1\nstatus: succeeded" });
     } else if (match[2] === "stop") session.status = "interrupted";
@@ -404,8 +406,10 @@ const boxOf = (selector) => page.evaluate((value) => {
   const node = document.querySelector(value);
   return node ? node.getBoundingClientRect().width : 0;
 }, selector);
-const activityRows = (expected) => page.waitForFunction(
-  (count) => document.querySelectorAll(".chat-activity").length === count, expected);
+// #285: a turn's calls fold into one process row that states how many there were.
+const activityRows = (expected) => page.waitForFunction((count) => [...document.querySelectorAll(".chat-process__row")]
+  .some((row) => row.textContent.includes(`${count} steps`)), expected);
+const resultButton = (candidate) => page.locator(`.chat-activity__result button[title="${candidate}"]`);
 const visibleWorkspace = () => page.locator('.chat-project-workspace:not([hidden])');
 const waitWorkspace = async (kind = "arch") => {
   await visibleWorkspace().locator(`[data-project-surface="${kind}"]:not([hidden])`).waitFor();
@@ -681,13 +685,26 @@ try {
     ["CLI default model", "fixture-model-a", "fixture-model-b", "Custom model id…"]);
   assert.equal(await modelPicker.isDisabled(), true, "a running turn keeps the model it started with");
 
-  // The MCP activity is readable, its diagnostics stay collapsed until asked
-  // for, and the failed call is visible rather than silent.
+  // #285: the turn's calls fold into one row that says what it is doing now in
+  // plain words; the failed call is counted, not hidden, and the raw request
+  // lines are technical detail under that row.
   await activityRows(3);
-  await page.getByText("studio_request · POST /api/issue · failed").waitFor();
+  const firstProcess = page.locator(".chat-process").last();
+  assert.equal(await page.locator(".chat-process").count(), 1, "one process row for the turn");
+  await firstProcess.locator(".chat-process__current").filter({ hasText: "Prepare to read the model state" }).waitFor();
+  assert.match((await firstProcess.locator(".chat-process__row").innerText()).replace(/\s+/g, " "),
+    /^Working · \d+:\d{2} · Prepare to read the model state… · 3 steps · 1 failed$/);
+  assert.equal(await firstProcess.locator(".chat-process__row").getAttribute("aria-expanded"), "false", "a running turn stays folded");
+  assert.equal(await page.getByText("studio_request · POST /api/issue · failed").count(), 0, "no raw request line in the conversation");
+  await firstProcess.locator(".chat-process__row").click();
+  assert.deepEqual(await firstProcess.locator(".chat-process__steps li > span:last-child").allInnerTexts(),
+    ["Prepare to read the model state", "Update project data · failed", "Check progress"]);
   assert.equal(await page.getByText("HubFailure(422): This action is not exposed to the chat.").isVisible(), false);
-  await page.getByText("studio_request · POST /api/issue · failed").click();
+  await firstProcess.locator(".chat-process__technical summary").click();
+  await firstProcess.locator(".chat-process__technical").getByText("studio_request · POST /api/issue · failed", { exact: true }).waitFor();
   await page.getByText("HubFailure(422): This action is not exposed to the chat.").waitFor();
+  await firstProcess.locator(".chat-process__row").click();
+  assert.equal(await firstProcess.locator(".chat-process__body").count(), 0, "folding leaves nothing behind");
 
   // The agent's permission choices appear in its activity row and wait for an
   // actual choice. Repeated clicks cannot answer the same request twice.
@@ -951,8 +968,8 @@ try {
   // The saved frame comes back after a reload, with the conversation.
   const savedWidth = await boxOf(".chat-browser");
   await page.reload();
-  await page.getByText("studio_request · GET /api/jobs/job-1 · completed").waitFor();
   await activityRows(3);
+  assert.equal(await page.locator('.chat-process__row[aria-expanded="true"]').count(), 0, "a reloaded chat shows its turns folded");
   await page.locator(".chat-browser").waitFor();
   assert.ok(Math.abs(await boxOf(".chat-browser") - savedWidth) < 12, "the panel width is restored");
 
@@ -1088,7 +1105,7 @@ try {
   await visibleWorkspace().evaluate((element) => { element.completionMarker = "once"; });
   await page.waitForTimeout(1600);
   assert.equal(await visibleWorkspace().evaluate((element) => element.completionMarker), "once", "later transcript polls do not reload the completed checkpoint");
-  await page.locator(".chat-activity").filter({ hasText: "Final checkpoint completed" }).getByRole("button", { name: "Open this candidate on the right" }).click();
+  await resultButton("cand-B-final").click();
   assert.equal(await visibleWorkspace().evaluate((element) => element.completionMarker), "once", "clicking the same candidate preserves the mounted model");
   completing.status = "idle";
   emitRuntime();
@@ -1178,7 +1195,7 @@ try {
 
   // A manual historical preview survives repeated snapshots. Reopening the app
   // starts at the newest reliably ordered headless result, even with an old tab.
-  await page.locator(".chat-activity").filter({ hasText: "Final checkpoint completed" }).getByRole("button", { name: "Open this candidate on the right" }).click();
+  await resultButton("cand-B-final").click();
   await waitCandidate("cand-B-final");
   const manualBytes = workspaceFixture.requests.filter((row) => row.name.endsWith("/bytes")).length;
   emitRuntime(); emitRuntime();
@@ -1192,7 +1209,7 @@ try {
 
   // A delivery arriving while the saved historical tab is being restored is
   // still consumed after attachment completes, without any project mutation.
-  await page.locator(".chat-activity").filter({ hasText: "Final checkpoint completed" }).getByRole("button", { name: "Open this candidate on the right" }).click();
+  await resultButton("cand-B-final").click();
   await waitCandidate("cand-B-final");
   let releaseColdRestore;
   runtimeOpenGate = new Promise((resolve) => { releaseColdRestore = resolve; });
@@ -1228,7 +1245,7 @@ try {
   assert.equal(workspaceFixture.requests.filter((row) => row.name.endsWith("/bytes")).length, stableBytes,
     "older, tied, or unordered results never replace the known latest candidate");
   runtimeB.operations = []; runtimeB.retained = null; emitRuntime();
-  await page.locator(".chat-activity").filter({ hasText: "Final checkpoint completed" }).getByRole("button", { name: "Open this candidate on the right" }).click();
+  await resultButton("cand-B-final").click();
   await waitCandidate("cand-B-final");
   await visibleWorkspace().evaluate((element) => { element.completionMarker = "once"; });
 
@@ -1265,7 +1282,7 @@ try {
   await page.locator(".chat-error").waitFor();
   await page.getByRole("button", { name: "Recover project service", exact: true }).click();
   await studioReady();
-  await page.locator(".chat-activity").filter({ hasText: "Final checkpoint completed" }).getByRole("button", { name: "Open this candidate on the right" }).click();
+  await resultButton("cand-B-final").click();
   await waitCandidate("cand-B-final");
   const beforeCrash = writes.length;
   for (const app of appsFor(runtimeB.projectDir).filter((app) => app.serviceId === "studio")) {
@@ -1636,10 +1653,18 @@ try {
   const progressCard = page.locator(".chat-progress").filter({ hasText: "Reading the uploaded drawings." });
   await progressCard.getByText("Checking the marked opening against the project model.", { exact: false }).waitFor();
   assert.equal(await progressCard.locator("details").count(), 0);
-  const toolDetails = page.locator(".chat-activity details").filter({ hasText: "Read project files" });
+  // #285: the running turn names the step it is on in plain words; the CLI's
+  // own line and diagnostics wait under Technical details.
+  const readingTurn = page.locator(".chat-process").last();
+  await readingTurn.locator(".chat-process__current").filter({ hasText: "Look through files" }).waitFor();
+  assert.match(await readingTurn.locator(".chat-process__row").innerText(), /4 steps/);
+  assert.equal(await readingTurn.locator(".chat-process__body").count(), 0);
+  await readingTurn.locator(".chat-process__row").click();
+  const toolDetails = readingTurn.locator(".chat-process__technical");
   assert.equal(await toolDetails.getAttribute("open"), null);
   await toolDetails.locator("summary").click();
-  assert.equal(await toolDetails.locator("pre").innerText(), "Synthetic tool diagnostics");
+  assert.equal(await toolDetails.locator("li").filter({ hasText: "Read project files · in_progress" }).locator("pre").innerText(), "Synthetic tool diagnostics");
+  await readingTurn.locator(".chat-process__row").click();
   publicProgress.content += "\nThe opening comparison is ready to review.";
   publicProgress.status = "complete";
   emitRuntime();
@@ -1935,6 +1960,128 @@ try {
   await page.getByRole("button", { name: "Project B", exact: true }).first().click();
   await page.locator(".chat-external-notice").waitFor();
   assert.equal(writes.filter(([, name]) => /\/(messages|stop|model)$/.test(name)).length, beforeExternalTurns);
+
+  // #285: a long conversation opens at its latest message. Each finished turn
+  // is one folded row above the Agent's answer; the steps read in plain words,
+  // the CLI's lines only under Technical details. A reader who scrolls up stays
+  // there while the Agent writes, and one button brings them back.
+  const longStart = Date.parse("2026-09-25T09:00:00Z"), longAt = (seconds) => new Date(longStart + seconds * 1000).toISOString();
+  const longSession = { id: "long-review", projectId: "A", projectDir: "D:\\fixture\\A", title: "Long review", provider: "codex",
+    status: "idle", archived: false, createdAt: longAt(0), updatedAt: longAt(0), messages: [] };
+  for (let turn = 0; turn < 12; turn++) {
+    const start = turn * 600, id = `lu-${turn}`;
+    longSession.messages.push(
+      { id, role: "user", status: "complete", createdAt: longAt(start), content: `Revision ${turn + 1}: move the entrance to the south side` },
+      { id: `${id}:schema`, role: "tool", status: "complete", createdAt: longAt(start + 2), content: "studio_schema · POST /api/intents/context · completed" },
+      { id: `${id}:context`, role: "tool", status: "complete", createdAt: longAt(start + 5), content: "studio_request · POST /api/intents/context · completed\nstatus: ok" },
+      { id: `${id}:search`, role: "tool", status: "failed", createdAt: longAt(start + 20), content: "rg -n entrance C:\\notes\\MEMORY.md · failed\nexit code 1" },
+      { id: `${id}:board`, role: "tool", status: "complete", createdAt: longAt(start + 40), content: "studio_request · GET /api/board · completed" },
+      { id: `${id}:answer`, role: "assistant", status: "complete", createdAt: longAt(start + 78),
+        content: `Moved the main entrance to the middle of the south facade (revision ${turn + 1}).\n\nThe east stair follows it by 1.2 m, and the canopy is 3 m deep.` },
+    );
+  }
+  sessions.unshift(longSession);
+  const longList = page.locator(".chat-messages");
+  const atLatest = () => page.waitForFunction(() => {
+    const node = document.querySelector(".chat-messages");
+    return node && node.scrollHeight > node.clientHeight * 2 && node.scrollHeight - node.scrollTop - node.clientHeight < 2;
+  });
+  await page.goto(`${origin}/?chatId=${longSession.id}`);
+  await page.locator(".chat-header h1").filter({ hasText: "Long review" }).waitFor();
+  await atLatest();
+  assert.equal(await page.locator(".chat-jump").count(), 0, "a chat opened at its latest message offers no jump");
+  assert.equal(await page.locator(".chat-process").count(), 12, "one process row per turn");
+  const lastTurn = page.locator(".chat-process").last(), lastRow = lastTurn.locator(".chat-process__row");
+  assert.equal((await lastRow.innerText()).replace(/\s+/g, " ").trim(), "Worked 1m 18s · 4 steps · 1 failed");
+  assert.equal(await lastRow.getAttribute("aria-expanded"), "false", "a finished turn starts folded");
+  await page.locator(".chat-message--assistant").filter({ hasText: "revision 12" }).waitFor();
+  assert.equal(await page.getByText("studio_request · GET /api/board · completed").count(), 0, "raw request lines stay out of the conversation");
+  const rowTop = () => lastRow.evaluate((node) => node.getBoundingClientRect().top);
+  const beforeOpen = await rowTop();
+  await lastRow.click();
+  assert.deepEqual(await lastTurn.locator(".chat-process__steps li > span:last-child").allInnerTexts(),
+    ["Prepare to read the design context", "Read the design context", "Look through files · failed", "Read the board"]);
+  assert.ok(Math.abs(await rowTop() - beforeOpen) < 1, "opening a turn does not move it");
+  const longTechnical = lastTurn.locator(".chat-process__technical");
+  assert.equal(await longTechnical.locator("code").first().isVisible(), false, "the raw lines wait under Technical details");
+  await longTechnical.locator("summary").click();
+  assert.deepEqual(await longTechnical.locator("code").allInnerTexts(), ["studio_schema · POST /api/intents/context · completed",
+    "studio_request · POST /api/intents/context · completed", "rg -n entrance C:\\notes\\MEMORY.md · failed", "studio_request · GET /api/board · completed"]);
+  await page.screenshot({ path: path.join(temporary, "process-open-en-1440.png") });
+  const beforeFold = await rowTop();
+  await lastRow.click();
+  assert.equal(await lastTurn.locator(".chat-process__body").count(), 0, "folding leaves no space behind");
+  assert.ok(Math.abs(await rowTop() - beforeFold) < 1 || await longList.evaluate((node) => node.scrollHeight - node.scrollTop - node.clientHeight < 2),
+    "folding keeps the row in place unless the list ends above it");
+  // A turn in the middle of the conversation opens and folds in place as well.
+  const middleRow = page.locator(".chat-process").nth(5).locator(".chat-process__row");
+  await middleRow.evaluate((node) => node.scrollIntoView({ block: "center", behavior: "instant" }));
+  const middleTop = () => middleRow.evaluate((node) => node.getBoundingClientRect().top);
+  const middleBefore = await middleTop();
+  await middleRow.click();
+  assert.ok(Math.abs(await middleTop() - middleBefore) < 1, "opening a middle turn keeps it where it was");
+  await middleRow.click();
+  assert.ok(Math.abs(await middleTop() - middleBefore) < 1, "folding a middle turn keeps it where it was");
+  // Switching away and back lands at the latest message again, folded.
+  await lastRow.click();
+  await page.getByRole("button", { name: "Project B", exact: true }).first().click();
+  await page.locator(".chat-thread").filter({ hasText: "Long review" }).click();
+  await page.locator(".chat-header h1").filter({ hasText: "Long review" }).waitFor();
+  await atLatest();
+  assert.equal(await page.locator('.chat-process__row[aria-expanded="true"]').count(), 0, "reopening a chat shows it folded");
+  // Reading earlier turns: new output leaves the reader where they are and is counted.
+  await longList.evaluate((node) => node.scrollTo({ top: 0, behavior: "instant" }));
+  const jump = page.locator(".chat-jump");
+  await jump.waitFor();
+  assert.equal(await jump.getAttribute("aria-label"), "Jump to the latest message");
+  const readingAt = await longList.evaluate((node) => node.scrollTop);
+  longSession.status = "running";
+  longSession.messages.push({ id: "lu-11:follow-up", role: "assistant", status: "streaming", createdAt: longAt(11 * 600 + 90), content: "Checking the stair headroom next." });
+  emitRuntime();
+  await page.locator(".chat-jump__count").filter({ hasText: /^1$/ }).waitFor();
+  assert.equal(await jump.getAttribute("aria-label"), "Jump to the latest message (1 new)");
+  await page.screenshot({ path: path.join(temporary, "process-jump-en-1440.png") });
+  assert.equal(await longList.evaluate((node) => node.scrollTop), readingAt, "a reader who scrolled up is not moved");
+  const jumpBox = await jump.boundingBox(), composerBox = await page.locator(".chat-composer").boundingBox();
+  assert.ok(jumpBox.y + jumpBox.height <= composerBox.y && Math.abs(jumpBox.x + jumpBox.width / 2 - (composerBox.x + composerBox.width / 2)) < 2,
+    "the jump sits centred just above the composer");
+  await jump.click();
+  await atLatest();
+  await jump.waitFor({ state: "hidden" });
+  // At the latest message, streamed text keeps the reader there.
+  longSession.messages.at(-1).content += "\n\nThe headroom under the landing is 2.3 m, so the stair can stay.";
+  emitRuntime();
+  await page.getByText("The headroom under the landing is 2.3 m", { exact: false }).waitFor();
+  await atLatest();
+  assert.equal(await page.locator(".chat-jump").count(), 0);
+  longSession.status = "idle"; longSession.messages.at(-1).status = "complete";
+  emitRuntime();
+  await page.waitForFunction(() => !document.querySelector('.chat-process[data-running="true"]'));
+  // The same conversation in Chinese, at desktop and phone widths.
+  await page.getByRole("button", { name: "Hub settings", exact: true }).click();
+  await page.locator("#language").selectOption("zh-CN");
+  await page.getByRole("dialog").getByRole("button", { name: "关闭", exact: true }).click();
+  await atLatest();
+  assert.equal((await lastRow.innerText()).replace(/\s+/g, " ").trim(), "用时 1分30秒 · 4 步 · 1 步失败");
+  await lastRow.click();
+  assert.deepEqual(await lastTurn.locator(".chat-process__steps li > span:last-child").allInnerTexts(),
+    ["准备读取设计上下文", "读取设计上下文", "查阅资料 · 失败", "读取画板"]);
+  await longList.evaluate((node) => node.scrollBy({ top: -260, behavior: "instant" }));
+  await jump.waitFor();
+  assert.equal(await jump.getAttribute("aria-label"), "跳到最新消息");
+  await page.screenshot({ path: path.join(temporary, "process-zh-1440.png") });
+  await page.setViewportSize({ width: 375, height: 812 });
+  if (await page.getByRole("button", { name: "收起项目栏", exact: true }).first().isVisible()) {
+    await page.getByRole("button", { name: "收起项目栏", exact: true }).first().click();
+  }
+  await page.screenshot({ path: path.join(temporary, "process-zh-375.png") });
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, "no sideways scroll at 375 px");
+  await page.setViewportSize({ width: 1440, height: 960 });
+  await page.getByRole("button", { name: "展开项目栏", exact: true }).first().click();
+  await lastRow.click();
+  await page.getByRole("button", { name: "Hub 设置", exact: true }).click();
+  await page.locator("#language").selectOption("en");
+  await page.getByRole("dialog").getByRole("button", { name: "Close", exact: true }).click();
 
   // With no building project, machine tools remain available and report a
   // missing dependency directly instead of asking the person to bind Studio.
