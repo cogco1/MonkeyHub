@@ -4,7 +4,6 @@
 
 | ID | Status | Goal | Card |
 | --- | --- | --- | --- |
-| GH-294 | active | Record the repository owner's decisions on the candidate admission seam so implementation slice S1 can start. | [GH-294](GH-294-candidate-admission.md) |
 | P115 | blocked | Frozen legacy index (#60); claims no path and is not a task list. Derive no current work from it: new work starts from a GitHub Issue and live coordination is the active/review lanes shown by devctl work. The card names the open Issues that carry the remaining P115 acceptance and the questions left open at the freeze. | [P115](P115-capability-consolidation.md) |
 | P105 | blocked | Give the canonical producers the vocabulary the monuments are written in: solids of revolution and the boolean chain the Pantheon's dome and drum need, and the Doric and Ionic member families plus the roof and entablature fields the Parthenon's 687 retained operations are made of, dimensioned by a derivation table in module ratios and placed by grid reference. Retires that vocabulary as operation kinds invented inside a per-building tool. | [P105](P105-classical-order-producers.md) |
 | P108 | blocked | Legacy card; claims no path. The Studio edit-and-review round is delivered and now runs inside MonkeyHub; its record is Git history. Blocked on one owner decision: whether the ARCHITECTURE 'Development order' stair and side-passage revision is still the first real-project trial. The independent first-user trial is carried by #86 and real-revision acceptance by #185. | [P108](P108-vibe-modeling-frontend.md) |
