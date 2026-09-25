@@ -15,5 +15,6 @@
 | GH-66 | active | Implement the first project-bound Publish composition slice, with Drawing/Render source freshness and bounded Board handoff. Related consumer fixes follow #223/#216/#244 in the same integration review. | [GH-66](https://github.com/cogco1/MonkeyHub/issues/66) |
 | GH-285 | active | Fold each Agent turn's tool calls into one plain-language process row so the Agent's answer, results, permission prompts and errors stay readable, and open conversations at their latest message. | [GH-285](GH-285-process-fold.md) |
 | GH-300 | active | Give the Hub sidebar its first cross-project entries: 7-day usage from Monitor and a ready update in the footer, a Tasks list of running and queued Agent work with running badges on project rows, and the approved rail groups with Layout as a Board mode. | [GH-300](GH-300-sidebar.md) |
+| GH-304 | active | Launch the configured Codex executable on Windows, where npm installs codex.cmd. | [GH-304](GH-304-codex-exe.md) |
 
 [Back to RMPA](../README.md)

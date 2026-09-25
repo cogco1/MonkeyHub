@@ -484,6 +484,44 @@
           "blocked_reason": null
         }
       ]
+    },
+    {
+      "id": "GH-304",
+      "stream": "planning",
+      "status": "active",
+      "goal": "Launch the configured Codex executable on Windows, where npm installs codex.cmd.",
+      "depends_on": [],
+      "write_scope": [
+        "apps/archflow-studio/api/archflow_studio_api/settings.py",
+        "apps/archflow-studio/api/tests/test_settings.py",
+        "docs/mapping/planning/GH-304-codex-exe.md"
+      ],
+      "card": "docs/mapping/planning/GH-304-codex-exe.md",
+      "acceptance": [
+        "A bare codex setting resolves through PATH (PATHEXT) and launches without a shell; an explicit absolute path is kept."
+      ],
+      "lanes": [
+        {
+          "id": "codex-exe",
+          "issue": "https://github.com/cogco1/MonkeyHub/issues/304",
+          "branch": "codex/batch-a-0925",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-batch-a-0925",
+          "base_ref": "e183a69a",
+          "contributor": "Claude",
+          "reviewer": "Claude root task",
+          "handoff": "Resolve the Codex executable through PATH so Windows finds codex.cmd.",
+          "modules": [
+            "studio.intent"
+          ],
+          "write_scope": [
+            "apps/archflow-studio/api/archflow_studio_api/settings.py",
+            "apps/archflow-studio/api/tests/test_settings.py"
+          ],
+          "depends_on": [],
+          "status": "active",
+          "blocked_reason": null
+        }
+      ]
     }
   ]
 }
