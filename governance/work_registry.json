@@ -196,6 +196,9 @@
         "apps/monkeyhub/web/workspaces/test/designTree.browser.mjs",
         "apps/monkeyhub/web/workspaces/test/designTree.test.ts",
         "apps/monkeyhub/web/workspaces/test/documentCanvas.browser.mjs",
+        "apps/monkeyhub/web/workspaces/test/documentModelSource.browser.mjs",
+        "apps/monkeyhub/web/workspaces/test/documentShortcuts.browser.mjs",
+        "apps/monkeyhub/web/workspaces/test/documentTracing.browser.mjs",
         "apps/monkeyhub/web/workspaces/test/drawingCanvas.browser.mjs",
         "apps/monkeyhub/web/workspaces/test/intentViewSource.browser.mjs",
         "apps/monkeyhub/web/workspaces/test/modelSync.browser.mjs",
@@ -293,7 +296,10 @@
             "apps/monkeyhub/web/workspaces/test/documentCanvas.browser.mjs",
             "apps/monkeyhub/web/workspaces/test/drawingCanvas.browser.mjs",
             "apps/monkeyhub/web/workspaces/test/boardWhiteboard.browser.mjs",
-            "apps/monkeyhub/web/workspaces/test/canvasChrome.browser.mjs"
+            "apps/monkeyhub/web/workspaces/test/canvasChrome.browser.mjs",
+            "apps/monkeyhub/web/workspaces/test/documentModelSource.browser.mjs",
+            "apps/monkeyhub/web/workspaces/test/documentShortcuts.browser.mjs",
+            "apps/monkeyhub/web/workspaces/test/documentTracing.browser.mjs"
           ],
           "depends_on": [],
           "status": "active",
