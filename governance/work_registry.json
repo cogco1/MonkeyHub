@@ -163,7 +163,7 @@
         "The owner decides whether the stair and side-passage revision in ARCHITECTURE 'Development order' step 1 is still wanted; until then it is not scheduled."
       ],
       "notes": [
-        "2026-09-24 GH-60: kept as a blocked legacy card rather than removed, because ARCHITECTURE.md, the P110/P111 cards and the Stage plan still name P108 for the real-project trial and one owner decision is open. Released: the 71-path Studio write_scope, the finished P102/P103 dependencies, the wait for the retired Studio page, the P115 migration wait and the b5e6677 handoff freeze. The delivered record remains at 04e71961."
+        "2026-09-24 GH-60: kept as a blocked legacy card rather than removed, because ARCHITECTURE.md names P108 for the real-project trial, the P110/P111 cards and the Stage plan still reference it, and one owner decision is open. Released: the 71-path Studio write_scope, the finished P102/P103 dependencies, the wait for the retired Studio page, the P115 migration wait and the b5e6677 handoff freeze. The delivered record remains at 04e71961."
       ]
     },
     {
