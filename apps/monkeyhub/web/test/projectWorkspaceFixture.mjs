@@ -70,6 +70,23 @@ export async function createProjectWorkspaceFixture(runtimes, sessions) {
       if (name === "/api/design-history") return json({ projectId, branchId: "main", branches: [], stages: [] });
       if (name === "/api/board") return json(current.board);
       if (name === "/api/drawings/styles") return json({ styles: [] });
+      // #271: the head a real runtime would resolve for this fixture, and its read-only Worktree Graph.
+      const home = current.assets.get(current.home).dto;
+      const head = { runId: current.home, stateDigest: home.modelSource.stateDigest, recordDigest: digest(`record:${projectId}:${current.home}`),
+        sourceStageRef: null, branchId: null, accepted: false, origin: "reference", label: null, modelSource: home.modelSource, lineage: [current.home] };
+      if (name === "/api/working-source") return json({ projectId, workspace: url.searchParams.get("workspace") ?? "modeling", policy: "live",
+        revisionSha256: null, head, compatible: false, source: null, stageRef: null, reason: "This fixture has no exact STEP to draw.", warnings: [] });
+      if (name === "/api/worktrees") {
+        const results = [...new Set(sessions.filter((row) => row.projectId === projectId).flatMap((row) => row.messages)
+          .map((message) => message.candidateId).filter(Boolean))];
+        return json({ projectId, head, revisionSha256: null, warnings: [], representations: [], lines: [
+          { lineId: `head:${current.home}`, kind: "head", runId: current.home, jobId: null, label: null, baseRunId: null, baseStageRef: null,
+            branchId: null, status: "current", relation: "head", reads: [], writes: [], reconcile: "none", conflicts: [], detail: null, updatedAt: null },
+          ...results.map((runId) => ({ lineId: `result:${runId}`, kind: "result", runId, jobId: null, label: null, baseRunId: current.home,
+            baseStageRef: null, branchId: null, status: "ready", relation: "diverged", reads: [], writes: ["entity:floor"],
+            reconcile: "can-combine", conflicts: [], detail: null, updatedAt: null })),
+        ] });
+      }
       const bytes = name.match(/^\/api\/artifacts\/([^/]+)\/bytes$/);
       if (bytes) {
         const asset = [...current.assets.values()].find((row) => row.dto.sha256 === bytes[1]);

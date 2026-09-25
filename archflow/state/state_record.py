@@ -1169,7 +1169,7 @@ def combine_component_changes(
                            "predecessor_ref", "decision_ref", "invalidated_refs", "option"):
             if getattr(candidate, field_name) != getattr(record, field_name):
                 raise StateRecordError(f"combine cannot normalize changes to {field_name} as component edits")
-        changed = set(_changed_refs(record, candidate))
+        changed = set(changed_refs(record, candidate))
         closure = reached(changed, (DependencyEffect.INVALIDATES, DependencyEffect.REQUIRES_REVALIDATION))
         writes = reached(changed, (DependencyEffect.INVALIDATES,))
         for previous, reached, written in zip(changed_sets, closures, write_sets):
@@ -1254,7 +1254,7 @@ def apply_state_record_operator(
     elif operator.kind is StateRecordEditKind.EDIT_COMPONENTS:
         successor = _apply_component_operator(record, operator)
 
-    changed = _changed_refs(record, successor)
+    changed = changed_refs(record, successor)
     closure = (set(record.closure(changed)) | set(successor.closure(changed))) if changed else set()
     conflicts = tuple(sorted(closure & set(operator.protected)))
     if conflicts:
@@ -1666,7 +1666,7 @@ def _upsert_graph(
     )
 
 
-def _changed_refs(
+def changed_refs(
     before: StateRecord, after: StateRecord
 ) -> tuple[str, ...]:
     changed: set[str] = set()

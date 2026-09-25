@@ -7,6 +7,7 @@ import type { RenderCapabilityDto, RenderJobDto, SourceDocumentDto } from "../..
 import { usePreferences } from "../../features/settings/preferences";
 import { documentKey, documentMime, findSource, pageKey, pageReplacements, pageSource, type PageSource } from "../monkeyboard/boardScene";
 import RenderResults, { ImageThumbnail, renderStatus } from "./RenderResults";
+import { latestRevisions } from "../monkeydiagram/drawingPlan";
 import "./render.css";
 
 /** One mounted draft. Entering another workspace only suspends reads. */
@@ -159,10 +160,16 @@ export default function RenderWorkspace({ projectId, active, refreshKey, onBoard
       const next = replacements.get(pageKey(original));
       const originalReferences = (job.request.references ?? []).map((ref) => ({ ...ref, revisionRef: ref.revisionRef ?? null }));
       const nextReferences = originalReferences.map((source) => replacements.get(pageKey(source)) ?? source);
-      const hasReplacement = !!next || nextReferences.some((source, index) => pageKey(source) !== pageKey(originalReferences[index]));
-      setSource(hasReplacement ? next ?? original : null);
+      // A cut plan follows the Working Head as a LIVE drawing: its newest
+      // revision is the updated source even without a registered replacement.
+      const drawing = documents.find((item) => pageKey(pageSource(item, original.pageIndex)) === pageKey(original));
+      const liveDrawing = !next && drawing?.drawingId && drawing.viewRecipe?.kind === "cut-plan"
+        ? latestRevisions(documents.filter((item) => item.drawingId === drawing.drawingId && item.viewRecipe?.kind === "cut-plan"))[0] : undefined;
+      const livePage = liveDrawing && pageKey(pageSource(liveDrawing, 0)) !== pageKey(original) ? pageSource(liveDrawing, 0) : undefined;
+      const hasReplacement = !!next || !!livePage || nextReferences.some((source, index) => pageKey(source) !== pageKey(originalReferences[index]));
+      setSource(hasReplacement ? next ?? livePage ?? original : null);
       setReferences(nextReferences);
-      if (!hasReplacement) setSubmitError(zh ? "请从项目图片选择或上传更新的视图；项目中尚无此来源的替代图片。" : "Choose or upload an updated view. No replacement image for this source is registered in the project.");
+      if (!hasReplacement) setSubmitError(zh ? "项目模型已更新。请在建模中截取当前视图，或选择更新的图片后再渲染。" : "The project model has changed. Capture the current view in Modeling, or choose an updated image, then render again.");
     } catch (cause) { setSubmitError(asStudioApiError(cause).detail); }
   };
   const addReference = (key: string) => {

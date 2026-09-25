@@ -5542,6 +5542,12 @@ export type PlanRequestDto = {
      * Dressingoperations
      */
     dressingOperations?: Array<PlanDressingOperationDto> | null;
+    /**
+     * Follow
+     *
+     * live follows the project's Working Head; frozen keeps this drawing on its chosen source until it is rebuilt. Omitted keeps the previous revision's choice; a new drawing is live.
+     */
+    follow?: 'live' | 'frozen' | null;
 };
 
 /**
@@ -7041,6 +7047,36 @@ export type RenderViewSourceRequestDto = {
      * Pngbase64
      */
     pngBase64: string;
+};
+
+/**
+ * RepresentationStateDto
+ */
+export type RepresentationStateDto = {
+    /**
+     * Kind
+     */
+    kind: 'drawing' | 'render';
+    /**
+     * Itemid
+     */
+    itemId: string;
+    /**
+     * Label
+     */
+    label: string;
+    /**
+     * State
+     */
+    state: 'current' | 'stale' | 'frozen' | 'running' | 'unavailable';
+    /**
+     * Sourcerunid
+     */
+    sourceRunId: string | null;
+    /**
+     * Detail
+     */
+    detail: string | null;
 };
 
 /**
@@ -10317,6 +10353,235 @@ export type WorkingDraftSelectionDto = {
     branchId?: string | null;
 };
 
+/**
+ * WorkingHeadDto
+ *
+ * The project's current valid working state; ordinary work follows it.
+ */
+export type WorkingHeadDto = {
+    /**
+     * Runid
+     */
+    runId: string;
+    /**
+     * Statedigest
+     */
+    stateDigest: string;
+    /**
+     * Recorddigest
+     */
+    recordDigest: string;
+    /**
+     * Sourcestageref
+     *
+     * The accepted Stage this state is, or continues from.
+     */
+    sourceStageRef?: string | null;
+    /**
+     * Branchid
+     */
+    branchId?: string | null;
+    /**
+     * Accepted
+     *
+     * True only when the head run is exactly the accepted Stage's model run.
+     */
+    accepted: boolean;
+    /**
+     * Origin
+     *
+     * Which retained fact answered: the saved working position, the main line's accepted head, or the reference run.
+     */
+    origin: 'working-position' | 'branch-head' | 'reference';
+    /**
+     * Label
+     */
+    label?: string | null;
+    modelSource?: ModelSourceDto | null;
+    /**
+     * Lineage
+     *
+     * The head run first, then each exact retained source it continued.
+     */
+    lineage: Array<string>;
+};
+
+/**
+ * WorkingRevisionDto
+ *
+ * Only the working position's revision: a cheap check for whether the head may have moved.
+ */
+export type WorkingRevisionDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Revisionsha256
+     */
+    revisionSha256?: string | null;
+};
+
+/**
+ * WorkingSourceDto
+ *
+ * One workspace's current source under a LIVE or FROZEN policy.
+ */
+export type WorkingSourceDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Workspace
+     */
+    workspace: 'modeling' | 'drawing' | 'render' | 'board';
+    /**
+     * Policy
+     */
+    policy: 'live' | 'frozen';
+    /**
+     * Revisionsha256
+     *
+     * The working position revision; it changes whenever the head moves.
+     */
+    revisionSha256?: string | null;
+    head?: WorkingHeadDto | null;
+    /**
+     * Compatible
+     */
+    compatible: boolean;
+    /**
+     * The exact model this workspace should use.
+     */
+    source?: ModelSourceDto | null;
+    /**
+     * Stageref
+     *
+     * Set only when source is exactly an accepted Stage's pinned model.
+     */
+    stageRef?: string | null;
+    /**
+     * Reason
+     *
+     * Why the workspace cannot follow the head, or why a frozen pin is no longer current.
+     */
+    reason?: string | null;
+    /**
+     * Warnings
+     */
+    warnings?: Array<string>;
+};
+
+/**
+ * WorktreeGraphDto
+ *
+ * A read-only view of the project's current head, active work and other lines.
+ */
+export type WorktreeGraphDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    head: WorkingHeadDto | null;
+    /**
+     * Revisionsha256
+     */
+    revisionSha256: string | null;
+    /**
+     * Lines
+     */
+    lines: Array<WorktreeLineDto>;
+    /**
+     * Representations
+     */
+    representations: Array<RepresentationStateDto>;
+    /**
+     * Warnings
+     */
+    warnings: Array<string>;
+};
+
+/**
+ * WorktreeLineDto
+ *
+ * One line of work: the head, another accepted line, running work or a retained result.
+ */
+export type WorktreeLineDto = {
+    /**
+     * Lineid
+     */
+    lineId: string;
+    /**
+     * Kind
+     */
+    kind: 'head' | 'branch' | 'running' | 'result';
+    /**
+     * Runid
+     */
+    runId: string | null;
+    /**
+     * Jobid
+     */
+    jobId: string | null;
+    /**
+     * Label
+     */
+    label: string | null;
+    /**
+     * Baserunid
+     *
+     * The exact retained source this line started from.
+     */
+    baseRunId: string | null;
+    /**
+     * Basestageref
+     */
+    baseStageRef: string | null;
+    /**
+     * Branchid
+     */
+    branchId: string | null;
+    /**
+     * Status
+     */
+    status: 'current' | 'accepted' | 'queued' | 'running' | 'interrupted' | 'ready';
+    /**
+     * Relation
+     *
+     * ahead continues the head; behind started from an older head; diverged shares an older source; separate shares none shown here.
+     */
+    relation: 'head' | 'ahead' | 'behind' | 'diverged' | 'separate';
+    /**
+     * Reads
+     */
+    reads: Array<string>;
+    /**
+     * Writes
+     *
+     * Declared write scope for running work; changed refs since the shared source for results.
+     */
+    writes: Array<string>;
+    /**
+     * Reconcile
+     *
+     * Whether the StateRecord combine rule accepts this line together with the head; nothing is merged.
+     */
+    reconcile: 'none' | 'can-combine' | 'conflict' | 'unknown';
+    /**
+     * Conflicts
+     */
+    conflicts: Array<string>;
+    /**
+     * Detail
+     */
+    detail: string | null;
+    /**
+     * Updatedat
+     */
+    updatedAt: string | null;
+};
+
 export type ReadHealthApiHealthGetData = {
     body?: never;
     headers?: {
@@ -10649,6 +10914,41 @@ export type ReadRuntimeApiRuntimeGetResponses = {
 };
 
 export type ReadRuntimeApiRuntimeGetResponse = ReadRuntimeApiRuntimeGetResponses[keyof ReadRuntimeApiRuntimeGetResponses];
+
+export type ReadWorktreesApiWorktreesGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/worktrees';
+};
+
+export type ReadWorktreesApiWorktreesGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadWorktreesApiWorktreesGetError = ReadWorktreesApiWorktreesGetErrors[keyof ReadWorktreesApiWorktreesGetErrors];
+
+export type ReadWorktreesApiWorktreesGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: WorktreeGraphDto;
+};
+
+export type ReadWorktreesApiWorktreesGetResponse = ReadWorktreesApiWorktreesGetResponses[keyof ReadWorktreesApiWorktreesGetResponses];
 
 export type ReadStateApiStateGetData = {
     body?: never;
@@ -14635,6 +14935,41 @@ export type SelectCurrentWorkingDraftApiWorkingDraftPutResponses = {
 
 export type SelectCurrentWorkingDraftApiWorkingDraftPutResponse = SelectCurrentWorkingDraftApiWorkingDraftPutResponses[keyof SelectCurrentWorkingDraftApiWorkingDraftPutResponses];
 
+export type ReadWorkingRevisionApiWorkingDraftRevisionGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/working-draft/revision';
+};
+
+export type ReadWorkingRevisionApiWorkingDraftRevisionGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadWorkingRevisionApiWorkingDraftRevisionGetError = ReadWorkingRevisionApiWorkingDraftRevisionGetErrors[keyof ReadWorkingRevisionApiWorkingDraftRevisionGetErrors];
+
+export type ReadWorkingRevisionApiWorkingDraftRevisionGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: WorkingRevisionDto;
+};
+
+export type ReadWorkingRevisionApiWorkingDraftRevisionGetResponse = ReadWorkingRevisionApiWorkingDraftRevisionGetResponses[keyof ReadWorkingRevisionApiWorkingDraftRevisionGetResponses];
+
 export type SaveCurrentWorkingDraftApiWorkingDraftSavePostData = {
     body: WorkingDraftSaveDto;
     headers?: {
@@ -14704,3 +15039,69 @@ export type RetainLocalWorkingDraftApiWorkingDraftLocalPutResponses = {
 };
 
 export type RetainLocalWorkingDraftApiWorkingDraftLocalPutResponse = RetainLocalWorkingDraftApiWorkingDraftLocalPutResponses[keyof RetainLocalWorkingDraftApiWorkingDraftLocalPutResponses];
+
+export type ReadWorkingSourceApiWorkingSourceGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Workspace
+         *
+         * modeling, drawing, render or board.
+         */
+        workspace?: string;
+        /**
+         * Policy
+         *
+         * live follows the Working Head; frozen keeps the exact pinned model.
+         */
+        policy?: string;
+        /**
+         * Runid
+         *
+         * Frozen pin: the exact retained run.
+         */
+        runId?: string | null;
+        /**
+         * Statedigest
+         *
+         * Frozen pin: that run's exact state digest.
+         */
+        stateDigest?: string | null;
+        /**
+         * Assetsha256
+         *
+         * Frozen pin: the exact model bytes.
+         */
+        assetSha256?: string | null;
+    };
+    url: '/api/working-source';
+};
+
+export type ReadWorkingSourceApiWorkingSourceGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadWorkingSourceApiWorkingSourceGetError = ReadWorkingSourceApiWorkingSourceGetErrors[keyof ReadWorkingSourceApiWorkingSourceGetErrors];
+
+export type ReadWorkingSourceApiWorkingSourceGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: WorkingSourceDto;
+};
+
+export type ReadWorkingSourceApiWorkingSourceGetResponse = ReadWorkingSourceApiWorkingSourceGetResponses[keyof ReadWorkingSourceApiWorkingSourceGetResponses];

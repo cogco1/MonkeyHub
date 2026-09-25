@@ -94,3 +94,4 @@
 .render-model-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
 .render-model-canvas { height: 280px; display: flex; align-items: center; justify-content: center; overflow: hidden; background: #171717; margin: 8px 0; }
 .render-model-canvas canvas { display: block; max-width: 100%; }
+.render-source-reason { margin: 4px 0 0; color: var(--muted); font-size: var(--text-caption); }

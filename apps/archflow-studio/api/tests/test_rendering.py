@@ -20,6 +20,7 @@ from archflow.project.record_kinds import STUDIO_RENDER_JOB
 
 from .support import make_project, PROJECT_ID
 from .test_design_history import DesignHistoryFixture
+from .test_working_source import adopt
 
 
 def png(color="blue"):
@@ -437,3 +438,30 @@ class RenderModelFreshnessTests(DesignHistoryFixture):
         self.assertEqual(stale["document"], result["document"])
         self.assertEqual(stale["document"]["viewRecipe"]["sourceSnapshots"][0]["viewRecipe"], source.view_recipe)
         self.assertEqual(self.repository.read_head(), self.initial_head)
+
+    def test_saved_render_goes_stale_when_the_working_head_moves_and_current_when_it_returns(self):
+        stage = self.initialize()
+        self.app.state.render_jobs.adapter = Adapter()
+        self.addCleanup(self.app.state.render_jobs.shutdown)
+        source = save_document(
+            bound_project(self.app.state), stage["candidateId"], "exact-view.png", "image/png",
+            base64.b64encode(png()).decode(), model_source=ModelSource.from_dict(stage["modelSource"]),
+            source_stage_ref=stage["stageRef"], view_recipe={"camera": {"projection": "orthographic"}},
+        )
+        page = {"runId": source.run_id, "assetSha256": source.asset_sha256, "revisionRef": None, "pageIndex": 0}
+        result = finished(self.client, submit(self.client, request(page)))
+        self.assertEqual(result["sourceState"], "current")
+        moved = self.candidate_from(stage)
+        # A generated result alone is not the base (GH-234 Q2); the render stays current.
+        self.assertEqual(self.client.get("/api/render/jobs/" + result["jobId"]).json()["sourceState"], "current")
+        adopt(self.client, moved)
+        # Nothing is accepted: the branch still names this Stage, but the working model moved on.
+        self.assertEqual(self.history()["branches"][0]["headStageRef"], stage["stageRef"])
+        stale = self.client.get("/api/render/jobs/" + result["jobId"]).json()
+        self.assertEqual(stale["sourceState"], "outdated")
+        self.assertEqual(stale["document"], result["document"])
+        position = self.client.get("/api/working-draft").json()
+        back = self.client.put("/api/working-draft", json={"projectId": PROJECT_ID, "runId": stage["candidateId"],
+                               "baseRevisionSha256": position["revisionSha256"]})
+        self.assertEqual(back.status_code, 200, back.text)
+        self.assertEqual(self.client.get("/api/render/jobs/" + result["jobId"]).json()["sourceState"], "current")

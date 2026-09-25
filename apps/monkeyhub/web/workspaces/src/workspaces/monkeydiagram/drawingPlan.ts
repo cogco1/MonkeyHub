@@ -1,4 +1,4 @@
-import type { PlanRequestDto, SourceDocumentDto } from "../../api/generated";
+import type { PlanRequestDto, PlanStatusDto, SourceDocumentDto } from "../../api/generated";
 
 /** A form for the existing document's recipe; never a second retained design. */
 export type PlanForm = { [K in "cutHeight" | "bottom" | "scaleDenominator" | "cutLineMm" | "visibleLineMm" | "hatchSpacingMm" | "dimensions" | "dressing"]: NonNullable<PlanRequestDto[K]> }
@@ -32,4 +32,39 @@ export function planFormFromDocument(document: SourceDocumentDto, lengthUnit: st
     ...(Array.isArray(frame.crop_uv) ? { cropUv: structuredClone(frame.crop_uv) as PlanForm["cropUv"] } : {}),
     ...(Array.isArray(recipe.hiddenObjectIds) ? { hiddenObjectIds: recipe.hiddenObjectIds.filter((id): id is string => typeof id === "string") } : {}),
   };
+}
+
+/** A drawing made from a chosen version stays on it until a person rebuilds it on the current model (#271). */
+export const keptOnChosenVersion = (document: Pick<SourceDocumentDto, "viewRecipe"> | null) => document?.viewRecipe?.follow === "frozen";
+
+/** One drawing identity: its revisions share a drawing id (older drawings fall back to their file name). */
+export const drawingIdentity = (document: Pick<SourceDocumentDto, "drawingId" | "fileName">) => document.drawingId ?? document.fileName;
+
+/** The newest revision of each drawing, newest drawing first; older revisions are history. */
+export function latestRevisions(documents: readonly SourceDocumentDto[]): SourceDocumentDto[] {
+  const latest = new Map<string, SourceDocumentDto>();
+  for (const document of documents) {
+    const key = drawingIdentity(document);
+    const known = latest.get(key);
+    if (!known || (document.generatedAt ?? "") > (known.generatedAt ?? "")) latest.set(key, document);
+  }
+  return [...latest.values()].sort((a, b) => (b.generatedAt ?? "").localeCompare(a.generatedAt ?? ""));
+}
+
+export type LiveAction = "none" | "rebuild" | "blocked";
+
+/**
+ * What a LIVE drawing does about its status against the Working Head (#271):
+ * rebind once to the head's exact source, or say why it cannot. A drawing that
+ * already reads the head keeps its broken anchors visible instead of looping.
+ */
+export function liveAction(input: {
+  live: boolean; dirty: boolean; attempted: boolean;
+  status: Pick<PlanStatusDto, "status" | "bindingChanged" | "targetModelSource"> | null;
+}): LiveAction {
+  const { status } = input;
+  if (!input.live || input.dirty || status === null || status.status === "unknown") return "none";
+  if (!status.targetModelSource) return status.status === "outdated" ? "blocked" : "none";
+  if (!status.bindingChanged) return "none";
+  return input.attempted ? "none" : "rebuild";
 }
