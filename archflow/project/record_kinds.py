@@ -112,6 +112,7 @@ STUDIO_MODEL_ANNOTATIONS = "studio-model-annotations"
 DESIGN_STAGE = "design-stage"
 STUDIO_CANDIDATE_DELTA = "studio-candidate-delta"
 STUDIO_BOARD_SCENE = "studio-board-scene"
+STUDIO_PUBLICATION = "studio-publication"
 STUDIO_SCOPED_DECISION = "studio-scoped-decision"
 AUDIT_EVENT = "audit-event"
 
@@ -142,6 +143,8 @@ _RUN_BRANCH = PersistenceArea.RUN_BRANCH.value
 
 
 _TABLE: tuple[RecordKind, ...] = (
+    RecordKind(STUDIO_PUBLICATION, "PublicationDocument@1", _RUN_RECORD,
+               "ordered communication pages and exact project source refs; never design state"),
     RecordKind("studio-model-export", "StudioModelExport@1", _RUN_RECORD, "Conversion job lifecycle, original source provenance and validated output; never canonical state."),
     RecordKind(
         STUDIO_RENDER_JOB,

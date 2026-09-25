@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .artifacts import ModelSourceDto
 
@@ -21,6 +21,66 @@ class PlanDimensionDto(BaseModel):
     entity_ref: str = Field(alias="entityRef", pattern=r"^entity:[A-Za-z0-9][A-Za-z0-9._-]*$")
     opening_id: str = Field(alias="openingId", min_length=1, max_length=100)
     placement: PlanDimensionPlacementDto = Field(default_factory=PlanDimensionPlacementDto)
+
+
+Finite = Annotated[float, Field(allow_inf_nan=False)]
+
+
+class PlanDressingDto(BaseModel):
+    """Representation-only SVG from the built-in plan symbols, in source view units."""
+    model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
+    id: str = Field(min_length=1, max_length=100, pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+    asset_id: Literal["person-plan", "tree-plan"] = Field(alias="assetId")
+    position_uv: tuple[Finite, Finite] = Field(alias="positionUv",
+        description="View coordinates, or an offset from anchorObjectId's projected bounding-box centre.")
+    size: float = Field(gt=0, le=100000, allow_inf_nan=False, description="Symbol extent in exact source length units.")
+    flipped: bool = False
+    anchor_object_id: str | None = Field(alias="anchorObjectId", default=None, min_length=1, max_length=200)
+
+
+class PlanDressingOperationDto(BaseModel):
+    """A bounded edit to an independently identified representation object."""
+    model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
+    op: Literal["insert", "move", "scale", "flip", "delete"]
+    id: str = Field(min_length=1, max_length=100)
+    object: PlanDressingDto | None = None
+    position_uv: tuple[Finite, Finite] | None = Field(alias="positionUv", default=None)
+    size: float | None = Field(default=None, gt=0, le=100000, allow_inf_nan=False)
+    flipped: bool | None = None
+
+    @model_validator(mode="after")
+    def operation_fields(self):
+        required = {"insert": "object", "move": "position_uv", "scale": "size", "flip": "flipped", "delete": None}[self.op]
+        for field in ("object", "position_uv", "size", "flipped"):
+            if (getattr(self, field) is not None) != (field == required):
+                raise ValueError(f"{self.op} requires only {required or 'id'}")
+        if self.object is not None and self.object.id != self.id:
+            raise ValueError("insert id must match object id")
+        return self
+
+
+class PlanDressingReadDto(PlanDressingDto):
+    status: Literal["resolved", "missing", "outside-view"]
+    resolved_uv: tuple[float, float] | None = Field(alias="resolvedUv", default=None)
+    detail: str | None = None
+
+
+class PlanDressingAssetDto(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, frozen=True)
+    id: Literal["person-plan", "tree-plan"]
+    polylines: list[list[tuple[float, float]]]
+
+
+class PlanDressingAnchorDto(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, frozen=True)
+    object_id: str = Field(alias="objectId")
+    position_uv: tuple[float, float] = Field(alias="positionUv")
+
+
+class PlanVectorDto(BaseModel):
+    svg: str
+    assets: list[PlanDressingAssetDto]
+    anchors: list[PlanDressingAnchorDto]
 
 
 class PlanRequestDto(BaseModel):
@@ -40,6 +100,16 @@ class PlanRequestDto(BaseModel):
     hatch_spacing_mm: float | None = Field(alias="hatchSpacingMm", default=None, ge=0.5, le=20, allow_inf_nan=False)
     hidden_object_ids: list[str] | None = Field(alias="hiddenObjectIds", default=None, max_length=10000)
     dimensions: list[PlanDimensionDto] | None = Field(default=None, max_length=100)
+    dressing: list[PlanDressingDto] | None = Field(default=None, max_length=100)
+    dressing_operations: list[PlanDressingOperationDto] | None = Field(alias="dressingOperations", default=None, max_length=100)
+
+    @model_validator(mode="after")
+    def one_dressing_edit(self):
+        if self.dressing is not None and self.dressing_operations is not None:
+            raise ValueError("Use dressing replacement or dressingOperations, not both")
+        if self.dressing_operations is not None and self.previous_revision_ref is None:
+            raise ValueError("dressingOperations requires previousRevisionRef")
+        return self
 
 
 class PlanStatusRequestDto(BaseModel):
@@ -90,6 +160,7 @@ class PlanStatusDto(BaseModel):
     binding_changed: bool = Field(alias="bindingChanged", default=False)
     dimensions: list[PlanDimensionReadDto] = Field(default_factory=list)
     unresolved_object_ids: list[str] = Field(alias="unresolvedObjectIds", default_factory=list)
+    dressing: list[PlanDressingReadDto] = Field(default_factory=list)
 
 
 class PlanDimensionChoicesDto(BaseModel):

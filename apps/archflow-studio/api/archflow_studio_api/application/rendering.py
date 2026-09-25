@@ -7,6 +7,8 @@ derive from YNNAP-HelloWorld's 6f39e67116a2716c2dac70bb4ee3cf1b369afd9d
 from __future__ import annotations
 
 import base64
+from io import BytesIO
+from PIL import Image
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict
 from datetime import datetime, timezone
@@ -15,7 +17,7 @@ import threading
 from time import perf_counter
 from uuid import UUID, uuid4
 
-from archflow.contracts.canonical import canonical_json
+from archflow.contracts.canonical import canonical_json, canonical_digest
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import STUDIO_RENDER_JOB
 from archflow.project.refs import ProjectRecordRef, record_ref_from_uri
@@ -30,10 +32,35 @@ from .render_contract import (
     ImageRenderAdapter, RenderImage, RenderInput, RenderOutputOptions,
     RenderPageRef, RenderProviderError,
 )
+from .drawing_plans import plan_status
+from .projection import project_state
 
 
 def _now():
     return datetime.now(timezone.utc).isoformat()
+
+
+def save_render_view(binding, request):
+    if request.project_id != binding.project_id:
+        raise StudioError(403, "PROJECT_MISMATCH", "The render view names another project.")
+    source = ModelSource.from_dict(request.model_source.model_dump(by_alias=True))
+    projection = project_state(binding, run_id=source.run_id, source_stage_ref=request.source_stage_ref)
+    require_model_source(binding, source, projection)
+    try:
+        data = base64.b64decode(request.png_base64, validate=True)
+        with Image.open(BytesIO(data)) as image:
+            if image.format != "PNG" or image.size != request.screen_size:
+                raise ValueError("The PNG must match the captured pixel dimensions.")
+            image.verify()
+    except (ValueError, OSError) as exc:
+        raise StudioError(422, "RENDER_VIEW_INVALID", "Provide the PNG matching this captured view.") from exc
+    recipe = {"kind": "model-view", "camera": request.camera.model_dump(by_alias=True),
+              "screenSize": list(request.screen_size)}
+    identity = canonical_digest({"modelSource": source.to_dict(), "sourceStageRef": request.source_stage_ref,
+                                 "viewRecipe": recipe})
+    return save_document(binding, source.run_id, f"Model view - {identity[:8]}.png", "image/png",
+                         request.png_base64, source, source_stage_ref=request.source_stage_ref,
+                         view_recipe=recipe, generated_at=_now(), content_identity=identity)
 
 
 def _page_key(page):
@@ -62,15 +89,54 @@ def _snapshot(document):
 
 
 def _freshness(binding, request, snapshots):
+    """Follow retained inputs, without rebinding outputs or writing a global graph.
+
+    A Render result can itself be a later Render's source/reference. Its inherited
+    Stage is too broad for a cut plan and too narrow for its image references;
+    inspect the actual retained request instead.
+    """
     try:
-        pages = [request.source, *request.references]
-        for page in pages:
-            _resolve_page(binding, page)
         documents = list_documents(binding)
         replaced = {_page_key(page) for doc in documents for page in doc.replaces_pages}
-        if any(_page_key(page) in replaced for page in pages):
-            return "outdated", "A source or reference page has a newer registered replacement."
-        for snapshot in snapshots:
+        checked = set()
+
+        def visit(page, snapshot, active):
+            key = _page_key(page)
+            identity = (key, canonical_json(snapshot))
+            if key in active or len(active) >= 128:
+                raise ValueError("Unverifiable render input chain")
+            if identity in checked:
+                return "current", None
+            document, _ = _resolve_page(binding, page)
+            if key in replaced:
+                return "outdated", "A source or reference page has a newer registered replacement."
+            recipe = snapshot.get("viewRecipe") or {}
+            if recipe.get("kind") == "ai-render":
+                upstream = RenderRequestDto.model_validate(recipe["request"])
+                if upstream.project_id != binding.project_id or recipe["jobId"] != document.run_id:
+                    raise ValueError("Render input belongs to another binding")
+                for source, source_snapshot in zip(
+                    [upstream.source, *upstream.references], recipe["sourceSnapshots"], strict=True,
+                ):
+                    state, reason = visit(source, source_snapshot, active | {key})
+                    if state != "current":
+                        return state, reason
+            elif recipe.get("kind") == "cut-plan":
+                # Drawing owns its geometric read-set and semantic anchors. A
+                # change outside this crop must not invalidate its render too.
+                target = {} if document.source_stage_ref else {"target_model_source": document.model_source}
+                status = plan_status(binding, run_id=document.run_id, asset_sha256=document.asset_sha256,
+                                     revision_ref=document.revision_ref, **target)
+                if status["status"] != "current":
+                    return ("outdated" if status["status"] == "outdated" else "unavailable"), status["detail"]
+            else:
+                state, reason = model_freshness(snapshot)
+                if state != "current":
+                    return state, reason
+            checked.add(identity)
+            return "current", None
+
+        def model_freshness(snapshot):
             if snapshot["modelSource"]:
                 require_model_source(binding, ModelSource.from_dict(snapshot["modelSource"]))
             if snapshot["sourceStageRef"]:
@@ -81,8 +147,14 @@ def _freshness(binding, request, snapshots):
                     return "unavailable", "The source model's design branch is unavailable."
                 if ProjectRecordRef.from_dict(branch["head_stage"]) != ref:
                     return "outdated", "The source model's design branch has advanced."
+            return "current", None
+
+        for page, snapshot in zip([request.source, *request.references], snapshots, strict=True):
+            state, reason = visit(page, snapshot, frozenset())
+            if state != "current":
+                return state, reason
         return "current", None
-    except (StudioError, ProjectRepositoryError, OSError, ValueError):
+    except (StudioError, ProjectRepositoryError, OSError, KeyError, TypeError, ValueError):
         return "unavailable", "An exact source image, reference or declared model can no longer be resolved."
 
 

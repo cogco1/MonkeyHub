@@ -9,6 +9,7 @@ reportlab==5.0.0
 ezdxf==1.4.4
 fonttools==4.64.0
 shapely==2.1.2
+python-pptx==1.0.2
 
 # Optional: ARCHFLOW_STUDIO_INTENT_PROVIDER=anthropic (the key is the SDK's to
 # read from ANTHROPIC_API_KEY; the API never holds it). Imported only when chosen.

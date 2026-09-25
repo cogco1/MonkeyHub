@@ -1,7 +1,7 @@
 import type { PlanRequestDto, SourceDocumentDto } from "../../api/generated";
 
 /** A form for the existing document's recipe; never a second retained design. */
-export type PlanForm = { [K in "cutHeight" | "bottom" | "scaleDenominator" | "cutLineMm" | "visibleLineMm" | "hatchSpacingMm" | "dimensions"]: NonNullable<PlanRequestDto[K]> }
+export type PlanForm = { [K in "cutHeight" | "bottom" | "scaleDenominator" | "cutLineMm" | "visibleLineMm" | "hatchSpacingMm" | "dimensions" | "dressing"]: NonNullable<PlanRequestDto[K]> }
   & Pick<PlanRequestDto, "cropUv" | "hiddenObjectIds">;
 
 export const drawingDocumentKey = (source: Pick<SourceDocumentDto, "runId" | "assetSha256" | "revisionRef">) =>
@@ -10,7 +10,7 @@ export const drawingDocumentKey = (source: Pick<SourceDocumentDto, "runId" | "as
 export function defaultPlanForm(lengthUnit: string): PlanForm {
   const heights: Record<string, number> = { millimeter: 1200, meter: 1.2, foot: 1.2 / .3048, inch: 1.2 / .0254 };
   return { cutHeight: heights[lengthUnit] ?? 1.2, bottom: 0, scaleDenominator: 100,
-    cutLineMm: 0.35, visibleLineMm: 0.18, hatchSpacingMm: 2, dimensions: [] };
+    cutLineMm: 0.35, visibleLineMm: 0.18, hatchSpacingMm: 2, dimensions: [], dressing: [] };
 }
 
 export function planFormFromDocument(document: SourceDocumentDto, lengthUnit: string): PlanForm {
@@ -27,6 +27,7 @@ export function planFormFromDocument(document: SourceDocumentDto, lengthUnit: st
     cutLineMm: number(graphics.cutLineMm, defaults.cutLineMm ?? 0.35),
     visibleLineMm: number(graphics.visibleLineMm, defaults.visibleLineMm ?? 0.18),
     hatchSpacingMm: number(graphics.hatchSpacingMm, defaults.hatchSpacingMm ?? 2),
+    dressing: Array.isArray(recipe.dressing) ? structuredClone(recipe.dressing) as PlanForm["dressing"] : [],
     dimensions: Array.isArray(recipe.dimensions) ? structuredClone(recipe.dimensions) as PlanForm["dimensions"] : [],
     ...(Array.isArray(frame.crop_uv) ? { cropUv: structuredClone(frame.crop_uv) as PlanForm["cropUv"] } : {}),
     ...(Array.isArray(recipe.hiddenObjectIds) ? { hiddenObjectIds: recipe.hiddenObjectIds.filter((id): id is string => typeof id === "string") } : {}),

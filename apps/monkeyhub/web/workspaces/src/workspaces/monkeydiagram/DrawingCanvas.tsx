@@ -1,55 +1,62 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useStudio } from "../../api/ProjectRuntimeContext";
 import { asStudioApiError, type StudioApiError } from "../../api/client";
-import type { DesignStageDto, ModelSourceDto, PlanDimensionChoicesDto, PlanStatusDto, ProposalDto, SourceDocumentDto } from "../../api/generated";
+import type { DesignStageDto, ModelSourceDto, PlanDimensionChoicesDto, PlanStatusDto, PlanVectorDto, PlanDressingDto, SourceDocumentDto } from "../../api/generated";
 import { ErrorPanel } from "../../app/ErrorPanel";
 import { usePreferences } from "../../features/settings/preferences";
 import { DocumentSurface } from "./DocumentCanvas";
 import { defaultPlanForm, drawingDocumentKey, planFormFromDocument, type PlanForm } from "./drawingPlan";
+import { DressingControls, DressingOverlay } from "./DrawingDressing";
 import "./DrawingCanvas.css";
-
-export interface DrawingDesignRequest {
-  projectId: string;
-  proposal: ProposalDto;
-  modelSource: ModelSourceDto;
-  sourceStageRef: string | null;
-}
 
 const copy = {
   en: { title: "Drawing", intro: "Cut plans linked to a saved model.", source: "Model to draw", revision: "Drawing revision", fresh: "New cut plan",
     noModel: "Accept a model Stage in Modeling to create a cut plan.", automaticSource: "Latest Stage on the drawing's source branch", refresh: "Refresh sources", generating: "Generating…", generate: "Generate cut plan",
     rebuild: "Rebuild on selected model", representation: "Drawing appearance", cutHeight: "Cut height", bottom: "View bottom", scale: "Scale denominator (1 : n)",
     graphics: "Linework and hatch", cutLine: "Cut line (paper mm)", visibleLine: "Visible line (paper mm)", hatch: "Hatch spacing (paper mm)",
-    dimensions: "Door width dimensions", chooseDoor: "Choose a door", add: "Add dimension", noDoors: "No supported wall openings in this model.",
-    placement: "Label offset (paper mm)", remove: "Remove dimension", apply: "Save appearance as a revision", dirty: "Appearance changes are not saved.",
+    dimensions: "Saved dimensions",
+    placement: "Label offset (paper mm)", remove: "Remove dimension", apply: "Save appearance as a revision", dirty: "Save appearance changes before downloading SVG.",
     status: "Source status", current: "Current", outdated: "Outdated", "partially-broken": "Some anchors are broken", unknown: "Source status unknown",
-    checking: "Checking source…", sourceHint: "Heights and design widths use the source model unit:", unitUnknown: "Waiting for model units",
-    design: "Change design width", width: "New width", drive: "Create design candidate", driving: "Preparing candidate…", driveHint: "Changes the model through a proposal and opens the candidate in Modeling.",
-    broken: "Unresolved anchor", outsideView: "Dimension falls outside the drawing. Adjust its paper offset and save appearance.", unsavedDrive: "Save appearance before changing the design.", empty: "Choose a model and generate a cut plan.",
-    zoomOut: "Zoom out", zoomIn: "Zoom in", fit: "Fit page", saved: "Saved revision", sourceOfPage: "This drawing's source", noDrive: "This dimension cannot drive the design.",
+    checking: "Checking source…", sourceHint: "Heights use the source model unit:", unitUnknown: "Waiting for model units",
+    broken: "Unresolved anchor", outsideView: "Dimension falls outside the drawing. Adjust its paper offset and save appearance.", empty: "Choose a model and generate a cut plan.",
+    zoomOut: "Zoom out", zoomIn: "Zoom in", fit: "Fit page", sourceOfPage: "This drawing's source",
+    download: "Download SVG", downloadHint: "Saved vector drawing, with its scale and entourage, for further editing in Illustrator.",
     targetHint: "The drawing changes only when you rebuild it.", settings: "Drawing settings",
     statusError: "Source status could not be read. Refresh to try again.", loading: "Loading drawing…" },
   "zh-CN": { title: "Drawing · 图纸", intro: "与保留模型关联的剖切平面。", source: "出图模型", revision: "图纸版本", fresh: "新建剖切平面",
     noModel: "请先在建模页面接受一个模型 Stage，再生成剖切平面。", automaticSource: "图纸来源分支的最新 Stage", refresh: "刷新来源", generating: "正在生成…", generate: "生成剖切平面",
     rebuild: "基于所选模型重建", representation: "图纸表达", cutHeight: "剖切高度", bottom: "视图底部", scale: "比例分母（1 : n）",
     graphics: "线型与填充", cutLine: "剖切线宽（纸面 mm）", visibleLine: "可见线宽（纸面 mm）", hatch: "填充间距（纸面 mm）",
-    dimensions: "门宽尺寸", chooseDoor: "选择门洞", add: "添加尺寸", noDoors: "此模型没有支持标注的墙体门洞。",
-    placement: "标注偏移（纸面 mm）", remove: "移除尺寸", apply: "保存表达新版本", dirty: "表达修改尚未保存。",
+    dimensions: "已有尺寸标注",
+    placement: "标注偏移（纸面 mm）", remove: "移除尺寸", apply: "保存表达新版本", dirty: "表达修改尚未保存，保存后可下载 SVG。",
     status: "来源状态", current: "当前有效", outdated: "来源已更新", "partially-broken": "部分锚点断开", unknown: "来源状态未知",
-    checking: "正在核对来源…", sourceHint: "高度与设计门宽使用模型单位：", unitUnknown: "正在读取模型单位",
-    design: "修改设计门宽", width: "新门宽", drive: "生成设计候选", driving: "正在准备候选…", driveHint: "通过设计提案修改模型，并在建模页面打开候选。",
-    broken: "锚点未解析", outsideView: "标注超出图框，请调整纸面偏移后保存表达。", unsavedDrive: "请先保存表达，再修改设计尺寸。", empty: "选择模型并生成剖切平面。",
-    zoomOut: "缩小", zoomIn: "放大", fit: "适合页面", saved: "已保存版本", sourceOfPage: "此图来源", noDrive: "此尺寸不能驱动设计。",
+    checking: "正在核对来源…", sourceHint: "高度使用模型单位：", unitUnknown: "正在读取模型单位",
+    broken: "锚点未解析", outsideView: "标注超出图框，请调整纸面偏移后保存表达。", empty: "选择模型并生成剖切平面。",
+    zoomOut: "缩小", zoomIn: "放大", fit: "适合页面", sourceOfPage: "此图来源",
+    download: "下载 SVG", downloadHint: "下载已保存的矢量图，保留比例和配景，可在 Illustrator 中继续编辑。",
     targetHint: "点击重建后，才会更新此图。", settings: "图纸设置",
     statusError: "无法读取来源状态，请刷新重试。", loading: "正在读取图纸…" },
 } as const;
 
-function PlanPreview({ source, file }: { source: SourceDocumentDto; file: File }) {
+function PlanPreview({ source, file, vector, objects, selected, onSelect, onChange, disabled }: {
+  source: SourceDocumentDto; file: File; vector: PlanVectorDto | null; objects: PlanDressingDto[];
+  selected: string; onSelect(id: string): void; onChange(objects: PlanDressingDto[]): void; disabled: boolean;
+}) {
   const { language } = usePreferences(), text = copy[language];
   const viewport = useRef<HTMLDivElement>(null);
   const [bounds, setBounds] = useState({ width: 600, height: 500 });
   const [zoom, setZoom] = useState(1), [ready, setReady] = useState(false);
   const onReady = useCallback((value: boolean) => setReady(value), []);
+  const [baseImage, setBaseImage] = useState<string | null>(null);
+  useEffect(() => {
+    if (!vector) { setBaseImage(null); return; }
+    const svg = new DOMParser().parseFromString(vector.svg, "image/svg+xml");
+    svg.querySelector('[id="dressing"]')?.remove();
+    const url = URL.createObjectURL(new Blob([new XMLSerializer().serializeToString(svg)], { type: "image/svg+xml" }));
+    setReady(false); setBaseImage(url); return () => URL.revokeObjectURL(url);
+  }, [vector]);
+  const recipeFrame = source.viewRecipe?.frame as { crop_uv?: number[] } | undefined;
+  const crop = recipeFrame?.crop_uv;
   useEffect(() => {
     const node = viewport.current;
     if (!node) return;
@@ -68,14 +75,17 @@ function PlanPreview({ source, file }: { source: SourceDocumentDto; file: File }
     </div>
     <div className="drawing-preview__viewport" ref={viewport} tabIndex={0} data-ready={ready}>
       <div className="drawing-preview__paper" style={{ width: page.width * scale, height: page.height * scale }}>
-        <DocumentSurface file={file} page={page} scale={scale} onReady={onReady} />
+        {baseImage ? <img className="drawing-vector-base" src={baseImage} alt={source.fileName} onLoad={() => setReady(true)} />
+          : <DocumentSurface file={file} page={page} scale={scale} onReady={onReady} />}
+        {baseImage && vector && crop && <DressingOverlay objects={objects} vector={vector} crop={crop} selected={selected}
+          onSelect={onSelect} onChange={onChange} language={language} disabled={disabled} />}
       </div>
     </div>
   </section>;
 }
 
-export default function DrawingCanvas({ projectId, active = true, refreshKey = 0, onDesignRequest }: {
-  projectId: string; active?: boolean; refreshKey?: number; onDesignRequest(request: DrawingDesignRequest): void;
+export default function DrawingCanvas({ projectId, active = true, refreshKey = 0 }: {
+  projectId: string; active?: boolean; refreshKey?: number;
 }) {
   const studio = useStudio(), { language } = usePreferences(), text = copy[language];
   const controls = useRef<HTMLFormElement>(null);
@@ -85,11 +95,12 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
   const targetWasChosen = useRef(false); targetWasChosen.current = explicitTarget;
   const [automaticTarget, setAutomaticTarget] = useState<{ modelSource: ModelSourceDto; stageRef: string | null } | null>(null);
   const [form, setForm] = useState<PlanForm>(() => defaultPlanForm("meter")), [dirty, setDirty] = useState(false);
-  const [choices, setChoices] = useState<PlanDimensionChoicesDto | null>(null), [door, setDoor] = useState("");
+  const [choices, setChoices] = useState<PlanDimensionChoicesDto | null>(null);
   const [status, setStatus] = useState<PlanStatusDto | null>(null), [statusLoading, setStatusLoading] = useState(false);
   const [file, setFile] = useState<File | null>(null), [loading, setLoading] = useState(true);
+  const [vector, setVector] = useState<PlanVectorDto | null>(null), [selectedDressing, setSelectedDressing] = useState("");
   const [error, setError] = useState<StudioApiError | null>(null), [busy, setBusy] = useState(false);
-  const [refresh, setRefresh] = useState(0), [widths, setWidths] = useState<Record<string, string>>({});
+  const [refresh, setRefresh] = useState(0);
   const source = documents.find(document => drawingDocumentKey(document) === selected) ?? null;
   const stage = source && !explicitTarget ? automaticTarget : stages.find(item => item.stageRef === target) ?? null;
   const selectedTargetValue = source && !explicitTarget ? automaticTarget?.stageRef ?? "" : target;
@@ -115,7 +126,7 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
     return () => { cancelled = true; };
   }, [studio, projectId, active, refreshKey, refresh]);
   useEffect(() => {
-    setChoices(null); setDoor("");
+    setChoices(null);
     if (!stage || !active) return;
     let cancelled = false;
     void studio.drawingPlanDimensions(stage.modelSource, stage.stageRef).then(value => {
@@ -126,9 +137,11 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
     return () => { cancelled = true; };
   }, [studio, projectId, stage?.stageRef, active, refresh]);
   useEffect(() => {
-    setFile(null); setStatus(null); setAutomaticTarget(null); setWidths({});
+    setFile(null); setVector(null); setSelectedDressing(""); setStatus(null); setAutomaticTarget(null);
     if (!source) { setStatusLoading(false); return; }
     let cancelled = false;
+    if (source.revisionRef) void studio.drawingPlanVector({ runId: source.runId, assetSha256: source.assetSha256, revisionRef: source.revisionRef })
+      .then(value => { if (!cancelled) setVector(value); }).catch(cause => { if (!cancelled) setError(asStudioApiError(cause)); });
     void studio.documentFile(source.runId, source.assetSha256, source.fileName, source.revisionRef).then(value => {
       if (!cancelled) setFile(value);
     }).catch(cause => { if (!cancelled) setError(asStudioApiError(cause)); });
@@ -152,18 +165,12 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
 
   function chooseDocument(key: string) {
     const document = documents.find(item => drawingDocumentKey(item) === key);
-    setSelected(key); setDirty(false); setError(null); setExplicitTarget(false); setAutomaticTarget(null);
+    setSelected(key); setVector(null); setDirty(false); setError(null); setExplicitTarget(false); setAutomaticTarget(null);
     if (!document) setTarget(defaultTarget);
     setForm(document ? planFormFromDocument(document, lengthUnit) : defaultPlanForm(lengthUnit));
   }
   function update(patch: Partial<PlanForm>) { setForm(current => ({ ...current, ...patch })); setDirty(true); }
   const dimensions = form.dimensions ?? [];
-  const selectedDoor = choices?.dimensions.find(item => `${item.entityRef}/${item.openingId}` === door);
-  const addDimension = () => {
-    if (!selectedDoor) return;
-    update({ dimensions: [...dimensions, { id: crypto.randomUUID(), entityRef: selectedDoor.entityRef, openingId: selectedDoor.openingId, placement: { offsetMm: 8 } }] });
-    setDoor("");
-  };
   const generate = async (useTarget: boolean) => {
     const modelSource = useTarget ? stage?.modelSource : source?.modelSource;
     const stageRef = useTarget ? stage?.stageRef : source?.sourceStageRef;
@@ -175,24 +182,17 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
         ...(source?.drawingId ? { drawingId: source.drawingId } : {}), ...(source?.revisionRef ? { previousRevisionRef: source.revisionRef } : {}) });
       if (!mounted.current || scope.current !== origin) return;
       setDocuments(current => [...current.filter(item => drawingDocumentKey(item) !== drawingDocumentKey(result)), result]);
+      if (drawingDocumentKey(result) !== selected) setVector(null);
       setSelected(drawingDocumentKey(result)); setForm(planFormFromDocument(result, lengthUnit)); setDirty(false);
     } catch (cause) { if (mounted.current && scope.current === origin) setError(asStudioApiError(cause)); }
     finally { if (mounted.current) setBusy(false); }
   };
-  const drive = async (dimensionId: string) => {
-    if (!source?.revisionRef || !stage || busy || !active || dirty || status?.status !== "current") return;
-    const dimension = status.dimensions?.find(item => item.id === dimensionId);
-    const value = Number(widths[dimensionId] ?? dimension?.value);
-    if (!dimension?.canDrive || !Number.isFinite(value) || value <= 0) return;
-    const origin = scope.current;
-    setBusy(true); setError(null);
-    try {
-      const proposal = await studio.drawingDimensionProposal({ projectId, runId: source.runId, assetSha256: source.assetSha256,
-        revisionRef: source.revisionRef, dimensionId, value, targetModelSource: stage.modelSource, targetStageRef: stage.stageRef });
-      if (!mounted.current || scope.current !== origin) return;
-      onDesignRequest({ projectId, proposal, modelSource: stage.modelSource, sourceStageRef: stage.stageRef });
-    } catch (cause) { if (mounted.current && scope.current === origin) setError(asStudioApiError(cause)); }
-    finally { if (mounted.current) setBusy(false); }
+  const downloadSvg = () => {
+    if (!source || !vector || busy || dirty || !active) return;
+    const url = URL.createObjectURL(new Blob([vector.svg], { type: "image/svg+xml;charset=utf-8" }));
+    const link = document.createElement("a");
+    link.href = url; link.download = source.fileName.replace(/\.[^.]+$/, "") + ".svg"; link.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
   const numeric = (key: "cutHeight" | "bottom" | "scaleDenominator" | "cutLineMm" | "visibleLineMm" | "hatchSpacingMm", label: string, min?: number, step = "any") =>
     <label className="drawing-field">{label}<input type="number" min={min} step={step} required value={Number.isFinite(form[key]) ? form[key] : ""} onChange={event => update({ [key]: event.currentTarget.valueAsNumber })} /></label>;
@@ -223,7 +223,8 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
           <button type="button" disabled={!stage || busy || statusLoading} onClick={() => void generate(true)}>{text.rebuild}</button>
         </section>}
         </div>
-        <div className="drawing-canvas">{source && file ? <PlanPreview key={selected} source={source} file={file} />
+        <div className="drawing-canvas">{source && file ? <PlanPreview key={selected} source={source} file={file} vector={vector} objects={form.dressing} selected={selectedDressing}
+          onSelect={setSelectedDressing} onChange={dressing => update({ dressing })} disabled={busy || !active} />
           : <div className="drawing-empty" role="status">{loading || source ? text.loading : stages.length ? text.empty : text.noModel}</div>}</div>
       </div>
       <form ref={controls} className="drawing-controls" aria-label={text.settings} onSubmit={event => { event.preventDefault(); void generate(!source); }}>
@@ -235,12 +236,10 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
           {numeric("scaleDenominator", text.scale, 1, "1")}
           <details><summary>{text.graphics}</summary>{numeric("cutLineMm", text.cutLine, 0.01)}{numeric("visibleLineMm", text.visibleLine, 0.01)}{numeric("hatchSpacingMm", text.hatch, 0.1)}</details>
         </fieldset>
-        <fieldset disabled={busy || !active}><legend>{text.dimensions}</legend>
-          <label className="drawing-field">{text.chooseDoor}<select value={door} onChange={event => setDoor(event.target.value)}>
-            <option value="">{text.chooseDoor}</option>{choices?.dimensions.filter(item => !dimensions.some(d => d.entityRef === item.entityRef && d.openingId === item.openingId)).map(item =>
-              <option key={`${item.entityRef}/${item.openingId}`} value={`${item.entityRef}/${item.openingId}`}>{item.label}</option>)}</select></label>
-          <button type="button" disabled={!selectedDoor} onClick={addDimension}>{text.add}</button>
-          {choices && choices.dimensions.length === 0 && <p>{text.noDoors}</p>}
+        {source && vector && form.cropUv && <DressingControls objects={form.dressing} vector={vector} crop={form.cropUv}
+          selected={selectedDressing} onSelect={setSelectedDressing} onChange={dressing => update({ dressing })}
+          disabled={busy || !active} language={language} unit={lengthUnit} status={status} />}
+        {dimensions.length > 0 && <fieldset disabled={busy || !active}><legend>{text.dimensions}</legend>
           {dimensions.map(dimension => {
             const resolved = status?.dimensions?.find(item => item.id === dimension.id);
             const label = choices?.dimensions.find(item => item.entityRef === dimension.entityRef && item.openingId === dimension.openingId)?.label ?? dimension.openingId;
@@ -250,21 +249,16 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
               <label className="drawing-field">{text.placement}<input type="number" min="-100" max="100" step="1" required value={Number.isFinite(dimension.placement?.offsetMm ?? 8) ? dimension.placement?.offsetMm ?? 8 : ""}
                 onChange={event => update({ dimensions: dimensions.map(item => item.id === dimension.id ? { ...item, placement: { ...item.placement, offsetMm: event.currentTarget.valueAsNumber } } : item) })} /></label>
               <button type="button" onClick={() => update({ dimensions: dimensions.filter(item => item.id !== dimension.id) })}>{text.remove}</button>
-              {resolved && <details><summary>{text.design}</summary><p>{text.driveHint}</p>
-                <label className="drawing-field">{text.width} ({lengthUnit})<input type="number" min="0" step="any" value={widths[dimension.id] ?? resolved.value ?? ""}
-                  disabled={!resolved.canDrive || status?.status !== "current" || dirty} onChange={event => setWidths(current => ({ ...current, [dimension.id]: event.target.value }))} /></label>
-                <button type="button" disabled={!resolved.canDrive || status?.status !== "current" || dirty || !stage || busy}
-                  onClick={() => void drive(dimension.id)}>{busy ? text.driving : text.drive}</button>
-                {(dirty || !resolved.canDrive) && <p>{dirty ? text.unsavedDrive : resolved.driveReason ?? text.noDrive}</p>}
-              </details>}
             </div>;
           })}
-        </fieldset>
+        </fieldset>}
         </div>
         <div className="drawing-actions">
         {dirty && <p role="status">{text.dirty}</p>}
         <button className="btn btn--accent" type="submit" disabled={busy || loading || !lengthUnit || (!source && !stage) || Boolean(source && !source.modelSource)}>
           {busy ? text.generating : source ? text.apply : text.generate}</button>
+        {source && <><button className="drawing-download" type="button" disabled={busy || dirty || !active || !vector} onClick={downloadSvg}>{text.download}</button>
+          <p>{text.downloadHint}</p></>}
         {error && <ErrorPanel error={error} what={text.title} />}
         </div>
       </form>

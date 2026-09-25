@@ -1,0 +1,201 @@
+/** Actual Runtime/P036 and rendered Publish/Board components; no provider calls. */
+import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
+import { createServer as httpServer } from "node:http";
+import { mkdtemp, readFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { createServer } from "vite";
+const root = fileURLToPath(new URL("..", import.meta.url)), repo = path.resolve(root, "../../../..");
+const temporary = await mkdtemp(path.join(tmpdir(), "monkeyhub-publish-browser-"));
+const processes = [], origins = {}, errors = [], passed = [];
+let browser, vite, page, current;
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+async function until(read, accepts, label) {
+  const end = Date.now() + 30000; let value;
+  do { value = await read(); if (accepts(value)) return value; await delay(100); } while (Date.now() < end);
+  assert.fail(`${label}: ${JSON.stringify(value)} ${processes.map((p) => p.log).join("\n")}`);
+}
+async function freePort() { const s = httpServer(); await new Promise((r) => s.listen(0, "127.0.0.1", r)); const port = s.address().port; await new Promise((r) => s.close(r)); return port; }
+const source = `
+import sys,base64
+from pathlib import Path
+from io import BytesIO
+from PIL import Image,ImageDraw
+from fastapi.testclient import TestClient
+import uvicorn
+from archflow.project.repository import FilesystemProjectRepository
+from archflow_studio_api.main import create_app
+from archflow_studio_api.settings import StudioSettings
+root, project, port=Path(sys.argv[1]),sys.argv[2],int(sys.argv[3])
+repository=FilesystemProjectRepository.initialize(root/project,project_id=project,initial_state={'project_id':project,'version':0})
+app=create_app(StudioSettings(project_dir=root/project,cad_export='off'))
+image=Image.new('RGB',(1000,600),'white');draw=ImageDraw.Draw(image)
+draw.rectangle((80,100,920,490),outline='#384150',width=5)
+for x in (340,660):draw.line((x,100,x,490),fill='#384150',width=4)
+draw.rectangle((110,130,240,220),outline='#777777',width=2)
+draw.text((90,50),'SYNTHETIC PLAN / '+project,fill='black')
+out=BytesIO();image.save(out,format='PNG')
+with TestClient(app) as client:
+ document=client.post('/api/documents',json={'projectId':project,'fileName':'Room plan.png','mimeType':'image/png','contentBase64':base64.b64encode(out.getvalue()).decode()}).json()
+ print(document,flush=True)
+@app.get('/fixture/head')
+def head():return {'head':repr(repository.read_head())}
+uvicorn.run(app,host='127.0.0.1',port=port,log_level='warning')
+`;
+const fixture = `
+import React,{useState} from 'react';import{createRoot}from'react-dom/client';
+import{ProjectWorkspace}from'/src/app/ProjectWorkspace';import{UserPreferencesProvider}from'/test/TestProviders';
+import'/src/styles.css';import'/@fs/${path.resolve(repo, "apps/shared-web/src/base.css").replaceAll("\\", "/")}';
+function Project({id}){const[workspace,setWorkspace]=useState('publish');
+return <UserPreferencesProvider baseUrl={location.origin+'/'+id}><nav>{['publish','board','render'].map(w=><button key={w} onClick={()=>setWorkspace(w)}>{w}</button>)}</nav><main style={{height:'calc(100% - 40px)'}}><ProjectWorkspace expectedProjectId={id} workspace={workspace} onWorkspaceChange={setWorkspace}/></main></UserPreferencesProvider>}
+function App(){const[id,setId]=useState('pub-a');return <><button id="project-switch" onClick={()=>setId(id==='pub-a'?'pub-b':'pub-a')}>{id}</button><div style={{height:'calc(100% - 30px)'}}><Project key={id} id={id}/></div></>}
+createRoot(document.getElementById('root')).render(<App/>);
+`;
+try {
+  for (const id of ["pub-a", "pub-b"]) {
+    const port = await freePort();
+    const child = spawn(process.env.PYTHON ?? "python", ["-c", source, temporary, id, String(port)], { cwd: repo,
+      env: { ...process.env, PYTHONUTF8: "1", PYTHONPATH: [repo, path.join(repo, "apps/archflow-studio/api")].join(path.delimiter) }, stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
+    const p = { child, log: "" }; processes.push(p); child.stdout.on("data", (c) => p.log += c); child.stderr.on("data", (c) => p.log += c);
+    origins[id] = `http://127.0.0.1:${port}`;
+    await until(() => fetch(origins[id] + "/api/health").then((r) => r.ok).catch(() => false), Boolean, "Runtime ready");
+  }
+  vite = await createServer({ root, configFile: false, publicDir: "../.generated/public", cacheDir: path.join(temporary, "vite"), logLevel: "error",
+    resolve: { dedupe: ["react", "react-dom"] }, optimizeDeps: { include: ["react", "react-dom/client", "react/jsx-runtime", "react/jsx-dev-runtime"] },
+    server: { host: "127.0.0.1", port: 0, proxy: Object.fromEntries(Object.entries(origins).map(([id, target]) => [`/${id}`, { target, rewrite: (url) => url.slice(id.length + 1) }])) },
+    plugins: [{ name: "publication-fixture", resolveId(id) { if (id === "/fixture.tsx") return path.join(root, "fixture.tsx").replaceAll("\\", "/"); }, load(id) { if (id === path.join(root, "fixture.tsx").replaceAll("\\", "/")) return fixture; },
+      configureServer(server) { server.middlewares.use((request, response, next) => { if (request.url.split("?")[0] !== "/") return next(); response.setHeader("content-type", "text/html"); response.end('<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>html,body,#root{height:100%;margin:0}*{box-sizing:border-box}nav{height:40px}</style></head><body><div id="root" class="project-workspace"></div><script type="module" src="/fixture.tsx"></script></body></html>'); }); } }],
+  });
+  await vite.listen();
+  const { chromium } = await import(process.env.PLAYWRIGHT_MODULE ? pathToFileURL(process.env.PLAYWRIGHT_MODULE).href : "playwright");
+  browser = await chromium.launch({ headless: true, channel: "chrome" });
+  page = await browser.newPage({ viewport: { width: 1440, height: 960 }, acceptDownloads: true });
+  page.on("pageerror", (error) => errors.push(error.message));
+  const api = (id, route) => fetch(origins[id] + route).then((r) => r.json());
+  const head = await api("pub-a", "/fixture/head");
+  const pub = () => page.locator('[data-project-surface="publish"]:visible');
+  async function step(name, action) { current = name; await action(); passed.push(name); console.log("PASS", name); }
+  const board = () => page.locator('[data-project-surface="board"]:visible');
+  async function sendBoardSelection() {
+    await board().locator('.monkeyboard-canvas canvas').first().waitFor();
+    await until(() => api('pub-a', '/api/board'), (value) => value.elements.some((item) => item.type === 'image' && !item.isDeleted), 'Board has the retained source page');
+    await board().locator('.excalidraw').focus();
+    await page.keyboard.press('Escape'); await page.keyboard.press('v'); await page.keyboard.press('Control+a');
+    const actions = board().locator('details').filter({ has: page.locator('summary', { hasText: 'More board actions' }) });
+    if (!await actions.evaluate((element) => element.open)) await actions.locator('summary').click();
+    await board().getByRole('button', { name: 'Add to Publish', exact: true }).click();
+    await pub().getByLabel('Publication title').waitFor();
+  }
+  await page.goto(vite.resolvedUrls.local[0] + "?lang=en");
+  await step("create native text and a real registered image page", async () => {
+    await pub().getByRole("button", { name: "+ Page", exact: true }).click();
+    await pub().getByLabel("Publication title").fill("Structure review");
+    await pub().getByRole("button", { name: "Add text", exact: true }).click();
+    await pub().getByLabel("Text", { exact: true }).fill("One building, three rooms");
+    await pub().getByLabel("Project drawing / image").selectOption({ label: "Room plan.png" });
+    await pub().getByRole("button", { name: "Place on page", exact: true }).click();
+    await until(() => pub().locator('.publish-page img').count(), (n) => n === 1, "retained image loads");
+    await pub().getByRole("button", { name: "Save", exact: true }).click();
+    await until(() => api("pub-a", "/api/publication"), (x) => x.pages.length === 1 && x.title === "Structure review", "save page");
+  });
+  await step("drag, resize and crop remain editable after cold reopen", async () => {
+    const image = pub().locator('.publish-element').filter({ has: page.locator('img') });
+    const box = await image.boundingBox();
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2); await page.mouse.down(); await page.mouse.move(box.x + box.width / 2 + 12, box.y + box.height / 2 + 10, { steps: 4 }); await page.mouse.up();
+    await pub().getByLabel("width", { exact: true }).fill("760");
+    await pub().getByLabel("Crop left %", { exact: true }).fill("10");
+    await pub().getByRole("button", { name: "Save", exact: true }).click();
+    await until(() => api("pub-a", "/api/publication"), (x) => x.pages[0].elements[1].width === 760 && x.pages[0].elements[1].crop[0] === .1, "save manipulation");
+    await page.reload();
+    await until(() => pub().locator('.publish-page img').count(), (n) => n === 1, "cold read image");
+    assert.match(await pub().innerText(), /One building, three rooms/);
+    await page.screenshot({ path: path.join(temporary, "publish-wide.png"), fullPage: true });
+  });
+  await step("PPTX and PDF export the saved source; switching project isolates pages", async () => {
+    for (const format of ["PPTX", "PDF"]) { const pending = page.waitForEvent("download"); await pub().getByRole("button", { name: format, exact: true }).click(); const result = await pending; const content = await readFile(await result.path()); assert.ok(content.length > 1000); assert.ok(result.suggestedFilename().endsWith(format.toLowerCase())); }
+    await page.locator('#project-switch').click(); await pub().getByRole("button", { name: "+ Page", exact: true }).waitFor();
+    assert.equal(await pub().locator('.publish-page').count(), 0);
+    await page.locator('#project-switch').click(); await pub().locator('.publish-page').waitFor();
+    assert.deepEqual(await api("pub-a", "/fixture/head"), head);
+  });
+  await step("multiple pages reorder and narrow screen has no horizontal overflow", async () => {
+    await pub().getByRole("button", { name: "+ Page", exact: true }).click(); await pub().getByRole("button", { name: "Add text", exact: true }).click();
+    await pub().getByLabel("Text", { exact: true }).fill("Second page"); await pub().getByRole("button", { name: "Move page up", exact: true }).click();
+    await pub().getByRole("button", { name: "Save", exact: true }).click();
+    await until(() => api("pub-a", "/api/publication"), (x) => x.pages[0].elements[0].text === "Second page", "page order persisted");
+    for (const width of [900, 390]) { await page.setViewportSize({ width, height: 850 }); await delay(250); assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 2)); await page.screenshot({ path: path.join(temporary, `publish-${width}.png`), fullPage: true }); }
+  });
+  await step('a delayed old GET cannot roll back a newer saved draft', async () => {
+    await page.setViewportSize({ width: 1440, height: 960 });
+    await page.getByRole('button', { name: 'render', exact: true }).click();
+    let release, captured = false;
+    const gate = new Promise((resolve) => { release = resolve; });
+    const readingPublication = (url) => url.pathname === '/pub-a/api/publication';
+    await page.route(readingPublication, async (route) => {
+      if (route.request().method() !== 'GET') return route.continue();
+      const response = await route.fetch();
+      captured = true;
+      await gate;
+      await route.fulfill({ response });
+    });
+    await page.getByRole('button', { name: 'publish', exact: true }).click();
+    await until(() => captured, Boolean, 'old publication read captured');
+    await pub().getByLabel('Publication title').fill('Newer saved review');
+    await pub().getByRole('button', { name: 'Save', exact: true }).click();
+    await until(() => api('pub-a', '/api/publication'), (value) => value.title === 'Newer saved review', 'new save reaches P036');
+    await until(() => pub().getByRole('button', { name: 'Save', exact: true }).isEnabled(), Boolean, 'save response completes');
+    release();
+    await delay(250);
+    assert.equal(await pub().getByLabel('Publication title').inputValue(), 'Newer saved review');
+    await page.unroute(readingPublication);
+    await pub().getByLabel('Publication title').fill('Subsequent edit still saves');
+    await pub().getByRole('button', { name: 'Save', exact: true }).click();
+    await until(() => api('pub-a', '/api/publication'), (value) => value.title === 'Subsequent edit still saves', 'no stale revision remains in the UI');
+    assert.equal(await pub().getByRole('alert').count(), 0);
+  });
+  await step('Board selection appends an exact page while preserving unsaved publication edits', async () => {
+    const before = await api('pub-a', '/api/publication');
+    await pub().getByLabel('Publication title').fill('Unsaved manual review title');
+    await page.getByRole('button', { name: 'board', exact: true }).click();
+    await sendBoardSelection();
+    const appended = await until(() => api('pub-a', '/api/publication'), (value) => value.pages.length === before.pages.length + 1, 'Board page appended');
+    assert.equal(appended.title, 'Unsaved manual review title');
+    assert.deepEqual(appended.pages.slice(0, before.pages.length), before.pages, 'manual coordinates, crop and text are not rebuilt');
+    const savedBoard = await api('pub-a', '/api/board');
+    const placed = savedBoard.elements.find((item) => item.type === 'image' && !item.isDeleted);
+    assert.deepEqual(appended.pages.at(-1).elements.find((item) => item.kind === 'image').source, placed.customData.sourceDocument);
+    await until(() => pub().locator('.publish-page img').count(), (value) => value === 1, 'appended source image visible');
+    await page.screenshot({ path: path.join(temporary, 'publish-board-handoff.png'), fullPage: true });
+  });
+  await step('Board handoff waits for a busy export and does not duplicate already imported pages', async () => {
+    const before = await api('pub-a', '/api/publication');
+    let release, captured = false;
+    const gate = new Promise((resolve) => { release = resolve; });
+    await page.route('**/pub-a/api/publication/export', async (route) => {
+      const response = await route.fetch(); captured = true; await gate; await route.fulfill({ response });
+    });
+    const download = page.waitForEvent('download');
+    await pub().getByRole('button', { name: 'PDF', exact: true }).click();
+    await until(() => captured, Boolean, 'export response delayed');
+    await page.getByRole('button', { name: 'board', exact: true }).click();
+    const handed = page.waitForResponse((response) => response.url().includes('/pub-a/api/publication/from-board') && response.request().method() === 'POST');
+    await sendBoardSelection();
+    assert.equal(await pub().getByRole('button', { name: 'Save', exact: true }).isDisabled(), true, 'export still owns the in-flight operation');
+    release(); await download;
+    const response = await handed;
+    assert.equal(response.status(), 200, await response.text());
+    const after = await api('pub-a', '/api/publication');
+    assert.deepEqual(after.pages, before.pages, 'retrying the same retained Board selection is idempotent');
+    await until(() => pub().getByRole('button', { name: 'Save', exact: true }).isEnabled(), Boolean, 'handoff response applied');
+    assert.equal(await pub().locator('.publish-page').count(), 1, 'idempotent handoff still shows an existing page');
+    assert.deepEqual(await api('pub-a', '/fixture/head'), head);
+    await page.unroute('**/pub-a/api/publication/export');
+  });
+  assert.deepEqual(errors, []);
+  console.log(JSON.stringify({ passed, temporary }));
+} catch (error) {
+  await page?.screenshot({ path: path.join(temporary, 'failure.png'), fullPage: true }).catch(() => {});
+  console.error(`FAIL ${current}; ${temporary}`); console.error(errors); throw error;
+} finally { await browser?.close(); await vite?.close(); for (const p of processes) p.child.kill(); }

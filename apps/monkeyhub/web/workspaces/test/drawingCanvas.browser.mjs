@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
-import { mkdtemp } from "node:fs/promises";
+import { execFileSync } from "node:child_process";
+import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { createServer } from "vite";
 
@@ -9,8 +10,16 @@ import { createServer } from "vite";
 const root = fileURLToPath(new URL("..", import.meta.url)).replaceAll("\\", "/").replace(/\/$/, "");
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE ? pathToFileURL(process.env.PLAYWRIGHT_MODULE).href : "playwright");
 const screenshots = await mkdtemp(join(tmpdir(), "archflow-drawing-canvas-"));
+const assets = JSON.parse(execFileSync(process.env.PYTHON ?? "python", ["-c", "import json; from monkeydiagram.drawing_svg import dressing_assets; print(json.dumps(dressing_assets()))"], { cwd: resolve(root, "../../../.."), encoding: "utf8" }));
 const modelA = { runId: "model-A", stateDigest: "a".repeat(64), assetSha256: "b".repeat(64) };
 const modelB = { runId: "model-B", stateDigest: "c".repeat(64), assetSha256: "d".repeat(64) };
+const savedDimension = { id: "saved-door-width", entityRef: "entity:wall", openingId: "door", placement: { offsetMm: 8 } };
+const legacyDocument = { projectId: "drawing-project", runId: modelA.runId, assetSha256: "0".repeat(64),
+  fileName: "retained-floor-plan.png", mimeType: "image/png", sizeBytes: 200, pageCount: 1,
+  pages: [{ pageIndex: 0, width: 600, height: 400, rotation: 0 }], modelSource: modelA, sourceStageRef: "stage-A",
+  drawingId: "floor-plan", revisionRef: "revision-legacy", generatedAt: "2026-09-22T00:00:00Z",
+  viewRecipe: { kind: "cut-plan", frame: { origin: [0, 0, 1.2], far_depth: 1.2, scale: "1:100", crop_uv: [0, 0, 10, 6] },
+    graphics: { cutLineMm: .35, visibleLineMm: .18, hatchSpacingMm: 2 }, dimensions: [savedDimension] } };
 const fixture = `
 import React,{useState} from 'react';
 import {createRoot} from 'react-dom/client';
@@ -20,7 +29,7 @@ import {UserPreferencesProvider,useStudio,usePreferences} from '/test/TestProvid
 import '/src/styles.css';
 import '/@fs/${root}/../../../shared-web/src/base.css';
 const modelA=${JSON.stringify(modelA)},modelB=${JSON.stringify(modelB)};
-const metrics=window.drawingFixture={requests:[],documents:[],handoffs:[],head:'stage-A'};
+const metrics=window.drawingFixture={requests:[],documents:[${JSON.stringify(legacyDocument)}],handoffs:[],head:'stage-A'};
 const stages=[{stageRef:'stage-A',label:'Accepted A',branchId:'main',modelSource:modelA}, {stageRef:'stage-B',label:'Accepted B',branchId:'main',modelSource:modelB}];
 function App(){
  const studio=useStudio(),[active,setActive]=useState(true),[projectId,setProjectId]=useState('drawing-project');
@@ -55,7 +64,7 @@ const server = await createServer({ root, configFile: false, resolve: { dedupe: 
   }],
 });
 let browser, page, hold = false, release, broken = false, current;
-const requests = [], statusRequests = [], drives = [], errors = [], passed = [];
+const requests = [], statusRequests = [], drives = [], errors = [], passed = [], vectorBytes = new Map();
 async function step(name, action) { current = name; await action(); passed.push(name); console.log(`PASS ${name}`); }
 const revision = () => page.getByRole("combobox", { name: "Drawing revision", exact: true });
 const source = () => page.getByRole("combobox", { name: "Model to draw", exact: true });
@@ -84,9 +93,19 @@ try {
       viewRecipe: { kind: "cut-plan", frame: { origin: [0, 0, body.cutHeight], far_depth: body.cutHeight - body.bottom,
         scale: `1:${body.scaleDenominator}`, crop_uv: body.cropUv ?? [0, 0, 10, 6] },
         graphics: { cutLineMm: body.cutLineMm, visibleLineMm: body.visibleLineMm, hatchSpacingMm: body.hatchSpacingMm },
-        hiddenObjectIds: body.hiddenObjectIds ?? [], dimensions: body.dimensions } };
+        hiddenObjectIds: body.hiddenObjectIds ?? [], dimensions: body.dimensions, dressing: body.dressing ?? [] } };
     await page.evaluate(result => window.drawingFixture.documents.push(result), result);
     await route.fulfill({ status: 201, json: result });
+  });
+  await page.route("**/api/drawings/plans/vector?*", async route => {
+    const revisionRef = new URL(route.request().url()).searchParams.get("revisionRef");
+    const doc = await page.evaluate(ref => window.drawingFixture.documents.find(d => d.revisionRef === ref), revisionRef);
+    const scale = Number(doc.viewRecipe.frame.scale.split(":")[1]);
+    const dressing = (doc.viewRecipe.dressing ?? []).map(item => `<polyline data-dressing-id="${item.id}" points="1,1 2,2"/>`).join("");
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${10000 / scale}mm" height="${6000 / scale}mm" viewBox="0 0 10 6" data-unit="meter" data-scale="1:${scale}"><title>${doc.fileName}</title><polyline data-object="obj-wall" points="1,1 9,1 9,5 1,5 1,1" fill="none" stroke="black" stroke-width="0.04"/><g id="dressing">${dressing}</g></svg>`;
+    vectorBytes.set(revisionRef, svg);
+    return route.fulfill({ json: { svg, assets,
+      anchors: [{ objectId: "obj-wall", positionUv: [5, 1] }] } });
   });
   await page.route("**/api/drawings/plans/status", async route => {
     const body = route.request().postDataJSON(); statusRequests.push(body);
@@ -105,32 +124,35 @@ try {
     return route.fulfill({ json: { proposalId: "dimension-proposal", baseStateDigest: body.targetModelSource.stateDigest } });
   });
   await page.goto(`http://127.0.0.1:${server.httpServer.address().port}/?lang=en`);
-  await step("accepted model, source units and a semantic door choice generate one exact-source plan", async () => {
+  await step("a new cut plan starts with model and appearance choices without a door-width experiment", async () => {
     await page.getByRole("button", { name: "Generate cut plan", exact: true }).waitFor();
     await until(() => source().inputValue(), value => value === "stage-A", "accepted source selected");
-    await page.getByRole("combobox", { name: "Choose a door", exact: true }).selectOption("entity:wall/door");
-    await page.getByRole("button", { name: "Add dimension", exact: true }).click();
+    assert.equal(await page.getByRole("combobox", { name: "Choose a door", exact: true }).count(), 0);
+    assert.equal(await page.getByRole("button", { name: "Add dimension", exact: true }).count(), 0);
+    assert.equal(await page.getByRole("group", { name: "Saved dimensions", exact: true }).count(), 0);
     await page.getByRole("button", { name: "Generate cut plan", exact: true }).click();
     await page.locator('.drawing-preview__viewport[data-ready="true"]').waitFor();
     assert.deepEqual(requests[0].modelSource, modelA); assert.equal(requests[0].sourceStageRef, "stage-A");
-    assert.equal(requests[0].cutHeight, 1.2); assert.equal(requests[0].dimensions[0].entityRef, "entity:wall");
+    assert.equal(requests[0].cutHeight, 1.2); assert.deepEqual(requests[0].dimensions, []);
   });
   let oldRevision;
   await step("appearance updates retain semantic dimension and previous revision without design calls", async () => {
+    await revision().selectOption(JSON.stringify([legacyDocument.runId, legacyDocument.assetSha256, legacyDocument.revisionRef]));
+    await page.getByText("900 mm", { exact: true }).waitFor();
     oldRevision = await revision().inputValue();
     await page.getByLabel("Scale denominator (1 : n)", { exact: true }).fill("50");
     await page.getByLabel("Label offset (paper mm)", { exact: true }).fill("16");
     await page.getByRole("button", { name: "Save appearance as a revision", exact: true }).click();
     await until(() => revision().inputValue(), value => value !== oldRevision, "new drawing revision opened");
-    assert.equal(requests[1].previousRevisionRef, "revision-1"); assert.equal(requests[1].drawingId, "floor-plan");
-    assert.equal(requests[1].dimensions[0].id, requests[0].dimensions[0].id); assert.equal(requests[1].dimensions[0].placement.offsetMm, 16);
+    assert.equal(requests[1].previousRevisionRef, legacyDocument.revisionRef); assert.equal(requests[1].drawingId, "floor-plan");
+    assert.equal(requests[1].dimensions[0].id, savedDimension.id); assert.equal(requests[1].dimensions[0].placement.offsetMm, 16);
     assert.equal(drives.length, 0);
     await revision().selectOption(oldRevision); assert.equal(await page.getByLabel("Label offset (paper mm)", { exact: true }).inputValue(), "8");
   });
   await step("returning after a new accepted Stage follows the source branch head unless explicitly pinned", async () => {
     const generationCount = requests.length;
     const selectedBefore = await revision().inputValue();
-    const retainedBefore = await page.evaluate(() => structuredClone(window.drawingFixture.documents.find(document => document.revisionRef === "revision-1")));
+    const retainedBefore = await page.evaluate(() => structuredClone(window.drawingFixture.documents.find(document => document.revisionRef === "revision-legacy")));
     const exactPage = { runId: retainedBefore.runId, assetSha256: retainedBefore.assetSha256, revisionRef: retainedBefore.revisionRef };
     await page.evaluate(() => { window.drawingFixture.setActive(false); window.drawingFixture.head = "stage-B"; });
     await page.evaluate(() => window.drawingFixture.setActive(true));
@@ -140,7 +162,7 @@ try {
     assert.deepEqual(statusRequests.at(-1), exactPage, "only the comparison target is refreshed; status still reads the original exact drawing");
     assert.equal(await revision().inputValue(), selectedBefore, "following the branch head never selects or creates another drawing revision");
     assert.equal(requests.length, generationCount, "returning to Drawing cannot generate or rebuild automatically");
-    assert.deepEqual(await page.evaluate(() => window.drawingFixture.documents.find(document => document.revisionRef === "revision-1")), retainedBefore,
+    assert.deepEqual(await page.evaluate(() => window.drawingFixture.documents.find(document => document.revisionRef === "revision-legacy")), retainedBefore,
       "the original document's ModelSource, Stage, bytes and recipe remain unchanged");
     assert.deepEqual(await page.evaluate(() => window.drawingFixture.requests.filter(request => request.kind === "bytes").at(-1)),
       { kind: "bytes", runId: exactPage.runId, sha: exactPage.assetSha256, revisionRef: exactPage.revisionRef }, "the displayed file still comes from the original exact revision");
@@ -153,35 +175,26 @@ try {
     assert.equal(await source().inputValue(), "stage-A", "explicit historical source survives reactivation");
     assert.deepEqual(statusRequests.at(-1).targetModelSource, modelA);
   });
-  await step("source change is explicit, outdated disables driving, rebuild preserves intention", async () => {
+  await step("source change is explicit and rebuild preserves retained dimension intention", async () => {
     const generationCount = requests.length;
     const oldSelection = await revision().inputValue();
     await source().selectOption("stage-B");
     await page.locator('.drawing-status[data-status="outdated"]').waitFor();
-    await page.getByText("Change design width", { exact: true }).click();
-    assert.equal(await page.getByRole("button", { name: "Create design candidate", exact: true }).isDisabled(), true);
+    assert.equal(await page.getByText("Change design width", { exact: true }).count(), 0);
+    assert.equal(await page.getByRole("button", { name: "Create design candidate", exact: true }).count(), 0);
     await page.getByRole("button", { name: "Rebuild on selected model", exact: true }).click();
     await page.locator('.drawing-status[data-status="current"]').waitFor();
     assert.equal(requests.length, generationCount + 1, "only the explicit rebuild creates the revision");
     assert.notEqual(await revision().inputValue(), oldSelection);
-    assert.deepEqual(requests.at(-1).modelSource, modelB); assert.equal(requests.at(-1).dimensions[0].id, requests[0].dimensions[0].id);
-  });
-  await step("real width emits a proposal handoff with exact model and Stage, using model units", async () => {
-    const panel = page.locator(".drawing-dimension details"); if (!(await panel.getAttribute("open"))) await panel.locator("summary").click();
-    await page.getByLabel("New width (meter)", { exact: true }).fill("1.1");
-    await page.getByRole("button", { name: "Create design candidate", exact: true }).click();
-    await until(() => page.evaluate(() => window.drawingFixture.handoffs.length), value => value === 1, "proposal handoff");
-    assert.equal(drives[0].value, 1.1); assert.deepEqual(drives[0].targetModelSource, modelB);
-    assert.equal((await page.evaluate(() => window.drawingFixture.handoffs[0])).sourceStageRef, "stage-B");
+    assert.deepEqual(requests.at(-1).modelSource, modelB); assert.equal(requests.at(-1).dimensions[0].id, savedDimension.id);
   });
   await step("broken anchors remain visible and cannot drive, while prior revisions remain selectable", async () => {
     broken = true;
     await page.getByRole("button", { name: "Refresh sources", exact: true }).click();
     await page.locator('.drawing-status[data-status="partially-broken"]').waitFor();
     assert.equal(await page.getByText("Door anchor is missing.", { exact: true }).count(), 1);
-    await page.locator(".drawing-dimension details summary").click();
-    assert.equal(await page.getByRole("button", { name: "Create design candidate", exact: true }).isDisabled(), true);
-    assert.equal(await revision().locator("option").count(), 4);
+    assert.equal(await page.getByRole("button", { name: "Create design candidate", exact: true }).count(), 0);
+    assert.equal(await revision().locator("option").count(), 5);
     broken = "outside-view";
     await page.getByRole("button", { name: "Refresh sources", exact: true }).click();
     await page.getByText("Dimension falls outside the drawing. Adjust its paper offset and save appearance.", { exact: true }).waitFor();
@@ -205,6 +218,69 @@ try {
     assert.equal(requests.length, before);
     assert.equal(await page.getByLabel("Cut height (meter)", { exact: true }).evaluate(node => node.validity.valueMissing), true);
     await page.getByLabel("Cut height (meter)", { exact: true }).fill("1.2");
+  });
+  await step("SVG people and trees remain independently editable through drag, keyboard, mirror, save and reopen", async () => {
+    await page.getByRole("button", { name: "Add person", exact: true }).click();
+    const object = page.locator('[data-dressing-id]').first();
+    await object.waitFor();
+    const id = await object.getAttribute("data-dressing-id");
+    await page.getByLabel("Symbol size (meter)", { exact: true }).fill("1.2");
+    await page.getByRole("button", { name: "Mirror horizontally", exact: true }).click();
+    await object.focus(); await page.keyboard.press("ArrowRight");
+    assert.ok(Number(await page.getByLabel("Horizontal position / offset (meter)", { exact: true }).inputValue()) > 5);
+    const bounds = await object.boundingBox();
+    await page.mouse.move(bounds.x+bounds.width/2, bounds.y+bounds.height/2); await page.mouse.down();
+    await page.mouse.move(bounds.x+bounds.width/2+35, bounds.y+bounds.height/2-20, { steps: 5 }); await page.mouse.up();
+    assert.ok(Number(await page.getByLabel("Vertical position / offset (meter)", { exact: true }).inputValue()) > 3);
+    await page.getByRole("button", { name: "Add tree", exact: true }).click();
+    assert.equal(await page.locator('[data-dressing-id]').count(), 2);
+    await page.getByLabel("Position follows", { exact: true }).selectOption("obj-wall");
+    const old = await revision().inputValue();
+    await page.getByRole("button", { name: "Save appearance as a revision", exact: true }).click();
+    await until(() => revision().inputValue(), value => value !== old, "dressing revision");
+    const newRevision = await revision().inputValue();
+    assert.equal(requests.at(-1).dressing.length, 2);
+    assert.equal(requests.at(-1).dressing[0].id, id); assert.equal(requests.at(-1).dressing[0].flipped, true);
+    assert.equal(requests.at(-1).dressing[1].anchorObjectId, "obj-wall");
+    await revision().selectOption(old); await until(() => page.locator('[data-dressing-id]').count(), value => value === 0, "old recipe remains intact");
+    await revision().selectOption(newRevision); await until(() => page.locator('[data-dressing-id]').count(), value => value === 2, "reopened SVG objects");
+    await page.getByLabel("Selected object", { exact: true }).selectOption(id);
+    await page.getByRole("button", { name: "Delete object", exact: true }).click();
+    assert.equal(await page.locator('[data-dressing-id]').count(), 1);
+    await page.getByRole("button", { name: "Save appearance as a revision", exact: true }).click();
+    await until(() => revision().inputValue(), value => value !== newRevision, "deletion retained");
+    assert.equal(requests.at(-1).dressing.length, 1);
+    await page.waitForFunction(() => { const image = document.querySelector(".drawing-vector-base"); return image?.complete && image.naturalWidth > 0; });
+    assert.equal(drives.length, 0, "appearance never invokes a design proposal");
+  });
+  await step("SVG download preserves exact saved vector bytes, scale, source objects and entourage", async () => {
+    const downloadButton = page.getByRole("button", { name: "Download SVG", exact: true });
+    await until(() => downloadButton.isEnabled(), Boolean, "saved SVG available");
+    const [, , revisionRef] = JSON.parse(await revision().inputValue());
+    const [download] = await Promise.all([page.waitForEvent("download"), downloadButton.click()]);
+    const svg = await readFile(await download.path(), "utf8");
+    assert.equal(svg, vectorBytes.get(revisionRef), "download is the retained SVG, not the display with dressing removed");
+    assert.match(download.suggestedFilename(), /\.svg$/);
+    assert.match(svg, /width="[\d.]+mm"/); assert.match(svg, /data-scale="1:100"/);
+    assert.match(svg, /data-object="obj-wall"/); assert.match(svg, /data-dressing-id=/);
+    await page.getByRole("button", { name: "Add person", exact: true }).click();
+    assert.equal(await downloadButton.isDisabled(), true, "unsaved appearance cannot be downloaded as a retained version");
+    await page.getByText("Save appearance changes before downloading SVG.", { exact: true }).waitFor();
+    await revision().selectOption(oldRevision);
+    await until(() => downloadButton.isEnabled(), Boolean, "historical SVG available");
+    const [oldDownload] = await Promise.all([page.waitForEvent("download"), downloadButton.click()]);
+    const oldSvg = await readFile(await oldDownload.path(), "utf8");
+    assert.equal(oldSvg, vectorBytes.get(legacyDocument.revisionRef));
+    assert.doesNotMatch(oldSvg, /data-dressing-id=/, "historical download never inherits new or unsaved entourage");
+  });
+  await step("retained dimensions can be removed without rewriting their original revision", async () => {
+    await page.getByRole("button", { name: "Remove dimension", exact: true }).click();
+    assert.equal(await page.getByRole("group", { name: "Saved dimensions", exact: true }).count(), 0);
+    await page.getByRole("button", { name: "Save appearance as a revision", exact: true }).click();
+    await until(() => revision().inputValue(), value => value !== oldRevision, "dimension removal retained");
+    assert.deepEqual(requests.at(-1).dimensions, []);
+    assert.deepEqual(await page.evaluate(() => window.drawingFixture.documents.find(document => document.revisionRef === "revision-legacy").viewRecipe.dimensions), [savedDimension]);
+    assert.equal(drives.length, 0);
   });
   await step("keyboard controls and English/Chinese narrow layouts keep the drawing usable", async () => {
     await page.setViewportSize({ width: 390, height: 844 });
@@ -238,5 +314,5 @@ try {
   console.log(JSON.stringify({ passed, screenshots, generationRequests: requests.length, dimensionProposals: drives.length }));
 } catch (error) {
   if (page) await page.screenshot({ path: join(screenshots, "failure.png"), fullPage: true }).catch(() => {});
-  console.error(`FAIL ${current}; screenshots: ${screenshots}`); throw error;
+  console.error(`FAIL ${current}; screenshots: ${screenshots}`, errors); throw error;
 } finally { if (release) release(); await browser?.close(); await server.close(); }

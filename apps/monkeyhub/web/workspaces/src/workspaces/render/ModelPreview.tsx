@@ -2,12 +2,13 @@ import { useEffect, useRef, useState } from "react";
 import { ACESFilmicToneMapping, SRGBColorSpace, WebGLRenderer } from "three";
 import { previewSize, type RenderView } from "../monkeyarch/viewer/renderView";
 
-export default function ModelPreview({ active, readView, onModeling, zh }: {
-  active: boolean; readView?: () => RenderView | null; onModeling?: () => void; zh: boolean;
+export default function ModelPreview({ active, readView, onModeling, onCapture, capturing, zh }: {
+  active: boolean; readView?: () => RenderView | null; onModeling?: () => void; onCapture(): void; capturing: boolean; zh: boolean;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const [available, setAvailable] = useState(false);
   const [failed, setFailed] = useState(false);
+  const [sourceIssue, setSourceIssue] = useState<RenderView["sourceIssue"]>("unbound");
   useEffect(() => {
     if (!active || !host.current || !readView) return;
     const element = host.current;
@@ -19,6 +20,7 @@ export default function ModelPreview({ active, readView, onModeling, zh }: {
       try {
         const view = readView();
         setAvailable(Boolean(view));
+        setSourceIssue(view?.sourceIssue ?? (view?.modelSource ? null : "unbound"));
         if (view) {
           if (!renderer) {
             renderer = new WebGLRenderer({ antialias: true });
@@ -53,11 +55,16 @@ export default function ModelPreview({ active, readView, onModeling, zh }: {
   }, [active, readView]);
   return <section className="render-model-preview" aria-label={zh ? "建模视角" : "Modeling view"}>
     <header><strong>{zh ? "建模视角 · 实时预览" : "Modeling view · Live preview"}</strong>
-      <button type="button" onClick={onModeling}>{zh ? "前往建模调整视角" : "Adjust view in Modeling"}</button></header>
-    <div ref={host} className="render-model-canvas" />
+      <div className="render-model-actions"><button type="button" onClick={onModeling}>{zh ? "前往建模调整视角" : "Adjust view in Modeling"}</button>
+        <button type="button" disabled={!active || !available || failed || Boolean(sourceIssue) || capturing} onClick={onCapture}>
+          {capturing ? (zh ? "正在保存底图…" : "Saving source…") : (zh ? "使用当前视角作为底图" : "Use current view as source")}</button></div></header>
+    <div ref={host} className="render-model-canvas" hidden={!available || failed} />
     {(!available || failed) && <p role="status">{failed
       ? (zh ? "预览暂时不可用，请返回建模后重试。" : "Preview unavailable. Return to Modeling and try again.")
       : (zh ? "先在建模中打开模型并调整视角，再进入渲染。" : "Open a model and set its view in Modeling, then enter Render.")}</p>}
-    <small>{zh ? "与建模共用场景；保留原画幅。此预览尚未作为 AI 渲染输入。" : "Shared Modeling scene; original framing preserved. This preview is not yet an AI image input."}</small>
+    {available && sourceIssue && <small role="status">{sourceIssue === "unsaved"
+      ? (zh ? "先在建模中同步修改并打开候选，再使用这个视角。" : "Sync edits and open the saved candidate in Modeling before using this view.")
+      : sourceIssue === "loading" ? (zh ? "模型正在加载。" : "The model is loading.")
+        : (zh ? "请打开一个已保留的模型版本作为底图来源。" : "Open one retained model version to use this view as a source.")}</small>}
   </section>;
 }

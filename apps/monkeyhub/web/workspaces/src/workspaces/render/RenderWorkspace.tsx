@@ -1,5 +1,5 @@
 import ModelPreview from "./ModelPreview";
-import type { RenderView } from "../monkeyarch/viewer/renderView";
+import { renderViewImage, type RenderView } from "../monkeyarch/viewer/renderView";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { useStudio } from "../../api/ProjectRuntimeContext";
 import { asStudioApiError } from "../../api/client";
@@ -87,10 +87,30 @@ export default function RenderWorkspace({ projectId, active, refreshKey, onBoard
         const retained = await studio.uploadDocument(projectId, null, typedFile);
         if (retained.projectId !== projectId) throw new Error("The uploaded image belongs to another project.");
         if (!alive.current) return;
+        ++readEpoch.current;
         setDocuments((rows) => [...rows.filter((row) => documentKey(row) !== documentKey(retained)), retained]);
         if (target === "source") setSource(pageSource(retained, 0));
         else setReferences((rows) => [...rows, pageSource(retained, 0)]);
       }
+    } catch (cause) { if (alive.current) setSubmitError(asStudioApiError(cause).detail); }
+    finally { uploadingRef.current = false; if (alive.current) setUploading(false); }
+  };
+
+  const captureModelView = async () => {
+    if (uploadingRef.current || submitting.current || !active) return;
+    const view = readModelView?.();
+    if (!view?.modelSource || view.sourceIssue) return;
+    uploadingRef.current = true; setUploading(true); setSubmitError(null);
+    ++readEpoch.current;
+    try {
+      const captured = await renderViewImage(view);
+      const retained = await studio.retainRenderView({ projectId, modelSource: view.modelSource,
+        sourceStageRef: view.sourceStageRef ?? null, camera: captured.camera, screenSize: captured.screenSize }, captured.png);
+      if (retained.projectId !== projectId) throw new Error("The captured view belongs to another project.");
+      if (!alive.current) return;
+      ++readEpoch.current;
+      setDocuments(rows => [...rows.filter(row => documentKey(row) !== documentKey(retained)), retained]);
+      setSource(pageSource(retained, 0)); setMode("ai"); setAspectRatio("source");
     } catch (cause) { if (alive.current) setSubmitError(asStudioApiError(cause).detail); }
     finally { uploadingRef.current = false; if (alive.current) setUploading(false); }
   };
@@ -162,7 +182,7 @@ export default function RenderWorkspace({ projectId, active, refreshKey, onBoard
       </div>
       <button type="button" onClick={() => void refresh()} disabled={loading}>{loading ? (zh ? "读取中…" : "Reading…") : (zh ? "刷新状态" : "Refresh status")}</button>
     </header>
-    <ModelPreview active={active} readView={readModelView} onModeling={onModeling} zh={zh} />
+    <ModelPreview active={active} readView={readModelView} onModeling={onModeling} onCapture={() => void captureModelView()} capturing={uploading || sending} zh={zh} />
     {error && <div className="render-error" role="alert">{error}</div>}
     {mode === "physical" && <div className="render-physical" role="status">
       <h2>Physical Render</h2>
@@ -185,7 +205,8 @@ export default function RenderWorkspace({ projectId, active, refreshKey, onBoard
           </select></label>
           {source && !sourceDocument && <p role="alert">{zh ? "已选来源不可用。请选择仍在项目中的图片。" : "The selected source is unavailable. Choose an image retained in this project."}</p>}
           {sourceDocument && <div className="render-source-preview"><ImageThumbnail image={sourceDocument} active={active && mode === "ai"} />
-            <small>{sourceDocument.modelSource ? (zh ? "保留原模型来源" : "Original model source retained") : (zh ? "独立图片来源" : "Independent image source")}</small></div>}
+            <small>{sourceDocument.viewRecipe?.kind === "model-view" ? (zh ? "已保存这个视角；调整模型或镜头后，可重新使用当前视角。" : "View saved. Capture the current view again after changing the model or camera.")
+              : sourceDocument.modelSource ? (zh ? "保留原模型来源" : "Original model source retained") : (zh ? "独立图片来源" : "Independent image source")}</small></div>}
           <label className="render-upload">{zh ? "上传底图" : "Upload source"}<input type="file" accept="image/png,image/jpeg,.png,.jpg,.jpeg" onChange={(event) => {
             void upload(event.target.files, "source"); event.target.value = "";
           }} /></label>

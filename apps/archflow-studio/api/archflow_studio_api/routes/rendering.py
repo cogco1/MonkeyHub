@@ -3,9 +3,16 @@ from fastapi import APIRouter
 from starlette.requests import Request
 
 from ..application.binding import bound_project
-from ..transport.rendering import RenderCapabilitiesDto, RenderJobDto, RenderJobListDto, RenderRequestDto
+from ..transport.rendering import RenderCapabilitiesDto, RenderJobDto, RenderJobListDto, RenderRequestDto, RenderViewSourceRequestDto
+from ..transport.artifacts import SourceDocumentDto, document_dto
+from ..application.rendering import save_render_view
 
 router = APIRouter(prefix="/render", tags=["render"])
+
+
+@router.post("/views", response_model=SourceDocumentDto, response_model_by_alias=True, status_code=201)
+def retain_render_view(request: Request, payload: RenderViewSourceRequestDto):
+    return document_dto(save_render_view(bound_project(request.app.state), payload))
 
 
 @router.get("/capabilities", response_model=RenderCapabilitiesDto, response_model_by_alias=True)

@@ -57,7 +57,6 @@ import { renderTracingPaperSnapshotPng, captureTracingPaperReview, type GestureT
 import { createModelAnnotationsController, useModelAnnotations } from "../workspaces/monkeyarch/useModelAnnotations";
 import { createDocumentAnnotationsController } from "../workspaces/monkeydiagram/useDocumentAnnotations";
 import type { DocumentViewContext } from "../workspaces/monkeydiagram/DocumentCanvas";
-import type { DrawingDesignRequest } from "../workspaces/monkeydiagram/DrawingCanvas";
 import { DocumentTracingContext } from "../workspaces/monkeydiagram/DocumentTracingContext";
 import type { BoardDesignRequest } from "../workspaces/monkeyboard/boardFeedback";
 import type { BoardSketchRequest } from "../workspaces/monkeyboard/boardSketch";
@@ -225,13 +224,12 @@ export type WorkspaceDesignContext = {
   unavailableReason: "unsaved" | "loading" | "unavailable" | null;
 };
 
-export default function App({ server, expectedProjectId, initialDocumentIntent, initialSketchRequest, initialDrawingRequest, initialRunId, documentSource = null, active = true, refreshKey = 0, onReturnToBoard, onOpenBoard, onChatRequest, onDesignContextChange, onRenderReader }: {
+export default function App({ server, expectedProjectId, initialDocumentIntent, initialSketchRequest, initialRunId, documentSource = null, active = true, refreshKey = 0, onReturnToBoard, onOpenBoard, onChatRequest, onDesignContextChange, onRenderReader }: {
   onRenderReader?: (reader: (() => RenderView | null) | null) => void;
   server: ServerIdentity; initialDocumentIntent?: BoardDesignRequest;
   expectedProjectId?: string;
   /** One calibrated board sketch frame, to be run as a sketch proposal once the session is ready. */
   initialSketchRequest?: BoardSketchRequest;
-  initialDrawingRequest?: DrawingDesignRequest;
   /** The exact run this page was opened on, such as a candidate named by the host. */
   initialRunId?: string | null;
   /** Go back to the board this tab opened its page from, once the page is saved. */
@@ -344,10 +342,6 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
   );
 
   const viewportRef = useRef<ViewportController>(null);
-  useEffect(() => {
-    onRenderReader?.(() => viewportRef.current?.renderView() ?? null);
-    return () => onRenderReader?.(null);
-  }, [onRenderReader]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [inspection, setInspection] = useState<SceneInspection | null>(null);
   const [viewerMessage, setViewerMessage] = useState("");
@@ -704,6 +698,18 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
   const unsavedChatDraft = !!localModel && unsynced(localModel) || [...localModels.current.values()].some((model) =>
     model.source.projectId === project?.projectId && model.source.stateDigest === projection?.stateDigest &&
     model.source.sourceRunId === (projection?.referenceRunSource === "none" ? null : projection?.referenceRun.runId) && unsynced(model));
+  useEffect(() => {
+    onRenderReader?.(() => {
+      const view = viewportRef.current?.renderView();
+      if (!view) return null;
+      const sourceIssue = modelLoading ? "loading" : localEditingRef.current ? "unsaved"
+        : !loadedModelSource || blendState !== null || sourceLabel === LOCAL_SOURCE_LABEL ? "unbound" : null;
+      const acceptedStage = designHistory?.stages.find(stage => sameModelSource(stage.modelSource, loadedModelSource));
+      return { ...view, modelSource: sourceIssue ? null : loadedModelSource, sourceIssue,
+        sourceStageRef: acceptedStage?.stageRef ?? loadedArtifact?.sourceStageRef ?? null };
+    });
+    return () => onRenderReader?.(null);
+  }, [onRenderReader, loadedModelSource, modelLoading, localModel, localRevision, blendState, sourceLabel, designHistory, loadedArtifact]);
   const chatContext = useMemo<WorkspaceDesignContext | null>(() => {
     const projectId = project?.projectId ?? binding?.projectId;
     if (!projectId) return null;
@@ -2335,47 +2341,6 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
     },
     [append, beginCandidatePreview, monitorDiagnostics, project, projection, recoverFromStaleBase, sourceRunId],
   );
-
-  const drawingStarted = useRef<string | null>(null);
-  const drawingSubmitted = useRef<string | null>(null);
-  const [drawingReady, setDrawingReady] = useState<DrawingDesignRequest | null>(null);
-  const currentDrawingRequest = useRef({ request: initialDrawingRequest, active, projectId: project?.projectId });
-  currentDrawingRequest.current = { request: initialDrawingRequest, active, projectId: project?.projectId };
-  useEffect(() => {
-    const request = initialDrawingRequest;
-    if (!request || !active || drawingStarted.current === request.proposal.proposalId || session.status !== "ready" ||
-        changingBase || proposalBusy || candidateBusy || selectingWorkingCopy || artifacts.status !== "ready") return;
-    drawingStarted.current = request.proposal.proposalId;
-    setConversationOpen(true);
-    void (async () => {
-      if (project?.projectId !== request.projectId) throw new Error("The drawing proposal belongs to another project.");
-      if ([...localModels.current.values()].some(unsynced)) throw new Error(language === "zh-CN"
-        ? "请先同步建模页面的草稿，再从图纸提交设计尺寸。" : "Sync the Modeling draft before submitting a design dimension from Drawing.");
-      const next = await changeEditingBase(request.modelSource.runId, request.modelSource, request.sourceStageRef ?? undefined);
-      if (currentDrawingRequest.current.request !== request || !currentDrawingRequest.current.active || currentDrawingRequest.current.projectId !== request.projectId) return;
-      if (!next || next.project.projectId !== request.projectId || next.projection.stateDigest !== request.modelSource.stateDigest ||
-          next.projection.referenceRun.runId !== request.modelSource.runId ||
-          (request.sourceStageRef !== null && next.projection.sourceStageRef !== request.sourceStageRef)) {
-        throw new Error("The drawing proposal's exact model and Stage could not be restored. No candidate was started.");
-      }
-      setDrawingReady(request);
-    })().catch(cause => append({ kind: "refusal", error: asStudioApiError(cause), what: "Drawing" }));
-  }, [initialDrawingRequest, active, session.status, changingBase, proposalBusy, candidateBusy, selectingWorkingCopy,
-    artifacts.status, project?.projectId, changeEditingBase, append, language]);
-  useEffect(() => {
-    const request = drawingReady;
-    if (!request || request !== initialDrawingRequest || !active || changingBase || selectingWorkingCopy ||
-        drawingSubmitted.current === request.proposal.proposalId) return;
-    drawingSubmitted.current = request.proposal.proposalId;
-    if (project?.projectId !== request.projectId || projection?.stateDigest !== request.modelSource.stateDigest ||
-        projection?.referenceRun.runId !== request.modelSource.runId ||
-        (request.sourceStageRef !== null && projection?.sourceStageRef !== request.sourceStageRef)) {
-      append({ kind: "refusal", error: asStudioApiError(new Error("The drawing source changed before the candidate could start.")), what: "Drawing" });
-      return;
-    }
-    append({ kind: "proposal", proposal: request.proposal, agent: null, refinements: 0 });
-    void runCandidate(request.proposal.proposalId);
-  }, [drawingReady, initialDrawingRequest, active, changingBase, selectingWorkingCopy, project?.projectId, projection, append, runCandidate]);
 
   const [tracingLevels, setTracingLevels] = useState<FrameLevelDto[]>([]);
   useEffect(() => {

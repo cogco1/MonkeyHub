@@ -509,6 +509,46 @@ def _retain_projection(repository, *, source, verified, projection, view, name, 
     return drawing
 
 
+
+def plan_dressing_anchors(receipt: Mapping) -> list[dict]:
+    """Exact physical-object centres projected in the cut plan's CAD XY frame."""
+    semantics = receipt.get("expected_semantics", {}).get("objects", {})
+    return [{"objectId": name, "positionUv": [(receipt["readback"][name]["bbox"]["min"][i]
+                + receipt["readback"][name]["bbox"]["max"][i]) / 2 for i in (0, 1)]}
+            for name in receipt["physical_object_ids"] if name in receipt.get("readback", {}) and semantics.get(name, {}).get("visible", True)]
+
+
+def resolve_plan_dressing(recipe: Mapping, receipt: Mapping) -> list[dict]:
+    """Keep representation intent; missing exact anchors are never rebound."""
+    from monkeydiagram.drawing_svg import dressing_assets
+    assets = {asset["id"] for asset in dressing_assets()}
+    anchors = {row["objectId"]: row["positionUv"] for row in plan_dressing_anchors(receipt)}
+    crop = recipe["frame"]["crop_uv"]
+    result, seen = [], set()
+    for item in recipe.get("dressing", []):
+        name = item["id"]
+        require_identifier(name, "dressing id")
+        _require(name not in seen and item["assetId"] in assets, "dressing needs unique ids and a supported SVG asset")
+        seen.add(name)
+        position = item["positionUv"]
+        _require(len(position) == 2, "dressing positionUv needs two view coordinates")
+        u, v = (_finite(value, "dressing coordinate") for value in position)
+        size = _finite(item["size"], "dressing size")
+        _require(0 < size <= 100000 and isinstance(item.get("flipped", False), bool), "invalid dressing size or flip")
+        anchor = item.get("anchorObjectId")
+        if anchor is not None and anchor not in anchors:
+            result.append({**item, "status": "missing", "resolvedUv": None,
+                           "detail": f"Anchor {anchor} is missing or unavailable; this object has not been moved to another anchor."})
+            continue
+        if anchor is not None:
+            u += anchors[anchor][0]
+            v += anchors[anchor][1]
+        fits = crop[0] <= u-size/2 and u+size/2 <= crop[2] and crop[1] <= v-size/2 and v+size/2 <= crop[3]
+        result.append({**item, "status": "resolved" if fits else "outside-view", "resolvedUv": [u, v],
+                       "detail": None if fits else "The symbol falls outside the drawing crop; move it or enlarge the crop."})
+    return result
+
+
 def freeze_cut_plan(
     repository: FilesystemProjectRepository, *, source: ElevationSource, recipe: Mapping,
     drawing_run_id: str, dimensions: tuple[Mapping, ...] = (), previous_revision_ref: str | None = None,
@@ -549,6 +589,7 @@ def freeze_cut_plan(
         raise DrawingElevationError(f"the cut-plan recipe is invalid: {exc}") from exc
     head_before = repository.read_head()
     verified = read_elevation_source(repository, source)
+    dressing = resolve_plan_dressing(recipe, verified.receipt)
     hidden = recipe.get("hiddenObjectIds", [])
     if not isinstance(hidden, (list, tuple)) or any(not isinstance(name, str) for name in hidden):
         raise DrawingElevationError("hiddenObjectIds must be a list of physical object ids")
@@ -571,7 +612,7 @@ def freeze_cut_plan(
         lines = background + sections
         svg = drawing_svg(lines, crop_uv=view.crop_uv, unit=verified.length_unit,
                           scale_denominator=view.scale_denominator, hidden_lines=view.hidden_lines,
-                          title=recipe["name"], regions=regions, graphics=graphics, dimensions=resolved)
+                          title=recipe["name"], regions=regions, graphics=graphics, dimensions=resolved, dressing=dressing)
         projection = ElevationProjection(lines=lines, svg=svg, png=render_svg_png(svg))
     except (OcctBackendError, DrawingSvgError) as exc:
         raise DrawingElevationError(f"cut-plan {view.name}: {exc}") from exc
@@ -582,6 +623,7 @@ def freeze_cut_plan(
             "algorithm": "BRepAlgoAPI_Section on the cut plane; exact below-cut slab and global HLRBRep_Algo visibility",
             "selected_object_ids": list(selected), "section_polylines": len(sections),
             "section_regions": len(regions), "dimensions": resolved, "unresolvedObjectIds": unresolved_objects,
+            **({"dressing": dressing} if "dressing" in recipe else {}),
         }, previous_revision_ref=previous_revision_ref,
     )
 
@@ -682,6 +724,8 @@ __all__ = [
     "ElevationView",
     "freeze_model_axis_elevation",
     "freeze_cut_plan",
+    "plan_dressing_anchors",
+    "resolve_plan_dressing",
     "list_model_axis_elevations",
     "project_model_axis_elevation",
     "read_model_axis_elevation",

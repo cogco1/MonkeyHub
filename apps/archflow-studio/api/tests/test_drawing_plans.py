@@ -91,6 +91,88 @@ class CutPlanTests(CandidateTestCase):
         model = next(row["modelSource"] for row in self.client.get(f"/api/candidates/{job['candidateId']}").json()["artifacts"] if row["format"] == "3dm")
         return stage, model
 
+    def test_dressing_typed_edits_reopen_and_preserve_design_and_old_vectors(self):
+        person = {"id": "person-a", "assetId": "person-plan", "positionUv": [2, 2], "size": .65,
+                  "flipped": False, "anchorObjectId": None}
+        tree = {"id": "tree-a", "assetId": "tree-plan", "positionUv": [1, 1], "size": 1,
+                "flipped": False, "anchorObjectId": None}
+        first = self.generate(dressing=[person, tree])
+        vector = self.client.get("/api/drawings/plans/vector", params={
+            "runId": first["runId"], "assetSha256": first["assetSha256"], "revisionRef": first["revisionRef"]})
+        self.assertEqual(vector.status_code, 200, vector.text)
+        self.assertIn('data-dressing="person-a"', vector.json()["svg"])
+        self.assertNotIn('data-object="person-a"', vector.json()["svg"])
+        self.assertEqual({row["id"] for row in vector.json()["assets"]}, {"person-plan", "tree-plan"})
+        self.assertIn("obj-passage-wall-cut", {row["objectId"] for row in vector.json()["anchors"]})
+        second = self.generate(previousRevisionRef=first["revisionRef"], dressingOperations=[
+            {"op": "move", "id": "person-a", "positionUv": [3, 2]},
+            {"op": "scale", "id": "person-a", "size": .9},
+            {"op": "flip", "id": "person-a", "flipped": True},
+            {"op": "delete", "id": "tree-a"},
+            {"op": "insert", "id": "person-b", "object": {**person, "id": "person-b"}},
+        ])
+        self.assertEqual(second["viewRecipe"]["dressing"], [{**person, "positionUv": [3, 2], "size": .9, "flipped": True}, {**person, "id": "person-b"}])
+        self.assertEqual(self.repository.read_head(), self.head)
+        self.assertEqual(self.repository.read_design_branches(), self.branches)
+        old = read_model_axis_elevation(self.repository, record_ref_from_uri(first["revisionRef"], PROJECT_ID))
+        new = read_model_axis_elevation(self.repository, record_ref_from_uri(second["revisionRef"], PROJECT_ID))
+        self.assertNotEqual(old.png, new.png)
+        self.assertIn(b'data-dressing="tree-a"', old.svg)
+        self.assertNotIn(b'data-dressing="tree-a"', new.svg)
+        self.assertEqual(old.receipt["projection"]["selected_object_ids"], new.receipt["projection"]["selected_object_ids"])
+        with TestClient(create_app(self.settings)) as client:
+            cold = client.get("/api/documents").json()["documents"]
+            reopened = next(row for row in cold if row["revisionRef"] == second["revisionRef"])
+            self.assertEqual(reopened["viewRecipe"]["dressing"], second["viewRecipe"]["dressing"])
+            again = client.get("/api/drawings/plans/vector", params={
+                "runId": first["runId"], "assetSha256": first["assetSha256"], "revisionRef": first["revisionRef"]})
+            self.assertEqual(again.json(), vector.json())
+        self.assertEqual(self.status(second)["status"], "current")
+
+    def test_dressing_anchor_follows_exact_object_and_survives_deleted_anchor_without_rebinding(self):
+        fixed = {"id": "fixed", "assetId": "tree-plan", "positionUv": [1, 2], "size": .5}
+        anchored = {"id": "anchored", "assetId": "person-plan", "positionUv": [0, 1], "size": .5,
+                    "anchorObjectId": "obj-passage-wall-cut"}
+        first = self.generate(dimensions=[], dressing=[fixed, anchored])
+        first_read = self.status(first)["dressing"]
+        newer, model = self.commit_edit({"summary": "Move wall", "parameters": [{"key": "front_shift", "value": .4}]})
+        changed = self.status(first)
+        self.assertEqual(changed["status"], "outdated", changed)
+        self.assertAlmostEqual(changed["dressing"][1]["resolvedUv"][1] - first_read[1]["resolvedUv"][1], .4)
+        second = self.generate(sourceStageRef=newer["stageRef"], previousRevisionRef=first["revisionRef"], dimensions=[])
+        self.assertEqual(second["viewRecipe"]["dressing"], first["viewRecipe"]["dressing"])
+        self.assertEqual(self.status(second)["dressing"][0]["resolvedUv"], first_read[0]["resolvedUv"])
+        self.stage, self.model = newer, model
+        removed, _ = self.commit_edit({"summary": "Remove the anchor wall", "removeEntityIds": ["passage-wall"]})
+        missing = self.status(second)
+        self.assertEqual(missing["status"], "partially-broken", missing)
+        self.assertEqual(missing["dressing"][1]["status"], "missing")
+        self.assertIsNone(missing["dressing"][1]["resolvedUv"])
+        third = self.generate(sourceStageRef=removed["stageRef"], previousRevisionRef=second["revisionRef"], dimensions=[])
+        self.assertEqual(third["viewRecipe"]["dressing"], second["viewRecipe"]["dressing"])
+        drawing = read_model_axis_elevation(self.repository, record_ref_from_uri(third["revisionRef"], PROJECT_ID))
+        self.assertIn(b'data-dressing="fixed"', drawing.svg)
+        self.assertNotIn(b'data-dressing="anchored"', drawing.svg)
+        self.assertEqual(self.repository.read_head(), self.head)
+
+    def test_dressing_invalid_edits_are_atomic_and_outside_crop_is_explicit(self):
+        first = self.generate(dimensions=[], dressing=[{"id": "person", "assetId": "person-plan", "positionUv": [100, 100], "size": .5}])
+        self.assertEqual(self.status(first)["dressing"][0]["status"], "outside-view")
+        before = self.client.get("/api/documents").json()
+        for changes in (
+            {"dressing": [{"id": "bad", "assetId": "tree-plan", "positionUv": [0, 0], "size": 1, "anchorObjectId": "not-a-wall"}]},
+            {"dressingOperations": [{"op": "move", "id": "person", "positionUv": [2, 2]}, {"op": "delete", "id": "missing"}]},
+            {"dressingOperations": [{"op": "scale", "id": "person", "size": 0}]},
+            {"dressingOperations": [{"op": "flip", "id": "person"}]},
+            {"dressingOperations": [{"op": "move", "id": "person", "positionUv": [1, 1], "size": 1}]},
+            {"dressing": [], "dressingOperations": []},
+        ):
+            response = self.client.post("/api/drawings/plans", json={"projectId": PROJECT_ID,
+                "sourceStageRef": self.stage["stageRef"], "previousRevisionRef": first["revisionRef"], **changes})
+            self.assertEqual(response.status_code, 422, response.text)
+        self.assertEqual(self.client.get("/api/documents").json(), before)
+        self.assertEqual(self.repository.read_design_branches(), self.branches)
+
     def test_real_plan_representation_changes_reopen_with_source_and_old_revisions(self):
         first = self.generate()
         reading = self.status(first)
