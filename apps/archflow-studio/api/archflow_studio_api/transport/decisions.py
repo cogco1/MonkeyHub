@@ -282,9 +282,11 @@ class DecisionRevisionRequestDto(_Frozen):
 class DecisionContextDto(_Frozen):
     """What a next turn is about, for the decisions it should be handed.
 
-    Absent, the design domain, the projection's own Stage and the focus the
-    request already names answer for it. Present, it is checked exactly like a
-    decision's own evidence; it never invents a Stage or a design source.
+    Absent, the design and drawing domains (the project recipe among the drawing
+    decisions), the projection's own Stage and the focus the request already
+    names answer for it. Present, it names the one domain the turn reads and is
+    checked exactly like a decision's own evidence; it never invents a Stage or a
+    design source.
     """
 
     domain: Domain

@@ -29,11 +29,13 @@ from archflow_studio_api.application.decisions import (
     compile_scoped_decisions,
     decision_context_for,
     focus_refs,
+    project_recipe,
 )
 from archflow_studio_api.main import create_app
 from archflow_studio_api.settings import StudioSettings
 from archflow_studio_api.transport.decisions import RecipeGraphicsDto
 from archflow_studio_api.transport.drawings import PlanRequestDto
+from archflow_studio_api.transport.errors import StudioError
 
 from .support import (
     PROJECT_ID,
@@ -399,23 +401,28 @@ class DecisionContextTests(DecisionFixture):
 
         cold = self.new_client()
         pack = self.context(cold, elementIds=["portico-base"], utterance="把这块基座再抬高一点")
-        self.assertEqual([row["decisionId"] for row in pack["scopedDecisions"]], [keep["decisionId"]])
+        # A turn that names no domain reads the design decisions and the
+        # project's drawing ones (05, option A); the deferred one stays out.
+        self.assertEqual([row["decisionId"] for row in pack["scopedDecisions"]],
+                         [keep["decisionId"], drawing["decisionId"]])
         self.assertEqual(pack["scopedDecisions"][0]["rawLanguage"], KEEP_WORDS)
         self.assertEqual(pack["scopedDecisions"][0]["messageSource"], message(1))
-        self.assertNotIn(HATCH_WORDS, str(pack))
         self.assertNotIn("把这块基座再抬高一点", str(pack["scopedDecisions"]))
 
-        focused = self.context(cold, elementIds=["portico-cornice"], utterance="檐口再讨论一下")
-        self.assertEqual({row["decisionId"] for row in focused["scopedDecisions"]},
-                         {keep["decisionId"], cornice["decisionId"]})
-
-        # The drawing decision is real, and belongs to a drawing turn.
+        # A turn that names its domain reads that domain alone.
+        designed = self.context(cold, elementIds=["portico-base"], decisionContext={"domain": "design"})
+        self.assertEqual([row["decisionId"] for row in designed["scopedDecisions"]], [keep["decisionId"]])
+        self.assertNotIn(HATCH_WORDS, str(designed))
         drawn = self.context(cold, decisionContext={"domain": "drawing"})
         self.assertEqual([row["decisionId"] for row in drawn["scopedDecisions"]], [drawing["decisionId"]])
 
+        focused = self.context(cold, elementIds=["portico-cornice"], utterance="檐口再讨论一下")
+        self.assertEqual({row["decisionId"] for row in focused["scopedDecisions"]},
+                         {keep["decisionId"], cornice["decisionId"], drawing["decisionId"]})
+
         self.revise(keep, action="revoke", reason="不再保留")
         after = self.context(self.new_client(), elementIds=["portico-base"])
-        self.assertEqual(after["scopedDecisions"], [])
+        self.assertEqual([row["decisionId"] for row in after["scopedDecisions"]], [drawing["decisionId"]])
 
     def test_all_applicable_project_decisions_reach_the_next_turn(self) -> None:
         saved = [self.design(rawLanguage=f"保留 module 的第 {index + 1} 条判断") for index in range(33)]
@@ -640,15 +647,15 @@ class DecisionContextTests(DecisionFixture):
         # board evidence also reads only the exact Board run.
         with patch.object(ProjectBinding, "run_ids", side_effect=AssertionError("run enumeration")):
             self.assertEqual(len(self.decisions()), 2)
-            for requested, expected in ((None, design),
-                                        ({"domain": "design", "source": design_source}, design),
-                                        (board, drawing)):
+            for requested, expected in ((None, (design, drawing)),
+                                        ({"domain": "design", "source": design_source}, (design,)),
+                                        (board, (drawing,))):
                 context = decision_context_for(
                     binding, requested=requested, design_source=design_source, stage_ref=None,
                     focus=focus_refs(record, ("portico-base",)), record=record,
                 )
                 included, _ = compile_scoped_decisions(binding, context, record)
-                self.assertEqual([row.decision_id for row in included], [expected["decisionId"]])
+                self.assertEqual([row.decision_id for row in included], [row["decisionId"] for row in expected])
 
     def test_cleanup_keeps_a_cited_and_an_unreferenced_automatic_run(self) -> None:
         kept, job = self.run_candidate("set height to 2.2", elementId="portico-base")
@@ -705,7 +712,12 @@ class DecisionRecipeTests(DecisionFixture):
         self.assertEqual(response.status_code, expect, response.text)
         return response.json()
 
-    def test_a_recipe_decision_retains_exactly_the_values_the_person_set(self) -> None:
+    def layer(self, client: TestClient | None = None, **options) -> dict:
+        binding = bound_project((client or self.client).app.state)
+        return {key: (row.value, row.decision_id, row.revision_ref, row.strength)
+                for key, row in project_recipe(binding, **options).items()}
+
+    def test_a_drawing_recipe_decision_binds_paper_space_values_and_reaches_the_default_pack(self) -> None:
         head, branches = self.repository.read_head(), self.repository.read_design_branches()
         hatch = self.recipe()
         self.assertEqual(hatch["typedBinding"], {"kind": "recipe", "graphics": {
@@ -714,17 +726,39 @@ class DecisionRecipeTests(DecisionFixture):
                          ("require", "active", "human"))
         lines = self.recipe(rawLanguage=LINE_RECIPE_WORDS, targetRef="drawing:lineweight", strength="soft_preference",
                             graphics={"cutLineMm": 0.5, "visibleLineMm": 0.25}, messageSource=message(2))
+        keep = self.save(rawLanguage=KEEP_WORDS, disposition="keep", strength="hard", targetRef="parameter:module",
+                         scope={"domain": "design", "extent": "project"}, source=self.design_source(),
+                         messageSource=message(3))
+        # The record keeps exactly the values the person set, and no others.
         run = self.repository.load_run(DECISIONS_RUN_ID)
         retained = [self.repository.load_json(ref) for ref in self.repository.list_json(
             run=run, destination=PersistenceDestination(PersistenceArea.RUN_REVIEW, run_id=DECISIONS_RUN_ID),
             record_kind=STUDIO_SCOPED_DECISION)]
         self.assertEqual({row["decisionId"]: row["typedBinding"] for row in retained}, {
             hatch["decisionId"]: {"kind": "recipe", "graphics": {"hatchSpacingMm": 3.0}},
-            lines["decisionId"]: {"kind": "recipe", "graphics": {"cutLineMm": 0.5, "visibleLineMm": 0.25}}})
+            lines["decisionId"]: {"kind": "recipe", "graphics": {"cutLineMm": 0.5, "visibleLineMm": 0.25}},
+            keep["decisionId"]: None})
+
         cold = self.new_client()
-        self.assertEqual(self.decisions(cold), [hatch, lines])
+        self.assertEqual(self.decisions(cold), [hatch, lines, keep])
+        # The turn that names no domain (what the Hub prepares) hands the
+        # recipe on with the design decisions, in the architect's own words.
+        pack = self.context(cold, elementIds=["portico-base"])
+        self.assertEqual(pack["scopedDecisions"], [hatch, lines, keep])
         drawn = self.context(cold, decisionContext={"domain": "drawing", "source": document_source(self.page)})
         self.assertEqual(drawn["scopedDecisions"], [hatch, lines])
+        self.assertEqual(self.context(cold, decisionContext={"domain": "design"})["scopedDecisions"], [keep])
+        self.assertEqual(self.context(cold, decisionContext={"domain": "copy"})["scopedDecisions"], [])
+
+        # What a new drawing reads: one value per paper-space key, and whose it
+        # is. Reading it never surveys the project's runs.
+        with patch.object(ProjectBinding, "run_ids", side_effect=AssertionError("run enumeration")):
+            self.assertEqual(self.layer(cold), {
+                "cutLineMm": (0.5, lines["decisionId"], lines["revisionRef"], "soft_preference"),
+                "visibleLineMm": (0.25, lines["decisionId"], lines["revisionRef"], "soft_preference"),
+                "hatchSpacingMm": (3.0, hatch["decisionId"], hatch["revisionRef"], "strong_preference"),
+            })
+        # Representation memory writes no design state.
         self.assertEqual(self.repository.read_head(), head)
         self.assertEqual(self.repository.read_design_branches(), branches)
 
@@ -774,21 +808,25 @@ class DecisionRecipeTests(DecisionFixture):
                  for index, target in enumerate(("drawing:hatch", "drawing:lineweight", "drawing:beyond",
                                                  "drawing:entourage", "drawing:poche"))]
         self.assertEqual([row["typedBinding"] for row in saved], [None] * 5)
-        drawn = self.context(self.new_client(), decisionContext={"domain": "drawing"})
-        self.assertEqual({row["targetRef"] for row in drawn["scopedDecisions"]},
+        self.assertEqual(self.layer(), {})
+        pack = self.context(self.new_client())
+        self.assertEqual({row["targetRef"] for row in pack["scopedDecisions"]},
                          {"drawing:hatch", "drawing:lineweight", "drawing:beyond", "drawing:entourage",
                           "drawing:poche"})
 
-    def test_one_value_per_key_hold_and_reach_and_changing_a_recipe_supersedes_it(self) -> None:
+    def test_the_stronger_recipe_reads_first_and_a_revoked_one_is_gone(self) -> None:
         strong = self.recipe()
         # A second value of the same hold and reach would leave a new drawing to
         # choose by age: it is refused, and changing a recipe is a supersession.
         refused = self.recipe(409, rawLanguage="还是 4 mm 吧", graphics={"hatchSpacingMm": 4})
         self.assertEqual(refused["code"], "DECISION_RECIPE_CONFLICT")
         self.assertIn(strong["decisionId"], refused["detail"])
-        # A standard beside the recipe is a different hold, not a conflict.
-        self.recipe(rawLanguage="事务所标准:填充 4 mm", strength="hard", messageSource=message(2),
-                    graphics={"hatchSpacingMm": 4})
+        # A standard is not a conflict with the recipe: it reads first, and
+        # nothing enforces it (D-05-3).
+        standard = self.recipe(rawLanguage="事务所标准:填充 4 mm", strength="hard", messageSource=message(2),
+                               graphics={"hatchSpacingMm": 4})
+        self.assertEqual(self.layer()["hatchSpacingMm"],
+                         (4.0, standard["decisionId"], standard["revisionRef"], "hard"))
 
         # Superseding restates the recipe without conflicting with itself;
         # superseding another decision into the same value and reach does not.
@@ -799,11 +837,34 @@ class DecisionRecipeTests(DecisionFixture):
         clash = self.revise(words, action="supersede", replacement=replacement, reason="改成 recipe", expect=409)
         self.assertEqual(clash["code"], "DECISION_RECIPE_CONFLICT")
         changed = self.revise(strong, action="supersede", replacement=replacement, reason="讨论后改口")
-        self.assertEqual(changed["typedBinding"]["graphics"]["hatchSpacingMm"], 2.5)
-        # A revoked recipe keeps what it said and no longer holds the value.
-        revoked = self.revise(changed, action="revoke", reason="回到默认")
-        self.assertEqual(revoked["typedBinding"], changed["typedBinding"])
-        self.recipe(rawLanguage="重新定为 3 mm", messageSource=message(4))
+        self.revise(standard, action="revoke", reason="标准不再适用")
+        self.assertEqual(self.layer()["hatchSpacingMm"],
+                         (2.5, strong["decisionId"], changed["revisionRef"], "strong_preference"))
+
+        # Revoking the last one returns a new drawing to the code default. The
+        # records stay; the recipe is simply no longer active.
+        self.revise(changed, action="revoke", reason="回到默认")
+        self.assertEqual(self.layer(self.new_client()), {})
+        self.assertEqual({row["decisionId"] for row in self.context(self.new_client())["scopedDecisions"]},
+                         {words["decisionId"]})
+        self.assertEqual({row["status"] for row in self.decisions()}, {"revoked", "active"})
+
+    def test_two_values_of_the_same_hold_and_reach_are_refused_rather_than_ordered_by_age(self) -> None:
+        first = self.recipe()
+        run = self.repository.load_run(DECISIONS_RUN_ID)
+        review = PersistenceDestination(PersistenceArea.RUN_REVIEW, run_id=DECISIONS_RUN_ID)
+        payload = self.repository.load_json(next(iter(self.repository.list_json(
+            run=run, destination=review, record_kind=STUDIO_SCOPED_DECISION))))
+        # A race the write check cannot see: two roots, both active, both set hatchSpacingMm.
+        twin = self.repository.put_json(run=run, destination=review, record_kind=STUDIO_SCOPED_DECISION, payload={
+            **payload, "decisionId": "raced-twin", "createdAt": "2026-09-26T00:00:00+00:00",
+            "typedBinding": {"kind": "recipe", "graphics": {"hatchSpacingMm": 5.0}}})
+        with self.assertRaises(StudioError) as refused:
+            project_recipe(bound_project(self.client.app.state))
+        self.assertEqual((refused.exception.status, refused.exception.code), (409, "DECISION_RECIPE_CONFLICT"))
+        self.repository.layout.resolve_record(twin).unlink()
+        self.assertEqual(self.layer()["hatchSpacingMm"], (3.0, first["decisionId"], first["revisionRef"],
+                                                          "strong_preference"))
 
     def test_the_recipe_keys_are_the_drawing_requests_own(self) -> None:
         recipe = RecipeGraphicsDto.model_json_schema(by_alias=True)["properties"]
@@ -842,6 +903,43 @@ class DecisionStageScopeTests(DesignHistoryFixture):
         injected = self.pack(run_id=outside, expect=409,
                              decisionContext={"domain": "design", "stageRef": stage["stageRef"]})
         self.assertEqual(injected["code"], "DECISION_STAGE_MISMATCH")
+
+    def test_a_stage_recipe_reaches_only_its_stage_and_reads_before_the_projects(self) -> None:
+        stage = self.initialize()
+        uploaded = self.client.post("/api/documents", json={
+            "projectId": PROJECT_ID, "fileName": "剖面.pdf", "mimeType": "application/pdf",
+            "contentBase64": base64.b64encode(two_page_pdf()).decode()})
+        self.assertEqual(uploaded.status_code, 201, uploaded.text)
+        page = document_source(uploaded.json())
+
+        def recipe(value: float, **overrides) -> dict:
+            body = {"projectId": PROJECT_ID, "rawLanguage": f"剖面填充 {value} mm", "disposition": "require",
+                    "strength": "strong_preference", "targetRef": "drawing:hatch", "applicability": "scope",
+                    "sourceKind": "human", "source": page, "scope": {"domain": "drawing", "extent": "project"},
+                    "typedBinding": {"kind": "recipe", "graphics": {"hatchSpacingMm": value}}, **overrides}
+            response = self.client.post("/api/decisions", json=body)
+            self.assertEqual(response.status_code, 201, response.text)
+            return response.json()
+
+        project = recipe(3)
+        # The same hold at a narrower reach is not a conflict: there, the Stage's own reads first.
+        staged = recipe(4, scope={"domain": "drawing", "extent": "stage", "stageRef": stage["stageRef"]})
+        binding = bound_project(self.client.app.state)
+        self.assertEqual(project_recipe(binding)["hatchSpacingMm"].decision_id, project["decisionId"])
+        self.assertEqual(project_recipe(binding, stage_ref=stage["stageRef"])["hatchSpacingMm"].decision_id,
+                         staged["decisionId"])
+        # A project standard still reads before a Stage's recipe.
+        standard = recipe(5, strength="hard")
+        self.assertEqual(project_recipe(binding, stage_ref=stage["stageRef"])["hatchSpacingMm"].value, 5.0)
+
+        # A turn under that Stage is handed every recipe that reaches it; a run
+        # under no Stage is handed the project's alone.
+        under = self.pack(run_id=stage["candidateId"], sourceStageRef=stage["stageRef"])
+        self.assertEqual([row["decisionId"] for row in under["scopedDecisions"]],
+                         [project["decisionId"], staged["decisionId"], standard["decisionId"]])
+        outside = self.pack(run_id=self.unstaged_run())
+        self.assertEqual([row["decisionId"] for row in outside["scopedDecisions"]],
+                         [project["decisionId"], standard["decisionId"]])
 
     def unstaged_run(self, run_id: str = "run-unstaged") -> str:
         run = self.repository.create_run(run_id)

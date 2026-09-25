@@ -19,8 +19,8 @@ architect's own words back with their provenance — not a transcript.
 A drawing decision can also be the project recipe (correction capture,
 option A): a ``require`` decision whose typed binding is ``recipe`` - the
 paper-space values a new drawing starts from. It is not a second memory. A
-person promotes it explicitly, and it revokes and supersedes like every
-other decision.
+person promotes it explicitly, it revokes and supersedes like every other
+decision, and ``project_recipe`` is the one read of it.
 """
 
 from __future__ import annotations
@@ -68,6 +68,10 @@ RECIPE_KEYS = {"cutLineMm": "drawing:lineweight", "visibleLineMm": "drawing:line
 # not enforced (D-05-3). A temporary correction is not memory: it stays on its
 # own drawing as a local override.
 RECIPE_STRENGTHS = ("hard", "strong_preference", "soft_preference")
+# A turn that names no domain reads the design decisions and the drawing ones
+# that reach it, so the agent drawing next sees the recipe a new drawing
+# starts from. Copy stays opt-in.
+_DEFAULT_DOMAINS = ("design", "drawing")
 
 ACTIVE = "active"
 DEFERRED = "deferred"
@@ -92,12 +96,27 @@ class DecisionRevision:
 
 @dataclass(frozen=True, slots=True)
 class DecisionContext:
-    """What a next turn is asking about, as its own evidence states it."""
+    """What a next turn is asking about, as its own evidence states it.
 
-    domain: str
+    ``domains`` holds the one domain a turn named, or the default pair a turn
+    that named none reads.
+    """
+
+    domains: tuple[str, ...]
     stage_ref: str | None = None
     target_refs: tuple[str, ...] = ()
     source: Mapping[str, Any] | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class RecipeValue:
+    """One paper-space value the project recipe gives a new drawing, and whose it is."""
+
+    value: float
+    decision_id: str
+    revision_ref: str
+    strength: str
+    extent: str
 
 
 def _invalid(message: str) -> StudioError:
@@ -419,7 +438,7 @@ def _require_one_recipe_value(
 
     A second active value beside the first would leave a new drawing to pick
     one by age. The narrower reach (a Stage over the project) and a stronger
-    hold are not conflicts.
+    hold are not conflicts: ``project_recipe`` orders those.
     """
 
     for other in _active_recipes(chain[-1] for chain in chains.values()):
@@ -669,10 +688,16 @@ def decision_context_for(
     its own representation evidence, which is never coerced into a Design
     run; omitting it is allowed and costs exactly the ``exact-source``
     decisions, which have no current identity to be compared against.
+
+    A turn that names no domain reads design and drawing together (05, option
+    A): the agent about to draw sees the same project recipe a new drawing
+    starts from. Its only evidence is the design source it projects, so a
+    drawing decision said against one exact page does not follow it. A turn
+    that names a domain reads that domain alone.
     """
 
     if requested is None:
-        return DecisionContext("design", stage_ref, tuple(focus), design_source)
+        return DecisionContext(_DEFAULT_DOMAINS, stage_ref, tuple(focus), design_source)
     domain = requested["domain"]
     if requested.get("stageRef") is not None and requested["stageRef"] != stage_ref:
         raise StudioError(409, "DECISION_STAGE_MISMATCH",
@@ -696,18 +721,18 @@ def decision_context_for(
                                   "context pack projects; read the pack for that source instead.")
         if record is not None:
             targets = tuple(_require_design_ref(record, ref) for ref in targets)
-        return DecisionContext(domain, stage_ref, targets or tuple(focus), design_source)
+        return DecisionContext((domain,), stage_ref, targets or tuple(focus), design_source)
     if targets:
         raise _invalid(f"a {domain} turn names no design targetRefs.")
     if source is not None and source["kind"] not in _DOMAIN_SOURCES[domain]:
         raise _invalid(f"a {domain} turn is evidenced by "
                        f"{' or '.join(sorted(_DOMAIN_SOURCES[domain]))}, not by a {source['kind']} source.")
-    return DecisionContext(domain, stage_ref, (),
+    return DecisionContext((domain,), stage_ref, (),
                            None if source is None else _validate_source(binding, source)[0])
 
 
 def _applies_to_scope(scope: Mapping[str, Any], context: DecisionContext) -> str | None:
-    if scope["domain"] != context.domain:
+    if scope["domain"] not in context.domains:
         return "domain-mismatch"
     if scope["extent"] == "stage":
         if context.stage_ref is None or scope["stageRef"] != context.stage_ref:
@@ -793,3 +818,47 @@ def compile_scoped_decisions(
             excluded.append((revision.decision_id, reason))
     return tuple(included), tuple(excluded)
 
+
+# ---- the project recipe a new drawing starts from --------------------------
+
+
+def project_recipe(binding: ProjectBinding, *, stage_ref: str | None = None) -> dict[str, RecipeValue]:
+    """The project recipe layer: one value per paper-space key, or none.
+
+    This is what a drawing reads between its own previous revision and the
+    code default (03-C4, D-05-2): an explicit request value wins, a rebuild
+    keeps its revision's values, and only a key neither names comes from
+    here. ``stage_ref`` is the exact Stage the drawing's source is under; a
+    Stage-scoped recipe reaches only that Stage. Per key the stronger hold
+    wins (hard, strong_preference, soft_preference), then a Stage's own over
+    the project's. Nothing enforces a hard value (D-05-3). Two values of the
+    same hold and reach are refused, never ordered by age.
+
+    Only active recipe decisions count: a revoked one is gone and a
+    superseded one reads as its replacement. Nothing is inferred from earlier
+    drawings, and only the decisions run is read.
+    """
+
+    ranked: dict[str, list[tuple[tuple[int, int], RecipeValue]]] = {}
+    for revision in _active_recipes(_ordered(_latest(binding).values())):
+        payload = revision.payload
+        scope = payload["scope"]
+        if scope["domain"] != "drawing" or payload["strength"] not in RECIPE_STRENGTHS:
+            continue
+        if scope["extent"] == "stage" and scope["stageRef"] != stage_ref:
+            continue
+        rank = (RECIPE_STRENGTHS.index(payload["strength"]), 0 if scope["extent"] == "stage" else 1)
+        for key, value in payload["typedBinding"]["graphics"].items():
+            ranked.setdefault(key, []).append((rank, RecipeValue(
+                value=value, decision_id=revision.decision_id, revision_ref=revision.ref,
+                strength=payload["strength"], extent=scope["extent"])))
+    layer: dict[str, RecipeValue] = {}
+    for key in RECIPE_KEYS:
+        rows = sorted(ranked.get(key, ()), key=lambda row: row[0])
+        if len(rows) > 1 and rows[0][0] == rows[1][0]:
+            raise StudioError(409, "DECISION_RECIPE_CONFLICT",
+                              f"decisions {rows[0][1].decision_id} and {rows[1][1].decision_id} both set {key} "
+                              f"as {rows[0][1].strength} for the same reach. Revoke or supersede one.")
+        if rows:
+            layer[key] = rows[0][1]
+    return layer
