@@ -970,7 +970,10 @@ console.log('1 · completed rectangles/lines stay local and independently pickab
 const block=await rectangle(2,1), curve=await line();
 await button('Record').waitFor();assert.equal(await button('Record').isEnabled(),true);
 assert.equal(await button('Record').locator('.model-tool-button__label').innerText(),'Record','Record carries its name beside the icon');
-await steadyTools(steady,'Record appearing');await narrowRecord(narrowSteady);
+await steadyTools(steady,'Record appearing');
+// Clear the selection as before the drawing: a narrow footer wraps its selection chip and lifts the tools.
+await page.keyboard.press('Escape');await wait(s=>!s.picked&&!s.selection,'Esc did not clear the drawing before the narrow toolbar check');
+await narrowRecord(narrowSteady);
 let state=await snap();assert.equal(state.view.drafts.find(o=>o.id===curve).spec.closed,false);
 assert.deepEqual(state.view.drafts.find(o=>o.id===curve).visible,[true,false,false]);
 await pick(block,true);assert.equal((await snap()).pickedStatus,'local');
@@ -1067,7 +1070,7 @@ await page.route('**/api/proposals/sketch',async route=>{
 await button('Record').click();await within(failureHeld,15000,'failure was not held');await page.keyboard.press('Control+z');
 await wait(s=>!s.view.drafts.some(o=>o.id===failedObject),'Undo while rejected request is held');releaseFailure();
 await wait(s=>!s.syncBusy&&Boolean(s.error),'422 did not release Sync');
-await page.locator('.model-tools__sync--status-only [role="alert"]').waitFor();await steadyTools(steady,'a Record error with nothing left to record');
+await page.locator('.model-tools__sync [role="alert"]').waitFor();await steadyTools(steady,'a refused Record and its error line');
 assert.equal(candidateCalls().length,2,'a refused snapshot cannot start a candidate');
 const corrected=await rectangle(1.2,.7);await button('Record').click();
 await wait(s=>!s.syncBusy&&s.candidates.length===3&&s.loaded===s.candidates[2]&&s.base===s.candidates[2],'corrected Sync did not finish',120000);
