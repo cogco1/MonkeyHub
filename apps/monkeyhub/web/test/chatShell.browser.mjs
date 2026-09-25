@@ -443,6 +443,16 @@ const boxOf = (selector) => page.evaluate((value) => {
 const activityRows = (expected) => page.waitForFunction((count) => [...document.querySelectorAll(".chat-process__row")]
   .some((row) => row.textContent.includes(`${count} steps`)), expected);
 const visibleWorkspace = () => page.locator('.chat-project-workspace:not([hidden])');
+// #285: the composer's + menu holds Add attachments and New topic; the composer
+// names the design context the next message carries.
+const composerMenu = (name = "Attachments and new topic") => page.getByRole("button", { name, exact: true });
+const addAttachments = async (files) => {
+  const chooser = page.waitForEvent("filechooser");
+  await composerMenu().click();
+  await page.getByRole("menuitem", { name: "Add attachments", exact: true }).click();
+  await (await chooser).setFiles(files);
+};
+const contextReady = () => page.waitForFunction(() => document.querySelector(".chat-composer")?.dataset.context === "ready");
 const waitWorkspace = async (kind = "arch") => {
   await visibleWorkspace().locator(`[data-project-surface="${kind}"]:not([hidden])`).waitFor();
   await visibleWorkspace().locator(kind === "board" ? ".monkeyboard-canvas canvas" : kind === "drawing" ? ".drawing-workspace" : kind === "render" ? ".render-workspace" : ".stage canvas").first().waitFor();
@@ -550,16 +560,17 @@ const autosavedModelRestart = async () => {
   assert.deepEqual(draft.writes[0].draft.commands, commands);
   assert.deepEqual(draft.writes[0].draft.source, draft.localDraft.source);
   assert.equal(await visibleWorkspace().getByRole("button", { name: "Record", exact: true }).isEnabled(), true);
-  // Restored edits are still not a candidate: chat asks for them to be recorded first,
+  // Restored edits are still not a candidate: a New topic asks for them to be recorded first,
   // and offers the one click that does it (#302) instead of a dead end.
-  const contextOption = page.locator(".chat-context-option input");
-  await page.waitForFunction(() => document.querySelector(".chat-context-option input")?.getAttribute("aria-description")?.startsWith("Model edits are not recorded"));
-  assert.equal(await contextOption.getAttribute("aria-description"), "Model edits are not recorded yet. Record them to start a new context from project state, or undo them in Modeling. You can still continue this conversation.");
-  await contextOption.check();
+  await page.waitForFunction(() => document.querySelector(".chat-composer")?.dataset.context === "unsynced");
+  await composerMenu().click();
+  const newTopic = page.getByRole("menuitemcheckbox", { name: "New topic", exact: true });
+  assert.equal(await newTopic.getAttribute("aria-description"), "Model edits are not recorded yet. Record them to start a new context from project state, or undo them in Modeling. You can still continue this conversation.");
+  await newTopic.click();
   const recordOffer = page.locator(".chat-composer .chat-record");
-  assert.equal(await recordOffer.innerText(), "Record edits and continue", "the refused new context offers Record edits and continue");
+  assert.equal(await recordOffer.innerText(), "Record edits and continue", "the refused New topic offers Record edits and continue");
   assert.equal(await page.locator(".chat-composer [role=status]").filter({ hasText: "Model edits are not recorded yet." }).count(), 1);
-  await contextOption.uncheck();
+  await page.getByRole("button", { name: "Remove New topic", exact: true }).click();
   await recordOffer.waitFor({ state: "detached" });
   await openSettings();
   await restartAllowed("edits the working draft already holds do not block the update restart");
@@ -612,10 +623,10 @@ try {
         for (const width of [1440, 900, 375]) {
           await page.setViewportSize({ width, height: 960 });
           const composer = page.locator(".chat-composer");
-          const attach = page.getByRole("button", { name: "Add attachments", exact: true });
+          const attach = composerMenu();
           const type = await page.evaluate(() => {
             const read = (selector) => { const style = getComputedStyle(document.querySelector(selector)); return { size: parseFloat(style.fontSize), weight: style.fontWeight, family: style.fontFamily }; };
-            return { ui: ["#chat-input", ".chat-connection__name", "#chat-model", ".chat-context-option"].map(read) };
+            return { ui: ["#chat-input", ".chat-connection__name", "#chat-model"].map(read) };
           });
           assert.ok(type.ui.every((text) => Math.abs(text.size - 14 * fontScale) < 0.05 && text.family === type.ui[0].family && text.weight === "400"), `${theme}/${width}/${fontScale}: equal-role text follows the chosen size together: ${JSON.stringify(type)}`);
           assert.equal(await composer.locator(":scope > .chat-muted").count(), 0);
@@ -625,6 +636,9 @@ try {
           await page.keyboard.press("Shift+Tab");
           assert.ok(await attach.evaluate((node) => node === document.activeElement && node.matches(":focus-visible") && getComputedStyle(node).outlineStyle !== "none"));
           const chooser = page.waitForEvent("filechooser");
+          await page.keyboard.press("Enter");
+          // The + menu opens on its first entry, Add attachments.
+          await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "Add attachments");
           await page.keyboard.press("Enter");
           await (await chooser).setFiles([
             { name: "roof-section-review-with-a-very-long-file-name.pdf", mimeType: "application/pdf", buffer: Buffer.from("Synthetic attachment") },
@@ -656,7 +670,7 @@ try {
     preferences = { ...preferences, language: "zh-CN", theme: "dark", fontScale: 1 };
     await page.setViewportSize({ width: 1440, height: 960 });
     await page.goto(origin);
-    await page.getByRole("button", { name: "添加附件", exact: true }).waitFor();
+    await composerMenu("附件与新话题").waitFor();
     await page.locator(".chat-composer").screenshot({ path: path.join(temporary, "composer-zh.png") });
   } else {
   if (process.env.MONKEYHUB_UI_FOCUS !== "updates") {
@@ -681,7 +695,7 @@ try {
   assert.equal(await rail.getByRole("button", { name: /Publish|Layout/ }).count(), 0, "Layout is not a rail entry");
   assert.ok(await railWidth() > 40, "the rail stays on screen while the tool content is closed");
   assert.equal(await page.locator(".chat-browser:visible").count(), 0);
-  await page.waitForFunction(() => !document.querySelector('.chat-composer input[type="checkbox"]')?.disabled);
+  await contextReady();
   assert.equal(await page.locator(".stage canvas").count(), 0, "reading initial project context does not initialize a hidden viewport");
   assert.equal(workspaceFixture.requests.some((row) => row.name.endsWith("/bytes")), false,
     "initial chat reads its editing state without loading model files");
@@ -1721,9 +1735,7 @@ try {
   await page.locator(".chat-new").getByText("New chat", { exact: true }).click();
   await page.locator("#chat-input").fill("Attachment draft A");
   const beforeAttachmentDrafts = writes.filter(([, pathname]) => pathname.endsWith("/messages")).length;
-  const fileChooser = page.waitForEvent("filechooser");
-  await page.getByRole("button", { name: "Add attachments", exact: true }).click();
-  await (await fileChooser).setFiles([
+  await addAttachments([
     { name: "outline.txt", mimeType: "text/plain", buffer: Buffer.from("Synthetic outline A") },
     { name: "remove-me.txt", mimeType: "text/plain", buffer: Buffer.from("Remove this draft file") },
   ]);
@@ -1852,12 +1864,15 @@ try {
   for (const width of [1440, 900, 375]) {
     await page.setViewportSize({ width, height: 960 });
     await progressCard.scrollIntoViewIfNeeded();
-    const uploadButton = page.getByRole("button", { name: "Add attachments", exact: true });
+    const uploadButton = composerMenu();
     const bounds = await uploadButton.boundingBox();
     assert.ok(bounds && bounds.width >= 44 && bounds.height >= 44 && bounds.x >= 0 && bounds.x + bounds.width <= width);
     assert.ok(await progressCard.evaluate((node) => node.scrollWidth <= node.clientWidth + 1));
     await uploadButton.focus();
     const chooser = page.waitForEvent("filechooser");
+    await page.keyboard.press("Enter");
+    const menuBox = await page.getByRole("menu", { name: "Attachments and new topic", exact: true }).boundingBox();
+    assert.ok(menuBox && menuBox.x >= 0 && menuBox.x + menuBox.width <= width, "the + menu fits the window at " + width + "px");
     await page.keyboard.press("Enter");
     await (await chooser).setFiles({ name: "next-turn.txt", mimeType: "text/plain", buffer: Buffer.from("Next turn attachment") });
     await page.getByRole("button", { name: "Remove attachment: next-turn.txt", exact: true }).click();
@@ -1941,7 +1956,7 @@ try {
   await page.goto(`${origin}/?view=board&runtimeId=${runtimes.get("D:\\fixture\\A").runtimeId}`);
   await waitWorkspace("board");
   assert.equal(await page.locator('.chat-project[data-selected="true"] .chat-project__name').innerText(), "Project A");
-  await page.waitForFunction(() => !document.querySelector('.chat-composer input[type="checkbox"]')?.disabled);
+  await contextReady();
   assert.equal(await visibleWorkspace().locator(".stage canvas").count(), 0, "Board-first context uses the same session without opening Arch");
   assert.equal(await page.getByRole("button", { name: "Board", exact: true }).getAttribute("aria-pressed"), "true");
   assert.equal(new URL(page.url()).searchParams.get("view"), "board");
@@ -1992,15 +2007,33 @@ try {
   await page.locator(".chat-new").getByText("New chat", { exact: true }).click();
   await page.getByRole("button", { name: "Modeling", exact: true }).click();
   await waitWorkspace();
-  const projectContext = page.getByRole("checkbox", { name: "Continue from project state (without previous conversation context)" });
-  await page.waitForFunction(() => !document.querySelector('.chat-composer input[type="checkbox"]')?.disabled);
+  await contextReady();
   assert.equal(await page.locator('.chat-composer > .chat-muted').count(), 0,
     "ordinary chat does not show instructions for the optional new project context");
+  assert.equal(await page.locator(".chat-composer input[type=checkbox], .chat-composer .chat-topic").count(), 0,
+    "DC-5: no standing checkbox; New topic lives in the + menu");
   await visibleWorkspace().locator(".stage__versions-toggle").click();
   await visibleWorkspace().locator('.vcard__export').filter({ hasText: "cand-A-1.3dm" }).click();
   await visibleWorkspace().locator(".stage__versions-toggle").click();
-  await projectContext.check();
-  await page.locator('.chat-composer > .chat-muted').getByText("The next message starts a new model context from the saved editing state. This conversation stays visible.", { exact: true }).waitFor();
+  await composerMenu().click();
+  const newTopic = page.getByRole("menuitemcheckbox", { name: "New topic", exact: true });
+  assert.equal(await newTopic.getAttribute("aria-checked"), "false");
+  assert.equal(await newTopic.getAttribute("aria-description"), "The next message starts from the project state, without this conversation's context");
+  await newTopic.click();
+  const topicChip = page.locator(".chat-composer .chat-topic");
+  assert.equal((await topicChip.innerText()).trim(), "New topic");
+  assert.equal(await topicChip.getAttribute("title"), "The next message starts a new model context from the saved editing state. This conversation stays visible.");
+  assert.equal(await page.locator(".chat-composer .chat-topic-refusal").count(), 0, "a New topic with a saved state to start from has no refusal to show");
+  // The chip is removable, and the menu shows the choice as checked while it stands.
+  await page.getByRole("button", { name: "Remove New topic", exact: true }).click();
+  await topicChip.waitFor({ state: "detached" });
+  await composerMenu().click();
+  await newTopic.click();
+  await composerMenu().click();
+  assert.equal(await newTopic.getAttribute("aria-checked"), "true");
+  await page.keyboard.press("Escape");
+  await page.getByRole("menu").waitFor({ state: "detached" });
+  assert.ok(await composerMenu().evaluate((node) => node === document.activeElement), "Escape returns to the + button");
   await page.locator("#chat-input").fill("Compare the courtyard from the saved project state");
   await page.getByRole("button", { name: "Send", exact: true }).click();
   await page.getByRole("button", { name: "Stop", exact: true }).waitFor();
@@ -2014,7 +2047,7 @@ try {
   await visibleWorkspace().getByRole("button", { name: "Continue from here", exact: true }).click();
   await page.waitForFunction(() => document.querySelector('.chat-project-workspace:not([hidden]) .editing-base')?.dataset.sourceMatch === "same");
   await visibleWorkspace().locator(".stage__versions-toggle").click();
-  assert.equal(await projectContext.isChecked(), false, "the new-context option applies to one message");
+  assert.equal(await page.locator(".chat-composer .chat-topic").count(), 0, "New topic applies to one message");
   await page.locator("#chat-input").fill("Revise this candidate now");
   await page.getByRole("button", { name: "Send", exact: true }).click();
   await page.getByRole("button", { name: "Stop", exact: true }).waitFor();
@@ -2029,7 +2062,7 @@ try {
 
   await page.reload();
   await waitWorkspace();
-  await page.waitForFunction(() => !document.querySelector('.chat-composer input[type="checkbox"]')?.disabled);
+  await contextReady();
   await page.locator("#chat-input").fill("Continue the saved candidate after reopening");
   await page.getByRole("button", { name: "Send", exact: true }).click();
   await page.getByRole("button", { name: "Stop", exact: true }).waitFor();

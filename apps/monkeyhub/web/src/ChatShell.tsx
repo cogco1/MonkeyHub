@@ -1,6 +1,6 @@
 import "../workspaces/src/styles.css";
 import { ErrorBoundary } from "../workspaces/src/app/ErrorBoundary";
-import { Fragment, lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from "react";
+import { Fragment, lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
 import { applicationUrl, type AppearancePreferences } from "../../../shared-web/src/appearance.js";
 import type { WorktreeGraphDto } from "../workspaces/src/api/generated";
 import { projectStatus } from "./worktreeGraph";
@@ -43,6 +43,22 @@ const VIEW_KEY = "monkeyhub.chat-view.v1";
 /** The rail is always on screen; the conversation never shrinks past this. */
 const RAIL_WIDTH = 76, RESIZER_WIDTH = 5, CHAT_MIN_WIDTH = 360;
 import { chatCopyCatalog as words } from "./i18n/catalogs";
+/**
+ * GH-285: the composer's and the operation notice's own copy, in both languages.
+ * It stays here while GH-244 holds the catalogs (review §4, step 1) and moves
+ * into them afterwards.
+ */
+const composerWords = {
+  "zh-CN": {
+    composerMenu: "附件与新话题", newTopic: "新话题", newTopicDetail: "下一条消息从项目状态开始，不带之前的对话",
+    newTopicRemove: "移除新话题",
+  },
+  en: {
+    composerMenu: "Attachments and new topic", newTopic: "New topic",
+    newTopicDetail: "The next message starts from the project state, without this conversation's context",
+    newTopicRemove: "Remove New topic",
+  },
+} as const;
 /** The rail's two kinds of entry (#295, regrouped by the owner for #300): the
     surfaces you work on in this project (Modeling, Board and the Design Tree,
     #284), and the tools that produce output over it or report on the machine.
@@ -161,6 +177,49 @@ function Failure({ failure, language, labels, connection, onClose, onChangeModel
   </div>;
 }
 
+type MenuItem = { key: string; label: string; detail?: string; checked?: boolean; disabled?: boolean; onSelect(): void };
+/**
+ * The composer's + menu (#285): attachments, and New topic for the next message.
+ * Opened, focus moves into it; arrows move between entries and Escape returns
+ * to the + button. A checked entry is a choice the next send carries.
+ */
+function ComposerMenu({ label, disabled, items }: { label: string; disabled: boolean; items: MenuItem[] }) {
+  const [open, setOpen] = useState(false);
+  const button = useRef<HTMLButtonElement>(null), menu = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    menu.current?.querySelector<HTMLElement>("[role^=menuitem]")?.focus();
+    const outside = (event: PointerEvent) => {
+      if (!menu.current?.contains(event.target as Node) && !button.current?.contains(event.target as Node)) setOpen(false);
+    };
+    document.addEventListener("pointerdown", outside);
+    return () => document.removeEventListener("pointerdown", outside);
+  }, [open]);
+  useEffect(() => { if (disabled) setOpen(false); }, [disabled]);
+  const keys = (event: KeyboardEvent<HTMLDivElement>) => {
+    const entries = [...(menu.current?.querySelectorAll<HTMLElement>("[role^=menuitem]") ?? [])];
+    const at = entries.indexOf(document.activeElement as HTMLElement);
+    const step = { ArrowDown: 1, ArrowUp: -1 }[event.key];
+    if (step) { event.preventDefault(); entries[(at + step + entries.length) % entries.length]?.focus(); }
+    else if (event.key === "Home" || event.key === "End") { event.preventDefault(); entries.at(event.key === "Home" ? 0 : -1)?.focus(); }
+    else if (event.key === "Escape") { event.preventDefault(); setOpen(false); button.current?.focus(); }
+    else if (event.key === "Tab") setOpen(false);
+  };
+  return <div className="chat-composer-menu">
+    <button ref={button} type="button" className="chat-icon chat-attach" aria-label={label} title={label} aria-haspopup="menu" aria-expanded={open}
+      aria-controls={open ? "chat-composer-menu" : undefined} disabled={disabled} onClick={() => setOpen(!open)}><Icon name="plus" /></button>
+    {open && <div ref={menu} id="chat-composer-menu" className="chat-composer-menu__list" role="menu" aria-label={label} onKeyDown={keys}>
+      {items.map((item) => <button key={item.key} type="button" tabIndex={-1} className="chat-composer-menu__item"
+        role={item.checked === undefined ? "menuitem" : "menuitemcheckbox"} aria-checked={item.checked} aria-disabled={item.disabled || undefined}
+        aria-label={item.label} aria-description={item.detail}
+        onClick={() => { if (item.disabled) return; setOpen(false); item.onSelect(); }}>
+        <span className="chat-composer-menu__check" aria-hidden="true">{item.checked ? "✓" : ""}</span>
+        <span className="chat-composer-menu__text"><span>{item.label}</span>{item.detail && <small>{item.detail}</small>}</span>
+      </button>)}
+    </div>}
+  </div>;
+}
+
 type ChatWords = (typeof words)[keyof typeof words];
 const processWords = (t: ChatWords): ProcessWords => ({ steps: t.processStep, prepare: t.processPrepare,
   webSearch: t.processWebSearch, desktop: t.processDesktop, permission: t.processPermission });
@@ -223,7 +282,7 @@ function ProcessRow({ turn, running, open, t, onToggle }: {
 }
 
 export function ChatShell({ preferences, settings, settingsDirty = false, configuredProject, defaults, workspace, apps }: Props) {
-  const t = words[preferences.language];
+  const t = words[preferences.language], w = composerWords[preferences.language];
   const [initial] = useState(readView);
   const [projects, setProjects] = useState<ChatProject[]>([]);
   const [sessions, setSessions] = useState<ChatSummary[]>([]);
@@ -1148,11 +1207,26 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
           <p>{t.archivedNotice}</p>
           <button className="chat-activity__open" disabled={archiveBusy !== null} onClick={() => void setArchived(chat!, false)}><Icon name="restore" /><span>{t.restoreChat}</span></button>
         </div> : external ? <div className="chat-external-notice" role="status"><strong>{t.externalChat}</strong><p>{t.externalNotice}</p></div> : <form className="chat-composer" data-dragging={draggingFiles} onSubmit={(event) => void send(event)}
+          data-context={designContext ? "ready" : workspaceContext?.projectId === project?.projectId ? workspaceContext?.unavailableReason ?? "none" : "none"}
           onDragOver={(event) => { if (event.dataTransfer.types.includes("Files")) { event.preventDefault(); event.dataTransfer.dropEffect = !project || busy ? "none" : "copy"; setDraggingFiles(Boolean(project) && !busy); } }}
           onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDraggingFiles(false); }}
           onDrop={(event) => { if (event.dataTransfer.files.length) { event.preventDefault(); addAttachments(Array.from(event.dataTransfer.files)); } setDraggingFiles(false); }}
           onPaste={(event) => { if (event.clipboardData.files.length) { event.preventDefault(); addAttachments(Array.from(event.clipboardData.files)); } }}>
           {draggingFiles && <p className="chat-attachment-drop" role="status">{t.dropFiles}</p>}
+          {/* DC-5: New topic, chosen from the + menu, as one removable chip; it applies to the next send. */}
+          {contextMode === "project" && <div className="chat-composer__context">
+            <span className="chat-topic" title={designContext ? t.contextProjectHint : contextUnavailable}>
+              <span>{w.newTopic}</span>
+              <button type="button" className="chat-topic__remove" aria-label={w.newTopicRemove} title={w.newTopicRemove}
+                onClick={() => { setContextModes((value) => ({ ...value, [draftKey]: "continue" })); input.current?.focus(); }}><Icon name="close" /></button>
+            </span>
+          </div>}
+          {/* The refusal a New topic can meet stays in view, with the one click that clears it (#302). */}
+          {contextMode === "project" && !designContext && <div className="chat-topic-refusal">
+            <p className="chat-muted" role="status">{contextUnavailable}</p>
+            {recordContext && <button type="button" className="chat-activity__open chat-record"
+              disabled={recordingContext || busy} onClick={() => void recordForContext()}>{recordingContext ? t.recordBusy : t.recordContinue}</button>}
+          </div>}
           {Boolean(attachments.length) && <ul className="chat-attachments chat-attachments--draft" aria-label={t.attachments}>{attachments.map((file, index) => <li key={`${index}:${file.name}`}>
             <Icon name="file" /><span className="chat-attachment__details"><span className="chat-attachment__name" title={file.name}>{file.name}</span><span className="chat-attachment__size">{fileSize(file.size)}</span></span>
             <button type="button" className="chat-icon" aria-label={`${t.removeAttachment}: ${file.name}`} disabled={busy} onClick={() => {
@@ -1163,15 +1237,13 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
           <label className="sr-only" htmlFor="chat-input">{t.placeholder}</label><textarea id="chat-input" ref={input} value={draft} placeholder={!project ? t.projectRequired : running ? t.interjectPlaceholder : t.placeholder} disabled={!project || busy}
             onChange={(event) => setDrafts((value) => ({ ...value, [draftKey]: event.target.value }))} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void send(); } }} />
           <input ref={fileInput} type="file" multiple hidden aria-label={t.attach} disabled={!project || busy} onChange={(event) => { addAttachments(Array.from(event.target.files ?? [])); event.target.value = ""; }} />
-          <label className="chat-context-option" title={designContext ? t.contextProjectHint : contextUnavailable}>
-            <input type="checkbox" checked={contextMode === "project"} aria-description={designContext ? t.contextProjectHint : contextUnavailable} disabled={busy || running || (!designContext && contextMode !== "project" && !recordContext)}
-              onChange={(event) => setContextModes((value) => ({ ...value, [draftKey]: event.target.checked ? "project" : "continue" }))} />
-            {t.contextProject}
-          </label>
-          {contextMode === "project" && <p className="chat-muted" role="status">{designContext ? t.contextProjectHint : contextUnavailable}</p>}
-          {contextMode === "project" && !designContext && recordContext && <button type="button" className="chat-activity__open chat-record"
-            disabled={recordingContext || busy} onClick={() => void recordForContext()}>{recordingContext ? t.recordBusy : t.recordContinue}</button>}
-          <div className="chat-composer__bottom"><button type="button" className="chat-icon chat-attach" aria-label={t.attach} title={t.attach} disabled={!project || busy} onClick={() => fileInput.current?.click()}><Icon name="plus" /></button><div className="chat-connection" title={running ? t.modelRunning : t.connectionHint}>
+          <div className="chat-composer__bottom"><ComposerMenu label={w.composerMenu} disabled={!project || busy} items={[
+            { key: "attach", label: t.attach, onSelect: () => fileInput.current?.click() },
+            // Offered as the checkbox was: with a saved editing state to start from, or with the edits that keep it out.
+            { key: "topic", label: w.newTopic, detail: designContext ? w.newTopicDetail : contextUnavailable, checked: contextMode === "project",
+              disabled: busy || running || (!designContext && contextMode !== "project" && !recordContext),
+              onSelect: () => { setContextModes((value) => ({ ...value, [draftKey]: value[draftKey] === "project" ? "continue" : "project" })); input.current?.focus(); } },
+          ]} /><div className="chat-connection" title={running ? t.modelRunning : t.connectionHint}>
             <span className="chat-connection__name">{providers.find((item) => item.id === connection.provider)?.label ?? connection.provider}</span>
             <label className="sr-only" htmlFor="chat-model">{t.modelLabel}</label>
             <select id="chat-model" className="chat-connection__model" value={customModel !== null ? "__custom__" : chosenModel ?? ""} disabled={running || modelBusy || busy}
