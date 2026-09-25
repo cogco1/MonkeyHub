@@ -16,12 +16,8 @@ import { failed, loading, ready, type Loadable } from "./loadable";
 const Drawing = lazy(() => import("../workspaces/monkeydiagram/DrawingCanvas"));
 const Publish = lazy(() => import("../workspaces/publish/PublishWorkspace"));
 const Render = lazy(() => import("../workspaces/render/RenderWorkspace"));
-
-const Board = lazy(async () => {
-  (window as Window & { EXCALIDRAW_ASSET_PATH?: string }).EXCALIDRAW_ASSET_PATH =
-    new URL("excalidraw/", document.baseURI).href;
-  return import("../workspaces/monkeyboard/Board");
-});
+// The shared canvas host (features/canvas) sets Excalidraw's local font path.
+const Board = lazy(() => import("../workspaces/monkeyboard/Board"));
 
 export interface ProjectWorkspaceProps {
   workspace: "arch" | "board" | "drawing" | "render" | "publish";

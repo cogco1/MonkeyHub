@@ -7,6 +7,7 @@
  * the return is the board they left, not a refitted one.
  */
 
+import { sceneBoxContains } from "../../features/canvas/sceneHit";
 import { imageSource, type PageSource } from "./boardScene";
 
 /** The part of the live canvas that is the operator's place on the board. */
@@ -71,18 +72,9 @@ export function pageSourceAt(
     if (element.isDeleted) continue;
     const source = imageSource(element);
     if (source === null) continue;
-    const x = Number(element.x), y = Number(element.y);
-    const width = Number(element.width), height = Number(element.height);
-    const angle = Number(element.angle ?? 0);
-    if (![x, y, width, height, angle].every((value) => Number.isFinite(value))) continue;
-    // A rotated page keeps its own rectangle; the point enters that frame first.
-    const centreX = x + width / 2, centreY = y + height / 2;
-    const cos = Math.cos(-angle), sin = Math.sin(-angle);
-    const dx = point.x - centreX, dy = point.y - centreY;
-    const localX = dx * cos - dy * sin + centreX;
-    const localY = dx * sin + dy * cos + centreY;
-    if (localX < Math.min(x, x + width) || localX > Math.max(x, x + width)) continue;
-    if (localY < Math.min(y, y + height) || localY > Math.max(y, y + height)) continue;
+    // A rotated page keeps its own rectangle (the shared canvas hit test).
+    if (!sceneBoxContains({ x: Number(element.x), y: Number(element.y), width: Number(element.width),
+      height: Number(element.height), angle: Number(element.angle ?? 0) }, point)) continue;
     return source;
   }
   return null;

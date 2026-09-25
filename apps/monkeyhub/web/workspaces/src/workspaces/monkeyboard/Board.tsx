@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useRef, useState, type ClipboardEvent as ReactClipboardEvent, type DragEvent } from "react";
-import { CaptureUpdateAction, convertToExcalidrawElements, Excalidraw, FONT_FAMILY, MainMenu, newElementWith, viewportCoordsToSceneCoords, WelcomeScreen } from "@excalidraw/excalidraw";
+import { CaptureUpdateAction, convertToExcalidrawElements, MainMenu, newElementWith, WelcomeScreen } from "@excalidraw/excalidraw";
 import type { ExcalidrawElement, FileId } from "@excalidraw/excalidraw/element/types";
 import type { AppState, BinaryFiles, DataURL, ExcalidrawImperativeAPI, ExcalidrawInitialDataState } from "@excalidraw/excalidraw/types";
-import "@excalidraw/excalidraw/index.css";
 
 import { useStudio } from "../../api/ProjectRuntimeContext";
 import type { StudioClient } from "../../api/client";
 import type { BoardDto, FrameLevelDto, SourceDocumentDto } from "../../api/generated";
+import { CANVAS_APP_STATE, PROJECT_CANVAS_CLASS, ProjectCanvas, useScenePointer, useWheelZoom } from "../../features/canvas/ProjectCanvas";
 import { usePreferences } from "../../features/settings/preferences";
 import { renderDocumentVisual } from "../monkeydiagram/documentVisualInput";
 import { createBoardSaveQueue, type BoardSaveState } from "./boardSaveQueue";
@@ -358,7 +358,7 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
   pageRequest: BoardPageRequest | null;
 }) {
   const studio = useStudio();
-  const { language, theme } = usePreferences();
+  const { language } = usePreferences();
   const text = copy[language];
   const textRef = useRef<Copy>(text); textRef.current = text;
   const alive = useRef(true);
@@ -394,7 +394,6 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
   const [exporting, setExporting] = useState(false);
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
-  const [systemDark, setSystemDark] = useState(() => window.matchMedia("(prefers-color-scheme: dark)").matches);
   const [notice, setNotice] = useState("");
   // A replacement this tab uploaded itself is never announced back to its author.
   const originated = useRef(new Set<string>());
@@ -501,7 +500,7 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
     const restored = restoreView === null ? null : boardViewAppState(restoreView, board.elements);
     return {
       elements: board.elements as unknown as ExcalidrawElement[], files, scrollToContent: restored === null,
-      appState: { viewBackgroundColor: "#f4f5f0", currentItemStrokeColor: "#29352d", currentItemBackgroundColor: "transparent", currentItemRoughness: 0, currentItemFontFamily: FONT_FAMILY.Helvetica, currentItemStrokeWidth: 1, currentItemRoundness: "sharp", gridSize: 20,
+      appState: { ...CANVAS_APP_STATE,
         ...(restored === null ? {} : { ...restored, zoom: { value: restored.zoom.value as AppState["zoom"]["value"] } }) },
     };
   });
@@ -692,12 +691,6 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
     };
   }, [queue]);
   useEffect(() => {
-    const media = window.matchMedia("(prefers-color-scheme: dark)");
-    const changed = () => setSystemDark(media.matches);
-    media.addEventListener("change", changed);
-    return () => media.removeEventListener("change", changed);
-  }, []);
-  useEffect(() => {
     if (!ready || !active) return;
     let live = true;
     let refreshing = false;
@@ -723,22 +716,7 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
     window.addEventListener("focus", refresh);
     return () => { live = false; window.clearInterval(timer); window.removeEventListener("focus", refresh); };
   }, [acceptDocuments, board.projectId, ready, receive, serial, active]);
-  useEffect(() => {
-    const element = root.current;
-    if (!element) return;
-    const wheel = (event: WheelEvent) => {
-      const api = canvas.current;
-      if (!(event.target instanceof HTMLCanvasElement) || !api || event.ctrlKey || event.metaKey || event.shiftKey) return;
-      event.preventDefault(); event.stopPropagation();
-      const state = api.getAppState();
-      const point = viewportCoordsToSceneCoords({ clientX: event.clientX, clientY: event.clientY }, state);
-      const delta = event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? element.clientHeight : 1);
-      const zoom = Math.min(30, Math.max(0.1, state.zoom.value * Math.exp(-delta * 0.0015))) as AppState["zoom"]["value"];
-      api.updateScene({ appState: { zoom: { value: zoom }, scrollX: (point.x + state.scrollX) * state.zoom.value / zoom - point.x, scrollY: (point.y + state.scrollY) * state.zoom.value / zoom - point.y }, captureUpdate: CaptureUpdateAction.NEVER });
-    };
-    element.addEventListener("wheel", wheel, { passive: false, capture: true });
-    return () => element.removeEventListener("wheel", wheel, true);
-  }, []);
+  useWheelZoom(root, canvas);
   // Leaving for a page is still a board edit: the canvas is saved first, and a
   // refused save keeps the operator here with their marks rather than losing them.
   const openDocumentRef = useRef(onOpenDocument); openDocumentRef.current = onOpenDocument;
@@ -756,24 +734,18 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
       finally { busyRef.current = false; if (alive.current) setBusy(false); }
     })();
   }, [queue]);
-  useEffect(() => {
-    const element = root.current;
-    if (!element || !onOpenDocument || !ready) return;
-    const open = (event: MouseEvent) => {
-      const api = canvas.current;
-      if (!(event.target instanceof HTMLCanvasElement) || !api || queue.getState().conflict) return;
+  useScenePointer(root, canvas, {
+    onDoubleClick: (point, api) => {
+      if (queue.getState().conflict) return false;
       const state = api.getAppState();
-      if (state.editingTextElement || state.newElement || state.isResizing || state.isRotating) return;
-      const point = viewportCoordsToSceneCoords({ clientX: event.clientX, clientY: event.clientY }, state);
+      if (state.editingTextElement || state.newElement || state.isResizing || state.isRotating) return false;
       const source = pageSourceAt(records(api.getSceneElements()), point);
-      if (!source || !findSource(documentsRef.current, source)) return;
-      // The canvas would otherwise start cropping the page under the pointer.
-      event.preventDefault(); event.stopPropagation();
+      if (!source || !findSource(documentsRef.current, source)) return false;
       openDocument(source);
-    };
-    element.addEventListener("dblclick", open, { capture: true });
-    return () => element.removeEventListener("dblclick", open, true);
-  }, [onOpenDocument, openDocument, queue, ready]);
+      // Handled: the canvas would otherwise start cropping the page under the pointer.
+      return true;
+    },
+  }, Boolean(onOpenDocument) && ready);
 
   const onPasteCapture = (event: ReactClipboardEvent) => {
     if (event.target instanceof Element && event.target.closest("input,textarea,select,[contenteditable=true]")) return;
@@ -1123,7 +1095,6 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
       if (alive.current) onSubmit(request);
     } finally { busyRef.current = false; }
   };
-  const resolvedTheme = theme === "system" ? (systemDark ? "dark" : "light") : theme;
   const boardText = whiteboardCopy[language];
   return <section className={`monkeyboard${critMode ? " monkeyboard--crit" : ""}`} aria-label="MonkeyBoard">
     <header className="monkeyboard-topbar">
@@ -1188,8 +1159,8 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
           </article>;
         })}</div>
       </aside>
-      <div className="monkeyboard-canvas" ref={root} onPasteCapture={onPasteCapture} onDropCapture={onDropCapture} onDragOverCapture={(event) => { if (event.dataTransfer.types.includes("Files")) { event.preventDefault(); event.stopPropagation(); } }} onKeyDownCapture={(event) => { if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") { event.preventDefault(); event.stopPropagation(); void queue.flush().catch(() => {}); } }}>
-        <Excalidraw initialData={initialData} excalidrawAPI={(api) => { canvas.current = api; }} langCode={language} theme={resolvedTheme} name={title} aiEnabled={false} validateEmbeddable={false} autoFocus={active} handleKeyboardGlobally={false} zenModeEnabled={critMode} UIOptions={{ canvasActions: { loadScene: false, saveToActiveFile: false, export: false, saveAsImage: false }, tools: { image: false } }}
+      <div className={`monkeyboard-canvas ${PROJECT_CANVAS_CLASS}`} ref={root} onPasteCapture={onPasteCapture} onDropCapture={onDropCapture} onDragOverCapture={(event) => { if (event.dataTransfer.types.includes("Files")) { event.preventDefault(); event.stopPropagation(); } }} onKeyDownCapture={(event) => { if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") { event.preventDefault(); event.stopPropagation(); void queue.flush().catch(() => {}); } }}>
+        <ProjectCanvas initialData={initialData} excalidrawAPI={(api) => { canvas.current = api; }} name={title} autoFocus={active} zenModeEnabled={critMode}
           onPaste={(data) => {
             if (data.elements?.some((element) => element.type === "image" && (!imageSource(element as unknown as Record<string, unknown>) || !findSource(documentsRef.current, imageSource(element as unknown as Record<string, unknown>)!)))) { setNotice(text.unbound); return false; }
             return true;
@@ -1212,7 +1183,7 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
           }}>
           <MainMenu><MainMenu.Item onSelect={() => input.current?.click()}>{text.upload}</MainMenu.Item><MainMenu.Item onSelect={() => { void queue.flush().catch(() => {}); }}>{text.save}</MainMenu.Item><MainMenu.DefaultItems.ClearCanvas /></MainMenu>
           <WelcomeScreen><WelcomeScreen.Center><WelcomeScreen.Center.Heading>{boardText.welcome}</WelcomeScreen.Center.Heading><div className="monkeyboard-welcome-body"><p>{boardText.gestures}</p><span className="monkeyboard-welcome-example">{boardText.example}</span><p>{boardText.designHint}</p></div><WelcomeScreen.Center.Menu><button type="button" className="monkeyboard-welcome-upload" onClick={() => input.current?.click()}>{text.upload}</button></WelcomeScreen.Center.Menu></WelcomeScreen.Center></WelcomeScreen>
-        </Excalidraw>
+        </ProjectCanvas>
         {!ready && <div className="monkeyboard-initializing" role="status">{text.loading}</div>}
         {busy && <div className="monkeyboard-busy" role="status">{text.busy}</div>}
         {!critMode && (context || source) && <div className="monkeyboard-context" role="group" aria-label={language === "en" ? "Selected drawing actions" : "选中图纸操作"}>
