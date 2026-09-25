@@ -146,6 +146,33 @@ export function describeCall(line: string): Step {
   return titleStep(title);
 }
 
+/** An operation's kind in plain words: a `METHOD /path` request, or a run the project retained ("candidate"). */
+export const operationStep = (kind: string): Step => kind === "candidate" ? { key: "candidate" } : describeCall(kind);
+
+/** What the unfinished-operation notice reads of a Hub operation record. */
+export interface OperationNotice {
+  operationId: string;
+  kind: string;
+  status: string;
+  admissionSequence?: number | null;
+  createdAt?: string | null;
+  acknowledgedAt?: string | null;
+}
+
+/**
+ * The operations the "did not finish" notice stands for (#285): failed or stale
+ * ones nobody dismissed, newest first, then those that need recovery, newest
+ * first. A dismissal never hides one that needs recovery; it stays until it is
+ * recovered. Retained runs without an admission come after admitted requests.
+ */
+export function unfinishedOperations<T extends OperationNotice>(operations: readonly T[]): T[] {
+  const newest = (a: T, b: T) => (b.admissionSequence ?? 0) - (a.admissionSequence ?? 0);
+  return [
+    ...operations.filter((row) => (row.status === "failed" || row.status === "stale") && !row.acknowledgedAt).sort(newest),
+    ...operations.filter((row) => row.status === "needs_recovery").sort(newest),
+  ];
+}
+
 export function describeStep(message: ChatMessage): Step {
   // A permission row is the request itself, then the choice that answered it.
   if (message.id.includes(":permission:")) {

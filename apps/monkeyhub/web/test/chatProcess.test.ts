@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import type { ChatMessage } from "../src/api/generated";
-import { clock, currentStep, describeCall, describeStep, resultCandidates, stepText, turnsOf, workedSeconds, type ProcessWords } from "../src/chatProcess.ts";
+import { clock, currentStep, describeCall, describeStep, operationStep, resultCandidates, stepText, turnsOf, unfinishedOperations, workedSeconds, type ProcessWords } from "../src/chatProcess.ts";
 import { chatCopy as en } from "../src/i18n/messages.en.ts";
 import { chatCopy as zh } from "../src/i18n/messages.zh-CN.ts";
 
@@ -129,4 +129,32 @@ test("elapsed time reads naturally and unreadable times are not guessed", () => 
   const [turn] = turnsOf([message({ id: "u", role: "user", createdAt: "not a time" }), message({ id: "u:t", role: "tool", content: "Bash · completed" })], false);
   assert.equal(workedSeconds(turn!), null);
   assert.equal(en.processSteps(turn!.steps.length), "Process · 1 step");
+});
+
+test("an unfinished operation is named by what it did, in both languages", () => {
+  const cases: Array<[string, string, string]> = [
+    ["POST /api/proposals/prop-3/candidate", "生成方案", "Generate a scheme"],
+    ["POST /api/drawings/sheets", "出图", "Make a drawing sheet"],
+    ["POST /api/proposals", "起草修改", "Draft a model change"],
+    ["candidate", "生成方案", "Generate a scheme"],
+    ["POST /api/issue", "更新项目数据", "Update project data"],
+  ];
+  for (const [kind, chinese, english] of cases) {
+    assert.equal(stepText(operationStep(kind), words(zh)), chinese, kind);
+    assert.equal(stepText(operationStep(kind), words(en)), english, kind);
+  }
+});
+
+test("the notice stands for undismissed failures, newest first, then what needs recovery", () => {
+  const row = (operationId: string, status: string, admissionSequence: number | null, acknowledgedAt: string | null = null) =>
+    ({ operationId, kind: "POST /api/drawings/sheets", status, admissionSequence, acknowledgedAt });
+  const operations = [
+    row("old-failure", "failed", 1), row("waiting", "needs_recovery", 2), row("dismissed", "failed", 3, "2026-09-25T10:00:00Z"),
+    row("stale", "stale", 4), row("done", "completed", 5), row("running", "executing", 6), row("candidate:old-run", "failed", null),
+    row("recovering-later", "needs_recovery", 7, "2026-09-25T10:00:00Z"),
+  ];
+  assert.deepEqual(unfinishedOperations(operations).map((item) => item.operationId),
+    ["stale", "old-failure", "candidate:old-run", "recovering-later", "waiting"]);
+  assert.deepEqual(operations.map((item) => item.operationId).slice(0, 2), ["old-failure", "waiting"], "the records themselves are not reordered");
+  assert.deepEqual(unfinishedOperations([]), []);
 });

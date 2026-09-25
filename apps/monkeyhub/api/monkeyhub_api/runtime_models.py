@@ -45,6 +45,14 @@ class OperationRecord(BaseModel):
         "Project-scoped request order projected from the existing Hub admission journal. "
         "Not a completion order or design version; null for observations without a journal entry."
     ))
+    createdAt: str | None = Field(default=None, description=(
+        "When this Hub admitted the request (ISO 8601, UTC). Null for requests admitted before "
+        "admission times were kept and for observations of retained runs."
+    ))
+    acknowledgedAt: str | None = Field(default=None, description=(
+        "When a person dismissed the notice of this failed or stale operation. Reported only while "
+        "the operation is failed or stale; it changes no status, reason or result."
+    ))
 
 
 class ProjectRuntimeDto(BaseModel):
@@ -84,4 +92,12 @@ class OpenRuntimeRequest(BaseModel):
 
 class RuntimeProjectRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
+    projectId: str = Field(min_length=1)
+
+
+class OperationAcknowledgeRequest(BaseModel):
+    """The runtime and project whose operation notice a person dismissed."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+    runtimeId: str = Field(min_length=1)
     projectId: str = Field(min_length=1)
