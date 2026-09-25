@@ -172,6 +172,51 @@ class HarnessBudgetTests(unittest.TestCase):
         with self.assertRaises(VisualReviewInvalid):
             observe_frames(request(budget=1), frames, provider=provider, budget=budget, reason="after_repair")
 
+    def test_a_deterministic_loop_states_its_zero_allowance_and_is_refused_at_admission(self):
+        provider, budget = CountingProvider(), VisualReviewBudget.for_task(TaskClass.DETERMINISTIC_EDIT)
+        frames = [model_view_frame(view_answer("top")), model_view_frame(view_answer("front"))]
+        with self.assertRaises(VisualBudgetRefused) as refused:
+            observe_frames(request(budget=0), frames, provider=provider, budget=budget, reason="first_bundle")
+        self.assertEqual(refused.exception.code, "VISUAL_REVIEW_NOT_WARRANTED")
+        self.assertEqual((provider.calls, budget.used), ([], 0))
+        with self.assertRaises(VisualReviewInvalid):
+            request(budget=5)
+
+    def test_a_carried_allowance_resumes_only_at_the_policy_value(self):
+        """A stateless caller holds the loop; it can hand the state back, never raise the allowance."""
+
+        budget = VisualReviewBudget.for_task(TaskClass.SPATIAL_FORMAL)
+        budget.admit(ReviewReason.FIRST_BUNDLE)
+        budget.settle(parse_observation(GOOD, request(), [model_view_frame(view_answer("top"))], review_index=1))
+        carried = budget.to_dict()
+        self.assertEqual(carried, {"taskClass": "spatial_formal", "allowed": 2, "used": 1, "lastFindingIds": ["f1"]})
+        resumed = VisualReviewBudget.resume(carried["taskClass"], allowed=carried["allowed"], used=carried["used"],
+                                            last_findings=carried["lastFindingIds"])
+        self.assertEqual(resumed.to_dict(), carried)
+        self.assertIsNotNone(resumed.refusal(ReviewReason.AFTER_REPAIR))
+        resumed.note_repair(["f1"])
+        self.assertEqual(resumed.admit(ReviewReason.AFTER_REPAIR), 2)
+        self.assertEqual(resumed.to_dict()["lastFindingIds"], [])
+        polish = VisualReviewBudget.resume("polish", allowed=3, used=0)
+        self.assertEqual(polish.admit(ReviewReason.POLISH_ROUND), 1)
+        exhausted = VisualReviewBudget.resume("spatial_formal", allowed=2, used=3)
+        self.assertEqual(exhausted.refusal(ReviewReason.FIRST_BUNDLE).code, "VISUAL_BUDGET_EXHAUSTED")
+        refused = {
+            "a raised spatial allowance": dict(task_class="spatial_formal", allowed=3, used=0),
+            "a deterministic allowance": dict(task_class="deterministic_edit", allowed=1, used=0),
+            "a polish round count past the cap": dict(task_class="polish", allowed=5, used=0),
+            "an unknown task class": dict(task_class="glance", allowed=2, used=0),
+            "a negative count": dict(task_class="spatial_formal", allowed=2, used=-1),
+            "a boolean count": dict(task_class="spatial_formal", allowed=2, used=True),
+            "findings before any review": dict(task_class="spatial_formal", allowed=2, used=0, last_findings=["f1"]),
+            "a foreign finding id": dict(task_class="spatial_formal", allowed=2, used=1, last_findings=["entity:roof"]),
+            "a repeated finding id": dict(task_class="spatial_formal", allowed=2, used=1, last_findings=["f1", "f1"]),
+        }
+        for name, state in refused.items():
+            task_class = state.pop("task_class")
+            with self.subTest(name), self.assertRaises(VisualReviewInvalid):
+                VisualReviewBudget.resume(task_class, **state)
+
 
 class ObservationContractTests(unittest.TestCase):
     frames = [model_view_frame(view_answer("top")), model_view_frame(view_answer("front", shade=0))]
@@ -203,6 +248,29 @@ class ObservationContractTests(unittest.TestCase):
         for name, answer in broken.items():
             with self.subTest(name), self.assertRaises(VisualObservationInvalid):
                 parse_observation(answer, request(), self.frames, review_index=1)
+
+    def test_an_answer_the_schema_admits_but_the_contract_refuses_keeps_its_cost(self):
+        inverted = {**GOOD, "observations": [{**GOOD["observations"][0], "evidence_region": {
+            **GOOD["observations"][0]["evidence_region"], "x0": 0.8}}]}
+        provider, budget = CountingProvider(inverted), VisualReviewBudget.for_task(TaskClass.SPATIAL_FORMAL)
+        with self.assertRaises(VisualProviderFailed) as failed:
+            observe_frames(request(), self.frames, provider=provider, budget=budget, reason=ReviewReason.FIRST_BUNDLE)
+        self.assertIsInstance(failed.exception.__cause__, VisualObservationInvalid)
+        self.assertEqual((len(provider.calls), budget.used), (1, 1))
+        self.assertEqual(failed.exception.usage.image_inputs, 2)
+        self.assertEqual(failed.exception.usage.to_dict()["imageBytes"], sum(len(frame.png) for frame in self.frames))
+
+    def test_known_readback_facts_are_bounded(self):
+        with_facts = VisualReviewRequest(
+            domain="modeling", source_refs=(SourceRef.model(RUN, STATE, ASSET),), view_recipe=("top",),
+            task="Make the void feel generous.", criteria=(Criterion("void-generous", "The void dominates."),),
+            known_facts=("Void clear width 3.90 m x 3.90 m.",) * 8)
+        self.assertEqual(len(with_facts.known_facts), 8)
+        for facts in (("fact",) * 9, ("x" * 121,), ("  ",)):
+            with self.subTest(facts=facts[:1]), self.assertRaises(VisualReviewInvalid):
+                VisualReviewRequest(domain="modeling", source_refs=(SourceRef.model(RUN, STATE, ASSET),),
+                                    view_recipe=("top",), task="Look.", known_facts=facts,
+                                    criteria=(Criterion("void-generous", "The void dominates."),))
 
     def test_an_observation_reopens_from_its_wire_form(self):
         observation = parse_observation(GOOD, request(), self.frames, review_index=2)
@@ -271,6 +339,7 @@ class CodexTransportTests(unittest.TestCase):
 
     def test_codex_receipt_names_the_visual_observation_phase(self):
         frames = [model_view_frame(view_answer("top")), model_view_frame(view_answer("front"))]
+        fact = "Void clear width 3.90 m by 3.90 m; flight F2 starts at 0.00."
         with self.codex(GOOD) as (compiler, calls):
             seen = []
             original = intent_agent.invoke_structured
@@ -281,9 +350,16 @@ class CodexTransportTests(unittest.TestCase):
                 return output, receipt
 
             with patch("archflow_studio_api.application.visual_observation.invoke_structured", side_effect=spy):
-                StudioModelVisualProvider(compiler).observe(request(), frames)
+                with_facts = VisualReviewRequest(
+                    domain="modeling", source_refs=(SourceRef.model(RUN, STATE, ASSET),), view_recipe=("top", "front"),
+                    task="Make the void feel generous.", known_facts=(fact,),
+                    criteria=(Criterion("void-generous", "The central void reads as the dominant open space."),),
+                    budget=2)
+                StudioModelVisualProvider(compiler).observe(with_facts, frames)
         self.assertIs(seen[0].request.phase, ModelPhase.VISUAL_OBSERVATION)
         self.assertEqual(seen[0].request.payload["frames"][0]["sha256"], frames[0].sha256)
+        self.assertEqual(seen[0].request.payload["known_facts"], [fact])
+        self.assertIn(fact, calls[0]["prompt"])
 
     def test_an_answer_outside_the_schema_is_a_failed_call_that_still_spent_its_review(self):
         bad = {**GOOD, "observations": [{**GOOD["observations"][0], "target_refs": ["entity:roof"]}]}
