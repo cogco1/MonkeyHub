@@ -6,11 +6,13 @@
  * the surface the tree was opened from. Admitted options this viewer has not
  * opened are its notice, "3 options ready · View", which opens the tree on
  * their Study; a result never opens itself (#302). While a node is viewed
- * read-only in Modeling it says so, with the way back to Current.
+ * read-only in Modeling it says so, with the way back to Current. Beside it,
+ * the last act that changed the design confirms itself (FN-5).
  * It carries no Excalidraw: the canvas loads only when the tree opens.
  */
 import { useMemo } from "react";
 import { useT } from "../../i18n/useT";
+import { DesignTreeToast } from "./DesignTreeToast";
 import { CURRENT } from "./model";
 import type { DesignTreeData } from "./useDesignTree";
 import { treeWords } from "./words";
@@ -71,5 +73,9 @@ export function DesignTreeBar({ data, seen, open, viewing, onToggle, onBackToCur
       <span>{t("designTree.chip.viewing", { name: viewing.name })}</span>
       <button type="button" className="btn btn--small" disabled={!tree?.nodes.get(CURRENT)} onClick={onBackToCurrent}>{t("designTree.chip.back")}</button>
     </span>}
+    {/* One live region for the toast, present before it speaks. */}
+    <div className="design-tree-bar__notice" role="status">
+      {data.toast && <DesignTreeToast key={data.toast.id} data={data} toast={data.toast} words={words} />}
+    </div>
   </div>;
 }

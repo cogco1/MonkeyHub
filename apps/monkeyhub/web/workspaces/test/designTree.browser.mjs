@@ -171,7 +171,15 @@ try {
   const { chromium } = await import(process.env.PLAYWRIGHT_MODULE ? pathToFileURL(process.env.PLAYWRIGHT_MODULE).href : "playwright");
   browser = await chromium.launch({ headless: true, channel: "chrome" });
   if (shots) await mkdir(shots, { recursive: true });
-  const shoot = async (target, name) => { if (shots) { await target.screenshot({ path: path.join(shots, `${name}.png`) }); console.log(`design tree: ${name}.png`); } };
+  // A toast is shot once it has faded in.
+  const settled = (target) => target.evaluate(() => Promise.all(document.getAnimations()
+    .filter((animation) => animation.effect?.target?.matches?.(".design-tree-toast")).map((animation) => animation.finished.catch(() => undefined))));
+  const shoot = async (target, name) => {
+    if (!shots) return;
+    await settled(target);
+    await target.screenshot({ path: path.join(shots, `${name}.png`) });
+    console.log(`design tree: ${name}.png`);
+  };
 
   // ------------------------------------------------------------------ Part A: the tree in ProjectWorkspace.
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: "en-US" });
@@ -375,9 +383,15 @@ try {
   await card.getByText("Model edits in Modeling are not recorded yet; they are kept. Record them and continue, or undo them in Modeling.").waitFor();
   assert.equal(fixture.state.head, headBefore, "a Continue refused by unrecorded edits moves nothing");
   assert.equal(writes.length, 0);
+  const toast = tab.locator(".design-tree-toast");
+  assert.equal(await toast.count(), 0, "a refused Continue keeps its inline message and shows no toast");
   await shoot(tab, "06b-record-and-continue");
   await card.locator('[data-action="record"]').click();
-  await card.getByText("Current now continues from D · Terraced wedge. Nothing was accepted.").waitFor();
+  // FN-5: the Continue confirms itself beside the chip, with Undo; hovering keeps the toast while it is checked.
+  await toast.filter({ hasText: "Current is now “D · Terraced wedge”" }).waitFor();
+  await toast.hover();
+  assert.equal((await toast.innerText()).replace(/\s+/g, " ").trim(), "Current is now “D · Terraced wedge” · Undo");
+  assert.equal(await card.locator(".design-tree-card__outcome").count(), 0, "the toast is the one confirmation");
   assert.equal(recorded, 1, "Record edits and continue records the edits once, then continues");
   assert.deepEqual(writes.at(-1), { method: "PUT", name: "/api/working-draft",
     body: { projectId: PROJECT, runId: "run-massing-d", baseRevisionSha256: "rev-0001", branchId: null } });
@@ -387,6 +401,28 @@ try {
   checkTree(view, [S0, "candidate:run-massing-d", "current"], { "study-massing": 4 });
   assert.ok(view.elements.find((element) => element.id === `${S2}:card`).opacity < 100, "the future left behind stays, faded");
   assert.ok(await tab.evaluate((before) => window.__arch.refreshKey > before, archRefresh), "Modeling re-reads the moved head");
+  await shoot(tab, "06c-continue-toast");
+  if (shots) await inChinese("06d-continue-toast-zh");
+
+  // Undo continues back to the exact previous Current: the same PUT, onto the source recorded before the Continue.
+  const rev = (value) => `rev-${String(value).padStart(4, "0")}`;
+  let revision = fixture.state.revision;
+  await toast.getByRole("button", { name: "Undo", exact: true }).click();
+  await toast.filter({ hasText: "Undone · Current is back where it was" }).waitFor();
+  assert.deepEqual(writes.at(-1), { method: "PUT", name: "/api/working-draft",
+    body: { projectId: PROJECT, runId: "run-s2-layout", baseRevisionSha256: rev(revision), branchId: "main" } });
+  assert.equal(fixture.state.head, "run-s2-layout", "Undo put the previous Current back");
+  assert.equal(await toast.getByRole("button").count(), 0, "an Undo offers no second Undo");
+  await tab.waitForFunction(() => window.__treeApi.getSceneElements().find((element) => element.customData?.tree?.role === "trunk")?.points.length === 6);
+  checkTree(await scene(), [S0, "candidate:run-massing-c", S1, "candidate:run-facade-b", S2, "current"], { "study-massing": 4, "study-facade": 2, "study-entrance": 1 });
+  assert.equal((await chip.innerText()).replace(/\s+/g, " ").trim(), "S2 · Layout — Current · 2 running");
+
+  // Continue from D again; the tour goes on from there.
+  revision = fixture.state.revision;
+  await card.getByRole("button", { name: "Continue from here", exact: true }).click();
+  await toast.filter({ hasText: "Current is now “D · Terraced wedge”" }).waitFor();
+  assert.deepEqual(writes.at(-1).body, { projectId: PROJECT, runId: "run-massing-d", baseRevisionSha256: rev(revision), branchId: null });
+  await tab.waitForFunction(() => window.__treeApi.getSceneElements().find((element) => element.customData?.tree?.role === "trunk")?.points.length === 3);
   assert.equal((await chip.innerText()).replace(/\s+/g, " ").trim(), "S0 · Site — Current · 2 running");
   assert.equal((await ready.innerText()).replace(/\s+/g, " ").trim(), "3 options ready · View");
   card = await clickNode("current");
@@ -398,7 +434,7 @@ try {
   card = await clickNode("candidate:run-entrance-a");
   assert.match(await card.innerText(), /Study\s+Study from S2 · Layout/, "a Study without a name is named after where it started");
   await card.getByRole("button", { name: "Continue from here", exact: true }).click();
-  await card.getByText(/Current now continues from Courtyard gate on the south bar/).waitFor();
+  await toast.filter({ hasText: "Current is now “Courtyard gate on the south bar”" }).waitFor();
   await tab.waitForFunction(() => window.__treeApi.getSceneElements().find((element) => element.customData?.tree?.role === "trunk")?.points.length === 7);
   checkTree(await scene(), [S0, "candidate:run-massing-c", S1, "candidate:run-facade-b", S2, "candidate:run-entrance-a", "current"], { "study-massing": 4, "study-facade": 2 });
   card = await clickNode("current");
@@ -408,7 +444,11 @@ try {
   await card.getByText("Accept Current as S3? This creates an immutable Stage from the current work.").waitFor();
   await shoot(tab, "08-accept-confirm");
   await card.locator('[data-action="accept-confirm"]').click();
-  await card.getByText("S3 accepted. Current follows it.").waitFor();
+  // Accept confirms itself too, with no Undo: acceptance is a retained fact.
+  await toast.filter({ hasText: "Accepted as S3" }).waitFor();
+  await toast.hover();
+  assert.equal((await toast.innerText()).trim(), "Accepted as S3");
+  assert.equal(await toast.getByRole("button").count(), 0, "an accepted Stage has no Undo");
   assert.deepEqual(writes.at(-1), { method: "POST", name: "/api/candidates/run-entrance-a/accept",
     body: { projectId: PROJECT, branchId: "main", expectedHeadStageRef: fixture.state.stages.find((row) => row.run === "run-s2-layout").ref } });
   const S3 = `stage:${fixture.state.branchHead}`;
@@ -416,6 +456,13 @@ try {
   checkTree(await scene(), [S0, "candidate:run-massing-c", S1, "candidate:run-facade-b", S2, "candidate:run-entrance-a", S3, "current"], { "study-massing": 4, "study-facade": 2 });
   assert.equal((await chip.innerText()).replace(/\s+/g, " ").trim(), "S3 — Current · 2 running");
   await shoot(tab, "09-accepted-s3");
+  if (shots) await inChinese("09a-accept-toast-zh");
+  // A toast stays while hovered (about 8 s otherwise), then fades once the pointer leaves.
+  await toast.hover();
+  await tab.waitForTimeout(9_000);
+  assert.equal(await toast.count(), 1, "hovering keeps the toast");
+  await tab.mouse.move(8, 8);
+  await toast.waitFor({ state: "detached", timeout: 6_000 });
 
   // The list shows the same nodes to the keyboard.
   await surface.getByRole("button", { name: "List", exact: true }).click();
@@ -516,7 +563,7 @@ try {
   assert.deepEqual(unexpected, [], "the tree reads only what it declares");
   assert.deepEqual(external, [], "no external request");
   assert.deepEqual(errors.filter((message) => !/Failed to load resource: the server responded with a status of 404/.test(message)), []);
-  console.log(JSON.stringify({ passed: "chip → tree, trunk, twigs, planar, three zoom levels, side card, review-open warning, View read-only, Continue re-roots via PUT /api/working-draft, Accept on Current only via POST accept, a rejected Current cannot be accepted, keyboard list, return to previous surface, zh copy, Hub rail entry and deep link",
+  console.log(JSON.stringify({ passed: "chip → tree, trunk, twigs, planar, three zoom levels, side card, review-open warning, View read-only, Continue re-roots via PUT /api/working-draft, its toast's Undo puts the previous Current back through the same PUT, Accept on Current only via POST accept with a toast and no Undo, a toast stays while hovered and then fades, no toast on refusal, a rejected Current cannot be accepted, keyboard list, return to previous surface, zh copy, Hub rail entry and deep link",
     writes: writes.map((row) => `${row.method} ${row.name}`) }));
 } catch (error) {
   console.error("FAILED:", error);

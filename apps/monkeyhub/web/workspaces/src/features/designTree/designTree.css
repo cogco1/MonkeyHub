@@ -26,6 +26,23 @@
 .stage-chip__viewing > span { overflow: hidden; text-overflow: ellipsis; }
 @media (max-width: 560px) { .stage-chip__attention { display: none; } }
 
+/* FN-5: the last act's confirmation, beside the chip; it fades on its own. */
+.design-tree-bar__notice { display: inline-flex; min-width: 0; }
+.design-tree-toast { display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: 100%; min-height: 28px; box-sizing: border-box;
+  padding: 3px 4px 3px 12px; border-radius: 999px; background: var(--ink); color: var(--ground); box-shadow: var(--shadow-soft); white-space: nowrap;
+  animation: design-tree-toast-in 160ms ease-out; transition: opacity 240ms ease; }
+.design-tree-toast:not(:has(.design-tree-toast__undo)) { padding-right: 12px; }
+.design-tree-toast[data-leaving] { opacity: 0; }
+.design-tree-toast[data-refused] { box-shadow: inset 0 0 0 2px var(--unchecked), var(--shadow-soft); }
+.design-tree-toast__text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.design-tree-toast__undo { flex: none; min-height: 22px; padding: 1px 10px; border: 0; border-radius: 999px; background: transparent; color: inherit;
+  font: inherit; font-weight: 650; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+.design-tree-toast__undo:hover:not(:disabled) { background: color-mix(in srgb, var(--ground) 16%, transparent); }
+.design-tree-toast__undo:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.design-tree-toast__undo:disabled { cursor: default; text-decoration: none; opacity: .75; }
+@keyframes design-tree-toast-in { from { opacity: 0; transform: translateY(-3px); } }
+@media (prefers-reduced-motion: reduce) { .design-tree-toast { animation: none; transition: none; } }
+
 .design-tree { position: relative; display: flex; flex-direction: column; height: 100%; min-height: 0; background: var(--ground); color: var(--ink);
   font-family: var(--font-ui); font-size: var(--text-ui, 13px); }
 .design-tree__head { display: flex; flex: none; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding: 8px 14px; border-bottom: 1px solid var(--line); background: var(--panel); }
@@ -73,7 +90,6 @@
 .design-tree-card__accept { display: grid; gap: 8px; }
 .design-tree-card__confirm { display: grid; gap: 8px; padding: 10px; border: 1px solid var(--accent); border-radius: 7px; background: var(--accent-soft); }
 .design-tree-card__confirm p { margin: 0; line-height: 1.55; }
-.design-tree-card__outcome { margin: 0; color: var(--held); font-size: var(--text-caption, 12px); }
 .design-tree-card__refusal { margin: 0; color: var(--violated); font-size: var(--text-caption, 12px); overflow-wrap: anywhere; }
 .design-tree-card__warning { margin: 0; color: var(--unchecked); font-size: var(--text-caption, 12px); line-height: 1.55; }
 .design-tree-card__warning > span { font-weight: 700; margin-inline-end: 2px; }
