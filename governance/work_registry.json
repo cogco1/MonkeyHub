@@ -158,11 +158,13 @@
       "id": "GH-284",
       "stream": "planning",
       "status": "active",
-      "goal": "Ship the first product Design Tree: a Stage chip in the project workspace header opens a growth tree of Stages, admitted Candidates and running Agent work on the canvas shared with MonkeyBoard, with View, Continue and Accept kept distinct.",
+      "goal": "Ship the first product Design Tree (状态树) as a project surface beside Modeling and Board: a rail entry and a Stage chip in the project workspace header open a growth tree of Stages, admitted Candidates and running Agent work on the canvas shared with MonkeyBoard, with View, Continue and Accept kept distinct.",
       "depends_on": [],
       "write_scope": [
+        "apps/monkeyhub/web/src/ChatShell.tsx",
         "apps/monkeyhub/web/src/i18n/messages.en.ts",
         "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
+        "apps/monkeyhub/web/test/chatShell.browser.mjs",
         "apps/monkeyhub/web/workspaces/src/app/ProjectWorkspace.tsx",
         "apps/monkeyhub/web/workspaces/src/features/canvas/",
         "apps/monkeyhub/web/workspaces/src/features/designTree/",
@@ -171,11 +173,13 @@
         "apps/monkeyhub/web/workspaces/src/workspaces/monkeyboard/boardNavigation.ts",
         "apps/monkeyhub/web/workspaces/test/designTree.browser.mjs",
         "apps/monkeyhub/web/workspaces/test/designTree.test.ts",
+        "docs/2026-09-25-candidate-graph-interaction.md",
+        "docs/WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.md",
         "docs/mapping/planning/GH-284-design-tree-ui.md"
       ],
       "card": "docs/mapping/planning/GH-284-design-tree-ui.md",
       "acceptance": [
-        "The Stage chip in the project workspace header shows the current Stage, position and attention counts and opens the Design Tree over the workspace; closing returns to the previous view.",
+        "The Design Tree is a project surface (view=tree) opened from the rail's third primary entry and from the Stage chip in the project workspace header, which shows the current Stage, position and attention counts; leaving it returns to the previous surface.",
         "The growth tree draws the Working Head's lineage as one continuous trunk and N-1 twigs per Study, shows running work as placeholders, has no crossings, switches between three semantic zoom levels and has a keyboard list of the same nodes.",
         "View is read-only; Continue moves the Working Head through PUT /api/working-draft; Accept as next Stage appears only on Current and uses POST /api/candidates/{id}/accept.",
         "MonkeyBoard runs on the shared canvas host with unchanged behaviour, and its browser regressions pass."
@@ -195,8 +199,10 @@
             "studio.board"
           ],
           "write_scope": [
+            "apps/monkeyhub/web/src/ChatShell.tsx",
             "apps/monkeyhub/web/src/i18n/messages.en.ts",
             "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
+            "apps/monkeyhub/web/test/chatShell.browser.mjs",
             "apps/monkeyhub/web/workspaces/src/app/ProjectWorkspace.tsx",
             "apps/monkeyhub/web/workspaces/src/features/canvas/",
             "apps/monkeyhub/web/workspaces/src/features/designTree/",
@@ -205,12 +211,18 @@
             "apps/monkeyhub/web/workspaces/src/workspaces/monkeyboard/boardNavigation.ts",
             "apps/monkeyhub/web/workspaces/test/designTree.browser.mjs",
             "apps/monkeyhub/web/workspaces/test/designTree.test.ts",
+            "docs/2026-09-25-candidate-graph-interaction.md",
+            "docs/WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.md",
             "docs/mapping/planning/GH-284-design-tree-ui.md"
           ],
           "depends_on": [],
           "status": "active",
           "blocked_reason": null
         }
+      ],
+      "notes": [
+        "2026-09-25: overlaps GH-66 on Board.tsx; canvas-host extraction only; coordinated by root task.",
+        "2026-09-25: owner decision relayed by the root task: the rail's primary surfaces are 建模, 画板 and 状态树, so the Design Tree is a surface with a rail entry; the Stage chip stays as the position indicator."
       ]
     },
     {
@@ -251,6 +263,7 @@
         "apps/archflow-studio/api/tests/test_representation_dependencies.py",
         "apps/monkeyhub/web/workspaces/src/api/publication.ts",
         "apps/monkeyhub/web/workspaces/src/workspaces/monkeyarch/viewer/renderView.ts",
+        "apps/monkeyhub/web/workspaces/src/workspaces/monkeyboard/Board.tsx",
         "apps/monkeyhub/web/workspaces/src/workspaces/monkeydiagram/DrawingDressing.tsx",
         "apps/monkeyhub/web/workspaces/src/workspaces/publish/PublishWorkspace.tsx",
         "apps/monkeyhub/web/workspaces/src/workspaces/publish/publish.css",
@@ -273,8 +286,7 @@
       ],
       "notes": [
         "2026-09-24: #273 merged the GH-66 integration. On the repository owner's instruction the Drawing, Render, Hub and shared client paths it also claimed are handed to GH-271 (#271, Working Head); GH-66 keeps its Publish paths and the broader #66 acceptance.",
-        "2026-09-25: the cut-plan request DTO (transport/drawings.py) is handed to GH-271 as well, for the drawing follow choice found in the #277 review; GH-66 keeps its Publish paths.",
-        "2026-09-25: GH-66's Board.tsx change is merged (#273, 2395f8fa) and its lane checkout is clean, so the file moves to GH-284/design-tree-ui, which puts MonkeyBoard on the shared canvas host. GH-66 keeps its Publish paths and the broader #66 acceptance."
+        "2026-09-25: the cut-plan request DTO (transport/drawings.py) is handed to GH-271 as well, for the drawing follow choice found in the #277 review; GH-66 keeps its Publish paths."
       ]
     }
   ]
