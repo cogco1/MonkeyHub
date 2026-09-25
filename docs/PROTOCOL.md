@@ -1129,9 +1129,15 @@ without a run (`422`). The schema tool hides the bound fields, and the Continue 
 `projectId`, `revisionSha256` and `current`. The Hub prompt asks for one admission per completed
 loop: a declared Study for several alternatives, each result's superseded attempts, no
 intermediate runs, and a rejection or Continue only on the user's own words.
-Drawing/copy work explicitly selects `decisionContext.domain` on the existing
-context read; the prepared default remains design. Full applicable decision
-slices pass through, while revoked, deferred or inapplicable records do not.
+The prepared default reads design and drawing decisions together, so the Agent is
+handed the same project recipe a new drawing starts from: a drawing decision
+whose `typedBinding` is `{"kind": "recipe", "graphics": {…}}` over the closed
+paper-space keys `cutLineMm`, `visibleLineMm` and `hatchSpacingMm`. Copy work,
+or a turn that wants one domain alone, selects `decisionContext.domain` on the
+existing context read. Full applicable decision slices pass through, while
+revoked, deferred or inapplicable records do not. Chat feedback cannot retain a
+recipe: the Runtime keeps one only for a person's confirmed `require`
+(`sourceKind=human`), and the chat saves `avoid`/`keep` as `agent`.
 
 `contextMode` defaults to `continue`, preserving native conversation continuity. Explicit
 `project` requires `designContext`; after that source read succeeds, Hub starts a new native
