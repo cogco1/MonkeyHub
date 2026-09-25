@@ -9,17 +9,11 @@
       "goal": "Propose the Hub-level interaction architecture for the expanded workspace set from the recorded UI audit; the audit and the view-base fixes are delivered.",
       "depends_on": [],
       "write_scope": [
-        "docs/2026-09-24-monkeyhub-interaction-proposal.md",
         "docs/mapping/planning/GH-234-hub-ui-round.md",
         "docs/2026-09-24-monkeyhub-ui-reality-audit.md",
         "apps/archflow-studio/api/archflow_studio_api/application/working_draft.py",
         "apps/monkeyhub/web/workspaces/test/candidatePreview.browser.mjs",
-        "apps/archflow-studio/README.md",
-        "archflow/project/repository.py",
-        "archflow/project/ports.py",
-        "apps/monkeyhub/api/monkeyhub_api/runtime.py",
-        "apps/monkeyhub/api/tests/test_working_draft_cleanup.py",
-        "apps/monkeyhub/README.md"
+        "apps/archflow-studio/README.md"
       ],
       "card": "docs/mapping/planning/GH-234-hub-ui-round.md",
       "acceptance": [
@@ -48,25 +42,6 @@
           "blocked_reason": null
         },
         {
-          "id": "interaction-proposal",
-          "issue": "https://github.com/cogco1/MonkeyHub/issues/234",
-          "branch": "codex/234-interaction-proposal",
-          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-234-interaction-proposal",
-          "base_ref": "33bae5ce",
-          "contributor": "Claude (separate session)",
-          "reviewer": "Claude root task",
-          "handoff": "Separate session writes the interaction proposal; root task codex/234-ui-round integrates; the user reviews before any push.",
-          "modules": [
-            "hub.shell"
-          ],
-          "write_scope": [
-            "docs/2026-09-24-monkeyhub-interaction-proposal.md"
-          ],
-          "depends_on": [],
-          "status": "active",
-          "blocked_reason": null
-        },
-        {
           "id": "working-draft-position",
           "issue": "https://github.com/cogco1/MonkeyHub/issues/234",
           "branch": "codex/234-working-draft-position",
@@ -83,30 +58,6 @@
             "apps/archflow-studio/api/archflow_studio_api/application/working_draft.py",
             "apps/monkeyhub/web/workspaces/test/candidatePreview.browser.mjs",
             "apps/archflow-studio/README.md"
-          ],
-          "depends_on": [],
-          "status": "active",
-          "blocked_reason": null
-        },
-        {
-          "id": "candidate-retention",
-          "issue": "https://github.com/cogco1/MonkeyHub/issues/234",
-          "branch": "codex/234-candidate-retention",
-          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-234-candidate-retention",
-          "base_ref": "baabea02",
-          "contributor": "Claude",
-          "reviewer": "Claude root task",
-          "handoff": "Q3: unreferenced candidates are no longer deleted automatically; they stay until explicitly rejected or archived. Root task codex/234-ui-round integrates.",
-          "modules": [
-            "project.repository",
-            "hub.shell"
-          ],
-          "write_scope": [
-            "archflow/project/repository.py",
-            "archflow/project/ports.py",
-            "apps/monkeyhub/api/monkeyhub_api/runtime.py",
-            "apps/monkeyhub/api/tests/test_working_draft_cleanup.py",
-            "apps/monkeyhub/README.md"
           ],
           "depends_on": [],
           "status": "active",
