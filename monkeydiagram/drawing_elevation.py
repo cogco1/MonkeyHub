@@ -605,9 +605,10 @@ def _revision_provenance(attribution, reason) -> dict[str, Any]:
     ``attribution`` is a flat mapping of JSON values, such as the Studio's
     ``{"actorId", "authenticated", "origin"}``, or a dataclass of them, whose
     field names are then written in camelCase.  ``reason`` is the words the
-    revision was asked with.  Neither is interpreted here.  What is not
-    given is not written, so an earlier receipt and a revision without them
-    both read as None.
+    revision was asked with.  Neither is interpreted here, but both must be
+    text a receipt can hold, so a refusal comes before any file is written.
+    What is not given is not written, so an earlier receipt and a revision
+    without them both read as None.
     """
 
     provenance: dict[str, Any] = {}
@@ -627,6 +628,13 @@ def _revision_provenance(attribution, reason) -> dict[str, Any]:
             raise DrawingElevationError("reason must be text")
         if reason.strip():
             provenance["reason"] = reason
+    texts = [reason or "", *(key for key in provenance.get("attribution", {})),
+             *(value for value in provenance.get("attribution", {}).values() if isinstance(value, str))]
+    try:
+        for text in texts:
+            text.encode("utf-8")
+    except UnicodeEncodeError as exc:
+        raise DrawingElevationError("attribution and reason must be text a receipt can hold") from exc
     return provenance
 
 

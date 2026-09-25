@@ -117,6 +117,32 @@ class CleanupTests(unittest.TestCase):
         self.assertIn(_line("footing", "hidden", (1.2, 2.5), (1.8, 2.5)), without_regions)
         self.assertEqual(clean_drawing((), (), tolerance=self.tolerance), ((), CleanupReport(0.005, 0, 0, 0, 0, 0, 0, 0)))
 
+    def test_cleanup_keeps_faceted_curves_and_judges_hidden_lines_along_their_length(self) -> None:
+        # A 60 mm rail returned as 48 edges of 3.9 mm is one 188 mm stroke: every facet stays at 1:100.
+        corner = lambda i: (8 + 0.03 * math.cos(2 * math.pi * i / 48), 8 + 0.03 * math.sin(2 * math.pi * i / 48))  # noqa: E731
+        rail = tuple(_line("rail", "visible", corner(i), corner(i + 1)) for i in range(48))
+        # A 3 mm stub standing against the middle of a wall line is a speck.
+        wall, stub = _line("wall", "visible", (0, 0), (4, 0)), _line("wall", "visible", (2, 0), (2, 0.003))
+        # Hidden lines of 4 mm segments: far from the cut they stay, inside the cut material they go.
+        far = _line("pipe", "hidden", *[(10 + 0.004 * i, 10) for i in range(40)])
+        under = _line("footing", "hidden", *[(1 + 0.004 * i, 2.5) for i in range(40)])
+        # An edge 4 mm off the cut goes with the cut; its 3 mm tail, left standing alone, is a speck next pass.
+        edge, tail = _line("slab", "visible", (0, 1.996), (4, 1.996)), _line("slab", "visible", (4, 1.996), (4, 1.993))
+        section = _line("slab", "section", (0, 2), (4, 2), (4, 3), (0, 3), (0, 2))
+        lines = rail + (wall, stub, far, under, edge, tail, section)
+        cleaned, report = clean_drawing(lines, self.regions, tolerance=self.tolerance)
+        self.assertEqual(cleaned, tuple(sorted(rail + (wall, far, section),
+                                               key=lambda line: (line.object_id, line.kind, line.points))))
+        self.assertEqual(report, CleanupReport(0.005, 55, 51, micro=2, collinear=0, cut_precedence=1, duplicate=0,
+                                               hidden_under_cut=1))
+        self.assertEqual(clean_drawing(cleaned, self.regions, tolerance=self.tolerance),
+                         (cleaned, CleanupReport(0.005, 51, 51, 0, 0, 0, 0, 0)))
+        # A region with no loops holds no material and hides nothing; a line of no length is a speck wherever it is.
+        self.assertEqual(clean_drawing((far,), (OcctDrawingRegion("empty", ()),), tolerance=self.tolerance)[0], (far,))
+        dot = _line("wall", "visible", (4, 0), (4, 0))
+        self.assertEqual(clean_drawing((wall, dot), (), tolerance=self.tolerance),
+                         ((wall,), CleanupReport(0.005, 2, 1, 1, 0, 0, 0, 0)))
+
     def test_cleanup_refuses_what_it_cannot_clean(self) -> None:
         for tolerance in (0, -1, float("nan"), True, "5"):
             with self.subTest(tolerance=tolerance), self.assertRaises(DrawingSvgError):
@@ -202,6 +228,12 @@ class SvgTests(unittest.TestCase):
                                          hidden_lines=True, title="test elevation", semantics=none), self.render(True))
         self.assertNotIn(b"data-component", self.render(True))
         self.assertNotIn(b"data-material", self.render(True))
+        # User text XML cannot carry is written as U+FFFD: the SVG stays well formed and drawable.
+        odd = drawing_svg(self.lines, crop_uv=(-1, -1, 5, 4), unit="meter", scale_denominator=100, hidden_lines=False,
+                          title="odd", semantics={"wall": {"component": "wall\x01north", "material": "brick\ud800"}})
+        line = ElementTree.fromstring(odd).find(f".//{SVG}polyline")
+        self.assertEqual((line.get("data-component"), line.get("data-material")), ("wall�north", "brick�"))
+        self.assertTrue(render_svg_png(odd).startswith(b"\x89PNG"))
 
 
 class PngTests(unittest.TestCase):
@@ -394,6 +426,24 @@ class CutPlanSvgTests(unittest.TestCase):
         with Image.open(BytesIO(render_svg_png(ElementTree.tostring(root), dots_per_inch=254))) as bare:
             self.assertEqual(bare.getpixel((625, 300)), 255)
 
+    def test_poche_is_clipped_to_the_window_like_every_line(self):
+        from PIL import Image
+
+        # A concrete L running out of the window to the right and below it.
+        points = ((1, -2), (6, -2), (6, 1), (3, 1), (3, 3), (1, 3))
+        region = OcctDrawingRegion("slab", (tuple((float(x), float(y)) for x, y in points + points[:1]),))
+        svg = drawing_svg((), crop_uv=(0, 0, 4, 4), unit="meter", scale_denominator=100, hidden_lines=False, title="clip",
+                          regions=(region,), semantics={"slab": {"material": "concrete"}},
+                          graphics={**self.graphics, "hatch": {"byMaterial": {"concrete": {"poche": True}}}})
+        (poche,) = ElementTree.fromstring(svg).findall(f".//{SVG}polygon")
+        # Back to the drawing frame (v = 4 - y): the L as the window cuts it, nothing outside it.
+        corners = [(float(x), 4 - float(y)) for x, y in (pair.split(",") for pair in poche.get("points").split())]
+        self.assertEqual(corners, [(1.0, 0.0), (4.0, 0.0), (4.0, 1.0), (3.0, 1.0), (3.0, 3.0), (1.0, 3.0)])
+        with Image.open(BytesIO(render_svg_png(svg, dots_per_inch=254))) as image:
+            pixel = lambda u, v: image.getpixel((round(u * 100), round((4 - v) * 100)))  # noqa: E731
+            self.assertEqual((pixel(2, 0.5), pixel(3.9, 0.5), pixel(2, 2.5)), (0, 0, 0))
+            self.assertEqual((pixel(3.5, 2), pixel(2, 3.5)), (255, 255))
+
     def test_beyond_fade_greys_what_lies_beyond_the_cut_in_svg_and_png(self):
         from PIL import Image
 
@@ -414,6 +464,11 @@ class CutPlanSvgTests(unittest.TestCase):
         self.assertEqual(render(beyond={"fade": 0}), render())
         self.assertEqual(ElementTree.fromstring(render(beyond={"fade": 1})).find(f"{SVG}g[@id='visible']").get("stroke"),
                          "#ffffff")
+        # Hidden lines lie beyond the cut too: they fade with the visible ones, still dashed.
+        hidden = drawing_svg(lines + (_line("footing", "hidden", (0, 1.5), (4, 1.5)),), crop_uv=(0, 0, 4, 2), unit="meter",
+                             scale_denominator=100, hidden_lines=True, title="t", graphics={**graphics, "beyond": {"fade": 0.5}})
+        group = ElementTree.fromstring(hidden).find(f"{SVG}g[@id='hidden']")
+        self.assertEqual((group.get("stroke"), group.get("stroke-dasharray")), ("#808080", "0.2000 0.1000"))
         for beyond in ({"fade": -0.1}, {"fade": 1.5}, {"fade": True}, {"fade": "half"}, {"opacity": 0.5}, 0.5):
             with self.subTest(beyond=beyond), self.assertRaises(DrawingSvgError):
                 render(beyond=beyond)

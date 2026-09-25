@@ -533,7 +533,9 @@ class CutPlanTests(unittest.TestCase):
         self.assertEqual((third.attribution, third.reason),
                          ({"actorId": "kaiwen", "authenticated": True, "origin": "studio"}, None))
         for attribution, reason in (("local", None), ({}, None), ({"actor": {"id": "local"}}, None),
-                                    ({"weight": float("nan")}, None), ({1: "local"}, None), (None, 7)):
+                                    ({"weight": float("nan")}, None), ({1: "local"}, None), (None, 7),
+                                    # Text a receipt cannot hold is refused before a file is written, not after.
+                                    (None, "hatch \ud800"), ({"actorId": "\udfff"}, None)):
             with self.subTest(attribution=attribution, reason=reason), self.assertRaises(DrawingElevationError):
                 freeze_cut_plan(self.repository, source=self.source, recipe=self.recipe, drawing_run_id="refused-plan",
                                 dimensions=(self.dimension,), attribution=attribution, reason=reason)
