@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type CSS
 import type { AppearancePreferences } from "../../../shared-web/src/appearance.js";
 import type { AppStatus, ApplicationSettingsDto } from "./api/generated";
 import {
-  aggregateTokens, formatCount, formatDuration, isModelCall, uncachedInput, projectIds, summarizeUsage, quoteDraftReducer,
+  aggregateTokens, formatCount, formatDuration, isModelCall, uncachedInput, projectIds, summarizeUsage, quoteDraftReducer, serialMonitorRead,
   type MonitorEvent, type MonitorTrace,
 } from "./monitorData";
 import "./MonitorPage.css";
@@ -143,13 +143,14 @@ export function MonitorPage({ preferences, active }: Props) {
       const monitorBase = baseRef.current ?? await ensureService();
       setBase(monitorBase);
       const [diagnostics, rateResult, sourceResult] = await Promise.all([
-        (async () => {
-          // These two views read the same rotation-protected journal. Parallel
-          // reads contend on its process lock and turn every refresh into 503.
+        // These two views read the same rotation-protected journal. Parallel
+        // reads contend on its process lock and turn every refresh into 503;
+        // the sidebar's usage figure (#300) takes its turn in the same queue.
+        serialMonitorRead(async () => {
           const eventResult = await jsonRequest<EventResponse>(`${monitorBase}/api/events`);
           const traceResult = await jsonRequest<TraceResponse>(`${monitorBase}/api/traces`);
           return { eventResult, traceResult };
-        })(),
+        }),
         jsonRequest<Rates>(`${monitorBase}/api/rates`),
         includeSources ? jsonRequest<SourceResponse>(`${monitorBase}/api/sources/codex`) : null,
       ]);
