@@ -18,7 +18,7 @@
 .chat-project{margin:6px 0 14px}.chat-project__name{display:flex;align-items:center;gap:9px;width:100%;border:0;border-radius:7px;background:transparent;text-align:left;min-height:40px;padding:8px 11px;cursor:pointer;font-size:var(--text-ui);font-weight:600}
 .chat-project__name span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.chat-project__name svg{width:17px;height:17px;color:var(--muted)}
 .chat-thread{width:100%;min-height:38px;display:flex;align-items:center;gap:8px;border:0;border-radius:7px;background:transparent;padding:8px 10px 8px 22px;text-align:left;cursor:pointer;font-size:var(--text-ui);color:var(--muted)}
-.chat-thread>span:last-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.chat-thread:hover{background:var(--panel-2);color:var(--ink)}.chat-thread[aria-current=page]{background:var(--panel-2);color:var(--ink);font-weight:500}
+.chat-thread__title{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.chat-thread:hover{background:var(--panel-2);color:var(--ink)}.chat-thread[aria-current=page]{background:var(--panel-2);color:var(--ink);font-weight:500}
 .chat-thread-row{display:flex;align-items:center;gap:2px}.chat-thread-row .chat-thread{flex:1;min-width:0}.chat-thread-action{width:32px;min-width:32px;height:34px;padding:8px}.chat-thread-action svg{width:15px;height:15px}.chat-thread-action:disabled{opacity:.35;cursor:default}.chat-archive-toggle[aria-pressed=true]{background:var(--panel-2);color:var(--ink)}
 .chat-archived-notice{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;padding:14px 16px;border:1px solid var(--line);border-radius:12px;background:var(--panel-2)}.chat-archived-notice p{flex:1;min-width:180px;color:var(--muted);font-size:var(--text-caption);line-height:1.7}.chat-archived-notice .chat-activity__open{flex:none}
 .chat-external-badge{display:inline-block;margin-left:8px;padding:1px 5px;border:1px solid var(--line);border-radius:4px;font-size:var(--text-caption);line-height:1.5;font-weight:400;color:var(--muted);vertical-align:middle}.chat-external-notice{padding:12px 16px;border:1px solid var(--line);border-radius:12px;background:var(--panel-2);font-size:var(--text-caption);line-height:1.7}.chat-external-notice strong{font-weight:500}.chat-external-notice p{color:var(--muted);margin-top:4px}
@@ -178,6 +178,13 @@
 .chat-shell .chat-topic__remove svg{width:13px;height:13px}
 .chat-topic-refusal{margin:0 2px 8px}.chat-topic-refusal>.chat-muted{margin:0}
 @media(max-width:900px){.chat-composer-menu__item{min-height:44px}.chat-topic__remove{width:32px;height:32px}}
+
+/* GH-300 FN-2: a conversation waiting on the architect's permission says so in words and colour;
+   its project row carries a smaller mark in the badge family, in place of Running. */
+.chat-needs{flex:none;margin-left:auto;padding:0 8px;border-radius:999px;background:var(--accent);color:var(--accent-ink);font-size:var(--text-caption);font-weight:600;line-height:20px;white-space:nowrap}
+.chat-thread-row[data-attention=permission] .chat-thread{color:var(--ink)}
+.chat-project__badge[data-kind=needs]{display:inline-flex;align-items:center;gap:5px;border-color:color-mix(in srgb,var(--accent) 60%,transparent);color:var(--accent);font-weight:600}
+.chat-project__badge[data-kind=needs]::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--accent)}
 
 /* GH-58: why an operation that needs recovery can still be dismissed. */
 .chat-runtime__note{color:var(--muted);font-size:var(--text-caption)}

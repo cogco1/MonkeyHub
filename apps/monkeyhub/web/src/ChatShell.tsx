@@ -80,14 +80,18 @@ const composerWords = {
   },
 } as const;
 /**
- * GH-300 (batch F): an operation that cannot be recovered. Local for the same reason
- * as composerWords.
+ * GH-300 (batch F): the sidebar's needs-you marks and an operation that cannot be
+ * recovered. Local for the same reason as composerWords.
  */
 const shellWords = {
   "zh-CN": {
+    needsYou: "需要你", needsYouThread: "需要你的授权",
+    needsYouProject: (count: number) => `${count} 个对话需要你`,
     operationUnrecoverable: "无法自动恢复",
   },
   en: {
+    needsYou: "Needs you", needsYouThread: "Needs your permission",
+    needsYouProject: (count: number) => count === 1 ? "1 chat needs you" : `${count} chats need you`,
     operationUnrecoverable: "Cannot be recovered automatically",
   },
 } as const;
@@ -1242,12 +1246,19 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
         <div className="chat-project-label"><span>{archivedView ? t.archivedChats : t.projects}</span><button className="chat-icon" aria-label={t.addExisting} title={t.addExisting} onClick={() => { setDialogError(null); addDialog.current?.showModal(); }}><Icon name="plus" /></button></div>
         {!projects.length && <p className="chat-muted chat-project-empty">{loading ? t.loading : t.emptyProjects}</p>}
         {archivedView && !visibleSessions.length && <p className="chat-muted chat-project-empty">{t.archiveEmpty}</p>}
-        {projects.filter((item) => !archivedView || visibleSessions.some((session) => session.projectDir === item.projectDir)).map((item) => <section className="chat-project" key={item.projectDir} data-selected={item.projectDir === projectDir}>
+        {projects.filter((item) => !archivedView || visibleSessions.some((session) => session.projectDir === item.projectDir)).map((item) => {
+          const threads = visibleSessions.filter((session) => session.projectDir === item.projectDir);
+          // FN-2: conversations whose turn waits on the architect's permission; the project row carries their count.
+          const waiting = threads.filter((session) => session.attention === "permission").length;
+          const working = busyProjects.get(item.projectDir);
+          return <section className="chat-project" key={item.projectDir} data-selected={item.projectDir === projectDir} data-attention={waiting ? "permission" : undefined}>
           <div className="chat-project__head">
             <button className="chat-project__name" title={item.projectDir} onClick={() => selectProject(item)}
-              aria-description={busyProjects.get(item.projectDir) ? t.projectBusy(busyProjects.get(item.projectDir)!) : undefined}><Icon name="folder" /><span>{item.name}</span></button>
+              aria-description={[working ? t.projectBusy(working) : null, waiting ? s.needsYouProject(waiting) : null].filter(Boolean).join(" · ") || undefined}><Icon name="folder" /><span>{item.name}</span></button>
+            {/* A turn waiting on the architect is not running for them: its mark stands in for Running. */}
+            {waiting > 0 && <span className="chat-project__badge" data-kind="needs" aria-hidden="true">{s.needsYou}</span>}
             {/* #300: a small badge while the project has work running or waiting, on the project's own line. */}
-            {busyProjects.has(item.projectDir) && <span className="chat-project__badge" data-kind="running" aria-hidden="true">{t.projectBusyBadge}</span>}
+            {!waiting && working !== undefined && <span className="chat-project__badge" data-kind="running" aria-hidden="true">{t.projectBusyBadge}</span>}
             {/* #300 hook: the "N new" schemes badge, drawn from #294's admission data (S1–S2);
                 newSchemes() answers null until the runtime reports it, so no number is guessed. */}
             {(() => {
@@ -1255,16 +1266,23 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
               return count ? <span className="chat-project__badge" data-kind="new">{t.projectNewSchemes(count)}</span> : null;
             })()}
           </div>
-          {visibleSessions.filter((session) => session.projectDir === item.projectDir).map((session) => <div key={session.id} className="chat-thread-row">
-            <button className="chat-thread" aria-current={session.id === chatId ? "page" : undefined} onClick={() => selectChat(session)} title={session.title}>
-              <span className="chat-thread__dot" data-status={session.status} /><span>{session.title}{session.sourceSessionId && <small className="chat-external-badge">{t.externalChat}</small>}</span>
+          {threads.map((session) => {
+            const needsYou = session.attention === "permission";
+            return <div key={session.id} className="chat-thread-row" data-attention={needsYou ? "permission" : undefined}>
+            <button className="chat-thread" aria-current={session.id === chatId ? "page" : undefined} onClick={() => selectChat(session)} title={session.title}
+              aria-description={needsYou ? s.needsYouThread : undefined}>
+              <span className="chat-thread__dot" data-status={session.status} /><span className="chat-thread__title">{session.title}{session.sourceSessionId && <small className="chat-external-badge">{t.externalChat}</small>}</span>
+              {/* FN-2: text and colour, not colour alone; the row's description says it to a screen reader. */}
+              {needsYou && <span className="chat-needs" aria-hidden="true">{s.needsYou}</span>}
             </button>
             <button className="chat-icon chat-thread-action" aria-label={`${session.archived ? t.restore : t.archive}: ${session.title}`}
               title={session.status === "running" ? t.archiveRunning : session.archived ? t.restore : t.archive}
               disabled={session.status === "running" || busy || modelBusy || archiveBusy !== null}
               onClick={() => void setArchived(session, !session.archived)}><Icon name={session.archived ? "restore" : "archive"} /></button>
-          </div>)}
-        </section>)}
+          </div>;
+          })}
+        </section>;
+        })}
       </div>
       <div className="chat-sidebar__footer">
         {/* #300: the last seven days of model usage, as MonkeyMonitor recorded it. */}

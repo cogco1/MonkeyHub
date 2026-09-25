@@ -153,12 +153,14 @@ const appsFor = (target) => {
   if (!projectApps.has(target)) projectApps.set(target, apps.map((app) => app.serviceId === "studio" ? { ...app, state: "stopped", processId: null, url: null, apiUrl: null } : app));
   return projectApps.get(target);
 };
+// #300: a summary says whether its conversation waits on the architect, read from its transcript as the Hub does.
+const summaryOf = (session) => ({ ...session, attention: session.messages?.some((message) => message.permission) ? "permission" : null });
 const runtimeSnapshot = () => ({ serverId: "fixture-hub", sequence: runtimeSequence, workers: [], projects: [...runtimes.values()].map((runtime) => {
   const app = appsFor(runtime.projectDir).find((app) => app.appId === "monkeyarch");
   return { ...runtime, workers: app.processId || app.state === "error" ? [{ workerId: runtime.runtimeId, serviceId: "studio", projectId: runtime.projectId,
     projectDir: runtime.projectDir, instanceId: `instance-${app.processId}`, processId: app.processId, desiredState: "running", healthy: app.state === "running",
     state: app.state === "error" ? "crashed" : app.state === "running" ? "ready" : app.state, url: app.apiUrl ?? app.url, error: app.error ?? null }] : [],
-    sessions: sessions.filter((session) => session.projectId === runtime.projectId) };
+    sessions: sessions.filter((session) => session.projectId === runtime.projectId).map(summaryOf) };
 }) });
 page.on("pageerror", (error) => errors.push(error.message));
 await page.route((url) => url.pathname.startsWith("/api/"), async (route) => {
@@ -344,7 +346,7 @@ await page.route((url) => url.pathname.startsWith("/api/"), async (route) => {
     projects.push(made); return json(made, 201);
   }
   if (url.pathname === "/api/chat/sessions") {
-    if (method === "GET") return json(sessions.filter((session) => Boolean(session.archived) === (url.searchParams.get("archived") === "true")));
+    if (method === "GET") return json(sessions.filter((session) => Boolean(session.archived) === (url.searchParams.get("archived") === "true")).map(summaryOf));
     const body = data();
     if (body.projectDir === chatCreationFailureFor) return json({ code: "CHAT_PROVIDER_UNAVAILABLE", detail: "The CLI connection is temporarily unavailable." }, 503);
     let project = projects.find((item) => item.projectDir === body.projectDir);
@@ -940,6 +942,18 @@ try {
   await choices.waitFor();
   assert.deepEqual(await choices.getByRole("button").allInnerTexts(), ["Allow once", "Reject", "Cancel"]);
   assert.equal(permissionWrites().length, 0, "rendering a permission never agrees to it");
+  // FN-2: the waiting conversation's row says so in words and colour; its project row carries a smaller
+  // mark in place of Running. Both are on buttons a keyboard reaches, whose descriptions say it aloud.
+  const waitingThread = page.locator(".chat-thread-row").filter({ hasText: "Widen the courtyard" });
+  await waitingThread.locator(".chat-needs").filter({ hasText: /^Needs you$/ }).waitFor();
+  assert.equal(await waitingThread.locator(".chat-thread").getAttribute("aria-description"), "Needs your permission");
+  const projectAHead = page.locator(".chat-project__head").filter({ has: page.getByRole("button", { name: "Project A", exact: true }) });
+  assert.equal(await projectAHead.locator('.chat-project__badge[data-kind="needs"]').innerText(), "Needs you");
+  assert.equal(await projectAHead.locator('.chat-project__badge[data-kind="running"]').count(), 0, "the mark stands in for Running");
+  assert.match(await projectAHead.getByRole("button", { name: "Project A", exact: true }).getAttribute("aria-description"), /1 chat needs you$/);
+  await waitingThread.locator(".chat-thread").focus();
+  assert.equal(await page.evaluate(() => document.activeElement?.getAttribute("aria-description")), "Needs your permission");
+  assert.equal(await page.locator(".chat-thread-row[data-attention]").count(), 1, "only the conversation that asked is marked");
   await page.screenshot({ path: path.join(temporary, "permission-pending.png") });
   let releasePermission;
   permissionResponseGate = new Promise((resolve) => { releasePermission = resolve; });
@@ -952,6 +966,9 @@ try {
   releasePermission();
   await choices.waitFor({ state: "hidden" });
   permissionResponseGate = Promise.resolve();
+  // Answered, the marks leave with the request.
+  await waitingThread.locator(".chat-needs").waitFor({ state: "detached" });
+  await projectAHead.locator('.chat-project__badge[data-kind="needs"]').waitFor({ state: "detached" });
 
   pendingActivity.permission = { ...permission, id: "permission-cancel" };
   emitRuntime();
@@ -2597,6 +2614,30 @@ try {
   await page.locator(".chat-main").screenshot({ path: path.join(temporary, "operation-unrecoverable-zh.png") });
   await notice.getByRole("button", { name: "知道了", exact: true }).click();
   await notice.waitFor({ state: "detached" });
+
+  // FN-2: a conversation waiting on the architect's permission is marked 需要你 in words and colour,
+  // and its project row carries the smaller mark.
+  const shownChatId = new URL(page.url()).searchParams.get("chatId");
+  const waitingChat = sessions.find((row) => row.projectId === "T" && row.id !== shownChatId && !row.archived);
+  waitingChat.status = "running";
+  waitingChat.messages.push({ id: "needs-you-permission", role: "tool", status: "streaming", content: "studio_request · POST /api/proposals · in_progress",
+    permission: { id: "permission-needs-you", title: "允许修改模型？", options: [{ optionId: "allow", name: "允许一次", kind: "allow_once" }] } });
+  emitRuntime();
+  const waitingRowZh = page.locator(".chat-thread-row").filter({ hasText: waitingChat.title });
+  await waitingRowZh.locator(".chat-needs").filter({ hasText: /^需要你$/ }).waitFor();
+  assert.equal(await waitingRowZh.locator(".chat-thread").getAttribute("aria-description"), "需要你的授权");
+  const treeHead = page.locator(".chat-project__head").filter({ has: page.getByRole("button", { name: "Tree project", exact: true }) });
+  assert.equal(await treeHead.locator('.chat-project__badge[data-kind="needs"]').innerText(), "需要你");
+  assert.match(await treeHead.getByRole("button", { name: "Tree project", exact: true }).getAttribute("aria-description"), /1 个对话需要你$/);
+  // The notice layer announces the same moment; it is only waited for here, for the picture.
+  await page.locator('.attention-toast[data-kind="permission"]').waitFor({ timeout: 6000 }).catch(() => {});
+  await treeHead.scrollIntoViewIfNeeded();
+  await page.screenshot({ path: path.join(temporary, "needs-you-zh-1440.png") });
+  waitingChat.messages.at(-1).permission = null; waitingChat.status = "idle";
+  emitRuntime();
+  await waitingRowZh.locator(".chat-needs").waitFor({ state: "detached" });
+  await treeHead.locator('.chat-project__badge[data-kind="needs"]').waitFor({ state: "detached" });
+  await page.locator(".attention-toast").waitFor({ state: "detached", timeout: 10000 }).catch(() => {});
   await page.getByRole("button", { name: "Hub 设置", exact: true }).click();
   await page.locator("#language").selectOption("en");
   await page.getByRole("dialog").getByRole("button", { name: "Close", exact: true }).click();
