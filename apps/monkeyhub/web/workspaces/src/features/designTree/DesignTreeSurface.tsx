@@ -66,7 +66,8 @@ export default function DesignTreeSurface({ data, markSeen, active, returnTo, on
   const view = (target: TreeNode) => {
     if (!target.runId) return;
     if (target.kind === "candidate") markSeen(target.runId);
-    onView({ runId: target.runId, name: words.title(target), back: false });
+    // The node goes with the view: the chip's Continue from here continues exactly it (R2).
+    onView({ runId: target.runId, name: words.title(target), back: false, node: target.id });
   };
   const back = t("designTree.back", { surface: t(`designTree.surface.${returnTo}` as MessageKey) });
 

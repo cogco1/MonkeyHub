@@ -19,3 +19,34 @@
   flex-wrap: wrap;
   gap: 6px;
 }
+
+/* SS-5: Record carries its name beside the icon, so it never reads as reload.
+   styles.css is scoped to .project-workspace and wins a specificity tie, so
+   these selectors are one class stronger than the rules they adjust. */
+.viewtools button.model-tool-button.model-tool-button--labelled {
+  gap: 6px;
+  width: auto;
+  padding: 0 12px 0 9px;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.model-tool-button__label {
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* A Record error with nothing left to record keeps its line, not an empty group. */
+.viewtools.model-tools .model-tools__group.model-tools__sync--status-only {
+  margin-left: 0;
+  padding: 0;
+  border-left: 0;
+}
+
+/* R14: how long the loading overlay has waited, quieter than the caller's status.
+   Without this sheet the line keeps the status style it is built on. */
+.boot__status.boot__elapsed {
+  margin-top: 2px;
+  color: var(--faint);
+  font-variant-numeric: tabular-nums;
+}

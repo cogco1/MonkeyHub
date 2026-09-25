@@ -1,18 +1,18 @@
 import "../workspaces/src/styles.css";
 import { ErrorBoundary } from "../workspaces/src/app/ErrorBoundary";
-import { Fragment, lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from "react";
+import { Fragment, lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
 import { applicationUrl, type AppearancePreferences } from "../../../shared-web/src/appearance.js";
 import type { WorktreeGraphDto } from "../workspaces/src/api/generated";
 import { projectStatus } from "./worktreeGraph";
-import type { AppStatus, ChatArchiveRequest, ChatCreateRequest, ChatDetail, ChatMessage, ChatPostRequest, ChatProject, ChatProvider, ChatSummary, ChatWorkspace, HubError, HubRuntimeDto, ProjectArchiveExportRequest, ProjectArchiveRestoreRequest, ProjectArchiveRestoreResult, ProjectArchiveSummary, ProjectRuntimeDto, RuntimeEvent, UpdateStatus } from "./api/generated";
+import type { AppStatus, ChatArchiveRequest, ChatCreateRequest, ChatDetail, ChatMessage, ChatPostRequest, ChatProject, ChatProvider, ChatSummary, ChatWorkspace, HubError, HubRuntimeDto, OperationRecord, ProjectArchiveExportRequest, ProjectArchiveRestoreRequest, ProjectArchiveRestoreResult, ProjectArchiveSummary, ProjectRuntimeDto, RuntimeEvent, UpdateStatus } from "./api/generated";
 import { ProjectRuntimeProvider } from "../workspaces/src/api/ProjectRuntimeContext";
-import type { WorkspaceDesignContext } from "../workspaces/src/app/ProjectWorkspace";
+import type { WorkspaceDesignContext, WorkspacePosition } from "../workspaces/src/app/ProjectWorkspace";
 import { MonitorPage } from "./MonitorPage";
 import { ChatMarkdown, ChatMessageFiles, type ChatDocument } from "./ChatMessageContent";
 import type { PageSource } from "../workspaces/src/workspaces/monkeyboard/boardScene";
 const ProjectWorkspace = lazy(() => import("../workspaces/src/app/ProjectWorkspace").then((module) => ({ default: module.ProjectWorkspace })));
 import { presentFailure } from "./chatError";
-import { clock, currentStep, describeCall, describeStep, rawDetail, rawLine, resultCandidates, stepText, turnsOf, workedSeconds, type ProcessTurn, type ProcessWords } from "./chatProcess";
+import { clock, currentStep, describeCall, describeStep, operationStep, rawDetail, rawLine, resultCandidates, stepText, turnsOf, unfinishedOperations, workedSeconds, type ProcessTurn, type ProcessWords } from "./chatProcess";
 import { recentUsage, serialMonitorRead, type MonitorEvent, type RecentUsage } from "./monitorData";
 import { activeWork, newSchemes, sidebarTasks, type SidebarTask } from "./sidebarTasks";
 import { SoftwareUpdateSettings, type RestartBlocker } from "./SoftwareUpdateSettings";
@@ -39,10 +39,43 @@ type ToolTab = { id: AppId; url: string; revision: number; projectDir?: string; 
   returnTo?: AppId; focus?: { runIds: string[]; request: number } };
 type SavedTool = { id: AppId; candidate?: string };
 type ProjectPreparation = { promise: Promise<AppStatus[]>; apps: AppStatus[] | null; modeling?: Promise<unknown> };
+/** GH-285: the admission time and dismissal the Hub now reports, until the generated client carries them. */
+type OperationRow = OperationRecord & { createdAt?: string | null; acknowledgedAt?: string | null };
+/** "25 Sep, 14:02" in the reader's language; nothing for a record that kept no readable time. */
+const operationTime = (value: string | null | undefined, language: string) => {
+  const date = value ? new Date(value) : null;
+  return date && !Number.isNaN(date.getTime()) ? date.toLocaleString(language, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : null;
+};
 const VIEW_KEY = "monkeyhub.chat-view.v1";
+/** SS-9: unsent composer text by conversation (`new:<project>` before one exists), with when it last changed. */
+const DRAFTS_KEY = "monkeyhub.chat-drafts.v1", DRAFT_LIMIT = 50;
 /** The rail is always on screen; the conversation never shrinks past this. */
 const RAIL_WIDTH = 76, RESIZER_WIDTH = 5, CHAT_MIN_WIDTH = 360;
 import { chatCopyCatalog as words } from "./i18n/catalogs";
+/**
+ * GH-285: the composer's and the operation notice's own copy, in both languages.
+ * It stays here while GH-244 holds the catalogs (review §4, step 1) and moves
+ * into them afterwards.
+ */
+const composerWords = {
+  "zh-CN": {
+    composerMenu: "附件与新话题", newTopic: "新话题", newTopicDetail: "下一条消息从项目状态开始，不带之前的对话",
+    newTopicRemove: "移除新话题",
+    target: "将修改：当前", targetUnrecorded: "未记录的修改不包括在内", sending: "发送中…",
+    operationOpenChat: "打开对话", operationDismiss: "知道了",
+    operationMore: (count: number) => `另有 ${count} 个`,
+    targetViewing: (name: string) => `正在查看 ${name}，这条消息仍会修改当前`,
+  },
+  en: {
+    composerMenu: "Attachments and new topic", newTopic: "New topic",
+    newTopicDetail: "The next message starts from the project state, without this conversation's context",
+    newTopicRemove: "Remove New topic",
+    target: "Changes: Current", targetUnrecorded: "unrecorded edits not included", sending: "Sending…",
+    operationOpenChat: "Open chat", operationDismiss: "Dismiss",
+    operationMore: (count: number) => `${count} more`,
+    targetViewing: (name: string) => `Viewing ${name}; this message still changes Current`,
+  },
+} as const;
 /** The rail's two kinds of entry (#295, regrouped by the owner for #300): the
     surfaces you work on in this project (Modeling, Board and the Design Tree,
     #284), and the tools that produce output over it or report on the machine.
@@ -115,6 +148,37 @@ const fileData = (file: File, failure: string) => new Promise<string>((resolve, 
   reader.onabort = () => reject(new Error(failure));
   reader.readAsDataURL(file);
 });
+/** The unsent text this browser kept, by conversation. Unreadable storage keeps nothing. */
+function readDrafts(): Record<string, string> {
+  try {
+    const saved: unknown = JSON.parse(localStorage.getItem(DRAFTS_KEY) ?? "null");
+    if (!saved || typeof saved !== "object" || Array.isArray(saved)) return {};
+    return Object.fromEntries(Object.entries(saved).flatMap(([key, value]) =>
+      value && typeof value === "object" && typeof (value as { text?: unknown }).text === "string" && (value as { text: string }).text.trim()
+        ? [[key, (value as { text: string }).text]] : []));
+  } catch { return {}; }
+}
+/**
+ * Write these conversations' text over what is kept; blank text removes its entry.
+ * Other conversations' entries stay as another window may have left them, and
+ * the newest DRAFT_LIMIT are kept. False when storage refused the write.
+ */
+function keepDrafts(changes: readonly (readonly [string, string])[]): boolean {
+  try {
+    let saved: unknown;
+    try { saved = JSON.parse(localStorage.getItem(DRAFTS_KEY) ?? "null"); } catch { saved = null; }
+    const kept: Record<string, { text: string; savedAt: number }> = {};
+    if (saved && typeof saved === "object" && !Array.isArray(saved)) for (const [key, value] of Object.entries(saved)) {
+      if (value && typeof value === "object" && typeof value.text === "string" && typeof value.savedAt === "number") kept[key] = value;
+    }
+    const now = Date.now();
+    for (const [key, text] of changes) { if (text.trim()) kept[key] = { text, savedAt: now }; else delete kept[key]; }
+    const newest = Object.entries(kept).sort((a, b) => b[1].savedAt - a[1].savedAt).slice(0, DRAFT_LIMIT);
+    if (newest.length) localStorage.setItem(DRAFTS_KEY, JSON.stringify(Object.fromEntries(newest)));
+    else localStorage.removeItem(DRAFTS_KEY);
+    return true;
+  } catch { return false; }
+}
 /** What this page looked like last time: the same conversation and the same frame. */
 function readView(): { chatId: string | null; projectDir: string | null; sidebar: boolean | null; panel: boolean | null; panelWidth: number | null; tools: SavedTool[]; activeTool: AppId | null } {
   const routeChatId = new URLSearchParams(window.location.search).get("chatId") || null;
@@ -158,6 +222,49 @@ function Failure({ failure, language, labels, connection, onClose, onChangeModel
       <details className="chat-error__details" key={shown.technical}><summary>{labels.errorDetails}</summary><pre lang="en" translate="no">{shown.technical}</pre></details>
     </div>
     {onClose && <button className="chat-icon" aria-label={labels.close} onClick={onClose}><Icon name="close" /></button>}
+  </div>;
+}
+
+type MenuItem = { key: string; label: string; detail?: string; checked?: boolean; disabled?: boolean; onSelect(): void };
+/**
+ * The composer's + menu (#285): attachments, and New topic for the next message.
+ * Opened, focus moves into it; arrows move between entries and Escape returns
+ * to the + button. A checked entry is a choice the next send carries.
+ */
+function ComposerMenu({ label, disabled, items }: { label: string; disabled: boolean; items: MenuItem[] }) {
+  const [open, setOpen] = useState(false);
+  const button = useRef<HTMLButtonElement>(null), menu = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    menu.current?.querySelector<HTMLElement>("[role^=menuitem]")?.focus();
+    const outside = (event: PointerEvent) => {
+      if (!menu.current?.contains(event.target as Node) && !button.current?.contains(event.target as Node)) setOpen(false);
+    };
+    document.addEventListener("pointerdown", outside);
+    return () => document.removeEventListener("pointerdown", outside);
+  }, [open]);
+  useEffect(() => { if (disabled) setOpen(false); }, [disabled]);
+  const keys = (event: KeyboardEvent<HTMLDivElement>) => {
+    const entries = [...(menu.current?.querySelectorAll<HTMLElement>("[role^=menuitem]") ?? [])];
+    const at = entries.indexOf(document.activeElement as HTMLElement);
+    const step = { ArrowDown: 1, ArrowUp: -1 }[event.key];
+    if (step) { event.preventDefault(); entries[(at + step + entries.length) % entries.length]?.focus(); }
+    else if (event.key === "Home" || event.key === "End") { event.preventDefault(); entries.at(event.key === "Home" ? 0 : -1)?.focus(); }
+    else if (event.key === "Escape") { event.preventDefault(); setOpen(false); button.current?.focus(); }
+    else if (event.key === "Tab") setOpen(false);
+  };
+  return <div className="chat-composer-menu">
+    <button ref={button} type="button" className="chat-icon chat-attach" aria-label={label} title={label} aria-haspopup="menu" aria-expanded={open}
+      aria-controls={open ? "chat-composer-menu" : undefined} disabled={disabled} onClick={() => setOpen(!open)}><Icon name="plus" /></button>
+    {open && <div ref={menu} id="chat-composer-menu" className="chat-composer-menu__list" role="menu" aria-label={label} onKeyDown={keys}>
+      {items.map((item) => <button key={item.key} type="button" tabIndex={-1} className="chat-composer-menu__item"
+        role={item.checked === undefined ? "menuitem" : "menuitemcheckbox"} aria-checked={item.checked} aria-disabled={item.disabled || undefined}
+        aria-label={item.label} aria-description={item.detail}
+        onClick={() => { if (item.disabled) return; setOpen(false); button.current?.focus(); item.onSelect(); }}>
+        <span className="chat-composer-menu__check" aria-hidden="true">{item.checked ? "✓" : ""}</span>
+        <span className="chat-composer-menu__text"><span>{item.label}</span>{item.detail && <small>{item.detail}</small>}</span>
+      </button>)}
+    </div>}
   </div>;
 }
 
@@ -223,7 +330,7 @@ function ProcessRow({ turn, running, open, t, onToggle }: {
 }
 
 export function ChatShell({ preferences, settings, settingsDirty = false, configuredProject, defaults, workspace, apps }: Props) {
-  const t = words[preferences.language];
+  const t = words[preferences.language], w = composerWords[preferences.language];
   const [initial] = useState(readView);
   const [projects, setProjects] = useState<ChatProject[]>([]);
   const [sessions, setSessions] = useState<ChatSummary[]>([]);
@@ -237,10 +344,37 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
   const [projectDir, setProjectDir] = useState<string | null>(initial.projectDir ?? configuredProject);
   const [chatId, setChatId] = useState<string | null>(initial.chatId);
   const [chat, setChat] = useState<ChatDetail | null>(null);
-  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [drafts, setDrafts] = useState<Record<string, string>>(readDrafts);
+  // SS-9: unsent text is kept in this browser as it changes, so a reload or a restart brings it
+  // back. Only what this window changed is written; text storage refused stays pending here.
+  const keptDrafts = useRef(drafts), pendingDrafts = useRef(new Set<string>());
+  const [draftsKept, setDraftsKept] = useState(true);
+  useEffect(() => {
+    const previous = keptDrafts.current;
+    keptDrafts.current = drafts;
+    for (const key of new Set([...Object.keys(previous), ...Object.keys(drafts)])) {
+      if ((previous[key] ?? "") !== (drafts[key] ?? "")) pendingDrafts.current.add(key);
+    }
+    if (!pendingDrafts.current.size) return;
+    const pending = [...pendingDrafts.current];
+    if (keepDrafts(pending.map((key) => [key, drafts[key] ?? ""] as const))) pendingDrafts.current.clear();
+    setDraftsKept(!pending.some((key) => pendingDrafts.current.has(key) && Boolean(drafts[key]?.trim())));
+  }, [drafts]);
   const [draftAttachments, setDraftAttachments] = useState<Record<string, File[]>>({});
   const [contextModes, setContextModes] = useState<Record<string, "continue" | "project">>({});
   const [designContexts, setDesignContexts] = useState<Record<string, WorkspaceDesignContext | null>>({});
+  // DC-9: each mounted project's position as its Stage chip states it.
+  const [positions, setPositions] = useState<Record<string, WorkspacePosition | null>>({});
+  const positionCallbacks = useRef(new Map<string, (position: WorkspacePosition | null) => void>());
+  const workspacePositionCallback = (runtimeId: string) => {
+    let callback = positionCallbacks.current.get(runtimeId);
+    if (!callback) {
+      callback = (position) => setPositions((current) => JSON.stringify(current[runtimeId] ?? null) === JSON.stringify(position)
+        ? current : { ...current, [runtimeId]: position });
+      positionCallbacks.current.set(runtimeId, callback);
+    }
+    return callback;
+  };
   const contextCallbacks = useRef(new Map<string, (context: WorkspaceDesignContext | null) => void>());
   const workspaceContextCallback = (runtimeId: string) => {
     let callback = contextCallbacks.current.get(runtimeId);
@@ -255,6 +389,8 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
   const [error, setError] = useState<HubError | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  // PP-3: a send says Sending… once its project is connected; connecting it keeps its own words.
+  const [sending, setSending] = useState<"connecting" | "posting" | null>(null);
   const [sidebar, setSidebar] = useState(() => initial.sidebar ?? window.innerWidth > 900);
   const [panel, setPanel] = useState(() => initial.panel ?? false);
   const [tabs, setTabs] = useState<ToolTab[]>([]);
@@ -308,7 +444,10 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
   const projectRuntime = runtime?.projects.find((item) => item.projectDir === projectDir && item.projectId === project?.projectId);
   const studioWorker = projectRuntime?.workers?.find((item) => item.serviceId === "studio");
   const crashed = studioWorker?.state === "crashed";
-  const recoverableOperation = projectRuntime?.operations?.find((item) => ["needs_recovery", "failed", "stale"].includes(item.status));
+  // #285: the operations that did not finish; the notice names the first, links its chat and can dismiss it.
+  const unfinished = unfinishedOperations((projectRuntime?.operations ?? []) as OperationRow[]);
+  const unfinishedOperation = unfinished[0] ?? null;
+  const [dismissing, setDismissing] = useState<string | null>(null);
   // An edited work copy the project would not take is the architect's own save
   // going nowhere. It is said here, on the runtime strip that already reports
   // what this attachment knows, and nowhere else.
@@ -326,6 +465,12 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
   const recordContext = workspaceContext?.projectId === project?.projectId && (workspaceContext?.unavailableReason === "unsaved" ||
     workspaceContext?.unavailableReason === "unsynced") ? workspaceContext?.record ?? null : null;
   const [recordingContext, setRecordingContext] = useState(false);
+  // DC-9: what the next message changes. It always works on Current, the editing base the design
+  // context names; the label adds where Current stands, and says so when another model is on screen.
+  const position = projectRuntime && workspaceContext?.projectId === project?.projectId ? positions[projectRuntime.runtimeId] ?? null : null;
+  const target = [w.target, position?.current,
+    workspaceContext?.projectId === project?.projectId && (workspaceContext?.unavailableReason === "unsaved" || workspaceContext?.unavailableReason === "unsynced")
+      ? w.targetUnrecorded : null].filter(Boolean).join(" · ");
   const running = chat?.id === chatId && chat.status === "running";
   // #285: a turn's tool calls fold into one process row; the Agent's text,
   // results, permission prompts and errors stay in the conversation.
@@ -347,11 +492,12 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
   const [usage, setUsage] = useState<RecentUsage | null>(null);
   const [usageRead, setUsageRead] = useState(0);
   const [updateReady, setUpdateReady] = useState(false);
-  // Include hidden conversations and mounted project workspaces: a restart
-  // would lose their in-memory drafts just as it would the visible composer.
-  // Model edits the project's working draft already holds ("unsynced") are
-  // restored after the restart; only edits it does not hold yet block it.
-  const restartBlocker: RestartBlocker = Object.values(drafts).some((text) => Boolean(text.trim())) || Object.values(draftAttachments).some((files) => files.length)
+  // Include hidden conversations and mounted project workspaces. Their unsent
+  // text is kept in this browser and comes back after the restart (SS-9);
+  // chosen files live only in memory, so they hold it, as does text storage
+  // refused. Model edits the project's working draft already holds
+  // ("unsynced") are restored after the restart; only edits it does not hold yet block it.
+  const restartBlocker: RestartBlocker = !draftsKept || Object.values(draftAttachments).some((files) => files.length)
     ? "drafts" : Object.values(designContexts).some((context) => context?.unavailableReason === "unsaved") ? "model"
       : settingsDirty ? "settings" : busy || toolBusy || modelBusy || archiveBusy || permissionBusy || recovering || loading || running || !eventsConnected ||
         sessions.some((session) => session.status === "running") ||
@@ -597,6 +743,20 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
     if (item.projectDir !== projectDir) { const view = tabs.find((tab) => tab.projectDir === item.projectDir); setActiveTool(view?.id ?? null); setPanel(Boolean(view)); }
     setArchivedView(Boolean(item.archived)); setProjectDir(item.projectDir); setChatId(item.id);
   };
+  // GH-300: a notice's 查看 opens its chat here, in place (src/notifications/openChat.ts).
+  const openFromNotice = useRef<(chatId: string, projectDir: string) => void>(() => undefined);
+  openFromNotice.current = (chatId, projectDir) =>
+    selectChat(sessions.find((item) => item.id === chatId) ?? ({ id: chatId, projectDir, archived: false } as ChatSummary));
+  useEffect(() => {
+    const open = (event: Event) => {
+      const detail = (event as CustomEvent<{ chatId?: unknown; projectDir?: unknown }>).detail;
+      if (typeof detail?.chatId !== "string" || typeof detail.projectDir !== "string") return;
+      event.preventDefault();
+      openFromNotice.current(detail.chatId, detail.projectDir);
+    };
+    window.addEventListener("monkeyhub:open-chat", open);
+    return () => window.removeEventListener("monkeyhub:open-chat", open);
+  }, []);
   const openTask = (task: SidebarTask) => {
     if (task.chat) { selectChat(task.chat); return; }
     const target = projects.find((item) => item.projectDir === task.projectDir && item.projectId === task.projectId);
@@ -720,7 +880,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
       // stay in the draft for the next turn. The composer stays open.
       if (!draft.trim()) return;
       const target = chat.id, content = draft.trim(), key = draftKey;
-      actionLock.current = true; setError(null);
+      actionLock.current = true; setError(null); setSending("posting");
       setDrafts((value) => ({ ...value, [key]: "" }));
       try {
         const body: ChatPostRequest = { content, projectId: chat.projectId };
@@ -728,7 +888,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
         if (selection.current.chatId === target) setChat(posted);
         requestAnimationFrame(() => { if (messages.current) messages.current.scrollTop = messages.current.scrollHeight; });
       } catch (cause) { setDrafts((value) => ({ ...value, [key]: value[key] || content })); setError(asFailure(cause)); }
-      finally { actionLock.current = false; }
+      finally { actionLock.current = false; setSending(null); }
       return;
     }
     const target = projectDir, content = draft.trim(), key = draftKey, files = attachments;
@@ -736,13 +896,13 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
     if (requestedContextMode === "project" && !requestedContext) {
       setError({ code: "CHAT_CONTEXT_UNAVAILABLE", detail: contextUnavailable }); return;
     }
-    actionLock.current = true; setBusy(true); setError(null);
+    actionLock.current = true; setBusy(true); setSending("connecting"); setError(null);
     try {
       let current = chat?.id === chatId ? chat : chatId ? await request<ChatDetail>(`/api/chat/sessions/${encodeURIComponent(chatId)}`) : null;
       if (!current) {
         const body: ChatCreateRequest = { projectDir: target, provider: defaults.provider, model: draftModel };
         current = await request<ChatDetail>("/api/chat/sessions", body);
-        setDrafts((value) => ({ ...value, [current!.id]: content }));
+        setDrafts((value) => ({ ...value, [key]: "", [current!.id]: content }));
         setDraftAttachments((value) => ({ ...value, [key]: [], [current!.id]: files }));
         if (selection.current.projectDir === target && selection.current.chatId === chatId) { setChatId(current.id); setChat(current); }
       }
@@ -757,6 +917,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
         if (!body.designContext) throw new Error(t.contextOpenProject);
         body.contextMode = "project";
       }
+      setSending("posting");
       if (files.length) body.attachments = await Promise.all(files.map(async (file) => ({ name: file.name, mimeType: file.type || "application/octet-stream", data: await fileData(file, t.attachmentRead) })));
       const posted = await request<ChatDetail>(`/api/chat/sessions/${current.id}/messages`, body);
       if (selection.current.projectDir === target && (selection.current.chatId === chatId || selection.current.chatId === current.id)) { setChatId(posted.id); setChat(posted); }
@@ -768,7 +929,19 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
       followLatest.current = true; setLatest({ away: false, unseen: 0 });
       requestAnimationFrame(() => toLatest());
     } catch (cause) { setError(asFailure(cause)); void refresh(); }
-    finally { actionLock.current = false; setBusy(false); }
+    finally { actionLock.current = false; setBusy(false); setSending(null); }
+  };
+  /** #285: dismiss one failed or stale operation's notice; the Hub keeps that with the operation, past restarts. */
+  const dismissOperation = async (operation: OperationRow) => {
+    if (!projectRuntime || dismissing) return;
+    const target = projectRuntime;
+    setDismissing(operation.operationId); setError(null);
+    try {
+      await request<OperationRow>(`/api/runtime/operations/${encodeURIComponent(operation.operationId)}/acknowledge`,
+        { runtimeId: target.runtimeId, projectId: target.projectId });
+      await refresh();
+    } catch (cause) { if (selection.current.projectDir === target.projectDir) setError(asFailure(cause)); }
+    finally { setDismissing(null); }
   };
   /** Record the edits that keep project state out of chat; the new context the architect chose then starts. */
   const recordForContext = async () => {
@@ -1090,14 +1263,32 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
     </aside>
     <main className="chat-main">
       <header className="chat-header"><button className="chat-icon mobile-project-toggle" aria-label={sidebar ? t.collapse : t.expand} onClick={() => setSidebar(!sidebar)}><Icon name="sidebar" /></button><div><span className="chat-header__project">{project?.name ?? "MonkeyHub"}</span><h1>{chat?.id === chatId ? chat.title : t.newChat}{external && <small className="chat-external-badge">{t.externalChat}</small>}</h1></div></header>
-      {(!eventsConnected || crashed || recovering || recoverableOperation || workCopyRefusal) && <div className="chat-runtime" role="status" aria-live="polite">
+      {(!eventsConnected || crashed || recovering || workCopyRefusal) && <div className="chat-runtime" role="status" aria-live="polite">
         <div>{!eventsConnected && <p>{t.reconnecting}</p>}
           {(crashed || recovering) && <><p>{recovering ? t.recovering : t.workerCrashed}</p><small>{t.recoveryHint}</small></>}
-          {recoverableOperation && <p>{recoverableOperation.status === "needs_recovery" ? t.operationRecovery : recoverableOperation.status === "stale" ? t.operationStale : t.operationFailed}</p>}
           {workCopyRefusal && <><p>{t.workCopyRefused}</p><small>{workCopyRefusal.detail}</small></>}
         </div>
         {crashed && <button type="button" className="chat-activity__open" disabled={recovering || busy || Boolean(toolBusy)} onClick={() => void recoverWorker()}><Icon name="refresh" />{recovering ? t.recovering : t.recoverWorker}</button>}
       </div>}
+      {unfinishedOperation && (() => {
+        // #285: which operation did not finish, when, and the chat that asked for it. A failed or
+        // stale one can be dismissed; one that needs recovery stays until it is recovered.
+        const operation = unfinishedOperation;
+        const step = operationStep(operation.kind);
+        const source = operation.sessionId ? projectRuntime?.sessions?.find((row) => row.id === operation.sessionId) : undefined;
+        const detail = [step.key === "generic" ? null : stepText(step, processWords(t)), operationTime(operation.createdAt, preferences.language),
+          unfinished.length > 1 ? w.operationMore(unfinished.length - 1) : null].filter(Boolean).join(" · ");
+        return <div className="chat-runtime chat-runtime--operation" role="status" aria-live="polite" data-status={operation.status}>
+          <div><p>{operation.status === "needs_recovery" ? t.operationRecovery : operation.status === "stale" ? t.operationStale : t.operationFailed}</p>
+            {detail && <small>{detail}</small>}</div>
+          <div className="chat-runtime__actions">
+            {source && source.id !== chatId && <button type="button" className="chat-activity__open" title={source.title}
+              aria-label={`${w.operationOpenChat}: ${source.title}`} onClick={() => selectChat(source)}><Icon name="chat" />{w.operationOpenChat}</button>}
+            {operation.status !== "needs_recovery" && <button type="button" className="chat-activity__open" disabled={dismissing !== null}
+              aria-busy={dismissing === operation.operationId} onClick={() => void dismissOperation(operation)}>{w.operationDismiss}</button>}
+          </div>
+        </div>;
+      })()}
       <div className="chat-messages" ref={messages} role="log" aria-live="polite" aria-relevant="additions text" onScroll={readPosition}
         onWheel={() => { jumping.current = false; }} onTouchStart={() => { jumping.current = false; }}>
         {!shownMessages?.length ? <div className="chat-welcome"><div className="chat-welcome__mark"><Icon name="chat" /></div><h2>{project ? t.empty : t.noProject}</h2><p>{t.emptyHint}</p>{!project && <div className="chat-welcome__actions"><button className="btn btn--primary" onClick={() => { setDialogError(null); newDialog.current?.showModal(); }}>{t.newProject}</button><button className="btn" onClick={() => { setDialogError(null); addDialog.current?.showModal(); }}>{t.addExisting}</button></div>}</div>
@@ -1148,11 +1339,30 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
           <p>{t.archivedNotice}</p>
           <button className="chat-activity__open" disabled={archiveBusy !== null} onClick={() => void setArchived(chat!, false)}><Icon name="restore" /><span>{t.restoreChat}</span></button>
         </div> : external ? <div className="chat-external-notice" role="status"><strong>{t.externalChat}</strong><p>{t.externalNotice}</p></div> : <form className="chat-composer" data-dragging={draggingFiles} onSubmit={(event) => void send(event)}
+          data-context={designContext ? "ready" : workspaceContext?.projectId === project?.projectId ? workspaceContext?.unavailableReason ?? "none" : "none"}
           onDragOver={(event) => { if (event.dataTransfer.types.includes("Files")) { event.preventDefault(); event.dataTransfer.dropEffect = !project || busy ? "none" : "copy"; setDraggingFiles(Boolean(project) && !busy); } }}
           onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDraggingFiles(false); }}
           onDrop={(event) => { if (event.dataTransfer.files.length) { event.preventDefault(); addAttachments(Array.from(event.dataTransfer.files)); } setDraggingFiles(false); }}
           onPaste={(event) => { if (event.clipboardData.files.length) { event.preventDefault(); addAttachments(Array.from(event.clipboardData.files)); } }}>
           {draggingFiles && <p className="chat-attachment-drop" role="status">{t.dropFiles}</p>}
+          {/* DC-9: what this message will change, and DC-5: a New topic chosen from the + menu, as one removable chip. */}
+          <div className="chat-composer__context">
+            {project && <p className="chat-target" id="chat-target" data-viewing={Boolean(position?.viewing)}>
+              <span className="chat-target__text">{target}</span>
+              {position?.viewing && <span className="chat-target__viewing">{w.targetViewing(position.viewing)}</span>}
+            </p>}
+            {contextMode === "project" && <span className="chat-topic" title={designContext ? t.contextProjectHint : contextUnavailable}>
+              <span>{w.newTopic}</span>
+              <button type="button" className="chat-topic__remove" aria-label={w.newTopicRemove} title={w.newTopicRemove}
+                onClick={() => { setContextModes((value) => ({ ...value, [draftKey]: "continue" })); input.current?.focus(); }}><Icon name="close" /></button>
+            </span>}
+          </div>
+          {/* The refusal a New topic can meet stays in view, with the one click that clears it (#302). */}
+          {contextMode === "project" && !designContext && <div className="chat-topic-refusal">
+            <p className="chat-muted" role="status">{contextUnavailable}</p>
+            {recordContext && <button type="button" className="chat-activity__open chat-record"
+              disabled={recordingContext || busy} onClick={() => void recordForContext()}>{recordingContext ? t.recordBusy : t.recordContinue}</button>}
+          </div>}
           {Boolean(attachments.length) && <ul className="chat-attachments chat-attachments--draft" aria-label={t.attachments}>{attachments.map((file, index) => <li key={`${index}:${file.name}`}>
             <Icon name="file" /><span className="chat-attachment__details"><span className="chat-attachment__name" title={file.name}>{file.name}</span><span className="chat-attachment__size">{fileSize(file.size)}</span></span>
             <button type="button" className="chat-icon" aria-label={`${t.removeAttachment}: ${file.name}`} disabled={busy} onClick={() => {
@@ -1160,18 +1370,16 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
               input.current?.focus();
             }}><Icon name="close" /></button>
           </li>)}</ul>}
-          <label className="sr-only" htmlFor="chat-input">{t.placeholder}</label><textarea id="chat-input" ref={input} value={draft} placeholder={!project ? t.projectRequired : running ? t.interjectPlaceholder : t.placeholder} disabled={!project || busy}
+          <label className="sr-only" htmlFor="chat-input">{t.placeholder}</label><textarea id="chat-input" ref={input} value={draft} aria-describedby={project ? "chat-target" : undefined} placeholder={!project ? t.projectRequired : running ? t.interjectPlaceholder : t.placeholder} disabled={!project || busy}
             onChange={(event) => setDrafts((value) => ({ ...value, [draftKey]: event.target.value }))} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void send(); } }} />
           <input ref={fileInput} type="file" multiple hidden aria-label={t.attach} disabled={!project || busy} onChange={(event) => { addAttachments(Array.from(event.target.files ?? [])); event.target.value = ""; }} />
-          <label className="chat-context-option" title={designContext ? t.contextProjectHint : contextUnavailable}>
-            <input type="checkbox" checked={contextMode === "project"} aria-description={designContext ? t.contextProjectHint : contextUnavailable} disabled={busy || running || (!designContext && contextMode !== "project" && !recordContext)}
-              onChange={(event) => setContextModes((value) => ({ ...value, [draftKey]: event.target.checked ? "project" : "continue" }))} />
-            {t.contextProject}
-          </label>
-          {contextMode === "project" && <p className="chat-muted" role="status">{designContext ? t.contextProjectHint : contextUnavailable}</p>}
-          {contextMode === "project" && !designContext && recordContext && <button type="button" className="chat-activity__open chat-record"
-            disabled={recordingContext || busy} onClick={() => void recordForContext()}>{recordingContext ? t.recordBusy : t.recordContinue}</button>}
-          <div className="chat-composer__bottom"><button type="button" className="chat-icon chat-attach" aria-label={t.attach} title={t.attach} disabled={!project || busy} onClick={() => fileInput.current?.click()}><Icon name="plus" /></button><div className="chat-connection" title={running ? t.modelRunning : t.connectionHint}>
+          <div className="chat-composer__bottom"><ComposerMenu label={w.composerMenu} disabled={!project || busy} items={[
+            { key: "attach", label: t.attach, onSelect: () => fileInput.current?.click() },
+            // Offered as the checkbox was: with a saved editing state to start from, or with the edits that keep it out.
+            { key: "topic", label: w.newTopic, detail: designContext ? w.newTopicDetail : contextUnavailable, checked: contextMode === "project",
+              disabled: busy || running || (!designContext && contextMode !== "project" && !recordContext),
+              onSelect: () => { setContextModes((value) => ({ ...value, [draftKey]: value[draftKey] === "project" ? "continue" : "project" })); input.current?.focus(); } },
+          ]} /><div className="chat-connection" title={running ? t.modelRunning : t.connectionHint}>
             <span className="chat-connection__name">{providers.find((item) => item.id === connection.provider)?.label ?? connection.provider}</span>
             <label className="sr-only" htmlFor="chat-model">{t.modelLabel}</label>
             <select id="chat-model" className="chat-connection__model" value={customModel !== null ? "__custom__" : chosenModel ?? ""} disabled={running || modelBusy || busy}
@@ -1192,7 +1400,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
           <button type="submit" className="btn">{t.modelApply}</button>
           <button type="button" className="btn" onClick={() => setCustomModel(null)}>{t.cancel}</button>
         </form>}
-        <p className="chat-composer-note" role="status">{busy || toolBusy ? t.working : !availableProvider?.available && !chatId ? availableProvider?.detail ?? (loading ? "" : t.noProvider) : ""}</p>
+        <p className="chat-composer-note" role="status">{sending === "posting" ? w.sending : busy || toolBusy ? t.working : !availableProvider?.available && !chatId ? availableProvider?.detail ?? (loading ? "" : t.noProvider) : ""}</p>
       </div>
     </main>
     {panel && <div className="chat-resizer" role="separator" aria-label={t.resize} aria-orientation="vertical" aria-valuemin={320} aria-valuemax={Math.max(320, window.innerWidth - 400)} aria-valuenow={panelWidth} tabIndex={0}
@@ -1211,7 +1419,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
                 expectedProjectId={item.projectId} candidateRunId={item.candidate} candidateFollowsHead={item.followHead} treeFocus={item.focus ?? null}
                 refreshKey={item.revision} onChatRequest={focusConversation}
                 documentRequest={item.projectDir ? documentRequests[item.projectDir] : undefined}
-                onDesignContextChange={workspaceContextCallback(item.runtimeId)}
+                onDesignContextChange={workspaceContextCallback(item.runtimeId)} onPositionChange={workspacePositionCallback(item.runtimeId)}
                 onWorkspaceChange={(workspace) => { const id = workspace === "board" ? "monkeyboard" : workspace === "publish" ? "publish" : workspace === "drawing" ? "drawing" : workspace === "render" ? "monkeyrender" : workspace === "tree" ? "tree" : "monkeyarch";
                   setTabs((items) => items.map((tab) => tab.runtimeId === item.runtimeId ? { ...tab, id,
                     url: `${window.location.origin}/?${new URLSearchParams({ runtimeId: item.runtimeId!, view: workspace })}` } : tab));
@@ -1278,7 +1486,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
           onClick={() => { setProjectInfo(false); void openTool("tree"); }}><Icon name="tree" /><span>{t.openInTree}</span></button>}
         {/* The local address of the page on the right is a connection detail:
             available when it is asked for, not on screen all the time. */}
-        {Boolean(projectRuntime?.operations?.length) && <details className="chat-project-card__connection" open={Boolean(recoverableOperation) || undefined}>
+        {Boolean(projectRuntime?.operations?.length) && <details className="chat-project-card__connection" open={Boolean(unfinishedOperation) || undefined}>
           <summary>{t.recoveryDetails}</summary>
           <p className="chat-muted">{t.runtimeOperations}</p>
           {projectRuntime!.operations!.map((operation) => <div className="chat-project-card__operation" key={operation.operationId}>

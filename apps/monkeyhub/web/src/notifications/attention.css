@@ -1,0 +1,19 @@
+/* #300: the Hub's notices. AttentionHost sets --attention-right and --attention-bottom so the
+   stack clears the rail and, where they would share columns, the composer. */
+.attention-toasts{position:fixed;right:var(--attention-right,16px);bottom:var(--attention-bottom,16px);z-index:40;display:flex;flex-direction:column;gap:8px;width:min(360px,calc(100vw - var(--attention-right,16px) - 16px));margin:0;padding:0;pointer-events:none}
+.attention-toast{pointer-events:auto;display:flex;align-items:center;gap:10px;min-height:48px;padding:6px 6px 6px 14px;border:1px solid var(--line);border-radius:12px;background:var(--ground);color:var(--ink);box-shadow:var(--shadow);font:var(--text-ui)/1.5 var(--font-ui);animation:attention-enter .18s ease-out;transition:opacity .2s ease,transform .2s ease}
+.attention-toast[data-leaving]{opacity:0;transform:translateY(4px)}
+.attention-toast__mark{flex:none;width:8px;height:8px;border-radius:50%;background:var(--held)}
+.attention-toast[data-kind=permission] .attention-toast__mark{background:var(--accent)}
+.attention-toast[data-kind=failed] .attention-toast__mark{background:var(--violated)}
+.attention-toast__text{flex:1;min-width:0;margin:0;display:flex;flex-wrap:wrap;align-items:center;column-gap:6px;overflow-wrap:anywhere}
+.attention-toast__dot{color:var(--muted)}
+.attention-toast__view{display:inline-flex;align-items:center;min-height:32px;padding:0 4px;margin:0 -4px;border:0;border-radius:6px;background:transparent;color:var(--link);font:inherit;font-weight:500;cursor:pointer}
+.attention-toast__view:hover{text-decoration:underline;text-underline-offset:3px}
+.attention-toast__close{flex:none;display:inline-grid;place-items:center;width:32px;height:32px;padding:0;border:0;border-radius:8px;background:transparent;color:var(--muted);cursor:pointer}
+.attention-toast__close:hover{background:var(--panel-2);color:var(--ink)}
+.attention-toast__close svg{width:16px;height:16px}
+.attention-toast button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+@keyframes attention-enter{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+@media(max-width:900px){.attention-toast__view{min-height:44px}.attention-toast__close{width:44px;height:44px}}
+@media(prefers-reduced-motion:reduce){.attention-toast{animation:none;transition:none}}

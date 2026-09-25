@@ -10,6 +10,7 @@ import { applicationSettingsApiSettingsAppsGet, chatProvidersApiChatProvidersGet
 import "./styles.css";
 import { FabPage } from "./FabPage";
 import { ChatShell } from "./ChatShell";
+import { AttentionHost } from "./notifications/AttentionHost";
 
 type AppId = AppStatus["appId"];
 type Issue = { code: string; detail: string };
@@ -273,7 +274,9 @@ function App() {
     } catch (cause) { setActionIssues((current) => ({ ...current, [app.appId]: issueOf(cause) })); }
     finally { actionLocks.current.delete(app.serviceId); setBusyServices(new Set(actionLocks.current)); }
   };
-  if (fabView) return <FabPage preferences={preferences} client={hubClient} readResult={responseData} />;
+  // #300: every Hub view carries the notices; a view framed in another Hub page leaves them to that page.
+  const attention = <AttentionHost language={preferences.language} />;
+  if (fabView) return <><FabPage preferences={preferences} client={hubClient} readResult={responseData} />{attention}</>;
   // One detection answers both places: what a connection is, and what it lists.
   const connectionWords = (row: ChatProvider) => !row.installed ? t("notInstalled")
     : row.id === "coding-plan" && !row.available ? t("notConfigured")
@@ -383,7 +386,7 @@ function App() {
   return <UserPreferencesProvider appearance={preferences}><ChatShell preferences={preferences} configuredProject={savedLaunch?.projectDir ?? null} settings={settings}
     settingsDirty={appearanceDirty || launchDirty || settingsSaving || busyServices.size > 0}
     defaults={{ provider: savedChatDefaults.chatProvider ?? "codex", model: savedChatDefaults.chatModel }}
-    workspace={workspace} apps={statusIssue ? null : apps} /></UserPreferencesProvider>;
+    workspace={workspace} apps={statusIssue ? null : apps} />{attention}</UserPreferencesProvider>;
 }
 const root = document.getElementById("root");
 if (!root) throw new Error("MonkeyHub root is missing.");

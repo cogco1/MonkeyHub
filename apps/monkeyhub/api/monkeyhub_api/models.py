@@ -109,6 +109,9 @@ class FabSendResult(BaseModel):
 
 ChatProviderId = Literal["codex", "claude", "coding-plan"]
 ChatStatus = Literal["idle", "running", "failed", "interrupted"]
+# What a conversation waits for from the architect (#300). One value for now:
+# an unanswered permission request.
+ChatAttention = Literal["permission"]
 
 
 class ChatProvider(BaseModel):
@@ -234,6 +237,10 @@ class ChatSummary(BaseModel):
     error: HubError | None = None
     # External conversations are displayed here; their provider runs in the source host.
     sourceSessionId: str | None = None
+    # "permission" while a permission request in this conversation waits for a
+    # decision: the same request the conversation shows with its options.
+    # Derived on every read and never stored, so a record cannot go stale.
+    attention: ChatAttention | None = None
 
 
 class ChatDetail(ChatSummary):

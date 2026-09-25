@@ -196,7 +196,8 @@ class DesktopUpdateTests(unittest.TestCase):
             restored = old.rollback(BASE, TARGET)
             activate.assert_called_once()
         self.assertEqual(restored.error.code, "UPDATE_ROLLED_BACK")
-        self.assertEqual(restored.state, "failed")
+        self.assertEqual((restored.state, restored.canApply, restored.nextLaunch, restored.prepared),
+                         ("failed", False, False, None))
         with old.mutation():
             pass
         self.assertIsNone(old.restart()["targetCommit"])
@@ -426,10 +427,11 @@ class AutomaticUpdateTests(unittest.TestCase):
         self.preference = MemoryPreference()
         self.github = FakeGitHub()
         self.publish()
-        self.processes, self.activation_code = [], 0
+        self.processes, self.activation_code, self.stdins = [], 0, []
 
         def run(command, **options):
             self.processes.append(command)
+            self.stdins.append(options.get("stdin"))
             if command[0] == "powershell.exe":
                 return SimpleNamespace(returncode=self.activation_code, stdout="", stderr="")
             return SimpleNamespace(returncode=0, stdout="usage: run.py [-h] [--runtime-root RUNTIME_ROOT]", stderr="")
@@ -482,12 +484,42 @@ class AutomaticUpdateTests(unittest.TestCase):
         for name, content in assets.items():
             self.github.routes[ReleaseFeed.url(TAG, name)] = content
 
+    def publish_newer(self, version="0.1.7"):
+        """Add a newer release whose patch for this base does not match the SHA-256 its index states."""
+        commit, tag = "e" * 40, f"v{version}"
+        patch_name = f"MonkeyHub-{version}-from-0.1.4.patch.zip"
+        manifest_name = f"MonkeyHub-{version}-windows-x64-candidate.zip.release-manifest.json"
+        manifest = json.dumps({"schema": "ReleaseManifest@1",
+                               "release": {"version": version, "target": "windows-x64", "sourceCommit": commit},
+                               "buildInfo": {"sha256": sha256(b"build-info")}}).encode()
+        patch_bytes = b"not the published patch"
+        index = json.dumps({"schema": "MonkeyHubUpdateIndex@1", "version": version, "releaseCommit": commit,
+                            "releaseManifest": {"name": manifest_name, "size": len(manifest), "sha256": sha256(manifest)},
+                            "patches": [{"name": patch_name, "size": len(patch_bytes), "sha256": sha256(b"published"),
+                                         "baseVersion": "0.1.4", "baseCommit": BASE}]}).encode()
+        assets = {f"MonkeyHub-{version}-update-index.json": index, manifest_name: manifest, patch_name: patch_bytes}
+        for name, content in assets.items():
+            self.github.routes[ReleaseFeed.url(tag, name)] = content
+        previous = self.github.routes[ReleaseFeed.API]
+        listing = json.loads(previous(urllib.request.Request(ReleaseFeed.API)).read())
+        releases = json.dumps([listed(version, assets), *listing]).encode()
+        self.github.routes[ReleaseFeed.API] = lambda request: FakeResponse(releases, {"ETag": '"newer"'})
+
     def controller(self, source=None, **options):
         options.setdefault("preference", self.preference)
         options.setdefault("feed", ReleaseFeed("MonkeyHub-test", opener=self.github))
         updates = DesktopUpdates(source or self.base, self.runtime / "updates", managed=True, busy=lambda: None, **options)
         self.addCleanup(updates.shutdown)
         return updates
+
+    def consistent(self, status):
+        """What a status offers agrees with what it says."""
+        if status.canApply or status.nextLaunch:
+            self.assertEqual(status.state, "ready", status)
+        if status.state == "failed":
+            self.assertIsNotNone(status.error, status)
+            self.assertIsNone(status.prepared, status)
+        return status
 
     def record(self):
         # Read only while no update thread writes: Windows refuses to replace
@@ -533,6 +565,101 @@ class AutomaticUpdateTests(unittest.TestCase):
         self.assertEqual(updates.status().check.state, "ready")
         self.assertEqual(self.github.seen[seen][1].get("If-none-match"), '"listing"')
         self.assertFalse(any(url.endswith(".patch.zip") for url in self.github.requests[seen:]))
+
+    def test_a_staged_update_is_ready_only_after_its_runtime_loads_and_never_turns_failed(self):
+        # The owner's 0.1.425 -> 0.1.428 check: once the patch was staged the
+        # status said ready while the check still said downloading, and minutes
+        # later the same prepared update was reported failed although Restart
+        # to update still worked. The trial load of the new runtime is part of
+        # preparing it: ready comes after it, or failed with its reason instead.
+        for loads in (True, False):
+            with self.subTest(loads=loads):
+                shutil.rmtree(self.runtime, ignore_errors=True)
+                updates, seen = self.controller(), []
+
+                def trial_load(target):
+                    self.assertEqual(target, self.target)
+                    seen.append(self.consistent(updates.status()))
+                    if not loads:
+                        raise ValueError("The new version's runtime could not load MonkeyHub: fixture refusal")
+
+                with patch.object(updates, "_preflight", side_effect=trial_load):
+                    updates._run_check(explicit=True)
+                during = seen[0]
+                self.assertEqual((during.state, during.canApply, during.nextLaunch, during.prepared),
+                                 ("preparing", False, False, None))
+                self.assertEqual((during.check.state, during.check.latestVersion), ("checking", VERSION),
+                                 "a downloaded patch is no longer reported as downloading")
+                status = self.consistent(updates.status())
+                if loads:
+                    self.assertEqual((status.state, status.canApply, status.nextLaunch, status.error),
+                                     ("ready", True, True, None))
+                    self.assertEqual((status.check.state, self.record()["preflight"]), ("ready", "passed"))
+                else:
+                    self.assertEqual((status.state, status.canApply, status.nextLaunch, status.check.state),
+                                     ("failed", False, False, "error"))
+                    self.assertEqual(status.error.code, "UPDATE_PREFLIGHT_FAILED")
+                    self.assertIn("fixture refusal", status.error.detail)
+                    self.assertIn("fixture refusal", status.check.detail)
+                    self.assertEqual(self.record()["state"], "failed")
+                    # The owner's restart-now is no longer offered for it; checking again retries it.
+                    self.assertEqual(updates.check_now().check.state, "checking")
+
+    def test_a_later_check_that_fails_keeps_the_prepared_update_ready_and_says_why(self):
+        updates = self.controller()
+        updates._run_check(explicit=False)
+        self.assertEqual(updates.status().prepared.releaseVersion, VERSION)
+        self.publish_newer()
+        updates._run_check(explicit=True)
+        status = self.consistent(updates.status())
+        self.assertEqual((status.state, status.canApply, status.nextLaunch, status.prepared.releaseVersion),
+                         ("ready", True, True, VERSION))
+        self.assertEqual((status.error.code, status.check.state, status.check.latestVersion),
+                         ("UPDATE_DOWNLOAD_REFUSED", "error", "0.1.7"))
+        self.assertIn("SHA-256", status.error.detail)
+        self.assertEqual(self.record()["state"], "ready")
+
+    @unittest.skipUnless(os.name == "nt", "a pending synchronous pipe read holds up the children that inherit it on Windows")
+    def test_the_runtime_trial_load_does_not_wait_on_the_hub_stdin(self):
+        # The packaged Hub runs with --managed-stdin: one thread always waits
+        # to read its stdin pipe. A Python child that inherits that pipe does
+        # not start until the read returns, so every packaged check timed its
+        # trial load out after 180 s while the same command passed by hand.
+        target = self.root / "trial"
+        (target / "apps/monkeyhub").mkdir(parents=True)
+        (target / "apps/monkeyhub/run.py").write_text("print('usage: run.py [-h] [--runtime-root RUNTIME_ROOT]')\n")
+        harness = self.root / "managed_hub.py"
+        harness.write_text("\n".join((
+            "import subprocess, sys, threading, time",
+            "from pathlib import Path",
+            f"sys.path[:0] = {[str(ROOT), str(ROOT / 'apps/archflow-studio/api'), str(ROOT / 'apps/monkeyhub/api')]!r}",
+            "threading.Thread(target=sys.stdin.read, daemon=True).start()",
+            "time.sleep(0.5)",
+            "from monkeyhub_api import updates",
+            "real = subprocess.run",
+            "# Only the interpreter is this one; every option is the Hub's own.",
+            "subprocess.run = lambda command, **options: real([sys.executable, *command[1:]], **options)",
+            "updates.PREFLIGHT_SECONDS = 20.0",
+            "target = Path(sys.argv[1])",
+            "try:",
+            "    updates.DesktopUpdates(target, target / 'updates', managed=False, busy=lambda: None)._preflight(target)",
+            "except ValueError as error:",
+            "    print('refused:', error)",
+            "else:",
+            "    print('loaded')",
+        )) + "\n", encoding="utf-8")
+        with subprocess.Popen([sys.executable, str(harness), str(target)], stdin=subprocess.PIPE,
+                              stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                              creationflags=subprocess.CREATE_NO_WINDOW) as hub:
+            guard = threading.Timer(120, hub.kill)
+            guard.start()
+            try:
+                started = time.monotonic()
+                output = hub.stdout.read()
+            finally:
+                guard.cancel()
+        self.assertEqual(output.strip(), "loaded", output)
+        self.assertLess(time.monotonic() - started, 15)
 
     def test_a_patch_that_does_not_match_its_sha256_is_refused_before_staging(self):
         changed = bytearray(self.patch_file.read_bytes())
@@ -618,6 +745,7 @@ class AutomaticUpdateTests(unittest.TestCase):
         updates.shutdown()
         updates.activate_on_quit()
         self.assertEqual(self.processes, [self.activation(self.target)])
+        self.assertEqual(set(self.stdins), {subprocess.DEVNULL}, "no child reads the Hub's own stdin")
         record = self.record()
         self.assertEqual((record["state"], record["launchAttempts"]), ("activated", 0))
         # A version that is already switched in is not switched again.
@@ -679,10 +807,13 @@ class AutomaticUpdateTests(unittest.TestCase):
         with started.mutation():
             pass
         previous = self.controller()
-        self.assertEqual(previous.status().error.code, "UPDATE_ROLLED_BACK")
+        restored = self.consistent(previous.status())
+        self.assertEqual((restored.state, restored.error.code, restored.canApply, restored.nextLaunch),
+                         ("failed", "UPDATE_ROLLED_BACK", False, False))
         seen = len(self.github.requests)
         previous._run_check(explicit=False)
         self.assertEqual(previous.status().check.state, "error")
+        self.assertIn("Check again", previous.status().check.detail)
         self.assertFalse(any(url.endswith(".patch.zip") for url in self.github.requests[seen:]),
                          "a release that failed here is not downloaded again automatically")
 

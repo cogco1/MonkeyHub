@@ -10,6 +10,9 @@ export async function createProjectWorkspaceFixture(runtimes, sessions) {
   // { revisionSha256, current, localDraft, writes, hold, failure }. A test may set
   // `hold` to a promise that delays the next local write and `failure` to refuse it.
   const workingDrafts = new Map();
+  // #285: projects whose runtime has a Design Tree, by project id: { stages, edits }, the
+  // runs accepted as S0, S1, … in order, and the runs Current made after the last one.
+  const designTrees = new Map();
   const digest = (value) => createHash("sha256").update(value).digest("hex");
   const stateDigestOf = (projectId, runId) => digest(`state:${projectId}:${runId}`);
   const workingDraftDto = (projectId) => {
@@ -52,13 +55,14 @@ export async function createProjectWorkspaceFixture(runtimes, sessions) {
     const json = async (value) => { await route.fulfill({ json: value }); return true; };
     if (method === "GET") {
       if (name === "/api/protocol") return json({ protocol: "archflow/2", server: "fixture", serverVersion: "test", mode: "local",
-        capabilities: workingDrafts.has(projectId) ? ["working-draft"] : [] });
+        capabilities: [...(workingDrafts.has(projectId) ? ["working-draft"] : []), ...(designTrees.has(projectId) ? ["design-history", "working-source"] : [])] });
       if (name === "/api/working-draft" && workingDrafts.has(projectId)) return json(workingDraftDto(projectId));
       if (name === "/api/project") return json({ projectId, projectDir: runtime.projectDir, published: current.published,
         referenceRun: { runId: current.home, baseVersion: 0, baseSha256: current.published.stateSha256 }, intentProvider: "codex", intentModel: "fixture" });
       if (name === "/api/state") {
         const runId = url.searchParams.get("run") ?? current.home;
-        return json({ projectId, published: current.published, sourceStageRef: null,
+        // The state of the Stage asked for, as a runtime answers it; no Stage otherwise.
+        return json({ projectId, published: current.published, sourceStageRef: url.searchParams.get("sourceStageRef"),
           referenceRun: { runId, baseVersion: 0, baseSha256: current.published.stateSha256 }, referenceRunSource: "fixture",
           referenceReceipt: null, matchesReferenceReceipt: true, recordSource: "fixture", recordDigest: digest(`record:${projectId}:${runId}`),
           stateDigest: stateDigestOf(projectId, runId), activePhase: "stage-2", counts: { entities: 0, components: 0, parameters: 0, relations: 0, obligations: 0, dependencyEdges: 0 },
@@ -66,6 +70,7 @@ export async function createProjectWorkspaceFixture(runtimes, sessions) {
             components: [], elements: [], objects: [], coverage: { objects: 0, bound: 0, unbound: 0, ambiguous: 0, unknownComponent: 0 }, inspectionRun: runId, honesty: [] } });
       }
       if (name === "/api/artifacts") {
+        for (const run of designTrees.get(projectId)?.stages ?? []) current.artifact(run);
         for (const session of sessions.filter((row) => row.projectId === projectId)) for (const message of session.messages) {
           if (message.candidateId) current.artifact(message.candidateId);
         }
@@ -79,7 +84,16 @@ export async function createProjectWorkspaceFixture(runtimes, sessions) {
       if (name === "/api/documents") return json({ projectId, runId: null, documents: [] });
       if (name === "/api/render/capabilities") return json({ providers: [] });
       if (name === "/api/render/jobs") return json({ projectId, jobs: [] });
-      if (name === "/api/design-history") return json({ projectId, branchId: "main", branches: [], stages: [] });
+      if (name === "/api/design-history") {
+        const tree = designTrees.get(projectId);
+        if (!tree) return json({ projectId, branchId: "main", branches: [], stages: [] });
+        const stageRef = (run) => `project://${projectId}/runs/${run}/review/design-stage.json`;
+        const stages = tree.stages.map((run, index) => ({ stageRef: stageRef(run), parentStageRef: index ? stageRef(tree.stages[index - 1]) : null,
+          branchId: "main", label: `S${index}`, candidateId: run, modelSource: current.artifact(run).modelSource,
+          recordDigest: digest(`record:${projectId}:${run}`), acceptedBy: "studio:explicit-user-action", acceptance: null }));
+        return json({ projectId, branchId: "main", stages, candidates: [], studies: [], warnings: [], branches: [{ branchId: "main",
+          parentBranch: null, forkStageRef: stages[0].stageRef, headStageRef: stages.at(-1).stageRef }] });
+      }
       if (name === "/api/board") return json(current.board);
       // #300: Layout, Board's second mode, reads the project's publication; none is saved yet.
       if (name === "/api/publication") return json({ projectId, revisionSha256: null, title: `Layout ${projectId}`,
@@ -87,8 +101,12 @@ export async function createProjectWorkspaceFixture(runtimes, sessions) {
       if (name === "/api/drawings/styles") return json({ styles: [] });
       // #271: the head a real runtime would resolve for this fixture, and its read-only Worktree Graph.
       const home = current.assets.get(current.home).dto;
+      const tree = designTrees.get(projectId);
       const head = { runId: current.home, stateDigest: home.modelSource.stateDigest, recordDigest: digest(`record:${projectId}:${current.home}`),
-        sourceStageRef: null, branchId: null, accepted: false, origin: "reference", label: null, modelSource: home.modelSource, lineage: [current.home] };
+        sourceStageRef: null, branchId: null, accepted: false, origin: "reference", label: null, modelSource: home.modelSource, lineage: [current.home],
+        // A Design Tree's Current continues its last Stage through the runs it made after it.
+        ...(tree ? { sourceStageRef: `project://${projectId}/runs/${tree.stages.at(-1)}/review/design-stage.json`, branchId: "main",
+          origin: "working-position", lineage: [current.home, ...tree.edits, tree.stages.at(-1)] } : {}) };
       if (name === "/api/working-source") return json({ projectId, workspace: url.searchParams.get("workspace") ?? "modeling", policy: "live",
         revisionSha256: null, head, compatible: false, source: null, stageRef: null, reason: "This fixture has no exact STEP to draw.", warnings: [] });
       if (name === "/api/worktrees") {
@@ -137,5 +155,5 @@ export async function createProjectWorkspaceFixture(runtimes, sessions) {
     }
     throw new Error(`Unexpected project request: ${method} ${projectId} ${name}`);
   }
-  return { handle, requests, projects, workingDrafts, stateDigestOf };
+  return { handle, requests, projects, workingDrafts, designTrees, stateDigestOf };
 }

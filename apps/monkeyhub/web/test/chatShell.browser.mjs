@@ -251,6 +251,18 @@ await page.route((url) => url.pathname.startsWith("/api/"), async (route) => {
     }
     return json(runtimeSnapshot().projects.find((item) => item.projectDir === body.projectDir));
   }
+  const dismissal = url.pathname.match(/^\/api\/runtime\/operations\/([^/]+)\/acknowledge$/);
+  if (dismissal) {
+    assert.equal(method, "POST");
+    const runtime = [...runtimes.values()].find((item) => item.runtimeId === data().runtimeId);
+    assert.equal(data().projectId, runtime?.projectId, "a dismissal names its runtime and that runtime's project");
+    const operation = runtime.operations.find((item) => item.operationId === decodeURIComponent(dismissal[1]));
+    if (!operation) return json({ code: "OPERATION_NOT_FOUND", detail: "This project runtime has no operation with that id." }, 404);
+    if (!["failed", "stale"].includes(operation.status)) return json({ code: "OPERATION_NOT_ACKNOWLEDGEABLE",
+      detail: "Only a failed or stale operation can be dismissed. An operation that needs recovery stays until it is recovered." }, 409);
+    operation.acknowledgedAt ??= new Date().toISOString();
+    return json(operation);
+  }
   if (/^\/api\/runtime\/projects\/[^/]+\/recover$/.test(url.pathname)) {
     const runtime = [...runtimes.values()].find((item) => url.pathname.includes(item.runtimeId));
     assert.equal(data().projectId, runtime.projectId);
@@ -443,6 +455,16 @@ const boxOf = (selector) => page.evaluate((value) => {
 const activityRows = (expected) => page.waitForFunction((count) => [...document.querySelectorAll(".chat-process__row")]
   .some((row) => row.textContent.includes(`${count} steps`)), expected);
 const visibleWorkspace = () => page.locator('.chat-project-workspace:not([hidden])');
+// #285: the composer's + menu holds Add attachments and New topic; the composer
+// names the design context the next message carries.
+const composerMenu = (name = "Attachments and new topic") => page.getByRole("button", { name, exact: true });
+const addAttachments = async (files) => {
+  const chooser = page.waitForEvent("filechooser");
+  await composerMenu().click();
+  await page.getByRole("menuitem", { name: "Add attachments", exact: true }).click();
+  await (await chooser).setFiles(files);
+};
+const contextReady = () => page.waitForFunction(() => document.querySelector(".chat-composer")?.dataset.context === "ready");
 const waitWorkspace = async (kind = "arch") => {
   await visibleWorkspace().locator(`[data-project-surface="${kind}"]:not([hidden])`).waitFor();
   await visibleWorkspace().locator(kind === "board" ? ".monkeyboard-canvas canvas" : kind === "drawing" ? ".drawing-workspace" : kind === "render" ? ".render-workspace" : ".stage canvas").first().waitFor();
@@ -550,16 +572,17 @@ const autosavedModelRestart = async () => {
   assert.deepEqual(draft.writes[0].draft.commands, commands);
   assert.deepEqual(draft.writes[0].draft.source, draft.localDraft.source);
   assert.equal(await visibleWorkspace().getByRole("button", { name: "Record", exact: true }).isEnabled(), true);
-  // Restored edits are still not a candidate: chat asks for them to be recorded first,
+  // Restored edits are still not a candidate: a New topic asks for them to be recorded first,
   // and offers the one click that does it (#302) instead of a dead end.
-  const contextOption = page.locator(".chat-context-option input");
-  await page.waitForFunction(() => document.querySelector(".chat-context-option input")?.getAttribute("aria-description")?.startsWith("Model edits are not recorded"));
-  assert.equal(await contextOption.getAttribute("aria-description"), "Model edits are not recorded yet. Record them to start a new context from project state, or undo them in Modeling. You can still continue this conversation.");
-  await contextOption.check();
+  await page.waitForFunction(() => document.querySelector(".chat-composer")?.dataset.context === "unsynced");
+  await composerMenu().click();
+  const newTopic = page.getByRole("menuitemcheckbox", { name: "New topic", exact: true });
+  assert.equal(await newTopic.getAttribute("aria-description"), "Model edits are not recorded yet. Record them to start a new context from project state, or undo them in Modeling. You can still continue this conversation.");
+  await newTopic.click();
   const recordOffer = page.locator(".chat-composer .chat-record");
-  assert.equal(await recordOffer.innerText(), "Record edits and continue", "the refused new context offers Record edits and continue");
+  assert.equal(await recordOffer.innerText(), "Record edits and continue", "the refused New topic offers Record edits and continue");
   assert.equal(await page.locator(".chat-composer [role=status]").filter({ hasText: "Model edits are not recorded yet." }).count(), 1);
-  await contextOption.uncheck();
+  await page.getByRole("button", { name: "Remove New topic", exact: true }).click();
   await recordOffer.waitFor({ state: "detached" });
   await openSettings();
   await restartAllowed("edits the working draft already holds do not block the update restart");
@@ -612,10 +635,10 @@ try {
         for (const width of [1440, 900, 375]) {
           await page.setViewportSize({ width, height: 960 });
           const composer = page.locator(".chat-composer");
-          const attach = page.getByRole("button", { name: "Add attachments", exact: true });
+          const attach = composerMenu();
           const type = await page.evaluate(() => {
             const read = (selector) => { const style = getComputedStyle(document.querySelector(selector)); return { size: parseFloat(style.fontSize), weight: style.fontWeight, family: style.fontFamily }; };
-            return { ui: ["#chat-input", ".chat-connection__name", "#chat-model", ".chat-context-option"].map(read) };
+            return { ui: ["#chat-input", ".chat-connection__name", "#chat-model"].map(read) };
           });
           assert.ok(type.ui.every((text) => Math.abs(text.size - 14 * fontScale) < 0.05 && text.family === type.ui[0].family && text.weight === "400"), `${theme}/${width}/${fontScale}: equal-role text follows the chosen size together: ${JSON.stringify(type)}`);
           assert.equal(await composer.locator(":scope > .chat-muted").count(), 0);
@@ -625,6 +648,9 @@ try {
           await page.keyboard.press("Shift+Tab");
           assert.ok(await attach.evaluate((node) => node === document.activeElement && node.matches(":focus-visible") && getComputedStyle(node).outlineStyle !== "none"));
           const chooser = page.waitForEvent("filechooser");
+          await page.keyboard.press("Enter");
+          // The + menu opens on its first entry, Add attachments.
+          await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "Add attachments");
           await page.keyboard.press("Enter");
           await (await chooser).setFiles([
             { name: "roof-section-review-with-a-very-long-file-name.pdf", mimeType: "application/pdf", buffer: Buffer.from("Synthetic attachment") },
@@ -656,7 +682,7 @@ try {
     preferences = { ...preferences, language: "zh-CN", theme: "dark", fontScale: 1 };
     await page.setViewportSize({ width: 1440, height: 960 });
     await page.goto(origin);
-    await page.getByRole("button", { name: "添加附件", exact: true }).waitFor();
+    await composerMenu("附件与新话题").waitFor();
     await page.locator(".chat-composer").screenshot({ path: path.join(temporary, "composer-zh.png") });
   } else {
   if (process.env.MONKEYHUB_UI_FOCUS !== "updates") {
@@ -681,7 +707,9 @@ try {
   assert.equal(await rail.getByRole("button", { name: /Publish|Layout/ }).count(), 0, "Layout is not a rail entry");
   assert.ok(await railWidth() > 40, "the rail stays on screen while the tool content is closed");
   assert.equal(await page.locator(".chat-browser:visible").count(), 0);
-  await page.waitForFunction(() => !document.querySelector('.chat-composer input[type="checkbox"]')?.disabled);
+  await contextReady();
+  assert.equal(await page.locator(".chat-composer .chat-target").innerText(), "Changes: Current",
+    "DC-9: without a Design Tree the composer still names what a message changes");
   assert.equal(await page.locator(".stage canvas").count(), 0, "reading initial project context does not initialize a hidden viewport");
   assert.equal(workspaceFixture.requests.some((row) => row.name.endsWith("/bytes")), false,
     "initial chat reads its editing state without loading model files");
@@ -1721,9 +1749,7 @@ try {
   await page.locator(".chat-new").getByText("New chat", { exact: true }).click();
   await page.locator("#chat-input").fill("Attachment draft A");
   const beforeAttachmentDrafts = writes.filter(([, pathname]) => pathname.endsWith("/messages")).length;
-  const fileChooser = page.waitForEvent("filechooser");
-  await page.getByRole("button", { name: "Add attachments", exact: true }).click();
-  await (await fileChooser).setFiles([
+  await addAttachments([
     { name: "outline.txt", mimeType: "text/plain", buffer: Buffer.from("Synthetic outline A") },
     { name: "remove-me.txt", mimeType: "text/plain", buffer: Buffer.from("Remove this draft file") },
   ]);
@@ -1852,12 +1878,15 @@ try {
   for (const width of [1440, 900, 375]) {
     await page.setViewportSize({ width, height: 960 });
     await progressCard.scrollIntoViewIfNeeded();
-    const uploadButton = page.getByRole("button", { name: "Add attachments", exact: true });
+    const uploadButton = composerMenu();
     const bounds = await uploadButton.boundingBox();
     assert.ok(bounds && bounds.width >= 44 && bounds.height >= 44 && bounds.x >= 0 && bounds.x + bounds.width <= width);
     assert.ok(await progressCard.evaluate((node) => node.scrollWidth <= node.clientWidth + 1));
     await uploadButton.focus();
     const chooser = page.waitForEvent("filechooser");
+    await page.keyboard.press("Enter");
+    const menuBox = await page.getByRole("menu", { name: "Attachments and new topic", exact: true }).boundingBox();
+    assert.ok(menuBox && menuBox.x >= 0 && menuBox.x + menuBox.width <= width, "the + menu fits the window at " + width + "px");
     await page.keyboard.press("Enter");
     await (await chooser).setFiles({ name: "next-turn.txt", mimeType: "text/plain", buffer: Buffer.from("Next turn attachment") });
     await page.getByRole("button", { name: "Remove attachment: next-turn.txt", exact: true }).click();
@@ -1941,7 +1970,7 @@ try {
   await page.goto(`${origin}/?view=board&runtimeId=${runtimes.get("D:\\fixture\\A").runtimeId}`);
   await waitWorkspace("board");
   assert.equal(await page.locator('.chat-project[data-selected="true"] .chat-project__name').innerText(), "Project A");
-  await page.waitForFunction(() => !document.querySelector('.chat-composer input[type="checkbox"]')?.disabled);
+  await contextReady();
   assert.equal(await visibleWorkspace().locator(".stage canvas").count(), 0, "Board-first context uses the same session without opening Arch");
   assert.equal(await page.getByRole("button", { name: "Board", exact: true }).getAttribute("aria-pressed"), "true");
   assert.equal(new URL(page.url()).searchParams.get("view"), "board");
@@ -1992,15 +2021,33 @@ try {
   await page.locator(".chat-new").getByText("New chat", { exact: true }).click();
   await page.getByRole("button", { name: "Modeling", exact: true }).click();
   await waitWorkspace();
-  const projectContext = page.getByRole("checkbox", { name: "Continue from project state (without previous conversation context)" });
-  await page.waitForFunction(() => !document.querySelector('.chat-composer input[type="checkbox"]')?.disabled);
+  await contextReady();
   assert.equal(await page.locator('.chat-composer > .chat-muted').count(), 0,
     "ordinary chat does not show instructions for the optional new project context");
+  assert.equal(await page.locator(".chat-composer input[type=checkbox], .chat-composer .chat-topic").count(), 0,
+    "DC-5: no standing checkbox; New topic lives in the + menu");
   await visibleWorkspace().locator(".stage__versions-toggle").click();
   await visibleWorkspace().locator('.vcard__export').filter({ hasText: "cand-A-1.3dm" }).click();
   await visibleWorkspace().locator(".stage__versions-toggle").click();
-  await projectContext.check();
-  await page.locator('.chat-composer > .chat-muted').getByText("The next message starts a new model context from the saved editing state. This conversation stays visible.", { exact: true }).waitFor();
+  await composerMenu().click();
+  const newTopic = page.getByRole("menuitemcheckbox", { name: "New topic", exact: true });
+  assert.equal(await newTopic.getAttribute("aria-checked"), "false");
+  assert.equal(await newTopic.getAttribute("aria-description"), "The next message starts from the project state, without this conversation's context");
+  await newTopic.click();
+  const topicChip = page.locator(".chat-composer .chat-topic");
+  assert.equal((await topicChip.innerText()).trim(), "New topic");
+  assert.equal(await topicChip.getAttribute("title"), "The next message starts a new model context from the saved editing state. This conversation stays visible.");
+  assert.equal(await page.locator(".chat-composer .chat-topic-refusal").count(), 0, "a New topic with a saved state to start from has no refusal to show");
+  // The chip is removable, and the menu shows the choice as checked while it stands.
+  await page.getByRole("button", { name: "Remove New topic", exact: true }).click();
+  await topicChip.waitFor({ state: "detached" });
+  await composerMenu().click();
+  await newTopic.click();
+  await composerMenu().click();
+  assert.equal(await newTopic.getAttribute("aria-checked"), "true");
+  await page.keyboard.press("Escape");
+  await page.getByRole("menu").waitFor({ state: "detached" });
+  assert.ok(await composerMenu().evaluate((node) => node === document.activeElement), "Escape returns to the + button");
   await page.locator("#chat-input").fill("Compare the courtyard from the saved project state");
   await page.getByRole("button", { name: "Send", exact: true }).click();
   await page.getByRole("button", { name: "Stop", exact: true }).waitFor();
@@ -2014,7 +2061,7 @@ try {
   await visibleWorkspace().getByRole("button", { name: "Continue from here", exact: true }).click();
   await page.waitForFunction(() => document.querySelector('.chat-project-workspace:not([hidden]) .editing-base')?.dataset.sourceMatch === "same");
   await visibleWorkspace().locator(".stage__versions-toggle").click();
-  assert.equal(await projectContext.isChecked(), false, "the new-context option applies to one message");
+  assert.equal(await page.locator(".chat-composer .chat-topic").count(), 0, "New topic applies to one message");
   await page.locator("#chat-input").fill("Revise this candidate now");
   await page.getByRole("button", { name: "Send", exact: true }).click();
   await page.getByRole("button", { name: "Stop", exact: true }).waitFor();
@@ -2029,7 +2076,7 @@ try {
 
   await page.reload();
   await waitWorkspace();
-  await page.waitForFunction(() => !document.querySelector('.chat-composer input[type="checkbox"]')?.disabled);
+  await contextReady();
   await page.locator("#chat-input").fill("Continue the saved candidate after reopening");
   await page.getByRole("button", { name: "Send", exact: true }).click();
   await page.getByRole("button", { name: "Stop", exact: true }).waitFor();
@@ -2369,6 +2416,160 @@ try {
   await page.locator("#language").selectOption("en");
   await page.getByRole("dialog").getByRole("button", { name: "Close", exact: true }).click();
 
+  // #285, on a project whose runtime has a Design Tree. DC-9: the composer names what the
+  // next message changes and where Current stands, as the Stage chip does, and says so
+  // while another model is open read-only; the message still changes Current.
+  projects.push({ projectId: "T", projectDir: "D:\\fixture\\T", name: "Tree project", chatCount: 0, version: 2, stage: "S2" });
+  workspaceFixture.designTrees.set("T", { stages: ["tree-s0", "tree-s1", "tree-s2"], edits: ["tree-e2", "tree-e1"] });
+  emitRuntime();
+  await page.getByRole("button", { name: "Tree project", exact: true }).first().click();
+  await studioReady();
+  await contextReady();
+  const target = page.locator(".chat-composer .chat-target");
+  await target.filter({ hasText: "Changes: Current · 3 edits after S2" }).waitFor();
+  assert.equal(await target.getAttribute("data-viewing"), "false");
+  assert.equal(await page.locator("#chat-input").getAttribute("aria-describedby"), "chat-target", "the input is described by what it changes");
+  assert.doesNotMatch(await target.innerText(), /tree-|project:\/\/|[0-9a-f]{12}/, "the target label shows no raw ids");
+  await page.getByRole("button", { name: "Design tree", exact: true }).click();
+  const treeSurface = visibleWorkspace().locator(".design-tree");
+  await treeSurface.waitFor();
+  await treeSurface.getByRole("button", { name: "List", exact: true }).click();
+  await treeSurface.locator('[role="treeitem"][data-node="stage:project://T/runs/tree-s0/review/design-stage.json"]').click();
+  await treeSurface.getByRole("button", { name: "View", exact: true }).click();
+  await target.locator(".chat-target__viewing").filter({ hasText: "Viewing S0; this message still changes Current" }).waitFor();
+  assert.equal(await target.getAttribute("data-viewing"), "true");
+  assert.equal(await target.locator(".chat-target__text").innerText(), "Changes: Current · 3 edits after S2");
+  await visibleWorkspace().getByRole("button", { name: "Back to Current", exact: true }).click();
+  await target.locator(".chat-target__viewing").waitFor({ state: "detached" });
+  assert.equal(await target.getAttribute("data-viewing"), "false");
+  // PP-3: a send says Sending… while its message is on the way; connecting a project keeps its own words.
+  let releaseSend;
+  chatMessageResponseGate = new Promise((resolve) => { releaseSend = resolve; });
+  await page.locator("#chat-input").fill("Widen the reading room by one bay");
+  const heldSend = page.waitForRequest((req) => req.method() === "POST" && new URL(req.url()).pathname.endsWith("/messages"));
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  await heldSend;
+  await page.waitForFunction(() => document.querySelector(".chat-composer-note")?.textContent === "Sending…");
+  releaseSend(); chatMessageResponseGate = Promise.resolve();
+  await page.getByRole("button", { name: "Stop", exact: true }).waitFor();
+  await page.waitForFunction(() => document.querySelector(".chat-composer-note")?.textContent === "");
+  await page.getByRole("button", { name: "Stop", exact: true }).click();
+  // SS-9: unsent text is kept per conversation in this browser and comes back after a
+  // reload; it no longer holds the update restart (chosen files still do). Sending clears it.
+  const treeChat = sessions.find((row) => row.projectId === "T");
+  const keptDraft = (id) => page.evaluate((key) => JSON.parse(localStorage.getItem("monkeyhub.chat-drafts.v1") ?? "{}")[key]?.text ?? null, id);
+  await page.locator("#chat-input").fill("Keep this sentence through a reload");
+  await page.waitForFunction((id) => JSON.parse(localStorage.getItem("monkeyhub.chat-drafts.v1") ?? "{}")[id]?.text === "Keep this sentence through a reload", treeChat.id);
+  await page.reload();
+  await page.waitForFunction(() => document.querySelector("#chat-input")?.value === "Keep this sentence through a reload");
+  updateStatus = { ...updateStatus, state: "ready", prepared: preparedPatch, canApply: true };
+  await page.getByRole("button", { name: "Hub settings", exact: true }).click();
+  await page.getByRole("button", { name: "Restart to update", exact: true }).waitFor();
+  assert.equal(await page.getByText("A conversation has unsent text or attachments. Send or remove them before restarting.").count(), 0,
+    "kept text alone does not hold the update restart");
+  await page.getByRole("dialog").getByRole("button", { name: "Close", exact: true }).click();
+  updateStatus = { ...updateStatus, state: "idle", prepared: null, canApply: false };
+  assert.equal(appliedPatches, 0);
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  await page.getByRole("button", { name: "Stop", exact: true }).waitFor();
+  assert.equal(await keptDraft(treeChat.id), null, "a sent message leaves no kept draft");
+  await page.getByRole("button", { name: "Stop", exact: true }).click();
+
+  // #285: the unfinished-operation notice names the operation and when it was asked for,
+  // links the chat that asked, and Dismiss is recorded with the operation in the Hub
+  // runtime, so it stays dismissed after a restart. One that needs recovery stays.
+  const runtimeT = runtimes.get("D:\\fixture\\T");
+  sessions.push({ id: "tree-earlier", projectId: "T", projectDir: "D:\\fixture\\T", title: "Earlier drawing request", provider: "codex",
+    model: null, status: "idle", archived: false, createdAt: "2026-09-25", updatedAt: "2026-09-25", messages: [] });
+  const sheetAskedAt = "2026-09-25T06:02:00Z";
+  runtimeT.operations = [
+    { operationId: "candidate-waiting", projectId: "T", kind: "POST /api/proposals/prop-1/candidate", source: "chat", status: "needs_recovery",
+      committed: false, admissionSequence: 1, createdAt: "2026-09-25T05:00:00Z" },
+    // Admitted before admission times were kept: no time is shown for it.
+    { operationId: "proposal-stale", projectId: "T", kind: "POST /api/proposals", source: "studio", status: "stale", committed: false, admissionSequence: 2 },
+    { operationId: "sheet-failed", projectId: "T", kind: "POST /api/drawings/sheets", source: "chat", status: "failed", committed: false,
+      admissionSequence: 3, createdAt: sheetAskedAt, sessionId: "tree-earlier" },
+  ];
+  emitRuntime();
+  const notice = page.locator(".chat-runtime--operation");
+  const askedAt = await page.evaluate((value) => new Date(value).toLocaleString("en", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }), sheetAskedAt);
+  await notice.locator("p").filter({ hasText: "An operation did not complete" }).waitFor();
+  assert.equal(await notice.locator("small").innerText(), `Make a drawing sheet · ${askedAt} · 2 more`);
+  assert.doesNotMatch(await notice.innerText(), /sheet-failed|POST|\/api\//, "the notice names the operation in words, not its id or route");
+  await notice.getByRole("button", { name: "Open chat: Earlier drawing request", exact: true }).click();
+  await page.locator(".chat-header h1").filter({ hasText: "Earlier drawing request" }).waitFor();
+  assert.equal(await notice.getByRole("button", { name: /^Open chat/ }).count(), 0, "the chat it came from is the one on screen");
+  const beforeDismiss = writes.length;
+  await notice.getByRole("button", { name: "Dismiss", exact: true }).click();
+  await notice.locator("p").filter({ hasText: "An operation has an outdated base" }).waitFor();
+  assert.equal(await notice.locator("small").innerText(), "Draft a model change · 1 more");
+  assert.deepEqual(writes.slice(beforeDismiss).filter(([, pathname]) => pathname.includes("/acknowledge")),
+    [["POST", "/api/runtime/operations/sheet-failed/acknowledge", { runtimeId: runtimeT.runtimeId, projectId: "T" }, null]]);
+  await page.reload();
+  await notice.locator("p").filter({ hasText: "An operation has an outdated base" }).waitFor();
+  await notice.getByRole("button", { name: "Dismiss", exact: true }).click();
+  await notice.locator("p").filter({ hasText: "An operation needs recovery review" }).waitFor();
+  assert.equal(await notice.locator("small").innerText(), `Generate a scheme · ${await page.evaluate(() => new Date("2026-09-25T05:00:00Z")
+    .toLocaleString("en", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }))}`);
+  assert.equal(await notice.getByRole("button", { name: "Dismiss", exact: true }).count(), 0, "one that needs recovery cannot be dismissed");
+  assert.ok(runtimeT.operations.filter((row) => row.status !== "needs_recovery").every((row) => row.acknowledgedAt));
+
+  // The same composer states and notice in Chinese, for review.
+  await page.getByRole("button", { name: "Hub settings", exact: true }).click();
+  await page.locator("#language").selectOption("zh-CN");
+  await page.getByRole("dialog").getByRole("button", { name: "关闭", exact: true }).click();
+  runtimeT.operations.push({ operationId: "sheet-failed-again", projectId: "T", kind: "POST /api/drawings/sheets", source: "chat",
+    status: "failed", committed: false, admissionSequence: 4, createdAt: sheetAskedAt, sessionId: treeChat.id });
+  emitRuntime();
+  const askedAtZh = await page.evaluate((value) => new Date(value).toLocaleString("zh-CN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }), sheetAskedAt);
+  await notice.locator("p").filter({ hasText: "有操作未完成" }).waitFor();
+  assert.equal(await notice.locator("small").innerText(), `出图 · ${askedAtZh} · 另有 1 个`);
+  await notice.getByRole("button", { name: `打开对话: ${treeChat.title}`, exact: true }).waitFor();
+  await notice.getByRole("button", { name: "知道了", exact: true }).waitFor();
+  await contextReady();
+  await page.locator(".chat-composer .chat-target").filter({ hasText: "将修改：当前 · S2 之后 3 次修改" }).waitFor();
+  // A loading model's status shows through a hidden panel (BilingualText sets visibility: visible); wait it out.
+  const modelSettled = () => page.waitForFunction(() => !document.querySelector(".chat-browser")?.innerText.includes("Parsing"));
+  await modelSettled();
+  if (await page.getByRole("button", { name: "收起工具", exact: true }).count()) await page.getByRole("button", { name: "收起工具", exact: true }).click();
+  await page.locator(".chat-main").screenshot({ path: path.join(temporary, "composer-notice-zh.png") });
+  await composerMenu("附件与新话题").click();
+  await page.getByRole("menuitemcheckbox", { name: "新话题", exact: true }).waitFor();
+  await page.locator(".chat-main").screenshot({ path: path.join(temporary, "composer-menu-zh.png") });
+  await page.getByRole("menuitemcheckbox", { name: "新话题", exact: true }).click();
+  await page.locator(".chat-composer .chat-topic").filter({ hasText: "新话题" }).waitFor();
+  await page.getByRole("button", { name: "状态树", exact: true }).click();
+  const treeSurfaceZh = visibleWorkspace().locator(".design-tree");
+  await treeSurfaceZh.getByRole("button", { name: "列表", exact: true }).click();
+  await treeSurfaceZh.locator('[role="treeitem"][data-node="stage:project://T/runs/tree-s0/review/design-stage.json"]').click();
+  await treeSurfaceZh.getByRole("button", { name: "查看", exact: true }).click();
+  await page.locator(".chat-composer .chat-target__viewing").filter({ hasText: "正在查看 S0，这条消息仍会修改当前" }).waitFor();
+  await visibleWorkspace().locator(".boot").waitFor({ state: "hidden" });
+  await modelSettled();
+  await page.getByRole("button", { name: "收起工具", exact: true }).click();
+  await page.locator(".chat-main").screenshot({ path: path.join(temporary, "composer-viewing-topic-zh.png") });
+  await page.getByRole("button", { name: "展开工具", exact: true }).click();
+  await visibleWorkspace().getByRole("button", { name: "回到当前", exact: true }).click();
+  await page.locator(".chat-composer .chat-target__viewing").waitFor({ state: "detached" });
+  await page.getByRole("button", { name: "移除新话题", exact: true }).click();
+  await page.getByRole("button", { name: "收起工具", exact: true }).click();
+  let releaseZhSend;
+  chatMessageResponseGate = new Promise((resolve) => { releaseZhSend = resolve; });
+  await page.locator("#chat-input").fill("把阅览室加宽一跨");
+  const heldZhSend = page.waitForRequest((req) => req.method() === "POST" && new URL(req.url()).pathname.endsWith("/messages"));
+  await page.getByRole("button", { name: "发送", exact: true }).click();
+  await heldZhSend;
+  await page.waitForFunction(() => document.querySelector(".chat-composer-note")?.textContent === "发送中…");
+  await page.locator(".chat-main").screenshot({ path: path.join(temporary, "composer-sending-zh.png") });
+  releaseZhSend(); chatMessageResponseGate = Promise.resolve();
+  await page.getByRole("button", { name: "停止", exact: true }).waitFor();
+  await page.getByRole("button", { name: "停止", exact: true }).click();
+  runtimeT.operations = []; emitRuntime();
+  await notice.waitFor({ state: "detached" });
+  await page.getByRole("button", { name: "Hub 设置", exact: true }).click();
+  await page.locator("#language").selectOption("en");
+  await page.getByRole("dialog").getByRole("button", { name: "Close", exact: true }).click();
+
   // With no building project, machine tools remain available and report a
   // missing dependency directly instead of asking the person to bind Studio.
   projects.splice(0); sessions.splice(0); settings.projectDir = null;
@@ -2393,9 +2594,12 @@ try {
   } else {
     await page.goto(origin);
     await autosavedModelRestart();
-    await page.reload();
+    // A fresh page: reloading would follow the address's link to Project D's Modeling, which
+    // selects D again until it has opened, and could undo the click on Project A below.
+    await page.goto(origin);
     await page.getByRole("button", { name: "Project A", exact: true }).first().click();
     await page.waitForFunction(() => document.querySelector("#chat-input") && !document.querySelector("#chat-input").disabled);
+    await page.waitForFunction(() => document.querySelector(".chat-header__project")?.textContent === "Project A");
     await page.locator("#chat-input").fill("Keep this hidden project draft");
     await page.locator('.chat-composer input[type="file"]').setInputFiles({ name: "keep.txt", mimeType: "text/plain", buffer: Buffer.from("Retain these exact draft bytes") });
     await page.getByRole("button", { name: "Project B", exact: true }).first().click();

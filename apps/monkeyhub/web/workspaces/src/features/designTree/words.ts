@@ -3,10 +3,53 @@
  * chip, the canvas, the list and the side card name a node the same way,
  * and no raw id or hash reaches the main copy.
  */
+import { translateMessage, type MessageParameters } from "../../../../../../shared-web/src/i18n.js";
+import type { StudioApiError } from "../../api/client";
 import type { TFunction } from "../../i18n/useT";
+import type { Language } from "../settings/preferences";
+import { DESIGN_TREE_UNDO_MOVED, DESIGN_TREE_UNSYNCED } from "./continueUndo";
 import type { Fork } from "./layout";
 import { CURRENT, type GrowthTree, type PendingStatus, type TreeNode } from "./model";
 import type { SceneWords } from "./scene";
+
+/**
+ * The tree's action copy that the catalogs do not carry yet. GH-244 claims the
+ * catalogs, so it stays here until it moves into them (review §4 step 1).
+ */
+interface ActionCopy {
+  /** FN-5: the toast after Continue, naming the new Current. */
+  readonly continued: string;
+  readonly undo: string;
+  readonly undoing: string;
+  /** FN-5: the toast after Accept as next Stage; acceptance has no Undo. */
+  readonly accepted: string;
+  readonly undone: string;
+  /** An Undo that found Current changed since its Continue: nothing was put back. */
+  readonly undoMoved: string;
+}
+
+const ACTION_COPY: Readonly<Record<Language, ActionCopy>> = {
+  en: {
+    continued: "Current is now “{name}”", undo: "Undo", undoing: "Undoing…", accepted: "Accepted as {stage}",
+    undone: "Undone · Current is back where it was", undoMoved: "Current has changed since the Continue; nothing was undone.",
+  },
+  "zh-CN": {
+    continued: "当前已改为「{name}」", undo: "撤销", undoing: "正在撤销…", accepted: "已接受为 {stage}",
+    undone: "已撤销 · 当前已回到原处", undoMoved: "继续之后当前已有变化，未撤销。",
+  },
+};
+
+/** One line of the action copy, filled the way the catalogs are. */
+export const actionWords = (language: Language) =>
+  (key: keyof ActionCopy, parameters?: MessageParameters): string => translateMessage(ACTION_COPY[language], key, parameters);
+
+/** A refused Continue, Accept or Undo, in the words it gets wherever it was asked for. */
+export function refusalWords(t: TFunction, language: Language, error: StudioApiError): string {
+  return error.code === DESIGN_TREE_UNSYNCED ? t("designTree.outcome.unsynced")
+    : error.code === DESIGN_TREE_UNDO_MOVED ? actionWords(language)("undoMoved")
+      : error.code === "CANDIDATE_REJECTED" ? t("designTree.outcome.rejected")
+        : t("designTree.outcome.refused", { reason: error.detail });
+}
 
 /** The actor id an explicit act in the Studio carries when nobody signed in. */
 const LOCAL_ACTOR = "studio:explicit-user-action";

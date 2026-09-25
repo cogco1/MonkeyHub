@@ -105,6 +105,18 @@ export interface ReviewSummary {
 
 export type CaptureState = "idle" | "busy" | "success" | "error";
 
+/**
+ * The annotation swatches, each announced by its colour's name rather than its
+ * hex code (NA-4). The names stay here until the catalogs can take new copy
+ * (review §4 step 1).
+ */
+const ANNOTATION_COLOURS = [
+  { value: "#e5534b", "zh-CN": "红色", en: "Red" },
+  { value: "#2f80ed", "zh-CN": "蓝色", en: "Blue" },
+  { value: "#f2c94c", "zh-CN": "黄色", en: "Yellow" },
+  { value: "#ffffff", "zh-CN": "白色", en: "White" },
+] as const;
+
 function sketchControls(state: SketchState) {
   return {
     tool: state.tool, phase: state.phase, typed: state.typed, axisLock: state.axisLock,
@@ -1759,14 +1771,17 @@ export function Stage({
             <ModelToolButton icon="more" label={t("stage.tools.viewOptions")} aria-expanded={viewToolsOpen} aria-controls="view-tools"
               onClick={() => { setViewToolsOpen((open) => !open); setAnnotationToolsOpen(false); setVersionsOpen(false); setParameterLocksOpen(false); }} />
             </div>
-            {model?.sync && <div className="model-tools__group model-tools__sync">
-              <ModelToolButton icon="sync" label={t("stage.sync.label")} disabled={!model.sync.dirty || model.sync.busy}
-                onClick={model.sync.onSync} />
-              {(model.sync.dirty || model.sync.busy || model.sync.error) && <span className="model-tools__sync-status"
-                role={model.sync.error ? "alert" : "status"}>
+            {/* SS-5: Record is a design act, not a save. It appears, named, only while
+                edits wait to be recorded or are being recorded; a Record error with
+                nothing left to record keeps its line without the button. */}
+            {model?.sync && (model.sync.dirty || model.sync.busy || model.sync.error) && <div
+              className={`model-tools__group model-tools__sync${model.sync.dirty || model.sync.busy ? "" : " model-tools__sync--status-only"}`}>
+              {(model.sync.dirty || model.sync.busy) && <ModelToolButton icon="sync" label={t("stage.sync.label")} showLabel
+                disabled={model.sync.busy} onClick={model.sync.onSync} />}
+              <span className="model-tools__sync-status" role={model.sync.error ? "alert" : "status"}>
                 {model.sync.error ?? (model.sync.busy ? t("stage.sync.busy") : model.sync.autosave
                   ? t(model.sync.autosave === "saved" ? "stage.sync.autosaved" : "stage.sync.autosaving") : t("stage.sync.dirty"))}
-              </span>}
+              </span>
             </div>}
           </div>
           {annotationToolsOpen && <div id="annotation-tools" className="viewtools viewtools--panel" role="group" aria-label={t("stage.tools.annotate")}>
@@ -1784,12 +1799,12 @@ export function Stage({
               </button>
             ))}
             <span className="viewtools__sep" aria-hidden="true" />
-            <span className="annotation-style" aria-label={t("stage.tools.colour")}>
-              {["#e5534b", "#2f80ed", "#f2c94c", "#ffffff"].map((color) => (
-                <button key={color} type="button" className="annotation-style__colour" aria-label={color} aria-pressed={annotationStyle.color === color} onClick={() => setAnnotationStyle((current) => ({ ...current, color }))} style={{ "--annotation-colour": color } as CSSProperties} />
+            <span className="annotation-style" role="group" aria-label={t("stage.tools.colour")}>
+              {ANNOTATION_COLOURS.map(({ value: color, ...names }) => (
+                <button key={color} type="button" className="annotation-style__colour" aria-label={names[language]} title={names[language]} aria-pressed={annotationStyle.color === color} onClick={() => setAnnotationStyle((current) => ({ ...current, color }))} style={{ "--annotation-colour": color } as CSSProperties} />
               ))}
             </span>
-            <span className="annotation-style" aria-label={t("stage.tools.lineWidth")}>
+            <span className="annotation-style" role="group" aria-label={t("stage.tools.lineWidth")}>
               {([2, 4, 6] as const).map((lineWidth) => (
                 <button key={lineWidth} type="button" className="annotation-style__width" aria-label={`${lineWidth}px`} aria-pressed={annotationStyle.lineWidth === lineWidth} onClick={() => setAnnotationStyle((current) => ({ ...current, lineWidth }))}><span style={{ height: lineWidth }} /></button>
               ))}
