@@ -3635,7 +3635,8 @@
         "StateRecordOperator.from_dict",
         "combine_component_changes",
         "StateRecord.closures",
-        "compile_parameter_locks"
+        "compile_parameter_locks",
+        "changed_refs"
       ],
       "depends_on": [
         "contracts.canonical",

@@ -208,7 +208,7 @@ def _detail(exc: Exception) -> str:
     return exc.detail if isinstance(exc, StudioError) else str(exc) or type(exc).__name__
 
 
-def _lineage(binding: ProjectBinding, run_id: str) -> tuple[str, ...]:
+def lineage_of(binding: ProjectBinding, run_id: str) -> tuple[str, ...]:
     """The run and the exact retained sources it continued, newest first."""
 
     runs = [run_id]
@@ -263,7 +263,7 @@ def _head_at(binding: ProjectBinding, run_id: str, *, branch_id: str | None, ori
         branch_id=stage.branch_id if stage is not None else branch_id, accepted=accepted, origin=origin,
         label=label or (stage.label if accepted else None),
         model_source=_complete_model(binding, projection, stage if accepted else None),
-        lineage=_lineage(binding, run_id),
+        lineage=lineage_of(binding, run_id),
     )
 
 

@@ -7,8 +7,8 @@ from pydantic import Field
 from starlette.requests import Request
 
 from ..application.binding import bound_project
-from ..application.runtime import inspect_runtime
-from ..transport.runtime import RuntimeDto, runtime_dto
+from ..application.runtime import inspect_runtime, worktree_graph
+from ..transport.runtime import RuntimeDto, WorktreeGraphDto, runtime_dto, worktree_graph_dto
 
 router = APIRouter(tags=["runtime"])
 
@@ -21,3 +21,11 @@ def read_runtime(
 ) -> RuntimeDto:
     return runtime_dto(inspect_runtime(bound_project(request.app.state), jobs=request.app.state.jobs,
                                        limit=limit, offset=offset, candidate_ids=tuple(candidate_ids)))
+
+
+@router.get("/worktrees", response_model=WorktreeGraphDto, response_model_by_alias=True)
+def read_worktrees(request: Request) -> WorktreeGraphDto:
+    """Read-only: the Working Head, running work, other lines and whether they reconcile."""
+    binding = bound_project(request.app.state)
+    renders = request.app.state.render_jobs.list(binding)
+    return worktree_graph_dto(worktree_graph(binding, jobs=request.app.state.jobs, render_jobs=renders))

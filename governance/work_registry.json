@@ -284,7 +284,8 @@
         "apps/monkeyhub/web/test/chatShell.browser.mjs",
         "docs/PROJECT_RUNTIME.md",
         "docs/mapping/planning/GH-271-working-head.md",
-        "governance/work_registry.json"
+        "governance/work_registry.json",
+        "archflow/state/state_record.py"
       ],
       "card": "docs/mapping/planning/GH-271-working-head.md",
       "acceptance": [
@@ -346,7 +347,8 @@
             "apps/monkeyhub/web/test/chatShell.browser.mjs",
             "docs/PROJECT_RUNTIME.md",
             "docs/mapping/planning/GH-271-working-head.md",
-            "governance/work_registry.json"
+            "governance/work_registry.json",
+            "archflow/state/state_record.py"
           ],
           "depends_on": [],
           "status": "active",
