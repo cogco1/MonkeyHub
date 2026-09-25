@@ -13,7 +13,13 @@
         "docs/2026-09-24-monkeyhub-ui-reality-audit.md",
         "apps/archflow-studio/api/archflow_studio_api/application/working_draft.py",
         "apps/monkeyhub/web/workspaces/test/candidatePreview.browser.mjs",
-        "apps/archflow-studio/README.md"
+        "apps/archflow-studio/README.md",
+        "apps/monkeyhub/web/workspaces/src/app/App.tsx",
+        "apps/monkeyhub/web/workspaces/src/app/useSession.ts",
+        "apps/monkeyhub/web/workspaces/src/features/stage/VersionsStrip.tsx",
+        "apps/monkeyhub/web/workspaces/test/modelSync.browser.mjs",
+        "apps/monkeyhub/web/workspaces/test/connection.test.ts",
+        "apps/monkeyhub/README.md"
       ],
       "card": "docs/mapping/planning/GH-234-hub-ui-round.md",
       "acceptance": [
@@ -49,7 +55,7 @@
           "base_ref": "baabea02",
           "contributor": "Claude",
           "reviewer": "Claude root task",
-          "handoff": "Q2: only the architect's own Sync results advance the saved working position; generated candidates never do. Root task codex/234-ui-round integrates.",
+          "handoff": "Q2 end to end: generated candidates never become the saved base, including when auto-shown in Modeling; the architect's own completed Sync always advances it. App.tsx is claimed only for this lane's commits (GH-66 still lists it after #273) and is released at integration. Root task codex/234-ui-round integrates.",
           "modules": [
             "hub.shell",
             "studio.shell"
@@ -57,7 +63,13 @@
           "write_scope": [
             "apps/archflow-studio/api/archflow_studio_api/application/working_draft.py",
             "apps/monkeyhub/web/workspaces/test/candidatePreview.browser.mjs",
-            "apps/archflow-studio/README.md"
+            "apps/archflow-studio/README.md",
+            "apps/monkeyhub/web/workspaces/src/app/App.tsx",
+            "apps/monkeyhub/web/workspaces/src/app/useSession.ts",
+            "apps/monkeyhub/web/workspaces/src/features/stage/VersionsStrip.tsx",
+            "apps/monkeyhub/web/workspaces/test/modelSync.browser.mjs",
+            "apps/monkeyhub/web/workspaces/test/connection.test.ts",
+            "apps/monkeyhub/README.md"
           ],
           "depends_on": [],
           "status": "active",
