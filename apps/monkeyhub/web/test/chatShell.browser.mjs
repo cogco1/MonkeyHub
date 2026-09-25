@@ -2594,10 +2594,11 @@ try {
   } else {
     await page.goto(origin);
     await autosavedModelRestart();
-    await page.reload();
+    // A fresh page: reloading would follow the address's link to Project D's Modeling, which
+    // selects D again until it has opened, and could undo the click on Project A below.
+    await page.goto(origin);
     await page.getByRole("button", { name: "Project A", exact: true }).first().click();
     await page.waitForFunction(() => document.querySelector("#chat-input") && !document.querySelector("#chat-input").disabled);
-    // The reload may reopen the last project first; type only once Project A holds the composer.
     await page.waitForFunction(() => document.querySelector(".chat-header__project")?.textContent === "Project A");
     await page.locator("#chat-input").fill("Keep this hidden project draft");
     await page.locator('.chat-composer input[type="file"]').setInputFiles({ name: "keep.txt", mimeType: "text/plain", buffer: Buffer.from("Retain these exact draft bytes") });
