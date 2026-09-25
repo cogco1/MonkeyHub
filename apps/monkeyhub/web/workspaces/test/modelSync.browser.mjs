@@ -409,9 +409,13 @@ if (autosaveOnly) {
   await deselect();await page.keyboard.press('Control+z');
   await wait(s=>!s.dirty&&!s.view.drafts.some(row=>row.id===object),'Undo did not return to the original model');
   await savedDraft(d=>d.localDraft===null,'Undo to baseline did not clear recovery');
+  await button('Record').waitFor({state:'detached'});
   await page.keyboard.press('Control+y');
   await wait(s=>s.dirty&&s.view.drafts.some(row=>row.id===object),'Redo did not recover the local object');
   await savedDraft(d=>d.localDraft?.commands.length===1,'Redo was not retained');
+  // SS-5: with its edits autosaved, Record is back with its status line.
+  await page.locator('.model-tools__sync-status').filter({hasText:'Unrecorded edits · saved automatically'}).waitFor();
+  assert.equal(await button('Record').isEnabled(),true);
 
   let delayedClear=false;
   const delayClear=async route=>{
@@ -474,6 +478,7 @@ if (autosaveOnly) {
   assert.equal(authoredContext.designContext.sourceRunId,null,'authored context must not invent a retained run');
   assert.equal(authoredContext.designContext.stateDigest,initial.stateDigest);
   assert.equal(initial.view.hasBaseModel,false);assert.equal(initial.view.drafts.length,0);
+  assert.equal(await button('Record').count(),0,'an empty project offers no Record');
   console.log('0 · authored-only project: first local drawing, selection, delete/undo, then one explicit Sync');
   const first=await rectangle(2,1.25);
   // Authored fixture primitives become visible with the first local snapshot;
@@ -897,15 +902,34 @@ if (autosaveOnly) {
   for(const transform of transforms)assert.equal(transform.body.sourceRunId,seedRun);
   console.log('PASS pointer Move/Copy: base-point capture without jump, reused preview/zero pointer commits, latest pointer Click, exact XYZ/Enter, stable copy identity, Esc/Undo/Redo, zero local writes and one frozen OCCT candidate');
 } else {
-await openSeed('initial model');
+// R14: a boot that runs long says what it does, not a brand, and how long it has waited.
+let releaseBoot;const bootHeld=new Promise(resolve=>releaseBoot=resolve);
+await page.route('**/api/project',async route=>{await bootHeld;await route.continue();},{times:1});
+const opening=openSeed('initial model');opening.catch(()=>{});// awaited below; a failure still surfaces there
+const boot=page.locator('.boot[data-mode="boot"]');
+await boot.locator('.boot__elapsed').waitFor();
+assert.equal(await boot.locator('.boot__title').innerText(),'Opening…','the boot overlay is headed by what it does');
+assert.match(await boot.locator('.boot__elapsed').innerText(),/^Still waiting · \d+ s$/);
+assert.equal(await boot.locator('[role="status"] .boot__elapsed').count(),0,'the count is not a live region');
+releaseBoot();await opening;
 const originalRuns=await runIds(), beforeWrites=sent.length;
+// SS-5: Record is offered, by name, only while there is something to record.
+assert.equal(await button('Record').count(),0,'no dead Record icon before any edit');
+// NA-4: a tool's shortcut is announced, not only shown in its hover tooltip.
+for(const [name,keys] of [['Select','Space'],['Rectangle','R'],['Push/Pull','P'],['Undo model','Control+Z'],['Redo model','Control+Shift+Z']])
+  assert.equal(await button(name).getAttribute('aria-keyshortcuts'),keys,`${name} announces ${keys}`);
 console.log('1 · completed rectangles/lines stay local and independently pickable');
 const block=await rectangle(2,1), curve=await line();
+await button('Record').waitFor();assert.equal(await button('Record').isEnabled(),true);
+assert.equal(await button('Record').locator('.model-tool-button__label').innerText(),'Record','Record carries its name beside the icon');
 let state=await snap();assert.equal(state.view.drafts.find(o=>o.id===curve).spec.closed,false);
 assert.deepEqual(state.view.drafts.find(o=>o.id===curve).visible,[true,false,false]);
 await pick(block,true);assert.equal((await snap()).pickedStatus,'local');
 console.log('2 · two successive P gestures re-pick the moved face, with latest-pointer and numeric override');
 await button('Push/Pull').click();await wait(s=>s.gesture.pushPull,'P did not start');
+const pushPullForm=page.getByRole('form',{name:'Push/Pull P',exact:true});
+assert.equal(await pushPullForm.getByRole('button',{name:'Apply',exact:true}).getAttribute('aria-keyshortcuts'),'Enter');
+assert.equal(await pushPullForm.getByRole('button',{name:'Close tool',exact:true}).getAttribute('aria-keyshortcuts'),'Escape','Esc is announced by its key name');
 const first=await snap(),g=first.gesture.pushPull,original=first.view.drafts.find(o=>o.id===block);
 const end=await page.evaluate(p=>window.__view.project(p),g.face.origin.map((v,i)=>v+g.face.normal[i]*.625));
 const pStart=performance.now();await page.evaluate(({x,y})=>{
@@ -977,6 +1001,7 @@ const quietSyncStart=performance.now(),quietSyncWall=Date.now();await button('Re
   'second Sync did not show the completed model',120000);
 console.log('TIMING quiet Sync click → visible candidate',Math.round(performance.now()-quietSyncStart),'ms (no artificial hold)');
 await stages(quietSyncWall,'quiet auto display');
+await button('Record').waitFor({state:'detached'});
 state=await snap();assert.equal(candidateCalls().length,2);assert.ok((await exported(state.candidates[1])).has('obj-'+later));
 assert.equal(state.view.drafts.length,0,'the completed batch must not overlap its saved model');
 const continuedDraft=await call('GET','/api/working-draft');
@@ -1002,6 +1027,8 @@ assert.notEqual(state.base,failedBase);assert.equal(candidateCalls().length,3);
 console.log('7 · annotation and document keys cannot act on the local model');
 const inkObject=await rectangle(.8,.6);await pick(inkObject);const inkModelIndex=(await snap()).index;
 const annotate=page.locator('button[aria-controls="annotation-tools"]');await annotate.click();
+assert.deepEqual(await page.getByRole('group',{name:'Annotation colour',exact:true}).getByRole('button').evaluateAll(nodes=>nodes.map(node=>node.getAttribute('aria-label'))),
+  ['Red','Blue','Yellow','White'],'annotation swatches announce colour names, not hex codes');
 const inkTool=page.locator('#annotation-tools').getByRole('button',{name:'╱ Line',exact:true});await inkTool.click();
 const inkBox=await page.locator('canvas.annotate[data-armed="true"]').boundingBox();assert.ok(inkBox);
 await page.mouse.move(inkBox.x+inkBox.width*.4,inkBox.y+inkBox.height*.55);await page.mouse.down();

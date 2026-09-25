@@ -138,24 +138,40 @@ export type ModelToolButtonProps = Omit<ComponentProps<"button">, "children" | "
   icon: ModelToolIcon;
   label: string;
   shortcut?: string;
+  /** Show the label beside the icon, for an act the icon alone would misname (SS-5). */
+  showLabel?: boolean;
 };
 
+/** The tooltip's short key names, as `aria-keyshortcuts` spells them. */
+const ARIA_KEY_NAMES: Readonly<Record<string, string>> = { Ctrl: "Control", Esc: "Escape", Del: "Delete" };
+
+/**
+ * The shortcut the tooltip shows, in `aria-keyshortcuts` words (NA-4):
+ * `Ctrl+Shift+Z` is `Control+Shift+Z` and `Esc` is `Escape`. Letters, `Enter`
+ * and `Space` are already spelled the way the attribute expects.
+ */
+function keyShortcuts(shortcut: string | undefined): string | undefined {
+  if (!shortcut) return undefined;
+  return shortcut.split("+").map((key) => ARIA_KEY_NAMES[key] ?? key).join("+");
+}
+
 /** A local toolbar control; the caller continues to own its action and state. */
-export function ModelToolButton({ icon, label, shortcut, className, type = "button", ...props }: ModelToolButtonProps) {
+export function ModelToolButton({ icon, label, shortcut, showLabel = false, className, type = "button", ...props }: ModelToolButtonProps) {
   useEffect(() => { installStageToolbarPolicy(); }, []);
   if (HIDDEN_FROM_STAGE1_TOOLBAR.has(icon)) return null;
 
   return (
-    <button {...props} type={type} aria-label={label} data-tool-icon={icon}
-      className={`model-tool-button${className ? ` ${className}` : ""}`}>
+    <button aria-keyshortcuts={keyShortcuts(shortcut)} {...props} type={type} aria-label={label} data-tool-icon={icon}
+      className={`model-tool-button${showLabel ? " model-tool-button--labelled" : ""}${className ? ` ${className}` : ""}`}>
       <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor"
         strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
         <path d={paths[icon]} />
       </svg>
-      <span className="model-tool-button__tooltip" aria-hidden="true">
-        <span>{label}</span>
+      {showLabel && <span className="model-tool-button__label" aria-hidden="true">{label}</span>}
+      {(!showLabel || shortcut) && <span className="model-tool-button__tooltip" aria-hidden="true">
+        {!showLabel && <span>{label}</span>}
         {shortcut && <kbd>{shortcut}</kbd>}
-      </span>
+      </span>}
     </button>
   );
 }
