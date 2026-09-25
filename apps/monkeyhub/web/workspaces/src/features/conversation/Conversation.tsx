@@ -64,6 +64,7 @@ export function Conversation({
   sessionError,
   projection,
   currentStateDigest,
+  viewingOtherVersion = false,
   selection,
   disabledReason,
   busy,
@@ -86,6 +87,8 @@ export function Conversation({
   sessionError: StudioApiError | null;
   projection: StateProjectionDto | null;
   currentStateDigest: string | null;
+  /** The picture is not the editing base, so no proposal can be applied from it. */
+  viewingOtherVersion?: boolean;
   selection: Selection | null;
   disabledReason: string | null;
   busy: boolean;
@@ -154,6 +157,8 @@ export function Conversation({
               candidateRuns,
               callbacks,
               currentStateDigest,
+              editingStateDigest: projection?.stateDigest ?? null,
+              viewingOtherVersion,
               t,
               developerMode,
             })}
@@ -187,6 +192,8 @@ function renderEntry(
     candidateRuns,
     callbacks,
     currentStateDigest,
+    editingStateDigest,
+    viewingOtherVersion,
     t,
     developerMode,
   }: {
@@ -198,6 +205,8 @@ function renderEntry(
     callbacks: ConversationCallbacks;
   onClose?: () => void;
     currentStateDigest: string | null;
+    editingStateDigest: string | null;
+    viewingOtherVersion: boolean;
     t: TFunction;
     developerMode: boolean;
   },
@@ -216,7 +225,14 @@ function renderEntry(
       );
     case "you":
       return <p className="bubble">{entry.text}</p>;
-    case "proposal":
+    case "proposal": {
+      // A proposal applies only to the base it was made on, on screen. When
+      // it is disabled the note says which of the two is missing: another
+      // version is being viewed, or the editing base has since moved.
+      const inactive = entry.proposal.baseStateDigest !== currentStateDigest;
+      const inactiveReason = !inactive ? null
+        : editingStateDigest !== null && entry.proposal.baseStateDigest !== editingStateDigest ? "otherBase"
+          : viewingOtherVersion ? "viewing" : null;
       return (
         <>
           <p className="msg__who">{t("conversation.who.proposed")}</p>
@@ -227,7 +243,8 @@ function renderEntry(
             refinements={entry.refinements}
             refining={entry.id === refiningEntryId}
             busy={runBusy}
-            inactive={entry.proposal.baseStateDigest !== currentStateDigest}
+            inactive={inactive}
+            inactiveReason={inactiveReason}
             onRun={() => callbacks.onRun(entry.proposal.proposalId)}
             onAdjust={callbacks.onAdjust}
             onRefine={(value) => callbacks.onRefine(entry.id, value)}
@@ -235,6 +252,7 @@ function renderEntry(
           />
         </>
       );
+    }
     case "question":
       return (
         <>

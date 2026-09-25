@@ -183,6 +183,10 @@ export const messagesZhCN = {
   "stage.base.notSaved": "浏览器未能保存这次修改起点；选择仅在当前标签页有效。",
   "stage.base.programUnavailable": "任务书编辑尚未支持候选续改，请返回默认修改起点后编辑。",
   "stage.base.optionsReadOnly": "这里可查看候选体量；生成体量选项尚未支持候选续改，请返回默认修改起点。",
+  "stage.base.refusedBusy": "修改起点未切换：另一个模型操作仍在进行。请等它完成后重试。",
+  "stage.base.refusedUnsynced": "修改起点未切换：本地模型修改尚未同步，已保留在工作草稿中。请在修改过的模型上同步或撤销这些修改，然后重试。",
+  "stage.base.switchFailed": "修改起点未切换。请先处理所报告的错误，然后重试。",
+  "stage.base.proposalViewing": "此提案作用于修改起点，而不是画面中的版本。返回修改起点即可应用；也可以从此版本继续后重新提案。",
   "proposal.otherBase": "此提案属于另一个修改起点，可调整其语句，在当前起点重新提案。",
 
   "common.apply": "应用",
