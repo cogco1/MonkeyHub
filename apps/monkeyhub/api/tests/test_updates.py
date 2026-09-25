@@ -585,6 +585,16 @@ class AutomaticUpdateTests(unittest.TestCase):
             updates.check_now()
         self.assertEqual(len(self.github.requests), seen)
 
+    def test_an_automatic_check_skipped_while_busy_runs_again_soon(self):
+        updates = self.controller()
+        updates._preparing = True
+        with patch.object(updates_module, "BUSY_RETRY_SECONDS", 0.1):
+            updates.start(9, "instance")
+            time.sleep(0.3)
+            self.assertEqual(self.github.requests, [], "no check while a transaction is busy")
+            updates._preparing = False
+            wait_until(lambda: updates.status().check.state == "ready", "the check did not run again")
+
     def test_the_automatic_setting_is_honoured(self):
         self.preference.value = False
         updates = self.controller()

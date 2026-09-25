@@ -44,6 +44,8 @@ CHANNEL = "unsigned-prerelease"
 INDEX_SCHEMA = "MonkeyHubUpdateIndex@1"
 FIRST_CHECK_SECONDS = 30.0
 CHECK_INTERVAL_SECONDS = 6 * 60 * 60.0
+# An automatic check that found an update transaction in progress looks again this soon.
+BUSY_RETRY_SECONDS = 60.0
 # The desktop's restart-now trial completes through its helper; a start that
 # was not such a trial finishes itself after this long.
 TRIAL_GRACE_SECONDS = 90.0
@@ -887,16 +889,18 @@ class DesktopUpdates:
             self._wake.clear()
             with self._lock:
                 explicit, self._explicit = self._explicit, False
-            if explicit or self._auto_enabled():
-                self._run_check(explicit=explicit)
             delay = CHECK_INTERVAL_SECONDS
+            if (explicit or self._auto_enabled()) and not self._run_check(explicit=explicit):
+                # A new version finishing its own start checks again shortly after.
+                delay = BUSY_RETRY_SECONDS
 
-    def _run_check(self, *, explicit: bool) -> None:
+    def _run_check(self, *, explicit: bool) -> bool:
+        """One check; False when it did not run because an update transaction is busy."""
         with self._lock:
             if self._stop.is_set() or self._update_busy():
                 # Never while an update is being prepared, applied or finished.
                 self._progress = None
-                return
+                return False
             self._progress = ("checking", None)
         try:
             outcome = self._check_once(explicit)
@@ -913,6 +917,7 @@ class DesktopUpdates:
             if outcome is not None:
                 self._write_check({**self._check, "revision": self.revision,
                                    "lastCheck": {**outcome, "checkedAt": _now()}})
+        return True
 
     def _feed_or_default(self) -> ReleaseFeed:
         if self._feed is None:
