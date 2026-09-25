@@ -14,7 +14,9 @@ is looking at, exactly as it is for a proposal.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Query
+from typing import Literal
+
+from fastapi import APIRouter, Query, Response
 from starlette.requests import Request
 
 from ..transport.proposal import EpisodeDto, episode_dto
@@ -24,25 +26,28 @@ from ..application.synchronization import accept_shared_candidate, fork_shared_b
 from ..transport.errors import StudioError
 from ..application.monitoring import candidate_event_id
 from ..application.design_history import (
-    accept_design_candidate, fork_design_branch, initialize_design_stage,
-    read_design_history, stage_ref_from,
+    accept_design_candidate, admit_results, fork_design_branch, initialize_design_stage,
+    list_admissions, read_design_history, stage_ref_from,
 )
 from ..application.episodes import (
-    add_working_copy_option, create_working_copy, list_working_copies,
+    add_working_copy_option, list_working_copies,
     read_working_copy, select_working_copy_option,
 )
 from ..transport.artifacts import model_source_from
 from ..transport.design_history import (
-    AcceptDesignCandidateRequestDto, DesignBranchDto, DesignHistoryDto, DesignStageDto,
+    AcceptDesignCandidateRequestDto, AdmissionListDto, AdmissionRequestDto, CandidateAdmissionDto,
+    DesignBranchDto, DesignHistoryDto, DesignStageDto,
     ForkDesignBranchRequestDto, InitializeDesignStageRequestDto,
-    branch_dto, history_dto, stage_dto,
+    admission_dto, branch_dto, history_dto, stage_dto,
 )
 from ..transport.proposal import (
-    WorkingCopyCreateRequestDto, WorkingCopyDto, WorkingCopyListDto,
+    WorkingCopyDto, WorkingCopyListDto,
     WorkingCopySelectionRequestDto, WorkingCopyOptionRequestDto,
     working_copy_dto, working_option_from,
 )
 from .proposals import _require_bound_project
+
+_INCLUDE = Query(default=None, description="rejected also lists retained rejections, for advanced views.")
 
 router = APIRouter(tags=["episodes"])
 
@@ -54,8 +59,11 @@ def _attribution(request: Request) -> ActorAttribution:
 
 
 @router.get("/design-history", response_model=DesignHistoryDto, response_model_by_alias=True)
-def read_committed_design_history(request: Request, branch_id: str = Query(default="main", alias="branchId")) -> DesignHistoryDto:
-    return history_dto(read_design_history(bound_project(request.app.state), branch_id))
+def read_committed_design_history(request: Request, branch_id: str = Query(default="main", alias="branchId"),
+                                  include: Literal["rejected"] | None = _INCLUDE) -> DesignHistoryDto:
+    """Committed Stages of one line, and the project's admitted Candidates and Studies."""
+    return history_dto(read_design_history(bound_project(request.app.state), branch_id,
+                                           include_rejected=include == "rejected"))
 
 
 @router.post("/design-stages/initialize", response_model=DesignStageDto, response_model_by_alias=True, status_code=201)
@@ -104,6 +112,34 @@ def accept_committed_design(request: Request, candidate_id: str, payload: Accept
     return stage_dto(saved)
 
 
+@router.get("/admissions", response_model=AdmissionListDto, response_model_by_alias=True)
+def read_candidate_admissions(request: Request, include: Literal["rejected"] | None = _INCLUDE) -> AdmissionListDto:
+    """Every live admission record; a rejection stays readable as already tried, on request."""
+    binding = bound_project(request.app.state)
+    records, warnings = list_admissions(binding, include_rejected=include == "rejected")
+    return AdmissionListDto(project_id=binding.project_id, admissions=[admission_dto(row) for row in records],
+                            warnings=list(warnings))
+
+
+@router.post("/admissions", response_model=CandidateAdmissionDto, response_model_by_alias=True, status_code=201)
+def admit_candidate_results(request: Request, payload: AdmissionRequestDto, response: Response) -> CandidateAdmissionDto:
+    """Retain one closed loop's verdict through the gate Stage acceptance also uses.
+
+    201 retains a new record; 200 answers an identical retry with the record it
+    repeats. Admission accepts no Stage and moves no Working Head.
+    """
+    binding = bound_project(request.app.state)
+    _require_bound_project(binding, payload.project_id)
+    if request.app.state.settings.sync_url:
+        raise StudioError(409, "SYNC_ADMISSION_UNSUPPORTED", "This Runtime is connected to a shared project, and "
+                          "admissions are not synchronized yet; a local one would diverge from the shared project.")
+    record, created = admit_results(binding, payload.model_dump(by_alias=True, exclude={"project_id"}),
+                                    _attribution(request), events=request.app.state.events)
+    if not created:
+        response.status_code = 200
+    return admission_dto(record)
+
+
 @router.post("/design-branches", response_model=DesignBranchDto, response_model_by_alias=True, status_code=201)
 def fork_committed_design(request: Request, payload: ForkDesignBranchRequestDto) -> DesignBranchDto:
     binding = bound_project(request.app.state)
@@ -124,13 +160,8 @@ def read_working_copy_group(request: Request, group_id: str, revision_sha256: st
     return working_copy_dto(read_working_copy(bound_project(request.app.state), group_id, revision_sha256))
 
 
-@router.post("/working-copies", response_model=WorkingCopyDto, response_model_by_alias=True, status_code=201)
-def create_working_copy_group(request: Request, payload: WorkingCopyCreateRequestDto) -> WorkingCopyDto:
-    binding = bound_project(request.app.state)
-    _require_bound_project(binding, payload.project_id)
-    return working_copy_dto(create_working_copy(binding, payload.group_id, payload.label, payload.stage_id,
-                                              model_source_from(payload.common_base), payload.scope,
-                                              [working_option_from(option) for option in payload.options]))
+# Creating an Exploration is retired (#294 owner decision Q4): a Study is declared
+# on a CandidateAdmission@1. Retained Explorations stay readable and selectable.
 
 
 @router.put("/working-copies/{group_id}/selection", response_model=WorkingCopyDto, response_model_by_alias=True)

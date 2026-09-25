@@ -17,7 +17,7 @@ from fastapi.testclient import TestClient
 
 from archflow.adapters.three_dm_inspector import ThreeDmInspectionError, ThreeDmInspectionErrorCode
 from archflow.project.ports import PersistenceArea, PersistenceDestination
-from archflow.project.record_kinds import STUDIO_SOURCE_DOCUMENT
+from archflow.project.record_kinds import STUDIO_SOURCE_DOCUMENT, STUDIO_WORKING_COPY
 from archflow_studio_api.application.binding import record_kind
 from archflow_studio_api.application.binding import bound_project
 from archflow_studio_api.main import create_app
@@ -59,26 +59,46 @@ class WorkingCopyTests(unittest.TestCase):
         self.asset_b = register_model(self.client, "run-b", self.digest_b, self.bytes_b)
         self.a, self.b = self.asset_a["modelSource"], self.asset_b["modelSource"]
 
-    def group(self, group_id: str = "local-cabinets") -> dict:
-        response = self.client.post("/api/working-copies", json={"projectId": PROJECT_ID, "groupId": group_id,
-                                    "label": "Local cabinets", "stageId": "stage02", "commonBase": self.a,
-                                    "scope": ["element:portico-base"], "options": [
-                                        {"id": "A", "label": "Original", "modelSource": self.a},
-                                        {"id": "B", "label": "Higher", "modelSource": self.b}]})
-        self.assertEqual(response.status_code, 201, response.text)
+    def group(self, group_id: str = "local-cabinets", base_stage_ref: str | None = None) -> dict:
+        """A retained Exploration, as the retired creation route wrote it into its common-base run."""
+
+        self.repository.put_json(
+            run=self.repository.load_run(REFERENCE_RUN_ID),
+            destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=REFERENCE_RUN_ID),
+            record_kind=STUDIO_WORKING_COPY,
+            payload={"schema": "StudioWorkingCopy@1", "projectId": PROJECT_ID, "groupId": group_id,
+                     "label": "Local cabinets", "stageId": "stage02", "commonBase": self.a,
+                     "baseStageRef": base_stage_ref, "scope": ["element:portico-base"],
+                     "options": [{"id": "A", "label": "Original", "modelSource": self.a},
+                                 {"id": "B", "label": "Higher", "modelSource": self.b}],
+                     "selectedOptionId": None, "previousRevisionSha256": None},
+        )
+        response = self.client.get(f"/api/working-copies/{group_id}")
+        self.assertEqual(response.status_code, 200, response.text)
         return response.json()
 
-    def test_exploration_retains_exact_stage_without_promoting_legacy_choices(self) -> None:
+    def test_exploration_creation_is_retired_and_retained_explorations_stay_readable(self) -> None:
+        # A Study is declared on a candidate admission now (#294 owner decision Q4).
+        retired = self.client.post("/api/working-copies", json={
+            "projectId": PROJECT_ID, "groupId": "new-cabinets", "label": "Local cabinets", "stageId": "stage02",
+            "commonBase": self.a, "scope": ["element:portico-base"],
+            "options": [{"id": "A", "label": "Original", "modelSource": self.a},
+                        {"id": "B", "label": "Higher", "modelSource": self.b}]})
+        self.assertEqual(retired.status_code, 405, retired.text)
+        self.assertEqual(retired.json()["code"], "METHOD_NOT_ALLOWED")
+        self.assertNotIn("/api/working-copies", {
+            path for path, operations in self.app.openapi()["paths"].items() if "post" in operations})
         legacy = self.group("legacy-cabinets")
         self.assertIsNone(legacy["baseStageRef"])
         self.assertEqual(self.client.get("/api/design-history").json()["stages"], [])
         initial = self.client.post("/api/design-stages/initialize", json={"projectId": PROJECT_ID, "modelSource": self.a})
         self.assertEqual(initial.status_code, 201, initial.text)
-        current = self.group("stage-cabinets")
+        current = self.group("stage-cabinets", initial.json()["stageRef"])
         self.assertEqual(current["baseStageRef"], initial.json()["stageRef"])
         with TestClient(create_app(self.settings)) as restarted:
             self.assertEqual(restarted.get("/api/working-copies/stage-cabinets").json(), current)
             self.assertEqual(restarted.get("/api/working-copies/legacy-cabinets").json(), legacy)
+            self.assertEqual(restarted.get("/api/working-copies").json()["workingCopies"], [legacy, current])
             self.assertEqual(len(restarted.get("/api/design-history").json()["stages"]), 1)
 
     def events(self) -> list[dict]:

@@ -260,17 +260,28 @@ def _parents(binding: ProjectBinding, run_id: str) -> tuple[str, ...]:
     return parents
 
 
-def lineage_of(binding: ProjectBinding, run_id: str) -> tuple[str, ...]:
-    """The run and the exact retained runs it continued or combined, nearest first."""
+def lineage_of(binding: ProjectBinding, run_id: str, *,
+               known: dict[str, tuple[str, ...]] | None = None) -> tuple[str, ...]:
+    """The run and the exact retained runs it continued or combined, nearest first.
+
+    ``known`` lets one caller that walks many lineages read each run's change
+    at most once, a root without one included; the process memo keeps only
+    changes that exist, because a run's change may still be being retained.
+    """
 
     runs = [run_id]
     for current in runs:
         if len(runs) >= _LINEAGE_LIMIT:
             break
-        try:
-            parents = _parents(binding, current)
-        except _UNREADABLE:
-            continue
+        if known is not None and current in known:
+            parents = known[current]
+        else:
+            try:
+                parents = _parents(binding, current)
+            except _UNREADABLE:
+                parents = ()
+            if known is not None:
+                known[current] = parents
         for parent in parents:
             if parent not in runs and len(runs) < _LINEAGE_LIMIT:
                 runs.append(parent)
@@ -433,6 +444,16 @@ def resolve_working_source(binding: ProjectBinding, workspace: str = "modeling",
             head = _head_at(binding, current, branch_id=row["branchId"], origin="working-position", label=row["label"])
         except _UNREADABLE as exc:
             warnings.append(f"The saved working position {current} could not be read: {_detail(exc)}")
+        # Reported, never acted on: only an explicit Continue moves the head (Q2).
+        from .design_history import rejected_by  # design history reads this module's lineage
+        try:
+            rejection = rejected_by(binding, current)
+        except _UNREADABLE as exc:
+            rejection = None
+            warnings.append(f"Candidate admissions could not be read: {_detail(exc)}")
+        if rejection is not None:
+            warnings.append(f"The current working version {current} was rejected ({rejection}). It stays the "
+                            "editing base until another result is continued.")
     if head is None:
         head = _fallback_head(binding, warnings)
 
