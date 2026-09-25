@@ -1,5 +1,6 @@
 """A real room cut plan remains a representation of one exact design source."""
 
+from contextlib import contextmanager
 from copy import deepcopy
 import unittest
 from unittest.mock import patch
@@ -7,8 +8,10 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 from archflow.adapters.occt_backend import occt_available
+from archflow.project.record_kinds import DRAWING_PROJECTION_RECEIPT
 from archflow.project.refs import record_ref_from_uri
 from monkeydiagram.drawing_elevation import read_model_axis_elevation
+from archflow_studio_api.application import drawing_plans
 from archflow_studio_api.application.artifacts import _chain_head, _page_replacements, list_documents, replacement_cause
 from archflow_studio_api.application.binding import bound_project
 from archflow_studio_api.main import create_app
@@ -52,6 +55,32 @@ def replacing(document):
     """The replacesPages entry naming this revision's page as the replaced one."""
     return {"runId": document["runId"], "assetSha256": document["assetSha256"],
             "revisionRef": document["revisionRef"], "pageIndex": 0, "newPageIndex": 0}
+
+
+@contextmanager
+def receipt_fields(**fields):
+    """Cut-plan receipts retained meanwhile carry exactly these fields; None leaves one out.
+
+    The projection owner (monkeydiagram.drawing_elevation) writes its own
+    receipt fields; this retains known values, or none as an older revision
+    has, around the real projection so the application's reading is checked.
+    """
+    freeze = drawing_plans.freeze_cut_plan
+
+    def retaining(repository, **kwargs):
+        put_json = repository.put_json
+
+        def put(*, record_kind, payload, **rest):
+            if record_kind == DRAWING_PROJECTION_RECEIPT:
+                payload = {key: value for key, value in {**payload, **fields}.items()
+                           if key not in fields or fields[key] is not None}
+            return put_json(record_kind=record_kind, payload=payload, **rest)
+
+        with patch.object(repository, "put_json", put):
+            return freeze(repository, **kwargs)
+
+    with patch.object(drawing_plans, "freeze_cut_plan", retaining):
+        yield
 
 
 @unittest.skipUnless(occt_available(), "cadquery-ocp is not installed")
@@ -504,3 +533,21 @@ class CutPlanTests(CandidateTestCase):
         links, _ = self.links()
         self.assertEqual(links, {page_of(first): page_of(second)})
         self.assertEqual(_chain_head(links, page_of(first))[0], page_of(second))
+
+    def test_the_cleanup_report_is_read_from_the_receipt_and_never_keys_a_revision(self):
+        report = {"micro": 3, "collinear": 2, "cut_precedence": 5, "duplicate": 1, "hidden_under_cut": 0,
+                  "input_lines": 120, "output_lines": 109}
+        with receipt_fields(cleanup=None):
+            older = self.generate()
+        with receipt_fields(cleanup=report):
+            cleaned = self.generate(previousRevisionRef=older["revisionRef"], cutLineMm=.5)
+        for document, expected in ((older, None), (cleaned, report)):
+            ref = {key: document[key] for key in ("runId", "assetSha256", "revisionRef")}
+            self.assertEqual(self.status(document)["cleanup"], expected)
+            vector = self.client.get("/api/drawings/plans/vector", params=ref)
+            self.assertEqual(vector.status_code, 200, vector.text)
+            self.assertEqual(vector.json()["cleanup"], expected)
+            self.assertNotIn("cleanup", document["viewRecipe"])
+            self.assertNotIn("cleanup", document["viewRecipe"]["graphics"])
+        with patch("archflow_studio_api.application.drawing_plans.freeze_cut_plan", side_effect=AssertionError("cache must not project")):
+            self.assertEqual(self.generate(previousRevisionRef=cleaned["revisionRef"]), cleaned)

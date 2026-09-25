@@ -6041,6 +6041,14 @@ export type PlanStatusDto = {
      * Dressing
      */
     dressing?: Array<PlanDressingReadDto>;
+    /**
+     * Cleanup
+     *
+     * The deterministic cleanup the projection owner applied to this revision's lines - per-rule counts and input/output line counts - exactly as the revision's receipt retains it; null for a revision drawn before cleanup existed. It is never part of viewRecipe.
+     */
+    cleanup?: {
+        [key: string]: unknown;
+    } | null;
 };
 
 /**
@@ -6082,6 +6090,14 @@ export type PlanVectorDto = {
      * Anchors
      */
     anchors: Array<PlanDressingAnchorDto>;
+    /**
+     * Cleanup
+     *
+     * The deterministic cleanup the projection owner applied to this revision's lines - per-rule counts and input/output line counts - exactly as the revision's receipt retains it; null for a revision drawn before cleanup existed. It is never part of viewRecipe.
+     */
+    cleanup?: {
+        [key: string]: unknown;
+    } | null;
 };
 
 /**
