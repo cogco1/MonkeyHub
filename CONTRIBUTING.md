@@ -61,7 +61,9 @@ python tools/devctl.py work --json
 查看一项时写精确 id：`work GH-<issue>`、`work GH-<issue>/<lane>`；legacy 卡用 `work P###`。
 这些命令只读已登记的当前任务、基线、责任与重叠，不联网确认合并，不创建 worktree 或改 registry。现有 legacy 卡继续沿用原结构直到自然关闭；**不要为了新 GitHub Issue 创建 P116。**
 
-`active` 与 `review` 是当前写入范围声明；`planned`、`blocked`、`done` 不占并发路径。没有 `lanes` 的登记项（如 legacy 卡）只在 `active`／`ready` 时占用其 `write_scope`，`blocked` 项不占路径。两个当前任务声明相同非共享生产路径时，缩窄范围，或把后行工作标为 `blocked`、加入 `depends_on` 并在 `handoff` 写明先后顺序。依赖未完成的工作不能标为 active/review。上游合入后核实实际提交、更新基线和依赖，再继续；完成后释放对应 live scope，GitHub Issue/PR 仍保留历史。
+带 `lanes` 的父项只提供范围上限，实际占用取决于其 `active`／`review` lane；`lanes: []` 没有执行任务。没有 `lanes` 的 legacy 项按根级 `active`／`ready` 判断范围。不能把父项的宽泛历史路径、blocked 卡或 module owner 当作当前独占锁；带空 `lanes` 的父项也不能仅凭旧状态标成正在执行。未完成的真实项目验收可以继续保留为 blocked，同时清空已结束的源码范围。
+
+`active` 与 `review` 是当前写入范围声明；`planned`、`blocked`、`done` 不占并发路径。两个当前任务声明相同非共享生产路径时，缩窄范围，或把后行工作标为 `blocked`、加入 `depends_on` 并在 `handoff` 写明先后顺序。依赖未完成的工作不能标为 active/review。上游合入后核实实际提交、更新基线和依赖，再继续；完成后释放对应 live scope，GitHub Issue/PR 仍保留历史。
 
 `archcheck --changed <base>` 按每次提交当时的 policy 与 work scope 检查，因此历史 P 卡不会被重编号或追溯改写。新 Issue 使用 `GH-<n>` / `GH-<n>/<lane>` claim；未知或格式不完整的 GH id 不会部分匹配其他 Issue。仅规则与说明维护可明确写 `P000-governance`，准确路径由 [`tools/archcheck.py`](tools/archcheck.py) 定义。
 

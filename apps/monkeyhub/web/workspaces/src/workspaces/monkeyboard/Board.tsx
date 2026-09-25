@@ -305,12 +305,13 @@ async function sceneFiles(board: BoardDto, documents: SourceDocumentDto[], previ
 
 export interface BoardPageRequest { source: PageSource; requestId: string }
 
-export default function MonkeyBoard({ onSubmit, onSketch, onOpenDocument, restoreView = null, active = true, refreshKey = 0, expectedProjectId, pageRequest = null }: {
+export default function MonkeyBoard({ onSubmit, onSketch, onOpenDocument, onPublish, restoreView = null, active = true, refreshKey = 0, expectedProjectId, pageRequest = null }: {
   onSubmit: (request: BoardDesignRequest) => void;
   /** Hand one calibrated sketch frame to the App, which runs it as a sketch proposal. */
   onSketch: (request: BoardSketchRequest) => void;
   /** Hand one registered page to the existing document editor, with this place on the board. */
   onOpenDocument?: (open: BoardDocumentOpen) => void;
+  onPublish?: (revision: string, ids: string[]) => void;
   /** The place a returning operator left, when this board is being reopened. */
   restoreView?: BoardViewState | null;
   active?: boolean;
@@ -337,7 +338,7 @@ export default function MonkeyBoard({ onSubmit, onSketch, onOpenDocument, restor
     }).catch((cause) => { if (alive) setError(cause); });
     return () => { alive = false; };
   }, [attempt, expectedProjectId]);
-  if (loaded) return <BoardCanvas {...loaded} onSubmit={onSubmit} onSketch={onSketch} onOpenDocument={onOpenDocument} restoreView={restoreView} active={active} refreshKey={refreshKey} pageRequest={pageRequest} />;
+  if (loaded) return <BoardCanvas {...loaded} onSubmit={onSubmit} onSketch={onSketch} onOpenDocument={onOpenDocument} onPublish={onPublish} restoreView={restoreView} active={active} refreshKey={refreshKey} pageRequest={pageRequest} />;
   return <section className="monkeyboard monkeyboard-loading" aria-live="polite">
     <strong>MonkeyBoard</strong>
     <p>{error === null ? text.loading : text.loadFailed}</p>
@@ -345,11 +346,12 @@ export default function MonkeyBoard({ onSubmit, onSketch, onOpenDocument, restor
   </section>;
 }
 
-function BoardCanvas({ board, documents: initialDocuments, files, failures, preview, onSubmit, onSketch, onOpenDocument, restoreView, active, refreshKey, pageRequest }: {
+function BoardCanvas({ board, documents: initialDocuments, files, failures, preview, onSubmit, onSketch, onOpenDocument, onPublish, restoreView, active, refreshKey, pageRequest }: {
   board: BoardDto; documents: SourceDocumentDto[]; files: BinaryFiles; failures: string[]; preview: PreviewLoader;
   onSubmit: (request: BoardDesignRequest) => void;
   onSketch: (request: BoardSketchRequest) => void;
   onOpenDocument?: (open: BoardDocumentOpen) => void;
+  onPublish?: (revision: string, ids: string[]) => void;
   restoreView: BoardViewState | null;
   active: boolean;
   refreshKey: number;
@@ -831,6 +833,18 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
       lastRefresh.current = refreshKey; preview.invalidate(); retryVisuals();
     }
   }, [active, ready, refreshKey]);
+  const sendToPublish = async () => {
+    const api = canvas.current;
+    if (!api || !onPublish || !ready || busy || saveState.conflict) return;
+    const ids = Object.entries(api.getAppState().selectedElementIds).filter(([, selected]) => selected).map(([id]) => id);
+    if (!ids.length) { setNotice(language === "zh-CN" ? "请先选中图纸或图片。" : "Select drawing pages or images first."); return; }
+    setExporting(true);
+    try { await queue.flush(); const revision = queue.getState().revisionSha256;
+      if (!revision) throw new Error("The Board must be saved before sending its selection.");
+      onPublish(revision, ids);
+    } catch (cause) { setNotice(errorText(cause)); }
+    finally { if (alive.current) setExporting(false); }
+  };
   const exportBoard = async () => {
     const placed = canvas.current?.getSceneElements().filter((element) => element.type === "image") ?? [];
     const ordered = [...placed].sort((left, right) => left.y - right.y || left.x - right.x);
@@ -1126,6 +1140,7 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
           <button disabled={!ready} onClick={enterCrit}>{text.crit}</button>
           <button type="button" disabled={!ready || busy || saveState.conflict || !hasAnnotations} onClick={clearAnnotations} title={text.clearAnnotationsHint}>{text.clearAnnotations}</button>
           <button disabled={!ready || busy || saveState.conflict} onClick={() => { closeActions(); void queue.flush().catch(() => {}); }}>{text.save}</button>
+          {onPublish && <button disabled={!ready || busy || exporting || saveState.conflict} onClick={() => void sendToPublish()}>{language === "zh-CN" ? "放入汇报" : "Add to Publish"}</button>}
           <div className="monkeyboard-export" aria-label={text.export}>
             <span>{text.exportClean}</span>
             <select aria-label={text.export} value={exportFormat} disabled={!ready || exporting} onChange={(event) => setExportFormat(event.target.value as typeof exportFormat)}>

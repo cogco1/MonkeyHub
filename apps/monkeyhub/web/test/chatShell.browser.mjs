@@ -75,6 +75,9 @@ const { chromium } = await import((process.env.PLAYWRIGHT_MODULE ? pathToFileURL
 const browser = await chromium.launch({ headless: true, channel: "chrome" });
 const page = await browser.newPage({ viewport: { width: 1440, height: 960 } });
 page.setDefaultTimeout(12000);
+// Keep chooser interception installed across keyboard passes. Repeatedly
+// enabling it at keydown can race Chromium's native dialog cancellation.
+page.on("filechooser", () => {});
 const errors = [], writes = [], sessions = [], providerReads = [];
 const monitorReads = [];
 const monitorTokens = { input_tokens: 200, cached_input_tokens: 50, output_tokens: 30,
@@ -453,9 +456,6 @@ const waitMonitor = async () => {
 };
 try {
   if (process.env.MONKEYHUB_UI_FOCUS === "attachments") {
-    // Keep chooser interception installed across keyboard passes. Repeatedly
-    // enabling it at keydown can race Chromium's native dialog cancellation.
-    page.on("filechooser", () => {});
     const restoredFocus = [];
     for (const theme of ["dark", "light"]) {
       for (const fontScale of [0.9, 1, 1.1]) {
@@ -471,10 +471,10 @@ try {
           const attach = page.getByRole("button", { name: "Add attachments", exact: true });
           const type = await page.evaluate(() => {
             const read = (selector) => { const style = getComputedStyle(document.querySelector(selector)); return { size: parseFloat(style.fontSize), weight: style.fontWeight, family: style.fontFamily }; };
-            return { ui: ["#chat-input", ".chat-connection__name", "#chat-model", ".chat-context-option"].map(read), caption: read(".chat-composer>.chat-muted") };
+            return { ui: ["#chat-input", ".chat-connection__name", "#chat-model", ".chat-context-option"].map(read) };
           });
           assert.ok(type.ui.every((text) => Math.abs(text.size - 14 * fontScale) < 0.05 && text.family === type.ui[0].family && text.weight === "400"), `${theme}/${width}/${fontScale}: equal-role text follows the chosen size together: ${JSON.stringify(type)}`);
-          assert.ok(Math.abs(type.caption.size - 12 * fontScale) < 0.05);
+          assert.equal(await composer.locator(":scope > .chat-muted").count(), 0);
           await composer.screenshot({ path: path.join(temporary, `composer-${theme}-${width}-${fontScale}.png`) });
           await attach.focus();
           await page.keyboard.press("Tab");
@@ -534,6 +534,8 @@ try {
   assert.equal(workspaceFixture.requests.some((row) => row.name.endsWith("/bytes")), false,
     "initial chat reads its editing state without loading model files");
   await studioReady();
+  assert.equal(await page.locator('.chat-rail__tool[data-state="running"] small').count(), 0,
+    "ready workspaces show their names without redundant availability labels");
   assert.equal(writes.filter(([, pathname, , target]) => pathname === "/api/project/modeling" && target === "D:\\fixture\\A").length, 0,
     "selecting a project starts its Runtime without seeding modeling");
   assert.ok(!writes.some(([, pathname]) => /\/api\/apps\/monkey(arch|diagram|board)\/start$/.test(pathname)),
@@ -1727,10 +1729,13 @@ try {
   await waitWorkspace();
   const projectContext = page.getByRole("checkbox", { name: "Continue from project state (without previous conversation context)" });
   await page.waitForFunction(() => !document.querySelector('.chat-composer input[type="checkbox"]')?.disabled);
+  assert.equal(await page.locator('.chat-composer > .chat-muted').count(), 0,
+    "ordinary chat does not show instructions for the optional new project context");
   await visibleWorkspace().locator(".stage__versions-toggle").click();
   await visibleWorkspace().locator('.vcard__export').filter({ hasText: "cand-A-1.3dm" }).click();
   await visibleWorkspace().locator(".stage__versions-toggle").click();
   await projectContext.check();
+  await page.locator('.chat-composer > .chat-muted').getByText("The next message starts a new model context from the saved editing state. This conversation stays visible.", { exact: true }).waitFor();
   await page.locator("#chat-input").fill("Compare the courtyard from the saved project state");
   await page.getByRole("button", { name: "Send", exact: true }).click();
   await page.getByRole("button", { name: "Stop", exact: true }).waitFor();
@@ -1771,7 +1776,8 @@ try {
   // The Runtime/ChatStore tests verify acceptance and rotation. Here the UI
   // receives the actual confirmed boundary, not a client-inferred acceptance.
   confirmedStageForChat = { runId: "cand-A-1", stageRef: "confirmed-massing", label: "Massing approved" };
-  await page.getByText("After you confirm a stage, its saved result starts the next model context. Candidate revisions keep the same conversation.", { exact: true }).waitFor();
+  assert.equal(await page.locator('.chat-composer > .chat-muted').count(), 0,
+    "stage handoff works without a permanent explanatory caption");
   await page.locator("#chat-input").fill("Continue with the walls from the confirmed massing");
   await page.getByRole("button", { name: "Send", exact: true }).click();
   await page.getByRole("button", { name: "Stop", exact: true }).waitFor();
@@ -1782,6 +1788,7 @@ try {
   await page.getByRole("button", { name: "Stop", exact: true }).click();
   await page.reload();
   await page.getByText("Continuing from confirmed stage: Massing approved", { exact: true }).waitFor();
+  await page.waitForFunction(() => document.querySelectorAll(".chat-message--user").length === 4);
   assert.equal(await page.locator(".chat-message--user").count(), 4, "the stage handoff remains visible after reopening");
   confirmedStageForChat = null;
 

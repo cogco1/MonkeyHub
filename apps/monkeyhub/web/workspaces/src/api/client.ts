@@ -5,12 +5,12 @@
  */
 
 import type { ServerConnection } from "./connection";
-import { renderCapabilitiesApiRenderCapabilitiesGet, listRenderJobsApiRenderJobsGet, createRenderJobApiRenderJobsPost } from "./generated";
-import type { RenderCapabilitiesDto, RenderJobListDto, RenderJobDto, RenderRequestDto } from "./generated";
+import { renderCapabilitiesApiRenderCapabilitiesGet, listRenderJobsApiRenderJobsGet, createRenderJobApiRenderJobsPost, retainRenderViewApiRenderViewsPost } from "./generated";
+import type { RenderCapabilitiesDto, RenderJobListDto, RenderJobDto, RenderRequestDto, RenderViewSourceRequestDto } from "./generated";
 import type { ElevationEditRequestDto } from "./generated";
 import type { SaveStudyRequestDto, StudyViewDto, ProposeStudyRequestDto } from "./generated";
-import type { PlanRequestDto, PlanStatusRequestDto, PlanStatusDto, PlanDimensionProposalRequestDto, PlanDimensionChoicesDto } from "./generated";
-import { createPlanApiDrawingsPlansPost, readPlanStatusApiDrawingsPlansStatusPost,
+import type { PlanRequestDto, PlanStatusRequestDto, PlanStatusDto, PlanDimensionProposalRequestDto, PlanDimensionChoicesDto, PlanVectorDto } from "./generated";
+import { createPlanApiDrawingsPlansPost, readPlanStatusApiDrawingsPlansStatusPost, readPlanVectorApiDrawingsPlansVectorGet,
   readPlanDimensionChoicesApiDrawingsPlansDimensionsGet, createPlanDimensionProposalApiDrawingsPlansDimensionProposalPost } from "./generated";
 import { retainStudyApiStudiesPost, discoverStudiesApiStudiesGet,
   proposeStudyApiStudiesProposePost } from "./generated";
@@ -225,6 +225,9 @@ export const createStudioClient = (connection: ServerConnection) => ({
   drawingPlan(body: PlanRequestDto): Promise<SourceDocumentDto> {
     return call("POST /api/drawings/plans", createPlanApiDrawingsPlansPost({ client: connection.client, body }));
   },
+  drawingPlanVector(source: { runId: string; assetSha256: string; revisionRef: string }): Promise<PlanVectorDto> {
+    return call("GET /api/drawings/plans/vector", readPlanVectorApiDrawingsPlansVectorGet({ client: connection.client, query: source }));
+  },
   drawingPlanStatus(body: PlanStatusRequestDto): Promise<PlanStatusDto> {
     return call("POST /api/drawings/plans/status", readPlanStatusApiDrawingsPlansStatusPost({ client: connection.client, body }));
   },
@@ -365,6 +368,11 @@ export const createStudioClient = (connection: ServerConnection) => ({
         body: { runId, pngBase64 },
       }),
     );
+  },
+
+  async retainRenderView(body: Omit<RenderViewSourceRequestDto, "pngBase64">, png: Blob): Promise<SourceDocumentDto> {
+    const pngBase64 = base64Of(await png.arrayBuffer());
+    return call("POST /api/render/views", retainRenderViewApiRenderViewsPost({ client: connection.client, body: { ...body, pngBase64 } }));
   },
 
   /** Retain the original 3DM in this project before exposing it to downstream workspaces. */

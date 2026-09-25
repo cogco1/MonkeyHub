@@ -536,7 +536,8 @@
         "cropping projected polylines to the view window after visibility was solved (crop_polylines)",
         "the SVG document of a drawing: viewBox in frame units, physical mm size at the sheet scale, hidden group under visible group, data-object per polyline, fixed-decimal coordinates, no timestamp (drawing_svg)",
         "rasterising that SVG's own polylines to a PNG at its physical size (render_svg_png), and reading the object ids an SVG names (svg_objects)",
-        "even-odd section hatching and measured dimension strokes/native text with one embedded font; shared paper-placement bounds reject clipped dimensions"
+        "even-odd section hatching and measured dimension strokes/native text with one embedded font; shared paper-placement bounds reject clipped dimensions",
+        "built-in person/tree plan SVG polylines and independent data-dressing groups, rendered through the same SVG-to-PNG path without architectural data-object identity"
       ],
       "does_not_own": [
         "projecting geometry - adapters.cad_execution (project_occt_lines)",
@@ -564,7 +565,8 @@
         "DrawingSvgError",
         "SVG_MEDIA_TYPE",
         "PNG_MEDIA_TYPE",
-        "dimension_placement_fits"
+        "dimension_placement_fits",
+        "dressing_assets"
       ],
       "depends_on": [
         "archflow.adapters.occt_backend"
@@ -2748,7 +2750,8 @@
         "the drawing run: created with base = source run base, or reused only when it already carries that base",
         "DrawingProjectionReceipt@1 (retained as drawing-projection-receipt): source binding, frame, backend, counts and the two artifact refs",
         "cold readback of a retained drawing (read_model_axis_elevation, list_model_axis_elevations) with every sha verified",
-        "horizontal cut-plan composition: section boundaries, one material hatch and below-cut visible lines, with caller-resolved semantic dimensions and retained representation recipe"
+        "horizontal cut-plan composition: section boundaries, one material hatch and below-cut visible lines, with caller-resolved semantic dimensions and retained representation recipe",
+        "representation-only SVG entourage in the existing cut-plan recipe; exact physical-object-centre anchors, explicit missing/outside-view status and immutable dressing readback across source rebuilds"
       ],
       "does_not_own": [
         "the hidden-line solve - adapters.cad_execution",
@@ -2786,7 +2789,9 @@
         "DRAWING_PROJECTION_RECEIPT_SCHEMA",
         "ELEVATION_KIND",
         "DOCUMENTATION_WORKSPACE",
-        "freeze_cut_plan"
+        "freeze_cut_plan",
+        "plan_dressing_anchors",
+        "resolve_plan_dressing"
       ],
       "depends_on": [
         "adapters.cad_execution",
@@ -2808,7 +2813,8 @@
         "the same source and view give the same SVG/PNG bytes and the same receipt; a repeat lands on the same paths",
         "two identities only: the SVG/PNG content (sha256) and the source binding (run, base, STEP, CAD receipt, object ids, frame); the receipt digests nothing of itself",
         "Observations are plain values; callback failure cannot alter or repeat projection or persistence; input and emitted object ids do not claim a changed-object-only visibility solve",
-        "Existing elevation/top recipe and digest bytes keep their original meaning; cut-plan is an explicit recipe kind. Missing retained visibility ids and dimension intent remain explicit in the new receipt."
+        "Existing elevation/top recipe and digest bytes keep their original meaning; cut-plan is an explicit recipe kind. Missing retained visibility ids and dimension intent remain explicit in the new receipt.",
+        "Dressing has independent object ids, uses fixed view coordinates or exact physical-object anchors, never creates design entities and never silently rebinds missing anchors."
       ],
       "status": "canonical",
       "tests": [
@@ -3885,7 +3891,8 @@
         "the explicitly requested editable work copy of one registered document (PDF, PNG or JPEG): POST /api/documents/{asset_sha256}/work-copy seeds one P036 run-workspace file under studio-documents/work/<origin sha256>/ from the page that registration currently answers for, returns the copy already there untouched when asked again, and never overwrites it; which copies exist is derived from the registered documents plus that one path, with no second store and no workspace scan; one derivation decides whether a document can have a single editable file and carries the reason it cannot on the row itself, so opening a copy and listing the copies never disagree and a file already on disk is never dropped out of sight",
         "one horizontal cut-plan revision over the existing SourceDocument and DrawingProjectionReceipt: retained scale, pens, hatch, semantic rectangular empty-door dimensions and explicit rebuild against a named exact source or the original Stage branch head",
         "Model conversion orchestration using the existing job pool, original source objects and noncanonical P036 export runs; retained progress, failure and validated-download reports.",
-        "read-only paged native-object lookup by exact ModelSource and GUID; no architectural-role inference or edit admission"
+        "read-only paged native-object lookup by exact ModelSource and GUID; no architectural-role inference or edit admission",
+        "typed representation-only SVG dressing replacement and insert/move/scale/flip/delete operations against an exact previous Drawing revision; retained SVG readback and source anchor choices"
       ],
       "does_not_own": [
         "producing the export or its receipt - adapters.cad_execution through runtime.project_runner",
@@ -3968,7 +3975,9 @@
         "GET /api/exports/{export_id}",
         "GET /api/exports/{export_id}/bytes",
         "GET /api/model-assets/{asset_sha256}/index",
-        "read_model_source_index"
+        "read_model_source_index",
+        "GET /api/drawings/plans/vector",
+        "plan_vector"
       ],
       "depends_on": [
         "adapters.cad_execution",
@@ -4879,9 +4888,10 @@
         "Exact registered image-page resolution, ordered references and immutable per-request attempts",
         "P036 RenderJobRecords history and restart readback without paid replay",
         "ImageRenderAdapter values, server-image dispatch and safe unknown versus failed outcomes",
-        "Derived source replacement or declared Stage branch freshness; no inferred model source",
+        "Derived transitive Render source/reference freshness, reusing Drawing read-set status and declared Stage branches; no inferred model source",
         "One configured Gemini image HTTP attempt with bounded inputs, final-image validation and measured usage; no retry, redirect or model fallback",
-        "Read-only PR #235 native history; no fabricated AI recipe or resumed native executor"
+        "Read-only PR #235 native history; no fabricated AI recipe or resumed native executor",
+        "Freeze the current Modeling camera image as a model-bound SourceDocument with projection/world matrices and pixel dimensions; no provider call or design change occurs during capture"
       ],
       "does_not_own": [
         "SourceDocument persistence and bytes: studio.artifacts",
@@ -4901,7 +4911,8 @@
         "RenderProviderError",
         "RenderCapability",
         "GeminiImageRenderAdapter",
-        "adapter_from_settings"
+        "adapter_from_settings",
+        "POST /api/render/views"
       ],
       "depends_on": [
         "studio.artifacts",
@@ -4924,12 +4935,14 @@
       ],
       "tests": [
         "apps/archflow-studio/api/tests/test_rendering.py",
+        "apps/archflow-studio/api/tests/test_representation_dependencies.py",
         "apps/archflow-studio/api/tests/test_render_gemini_adapter.py",
         "apps/monkeyhub/web/workspaces/test/renderWorkspace.browser.mjs"
       ],
       "inputs": [
         "Exact SourceDocument runId/assetSha256/revisionRef/pageIndex, ordered references, direction and output options",
-        "Explicitly injected image adapter and optional StudioMonitor"
+        "Explicitly injected image adapter and optional StudioMonitor",
+        "Captured PNG with exact retained modelSource, optional verified Stage, camera matrices/exposure and matching pixel dimensions"
       ],
       "outputs": [
         "Project-scoped immutable render-job transitions and SourceDocument result references",
@@ -4941,7 +4954,7 @@
         "Restart or uncertain provider response yields unknown and never causes automatic replay",
         "No adapter receives a project path or writer; all result persistence uses save_document",
         "Uploaded images without models are valid and never acquire fabricated modelSource",
-        "Source freshness is derived from registered replacements and a declared Stage branch, never filenames or current UI selection",
+        "Source freshness follows retained input requests, explicit page replacements and Drawing read-set status; a prior revision alone is not a replacement decision",
         "No render action changes Design HEAD or accepts a Stage; hidden UI does not cancel a running attempt"
       ]
     },
@@ -6447,13 +6460,13 @@
         "A narrow ordinary-chat feedback capability over studio.intent decisions: current user wording/message provenance is bound by Hub, interpreted avoid/keep fields stay attributed to the agent, and revocation verifies the original project/message without exposing lock, supersede or Stage acceptance.",
         "User-selected local desktop patch preparation, idle restart admission, owned host trial activation and startup rollback; update files and transaction state live only under the explicitly supplied nonproject runtime/updates directory and sibling application versions.",
         "Forwarding explicitly selected Study revisions into prepared task context and exposing the existing project-bound Study read for exact evidence reopening; no Study mutation tool.",
-        "Drawing as a project-bound page in the same Hub: retained cut-plan revisions and representation controls, explicit source comparison/rebuild, and exact-source dimension proposal handoff into the existing Modeling candidate flow",
+        "Drawing as a project-bound page in the same Hub: retained cut-plan revisions and representation controls, explicit source comparison/rebuild, saved-revision SVG download and editing placement/removal of retained dimensions",
         "Conversational model export/convert tool routing, exact session attachment transfer, clarification for conflicting sources and verified result download links.",
         "project-bound chat read access to exact native source indexes through the existing studio_request tool",
         "Render as a peer project workspace with lazy first mount and preserved per-project inputs/history; hidden views suspend polling without cancelling image attempts",
         "Explicit Render result handoff to the existing Board using its exact SourceDocument page identity",
         "Nonsecret Render preferences through existing Hub settings; only MONKEYHUB_RENDER_API_KEY is mapped to the configured Gemini Runtime, never exposed over HTTP",
-        "Read-only Modeling-to-Render preview borrows the mounted project scene and copies its active camera including projection, target, lens, aspect and clipping; no second model store."
+        "Modeling-to-Render preview borrows the mounted project scene and camera; explicit capture freezes an exact retained model view as the AI source. Local edits, loading and blended/unbound views cannot claim a saved model source."
       ],
       "does_not_own": [
         "Building project state, geometry, drawing algorithms, model gateways, provider credentials or project creation",
@@ -6651,7 +6664,8 @@
         "apps/monkeyhub/web/workspaces/src/workspaces/render/RenderResults.tsx",
         "apps/monkeyhub/web/workspaces/src/workspaces/render/render.css",
         "apps/monkeyhub/web/workspaces/src/workspaces/render/ModelPreview.tsx",
-        "apps/monkeyhub/web/workspaces/src/workspaces/monkeyarch/viewer/renderView.ts"
+        "apps/monkeyhub/web/workspaces/src/workspaces/monkeyarch/viewer/renderView.ts",
+        "apps/monkeyhub/web/workspaces/src/workspaces/monkeydiagram/DrawingDressing.tsx"
       ],
       "tests": [
         "apps/monkeyhub/api/tests/test_monkeyhub_lifecycle.py",
@@ -7048,6 +7062,63 @@
         "apps/archflow-studio/api/archflow_studio_api/transport/study.py",
         "apps/archflow-studio/api/archflow_studio_api/application/study_model.py",
         "monkeydiagram/study.py"
+      ]
+    },
+    {
+      "module_id": "studio.publication",
+      "owner_path": "apps/archflow-studio/api/archflow_studio_api/application/publications.py",
+      "purpose": "Retain editable communication pages and compile them to PPTX/PDF. CREATE: Board owns review and artifacts owns source bytes; neither owns ordered page composition or publication export.",
+      "status": "canonical",
+      "owns": [
+        "One P036-retained PublicationDocument per project with immutable revisions and optimistic saves",
+        "Exact registered page placement, explicit replacement/freeze controls, Board selection into repeated page layouts",
+        "Shared coordinates and measured text lines compiled into native editable PPTX text/images and deterministic PDF"
+      ],
+      "does_not_own": [
+        "Design state, Stage acceptance or HEAD changes",
+        "Board annotations and review",
+        "Drawing projection and Render execution",
+        "Hub lifecycle and workspace navigation"
+      ],
+      "public_api": [
+        "GET /api/publication",
+        "PUT /api/publication",
+        "POST /api/publication/from-board",
+        "POST /api/publication/export"
+      ],
+      "depends_on": [
+        "studio.board",
+        "studio.artifacts",
+        "studio.binding",
+        "studio.render",
+        "project.ports",
+        "project.record_kinds",
+        "project.repository"
+      ],
+      "files": [
+        "apps/archflow-studio/api/archflow_studio_api/application/publications.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/publication_output.py",
+        "apps/archflow-studio/api/archflow_studio_api/routes/publications.py",
+        "apps/archflow-studio/api/archflow_studio_api/transport/publications.py"
+      ],
+      "inputs": [
+        "Project binding, exact registered page references, editable page elements and format-independent layout spec",
+        "Exact saved revision for export or Board selection"
+      ],
+      "outputs": [
+        "Immutable PublicationDocument@1 and derived source freshness",
+        "Transient PPTX/PDF bytes"
+      ],
+      "invariants": [
+        "Source replacement changes only the requested placed image; manual text and coordinates remain authored",
+        "Saving/exporting never accepts a design Stage or advances HEAD",
+        "Exports use an exact retained publication revision; missing sources refuse instead of silently substituting",
+        "PPTX text remains native; PDF source pages currently embed raster previews, explicitly not editable drawing vectors"
+      ],
+      "tests": [
+        "apps/archflow-studio/api/tests/test_publications.py",
+        "apps/archflow-studio/api/tests/test_publication_dependencies.py",
+        "apps/monkeyhub/web/workspaces/test/publishWorkspace.browser.mjs"
       ]
     }
   ]

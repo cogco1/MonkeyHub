@@ -48,6 +48,55 @@ class Adapter:
         return RenderOutput(png("green"), "image/png", input_tokens=17, output_tokens=9)
 
 
+class RenderViewTests(DesignHistoryFixture):
+    def view_request(self, **extra):
+        return {"projectId": PROJECT_ID, "modelSource": self.model, "screenSize": [24, 16],
+                "pngBase64": base64.b64encode(png()).decode(),
+                "camera": {"projection": "orthographic", "exposure": 1,
+                           "worldMatrix": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 5, 6, 7, 1],
+                           "projectionMatrix": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, -1, 0, 0, 0, 0, 1]}, **extra}
+
+    def test_camera_source_survives_restart_and_is_the_actual_adapter_input(self):
+        stage = self.initialize()
+        payload = self.view_request(sourceStageRef=stage["stageRef"])
+        response = self.client.post("/api/render/views", json=payload)
+        self.assertEqual(response.status_code, 201, response.text)
+        document = response.json()
+        self.assertEqual(document["modelSource"], self.model)
+        self.assertEqual(document["sourceStageRef"], stage["stageRef"])
+        self.assertEqual(document["viewRecipe"]["camera"], payload["camera"])
+        self.assertEqual(document["viewRecipe"]["screenSize"], [24, 16])
+        self.assertEqual(self.client.post("/api/render/views", json=payload).json()["assetSha256"], document["assetSha256"])
+        moved = self.view_request(sourceStageRef=stage["stageRef"])
+        moved["camera"]["worldMatrix"][12] += 1
+        other = self.client.post("/api/render/views", json=moved).json()
+        self.assertNotEqual(other["assetSha256"], document["assetSha256"], "identical pixels from a different camera must retain separate source metadata")
+        adapter = Adapter()
+        with TestClient(create_app(self.settings, render_adapter=adapter)) as client:
+            source = {key: document[key] for key in ("runId", "assetSha256", "revisionRef")} | {"pageIndex": 0}
+            job = finished(client, submit(client, request(source)))
+            self.assertEqual(job["status"], "succeeded")
+            self.assertEqual(adapter.calls[0].source.ref.asset_sha256, document["assetSha256"])
+            image = Image.open(BytesIO(adapter.calls[0].source.data))
+            self.assertEqual(image.size, (24, 16))
+            self.assertEqual(image.getpixel((0, 0)), (0, 0, 255))
+            self.assertEqual(job["document"]["modelSource"], self.model)
+        self.assertEqual(self.repository.read_head(), self.initial_head)
+
+    def test_invalid_view_never_registers_a_source(self):
+        before = self.client.get("/api/documents").json()
+        cases = [(self.view_request(projectId="another-project"), 403),
+                 (self.view_request(screenSize=[25, 16]), 422),
+                 (self.view_request(pngBase64="not png"), 422),
+                 (self.view_request(modelSource={**self.model, "assetSha256": "f" * 64}), 409)]
+        for payload, status in cases:
+            with self.subTest(status=status, payload=payload.keys()):
+                response = self.client.post("/api/render/views", json=payload)
+                self.assertEqual(response.status_code, status, response.text)
+                self.assertEqual(self.client.get("/api/documents").json(), before)
+        self.assertEqual(self.repository.read_head(), self.initial_head)
+
+
 @pytest.fixture
 def setup(tmp_path):
     repository, _ = make_project(tmp_path)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, replace
+from copy import deepcopy
 from datetime import datetime, timezone
 from uuid import uuid4
 
@@ -16,7 +17,7 @@ from archflow.state.design_portfolio import DesignBranch
 from monkeyarch.capabilities.geometry_proposal import load_compiled_geometry_program
 from monkeydiagram.drawing_elevation import (
     DrawingElevationError, ElevationView, freeze_cut_plan, read_elevation_source,
-    read_model_axis_elevation,
+    read_model_axis_elevation, plan_dressing_anchors, resolve_plan_dressing,
 )
 
 from .artifacts import (
@@ -75,11 +76,40 @@ def _previous_plan(binding, revision_ref):
     return _plan_document(binding, drawing.receipt["source"]["run_id"], drawing.png_ref.sha256, revision_ref)
 
 
+def _edit_dressing(objects, operations):
+    for operation in operations:
+        name, op = operation["id"], operation["op"]
+        item = next((item for item in objects if item["id"] == name), None)
+        if op == "insert":
+            if item is not None or operation["object"]["id"] != name:
+                raise StudioError(422, "DRAWING_DRESSING_INVALID", "Insert needs a new matching object id.")
+            objects.append(deepcopy(operation["object"]))
+        elif item is None:
+            raise StudioError(422, "DRAWING_DRESSING_MISSING", f"No dressing object {name} exists in this drawing revision.")
+        elif op == "delete":
+            objects.remove(item)
+        else:
+            field = {"move": "positionUv", "scale": "size", "flip": "flipped"}[op]
+            item[field] = deepcopy(operation[field])
+    if len(objects) > 100:
+        raise StudioError(422, "DRAWING_DRESSING_LIMIT", "A drawing supports up to 100 dressing objects.")
+
+
+def plan_vector(binding, *, run_id, asset_sha256, revision_ref):
+    """Retained SVG and its exact-source anchor choices; no regeneration or write."""
+    from monkeydiagram.drawing_svg import dressing_assets
+    document = _plan_document(binding, run_id, asset_sha256, revision_ref)
+    drawing = read_model_axis_elevation(binding.repository, record_ref_from_uri(revision_ref, binding.project_id))
+    _, receipt = _complete_source(binding, document.model_source, None if document.source_stage_ref is None else record_ref_from_uri(document.source_stage_ref, binding.project_id))
+    return {"svg": drawing.svg.decode("utf-8"), "assets": dressing_assets(),
+            "anchors": plan_dressing_anchors(receipt)}
+
+
 @retained_sources
 def generate_plan(binding, *, source_stage_ref=None, model_source=None, drawing_id=None,
                   previous_revision_ref=None, cut_height=None, bottom=None, scale_denominator=None,
                   crop_uv=None, cut_line_mm=None, visible_line_mm=None, hatch_spacing_mm=None,
-                  hidden_object_ids=None, dimensions=None):
+                  hidden_object_ids=None, dimensions=None, dressing=None, dressing_operations=None):
     previous = None if previous_revision_ref is None else _previous_plan(binding, previous_revision_ref)
     old = {} if previous is None else previous.view_recipe
     if previous is not None and drawing_id not in (None, previous.drawing_id):
@@ -118,6 +148,20 @@ def generate_plan(binding, *, source_stage_ref=None, model_source=None, drawing_
             "hatchSpacingMm": hatch_spacing_mm if hatch_spacing_mm is not None else graphics.get("hatchSpacingMm", 2),
         }, "hiddenObjectIds": sorted(set(hidden_object_ids if hidden_object_ids is not None else old.get("hiddenObjectIds", []))),
             "dimensions": list(dimensions if dimensions is not None else old.get("dimensions", []))}
+        if dressing is not None or "dressing" in old or dressing_operations is not None:
+            recipe["dressing"] = deepcopy(dressing if dressing is not None else old.get("dressing", []))
+            if dressing_operations is not None:
+                if previous is None or dressing is not None:
+                    raise StudioError(422, "DRAWING_DRESSING_INVALID", "Operations need an exact previous revision and cannot accompany replacement dressing.")
+                _edit_dressing(recipe["dressing"], dressing_operations)
+            # Missing retained anchors survive as broken intent. New anchors must be exact.
+            available = {row["objectId"] for row in plan_dressing_anchors(cad_receipt)}
+            retained_anchors = {row["id"]: row.get("anchorObjectId") for row in old.get("dressing", [])}
+            for item in recipe["dressing"]:
+                anchor = item.get("anchorObjectId")
+                if anchor is not None and anchor not in available and retained_anchors.get(item["id"]) != anchor:
+                    raise StudioError(422, "DRAWING_ANCHOR_UNKNOWN", "A new dressing anchor must exist in the exact source model.")
+            resolve_plan_dressing(recipe, cad_receipt)
         ids = [item["id"] for item in recipe["dimensions"]]
         if len(ids) != len(set(ids)):
             raise StudioError(422, "DRAWING_DIMENSION_INVALID", "Each dimension needs its own id in this drawing.")
@@ -228,11 +272,14 @@ def plan_status(binding, *, run_id, asset_sha256, revision_ref, target_model_sou
             dimensions = resolve_plan_dimensions(binding, target, stage_ref, verified, frame, document.view_recipe.get("dimensions", []),
                                                   hidden_object_ids=hidden)
         result["dimensions"] = list(dimensions)
-        broken = missing or any(dimension["status"] != "resolved" for dimension in dimensions)
+        dressing = resolve_plan_dressing(document.view_recipe, receipt)
+        original_dressing = resolve_plan_dressing(document.view_recipe, old_receipt)
+        result["dressing"] = dressing
+        broken = missing or any(dimension["status"] != "resolved" for dimension in dimensions) or any(item["status"] != "resolved" for item in dressing)
         # Changes to unit conversion, driving availability, actual geometry or
         # anchor location matter; representation placement is the same recipe.
         changed = (old_reads != new_reads or bool(set(changes.changed_object_ids) & (old_reads | new_reads))
-                   or list(dimensions) != list(original_dimensions))
+                   or list(dimensions) != list(original_dimensions) or dressing != original_dressing)
         result.update(status="partially-broken" if broken else "outdated" if changed else "current",
                       detail="Some drawing anchors or visibility selections no longer resolve." if broken else
                              "The target changes inputs read by this drawing. Rebuild explicitly." if changed else

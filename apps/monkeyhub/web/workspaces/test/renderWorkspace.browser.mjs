@@ -1,7 +1,10 @@
 /** Real project Runtime/P036/SDK/UI; the injected image adapter is offline.
- * Never a live provider acceptance test. All assets are synthetic test images.
+ * Camera capture uses the registered 3DM fixture in a real WebGL scene with a
+ * fixture-supplied view reader. It does not test App's dirty-state detection.
+ * Never a live provider or architectural-project acceptance test.
  */
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
 import { createServer as createHttpServer } from "node:http";
 import { mkdtemp } from "node:fs/promises";
@@ -30,19 +33,34 @@ async function freePort() {
   const port = probe.address().port; await new Promise((resolve) => probe.close(resolve)); return port;
 }
 const pythonSource = `
-import sys, threading, time
+import sys, threading, time, base64
+from uuid import uuid4
 from pathlib import Path
 from io import BytesIO
 from PIL import Image, ImageDraw
 from starlette.responses import Response
 import uvicorn
 from archflow.project.repository import FilesystemProjectRepository
+from archflow.project.ports import PersistenceArea, PersistenceDestination
+from archflow.project.record_kinds import STUDIO_RENDER_JOB
+from archflow_studio_api.application.binding import bound_project
+from archflow_studio_api.application.artifacts import save_document
 from archflow_studio_api.main import create_app
 from archflow_studio_api.settings import StudioSettings
 from archflow_studio_api.application.render_contract import RenderCapability, RenderOutput, RenderProviderError
 root, project_id, port = Path(sys.argv[1]), sys.argv[2], int(sys.argv[3])
+capture_fixture = project_id == 'capture'
+reference_run = None
+if capture_fixture:
+    from fastapi.testclient import TestClient
+    from tests.support import PROJECT_ID, REFERENCE_RUN_ID, make_project, runner_state_digest
+    from tests.test_working_copies import register_model
+    root = root / 'capture'
+    repo, _ = make_project(root)
+    project_id, reference_run = PROJECT_ID, REFERENCE_RUN_ID
+else:
+    repo = FilesystemProjectRepository.initialize(root / project_id, project_id=project_id, initial_state={'project_id': project_id, 'version': 0})
 project = root / project_id
-repo = FilesystemProjectRepository.initialize(project, project_id=project_id, initial_state={'project_id': project_id, 'version': 0})
 def image(color):
     canvas = Image.new('RGB', (720, 480), '#e2e4e0'); draw = ImageDraw.Draw(canvas)
     draw.rectangle((0, 340, 720, 480), fill='#c3c8bd')
@@ -61,13 +79,32 @@ class Adapter:
         if 'UNKNOWN' in request.direction: raise RenderProviderError('unknown','transport_unknown')
         return RenderOutput(image('#c4a16d'), 'image/png')
 adapter=Adapter()
-app=create_app(StudioSettings(project_dir=project,cad_export='off',monitor_dir=root/'monitor'),render_adapter=adapter)
+app=create_app(StudioSettings(project_dir=project,reference_run=reference_run,cad_export='off',monitor_dir=root/'monitor'),render_adapter=adapter)
+if capture_fixture:
+    client = TestClient(app)
+    model_bytes = (Path.cwd()/'tests/fixtures/model-source-a.3dm').read_bytes()
+    model = register_model(client, reference_run, runner_state_digest(repo, reference_run), model_bytes)
+    stage = client.post('/api/design-stages/initialize',json={'projectId':project_id,'modelSource':model['modelSource']})
+    if stage.status_code != 201: raise RuntimeError(stage.text)
+    model_fixture = {'projectId':project_id,'modelSource':model['modelSource'],'sourceStageRef':stage.json()['stageRef']}
+    @app.get('/fixture/model')
+    def source_model(): return model_fixture
+    @app.get('/fixture/model-bytes')
+    def source_model_bytes(): return Response(model_bytes,media_type='application/octet-stream')
 @app.get('/fixture/image')
 def source_image(color: str='white'): return Response(image(color), media_type='image/png')
 @app.get('/fixture/metrics')
 def metrics(): return {'calls':adapter.calls,'head':repr(repo.read_head())}
 @app.post('/fixture/release')
 def release(): adapter.release.set(); return {'ok':True}
+@app.post('/fixture/legacy')
+def legacy():
+    job_id='render-'+uuid4().hex; run=repo.create_run(job_id)
+    document=save_document(bound_project(app.state),job_id,'retained-native.png','image/png',base64.b64encode(image('#948ed1')).decode())
+    repo.put_json(run=run,destination=PersistenceDestination(PersistenceArea.RUN_RECORD,run_id=job_id),record_kind=STUDIO_RENDER_JOB,payload={
+        'schema':'StudioRenderJob@1','projectId':project_id,'jobId':job_id,'instance':'retired-runtime','sequence':1,'status':'succeeded',
+        'createdAt':'2026-09-21T00:00:00Z','renderer':'monkeyhub-three-webgl2-v1','documentSha256':document.asset_sha256})
+    return {'jobId':job_id,'fileName':document.file_name}
 uvicorn.run(app,host='127.0.0.1',port=port,log_level='warning')
 `;
 // Real Hub and its managed Runtime, with private settings and no CLI discovery.
@@ -111,7 +148,10 @@ async function api(project, route, method = "GET", body) {
   assert.ok(response.ok, `${method} ${route}: ${response.status} ${response.ok ? "" : await response.text()}`);
   return response.json();
 }
-async function step(name, action) { current = name; await action(); passed.push(name); console.log(`PASS ${name}`); }
+async function step(name, action) {
+  if (process.argv.includes("--capture-only") && !name.startsWith("perspective and orthographic")) return;
+  current = name; await action(); passed.push(name); console.log(`PASS ${name}`);
+}
 const fixture = `
 import React,{useState} from 'react';
 import {createRoot} from 'react-dom/client';
@@ -134,8 +174,37 @@ function App(){const [selected,setSelected]=useState('project-a');
 }
 createRoot(document.getElementById('root')).render(<App/>);
 `;
+const captureFixture = `
+import React from 'react';
+import {createRoot} from 'react-dom/client';
+import {Scene,Color,AmbientLight,DirectionalLight,Box3,Vector3,PerspectiveCamera,OrthographicCamera} from 'three';
+import {Rhino3dmLoader} from 'three/examples/jsm/loaders/3DMLoader.js';
+import RenderWorkspace from '/src/workspaces/render/RenderWorkspace';
+import {captureRenderView} from '/src/workspaces/monkeyarch/viewer/renderView';
+import {UserPreferencesProvider} from '/test/TestProviders';
+import '/src/styles.css';
+import '/@fs/${path.resolve(repoRoot, "apps/shared-web/src/base.css").replaceAll("\\", "/")}';
+const source=await fetch('/capture/fixture/model').then(response=>response.json());
+const loader=new Rhino3dmLoader(); loader.setLibraryPath('/rhino3dm/');
+const object=await loader.loadAsync('/capture/fixture/model-bytes'); loader.dispose();
+const scene=new Scene(); scene.background=new Color('#d9e0e4'); scene.add(object,new AmbientLight(0xffffff,2));
+const light=new DirectionalLight(0xffffff,3); light.position.set(3,8,5); scene.add(light);
+const box=new Box3().setFromObject(object),center=box.getCenter(new Vector3()),size=box.getSize(new Vector3()).length();
+if(!Number.isFinite(size)||size<=0)throw new Error('The registered model fixture has no renderable geometry.');
+let camera,visible=false,sourceIssue=null;
+function setProjection(kind){
+ const aspect=kind==='perspective'?1.6:.75;
+ camera=kind==='perspective'?new PerspectiveCamera(43,aspect,size/1000,size*100):new OrthographicCamera(-size*aspect/2,size*aspect/2,size/2,-size/2,size/1000,size*100);
+ camera.position.copy(center).add(new Vector3(size*.8,size*.6,size)); camera.lookAt(center); camera.updateProjectionMatrix(); camera.updateMatrixWorld(true); visible=true;
+}
+function readView(){return visible?{...captureRenderView(scene,camera,center,43,1),modelSource:source.modelSource,sourceStageRef:source.sourceStageRef,sourceIssue}:null;}
+window.captureFixture={source,setProjection,setIssue:value=>{sourceIssue=value;},setVisible:value=>{visible=value;},
+ moveCamera:()=>{camera.position.x+=size*.35;camera.lookAt(center);camera.updateMatrixWorld(true);},
+ snapshot:()=>{const view=readView();return view?{modelSource:view.modelSource,sourceStageRef:view.sourceStageRef,aspect:view.aspect,worldMatrix:view.camera.matrixWorld.toArray(),projectionMatrix:view.camera.projectionMatrix.toArray()}:null;}};
+createRoot(document.getElementById('root')).render(<UserPreferencesProvider baseUrl={location.origin+'/capture'}><RenderWorkspace projectId={source.projectId} active={true} refreshKey={0} onBoard={()=>{}} readModelView={readView} onModeling={()=>{}}/></UserPreferencesProvider>);
+`;
 try {
-  for (const id of ["project-a", "project-b"]) {
+  for (const id of ["project-a", "project-b", "capture"]) {
     const port = await freePort();
     const child = spawn(python, ["-c", pythonSource, temporary, id, String(port)], { cwd: apiRoot, env: pythonEnv, stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
     const process = { child, log: "" }; processes.push(process);
@@ -147,11 +216,12 @@ try {
   server = await createServer({ root: webRoot, configFile: false, publicDir: "../.generated/public", cacheDir: path.join(temporary, "vite"), logLevel: "error",
     resolve: { dedupe: ["react", "react-dom"] }, optimizeDeps: { include: ["react", "react-dom/client", "react/jsx-runtime", "react/jsx-dev-runtime"] },
     server: { host: "127.0.0.1", port: 0, strictPort: true, proxy: Object.fromEntries(Object.entries(origins).map(([id, target]) => [`/${id}`, { target, rewrite: (url) => url.slice(id.length + 1) }])) },
-    plugins: [{ name: "render-fixture", resolveId(id) { if (id === "/render-fixture.tsx") return path.join(webRoot, "render-fixture.tsx").replaceAll("\\", "/"); },
-      load(id) { if (id === path.join(webRoot, "render-fixture.tsx").replaceAll("\\", "/")) return fixture; },
+    plugins: [{ name: "render-fixture", resolveId(id) { if (["/render-fixture.tsx", "/camera-fixture.tsx"].includes(id)) return path.join(webRoot, id.slice(1)).replaceAll("\\", "/"); },
+      load(id) { if (id === path.join(webRoot, "render-fixture.tsx").replaceAll("\\", "/")) return fixture;
+        if (id === path.join(webRoot, "camera-fixture.tsx").replaceAll("\\", "/")) return captureFixture; },
       configureServer(vite) { vite.middlewares.use((request, response, next) => {
-        if (request.url !== "/") return next();
-        response.setHeader("content-type", "text/html"); response.end('<html><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><style>html,body,#root{height:100%;margin:0}nav{height:44px;display:flex;gap:8px}*{box-sizing:border-box}</style></head><body><div id="root" class="project-workspace"></div><script type="module" src="/render-fixture.tsx"></script></body></html>');
+        if (request.url !== "/" && request.url !== "/camera") return next();
+        response.setHeader("content-type", "text/html"); response.end('<html><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><style>html,body,#root{height:100%;margin:0}nav{height:44px;display:flex;gap:8px}*{box-sizing:border-box}</style></head><body><div id="root" class="project-workspace"></div><script type="module" src="/'+(request.url === '/camera' ? 'camera' : 'render')+'-fixture.tsx"></script></body></html>');
       }); },
     }],
   });
@@ -201,9 +271,25 @@ try {
     await workspace().getByRole("button", { name: "Zoom in", exact: true }).click();
     assert.equal(await workspace().locator('.render-image img').first().evaluate((el) => el.style.width), "125%");
     await workspace().getByRole("button", { name: "Fit", exact: true }).click();
+    assert.match(await workspace().locator('.render-metadata').innerText(), /source.png/);
+    assert.match(await workspace().locator('.render-metadata').innerText(), /No model association/);
     const download = page.waitForEvent("download"); await workspace().getByRole("link", { name: "Download", exact: true }).click();
     assert.equal((await download).suggestedFilename(), first.document.fileName);
     await page.screenshot({ path: path.join(temporary, "render-wide.png"), fullPage: true });
+  });
+  await step("zoomed result can be dragged and Fit resets the image viewport", async () => {
+    await workspace().getByRole("button", { name: "Result", exact: true }).click();
+    for (let i = 0; i < 5; i++) await workspace().getByRole("button", { name: "Zoom in", exact: true }).click();
+    const pane = workspace().locator('.render-image');
+    const box = await pane.boundingBox();
+    await page.mouse.move(box.x + box.width * .8, box.y + box.height * .7);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width * .3, box.y + box.height * .3, { steps: 6 });
+    await page.mouse.up();
+    assert.ok(await pane.evaluate((el) => el.scrollLeft > 0 && el.scrollTop > 0), 'drag moves both image axes');
+    await workspace().getByRole("button", { name: "Fit", exact: true }).click();
+    await until(() => pane.evaluate((el) => [el.scrollLeft, el.scrollTop]), (p) => p[0] === 0 && p[1] === 0, 'fit resets pan');
+    assert.equal(await workspace().locator('.render-model-canvas').isVisible(), false, 'no blank canvas when no model is loaded');
   });
   await step("project and workspace switches preserve inputs, stop hidden polling and do not cancel or resend", async () => {
     await direction().fill("SLOW afternoon"); await generate().click();
@@ -222,6 +308,35 @@ try {
     await page.getByRole("button", { name: "drawing", exact: true }).click();
     await page.getByRole("button", { name: "render", exact: true }).click();
     assert.equal(await direction().inputValue(), "SLOW afternoon");
+  });
+  await step("selected-image loading, HTTP failure and corrupt bytes recover by read without generating", async () => {
+    const firstButton = () => history().filter({ hasText: "Soft morning light" });
+    const secondButton = () => history().filter({ hasText: "SLOW afternoon" });
+    const firstBytes = (url) => url.pathname.includes('/api/documents/') && url.pathname.endsWith('/bytes') && url.searchParams.get('runId') === first.document.runId;
+    let release;
+    const gate = new Promise((resolve) => { release = resolve; });
+    await page.route(firstBytes, async (route) => { await gate; await route.continue(); });
+    await firstButton().click();
+    await workspace().getByText('Loading image…', { exact: true }).waitFor();
+    assert.equal(await workspace().locator('.render-image img').count(), 0, 'previous result is not shown under the new selection');
+    release();
+    await until(() => workspace().locator('.render-image img').count(), (n) => n === 1, 'selected bytes loaded');
+    await page.unroute(firstBytes);
+    for (const response of [
+      { status: 503, contentType: 'application/json', body: JSON.stringify({ detail: 'Temporary image read failure' }) },
+      { status: 200, contentType: 'image/png', body: 'not a valid image' },
+    ]) {
+      await secondButton().click();
+      await until(() => workspace().locator('.render-image img').count(), (n) => n === 1, 'second result ready');
+      await page.route(firstBytes, (route) => route.fulfill(response));
+      await firstButton().click();
+      await workspace().getByRole('button', { name: 'Reload image', exact: true }).waitFor();
+      assert.equal(await workspace().locator('.render-image img').count(), 0, 'broken bytes are not displayed as a usable image');
+      await page.unroute(firstBytes);
+      await workspace().getByRole('button', { name: 'Reload image', exact: true }).click();
+      await until(() => workspace().locator('.render-image img').count(), (n) => n === 1, 'read retry recovers image');
+    }
+    assert.equal((await api('project-a', '/fixture/metrics')).calls.length, 2, 'image recovery never calls the generation adapter');
   });
   await step("failure preserves old image; unknown and refresh never replay the provider", async () => {
     await history().filter({ hasText: "SLOW afternoon" }).click();
@@ -315,6 +430,149 @@ try {
     assert.equal((await api('project-a', '/fixture/metrics')).calls.length, 5);
     assert.equal((await api('project-a', '/fixture/metrics')).head, headBefore);
     await page.unroute('**/project-a/api/render/jobs');
+  });
+  await step("retained native result reopens in its own project without invented source or paid replay", async () => {
+    const native = await api('project-b', '/fixture/legacy', 'POST');
+    await page.getByRole('button', { name: 'Project B', exact: true }).click();
+    await until(() => history().count(), (n) => n === 1, 'native history visible');
+    await until(() => workspace().locator('.render-image img').count(), (n) => n === 1, 'native image read');
+    assert.match(await workspace().locator('.render-metadata').innerText(), /retained-native.png/);
+    assert.equal(await workspace().getByRole('button', { name: 'Source', exact: true }).isDisabled(), true);
+    assert.equal(await workspace().getByRole('button', { name: 'Compare', exact: true }).isDisabled(), true);
+    assert.equal(await workspace().getByRole('button', { name: 'Use these inputs', exact: true }).isDisabled(), true);
+    const download = page.waitForEvent('download');
+    await workspace().getByRole('link', { name: 'Download', exact: true }).click();
+    assert.equal((await download).suggestedFilename(), native.fileName);
+    await page.screenshot({ path: path.join(temporary, 'render-native-history.png'), fullPage: true });
+    await page.reload();
+    await page.getByRole('button', { name: 'Project B', exact: true }).click();
+    await until(() => workspace().locator('.render-image img').count(), (n) => n === 1, 'native result survives reload');
+    assert.equal((await api('project-b', '/fixture/metrics')).calls.length, 0);
+    assert.equal((await api('project-b', '/api/render/jobs')).jobs[0].jobId, native.jobId);
+    await page.getByRole('button', { name: 'Project A', exact: true }).click();
+    await until(() => history().count(), (n) => n === 5, 'project A keeps only its five attempts');
+    assert.equal(await history().filter({ hasText: native.fileName }).count(), 0);
+  });
+  await step("perspective and orthographic model views become exact frozen inputs without generating until requested", async () => {
+    const capturePage = await browser.newPage({ viewport: { width: 1440, height: 1050 } });
+    const captureRequests = [];
+    capturePage.on("pageerror", error => errors.push(String(error)));
+    capturePage.on("console", message => { if (message.type() === "error") console.error(message.text()); });
+    capturePage.on("requestfailed", request => console.error(`Capture fixture: ${request.url()} ${request.failure()?.errorText}`));
+    capturePage.on("request", request => {
+      if (request.method() === "POST" && request.url().endsWith("/api/render/views")) captureRequests.push(request.postDataJSON());
+    });
+    await capturePage.goto(new URL("camera", origin).href);
+    const capture = () => capturePage.getByRole("button", { name: "Use current view as source", exact: true });
+    const selectedSource = () => capturePage.getByRole("combobox", { name: "Source image", exact: true }).inputValue();
+    try { await capture().waitFor(); }
+    catch (error) { await capturePage.screenshot({ path: path.join(temporary, "capture-failure.png"), fullPage: true }); throw error; }
+    assert.equal(await capture().isDisabled(), true, "no model view cannot be captured");
+    const initial = await api("capture", "/fixture/metrics");
+    const retained = [];
+    for (const [index, projection] of ["perspective", "orthographic"].entries()) {
+      await capturePage.evaluate(kind => window.captureFixture.setProjection(kind), projection);
+      await until(() => capture().isEnabled(), Boolean, `${projection} saved model view is available`);
+      await capturePage.evaluate(() => window.captureFixture.setIssue("unsaved"));
+      await until(() => capture().isDisabled(), Boolean, "dirty view disables capture");
+      await capturePage.getByText("Sync edits and open the saved candidate in Modeling before using this view.", { exact: true }).waitFor();
+      assert.equal(captureRequests.length, index, "blocked views never send a capture request");
+      await capturePage.evaluate(() => window.captureFixture.setIssue(null));
+      await until(() => capture().isEnabled(), Boolean, "saved source restored");
+      // JSON transport normalizes Three's -0 matrix entries to 0.
+      const view = JSON.parse(JSON.stringify(await capturePage.evaluate(() => window.captureFixture.snapshot())));
+      let releaseCapture, releaseDocuments, oldDocumentsRead = false;
+      if (index === 0) {
+        const captureGate = new Promise(resolve => { releaseCapture = resolve; });
+        const documentsGate = new Promise(resolve => { releaseDocuments = resolve; });
+        await capturePage.route("**/capture/api/render/views", async route => { await captureGate; await route.continue(); });
+        await capturePage.route("**/capture/api/documents", async route => {
+          const response = await route.fetch(); oldDocumentsRead = true;
+          await documentsGate; await route.fulfill({ response });
+        });
+      }
+      await capture().click();
+      if (index === 0) {
+        await until(() => captureRequests.length, count => count === 1, "capture waiting to save");
+        await capturePage.getByRole("button", { name: "Refresh status", exact: true }).click();
+        await until(() => oldDocumentsRead, Boolean, "refresh read the documents before capture was saved");
+        releaseCapture();
+      }
+      await until(selectedSource, value => value && !retained.some(document => document.assetSha256 === JSON.parse(value)[1]), `${projection} selected as source`);
+      if (index === 0) {
+        const selected = await selectedSource();
+        releaseDocuments();
+        await until(() => capturePage.getByRole("button", { name: "Refresh status", exact: true }).isEnabled(), Boolean, "stale refresh finished");
+        assert.equal(await selectedSource(), selected, "a late refresh cannot replace the just-saved source with its older document list");
+        await capturePage.unroute("**/capture/api/render/views"); await capturePage.unroute("**/capture/api/documents");
+      }
+      const [, sha] = JSON.parse(await selectedSource());
+      const document = (await api("capture", "/api/documents")).documents.find(row => row.assetSha256 === sha);
+      assert.ok(document, "captured source is retained in the real Runtime");
+      assert.deepEqual(document.modelSource, view.modelSource);
+      assert.equal(document.sourceStageRef, view.sourceStageRef);
+      assert.deepEqual(document.viewRecipe.camera, { projection, worldMatrix: view.worldMatrix, projectionMatrix: view.projectionMatrix, exposure: 1 });
+      const [width, height] = document.viewRecipe.screenSize;
+      assert.equal(Math.max(width, height), 2048);
+      assert.ok(Math.abs(width / height - view.aspect) <= 1 / height, "capture preserves the original aspect within pixel rounding");
+      assert.deepEqual(captureRequests[index].modelSource, view.modelSource);
+      assert.deepEqual(captureRequests[index].camera, document.viewRecipe.camera);
+      assert.deepEqual(captureRequests[index].screenSize, [width, height]);
+      const bytesUrl = `/api/documents/${sha}/bytes?runId=${encodeURIComponent(document.runId)}`;
+      const bytes = Buffer.from(await (await fetch(origins.capture + bytesUrl)).arrayBuffer());
+      assert.equal(createHash("sha256").update(bytes).digest("hex"), sha);
+      assert.deepEqual([bytes.readUInt32BE(16), bytes.readUInt32BE(20)], [width, height], "PNG pixels agree with retained dimensions");
+      const pixelChunks = png => {
+        const chunks = [];
+        for (let offset = 8; offset < png.length;) {
+          const length = png.readUInt32BE(offset);
+          if (png.toString("ascii", offset + 4, offset + 8) === "IDAT") chunks.push(png.subarray(offset + 8, offset + 8 + length));
+          offset += length + 12;
+        }
+        return Buffer.concat(chunks);
+      };
+      assert.equal(pixelChunks(Buffer.from(captureRequests[index].pngBase64, "base64")).equals(pixelChunks(bytes)), true,
+        "retaining source identity metadata preserves the exact frontend PNG image data");
+      const colors = await capturePage.evaluate(async url => {
+        const image = await createImageBitmap(await (await fetch('/capture' + url)).blob());
+        const canvas = document.createElement('canvas'); canvas.width = 32; canvas.height = 32;
+        const context = canvas.getContext('2d'); context.drawImage(image, 0, 0, 32, 32); image.close();
+        const data = context.getImageData(0, 0, 32, 32).data, colors = new Set();
+        for (let i = 0; i < data.length; i += 4) colors.add(Array.from(data.slice(i, i + 3)).join(','));
+        return colors.size;
+      }, bytesUrl);
+      assert.ok(colors > 3, "capture contains rendered model geometry, not an empty background");
+      assert.equal((await api("capture", "/fixture/metrics")).calls.length, index, "saving a view never invokes the provider");
+      const selected = await selectedSource();
+      await capturePage.evaluate(() => window.captureFixture.moveCamera());
+      const changed = await capturePage.evaluate(() => window.captureFixture.snapshot());
+      assert.notDeepEqual(changed.worldMatrix, view.worldMatrix);
+      assert.equal(await selectedSource(), selected, "moving the live camera cannot replace the selected frozen source");
+      assert.deepEqual((await api("capture", "/api/documents")).documents.find(row => row.assetSha256 === sha), document);
+      await capturePage.getByRole("textbox", { name: "Visual direction", exact: true }).fill(`Captured ${projection} view`);
+      await capturePage.getByRole("button", { name: "Generate", exact: true }).click();
+      const job = (await until(() => api("capture", "/api/render/jobs"), value => value.jobs.length === index + 1 && value.jobs[0].status === "succeeded", `${projection} generated from capture`)).jobs[0];
+      assert.equal(job.request.source.assetSha256, sha);
+      assert.deepEqual(job.document.modelSource, view.modelSource);
+      assert.equal((await api("capture", "/fixture/metrics")).calls[index].source, sha);
+      retained.push(document);
+      await capturePage.getByRole("button", { name: "Refresh status", exact: true }).click();
+      const result = capturePage.locator(".render-list button").filter({ hasText: `Captured ${projection} view` });
+      await until(() => result.innerText(), text => text.includes("Complete"), `${projection} result appears in the UI`);
+      await result.click();
+      await capturePage.getByRole("button", { name: "Compare", exact: true }).click();
+      await until(() => capturePage.locator(".render-image img").count(), count => count === 2, "saved model view and its offline result visible together");
+      await capturePage.screenshot({ path: path.join(temporary, `render-capture-${projection}.png`), fullPage: true });
+    }
+    const documents = (await api("capture", "/api/documents")).documents;
+    for (const document of retained) assert.deepEqual(documents.find(row => row.assetSha256 === document.assetSha256), document,
+      "changing projection and generating another view never rewrites earlier pixels or camera metadata");
+    await capturePage.evaluate(() => window.captureFixture.setVisible(false));
+    await until(() => capture().isDisabled(), Boolean, "removing the model view disables capture again");
+    assert.equal(captureRequests.length, 2);
+    assert.equal((await api("capture", "/fixture/metrics")).head, initial.head, "view capture and rendering leave model HEAD unchanged");
+    assert.deepEqual(errors, []);
+    await capturePage.close();
   });
   await step("cold real Hub Render leaves every project content file unchanged; entering Arch seeds only then", async () => {
     const ports = [await freePort(), await freePort(), await freePort()];
