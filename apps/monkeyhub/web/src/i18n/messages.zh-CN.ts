@@ -953,4 +953,5 @@ export const chatCopy = {
     reconnecting: "连接中断，正在重新读取项目状态…", workerCrashed: "项目服务已退出", recoverWorker: "恢复项目服务", recovering: "正在恢复…",
     recoveryHint: "恢复服务后读取已保存结果；未完成的修改需要重新检查。", operationRecovery: "有操作需要检查恢复结果", operationFailed: "有操作未完成", operationStale: "操作基底已过期", runtimeOperations: "项目操作", operationCommitted: "已提交", operationPending: "尚无提交确认",
     workCopyRefused: "可编辑副本的改动未能登记为新版本",
+    interject: "插话", interjectPlaceholder: "补充一句，改变方向…", interjected: "插话", interjectionPending: "将在下一步送达", interjectionDelivered: "已送达", interjectionRestarted: "已停止当前步骤，按新消息继续", interjectionUndelivered: "未送达",
   } as const;

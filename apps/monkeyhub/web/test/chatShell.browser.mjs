@@ -353,6 +353,14 @@ await page.route((url) => url.pathname.startsWith("/api/"), async (route) => {
       assert.equal(data().projectId, session.projectId);
       assert.equal(appsFor(session.projectDir).find((item) => item.appId === "monkeyarch").state, "running");
       if (session.projectDir === chatMessageFailureFor) return json({ code: "CHAT_SEND_FAILED", detail: "Fixture upload failed. Try again." }, 503);
+      if (session.status === "running") {
+        // #301: what the API does with a message sent while a turn runs.
+        assert.equal(data().attachments, undefined, "an interjection carries no files");
+        assert.equal(data().designContext, undefined, "an interjection carries no new design source");
+        session.messages.push({ id: `u-${session.messages.length}`, role: "user", content: data().content, status: "complete",
+          attachments: [], contextMode: "continue", interjection: "pending" });
+        return json(session, 202);
+      }
       await chatMessageResponseGate;
       const attachments = (data().attachments ?? []).map((file, index) => {
         const id = `attachment-${session.id}-${session.messages.length}-${index}`;
@@ -680,6 +688,31 @@ try {
   assert.deepEqual(await modelPicker.locator("option").allInnerTexts(),
     ["CLI default model", "fixture-model-a", "fixture-model-b", "Custom model id…"]);
   assert.equal(await modelPicker.isDisabled(), true, "a running turn keeps the model it started with");
+
+  // #301: while a turn runs the composer stays usable. A message sent now is an
+  // interjection: it reaches the API as text alone, appears at once with its
+  // label, and Stop stays beside it as the secondary action.
+  const steered = sessions.find((row) => row.messages.some((message) => message.content === "Widen the courtyard"));
+  const composerInput = page.getByRole("textbox", { name: "What would you like to do in this project?" });
+  assert.equal(await composerInput.isEnabled(), true, "the composer stays usable while the Agent works");
+  assert.equal(await page.getByRole("button", { name: "Stop", exact: true }).isVisible(), true);
+  assert.equal(await page.getByRole("button", { name: "Interject", exact: true }).isDisabled(), true, "an empty draft interjects nothing");
+  const messagesBefore = writes.filter(([, pathname]) => pathname.endsWith("/messages")).length;
+  await composerInput.fill("Keep the courtyard square instead");
+  await composerInput.press("Enter");
+  const interjected = page.locator(".chat-message--user").filter({ hasText: "Keep the courtyard square instead" });
+  await interjected.getByText("Interjected · Delivers at the next step", { exact: true }).waitFor();
+  const interjectionWrites = writes.filter(([, pathname]) => pathname.endsWith("/messages"));
+  assert.equal(interjectionWrites.length, messagesBefore + 1);
+  assert.deepEqual(interjectionWrites.at(-1).slice(0, 3), ["POST", `/api/chat/sessions/${steered.id}/messages`,
+    { content: "Keep the courtyard square instead", projectId: steered.projectId }]);
+  assert.equal(await composerInput.inputValue(), "", "the composer clears and stays open for the next message");
+  assert.equal(await composerInput.isEnabled(), true);
+  assert.equal(steered.status, "running", "interjecting never stops the turn");
+  await page.getByRole("button", { name: "Stop", exact: true }).waitFor();
+  steered.messages.find((message) => message.content === "Keep the courtyard square instead").interjection = "delivered";
+  emitRuntime();
+  await interjected.getByText("Interjected · Delivered", { exact: true }).waitFor();
 
   // The MCP activity is readable, its diagnostics stay collapsed until asked
   // for, and the failed call is visible rather than silent.

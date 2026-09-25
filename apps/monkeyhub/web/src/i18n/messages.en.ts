@@ -998,4 +998,5 @@ export const chatCopy = {
     reconnecting: "Connection interrupted. Reading the current project state…", workerCrashed: "The project service exited", recoverWorker: "Recover project service", recovering: "Recovering…",
     recoveryHint: "Recovery reads saved results. Unfinished changes need review.", operationRecovery: "An operation needs recovery review", operationFailed: "An operation did not complete", operationStale: "An operation has an outdated base", runtimeOperations: "Project operations", operationCommitted: "Committed", operationPending: "No commit confirmed",
     workCopyRefused: "A work copy's change was not registered as a new revision",
+    interject: "Interject", interjectPlaceholder: "Add a message to change direction…", interjected: "Interjected", interjectionPending: "Delivers at the next step", interjectionDelivered: "Delivered", interjectionRestarted: "Stopped the current step and continued with this message", interjectionUndelivered: "Not delivered",
   } as const;

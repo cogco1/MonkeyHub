@@ -452,6 +452,10 @@ export type ChatMessage = {
      * Confirmedstagelabel
      */
     confirmedStageLabel?: string | null;
+    /**
+     * Interjection
+     */
+    interjection?: 'pending' | 'delivered' | 'restarted' | 'undelivered' | null;
 };
 
 /**
