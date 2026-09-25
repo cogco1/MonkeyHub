@@ -5,7 +5,7 @@
  * side card; leaving returns to the surface the tree was opened from.
  * Loaded on demand with the canvas it draws on.
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MessageKey } from "../../../../src/i18n/messages.en";
 import { ErrorPanel } from "../../app/ErrorPanel";
 import { useT } from "../../i18n/useT";
@@ -18,7 +18,7 @@ import type { ZoomLevel } from "./scene";
 import type { DesignTreeData } from "./useDesignTree";
 import { treeWords, type SurfaceName } from "./words";
 
-export default function DesignTreeSurface({ data, markSeen, active, returnTo, onLeave, onView, onRecordEdits = null }: {
+export default function DesignTreeSurface({ data, markSeen, active, returnTo, onLeave, onView, onRecordEdits = null, focus = null }: {
   data: DesignTreeData;
   markSeen(candidateId: string): void;
   active: boolean;
@@ -28,6 +28,8 @@ export default function DesignTreeSurface({ data, markSeen, active, returnTo, on
   onView(view: DesignTreeView): void;
   /** Modeling's Record edits and continue, when Modeling is open to record them (#302). */
   onRecordEdits?: (() => Promise<void>) | null;
+  /** A node to open with its side card and bring into view, such as the ready options' Study (#302). */
+  focus?: { node: string; request: number } | null;
 }) {
   const t = useT();
   const [mode, setMode] = useState<"canvas" | "list">("canvas");
@@ -46,6 +48,15 @@ export default function DesignTreeSurface({ data, markSeen, active, returnTo, on
     if (chosen?.kind === "candidate" && chosen.runId) markSeen(chosen.runId);
   }, [tree, markSeen]);
   const acceptFromCanvas = useCallback(() => { setSelected(CURRENT); setConfirmAccept(Boolean(tree?.accept.allowed)); }, [tree]);
+  // Focus once per request, when the tree has the node: its side card opens and the canvas centres it.
+  const [center, setCenter] = useState<{ node: string; request: number } | null>(null);
+  const focused = useRef(0);
+  useEffect(() => {
+    if (!focus || focused.current === focus.request || !tree?.nodes.has(focus.node)) return;
+    focused.current = focus.request;
+    select(focus.node);
+    setCenter(focus);
+  }, [focus, tree, select]);
   useEffect(() => {
     if (!active) return;
     const escape = (event: KeyboardEvent) => { if (event.key === "Escape") setSelected(null); };
@@ -79,7 +90,7 @@ export default function DesignTreeSurface({ data, markSeen, active, returnTo, on
         {!data.available ? t("designTree.unavailable") : data.status === "failed" && data.error ? <><ErrorPanel error={data.error} what="GET /api/design-history" />
           <button type="button" className="btn btn--small" onClick={data.reload}>{t("designTree.retry")}</button></> : t("designTree.loading")}
       </div> : mode === "canvas" ? <>
-        <DesignTreeCanvas tree={tree} words={words.scene} selected={selected} fitRequest={fitRequest} title={t("designTree.title")}
+        <DesignTreeCanvas tree={tree} words={words.scene} selected={selected} fitRequest={fitRequest} centerOn={center} title={t("designTree.title")}
           onSelect={select} onAccept={acceptFromCanvas} onLevel={setLevel} />
         <p className="visually-hidden">{t("designTree.canvasNote")}</p>
       </> : <DesignTreeList tree={tree} words={words} selected={selected} onSelect={select} />}

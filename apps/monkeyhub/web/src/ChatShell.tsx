@@ -12,7 +12,7 @@ import { ChatMarkdown, ChatMessageFiles, type ChatDocument } from "./ChatMessage
 import type { PageSource } from "../workspaces/src/workspaces/monkeyboard/boardScene";
 const ProjectWorkspace = lazy(() => import("../workspaces/src/app/ProjectWorkspace").then((module) => ({ default: module.ProjectWorkspace })));
 import { presentFailure } from "./chatError";
-import { clock, currentStep, describeCall, describeStep, rawDetail, rawLine, stepText, turnsOf, workedSeconds, type ProcessTurn, type ProcessWords } from "./chatProcess";
+import { clock, currentStep, describeCall, describeStep, rawDetail, rawLine, resultCandidates, stepText, turnsOf, workedSeconds, type ProcessTurn, type ProcessWords } from "./chatProcess";
 import { recentUsage, serialMonitorRead, type MonitorEvent, type RecentUsage } from "./monitorData";
 import { activeWork, newSchemes, sidebarTasks, type SidebarTask } from "./sidebarTasks";
 import { SoftwareUpdateSettings, type RestartBlocker } from "./SoftwareUpdateSettings";
@@ -31,10 +31,12 @@ type Props = {
   apps: readonly AppStatus[] | null;
 };
 // followHead: the tab was restored on a cold start, not opened to inspect that exact
-// candidate; the workspace shows the architect's editing base instead (#271). A delivered
-// result opens view-only, and only Continue makes it the base (GH-234 Q1/Q2).
+// candidate; the workspace shows the architect's editing base instead (#271). An opened
+// result is view-only, and only Continue makes it the base (GH-234 Q1/Q2).
 // returnTo: the primary surface this project's Drawing tool was opened from (#295).
-type ToolTab = { id: AppId; url: string; revision: number; projectDir?: string; projectId?: string; runtimeId?: string; candidate?: string; followHead?: boolean; returnTo?: AppId };
+// focus: the options a Study card asked the Design Tree to show, once per request (#302).
+type ToolTab = { id: AppId; url: string; revision: number; projectDir?: string; projectId?: string; runtimeId?: string; candidate?: string; followHead?: boolean;
+  returnTo?: AppId; focus?: { runIds: string[]; request: number } };
 type SavedTool = { id: AppId; candidate?: string };
 type ProjectPreparation = { promise: Promise<AppStatus[]>; apps: AppStatus[] | null; modeling?: Promise<unknown> };
 const VIEW_KEY = "monkeyhub.chat-view.v1";
@@ -301,9 +303,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
   const restoredTools = useRef(false);
   const workerInstances = useRef(new Map<string, string>());
   const observedSessions = useRef(new Map<string, ChatSummary["status"]>());
-  const completedChats = useRef(new Set<string>());
-  const openedCandidates = useRef(new Set<string>());
-  const observedRuntimeCandidates = useRef(new Map<string, { completed: Set<string>; sequence: number }>());
+  const focusRequests = useRef(0);
   const projectPreparations = useRef(new Map<string, ProjectPreparation>());
   const selection = useRef({ chatId, projectDir, archivedView, projects }); selection.current = { chatId, projectDir, archivedView, projects };
   const project = projects.find((item) => item.projectDir === projectDir);
@@ -424,10 +424,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
       ]);
       receiveRuntime(nextRuntime);
       for (const session of nextSessions) {
-        if (observedSessions.current.get(session.id) === "running" && session.status !== "running") {
-          completedChats.current.add(session.id);
-          setUsageRead((value) => value + 1);
-        }
+        if (observedSessions.current.get(session.id) === "running" && session.status !== "running") setUsageRead((value) => value + 1);
         observedSessions.current.set(session.id, session.status);
       }
       // A project created after this request began cannot be present in its
@@ -890,8 +887,12 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
     </dl>
     {summary.verified && <p className="chat-muted">{t.archiveSummaryVerified}</p>}
   </>;
-  /** `view` names what this page should open, such as the candidate a step produced. */
+  /**
+   * `view` names what this page should open: a candidate to show (`candidate`), or
+   * the options a Study card asks the Design Tree to show (`focus`, comma-separated).
+   */
   const openTool = async (id: AppId, view?: Record<string, string>) => {
+    const focus = view?.focus ? { runIds: view.focus.split(","), request: ++focusRequests.current } : undefined;
     const needsProject = id !== "monkeyfab" && id !== "monkeymonitor";
     if (needsProject && !projectDir) return false;
     // An explicit system-page choice supersedes even a stale project link.
@@ -901,7 +902,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
       setTabs((items) => items.map((item) => item === existing ? { ...item, id,
         // Drawing and Render open over the surface already shown, in this same project workspace.
         returnTo: !returnsToSurface(id) ? undefined : returnsToSurface(item.id) ? item.returnTo : item.id,
-        candidate: view?.candidate ?? item.candidate, followHead: view?.candidate ? view.follow === "head" : item.followHead,
+        candidate: view?.candidate ?? item.candidate, followHead: view?.candidate ? view.follow === "head" : item.followHead, focus: focus ?? item.focus,
         url: needsProject ? `${window.location.origin}/?${new URLSearchParams({ runtimeId: item.runtimeId!, view: id === "monkeyboard" ? "board" : id === "publish" ? "publish" : id === "drawing" ? "drawing" : id === "monkeyrender" ? "render" : id === "tree" ? "tree" : "arch" })}` : item.url } : item));
       setPanel(true); setActiveTool(id); setError(null);
       return true;
@@ -926,7 +927,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
         const attached = runtimeAttachments.current.get(target!);
         if (!attached || attached.projectId !== project!.projectId) throw new Error("The project runtime has not been attached.");
         tab = { id, projectDir: target!, projectId: attached.projectId, runtimeId: attached.runtimeId, candidate: view?.candidate ?? existing?.candidate,
-          followHead: view?.candidate ? view.follow === "head" : existing?.followHead, revision: existing?.revision ?? 0,
+          followHead: view?.candidate ? view.follow === "head" : existing?.followHead, focus: focus ?? existing?.focus, revision: existing?.revision ?? 0,
           url: `${window.location.origin}/?${new URLSearchParams({ runtimeId: attached.runtimeId, view: id === "monkeyboard" ? "board" : id === "publish" ? "publish" : id === "drawing" ? "drawing" : id === "monkeyrender" ? "render" : id === "tree" ? "tree" : "arch" })}` };
       } else {
         tab = { id, url: applicationUrl(location, preferences), revision: 0 };
@@ -1004,89 +1005,10 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
     })();
   }, [project, projectDir, studioWorker, busy, toolBusy, initial]);
 
-  useEffect(() => {
-    // openTool releases its ref lock before React commits the restored tab.
-    // Wait for that render before observing a delivery against its candidate.
-    if (!runtime || !restoredTools.current || actionLock.current || toolBusy) return;
-    const updates = new Map<string, { tab: ToolTab; previous?: string; candidate: string }>();
-    // A headless delivery can arrive before the architect opens any tool.
-    // Promote the already prepared workspace instead of mounting another one.
-    const targets: ToolTab[] = [...tabs];
-    if (projectRuntime?.projection === "ready" && studioWorker?.healthy &&
-        !targets.some((tab) => tab.runtimeId === projectRuntime.runtimeId)) {
-      targets.push({ id: "monkeyarch", revision: 0, projectDir: projectRuntime.projectDir,
-        projectId: projectRuntime.projectId, runtimeId: projectRuntime.runtimeId,
-        url: `${window.location.origin}/?${new URLSearchParams({ runtimeId: projectRuntime.runtimeId, view: "arch" })}` });
-    }
-    for (const tab of targets) {
-      const current = runtime.projects.find((item) => item.runtimeId === tab.runtimeId &&
-        item.projectId === tab.projectId && item.projectDir === tab.projectDir);
-      if (!current?.retained || current.retained.projectId !== current.projectId || current.retained.projectDir !== current.projectDir) continue;
-      const jobs = new Map(current.retained.jobs.map((job) => [job.jobId, job]));
-      const retained = new Map(current.retained.candidates.map((candidate) => [candidate.candidateId, candidate]));
-      const completed = (current.operations ?? []).filter((item) => {
-        const candidate = item.candidateId ? retained.get(item.candidateId) : undefined;
-        const job = item.jobId ? jobs.get(item.jobId) : undefined;
-        return item.projectId === current.projectId && item.status === "completed" && item.resultDigest &&
-          candidate?.receiptRef && ["completed", "succeeded"].includes(candidate.status) &&
-          [candidate.resultStateDigest, candidate.resultRecordDigest].includes(item.resultDigest) &&
-          (!job || (job.candidateId === item.candidateId && job.status === "succeeded"));
-      });
-      const choices = completed.filter((item) => item.source === "studio" && !item.sessionId && !item.committed)
-        .map((item) => ({ candidate: item.candidateId!, sequence: Number.isSafeInteger(item.admissionSequence) && item.admissionSequence! > 0
-          ? item.admissionSequence! : NaN }));
-      const previous = observedRuntimeCandidates.current.get(current.runtimeId);
-      const unseen = choices.filter((item) => !previous?.completed.has(item.candidate));
-      const sequence = Math.max(previous?.sequence ?? -Infinity, ...choices.map((item) => item.sequence).filter(Number.isFinite));
-      observedRuntimeCandidates.current.set(current.runtimeId, {
-        completed: new Set([...(previous?.completed ?? []), ...choices.map((item) => item.candidate)]), sequence,
-      });
-      // The journal supplies request order even after jobs leave memory. It
-      // never proves success: the retained receipt and digest above do that.
-      // Older slow requests and unordered legacy observations cannot win.
-      if (!unseen.length || unseen.some((item) => !Number.isFinite(item.sequence))) continue;
-      unseen.sort((a, b) => b.sequence - a.sequence);
-      const newest = unseen[0]!;
-      if (newest.sequence <= (previous?.sequence ?? -Infinity) || unseen[1]?.sequence === newest.sequence) continue;
-      const latestCompletedRequest = Math.max(...completed.map((item) => item.admissionSequence ?? NaN).filter(Number.isFinite));
-      if (newest.sequence < latestCompletedRequest || newest.candidate === tab.candidate) continue;
-      updates.set(current.runtimeId, { tab, previous: tab.candidate, candidate: newest.candidate });
-    }
-    if (!updates.size) return;
-    setTabs((items) => {
-      const next = items.map((item) => {
-        const update = item.runtimeId ? updates.get(item.runtimeId) : undefined;
-        // Keep the same workspace mounted, including a Board with unsent marks.
-        // A manual choice made meanwhile wins; polling never reopens old results.
-        return update && item.candidate === update.previous ? { ...item, candidate: update.candidate, followHead: false } : item;
-      });
-      for (const [runtimeId, update] of updates) {
-        if (!next.some((item) => item.runtimeId === runtimeId)) next.push({ ...update.tab, candidate: update.candidate, followHead: false });
-      }
-      return next;
-    });
-    const delivered = projectRuntime && updates.get(projectRuntime.runtimeId);
-    if (delivered && activeTool !== "monkeymonitor" && activeTool !== "monkeyfab" &&
-        !(initialMonitorRoute && activeTool === null)) {
-      setPanel(true);
-      setActiveTool(delivered.tab.id);
-    }
-  }, [runtime, tabs, projectRuntime, studioWorker?.healthy, projectDir, busy, toolBusy, activeTool, initialMonitorRoute]);
+  // #302: an Agent result, from a conversation or a headless job, never changes the
+  // visible surface, opens the panel or replaces the model on screen. The request's
+  // Study card and the Stage chip's "ready" notice lead to it, in the Design Tree.
 
-  // Show each successful candidate as soon as it is read back. A turn can keep
-  // working on drawings afterward; later readback never reloads the same view.
-  useEffect(() => {
-    if (!chat || chat.id !== chatId || chat.archived || chat.projectDir !== projectDir || (chat.status !== "running" && !completedChats.current.has(chat.id)) || actionLock.current) return;
-    const messages = chat.messages ?? [];
-    const lastUser = messages.findLastIndex((message) => message.role === "user");
-    const candidate = messages.slice(lastUser + 1).findLast((message) => message.candidateId && message.status === "complete")?.candidateId;
-    if (chat.status !== "running") completedChats.current.delete(chat.id);
-    const key = `${chat.id}:${messages[lastUser]?.id}:${candidate}`;
-    if (candidate && !openedCandidates.current.has(key)) {
-      openedCandidates.current.add(key);
-      void openTool("monkeyarch", { candidate });
-    }
-  }, [chat, chatId, projectDir, busy, toolBusy]);
   // The tool panel may take everything except the rail and a usable conversation.
   const clampWidth = (width: number) => Math.max(320, Math.min(width, window.innerWidth - (sidebar ? 244 : 60) - RAIL_WIDTH - RESIZER_WIDTH - CHAT_MIN_WIDTH));
 
@@ -1201,8 +1123,15 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
                   </div>
                 </div>
               </div>)}
-            {turn.results.map((message) => <div className="chat-activity__result" key={`${message.id}:result`}><button type="button" className="chat-activity__open" title={message.candidateId ?? undefined} disabled={!project || Boolean(toolBusy)}
-                  onClick={() => void openTool("monkeyarch", { candidate: message.candidateId! })}><Icon name="cube" /><span>{t.openCandidate}</span></button><span className="chat-muted">{t.candidateHint}</span></div>)}
+            {/* #302: one Study card per request, listing the options it produced; View opens the Design Tree on them. */}
+            {turn.results.length > 0 && (() => {
+              const options = resultCandidates(turn);
+              return <div className="chat-study" data-candidates={options.join(" ")}>
+                <Icon name="tree" /><span className="chat-study__text">{t.studyReady(options.length)}</span>
+                <button type="button" className="chat-activity__open" disabled={!project || Boolean(toolBusy)}
+                  onClick={() => void openTool("tree", { focus: options.join(",") })}>{t.studyView}</button>
+              </div>;
+            })()}
           </Fragment>)}</div>}
         {running && !turns.at(-1)?.steps.length && <div className="chat-thinking" role="status"><span className="chat-thread__dot" data-status="running" />{t.thinking}</div>}
       </div>
@@ -1282,7 +1211,8 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
           <ProjectRuntimeProvider baseUrl={`${window.location.origin}/api/runtime/projects/${item.runtimeId}/studio`}>
             <ErrorBoundary label={t.tools}><Suspense fallback={<div role="status">{t.working}</div>}>
               <ProjectWorkspace workspace={item.id === "monkeyboard" ? "board" : item.id === "publish" ? "publish" : item.id === "drawing" ? "drawing" : item.id === "monkeyrender" ? "render" : item.id === "tree" ? "tree" : "arch"} active={visible}
-                expectedProjectId={item.projectId} candidateRunId={item.candidate} candidateFollowsHead={item.followHead} refreshKey={item.revision} onChatRequest={focusConversation}
+                expectedProjectId={item.projectId} candidateRunId={item.candidate} candidateFollowsHead={item.followHead} treeFocus={item.focus ?? null}
+                refreshKey={item.revision} onChatRequest={focusConversation}
                 documentRequest={item.projectDir ? documentRequests[item.projectDir] : undefined}
                 onDesignContextChange={workspaceContextCallback(item.runtimeId)}
                 onWorkspaceChange={(workspace) => { const id = workspace === "board" ? "monkeyboard" : workspace === "publish" ? "publish" : workspace === "drawing" ? "drawing" : workspace === "render" ? "monkeyrender" : workspace === "tree" ? "tree" : "monkeyarch";

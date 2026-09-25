@@ -189,17 +189,32 @@ try {
   await chip.waitFor({ timeout: 120_000 });
   await tab.getByTestId("arch-stub").waitFor();
   await tab.waitForFunction(() => /S2 · Layout — Current/.test(document.querySelector(".stage-chip")?.textContent ?? ""));
-  assert.equal((await chip.innerText()).replace(/\s+/g, " ").trim(), "S2 · Layout — Current · 1 new · 2 running", "the chip reads Stage, position and attention");
+  assert.equal((await chip.innerText()).replace(/\s+/g, " ").trim(), "S2 · Layout — Current · 2 running", "the chip reads Stage, position and running work");
+  const ready = tab.locator(".stage-chip__ready");
+  assert.equal((await ready.innerText()).replace(/\s+/g, " ").trim(), "1 option ready · View", "options nobody opened are the chip's notice");
   assert.equal(await chip.getAttribute("aria-pressed"), "false");
   assert.ok(!loaded.some((url) => /excalidraw/i.test(url)), "Excalidraw is not loaded until the tree opens");
   assert.equal(await tab.locator(".chat-rail").count(), 0, "the entry is project chrome, not a rail of its own here");
   await shoot(tab, "01-chip-over-modeling");
+
+  // #302: the notice's View opens the tree on the ready option's Study, with its side card.
+  await ready.click();
+  await tab.locator('[data-project-surface="tree"] .design-tree-card[data-node="candidate:run-entrance-a"]').waitFor();
+  assert.equal(await chip.getAttribute("aria-pressed"), "true");
+  await shoot(tab, "01b-ready-notice-opens-study");
+  await tab.locator('[data-project-surface="tree"]').getByRole("button", { name: "Back to Modeling" }).click();
+  await tab.getByTestId("arch-stub").waitFor();
+  assert.equal(await ready.count(), 0, "an option that was opened is no longer new");
 
   // The chip opens the tree surface and keeps itself.
   await chip.click();
   const surface = tab.locator('[data-project-surface="tree"]');
   await surface.locator(".design-tree__canvas canvas").first().waitFor();
   await tab.waitForFunction(() => window.__treeApi?.getSceneElements().length > 20);
+  // The notice left the canvas centred on the ready option; Fit shows the whole tree again.
+  await surface.getByRole("button", { name: "Fit", exact: true }).click();
+  await tab.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(resolve)))));
+  await tab.waitForFunction(() => document.querySelector(".design-tree__canvas")?.dataset.level === "mid");
   assert.equal(await chip.getAttribute("aria-pressed"), "true");
   assert.equal(await tab.getByTestId("arch-stub").isVisible(), false, "the tree replaces the view, it is not drawn over it");
   assert.ok(loaded.some((url) => /excalidraw/i.test(url)), "the canvas loads with the tree");
@@ -363,7 +378,8 @@ try {
   checkTree(view, [S0, "candidate:run-massing-d", "current"], { "study-massing": 4 });
   assert.ok(view.elements.find((element) => element.id === `${S2}:card`).opacity < 100, "the future left behind stays, faded");
   assert.ok(await tab.evaluate((before) => window.__arch.refreshKey > before, archRefresh), "Modeling re-reads the moved head");
-  assert.equal((await chip.innerText()).replace(/\s+/g, " ").trim(), "S0 · Site — Current · 3 new · 2 running");
+  assert.equal((await chip.innerText()).replace(/\s+/g, " ").trim(), "S0 · Site — Current · 2 running");
+  assert.equal((await ready.innerText()).replace(/\s+/g, " ").trim(), "3 options ready · View");
   card = await clickNode("current");
   assert.equal(await card.locator('[data-action="accept"]').isDisabled(), true);
   assert.match(await card.innerText(), /Current comes from S0 · Site, but this line's newest Stage is S2 · Layout/);

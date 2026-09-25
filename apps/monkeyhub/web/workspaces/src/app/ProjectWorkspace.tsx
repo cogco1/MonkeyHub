@@ -29,6 +29,8 @@ export interface ProjectWorkspaceProps {
   candidateRunId?: string | null;
   /** The pin is a delivery or restore hint; a runtime that knows its Working Head shows the head. */
   candidateFollowsHead?: boolean;
+  /** Options a chat Study card asked to see: the Design Tree opens on them, once per request (#302). */
+  treeFocus?: { runIds: readonly string[]; request: number } | null;
   active?: boolean;
   refreshKey?: number;
   documentRequest?: { source: PageSource; requestId: number } | null;
@@ -38,7 +40,7 @@ export interface ProjectWorkspaceProps {
 }
 
 /** One mounted project: the Board, its page editor and the same local model draft. */
-export function ProjectWorkspace({ workspace, expectedProjectId, candidateRunId = null, candidateFollowsHead = false, active = true, refreshKey = 0, documentRequest = null,
+export function ProjectWorkspace({ workspace, expectedProjectId, candidateRunId = null, candidateFollowsHead = false, treeFocus = null, active = true, refreshKey = 0, documentRequest = null,
   onWorkspaceChange, onChatRequest, onDesignContextChange }: ProjectWorkspaceProps) {
   const renderReader = useRef<(() => RenderView | null) | null>(null);
   const registerRenderReader = useCallback((reader: (() => RenderView | null) | null) => { renderReader.current = reader; }, []);
@@ -105,6 +107,21 @@ export function ProjectWorkspace({ workspace, expectedProjectId, candidateRunId 
   const seenCandidates = useSeenCandidates(treeProject);
   const designTree = useDesignTree({ studio, capabilities: server.status === "ready" ? server.value.capabilities : null,
     projectId: treeProject, active, refreshKey: refreshKey + attempt, onHeadMoved: () => setHeadMoves((value) => value + 1) });
+  // The node the tree opens on (#302): the chip's ready options, or a chat Study card's.
+  const [treeNodeFocus, setTreeNodeFocus] = useState<{ node: string; request: number } | null>(null);
+  const focusRequests = useRef(0);
+  const showReady = useCallback((node: string) => {
+    setTreeNodeFocus({ node, request: ++focusRequests.current });
+    onWorkspaceChange("tree");
+  }, [onWorkspaceChange]);
+  const studyFocused = useRef(0);
+  useEffect(() => {
+    const tree = designTree.tree;
+    if (!treeFocus || studyFocused.current === treeFocus.request || !tree) return;
+    studyFocused.current = treeFocus.request;
+    const node = [...tree.nodes.values()].find((item) => item.kind === "candidate" && item.runId !== null && treeFocus.runIds.includes(item.runId));
+    if (node) setTreeNodeFocus({ node: node.id, request: ++focusRequests.current });
+  }, [treeFocus, designTree.tree]);
   useEffect(() => {
     let live = true;
     setRefreshError(null);
@@ -154,7 +171,7 @@ export function ProjectWorkspace({ workspace, expectedProjectId, candidateRunId 
     {designTree.available && <DesignTreeBar data={designTree} seen={seenCandidates.seen} open={workspace === "tree"}
       viewing={treeView && !treeView.back && treeView.runId !== editingRunId ? treeView : null}
       onToggle={() => onWorkspaceChange(workspace === "tree" ? treeReturn.current : "tree")}
-      onBackToCurrent={() => viewRun(currentView(designTree))} />}
+      onBackToCurrent={() => viewRun(currentView(designTree))} onShowReady={showReady} />}
     {refreshError && <ErrorPanel error={refreshError} what="GET /api/protocol" />}
     {(archVisited || modelVisible) && <div data-project-surface="arch" hidden={!modelVisible} inert={!active || !modelVisible}
       style={{ height: "100%", minHeight: 0, display: modelVisible ? "block" : "none" }}>
@@ -199,7 +216,7 @@ export function ProjectWorkspace({ workspace, expectedProjectId, candidateRunId 
       style={{ height: "100%", minHeight: 0, display: workspace === "tree" ? "block" : "none" }}>
       <Suspense fallback={<LoadingOverlay mode="boot" status="Design tree" />}>
         <DesignTreeSurface data={designTree} markSeen={seenCandidates.markSeen} active={active && workspace === "tree"} returnTo={treeReturn.current}
-          onLeave={() => onWorkspaceChange(treeReturn.current)} onView={viewRun} onRecordEdits={recordEdits} />
+          onLeave={() => onWorkspaceChange(treeReturn.current)} onView={viewRun} onRecordEdits={recordEdits} focus={treeNodeFocus} />
       </Suspense>
     </div>}
   </div>;

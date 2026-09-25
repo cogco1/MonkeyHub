@@ -37,12 +37,14 @@ export function textScaleFor(zoom: number, level: ZoomLevel): number {
   return Math.min(24, 2 ** (Math.round(2 * Math.log2(1 / Math.max(zoom, 0.01))) / 2));
 }
 
-export default function DesignTreeCanvas({ tree, words, selected, fitRequest, title, onSelect, onAccept, onLevel }: {
+export default function DesignTreeCanvas({ tree, words, selected, fitRequest, centerOn = null, title, onSelect, onAccept, onLevel }: {
   tree: GrowthTree;
   words: SceneWords;
   selected: string | null;
   /** Changes when the viewer asks to see the whole tree again. */
   fitRequest: number;
+  /** A node to bring into view, once per request, clear of the side card. */
+  centerOn?: { node: string; request: number } | null;
   title: string;
   onSelect(node: string | null): void;
   onAccept(): void;
@@ -121,6 +123,27 @@ export default function DesignTreeCanvas({ tree, words, selected, fitRequest, ti
     return () => { observer.disconnect(); cancelAnimationFrame(fitFrame.current); };
   }, []);
   useEffect(() => { onLevel(detail.level); }, [detail.level, onLevel]);
+  // A focused node replaces the pending fit: at a readable zoom, centred in the part of the
+  // canvas the side card leaves free.
+  useEffect(() => {
+    if (!ready || !centerOn) return;
+    fitWanted.current = null;
+    cancelAnimationFrame(fitFrame.current);
+    let tries = 0, frame = 0;
+    const attempt = () => {
+      const api = canvas.current, state = api?.getAppState(), placed = drawn.current.nodes.get(centerOn.node);
+      if (api && state && placed && state.width >= 40 && state.height >= 40) {
+        const zoom = Math.max(state.zoom.value, 0.8) as AppState["zoom"]["value"];
+        const free = state.width > 700 ? state.width - 344 : state.width, box = placed.footprint;
+        api.updateScene({ appState: { zoom: { value: zoom }, scrollX: free / (2 * zoom) - (box.x + box.width / 2),
+          scrollY: state.height / (2 * zoom) - (box.y + box.height / 2) }, captureUpdate: CaptureUpdateAction.NEVER });
+        return;
+      }
+      if (++tries < 120) frame = requestAnimationFrame(attempt);
+    };
+    frame = requestAnimationFrame(attempt);
+    return () => cancelAnimationFrame(frame);
+  }, [ready, centerOn?.node, centerOn?.request]);
 
   useWheelZoom(root, canvas, TREE_ZOOM);
   useScenePointer(root, canvas, {
