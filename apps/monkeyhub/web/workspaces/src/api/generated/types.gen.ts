@@ -3357,6 +3357,20 @@ export type DocumentWorkCopyRequestDto = {
 };
 
 /**
+ * DrawingAssetSourceDto
+ */
+export type DrawingAssetSourceDto = {
+    /**
+     * Runid
+     */
+    runId: string;
+    /**
+     * Assetsha256
+     */
+    assetSha256: string;
+};
+
+/**
  * DrawingStyleDto
  */
 export type DrawingStyleDto = {
@@ -3609,6 +3623,7 @@ export type ElevationReferenceDto = {
  * ElevationRequestDto
  */
 export type ElevationRequestDto = {
+    sourceAsset?: DrawingAssetSourceDto | null;
     /**
      * Projectid
      */
@@ -5005,6 +5020,49 @@ export type ModelGestureDto = {
 };
 
 /**
+ * ModelImportConversionDto
+ */
+export type ModelImportConversionDto = {
+    /**
+     * Provider
+     */
+    provider: string;
+    /**
+     * Sourceformat
+     */
+    sourceFormat: string;
+    /**
+     * Targetformat
+     */
+    targetFormat: string;
+    /**
+     * Representation
+     */
+    representation: string;
+    /**
+     * Warnings
+     */
+    warnings: Array<string>;
+};
+
+/**
+ * ModelImportDto
+ */
+export type ModelImportDto = {
+    /**
+     * Sourceartifact
+     */
+    sourceArtifact: {
+        [key: string]: string;
+    };
+    /**
+     * Sourcefilename
+     */
+    sourceFileName: string;
+    conversion: ModelImportConversionDto;
+};
+
+/**
  * ModelLoadTimingDto
  *
  * Client elapsed time from artifact download to viewport load completion.
@@ -5869,6 +5927,7 @@ export type PlanDressingReadDto = {
  * PlanRequestDto
  */
 export type PlanRequestDto = {
+    sourceAsset?: DrawingAssetSourceDto | null;
     /**
      * Projectid
      */
@@ -5889,7 +5948,7 @@ export type PlanRequestDto = {
     /**
      * Cutheight
      *
-     * Horizontal cut elevation in the exact STEP length unit.
+     * Horizontal cut elevation in the source model length unit.
      */
     cutHeight?: number | null;
     /**
@@ -6301,6 +6360,7 @@ export type ProjectArtifactDto = {
      */
     runId: string;
     modelSource?: ModelSourceDto | null;
+    sourceImport?: ModelImportDto | null;
     /**
      * Sourcestageref
      *
@@ -7698,7 +7758,7 @@ export type SectionCameraDto = {
     /**
      * Eyeheight
      *
-     * Default eye only: height above the lowest cut point, in the STEP unit (default 1.6 m).
+     * Default eye only: height above the lowest cut point, in the source model unit (default 1.6 m).
      */
     eyeHeight?: number | null;
 };
@@ -7712,7 +7772,7 @@ export type SectionLineDto = {
     /**
      * Line
      *
-     * Plan points [[x1, y1], [x2, y2]] in the exact STEP length unit (CAD X/Y, Z up); the section is the vertical plane through them.
+     * Plan points [[x1, y1], [x2, y2]] in the source model length unit (CAD X/Y, Z up); the section is the vertical plane through them.
      */
     line: [
         [
@@ -7736,6 +7796,7 @@ export type SectionLineDto = {
  * SectionPerspectiveRequestDto
  */
 export type SectionPerspectiveRequestDto = {
+    sourceAsset?: DrawingAssetSourceDto | null;
     /**
      * Projectid
      */
@@ -7762,7 +7823,7 @@ export type SectionPerspectiveRequestDto = {
     /**
      * Depth
      *
-     * Keep only this far behind the section plane, in the STEP unit.
+     * Keep only this far behind the section plane, in the source model unit.
      */
     depth?: number | null;
     /**
@@ -7802,7 +7863,7 @@ export type SectionPlaneDto = {
     /**
      * Origin
      *
-     * A point on the plane, CAD X/Y/Z in the exact STEP length unit.
+     * A point on the plane, CAD X/Y/Z in the source model length unit.
      */
     origin: [
         number,
@@ -9065,6 +9126,7 @@ export type ServerIdentityDto = {
  * SheetRequestDto
  */
 export type SheetRequestDto = {
+    sourceAsset?: DrawingAssetSourceDto | null;
     /**
      * Projectid
      */
@@ -13111,23 +13173,31 @@ export type ReadPlanDimensionChoicesApiDrawingsPlansDimensionsGetData = {
         'x-monkey-parent'?: string | null;
     };
     path?: never;
-    query: {
+    query?: {
         /**
          * Sourcerunid
          */
-        sourceRunId: string;
+        sourceRunId?: string | null;
         /**
          * Statedigest
          */
-        stateDigest: string;
+        stateDigest?: string | null;
         /**
          * Assetsha256
          */
-        assetSha256: string;
+        assetSha256?: string | null;
         /**
          * Sourcestageref
          */
         sourceStageRef?: string | null;
+        /**
+         * Sourceassetrunid
+         */
+        sourceAssetRunId?: string | null;
+        /**
+         * Sourceassetsha256
+         */
+        sourceAssetSha256?: string | null;
     };
     url: '/api/drawings/plans/dimensions';
 };

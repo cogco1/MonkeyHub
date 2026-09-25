@@ -251,9 +251,12 @@ export const createStudioClient = (connection: ServerConnection) => ({
   drawingPlanStatus(body: PlanStatusRequestDto): Promise<PlanStatusDto> {
     return call("POST /api/drawings/plans/status", readPlanStatusApiDrawingsPlansStatusPost({ client: connection.client, body }));
   },
-  drawingPlanDimensions(source: ModelSourceDto, sourceStageRef?: string | null): Promise<PlanDimensionChoicesDto> {
+  drawingPlanDimensions(target: { modelSource: ModelSourceDto; stageRef: string | null } | { sourceAsset: { runId: string; assetSha256: string } }): Promise<PlanDimensionChoicesDto> {
     return call("GET /api/drawings/plans/dimensions", readPlanDimensionChoicesApiDrawingsPlansDimensionsGet({ client: connection.client, query: {
-      sourceRunId: source.runId, stateDigest: source.stateDigest, assetSha256: source.assetSha256, sourceStageRef,
+      ...("modelSource" in target
+        ? { sourceRunId: target.modelSource.runId, stateDigest: target.modelSource.stateDigest,
+          assetSha256: target.modelSource.assetSha256, sourceStageRef: target.stageRef }
+        : { sourceAssetRunId: target.sourceAsset.runId, sourceAssetSha256: target.sourceAsset.assetSha256 }),
     } }));
   },
   drawingDimensionProposal(body: PlanDimensionProposalRequestDto): Promise<ProposalDto> {
@@ -395,9 +398,9 @@ export const createStudioClient = (connection: ServerConnection) => ({
     return call("POST /api/render/views", retainRenderViewApiRenderViewsPost({ client: connection.client, body: { ...body, pngBase64 } }));
   },
 
-  /** Retain the original 3DM in this project before exposing it to downstream workspaces. */
+  /** Retain a 3DM or SKP in this project; the server returns a viewable 3DM artifact. */
   async uploadModel(projectId: string, file: File, signal?: AbortSignal): Promise<ProjectArtifactDto> {
-    if (!file.name.toLowerCase().endsWith(".3dm")) throw new Error("Choose a Rhino .3dm model.");
+    if (!/\.(3dm|skp)$/i.test(file.name)) throw new Error("Choose a Rhino .3dm or SketchUp .skp model.");
     if (file.size <= 0 || file.size > 128 * 1024 * 1024) throw new Error("Choose a non-empty model up to 128 MiB.");
     signal?.throwIfAborted();
     const bytes = await file.arrayBuffer();

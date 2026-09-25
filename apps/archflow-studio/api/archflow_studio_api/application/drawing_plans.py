@@ -16,7 +16,7 @@ from archflow.project.refs import ProjectRecordRef, record_ref_from_uri
 from archflow.project.repository import ProjectRepositoryError
 from monkeyarch.capabilities.geometry_proposal import load_compiled_geometry_program
 from monkeydiagram.drawing_elevation import (
-    DrawingElevationError, ElevationView, freeze_cut_plan, read_elevation_source,
+    DrawingElevationError, ElevationView, NativeModelSource, freeze_cut_plan, read_elevation_source,
     read_model_axis_elevation, plan_dressing_anchors, resolve_plan_dressing,
 )
 
@@ -24,7 +24,7 @@ from .artifacts import (
     ModelSource, _document_pages, _document_source_lock, document_bytes, list_documents,
 )
 from .binding import retained_sources
-from .drawings import _complete_source, _elevation_view, _selected_source
+from .drawings import _complete_source, _elevation_view, _selected_source, _document_source, DrawingAssetSource
 from .drawing_dimensions import resolve_plan_dimensions, list_plan_dimension_intents
 from .intent import component_edit_proposal
 from .projection import project_state, require_actionable
@@ -35,8 +35,10 @@ from ..transport.errors import StudioError
 UNIT_METRES = {"meter": 1.0, "millimeter": .001, "inch": .0254, "foot": .3048}
 
 
-def _plan_source(binding, source_stage_ref, model_source):
-    model, stage_ref = _selected_source(binding, source_stage_ref, model_source)
+def _plan_source(binding, source_stage_ref, model_source, source_asset=None):
+    model, stage_ref = _selected_source(binding, source_stage_ref, model_source, source_asset)
+    if isinstance(model, DrawingAssetSource):
+        return model, None
     if stage_ref is None:
         # No inferred Stage can mean either an unaccepted candidate or several
         # accepted histories. Only the former is a genuinely stage-less source.
@@ -64,7 +66,7 @@ def plan_frame(recipe) -> ElevationView:
 
 def _plan_document(binding, run_id, asset_sha256, revision_ref):
     document, _ = document_bytes(binding, run_id, asset_sha256, revision_ref)
-    if document.revision_ref != revision_ref or not document.model_source or (document.view_recipe or {}).get("kind") != "cut-plan":
+    if document.revision_ref != revision_ref or not _document_source(document) or (document.view_recipe or {}).get("kind") != "cut-plan":
         raise StudioError(422, "DRAWING_PLAN_REQUIRED", "Choose an exact retained cut-plan revision.")
     return document
 
@@ -101,7 +103,7 @@ def plan_vector(binding, *, run_id, asset_sha256, revision_ref):
     from monkeydiagram.drawing_svg import dressing_assets
     document = _plan_document(binding, run_id, asset_sha256, revision_ref)
     drawing = read_model_axis_elevation(binding.repository, record_ref_from_uri(revision_ref, binding.project_id))
-    _, receipt = _complete_source(binding, document.model_source, None if document.source_stage_ref is None else record_ref_from_uri(document.source_stage_ref, binding.project_id))
+    _, receipt = _complete_source(binding, _document_source(document), None if document.source_stage_ref is None else record_ref_from_uri(document.source_stage_ref, binding.project_id))
     return {"svg": drawing.svg.decode("utf-8"), "assets": dressing_assets(),
             "anchors": plan_dressing_anchors(receipt)}
 
@@ -110,12 +112,12 @@ def plan_vector(binding, *, run_id, asset_sha256, revision_ref):
 def generate_plan(binding, *, source_stage_ref=None, model_source=None, drawing_id=None,
                   previous_revision_ref=None, cut_height=None, bottom=None, scale_denominator=None,
                   crop_uv=None, cut_line_mm=None, visible_line_mm=None, hatch_spacing_mm=None,
-                  hidden_object_ids=None, dimensions=None, dressing=None, dressing_operations=None, follow=None):
+                  hidden_object_ids=None, dimensions=None, dressing=None, dressing_operations=None, follow=None, source_asset=None):
     previous = None if previous_revision_ref is None else _previous_plan(binding, previous_revision_ref)
     old = {} if previous is None else previous.view_recipe
     if previous is not None and drawing_id not in (None, previous.drawing_id):
         raise StudioError(409, "DRAWING_REVISION_MISMATCH", "Continue the selected drawing identity.")
-    model_source, stage_ref = _plan_source(binding, source_stage_ref, model_source)
+    model_source, stage_ref = _plan_source(binding, source_stage_ref, model_source, source_asset)
     source, cad_receipt = _complete_source(binding, model_source, stage_ref)
     unit = cad_receipt["identity"]["length_unit"]
     drawing_id = drawing_id or (previous.drawing_id if previous else _new_plan_id(binding))
@@ -125,8 +127,8 @@ def generate_plan(binding, *, source_stage_ref=None, model_source=None, drawing_
     scale = scale_denominator or (int(prior_frame["scale"].split(":")[1]) if prior_frame else 100)
     if cut <= low:
         raise StudioError(422, "DRAWING_DEPTH_INVALID", "The cut must be above the bottom of the plan view.")
-    if previous and previous.model_source != model_source:
-        _, old_receipt = _complete_source(binding, previous.model_source,
+    if previous and _document_source(previous) != model_source:
+        _, old_receipt = _complete_source(binding, _document_source(previous),
             None if previous.source_stage_ref is None else record_ref_from_uri(previous.source_stage_ref, binding.project_id))
         if old_receipt["identity"]["length_unit"] != unit:
             raise StudioError(409, "DRAWING_UNIT_CHANGED", "The source unit changed; the retained recipe cannot be reinterpreted in another unit.")
@@ -168,6 +170,10 @@ def generate_plan(binding, *, source_stage_ref=None, model_source=None, drawing_
                     raise StudioError(422, "DRAWING_ANCHOR_UNKNOWN", "A new dressing anchor must exist in the exact source model.")
             resolve_plan_dressing(recipe, cad_receipt)
         ids = [item["id"] for item in recipe["dimensions"]]
+        if isinstance(model_source, DrawingAssetSource):
+            if recipe["dimensions"]:
+                raise StudioError(422, "DRAWING_DIMENSION_NOT_DRIVING", "Imported geometry has no design parameters; semantic dimensions require a bound design state.")
+            recipe.update(sourceAsset=model_source.to_dict(), follow="frozen")
         if len(ids) != len(set(ids)):
             raise StudioError(422, "DRAWING_DIMENSION_INVALID", "Each dimension needs its own id in this drawing.")
         unknown_hidden = set(recipe["hiddenObjectIds"]) - set(cad_receipt["physical_object_ids"])
@@ -177,13 +183,13 @@ def generate_plan(binding, *, source_stage_ref=None, model_source=None, drawing_
         selected_stage = None if stage_ref is None else stage_ref.uri
         with _document_source_lock:
             for document in list_documents(binding, model_source.run_id):
-                if (document.drawing_id == drawing_id and document.model_source == model_source
+                if (document.drawing_id == drawing_id and _document_source(document) == model_source
                         and document.source_stage_ref == selected_stage and document.view_recipe == recipe):
                     document_bytes(binding, document.run_id, document.asset_sha256, document.revision_ref)
                     return document
             verified = read_elevation_source(binding.repository, source)
-            resolved = resolve_plan_dimensions(binding, model_source, stage_ref, verified, frame, recipe["dimensions"],
-                                               hidden_object_ids=recipe["hiddenObjectIds"])
+            resolved = () if isinstance(model_source, DrawingAssetSource) else resolve_plan_dimensions(
+                binding, model_source, stage_ref, verified, frame, recipe["dimensions"], hidden_object_ids=recipe["hiddenObjectIds"])
             drawing = freeze_cut_plan(binding.repository, source=source, recipe=recipe,
                                       drawing_run_id=f"studio-drawing-{uuid4().hex}", dimensions=resolved,
                                       previous_revision_ref=previous_revision_ref)
@@ -195,7 +201,7 @@ def generate_plan(binding, *, source_stage_ref=None, model_source=None, drawing_
                          "run_id": run.run_id, "asset_sha256": drawing.png_ref.sha256,
                          "file_name": f"{drawing_id}.png", "mime_type": "image/png", "size_bytes": len(drawing.png),
                          "pages": [asdict(page) for page in _document_pages(drawing.png, "image/png")],
-                         "modelSource": model_source.to_dict(), "sourceStageRef": selected_stage,
+                         "modelSource": None if isinstance(model_source, DrawingAssetSource) else model_source.to_dict(), "sourceStageRef": selected_stage,
                          "drawingId": drawing_id, "revisionRef": drawing.receipt_ref.uri,
                          "viewRecipe": recipe, "generatedAt": datetime.now(timezone.utc).isoformat()},
             )
@@ -270,6 +276,17 @@ def plan_status(binding, *, run_id, asset_sha256, revision_ref, target_model_sou
     result = {"status": "unknown", "detail": "The exact target could not be verified.", "dimensions": [],
               "targetModelSource": None, "targetStageRef": target_stage_ref, "lengthUnit": None, "bindingChanged": False}
     try:
+        imported = _document_source(document)
+        if isinstance(imported, DrawingAssetSource):
+            _, receipt = _complete_source(binding, imported, None)
+            dressing = resolve_plan_dressing(document.view_recipe, receipt)
+            missing = sorted(set(document.view_recipe.get("hiddenObjectIds", [])) - set(receipt["physical_object_ids"]))
+            broken = bool(missing) or any(item["status"] != "resolved" for item in dressing)
+            result.update(status="partially-broken" if broken else "current", dressing=dressing,
+                          unresolvedObjectIds=missing, lengthUnit=receipt["identity"]["length_unit"], targetStageRef=None,
+                          detail="Some drawing anchors or visibility selections no longer resolve." if broken else
+                                 "This drawing keeps the registered imported model. Re-import a revised file to draw another version.")
+            return result
         # Recheck retained stage-less drawings too: their model may since have
         # been accepted into multiple histories. Never silently rebind the page.
         _, old_stage = _plan_source(binding, document.source_stage_ref, document.model_source)
@@ -291,12 +308,23 @@ def plan_status(binding, *, run_id, asset_sha256, revision_ref, target_model_sou
         unit = receipt["identity"]["length_unit"]
         result["lengthUnit"] = unit
         frame = plan_frame(document.view_recipe)
-        _, old_receipt = _complete_source(binding, document.model_source, old_stage)
+        old_source, old_receipt = _complete_source(binding, document.model_source, old_stage)
         if unit != old_receipt["identity"]["length_unit"]:
             raise ValueError("The target unit changed; explicitly revise the view instead of reinterpreting its coordinates.")
         hidden = document.view_recipe.get("hiddenObjectIds", [])
         missing = sorted(set(hidden) - set(receipt["physical_object_ids"]))
         result["unresolvedObjectIds"] = missing
+        if isinstance(source, NativeModelSource) or isinstance(old_source, NativeModelSource):
+            verified = read_elevation_source(binding.repository, source)
+            dimensions = resolve_plan_dimensions(binding, target, stage_ref, verified, frame,
+                document.view_recipe.get("dimensions", []), hidden_object_ids=hidden)
+            dressing = resolve_plan_dressing(document.view_recipe, receipt)
+            broken = missing or any(row["status"] != "resolved" for row in dimensions) or any(row["status"] != "resolved" for row in dressing)
+            changed = target.asset_sha256 != document.model_source.asset_sha256
+            result.update(status="partially-broken" if broken else "outdated" if changed else "current",
+                          dimensions=list(dimensions), dressing=dressing,
+                          detail="The imported/composed model changed; rebuild the drawing." if changed else "This drawing matches the retained native model.")
+            return result
         old_program, old_reads = _read_set(binding, old_receipt, frame, hidden)
         new_program, new_reads = _read_set(binding, receipt, frame, hidden)
         # Reuse the CAD owner's structural comparison. Compiler object digests
@@ -337,16 +365,18 @@ def plan_status(binding, *, run_id, asset_sha256, revision_ref, target_model_sou
     return result
 
 
-def plan_dimension_choices(binding, model_source, source_stage_ref=None):
-    model, stage_ref = _plan_source(binding, source_stage_ref, model_source)
+def plan_dimension_choices(binding, model_source=None, source_stage_ref=None, source_asset=None):
+    model, stage_ref = _plan_source(binding, source_stage_ref, model_source, source_asset)
     _, receipt = _complete_source(binding, model, stage_ref)
     return {"lengthUnit": receipt["identity"]["length_unit"],
-            "dimensions": list(list_plan_dimension_intents(binding, model, stage_ref))}
+            "dimensions": [] if isinstance(model, DrawingAssetSource) else list(list_plan_dimension_intents(binding, model, stage_ref))}
 
 
 def dimension_proposal(binding, *, run_id, asset_sha256, revision_ref, dimension_id, value,
                        target_model_source=None, target_stage_ref=None):
     document = _plan_document(binding, run_id, asset_sha256, revision_ref)
+    if isinstance(_document_source(document), DrawingAssetSource):
+        raise StudioError(409, "DRAWING_DIMENSION_NOT_DRIVING", "Imported geometry has no bound design parameters.")
     source, stage_ref = _plan_source(binding, document.source_stage_ref, document.model_source)
     projection = project_state(binding, source.run_id, source_stage_ref=stage_ref)
     # A historical view stays readable, but a change starts only from the

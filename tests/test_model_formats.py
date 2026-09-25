@@ -3,6 +3,7 @@ import base64
 import json
 import struct
 import unittest
+from uuid import UUID
 from unittest.mock import patch
 from archflow.adapters.model_formats import GLB, ThreeDM, Mesh, Scene, convert, ConversionError
 
@@ -29,6 +30,30 @@ def changed_glb(changes, binary=None):
 
 
 class FormatTests(unittest.TestCase):
+    def test_three_dm_preserves_only_explicit_source_object_ids(self):
+        adapter = ThreeDM()
+        scene = fixture()
+        first = adapter.r.File3dm.FromByteArray(adapter.write(scene)).Objects[0].Attributes.Id
+        second = adapter.r.File3dm.FromByteArray(adapter.write(scene)).Objects[0].Attributes.Id
+        self.assertNotEqual(first, second)
+        identity = "486a77cb-9c94-40ee-9b18-e5df263719bb"
+        scene.meshes[0].source_object_id = identity
+        for _ in range(2):
+            data = adapter.write(scene)
+            self.assertEqual(adapter.r.File3dm.FromByteArray(data).Objects[0].Attributes.Id, UUID(identity))
+            self.assertEqual(adapter.read(data).meshes[0].source_object_id, identity)
+
+    def test_three_dm_refuses_invalid_or_duplicate_source_ids(self):
+        scene = fixture()
+        for identity in ("not-a-guid", "00000000-0000-0000-0000-000000000000"):
+            scene.meshes[0].source_object_id = identity
+            with self.assertRaisesRegex(ConversionError, "source object ID|Source object IDs"):
+                ThreeDM().write(scene)
+        scene.meshes[0].source_object_id = "486a77cb-9c94-40ee-9b18-e5df263719bb"
+        scene.meshes.append(scene.meshes[0])
+        with self.assertRaisesRegex(ConversionError, "unique"):
+            ThreeDM().write(scene)
+
     def test_glb_to_3dm_native_reopen_bounds_and_units(self):
         import rhino3dm as r
         output, info = convert(GLB().write(fixture()), "glb", "3dm")

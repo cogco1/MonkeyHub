@@ -1,8 +1,10 @@
-"""Model-axis elevations and horizontal cut plans from retained exact STEP through P036.
+"""Model-axis elevations and cut plans from retained STEP or registered 3DM through P036.
 
 The A0 drawing slice of ``docs/DRAWING_MODULE_ARCHITECTURE_PLAN.md``, as far
 as it is real: a source run's exact STEP (certified by its retained
-``OcctExecutionReceipt@1``) is cold-read, every named shape takes part in
+``OcctExecutionReceipt@1``) or registered 3DM is cold-read. Native 3DM retains
+object GUID paths and explicit exact/faceted/approximate geometry quality;
+it does not acquire a compiled-program or STEP receipt. Every selected shape takes part in
 one exact hidden-line solve for a frame stated along the model axes
 (``adapters.cad_execution.project_occt_lines``), the visible (and, on
 request, hidden) polylines are cropped and serialised as one deterministic
@@ -13,9 +15,10 @@ base is the source run's base.
 
 What this module decides and nothing else:
 
-- the source is trusted only through its retained receipt: STEP SHA, CAD
-  receipt SHA, run, base, unit and Z-up axis, and the object ids the STEP's
-  names must match one for one;
+- STEP identity is checked against its CAD receipt, run, base, unit and
+  Z-up axis, and its names match the certified object ids one for one;
+  native models instead verify their registered bytes, run and units,
+  preserving any original import identity and conversion warnings;
 - the frame is checked to be right-handed and consistent (``look`` is the
   opposite of ``right x up``), the crop window and near/far are finite and
   ordered, and the receipt records exactly what was applied;
@@ -197,6 +200,15 @@ class ElevationSource:
 
 
 @dataclass(frozen=True, slots=True)
+class NativeModelSource:
+    """An explicitly registered 3DM; no compiled-program or STEP authority is implied."""
+
+    run_id: str
+    registration: ProjectRecordRef
+    artifact: ProjectArtifactRef
+
+
+@dataclass(frozen=True, slots=True)
 class ElevationView:
     """One orthographic elevation frame along the model axes, in the STEP's CAD Z-up unit.
 
@@ -353,8 +365,8 @@ class VerifiedElevationSource:
     run: RunRef
     receipt: Mapping[str, Any]
     length_unit: str
-    program_digest: str
-    stage_id: str
+    program_digest: str | None
+    stage_id: str | None
     physical_object_ids: tuple[str, ...]
     entries: tuple[StepEntry, ...]
 
@@ -373,11 +385,13 @@ def _artifact_bytes(repository: FilesystemProjectRepository, ref: ProjectArtifac
     return data
 
 
-def read_elevation_source(repository: FilesystemProjectRepository, source: ElevationSource) -> VerifiedElevationSource:
-    """The source receipt, STEP and names, checked against each other; read-only."""
+def read_elevation_source(repository: FilesystemProjectRepository, source: ElevationSource | NativeModelSource) -> VerifiedElevationSource:
+    """Verify source bytes against their STEP receipt or native registration; read-only."""
 
+    if isinstance(source, NativeModelSource):
+        return _read_native_source(repository, source)
     if not isinstance(source, ElevationSource):
-        raise TypeError("source must be ElevationSource")
+        raise TypeError("source must be ElevationSource or NativeModelSource")
     project_id = repository.load_manifest().project_id
     try:
         run = repository.load_run(source.run_id)
@@ -433,6 +447,51 @@ def read_elevation_source(repository: FilesystemProjectRepository, source: Eleva
                            stage_id=stage_id, physical_object_ids=tuple(sorted(physical)), entries=tuple(entries))
 
 
+def _read_native_source(repository, source):
+    from archflow.adapters.occt_backend import read_three_dm, measure_shape
+
+    project_id = repository.load_manifest().project_id
+    run = repository.load_run(source.run_id)
+    _require(source.registration.project_id == source.artifact.project_id == project_id,
+             "the native model belongs to another project")
+    _require(source.registration.record_kind == "studio-model-asset" and
+             PurePosixPath(source.registration.relative_path).parts[:3] == ("runs", run.run_id, "records"),
+             "the native model must have a registration in its source run")
+    payload = repository.load_json(source.registration)
+    schema = payload.get("schema")
+    external = (schema == "StudioExternalModelAsset@1" or
+                (schema == "StudioModelAsset@1" and payload.get("representation") == "external"
+                 and payload.get("modelSource") is None))
+    _require(schema in {"StudioModelAsset@1", "StudioExternalModelAsset@1"} and payload.get("projectId") == project_id,
+             "the native model registration is invalid")
+    retained = payload.get("artifact", {})
+    _require(all(retained.get(key) == getattr(source.artifact, key)
+                 for key in ("relative_path", "sha256", "media_type")),
+             "the native model differs from its registered original")
+    bound = None if external else payload.get("modelSource")
+    _require((not external and isinstance(bound, Mapping) and bound.get("runId") == run.run_id and
+              bound.get("assetSha256") == source.artifact.sha256) or
+             (external and payload.get("runId") == run.run_id and
+              payload.get("assetSha256") == source.artifact.sha256 and
+              run.run_id == "studio-model-" + source.artifact.sha256),
+             "the native model registration has a different source binding")
+    data = _artifact_bytes(repository, source.artifact)
+    try:
+        entries, unit = read_three_dm(data)
+    except OcctBackendError as exc:
+        raise DrawingElevationError(str(exc)) from exc
+    _require(unit == payload.get("lengthUnit"), "native model units differ from its registration")
+    ids = tuple(entry.name for entry in entries)
+    _require(bool(ids) and len(set(ids)) == len(ids), "native model object identities are empty or duplicated")
+    # Plain readback values for the common frame/section operations, not an execution receipt.
+    measured = {entry.name: {"bbox": measure_shape(entry.shape).to_dict()["bbox"]} for entry in entries}
+    facts = {"identity": {"length_unit": unit}, "physical_object_ids": ids, "readback": measured, "modelSource": bound}
+    source_import = {key: deepcopy(payload[key]) for key in ("sourceArtifact", "sourceFileName", "conversion") if key in payload}
+    if source_import:
+        facts["sourceImport"] = source_import
+    return VerifiedElevationSource(run, facts, unit, None, None, ids, entries)
+
+
 def _drawing_run(repository: FilesystemProjectRepository, drawing_run_id: str, source_run: RunRef) -> RunRef:
     try:
         require_identifier(drawing_run_id, "drawing_run_id")
@@ -459,9 +518,27 @@ def _artifact_ref(project_id: str, value: Mapping[str, Any]) -> ProjectArtifactR
     return ProjectArtifactRef(project_id, value["artifact_id"], value["relative_path"], value["sha256"], value["media_type"])
 
 
+def _source_binding(source, verified):
+    common = {"run_id": verified.run.run_id, "base": verified.run.base.to_dict(),
+              "physical_object_ids": list(verified.physical_object_ids)}
+    if isinstance(source, NativeModelSource):
+        return {**common, "model": _ref_dict(source.artifact),
+                "registration": source.registration.to_dict(),
+                "object_identity": "3DM object GUID path including block instances",
+                "geometry_quality": {entry.name: entry.geometry_quality for entry in verified.entries},
+                **({"sourceImport": deepcopy(verified.receipt["sourceImport"])} if "sourceImport" in verified.receipt else {})}
+    return {**common, "stage_id": verified.stage_id, "program_digest": verified.program_digest,
+            "step": {"relative_path": source.step_relative_path, "sha256": source.step_sha256,
+                     "media_type": STEP_MEDIA_TYPE},
+            "cad_receipt": {"relative_path": source.cad_receipt_relative_path, "sha256": source.cad_receipt_sha256},
+            "object_identity": "STEP shape name = CAD receipt physical object id"}
+
+
 def _retain_projection(repository, *, source, verified, projection, view, name, drawing_run_id,
                        backend, head_before, projection_details=None, previous_revision_ref=None):
     """The one receipt/artifact boundary for elevation, cut-plan and section-perspective projections."""
+    if isinstance(source, NativeModelSource) and verified.receipt.get("modelSource") is None:
+        view = {**view, "sourceAsset": {"runId": source.run_id, "assetSha256": source.artifact.sha256}, "follow": "frozen"}
     run = _drawing_run(repository, drawing_run_id, verified.run)
     destination = PersistenceDestination(PersistenceArea.RUN_WORKSPACE, run_id=run.run_id)
     try:
@@ -482,18 +559,7 @@ def _retain_projection(repository, *, source, verified, projection, view, name, 
             "base": run.base.to_dict(),
             "view": view,
             "unit": verified.length_unit,
-            "source": {
-                "run_id": verified.run.run_id,
-                "base": verified.run.base.to_dict(),
-                "stage_id": verified.stage_id,
-                "program_digest": verified.program_digest,
-                "step": {"relative_path": source.step_relative_path, "sha256": source.step_sha256,
-                         "media_type": STEP_MEDIA_TYPE},
-                "cad_receipt": {"relative_path": source.cad_receipt_relative_path,
-                                "sha256": source.cad_receipt_sha256},
-                "object_identity": "STEP shape name = CAD receipt physical object id",
-                "physical_object_ids": list(verified.physical_object_ids),
-            },
+            "source": _source_binding(source, verified),
             "projection": {
                 "backend": backend,
                 "algorithm": "HLRBRep_Algo exact hidden-line solve over every listed object, then per-object extraction",
@@ -559,7 +625,7 @@ def resolve_plan_dressing(recipe: Mapping, receipt: Mapping) -> list[dict]:
 
 
 def freeze_cut_plan(
-    repository: FilesystemProjectRepository, *, source: ElevationSource, recipe: Mapping,
+    repository: FilesystemProjectRepository, *, source: ElevationSource | NativeModelSource, recipe: Mapping,
     drawing_run_id: str, dimensions: tuple[Mapping, ...] = (), previous_revision_ref: str | None = None,
 ) -> ElevationDrawing:
     """Retain a horizontal section and the exact below-cut visibility in the existing drawing envelope.
@@ -638,11 +704,11 @@ def freeze_cut_plan(
 
 
 def freeze_model_axis_elevation(
-    repository: FilesystemProjectRepository, *, source: ElevationSource, view: ElevationView, drawing_run_id: str,
+    repository: FilesystemProjectRepository, *, source: ElevationSource | NativeModelSource, view: ElevationView, drawing_run_id: str,
     operation_observer: Callable[[Mapping[str, Any]], None] | None = None,
     parent_event_id: str | None = None,
 ) -> ElevationDrawing:
-    """Project one elevation of the source STEP and retain SVG, PNG and receipt in the drawing run.
+    """Project retained STEP or native 3DM and retain SVG, PNG and receipt in the drawing run.
 
     Refuses before any write when the source does not verify, the frame is
     inconsistent, or the drawing run exists with another base.  A repeat
@@ -1064,11 +1130,11 @@ def section_perspective_objects(verified: VerifiedElevationSource, hidden_object
 
 
 def freeze_section_perspective(
-    repository: FilesystemProjectRepository, *, source: ElevationSource, view: SectionPerspectiveView,
+    repository: FilesystemProjectRepository, *, source: ElevationSource | NativeModelSource, view: SectionPerspectiveView,
     drawing_run_id: str, operation_observer: Callable[[Mapping[str, Any]], None] | None = None,
     parent_event_id: str | None = None,
 ) -> ElevationDrawing:
-    """Draw one section perspective of the source STEP and retain SVG, PNG and receipt in the drawing run.
+    """Draw a section perspective of verified STEP or native geometry and retain SVG, PNG and receipt.
 
     Mirrors ``freeze_model_axis_elevation``: the request was checked when the
     view was made, the source is verified, nothing is written until the
@@ -1084,6 +1150,8 @@ def freeze_section_perspective(
     identity = {"view_recipe": view.request()}
     if isinstance(source, ElevationSource):
         identity["step_sha256"] = source.step_sha256
+    elif isinstance(source, NativeModelSource):
+        identity["model_sha256"] = source.artifact.sha256
 
     def observe(event):
         operation_observer({**event, "details": {"input_identity": dict(identity), **event.get("details", {})}})
@@ -1166,6 +1234,7 @@ __all__ = [
     "ElevationDrawing",
     "ElevationProjection",
     "ElevationSource",
+    "NativeModelSource",
     "ElevationView",
     "SectionPerspectiveError",
     "SectionPerspectiveProjection",

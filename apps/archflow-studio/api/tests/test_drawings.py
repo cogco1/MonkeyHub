@@ -560,19 +560,20 @@ class DrawingTests(CandidateTestCase):
         self.assertEqual(self.generate().json(), r1)
         self.assertEqual(self.repository.read_head(), self.head)
 
-    def test_imported_complete_model_cannot_use_native_components_as_whole_building(self) -> None:
+    def test_imported_complete_model_draws_itself_instead_of_native_components(self) -> None:
         imported = register_model(self.client, self.model["runId"], self.model["stateDigest"],
                                   (Path(__file__).parent / "fixtures/model-source-a.3dm").read_bytes())
         composed = self.client.post("/api/design-stages/initialize", json={"projectId": PROJECT_ID,
                                    "branchId": "imported", "modelSource": imported["modelSource"]})
         self.assertEqual(composed.status_code, 201, composed.text)
         result = self.generate(composed.json())
-        self.assertEqual(result.status_code, 409, result.text)
-        self.assertEqual(result.json()["code"], "DRAWING_COMPLETE_SOURCE_UNAVAILABLE")
+        self.assertEqual(result.status_code, 201, result.text)
+        drawing = read_model_axis_elevation(self.repository, record_ref_from_uri(result.json()["revisionRef"], PROJECT_ID))
+        self.assertEqual(drawing.receipt["source"]["model"]["sha256"], imported["sha256"])
+        self.assertNotIn("step", drawing.receipt["source"])
         observation = self.client.get("/api/drawings/model-view", params=imported["modelSource"])
-        self.assertEqual(observation.status_code, 409, observation.text)
-        self.assertEqual(observation.json()["code"], "DRAWING_COMPLETE_SOURCE_UNAVAILABLE")
-        self.assertEqual(self.client.get("/api/documents", params={"runId": self.model["runId"]}).json()["documents"], [])
+        self.assertEqual(observation.status_code, 200, observation.text)
+        self.assertEqual(observation.json()["source"], imported["modelSource"])
         self.assertEqual(self.repository.read_head(), self.head)
 
     def test_stage_uses_pinned_runner_and_view_recipe_does_not_overwrite(self) -> None:

@@ -77,6 +77,24 @@ class DocumentModelSourceRequestDto(BaseModel):
     model_source: ModelSourceDto = Field(alias="modelSource", description="Explicitly declared correspondence, not a claim inferred from image pixels.")
 
 
+class ModelImportConversionDto(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, frozen=True)
+
+    provider: str
+    source_format: str = Field(alias="sourceFormat")
+    target_format: str = Field(alias="targetFormat")
+    representation: str
+    warnings: list[str]
+
+
+class ModelImportDto(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, frozen=True)
+
+    source_artifact: dict[str, str] = Field(alias="sourceArtifact")
+    source_file_name: str = Field(alias="sourceFileName")
+    conversion: ModelImportConversionDto
+
+
 class ProjectArtifactDto(BaseModel):
     """One exported model, as its receipt describes it and disk answers for it."""
 
@@ -88,6 +106,7 @@ class ProjectArtifactDto(BaseModel):
     )
     run_id: str = Field(alias="runId")
     model_source: ModelSourceDto | None = Field(alias="modelSource", default=None)
+    source_import: ModelImportDto | None = Field(alias="sourceImport", default=None)
     source_stage_ref: str | None = Field(
         alias="sourceStageRef", default=None,
         description="The committed source Stage declared by this run's retained candidate delta, "
@@ -400,6 +419,7 @@ def artifact_dto(record: ArtifactRecord) -> ProjectArtifactDto:
         artifact_id=record.artifact_id,
         run_id=record.run_id,
         model_source=model_source_dto(artifact_model_source(record)),
+        source_import=record.source_import,
         source_stage_ref=record.source_stage_ref,
         stage_id=record.stage_id,
         file_name=record.file_name,

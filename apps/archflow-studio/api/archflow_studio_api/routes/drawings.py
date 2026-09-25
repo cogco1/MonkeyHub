@@ -26,8 +26,9 @@ def create_plan(request: Request, payload: PlanRequestDto) -> SourceDocumentDto:
     binding = bound_project(request.app.state)
     if payload.project_id != binding.project_id:
         raise StudioError(403, "PROJECT_MISMATCH", "The drawing names another project.")
-    values = payload.model_dump(exclude={"project_id", "model_source", "dimensions", "dressing", "dressing_operations"})
+    values = payload.model_dump(exclude={"project_id", "model_source", "source_asset", "dimensions", "dressing", "dressing_operations"})
     return document_dto(generate_plan(binding, **values,
+        source_asset=None if payload.source_asset is None else payload.source_asset.model_dump(by_alias=True),
         model_source=None if payload.model_source is None else model_source_from(payload.model_source),
         dimensions=None if payload.dimensions is None else [row.model_dump(by_alias=True) for row in payload.dimensions],
         dressing=None if payload.dressing is None else [row.model_dump(by_alias=True) for row in payload.dressing],
@@ -51,11 +52,20 @@ def read_plan_status(request: Request, payload: PlanStatusRequestDto) -> PlanSta
 
 @router.get("/drawings/plans/dimensions", response_model=PlanDimensionChoicesDto, response_model_by_alias=True)
 def read_plan_dimension_choices(request: Request,
-    source_run_id: str = Query(alias="sourceRunId", min_length=1),
-    state_digest: str = Query(alias="stateDigest", pattern=r"^[0-9a-f]{64}$"),
-    asset_sha256: str = Query(alias="assetSha256", pattern=r"^[0-9a-f]{64}$"),
+    source_run_id: str | None = Query(alias="sourceRunId", default=None, min_length=1),
+    state_digest: str | None = Query(alias="stateDigest", default=None, pattern=r"^[0-9a-f]{64}$"),
+    asset_sha256: str | None = Query(alias="assetSha256", default=None, pattern=r"^[0-9a-f]{64}$"),
     source_stage_ref: str | None = Query(alias="sourceStageRef", default=None),
+    source_asset_run_id: str | None = Query(alias="sourceAssetRunId", default=None, min_length=1),
+    source_asset_sha256: str | None = Query(alias="sourceAssetSha256", default=None, pattern=r"^[0-9a-f]{64}$"),
 ) -> PlanDimensionChoicesDto:
+    if source_asset_run_id is not None or source_asset_sha256 is not None:
+        if not source_asset_run_id or not source_asset_sha256 or any((source_run_id, state_digest, asset_sha256, source_stage_ref)):
+            raise StudioError(422, "DRAWING_SOURCE_AMBIGUOUS", "Choose one complete source asset or model binding.")
+        return PlanDimensionChoicesDto(**plan_dimension_choices(bound_project(request.app.state),
+            source_asset={"runId": source_asset_run_id, "assetSha256": source_asset_sha256}))
+    if not all((source_run_id, state_digest, asset_sha256)):
+        raise StudioError(422, "DRAWING_SOURCE_REQUIRED", "Provide an exact model or imported asset.")
     source = model_source_from(ModelSourceDto(run_id=source_run_id, state_digest=state_digest, asset_sha256=asset_sha256))
     return PlanDimensionChoicesDto(**plan_dimension_choices(bound_project(request.app.state), source, source_stage_ref))
 
@@ -104,6 +114,7 @@ def create_sheet(request: Request, payload: SheetRequestDto) -> SourceDocumentDt
         raise StudioError(403, "PROJECT_MISMATCH", "The drawing names another project.")
     return document_dto(generate_sheet(
         binding, source_stage_ref=payload.source_stage_ref,
+        source_asset=None if payload.source_asset is None else payload.source_asset.model_dump(by_alias=True),
         model_source=None if payload.model_source is None else model_source_from(payload.model_source),
         style_id=payload.style_id, scale_denominator=payload.scale_denominator,
         hidden_object_ids=tuple(payload.hidden_object_ids), outline_object_ids=tuple(payload.outline_object_ids),
@@ -115,13 +126,13 @@ def create_sheet(request: Request, payload: SheetRequestDto) -> SourceDocumentDt
 def create_section_perspective(request: Request, payload: SectionPerspectiveRequestDto) -> SourceDocumentDto:
     """Retain a true section perspective (剖透视) of an exact model and register it in the documents list.
 
-    The section plane cuts the retained STEP solids; the side away from the eye
+    The section plane cuts the retained STEP or registered native model; the side away from the eye
     is drawn in exact perspective with visible lines only, and the cut is
     filled (poché). The picture plane is the section plane, so the cut is true
     to scale at 1:scaleDenominator and lines perpendicular to it converge at
     the eye's foot on the plane. The minimal request is a plan line and the
     kept side; the default camera looks straight through the cut. Coordinates
-    use the exact STEP's CAD frame and length unit (X/Y plan, Z up). Refusals
+    use the source model's CAD frame and length unit (X/Y plan, Z up). Refusals
     are named: SECTION_PLANE_MISSES_MODEL, SECTION_EYE_ON_KEPT_SIDE,
     SECTION_EYE_ON_PLANE, SECTION_CAMERA_DEGENERATE, SECTION_LINE_DEGENERATE,
     SECTION_NORMAL_DEGENERATE, SECTION_DEPTH_INVALID, SECTION_VALUE_NOT_FINITE,
@@ -135,6 +146,7 @@ def create_section_perspective(request: Request, payload: SectionPerspectiveRequ
                                               ("hatchSpacingMm", payload.hatch_spacing_mm)) if value is not None}
     return document_dto(generate_section_perspective(
         binding, source_stage_ref=payload.source_stage_ref,
+        source_asset=None if payload.source_asset is None else payload.source_asset.model_dump(by_alias=True),
         model_source=None if payload.model_source is None else model_source_from(payload.model_source),
         section=payload.section.model_dump(by_alias=True),
         camera=None if payload.camera is None else payload.camera.model_dump(by_alias=True, exclude_none=True),
@@ -150,6 +162,7 @@ def create_elevation(request: Request, payload: ElevationRequestDto) -> SourceDo
         raise StudioError(403, "PROJECT_MISMATCH", "The drawing names another project.")
     return document_dto(generate_elevation(
         binding, source_stage_ref=payload.source_stage_ref,
+        source_asset=None if payload.source_asset is None else payload.source_asset.model_dump(by_alias=True),
         model_source=None if payload.model_source is None else model_source_from(payload.model_source),
         view=payload.view, drawing_id=payload.drawing_id, hidden_lines=payload.hidden_lines,
         scale_denominator=payload.scale_denominator,

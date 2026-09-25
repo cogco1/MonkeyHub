@@ -1,9 +1,9 @@
-"""Retained drawings and transient observations from the existing exact STEP owner."""
+"""Retained drawings and observations from exact STEP or registered native models."""
 
 from __future__ import annotations
 
 import base64
-from dataclasses import asdict, replace
+from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timezone
 import hashlib
 from io import BytesIO
@@ -20,16 +20,16 @@ from archflow.adapters.occt_backend import OcctBackendError
 from archflow.contracts.canonical import canonical_json
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import DESIGN_STAGE, SEAT_OCCT_EXECUTION, STUDIO_SOURCE_DOCUMENT
-from archflow.project.refs import ProjectRecordRef, record_ref_from_uri, require_identifier
+from archflow.project.refs import ProjectArtifactRef, ProjectRecordRef, record_ref_from_uri, require_identifier
 from monkeydiagram.drawing_elevation import (
-    SECTION_PERSPECTIVE_KIND, UNIT_METRES, DrawingElevationError, ElevationSource, ElevationView, SectionPerspectiveError,
+    SECTION_PERSPECTIVE_KIND, UNIT_METRES, DrawingElevationError, ElevationSource, NativeModelSource, ElevationView, SectionPerspectiveError,
     SectionPerspectiveView, freeze_model_axis_elevation, freeze_section_perspective,
     project_model_axis_elevation, read_elevation_source,
 )
 
 from .artifacts import (
     ModelSource, SourceDocument, _document_pages, _document_source_lock,
-    document_bytes, list_artifacts, list_documents, require_complete_model, require_model_source, save_document,
+    artifact_bytes, document_bytes, list_artifacts, list_documents, require_complete_model, require_model_source, save_document,
 )
 from .binding import retained_sources
 from .binding import ProjectBinding
@@ -38,9 +38,40 @@ from .projection import project_state
 from ..transport.errors import StudioError
 
 
+@dataclass(frozen=True)
+class DrawingAssetSource:
+    run_id: str
+    asset_sha256: str
+
+    def to_dict(self):
+        return {"runId": self.run_id, "assetSha256": self.asset_sha256}
+
+
+def _source_ref(binding, source):
+    return source.registration if isinstance(source, NativeModelSource) else ProjectRecordRef(
+        binding.project_id, source.cad_receipt_relative_path, source.cad_receipt_sha256)
+
+
+def _source_digest(source):
+    return source.artifact.sha256 if isinstance(source, NativeModelSource) else source.step_sha256
+
+
+def _document_source(document):
+    asset = (document.view_recipe or {}).get("sourceAsset")
+    return DrawingAssetSource(asset["runId"], asset["assetSha256"]) if asset else document.model_source
+
+
+def _model_binding(source):
+    return source if isinstance(source, ModelSource) else None
+
+
 def _selected_source(
-    binding: ProjectBinding, source_stage_ref: str | None, model_source: ModelSource | None,
-) -> tuple[ModelSource, ProjectRecordRef | None]:
+    binding: ProjectBinding, source_stage_ref: str | None, model_source: ModelSource | None, source_asset=None,
+) -> tuple[ModelSource | DrawingAssetSource, ProjectRecordRef | None]:
+    if source_asset is not None:
+        if model_source is not None or source_stage_ref is not None:
+            raise StudioError(422, "DRAWING_SOURCE_AMBIGUOUS", "Choose a model version or one imported asset.")
+        return DrawingAssetSource(source_asset["runId"], source_asset["assetSha256"]), None
     try:
         stage_ref = None if source_stage_ref is None else record_ref_from_uri(source_stage_ref, binding.project_id)
         if stage_ref is not None and stage_ref.record_kind != DESIGN_STAGE:
@@ -60,14 +91,26 @@ def _selected_source(
 
 
 def _complete_source(
-    binding: ProjectBinding, model: ModelSource, stage_ref: ProjectRecordRef | None,
-) -> tuple[ElevationSource, dict[str, Any]]:
-    projection = project_state(binding, model.run_id, source_stage_ref=stage_ref)
-    artifact = require_model_source(binding, model, projection)
+    binding: ProjectBinding, model: ModelSource | DrawingAssetSource, stage_ref: ProjectRecordRef | None,
+) -> tuple[ElevationSource | NativeModelSource, dict[str, Any]]:
+    if isinstance(model, DrawingAssetSource):
+        artifact, _ = artifact_bytes(binding, model.asset_sha256, run_id=model.run_id)
+        if artifact.run_id != model.run_id or artifact.representation != "external":
+            raise StudioError(409, "DRAWING_SOURCE_MISMATCH", "Choose an external model asset or use its exact modelSource.")
+    else:
+        projection = project_state(binding, model.run_id, source_stage_ref=stage_ref)
+        artifact = require_model_source(binding, model, projection)
     cad_ref = record_ref_from_uri(artifact.receipt_ref, binding.project_id)
     if stage_ref is not None and binding.design_stage(stage_ref).model_ref != cad_ref:
         raise StudioError(409, "DRAWING_SOURCE_MISMATCH", "The selected Stage pins a different model receipt.")
-    if artifact.representation == "composed" or cad_ref.record_kind != SEAT_OCCT_EXECUTION:
+    if artifact.representation in {"composed", "external"}:
+        registered = binding.repository.load_json(cad_ref)
+        native = NativeModelSource(model.run_id, cad_ref, ProjectArtifactRef(**registered["artifact"]))
+        try:
+            return native, dict(read_elevation_source(binding.repository, native).receipt)
+        except DrawingElevationError as exc:
+            raise StudioError(422, "DRAWING_NATIVE_GEOMETRY_UNSUPPORTED", str(exc)) from exc
+    if cad_ref.record_kind != SEAT_OCCT_EXECUTION:
         raise StudioError(409, "DRAWING_COMPLETE_SOURCE_UNAVAILABLE", "This complete model has no matching exact STEP. Its native components cannot stand in for a drawing of the complete building.")
     try:
         require_complete_model(artifact, projection.reference.receipt or {})
@@ -85,7 +128,7 @@ def _complete_source(
 def _elevation_view(
     receipt: dict[str, Any], direction: str, *, hidden_lines: bool, scale_denominator: int,
 ) -> ElevationView:
-    # Coordinates are the CAD Z-up frame used by the verified STEP. The
+    # Coordinates are the Z-up frame used by the verified source model. The
     # crop follows the retained cold-read bounds of every physical object.
     right, up, look = {
         "front": ((1, 0, 0), (0, 0, 1), (0, 1, 0)),
@@ -142,7 +185,7 @@ def model_view(binding: ProjectBinding, *, model_source: ModelSource, view: str)
 
 
 def _registered_drawing(
-    binding: ProjectBinding, monitor: StudioMonitor, operation: dict[str, Any], *, model_source: ModelSource,
+    binding: ProjectBinding, monitor: StudioMonitor, operation: dict[str, Any], *, model_source: ModelSource | DrawingAssetSource,
     stage_ref: ProjectRecordRef | None, drawing_id: str, same_recipe, freeze,
 ) -> SourceDocument:
     """A drawing request's registered revision: the exact registered one read back, or a new one retained and registered.
@@ -176,7 +219,7 @@ def _registered_drawing(
             checks = {
                 "drawing_id": "same" if document.drawing_id == drawing_id else "changed",
                 "source_stage_ref": "same" if document.source_stage_ref == selected_stage else "changed",
-                "model_source": "same" if document.model_source == model_source else "changed",
+                "model_source": "same" if _document_source(document) == model_source else "changed",
                 "view_recipe": "same" if same_recipe(document) else "changed",
             }
             if all(value == "same" for value in checks.values()):
@@ -221,7 +264,7 @@ def _registered_drawing(
                     "schema": "StudioSourceDocument@1", "project_id": binding.project_id, "run_id": run.run_id,
                     "asset_sha256": drawing.png_ref.sha256, "file_name": f"{drawing_id}.png", "mime_type": "image/png",
                     "size_bytes": len(drawing.png), "pages": [asdict(page) for page in pages],
-                    "modelSource": model_source.to_dict(), "sourceStageRef": selected_stage,
+                    "modelSource": None if isinstance(model_source, DrawingAssetSource) else model_source.to_dict(), "sourceStageRef": selected_stage,
                     "drawingId": drawing_id, "revisionRef": drawing.receipt_ref.uri, "viewRecipe": drawing.receipt["view"],
                     "generatedAt": datetime.now(timezone.utc).isoformat(),
                 },
@@ -236,7 +279,7 @@ def _registered_drawing(
 def generate_elevation(
     binding: ProjectBinding, *, source_stage_ref: str | None, model_source: ModelSource | None,
     view: str, drawing_id: str | None = None, hidden_lines: bool = False, scale_denominator: int = 100,
-    monitor: StudioMonitor | None = None,
+    monitor: StudioMonitor | None = None, source_asset=None,
 ) -> SourceDocument:
     monitor = monitor if monitor is not None else StudioMonitor(None)
     with monitor.measure(
@@ -246,7 +289,7 @@ def generate_elevation(
     ) as operation:
         details = operation["details"]
         try:
-            model_source, stage_ref = _selected_source(binding, source_stage_ref, model_source)
+            model_source, stage_ref = _selected_source(binding, source_stage_ref, model_source, source_asset)
             operation["run_id"] = model_source.run_id
             source, cad_receipt = _complete_source(binding, model_source, stage_ref)
             recipe = _elevation_view(cad_receipt, view, hidden_lines=hidden_lines, scale_denominator=scale_denominator)
@@ -255,11 +298,13 @@ def generate_elevation(
             raise
         drawing_id = drawing_id or recipe.name
         require_identifier(drawing_id, "drawing_id")
-        operation["source_ref"] = (None if stage_ref is None else stage_ref.uri) or ProjectRecordRef(
-            binding.project_id, source.cad_receipt_relative_path, source.cad_receipt_sha256,
-        ).uri
+        selected_stage = None if stage_ref is None else stage_ref.uri
+        document_recipe = recipe.to_dict()
+        if isinstance(model_source, DrawingAssetSource):
+            document_recipe.update(sourceAsset=model_source.to_dict(), follow="frozen")
+        operation["source_ref"] = selected_stage or _source_ref(binding, source).uri
         details.update(
-            input_identity={"step_sha256": source.step_sha256, "view_recipe": {
+            input_identity={"model_sha256" if isinstance(source, NativeModelSource) else "step_sha256": _source_digest(source), "view_recipe": {
                 key: value for key, value in recipe.to_dict().items() if key not in {"uv_definition", "depth_definition"}}},
             input_object_ids=list(cad_receipt["physical_object_ids"]),
         )
@@ -274,7 +319,7 @@ def generate_elevation(
                 raise StudioError(409, "DRAWING_GENERATION_FAILED", str(exc)) from exc
 
         return _registered_drawing(binding, monitor, operation, model_source=model_source, stage_ref=stage_ref,
-                                   drawing_id=drawing_id, same_recipe=lambda document: document.view_recipe == recipe.to_dict(),
+                                   drawing_id=drawing_id, same_recipe=lambda document: document.view_recipe == document_recipe,
                                    freeze=freeze)
 
 
@@ -283,9 +328,9 @@ def generate_section_perspective(
     binding: ProjectBinding, *, source_stage_ref: str | None, model_source: ModelSource | None,
     section: dict[str, Any], camera: dict[str, Any] | None = None, depth: float | None = None,
     hidden_object_ids: tuple[str, ...] = (), drawing_id: str | None = None, scale_denominator: int = 100,
-    graphics: dict[str, float] | None = None, monitor: StudioMonitor | None = None,
+    graphics: dict[str, float] | None = None, monitor: StudioMonitor | None = None, source_asset=None,
 ) -> SourceDocument:
-    """One section perspective of an exact source, retained and registered like an elevation.
+    """One section perspective of a verified source, retained and registered like an elevation.
 
     The same source resolution, cache, monitoring and documents-list
     registration as ``generate_elevation``; an identical request on the same
@@ -301,7 +346,7 @@ def generate_section_perspective(
     ) as operation:
         details = operation["details"]
         try:
-            model_source, stage_ref = _selected_source(binding, source_stage_ref, model_source)
+            model_source, stage_ref = _selected_source(binding, source_stage_ref, model_source, source_asset)
             operation["run_id"] = model_source.run_id
             source, cad_receipt = _complete_source(binding, model_source, stage_ref)
         except StudioError:
@@ -319,10 +364,8 @@ def generate_section_perspective(
             details.update(cache_status="refused", cache_reason="request_invalid")
             raise StudioError(422, exc.code, str(exc)) from exc
         request = view.request()
-        operation["source_ref"] = (None if stage_ref is None else stage_ref.uri) or ProjectRecordRef(
-            binding.project_id, source.cad_receipt_relative_path, source.cad_receipt_sha256,
-        ).uri
-        details.update(input_identity={"step_sha256": source.step_sha256, "view_recipe": request},
+        operation["source_ref"] = (None if stage_ref is None else stage_ref.uri) or _source_ref(binding, source).uri
+        details.update(input_identity={"model_sha256" if isinstance(source, NativeModelSource) else "step_sha256": _source_digest(source), "view_recipe": request},
                        input_object_ids=list(cad_receipt["physical_object_ids"]))
 
         def freeze(observe):
@@ -338,7 +381,9 @@ def generate_section_perspective(
 
         def same_recipe(document):
             recipe = document.view_recipe or {}
-            return recipe.get("kind") == SECTION_PERSPECTIVE_KIND and recipe.get("request") == request
+            return (recipe.get("kind") == SECTION_PERSPECTIVE_KIND and recipe.get("request") == request
+                    and (not isinstance(model_source, DrawingAssetSource) or
+                         (recipe.get("sourceAsset") == model_source.to_dict() and recipe.get("follow") == "frozen")))
 
         return _registered_drawing(binding, monitor, operation, model_source=model_source, stage_ref=stage_ref,
                                    drawing_id=drawing_id, same_recipe=same_recipe, freeze=freeze)
@@ -368,7 +413,7 @@ def generate_sheet(
     binding: ProjectBinding, *, source_stage_ref: str | None, model_source: ModelSource | None,
     style_id: str, scale_denominator: int = 20, hidden_object_ids: tuple[str, ...] = (),
     outline_object_ids: tuple[str, ...] = (), notes: tuple[str, ...] = (),
-    monitor: StudioMonitor | None = None,
+    monitor: StudioMonitor | None = None, source_asset=None,
 ) -> SourceDocument:
     """Three exact visibility projections, composed and retained as one source PDF."""
 
@@ -376,7 +421,7 @@ def generate_sheet(
     from monkeydiagram.documentation.styles import compose_review_sheet, drawing_style
     from monkeydiagram.drawing_output import render_dxf, render_pdf
 
-    model_source, stage_ref = _selected_source(binding, source_stage_ref, model_source)
+    model_source, stage_ref = _selected_source(binding, source_stage_ref, model_source, source_asset)
     source, receipt = _complete_source(binding, model_source, stage_ref)
     try:
         verified = read_elevation_source(binding.repository, source)
@@ -407,11 +452,14 @@ def generate_sheet(
         "kind": "review-sheet", "style": style, "scaleDenominator": scale_denominator,
         "hiddenObjectIds": sorted(hidden), "outlineObjectIds": sorted(outline), "notes": list(notes),
         "views": {name: frame.to_dict() for name, frame in frames.items()},
-        "source": {"modelSource": model_source.to_dict(), "sourceStageRef": None if stage_ref is None else stage_ref.uri,
-                   "stepSha256": source.step_sha256, "cadReceiptRef": ProjectRecordRef(
-                       binding.project_id, source.cad_receipt_relative_path, source.cad_receipt_sha256).uri},
+        "source": {"modelSource": None if isinstance(model_source, DrawingAssetSource) else model_source.to_dict(),
+                   "sourceStageRef": None if stage_ref is None else stage_ref.uri,
+                   "modelSha256" if isinstance(source, NativeModelSource) else "stepSha256": _source_digest(source),
+                   "cadReceiptRef": _source_ref(binding, source).uri},
         "fonts": {name: path.name for name, path in fonts.items()}, "title": binding.project_id,
     }
+    if isinstance(model_source, DrawingAssetSource):
+        recipe.update(sourceAsset=model_source.to_dict(), follow="frozen")
     # Use the wire form for both cold comparison and the PDF's provenance metadata.
     recipe_json = canonical_json(recipe, ascii=False)
     recipe = json.loads(recipe_json)
@@ -423,7 +471,7 @@ def generate_sheet(
                                   "input_object_ids": list(selected), "cache_status": "unknown"}) as operation:
         with _document_source_lock:
             for document in list_documents(binding, model_source.run_id):
-                if document.model_source == model_source and document.view_recipe == recipe:
+                if _document_source(document) == model_source and document.view_recipe == recipe:
                     document_bytes(binding, document.run_id, document.asset_sha256)
                     operation["details"].update(cache_status="hit", execution_path="retained_drawing")
                     return document
@@ -471,7 +519,7 @@ def generate_sheet(
         )
         document = save_document(
             binding, model_source.run_id, f"{style_id}-1-{scale_denominator}.pdf", "application/pdf",
-            base64.b64encode(pdf).decode("ascii"), model_source,
+            base64.b64encode(pdf).decode("ascii"), _model_binding(model_source),
             drawing_id=style_id, source_stage_ref=None if stage_ref is None else stage_ref.uri,
             view_recipe=recipe, generated_at=datetime.now(timezone.utc).isoformat(),
         )

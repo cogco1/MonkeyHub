@@ -154,25 +154,26 @@ test("document authorization and revision conflicts remain StudioApiError failur
 test("external model import sends original bytes without inventing a semantic run/state", async (t) => {
   const { studio } = await documentApi(t);
   const bytes = Uint8Array.from({ length: 65_553 }, (_, index) => index % 256);
-  const file = new File([bytes], "建筑.3dm");
+  const files = [new File([bytes], "建筑.3dm"), new File([bytes], "建筑.skp")];
   const stateDigest = "c".repeat(64);
   const artifact = { runId, sha256: assetSha256, modelSource: { runId, stateDigest, assetSha256 } };
   t.mock.method(globalThis, "fetch", async (request: Request) => {
     assert.equal(request.url, "http://studio.test/api/model-assets");
     assert.equal(request.method, "POST");
     assert.equal(request.headers.get("authorization"), "Bearer document-test-token");
-    assert.deepEqual(await request.json(), {
-      projectId, fileName: file.name, contentBase64: Buffer.from(bytes).toString("base64"),
-    });
+    const body = await request.json();
+    assert.equal(body.projectId, projectId);
+    assert.ok(files.some(file => file.name === body.fileName));
+    assert.equal(body.contentBase64, Buffer.from(bytes).toString("base64"));
     return Response.json(artifact, { status: 201 });
   });
-  assert.deepEqual(await studio.uploadModel(projectId, file), artifact);
+  for (const file of files) assert.deepEqual(await studio.uploadModel(projectId, file), artifact);
 });
 
 test("invalid or cancelled local model imports never send a registration request", async (t) => {
   const { studio } = await documentApi(t);
   const fetch = t.mock.method(globalThis, "fetch", async () => { throw new Error("unexpected upload"); });
-  await assert.rejects(studio.uploadModel(projectId, new File(["x"], "model.skp")), /3dm/);
+  await assert.rejects(studio.uploadModel(projectId, new File(["x"], "model.obj")), /3dm or SketchUp \.skp/);
   await assert.rejects(studio.uploadModel(projectId, new File([], "empty.3dm")), /non-empty/);
   const tooLarge = new File(["x"], "large.3dm");
   Object.defineProperty(tooLarge, "size", { value: 128 * 1024 * 1024 + 1 });

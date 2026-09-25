@@ -65,6 +65,7 @@ def discover_local_cad(*, system=None, program_roots=None, application_roots=Non
             Path(os.environ.get(key, default)) for key, default in (
                 ("ProgramFiles", r"C:\Program Files"), ("ProgramFiles(x86)", r"C:\Program Files (x86)"))))
         patterns = (("sketchup", "SketchUp/SketchUp */SketchUp.exe"),
+                    ("sketchup", "SketchUp/SketchUp */SketchUp/SketchUp.exe"),
                     ("autocad", "Autodesk/AutoCAD */acad.exe"),
                     ("autocad-core", "Autodesk/AutoCAD */accoreconsole.exe"))
         for root in roots:

@@ -83,7 +83,24 @@ class PlanVectorDto(BaseModel):
     anchors: list[PlanDressingAnchorDto]
 
 
-class PlanRequestDto(BaseModel):
+class DrawingAssetSourceDto(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
+    run_id: str = Field(alias="runId", min_length=1)
+    asset_sha256: str = Field(alias="assetSha256", pattern=r"^[0-9a-f]{64}$")
+
+
+class DrawingSourceRequestDto(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
+    source_asset: DrawingAssetSourceDto | None = Field(alias="sourceAsset", default=None)
+
+    @model_validator(mode="after")
+    def separate_imported_source(self):
+        if self.source_asset is not None and (self.model_source is not None or self.source_stage_ref is not None):
+            raise ValueError("Choose sourceAsset or a design model/Stage, not both")
+        return self
+
+
+class PlanRequestDto(DrawingSourceRequestDto):
     model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
     project_id: str = Field(alias="projectId", min_length=1)
     source_stage_ref: str | None = Field(alias="sourceStageRef", default=None)
@@ -91,7 +108,7 @@ class PlanRequestDto(BaseModel):
     drawing_id: str | None = Field(alias="drawingId", default=None, pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$")
     previous_revision_ref: str | None = Field(alias="previousRevisionRef", default=None)
     cut_height: float | None = Field(alias="cutHeight", default=None, allow_inf_nan=False,
-                                    description="Horizontal cut elevation in the exact STEP length unit.")
+                                    description="Horizontal cut elevation in the source model length unit.")
     bottom: float | None = Field(default=None, allow_inf_nan=False)
     scale_denominator: int | None = Field(alias="scaleDenominator", default=None, ge=1, le=10000, strict=True)
     crop_uv: tuple[float, float, float, float] | None = Field(alias="cropUv", default=None)
@@ -194,7 +211,7 @@ class ModelViewDto(BaseModel):
     representation: Literal["orthographic-line-projection"] = "orthographic-line-projection"
 
 
-class ElevationRequestDto(BaseModel):
+class ElevationRequestDto(DrawingSourceRequestDto):
     model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
     project_id: str = Field(alias="projectId", min_length=1)
     source_stage_ref: str | None = Field(alias="sourceStageRef", default=None)
@@ -215,7 +232,7 @@ class SectionLineDto(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
     line: tuple[tuple[float, float], tuple[float, float]] = Field(
-        description="Plan points [[x1, y1], [x2, y2]] in the exact STEP length unit (CAD X/Y, Z up); "
+        description="Plan points [[x1, y1], [x2, y2]] in the source model length unit (CAD X/Y, Z up); "
                     "the section is the vertical plane through them.")
     keep: Literal["left", "right"] = Field(
         description="The side kept when walking from the first point to the second. The eye stands on the other side, "
@@ -226,7 +243,7 @@ class SectionPlaneDto(BaseModel):
     """Any section plane, as a point on it and its normal."""
 
     model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
-    origin: tuple[float, float, float] = Field(description="A point on the plane, CAD X/Y/Z in the exact STEP length unit.")
+    origin: tuple[float, float, float] = Field(description="A point on the plane, CAD X/Y/Z in the source model length unit.")
     normal: tuple[float, float, float] = Field(
         description="Points from the kept side to the removed side, where the eye stands; need not be unit length.")
 
@@ -246,10 +263,10 @@ class SectionCameraDto(BaseModel):
         description="Horizontal field of view in degrees (default 55): the frame's width at the section plane.")
     eye_height: float | None = Field(
         alias="eyeHeight", default=None,
-        description="Default eye only: height above the lowest cut point, in the STEP unit (default 1.6 m).")
+        description="Default eye only: height above the lowest cut point, in the source model unit (default 1.6 m).")
 
 
-class SectionPerspectiveRequestDto(BaseModel):
+class SectionPerspectiveRequestDto(DrawingSourceRequestDto):
     model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
     project_id: str = Field(alias="projectId", min_length=1)
     source_stage_ref: str | None = Field(alias="sourceStageRef", default=None)
@@ -264,7 +281,7 @@ class SectionPerspectiveRequestDto(BaseModel):
             "as target; the frame is the cut with a 5% margin. The picture plane is always the section plane, so the cut "
             "is true to scale and lines along the view axis converge at the eye's foot on it. The target centres the "
             "frame; to move only the vanishing point, move the eye and keep the target at the cut's centre."))
-    depth: float | None = Field(default=None, description="Keep only this far behind the section plane, in the STEP unit.")
+    depth: float | None = Field(default=None, description="Keep only this far behind the section plane, in the source model unit.")
     hidden_object_ids: list[str] = Field(alias="hiddenObjectIds", default_factory=list, max_length=10000,
                                          description="Exact physical object ids left out of the cut and the view.")
     scale_denominator: int = Field(alias="scaleDenominator", default=100, ge=1, le=10000, strict=True,
@@ -290,7 +307,7 @@ class DrawingStylesDto(BaseModel):
     styles: list[DrawingStyleDto]
 
 
-class SheetRequestDto(BaseModel):
+class SheetRequestDto(DrawingSourceRequestDto):
     model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
     project_id: str = Field(alias="projectId", min_length=1)
     source_stage_ref: str | None = Field(alias="sourceStageRef", default=None)

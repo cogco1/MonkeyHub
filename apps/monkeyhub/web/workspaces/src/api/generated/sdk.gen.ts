@@ -551,7 +551,7 @@ export const readPlanStatusApiDrawingsPlansStatusPost = <ThrowOnError extends bo
 /**
  * Read Plan Dimension Choices
  */
-export const readPlanDimensionChoicesApiDrawingsPlansDimensionsGet = <ThrowOnError extends boolean = false>(options: Options<ReadPlanDimensionChoicesApiDrawingsPlansDimensionsGetData, ThrowOnError>): RequestResult<ReadPlanDimensionChoicesApiDrawingsPlansDimensionsGetResponses, ReadPlanDimensionChoicesApiDrawingsPlansDimensionsGetErrors, ThrowOnError> => (options.client ?? client).get<ReadPlanDimensionChoicesApiDrawingsPlansDimensionsGetResponses, ReadPlanDimensionChoicesApiDrawingsPlansDimensionsGetErrors, ThrowOnError>({ url: '/api/drawings/plans/dimensions', ...options });
+export const readPlanDimensionChoicesApiDrawingsPlansDimensionsGet = <ThrowOnError extends boolean = false>(options?: Options<ReadPlanDimensionChoicesApiDrawingsPlansDimensionsGetData, ThrowOnError>): RequestResult<ReadPlanDimensionChoicesApiDrawingsPlansDimensionsGetResponses, ReadPlanDimensionChoicesApiDrawingsPlansDimensionsGetErrors, ThrowOnError> => (options?.client ?? client).get<ReadPlanDimensionChoicesApiDrawingsPlansDimensionsGetResponses, ReadPlanDimensionChoicesApiDrawingsPlansDimensionsGetErrors, ThrowOnError>({ url: '/api/drawings/plans/dimensions', ...options });
 
 /**
  * Create Plan Dimension Proposal
@@ -597,13 +597,13 @@ export const createSheetApiDrawingsSheetsPost = <ThrowOnError extends boolean = 
  *
  * Retain a true section perspective (剖透视) of an exact model and register it in the documents list.
  *
- * The section plane cuts the retained STEP solids; the side away from the eye
+ * The section plane cuts the retained STEP or registered native model; the side away from the eye
  * is drawn in exact perspective with visible lines only, and the cut is
  * filled (poché). The picture plane is the section plane, so the cut is true
  * to scale at 1:scaleDenominator and lines perpendicular to it converge at
  * the eye's foot on the plane. The minimal request is a plan line and the
  * kept side; the default camera looks straight through the cut. Coordinates
- * use the exact STEP's CAD frame and length unit (X/Y plan, Z up). Refusals
+ * use the source model's CAD frame and length unit (X/Y plan, Z up). Refusals
  * are named: SECTION_PLANE_MISSES_MODEL, SECTION_EYE_ON_KEPT_SIDE,
  * SECTION_EYE_ON_PLANE, SECTION_CAMERA_DEGENERATE, SECTION_LINE_DEGENERATE,
  * SECTION_NORMAL_DEGENERATE, SECTION_DEPTH_INVALID, SECTION_VALUE_NOT_FINITE,

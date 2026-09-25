@@ -734,7 +734,7 @@ export const messagesZhCN = {
   "stage.source.meshes": "{count} 个网格",
   "stage.source.objects": "{count} 个对象",
   "stage.source.status.noModel":
-    "当前未显示模型 · 可返回参考运行、选择下方版本，或拖入本机 .3dm 文件",
+    "当前未显示模型 · 可返回参考运行、选择下方版本，或拖入本机 .3dm 或 .skp 文件",
   "stage.view.ghost": "幽灵预览",
   "stage.view.validated": "可提交人工复核",
   "stage.view.checked": "已检查",

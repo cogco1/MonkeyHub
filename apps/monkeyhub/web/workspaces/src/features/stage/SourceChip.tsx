@@ -104,7 +104,7 @@ export function SourceChip({
       {status !== "ready" && message && (
         <span className="source__status">
           {message ===
-          "No model on screen · reference brings the reference run back, or choose a version below, or drop a .3dm from this machine here"
+          "No model on screen · reference brings the reference run back, or choose a version below, or drop a .3dm or .skp from this machine here"
             ? t("stage.source.status.noModel")
             : <span lang="en" translate="no">{message}</span>}
         </span>

@@ -6,19 +6,23 @@ The Studio route over the same pipeline is tested in apps/archflow-studio/api/te
 from __future__ import annotations
 
 import hashlib
+import base64
 import math
 import tempfile
 import unittest
 from copy import deepcopy
+from dataclasses import asdict
 from pathlib import Path
+from io import BytesIO
 
 from archflow.adapters import occt_backend
 from archflow.project.ports import PersistenceArea, PersistenceDestination
-from archflow.project.record_kinds import SEAT_OCCT_EXECUTION
+from archflow.project.record_kinds import SEAT_OCCT_EXECUTION, STUDIO_MODEL_ASSET
 from archflow.project.repository import FilesystemProjectRepository
 from monkeydiagram.drawing_elevation import (
     SECTION_PERSPECTIVE_KIND,
     ElevationSource,
+    NativeModelSource,
     SectionPerspectiveError,
     SectionPerspectiveView,
     freeze_section_perspective,
@@ -422,6 +426,60 @@ class FreezeSectionPerspectiveTests(unittest.TestCase):
             self.assertEqual(refused.exception.code, code)
             self.assertFalse((self.root / "runs" / "drawing-run").exists())
         self.assertEqual(self.repository.read_head(), self.head)
+
+
+@NEEDS_OCCT
+class NativeSectionPerspectiveRetentionTests(unittest.TestCase):
+    def test_external_native_source_keeps_registration_import_and_frozen_view_after_reopen(self):
+        import rhino3dm as rhino
+
+        model = rhino.File3dm()
+        model.Settings.ModelUnitSystem = rhino.UnitSystem.Meters
+        object_id = str(model.Objects.AddBrep(rhino.Brep.CreateFromBox(rhino.Box(rhino.BoundingBox(0, 0, 0, 2, 3, 4)))))
+        data = base64.b64decode(model.Encode())
+        digest = hashlib.sha256(data).hexdigest()
+        for schema in ("StudioModelAsset@1", "StudioExternalModelAsset@1"):
+            with self.subTest(schema=schema), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                repository = FilesystemProjectRepository.initialize(
+                    root, project_id="native-section", initial_state={"phase": "request", "commitments": []})
+                head = repository.read_head()
+                run = repository.create_run("studio-model-" + digest)
+                artifact = repository.ingest(run=run, destination=PersistenceDestination(PersistenceArea.OBJECT),
+                    artifact_id="native-box", media_type="model/vnd.rhino", source=BytesIO(data))
+                source_import = {"sourceFileName": "original.skp", "conversion": {
+                    "sourceFormat": "skp", "targetFormat": "3dm", "warnings": ["SKP faces are tessellated."]}}
+                registration = repository.put_json(run=run,
+                    destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=run.run_id),
+                    record_kind=STUDIO_MODEL_ASSET, payload={
+                        "schema": schema, "projectId": "native-section", "runId": run.run_id,
+                        "assetSha256": digest, "representation": "external", "modelSource": None,
+                        "lengthUnit": "meter", "artifact": asdict(artifact), **source_import,
+                    })
+                source = NativeModelSource(run.run_id, registration, artifact)
+                view = SectionPerspectiveView(name="native-section", section={"line": [[0, 1.5], [2, 1.5]], "keep": "left"})
+                observations = []
+                drawing = freeze_section_perspective(repository, source=source, view=view, drawing_run_id="section-drawing",
+                                                     operation_observer=observations.append)
+                self.assertEqual(drawing.receipt["source"]["model"]["sha256"], digest)
+                self.assertEqual(drawing.receipt["source"]["registration"], registration.to_dict())
+                self.assertEqual(drawing.receipt["source"]["sourceImport"], source_import)
+                self.assertEqual(drawing.receipt["source"]["geometry_quality"], {object_id: "exact"})
+                self.assertNotIn("step", drawing.receipt["source"])
+                self.assertNotIn("cad_receipt", drawing.receipt["source"])
+                self.assertEqual(drawing.receipt["view"]["sourceAsset"], {"runId": run.run_id, "assetSha256": digest})
+                self.assertEqual(drawing.receipt["view"]["follow"], "frozen")
+                self.assertEqual(drawing.receipt["projection"]["cut_object_ids"], [object_id])
+                self.assertGreater(drawing.receipt["projection"]["section_regions"], 0)
+                self.assertEqual(svg_objects(drawing.svg), (object_id,))
+                self.assertTrue(all(event["details"]["input_identity"]["model_sha256"] == digest for event in observations))
+                reopened = FilesystemProjectRepository.open(root)
+                cold = read_model_axis_elevation(reopened, drawing.receipt_ref)
+                self.assertEqual((cold.receipt, cold.svg, cold.png), (drawing.receipt, drawing.svg, drawing.png))
+                again = freeze_section_perspective(reopened, source=source, view=view, drawing_run_id="section-drawing")
+                self.assertEqual(again.receipt_ref, drawing.receipt_ref)
+                self.assertEqual(repository.read_head(), head)
+                self.assertFalse(list(root.rglob("*.step")))
 
 
 if __name__ == "__main__":
