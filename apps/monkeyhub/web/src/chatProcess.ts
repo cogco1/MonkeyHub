@@ -181,6 +181,13 @@ export function turnsOf(messages: readonly ChatMessage[], running: boolean): Pro
   const turns: ProcessTurn[] = [];
   let current: ProcessTurn | null = null;
   for (const message of messages) {
+    // An interjection the running turn takes in (#301) belongs to that turn: it shows
+    // inline and the turn's calls keep folding into one row. A step the Agent stopped
+    // to continue with the message ("restarted") starts a new turn.
+    if (message.role === "user" && current && (message.interjection === "pending" || message.interjection === "delivered")) {
+      current.visible.push(message);
+      continue;
+    }
     if (message.role === "user" || !current) {
       current = { key: message.role === "user" ? message.id : "start", user: message.role === "user" ? message : null,
         steps: [], visible: [], results: [], failed: 0, startedAt: time(message.createdAt), endedAt: null };
