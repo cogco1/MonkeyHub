@@ -380,6 +380,15 @@ S3 ● Current
 
 ## 5. Risks and open questions
 
+**Owner decisions (Kaiwen, 2026-09-25).** Q1–Q4 below are decided. Slice S1 can start on these terms.
+
+| Question | Decision | Consequence |
+| --- | --- | --- |
+| Q1: new destination | **Approved.** Kind `candidate-admission` (`CandidateAdmission@1`), one record per closed loop, in the fixed run `studio-admissions`. | S1 registers the kind and the run with the `studio-decisions` pattern. |
+| Q2: admission with a recorded violation | **Allowed.** An architect may admit such a result as a comparison option. | The Candidate carries a visible violation marker. Accept-as-Stage still requires `review_ready`. C3 becomes a marker for a human admission, not a refusal. |
+| Q3: Agent authority | **Bounded automatic.** The Agent admits closed-loop results at the task's stopping condition; a request for five schemes admits five. It rejects or continues only on the user's bound words, never on its own judgment. | S3 and S4 as written. A Continue on the user's words moves the Working Head. |
+| Q4: Study naming and Exploration | **Study** is the display name; the Chinese label is 方案组. Exploration creation (`POST /api/working-copies`) is retired. | S2 updates the naming table and retires creation. Readers of retained `StudioWorkingCopy@1` data stay. |
+
 1. **Q1, new destination.** The fixed run `studio-admissions` and the kind `candidate-admission` need the repository owner's approval, as AGENTS.md requires for new artifacts.
 2. **Unbounded recovery list (Q3).** Every run adds a `working.json` row forever. Each completion rewrites the whole file under compare-and-swap with up to 8 retries (`API/application/working_draft.py:149-161`). The Worktree Graph compares up to 50 result lines (`API/application/runtime.py:197`, `:337-379`).
    - With admission, rows for runs that are admitted, superseded or rejected can leave `recovery` without deleting anything, so only abandoned loops accumulate.
