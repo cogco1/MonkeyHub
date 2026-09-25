@@ -80,11 +80,11 @@ module registry 管软件归口与公开契约，work registry 只管未完成�
 | 当前需要 | 固定入口 | 接着读取什么 |
 | --- | --- | --- |
 | 了解 ArchFlow 做什么 | README 的概述与当前状态 | 涉及架构决定时才读 `docs/ARCHITECTURE.md` 的对应部分 |
-| 梳理功能或准备补一段用户操作 | [P115 功能节点图](mapping/planning/P115-capability-consolidation.md#功能节点图与开发校准) | 对照前后节点、当前缺口与 owner，再按下行查真实契约和调用方；开发后更新同一项，优先复用已有能力 |
-| 按目标查已有操作 | `python tools/devctl.py capability <目标或能力-id>` | 读取匹配项的范围与入口；绑定项目内使用 `GET /api/capabilities?goal=...`，再描述具体来源和目标。首项为已有对象的数值修改，完整行为与试用状态见 P115 |
+| 梳理功能或准备补一段用户操作 | 当前用户请求及对应 GitHub Issue／PR | 确认这次操作与验收，再用 `devctl.py work` 查实际并发、`module` 查现有契约和调用方；[P115 功能节点图](mapping/planning/P115-capability-consolidation.md#功能节点图与开发校准) 仅作历史参考 |
+| 按目标查已有操作 | `python tools/devctl.py capability <目标或能力-id>` | 读取匹配项的范围与入口；绑定项目内使用 `GET /api/capabilities?goal=...`，再描述具体来源和目标。实际支持范围以 owner 的公开契约、调用方及当前 Issue／PR 的验收为准 |
 | 查建模、图纸、项目或应用的代码归属 | `python tools/devctl.py module <关键词>` | 用返回的精确 module id 再查契约；按 `--section`、`--offset` 补齐被省略的相关项 |
 | 修改已有实现 | owner 的 `source_paths`、`public_api`、`tests` | 目标实现及真实调用方；只有存在具体疑问时才在相关包中 `rg` |
-| 接续开发任务 | `python tools/devctl.py status` | 对应 live 工作卡；卡片状态不代表能力可用性 |
+| 接续开发任务 | 当前 Issue／PR 与 `python tools/devctl.py work` | 核对实际 branch／worktree／base／窄路径；`status` 只显示登记摘要，旧卡 blocked 或历史父级范围不代表正在占用代码 |
 | 创建或复用源码 worktree | `python tools/workspace.py create --branch codex/<task>` | 从一次配置的开发根取得目录；已有任务继续使用其原检出，详见下方“开发目录只配置一次” |
 | 查看打包目录或构建候选包 | `python tools/package_monkeyapps.py --show-paths` | 共用开发根配置；确认来源后用 `--source-ref <ref>` 构建，仍需打包工具所需的 Node/npm |
 | 查共享工具箱 Skill | `hgs skills list <关键词> --path <toolbox-root>/skills` | `hgs skills show <id> --path <toolbox-root>/skills`，再按需读取示例或调用入口 |
