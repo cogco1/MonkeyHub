@@ -115,18 +115,19 @@
 .chat-process+.chat-message--assistant,.chat-process+.chat-progress,.chat-process+.chat-activity,.chat-process+.chat-activity__result{margin-top:-13px}
 .chat-process__summary{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .chat-process__current{color:var(--ink)}
+.chat-process__count{flex:none;white-space:nowrap}
 .chat-process__failed{flex:none;color:var(--violated);white-space:nowrap}
 .chat-shell .chat-process__chevron{width:14px;height:14px;margin-left:6px;transition:transform .15s ease}
 .chat-process__row[aria-expanded=true] .chat-process__chevron{transform:rotate(90deg)}
 .chat-process__body{margin:6px 0 0 4px;padding:2px 0 2px 13px;border-left:2px solid var(--line)}
-.chat-process__steps{display:grid;gap:3px;margin:0;padding:0;list-style:none}
+.chat-process__steps{display:grid;grid-template-columns:minmax(0,1fr);gap:3px;margin:0;padding:0;list-style:none}
 .chat-process__steps li{display:flex;align-items:baseline;gap:8px;line-height:1.65;overflow-wrap:anywhere}
 .chat-process__mark{flex:none;width:12px;text-align:center}
 .chat-process__steps li[data-status=failed]{color:var(--violated)}
 .chat-process__steps li[data-status=streaming] .chat-process__mark{color:var(--accent)}
 .chat-process__technical{margin-top:8px}
 .chat-process__technical summary{display:flex;align-items:center;min-height:28px;cursor:pointer;width:max-content;max-width:100%}
-.chat-process__technical ol{display:grid;gap:8px;margin:6px 0 0;padding:0;list-style:none}
+.chat-process__technical ol{display:grid;grid-template-columns:minmax(0,1fr);gap:8px;margin:6px 0 0;padding:0;list-style:none}
 .chat-process__technical code,.chat-process__technical pre{font:var(--text-caption)/1.6 var(--font-mono);white-space:pre-wrap;overflow-wrap:anywhere}
 .chat-process__technical pre{margin:4px 0 0;padding:6px 12px;border-left:2px solid var(--line)}
 .chat-composer-wrap{position:relative}

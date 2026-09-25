@@ -2080,6 +2080,17 @@ try {
   await page.getByText("The headroom under the landing is 2.3 m", { exact: false }).waitFor();
   await atLatest();
   assert.equal(await page.locator(".chat-jump").count(), 0);
+  // In a phone-width column the running row shortens its current step, never its counts.
+  await page.setViewportSize({ width: 375, height: 812 });
+  const narrowRow = page.locator('.chat-process[data-running="true"] .chat-process__row');
+  assert.deepEqual(await narrowRow.evaluate((row) => {
+    const box = row.getBoundingClientRect();
+    return [...row.querySelectorAll(".chat-process__count, .chat-process__failed")].map((part) => {
+      const shown = part.getBoundingClientRect();
+      return [part.textContent.trim(), shown.width > 0 && shown.left >= box.left - 1 && shown.right <= box.right + 1];
+    });
+  }), [["· 4 steps", true], ["· 1 failed", true]], "the step and failure counts stay in view");
+  await page.setViewportSize({ width: 1440, height: 960 });
   longSession.status = "idle"; longSession.messages.at(-1).status = "complete";
   emitRuntime();
   await page.waitForFunction(() => !document.querySelector('.chat-process[data-running="true"]'));

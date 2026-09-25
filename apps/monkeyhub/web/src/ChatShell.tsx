@@ -195,8 +195,9 @@ function ProcessRow({ turn, running, open, t, onToggle }: {
         {/* The ticking clock is for the eye; announcing it every second would drown the log. */}
         {turn.startedAt !== null && <span aria-hidden="true"> · {clock((now - turn.startedAt) / 1000)}</span>}
         {current && <> · <span className="chat-process__current">{stepText(describeStep(current), names)}…</span></>}
-        {` · ${t.processStepCount(count)}`}
       </> : worked !== null ? t.processWorked(t.elapsed(worked), count) : t.processSteps(count)}</span>
+      {/* A narrow column shortens the current step, never the counts. */}
+      {running && <span className="chat-process__count">{"\u00a0· "}{t.processStepCount(count)}</span>}
       {turn.failed > 0 && <span className="chat-process__failed">{"\u00a0· "}{t.processFailed(turn.failed)}</span>}
       <svg className="chat-process__chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6" /></svg>
     </button>

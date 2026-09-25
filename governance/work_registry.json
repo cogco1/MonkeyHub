@@ -252,7 +252,7 @@
           "base_ref": "e183a69a",
           "contributor": "Claude",
           "reviewer": "Claude root task",
-          "handoff": "Review follow-up on this branch: a running process row in a narrow chat column must keep its step and failure counts visible, and long step lines must wrap inside the column. Then done again; root task reviews and publishes both lanes. GH-234/autosave-restart owns the restartBlocker lines and the updateModelBlocked copy; rebase after it merges.",
+          "handoff": "Delivered on this branch in fba8fce3 (one folded process row per turn with plain-language steps and Technical details; chat scrolling that opens at the latest message with a jump-to-latest button) and the review follow-up that keeps a running row's counts in view in a narrow column. Root task reviews and publishes both lanes. GH-234/autosave-restart owns the restartBlocker lines and the updateModelBlocked copy; rebase after it merges.",
           "modules": [
             "hub.shell"
           ],
@@ -267,7 +267,7 @@
             "apps/monkeyhub/README.md"
           ],
           "depends_on": [],
-          "status": "active",
+          "status": "done",
           "blocked_reason": null
         }
       ]
