@@ -998,7 +998,6 @@ export type MessageCatalog = {
 
 export const hubCopy = {
     softwareUpdate: "Software update", updateCurrent: "Current version", updateTarget: "Prepared version", updateChangedBytes: "Changed files size",
-    updateLocalMode: "Local patch mode · Automatic downloads are not configured.",
     updateUnsupported: "Patch updates require the installed MonkeyHub desktop app.",
     updateTrustLocal: "A local development patch contains executable code. Choose a ZIP from a source you trust (up to 256 MiB).",
     updateChoosePatch: "Choose patch ZIP", updateRefresh: "Refresh status", updateRestart: "Restart to update",
@@ -1032,6 +1031,12 @@ export const hubCopy = {
     catalogSignIn: "Sign in to this CLI to read its model list.", catalogChecking: "Reading the available models from this CLI…",
     workspace: "Workspace", workspaceDir: "Folder for new projects", saveSettings: "Save display and connection", saveWorkspace: "Save workspace and launch",
     workspaceHelp: "New projects are created in this folder. Left empty, the folder of the current project is used.",
+    updateAutoOn: "Automatic updates: On · Unsigned prerelease channel", updateAutoOff: "Automatic updates: Off · Unsigned prerelease channel",
+    updateAutoHelp: "About every 6 hours MonkeyHub checks its GitHub prereleases and downloads the patch for this version. It is checked against its SHA-256 and release manifest, prepared beside this version, and takes effect the next time MonkeyHub starts; running work is never restarted. Unsigned: these checks catch a damaged or mismatched download, not who published it.",
+    updateCheckNow: "Check now", updateLastCheck: "Last check: {result}", updateNeverChecked: "not yet", updateChecking: "checking…",
+    updateUpToDate: "up to date", updateDownloading: "downloading {version}…", updateCheckReady: "{version} prepared", updateCheckFailed: "did not succeed",
+    updateNeedsFull: "{version} needs a full update", updateFullHelp: "Download the complete package from its release page:",
+    updateNextLaunch: "{version} is ready and takes effect the next time MonkeyHub starts.",
   } as const;
 
 export const chatCopy = {

@@ -6530,6 +6530,7 @@
         "Scheduling project working-draft cleanup along the existing project watcher; it expires only superseded local recovery and never asks P036 to remove a run.",
         "A narrow ordinary-chat feedback capability over studio.intent decisions: current user wording/message provenance is bound by Hub, interpreted avoid/keep fields stay attributed to the agent, and revocation verifies the original project/message without exposing lock, supersede or Stage acceptance.",
         "User-selected local desktop patch preparation, idle restart admission, owned host trial activation and startup rollback; update files and transaction state live only under the explicitly supplied nonproject runtime/updates directory and sibling application versions.",
+        "Automatic desktop updates over the unsigned prerelease channel: packaged desktop only, about 30 s after start and every 6 h while the 自动更新 user setting is on (default on), an unauthenticated ETag read of this repository's public GitHub releases picks the newest greater prerelease; its update index, ReleaseManifest@1 and the patch for the exact installed commit are size-capped and SHA-256-checked, then staged and preflighted through the same prepare path. A normal quit switches the desktop entry to the ready version; that version finishes the transaction on its own start (health, full verification, entry) or restores the previous entry.",
         "Forwarding explicitly selected Study revisions into prepared task context and exposing the existing project-bound Study read for exact evidence reopening; no Study mutation tool.",
         "Drawing as a project-bound page in the same Hub: retained cut-plan revisions and representation controls, explicit source comparison/rebuild, saved-revision SVG download and editing placement/removal of retained dimensions",
         "Conversational model export/convert tool routing, exact session attachment transfer, clarification for conflicting sources and verified result download links.",
@@ -6544,7 +6545,7 @@
       "does_not_own": [
         "Building project state, geometry, drawing algorithms, model gateways, provider credentials or project creation",
         "Alternative preference persistence; user and application configuration are read and saved through the Project Runtime package's settings module (studio.shell), while the settings authority and its UI are the Hub's",
-        "Plugin discovery or installation, unattended remote update delivery, or attaching to and stopping foreign processes"
+        "Plugin discovery or installation, publisher signature verification of updates (issue #58), or attaching to and stopping foreign processes"
       ],
       "inputs": [
         "Explicit nonproject runtime root",
@@ -6556,7 +6557,7 @@
         "Optional explicit sourceRunId/stateDigest/targetComponentId/elementId/sourceStageRef in ChatPostRequest.designContext",
         "ChatPostRequest.contextMode: continue (legacy default), project (manual fresh source), or stage (fresh only for a newly selected exact committed Stage); project/stage require designContext",
         "ChatPresentationBindRequest and ChatPresentationRequest: explicit project/source session, turn/message UUIDs, revisioned full snapshots, attachment bytes and exact document/page references",
-        "Explicitly chosen local developer patch ZIP and installed exact-version desktop bundle; no remote feed or publisher identity is inferred"
+        "Explicitly chosen local developer patch ZIP, or the public cogco1/MonkeyHub GitHub prerelease feed (update index, ReleaseManifest@1, delta patch) over HTTPS, and the installed exact-version desktop bundle; no publisher identity is inferred"
       ],
       "outputs": [
         "Hub FastAPI and OpenAPI",
@@ -6567,7 +6568,7 @@
         "Typed project/session metadata for the owned Monitor Codex source connection",
         "Minimal operation admission journal at runtime/operations/<runtimeId>.json under the explicit Hub runtime root; signatures and recovery observations only, with no request bodies or canonical results",
         "External conversation deep link and process-local presentation capability; retained final results/media, transient progress and exact project document readback",
-        "Prepared sibling application version, nonproject update transaction status, and health-verified desktop restart or startup rollback"
+        "Prepared sibling application version, nonproject update transaction status and last-check record under runtime/updates, the desktop entry switched at a normal quit, and health-verified desktop restart, next-start completion or startup rollback"
       ],
       "public_api": [
         "create_app",
@@ -6639,6 +6640,8 @@
         "POST /api/updates/apply",
         "POST /api/updates/complete",
         "POST /api/updates/rollback",
+        "POST /api/updates/check",
+        "PUT /api/updates/settings",
         "GET /api/chat/sessions/{session_id}/attachments/{attachment_id}/model-source"
       ],
       "invariants": [
@@ -6668,6 +6671,7 @@
         "Automatic Stage context starts only from confirmedStage.isSource after an exact successful read; a persisted providerStageRef prevents repeated resets across restart, and inherited candidate Stage references never trigger a handoff",
         "External presentation cannot launch a provider or write project state; mutations require loopback plus the exact source/project capability, images use bounded session attachments or verified retained document references, and progress is never saved or replayed as model context.",
         "Updates do not overwrite the running application or alter project data. Restart blocks active requests, running conversations/jobs, unsent drafts, attachments and unsynchronized model edits. A trial desktop cannot open the working UI before exact owned-Hub health and activation succeed; failed trials drain before the old host reopens. This startup rollback does not authorize later project-format downgrades.",
+        "An automatic update never restarts the running application and never runs while a transaction is preparing, applying or finishing; it is switched in only after a normal quit. A next-launch activation never refuses writes, and a start left in applying by a lost restart-now helper finishes or rolls back itself, so no path stays in applying with writes refused. Checksums and the release manifest establish consistency, not the publisher.",
         "Render, Board and Arch share one project Runtime; image execution and persistence remain studio.render and studio.artifacts, with no Render process or store",
         "A new Render attempt gets a new requestId; status refresh and workspace/project switches never resend an uncertain paid call",
         "Automatic project selection, chat and first Render entry attach and verify the Runtime without seeding authored modeling inputs; explicit Arch entry initializes only when the modeling projection is not ready, including after Render-first navigation"
@@ -6874,11 +6878,12 @@
         "Optional --desktop builds and verifies MonkeyHub.exe from the same exact source snapshot, includes it in the existing candidate tree and binds its version and Cargo lock in build-info.json",
         "Derived unsigned release manifests, assembled-runtime and build-input CycloneDX inventories, and read-only verification of the distributed file set and bundled metadata digests",
         "Installer-side verification of a detached publisher signature over that same manifest, and the binding of the verified manifest to the candidate archive and extracted package before any installation",
-        "Exact-base file delta generation, complete file verification and reconstruction of a new sibling desktop version; activate-installed reuses the existing shortcut logic without copying or starting processes"
+        "Exact-base file delta generation, complete file verification and reconstruction of a new sibling desktop version; activate-installed reuses the existing shortcut logic without copying or starting processes",
+        "On the release-candidate path, delta patches from the latest three published desktop releases to the new one and their MonkeyHubUpdateIndex@1 (version, promoted and release commits, release manifest, full ZIP fallback, per-patch base commit, base version, size and SHA-256), each base verified against its own ReleaseManifest@1 and the set reverified before publishing; staging can be cancelled between files and rechecked by layout"
       ],
       "does_not_own": [
         "Project data, project initialization, candidate execution or formal project issue",
-        "Application lifecycle, model/provider credentials, automatic updates or publishing to a remote service",
+        "Application lifecycle, model/provider credentials, or the Hub's automatic update check, download and activation (hub.shell); the publish job, not this CLI, holds the only writable token",
         "The shared application preference authority"
       ],
       "inputs": [
@@ -6892,13 +6897,15 @@
         "ZIP, checksum and source/build metadata",
         "Read-only resolved packaging paths, or one-time personal root configuration through tools.workspace",
         "ReleaseManifest@1 and CycloneDX 1.6 SBOM beside the candidate ZIP; identical SBOM inside the bundle",
-        "MonkeyHubPatch@1 ZIP containing only changed files plus complete base/target inventories; a fully verified new sibling version when staged"
+        "MonkeyHubPatch@1 ZIP containing only changed files plus complete base/target inventories; a fully verified new sibling version when staged",
+        "MonkeyHub-<version>-from-<base>.patch.zip per published base and MonkeyHub-<version>-update-index.json on the release path"
       ],
       "public_api": [
         "main",
         "package",
         "verify_release",
-        "apps.monkeyhub.installer.patch: create_patch, describe_patch, inspect_patch, stage_patch, verify_target",
+        "update_index, verify_update_index (--update-index, --verify-update-index)",
+        "apps.monkeyhub.installer.patch: create_patch, describe_patch, inspect_patch, stage_patch(cancelled=), verify_target(cancelled=), verify_target_layout, PatchCancelled",
         "install.ps1 -ActivateInstalled [-CreateDesktopShortcut] [-DesktopDirectory PATH]"
       ],
       "depends_on": [

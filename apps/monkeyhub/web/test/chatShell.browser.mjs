@@ -15,8 +15,12 @@ const streams = new Set();
 let runtimeSequence = 0, runtimeReads = 0, allowRuntimeEvents = true;
 let confirmedStageForChat = null;
 const preparedPatch = { targetVersion: "fixture-next-desktop", targetRevision: "e".repeat(40), changedBytes: 1048576, changedFiles: 3, removedFiles: 1, reusedFiles: 21 };
-let updateStatus = { currentVersion: "fixture-current-desktop", currentRevision: "d".repeat(40), mode: "local", state: "idle", prepared: null, canApply: false, message: null, error: null };
+let updateStatus = { currentVersion: "fixture-current-desktop", currentRevision: "d".repeat(40), mode: "local", state: "idle", prepared: null, canApply: false, message: null, error: null,
+  channel: "unsigned-prerelease", autoUpdate: true, nextLaunch: false, check: { state: "never", checkedAt: null, latestVersion: null, detail: null, releaseUrl: null } };
 let patchPolls = 0, appliedPatches = 0, updateApplyFailure = false;
+// Automatic update checks move checking -> downloading -> ready on successive status reads.
+const autoUpdateWrites = [];
+let updateChecks = 0, checkPolls = 0;
 let updateReadFailures = 0;
 let updateApplyResponse = "normal";
 const patchUploads = [];
@@ -167,6 +171,19 @@ await page.route((url) => url.pathname.startsWith("/api/"), async (route) => {
   if (url.pathname === "/api/updates/status") {
     if (updateReadFailures > 0) { updateReadFailures--; return route.abort("connectionreset"); }
     if (updateStatus.state === "preparing" && ++patchPolls >= 2) updateStatus = { ...updateStatus, state: "ready", prepared: preparedPatch, canApply: true };
+    if (updateStatus.check.state === "checking" && ++checkPolls >= 1) updateStatus = { ...updateStatus, check: { ...updateStatus.check, state: "downloading", latestVersion: "0.1.6" } };
+    else if (updateStatus.check.state === "downloading" && ++checkPolls >= 3) updateStatus = { ...updateStatus, state: "ready", canApply: true, nextLaunch: updateStatus.autoUpdate,
+      prepared: { ...preparedPatch, releaseVersion: "0.1.6" }, check: { ...updateStatus.check, state: "ready", checkedAt: "2026-09-25T10:02:00+00:00" } };
+    return json(updateStatus);
+  }
+  if (url.pathname === "/api/updates/check") {
+    assert.equal(method, "POST"); updateChecks++; checkPolls = 0;
+    updateStatus = { ...updateStatus, check: { ...updateStatus.check, state: "checking", detail: null } };
+    return json(updateStatus, 202);
+  }
+  if (url.pathname === "/api/updates/settings") {
+    assert.equal(method, "PUT"); autoUpdateWrites.push(data());
+    updateStatus = { ...updateStatus, autoUpdate: data().autoUpdate, nextLaunch: updateStatus.state === "ready" && data().autoUpdate };
     return json(updateStatus);
   }
   if (url.pathname === "/api/updates/prepare") {
@@ -2392,12 +2409,43 @@ try {
   // preserves settings edits, and delegates restart without a document reload.
   await page.getByRole("button", { name: "Hub settings", exact: true }).click();
   await page.getByText("fixture-current-desktop", { exact: true }).waitFor();
-  await page.getByText("Local patch mode · Automatic downloads are not configured.").waitFor();
-  assert.equal(await page.getByRole("button", { name: "Check for updates", exact: true }).count(), 0);
+  // Automatic updates are on by default and named as the unsigned prerelease
+  // channel. The switch saves at once; checking never restarts the page.
+  const autoSwitch = page.getByRole("switch", { name: /^Automatic updates:/ });
+  await page.getByText("Automatic updates: On · Unsigned prerelease channel", { exact: true }).waitFor();
+  assert.equal(await autoSwitch.isChecked(), true);
+  await page.getByText("Last check: not yet", { exact: true }).waitFor();
+  await autoSwitch.click();
+  await page.getByText("Automatic updates: Off · Unsigned prerelease channel", { exact: true }).waitFor();
+  assert.equal(await autoSwitch.isChecked(), false);
+  await autoSwitch.click();
+  await page.getByText("Automatic updates: On · Unsigned prerelease channel", { exact: true }).waitFor();
+  assert.deepEqual(autoUpdateWrites, [{ autoUpdate: false }, { autoUpdate: true }]);
+  const beforeCheckLoads = documentLoads;
+  await page.getByRole("button", { name: "Check now", exact: true }).click();
+  await page.getByText("Last check: downloading 0.1.6…", { exact: true }).waitFor();
+  assert.equal(await page.getByRole("button", { name: "Check now", exact: true }).isDisabled(), true);
+  await page.getByText("0.1.6 is ready and takes effect the next time MonkeyHub starts.", { exact: true }).waitFor();
+  await page.getByText(/^Last check: .+ · 0\.1\.6 prepared$/).waitFor();
+  await page.getByText("0.1.6 · fixture-next-desktop", { exact: true }).waitFor();
+  assert.equal(await page.getByRole("button", { name: "Restart to update", exact: true }).isEnabled(), true, "restart now stays available");
+  assert.equal(updateChecks, 1); assert.equal(documentLoads, beforeCheckLoads, "a check never reloads the page");
+  updateStatus = { ...updateStatus, state: "idle", prepared: null, canApply: false, nextLaunch: false,
+    check: { state: "needs-full-update", checkedAt: "2026-09-25T10:05:00+00:00", latestVersion: "0.1.9", detail: null, releaseUrl: "https://github.com/cogco1/MonkeyHub/releases/tag/v0.1.9" } };
+  await page.getByRole("button", { name: "Refresh status", exact: true }).click();
+  await page.getByText(/^Last check: .+ · 0\.1\.9 needs a full update$/).waitFor();
+  await page.getByText("https://github.com/cogco1/MonkeyHub/releases/tag/v0.1.9", { exact: true }).waitFor();
+  updateStatus = { ...updateStatus, check: { ...updateStatus.check, state: "error", detail: "GitHub releases could not be read: fixture offline" } };
+  await page.getByRole("button", { name: "Refresh status", exact: true }).click();
+  await page.getByText(/^Last check: .+ · did not succeed$/).waitFor();
+  await page.getByText("GitHub releases could not be read: fixture offline", { exact: true }).waitFor();
+  updateStatus = { ...updateStatus, check: { state: "never", checkedAt: null, latestVersion: null, detail: null, releaseUrl: null } };
   updateStatus = { ...updateStatus, mode: "unsupported" };
   await page.getByRole("button", { name: "Refresh status", exact: true }).click();
   await page.getByText("Patch updates require the installed MonkeyHub desktop app.").waitFor();
   assert.equal(await page.getByRole("button", { name: "Choose patch ZIP", exact: true }).count(), 0);
+  assert.equal(await page.getByRole("button", { name: "Check now", exact: true }).count(), 0);
+  assert.equal(await page.getByRole("switch").count(), 0);
   updateStatus = { ...updateStatus, mode: "local" };
   await page.getByRole("button", { name: "Refresh status", exact: true }).click();
   await page.getByRole("button", { name: "Choose patch ZIP", exact: true }).waitFor();
@@ -2430,6 +2478,7 @@ try {
   await page.getByRole("dialog").screenshot({ path: path.join(temporary, "software-update-small-dark.png") });
   await page.locator("#language").selectOption("zh-CN"); await page.locator("#save-appearance").click();
   await page.getByRole("heading", { name: "软件更新", exact: true }).waitFor();
+  await page.getByText("自动更新：开 · 未签名预发布通道", { exact: true }).waitFor();
   await page.locator(".software-update").scrollIntoViewIfNeeded();
   await page.getByRole("dialog").screenshot({ path: path.join(temporary, "software-update-small-zh.png") });
   await page.setViewportSize({ width: 1440, height: 960 });

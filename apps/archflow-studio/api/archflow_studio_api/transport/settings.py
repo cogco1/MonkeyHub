@@ -39,6 +39,9 @@ class UserSettingsDto(BaseModel):
     chat_model: str | None = Field(
         default=None, alias="chatModel", min_length=1, pattern=r"^[^\x00-\x1f\x7f]+$",
     )
+    # MonkeyHub's automatic desktop updates; absent means on. The Hub reads
+    # and writes it; the Project Runtime ignores it.
+    auto_update: bool | None = Field(default=None, alias="autoUpdate")
 
     @field_validator("font_scale", mode="before")
     @classmethod

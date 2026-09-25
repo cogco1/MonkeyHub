@@ -366,6 +366,27 @@
       "reason": "Retains the locked ACP dependency release notices only under the external candidate bundle third-party directory."
     },
     {
+      "path": "tools/package_monkeyapps.py",
+      "function": "_unpacked_release",
+      "operations": [
+        "mkdir"
+      ],
+      "kind": "distribution_build",
+      "owner": "tools.package_monkeyapps",
+      "reason": "Extracts one verified published candidate archive only into its own new subdirectory of the external work directory update_index() created; it is removed after its patch is written."
+    },
+    {
+      "path": "tools/package_monkeyapps.py",
+      "function": "update_index",
+      "operations": [
+        "mkdir",
+        "write_text"
+      ],
+      "kind": "distribution_build",
+      "owner": "tools.package_monkeyapps",
+      "reason": "Creates the external --update-output and --update-work directories main() validated outside the source checkout, and writes one new MonkeyHub-<version>-update-index.json beside the patches create_patch wrote there."
+    },
+    {
       "path": "archflow/adapters/blender_cad.py",
       "function": "execute",
       "operations": [
@@ -449,6 +470,27 @@
       "kind": "application_update",
       "owner": "hub.shell",
       "reason": "Creates a private incoming patch directory under the explicitly supplied nonproject updates root; patch failures clean only that validated temporary directory."
+    },
+    {
+      "path": "apps/monkeyhub/api/monkeyhub_api/updates.py",
+      "function": "_write_check",
+      "operations": [
+        "mkdir",
+        "write_text"
+      ],
+      "kind": "application_update",
+      "owner": "hub.shell",
+      "reason": "Atomically records only the last automatic update check and the cached public release list (with its ETag) under the explicitly supplied nonproject updates directory; no project data or configuration authority."
+    },
+    {
+      "path": "apps/monkeyhub/api/monkeyhub_api/updates.py",
+      "function": "download",
+      "operations": [
+        "open_write"
+      ],
+      "kind": "application_update",
+      "owner": "hub.shell",
+      "reason": "Streams one size-bounded, SHA-256-checked release patch into the new private incoming file DesktopUpdates.begin_upload returned under the nonproject runtime/updates root."
     },
     {
       "path": "apps/monkeyhub/installer/patch.py",
