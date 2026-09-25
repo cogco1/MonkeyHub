@@ -86,6 +86,21 @@ test("a transcript folds each turn's calls and keeps text, progress, results and
   assert.equal(turnsOf([message({ id: "external", role: "assistant" })], false)[0]!.key, "start");
 });
 
+test("an interjection the running turn takes in stays inside that turn; a restarted one starts the next", () => {
+  const messages: ChatMessage[] = [
+    message({ id: "u-0", role: "user", content: "Widen the courtyard", createdAt: "2026-09-25T10:00:00Z" }),
+    message({ id: "u-0:t1", role: "tool", content: "studio_request · GET /api/board · completed", createdAt: "2026-09-25T10:00:05Z" }),
+    message({ id: "u-1", role: "user", content: "Keep it square", interjection: "delivered", createdAt: "2026-09-25T10:00:07Z" }),
+    message({ id: "u-0:t2", role: "tool", status: "streaming", content: "studio_request · POST /api/intents/context · in_progress", createdAt: "2026-09-25T10:00:09Z" }),
+    message({ id: "u-2", role: "user", content: "Stop the roof instead", interjection: "restarted", createdAt: "2026-09-25T10:00:30Z" }),
+  ];
+  const turns = turnsOf(messages, true);
+  assert.equal(turns.length, 2, "the delivered interjection does not split the turn; the restarted one opens the next");
+  assert.deepEqual(turns[0]!.steps.map((row) => row.id), ["u-0:t1", "u-0:t2"], "calls on both sides of the interjection fold into one row");
+  assert.deepEqual(turns[0]!.visible.map((row) => row.id), ["u-1"], "the interjection shows inline in its turn");
+  assert.equal(turns[1]!.key, "u-2");
+});
+
 test("elapsed time reads naturally and unreadable times are not guessed", () => {
   assert.equal(clock(42), "0:42");
   assert.equal(clock(725), "12:05");
