@@ -5,10 +5,10 @@
 
 Phase: GitHub Issues are the work items (#60); this registry records live source-edit coordination only. The remaining legacy P cards are blocked and claim no path; P115 is a frozen historical index. Real project acceptance and formal issue are explicit user actions.
 
-- active: GH-293, GH-223, GH-252, GH-66, GH-244
+- active: GH-293, GH-223, GH-252, GH-66
 - ready: none
 - blocked: P115, P105, P108, P110, P111, P113
-- next: continue active work: GH-293, GH-223, GH-252, GH-66, GH-244
+- next: continue active work: GH-293, GH-223, GH-252, GH-66
 
 ## Live work
 
@@ -24,4 +24,3 @@ Phase: GitHub Issues are the work items (#60); this registry records live source
 | GH-223 | active | One read-only representation-status projection replaces the four stale readers, an evidence document closes the experiment, and decisions can carry a project recipe binding (correction capture, option A, memory side). | [GH-223](mapping/planning/GH-223-representation-state.md) |
 | GH-252 | active | Monitor prices usage: Studio and Hub producers write details.billing_plan and rates.json carries the plan rows, so usage matches a price. | [GH-252](mapping/planning/GH-252-billing-plan.md) |
 | GH-66 | active | Implement the first project-bound Publish composition slice, with Drawing/Render source freshness and bounded Board handoff. Related consumer fixes follow #223/#216/#244 in the same integration review. | [GH-66](https://github.com/cogco1/MonkeyHub/issues/66) |
-| GH-244 | active | Draw directly from retained 3DM and SKP imports through the existing Drawing projection and representation workflow. | [GH-244](https://github.com/cogco1/MonkeyHub/issues/244) |
