@@ -7654,6 +7654,174 @@ export type SeatTimingDto = {
 };
 
 /**
+ * SectionCameraDto
+ *
+ * An explicit camera (eye and target), or the default one-point perspective's eye height and field of view.
+ */
+export type SectionCameraDto = {
+    /**
+     * Eye
+     *
+     * Eye position on the removed side; give it with target, or omit both for the default eye.
+     */
+    eye?: [
+        number,
+        number,
+        number
+    ] | null;
+    /**
+     * Target
+     *
+     * A point the camera looks at, through the cut; it centres the frame.
+     */
+    target?: [
+        number,
+        number,
+        number
+    ] | null;
+    /**
+     * Up
+     *
+     * Picture up, projected into the section plane. Default +Z; required for a horizontal plane.
+     */
+    up?: [
+        number,
+        number,
+        number
+    ] | null;
+    /**
+     * Fovdeg
+     *
+     * Horizontal field of view in degrees (default 55): the frame's width at the section plane.
+     */
+    fovDeg?: number | null;
+    /**
+     * Eyeheight
+     *
+     * Default eye only: height above the lowest cut point, in the STEP unit (default 1.6 m).
+     */
+    eyeHeight?: number | null;
+};
+
+/**
+ * SectionLineDto
+ *
+ * A vertical section plane through a plan line.
+ */
+export type SectionLineDto = {
+    /**
+     * Line
+     *
+     * Plan points [[x1, y1], [x2, y2]] in the exact STEP length unit (CAD X/Y, Z up); the section is the vertical plane through them.
+     */
+    line: [
+        [
+            number,
+            number
+        ],
+        [
+            number,
+            number
+        ]
+    ];
+    /**
+     * Keep
+     *
+     * The side kept when walking from the first point to the second. The eye stands on the other side, and nothing there is drawn.
+     */
+    keep: 'left' | 'right';
+};
+
+/**
+ * SectionPerspectiveRequestDto
+ */
+export type SectionPerspectiveRequestDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Sourcestageref
+     */
+    sourceStageRef?: string | null;
+    modelSource?: ModelSourceDto | null;
+    /**
+     * Drawingid
+     *
+     * Default section-perspective; the same id continues that drawing's revisions.
+     */
+    drawingId?: string | null;
+    /**
+     * Section
+     */
+    section: SectionLineDto | SectionPlaneDto;
+    /**
+     * Omit for the default one-point perspective: the eye on the removed side 1.6 m above the lowest cut point, centred on the cut, at the distance that fits the cut's width in a 55 degree field of view, the cut's centre as target; the frame is the cut with a 5% margin. The picture plane is always the section plane, so the cut is true to scale and lines along the view axis converge at the eye's foot on it. The target centres the frame; to move only the vanishing point, move the eye and keep the target at the cut's centre.
+     */
+    camera?: SectionCameraDto | null;
+    /**
+     * Depth
+     *
+     * Keep only this far behind the section plane, in the STEP unit.
+     */
+    depth?: number | null;
+    /**
+     * Hiddenobjectids
+     *
+     * Exact physical object ids left out of the cut and the view.
+     */
+    hiddenObjectIds?: Array<string>;
+    /**
+     * Scaledenominator
+     *
+     * 1:N at the section plane; farther geometry is drawn smaller.
+     */
+    scaleDenominator?: number;
+    /**
+     * Cutlinemm
+     */
+    cutLineMm?: number | null;
+    /**
+     * Visiblelinemm
+     */
+    visibleLineMm?: number | null;
+    /**
+     * Hatchspacingmm
+     *
+     * Poché hatch spacing on paper; default 0.5 mm.
+     */
+    hatchSpacingMm?: number | null;
+};
+
+/**
+ * SectionPlaneDto
+ *
+ * Any section plane, as a point on it and its normal.
+ */
+export type SectionPlaneDto = {
+    /**
+     * Origin
+     *
+     * A point on the plane, CAD X/Y/Z in the exact STEP length unit.
+     */
+    origin: [
+        number,
+        number,
+        number
+    ];
+    /**
+     * Normal
+     *
+     * Points from the kept side to the removed side, where the eye stands; need not be unit length.
+     */
+    normal: [
+        number,
+        number,
+        number
+    ];
+};
+
+/**
  * SemanticEditRequestDto
  *
  * Named design edits, validated by the existing component compiler.
@@ -13138,6 +13306,41 @@ export type CreateSheetApiDrawingsSheetsPostResponses = {
 };
 
 export type CreateSheetApiDrawingsSheetsPostResponse = CreateSheetApiDrawingsSheetsPostResponses[keyof CreateSheetApiDrawingsSheetsPostResponses];
+
+export type CreateSectionPerspectiveApiDrawingsSectionPerspectivesPostData = {
+    body: SectionPerspectiveRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/drawings/section-perspectives';
+};
+
+export type CreateSectionPerspectiveApiDrawingsSectionPerspectivesPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CreateSectionPerspectiveApiDrawingsSectionPerspectivesPostError = CreateSectionPerspectiveApiDrawingsSectionPerspectivesPostErrors[keyof CreateSectionPerspectiveApiDrawingsSectionPerspectivesPostErrors];
+
+export type CreateSectionPerspectiveApiDrawingsSectionPerspectivesPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: SourceDocumentDto;
+};
+
+export type CreateSectionPerspectiveApiDrawingsSectionPerspectivesPostResponse = CreateSectionPerspectiveApiDrawingsSectionPerspectivesPostResponses[keyof CreateSectionPerspectiveApiDrawingsSectionPerspectivesPostResponses];
 
 export type CreateElevationApiDrawingsElevationsPostData = {
     body: ElevationRequestDto;

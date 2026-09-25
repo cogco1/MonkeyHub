@@ -29,8 +29,12 @@ What this module decides and nothing else:
 The in-memory projection (``project_model_axis_elevation``) returns plain
 values and mints nothing. ``freeze_cut_plan`` adds a real horizontal plane
 section and below-cut visibility to that same retention boundary, with
-caller-resolved dimensions. There is no second storage, design mutation or
-update mechanism here; arbitrary sections and axonometrics are not implemented.
+caller-resolved dimensions. ``freeze_section_perspective`` adds a section
+perspective: an arbitrary section plane, the kept side drawn in exact
+perspective from an eye on the removed side, the cut in poché and true to
+scale because the picture plane is the section plane. There is no second
+storage, design mutation or update mechanism here; axonometrics are not
+implemented.
 """
 
 from __future__ import annotations
@@ -59,6 +63,7 @@ from archflow.adapters.cad_execution import (
     section_occt_regions,
     read_step,
 )
+from archflow.adapters.occt_backend import OcctSectionPerspective, project_occt_section_perspective
 from monkeydiagram.drawing_svg import (
     PNG_MEDIA_TYPE,
     SVG_MEDIA_TYPE,
@@ -79,6 +84,10 @@ from archflow.project.version_refs import (
 DRAWING_PROJECTION_RECEIPT_SCHEMA = "DrawingProjectionReceipt@1"
 SOURCE_RECEIPT_SCHEMA = "OcctExecutionReceipt@1"
 ELEVATION_KIND = "model-axis-elevation"
+CUT_PLAN_KIND = "cut-plan"
+SECTION_PERSPECTIVE_KIND = "section-perspective"
+#: The view kinds one drawing receipt may record; each is frozen by its own function here.
+DRAWING_VIEW_KINDS = (ELEVATION_KIND, CUT_PLAN_KIND, SECTION_PERSPECTIVE_KIND)
 DOCUMENTATION_WORKSPACE = "documentation"
 STEP_MEDIA_TYPE = "model/step"
 _STEP_FILE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._@-]{0,159}\.step$")
@@ -452,7 +461,7 @@ def _artifact_ref(project_id: str, value: Mapping[str, Any]) -> ProjectArtifactR
 
 def _retain_projection(repository, *, source, verified, projection, view, name, drawing_run_id,
                        backend, head_before, projection_details=None, previous_revision_ref=None):
-    """The one existing receipt/artifact boundary for elevation and cut-plan projections."""
+    """The one receipt/artifact boundary for elevation, cut-plan and section-perspective projections."""
     run = _drawing_run(repository, drawing_run_id, verified.run)
     destination = PersistenceDestination(PersistenceArea.RUN_WORKSPACE, run_id=run.run_id)
     try:
@@ -563,7 +572,7 @@ def freeze_cut_plan(
         raise TypeError("repository must be FilesystemProjectRepository")
     try:
         recipe = deepcopy(dict(recipe))
-        _require(recipe.get("kind") == "cut-plan", "the view recipe must be a cut-plan")
+        _require(recipe.get("kind") == CUT_PLAN_KIND, "the view recipe must be a cut-plan")
         require_identifier(recipe["name"], "cut-plan name")
         frame = recipe["frame"]
         scale = frame["scale"]
@@ -673,6 +682,434 @@ def freeze_model_axis_elevation(
     return drawing
 
 
+# ---------------------------------------------------------------- section perspective
+
+DEFAULT_SECTION_FOV_DEG = 55.0
+DEFAULT_SECTION_EYE_HEIGHT_M = 1.6
+DEFAULT_SECTION_GRAPHICS = {"cutLineMm": 0.5, "visibleLineMm": 0.25, "hatchSpacingMm": 0.5}
+#: Metres per CAD length unit, for defaults stated in metres.
+UNIT_METRES = {"meter": 1.0, "millimeter": 0.001, "inch": 0.0254, "foot": 0.3048}
+_SECTION_MARGIN = 0.05
+
+
+class SectionPerspectiveError(DrawingElevationError):
+    """A section perspective refused by name: ``code`` says which rule failed; nothing was written."""
+
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = code
+
+
+def _refuse(code: str, message: str):
+    raise SectionPerspectiveError(code, message)
+
+
+def _numbers(value, count: int, label: str) -> tuple[float, ...]:
+    """``count`` finite numbers, refused by name when one is not finite."""
+
+    if (not isinstance(value, Sequence) or isinstance(value, (str, bytes)) or len(value) != count
+            or any(isinstance(v, bool) or not isinstance(v, (int, float)) for v in value)):
+        _refuse("SECTION_REQUEST_INVALID", f"{label} must be {count} numbers")
+    if any(not math.isfinite(v) for v in value):
+        _refuse("SECTION_VALUE_NOT_FINITE", f"{label} holds a value that is not finite")
+    return tuple(float(v) for v in value)
+
+
+def _number(value, label: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        _refuse("SECTION_REQUEST_INVALID", f"{label} must be a number")
+    if not math.isfinite(value):
+        _refuse("SECTION_VALUE_NOT_FINITE", f"{label} is not finite")
+    return float(value)
+
+
+def _dot(a, b) -> float:
+    return sum(x * y for x, y in zip(a, b))
+
+
+def _normalized(vector) -> tuple[float, float, float]:
+    length = math.hypot(*vector)
+    return tuple(v / length for v in vector)
+
+
+def _section_plane(section: Mapping[str, Any]) -> tuple[tuple[float, float, float], tuple[float, float, float]]:
+    """A checked canonical section's origin and unit normal, which points to the removed side."""
+
+    if "line" in section:
+        (x1, y1), (x2, y2) = section["line"]
+        length = math.dist((x1, y1), (x2, y2))
+        dx, dy = (x2 - x1) / length + 0.0, (y2 - y1) / length + 0.0
+        # Keeping the left of walking the line removes its right: the normal points right.
+        return (x1, y1, 0.0), ((dy, -dx + 0.0, 0.0) if section["keep"] == "left" else (-dy + 0.0, dx, 0.0))
+    return tuple(section["origin"]), tuple(v + 0.0 for v in _normalized(section["normal"]))
+
+
+@dataclass(frozen=True, slots=True)
+class SectionPerspectiveView:
+    """One section perspective request, checked before the model is read; the CAD Z-up frame and STEP unit.
+
+    ``section`` is ``{"line": [[x1, y1], [x2, y2]], "keep": "left" | "right"}``, a
+    vertical plane through a plan line keeping the side on the left or right
+    of walking from its first point to its second, or ``{"origin": [x, y, z],
+    "normal": [nx, ny, nz]}`` whose normal points from the kept side to the
+    removed side.  The eye stands on the removed side; nothing there is drawn.
+
+    ``camera`` is explicit, ``{"eye", "target", "up"?, "fovDeg"?}``, or the
+    default one-point perspective, ``None`` or ``{"eyeHeight"?, "fovDeg"?,
+    "up"?}``: the eye on the removed side ``eyeHeight`` (1.6 m) above the
+    lowest cut point, centred on the cut, at the distance that fits the cut's
+    width in the horizontal field of view (55 degrees), with the cut's centre
+    as target.  ``up`` (+Z) sets the picture's up within the plane.  The
+    picture plane is always the section plane, so the cut is true to scale at
+    1:``scale_denominator`` and lines along the normal converge at the eye's
+    foot, wherever the target is.  The target's image centres the frame,
+    whose width is the field of view at the plane and whose height keeps the
+    cut's proportions; the default frame is the cut with a 5% margin, and
+    moving only the eye moves the vanishing point, not the frame.  ``depth``
+    bounds what is kept behind the plane.
+    """
+
+    name: str
+    section: Mapping[str, Any]
+    camera: Mapping[str, Any] | None = None
+    depth: float | None = None
+    hidden_object_ids: tuple[str, ...] = ()
+    scale_denominator: int = 100
+    graphics: Mapping[str, Any] | None = None
+    linear_deflection: float = 0.0001
+
+    def __post_init__(self) -> None:
+        try:
+            require_identifier(self.name, "view name")
+        except ValueError as exc:
+            raise SectionPerspectiveError("SECTION_REQUEST_INVALID", str(exc)) from exc
+        deflection = _number(self.linear_deflection, "linear_deflection")
+        if deflection <= 0.0:
+            _refuse("SECTION_REQUEST_INVALID", "linear_deflection must be positive")
+        object.__setattr__(self, "linear_deflection", deflection)
+        section = self.section
+        if not isinstance(section, Mapping) or set(section) not in ({"line", "keep"}, {"origin", "normal"}):
+            _refuse("SECTION_REQUEST_INVALID", "the section is either {line, keep} or {origin, normal}")
+        if "line" in section:
+            line = section["line"]
+            if not isinstance(line, Sequence) or isinstance(line, (str, bytes)) or len(line) != 2:
+                _refuse("SECTION_REQUEST_INVALID", "the section line must be two plan points [[x1, y1], [x2, y2]]")
+            start, end = (_numbers(point, 2, "a section line point") for point in line)
+            if section["keep"] not in ("left", "right"):
+                _refuse("SECTION_REQUEST_INVALID", "keep must be left or right of walking along the section line")
+            if math.dist(start, end) <= deflection:
+                _refuse("SECTION_LINE_DEGENERATE", "the section line has no length; give two distinct plan points")
+            canonical = {"line": [list(start), list(end)], "keep": section["keep"]}
+        else:
+            origin = _numbers(section["origin"], 3, "the section origin")
+            raw = _numbers(section["normal"], 3, "the section normal")
+            if math.hypot(*raw) <= _TOLERANCE:
+                _refuse("SECTION_NORMAL_DEGENERATE", "the section normal has no length")
+            canonical = {"origin": list(origin), "normal": list(raw)}
+        object.__setattr__(self, "section", canonical)
+        origin, normal = _section_plane(canonical)
+        camera = {} if self.camera is None else self.camera
+        if not isinstance(camera, Mapping) or not set(camera) <= {"eye", "target", "up", "fovDeg", "eyeHeight"}:
+            _refuse("SECTION_REQUEST_INVALID", "the camera takes eye, target, up, fovDeg or eyeHeight")
+        explicit = "eye" in camera or "target" in camera
+        if explicit and not {"eye", "target"} <= set(camera):
+            _refuse("SECTION_REQUEST_INVALID", "an explicit camera needs both eye and target")
+        if explicit and "eyeHeight" in camera:
+            _refuse("SECTION_REQUEST_INVALID", "eyeHeight places the default eye; an explicit camera states its eye")
+        resolved: dict[str, Any] = {}
+        for key in ("eye", "target", "up"):
+            if key in camera:
+                resolved[key] = list(_numbers(camera[key], 3, f"the camera {key}"))
+        for key in ("fovDeg", "eyeHeight"):
+            if key in camera:
+                resolved[key] = _number(camera[key], f"the camera {key}")
+        fov = resolved.get("fovDeg", DEFAULT_SECTION_FOV_DEG)
+        if not 0.0 < fov < 180.0:
+            _refuse("SECTION_CAMERA_DEGENERATE", "fovDeg must be between 0 and 180 degrees")
+        up = tuple(resolved.get("up", (0.0, 0.0, 1.0)))
+        in_plane = tuple(u - _dot(up, normal) * n for u, n in zip(up, normal))
+        if math.hypot(*up) <= _TOLERANCE or math.hypot(*in_plane) <= 1e-6 * math.hypot(*up):
+            _refuse("SECTION_CAMERA_DEGENERATE", "the camera up must not be parallel to the section normal; "
+                                                 "give an up that lies across the section plane")
+        if explicit:
+            eye, target = resolved["eye"], resolved["target"]
+            side = _dot([e - o for e, o in zip(eye, origin)], normal)
+            if side < -deflection:
+                _refuse("SECTION_EYE_ON_KEPT_SIDE", "the eye stands on the kept side of the section; "
+                                                    "stand it on the removed side, where the normal points")
+            if side <= deflection:
+                _refuse("SECTION_EYE_ON_PLANE", "the eye stands on the section plane; move it onto the removed side")
+            if math.dist(eye, target) <= deflection:
+                _refuse("SECTION_CAMERA_DEGENERATE", "the eye and the target coincide")
+            if _dot([t - e for t, e in zip(target, eye)], normal) >= 0.0:
+                _refuse("SECTION_CAMERA_DEGENERATE", "the camera must look through the cut toward the kept side")
+        object.__setattr__(self, "camera", resolved or None)
+        if self.depth is not None:
+            depth = _number(self.depth, "depth")
+            if depth <= 0.0:
+                _refuse("SECTION_DEPTH_INVALID", "depth must be a positive distance behind the section plane")
+            object.__setattr__(self, "depth", depth)
+        hidden = self.hidden_object_ids
+        if (not isinstance(hidden, (list, tuple)) or any(not isinstance(name, str) or not name for name in hidden)
+                or len(set(hidden)) != len(hidden)):
+            _refuse("SECTION_REQUEST_INVALID", "hiddenObjectIds must be distinct physical object ids")
+        object.__setattr__(self, "hidden_object_ids", tuple(sorted(hidden)))
+        if (isinstance(self.scale_denominator, bool) or not isinstance(self.scale_denominator, int)
+                or self.scale_denominator <= 0):
+            _refuse("SECTION_REQUEST_INVALID", "scale_denominator must be a positive integer")
+        graphics = dict(DEFAULT_SECTION_GRAPHICS)
+        if self.graphics is not None:
+            if not isinstance(self.graphics, Mapping) or not set(self.graphics) <= set(graphics):
+                _refuse("SECTION_REQUEST_INVALID", "graphics takes cutLineMm, visibleLineMm and hatchSpacingMm")
+            for key, value in self.graphics.items():
+                graphics[key] = _number(value, key)
+                if graphics[key] <= 0.0:
+                    _refuse("SECTION_REQUEST_INVALID", f"{key} must be a positive paper millimetre value")
+        object.__setattr__(self, "graphics", graphics)
+
+    def plane(self) -> tuple[tuple[float, float, float], tuple[float, float, float]]:
+        """The section plane's origin and unit normal (toward the removed side)."""
+
+        return _section_plane(self.section)
+
+    def frame(self) -> tuple[tuple[float, ...], tuple[float, ...], tuple[float, ...], tuple[float, ...]]:
+        """The drawing frame on the plane: origin, right, up and the normal ``right x up``."""
+
+        origin, normal = self.plane()
+        up = tuple((self.camera or {}).get("up", (0.0, 0.0, 1.0)))
+        up = _normalized(tuple(u - _dot(up, normal) * n for u, n in zip(up, normal)))
+        # Adding 0.0 turns a cross product's negative zeros into zeros for the receipt.
+        return (origin, tuple(v + 0.0 for v in _normalized(_cross(up, normal))),
+                tuple(v + 0.0 for v in up), tuple(v + 0.0 for v in normal))
+
+    def request(self) -> dict[str, Any]:
+        """The canonical request: with the exact source it determines the drawing."""
+
+        return {
+            "name": self.name, "section": deepcopy(self.section), "camera": deepcopy(self.camera),
+            "depth": self.depth, "hiddenObjectIds": list(self.hidden_object_ids),
+            "scale": f"1:{self.scale_denominator}", "graphics": dict(self.graphics),
+            "linear_deflection": self.linear_deflection,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class SectionPerspectiveProjection:
+    """The in-memory section perspective: the resolved view, the exact solve, and its SVG and PNG."""
+
+    view: Mapping[str, Any]
+    perspective: OcctSectionPerspective
+    svg: bytes
+    png: bytes
+
+    @property
+    def lines(self) -> tuple[OcctDrawingPolyline, ...]:
+        return self.perspective.lines
+
+    def counts(self) -> dict[str, Any]:
+        visible = [line for line in self.lines if line.kind == "visible"]
+        return {
+            "visible_polylines": len(visible),
+            "hidden_polylines": 0,
+            "objects_with_visible_lines": len({line.object_id for line in visible}),
+            "objects_with_hidden_lines": 0,
+            "objects_drawn_in_svg": len(svg_objects(self.svg)),
+        }
+
+    def details(self, selected: Sequence[str]) -> dict[str, Any]:
+        """What the receipt adds about the camera and the cut."""
+
+        perspective = self.perspective
+        return {
+            "algorithm": ("BRepAlgoAPI_Common with an oriented box on the kept side, then one exact HLRBRep_Algo "
+                          "perspective solve of the kept parts; BRepAlgoAPI_Section of the original solids for the cut"),
+            "projector": ("HLRAlgo_Projector(gp_Ax2(foot, normal, right), focus) with the shapes located in the eye's "
+                          "camera frame: the eye stands at foot + focus * normal, the picture plane is the section "
+                          "plane (true to scale) and a point z behind it maps 1 / (1 + z / focus) toward the foot"),
+            "principal_point_uv": list(perspective.principal_point),
+            "focus": perspective.focus,
+            "selected_object_ids": list(selected),
+            "drawn_object_ids": list(perspective.drawn_object_ids),
+            "cut_object_ids": list(perspective.cut_object_ids),
+            "removed_object_ids": list(perspective.removed_object_ids),
+            "section_polylines": sum(line.kind == "section" for line in perspective.lines),
+            "section_regions": len(perspective.regions),
+        }
+
+
+def _perspective_image(point, frame, eye, focus) -> tuple[float, float]:
+    """Where ``point`` lands in the picture, in drawing coordinates (the projector's own formula)."""
+
+    origin, right, up, normal = frame
+    foot = tuple(e - focus * n for e, n in zip(eye, normal))
+    delta = [p - f for p, f in zip(point, foot)]
+    shrink = 1.0 - _dot(delta, normal) / focus
+    return (_dot([f - o for f, o in zip(foot, origin)], right) + _dot(delta, right) / shrink,
+            _dot([f - o for f, o in zip(foot, origin)], up) + _dot(delta, up) / shrink)
+
+
+def project_section_perspective(
+    entries: Sequence[StepEntry], *, object_ids: Sequence[str], view: SectionPerspectiveView, unit: str,
+    operation_observer: Callable[[Mapping[str, Any]], None] | None = None,
+    parent_event_id: str | None = None,
+) -> SectionPerspectiveProjection:
+    """Cut, solve and render one section perspective of the named shapes; writes nothing.
+
+    The plane's section of the selected objects places the default camera
+    and must exist: a plane that misses them is refused by name.  The
+    resolved view (plane, frame, camera and crop) is returned with the
+    drawing so the receipt records exactly what was drawn.
+    """
+
+    if not isinstance(view, SectionPerspectiveView):
+        raise TypeError("view must be SectionPerspectiveView")
+    if unit not in _UNITS:
+        raise DrawingElevationError(f"unit {unit!r} is not a CAD length unit")
+    frame = view.frame()
+    origin, right, up, normal = frame
+    try:
+        with _observed_stage(operation_observer, "drawing.hlr", parent_event_id=parent_event_id,
+                             details={"scope": "global_visibility", "input_object_ids": sorted(object_ids)}) as observation:
+            cut = section_occt_lines(entries, object_ids=tuple(object_ids), origin=origin, right=right, up=up,
+                                     linear_deflection=view.linear_deflection)
+            points = [point for line in cut for point in line.points]
+            if not points:
+                _refuse("SECTION_PLANE_MISSES_MODEL", "the section plane meets none of the drawn objects; "
+                                                      "move it through the model")
+            u0, u1 = min(p[0] for p in points), max(p[0] for p in points)
+            v0, v1 = min(p[1] for p in points), max(p[1] for p in points)
+            margin = _SECTION_MARGIN * max(u1 - u0, v1 - v0)
+            # The frame keeps the cut's proportions, margin included, whatever its width.
+            aspect = (v1 - v0 + 2.0 * margin) / (u1 - u0 + 2.0 * margin)
+            camera = dict(view.camera or {})
+            fov = camera.get("fovDeg", DEFAULT_SECTION_FOV_DEG)
+            half = math.tan(math.radians(fov) / 2.0)
+            if "eye" in camera:
+                placement, eye, target = "explicit", tuple(camera["eye"]), tuple(camera["target"])
+            else:
+                # One-point perspective: the eye's foot is centred on the cut at eye height, and the target is
+                # the cut's centre, so the frame is the cut with its margin.
+                placement = "default"
+                height = camera.get("eyeHeight", DEFAULT_SECTION_EYE_HEIGHT_M / UNIT_METRES[unit])
+                distance = ((u1 - u0) / 2.0 + margin) / half
+                eye = tuple(o + (u0 + u1) / 2.0 * r + (v0 + height) * w + distance * n
+                            for o, r, w, n in zip(origin, right, up, normal))
+                target = tuple(o + (u0 + u1) / 2.0 * r + (v0 + v1) / 2.0 * w for o, r, w in zip(origin, right, up))
+            perspective = project_occt_section_perspective(
+                entries, object_ids=tuple(object_ids), origin=origin, right=right, up=up, eye=eye,
+                linear_deflection=view.linear_deflection, depth=view.depth,
+            )
+            observation["emitted_object_ids"] = sorted({line.object_id for line in perspective.lines})
+        width = 2.0 * perspective.focus * half
+        centre = _perspective_image(target, frame, eye, perspective.focus)
+        crop = (centre[0] - width / 2.0, centre[1] - width * aspect / 2.0,
+                centre[0] + width / 2.0, centre[1] + width * aspect / 2.0)
+        resolved = {
+            "kind": SECTION_PERSPECTIVE_KIND,
+            "name": view.name,
+            "projection": "perspective",
+            "request": view.request(),
+            "section": {"origin": list(view.plane()[0]), "normal": list(normal),
+                        "kept_side": "dot(point - origin, normal) <= 0", "depth": view.depth},
+            "camera": {"placement": placement, "eye": list(eye), "target": list(target),
+                       "up": list(camera.get("up", (0.0, 0.0, 1.0))), "fov_deg": fov},
+            "origin": list(origin),
+            "right": list(right),
+            "up": list(up),
+            "uv_definition": ("on the section plane u = dot(point - origin, right), v = dot(point - origin, up); "
+                              "behind it, the point's perspective image from the eye in the same frame"),
+            "picture_plane": "the section plane",
+            "crop_uv": list(crop),
+            "scale": f"1:{view.scale_denominator}",
+            "scale_at": "the section plane",
+            "hidden_lines": False,
+            "linear_deflection": view.linear_deflection,
+            "graphics": dict(view.graphics),
+            "hiddenObjectIds": list(view.hidden_object_ids),
+        }
+        with _observed_stage(operation_observer, "drawing.svg", parent_event_id=parent_event_id,
+                             details={"input_object_ids": sorted({line.object_id for line in perspective.lines})}) as observation:
+            svg = drawing_svg(
+                perspective.lines, crop_uv=crop, unit=unit, scale_denominator=view.scale_denominator,
+                hidden_lines=False, title=view.name, regions=perspective.regions, graphics=view.graphics,
+                projection=SECTION_PERSPECTIVE_KIND,
+            )
+            observation["emitted_object_ids"] = list(svg_objects(svg))
+        with _observed_stage(operation_observer, "drawing.png", parent_event_id=parent_event_id):
+            png = render_svg_png(svg)
+    except SectionPerspectiveError:
+        raise
+    except (OcctBackendError, DrawingSvgError) as exc:
+        raise DrawingElevationError(f"section perspective {view.name}: {exc}") from exc
+    return SectionPerspectiveProjection(view=resolved, perspective=perspective, svg=svg, png=png)
+
+
+def section_perspective_objects(verified: VerifiedElevationSource, hidden_object_ids: Sequence[str]) -> tuple[str, ...]:
+    """The objects a section perspective cuts and draws: every physical object not hidden.
+
+    Hidden inspection witnesses the source retains (aperture volumes) are
+    evidence, not material, as in a cut plan.  An unknown hidden id or
+    hiding everything is refused by name.
+    """
+
+    unknown = sorted(set(hidden_object_ids) - set(verified.physical_object_ids))
+    if unknown:
+        _refuse("DRAWING_OBJECT_UNKNOWN", "These physical objects are not in the selected model: " + ", ".join(unknown))
+    semantics = verified.receipt.get("expected_semantics", {}).get("objects", {})
+    excluded = set(hidden_object_ids) | {name for name, row in semantics.items() if row.get("visible") is False}
+    selected = tuple(name for name in verified.physical_object_ids if name not in excluded)
+    if not selected:
+        _refuse("DRAWING_EMPTY", "Keep at least one physical object in the section perspective.")
+    return selected
+
+
+def freeze_section_perspective(
+    repository: FilesystemProjectRepository, *, source: ElevationSource, view: SectionPerspectiveView,
+    drawing_run_id: str, operation_observer: Callable[[Mapping[str, Any]], None] | None = None,
+    parent_event_id: str | None = None,
+) -> ElevationDrawing:
+    """Draw one section perspective of the source STEP and retain SVG, PNG and receipt in the drawing run.
+
+    Mirrors ``freeze_model_axis_elevation``: the request was checked when the
+    view was made, the source is verified, nothing is written until the
+    projection and both renderings succeeded, and ``_retain_projection``
+    retains the receipt with the exact plane and camera.  A repeat with the
+    same source and view writes the same bytes and returns the same refs.
+    """
+
+    if not isinstance(repository, FilesystemProjectRepository):
+        raise TypeError("repository must be FilesystemProjectRepository")
+    if not isinstance(view, SectionPerspectiveView):
+        raise TypeError("view must be SectionPerspectiveView")
+    identity = {"view_recipe": view.request()}
+    if isinstance(source, ElevationSource):
+        identity["step_sha256"] = source.step_sha256
+
+    def observe(event):
+        operation_observer({**event, "details": {"input_identity": dict(identity), **event.get("details", {})}})
+
+    observer = observe if operation_observer is not None else None
+    with _observed_stage(observer, "drawing.load", parent_event_id=parent_event_id) as observation:
+        head_before = repository.read_head()
+        verified = read_elevation_source(repository, source)
+        backend = backend_identity()
+        identity.update(backend=backend["binding"], backend_version=backend["binding_version"])
+        selected = section_perspective_objects(verified, view.hidden_object_ids)
+        observation["input_object_ids"] = list(selected)
+    projection = project_section_perspective(
+        verified.entries, object_ids=selected, view=view, unit=verified.length_unit,
+        operation_observer=observer, parent_event_id=parent_event_id,
+    )
+    with _observed_stage(observer, "drawing.persist", parent_event_id=parent_event_id) as observation:
+        drawing = _retain_projection(
+            repository, source=source, verified=verified, projection=projection, view=dict(projection.view),
+            name=view.name, drawing_run_id=drawing_run_id, backend=backend, head_before=head_before,
+            projection_details=projection.details(selected),
+        )
+        observation["output_refs"] = [drawing.receipt_ref.uri, drawing.svg_ref.uri, drawing.png_ref.uri]
+    return drawing
+
+
 def read_model_axis_elevation(repository: FilesystemProjectRepository, receipt_ref: ProjectRecordRef) -> ElevationDrawing:
     """Cold-read one retained drawing: receipt, SVG and PNG, each verified against its sha256."""
 
@@ -684,6 +1121,8 @@ def read_model_axis_elevation(repository: FilesystemProjectRepository, receipt_r
         _require(receipt_ref.record_kind == DRAWING_PROJECTION_RECEIPT, "the record is not a drawing-projection-receipt")
         receipt = repository.load_json(receipt_ref)
         _require(receipt.get("schema") == DRAWING_PROJECTION_RECEIPT_SCHEMA, "the record is not a DrawingProjectionReceipt@1")
+        _require(isinstance(receipt.get("view"), Mapping) and receipt["view"].get("kind") in DRAWING_VIEW_KINDS,
+                 f"the drawing receipt's view is none of {', '.join(DRAWING_VIEW_KINDS)}")
         run = repository.load_run(receipt["run_id"])
         _require(run.base.to_dict() == receipt["base"] == receipt["source"]["base"],
                  "the drawing run, its receipt and the source disagree on the base")
@@ -703,7 +1142,7 @@ def read_model_axis_elevation(repository: FilesystemProjectRepository, receipt_r
 
 
 def list_model_axis_elevations(repository: FilesystemProjectRepository, drawing_run_id: str) -> tuple[ProjectRecordRef, ...]:
-    """The drawing receipts one run retains, verified as the repository lists them."""
+    """The drawing receipts one run retains, of every view kind, verified as the repository lists them."""
 
     try:
         run = repository.load_run(drawing_run_id)
@@ -714,21 +1153,33 @@ def list_model_axis_elevations(repository: FilesystemProjectRepository, drawing_
 
 
 __all__ = [
+    "CUT_PLAN_KIND",
+    "DEFAULT_SECTION_EYE_HEIGHT_M",
+    "DEFAULT_SECTION_FOV_DEG",
     "DOCUMENTATION_WORKSPACE",
     "DRAWING_PROJECTION_RECEIPT_SCHEMA",
+    "DRAWING_VIEW_KINDS",
     "ELEVATION_KIND",
+    "SECTION_PERSPECTIVE_KIND",
+    "UNIT_METRES",
     "DrawingElevationError",
     "ElevationDrawing",
     "ElevationProjection",
     "ElevationSource",
     "ElevationView",
+    "SectionPerspectiveError",
+    "SectionPerspectiveProjection",
+    "SectionPerspectiveView",
     "freeze_model_axis_elevation",
     "freeze_cut_plan",
+    "freeze_section_perspective",
     "plan_dressing_anchors",
     "resolve_plan_dressing",
     "list_model_axis_elevations",
     "project_model_axis_elevation",
+    "project_section_perspective",
     "read_model_axis_elevation",
+    "section_perspective_objects",
 ]
 
 

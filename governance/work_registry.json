@@ -179,7 +179,6 @@
       "write_scope": [
         "apps/archflow-studio/api/archflow_studio_api/application/publication_output.py",
         "apps/archflow-studio/api/archflow_studio_api/routes/__init__.py",
-        "apps/archflow-studio/api/archflow_studio_api/routes/drawings.py",
         "apps/archflow-studio/api/archflow_studio_api/routes/publications.py",
         "apps/archflow-studio/api/archflow_studio_api/routes/rendering.py",
         "apps/archflow-studio/api/archflow_studio_api/transport/publications.py",
@@ -205,8 +204,6 @@
         "docs/mapping/planning/INDEX.md",
         "governance/module_registry.json",
         "governance/work_registry.json",
-        "monkeydiagram/drawing_elevation.py",
-        "monkeydiagram/drawing_svg.py",
         "tests/test_version_refs.py"
       ],
       "acceptance": [
@@ -215,7 +212,8 @@
       "notes": [
         "2026-09-24: #273 merged the GH-66 integration. On the repository owner's instruction the Drawing, Render, Hub and shared client paths it also claimed are handed to GH-271 (#271, Working Head); GH-66 keeps its Publish paths and the broader #66 acceptance.",
         "2026-09-25: the cut-plan request DTO (transport/drawings.py) is handed to GH-271 as well, for the drawing follow choice found in the #277 review; GH-66 keeps its Publish paths.",
-        "2026-09-25: archflow/project/record_kinds.py is handed to GH-294/admission-record, which registers the owner-approved candidate-admission kind (audit Q1); GH-66 reclaims it if Publish needs another kind."
+        "2026-09-25: archflow/project/record_kinds.py is handed to GH-294/admission-record, which registers the owner-approved candidate-admission kind (audit Q1); GH-66 reclaims it if Publish needs another kind.",
+        "2026-09-25: monkeydiagram/drawing_elevation.py, monkeydiagram/drawing_svg.py and routes/drawings.py are handed to GH-307/section-perspective, which adds the owner-requested section perspective view to the one projection pipeline; GH-66 keeps its Publish paths and reclaims these if Publish needs drawing changes."
       ]
     }
   ]

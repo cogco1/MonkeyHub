@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useStudio } from "../../api/ProjectRuntimeContext";
 import { asStudioApiError, type StudioApiError } from "../../api/client";
-import type { DesignStageDto, ModelSourceDto, PlanDimensionChoicesDto, PlanStatusDto, PlanVectorDto, PlanDressingDto, SourceDocumentDto, WorkingSourceDto } from "../../api/generated";
+import type { DesignStageDto, ModelSourceDto, PlanDimensionChoicesDto, PlanStatusDto, PlanVectorDto, PlanDressingDto, SectionLineDto, SourceDocumentDto, WorkingSourceDto } from "../../api/generated";
 import { ErrorPanel } from "../../app/ErrorPanel";
 import { usePreferences } from "../../features/settings/preferences";
 import { DocumentSurface } from "./DocumentCanvas";
@@ -25,7 +25,11 @@ const copy = {
     zoomOut: "Zoom out", zoomIn: "Zoom in", fit: "Fit page", sourceOfPage: "This drawing's source",
     download: "Download SVG", downloadHint: "Saved vector drawing, with its scale and entourage, for further editing in Illustrator.",
     settings: "Drawing settings",
-    statusError: "Source status could not be read. Refresh to try again.", loading: "Loading drawing…" },
+    statusError: "Source status could not be read. Refresh to try again.", loading: "Loading drawing…",
+    section: "Section perspective", sectionHint: "Cut the model with a vertical plane and draw the side you look toward in perspective; the cut is drawn true to scale.",
+    sectionPlane: "Cut plane", sectionAcrossX: "Across X (x = position)", sectionAcrossY: "Across Y (y = position)", sectionPosition: "Position",
+    sectionToward: "Look toward", eyeHeight: "Eye height above the lowest cut point", fov: "Field of view (degrees)",
+    sectionGenerate: "Generate section perspective", sectionView: "Section perspective · true to scale at the cut plane" },
   "zh-CN": { title: "Drawing · 图纸", intro: "跟随项目当前模型的剖切平面。", source: "出图版本", revision: "图纸", fresh: "新建剖切平面",
     noModel: "项目当前模型还没有可出图的精确几何。", refresh: "刷新来源", generating: "正在生成…", generate: "生成剖切平面",
     rebuild: "基于此版本重建", another: "绘制其他版本", anotherHint: "在这里选择的版本只按一次绘制，不会自动更新。",
@@ -41,8 +45,26 @@ const copy = {
     zoomOut: "缩小", zoomIn: "放大", fit: "适合页面", sourceOfPage: "此图来源",
     download: "下载 SVG", downloadHint: "下载已保存的矢量图，保留比例和配景，可在 Illustrator 中继续编辑。",
     settings: "图纸设置",
-    statusError: "无法读取来源状态，请刷新重试。", loading: "正在读取图纸…" },
+    statusError: "无法读取来源状态，请刷新重试。", loading: "正在读取图纸…",
+    section: "剖透视", sectionHint: "用竖直剖切面切开模型，以透视绘制所看的一侧；剖切面按比例绘制。",
+    sectionPlane: "剖切面", sectionAcrossX: "垂直于 X（x = 位置）", sectionAcrossY: "垂直于 Y（y = 位置）", sectionPosition: "位置",
+    sectionToward: "看向", eyeHeight: "视高（自剖切最低点起）", fov: "视角（度）",
+    sectionGenerate: "生成剖透视", sectionView: "剖透视 · 剖切面处按比例" },
 } as const;
+
+// The drawings this workspace opens. A section perspective is generated and read here; its plan-only
+// appearance, status and vector controls belong to cut plans.
+const DRAWING_KINDS = new Set(["cut-plan", "section-perspective"]);
+const isCutPlan = (document: SourceDocumentDto | null) => document?.viewRecipe?.kind === "cut-plan";
+const UNIT_METRES: Record<string, number> = { meter: 1, millimeter: 0.001, inch: 0.0254, foot: 0.3048 };
+type SectionForm = { axis: "x" | "y"; position: number | null; toward: "+" | "-"; eyeHeight: number | null; fovDeg: number };
+
+/** A vertical cut across X or Y at the position, keeping the side the eye looks toward. */
+function sectionLine(axis: "x" | "y", position: number, toward: "+" | "-"): SectionLineDto {
+  // Walking +Y the right hand is +X; walking +X the left hand is +Y.
+  return axis === "x" ? { line: [[position, 0], [position, 1]], keep: toward === "+" ? "right" : "left" }
+    : { line: [[0, position], [1, position]], keep: toward === "+" ? "left" : "right" };
+}
 
 type PlanTarget = { modelSource: ModelSourceDto; stageRef: string | null };
 // An edited appearance is saved as a new revision once the edits pause, as Board saves itself.
@@ -123,7 +145,11 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
   const opened = useRef(false);
   // Revisions this view wrote; a list read that began before one was written never drops it.
   const madeHere = useRef(new Set<string>());
+  // #307: a section perspective has its own form, so its fields never hold a cut plan's autosave.
+  const sectionFormId = useId(), sectionForm = useRef<HTMLFormElement>(null);
+  const [section, setSection] = useState<SectionForm>({ axis: "y", position: null, toward: "+", eyeHeight: null, fovDeg: 55 });
   const source = documents.find(document => drawingDocumentKey(document) === selected) ?? null;
+  const perspectiveOpen = source?.viewRecipe?.kind === "section-perspective";
   const latest = useMemo(() => latestRevisions(documents), [documents]);
   const latestKeys = useMemo(() => new Set(latest.map(drawingDocumentKey)), [latest]);
   const earlier = documents.filter(document => !latestKeys.has(drawingDocumentKey(document)));
@@ -136,7 +162,13 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
   const stage: PlanTarget | null = explicitTarget ? (chosenStage ? { modelSource: chosenStage.modelSource, stageRef: chosenStage.stageRef } : null)
     : source ? automaticTarget : liveTarget;
   const selectedTargetValue = explicitTarget ? target : "";
+  // A section perspective has no plan status: the next one, and the unit, follow the Working Head.
+  const unitTarget = stage ?? (perspectiveOpen ? liveTarget : null);
+  const sectionTarget = stage ?? liveTarget;
   const lengthUnit = choices?.lengthUnit ?? status?.lengthUnit ?? "";
+  const planCrop = isCutPlan(source) ? (source?.viewRecipe?.frame as { crop_uv?: number[] } | undefined)?.crop_uv : undefined;
+  const sectionPosition = section.position ?? (planCrop ? (section.axis === "x" ? planCrop[0] + planCrop[2] : planCrop[1] + planCrop[3]) / 2 : 0);
+  const sectionEyeHeight = section.eyeHeight ?? (lengthUnit ? 1.6 / (UNIT_METRES[lengthUnit] ?? 1) : NaN);
   const scopeKey = JSON.stringify([projectId, selected, selectedTargetValue, explicitTarget, active]);
   const scope = useRef({ key: scopeKey });
   if (scope.current.key !== scopeKey) scope.current = { key: scopeKey };
@@ -149,7 +181,7 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
     void Promise.all([studio.documents(), studio.designHistory(), studio.workingSource("drawing")]).then(([list, history, working]) => {
       if (cancelled) return;
       if (list.projectId !== projectId || history.projectId !== projectId || working.projectId !== projectId) throw new Error("The drawing workspace belongs to another project.");
-      const plans = list.documents.filter(item => item.viewRecipe?.kind === "cut-plan");
+      const plans = list.documents.filter(item => DRAWING_KINDS.has(String(item.viewRecipe?.kind)));
       const listed = new Set(plans.map(drawingDocumentKey));
       setDocuments(current => [...plans, ...current.filter(item =>
         madeHere.current.has(drawingDocumentKey(item)) && !listed.has(drawingDocumentKey(item)))]);
@@ -178,15 +210,15 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
   }, [studio, active]);
   useEffect(() => {
     setChoices(null);
-    if (!stage || !active) return;
+    if (!unitTarget || !active) return;
     let cancelled = false;
-    void studio.drawingPlanDimensions(stage.modelSource, stage.stageRef ?? undefined).then(value => {
+    void studio.drawingPlanDimensions(unitTarget.modelSource, unitTarget.stageRef ?? undefined).then(value => {
       if (cancelled) return;
       setChoices(value);
       if (!source && !dirty) setForm(defaultPlanForm(value.lengthUnit));
     }).catch(cause => { if (!cancelled) setError(asStudioApiError(cause)); });
     return () => { cancelled = true; };
-  }, [studio, projectId, stage?.modelSource.runId, stage?.modelSource.assetSha256, stage?.stageRef, active, refresh]);
+  }, [studio, projectId, unitTarget?.modelSource.runId, unitTarget?.modelSource.assetSha256, unitTarget?.stageRef, active, refresh]);
   useEffect(() => {
     // A revision this view just wrote replaces the one on screen when it has
     // loaded; the picture and the selected object stay while it saves.
@@ -194,7 +226,7 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
     setStatus(null); setAutomaticTarget(null);
     if (!source) { setStatusLoading(false); return; }
     let cancelled = false;
-    if (source.revisionRef) void studio.drawingPlanVector({ runId: source.runId, assetSha256: source.assetSha256, revisionRef: source.revisionRef })
+    if (source.revisionRef && isCutPlan(source)) void studio.drawingPlanVector({ runId: source.runId, assetSha256: source.assetSha256, revisionRef: source.revisionRef })
       .then(value => { if (!cancelled) setVector(value); }).catch(cause => { if (!cancelled) setError(asStudioApiError(cause)); });
     void studio.documentFile(source.runId, source.assetSha256, source.fileName, source.revisionRef).then(value => {
       if (!cancelled) setFile(value);
@@ -203,7 +235,7 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
   }, [studio, projectId, selected]);
   useEffect(() => {
     setStatus(null);
-    if (!source || !source.revisionRef || !active) { setStatusLoading(false); return; }
+    if (!source || !source.revisionRef || !active || !isCutPlan(source)) { setStatusLoading(false); return; }
     let cancelled = false;
     setStatusLoading(true);
     void studio.drawingPlanStatus({ runId: source.runId, assetSha256: source.assetSha256, revisionRef: source.revisionRef,
@@ -222,7 +254,7 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
     setSelected(document ? drawingDocumentKey(document) : ""); setVector(null); setDirty(false); setAppearanceHeld(null); setError(null);
     setExplicitTarget(false); setAutomaticTarget(null); setStatus(null);
     if (!document) setTarget(defaultTarget);
-    setForm(document ? planFormFromDocument(document, lengthUnit) : defaultPlanForm(lengthUnit));
+    setForm(document && isCutPlan(document) ? planFormFromDocument(document, lengthUnit) : defaultPlanForm(lengthUnit));
   }
   async function chooseDocument(key: string) {
     // Appearance edits still waiting for their pause are saved before another revision opens.
@@ -260,6 +292,23 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
       return false;
     }
     finally { if (mounted.current) { setBusy(false); setLiveBusy(false); } }
+  };
+  /** Generate a section perspective of the drawing's target and open it; nothing else changes. */
+  const generateSection = async () => {
+    const drawn = sectionTarget;
+    if (!drawn || busy || !active || !sectionForm.current?.reportValidity()) return;
+    const origin = scope.current;
+    setBusy(true); setError(null);
+    try {
+      const result = await studio.drawingSectionPerspective({ projectId, modelSource: drawn.modelSource, sourceStageRef: drawn.stageRef,
+        section: sectionLine(section.axis, sectionPosition, section.toward), camera: { eyeHeight: sectionEyeHeight, fovDeg: section.fovDeg } });
+      if (!mounted.current || scope.current !== origin) return;
+      madeHere.current.add(drawingDocumentKey(result)); opened.current = true;
+      setDocuments(current => [...current.filter(item => drawingDocumentKey(item) !== drawingDocumentKey(result)), result]);
+      openDocument(result);
+    } catch (cause) {
+      if (mounted.current && scope.current === origin) setError(asStudioApiError(cause));
+    } finally { if (mounted.current) setBusy(false); }
   };
   // Appearance edits save themselves as a new revision after a pause. An
   // invalid field stays marked and unsaved; a refused save waits for the next
@@ -325,10 +374,16 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
               <option value="">{text.live}</option>
               {stages.map(item => <option key={item.stageRef} value={item.stageRef}>{item.label} · {item.branchId}</option>)}</select></label>
             <p className="drawing-field__hint">{text.anotherHint}</p>
-            {explicitTarget && source && <button type="button" disabled={!stage || busy || statusLoading} onClick={() => void generate(stage, { follow: "frozen" })}>{text.rebuild}</button>}
+            {explicitTarget && source && !perspectiveOpen && <button type="button" disabled={!stage || busy || statusLoading} onClick={() => void generate(stage, { follow: "frozen" })}>{text.rebuild}</button>}
           </details></div>
         </div>
-        {source && <section className="drawing-status" aria-label={text.status}
+        {source && perspectiveOpen && <section className="drawing-status" aria-label={text.status} data-kind="section-perspective">
+          <div className="drawing-status__summary">
+            <span className="drawing-source">{text.sourceOfPage}: <b>{sourceName(source)}</b></span>
+            <strong role="status">{text.sectionView}</strong>
+          </div>
+        </section>}
+        {source && !perspectiveOpen && <section className="drawing-status" aria-label={text.status}
           data-follow={historical || explicitTarget || kept ? "frozen" : "live"}
           data-status={liveBusy ? "updating" : action === "blocked" ? "outdated" : status?.status ?? "unknown"}>
           <div className="drawing-status__summary">
@@ -349,12 +404,12 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
       <form ref={controls} className="drawing-controls" aria-label={text.settings} onSubmit={event => { event.preventDefault(); void generate(source ? null : stage, !source && explicitTarget ? { follow: "frozen" } : {}); }}>
         <div className="drawing-controls__fields">
         <p className="drawing-unit">{lengthUnit ? `${text.sourceHint} ${lengthUnit}` : text.unitUnknown}</p>
-        <fieldset disabled={busy || !active || !lengthUnit}><legend>{text.representation}</legend>
+        {!perspectiveOpen && <fieldset disabled={busy || !active || !lengthUnit}><legend>{text.representation}</legend>
           {numeric("cutHeight", `${text.cutHeight} (${lengthUnit || "…"})`)}
           {numeric("bottom", `${text.bottom} (${lengthUnit || "…"})`)}
           {numeric("scaleDenominator", text.scale, 1, "1")}
           <details><summary>{text.graphics}</summary>{numeric("cutLineMm", text.cutLine, 0.01)}{numeric("visibleLineMm", text.visibleLine, 0.01)}{numeric("hatchSpacingMm", text.hatch, 0.1)}</details>
-        </fieldset>
+        </fieldset>}
         {source && vector && form.cropUv && <DressingControls objects={form.dressing} vector={vector} crop={form.cropUv}
           selected={selectedDressing} onSelect={setSelectedDressing} onChange={dressing => update({ dressing })}
           disabled={busy || !active} language={language} unit={lengthUnit} status={status} />}
@@ -371,17 +426,39 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
             </div>;
           })}
         </fieldset>}
+        {/* Its controls belong to the section form below, so a cut plan's autosave never waits on them. */}
+        <details className="drawing-section" open={perspectiveOpen || undefined}><summary>{text.section}</summary>
+          <fieldset form={sectionFormId} disabled={busy || !active || !lengthUnit || !sectionTarget}>
+            <p className="drawing-field__hint">{text.sectionHint}</p>
+            <label className="drawing-field">{text.sectionPlane}<select form={sectionFormId} value={section.axis}
+              onChange={event => { const axis = event.currentTarget.value === "x" ? "x" : "y"; setSection(current => ({ ...current, axis, position: null })); }}>
+              <option value="x">{text.sectionAcrossX}</option><option value="y">{text.sectionAcrossY}</option></select></label>
+            <label className="drawing-field">{`${text.sectionPosition} (${lengthUnit || "…"})`}<input form={sectionFormId} type="number" step="any" required
+              value={Number.isFinite(sectionPosition) ? sectionPosition : ""} onChange={event => { const position = event.currentTarget.valueAsNumber; setSection(current => ({ ...current, position })); }} /></label>
+            <label className="drawing-field">{text.sectionToward}<select form={sectionFormId} value={section.toward}
+              onChange={event => { const toward = event.currentTarget.value === "-" ? "-" : "+"; setSection(current => ({ ...current, toward })); }}>
+              <option value="+">+{section.axis.toUpperCase()}</option><option value="-">−{section.axis.toUpperCase()}</option></select></label>
+            <label className="drawing-field">{`${text.eyeHeight} (${lengthUnit || "…"})`}<input form={sectionFormId} type="number" step="any" required
+              value={Number.isFinite(sectionEyeHeight) ? sectionEyeHeight : ""} onChange={event => { const eyeHeight = event.currentTarget.valueAsNumber; setSection(current => ({ ...current, eyeHeight })); }} /></label>
+            <label className="drawing-field">{text.fov}<input form={sectionFormId} type="number" min="1" max="170" step="any" required
+              value={Number.isFinite(section.fovDeg) ? section.fovDeg : ""} onChange={event => { const fovDeg = event.currentTarget.valueAsNumber; setSection(current => ({ ...current, fovDeg })); }} /></label>
+            <button className="btn btn--accent" type="submit" form={sectionFormId}>{busy && perspectiveOpen ? text.generating : text.sectionGenerate}</button>
+          </fieldset>
+        </details>
         </div>
         <div className="drawing-actions">
-        {source ? <p className="drawing-save-state" role="status">{busy || (dirty && appearanceHeld === null) ? text.saving : dirty ? text.held : ""}</p>
+        {source ? <p className="drawing-save-state" role="status">{perspectiveOpen ? busy ? text.generating : ""
+          : busy || (dirty && appearanceHeld === null) ? text.saving : dirty ? text.held : ""}</p>
           : <button className="btn btn--accent" type="submit" disabled={busy || loading || !lengthUnit || !stage}>
             {busy ? text.generating : text.generate}</button>}
         {source && appearanceHeld === "refused" && <button className="btn btn--accent" type="submit" disabled={busy || !source.modelSource}>{text.retry}</button>}
-        {source && <><button className="drawing-download" type="button" disabled={busy || dirty || !active || !vector} onClick={downloadSvg}>{text.download}</button>
+        {source && !perspectiveOpen && <><button className="drawing-download" type="button" disabled={busy || dirty || !active || !vector} onClick={downloadSvg}>{text.download}</button>
           <p>{text.downloadHint}</p></>}
         {error && <ErrorPanel error={error} what={text.title} />}
         </div>
       </form>
+      <form id={sectionFormId} ref={sectionForm} hidden aria-label={text.section}
+        onSubmit={event => { event.preventDefault(); void generateSection(); }} />
     </div>
   </div>;
 }

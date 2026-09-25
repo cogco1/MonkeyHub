@@ -72,6 +72,7 @@ const server = await createServer({ root, configFile: false, resolve: { dedupe: 
 });
 let browser, page, hold = false, release, broken = false, refuseNext = false, current;
 const requests = [], statusRequests = [], drives = [], errors = [], passed = [], vectorBytes = new Map();
+const sectionRequests = [], planOnlyCalls = [];
 async function step(name, action) { current = name; await action(); passed.push(name); console.log(`PASS ${name}`); }
 const revision = () => page.getByRole("combobox", { name: "Drawing", exact: true });
 const source = () => page.getByRole("combobox", { name: "Version to draw", exact: true });
@@ -112,9 +113,21 @@ try {
     await page.evaluate(result => window.drawingFixture.documents.push(result), result);
     await route.fulfill({ status: 201, json: result });
   });
+  await page.route("**/api/drawings/section-perspectives", async route => {
+    const body = route.request().postDataJSON(); sectionRequests.push(body);
+    const serial = sectionRequests.length;
+    const result = { projectId: body.projectId, runId: body.modelSource.runId, assetSha256: `e${String(serial).padStart(63, "0")}`,
+      fileName: "section-perspective.png", mimeType: "image/png", sizeBytes: 200, pageCount: 1,
+      pages: [{ pageIndex: 0, width: 600, height: 400, rotation: 0 }], modelSource: body.modelSource, sourceStageRef: body.sourceStageRef,
+      drawingId: "section-perspective", revisionRef: `section-revision-${serial}`, generatedAt: `2026-09-24T00:00:0${serial}Z`,
+      viewRecipe: { kind: "section-perspective", request: { section: body.section, camera: body.camera }, crop_uv: [-0.3, -0.6, 6.3, 3.6], scale: "1:100" } };
+    await page.evaluate(result => window.drawingFixture.documents.push(result), result);
+    await route.fulfill({ status: 201, json: result });
+  });
   await page.route("**/api/drawings/plans/vector?*", async route => {
     const revisionRef = new URL(route.request().url()).searchParams.get("revisionRef");
     const doc = await page.evaluate(ref => window.drawingFixture.documents.find(d => d.revisionRef === ref), revisionRef);
+    if (doc.viewRecipe.kind !== "cut-plan") { planOnlyCalls.push(["vector", revisionRef]); return route.fulfill({ status: 422, json: { code: "DRAWING_PLAN_REQUIRED", detail: "Not a cut plan." } }); }
     const scale = Number(doc.viewRecipe.frame.scale.split(":")[1]);
     const dressing = (doc.viewRecipe.dressing ?? []).map(item => `<polyline data-dressing-id="${item.id}" points="1,1 2,2"/>`).join("");
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${10000 / scale}mm" height="${6000 / scale}mm" viewBox="0 0 10 6" data-unit="meter" data-scale="1:${scale}"><title>${doc.fileName}</title><polyline data-object="obj-wall" points="1,1 9,1 9,5 1,5 1,1" fill="none" stroke="black" stroke-width="0.04"/><g id="dressing">${dressing}</g></svg>`;
@@ -125,6 +138,7 @@ try {
   await page.route("**/api/drawings/plans/status", async route => {
     const body = route.request().postDataJSON(); statusRequests.push(body);
     const sourceDocument = await page.evaluate(body => window.drawingFixture.documents.find(d => d.revisionRef === body.revisionRef), body);
+    if (sourceDocument.viewRecipe.kind !== "cut-plan") { planOnlyCalls.push(["status", body.revisionRef]); return route.fulfill({ status: 422, json: { code: "DRAWING_PLAN_REQUIRED", detail: "Not a cut plan." } }); }
     const kept = sourceDocument.viewRecipe.follow === "frozen" && !body.targetModelSource && !body.targetStageRef;
     if (!kept && !body.targetModelSource && !body.targetStageRef && !await page.evaluate(() => window.drawingFixture.headDrawable))
       return route.fulfill({ json: { status: "outdated", detail: "The current model cannot be drawn yet: no exact STEP.", targetModelSource: null,
@@ -167,6 +181,7 @@ try {
     assert.equal(await saveButton().count(), 0, "appearance has no Save button, only a retry after a refusal");
     await page.getByLabel("Scale denominator (1 : n)", { exact: true }).fill("50");
     await page.getByLabel("Label offset (paper mm)", { exact: true }).fill("16");
+    // GH-302: an open drawing's autosave says it is saving its appearance.
     await page.getByText("Saving appearance…", { exact: true }).waitFor();
     await until(() => revision().inputValue(), value => value !== oldRevision, "the edits saved themselves as a new revision");
     assert.equal(requests.length, 2, "two edits inside one pause make one revision");
@@ -388,6 +403,41 @@ try {
     assert.equal(await revision().inputValue(), "");
     assert.equal(await revision().locator("option").count(), 1);
     assert.equal(await page.locator(".drawing-preview").count(), 0);
+  });
+  await step("a section perspective is generated on the drawing's target from its own form and opens as a drawing", async () => {
+    const generations = requests.length;
+    await page.locator("details.drawing-section > summary").click();
+    const eyeHeight = page.getByLabel("Eye height above the lowest cut point (meter)", { exact: true });
+    await until(() => eyeHeight.isEnabled(), Boolean, "the section form knows the model unit");
+    assert.equal(await eyeHeight.inputValue(), "1.6", "the default eye is 1.6 m above the lowest cut point, in the model unit");
+    assert.equal(await page.getByLabel("Field of view (degrees)", { exact: true }).inputValue(), "55");
+    await page.getByRole("combobox", { name: "Cut plane", exact: true }).selectOption("x");
+    await page.getByLabel("Position (meter)", { exact: true }).fill("2.5");
+    await page.getByRole("combobox", { name: "Look toward", exact: true }).selectOption("-");
+    await eyeHeight.fill("");
+    await page.getByRole("button", { name: "Generate section perspective", exact: true }).click();
+    assert.equal(sectionRequests.length, 0, "an empty section field is marked, never sent");
+    assert.equal(await eyeHeight.evaluate(node => node.validity.valueMissing), true);
+    await eyeHeight.fill("1.5");
+    await page.getByLabel("Field of view (degrees)", { exact: true }).fill("60");
+    await page.getByRole("button", { name: "Generate section perspective", exact: true }).click();
+    await until(() => Promise.resolve(sectionRequests.length), value => value === 1, "one section perspective request");
+    const head = await page.evaluate(() => window.drawingFixture.head);
+    assert.deepEqual(sectionRequests[0].modelSource, head === "stage-B" ? modelB : modelA);
+    assert.equal(sectionRequests[0].sourceStageRef, head);
+    assert.deepEqual(sectionRequests[0].section, { line: [[2.5, 0], [2.5, 1]], keep: "left" }, "looking toward -X keeps x < 2.5");
+    assert.deepEqual(sectionRequests[0].camera, { eyeHeight: 1.5, fovDeg: 60 });
+    await until(() => revision().inputValue(), value => value.includes("section-revision-1"), "the new drawing opened");
+    await page.getByText("Section perspective · true to scale at the cut plane", { exact: true }).waitFor();
+    await page.locator('.drawing-preview__viewport[data-ready="true"]').waitFor();
+    await page.screenshot({ path: join(screenshots, "drawing-section-perspective.png"), fullPage: true });
+    assert.equal(await page.getByLabel("Cut height (meter)", { exact: true }).count(), 0, "cut-plan appearance is not offered for it");
+    assert.equal(await page.getByRole("button", { name: "Download SVG", exact: true }).count(), 0);
+    assert.deepEqual(planOnlyCalls, [], "no cut-plan status or vector is asked for a section perspective");
+    assert.equal(requests.length, generations, "no cut plan was generated");
+    await page.evaluate(() => window.drawingFixture.setLanguage("zh-CN"));
+    await page.getByRole("button", { name: "生成剖透视", exact: true }).waitFor();
+    await page.evaluate(() => window.drawingFixture.setLanguage("en"));
   });
   assert.deepEqual(errors, []);
   console.log(JSON.stringify({ passed, screenshots, generationRequests: requests.length, dimensionProposals: drives.length }));
