@@ -193,7 +193,7 @@
           "base_ref": "e183a69a",
           "contributor": "Claude",
           "reviewer": "Claude root task",
-          "handoff": "First product Design Tree over the #294 design-history contract, read through a typed adapter with a fixture until codex/294-admission-record lands; MonkeyBoard's canvas setup becomes the shared canvas host.",
+          "handoff": "First product Design Tree over the #294 design-history contract, read through the generated client since codex/294-admission-record was merged in (the typed fixture serves tests only); MonkeyBoard's canvas setup becomes the shared canvas host.",
           "modules": [
             "hub.shell",
             "studio.board"
@@ -222,7 +222,8 @@
       ],
       "notes": [
         "2026-09-25: overlaps GH-66 on Board.tsx; canvas-host extraction only; coordinated by root task.",
-        "2026-09-25: owner decision relayed by the root task: the rail's primary surfaces are 建模, 画板 and 状态树, so the Design Tree is a surface with a rail entry; the Stage chip stays as the position indicator."
+        "2026-09-25: owner decision relayed by the root task: the rail's primary surfaces are 建模, 画板 and 状态树, so the Design Tree is a surface with a rail entry; the Stage chip stays as the position indicator.",
+        "2026-09-25: on the root task's instruction this branch merged codex/294-admission-record (GH-294 S1+S2) and reads its Candidate Pool; landing it lands those commits too."
       ]
     },
     {
