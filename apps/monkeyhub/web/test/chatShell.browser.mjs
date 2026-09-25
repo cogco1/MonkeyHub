@@ -2442,6 +2442,26 @@ try {
   await page.getByRole("button", { name: "Stop", exact: true }).waitFor();
   await page.waitForFunction(() => document.querySelector(".chat-composer-note")?.textContent === "");
   await page.getByRole("button", { name: "Stop", exact: true }).click();
+  // SS-9: unsent text is kept per conversation in this browser and comes back after a
+  // reload; it no longer holds the update restart (chosen files still do). Sending clears it.
+  const treeChat = sessions.find((row) => row.projectId === "T");
+  const keptDraft = (id) => page.evaluate((key) => JSON.parse(localStorage.getItem("monkeyhub.chat-drafts.v1") ?? "{}")[key]?.text ?? null, id);
+  await page.locator("#chat-input").fill("Keep this sentence through a reload");
+  await page.waitForFunction((id) => JSON.parse(localStorage.getItem("monkeyhub.chat-drafts.v1") ?? "{}")[id]?.text === "Keep this sentence through a reload", treeChat.id);
+  await page.reload();
+  await page.waitForFunction(() => document.querySelector("#chat-input")?.value === "Keep this sentence through a reload");
+  updateStatus = { ...updateStatus, state: "ready", prepared: preparedPatch, canApply: true };
+  await page.getByRole("button", { name: "Hub settings", exact: true }).click();
+  await page.getByRole("button", { name: "Restart to update", exact: true }).waitFor();
+  assert.equal(await page.getByText("A conversation has unsent text or attachments. Send or remove them before restarting.").count(), 0,
+    "kept text alone does not hold the update restart");
+  await page.getByRole("dialog").getByRole("button", { name: "Close", exact: true }).click();
+  updateStatus = { ...updateStatus, state: "idle", prepared: null, canApply: false };
+  assert.equal(appliedPatches, 0);
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  await page.getByRole("button", { name: "Stop", exact: true }).waitFor();
+  assert.equal(await keptDraft(treeChat.id), null, "a sent message leaves no kept draft");
+  await page.getByRole("button", { name: "Stop", exact: true }).click();
 
   // With no building project, machine tools remain available and report a
   // missing dependency directly instead of asking the person to bind Studio.
@@ -2470,6 +2490,8 @@ try {
     await page.reload();
     await page.getByRole("button", { name: "Project A", exact: true }).first().click();
     await page.waitForFunction(() => document.querySelector("#chat-input") && !document.querySelector("#chat-input").disabled);
+    // The reload may reopen the last project first; type only once Project A holds the composer.
+    await page.waitForFunction(() => document.querySelector(".chat-header__project")?.textContent === "Project A");
     await page.locator("#chat-input").fill("Keep this hidden project draft");
     await page.locator('.chat-composer input[type="file"]').setInputFiles({ name: "keep.txt", mimeType: "text/plain", buffer: Buffer.from("Retain these exact draft bytes") });
     await page.getByRole("button", { name: "Project B", exact: true }).first().click();

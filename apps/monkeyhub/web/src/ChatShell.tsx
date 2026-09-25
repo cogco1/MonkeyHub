@@ -40,6 +40,8 @@ type ToolTab = { id: AppId; url: string; revision: number; projectDir?: string; 
 type SavedTool = { id: AppId; candidate?: string };
 type ProjectPreparation = { promise: Promise<AppStatus[]>; apps: AppStatus[] | null; modeling?: Promise<unknown> };
 const VIEW_KEY = "monkeyhub.chat-view.v1";
+/** SS-9: unsent composer text by conversation (`new:<project>` before one exists), with when it last changed. */
+const DRAFTS_KEY = "monkeyhub.chat-drafts.v1", DRAFT_LIMIT = 50;
 /** The rail is always on screen; the conversation never shrinks past this. */
 const RAIL_WIDTH = 76, RESIZER_WIDTH = 5, CHAT_MIN_WIDTH = 360;
 import { chatCopyCatalog as words } from "./i18n/catalogs";
@@ -135,6 +137,37 @@ const fileData = (file: File, failure: string) => new Promise<string>((resolve, 
   reader.onabort = () => reject(new Error(failure));
   reader.readAsDataURL(file);
 });
+/** The unsent text this browser kept, by conversation. Unreadable storage keeps nothing. */
+function readDrafts(): Record<string, string> {
+  try {
+    const saved: unknown = JSON.parse(localStorage.getItem(DRAFTS_KEY) ?? "null");
+    if (!saved || typeof saved !== "object" || Array.isArray(saved)) return {};
+    return Object.fromEntries(Object.entries(saved).flatMap(([key, value]) =>
+      value && typeof value === "object" && typeof (value as { text?: unknown }).text === "string" && (value as { text: string }).text.trim()
+        ? [[key, (value as { text: string }).text]] : []));
+  } catch { return {}; }
+}
+/**
+ * Write these conversations' text over what is kept; blank text removes its entry.
+ * Other conversations' entries stay as another window may have left them, and
+ * the newest DRAFT_LIMIT are kept. False when storage refused the write.
+ */
+function keepDrafts(changes: readonly (readonly [string, string])[]): boolean {
+  try {
+    let saved: unknown;
+    try { saved = JSON.parse(localStorage.getItem(DRAFTS_KEY) ?? "null"); } catch { saved = null; }
+    const kept: Record<string, { text: string; savedAt: number }> = {};
+    if (saved && typeof saved === "object" && !Array.isArray(saved)) for (const [key, value] of Object.entries(saved)) {
+      if (value && typeof value === "object" && typeof value.text === "string" && typeof value.savedAt === "number") kept[key] = value;
+    }
+    const now = Date.now();
+    for (const [key, text] of changes) { if (text.trim()) kept[key] = { text, savedAt: now }; else delete kept[key]; }
+    const newest = Object.entries(kept).sort((a, b) => b[1].savedAt - a[1].savedAt).slice(0, DRAFT_LIMIT);
+    if (newest.length) localStorage.setItem(DRAFTS_KEY, JSON.stringify(Object.fromEntries(newest)));
+    else localStorage.removeItem(DRAFTS_KEY);
+    return true;
+  } catch { return false; }
+}
 /** What this page looked like last time: the same conversation and the same frame. */
 function readView(): { chatId: string | null; projectDir: string | null; sidebar: boolean | null; panel: boolean | null; panelWidth: number | null; tools: SavedTool[]; activeTool: AppId | null } {
   const routeChatId = new URLSearchParams(window.location.search).get("chatId") || null;
@@ -300,7 +333,22 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
   const [projectDir, setProjectDir] = useState<string | null>(initial.projectDir ?? configuredProject);
   const [chatId, setChatId] = useState<string | null>(initial.chatId);
   const [chat, setChat] = useState<ChatDetail | null>(null);
-  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [drafts, setDrafts] = useState<Record<string, string>>(readDrafts);
+  // SS-9: unsent text is kept in this browser as it changes, so a reload or a restart brings it
+  // back. Only what this window changed is written; text storage refused stays pending here.
+  const keptDrafts = useRef(drafts), pendingDrafts = useRef(new Set<string>());
+  const [draftsKept, setDraftsKept] = useState(true);
+  useEffect(() => {
+    const previous = keptDrafts.current;
+    keptDrafts.current = drafts;
+    for (const key of new Set([...Object.keys(previous), ...Object.keys(drafts)])) {
+      if ((previous[key] ?? "") !== (drafts[key] ?? "")) pendingDrafts.current.add(key);
+    }
+    if (!pendingDrafts.current.size) return;
+    const pending = [...pendingDrafts.current];
+    if (keepDrafts(pending.map((key) => [key, drafts[key] ?? ""] as const))) pendingDrafts.current.clear();
+    setDraftsKept(!pending.some((key) => pendingDrafts.current.has(key) && Boolean(drafts[key]?.trim())));
+  }, [drafts]);
   const [draftAttachments, setDraftAttachments] = useState<Record<string, File[]>>({});
   const [contextModes, setContextModes] = useState<Record<string, "continue" | "project">>({});
   const [designContexts, setDesignContexts] = useState<Record<string, WorkspaceDesignContext | null>>({});
@@ -430,11 +478,12 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
   const [usage, setUsage] = useState<RecentUsage | null>(null);
   const [usageRead, setUsageRead] = useState(0);
   const [updateReady, setUpdateReady] = useState(false);
-  // Include hidden conversations and mounted project workspaces: a restart
-  // would lose their in-memory drafts just as it would the visible composer.
-  // Model edits the project's working draft already holds ("unsynced") are
-  // restored after the restart; only edits it does not hold yet block it.
-  const restartBlocker: RestartBlocker = Object.values(drafts).some((text) => Boolean(text.trim())) || Object.values(draftAttachments).some((files) => files.length)
+  // Include hidden conversations and mounted project workspaces. Their unsent
+  // text is kept in this browser and comes back after the restart (SS-9);
+  // chosen files live only in memory, so they hold it, as does text storage
+  // refused. Model edits the project's working draft already holds
+  // ("unsynced") are restored after the restart; only edits it does not hold yet block it.
+  const restartBlocker: RestartBlocker = !draftsKept || Object.values(draftAttachments).some((files) => files.length)
     ? "drafts" : Object.values(designContexts).some((context) => context?.unavailableReason === "unsaved") ? "model"
       : settingsDirty ? "settings" : busy || toolBusy || modelBusy || archiveBusy || permissionBusy || recovering || loading || running || !eventsConnected ||
         sessions.some((session) => session.status === "running") ||
@@ -825,7 +874,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
       if (!current) {
         const body: ChatCreateRequest = { projectDir: target, provider: defaults.provider, model: draftModel };
         current = await request<ChatDetail>("/api/chat/sessions", body);
-        setDrafts((value) => ({ ...value, [current!.id]: content }));
+        setDrafts((value) => ({ ...value, [key]: "", [current!.id]: content }));
         setDraftAttachments((value) => ({ ...value, [key]: [], [current!.id]: files }));
         if (selection.current.projectDir === target && selection.current.chatId === chatId) { setChatId(current.id); setChat(current); }
       }
