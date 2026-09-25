@@ -628,15 +628,15 @@ try {
   // is no second copy of them anywhere.
   const rail = page.getByRole("navigation", { name: "Project tools" });
   await rail.waitFor();
-  for (const label of ["Modeling", "Drawings", "Render", "Board", "Fabrication", "Usage"]) {
+  for (const label of ["Modeling", "Drawings", "Render", "Board", "Fabrication", "Design tree", "Usage"]) {
     assert.equal(await page.getByRole("button", { name: label, exact: true }).count(), 1, `${label} appears once`);
   }
-  // #295, regrouped for #300: the project's surfaces are Modeling and Board;
-  // everything that produces output over the project, or reports on the
-  // machine, is a Tool. Layout is Board's mode and has no rail entry.
+  // #295, regrouped for #300, with #284: the project's surfaces are Modeling,
+  // Board and the Design tree; everything that produces output over the project,
+  // or reports on the machine, is a Tool. Layout is Board's mode and has no rail entry.
   const railEntries = (group) => rail.getByRole("group", { name: group, exact: true }).locator(".chat-rail__tool")
     .evaluateAll((nodes) => nodes.map((node) => node.getAttribute("aria-label")));
-  assert.deepEqual(await railEntries("Surfaces"), ["Modeling", "Board"], "the surfaces are Modeling and Board");
+  assert.deepEqual(await railEntries("Surfaces"), ["Modeling", "Board", "Design tree"], "the surfaces are Modeling, Board and the Design tree");
   assert.deepEqual(await railEntries("Tools"), ["Drawings", "Render", "Fabrication", "Usage"], "output tools and Usage share Tools");
   assert.equal(await rail.getByRole("button", { name: /Publish|Layout/ }).count(), 0, "Layout is not a rail entry");
   assert.ok(await railWidth() > 40, "the rail stays on screen while the tool content is closed");
@@ -723,7 +723,7 @@ try {
   await page.locator("#language").selectOption("zh-CN");
   assert.equal(await missingEndSpan.locator("dd").first().textContent(), "结束时间未观测");
   assert.deepEqual(await page.locator('.chat-rail__group[aria-label="工作面"] .chat-rail__tool').evaluateAll((nodes) =>
-    nodes.map((node) => node.getAttribute("aria-label"))), ["建模", "画板"], "the Surfaces group is named in the Chinese catalog too");
+    nodes.map((node) => node.getAttribute("aria-label"))), ["建模", "画板", "状态树"], "the Surfaces group is named in the Chinese catalog too");
   assert.deepEqual(await page.locator('.chat-rail__group[aria-label="工具"] .chat-rail__tool').evaluateAll((nodes) =>
     nodes.map((node) => node.getAttribute("aria-label"))), ["图纸", "渲染", "制作", "用量"], "the Tools group is named in the Chinese catalog too");
   assert.equal(await page.locator(".chat-rail").getByRole("button", { name: "排版", exact: true }).count(), 0, "no rail 排版");

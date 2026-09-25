@@ -18,7 +18,7 @@ import { activeWork, newSchemes, sidebarTasks, type SidebarTask } from "./sideba
 import { SoftwareUpdateSettings, type RestartBlocker } from "./SoftwareUpdateSettings";
 import "./ChatShell.css";
 
-type AppId = AppStatus["appId"] | "drawing" | "publish";
+type AppId = AppStatus["appId"] | "drawing" | "publish" | "tree";
 type Props = {
   preferences: AppearancePreferences;
   settings: ReactNode;
@@ -42,13 +42,15 @@ const VIEW_KEY = "monkeyhub.chat-view.v1";
 const RAIL_WIDTH = 76, RESIZER_WIDTH = 5, CHAT_MIN_WIDTH = 360;
 import { chatCopyCatalog as words } from "./i18n/catalogs";
 /** The rail's two kinds of entry (#295, regrouped by the owner for #300): the
-    surfaces you work on in this project, and the tools that produce output over
-    it or report on the machine. Drawing is a projection of the project's current
-    state, not another architectural surface. Layout is Board's second mode,
-    reached from its Board | Layout switch, so it has no rail entry of its own. */
-const tools: { id: AppId; label: "model" | "drawing" | "board" | "render" | "publish" | "fab" | "monitor"; icon: string; group: "workspace" | "tools" | null }[] = [
+    surfaces you work on in this project (Modeling, Board and the Design Tree,
+    #284), and the tools that produce output over it or report on the machine.
+    Drawing is a projection of the project's current state, not another
+    architectural surface. Layout is Board's second mode, reached from its
+    Board | Layout switch, so it has no rail entry of its own. */
+const tools: { id: AppId; label: "model" | "drawing" | "board" | "render" | "publish" | "fab" | "monitor" | "tree"; icon: string; group: "workspace" | "tools" | null }[] = [
   { id: "monkeyarch", label: "model", icon: "cube", group: "workspace" },
   { id: "monkeyboard", label: "board", icon: "board", group: "workspace" },
+  { id: "tree", label: "tree", icon: "tree", group: "workspace" },
   { id: "drawing", label: "drawing", icon: "drawing", group: "tools" },
   { id: "monkeyrender", label: "render", icon: "render", group: "tools" },
   { id: "monkeyfab", label: "fab", icon: "fab", group: "tools" },
@@ -80,6 +82,7 @@ function Icon({ name }: { name: string }) {
     fab: <><path d="M6 8V3h12v5M6 17H3V8h18v9h-3M6 13h12v8H6Z" /><path d="M17 10h1" /></>,
     chart: <><path d="M4 4v16h17M8 16v-4M13 16V7M18 16v-7" /></>,
     refresh: <path d="M20 10a8 8 0 1 0-2 8M20 4v6h-6" />,
+    tree: <><circle cx="5" cy="12" r="2" /><circle cx="19" cy="12" r="2" /><circle cx="12" cy="5" r="2" /><path d="M7 12h10M12 7v5M12 12l-4 6M12 12l4 6" /></>,
     settings: <><path d="M4 7h16M4 17h16" /><circle cx="9" cy="7" r="3" /><circle cx="15" cy="17" r="3" /></>,
   };
   return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.65" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name] ?? paths.chat}</svg>;
@@ -656,7 +659,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
         await preparation.modeling;
       }
       if (selection.current.projectDir === target) setProjectApps({ projectDir: target, apps: statuses });
-      const url = statuses.find((item) => item.appId === (!appId || (appId === "drawing" || appId === "publish") ? "monkeyarch" : appId) && item.state === "running")?.url;
+      const url = statuses.find((item) => item.appId === (!appId || (appId === "drawing" || appId === "publish" || appId === "tree") ? "monkeyarch" : appId) && item.state === "running")?.url;
       if (!url) throw new Error("The project workspace is unavailable.");
       return url;
     } catch (cause) {
@@ -887,7 +890,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
         // Drawing and Render open over the surface already shown, in this same project workspace.
         returnTo: !returnsToSurface(id) ? undefined : returnsToSurface(item.id) ? item.returnTo : item.id,
         candidate: view?.candidate ?? item.candidate, followHead: view?.candidate ? view.follow === "head" : item.followHead,
-        url: needsProject ? `${window.location.origin}/?${new URLSearchParams({ runtimeId: item.runtimeId!, view: id === "monkeyboard" ? "board" : id === "publish" ? "publish" : id === "drawing" ? "drawing" : id === "monkeyrender" ? "render" : "arch" })}` : item.url } : item));
+        url: needsProject ? `${window.location.origin}/?${new URLSearchParams({ runtimeId: item.runtimeId!, view: id === "monkeyboard" ? "board" : id === "publish" ? "publish" : id === "drawing" ? "drawing" : id === "monkeyrender" ? "render" : id === "tree" ? "tree" : "arch" })}` : item.url } : item));
       setPanel(true); setActiveTool(id); setError(null);
       return true;
     }
@@ -912,7 +915,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
         if (!attached || attached.projectId !== project!.projectId) throw new Error("The project runtime has not been attached.");
         tab = { id, projectDir: target!, projectId: attached.projectId, runtimeId: attached.runtimeId, candidate: view?.candidate ?? existing?.candidate,
           followHead: view?.candidate ? view.follow === "head" : existing?.followHead, revision: existing?.revision ?? 0,
-          url: `${window.location.origin}/?${new URLSearchParams({ runtimeId: attached.runtimeId, view: id === "monkeyboard" ? "board" : id === "publish" ? "publish" : id === "drawing" ? "drawing" : id === "monkeyrender" ? "render" : "arch" })}` };
+          url: `${window.location.origin}/?${new URLSearchParams({ runtimeId: attached.runtimeId, view: id === "monkeyboard" ? "board" : id === "publish" ? "publish" : id === "drawing" ? "drawing" : id === "monkeyrender" ? "render" : id === "tree" ? "tree" : "arch" })}` };
       } else {
         tab = { id, url: applicationUrl(location, preferences), revision: 0 };
       }
@@ -949,7 +952,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
     if (!match) return;
     if (projectDir !== match.projectDir) { selectProject(match); return; }
     if (actionLock.current || busy || toolBusy || !attached.workers?.some((worker) => worker.serviceId === "studio" && worker.healthy)) return;
-    const id = query.get("view") === "board" ? "monkeyboard" : query.get("view") === "publish" ? "publish" : query.get("view") === "drawing" ? "drawing" : query.get("view") === "render" ? "monkeyrender" : "monkeyarch";
+    const id = query.get("view") === "board" ? "monkeyboard" : query.get("view") === "publish" ? "publish" : query.get("view") === "drawing" ? "drawing" : query.get("view") === "render" ? "monkeyrender" : query.get("view") === "tree" ? "tree" : "monkeyarch";
     const saved = initial.projectDir === match.projectDir && initial.activeTool === id
       ? initial.tools.find((item) => item.id === id) : undefined;
     void openTool(id, saved?.candidate ? { candidate: saved.candidate } : undefined)
@@ -964,10 +967,10 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
       url.searchParams.set("view", "monitor");
     } else if (selectedTab?.runtimeId) {
       url.searchParams.set("runtimeId", selectedTab.runtimeId);
-      url.searchParams.set("view", selectedTab.id === "monkeyboard" ? "board" : selectedTab.id === "publish" ? "publish" : selectedTab.id === "drawing" ? "drawing" : selectedTab.id === "monkeyrender" ? "render" : "arch");
+      url.searchParams.set("view", selectedTab.id === "monkeyboard" ? "board" : selectedTab.id === "publish" ? "publish" : selectedTab.id === "drawing" ? "drawing" : selectedTab.id === "monkeyrender" ? "render" : selectedTab.id === "tree" ? "tree" : "arch");
     } else {
       url.searchParams.delete("runtimeId");
-      if (["arch", "board", "drawing", "render", "publish", "monitor"].includes(url.searchParams.get("view") ?? "")) url.searchParams.delete("view");
+      if (["arch", "board", "drawing", "render", "publish", "tree", "monitor"].includes(url.searchParams.get("view") ?? "")) url.searchParams.delete("view");
     }
     window.history.replaceState(null, "", url);
   }, [selectedTab?.runtimeId, selectedTab?.id, projectDir, panel]);
@@ -1264,11 +1267,11 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
         if (item.runtimeId) return <div className="chat-project-workspace project-workspace" key={item.runtimeId} hidden={!visible} inert={!visible}>
           <ProjectRuntimeProvider baseUrl={`${window.location.origin}/api/runtime/projects/${item.runtimeId}/studio`}>
             <ErrorBoundary label={t.tools}><Suspense fallback={<div role="status">{t.working}</div>}>
-              <ProjectWorkspace workspace={item.id === "monkeyboard" ? "board" : item.id === "publish" ? "publish" : item.id === "drawing" ? "drawing" : item.id === "monkeyrender" ? "render" : "arch"} active={visible}
+              <ProjectWorkspace workspace={item.id === "monkeyboard" ? "board" : item.id === "publish" ? "publish" : item.id === "drawing" ? "drawing" : item.id === "monkeyrender" ? "render" : item.id === "tree" ? "tree" : "arch"} active={visible}
                 expectedProjectId={item.projectId} candidateRunId={item.candidate} candidateFollowsHead={item.followHead} refreshKey={item.revision} onChatRequest={focusConversation}
                 documentRequest={item.projectDir ? documentRequests[item.projectDir] : undefined}
                 onDesignContextChange={workspaceContextCallback(item.runtimeId)}
-                onWorkspaceChange={(workspace) => { const id = workspace === "board" ? "monkeyboard" : workspace === "publish" ? "publish" : workspace === "drawing" ? "drawing" : workspace === "render" ? "monkeyrender" : "monkeyarch";
+                onWorkspaceChange={(workspace) => { const id = workspace === "board" ? "monkeyboard" : workspace === "publish" ? "publish" : workspace === "drawing" ? "drawing" : workspace === "render" ? "monkeyrender" : workspace === "tree" ? "tree" : "monkeyarch";
                   setTabs((items) => items.map((tab) => tab.runtimeId === item.runtimeId ? { ...tab, id,
                     url: `${window.location.origin}/?${new URLSearchParams({ runtimeId: item.runtimeId!, view: workspace })}` } : tab));
                   if (selection.current.projectDir === item.projectDir) setActiveTool(id);
@@ -1292,7 +1295,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
         {tools.filter((item) => item.group === group.id).map((item) => {
           const needsProject = item.id !== "monkeyfab" && item.id !== "monkeymonitor";
           const statuses = needsProject ? (projectApps?.projectDir === projectDir ? projectApps.apps : null) : apps;
-          const status = statuses?.find((app) => app.appId === ((item.id === "drawing" || item.id === "publish") ? "monkeyarch" : item.id));
+          const status = statuses?.find((app) => app.appId === ((item.id === "drawing" || item.id === "publish" || item.id === "tree") ? "monkeyarch" : item.id));
           const state = needsProject && studioWorker?.state === "crashed" ? "error" : status?.state;
           const stateText = state === "unavailable" ? t.toolUnavailable : state === "error" ? t.toolError
             : state === "starting" ? t.toolStarting : state === "stopping" ? t.toolStopping

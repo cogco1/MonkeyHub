@@ -1,0 +1,23 @@
+/* The project canvas speaks the Hub's tokens: Excalidraw's own variables are
+   mapped onto them for both themes. Moved unchanged from MonkeyBoard. */
+.project-canvas .excalidraw,
+.project-canvas .excalidraw.theme--dark {
+  --default-font: var(--font-ui, "Segoe UI", sans-serif);
+  --ui-font: var(--font-ui, "Segoe UI", sans-serif);
+  --color-primary: var(--accent);
+  --color-primary-darker: var(--accent);
+  --color-primary-darkest: var(--accent);
+  --color-primary-hover: var(--accent);
+  --color-primary-light: var(--accent-soft);
+  --color-primary-light-darker: var(--accent-soft);
+  --color-surface-primary-container: var(--accent-soft);
+  --color-on-primary-container: var(--ink);
+  --island-bg-color: var(--panel);
+  --color-surface-high: var(--surface-hover);
+  --color-surface-mid: var(--panel-2);
+  --color-surface-low: var(--panel);
+  --color-surface-lowest: var(--ground);
+  --shadow-island: var(--shadow-soft);
+}
+.project-canvas .excalidraw .default-sidebar-trigger, .project-canvas .excalidraw .default-sidebar { display: none !important; }
+.project-canvas .excalidraw button { font-size: inherit; }

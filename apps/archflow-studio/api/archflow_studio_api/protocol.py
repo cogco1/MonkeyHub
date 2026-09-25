@@ -43,6 +43,7 @@ SERVER_VERSION = "0.1.0"
 BASE_CAPABILITIES: tuple[str, ...] = (
     "artifacts",
     "board-scenes",
+    "candidate-admission",
     "candidates",
     "captures",
     "compare",
