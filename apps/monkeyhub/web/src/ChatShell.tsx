@@ -260,7 +260,7 @@ function ComposerMenu({ label, disabled, items }: { label: string; disabled: boo
       {items.map((item) => <button key={item.key} type="button" tabIndex={-1} className="chat-composer-menu__item"
         role={item.checked === undefined ? "menuitem" : "menuitemcheckbox"} aria-checked={item.checked} aria-disabled={item.disabled || undefined}
         aria-label={item.label} aria-description={item.detail}
-        onClick={() => { if (item.disabled) return; setOpen(false); item.onSelect(); }}>
+        onClick={() => { if (item.disabled) return; setOpen(false); button.current?.focus(); item.onSelect(); }}>
         <span className="chat-composer-menu__check" aria-hidden="true">{item.checked ? "✓" : ""}</span>
         <span className="chat-composer-menu__text"><span>{item.label}</span>{item.detail && <small>{item.detail}</small>}</span>
       </button>)}
