@@ -367,7 +367,10 @@ try {
   assert.equal(fixture.state.head, headBefore, "View never moves the Working Head");
   assert.equal(writes.length, 0);
   await tab.locator(".stage-chip__viewing").filter({ hasText: "Viewing D · Terraced wedge · read-only" }).waitFor();
+  // R2, the chip's half: the viewing state offers the way back and Continue from here.
+  assert.deepEqual(await tab.locator(".stage-chip__viewing").getByRole("button").allInnerTexts(), ["Back to Current", "Continue from here"]);
   await shoot(tab, "06-viewing-read-only");
+  if (shots) await inChinese("06a-chip-viewing-zh");
   await tab.getByRole("button", { name: "Back to Current", exact: true }).click();
   await tab.waitForFunction(() => window.__arch.initialRunId === "run-s2-layout");
   assert.equal(await tab.locator(".stage-chip__viewing").count(), 0);
@@ -463,6 +466,43 @@ try {
   assert.equal(await toast.count(), 1, "hovering keeps the toast");
   await tab.mouse.move(8, 8);
   await toast.waitFor({ state: "detached", timeout: 6_000 });
+
+  // R2, the chip's half: while another model is viewed, the chip continues from it through the same Continue.
+  card = await clickNode("candidate:run-massing-b");
+  await card.getByRole("button", { name: "View", exact: true }).click();
+  await tab.getByTestId("arch-stub").filter({ hasText: "run-massing-b" }).waitFor();
+  const viewingState = tab.locator(".stage-chip__viewing");
+  await viewingState.filter({ hasText: "Viewing B · Twin towers on a podium · read-only" }).waitFor();
+  const chipContinue = viewingState.getByRole("button", { name: "Continue from here", exact: true });
+  // Refused by unrecorded edits, it says so in the bar and shows no toast.
+  fixture.state.localDraft = { source: { projectId: PROJECT, stateDigest: "e".repeat(64), sourceRunId: "run-entrance-a", sourceStageRef: null },
+    commands: [], attempt: null, updatedAt: "2026-09-25T22:20:00Z" };
+  const beforeRefusal = writes.length;
+  await chipContinue.click();
+  await tab.locator(".design-tree-bar__refusal")
+    .getByText("Model edits in Modeling are not recorded yet; they are kept. Record them and continue, or undo them in Modeling.").waitFor();
+  assert.equal(await toast.count(), 0, "a refused Continue from the chip shows no toast");
+  assert.equal(writes.length, beforeRefusal);
+  assert.equal(fixture.state.head, "run-entrance-a");
+  await shoot(tab, "09b-chip-refusal");
+  fixture.state.localDraft = null;
+  revision = fixture.state.revision;
+  await chipContinue.click();
+  await toast.filter({ hasText: "Current is now “B · Twin towers on a podium”" }).waitFor();
+  assert.deepEqual(writes.at(-1), { method: "PUT", name: "/api/working-draft",
+    body: { projectId: PROJECT, runId: "run-massing-b", baseRevisionSha256: rev(revision), branchId: null } });
+  await viewingState.waitFor({ state: "detached" });
+  assert.equal(await tab.locator(".design-tree-bar__refusal").count(), 0, "B is Current now: nothing else is viewed");
+  await shoot(tab, "09c-chip-continued");
+  // Its Undo returns to S3, the Current it replaced.
+  revision = fixture.state.revision;
+  await toast.getByRole("button", { name: "Undo", exact: true }).click();
+  await toast.filter({ hasText: "Undone" }).waitFor();
+  assert.deepEqual(writes.at(-1).body, { projectId: PROJECT, runId: "run-entrance-a", baseRevisionSha256: rev(revision), branchId: "main" });
+  assert.equal(fixture.state.head, "run-entrance-a");
+  await tab.waitForFunction(() => /^S3 — Current/.test((document.querySelector(".stage-chip")?.textContent ?? "").replace(/\s+/g, " ").trim()));
+  await chip.click();
+  await surface.locator(".design-tree__canvas canvas").first().waitFor();
 
   // The list shows the same nodes to the keyboard.
   await surface.getByRole("button", { name: "List", exact: true }).click();
@@ -563,7 +603,7 @@ try {
   assert.deepEqual(unexpected, [], "the tree reads only what it declares");
   assert.deepEqual(external, [], "no external request");
   assert.deepEqual(errors.filter((message) => !/Failed to load resource: the server responded with a status of 404/.test(message)), []);
-  console.log(JSON.stringify({ passed: "chip → tree, trunk, twigs, planar, three zoom levels, side card, review-open warning, View read-only, Continue re-roots via PUT /api/working-draft, its toast's Undo puts the previous Current back through the same PUT, Accept on Current only via POST accept with a toast and no Undo, a toast stays while hovered and then fades, no toast on refusal, a rejected Current cannot be accepted, keyboard list, return to previous surface, zh copy, Hub rail entry and deep link",
+  console.log(JSON.stringify({ passed: "chip → tree, trunk, twigs, planar, three zoom levels, side card, review-open warning, View read-only, Continue re-roots via PUT /api/working-draft, its toast's Undo puts the previous Current back through the same PUT, Accept on Current only via POST accept with a toast and no Undo, a toast stays while hovered and then fades, no toast on refusal, the chip's viewing state continues from here, a rejected Current cannot be accepted, keyboard list, return to previous surface, zh copy, Hub rail entry and deep link",
     writes: writes.map((row) => `${row.method} ${row.name}`) }));
 } catch (error) {
   console.error("FAILED:", error);

@@ -24,6 +24,7 @@
 .stage-chip__viewing { display: inline-flex; align-items: center; gap: 8px; min-width: 0; padding: 2px 4px 2px 10px; border-radius: 6px;
   background: color-mix(in srgb, var(--unchecked) 16%, transparent); color: var(--ink); white-space: nowrap; }
 .stage-chip__viewing > span { overflow: hidden; text-overflow: ellipsis; }
+.stage-chip__viewing > .btn { flex: none; }
 @media (max-width: 560px) { .stage-chip__attention { display: none; } }
 
 /* FN-5: the last act's confirmation, beside the chip; it fades on its own. */
@@ -42,6 +43,10 @@
 .design-tree-toast__undo:disabled { cursor: default; text-decoration: none; opacity: .75; }
 @keyframes design-tree-toast-in { from { opacity: 0; transform: translateY(-3px); } }
 @media (prefers-reduced-motion: reduce) { .design-tree-toast { animation: none; transition: none; } }
+/* A refused Continue from the chip says why on a row of its own, where it was asked. */
+.design-tree-bar:has(> .design-tree-bar__refusal) { flex-wrap: wrap; }
+.design-tree-bar__refusal { display: flex; flex: 1 0 100%; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: 0 0 4px; color: var(--violated);
+  font-size: var(--text-caption, 12px); line-height: 1.5; }
 
 .design-tree { position: relative; display: flex; flex-direction: column; height: 100%; min-height: 0; background: var(--ground); color: var(--ink);
   font-family: var(--font-ui); font-size: var(--text-ui, 13px); }
