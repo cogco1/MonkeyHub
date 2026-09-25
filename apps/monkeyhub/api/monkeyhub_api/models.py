@@ -214,6 +214,10 @@ class ChatMessage(BaseModel):
     contextMode: Literal["continue", "project", "stage"] = "continue"
     confirmedStageRef: str | None = None
     confirmedStageLabel: str | None = None
+    # A message the architect sent while a turn was running (#301), and how far
+    # it got: waiting for the Agent's next step, read by it, sent after the
+    # current step was stopped for it, or never read because the turn ended.
+    interjection: Literal["pending", "delivered", "restarted", "undelivered"] | None = None
 
 
 class ChatSummary(BaseModel):

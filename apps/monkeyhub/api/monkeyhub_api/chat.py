@@ -21,6 +21,7 @@ import mimetypes
 import os
 from pathlib import Path
 import platform
+import queue
 import re
 import shutil
 import secrets
@@ -344,7 +345,14 @@ _BOUND_TOOLS = ("studio_schema", "studio_request", "fab_request")
 
 
 def _turn_id(session: _SavedChat) -> str:
-    return next((row.id for row in reversed(session.messages) if row.role == "user"), "turn")
+    """The last user message the Agent was given; see ChatStore._answering for a running turn."""
+    return next((row.id for row in reversed(session.messages) if row.role == "user"
+                 and row.interjection in {None, "delivered", "restarted"}), "turn")
+
+
+def _asked(session: _SavedChat) -> ChatMessage | None:
+    """The message that started this turn, never an interjection sent during it."""
+    return next((row for row in reversed(session.messages) if row.role == "user" and row.interjection is None), None)
 
 
 def _tool_text(value) -> str:
@@ -523,6 +531,22 @@ class _Running:
     design_context: ChatDesignContext | None = None
     context_mode: Literal["continue", "project", "stage"] = "continue"
     attachments: tuple[tuple[ChatAttachment, Path], ...] = ()
+    # #301. The user messages this turn has handed to the Agent, first to last:
+    # a call opened under one of them keeps its row when it finishes later.
+    turns: list[str] = field(default_factory=list)
+    # Interjections not yet with the Agent, in the order they were sent. What
+    # is still here when the turn ends becomes the next prompt.
+    waiting: list[tuple[str, str]] = field(default_factory=list)
+    # Claude reads further user messages from stdin until its turn's result;
+    # None when this turn has no such channel or it has closed.
+    stdin: queue.Queue | None = None
+    # Interjections already written to that stdin and not yet read back.
+    written: list[str] = field(default_factory=list)
+    # This turn was cancelled to continue with an interjection, not stopped.
+    redirected: bool = False
+    # The ACP prompt is with the adapter; steering is offered only then.
+    prompting: bool = False
+    steering: threading.Lock = field(default_factory=threading.Lock)
 
 
 # How long a connection check stays good before it is asked again, and how long
@@ -749,6 +773,8 @@ class ChatStore:
                 for message in session.messages:
                     if message.status == "streaming" and not session.sourceSessionId:
                         message.status = "interrupted"
+                    if message.interjection == "pending":
+                        message.interjection = "undelivered"
                     message.permission = None
                 self._save(session)
         self._loaded = True
@@ -1286,7 +1312,7 @@ class ChatStore:
             if request.projectId != session.projectId or _project(session.projectDir) != (session.projectId, session.projectDir):
                 raise HubFailure(409, "CHAT_PROJECT_MISMATCH", "This message belongs to a different project.")
             if session_id in self._running:
-                raise HubFailure(409, "CHAT_RUNNING", "This chat is already responding.")
+                return self._interject(session_id, request)
             provider = next(row for row in self.providers() if row.id == session.provider)
             legacy_codex = session.provider == "codex" and session.transport == "cli" and provider.installed
             if not provider.available and not legacy_codex:
@@ -1319,10 +1345,212 @@ class ChatStore:
                                                  for attachment, _ in attachments), trace=HubTurnObserver(
                 self.usage_log, _turn_id(session), session.projectId, session.provider, session.model,
             ))
-            self._running[session_id] = running
-            running.thread = threading.Thread(target=self._run, args=(session_id, content, running), daemon=True, name=f"hub-chat-{session_id[:8]}")
-            running.thread.start()
+            self._start(session_id, running, content)
             return self.get(session_id)
+
+    def _start(self, session_id: str, running: _Running, content: str, carried: tuple[str, ...] = ()) -> None:
+        """Register one turn and start its thread; the caller holds the lock."""
+        session = self._sessions[session_id]
+        running.turns = list(carried) or [_turn_id(session)]
+        if session.transport == "cli" and session.provider != "codex":
+            # Claude keeps reading stream-json user messages until its result.
+            running.stdin = queue.Queue()
+        self._running[session_id] = running
+        running.thread = threading.Thread(target=self._run, args=(session_id, content, running, carried),
+                                          daemon=True, name=f"hub-chat-{session_id[:8]}")
+        running.thread.start()
+
+    def _interject(self, session_id: str, request: ChatPostRequest) -> ChatDetail:
+        """Take a message sent while this chat's turn runs (#301); the lock is held.
+
+        It is kept like any other message and marked as an interjection. Claude
+        reads it from the stdin of its running turn at its next step. Codex takes
+        it through the adapter's steering when the adapter offers that, and
+        otherwise the current step is cancelled and the turn continues with it
+        as the next prompt. Whatever the running turn can no longer take becomes
+        the next prompt when it ends; nothing is refused for being early.
+        """
+        running = self._running[session_id]
+        if request.attachments:
+            raise HubFailure(409, "CHAT_INTERJECTION_FILES", "Attach files after this reply finishes, or stop it first.")
+        content = _redact(request.content.strip(), _claude_env())
+        if not content:
+            raise HubFailure(422, "CHAT_MESSAGE_EMPTY", "Enter a message or attach a file.")
+        # The running turn holds this same record and saves it as it goes, so
+        # the message joins it in place rather than through a replacement copy.
+        session = self._sessions[session_id]
+        message = ChatMessage(id=str(uuid4()), role="user", content=content, createdAt=_now(), interjection="pending")
+        session.messages.append(message)
+        session.updatedAt = _now()
+        try:
+            self._save(session)
+        except BaseException:
+            session.messages.remove(message)
+            raise
+        cancel = None
+        if running.stdin is not None:
+            running.stdin.put(json.dumps({
+                "type": "user", "session_id": session.nativeSessionId or session.cliStartId or session.id,
+                "parent_tool_use_id": None, "uuid": message.id,
+                "message": {"role": "user", "content": [{"type": "text", "text": content}]},
+            }, ensure_ascii=False) + "\n")
+            running.written.append(message.id)
+        else:
+            running.waiting.append((message.id, content))
+            # A Codex CLI turn reads its prompt once and nothing after it.
+            fixed = (session.transport == "cli" and session.provider == "codex"
+                     and running.process is not None and running.process.poll() is None)
+            if running.redirected:
+                # The step is already being cancelled; this one follows it.
+                message.interjection = "restarted"
+                self._save(session)
+            elif session.transport == "acp" and running.prompting:
+                # Whether the adapter steers is known once its turn is under way;
+                # the delivery thread waits for that and then steers or cancels.
+                threading.Thread(target=self._steer, args=(session_id, running), daemon=True,
+                                 name=f"hub-steer-{session_id[:8]}").start()
+            elif fixed:
+                cancel = self._redirect(session_id, running)
+            # Otherwise the provider has not started yet, and its prompt takes
+            # the message, or it has finished reading, and the next one does.
+        detail = self.get(session_id)
+        if cancel is not None:
+            # Cancelling waits on the adapter's thread or on a process, which may
+            # in turn wait for this store's lock, held here by the request.
+            threading.Thread(target=cancel, daemon=True, name=f"hub-redirect-{session_id[:8]}").start()
+        return detail
+
+    def _redirect(self, session_id: str, running: _Running):
+        """Stop the current step so the turn continues with its interjections.
+
+        The lock is held. Work already reported stays in the conversation; only
+        a permission still waiting is withdrawn, because the step it belonged to
+        is ending. Returns what cancels the step, to call outside the lock.
+        """
+        running.redirected = True
+        session = self._sessions[session_id]
+        waiting = {identifier for identifier, _ in running.waiting}
+        for message in session.messages:
+            if message.id in waiting:
+                message.interjection = "restarted"
+        self._clear_permissions(session_id)
+        self._save(session)
+        client, process = self._acp_sessions.get(session_id), running.process
+        if session.transport == "acp" and client is not None:
+            return client.cancel
+        if process is not None:
+            return lambda: _stop_process(process)
+        return None
+
+    def _steer(self, session_id: str, running: _Running) -> None:
+        """Offer this turn's waiting interjections to the adapter, one at a time and in order."""
+        with running.steering:
+            while True:
+                with self._lock:
+                    if (self._running.get(session_id) is not running or running.stop.is_set()
+                            or running.redirected or not running.prompting or not running.waiting):
+                        return
+                    identifier, content = running.waiting[0]
+                    client = self._acp_sessions.get(session_id)
+                if client is None:
+                    return
+                outcome = client.steer(content, lambda identifier=identifier: self._handing(session_id, running, identifier))
+                if outcome == "startedNewTurn":
+                    # The turn ended as the message arrived and the adapter began
+                    # a turn of its own for it, which no prompt of this Hub waits
+                    # on. That turn is cancelled; the message goes as a prompt.
+                    client.cancel_turn()
+                cancel = None
+                with self._lock:
+                    session = self._sessions[session_id]
+                    if running.waiting and running.waiting[0][0] == identifier:
+                        running.waiting.pop(0)
+                    if outcome == "injected":
+                        self._delivered(session, identifier)
+                        continue
+                    if identifier in running.turns:
+                        running.turns.remove(identifier)
+                    message = next((row for row in session.messages if row.id == identifier), None)
+                    if message is None or message.interjection == "undelivered":
+                        # The turn already ended stopped or failed, and said so.
+                        return
+                    current = self._running.get(session_id)
+                    message.interjection = "undelivered" if running.stop.is_set() or self._closing else "pending"
+                    self._save(session)
+                    if message.interjection == "undelivered":
+                        return
+                    if current is None:
+                        # This turn has already ended: the message is the next prompt.
+                        session.status, session.error = "running", None
+                        self._save(session)
+                        self._continue(session_id, [(identifier, content)], redirected=False)
+                        return
+                    if current is not running:
+                        # A later turn runs now; it takes the message as its own.
+                        current.waiting.append((identifier, content))
+                        if current.prompting:
+                            threading.Thread(target=self._steer, args=(session_id, current), daemon=True,
+                                             name=f"hub-steer-{session_id[:8]}").start()
+                        return
+                    # Still this turn: the message waits for its next prompt, or,
+                    # without steering, the current step stops for it now.
+                    running.waiting.insert(0, (identifier, content))
+                    if outcome in {"failed", "unsupported"} and running.prompting and not running.redirected:
+                        cancel = self._redirect(session_id, running)
+                if cancel is not None:
+                    cancel()
+                return
+
+    def _handing(self, session_id: str, running: _Running, identifier: str) -> None:
+        """Called on the adapter's thread as a steer leaves: what follows answers it."""
+        with self._lock:
+            if self._running.get(session_id) is running and not running.stop.is_set():
+                self._delivered(self._sessions[session_id], identifier)
+
+    def _delivered(self, session: _SavedChat, identifier: str) -> None:
+        """The Agent has this interjection; what it says next answers it. The lock is held."""
+        message = next((row for row in session.messages if row.id == identifier and row.role == "user"), None)
+        if message is None or message.interjection not in {"pending", "undelivered"}:
+            return
+        message.interjection = "delivered"
+        running = self._running.get(session.id)
+        if running is not None:
+            if identifier in running.written:
+                running.written.remove(identifier)
+            if identifier not in running.turns:
+                running.turns.append(identifier)
+        session.updatedAt = _now()
+        self._save(session)
+
+    def _answering(self, session: _SavedChat) -> str:
+        """The user message the running turn is answering: the last one the Agent has.
+
+        An interjection counts from the moment it is handed over; until then,
+        and for a step stopped on its account, what the Agent says still
+        belongs to the message before it.
+        """
+        running = self._running.get(session.id)
+        return running.turns[-1] if running is not None and running.turns else _turn_id(session)
+
+    def _call_row(self, session: _SavedChat, call: str) -> str:
+        """The row of one tool call: where it was opened, else under the current turn."""
+        running = self._running.get(session.id)
+        for turn in reversed(running.turns if running is not None else []):
+            identifier = f"{turn}:{call}"
+            if any(row.id == identifier for row in session.messages):
+                return identifier
+        return f"{self._answering(session)}:{call}"
+
+    def _take_waiting(self, session_id: str, running: _Running, prompt: str) -> str:
+        """Fold interjections sent before the provider started into its prompt. The lock is held."""
+        if not running.waiting:
+            return prompt
+        session = self._sessions[session_id]
+        for identifier, content in running.waiting:
+            prompt += "\n\n" + content
+            self._delivered(session, identifier)
+        running.waiting.clear()
+        return prompt
 
     def _tool_connection(self, session: _SavedChat) -> dict:
         return {"command": sys.executable, "args": [str(Path(__file__).resolve()), "--mcp",
@@ -1407,8 +1635,10 @@ class ChatStore:
                        *(("--add-dir", session.projectDir) if workdir != session.projectDir else ()),
                        "--strict-mcp-config", "--mcp-config", json.dumps({"mcpServers": {"monkeyhub": mcp}})]
             command += ["--resume", session.nativeSessionId] if session.nativeSessionId else ["--session-id", session.cliStartId or session.id]
-            if attachments:
-                command += ["--input-format", "stream-json"]
+            # Every turn reads stream-json from stdin, so a message sent while
+            # it runs reaches it at its next step (#301). Each one read is
+            # echoed back, which is how the conversation knows it arrived.
+            command += ["--input-format", "stream-json", "--replay-user-messages"]
             if model:
                 command += ["--model", model]
         return command, environment
@@ -1418,7 +1648,8 @@ class ChatStore:
         with self._lock:
             session = self._session(session_id)
             running = self._running.get(session_id)
-            if self._closing or running is None or running.stop.is_set() or request.get("sessionId") != session.acpSessionId:
+            if (self._closing or running is None or running.stop.is_set() or running.redirected
+                    or request.get("sessionId") != session.acpSessionId):
                 future.set_result(None)
                 return future
             permission = ChatPermission(
@@ -1426,7 +1657,7 @@ class ChatStore:
                 options=[ChatPermissionOption.model_validate(item) for item in request["options"]],
             )
             session.messages.append(ChatMessage(
-                id=f"{_turn_id(session)}:permission:{permission.id}", role="tool", content=permission.title,
+                id=f"{self._answering(session)}:permission:{permission.id}", role="tool", content=permission.title,
                 createdAt=_now(), status="streaming", permission=permission,
             ))
             self._permissions[(session_id, permission.id)] = future
@@ -1484,7 +1715,7 @@ class ChatStore:
             if kind == "agent_message_chunk" and update.get("content", {}).get("type") == "text":
                 if running.trace and update["content"].get("text"):
                     running.trace.first_response()
-                identifier = f"{_turn_id(session)}:acp-answer"
+                identifier = f"{self._answering(session)}:acp-answer"
                 message = next((row for row in session.messages if row.id == identifier), None)
                 if message is None:
                     message = ChatMessage(id=identifier, role="assistant", content="", createdAt=_now(), status="streaming")
@@ -1560,10 +1791,20 @@ class ChatStore:
             # reschedule, not a total for the turn. It keeps the whole of it.
             images = tuple((attachment.mimeType, base64.b64encode(path.read_bytes()).decode("ascii"))
                            for attachment, path in running.attachments if attachment.mimeType in _IMAGE_MIMES)
-            client.prompt(prompt, session.acpSessionId, session.model, connected, self.timeout_s, images=images)
+            with self._lock:
+                # What was sent before the prompt left goes with it; what is
+                # sent after is steered into it or continues after it.
+                prompt = self._take_waiting(session_id, running, prompt)
+                running.prompting = True
+            try:
+                client.prompt(prompt, session.acpSessionId, session.model, connected, self.timeout_s, images=images)
+            finally:
+                with self._lock:
+                    running.prompting = False
             return None
         except AcpCancelled:
-            running.stop.set()
+            if not running.redirected:
+                running.stop.set()
             return None
         except Exception as exc:
             with self._lock:
@@ -1590,7 +1831,7 @@ class ChatStore:
             if stage is not None:
                 session.providerStageRef = stage["stageRef"]
             if automatic:
-                message = next(row for row in reversed(session.messages) if row.role == "user")
+                message = _asked(session)
                 message.contextMode = "stage"
                 message.confirmedStageRef = stage["stageRef"]
                 message.confirmedStageLabel = stage["label"]
@@ -1603,7 +1844,7 @@ class ChatStore:
 
     def _retained_continuity(self, session: _SavedChat) -> dict:
         """What a rotation is about to replace, kept in case nothing replaces it."""
-        boundary = next((row for row in reversed(session.messages) if row.role == "user"), None)
+        boundary = _asked(session)
         return {
             "session": {"nativeSessionId": session.nativeSessionId, "acpSessionId": session.acpSessionId,
                         "cliStartId": session.cliStartId, "acpDefaultModel": session.acpDefaultModel,
@@ -1633,7 +1874,7 @@ class ChatStore:
         # here, and the next turn loads that identity on an adapter of its own.
         return self._acp_sessions.pop(session.id, None)
 
-    def _run(self, session_id: str, content: str, running: _Running) -> None:
+    def _run(self, session_id: str, content: str, running: _Running, carried: tuple[str, ...] = ()) -> None:
         error: HubError | None = None
         retained: dict | None = None
         stderr: list[str] = []
@@ -1729,6 +1970,11 @@ class ChatStore:
                 session = self._fresh_provider_session(session_id, stage=stage, automatic=automatic)
                 prompt += ("\n\nThis is a new provider session reconstructed from the project state above. "
                            "Previous chat messages are not included; use the current request and project evidence.")
+            with self._lock:
+                # A continuation's own interjections are its prompt: the Agent
+                # has them as soon as it starts.
+                for identifier in carried:
+                    self._delivered(self._sessions[session_id], identifier)
             if session.transport == "acp":
                 if running.trace:
                     running.trace.ready()
@@ -1748,8 +1994,10 @@ class ChatStore:
                 running.trace.ready()
             if running.stop.is_set():
                 return
-            prompt_input = prompt
-            if session.provider != "codex" and running.attachments:
+            with self._lock:
+                prompt_input = prompt = self._take_waiting(session_id, running, prompt)
+                channel = running.stdin
+            if channel is not None:
                 blocks = [{"type": "text", "text": prompt}]
                 blocks.extend({"type": "image", "source": {"type": "base64", "media_type": attachment.mimeType,
                                "data": base64.b64encode(path.read_bytes()).decode("ascii")}}
@@ -1768,6 +2016,12 @@ class ChatStore:
             def feed():
                 try:
                     process.stdin.write(prompt_input)
+                    process.stdin.flush()
+                    # Claude keeps reading: each interjection is one more
+                    # stream-json user message, until the turn's result.
+                    while channel is not None and (line := channel.get()) is not None:
+                        process.stdin.write(line)
+                        process.stdin.flush()
                     process.stdin.close()
                 except (OSError, ValueError):
                     pass
@@ -1799,11 +2053,18 @@ class ChatStore:
                         completed_turn = completed_turn or finished
                         if event_error:
                             error = event_error
+                        if finished:
+                            # After its result Claude answers what it has already
+                            # read and exits once stdin closes; anything sent
+                            # from here on is the next prompt.
+                            self._close_input(running)
                         if time.monotonic() - last_save >= 0.3:
                             self._save(session)
                             last_save = time.monotonic()
                 process.wait()
             finally:
+                with self._lock:
+                    self._close_input(running)
                 timer.cancel()
                 if process.poll() is None:
                     _stop_process(process)
@@ -1812,7 +2073,7 @@ class ChatStore:
                 errors.join(timeout=1)
                 for stream in (process.stdin, process.stdout, process.stderr):
                     stream.close()
-            if not running.stop.is_set():
+            if not (running.stop.is_set() or running.redirected):
                 if time.monotonic() >= deadline:
                     error = HubError(code="CHAT_TIMEOUT", detail="The CLI did not finish within this turn's time limit.")
                 elif process.returncode and error is None:
@@ -1826,17 +2087,34 @@ class ChatStore:
             abandoned = None
             with self._lock:
                 session = self._sessions[session_id]
+                stopped = running.stop.is_set()
+                halted = stopped or running.redirected
                 self._clear_permissions(session_id)
                 self._acp_tools.pop(session_id, None)
-                session.status = "interrupted" if running.stop.is_set() else "failed" if error else "idle"
-                session.error = HubError(code="CHAT_STOPPED", detail="The response was stopped.") if running.stop.is_set() else error
+                # What Claude read without echoing it back still reached it when
+                # its turn finished normally; a stopped or failed turn read none.
+                for identifier in list(running.written):
+                    if not (stopped or error):
+                        self._delivered(session, identifier)
+                # Interjections the turn could no longer take are the next prompt,
+                # unless the turn was stopped or failed or the Hub is closing.
+                # A steer that left just as the turn ended was handed over already.
+                handed = {row.id for row in session.messages if row.interjection == "delivered"}
+                follow = [] if stopped or error or self._closing else [
+                    (identifier, text) for identifier, text in running.waiting if identifier not in handed]
+                following = {identifier for identifier, _ in follow}
+                for message in session.messages:
+                    if message.interjection == "pending" and message.id not in following:
+                        message.interjection = "undelivered"
+                session.status = "running" if follow else "interrupted" if stopped else "failed" if error else "idle"
+                session.error = HubError(code="CHAT_STOPPED", detail="The response was stopped.") if stopped else error
                 for message in session.messages:
                     if message.status == "streaming":
-                        message.status = "interrupted" if running.stop.is_set() else "failed" if error else "complete"
+                        message.status = "interrupted" if halted else "failed" if error else "complete"
                 session.updatedAt = _now()
                 if running.trace:
                     running.trace.bind(session.acpSessionId if session.transport == "acp" else session.nativeSessionId)
-                    running.trace.finish("cancelled" if running.stop.is_set() else "failed" if error else "succeeded")
+                    running.trace.finish("cancelled" if halted else "failed" if error else "succeeded")
                 # A replacement that never reported an identity of its own is no
                 # replacement: the chat would be left with nothing to continue
                 # from at all, so the continuity this turn set aside goes back. A
@@ -1849,15 +2127,40 @@ class ChatStore:
                     self._save(session)
                 finally:
                     self._running.pop(session_id, None)
+                    if follow:
+                        self._continue(session_id, follow, redirected=running.redirected)
             if abandoned is not None:
                 # Closing hands work to the adapter's own thread and waits for
                 # it; that never happens while this store's lock is held.
                 abandoned.close()
 
+    def _close_input(self, running: _Running) -> None:
+        """Close Claude's stdin once its turn has a result. The lock is held."""
+        if running.stdin is not None:
+            running.stdin.put(None)
+            running.stdin = None
+
+    def _continue(self, session_id: str, follow: list[tuple[str, str]], *, redirected: bool) -> None:
+        """Send the interjections a finished turn could not take as the next prompt.
+
+        The lock is held and the finished turn is already gone. The chat stays
+        running; the continuation is a turn of its own with its own trace, on the
+        same provider session.
+        """
+        session = self._sessions[session_id]
+        content = "\n\n".join(text for _, text in follow)
+        if redirected:
+            content = ("The architect stopped your previous step to send the message below. "
+                       "Everything already completed stays as it is.\n\n" + content)
+        running = _Running(trace=HubTurnObserver(
+            self.usage_log, follow[0][0], session.projectId, session.provider, session.model,
+        ))
+        self._start(session_id, running, content, carried=tuple(identifier for identifier, _ in follow))
+
     def _tool_message(self, session: _SavedChat, item: Mapping, kind: str, environment) -> None:
         """Keep one visible row per MCP call, from started to its outcome."""
         content, candidate, failed = _tool_activity(item, environment)
-        message_id = f"{_turn_id(session)}:{item.get('id') or 'tool'}"
+        message_id = self._call_row(session, str(item.get("id") or "tool"))
         message = next((row for row in session.messages if row.id == message_id), None)
         running = kind in {"item.started", "item.updated"} and str(item.get("status") or "") not in {"completed", "failed", "cancelled", "interrupted"}
         outcome = "streaming" if running else "failed" if failed else "complete"
@@ -1915,10 +2218,20 @@ class ChatStore:
                     self._tool_message(session, _claude_call(row, None), "item.started", environment)
             text = "".join(row.get("text", "") for row in blocks if isinstance(row, dict) and row.get("type") == "text")
             message_id = "claude-answer"
+        elif kind == "user" and event.get("isReplay") is True:
+            # Claude echoes each stdin message as it reads it: an interjection
+            # echoed back is one the Agent now has (#301).
+            if isinstance(event.get("uuid"), str):
+                self._delivered(session, event["uuid"])
+            return None, False
+        elif kind == "command_lifecycle":
+            if event.get("state") == "started" and isinstance(event.get("command_uuid"), str):
+                self._delivered(session, event["command_uuid"])
+            return None, False
         elif kind == "user":
             for row in event.get("message", {}).get("content", []) or []:
                 if isinstance(row, dict) and row.get("type") == "tool_result":
-                    identifier = f"{_turn_id(session)}:{row.get('tool_use_id') or 'tool'}"
+                    identifier = self._call_row(session, str(row.get("tool_use_id") or "tool"))
                     asked = next((item for item in session.messages if item.id == identifier), None)
                     self._tool_message(session, _claude_call(row, asked), "item.completed", environment)
             return None, False
@@ -1929,7 +2242,7 @@ class ChatStore:
                 trace.first_response()
             # Prefix provider ids with the current user message, since CLI item
             # ids may repeat in a resumed turn.
-            output_id = f"{_turn_id(session)}:{message_id}"
+            output_id = f"{self._answering(session)}:{message_id}"
             message = next((row for row in session.messages if row.id == output_id), None)
             if message is None:
                 message = ChatMessage(id=output_id, role="assistant", content="", createdAt=_now(), status="streaming")
