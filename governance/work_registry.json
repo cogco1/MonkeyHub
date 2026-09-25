@@ -164,6 +164,7 @@
       "write_scope": [
         "apps/archflow-studio/api/archflow_studio_api/application/artifacts.py",
         "apps/archflow-studio/api/archflow_studio_api/application/runtime.py",
+        "apps/monkeyhub/api/monkeyhub_api/runtime.py",
         "archflow/project/repository.py",
         "docs/mapping/planning/GH-314-studio-document-reads.md"
       ],
@@ -186,12 +187,14 @@
           "modules": [
             "project.repository",
             "studio.artifacts",
-            "studio.candidate"
+            "studio.candidate",
+            "hub.shell"
           ],
           "write_scope": [
             "archflow/project/repository.py",
             "apps/archflow-studio/api/archflow_studio_api/application/artifacts.py",
-            "apps/archflow-studio/api/archflow_studio_api/application/runtime.py"
+            "apps/archflow-studio/api/archflow_studio_api/application/runtime.py",
+            "apps/monkeyhub/api/monkeyhub_api/runtime.py"
           ],
           "depends_on": [],
           "status": "active",
