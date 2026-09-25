@@ -116,6 +116,8 @@ tolerate it.
 | POST | `/api/design-stages/initialize` → 201 | explicit initial Stage from a complete exact model | writes review + design ref | provisional |
 | POST | `/api/candidates/{candidateId}/accept` | immutable Stage and atomic advancement of its expected design branch head | writes review + design ref | provisional |
 | POST | `/api/design-branches` → 201 | a sustained branch forked from a reachable historical Stage | writes design ref | provisional |
+| GET | `/api/working-source?workspace=` | the Working Head (§4.1) and the exact source one workspace (`modeling`, `drawing`, `render`, `board`) follows: `head{runId, stateDigest, sourceStageRef, branchId, accepted, origin, lineage}`, `compatible`, `source`, `stageRef` (only for an exact accepted Stage model), `reason`, `warnings`. `policy=frozen` with `runId`/`stateDigest`/`assetSha256` keeps that pin and says whether the head moved past it | reads the working position + shared + design refs | provisional |
+| GET | `/api/worktrees` | read-only Worktree Graph V0 (§4.1): the head line, other accepted lines, running and interrupted changes with their exact base and declared read/write refs, retained results off the head's line with `relation` and `reconcile` (`can-combine`, `conflict` with the shared refs, `unknown`), and drawing/render `current`/`stale`/`running` states. Nothing is merged or started | reads the working position + shared + design refs + server memory | provisional |
 | POST | `/api/drawings/elevations` → 201 | exact-model elevation document with drawing/revision/Stage/view references | writes shared drawing artifacts and document registration | provisional |
 | GET | `/api/candidates/{candidateId}/validation` | the kernel's validation receipt and the server's review readiness (§5) | reads shared + published | stable |
 | POST | `/api/intents` → 201 | one of four outcomes: the resolved target and the proposal it became, or the pending intent the refusal belongs to (§5.1) | reads work in progress + shared | provisional |
@@ -924,6 +926,19 @@ the existing candidate/branch readers, accepts bounded `limit` and repeated `can
 separates process jobs from retained candidate outcomes. `baseStateDigest` in that retained
 candidate view is the operator's exact StateRecord binding digest; `resultStateDigest` is the
 runner's developed-design digest. Neither is silently substituted for a third identity.
+
+### 4.1 Working Head and Worktree Graph
+
+The Working Head is the project's current valid working state that ordinary work follows. It is
+read from the retained working position (`design/working.json` `current`), which a successful
+candidate advances only when it continued that position and which the explicit
+`PUT /api/working-draft` moves; an unreadable position falls back to the main line's accepted
+head and then the reference run, with a warning. Resolving it writes nothing and never picks a
+newest file. Drawing status targets, drawing-driven design changes and render/publication
+freshness compare with this head. The Worktree Graph derives other lines from the same position,
+design branches, candidate deltas and the job queue; its `reconcile` is the StateRecord combine
+rule applied as a dry run from the nearest shared source. Owner attribution belongs to the Hub
+journal, not to project records.
 
 `POST /api/runtime/projects/{runtime_id}/recover` with `{projectId}` inspects retained outcomes
 before replacing one crashed owned Studio on the same port. It rebuilds the state projection
