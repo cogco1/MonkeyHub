@@ -28,6 +28,8 @@ import {
 } from "./error";
 import {
   readCurrentWorkingDraftApiWorkingDraftGet,
+  readWorkingSourceApiWorkingSourceGet,
+  readWorktreesApiWorktreesGet,
   selectCurrentWorkingDraftApiWorkingDraftPut,
   saveCurrentWorkingDraftApiWorkingDraftSavePost,
   retainLocalWorkingDraftApiWorkingDraftLocalPut,
@@ -89,7 +91,7 @@ import {
   writeSavedModelAnnotationsApiModelAnnotationsPut,
 } from "./generated";
 import type {
-  WorkingDraftDto, WorkingDraftSelectionDto, WorkingDraftSaveDto, LocalDraftRequestDto,
+  WorkingDraftDto, WorkingSourceDto, WorktreeGraphDto, WorkingDraftSelectionDto, WorkingDraftSaveDto, LocalDraftRequestDto,
   BoardDto, BoardExportRequestDto, BoardRequestDto,
   DesignHistoryDto, DesignStageDto, DesignBranchDto,
   ElevationRequestDto, CombineCandidatesRequestDto,
@@ -184,6 +186,14 @@ function base64Of(buffer: ArrayBuffer): string {
 export const createStudioClient = (connection: ServerConnection) => ({
   workingDraft(): Promise<WorkingDraftDto> {
     return call("GET /api/working-draft", readCurrentWorkingDraftApiWorkingDraftGet({ client: connection.client }));
+  },
+  /** The current working source a workspace follows; the server resolves it from retained facts. */
+  workingSource(workspace: WorkingSourceDto["workspace"] = "modeling", signal?: AbortSignal): Promise<WorkingSourceDto> {
+    return call("GET /api/working-source", readWorkingSourceApiWorkingSourceGet({ client: connection.client, query: { workspace }, signal }));
+  },
+  /** Read-only: the Working Head, running work, other lines and whether they reconcile. */
+  worktrees(signal?: AbortSignal): Promise<WorktreeGraphDto> {
+    return call("GET /api/worktrees", readWorktreesApiWorktreesGet({ client: connection.client, signal }));
   },
   selectWorkingDraft(body: WorkingDraftSelectionDto): Promise<WorkingDraftDto> {
     return call("PUT /api/working-draft", selectCurrentWorkingDraftApiWorkingDraftPut({ client: connection.client, body }));
