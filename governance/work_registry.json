@@ -155,6 +155,155 @@
       ]
     },
     {
+      "id": "GH-293",
+      "stream": "planning",
+      "status": "active",
+      "goal": "The first Sync is never refused with WORKING_DRAFT_STALE because a candidate job started: the position revision excludes the execution ledger, and the local draft writer re-reads and retries once.",
+      "depends_on": [],
+      "issue": "https://github.com/cogco1/MonkeyHub/issues/293",
+      "write_scope": [
+        "apps/monkeyhub/web/workspaces/src/features/stage/syncModelDraft.ts",
+        "apps/monkeyhub/web/workspaces/test/syncModelDraft.test.ts",
+        "archflow/project/repository.py",
+        "docs/mapping/planning/GH-293-sync-stale.md"
+      ],
+      "card": "docs/mapping/planning/GH-293-sync-stale.md",
+      "acceptance": [
+        "protect_working_run and release no longer change the revision the working-draft writers compare (repository.py), with tests.",
+        "createLocalDraftWriter re-reads and retries once on WORKING_DRAFT_STALE (syncModelDraft.ts), with tests."
+      ],
+      "lanes": [
+        {
+          "id": "sync-stale",
+          "issue": "https://github.com/cogco1/MonkeyHub/issues/293",
+          "branch": "codex/293-sync-stale",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-293-sync-stale",
+          "base_ref": "a512018a",
+          "contributor": "Claude",
+          "reviewer": "Claude root task",
+          "handoff": "Slices 293-S1 and 293-S2 of V4_RUNTIME handoff/260925_next-batch-plan/01_293.md.",
+          "modules": [
+            "project.repository",
+            "hub.shell"
+          ],
+          "write_scope": [
+            "archflow/project/repository.py",
+            "apps/monkeyhub/web/workspaces/src/features/stage/syncModelDraft.ts",
+            "apps/monkeyhub/web/workspaces/test/syncModelDraft.test.ts"
+          ],
+          "depends_on": [],
+          "status": "active",
+          "blocked_reason": null
+        }
+      ]
+    },
+    {
+      "id": "GH-223",
+      "stream": "planning",
+      "status": "active",
+      "goal": "One read-only representation-status projection replaces the four stale readers, an evidence document closes the experiment, and decisions can carry a project recipe binding (correction capture, option A, memory side).",
+      "depends_on": [],
+      "issue": "https://github.com/cogco1/MonkeyHub/issues/223",
+      "write_scope": [
+        "apps/archflow-studio/api/archflow_studio_api/application/decisions.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/publications.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/representation_dependencies.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/runtime.py",
+        "apps/archflow-studio/api/archflow_studio_api/transport/decisions.py",
+        "docs/2026-09-26-representation-state.md",
+        "docs/mapping/planning/GH-223-representation-state.md"
+      ],
+      "card": "docs/mapping/planning/GH-223-representation-state.md",
+      "acceptance": [
+        "The four readers answer from one projection in representation_dependencies.py; the worktree graph and Drawing agree.",
+        "docs/2026-09-26-representation-state.md records the model and the evidence; PROTOCOL drift fixed.",
+        "StudioScopedDecision@1 accepts a recipeBinding over a closed drawing target set, validated; default domain rules as planned."
+      ],
+      "lanes": [
+        {
+          "id": "representation-status",
+          "issue": "https://github.com/cogco1/MonkeyHub/issues/223",
+          "branch": "codex/223-representation-status",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-223-representation-status",
+          "base_ref": "a512018a",
+          "contributor": "Claude",
+          "reviewer": "Claude root task",
+          "handoff": "Slices 223-S1 and 223-S2 of V4_RUNTIME handoff/260925_next-batch-plan/04_223.md (not docs/DRAWING_V0_AUDIT.md, GH-66).",
+          "modules": [
+            "studio.binding"
+          ],
+          "write_scope": [
+            "apps/archflow-studio/api/archflow_studio_api/application/representation_dependencies.py",
+            "apps/archflow-studio/api/archflow_studio_api/application/runtime.py",
+            "apps/archflow-studio/api/archflow_studio_api/application/publications.py",
+            "docs/2026-09-26-representation-state.md"
+          ],
+          "depends_on": [],
+          "status": "active",
+          "blocked_reason": null
+        },
+        {
+          "id": "recipe-decision",
+          "issue": "https://github.com/cogco1/MonkeyHub/issues/223",
+          "branch": "codex/223-recipe-decision",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-223-recipe-decision",
+          "base_ref": "a512018a",
+          "contributor": "Claude",
+          "reviewer": "Claude root task",
+          "handoff": "Slice 05-S3a of V4_RUNTIME handoff/260925_next-batch-plan/05_correction-capture.md (decisions side only).",
+          "modules": [
+            "studio.intent"
+          ],
+          "write_scope": [
+            "apps/archflow-studio/api/archflow_studio_api/application/decisions.py",
+            "apps/archflow-studio/api/archflow_studio_api/transport/decisions.py"
+          ],
+          "depends_on": [],
+          "status": "active",
+          "blocked_reason": null
+        }
+      ]
+    },
+    {
+      "id": "GH-252",
+      "stream": "planning",
+      "status": "active",
+      "goal": "Monitor prices usage: Studio and Hub producers write details.billing_plan and rates.json carries the plan rows, so usage matches a price.",
+      "depends_on": [],
+      "issue": "https://github.com/cogco1/MonkeyHub/issues/252",
+      "write_scope": [
+        "apps/archflow-studio/api/archflow_studio_api/application/monitoring.py",
+        "docs/mapping/planning/GH-252-billing-plan.md",
+        "monkeymonitor/"
+      ],
+      "card": "docs/mapping/planning/GH-252-billing-plan.md",
+      "acceptance": [
+        "A usage event from Studio and from the Hub carries billing_plan and Monitor prices it; tests pin the match."
+      ],
+      "lanes": [
+        {
+          "id": "billing-plan",
+          "issue": "https://github.com/cogco1/MonkeyHub/issues/252",
+          "branch": "codex/252-billing-plan",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-252-billing-plan",
+          "base_ref": "a512018a",
+          "contributor": "Claude",
+          "reviewer": "Claude root task",
+          "handoff": "The Monitor billing_plan fix in V4_RUNTIME handoff/260925_next-batch-plan/07_252-268-investigation.md.",
+          "modules": [
+            "monkeymonitor"
+          ],
+          "write_scope": [
+            "monkeymonitor/",
+            "apps/archflow-studio/api/archflow_studio_api/application/monitoring.py"
+          ],
+          "depends_on": [],
+          "status": "active",
+          "blocked_reason": null
+        }
+      ]
+    },
+    {
       "id": "GH-66",
       "stream": "planning",
       "status": "active",
