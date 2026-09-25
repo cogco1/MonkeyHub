@@ -224,6 +224,8 @@ Agent：已把主入口移到南立面中段，加了 3 m 深的雨棚；东侧�
 | B2 | 键盘和读屏都能用 | ChatShell.tsx 等 | — | 重叠 | 图标按钮有名称；Esc 关闭弹层；禁用按钮说明原因；快捷键写入 `aria-keyshortcuts` |
 | B3 | 空状态能直接去修复，错误说清原因与下一步 | RenderWorkspace、PublishWorkspace、ChatShell、MonitorPage、FabPage、ProjectWorkspace | — | 重叠 | 渲染未配置时链接设置；统一错误展示（H6、W3）；用量从项目进入时筛选；图页刷新后恢复；H3 修复；发送时不再显示「正在连接项目…」；面板拖拽偏移先复现再修 |
 
+**跟踪：** 总 issue [#278](https://github.com/cogco1/MonkeyHub/issues/278)；A1 [#279](https://github.com/cogco1/MonkeyHub/issues/279) · A2 [#283](https://github.com/cogco1/MonkeyHub/issues/283) · A3 [#284](https://github.com/cogco1/MonkeyHub/issues/284) · A4 [#285](https://github.com/cogco1/MonkeyHub/issues/285) · A5 [#286](https://github.com/cogco1/MonkeyHub/issues/286) · A6 [#287](https://github.com/cogco1/MonkeyHub/issues/287) · A7 [#288](https://github.com/cogco1/MonkeyHub/issues/288) · B1 [#280](https://github.com/cogco1/MonkeyHub/issues/280) · B2 [#281](https://github.com/cogco1/MonkeyHub/issues/281) · B3 [#282](https://github.com/cogco1/MonkeyHub/issues/282)。
+
 **待立的能力 Issue（本轮不实现）：** Candidate 拒绝 / 归档（Q3）；持久化的「认可方向」（F7）；图纸重建作为后继文档（审计 9.2c）；runtime 预览图。
 
 **顺序与协调：**
