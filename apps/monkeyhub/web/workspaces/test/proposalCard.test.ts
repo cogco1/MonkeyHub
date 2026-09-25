@@ -102,7 +102,9 @@ test("design cards distinguish component edits from scalar controls and fold com
   ));
   assert.match(errorHtml.split("<details")[0], /No model was generated|尚未生成模型/);
   assert.doesNotMatch(errorHtml.split("<details")[0], /basis_refs|SEMANTIC_EDIT_INVALID|POST/);
-  assert.doesNotMatch(errorHtml, /basis_refs must be sorted and unique/);
+  // FN-4: the compiler's own words wait, folded, under Technical details.
+  assert.match(errorHtml.split("<details")[1] ?? "", /basis_refs must be sorted and unique/);
+  assert.doesNotMatch(errorHtml, /<details[^>]*\sopen/);
 
   const clarificationHtml = renderToStaticMarkup(createElement(UserPreferencesProvider, { appearance: { language: "en", theme: "light", fontScale: 1 } },
     createElement(ErrorPanel, {
@@ -111,7 +113,7 @@ test("design cards distinguish component edits from scalar controls and fold com
   ));
   assert.match(clarificationHtml, /Which side should the opening face/);
   assert.match(clarificationHtml, /set height to/);
-  assert.doesNotMatch(clarificationHtml, /missing internal slot/);
+  assert.doesNotMatch(clarificationHtml.split("<details")[0], /missing internal slot/);
 
   const composerProps = {
     selection: { componentId: "passages", elementId: null }, projection: { catalog: null },
