@@ -4628,7 +4628,7 @@
         "scoped project decisions: one architect judgement with its raw wording, disposition, strength, target, explicit scope, applicability and the exact source evidence it was said against, as an immutable revision chain in the fixed explicit studio-decisions P036 run",
         "compiling the decisions that still apply to one next turn - same domain, exact Stage, intersection with relevant task targets, applicability and current parameter binding - into the existing ContextPack",
         "Composing explicitly selected exact Study evidence revisions into ContextPack separately from design facts and applicable decisions; no implicit Study scan, acceptance or project write.",
-        "the source-bound, read-only visual observation channel (GH-303 V0): VisualReviewRequest over exact model or registered-page sources, EvidenceFrame values taken from the model-view and page-export owners' own answers, the strict VisualObservation answer and its validation, the VisualObservationProvider seam with the configured Studio model transport as its implementation, and the Harness review allowance VisualReviewBudget",
+        "the source-bound, read-only visual observation channel (GH-303): VisualReviewRequest over exact model or registered-page sources, EvidenceFrame values taken from the model-view and page-export owners' own answers, the strict VisualObservation answer and its validation, the VisualObservationProvider seam with the configured Studio model transport as its implementation, the Harness review allowance VisualReviewBudget, and POST /api/visual-reviews, which has those owners render the frames in-process from the exact sources a caller names",
         "candidate admission: one CandidateAdmission@1 per closed loop (a task, one worktree of it, or one person's act) in the fixed explicit studio-admissions P036 run, written only through the completion gate Stage acceptance shares, with the boundary's actor, the stated task, Study and bound message, each result's outcome, pinned model, receipt and superseded attempts",
         "the Candidate Pool read for the Design Tree: admitted Candidates and their Studies from admission records and from legacy facts that already prove admission (a committed Stage's run, a retained Exploration's non-base option, an accepted episode's produced run), with lineage-derived continuedFrom and acceptedStageRef and Working Head membership"
       ],
@@ -4660,6 +4660,7 @@
         "One scoped decision as the caller states it: rawLanguage, optional messageSource claim, disposition, strength, targetRef, scope, exact source evidence union (board revision + live element ids / document run+asset+revision+page / design run+stateDigest+optional Stage), applicability, sourceKind and an optional parameter typedBinding",
         "Optional decisionContext on POST /api/intents/context: the domain this turn is about, and for a drawing or copy turn its own representation evidence",
         "VisualReviewRequest with exact SourceRef values, criteria, preserve conditions and the Harness allowance, and owner-produced EvidenceFrame PNGs (model-view answers, registered page exports)",
+        "POST /api/visual-reviews: projectId, domain, 1-4 exact sourceRefs, viewRecipe, task, criteria, preserve, priorObservations, up to 8 knownFacts, the review reason with any addressedFindingIds, and the caller-held budgetState (taskClass, allowed, used, lastFindingIds); no field carries pixels",
         "an admission request: task kind and opaque ids, an optional Study (id, label, exact base run), an optional bound chat message and the user's words, and each result's outcome, superseded attempts, label, summary and reason"
       ],
       "outputs": [
@@ -4676,6 +4677,7 @@
         "retained StudioScopedDecision@1 revisions and their DTOs",
         "scopedDecisions on ContextPack@1: the applicable decisions in the architect's own words with their exact provenance, never a transcript",
         "VisualObservation bound to the frames actually sent, with ObservationUsage and a visual_observation MonkeyMonitor span over the provider's model_request row",
+        "the visual-review answer: observation, usage and the loop's next budgetState; 409 VISUAL_SOURCE_MISMATCH (with sourceRef), VISUAL_BUDGET_EXHAUSTED, VISUAL_REVIEW_NOT_WARRANTED, VISUAL_REVIEW_OUT_OF_ORDER or VISUAL_PROVIDER_UNAVAILABLE before any provider call, and 502 VISUAL_PROVIDER_FAILED with the spent budgetState and usage",
         "retained CandidateAdmission@1 records and their DTOs",
         "candidates[] and studies[] on the design history read"
       ],
@@ -4806,6 +4808,9 @@
         "model_view_frame",
         "page_frame",
         "observe_frames",
+        "POST /api/visual-reviews",
+        "review_sources",
+        "visual_provider",
         "POST /api/admissions",
         "GET /api/admissions",
         "admit_results",
@@ -4914,6 +4919,8 @@
         "a visual review refuses, before any provider call, a frame whose source is not exactly one of the request's source refs; the provider never states which source it saw, the channel binds its answer to the frames it sent",
         "the Harness allowance gives a deterministic edit no visual review, a spatial or formal task one review plus at most one follow-up after a repair that names a finding of the last review, and only an explicit polish request 1-4 reviews; a refusal spends nothing and an admitted review stays spent when the call fails",
         "a visual observation writes nothing and carries no State, Stage or Candidate authority and no provider reasoning; its findings point only at the request's own criterion and preserve refs",
+        "the visual-review route accepts no pixels: every frame is its projection owner's own in-process answer for a named exact source, and a source the owner does not retain exactly answers VISUAL_SOURCE_MISMATCH before any provider call",
+        "the visual-review route keeps no loop state: the caller carries budgetState, whose allowance must be the policy's own for its task class; a refusal returns it unchanged and a failed provider call returns it with the review spent",
         "a Candidate is made only by a retained CandidateAdmission@1 or read from a legacy fact that already proves admission; a finished run, a recovery or saved row, a chat candidate id, a pin or the newest file never makes one, and nothing is written for a legacy fact",
         "admissions are read only from the fixed studio-admissions run, never by enumerating runs; a run is in at most one live record as a result or a superseded attempt; an identical retry returns the retained record and any other claim on a claimed run, or rejecting or superseding a committed Stage's run, is ADMISSION_CONFLICT",
         "the admission gate is Stage acceptance's own preflight (C1 replay, C2 completed and not executing, C3 review readiness against the exact base, C5 one complete model) plus C4 object readback and C7 supersession; if any result fails nothing is retained and every failing clause is named",
@@ -4954,6 +4961,7 @@
         "apps/archflow-studio/api/tests/test_decisions.py",
         "tests/test_nonadjacent_stage_context.py",
         "apps/archflow-studio/api/tests/test_visual_observation.py",
+        "apps/archflow-studio/api/tests/test_visual_reviews.py",
         "apps/archflow-studio/api/tests/test_candidate_admission.py"
       ],
       "notes": "CANONICAL_SPINE 2.1 makes this the door live-model authoring re-enters by: typed intent, then record, then runner. clarification.py retired require_grammatical: the same two refusals, in the same words, with the target the agent had just worked out kept instead of thrown away.",
@@ -4991,6 +4999,7 @@
         "apps/archflow-studio/api/archflow_studio_api/routes/decisions.py",
         "apps/archflow-studio/api/archflow_studio_api/transport/decisions.py",
         "apps/archflow-studio/api/archflow_studio_api/application/visual_observation.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/visual_reviews.py",
         "tools/benchmark_visual_observation.py"
       ]
     },

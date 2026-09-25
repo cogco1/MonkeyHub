@@ -127,6 +127,7 @@ tolerate it.
 | GET | `/api/candidates/{candidateId}/validation` | the kernel's validation receipt and the server's review readiness (§5) | reads shared + published | stable |
 | POST | `/api/intents` → 201 | one of four outcomes: the resolved target and the proposal it became, or the pending intent the refusal belongs to (§5.1) | reads work in progress + shared | provisional |
 | POST | `/api/intents/context` | `ContextPack@1` against an exact source, with optional scalar, multiple-object, component or whole-project focus, dependency facts and bounded design-context supplements | reads work in progress + shared + published | provisional |
+| POST | `/api/visual-reviews` | one bounded visual review of exact sources: the runtime renders every frame through the source's own projection owner, looks once through the configured provider, and answers the observation, its usage and the loop's next `budgetState`. It accepts no pixels | reads shared; calls the configured provider | provisional |
 | POST | `/api/proposals/{proposalId}/decision` → 201 | an explicit judgement: accepted with its successful `candidateId`, rejected, or modified into a linked replacement (§5.2) | accepted is **written into its named run**; other decisions stay in memory until a candidate run against the same state | provisional |
 | GET | `/api/episodes?stateDigest=` | the judgements this process holds, each saying whether it lives in a run or only in memory (§5.2) | server memory + reads shared | provisional |
 | GET | `/api/episodes/{episodeId}` | one of them | server memory + reads shared | provisional |
@@ -264,6 +265,37 @@ an explicit `revisionRef` (null when the registered source has none), defaults `
 project/run/asset/revision/page identity, raster dimensions and `annotationsIncluded: false`.
 `CHAT_IMAGE_TOO_LARGE` means to read the same page at a smaller `maxEdge`; invalid PNG responses
 report `CHAT_IMAGE_INVALID`. Runtime source/revision/page refusals retain their code and status.
+
+**Visual review.** `POST /api/visual-reviews` looks at exact sources once, under a caller-held
+allowance, and answers structured findings instead of images. The body names `projectId`,
+`domain` (`modeling`, `board`, `drawing` or `render`), 1–4 `sourceRefs`, `viewRecipe`, `task`
+(at most 600 characters), 1–8 `criteria` (`criterionId`, `text`), up to 6 `preserve`
+conditions, up to 6 `priorObservations`, up to 8 `knownFacts` of at most 120 characters (exact
+readback values the observer should not ask about again), `reason` (`first_bundle`,
+`after_repair` or `polish_round`), `addressedFindingIds` for an `after_repair` review, and
+`budgetState` (`taskClass`, `allowed`, `used`, `lastFindingIds`). A modeling review names one
+model (`kind: "model"` with `runId`, `stateDigest`, `assetSha256`) and model-view directions;
+the other domains name registered pages (`kind: "page"` with `runId`, `assetSha256`, an explicit
+`revisionRef` and `pageIndex`) and the recipe `page-<pageIndex>` of each. No field carries
+pixels and every object refuses unknown fields: the runtime renders each frame in process, with
+`model_view` for each recipe view or a one-page PNG export at 1600 px, and each owner verifies
+its exact source before it draws. The route keeps no loop state and writes nothing to the
+project; each review is one `visual_observation` Monitor span.
+
+The answer is `observation` (`reviewId`, `reviewIndex`, `sourceRefs`, `viewRefs`, `frameSha256`,
+and findings with `findingId`, `type`, `targetRefs`, `description`, `confidence`, `severity` and
+an optional `evidenceRegion`, plus `unresolvedQuestions` and `suggestedChecks`; there is no
+verdict), `usage` as the provider reported it, and the next `budgetState`, which the caller sends
+back with the loop's next review. Its allowance must be the policy's own for `taskClass`: 0 for
+`deterministic_edit`, 2 for `spatial_formal` (a `first_bundle` review, then one `after_repair`
+review whose `addressedFindingIds` name findings of the last review), and the 1–4 rounds an
+explicit `polish` request named. Before any provider call, 409 answers `VISUAL_SOURCE_MISMATCH`
+with the `sourceRef` its owner does not retain exactly (a stale `stateDigest`, an unregistered
+asset, or a missing run, revision or page); `VISUAL_BUDGET_EXHAUSTED`,
+`VISUAL_REVIEW_NOT_WARRANTED` or `VISUAL_REVIEW_OUT_OF_ORDER` with the unchanged `budgetState`;
+or `VISUAL_PROVIDER_UNAVAILABLE` when the runtime's provider is deterministic. Other owner
+refusals keep their code and status. A failed provider call answers 502 `VISUAL_PROVIDER_FAILED`
+with the `budgetState` that counts the spent review and the call's `usage`.
 
 **The program sheet.** A sheet is `ProgramSheet@1` and travels whole in both directions, carrying
 the `stateDigest` of the record it was read from. `POST /api/program` refuses `409 STALE_BASE` when
@@ -747,9 +779,10 @@ Every failure, without exception, is one body:
 {"code": "STALE_BASE", "detail": "…"}
 ```
 
-plus `question` and — when non-empty — `acceptedForms` for `BLOCKED_NEEDS_HUMAN`, and `outcome`,
+plus `question` and — when non-empty — `acceptedForms` for `BLOCKED_NEEDS_HUMAN`, `outcome`,
 `pendingIntent` and `authoredControlDraft` for a refusal that belongs to a clarification chain
-(§5.1). That includes
+(§5.1), and `sourceRef`, `budgetState` and `usage` for a refused or failed visual review (§4).
+That includes
 unknown paths (`404 NOT_FOUND`), wrong methods (`405 METHOD_NOT_ALLOWED`), unreadable requests
 (`422 REQUEST_INVALID`) and server bugs (`500 INTERNAL_ERROR`, which says nothing about itself).
 Anything the framework refuses before a route runs keeps its own status under `HTTP_ERROR`.
