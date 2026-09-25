@@ -2,18 +2,23 @@
 
 The current position is also the project's **Working Head**: the architect's
 editing base, which ordinary Modeling, Drawing, Render and Board work follows
-(#271). Only an explicit select moves it: Continue on a shown result, or adopting
-the architect's own Sync. A generated result is recorded and shown, never adopted
+(#271). Only an explicit select moves it: Continue on a shown result, adopting
+the architect's own Sync, or the Hub Agent continuing on the user's bound words
+(#294 Q3). Each move onto a run is retained as an attributed ``design.continued``
+event beside that run. A generated result is recorded and shown, never adopted
 (GH-234 Q1/Q2). It is read here from the retained position, never guessed from
 the newest file.
 """
 
+from copy import deepcopy
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from typing import Mapping
+from uuid import uuid4
 
 from archflow.contracts.canonical import canonical_json
 from archflow.project.ports import PersistenceArea, PersistenceDestination
-from archflow.project.record_kinds import STUDIO_LOCAL_DRAFT
+from archflow.project.record_kinds import AUDIT_EVENT, RECORD_KINDS, STUDIO_LOCAL_DRAFT
 from archflow.project.refs import ProjectRecordRef, record_ref_from_uri
 from archflow.project.repository import ProjectRepositoryError, StaleWorkingDraft
 from archflow.state.design_portfolio import DesignBranch
@@ -21,6 +26,7 @@ from archflow.state.design_portfolio import DesignBranch
 from .artifacts import (
     FORMAT_3DM, ModelSource, artifact_model_source, list_artifacts, require_complete_model, require_model_source,
 )
+from .authentication import ActorAttribution, LOCAL_ACTOR_ID, ORIGIN_HUB, ORIGIN_HUB_AGENT, ORIGIN_STUDIO
 from .binding import retained_sources
 from .binding import ProjectBinding
 from .projection import StateProjection, project_state
@@ -32,9 +38,10 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _write(binding: ProjectBinding, value: dict, revision: str | None) -> None:
+def _write(binding: ProjectBinding, value: dict, revision: str | None) -> str:
+    """Compare-and-swap the whole position; the revision it now has."""
     try:
-        binding.repository.compare_and_swap_working_draft(expected_revision=revision, value=value)
+        return binding.repository.compare_and_swap_working_draft(expected_revision=revision, value=value)[1]
     except StaleWorkingDraft as exc:
         raise StudioError(409, "WORKING_DRAFT_STALE", str(exc)) from exc
 
@@ -100,10 +107,24 @@ def read_working_draft(binding: ProjectBinding) -> WorkingDraftDto:
 
 @retained_sources
 def select_working_draft(binding: ProjectBinding, run_id: str | None, revision: str | None,
-                         branch_id: str | None = None) -> WorkingDraftDto:
+                         branch_id: str | None = None, *,
+                         attribution: ActorAttribution = ActorAttribution(LOCAL_ACTOR_ID, False, ORIGIN_STUDIO),
+                         message_source: Mapping[str, str] | None = None,
+                         raw_language: str | None = None) -> WorkingDraftDto:
+    """Move the Working Head onto a run (Continue), or back to the default with none.
+
+    A move onto a run retains who made it beside that run (``design.continued``);
+    when that cannot be retained, the move is undone. ``message_source`` with
+    ``raw_language`` is the Hub Agent continuing on the user's bound words. A
+    Continue admits nothing and accepts no Stage.
+    """
+
+    origin = _continue_origin(attribution, run_id, message_source, raw_language)
     value, actual = binding.repository.read_working_draft()
     if actual != revision:
         raise StudioError(409, "WORKING_DRAFT_STALE", "The working position changed; read it before selecting another source.")
+    before = deepcopy(value)
+    head = None if run_id is None else _head_run(binding)
     if run_id is not None:
         previous = value["runs"].get(run_id)
         # Without a named branch, a recorded result keeps the line it was recorded on.
@@ -113,8 +134,103 @@ def select_working_draft(binding: ProjectBinding, run_id: str | None, revision: 
             row.update(label=previous["label"], automatic=previous["automatic"])
         value["runs"][run_id] = row
     value["current"] = run_id
-    _write(binding, value, revision)
+    written = _write(binding, value, revision)
+    if run_id is not None:
+        _retain_continued(binding, _continued(binding, attribution, origin, head, run_id, message_source),
+                          undo=before, written=written)
     return read_working_draft(binding)
+
+
+# ---- Continue is an attributed act (#294 S4) ----------------------------------
+#
+# Whoever moves the Working Head onto a run - the architect's Continue or adopted
+# Sync, or the Hub Agent continuing on the user's words (owner decision Q3) -
+# leaves one ``AuditEvent@1`` ``design.continued`` in that run's review area. It
+# names ids only; the user's words stay with the chat message it names. The
+# acceptance reader passes it by, since it names no result Stage, and nothing
+# here admits a Candidate. Generation never moves the head (Q2).
+
+DESIGN_CONTINUED = "design.continued"
+_AUDIT_EVENT_SCHEMA = RECORD_KINDS[AUDIT_EVENT].schema
+
+
+def _attribution_invalid(detail: str) -> StudioError:
+    return StudioError(422, "WORKING_DRAFT_ATTRIBUTION_INVALID", detail)
+
+
+def _continue_origin(attribution: ActorAttribution, run_id: str | None,
+                     message_source: Mapping[str, str] | None, raw_language: str | None) -> str:
+    """The surface that moved the head, as far as this boundary can vouch for it.
+
+    The architect's own move answers with the boundary's origin. A move bound to
+    a chat message is the Hub Agent's: it needs the user's words, a run to
+    continue on, and a Runtime a Hub manages.
+    """
+
+    if message_source is None and raw_language is None:
+        return attribution.origin
+    if message_source is None or raw_language is None:
+        raise _attribution_invalid("The Agent continues only on the user's own words: a Continue from chat binds both "
+                                   "messageSource and rawLanguage.")
+    if run_id is None:
+        raise _attribution_invalid("A Continue on the user's words names the run it continues on; returning to the "
+                                   "default is the architect's own act.")
+    if attribution.origin != ORIGIN_HUB:
+        raise _attribution_invalid("An Agent's Continue comes through the Hub that bound its chat; this Runtime is not "
+                                   "managed by a Hub.")
+    return ORIGIN_HUB_AGENT
+
+
+def _head_run(binding: ProjectBinding) -> str | None:
+    """The run the Working Head stands on before a move, as it is resolved for every workspace."""
+
+    try:
+        head = resolve_working_source(binding).head
+    except _UNREADABLE:
+        return None
+    return None if head is None else head.run_id
+
+
+def _continued(binding: ProjectBinding, attribution: ActorAttribution, origin: str, previous: str | None,
+               run_id: str, message_source: Mapping[str, str] | None) -> dict:
+    """One Continue's ids: who, through which surface, from which head run onto which run, on which message."""
+
+    return {
+        "schema": _AUDIT_EVENT_SCHEMA,
+        "eventId": f"aud-{uuid4().hex[:12]}",
+        "occurredAt": _now(),
+        "action": DESIGN_CONTINUED,
+        "status": "succeeded",
+        "projectId": binding.project_id,
+        "actorId": attribution.actor_id,
+        "authenticatedActor": attribution.authenticated,
+        "origin": origin,
+        "previousHeadRunId": previous,
+        "targetRunId": run_id,
+        "messageSource": None if message_source is None else {
+            "sessionId": message_source["sessionId"], "messageId": message_source["messageId"]},
+    }
+
+
+def _retain_continued(binding: ProjectBinding, payload: dict, *, undo: dict, written: str) -> None:
+    """Keep a Continue's event beside its run, or put the position back and say so."""
+
+    run_id = payload["targetRunId"]
+    try:
+        binding.repository.put_json(
+            run=binding.load_run(run_id), destination=PersistenceDestination(PersistenceArea.RUN_REVIEW, run_id=run_id),
+            record_kind=AUDIT_EVENT, payload=payload,
+        )
+        return
+    except (StudioError, ProjectRepositoryError, OSError, ValueError) as exc:
+        failure = exc
+    try:
+        binding.repository.compare_and_swap_working_draft(expected_revision=written, value=undo)
+    except (ProjectRepositoryError, OSError, ValueError) as exc:
+        raise StudioError(500, "CONTINUE_NOT_RETAINED", f"The Working Head moved to {run_id}, but who continued it "
+                          "could not be retained; continue on it again to record that.") from exc
+    raise StudioError(500, "CONTINUE_NOT_RETAINED", f"Who continued could not be retained beside {run_id}, so the "
+                      "Working Head was left where it was.") from failure
 
 
 @retained_sources
@@ -136,7 +252,8 @@ def record_candidate_draft(binding: ProjectBinding, run_id: str, source_run_id: 
 
     ``current`` is the architect's own editing base and only
     ``select_working_draft`` moves it (Continue, Return to default, a Versions
-    choice, an adopted Sync). Recording a generated candidate -- Hub agent, Arch
+    choice, an adopted Sync, or the Agent's Continue on the user's words).
+    Recording a generated candidate -- Hub agent, Arch
     proposal, options, program or combine -- leaves it alone, even when the
     candidate was generated from that base (``source_run_id``).
     """

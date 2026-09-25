@@ -46,6 +46,10 @@ _SHARED_READ_PATHS = (
 # it was launched with - and never a request header, which any caller can set.
 ORIGIN_STUDIO = "studio"
 ORIGIN_HUB = "hub"
+# The Hub Agent acting for the user of its bound chat (#294 owner decision Q3).
+# No boundary resolves it: a request that says the Agent acted on a chat message
+# is retained under this origin only when it came through a Runtime a Hub manages.
+ORIGIN_HUB_AGENT = "hub-agent"
 
 # What an explicit action is attributed to where the process runs with no actor
 # credentials configured at all: the local unauthenticated boundary itself,

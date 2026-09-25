@@ -120,6 +120,7 @@ tolerate it.
 | POST | `/api/design-branches` → 201 | a sustained branch forked from a reachable historical Stage | writes design ref | provisional |
 | GET | `/api/working-source?workspace=` | the Working Head (§4.1) and the exact source one workspace (`modeling`, `drawing`, `render`, `board`) follows: `head{runId, stateDigest, sourceStageRef, branchId, accepted, origin, lineage}`, `compatible`, `source`, `stageRef` (only for an exact accepted Stage model), `reason`, `warnings`. `policy=frozen` with `runId`/`stateDigest`/`assetSha256` keeps that pin and says whether the head moved past it | reads the working position + shared + design refs | provisional |
 | GET | `/api/working-draft/revision` | `{projectId, revisionSha256}` of the working position alone, for polling whether the head may have moved; no local draft and no project guard | reads the working position | provisional |
+| PUT | `/api/working-draft` | Continue: the working position, and so the Working Head, moves onto `runId`, or back to the default with `null`, under the `baseRevisionSha256` compare-and-swap; a move onto a run retains who made it as `AuditEvent@1` `design.continued` beside that run (§4.1). `messageSource` with `rawLanguage` marks the Hub Agent continuing on the user's bound words | **writes the working position + that run's review** | provisional |
 | GET | `/api/worktrees` | read-only Worktree Graph V0 (§4.1): the head line, other accepted lines, running and interrupted changes with their exact base and declared read/write refs, retained results off the head's line with `relation` and `reconcile` (`can-combine`, `conflict` with the shared refs, `unknown`), each finished line's `admission` (`admitted`, `rejected`, `superseded`, `none`) and `studyId` (§5.5), and drawing/render `current`/`stale`/`running` states. Nothing is merged or started | reads the working position + shared + design refs + the admissions review + server memory | provisional |
 | POST | `/api/drawings/elevations` → 201 | exact-model elevation document with drawing/revision/Stage/view references | writes shared drawing artifacts and document registration | provisional |
 | GET | `/api/candidates/{candidateId}/validation` | the kernel's validation receipt and the server's review readiness (§5) | reads shared + published | stable |
@@ -1006,8 +1007,9 @@ runner's developed-design digest. Neither is silently substituted for a third id
 
 The Working Head is the architect's editing base, which ordinary Modeling, Drawing, Render and
 Board work follows. It is read from the retained working position (`design/working.json`
-`current`), which only the explicit `PUT /api/working-draft` moves: Continue on a shown result, or
-adopting the architect's own Sync. A generated candidate, including a continuation of the base,
+`current`), which only the explicit `PUT /api/working-draft` moves: Continue on a shown result,
+adopting the architect's own Sync, or the Hub Agent continuing on the user's bound words (#294
+Q3). A generated candidate, including a continuation of the base,
 is recorded and shown but never adopted (GH-234 Q1/Q2). An unreadable position falls back to the
 main line's accepted head and then the reference run, with a warning. A position whose run has a live
 rejection (§5.5) stays the head and adds a warning; only Continue moves it. Resolving it writes nothing, takes no project
@@ -1020,6 +1022,18 @@ chosen version (`follow: "frozen"` in its recipe) stays on that version until it
 candidate deltas and the job queue; its `reconcile` is the StateRecord combine rule applied as a
 dry run from the nearest shared source. Owner attribution belongs to the Hub journal, not to
 project records.
+
+Continue is an attributed act, whoever makes it (#294 S4). Each move onto a run retains one
+`AuditEvent@1` with `action: design.continued` in that run's review area. It names ids only:
+`actorId` and `authenticatedActor` from the request boundary, `origin` (`studio` or `hub` for
+the architect, `hub-agent` for the Agent), `previousHeadRunId` (the resolved head before the
+move), `targetRunId` and `messageSource`. Returning to the default names no run and retains
+nothing. When the event cannot be retained, the move is undone and the request answers `500
+CONTINUE_NOT_RETAINED`. The Agent's Continue carries the chat `messageSource` and the user's
+`rawLanguage`, both bound by Hub; a Runtime no Hub manages, a missing half, or no named run
+answers `422 WORKING_DRAFT_ATTRIBUTION_INVALID`. The event keeps the message ids, not the words.
+A Continue admits no Candidate and accepts no Stage, and the acceptance reader ignores the event
+because it names no `resultStageRef`.
 
 `POST /api/runtime/projects/{runtime_id}/recover` with `{projectId}` inspects retained outcomes
 before replacing one crashed owned Studio on the same port. It rebuilds the state projection

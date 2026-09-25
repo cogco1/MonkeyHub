@@ -1205,6 +1205,8 @@ export const readCurrentWorkingDraftApiWorkingDraftGet = <ThrowOnError extends b
 
 /**
  * Select Current Working Draft
+ *
+ * Continue: the Working Head follows at once, and a move onto a run records who made it.
  */
 export const selectCurrentWorkingDraftApiWorkingDraftPut = <ThrowOnError extends boolean = false>(options: Options<SelectCurrentWorkingDraftApiWorkingDraftPutData, ThrowOnError>): RequestResult<SelectCurrentWorkingDraftApiWorkingDraftPutResponses, SelectCurrentWorkingDraftApiWorkingDraftPutErrors, ThrowOnError> => (options.client ?? client).put<SelectCurrentWorkingDraftApiWorkingDraftPutResponses, SelectCurrentWorkingDraftApiWorkingDraftPutErrors, ThrowOnError>({
     url: '/api/working-draft',

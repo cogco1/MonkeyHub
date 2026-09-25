@@ -4188,7 +4188,7 @@
         "explicitly preparing an empty project for its first modeling candidate through P036 initial-input persistence: a modeling root, zero level, setup basis and seat; existing authored or retained design and Board assets are preserved",
         "Projecting a checked in-memory proposed StateRecord for another edit without writing or claiming a retained candidate",
         "Read-only element elevation facts and their actual base/top references, plus named Level datums, projected from the exact StateRecord for contextual Stage 1 editing.",
-        "The current project working position (moved only by an explicit selection, never by recording a generated candidate), the automatic recovery listing of every unlabelled generated candidate however old, independent explicit saved versions and exact-source local command recovery through the P036 working-draft port; readback never executes a recovered request.",
+        "The current project working position (moved only by an explicit selection, never by recording a generated candidate), the automatic recovery listing of every unlabelled generated candidate however old, independent explicit saved versions and exact-source local command recovery through the P036 working-draft port; readback never executes a recovered request; every selection onto a run retains who made it as an AuditEvent@1 design.continued beside that run, ids only (actor, origin, previous head run, target run, chat message ids), and a selection whose event cannot be retained is undone.",
         "Resolving the Working Head for ordinary work: the readable retained working position, else the main line's accepted head, else the reference run, and each workspace's compatible exact source under a LIVE or FROZEN policy; resolving writes nothing; a live rejection of the working position is reported as a warning and never moves it"
       ],
       "does_not_own": [
@@ -4324,7 +4324,7 @@
         "the catalog derives; it never writes: an object no element names stays MODEL_VISIBLE_CATALOG_MISSING, and no neighbouring element's field is offered in its place",
         "all actionable projections retain exact record and runner binding; historical canonical bases require a verified committed Stage source",
         "main head Stage is the default when design history exists; a successful harness run alone never becomes a default committed Stage",
-        "the Working Head is the architect's editing base, read from retained facts and never guessed from the newest file; a generated candidate is recorded and shown but never moves it, viewing history never moves it, and only the explicit working-draft selection (Continue, or adopting the architect's own Sync) does; a recorded continuation keeps its source position's branch"
+        "the Working Head is the architect's editing base, read from retained facts and never guessed from the newest file; a generated candidate is recorded and shown but never moves it, viewing history never moves it, and only the explicit working-draft selection (Continue, adopting the architect's own Sync, or the Hub Agent's Continue on the user's bound words through a Hub-managed Runtime) does; every selection onto a run is retained as an attributed design.continued event and admits no Candidate; a recorded continuation keeps its source position's branch"
       ],
       "status": "canonical",
       "tests": [
@@ -4337,7 +4337,8 @@
         "apps/archflow-studio/api/tests/test_collaboration_http.py",
         "apps/archflow-studio/api/tests/test_boards.py",
         "apps/archflow-studio/api/tests/test_working_draft.py",
-        "apps/archflow-studio/api/tests/test_working_source.py"
+        "apps/archflow-studio/api/tests/test_working_source.py",
+        "apps/archflow-studio/api/tests/test_attributed_continue.py"
       ],
       "notes": "Every other Studio concern reads the project through this one binding.",
       "files": [
