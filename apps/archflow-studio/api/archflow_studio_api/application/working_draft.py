@@ -15,7 +15,9 @@ from archflow.project.refs import ProjectRecordRef, record_ref_from_uri
 from archflow.project.repository import ProjectRepositoryError, StaleWorkingDraft
 from archflow.state.design_portfolio import DesignBranch
 
-from .artifacts import FORMAT_3DM, ModelSource, list_artifacts, require_complete_model, require_model_source
+from .artifacts import (
+    FORMAT_3DM, ModelSource, artifact_model_source, list_artifacts, require_complete_model, require_model_source,
+)
 from .binding import retained_sources
 from .binding import ProjectBinding
 from .projection import StateProjection, project_state
@@ -232,8 +234,8 @@ def _complete_model(binding: ProjectBinding, projection: StateProjection, stage)
         return ModelSource(run_id, digest, stage.model_sha256)
     rows = [row for row in list_artifacts(binding, run_id=run_id).artifacts
             if row.run_id == run_id and row.design_state_digest == digest and row.format == FORMAT_3DM
-            and row.available and row.model_source is not None]
-    composed = {row.model_source for row in rows if row.representation == "composed"}
+            and artifact_model_source(row) is not None]
+    composed = {artifact_model_source(row) for row in rows if row.representation == "composed"}
     if composed:
         return next(iter(composed)) if len(composed) == 1 else None
     complete = set()
@@ -242,7 +244,7 @@ def _complete_model(binding: ProjectBinding, projection: StateProjection, stage)
             require_complete_model(row, projection.reference.receipt or {})
         except StudioError:
             continue
-        complete.add(row.model_source)
+        complete.add(artifact_model_source(row))
     return next(iter(complete)) if len(complete) == 1 else None
 
 
@@ -303,9 +305,10 @@ def _drawable(binding: ProjectBinding, head: WorkingHead) -> tuple[ModelSource |
     stage_ref = record_ref_from_uri(head.source_stage_ref, binding.project_id) if head.accepted else None
     models = [] if head.model_source is None else [head.model_source]
     for row in list_artifacts(binding, run_id=head.run_id).artifacts:
+        model = artifact_model_source(row)
         if (row.run_id == head.run_id and row.design_state_digest == head.state_digest and row.format == FORMAT_3DM
-                and row.available and row.model_source is not None and row.model_source not in models):
-            models.append(row.model_source)
+                and model is not None and model not in models):
+            models.append(model)
     reason = "The current working version has no complete model to draw from yet."
     for model in models:
         pinned = stage_ref if stage_ref is not None and model == head.model_source else None

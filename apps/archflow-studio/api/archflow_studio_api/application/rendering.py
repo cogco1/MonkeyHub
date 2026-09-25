@@ -20,7 +20,6 @@ from uuid import UUID, uuid4
 from archflow.contracts.canonical import canonical_json, canonical_digest
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import STUDIO_RENDER_JOB
-from archflow.project.refs import ProjectRecordRef, record_ref_from_uri
 from archflow.project.repository import ProjectRepositoryError
 from monkeymonitor.usage import TokenUsage
 
@@ -33,6 +32,7 @@ from .render_contract import (
     RenderPageRef, RenderProviderError,
 )
 from .drawing_plans import plan_status
+from .working_draft import model_is_current, resolve_working_source
 from .projection import project_state
 
 
@@ -96,6 +96,7 @@ def _freshness(binding, request, snapshots):
     inspect the actual retained request instead.
     """
     try:
+        head = resolve_working_source(binding).head
         documents = list_documents(binding)
         replaced = {_page_key(page) for doc in documents for page in doc.replaces_pages}
         checked = set()
@@ -124,9 +125,8 @@ def _freshness(binding, request, snapshots):
             elif recipe.get("kind") == "cut-plan":
                 # Drawing owns its geometric read-set and semantic anchors. A
                 # change outside this crop must not invalidate its render too.
-                target = {} if document.source_stage_ref else {"target_model_source": document.model_source}
                 status = plan_status(binding, run_id=document.run_id, asset_sha256=document.asset_sha256,
-                                     revision_ref=document.revision_ref, **target)
+                                     revision_ref=document.revision_ref)
                 if status["status"] != "current":
                     return ("outdated" if status["status"] == "outdated" else "unavailable"), status["detail"]
             else:
@@ -137,16 +137,11 @@ def _freshness(binding, request, snapshots):
             return "current", None
 
         def model_freshness(snapshot):
+            # A model view is current while it shows the Working Head's design.
             if snapshot["modelSource"]:
-                require_model_source(binding, ModelSource.from_dict(snapshot["modelSource"]))
-            if snapshot["sourceStageRef"]:
-                ref = record_ref_from_uri(snapshot["sourceStageRef"], binding.project_id)
-                stage = binding.design_stage(ref)
-                branch = binding.repository.read_design_branches().get(stage.branch_id)
-                if branch is None:
-                    return "unavailable", "The source model's design branch is unavailable."
-                if ProjectRecordRef.from_dict(branch["head_stage"]) != ref:
-                    return "outdated", "The source model's design branch has advanced."
+                model = ModelSource.from_dict(snapshot["modelSource"])
+                require_model_source(binding, model)
+                return model_is_current(binding, model.run_id, model.state_digest, head=head)
             return "current", None
 
         for page, snapshot in zip([request.source, *request.references], snapshots, strict=True):

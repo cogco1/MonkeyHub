@@ -84,9 +84,8 @@ def source_statuses(binding, pages):
                     recipe = document.view_recipe or {}
                     try:
                         if recipe.get("kind") == "cut-plan":
-                            target = {} if document.source_stage_ref else {"target_model_source": document.model_source}
                             status = plan_status(binding, run_id=document.run_id, asset_sha256=document.asset_sha256,
-                                                 revision_ref=document.revision_ref, **target)
+                                                 revision_ref=document.revision_ref)
                             if status["status"] != "current":
                                 row.update(status="stale", detail=status["detail"])
                         elif recipe.get("kind") == "ai-render":

@@ -1,8 +1,11 @@
 """A read-only Worktree Graph: current head, running work, other lines and conflicts."""
 
+import base64
+
 from archflow.project.refs import record_ref_from_uri
 from archflow.state.state_record import StateRecordEditKind, StateRecordOperator
 
+from archflow_studio_api.application.artifacts import ModelSource, save_document
 from archflow_studio_api.application.binding import bound_project
 from archflow_studio_api.application.candidate import run_operator
 from archflow_studio_api.application.jobs import Job
@@ -10,6 +13,7 @@ from archflow_studio_api.application.projection import project_state
 from archflow_studio_api.application.runtime import worktree_graph
 
 from .support import PROJECT_ID
+from .test_rendering import Adapter, finished, png, request, submit
 from .test_working_source import WorkingSourceFixture
 
 
@@ -129,5 +133,20 @@ class WorktreeGraphTests(WorkingSourceFixture):
         self.assertEqual((b.reconcile, b.conflicts), ("conflict", ("entity:portico-base",)))
         self.assertEqual(running["studio-cand-interrupted"].status, "interrupted")
 
-    def test_representations_start_empty(self):
+    def test_representations_start_empty_and_a_render_goes_stale_with_the_head(self):
         self.assertEqual(self.graph()["representations"], [])
+        stage = self.initialize()
+        self.app.state.render_jobs.adapter = Adapter()
+        self.addCleanup(self.app.state.render_jobs.shutdown)
+        source = save_document(
+            bound_project(self.app.state), stage["candidateId"], "exact-view.png", "image/png",
+            base64.b64encode(png()).decode(), model_source=ModelSource.from_dict(stage["modelSource"]),
+            source_stage_ref=stage["stageRef"], view_recipe={"camera": {"projection": "orthographic"}},
+        )
+        page = {"runId": source.run_id, "assetSha256": source.asset_sha256, "revisionRef": None, "pageIndex": 0}
+        job = finished(self.client, submit(self.client, request(page)))["jobId"]
+        [render] = self.graph()["representations"]
+        self.assertEqual((render["kind"], render["itemId"], render["state"]), ("render", job, "current"))
+        self.candidate_from(stage)
+        [render] = self.graph()["representations"]
+        self.assertEqual(render["state"], "stale")

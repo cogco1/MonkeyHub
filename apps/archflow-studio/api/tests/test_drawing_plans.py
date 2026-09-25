@@ -237,7 +237,11 @@ class CutPlanTests(CandidateTestCase):
         record = self.client.get("/api/state", params={"run": job["candidateId"]}).json()
         self.assertEqual(next(row["value"] for row in record["parameters"] if row["key"] == "passage_width"), 1.2)
         self.assertEqual(self.repository.read_design_branches(), self.branches)
-        self.assertEqual(self.status(document)["dimensions"][0]["label"], "2000 mm")
+        own = self.status(document, targetModelSource=self.model, targetStageRef=self.stage["stageRef"])
+        self.assertEqual(own["dimensions"][0]["label"], "2000 mm")
+        # The candidate became the Working Head; the retained drawing is stale, not relabelled.
+        live = self.status(document)
+        self.assertEqual((live["status"], live["dimensions"][0]["label"]), ("outdated", "1200 mm"))
 
     def test_invalid_inputs_fail_before_drawing_and_choices_are_semantic(self):
         choices = self.client.get("/api/drawings/plans/dimensions", params={
@@ -340,3 +344,53 @@ class CutPlanTests(CandidateTestCase):
         retained = next(row for row in self.client.get("/api/documents").json()["documents"]
                         if row["revisionRef"] == document["revisionRef"])
         self.assertEqual(retained, document, "Ambiguity must not rewrite the retained drawing's source.")
+
+    def propose_move(self, shift):
+        """An unaccepted continuation of the current Stage model, returned with its exact model."""
+        result = self.client.post("/api/proposals", json={"projectId": PROJECT_ID,
+            "stateDigest": self.model["stateDigest"], "sourceRunId": self.model["runId"],
+            "sourceStageRef": self.stage["stageRef"], "semanticEdit": {
+                "summary": "Move the front wall", "parameters": [{"key": "front_shift", "value": shift}]}})
+        self.assertEqual(result.status_code, 201, result.text)
+        job = self.start(result.json()["proposalId"])
+        self.assertEqual(self.finished(job["jobId"])["status"], "succeeded")
+        candidate = self.client.get(f"/api/candidates/{job['candidateId']}").json()
+        return job["candidateId"], next(row["modelSource"] for row in candidate["artifacts"] if row["format"] == "3dm")
+
+    def test_status_follows_the_working_head_before_anything_is_accepted(self):
+        first = self.generate()
+        candidate, model = self.propose_move(.4)
+        self.assertEqual(self.client.get("/api/working-source").json()["head"]["runId"], candidate)
+        stale = self.status(first)
+        self.assertEqual(stale["status"], "outdated", stale)
+        self.assertEqual((stale["targetModelSource"], stale["targetStageRef"]), (model, None))
+        drive = {"projectId": PROJECT_ID, "dimensionId": "door-width", "value": 1.2}
+        refused = self.client.post("/api/drawings/plans/dimension-proposal", json={**drive,
+            "runId": first["runId"], "assetSha256": first["assetSha256"], "revisionRef": first["revisionRef"]})
+        self.assertEqual(refused.status_code, 409, refused.text)
+        self.assertEqual(refused.json()["code"], "STALE_BASE")
+
+        live = self.generate(sourceStageRef=None, modelSource=model, previousRevisionRef=first["revisionRef"])
+        self.assertIsNone(live["sourceStageRef"])
+        current = self.status(live)
+        self.assertEqual((current["status"], current["bindingChanged"]), ("current", False), current)
+        self.assertTrue(current["dimensions"][0]["canDrive"], current)
+        proposal = self.client.post("/api/drawings/plans/dimension-proposal", json={**drive,
+            "runId": live["runId"], "assetSha256": live["assetSha256"], "revisionRef": live["revisionRef"]})
+        self.assertEqual(proposal.status_code, 201, proposal.text)
+        self.assertEqual(proposal.json()["sourceRunId"], candidate)
+        self.assertEqual(self.repository.read_design_branches(), self.branches)
+
+    def test_a_head_without_an_exact_step_is_reported_not_rebound(self):
+        first = self.generate()
+        position = self.client.get("/api/working-draft").json()
+        moved = self.client.put("/api/working-draft", json={"projectId": PROJECT_ID, "runId": REFERENCE_RUN_ID,
+                                "baseRevisionSha256": position["revisionSha256"]})
+        self.assertEqual(moved.status_code, 200, moved.text)
+        blocked = self.status(first)
+        self.assertEqual(blocked["status"], "outdated", blocked)
+        self.assertIsNone(blocked["targetModelSource"])
+        self.assertIn("cannot be drawn yet", blocked["detail"])
+        retained = next(row for row in self.client.get("/api/documents").json()["documents"]
+                        if row["revisionRef"] == first["revisionRef"])
+        self.assertEqual(retained, first)

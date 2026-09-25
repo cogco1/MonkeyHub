@@ -285,7 +285,10 @@
         "docs/PROJECT_RUNTIME.md",
         "docs/mapping/planning/GH-271-working-head.md",
         "governance/work_registry.json",
-        "archflow/state/state_record.py"
+        "archflow/state/state_record.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/publications.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/artifacts.py",
+        "apps/archflow-studio/api/archflow_studio_api/transport/artifacts.py"
       ],
       "card": "docs/mapping/planning/GH-271-working-head.md",
       "acceptance": [
@@ -348,7 +351,10 @@
             "docs/PROJECT_RUNTIME.md",
             "docs/mapping/planning/GH-271-working-head.md",
             "governance/work_registry.json",
-            "archflow/state/state_record.py"
+            "archflow/state/state_record.py",
+            "apps/archflow-studio/api/archflow_studio_api/application/publications.py",
+            "apps/archflow-studio/api/archflow_studio_api/application/artifacts.py",
+            "apps/archflow-studio/api/archflow_studio_api/transport/artifacts.py"
           ],
           "depends_on": [],
           "status": "active",

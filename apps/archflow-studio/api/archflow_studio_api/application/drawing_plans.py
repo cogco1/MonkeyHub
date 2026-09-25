@@ -11,9 +11,8 @@ from archflow.adapters.cad_patch import select_patch_operations
 from archflow.contracts.canonical import canonical_digest
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import STUDIO_SOURCE_DOCUMENT
-from archflow.project.refs import record_ref_from_uri
+from archflow.project.refs import ProjectRecordRef, record_ref_from_uri
 from archflow.project.repository import ProjectRepositoryError
-from archflow.state.design_portfolio import DesignBranch
 from monkeyarch.capabilities.geometry_proposal import load_compiled_geometry_program
 from monkeydiagram.drawing_elevation import (
     DrawingElevationError, ElevationView, freeze_cut_plan, read_elevation_source,
@@ -28,6 +27,7 @@ from .drawings import _complete_source, _elevation_view, _selected_source
 from .drawing_dimensions import resolve_plan_dimensions, list_plan_dimension_intents
 from .intent import component_edit_proposal
 from .projection import project_state, require_actionable
+from .working_draft import resolve_working_source
 from .proposals import proposal_from
 from ..transport.errors import StudioError
 
@@ -199,18 +199,34 @@ def generate_plan(binding, *, source_stage_ref=None, model_source=None, drawing_
         raise StudioError(422, "DRAWING_PLAN_INVALID", str(exc)) from exc
 
 
-def _branch_target(binding, document):
-    if not document.source_stage_ref:
-        raise StudioError(409, "DRAWING_TARGET_REQUIRED", "Choose an exact target source for this drawing; it has no accepted Stage branch.")
-    return _stage_branch_head(binding, record_ref_from_uri(document.source_stage_ref, binding.project_id))
+def _on_head(head, model):
+    """Whether a drawing reads exactly the Working Head, the only state it may change."""
+    return head is not None and model is not None and (model.run_id, model.state_digest) == (head.run_id, head.state_digest)
 
 
-def _stage_branch_head(binding, stage_ref):
-    stage = binding.design_stage(stage_ref)
-    branches = binding.repository.read_design_branches()
-    if stage.branch_id not in branches:
-        raise StudioError(409, "DRAWING_TARGET_UNAVAILABLE", "The source Stage branch is unavailable.")
-    return DesignBranch.from_dict(branches[stage.branch_id]).head_stage.uri
+def _drivable(binding, head, model, stage_ref):
+    """A design change may start from the Working Head, or explicitly from the
+    latest accepted state of another line; never from a line's own past."""
+    if _on_head(head, model):
+        return True
+    if stage_ref is None:
+        return False
+    stage = binding.design_stage(record_ref_from_uri(stage_ref, binding.project_id))
+    if head is not None and stage.branch_id == head.branch_id:
+        return False
+    branch = binding.repository.read_design_branches().get(stage.branch_id)
+    return branch is not None and ProjectRecordRef.from_dict(branch["head_stage"]).uri == stage_ref
+
+
+def _live_target(resolved, document):
+    """A LIVE drawing's target: the Working Head's exact drawable source, or why there is none."""
+    if resolved.head is None:
+        return None, None, resolved.reason
+    if _on_head(resolved.head, document.model_source):
+        return document.model_source, document.source_stage_ref, None
+    if resolved.source is None:
+        return None, None, resolved.reason
+    return resolved.source, resolved.stage_ref, None
 
 
 def _read_set(binding, receipt, frame, hidden):
@@ -243,8 +259,12 @@ def plan_status(binding, *, run_id, asset_sha256, revision_ref, target_model_sou
         # Recheck retained stage-less drawings too: their model may since have
         # been accepted into multiple histories. Never silently rebind the page.
         _, old_stage = _plan_source(binding, document.source_stage_ref, document.model_source)
+        resolved = resolve_working_source(binding, "drawing")
         if target_model_source is None and target_stage_ref is None:
-            target_stage_ref = _branch_target(binding, document)
+            target_model_source, target_stage_ref, blocked = _live_target(resolved, document)
+            if target_model_source is None:
+                result.update(status="outdated", detail=f"The current model cannot be drawn yet: {blocked}")
+                return result
         target, stage_ref = _plan_source(binding, target_stage_ref, target_model_source)
         result.update(targetModelSource=target.to_dict(), targetStageRef=None if stage_ref is None else stage_ref.uri,
                       bindingChanged=target != document.model_source or (None if stage_ref is None else stage_ref.uri) != document.source_stage_ref)
@@ -288,9 +308,9 @@ def plan_status(binding, *, run_id, asset_sha256, revision_ref, target_model_sou
         if result["bindingChanged"]:
             result["dimensions"] = [{**row, "canDrive": False,
                                      "driveReason": "Rebuild against the selected source before changing a design dimension."} for row in dimensions]
-        elif document.source_stage_ref and _branch_target(binding, document) != document.source_stage_ref:
+        elif not _drivable(binding, resolved.head, document.model_source, document.source_stage_ref):
             result["dimensions"] = [{**row, "canDrive": False,
-                                     "driveReason": "This is a historical source. Rebuild from its branch head before changing the design."} for row in dimensions]
+                                     "driveReason": "This drawing shows an earlier model. Rebuild it on the current model before changing the design."} for row in dimensions]
     except (StudioError, ProjectRepositoryError, DrawingElevationError, KeyError, TypeError, ValueError) as exc:
         result.update(status="unknown", detail=exc.detail if isinstance(exc, StudioError) else str(exc), dimensions=[])
     return result
@@ -308,10 +328,11 @@ def dimension_proposal(binding, *, run_id, asset_sha256, revision_ref, dimension
     document = _plan_document(binding, run_id, asset_sha256, revision_ref)
     source, stage_ref = _plan_source(binding, document.source_stage_ref, document.model_source)
     projection = project_state(binding, source.run_id, source_stage_ref=stage_ref)
-    # A pinned historical view stays readable, but cannot pretend its old base
-    # is the current accepted branch merely by supplying that same old target.
-    if projection.source_stage_ref and _stage_branch_head(binding, projection.source_stage_ref) != projection.source_stage_ref.uri:
-        raise StudioError(409, "STALE_BASE", "Rebuild this drawing from its branch head before changing the design.")
+    # A historical view stays readable, but a change starts only from the
+    # Working Head or another line's latest Stage; an old target never passes.
+    if not _drivable(binding, resolve_working_source(binding, "drawing").head, source,
+                     None if stage_ref is None else stage_ref.uri):
+        raise StudioError(409, "STALE_BASE", "Rebuild this drawing on the current model before changing the design.")
     status = plan_status(binding, run_id=run_id, asset_sha256=asset_sha256, revision_ref=revision_ref,
                          target_model_source=target_model_source, target_stage_ref=target_stage_ref)
     if status["status"] != "current" or status["bindingChanged"]:

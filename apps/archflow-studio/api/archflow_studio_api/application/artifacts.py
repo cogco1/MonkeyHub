@@ -1061,6 +1061,16 @@ def _candidate_stage_source(binding: ProjectBinding, run_id: str) -> tuple[str, 
         return None
 
 
+def artifact_model_source(record: ArtifactRecord) -> ModelSource | None:
+    """The exact model identity an available 3dm row answers to, as the wire states it."""
+
+    if record.model_source is not None:
+        return record.model_source
+    if record.design_state_digest and record.sha256 and record.format == FORMAT_3DM and record.available:
+        return ModelSource(record.run_id, record.design_state_digest, record.sha256)
+    return None
+
+
 def require_model_source(
     binding: ProjectBinding, source: ModelSource, projection: StateProjection | None = None,
 ) -> ArtifactRecord:
