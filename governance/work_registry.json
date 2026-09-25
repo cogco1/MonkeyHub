@@ -3,6 +3,43 @@
   "phase": "GitHub Issues are the work items (#60); this registry records live source-edit coordination only. The remaining legacy P cards are blocked and claim no path; P115 is a frozen historical index. Real project acceptance and formal issue are explicit user actions.",
   "items": [
     {
+      "id": "GH-294",
+      "stream": "planning",
+      "status": "active",
+      "goal": "Audit where candidate-like execution runs are created, retained and surfaced, and propose the minimum seam so only admitted design results become architectural Candidates.",
+      "depends_on": [],
+      "write_scope": [
+        "docs/2026-09-25-candidate-admission-audit.md",
+        "docs/mapping/planning/GH-294-candidate-admission.md"
+      ],
+      "card": "docs/mapping/planning/GH-294-candidate-admission.md",
+      "acceptance": [
+        "The audit maps each current candidate concept to Run, Worktree, Completed Result, Candidate or Stage with persistence owner and UI visibility.",
+        "The minimal migration plan names one retained admission fact that survives restart and feeds the Design Tree with admitted Candidates only."
+      ],
+      "lanes": [
+        {
+          "id": "admission-audit",
+          "issue": "https://github.com/cogco1/MonkeyHub/issues/294",
+          "branch": "codex/294-candidate-admission",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-294-candidate-admission",
+          "base_ref": "cc9397fa",
+          "contributor": "Claude",
+          "reviewer": "Claude root task",
+          "handoff": "Audit and plan only; no code changes until the seam is agreed.",
+          "modules": [
+            "hub.shell"
+          ],
+          "write_scope": [
+            "docs/2026-09-25-candidate-admission-audit.md"
+          ],
+          "depends_on": [],
+          "status": "active",
+          "blocked_reason": null
+        }
+      ]
+    },
+    {
       "id": "P115",
       "stream": "planning",
       "status": "blocked",
