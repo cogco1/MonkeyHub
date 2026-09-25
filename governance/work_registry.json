@@ -212,6 +212,7 @@
         "apps/archflow-studio/api/archflow_studio_api/application/runtime.py",
         "apps/archflow-studio/api/archflow_studio_api/transport/decisions.py",
         "apps/archflow-studio/api/archflow_studio_api/transport/intent.py",
+        "apps/monkeyhub/web/workspaces/src/api/generated/",
         "docs/2026-09-26-representation-state.md",
         "docs/mapping/planning/GH-223-representation-state.md"
       ],
@@ -260,7 +261,8 @@
             "apps/archflow-studio/README.md",
             "apps/archflow-studio/api/archflow_studio_api/application/decisions.py",
             "apps/archflow-studio/api/archflow_studio_api/transport/decisions.py",
-            "apps/archflow-studio/api/archflow_studio_api/transport/intent.py"
+            "apps/archflow-studio/api/archflow_studio_api/transport/intent.py",
+            "apps/monkeyhub/web/workspaces/src/api/generated/"
           ],
           "depends_on": [],
           "status": "active",
