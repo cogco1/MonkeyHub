@@ -180,6 +180,7 @@ export const messagesZhCN = {
   "stage.base.modelUnavailable": "已读取所选版本的修改记录，但模型不可用。可以重试加载，或返回默认修改起点。",
   "stage.base.retry": "重试",
   "stage.base.viewOnly": "当前仅查看。请选择“从此版本继续”，或返回修改起点后再修改。",
+  "stage.follow.moved": "已跟随项目当前模型。",
   "stage.base.notSaved": "浏览器未能保存这次修改起点；选择仅在当前标签页有效。",
   "stage.base.programUnavailable": "任务书编辑尚未支持候选续改，请返回默认修改起点后编辑。",
   "stage.base.optionsReadOnly": "这里可查看候选体量；生成体量选项尚未支持候选续改，请返回默认修改起点。",
