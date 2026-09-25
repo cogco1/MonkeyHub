@@ -27,6 +27,8 @@ export interface ProjectWorkspaceProps {
   workspace: "arch" | "board" | "drawing" | "render" | "publish";
   expectedProjectId?: string;
   candidateRunId?: string | null;
+  /** The pin is a delivery or restore hint; a runtime that knows its Working Head shows the head. */
+  candidateFollowsHead?: boolean;
   active?: boolean;
   refreshKey?: number;
   documentRequest?: { source: PageSource; requestId: number } | null;
@@ -36,7 +38,7 @@ export interface ProjectWorkspaceProps {
 }
 
 /** One mounted project: the Board, its page editor and the same local model draft. */
-export function ProjectWorkspace({ workspace, expectedProjectId, candidateRunId = null, active = true, refreshKey = 0, documentRequest = null,
+export function ProjectWorkspace({ workspace, expectedProjectId, candidateRunId = null, candidateFollowsHead = false, active = true, refreshKey = 0, documentRequest = null,
   onWorkspaceChange, onChatRequest, onDesignContextChange }: ProjectWorkspaceProps) {
   const renderReader = useRef<(() => RenderView | null) | null>(null);
   const registerRenderReader = useCallback((reader: (() => RenderView | null) | null) => { renderReader.current = reader; }, []);
@@ -120,7 +122,7 @@ export function ProjectWorkspace({ workspace, expectedProjectId, candidateRunId 
     {refreshError && <ErrorPanel error={refreshError} what="GET /api/protocol" />}
     {(archVisited || modelVisible) && <div data-project-surface="arch" hidden={!modelVisible} inert={!active || !modelVisible}
       style={{ height: "100%", minHeight: 0, display: modelVisible ? "block" : "none" }}>
-      <App server={server.value} expectedProjectId={boundProjectId.current} initialRunId={candidateRunId} documentSource={pageOpen ? visit.source : null}
+      <App server={server.value} expectedProjectId={boundProjectId.current} initialRunId={candidateRunId} initialRunFollowsHead={candidateFollowsHead} documentSource={pageOpen ? visit.source : null}
         initialDocumentIntent={documentIntent} initialSketchRequest={sketchRequest}
         active={active && modelVisible} refreshKey={refreshKey + attempt} onReturnToBoard={openBoard} onOpenBoard={openBoard} onChatRequest={onChatRequest}
         onDesignContextChange={onDesignContextChange} onRenderReader={registerRenderReader} />

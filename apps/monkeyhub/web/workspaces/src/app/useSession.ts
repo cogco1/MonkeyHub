@@ -46,8 +46,12 @@ interface SessionSnapshot {
 }
 
 export interface SessionHandle extends SessionSnapshot {
+  /**
+   * `persist: false` follows a position the server already holds (the Working
+   * Head) without writing a new working position or a local editing choice.
+   */
   reload(runId?: string | null, sourceStageRef?: string | null, branchId?: string, background?: boolean,
-    alreadyReadProjection?: StateProjectionDto): Promise<Session | null>;
+    alreadyReadProjection?: StateProjectionDto, persist?: boolean): Promise<Session | null>;
   /** Refresh version choices without re-projecting or selecting an editing base. */
   refreshWorkingCopies(): Promise<readonly WorkingCopyDto[] | null>;
   refreshWorkingDraft(): Promise<WorkingDraftDto | null>;
@@ -70,7 +74,7 @@ export function createSessionController(studio: StudioClient, serverBaseUrl = ""
   };
 
   const reload = async (requestedRunId?: string | null, sourceStageRef?: string | null, branchId?: string, background = false,
-    alreadyReadProjection?: StateProjectionDto): Promise<Session | null> => {
+    alreadyReadProjection?: StateProjectionDto, persist = true): Promise<Session | null> => {
     const currentRequest = ++request;
     const previous = snapshot.session;
     let project: ProjectBindingDto | null = null;
@@ -146,7 +150,7 @@ export function createSessionController(studio: StudioClient, serverBaseUrl = ""
       }
       // The worker usually retains this position already. A later local batch
       // can still start from the original source and must advance it explicitly.
-      if (workingDraft && persistEditingBase &&
+      if (workingDraft && persistEditingBase && persist &&
         ((requestedRunId !== undefined && (!background || workingDraft.current?.runId !== runId)) ||
           (workingDraft.revisionSha256 == null && legacyChoice !== null))) {
         workingDraft = await studio.selectWorkingDraft({ projectId: project.projectId,
@@ -158,7 +162,7 @@ export function createSessionController(studio: StudioClient, serverBaseUrl = ""
       // Reading a model or refreshing a session never records consent. Only the
       // explicit continuation/default action reaches the existing preference writer.
       let persistenceFailed = snapshot.persistenceFailed;
-      if (!workingDraft && requestedRunId !== undefined && persistEditingBase) {
+      if (!workingDraft && requestedRunId !== undefined && persistEditingBase && persist) {
         try {
           persistenceFailed = !editingBasePreferences.writeChoice(serverBaseUrl, project.projectId, runId === null ? null : {
             runId, sourceStageRef: stageRef ?? null, branchId: designHistory?.branchId ?? null,

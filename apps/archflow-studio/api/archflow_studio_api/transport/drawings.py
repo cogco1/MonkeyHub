@@ -102,6 +102,9 @@ class PlanRequestDto(BaseModel):
     dimensions: list[PlanDimensionDto] | None = Field(default=None, max_length=100)
     dressing: list[PlanDressingDto] | None = Field(default=None, max_length=100)
     dressing_operations: list[PlanDressingOperationDto] | None = Field(alias="dressingOperations", default=None, max_length=100)
+    follow: Literal["live", "frozen"] | None = Field(default=None, description=(
+        "live follows the project's Working Head; frozen keeps this drawing on its chosen source until it is "
+        "rebuilt. Omitted keeps the previous revision's choice; a new drawing is live."))
 
     @model_validator(mode="after")
     def one_dressing_edit(self):

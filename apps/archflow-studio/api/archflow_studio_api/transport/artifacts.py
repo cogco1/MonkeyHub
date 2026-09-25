@@ -17,6 +17,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from ..application.artifacts import (
+    artifact_model_source,
     ArtifactListing,
     ArtifactRecord,
     DocumentWorkCopy,
@@ -398,10 +399,7 @@ def artifact_dto(record: ArtifactRecord) -> ProjectArtifactDto:
     return ProjectArtifactDto(
         artifact_id=record.artifact_id,
         run_id=record.run_id,
-        model_source=model_source_dto(record.model_source or (
-            ModelSource(record.run_id, record.design_state_digest, record.sha256)
-            if record.design_state_digest and record.sha256 and record.format == "3dm" and record.available else None
-        )),
+        model_source=model_source_dto(artifact_model_source(record)),
         source_stage_ref=record.source_stage_ref,
         stage_id=record.stage_id,
         file_name=record.file_name,

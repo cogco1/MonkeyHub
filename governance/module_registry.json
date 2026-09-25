@@ -3635,7 +3635,8 @@
         "StateRecordOperator.from_dict",
         "combine_component_changes",
         "StateRecord.closures",
-        "compile_parameter_locks"
+        "compile_parameter_locks",
+        "changed_refs"
       ],
       "depends_on": [
         "contracts.canonical",
@@ -3977,7 +3978,8 @@
         "GET /api/model-assets/{asset_sha256}/index",
         "read_model_source_index",
         "GET /api/drawings/plans/vector",
-        "plan_vector"
+        "plan_vector",
+        "artifact_model_source"
       ],
       "depends_on": [
         "adapters.cad_execution",
@@ -4039,7 +4041,8 @@
         "model-view is a transient orthographic PNG from a complete retained STEP bound to exact run/stateDigest/model asset; it creates no drawing or project record and refuses unsupported sources.",
         "Uploaded model registrations protect their source run permanently; generated compositions retain generated provenance and remain eligible for unreferenced automatic cleanup. Legacy registrations are conservatively protected.",
         "Cut-plan freshness is derived from exact source object inputs intersecting the view slab, including entering and occluding objects, and resolved dimension anchors; unknown targets and broken anchors are explicit. Rebuild preserves the recipe and immutable prior revision; no nearest-object rebinding is allowed.",
-        "Design width proposals require two uniquely verified cut STEP jambs, an unlocked direct parameter with matching units and the original exact source at its accepted branch head. Placement edits change only paper representation and dimensions outside the view cannot drive."
+        "Design width proposals require two uniquely verified cut STEP jambs, an unlocked direct parameter with matching units and the drawing's exact source on the Working Head, or another line's latest accepted Stage. Placement edits change only paper representation and dimensions outside the view cannot drive.",
+        "a drawing's default status target is the Working Head's exact drawable source; a head with no exact STEP is reported, never rebound"
       ],
       "status": "canonical",
       "tests": [
@@ -4184,7 +4187,8 @@
         "explicitly preparing an empty project for its first modeling candidate through P036 initial-input persistence: a modeling root, zero level, setup basis and seat; existing authored or retained design and Board assets are preserved",
         "Projecting a checked in-memory proposed StateRecord for another edit without writing or claiming a retained candidate",
         "Read-only element elevation facts and their actual base/top references, plus named Level datums, projected from the exact StateRecord for contextual Stage 1 editing.",
-        "The current project working position, 24-hour automatic recovery listing, independent explicit saved versions and exact-source local command recovery through the P036 working-draft port; readback never executes a recovered request."
+        "The current project working position, 24-hour automatic recovery listing, independent explicit saved versions and exact-source local command recovery through the P036 working-draft port; readback never executes a recovered request.",
+        "Resolving the Working Head for ordinary work: the readable retained working position, else the main line's accepted head, else the reference run, and each workspace's compatible exact source under a LIVE or FROZEN policy; resolving writes nothing"
       ],
       "does_not_own": [
         "issuing a project version, and direct project file writes: the ProjectBinding object stays read-only, initial authored-input preparation and configured sync use project.repository ports; runtime.project_runner is the writer of a modeling run and project.issue the only issuer. A configured pull advances this Runtime's local design branch, and it does so entirely through project.repository's transfer and branch compare-and-swap ports; this owner writes no project file itself and moves no canonical HEAD",
@@ -4268,7 +4272,16 @@
         "save_working_draft",
         "retain_local_draft",
         "record_candidate_draft",
-        "retained_sources"
+        "retained_sources",
+        "GET /api/working-draft/revision",
+        "working_revision",
+        "GET /api/working-source",
+        "resolve_working_source",
+        "WorkingSource",
+        "WorkingHead",
+        "model_is_current",
+        "lineage_of",
+        "WorkingSources"
       ],
       "depends_on": [
         "project.inputs",
@@ -4309,7 +4322,8 @@
         "one process answers for one project: the scoped and the unscoped path resolve to the same binding and are shaped by the same function",
         "the catalog derives; it never writes: an object no element names stays MODEL_VISIBLE_CATALOG_MISSING, and no neighbouring element's field is offered in its place",
         "all actionable projections retain exact record and runner binding; historical canonical bases require a verified committed Stage source",
-        "main head Stage is the default when design history exists; a successful harness run alone never becomes a default committed Stage"
+        "main head Stage is the default when design history exists; a successful harness run alone never becomes a default committed Stage",
+        "the Working Head is the architect's editing base, read from retained facts and never guessed from the newest file; a generated candidate is recorded and shown but never moves it, viewing history never moves it, and only the explicit working-draft selection (Continue, or adopting the architect's own Sync) does; a recorded continuation keeps its source position's branch"
       ],
       "status": "canonical",
       "tests": [
@@ -4321,7 +4335,8 @@
         "apps/archflow-studio/api/tests/test_frame.py",
         "apps/archflow-studio/api/tests/test_collaboration_http.py",
         "apps/archflow-studio/api/tests/test_boards.py",
-        "apps/archflow-studio/api/tests/test_working_draft.py"
+        "apps/archflow-studio/api/tests/test_working_draft.py",
+        "apps/archflow-studio/api/tests/test_working_source.py"
       ],
       "notes": "Every other Studio concern reads the project through this one binding.",
       "files": [
@@ -4362,7 +4377,8 @@
         "retaining each candidate typed operator, exact immediate source and committed base Stage; replaying its chain against the saved materialized result",
         "retaining combined candidate source ids with one normalized operator against their common Stage; replaying all sources before acceptance",
         "Read-only runtime inspection of live jobs, exact retained candidates and branch-reachable committed Stages; managed candidate admission may accept a preallocated run id without weakening exact-base checks or re-executing an existing run",
-        "Protecting an executing candidate and its input from automatic cleanup, and advancing its exact current working position after successful execution without accepting a Stage."
+        "Protecting an executing candidate and its input from automatic cleanup, and recording its finished result in the working position for recovery and comparison without moving the editing base or accepting a Stage.",
+        "The read-only Worktree Graph: the Working Head, other accepted lines, running and interrupted candidate work with exact bases and declared read/write refs, retained results off the head's line and whether the StateRecord combine rule accepts them with the head, plus drawing and render freshness"
       ],
       "does_not_own": [
         "seat execution, geometry and every record it writes - runtime.project_runner",
@@ -4429,7 +4445,12 @@
         "inspect_runtime",
         "GET /api/runtime",
         "JobRegistry.list",
-        "candidate_seats"
+        "candidate_seats",
+        "GET /api/worktrees",
+        "worktree_graph",
+        "WorktreeGraph",
+        "WorktreeLine",
+        "RepresentationState"
       ],
       "depends_on": [
         "capabilities.declaration",
@@ -4477,7 +4498,8 @@
         "configured Runtime acceptance delegates to its shared service and then pulls the retained result; shared acceptance records the authenticated actor in existing accepted_by; older records retain their original attribution",
         "Runtime inspection never starts a worker, replays a change, executes CAD or writes project records; a live job or an incomplete retained candidate cannot prove successful execution or a committed Stage",
         "candidate ownership continues the selected source run through its retained seat round and discipline-seat refs; only explicitly deleted Component roots retire, legacy sources without a seat schedule keep authored-pack behavior, and missing or ambiguous retained ownership is refused",
-        "changed-component coverage is checked before composed-model registration and on cold candidate reads from the existing retained operator and runner receipt; a run that did not build its own changed components is not recovered as a succeeded candidate"
+        "changed-component coverage is checked before composed-model registration and on cold candidate reads from the existing retained operator and runner receipt; a run that did not build its own changed components is not recovered as a succeeded candidate",
+        "the Worktree Graph never merges, starts, replays or writes; conflicts are compared from the nearest shared source, never from a common Stage that both lines already changed"
       ],
       "status": "canonical",
       "tests": [
@@ -4492,7 +4514,8 @@
         "apps/archflow-studio/api/tests/test_working_copies.py",
         "apps/archflow-studio/api/tests/test_model_load_monitoring.py",
         "apps/monkeyhub/web/workspaces/test/candidatePreview.browser.mjs",
-        "apps/archflow-studio/api/tests/test_runtime.py"
+        "apps/archflow-studio/api/tests/test_runtime.py",
+        "apps/archflow-studio/api/tests/test_worktrees.py"
       ],
       "notes": "The whole module is arrangement: the kernel runner does the work, this decides when and with what.",
       "files": [
@@ -6702,7 +6725,9 @@
         "apps/monkeyhub/web/workspaces/test/candidatePreview.browser.mjs",
         "apps/monkeyhub/api/tests/test_model_export_chat.py",
         "apps/monkeyhub/web/workspaces/test/renderWorkspace.browser.mjs",
-        "apps/monkeyhub/web/workspaces/test/renderView.test.ts"
+        "apps/monkeyhub/web/workspaces/test/renderView.test.ts",
+        "apps/monkeyhub/web/workspaces/test/workingHead.test.ts",
+        "apps/monkeyhub/web/test/worktreeGraph.test.ts"
       ],
       "depends_on": [
         "project.repository",

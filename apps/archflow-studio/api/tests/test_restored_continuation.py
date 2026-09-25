@@ -117,7 +117,12 @@ class RestoredContinuationWithoutCadTests(unittest.TestCase):
                 utterance="set height to 2.2",
                 element_id="portico-base",
             )
-        self.assertEqual(job_a["status"], "succeeded", job_a)
+            self.assertEqual(job_a["status"], "succeeded", job_a)
+            # The architect continues from A explicitly; a result alone never moves the position.
+            position = source_client.get("/api/working-draft").json()
+            chosen = source_client.put("/api/working-draft", json={"projectId": PROJECT_ID,
+                                       "runId": job_a["candidateId"], "baseRevisionSha256": position["revisionSha256"]})
+            self.assertEqual(chosen.status_code, 200, chosen.text)
         run_a = job_a["candidateId"]
         source_head = self.repository.read_head()
         archive = self.root / f"{PROJECT_ID}.monkeyhub.zip"
@@ -164,10 +169,10 @@ class RestoredContinuationWithoutCadTests(unittest.TestCase):
             )
         )
         self.assertEqual(delta["source_run_ref"]["run_id"], run_a)
-        # Continuing advances the mutable working position, while A and every
-        # other archived file remain byte-identical to the restored source.
+        # B is recorded for recovery without moving the position (GH-234 Q2), while
+        # A and every other archived file remain byte-identical to the restored source.
         working_b, _ = restored.read_working_draft()
-        self.assertEqual(working_b["current"], run_b)
+        self.assertEqual(working_b["current"], run_a)
         self.assertEqual(working_b["runs"][run_a], working_a["runs"][run_a])
         self.assertEqual(set(working_b["runs"]), set(working_a["runs"]) | {run_b})
         self.assertTrue(working_b["runs"][run_b]["automatic"])

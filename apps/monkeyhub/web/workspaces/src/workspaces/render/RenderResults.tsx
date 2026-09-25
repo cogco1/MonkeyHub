@@ -113,13 +113,14 @@ export default function RenderResults({ active, jobs, documents, selectedId, onS
             {row.document && row.resultAvailable && <ImageThumbnail image={row.document} active={active} />}
             <span>{row.request?.direction ?? row.document?.fileName ?? "Native Render"}</span><small>{renderStatus(row.status, zh)}</small>
             <time dateTime={row.createdAt}>{new Date(row.createdAt).toLocaleString(language)}</time>
-            {row.sourceState !== "current" && <small>{row.sourceState === "outdated" ? (zh ? "来源已更新" : "Source outdated") : (zh ? "来源不可用" : "Source unavailable")}</small>}
+            {row.sourceState !== "current" && <small data-source-state={row.sourceState}>{row.sourceState === "outdated" ? (zh ? "来源已更新" : "Source outdated") : (zh ? "来源不可用" : "Source unavailable")}</small>}
           </button>)}
         </aside>
         <div className="render-detail">
           {job && <div className="render-job" role="status">
             {renderStatus(job.status, zh)} · {job.model ?? job.providerId}
-            {job.sourceState !== "current" && <span className="render-source-state"> · {job.sourceState === "outdated" ? (zh ? "来源已更新，此结果保留原来源" : "Source outdated; this result keeps its original source") : (zh ? "来源不可用" : "Source unavailable")}</span>}
+            {job.sourceState !== "current" && <span className="render-source-state" data-source-state={job.sourceState}> · {job.sourceState === "outdated" ? (zh ? "来源已更新，此结果保留原来源" : "Source outdated; this result keeps its original source") : (zh ? "来源不可用" : "Source unavailable")}</span>}
+            {job.sourceState !== "current" && job.sourceStateReason && <p className="render-source-reason">{job.sourceStateReason}</p>}
             {job.error && <p>{job.errorCode ? `${job.errorCode}: ` : ""}{job.error}</p>}
             {job.status === "unknown" && <p>{zh ? "调用结果未确认，可能已产生费用。刷新只查询状态；不会自动重发。" : "The call outcome is unconfirmed and may have incurred a charge. Refresh only reads its status; it never resends."}</p>}
           </div>}
@@ -133,7 +134,9 @@ export default function RenderResults({ active, jobs, documents, selectedId, onS
               {image && <><dt>{zh ? "文件" : "File"}</dt><dd>{image.fileName}</dd></>}
               <dt>{zh ? "创建时间" : "Created"}</dt><dd><time dateTime={job.createdAt}>{new Date(job.createdAt).toLocaleString(language)}</time></dd>
               {source && <><dt>{zh ? "底图" : "Source image"}</dt><dd>{source.fileName}</dd></>}
-              <dt>{zh ? "模型版本" : "Model version"}</dt><dd>{modelSource ? <span title={modelSource.stateDigest}>{modelSource.runId} · {modelSource.stateDigest.slice(0, 12)}</span>
+              {/* #271: the person sees current or earlier; exact ids stay in the details below. */}
+              <dt>{zh ? "模型" : "Model"}</dt><dd>{modelSource ? <span title={`${modelSource.runId} · ${modelSource.stateDigest}`}>
+                {job.sourceState === "current" ? (zh ? "项目当前模型" : "Current project model") : (zh ? "较早的模型" : "An earlier model")}</span>
                 : (zh ? "未关联模型" : "No model association")}</dd>
               {projection && <><dt>{zh ? "来源视图" : "Source view"}</dt><dd>{projection}</dd></>}
             </dl>

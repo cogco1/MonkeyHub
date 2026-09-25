@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, replace
 from copy import deepcopy
+from itertools import chain, count
 from datetime import datetime, timezone
 from uuid import uuid4
 
@@ -11,9 +12,8 @@ from archflow.adapters.cad_patch import select_patch_operations
 from archflow.contracts.canonical import canonical_digest
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import STUDIO_SOURCE_DOCUMENT
-from archflow.project.refs import record_ref_from_uri
+from archflow.project.refs import ProjectRecordRef, record_ref_from_uri
 from archflow.project.repository import ProjectRepositoryError
-from archflow.state.design_portfolio import DesignBranch
 from monkeyarch.capabilities.geometry_proposal import load_compiled_geometry_program
 from monkeydiagram.drawing_elevation import (
     DrawingElevationError, ElevationView, freeze_cut_plan, read_elevation_source,
@@ -28,6 +28,7 @@ from .drawings import _complete_source, _elevation_view, _selected_source
 from .drawing_dimensions import resolve_plan_dimensions, list_plan_dimension_intents
 from .intent import component_edit_proposal
 from .projection import project_state, require_actionable
+from .working_draft import WorkingSources
 from .proposals import proposal_from
 from ..transport.errors import StudioError
 
@@ -109,7 +110,7 @@ def plan_vector(binding, *, run_id, asset_sha256, revision_ref):
 def generate_plan(binding, *, source_stage_ref=None, model_source=None, drawing_id=None,
                   previous_revision_ref=None, cut_height=None, bottom=None, scale_denominator=None,
                   crop_uv=None, cut_line_mm=None, visible_line_mm=None, hatch_spacing_mm=None,
-                  hidden_object_ids=None, dimensions=None, dressing=None, dressing_operations=None):
+                  hidden_object_ids=None, dimensions=None, dressing=None, dressing_operations=None, follow=None):
     previous = None if previous_revision_ref is None else _previous_plan(binding, previous_revision_ref)
     old = {} if previous is None else previous.view_recipe
     if previous is not None and drawing_id not in (None, previous.drawing_id):
@@ -117,7 +118,7 @@ def generate_plan(binding, *, source_stage_ref=None, model_source=None, drawing_
     model_source, stage_ref = _plan_source(binding, source_stage_ref, model_source)
     source, cad_receipt = _complete_source(binding, model_source, stage_ref)
     unit = cad_receipt["identity"]["length_unit"]
-    drawing_id = drawing_id or (previous.drawing_id if previous else "floor-plan")
+    drawing_id = drawing_id or (previous.drawing_id if previous else _new_plan_id(binding))
     prior_frame = old.get("frame", {})
     cut = cut_height if cut_height is not None else prior_frame.get("origin", (0, 0, 1.2 / UNIT_METRES[unit]))[2]
     low = bottom if bottom is not None else (prior_frame["origin"][2] - prior_frame["far_depth"] if prior_frame else 0)
@@ -148,6 +149,10 @@ def generate_plan(binding, *, source_stage_ref=None, model_source=None, drawing_
             "hatchSpacingMm": hatch_spacing_mm if hatch_spacing_mm is not None else graphics.get("hatchSpacingMm", 2),
         }, "hiddenObjectIds": sorted(set(hidden_object_ids if hidden_object_ids is not None else old.get("hiddenObjectIds", []))),
             "dimensions": list(dimensions if dimensions is not None else old.get("dimensions", []))}
+        # A drawing made from a chosen version stays on it until a person rebuilds
+        # it to follow the Working Head again (#271); without a choice, it follows.
+        if follow == "frozen" or (follow is None and old.get("follow") == "frozen"):
+            recipe["follow"] = "frozen"
         if dressing is not None or "dressing" in old or dressing_operations is not None:
             recipe["dressing"] = deepcopy(dressing if dressing is not None else old.get("dressing", []))
             if dressing_operations is not None:
@@ -199,18 +204,42 @@ def generate_plan(binding, *, source_stage_ref=None, model_source=None, drawing_
         raise StudioError(422, "DRAWING_PLAN_INVALID", str(exc)) from exc
 
 
-def _branch_target(binding, document):
-    if not document.source_stage_ref:
-        raise StudioError(409, "DRAWING_TARGET_REQUIRED", "Choose an exact target source for this drawing; it has no accepted Stage branch.")
-    return _stage_branch_head(binding, record_ref_from_uri(document.source_stage_ref, binding.project_id))
+def _new_plan_id(binding):
+    """A new cut plan is its own drawing; only its revisions share its identity."""
+    taken = {document.drawing_id for document in list_documents(binding)
+             if (document.view_recipe or {}).get("kind") == "cut-plan"}
+    names = chain(("floor-plan",), (f"floor-plan-{n}" for n in count(2)))
+    return next(name for name in names if name not in taken)
 
 
-def _stage_branch_head(binding, stage_ref):
-    stage = binding.design_stage(stage_ref)
-    branches = binding.repository.read_design_branches()
-    if stage.branch_id not in branches:
-        raise StudioError(409, "DRAWING_TARGET_UNAVAILABLE", "The source Stage branch is unavailable.")
-    return DesignBranch.from_dict(branches[stage.branch_id]).head_stage.uri
+def _on_head(head, model):
+    """Whether a drawing reads exactly the Working Head, the only state it may change."""
+    return head is not None and model is not None and (model.run_id, model.state_digest) == (head.run_id, head.state_digest)
+
+
+def _drivable(binding, head, model, stage_ref):
+    """A design change may start from the Working Head, or explicitly from the
+    latest accepted state of another line; never from a line's own past."""
+    if _on_head(head, model):
+        return True
+    if stage_ref is None:
+        return False
+    stage = binding.design_stage(record_ref_from_uri(stage_ref, binding.project_id))
+    if head is not None and stage.branch_id == head.branch_id:
+        return False
+    branch = binding.repository.read_design_branches().get(stage.branch_id)
+    return branch is not None and ProjectRecordRef.from_dict(branch["head_stage"]).uri == stage_ref
+
+
+def _live_target(resolved, document):
+    """A LIVE drawing's target: the Working Head's exact drawable source, or why there is none."""
+    if resolved.head is None:
+        return None, None, resolved.reason
+    if _on_head(resolved.head, document.model_source):
+        return document.model_source, document.source_stage_ref, None
+    if resolved.source is None:
+        return None, None, resolved.reason
+    return resolved.source, resolved.stage_ref, None
 
 
 def _read_set(binding, receipt, frame, hidden):
@@ -235,7 +264,8 @@ def _read_set(binding, receipt, frame, hidden):
     return load_compiled_geometry_program(program), selected
 
 
-def plan_status(binding, *, run_id, asset_sha256, revision_ref, target_model_source=None, target_stage_ref=None):
+def plan_status(binding, *, run_id, asset_sha256, revision_ref, target_model_source=None, target_stage_ref=None,
+                working: WorkingSources | None = None):
     document = _plan_document(binding, run_id, asset_sha256, revision_ref)
     result = {"status": "unknown", "detail": "The exact target could not be verified.", "dimensions": [],
               "targetModelSource": None, "targetStageRef": target_stage_ref, "lengthUnit": None, "bindingChanged": False}
@@ -243,8 +273,17 @@ def plan_status(binding, *, run_id, asset_sha256, revision_ref, target_model_sou
         # Recheck retained stage-less drawings too: their model may since have
         # been accepted into multiple histories. Never silently rebind the page.
         _, old_stage = _plan_source(binding, document.source_stage_ref, document.model_source)
+        working = working or WorkingSources(binding)
+        kept = False
         if target_model_source is None and target_stage_ref is None:
-            target_stage_ref = _branch_target(binding, document)
+            if (document.view_recipe or {}).get("follow") == "frozen":
+                # A chosen version is this drawing's target until a person rebuilds it.
+                target_model_source, target_stage_ref, kept = document.model_source, document.source_stage_ref, True
+            else:
+                target_model_source, target_stage_ref, blocked = _live_target(working("drawing"), document)
+                if target_model_source is None:
+                    result.update(status="outdated", detail=f"The current model cannot be drawn yet: {blocked}")
+                    return result
         target, stage_ref = _plan_source(binding, target_stage_ref, target_model_source)
         result.update(targetModelSource=target.to_dict(), targetStageRef=None if stage_ref is None else stage_ref.uri,
                       bindingChanged=target != document.model_source or (None if stage_ref is None else stage_ref.uri) != document.source_stage_ref)
@@ -285,12 +324,14 @@ def plan_status(binding, *, run_id, asset_sha256, revision_ref, target_model_sou
                              "The target changes inputs read by this drawing. Rebuild explicitly." if changed else
                              "The source binding differs; the inputs read by this drawing are unchanged." if result["bindingChanged"] else
                              "This drawing matches the selected exact source.")
+        if kept and result["status"] == "current":
+            result["detail"] = "This drawing stays on the version it was drawn from until it is rebuilt."
         if result["bindingChanged"]:
             result["dimensions"] = [{**row, "canDrive": False,
                                      "driveReason": "Rebuild against the selected source before changing a design dimension."} for row in dimensions]
-        elif document.source_stage_ref and _branch_target(binding, document) != document.source_stage_ref:
+        elif not _drivable(binding, working.head, document.model_source, document.source_stage_ref):
             result["dimensions"] = [{**row, "canDrive": False,
-                                     "driveReason": "This is a historical source. Rebuild from its branch head before changing the design."} for row in dimensions]
+                                     "driveReason": "This drawing shows an earlier model. Rebuild it on the current model before changing the design."} for row in dimensions]
     except (StudioError, ProjectRepositoryError, DrawingElevationError, KeyError, TypeError, ValueError) as exc:
         result.update(status="unknown", detail=exc.detail if isinstance(exc, StudioError) else str(exc), dimensions=[])
     return result
@@ -308,12 +349,14 @@ def dimension_proposal(binding, *, run_id, asset_sha256, revision_ref, dimension
     document = _plan_document(binding, run_id, asset_sha256, revision_ref)
     source, stage_ref = _plan_source(binding, document.source_stage_ref, document.model_source)
     projection = project_state(binding, source.run_id, source_stage_ref=stage_ref)
-    # A pinned historical view stays readable, but cannot pretend its old base
-    # is the current accepted branch merely by supplying that same old target.
-    if projection.source_stage_ref and _stage_branch_head(binding, projection.source_stage_ref) != projection.source_stage_ref.uri:
-        raise StudioError(409, "STALE_BASE", "Rebuild this drawing from its branch head before changing the design.")
+    # A historical view stays readable, but a change starts only from the
+    # Working Head or another line's latest Stage; an old target never passes.
+    working = WorkingSources(binding)
+    if not _drivable(binding, working.head, source,
+                     None if stage_ref is None else stage_ref.uri):
+        raise StudioError(409, "STALE_BASE", "Rebuild this drawing on the current model before changing the design.")
     status = plan_status(binding, run_id=run_id, asset_sha256=asset_sha256, revision_ref=revision_ref,
-                         target_model_source=target_model_source, target_stage_ref=target_stage_ref)
+                         target_model_source=target_model_source, target_stage_ref=target_stage_ref, working=working)
     if status["status"] != "current" or status["bindingChanged"]:
         raise StudioError(409, "STALE_BASE", status["detail"])
     exact_source, _ = _complete_source(binding, source, stage_ref)

@@ -127,6 +127,7 @@ import { EVIDENCE_PINNED_KEY, type EvidenceTab } from "./evidence";
 import { failed, idle, loading, ready, type Loadable } from "./loadable";
 import { LoadingOverlay } from "./LoadingOverlay";
 import { editingDigestForView, useSession } from "./useSession";
+import { followStep, headOf, pinStep, viewerFollows } from "./workingHead";
 import { useTranscript, type SystemTextPart } from "./transcript";
 import { useCandidateRuns } from "./useCandidateRuns";
 import { finishEditTiming, startClientTiming, type ClientTimingSpan, type EditTimingTicket } from "./clientTiming";
@@ -224,7 +225,7 @@ export type WorkspaceDesignContext = {
   unavailableReason: "unsaved" | "loading" | "unavailable" | null;
 };
 
-export default function App({ server, expectedProjectId, initialDocumentIntent, initialSketchRequest, initialRunId, documentSource = null, active = true, refreshKey = 0, onReturnToBoard, onOpenBoard, onChatRequest, onDesignContextChange, onRenderReader }: {
+export default function App({ server, expectedProjectId, initialDocumentIntent, initialSketchRequest, initialRunId, initialRunFollowsHead = false, documentSource = null, active = true, refreshKey = 0, onReturnToBoard, onOpenBoard, onChatRequest, onDesignContextChange, onRenderReader }: {
   onRenderReader?: (reader: (() => RenderView | null) | null) => void;
   server: ServerIdentity; initialDocumentIntent?: BoardDesignRequest;
   expectedProjectId?: string;
@@ -232,6 +233,8 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
   initialSketchRequest?: BoardSketchRequest;
   /** The exact run this page was opened on, such as a candidate named by the host. */
   initialRunId?: string | null;
+  /** The host named that run only as a delivery or restore hint, not as a comparison. */
+  initialRunFollowsHead?: boolean;
   /** Go back to the board this tab opened its page from, once the page is saved. */
   onReturnToBoard?: () => void;
   documentSource?: PageSource | null;
@@ -1437,6 +1440,55 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
     showHome(false);
   }, [documentIntentStatus, homeArtifacts, loadedArtifacts, showHome, initialRunId, active]);
 
+  // #271: ordinary work follows the project's Working Head. The Project Runtime
+  // names the head from its retained working position; this tab only decides
+  // when it can follow without taking work away from the person using it.
+  const followsHead = server.capabilities.includes("working-source");
+  // The head to show once its model is listed, and the viewer load it may replace.
+  const [headFollow, setHeadFollow] = useState<{ runId: string; viewRequest: number } | null>(null);
+  const followRead = useRef(0);
+  const editingRunId = projection === null || projection.referenceRunSource === "none" ? null : projection.referenceRun.runId;
+  const followBusy = changingBase || proposalBusy || candidateBusy || modelSyncBusy || selectingWorkingCopy ||
+    historyBusy || refiningEntryId !== null || documentIntentStatus !== "done";
+  // Read when a follow is decided, which may be after an awaited read.
+  const followGate = useRef<{ baseRunId: string | null; busy: boolean; localEdits(): boolean; viewed(): string | null }>(
+    { baseRunId: editingRunId, busy: followBusy, localEdits: () => false, viewed: () => null });
+  followGate.current = {
+    baseRunId: editingRunId, busy: followBusy || autoShowRef.current !== null,
+    localEdits: () => localEditingRef.current || Boolean(workingDraft?.localDraft) || [...localModels.current.values()].some(unsynced),
+    viewed: () => sourceLabel === LOCAL_SOURCE_LABEL ? LOCAL_SOURCE_LABEL : loadedArtifactsRef.current[0]?.runId ?? null,
+  };
+  useEffect(() => {
+    if (!followsHead || !active || session.status !== "ready" || followBusy) return;
+    const read = ++followRead.current;
+    const controller = new AbortController();
+    const projectId = session.value.project.projectId;
+    const localEdits = localEditingRef.current || Boolean(session.value.workingDraft?.localDraft) ||
+      [...localModels.current.values()].some(unsynced);
+    void studio.workingSource("modeling", controller.signal).then(async (source) => {
+      if (read !== followRead.current || source.projectId !== projectId || !source.head) return;
+      const head = headOf(source);
+      if (followStep({ baseRunId: editingRunId, head, busy: autoShowRef.current !== null, localEdits }) !== "follow" || head === null) return;
+      const viewed = sourceLabel === LOCAL_SOURCE_LABEL ? LOCAL_SOURCE_LABEL : loadedArtifactsRef.current[0]?.runId ?? null;
+      const next = await reload(head.runId, source.head.accepted ? source.head.sourceStageRef ?? undefined : undefined,
+        source.head.branchId ?? undefined, true, undefined, false);
+      if (next === null || read !== followRead.current) return;
+      pushNotice(t("stage.follow.moved"));
+      if (viewerFollows(viewed, editingRunId)) setHeadFollow({ runId: head.runId, viewRequest: modelLoadRequest.current });
+    }).catch(() => { /* The current base stays usable; the next event reads the head again. */ });
+    return () => controller.abort();
+  }, [followsHead, active, session.status, followBusy, editingRunId, versionRefreshRequest, refreshKey, studio, reload, pushNotice, t, sourceLabel]);
+  useEffect(() => {
+    // Show the head once the base and its listed model describe it, unless the
+    // person loaded or started editing something since the follow was decided.
+    if (headFollow === null || homeArtifacts === null || homeArtifacts.runId !== headFollow.runId) return;
+    setHeadFollow(null);
+    if (modelLoadRequest.current !== headFollow.viewRequest || localEditingRef.current) return;
+    if (homeArtifacts.kind !== "reference" || (loadedArtifacts.length > 0 &&
+        loadedArtifacts.every((row) => homeArtifacts.artifacts.some((home) => home.sha256 === row.sha256)))) return;
+    showHome(false);
+  }, [headFollow, homeArtifacts, loadedArtifacts, showHome]);
+
   /** The viewer says which file it holds; that is when the shell writes it down. */
   const noteSource = useCallback((label: string | null) => {
     pickRequestRef.current += 1;
@@ -1973,11 +2025,31 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
     setArtifactError(null);
     // A new chat result owns a fresh listing read; the previous candidate's list
     // may predate this export and workspace events may not have arrived yet.
-    void studio.artifacts(controller.signal).then(async (listing) => {
+    const headRead = followsHead ? studio.workingSource("modeling", controller.signal).catch(() => null) : Promise.resolve(null);
+    void Promise.all([studio.artifacts(controller.signal), headRead]).then(async ([listing, source]) => {
       if (!isCurrent()) return;
       if (listing.projectId !== projectId) throw new Error("The candidate model list belongs to another project.");
-      const rows = viewableArtifacts(listing.artifacts.filter((artifact) => artifact.runId === initialRunId));
       setArtifacts(ready(listing));
+      const head = source?.projectId === projectId ? headOf(source) : null;
+      if (initialRunFollowsHead && head !== null && source?.head) {
+        // A delivered or restored result is the current project: follow the
+        // Working Head (#271) unless this tab's own work must keep its base; the
+        // follow effect moves later. An explicit open below stays view-only.
+        if (installedCandidate.current?.selection === candidateSelection) return;
+        installedCandidate.current = { selection: candidateSelection, viewRequest: modelLoadRequest.current };
+        const gate = followGate.current;
+        const step = pinStep(true, { baseRunId: gate.baseRunId, head, busy: gate.busy, localEdits: gate.localEdits() });
+        if (step !== "follow" && step !== "stay") return;
+        const viewed = gate.viewed();
+        if (step === "follow") {
+          const next = await reload(head.runId, source.head.accepted ? source.head.sourceStageRef ?? undefined : undefined,
+            source.head.branchId ?? undefined, true, undefined, false);
+          if (next === null || !isCurrent()) return;
+        }
+        if (viewerFollows(viewed, gate.baseRunId)) setHeadFollow({ runId: head.runId, viewRequest: modelLoadRequest.current });
+        return;
+      }
+      const rows = viewableArtifacts(listing.artifacts.filter((artifact) => artifact.runId === initialRunId));
       if (!rows.length) throw new Error("The selected candidate has no available registered model export.");
       // Refreshing the runtime only rereads an already opened choice. Its mounted
       // camera, local edits and any later manual version selection stay in place.
@@ -1989,7 +2061,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
       }
     }).catch((cause) => { if (isCurrent()) setArtifactError(asStudioApiError(cause)); });
     return () => { live = false; controller.abort(); };
-  }, [initialRunId, candidateSelection, candidateRequestKey, session.status, project?.projectId, studio, loadRunIntoViewer, active]);
+  }, [initialRunId, initialRunFollowsHead, candidateSelection, candidateRequestKey, session.status, project?.projectId, studio, loadRunIntoViewer, active, followsHead, reload]);
 
   useEffect(() => {
     const installed = installedCandidate.current;
