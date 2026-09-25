@@ -155,63 +155,6 @@
       ]
     },
     {
-      "id": "GH-284",
-      "stream": "planning",
-      "status": "active",
-      "goal": "Research external version and alternative interactions and prototype a project-level Candidate Graph that shows Stage, Study, admitted Candidates, Continue and the next Stage.",
-      "depends_on": [],
-      "write_scope": [
-        "docs/2026-09-25-candidate-graph-interaction.md",
-        "docs/mapping/planning/GH-284-candidate-graph.md",
-        "docs/prototypes/candidate-graph/"
-      ],
-      "card": "docs/mapping/planning/GH-284-candidate-graph.md",
-      "acceptance": [
-        "A concise design note compares external references and at least three entry points and recommends one.",
-        "A dev-only prototype on fixture data shows the six required states without claiming production capability."
-      ],
-      "lanes": [
-        {
-          "id": "research",
-          "issue": "https://github.com/cogco1/MonkeyHub/issues/284",
-          "branch": "codex/284-candidate-graph",
-          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-284-candidate-graph",
-          "base_ref": "cc9397fa",
-          "contributor": "Claude",
-          "reviewer": "Claude root task",
-          "handoff": "Research note; the prototype lane contributes screenshots.",
-          "modules": [
-            "hub.shell"
-          ],
-          "write_scope": [
-            "docs/2026-09-25-candidate-graph-interaction.md"
-          ],
-          "depends_on": [],
-          "status": "active",
-          "blocked_reason": null
-        },
-        {
-          "id": "prototype",
-          "issue": "https://github.com/cogco1/MonkeyHub/issues/284",
-          "branch": "codex/284-graph-prototype",
-          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-284-graph-prototype",
-          "base_ref": "cc9397fa",
-          "contributor": "Claude",
-          "reviewer": "Claude root task",
-          "handoff": "Static dev-only prototype on fixture data; merged into codex/284-candidate-graph.",
-          "modules": [
-            "hub.shell"
-          ],
-          "write_scope": [
-            "docs/prototypes/candidate-graph/"
-          ],
-          "depends_on": [],
-          "status": "active",
-          "blocked_reason": null
-        }
-      ]
-    },
-    {
       "id": "GH-66",
       "stream": "planning",
       "status": "active",
