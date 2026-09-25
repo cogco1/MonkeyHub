@@ -524,14 +524,14 @@ try {
   // is no second copy of them anywhere.
   const rail = page.getByRole("navigation", { name: "Project tools" });
   await rail.waitFor();
-  for (const label of ["Modeling", "Drawings", "Board", "Fabrication", "Usage"]) {
+  for (const label of ["Modeling", "Drawings", "Board", "Fabrication", "Design tree", "Usage"]) {
     assert.equal(await page.getByRole("button", { name: label, exact: true }).count(), 1, `${label} appears once`);
   }
   // #295: Drawing is a tool over the project, listed with Usage, not a peer of
-  // the project's primary surfaces.
+  // the project's primary surfaces. #284: the Design tree (状态树) is one of them.
   const railEntries = (group) => rail.getByRole("group", { name: group, exact: true }).locator(".chat-rail__tool")
     .evaluateAll((nodes) => nodes.map((node) => node.getAttribute("aria-label")));
-  assert.deepEqual(await railEntries("Workspaces"), ["Modeling", "Render", "Publish", "Board", "Fabrication"],
+  assert.deepEqual(await railEntries("Workspaces"), ["Modeling", "Render", "Publish", "Board", "Fabrication", "Design tree"],
     "the primary project surfaces no longer include Drawing");
   assert.deepEqual(await railEntries("Tools"), ["Drawings", "Usage"], "Drawing sits in Tools beside Usage");
   assert.ok(await railWidth() > 40, "the rail stays on screen while the tool content is closed");

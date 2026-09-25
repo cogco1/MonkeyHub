@@ -12,15 +12,18 @@ export type { WorkspaceDesignContext } from "./App";
 import { ErrorPanel } from "./ErrorPanel";
 import { LoadingOverlay } from "./LoadingOverlay";
 import { failed, loading, ready, type Loadable } from "./loadable";
+import { currentView, DesignTreeBar, type DesignTreeView } from "../features/designTree/DesignTreeBar";
+import { useDesignTree, useSeenCandidates } from "../features/designTree/useDesignTree";
 
 const Drawing = lazy(() => import("../workspaces/monkeydiagram/DrawingCanvas"));
 const Publish = lazy(() => import("../workspaces/publish/PublishWorkspace"));
 const Render = lazy(() => import("../workspaces/render/RenderWorkspace"));
 // The shared canvas host (features/canvas) sets Excalidraw's local font path.
 const Board = lazy(() => import("../workspaces/monkeyboard/Board"));
+const DesignTreeSurface = lazy(() => import("../features/designTree/DesignTreeSurface"));
 
 export interface ProjectWorkspaceProps {
-  workspace: "arch" | "board" | "drawing" | "render" | "publish";
+  workspace: "arch" | "board" | "drawing" | "render" | "publish" | "tree";
   expectedProjectId?: string;
   candidateRunId?: string | null;
   /** The pin is a delivery or restore hint; a runtime that knows its Working Head shows the head. */
@@ -28,7 +31,7 @@ export interface ProjectWorkspaceProps {
   active?: boolean;
   refreshKey?: number;
   documentRequest?: { source: PageSource; requestId: number } | null;
-  onWorkspaceChange(workspace: "arch" | "board" | "drawing" | "render" | "publish"): void;
+  onWorkspaceChange(workspace: "arch" | "board" | "drawing" | "render" | "publish" | "tree"): void;
   onChatRequest?: () => void;
   onDesignContextChange?: (context: WorkspaceDesignContext | null) => void;
 }
@@ -51,7 +54,7 @@ export function ProjectWorkspace({ workspace, expectedProjectId, candidateRunId 
   const [sketchRequest, setSketchRequest] = useState<BoardSketchRequest | undefined>();
   const [drawingVisited, setDrawingVisited] = useState(workspace === "drawing");
   const [boardVisited, setBoardVisited] = useState(workspace === "board");
-  const [archVisited, setArchVisited] = useState((workspace !== "render" && workspace !== "publish"));
+  const [archVisited, setArchVisited] = useState((workspace !== "render" && workspace !== "publish" && workspace !== "tree"));
   const [publishRequest, setPublishRequest] = useState<{ revision: string; ids: string[]; requestId: string } | null>(null);
   const [publishVisited, setPublishVisited] = useState(workspace === "publish");
   const [renderVisited, setRenderVisited] = useState(workspace === "render");
@@ -65,11 +68,23 @@ export function ProjectWorkspace({ workspace, expectedProjectId, candidateRunId 
     if (workspace === "drawing") setDrawingVisited(true);
     if (workspace === "render") setRenderVisited(true);
     if (workspace === "publish") setPublishVisited(true);
-    if ((workspace !== "render" && workspace !== "publish")) setArchVisited(true);
+    if ((workspace !== "render" && workspace !== "publish" && workspace !== "tree")) setArchVisited(true);
   }, [workspace]);
   useEffect(() => {
     if (workspace === "arch") setVisit(null);
   }, [workspace]);
+  // The Design Tree (#284): its facts, its surface, and what it opened read-only in Modeling.
+  const [treeVisited, setTreeVisited] = useState(workspace === "tree");
+  const treeReturn = useRef<Exclude<ProjectWorkspaceProps["workspace"], "tree">>(workspace === "tree" ? "arch" : workspace);
+  const [treeView, setTreeView] = useState<DesignTreeView | null>(null);
+  const [headMoves, setHeadMoves] = useState(0);
+  useEffect(() => { if (workspace === "tree") setTreeVisited(true); else treeReturn.current = workspace; }, [workspace]);
+  // A newer host pin, such as a delivered result, replaces what the tree opened.
+  useEffect(() => { setTreeView(null); }, [candidateRunId]);
+  const treeProject = server.status === "ready" ? boundProjectId.current : null;
+  const seenCandidates = useSeenCandidates(treeProject);
+  const designTree = useDesignTree({ studio, capabilities: server.status === "ready" ? server.value.capabilities : null,
+    projectId: treeProject, active, refreshKey: refreshKey + attempt, onHeadMoved: () => setHeadMoves((value) => value + 1) });
   useEffect(() => {
     let live = true;
     setRefreshError(null);
@@ -115,12 +130,18 @@ export function ProjectWorkspace({ workspace, expectedProjectId, candidateRunId 
   </div></div>;
   if (server.status !== "ready") return <div className="project-workspace"><LoadingOverlay mode="boot" status="Project Runtime" /></div>;
   return <div className="project-workspace" style={{ height: "100%", minHeight: 0 }}>
+    {/* The project's position over every surface: the Stage chip opens the Design Tree. */}
+    {designTree.available && <DesignTreeBar data={designTree} seen={seenCandidates.seen} open={workspace === "tree"}
+      viewing={treeView && !treeView.back ? treeView : null}
+      onToggle={() => onWorkspaceChange(workspace === "tree" ? treeReturn.current : "tree")}
+      onBackToCurrent={() => { setTreeView(currentView(designTree)); onWorkspaceChange("arch"); }} />}
     {refreshError && <ErrorPanel error={refreshError} what="GET /api/protocol" />}
     {(archVisited || modelVisible) && <div data-project-surface="arch" hidden={!modelVisible} inert={!active || !modelVisible}
       style={{ height: "100%", minHeight: 0, display: modelVisible ? "block" : "none" }}>
-      <App server={server.value} expectedProjectId={boundProjectId.current} initialRunId={candidateRunId} initialRunFollowsHead={candidateFollowsHead} documentSource={pageOpen ? visit.source : null}
+      <App server={server.value} expectedProjectId={boundProjectId.current} initialRunId={treeView?.runId ?? candidateRunId}
+        initialRunFollowsHead={treeView ? false : candidateFollowsHead} documentSource={pageOpen ? visit.source : null}
         initialDocumentIntent={documentIntent} initialSketchRequest={sketchRequest}
-        active={active && modelVisible} refreshKey={refreshKey + attempt} onReturnToBoard={openBoard} onOpenBoard={openBoard} onChatRequest={onChatRequest}
+        active={active && modelVisible} refreshKey={refreshKey + attempt + headMoves} onReturnToBoard={openBoard} onOpenBoard={openBoard} onChatRequest={onChatRequest}
         onDesignContextChange={onDesignContextChange} onRenderReader={registerRenderReader} />
     </div>}
     {(publishVisited || workspace === "publish") && <div data-project-surface="publish" hidden={workspace !== "publish"} inert={!active || workspace !== "publish"}
@@ -146,6 +167,13 @@ export function ProjectWorkspace({ workspace, expectedProjectId, candidateRunId 
       style={{ height: "100%", minHeight: 0, display: workspace === "board" && !pageOpen ? "block" : "none" }}>
       <Suspense fallback={<LoadingOverlay mode="boot" status="MonkeyBoard" />}>
         <Board onPublish={(revision, ids) => { setPublishRequest({ revision, ids, requestId: crypto.randomUUID() }); onWorkspaceChange("publish"); }} expectedProjectId={boundProjectId.current} refreshKey={refreshKey + attempt + boardRefresh} active={active && workspace === "board" && !pageOpen} onSubmit={submitFeedback} onSketch={submitSketch} onOpenDocument={setVisit} pageRequest={boardPage} />
+      </Suspense>
+    </div>}
+    {(treeVisited || workspace === "tree") && <div data-project-surface="tree" hidden={workspace !== "tree"} inert={!active || workspace !== "tree"}
+      style={{ height: "100%", minHeight: 0, display: workspace === "tree" ? "block" : "none" }}>
+      <Suspense fallback={<LoadingOverlay mode="boot" status="Design tree" />}>
+        <DesignTreeSurface data={designTree} markSeen={seenCandidates.markSeen} active={active && workspace === "tree"} returnTo={treeReturn.current}
+          onLeave={() => onWorkspaceChange(treeReturn.current)} onView={(view) => { setTreeView(view); onWorkspaceChange("arch"); }} />
       </Suspense>
     </div>}
   </div>;
