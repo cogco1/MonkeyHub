@@ -155,6 +155,73 @@
       ]
     },
     {
+      "id": "GH-307",
+      "stream": "planning",
+      "status": "active",
+      "goal": "Make a true section perspective: cut the retained STEP solids with a section plane, solve exact hidden lines with a perspective camera, fill the cut in poché, and retain it through the one drawing projection pipeline so the Agent, Board and Drawing read it like any other drawing.",
+      "depends_on": [],
+      "issue": "https://github.com/cogco1/MonkeyHub/issues/307",
+      "write_scope": [
+        "apps/archflow-studio/api/archflow_studio_api/application/drawings.py",
+        "apps/archflow-studio/api/archflow_studio_api/routes/drawings.py",
+        "apps/archflow-studio/api/archflow_studio_api/transport/drawings.py",
+        "apps/archflow-studio/api/tests/test_section_perspective.py",
+        "apps/monkeyhub/api/monkeyhub_api/chat.py",
+        "apps/monkeyhub/api/tests/",
+        "apps/monkeyhub/web/workspaces/src/api/generated/",
+        "apps/monkeyhub/web/workspaces/src/workspaces/monkeydiagram/DrawingCanvas.css",
+        "apps/monkeyhub/web/workspaces/src/workspaces/monkeydiagram/DrawingCanvas.tsx",
+        "apps/monkeyhub/web/workspaces/test/drawingCanvas.browser.mjs",
+        "archflow/adapters/occt_backend.py",
+        "docs/mapping/planning/GH-307-section-perspective.md",
+        "monkeydiagram/drawing_elevation.py",
+        "monkeydiagram/drawing_svg.py"
+      ],
+      "card": "docs/mapping/planning/GH-307-section-perspective.md",
+      "acceptance": [
+        "A fixture room cut in half shows the cut in poché, receding edges converging toward the vanishing point and nothing from the removed side; moving the eye moves the vanishing point.",
+        "POST /api/drawings/section-perspectives retains the drawing through _retain_projection with the exact source, plane and camera in its receipt, registers it as a document and reads back the same files; bad planes and eyes are refused by name.",
+        "The Hub Agent may call it and is told how; the Drawing tool offers a minimal entry if time allows.",
+        "Studio API tests, api:check and archcheck pass."
+      ],
+      "lanes": [
+        {
+          "id": "section-perspective",
+          "issue": "https://github.com/cogco1/MonkeyHub/issues/307",
+          "branch": "codex/307-section-perspective",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-307-section-perspective",
+          "base_ref": "93677d72",
+          "contributor": "Claude",
+          "reviewer": "Claude root task",
+          "handoff": "Backend exact geometry, API and Agent first; the Drawing tool entry is a stretch goal.",
+          "modules": [
+            "runtime.drawing_elevation",
+            "adapters.drawing_svg",
+            "hub.shell"
+          ],
+          "write_scope": [
+            "apps/archflow-studio/api/archflow_studio_api/application/drawings.py",
+            "apps/archflow-studio/api/archflow_studio_api/routes/drawings.py",
+            "apps/archflow-studio/api/archflow_studio_api/transport/drawings.py",
+            "apps/archflow-studio/api/tests/test_section_perspective.py",
+            "apps/monkeyhub/api/monkeyhub_api/chat.py",
+            "apps/monkeyhub/api/tests/",
+            "apps/monkeyhub/web/workspaces/src/api/generated/",
+            "apps/monkeyhub/web/workspaces/src/workspaces/monkeydiagram/DrawingCanvas.css",
+            "apps/monkeyhub/web/workspaces/src/workspaces/monkeydiagram/DrawingCanvas.tsx",
+            "apps/monkeyhub/web/workspaces/test/drawingCanvas.browser.mjs",
+            "archflow/adapters/occt_backend.py",
+            "docs/mapping/planning/GH-307-section-perspective.md",
+            "monkeydiagram/drawing_elevation.py",
+            "monkeydiagram/drawing_svg.py"
+          ],
+          "depends_on": [],
+          "status": "active",
+          "blocked_reason": null
+        }
+      ]
+    },
+    {
       "id": "GH-66",
       "stream": "planning",
       "status": "active",
@@ -179,7 +246,6 @@
       "write_scope": [
         "apps/archflow-studio/api/archflow_studio_api/application/publication_output.py",
         "apps/archflow-studio/api/archflow_studio_api/routes/__init__.py",
-        "apps/archflow-studio/api/archflow_studio_api/routes/drawings.py",
         "apps/archflow-studio/api/archflow_studio_api/routes/publications.py",
         "apps/archflow-studio/api/archflow_studio_api/routes/rendering.py",
         "apps/archflow-studio/api/archflow_studio_api/transport/publications.py",
@@ -205,8 +271,6 @@
         "docs/mapping/planning/INDEX.md",
         "governance/module_registry.json",
         "governance/work_registry.json",
-        "monkeydiagram/drawing_elevation.py",
-        "monkeydiagram/drawing_svg.py",
         "tests/test_version_refs.py"
       ],
       "acceptance": [
@@ -215,7 +279,8 @@
       "notes": [
         "2026-09-24: #273 merged the GH-66 integration. On the repository owner's instruction the Drawing, Render, Hub and shared client paths it also claimed are handed to GH-271 (#271, Working Head); GH-66 keeps its Publish paths and the broader #66 acceptance.",
         "2026-09-25: the cut-plan request DTO (transport/drawings.py) is handed to GH-271 as well, for the drawing follow choice found in the #277 review; GH-66 keeps its Publish paths.",
-        "2026-09-25: archflow/project/record_kinds.py is handed to GH-294/admission-record, which registers the owner-approved candidate-admission kind (audit Q1); GH-66 reclaims it if Publish needs another kind."
+        "2026-09-25: archflow/project/record_kinds.py is handed to GH-294/admission-record, which registers the owner-approved candidate-admission kind (audit Q1); GH-66 reclaims it if Publish needs another kind.",
+        "2026-09-25: monkeydiagram/drawing_elevation.py, monkeydiagram/drawing_svg.py and routes/drawings.py are handed to GH-307/section-perspective, which adds the owner-requested section perspective view to the one projection pipeline; GH-66 keeps its Publish paths and reclaims these if Publish needs drawing changes."
       ]
     }
   ]
