@@ -435,8 +435,9 @@ class ContextPackRequestDto(BaseModel):
     decision_context: DecisionContextDto | None = Field(
         alias="decisionContext", default=None,
         description="what this turn is about for the scoped decisions it should be handed: the "
-        "domain, and for a drawing or copy turn its own exact evidence. Absent, the design "
-        "domain, this source's Stage and the focus already named above answer for it",
+        "domain, and for a drawing or copy turn its own exact evidence. Absent, the design and "
+        "drawing domains (the project recipe among the drawing decisions), this source's Stage and "
+        "the focus already named above answer for it; naming a domain reads that domain alone",
     )
 
     @model_validator(mode="after")
