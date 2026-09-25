@@ -318,6 +318,14 @@ async function wait(predicate,label,timeout=15000) {
   throw new Error(`${label}: ${JSON.stringify(state)}`);
 }
 const button=name=>page.getByRole('button',{name,exact:true});
+// GH-234 Q1/Q2: a generated seed never becomes the saved base on its own; the
+// architect's explicit choice of it is what opening the page restores.
+async function openSeed(label){
+  const listed=await call('GET','/api/working-draft');
+  if(listed.current?.runId!==seedRun)await call('PUT','/api/working-draft',{projectId:listed.projectId,runId:seedRun,baseRevisionSha256:listed.revisionSha256});
+  await page.goto(`http://127.0.0.1:${http.address().port}/?embedded=tool&candidate=${seedRun}`);
+  await wait(s=>s.status==='ready'&&s.loaded===seedRun&&s.base===seedRun&&!s.busy,label,120000);
+}
 const localTimings=[];
 async function deselect(){await button('Select').click();await page.locator('body').click({position:{x:5,y:5}});}
 async function blank(){await deselect();const p=await page.evaluate(()=>window.__view.blank());assert.ok(p,'no usable ground-plane point');return p;}
@@ -346,6 +354,12 @@ if (autosaveOnly) {
     while(Date.now()<end){draft=await readDraft();if(predicate(draft))return draft;await delay(100);}
     throw new Error(`${label}: ${JSON.stringify(draft)}`);
   }
+  // GH-234 Q2: the seed is a generated candidate, so it is only listed; the
+  // architect's explicit choice of it is what reopening restores.
+  const listed=await readDraft();
+  assert.equal(listed.current,null,'a generated candidate never becomes the saved base on its own');
+  assert.ok(listed.recovery.some(row=>row.runId===seedRun),'the generated seed is listed for recovery');
+  await call('PUT','/api/working-draft',{projectId:listed.projectId,runId:seedRun,baseRevisionSha256:listed.revisionSha256});
   await page.goto(`http://127.0.0.1:${http.address().port}/?embedded=tool`);
   await wait(s=>s.status==='ready'&&s.loaded===seedRun&&s.base===seedRun&&!s.busy,'restored current source',120000);
   const initial=await snap(),originalRuns=await runIds();
@@ -402,7 +416,7 @@ if (autosaveOnly) {
   assert.ok((await exported(current)).has('obj-'+object),'retained candidate must contain the restored geometry');
 
   await page.locator('.stage__versions-toggle').click();
-  const recovery=page.locator('.versions details').filter({has:page.locator('summary').filter({hasText:'最近 24 小时的自动恢复'})});
+  const recovery=page.locator('.versions details').filter({has:page.locator('summary').filter({hasText:'自动恢复点'})});
   assert.equal(await recovery.evaluate(node=>node.open),false,'automatic recovery starts collapsed');
   assert.equal(await page.locator('[data-working-draft]:visible').count(),1,'only current is expanded before saving a milestone');
   await page.getByRole('textbox',{name:'重点版本名称',exact:true}).fill('Autosave milestone');
@@ -526,8 +540,7 @@ if (autosaveOnly) {
     authoredContinue ? 'PASS authored-only continued input: first Sync yields one captured candidate; later local drawing/deletion remain visible and unsynced; first export discovery performs no model download' :
     'PASS authored-only: zero artifacts/runs → two local drawings with selection/preselection/delete/undo and zero writes → one explicit candidate, real OCCT export and visible saved model');
 } else if(scaleOnly) {
-  await page.goto(`http://127.0.0.1:${http.address().port}/?embedded=tool&candidate=${seedRun}`);
-  await wait(s=>s.status==='ready'&&s.loaded===seedRun&&s.base===seedRun&&!s.busy,'Scale seed model',120000);
+  await openSeed('Scale seed model');
   const originalRuns=await runIds(),writeStart=sent.length,id='seed-block';
   const initialVertices=[0,1.5].flatMap(z=>[[10,0,z],[13,0,z],[10.5,2,z]]);
   const bounds=points=>({min:[0,1,2].map(i=>Math.min(...points.map(p=>p[i]))),max:[0,1,2].map(i=>Math.max(...points.map(p=>p[i])))});
@@ -619,8 +632,7 @@ if (autosaveOnly) {
   for(const transform of transforms){assert.equal(transform.body.kind,'scale');assert.equal(transform.body.sourceRunId,seedRun);}
   console.log('PASS Scale: asymmetric six vertices, uniform and signed XYZ factors, reference/latest-pointer/numeric Enter, reused preview/zero pointer commits, zero/Esc/Undo/Redo and one frozen real OCCT candidate');
 } else if(rotateOnly) {
-  await page.goto(`http://127.0.0.1:${http.address().port}/?embedded=tool&candidate=${seedRun}`);
-  await wait(s=>s.status==='ready'&&s.loaded===seedRun&&s.base===seedRun&&!s.busy,'Rotate seed model',120000);
+  await openSeed('Rotate seed model');
   const originalRuns=await runIds(),writeStart=sent.length,id='seed-block';
   // Independently rotate the six known corners; asymmetric geometry exposes sign/axis errors.
   const initialVertices=[0,1.5].flatMap(z=>[[10,0,z],[13,0,z],[10.5,2,z]]);
@@ -726,8 +738,7 @@ if (autosaveOnly) {
   for(const transform of transforms){assert.equal(transform.body.kind,'rotate');assert.equal(transform.body.sourceRunId,seedRun);}
   console.log('PASS Rotate: asymmetric six vertices, signed Z/Y/X angles, reference without jump, exact latest-pointer Click/numeric Enter, reused preview/zero pointer commits, Esc/Undo/Redo and one frozen real OCCT candidate');
 } else if(moveCopyOnly) {
-  await page.goto(`http://127.0.0.1:${http.address().port}/?embedded=tool&candidate=${seedRun}`);
-  await wait(s=>s.status==='ready'&&s.loaded===seedRun&&s.base===seedRun&&!s.busy,'Move/Copy seed model',120000);
+  await openSeed('Move/Copy seed model');
   const originalRuns=await runIds(),writeStart=sent.length;
   const block=await rectangle(2,1.25);
   const boxOf=(state,id)=>state.view.drafts.find(object=>object.id===id);
@@ -863,8 +874,7 @@ if (autosaveOnly) {
   for(const transform of transforms)assert.equal(transform.body.sourceRunId,seedRun);
   console.log('PASS pointer Move/Copy: base-point capture without jump, reused preview/zero pointer commits, latest pointer Click, exact XYZ/Enter, stable copy identity, Esc/Undo/Redo, zero local writes and one frozen OCCT candidate');
 } else {
-await page.goto(`http://127.0.0.1:${http.address().port}/?embedded=tool&candidate=${seedRun}`);
-await wait(s=>s.status==='ready'&&s.loaded===seedRun&&s.base===seedRun&&!s.busy,'initial model',120000);
+await openSeed('initial model');
 const originalRuns=await runIds(), beforeWrites=sent.length;
 console.log('1 · completed rectangles/lines stay local and independently pickable');
 const block=await rectangle(2,1), curve=await line();
@@ -948,7 +958,7 @@ state=await snap();assert.equal(candidateCalls().length,2);assert.ok((await expo
 assert.equal(state.view.drafts.length,0,'the completed batch must not overlap its saved model');
 const continuedDraft=await call('GET','/api/working-draft');
 assert.equal(continuedDraft.current?.runId,state.candidates[1],'a second Sync after late edits must retain the adopted successor, not the previous completed candidate');
-assert.equal(continuedDraft.localDraft,null,'quiet adoption clears the old source recovery before changing the editing base');
+assert.equal(continuedDraft.localDraft,null,'quiet adoption clears the old source recovery once the saved base holds the batch');
 console.log('6 · a delayed 422 after Undo releases Sync; corrected geometry replaces the failed snapshot');
 const failedObject=await rectangle(.9,.9), failedBase=(await snap()).base;
 let releaseFailure, failureReady;
