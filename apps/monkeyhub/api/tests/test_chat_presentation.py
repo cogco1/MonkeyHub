@@ -44,7 +44,12 @@ provider, gate = sys.argv[1], Path(sys.argv[2])
 if "mcp" in sys.argv and "list" in sys.argv:
     print("[]", flush=True)
     sys.exit(0)
-sys.stdin.read()
+if provider == "codex":
+    sys.stdin.read()
+else:
+    # Claude reads stream-json user messages as they arrive; stdin stays
+    # open for more of them until the turn's result (#301).
+    sys.stdin.readline()
 native = str(uuid4())
 def emit(value):
     print(json.dumps(value), flush=True)

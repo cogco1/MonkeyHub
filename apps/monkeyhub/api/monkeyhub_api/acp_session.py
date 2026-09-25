@@ -22,6 +22,12 @@ from acp.schema import (
 )
 
 
+# How long the adapter may take to answer one steering request.
+_STEER_TIMEOUT_S = 60.0
+# Updates that only a turn in progress produces.
+_TURN_ACTIVITY = {"agent_message_chunk", "agent_thought_chunk", "tool_call", "tool_call_update", "plan"}
+
+
 class AcpSessionError(RuntimeError):
     """An ACP turn failed; the caller must not silently submit it again."""
 
@@ -56,6 +62,9 @@ class CodexAcpSession:
         self._session_id: str | None = None
         self._can_load = False
         self._can_image = False
+        # The adapter's own steering extension: a prompt sent into the live turn.
+        self._can_steer = False
+        self._turn_live: asyncio.Event | None = None
         self._config_options: list[dict] = []
         self._default_model = default_model
         self._replaying = False
@@ -146,6 +155,8 @@ class CodexAcpSession:
             raise AcpSessionError(f"Unsupported ACP protocol version: {initialized.protocol_version}.")
         self._can_load = bool(initialized.agent_capabilities.load_session)
         self._can_image = bool(initialized.agent_capabilities.prompt_capabilities.image)
+        steering = (initialized.field_meta or {}).get("steering")
+        self._can_steer = isinstance(steering, dict) and steering.get("supported") is True
 
     async def _drain_stderr(self, reader) -> None:
         while chunk := await reader.read(4096):
@@ -163,6 +174,7 @@ class CodexAcpSession:
 
     async def _prompt(self, text, session_id, model, on_session, timeout_s, images) -> None:
         self._turn_task = asyncio.current_task()
+        self._turn_live = asyncio.Event()
         try:
             # Setup is bounded too. Only activity for this negotiated session
             # renews the deadline; transport keepalives never reach this hook.
@@ -262,6 +274,12 @@ class CodexAcpSession:
 
     async def session_update(self, session_id: str, update: Any, **kwargs: Any) -> None:
         self._touch_activity(session_id)
+        live = self._turn_live
+        if (live is not None and self._turn_task is not None and not self._replaying and session_id == self._session_id
+                and update.session_update in _TURN_ACTIVITY):
+            # Work of the prompt's own turn: the adapter has that turn now, so a
+            # steer joins it rather than waiting to start one after it.
+            live.set()
         if update.session_update == "config_option_update":
             self._set_config_options(update.config_options)
         if not self._replaying:
@@ -272,6 +290,9 @@ class CodexAcpSession:
         if self._cancel_requested.is_set() or self._replaying:
             return RequestPermissionResponse(outcome={"outcome": "cancelled"})
         self._touch_activity(session_id)
+        if self._turn_live is not None and self._turn_task is not None and session_id == self._session_id:
+            # Asking for permission is the turn at work too.
+            self._turn_live.set()
         future = self._on_permission({
             "sessionId": session_id,
             "toolCall": tool_call.model_dump(by_alias=True, exclude_none=True),
@@ -286,6 +307,69 @@ class CodexAcpSession:
         if selected is None or selected not in {option.option_id for option in options}:
             return RequestPermissionResponse(outcome={"outcome": "cancelled"})
         return RequestPermissionResponse(outcome={"outcome": "selected", "optionId": selected})
+
+    def steer(self, text: str, on_sending: Callable[[], bool] | None = None) -> str:
+        """Send text into the running turn through the adapter's steering extension.
+
+        Returns "injected" when the turn took it, "startedNewTurn" when the turn
+        had already ended and the adapter began another for it, "idle" when no
+        prompt of this session is running, "unsupported" when the adapter has no
+        steering, and "failed" otherwise. It is never sent as a prompt of its
+        own here; the caller decides what follows. on_sending runs on this
+        adapter's thread just before the request leaves, so every update the
+        adapter sends after it is seen after it; returning False keeps the
+        request from leaving ("idle").
+        """
+        with self._lifecycle_lock:
+            if self._closed or not self._prompt_lock.locked():
+                return "idle"
+            future = asyncio.run_coroutine_threadsafe(self._steer(text, on_sending), self._loop)
+        try:
+            # Bounded by the turn itself: waiting ends with it, and the request
+            # has its own limit below.
+            return future.result()
+        except Exception:  # noqa: BLE001 - any failure leaves the caller's fallback
+            return "failed"
+
+    async def _steer(self, text: str, on_sending: Callable[[], bool] | None) -> str:
+        turn, live = self._turn_task, self._turn_live
+        if turn is None or live is None:
+            return "idle"
+        if not live.is_set():
+            # Until the turn has shown work, the adapter may not have it yet and
+            # would queue the text behind it instead of steering.
+            waiting = asyncio.ensure_future(live.wait())
+            try:
+                await asyncio.wait({waiting, turn}, return_when=asyncio.FIRST_COMPLETED)
+            finally:
+                waiting.cancel()
+        if (turn.done() or not live.is_set() or self._cancel_requested.is_set()
+                or self._connection is None or self._session_id is None):
+            return "idle"
+        if not self._can_steer:
+            # Known only once the adapter has answered initialize, which the
+            # turn's own activity above implies.
+            return "unsupported"
+        self._touch_activity(self._session_id)
+        if on_sending is not None and not on_sending():
+            return "idle"
+        try:
+            response = await asyncio.wait_for(self._connection.ext_method(
+                "session/steering", {"sessionId": self._session_id, "prompt": [{"type": "text", "text": text}]},
+            ), timeout=_STEER_TIMEOUT_S)
+        except Exception:  # noqa: BLE001 - refused, unknown or unanswered: the caller falls back
+            return "failed"
+        outcome = response.get("outcome") if isinstance(response, dict) else None
+        return outcome if outcome in {"injected", "startedNewTurn"} else "failed"
+
+    def cancel_turn(self) -> None:
+        """Cancel whatever turn the adapter runs now, including one it began itself."""
+        with self._lifecycle_lock:
+            if self._closed:
+                return
+            future = asyncio.run_coroutine_threadsafe(self._send_cancel(), self._loop)
+        with suppress(Exception):
+            future.result(5)
 
     def _cancel_permissions(self) -> None:
         for future in tuple(self._permissions):

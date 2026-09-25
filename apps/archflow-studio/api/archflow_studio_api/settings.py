@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from ipaddress import ip_address
 import os
 import math
+import shutil
 from pathlib import Path
 import tempfile
 from typing import Mapping
@@ -289,7 +290,7 @@ class StudioSettings:
             intent_model=os.environ.get(INTENT_MODEL_ENV, "").strip() or None,
             intent_timeout_s=intent_timeout_s,
             intent_context_budget_tokens=context_budget,
-            codex_executable=(
+            codex_executable=_resolve_executable(
                 os.environ.get(CODEX_ENV, "").strip() or DEFAULT_CODEX_EXECUTABLE
             ),
             mode=os.environ.get(MODE_ENV, "").strip() or LOCAL_MODE,
@@ -312,6 +313,21 @@ class StudioSettings:
                 if origin
             ),
         )
+
+
+def _resolve_executable(name: str) -> str:
+    """The launchable path for a configured command name.
+
+    The Studio starts agent processes without a shell. On Windows npm installs
+    ``codex`` as ``codex.cmd``, and ``CreateProcess`` looks only for
+    ``codex.exe``, so a bare name fails. ``shutil.which`` honours PATHEXT and
+    finds the shim; an absolute path, or a name that PATH can't resolve, is
+    returned unchanged so the eventual error still names what was configured.
+    """
+
+    if Path(name).is_absolute():
+        return name
+    return shutil.which(name) or name
 
 
 def cad_export_from_env(environ: Mapping[str, str]) -> str:

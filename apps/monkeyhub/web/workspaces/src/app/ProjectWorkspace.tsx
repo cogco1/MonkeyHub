@@ -9,6 +9,7 @@ import type { BoardPageRequest } from "../workspaces/monkeyboard/Board";
 import type { BoardSketchRequest } from "../workspaces/monkeyboard/boardSketch";
 import App, { type WorkspaceDesignContext } from "./App";
 export type { WorkspaceDesignContext } from "./App";
+import { BoardModeSwitch } from "./BoardModeSwitch";
 import { ErrorPanel } from "./ErrorPanel";
 import { LoadingOverlay } from "./LoadingOverlay";
 import { failed, loading, ready, type Loadable } from "./loadable";
@@ -127,6 +128,10 @@ export function ProjectWorkspace({ workspace, expectedProjectId, candidateRunId 
         active={active && modelVisible} refreshKey={refreshKey + attempt} onReturnToBoard={openBoard} onOpenBoard={openBoard} onChatRequest={onChatRequest}
         onDesignContextChange={onDesignContextChange} onRenderReader={registerRenderReader} />
     </div>}
+    {/* #300: Board and its Layout mode share one rail entry; this switch moves between the two
+        mounted surfaces, and view=publish links still land on Layout. */}
+    {((workspace === "board" && !pageOpen) || workspace === "publish") && <BoardModeSwitch mode={workspace === "publish" ? "layout" : "board"}
+      onChange={(mode) => onWorkspaceChange(mode === "layout" ? "publish" : "board")} />}
     {(publishVisited || workspace === "publish") && <div data-project-surface="publish" hidden={workspace !== "publish"} inert={!active || workspace !== "publish"}
       style={{ height: "100%", minHeight: 0, display: workspace === "publish" ? "block" : "none" }}>
       <Suspense fallback={<LoadingOverlay mode="boot" status="Publish" />}>

@@ -83,6 +83,24 @@ class SettingsTests(unittest.TestCase):
         ):
             self.assertEqual(StudioSettings.from_env().project_dir, Path("some/project"))
 
+    def test_the_codex_executable_resolves_through_path(self) -> None:
+        with patch.dict(os.environ, {"ARCHFLOW_STUDIO_PROJECT_DIR": "some/project"}, clear=False):
+            os.environ.pop("ARCHFLOW_STUDIO_CODEX", None)
+            with patch("archflow_studio_api.settings.shutil.which", return_value=r"C:\npm\codex.CMD") as which:
+                self.assertEqual(StudioSettings.from_env().codex_executable, r"C:\npm\codex.CMD")
+            which.assert_called_once_with("codex")
+            with patch("archflow_studio_api.settings.shutil.which", return_value=None):
+                self.assertEqual(StudioSettings.from_env().codex_executable, "codex")
+        absolute = str(Path(tempfile.gettempdir()) / "tools" / "codex.exe")
+        with patch.dict(
+            os.environ,
+            {"ARCHFLOW_STUDIO_PROJECT_DIR": "some/project", "ARCHFLOW_STUDIO_CODEX": absolute},
+            clear=False,
+        ):
+            with patch("archflow_studio_api.settings.shutil.which") as which:
+                self.assertEqual(StudioSettings.from_env().codex_executable, absolute)
+            which.assert_not_called()
+
     def test_the_reference_run_is_configured_and_otherwise_unset(self) -> None:
         with patch.dict(
             os.environ, {"ARCHFLOW_STUDIO_PROJECT_DIR": "some/project"}, clear=False
