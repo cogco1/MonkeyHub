@@ -44,7 +44,10 @@ from .computer_tools import ComputerService
 from .runtime import ProjectRuntimeManager
 from .runtime_models import HubRuntimeDto, ProjectRuntimeDto, OpenRuntimeRequest, RuntimeProjectRequest, RuntimeEvent
 from .fabrication import Fabrication
-from .updates import DesktopUpdates, UpdateStatus, CompleteUpdate, RollbackUpdate, MAX_PATCH_BYTES
+from .updates import (
+    DesktopUpdates, UpdateStatus, CompleteUpdate, RollbackUpdate, UpdateSettings, MAX_PATCH_BYTES,
+    recover_failed_start,
+)
 from .models import (
     AppId, AppStatus, FabPrepareRequest, FabPrepareResult, FabProfile,
     FabSendRequest, FabSendResult, HubError, HubFailure, HubHealth,
@@ -180,6 +183,9 @@ def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> Fas
             # A launch failure must leave the Hub available for configuration
             # and an explicit retry through the existing application route.
             logging.getLogger(__name__).warning("MonkeyMonitor could not be prepared: %s", exc)
+        # Packaged desktop only: finish this version's own next-launch
+        # activation once it answers health, and check for updates.
+        updates.start(settings.port, settings.managed_instance_id)
         yield
         await asyncio.to_thread(updates.shutdown)
         await asyncio.to_thread(chats.shutdown)
@@ -325,6 +331,14 @@ def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> Fas
     @app.post("/api/updates/rollback", response_model=UpdateStatus)
     def rollback_update(body: RollbackUpdate) -> UpdateStatus:
         return updates.rollback(body.fromCommit, body.targetCommit)
+
+    @app.post("/api/updates/check", response_model=UpdateStatus, status_code=202)
+    def check_updates() -> UpdateStatus:
+        return updates.check_now()
+
+    @app.put("/api/updates/settings", response_model=UpdateStatus)
+    def update_settings(body: UpdateSettings) -> UpdateStatus:
+        return updates.set_auto_update(body.autoUpdate)
 
     @app.get("/api/apps", response_model=list[AppStatus])
     def list_apps(projectDir: str | None = None) -> list[AppStatus]:
@@ -702,7 +716,13 @@ def main(argv: list[str] | None = None) -> None:
     if sys.platform == "win32":
         complete_interrupted_connection_teardown()
     with _runtime_lease(settings.runtime_root):
-        app = create_app(settings)
+        managed = settings.managed_instance_id is not None
+        try:
+            app = create_app(settings)
+        except BaseException as error:
+            recover_failed_start(SOURCE_ROOT, settings.runtime_root, managed=managed,
+                                 reason=f"{type(error).__name__}: {error}"[:300])
+            raise
         server = HubServer(uvicorn.Config(app, host="127.0.0.1", port=settings.port))
         if args.managed_stdin:
             def watch_stdin():
@@ -720,7 +740,15 @@ def main(argv: list[str] | None = None) -> None:
                 if server.started:
                     webbrowser.open(f"http://127.0.0.1:{settings.port}/")
             threading.Thread(target=open_when_ready, daemon=True).start()
-        server.run()
+        try:
+            server.run()
+        finally:
+            if not server.started:
+                app.state.updates.startup_failed("the Hub server did not start")
+        if server.started:
+            # A normal quit, with every owned worker drained and the runtime
+            # lease still held: switch the desktop entry to a ready update.
+            app.state.updates.activate_on_quit()
 
 
 if __name__ == "__main__":
