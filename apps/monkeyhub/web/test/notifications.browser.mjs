@@ -254,7 +254,11 @@ try {
   });
 
   await step("with nobody answering, the Hub loads that chat by its address", async () => {
+    // Fabrication shows no conversation, so nothing on that page answers 查看.
     await page.evaluate(() => window.removeEventListener("monkeyhub:open-chat", window.__openListener));
+    await page.goto(`${origin}/?view=fab`);
+    await page.locator("main.fab-page").waitFor();
+    await poll(2);
     change("chat-materials", { status: "running", error: null });
     await poll();
     assert.equal(await toasts.count(), 0, "a turn starting is not news");
@@ -262,7 +266,7 @@ try {
     await poll();
     await toast("「材料清单」出错了").waitFor();
     const loads = documentLoads;
-    const arrived = page.waitForURL((url) => url.searchParams.get("chatId") === "chat-materials");
+    const arrived = page.waitForURL((url) => url.searchParams.get("chatId") === "chat-materials" && !url.searchParams.has("view"));
     await toast("「材料清单」出错了").getByRole("button", { name: "查看" }).click();
     await page.clock.fastForward(400);
     await arrived;
@@ -314,6 +318,16 @@ try {
     assert.ok((await notes()).every((note) => note.closed), "the OS copies are closed once the window is seen");
     await page.waitForTimeout(150);
     assert.deepEqual(await shown(), ["「结构选型」已完成 · 查看"], "the chat on screen speaks for itself");
+  });
+
+  await step("the Hub shell answers 查看 by opening the chat in place", async () => {
+    const loads = documentLoads;
+    await toast("「结构选型」已完成").getByRole("button", { name: "查看" }).click();
+    await until(() => page.evaluate(() => new URL(location.href).searchParams.get("chatId") === "chat-structure"),
+      "the shell selected the chat");
+    await page.clock.fastForward(1000);
+    await page.waitForTimeout(150);
+    assert.equal(documentLoads, loads, "the shell answered the event, so the page did not reload");
   });
 
   await step("a Hub page framed inside another leaves notices to that page", async () => {
