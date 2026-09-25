@@ -1144,11 +1144,16 @@ try {
   await card.getByText("S2", { exact: true }).waitFor();
   // #271: the card speaks about the current project and its work, never candidate ids.
   await card.getByText("Modeling follows the current project").waitFor();
-  await card.getByText(/Finished result/).first().waitFor();
-  await card.getByText(/can be combined/).first().waitFor();
   assert.equal(await card.getByText("cand-A-1").count(), 0, "candidate ids stay internal to the Worktree Graph");
   assert.equal(await card.getByRole("button", { name: /Accept|Issue|Endorse/ }).count(), 0);
-  await card.getByRole("button", { name: "Close" }).click();
+  // #302: the card's work lines retired behind one link to the Design Tree, the one history entry.
+  assert.equal(await card.getByText(/Finished result|can be combined/).count(), 0, "no second list of work beside the Design Tree");
+  await card.getByRole("button", { name: "Open in Design tree", exact: true }).click();
+  await card.waitFor({ state: "detached" });
+  await visibleWorkspace().locator('[data-project-surface="tree"]:not([hidden])').waitFor();
+  assert.equal(await page.getByRole("button", { name: "Design tree", exact: true }).getAttribute("aria-pressed"), "true");
+  await page.getByRole("button", { name: "Modeling", exact: true }).click();
+  await waitWorkspace();
 
   // The saved frame comes back after a reload, with the conversation.
   const savedWidth = await boxOf(".chat-browser");

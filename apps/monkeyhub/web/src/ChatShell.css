@@ -80,7 +80,6 @@
 .chat-project-card dd{margin:0;min-width:0;overflow-wrap:anywhere}
 .chat-project-card__path,.chat-project-card__candidate{display:block;font:var(--text-caption)/1.5 var(--font-mono)}
 .chat-project-card dd .chat-muted{display:block;margin:2px 0 6px}.chat-project-card__connection{margin-top:10px;border-top:1px solid var(--line);padding-top:8px}.chat-project-card__connection summary{cursor:pointer;min-height:32px;display:flex;align-items:center;color:var(--muted)}.chat-project-card__url{width:100%;margin-top:6px;min-height:30px;font:var(--text-caption)/1.5 var(--font-mono);color:var(--muted);background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:5px 8px}.chat-project-card__connection-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:8px}.chat-project-card__connection-actions .chat-activity__open{min-height:32px;padding:6px 10px}
-.chat-project-card__run{display:flex;flex-direction:column;gap:4px;margin-bottom:8px}.chat-project-card__run .chat-activity__open{align-self:flex-start;min-height:32px;padding:6px 10px}
 .chat-project-card__archive{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;padding-top:10px;border-top:1px solid var(--line)}.chat-project-card__archive .chat-activity__open{min-height:32px;padding:6px 10px}
 /* A written summary makes this dialog taller than a short window; its own
    scrollbar keeps Export and Close reachable rather than clipped. */
@@ -105,11 +104,8 @@
 .chat-project-card__status li::before { content: "✓ "; color: var(--muted); }
 .chat-project-card__status li[data-state="stale"]::before { content: "⚠ "; color: var(--accent); }
 .chat-project-card__status li[data-state="running"]::before { content: "↻ "; }
-.chat-project-card__work { display: grid; gap: 6px; }
-.chat-project-card__line { display: grid; gap: 2px; padding: 6px 8px; border: 1px solid var(--line); border-radius: var(--radius-sm, 6px); }
-.chat-project-card__line small { color: var(--muted); font-size: var(--text-caption); }
-.chat-project-card__line[data-reconcile="conflict"] { border-left: 3px solid var(--accent); }
-.chat-project-card__conflict { color: var(--text); }
+/* #302: the card's one link to the Design Tree, where its work lines went. */
+.chat-project-card__tree { margin-top: 10px; min-height: 32px; padding: 6px 10px; }
 
 /* GH-285: a turn's tool calls as one folded row, and the jump back to the latest message. */
 .chat-process{min-width:0;font-size:var(--text-caption);color:var(--muted)}

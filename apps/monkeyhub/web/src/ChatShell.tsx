@@ -3,7 +3,7 @@ import { ErrorBoundary } from "../workspaces/src/app/ErrorBoundary";
 import { Fragment, lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from "react";
 import { applicationUrl, type AppearancePreferences } from "../../../shared-web/src/appearance.js";
 import type { WorktreeGraphDto } from "../workspaces/src/api/generated";
-import { projectStatus, refLabel, workRows } from "./worktreeGraph";
+import { projectStatus } from "./worktreeGraph";
 import type { AppStatus, ChatArchiveRequest, ChatCreateRequest, ChatDetail, ChatMessage, ChatPostRequest, ChatProject, ChatProvider, ChatSummary, ChatWorkspace, HubError, HubRuntimeDto, ProjectArchiveExportRequest, ProjectArchiveRestoreRequest, ProjectArchiveRestoreResult, ProjectArchiveSummary, ProjectRuntimeDto, RuntimeEvent, UpdateStatus } from "./api/generated";
 import { ProjectRuntimeProvider } from "../workspaces/src/api/ProjectRuntimeContext";
 import type { WorkspaceDesignContext } from "../workspaces/src/app/ProjectWorkspace";
@@ -266,10 +266,8 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
   const [folder, setFolder] = useState("");
   const [projectName, setProjectName] = useState("");
   const [projectInfo, setProjectInfo] = useState(false);
-  // #271: the read-only Worktree Graph shown in the project card.
+  // #271: the read-only Worktree Graph the project card's status is read from.
   const [worktrees, setWorktrees] = useState<{ runtimeId: string; graph: WorktreeGraphDto } | null>(null);
-  const [worktreeError, setWorktreeError] = useState<string | null>(null);
-  const [worktreeRead, setWorktreeRead] = useState(0);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [updateRestarting, setUpdateRestarting] = useState(false);
   // The model this conversation will use next. An existing chat keeps its own;
@@ -390,13 +388,12 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
     if (!projectInfo || !runtimeId || projectRuntime?.projection !== "ready") return;
     let live = true;
     request<WorktreeGraphDto>(`/api/runtime/projects/${encodeURIComponent(runtimeId)}/studio/api/worktrees`)
-      .then((graph) => { if (live) { setWorktrees({ runtimeId, graph }); setWorktreeError(null); } })
-      .catch((cause: unknown) => { if (live) setWorktreeError(asFailure(cause).detail); });
+      .then((graph) => { if (live) setWorktrees({ runtimeId, graph }); })
+      .catch(() => { /* Unread, the card shows no status rather than a stale one. */ });
     return () => { live = false; };
-  }, [projectInfo, projectRuntime?.runtimeId, projectRuntime?.projection, operationSignature, worktreeRead]);
+  }, [projectInfo, projectRuntime?.runtimeId, projectRuntime?.projection, operationSignature]);
   const graph = worktrees?.runtimeId === projectRuntime?.runtimeId ? worktrees?.graph ?? null : null;
   const status = graph ? projectStatus(graph) : null;
-  const rows = graph ? workRows(graph, projectRuntime?.operations ?? [], sessions, { tools: t.workTools, unattributed: t.workUnattributed }) : [];
 
   const receiveRuntime = useCallback((snapshot: HubRuntimeDto) => {
     const previous = runtimeRef.current;
@@ -1274,22 +1271,11 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
             {status.background > 0 && <li data-state="running">{t.workBackground(status.background)}</li>}
             {status.unreadable > 0 && <li data-state="stale" title={graph?.warnings.join("\n")}>{t.workUnreadable(status.unreadable)}</li>}
           </ul></dd></>}
-          <dt>{t.workLines}</dt><dd className="chat-project-card__work">
-            {worktreeError && !graph ? <span className="chat-muted" role="status">{t.workUnavailable}</span>
-              : rows.length === 0 ? <span className="chat-muted">{graph ? t.workNone : t.loading}</span>
-              : rows.map((row) => <div className="chat-project-card__line" key={row.key} data-kind={row.kind} data-reconcile={row.reconcile}>
-                <span>{row.kind === "branch" ? t.workBranch(graph?.lines.find((line) => line.lineId === row.key)?.branchId ?? "", row.label ?? "")
-                  : `${row.owner} · ${row.status === "running" ? t.workRunning : row.status === "queued" ? t.workQueued : row.status === "interrupted" ? t.workInterrupted : t.workReady}`}</span>
-                {row.kind !== "branch" && <small>{row.relation === "ahead" ? t.workAhead : row.relation === "behind" ? t.workBehind
-                  : row.relation === "diverged" ? t.workDiverged : t.workSeparate}{row.kind === "result" && row.reconcile !== "none" && row.reconcile !== "conflict"
-                  ? ` · ${row.reconcile === "can-combine" ? t.workCombine : t.workReview}` : ""}</small>}
-                {row.conflicts.length > 0 && <small className="chat-project-card__conflict" role="note">{t.workConflict(row.conflicts.map(refLabel).join(", "))}</small>}
-                {row.kind === "result" && row.runId && <button type="button" className="chat-activity__open" disabled={Boolean(toolBusy)}
-                  onClick={() => { setProjectInfo(false); void openTool("monkeyarch", { candidate: row.runId! }); }}><Icon name="cube" /><span>{t.openCandidate}</span></button>}
-              </div>)}
-            <button type="button" className="chat-activity__open" onClick={() => setWorktreeRead((value) => value + 1)}><Icon name="refresh" /><span>{t.workRefresh}</span></button>
-          </dd>
         </dl> : <><p>{t.projectNone}</p><p className="chat-muted">{t.projectNoneHint}</p></>}
+        {/* #302: work in progress and results live in the Design Tree, the one history
+            entry; the card's former work lines are this link to it. */}
+        {project && <button type="button" className="chat-activity__open chat-project-card__tree" disabled={Boolean(toolBusy)}
+          onClick={() => { setProjectInfo(false); void openTool("tree"); }}><Icon name="tree" /><span>{t.openInTree}</span></button>}
         {/* The local address of the page on the right is a connection detail:
             available when it is asked for, not on screen all the time. */}
         {Boolean(projectRuntime?.operations?.length) && <details className="chat-project-card__connection" open={Boolean(recoverableOperation) || undefined}>
