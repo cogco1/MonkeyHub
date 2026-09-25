@@ -252,7 +252,7 @@
           "base_ref": "e183a69a",
           "contributor": "Claude",
           "reviewer": "Claude root task",
-          "handoff": "Process fold and chat scrolling in ChatShell (#285 section 6.1 'process fold' only; result cards, the composer target label and the project panel stay open). Hands the shared chat files to GH-300/sidebar on this branch; root task reviews and publishes both. GH-234/autosave-restart owns the restartBlocker lines and the updateModelBlocked copy; rebase after it merges.",
+          "handoff": "Delivered in fba8fce3 on this branch: one folded process row per turn with plain-language steps and Technical details, and chat scrolling that opens at the latest message with a jump-to-latest button. Hands the shared chat files to GH-300/sidebar; root task reviews and publishes both. GH-234/autosave-restart owns the restartBlocker lines and the updateModelBlocked copy; rebase after it merges.",
           "modules": [
             "hub.shell"
           ],
@@ -267,7 +267,7 @@
             "apps/monkeyhub/README.md"
           ],
           "depends_on": [],
-          "status": "active",
+          "status": "done",
           "blocked_reason": null
         }
       ]
@@ -340,8 +340,8 @@
           "depends_on": [
             "GH-285/process-fold"
           ],
-          "status": "blocked",
-          "blocked_reason": "Waits for GH-285/process-fold on the same branch and worktree: both edit ChatShell.tsx, its CSS, the chat catalogs, the chat browser test and the Hub README."
+          "status": "active",
+          "blocked_reason": null
         }
       ]
     }
