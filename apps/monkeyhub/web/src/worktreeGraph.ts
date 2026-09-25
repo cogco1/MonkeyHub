@@ -38,9 +38,13 @@ export function projectStatus(graph: WorktreeGraphDto): ProjectStatus {
 }
 
 export interface OwnerWords {
-  you: string;
+  /** A request made through the project tools without a conversation: Modeling or an external tool. */
+  tools: string;
   unattributed: string;
 }
+
+/** A retained ref as a person reads it: the element, parameter or relation name. */
+export const refLabel = (ref: string) => ref.replace(/^(entity|parameter|relation|element|component):/, "");
 
 export interface WorkRow {
   key: string;
@@ -62,7 +66,7 @@ export function ownerOf(runId: string | null, operations: readonly OperationReco
   const operation = runId ? operations.find((row) => row.candidateId === runId) : undefined;
   if (!operation) return words.unattributed;
   if (operation.sessionId) return sessions.find((row) => row.id === operation.sessionId)?.title || words.unattributed;
-  return operation.source === "studio" ? words.you : words.unattributed;
+  return operation.source === "studio" ? words.tools : words.unattributed;
 }
 
 /** Rows for everything that is not the current line itself, most actionable first. */
