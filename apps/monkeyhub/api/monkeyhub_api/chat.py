@@ -1348,10 +1348,15 @@ class ChatStore:
             self._start(session_id, running, content)
             return self.get(session_id)
 
-    def _start(self, session_id: str, running: _Running, content: str, carried: tuple[str, ...] = ()) -> None:
-        """Register one turn and start its thread; the caller holds the lock."""
+    def _start(self, session_id: str, running: _Running, content: str, carried: tuple[str, ...] = (),
+               earlier: tuple[str, ...] = ()) -> None:
+        """Register one turn and start its thread; the caller holds the lock.
+
+        A continuation also knows the turns before it, so a call they opened
+        and that only reports its end now keeps its own row.
+        """
         session = self._sessions[session_id]
-        running.turns = list(carried) or [_turn_id(session)]
+        running.turns = [*earlier, *carried] or [_turn_id(session)]
         if session.transport == "cli" and session.provider != "codex":
             # Claude keeps reading stream-json user messages until its result.
             running.stdin = queue.Queue()
@@ -1486,7 +1491,8 @@ class ChatStore:
                         # This turn has already ended: the message is the next prompt.
                         session.status, session.error = "running", None
                         self._save(session)
-                        self._continue(session_id, [(identifier, content)], redirected=False)
+                        self._continue(session_id, [(identifier, content)], redirected=False,
+                                       earlier=tuple(running.turns))
                         return
                     if current is not running:
                         # A later turn runs now; it takes the message as its own.
@@ -1765,7 +1771,8 @@ class ChatStore:
             with self._lock:
                 session = self._sessions[session_id]
                 client = self._acp_sessions.get(session_id)
-                self._acp_tools[session_id] = {}
+                # A continuation keeps what the cancelled step's calls said so far.
+                self._acp_tools.setdefault(session_id, {})
             if client is None:
                 commands = self.commands if self.commands is not None else _cli_commands()
                 environment["CODEX_PATH"] = _native_codex(commands["codex"])
@@ -2101,7 +2108,6 @@ class ChatStore:
                 stopped = running.stop.is_set()
                 halted = stopped or running.redirected
                 self._clear_permissions(session_id)
-                self._acp_tools.pop(session_id, None)
                 # What Claude read without echoing it back still reached it when
                 # its turn finished normally; a stopped or failed turn read none.
                 for identifier in list(running.written):
@@ -2120,6 +2126,8 @@ class ChatStore:
                 for message in session.messages:
                     if message.interjection == "pending" and message.id not in following:
                         message.interjection = "undelivered"
+                if not follow:
+                    self._acp_tools.pop(session_id, None)
                 session.status = "running" if follow else "interrupted" if stopped else "failed" if error else "idle"
                 session.error = HubError(code="CHAT_STOPPED", detail="The response was stopped.") if stopped else error
                 for message in session.messages:
@@ -2142,7 +2150,7 @@ class ChatStore:
                 finally:
                     self._running.pop(session_id, None)
                     if follow:
-                        self._continue(session_id, follow, redirected=running.redirected)
+                        self._continue(session_id, follow, redirected=running.redirected, earlier=tuple(running.turns))
             if abandoned is not None:
                 # Closing hands work to the adapter's own thread and waits for
                 # it; that never happens while this store's lock is held.
@@ -2154,7 +2162,8 @@ class ChatStore:
             running.stdin.put(None)
             running.stdin = None
 
-    def _continue(self, session_id: str, follow: list[tuple[str, str]], *, redirected: bool) -> None:
+    def _continue(self, session_id: str, follow: list[tuple[str, str]], *, redirected: bool,
+                  earlier: tuple[str, ...] = ()) -> None:
         """Send the interjections a finished turn could not take as the next prompt.
 
         The lock is held and the finished turn is already gone. The chat stays
@@ -2169,7 +2178,8 @@ class ChatStore:
         running = _Running(trace=HubTurnObserver(
             self.usage_log, follow[0][0], session.projectId, session.provider, session.model,
         ))
-        self._start(session_id, running, content, carried=tuple(identifier for identifier, _ in follow))
+        self._start(session_id, running, content, carried=tuple(identifier for identifier, _ in follow),
+                    earlier=earlier)
 
     def _tool_message(self, session: _SavedChat, item: Mapping, kind: str, environment) -> None:
         """Keep one visible row per MCP call, from started to its outcome."""
