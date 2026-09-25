@@ -241,6 +241,29 @@
       "acceptance": [
         "Project-bound pages save/reopen; exact source replacement/freeze; editable PPTX and deterministic PDF; Board selection preserves narrative page order without changing design HEAD."
       ]
+    },
+    {
+      "id": "GH-234",
+      "stream": "planning",
+      "status": "active",
+      "goal": "Write and review the daily-use UI and interaction plan for the Hub workspaces (working version, version timeline, chat result cards, Drawing and Board source states), then derive its tracking issues. No product source changes.",
+      "depends_on": [],
+      "issue": "https://github.com/cogco1/MonkeyHub/issues/234",
+      "branch": "codex/234-ui-daily-use-plan",
+      "worktree": "codex-234-ui-daily-use-plan",
+      "base_ref": "b33c1b3e63564d83ba14d0a6f5521cff571804a1",
+      "contributor": "Claude",
+      "reviewer": null,
+      "handoff": "After the maintainer approves docs/UI_DAILY_USE_PLAN.md, open the umbrella and child issues it lists, then release this scope. Implementation follows those issues; the frontend part of #272 is planned here, while its runtime resolver stays in #272.",
+      "modules": [
+        "hub.shell"
+      ],
+      "write_scope": [
+        "docs/UI_DAILY_USE_PLAN.md"
+      ],
+      "acceptance": [
+        "Maintainer-approved plan in docs/UI_DAILY_USE_PLAN.md and its tracking issues opened; no product source changed."
+      ]
     }
   ]
 }
