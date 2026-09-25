@@ -39,7 +39,8 @@
 .design-tree-toast__undo { flex: none; min-height: 22px; padding: 1px 10px; border: 0; border-radius: 999px; background: transparent; color: inherit;
   font: inherit; font-weight: 650; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
 .design-tree-toast__undo:hover:not(:disabled) { background: color-mix(in srgb, var(--ground) 16%, transparent); }
-.design-tree-toast__undo:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+/* The pill inverts the theme, so its own ink is the ring that shows on it in both. */
+.design-tree-toast__undo:focus-visible { outline: 2px solid currentColor; outline-offset: 1px; }
 .design-tree-toast__undo:disabled { cursor: default; text-decoration: none; opacity: .75; }
 @keyframes design-tree-toast-in { from { opacity: 0; transform: translateY(-3px); } }
 @media (prefers-reduced-motion: reduce) { .design-tree-toast { animation: none; transition: none; } }
