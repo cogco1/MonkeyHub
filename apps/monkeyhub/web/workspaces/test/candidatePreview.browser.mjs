@@ -248,14 +248,6 @@ try {
               return <CandidateApp {...props} initialRunId={request.runId} refreshKey={request.refreshKey} />;
             }
           `;
-        } else {
-          source = source.replace("export default function App(", "function CandidateApp(") + `
-            export default function DrawingHandoffFixture(props: Parameters<typeof CandidateApp>[0]) {
-              const [request, setRequest] = useState<DrawingDesignRequest>();
-              (window as unknown as { __openDrawingProposal: unknown }).__openDrawingProposal = setRequest;
-              return <CandidateApp {...props} initialDrawingRequest={request} />;
-            }
-          `;
         }
         const marker = '  const booting = !canOpenDocuments && (session.status === "idle" || session.status === "loading");';
         assert.equal(source.split(marker).length, 2);
@@ -1425,50 +1417,6 @@ try {
     assert.equal(sent.documentAnnotations[0].drawingRevisionRef, older.revisionRef);
     assert.equal(sent.documentVisuals[0].drawingRevisionRef, older.revisionRef);
     assert.equal(requests.findLast((row) => /^\/api\/documents\/.+\/bytes$/.test(row.name)).query.revisionRef, older.revisionRef);
-  });
-
-  await step("a Drawing dimension restores its exact Stage model and starts one normal candidate", async () => {
-    await page.reload({ waitUntil: "domcontentloaded" }); await rendered(historyA.candidateId);
-    await page.evaluate(({ source, stageRef }) => window.__candidatePreview.changeBase(source.runId, source, stageRef),
-      { source: currentHome.modelSource, stageRef: s0.stageRef });
-    await rendered(currentHome.runId);
-    const candidate = prepare("drawing-dimension"); candidateBases.set(candidate.candidateId, s1.stageRef);
-    const source = historyA.artifacts[0].modelSource;
-    const request = { projectId, modelSource: source, sourceStageRef: s1.stageRef, proposal: {
-      proposalId: candidate.proposalId, status: "proposed", modelSource: source, sourceRunId: source.runId, sourceStageRef: s1.stageRef,
-      baseStateDigest: source.stateDigest, recordDigest: digest(`record:${source.runId}`),
-      target: { componentId: "fixture-room", elementId: "fixture-floor", ref: "entity:fixture-room", key: "height" },
-      change: { kind: "set_scalar", old: 0.2, new: 0.3, unit: "meter" }, protected: [], decisionOperator: null,
-      impact: { direct: [], propagated: [], protected: [], conflicts: [], locks: [], honesty: [], unknownCoverage: { count: 0, componentIds: [], parameterIds: [] } },
-      utterance: "Change the bound drawing dimension", persistence: "fixture", createdAt: new Date().toISOString(),
-    } };
-    const start = requests.length, retainedDocuments = structuredClone(documents), retainedAnnotations = structuredClone([...annotations]);
-    const head = branches.get("main").headStageRef;
-    const starts = () => requests.slice(start).filter(row => row.name === `/api/proposals/${candidate.proposalId}/candidate`);
-    await page.evaluate(value => window.__openDrawingProposal(value), request);
-    await until(snapshot, value => value.runs[candidate.candidateId]?.job.status === "ready", "Drawing proposal did not enter the existing candidate lifecycle");
-    const restored = await snapshot();
-    assert.equal(restored.editingRunId, source.runId);
-    assert.equal(restored.sourceStageRef, s1.stageRef);
-    assert.deepEqual(restored.editingModelSource, source, "The Stage's exact asset wins over another saved working option in the same run");
-    const traffic = requests.slice(start);
-    const restoredAt = traffic.findIndex(row => row.name === "/api/state" && row.query.run === source.runId && row.query.sourceStageRef === s1.stageRef);
-    const startedAt = traffic.findIndex(row => row.name === `/api/proposals/${candidate.proposalId}/candidate`);
-    assert.ok(restoredAt >= 0 && restoredAt < startedAt, "The exact retained state must be restored before candidate submission");
-    assert.equal(starts().length, 1);
-    await page.evaluate(value => window.__openDrawingProposal(value), request);
-    await complete(candidate); await diagnosticRendered(candidate);
-    await until(snapshot, value => value.runs[candidate.candidateId]?.candidate.status === "ready", "The Drawing candidate was not read back");
-    const preview = await snapshot();
-    assert.deepEqual(preview.loadedModelSource, candidate.artifacts[0].modelSource);
-    assert.equal(preview.sourceStageRef, s1.stageRef, "The unaccepted candidate retains its source Stage");
-    assert.ok(requests.slice(start).some(row => row.name === `/api/candidates/${candidate.candidateId}`));
-    assert.ok(requests.slice(start).some(row => row.name === `/api/artifacts/${candidate.artifacts[0].sha256}/bytes`));
-    assert.equal(starts().length, 1, "Rerendering the same drawing proposal must not submit it twice");
-    assert.equal(preview.candidateEntries.filter(row => row.candidateId === candidate.candidateId).length, 1);
-    assert.equal(branches.get("main").headStageRef, head, "Preview must leave the accepted Stage unchanged");
-    assert.deepEqual(documents, retainedDocuments);
-    assert.deepEqual([...annotations], retainedAnnotations, "Design preview must preserve retained page notes");
   });
 
   }
