@@ -105,13 +105,15 @@ writing it and ask the repository owner to decide its ownership.
 - `AGENTS.md` states durable working rules. `governance/module_registry.json` names
   each capability's owning module and public contract; an owner is not a person or a
   single-file limit. Module `canonical` denotes established ownership, not a released
-  application or issued project. `governance/work_registry.json` holds current work and source-edit
-  scopes. `governance/architecture_policy.json` holds the checks enforced by archcheck.
+  application or issued project. GitHub Issues are the work items (`CONTRIBUTING.md`);
+  `governance/work_registry.json` holds live source-edit coordination and scopes.
+  `governance/architecture_policy.json` holds the checks enforced by archcheck.
   Generated maps are views of these sources, not separate rules or runtime switches.
 - Work is `active` while progressing, `ready` when its prerequisites are met, and
   `blocked` while awaiting a concrete input or decision, including an explicit pause.
-  Record the reason in the existing card. Reuse that card for related fixes; remove
-  the card and registry entry only when its remaining acceptance is complete.
+  Record the reason in the lane's `blocked_reason` or the existing card. Reuse the same
+  Issue for related fixes; remove a registry entry and its card only when its remaining
+  acceptance is complete.
 - A new domain capability may live in its own module and reach Studio through an
   existing application API or adapter. Extend the owning module's contract when needed;
   do not move independent implementation into core merely to make it callable. Change
