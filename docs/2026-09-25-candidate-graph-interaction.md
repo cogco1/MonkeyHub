@@ -259,10 +259,18 @@ The prototype is at [`prototypes/candidate-graph/`](prototypes/candidate-graph/R
 | 5 | One Candidate continued into the current line | [05-continued.png](prototypes/candidate-graph/screenshots/05-continued.png) |
 | 6 | Running Agent worktree under a Study | [06-running.png](prototypes/candidate-graph/screenshots/06-running.png) |
 | — | 390 px sheet; dark theme | [07-narrow.png](prototypes/candidate-graph/screenshots/07-narrow.png), [08-dark-tree-open.png](prototypes/candidate-graph/screenshots/08-dark-tree-open.png) |
+| — | Growth tree: fit with a selected option; close to Current; zoomed out | [09-growth-tree.png](prototypes/candidate-graph/screenshots/09-growth-tree.png), [10-growth-tree-close.png](prototypes/candidate-graph/screenshots/10-growth-tree-close.png), [11-growth-tree-overview.png](prototypes/candidate-graph/screenshots/11-growth-tree-overview.png) |
+| — | Compact list rows | [12-list-compact.png](prototypes/candidate-graph/screenshots/12-list-compact.png) |
 
 ![State 2: the Design Tree open beside the workspace, with the Stage spine and the Massing Study's five admitted Candidates](prototypes/candidate-graph/screenshots/02-tree-open.png)
 
 ![State 5: Entrance A continued into the current line; Accept as next Stage is now offered as a separate step](prototypes/candidate-graph/screenshots/05-continued.png)
+
+**Growth tree.** After reviewing the screenshots, Kaiwen described the design history as one branch that keeps getting longer: at each Stage he chooses one scheme and deepens it, so the chosen option is the trunk and keeps growing, while the options not taken stay short dead-end twigs. Continuing later from an old twig starts a new branch there, and the abandoned future stays visible but muted. The Design Tree header therefore has a `List | Growth tree` toggle (`#view=tree`). The growth tree borrows only the line grammar of a bracket diagram (solid for the chosen path, dashed for the rest), not its converging topology. The Working Head's lineage is one continuous stroke from left to right, and twigs alternate above and below it at each decision point, N − 1 per Study. Because a tree has E = V − 1 edges and every side subtree keeps its own x-range, the drawing never needs a crossing; `capture.mjs` checks this. The canvas copies MonkeyBoard's navigation: wheel zoom at the cursor, drag, Space or middle-mouse pan, a `− 100% +` bar with Fit, and the same grid.
+
+**Density.** Kaiwen also found the information density too high. The canvas shows only five element kinds (trunk, Stage milestones, option twigs, the Current tip with Accept, and running or queued placeholders) and uses semantic zoom. Zoomed out, it shows only the trunk, Stage labels and counts; the middle level adds thumbnails and short names; close up adds a one-line summary and status. Author, time and runs appear only in the side card of a selected node. The list rows were cut back the same way: thumbnail, letter, name and a status dot, with details on the selected row. Screenshots 01–08 still show the list as reviewed in PR #298.
+
+![Growth tree at Fit: the Working Head's lineage as one trunk, options not taken as twigs above and below, and the selected option's side card](prototypes/candidate-graph/screenshots/09-growth-tree.png)
 
 The prototype differs from this note in two small ways:
 
