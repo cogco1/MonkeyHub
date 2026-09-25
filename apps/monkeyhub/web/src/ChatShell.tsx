@@ -6,7 +6,7 @@ import type { WorktreeGraphDto } from "../workspaces/src/api/generated";
 import { projectStatus } from "./worktreeGraph";
 import type { AppStatus, ChatArchiveRequest, ChatCreateRequest, ChatDetail, ChatMessage, ChatPostRequest, ChatProject, ChatProvider, ChatSummary, ChatWorkspace, HubError, HubRuntimeDto, ProjectArchiveExportRequest, ProjectArchiveRestoreRequest, ProjectArchiveRestoreResult, ProjectArchiveSummary, ProjectRuntimeDto, RuntimeEvent, UpdateStatus } from "./api/generated";
 import { ProjectRuntimeProvider } from "../workspaces/src/api/ProjectRuntimeContext";
-import type { WorkspaceDesignContext } from "../workspaces/src/app/ProjectWorkspace";
+import type { WorkspaceDesignContext, WorkspacePosition } from "../workspaces/src/app/ProjectWorkspace";
 import { MonitorPage } from "./MonitorPage";
 import { ChatMarkdown, ChatMessageFiles, type ChatDocument } from "./ChatMessageContent";
 import type { PageSource } from "../workspaces/src/workspaces/monkeyboard/boardScene";
@@ -52,11 +52,15 @@ const composerWords = {
   "zh-CN": {
     composerMenu: "附件与新话题", newTopic: "新话题", newTopicDetail: "下一条消息从项目状态开始，不带之前的对话",
     newTopicRemove: "移除新话题",
+    target: "将修改：当前", targetUnrecorded: "未记录的修改不包括在内",
+    targetViewing: (name: string) => `正在查看 ${name}，这条消息仍会修改当前`,
   },
   en: {
     composerMenu: "Attachments and new topic", newTopic: "New topic",
     newTopicDetail: "The next message starts from the project state, without this conversation's context",
     newTopicRemove: "Remove New topic",
+    target: "Changes: Current", targetUnrecorded: "unrecorded edits not included",
+    targetViewing: (name: string) => `Viewing ${name}; this message still changes Current`,
   },
 } as const;
 /** The rail's two kinds of entry (#295, regrouped by the owner for #300): the
@@ -300,6 +304,18 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
   const [draftAttachments, setDraftAttachments] = useState<Record<string, File[]>>({});
   const [contextModes, setContextModes] = useState<Record<string, "continue" | "project">>({});
   const [designContexts, setDesignContexts] = useState<Record<string, WorkspaceDesignContext | null>>({});
+  // DC-9: each mounted project's position as its Stage chip states it.
+  const [positions, setPositions] = useState<Record<string, WorkspacePosition | null>>({});
+  const positionCallbacks = useRef(new Map<string, (position: WorkspacePosition | null) => void>());
+  const workspacePositionCallback = (runtimeId: string) => {
+    let callback = positionCallbacks.current.get(runtimeId);
+    if (!callback) {
+      callback = (position) => setPositions((current) => JSON.stringify(current[runtimeId] ?? null) === JSON.stringify(position)
+        ? current : { ...current, [runtimeId]: position });
+      positionCallbacks.current.set(runtimeId, callback);
+    }
+    return callback;
+  };
   const contextCallbacks = useRef(new Map<string, (context: WorkspaceDesignContext | null) => void>());
   const workspaceContextCallback = (runtimeId: string) => {
     let callback = contextCallbacks.current.get(runtimeId);
@@ -385,6 +401,12 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
   const recordContext = workspaceContext?.projectId === project?.projectId && (workspaceContext?.unavailableReason === "unsaved" ||
     workspaceContext?.unavailableReason === "unsynced") ? workspaceContext?.record ?? null : null;
   const [recordingContext, setRecordingContext] = useState(false);
+  // DC-9: what the next message changes. It always works on Current, the editing base the design
+  // context names; the label adds where Current stands, and says so when another model is on screen.
+  const position = projectRuntime && workspaceContext?.projectId === project?.projectId ? positions[projectRuntime.runtimeId] ?? null : null;
+  const target = [w.target, position?.current,
+    workspaceContext?.projectId === project?.projectId && (workspaceContext?.unavailableReason === "unsaved" || workspaceContext?.unavailableReason === "unsynced")
+      ? w.targetUnrecorded : null].filter(Boolean).join(" · ");
   const running = chat?.id === chatId && chat.status === "running";
   // #285: a turn's tool calls fold into one process row; the Agent's text,
   // results, permission prompts and errors stay in the conversation.
@@ -1213,14 +1235,18 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
           onDrop={(event) => { if (event.dataTransfer.files.length) { event.preventDefault(); addAttachments(Array.from(event.dataTransfer.files)); } setDraggingFiles(false); }}
           onPaste={(event) => { if (event.clipboardData.files.length) { event.preventDefault(); addAttachments(Array.from(event.clipboardData.files)); } }}>
           {draggingFiles && <p className="chat-attachment-drop" role="status">{t.dropFiles}</p>}
-          {/* DC-5: New topic, chosen from the + menu, as one removable chip; it applies to the next send. */}
-          {contextMode === "project" && <div className="chat-composer__context">
-            <span className="chat-topic" title={designContext ? t.contextProjectHint : contextUnavailable}>
+          {/* DC-9: what this message will change, and DC-5: a New topic chosen from the + menu, as one removable chip. */}
+          <div className="chat-composer__context">
+            {project && <p className="chat-target" id="chat-target" data-viewing={Boolean(position?.viewing)}>
+              <span className="chat-target__text">{target}</span>
+              {position?.viewing && <span className="chat-target__viewing">{w.targetViewing(position.viewing)}</span>}
+            </p>}
+            {contextMode === "project" && <span className="chat-topic" title={designContext ? t.contextProjectHint : contextUnavailable}>
               <span>{w.newTopic}</span>
               <button type="button" className="chat-topic__remove" aria-label={w.newTopicRemove} title={w.newTopicRemove}
                 onClick={() => { setContextModes((value) => ({ ...value, [draftKey]: "continue" })); input.current?.focus(); }}><Icon name="close" /></button>
-            </span>
-          </div>}
+            </span>}
+          </div>
           {/* The refusal a New topic can meet stays in view, with the one click that clears it (#302). */}
           {contextMode === "project" && !designContext && <div className="chat-topic-refusal">
             <p className="chat-muted" role="status">{contextUnavailable}</p>
@@ -1234,7 +1260,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
               input.current?.focus();
             }}><Icon name="close" /></button>
           </li>)}</ul>}
-          <label className="sr-only" htmlFor="chat-input">{t.placeholder}</label><textarea id="chat-input" ref={input} value={draft} placeholder={!project ? t.projectRequired : running ? t.interjectPlaceholder : t.placeholder} disabled={!project || busy}
+          <label className="sr-only" htmlFor="chat-input">{t.placeholder}</label><textarea id="chat-input" ref={input} value={draft} aria-describedby={project ? "chat-target" : undefined} placeholder={!project ? t.projectRequired : running ? t.interjectPlaceholder : t.placeholder} disabled={!project || busy}
             onChange={(event) => setDrafts((value) => ({ ...value, [draftKey]: event.target.value }))} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void send(); } }} />
           <input ref={fileInput} type="file" multiple hidden aria-label={t.attach} disabled={!project || busy} onChange={(event) => { addAttachments(Array.from(event.target.files ?? [])); event.target.value = ""; }} />
           <div className="chat-composer__bottom"><ComposerMenu label={w.composerMenu} disabled={!project || busy} items={[
@@ -1283,7 +1309,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
                 expectedProjectId={item.projectId} candidateRunId={item.candidate} candidateFollowsHead={item.followHead} treeFocus={item.focus ?? null}
                 refreshKey={item.revision} onChatRequest={focusConversation}
                 documentRequest={item.projectDir ? documentRequests[item.projectDir] : undefined}
-                onDesignContextChange={workspaceContextCallback(item.runtimeId)}
+                onDesignContextChange={workspaceContextCallback(item.runtimeId)} onPositionChange={workspacePositionCallback(item.runtimeId)}
                 onWorkspaceChange={(workspace) => { const id = workspace === "board" ? "monkeyboard" : workspace === "publish" ? "publish" : workspace === "drawing" ? "drawing" : workspace === "render" ? "monkeyrender" : workspace === "tree" ? "tree" : "monkeyarch";
                   setTabs((items) => items.map((tab) => tab.runtimeId === item.runtimeId ? { ...tab, id,
                     url: `${window.location.origin}/?${new URLSearchParams({ runtimeId: item.runtimeId!, view: workspace })}` } : tab));

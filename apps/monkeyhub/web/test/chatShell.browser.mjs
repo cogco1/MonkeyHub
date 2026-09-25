@@ -696,6 +696,8 @@ try {
   assert.ok(await railWidth() > 40, "the rail stays on screen while the tool content is closed");
   assert.equal(await page.locator(".chat-browser:visible").count(), 0);
   await contextReady();
+  assert.equal(await page.locator(".chat-composer .chat-target").innerText(), "Changes: Current",
+    "DC-9: without a Design Tree the composer still names what a message changes");
   assert.equal(await page.locator(".stage canvas").count(), 0, "reading initial project context does not initialize a hidden viewport");
   assert.equal(workspaceFixture.requests.some((row) => row.name.endsWith("/bytes")), false,
     "initial chat reads its editing state without loading model files");
@@ -2401,6 +2403,33 @@ try {
   await page.getByRole("button", { name: "Hub 设置", exact: true }).click();
   await page.locator("#language").selectOption("en");
   await page.getByRole("dialog").getByRole("button", { name: "Close", exact: true }).click();
+
+  // #285, on a project whose runtime has a Design Tree. DC-9: the composer names what the
+  // next message changes and where Current stands, as the Stage chip does, and says so
+  // while another model is open read-only; the message still changes Current.
+  projects.push({ projectId: "T", projectDir: "D:\\fixture\\T", name: "Tree project", chatCount: 0, version: 2, stage: "S2" });
+  workspaceFixture.designTrees.set("T", { stages: ["tree-s0", "tree-s1", "tree-s2"], edits: ["tree-e2", "tree-e1"] });
+  emitRuntime();
+  await page.getByRole("button", { name: "Tree project", exact: true }).first().click();
+  await studioReady();
+  await contextReady();
+  const target = page.locator(".chat-composer .chat-target");
+  await target.filter({ hasText: "Changes: Current · 3 edits after S2" }).waitFor();
+  assert.equal(await target.getAttribute("data-viewing"), "false");
+  assert.equal(await page.locator("#chat-input").getAttribute("aria-describedby"), "chat-target", "the input is described by what it changes");
+  assert.doesNotMatch(await target.innerText(), /tree-|project:\/\/|[0-9a-f]{12}/, "the target label shows no raw ids");
+  await page.getByRole("button", { name: "Design tree", exact: true }).click();
+  const treeSurface = visibleWorkspace().locator(".design-tree");
+  await treeSurface.waitFor();
+  await treeSurface.getByRole("button", { name: "List", exact: true }).click();
+  await treeSurface.locator('[role="treeitem"][data-node="stage:project://T/runs/tree-s0/review/design-stage.json"]').click();
+  await treeSurface.getByRole("button", { name: "View", exact: true }).click();
+  await target.locator(".chat-target__viewing").filter({ hasText: "Viewing S0; this message still changes Current" }).waitFor();
+  assert.equal(await target.getAttribute("data-viewing"), "true");
+  assert.equal(await target.locator(".chat-target__text").innerText(), "Changes: Current · 3 edits after S2");
+  await visibleWorkspace().getByRole("button", { name: "Back to Current", exact: true }).click();
+  await target.locator(".chat-target__viewing").waitFor({ state: "detached" });
+  assert.equal(await target.getAttribute("data-viewing"), "false");
 
   // With no building project, machine tools remain available and report a
   // missing dependency directly instead of asking the person to bind Studio.

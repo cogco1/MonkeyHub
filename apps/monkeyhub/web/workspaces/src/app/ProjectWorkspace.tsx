@@ -1,5 +1,5 @@
 import type { RenderView } from "../workspaces/monkeyarch/viewer/renderView";
-import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { asStudioApiError, StudioApiError } from "../api/client";
 import { useConnection, useStudio } from "../api/ProjectRuntimeContext";
 import type { ServerIdentity } from "../api/connection";
@@ -15,6 +15,8 @@ import { LoadingOverlay } from "./LoadingOverlay";
 import { failed, loading, ready, type Loadable } from "./loadable";
 import { currentView, DesignTreeBar, type DesignTreeView } from "../features/designTree/DesignTreeBar";
 import { useDesignTree, useSeenCandidates } from "../features/designTree/useDesignTree";
+import { treeWords } from "../features/designTree/words";
+import { useT } from "../i18n/useT";
 
 const Drawing = lazy(() => import("../workspaces/monkeydiagram/DrawingCanvas"));
 const Publish = lazy(() => import("../workspaces/publish/PublishWorkspace"));
@@ -37,11 +39,21 @@ export interface ProjectWorkspaceProps {
   onWorkspaceChange(workspace: "arch" | "board" | "drawing" | "render" | "publish" | "tree"): void;
   onChatRequest?: () => void;
   onDesignContextChange?: (context: WorkspaceDesignContext | null) => void;
+  /** Where a chat message lands (#285): the position the Stage chip states, as it states it. */
+  onPositionChange?: (position: WorkspacePosition | null) => void;
+}
+
+/** What the Stage chip says about the editing position, for the chat composer's target label (#285). */
+export interface WorkspacePosition {
+  /** Current's place on the Design Tree, such as "3 edits after S2"; null without a tree. */
+  readonly current: string | null;
+  /** The model open read-only in Modeling when it is not Current, by its tree name; the next message still changes Current. */
+  readonly viewing: string | null;
 }
 
 /** One mounted project: the Board, its page editor and the same local model draft. */
 export function ProjectWorkspace({ workspace, expectedProjectId, candidateRunId = null, candidateFollowsHead = false, treeFocus = null, active = true, refreshKey = 0, documentRequest = null,
-  onWorkspaceChange, onChatRequest, onDesignContextChange }: ProjectWorkspaceProps) {
+  onWorkspaceChange, onChatRequest, onDesignContextChange, onPositionChange }: ProjectWorkspaceProps) {
   const renderReader = useRef<(() => RenderView | null) | null>(null);
   const registerRenderReader = useCallback((reader: (() => RenderView | null) | null) => { renderReader.current = reader; }, []);
   const readRenderView = useCallback(() => renderReader.current?.() ?? null, []);
@@ -107,6 +119,15 @@ export function ProjectWorkspace({ workspace, expectedProjectId, candidateRunId 
   const seenCandidates = useSeenCandidates(treeProject);
   const designTree = useDesignTree({ studio, capabilities: server.status === "ready" ? server.value.capabilities : null,
     projectId: treeProject, active, refreshKey: refreshKey + attempt, onHeadMoved: () => setHeadMoves((value) => value + 1) });
+  // A node the tree opened read-only, until it becomes the base or the view returns to Current.
+  const viewing = treeView && !treeView.back && treeView.runId !== editingRunId ? treeView : null;
+  // #285: the chat composer names the same position as the chip, in the chip's words.
+  const t = useT();
+  const currentAt = useMemo(() => designTree.tree ? treeWords(t, designTree.tree).currentAt() : "", [t, designTree.tree]);
+  useEffect(() => {
+    onPositionChange?.(server.status === "ready" ? { current: currentAt || null, viewing: viewing?.name || null } : null);
+  }, [onPositionChange, server.status, currentAt, viewing?.name]);
+  useEffect(() => () => onPositionChange?.(null), [onPositionChange]);
   // The node the tree opens on (#302): the chip's ready options, or a chat Study card's.
   const [treeNodeFocus, setTreeNodeFocus] = useState<{ node: string; request: number } | null>(null);
   const focusRequests = useRef(0);
@@ -168,8 +189,7 @@ export function ProjectWorkspace({ workspace, expectedProjectId, candidateRunId 
   if (server.status !== "ready") return <div className="project-workspace"><LoadingOverlay mode="boot" status="Project Runtime" /></div>;
   return <div className="project-workspace" style={{ height: "100%", minHeight: 0 }}>
     {/* The project's position over every surface: the Stage chip opens the Design Tree. */}
-    {designTree.available && <DesignTreeBar data={designTree} seen={seenCandidates.seen} open={workspace === "tree"}
-      viewing={treeView && !treeView.back && treeView.runId !== editingRunId ? treeView : null}
+    {designTree.available && <DesignTreeBar data={designTree} seen={seenCandidates.seen} open={workspace === "tree"} viewing={viewing}
       onToggle={() => onWorkspaceChange(workspace === "tree" ? treeReturn.current : "tree")}
       onBackToCurrent={() => viewRun(currentView(designTree))} onShowReady={showReady} />}
     {refreshError && <ErrorPanel error={refreshError} what="GET /api/protocol" />}

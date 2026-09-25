@@ -166,6 +166,10 @@
 .chat-composer-menu__text{display:flex;flex-direction:column;gap:2px;min-width:0}
 .chat-composer-menu__text small{color:var(--muted);font-size:var(--text-caption);line-height:1.5}
 .chat-composer__context{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 2px 8px;min-width:0}
+/* DC-9: what the next message changes, and a note while another model is on screen. */
+.chat-target{display:flex;flex-direction:column;gap:2px;flex:1 1 12em;min-width:0;margin:0;color:var(--muted);font-size:var(--text-caption);line-height:1.5}
+.chat-target__text{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chat-target__viewing{color:var(--accent)}
 .chat-topic{display:inline-flex;align-items:center;gap:2px;min-height:28px;padding:2px 3px 2px 10px;border:1px solid var(--line);border-radius:999px;background:var(--panel);color:var(--ink);font-size:var(--text-caption);line-height:1.4}
 .chat-topic__remove{display:inline-grid;place-items:center;width:22px;height:22px;padding:0;border:0;border-radius:50%;background:transparent;color:var(--muted);cursor:pointer}
 .chat-topic__remove:hover{background:var(--panel-2);color:var(--ink)}
