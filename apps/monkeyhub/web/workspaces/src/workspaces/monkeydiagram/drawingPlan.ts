@@ -34,6 +34,9 @@ export function planFormFromDocument(document: SourceDocumentDto, lengthUnit: st
   };
 }
 
+/** A drawing made from a chosen version stays on it until a person rebuilds it on the current model (#271). */
+export const keptOnChosenVersion = (document: Pick<SourceDocumentDto, "viewRecipe"> | null) => document?.viewRecipe?.follow === "frozen";
+
 /** One drawing identity: its revisions share a drawing id (older drawings fall back to their file name). */
 export const drawingIdentity = (document: Pick<SourceDocumentDto, "drawingId" | "fileName">) => document.drawingId ?? document.fileName;
 

@@ -127,7 +127,7 @@ import { EVIDENCE_PINNED_KEY, type EvidenceTab } from "./evidence";
 import { failed, idle, loading, ready, type Loadable } from "./loadable";
 import { LoadingOverlay } from "./LoadingOverlay";
 import { editingDigestForView, useSession } from "./useSession";
-import { followStep, headOf, pinDisposition, viewerFollows } from "./workingHead";
+import { followStep, headOf, pinStep, viewerFollows } from "./workingHead";
 import { useTranscript, type SystemTextPart } from "./transcript";
 import { useCandidateRuns } from "./useCandidateRuns";
 import { finishEditTiming, startClientTiming, type ClientTimingSpan, type EditTimingTicket } from "./clientTiming";
@@ -1444,11 +1444,20 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
   // names the head from its retained working position; this tab only decides
   // when it can follow without taking work away from the person using it.
   const followsHead = server.capabilities.includes("working-source");
-  const [headFollow, setHeadFollow] = useState<string | null>(null);
+  // The head to show once its model is listed, and the viewer load it may replace.
+  const [headFollow, setHeadFollow] = useState<{ runId: string; viewRequest: number } | null>(null);
   const followRead = useRef(0);
   const editingRunId = projection === null || projection.referenceRunSource === "none" ? null : projection.referenceRun.runId;
   const followBusy = changingBase || proposalBusy || candidateBusy || modelSyncBusy || selectingWorkingCopy ||
     historyBusy || refiningEntryId !== null || documentIntentStatus !== "done";
+  // Read when a follow is decided, which may be after an awaited read.
+  const followGate = useRef<{ baseRunId: string | null; busy: boolean; localEdits(): boolean; viewed(): string | null }>(
+    { baseRunId: editingRunId, busy: followBusy, localEdits: () => false, viewed: () => null });
+  followGate.current = {
+    baseRunId: editingRunId, busy: followBusy || autoShowRef.current !== null,
+    localEdits: () => localEditingRef.current || Boolean(workingDraft?.localDraft) || [...localModels.current.values()].some(unsynced),
+    viewed: () => sourceLabel === LOCAL_SOURCE_LABEL ? LOCAL_SOURCE_LABEL : loadedArtifactsRef.current[0]?.runId ?? null,
+  };
   useEffect(() => {
     if (!followsHead || !active || session.status !== "ready" || followBusy) return;
     const read = ++followRead.current;
@@ -1465,14 +1474,16 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
         source.head.branchId ?? undefined, true, undefined, false);
       if (next === null || read !== followRead.current) return;
       pushNotice(t("stage.follow.moved"));
-      if (viewerFollows(viewed, editingRunId)) setHeadFollow(head.runId);
+      if (viewerFollows(viewed, editingRunId)) setHeadFollow({ runId: head.runId, viewRequest: modelLoadRequest.current });
     }).catch(() => { /* The current base stays usable; the next event reads the head again. */ });
     return () => controller.abort();
   }, [followsHead, active, session.status, followBusy, editingRunId, versionRefreshRequest, refreshKey, studio, reload, pushNotice, t, sourceLabel]);
   useEffect(() => {
-    // Show the head once the base and its listed model describe it.
-    if (headFollow === null || homeArtifacts === null || homeArtifacts.runId !== headFollow) return;
+    // Show the head once the base and its listed model describe it, unless the
+    // person loaded or started editing something since the follow was decided.
+    if (headFollow === null || homeArtifacts === null || homeArtifacts.runId !== headFollow.runId) return;
     setHeadFollow(null);
+    if (modelLoadRequest.current !== headFollow.viewRequest || localEditingRef.current) return;
     if (homeArtifacts.kind !== "reference" || (loadedArtifacts.length > 0 &&
         loadedArtifacts.every((row) => homeArtifacts.artifacts.some((home) => home.sha256 === row.sha256)))) return;
     showHome(false);
@@ -2020,19 +2031,22 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
       if (listing.projectId !== projectId) throw new Error("The candidate model list belongs to another project.");
       setArtifacts(ready(listing));
       const head = source?.projectId === projectId ? headOf(source) : null;
-      if (head !== null && source?.head && (initialRunFollowsHead || pinDisposition(initialRunId, head) === "follow")) {
-        // A delivered result on the Working Head, or a stale pin on one of its
-        // ancestors, is the current project: show and edit the head (#271).
+      if (initialRunFollowsHead && head !== null && source?.head) {
+        // A delivered or restored result is the current project: follow the
+        // Working Head (#271) unless this tab's own work must keep its base; the
+        // follow effect moves later. An explicit open below stays view-only.
         if (installedCandidate.current?.selection === candidateSelection) return;
         installedCandidate.current = { selection: candidateSelection, viewRequest: modelLoadRequest.current };
-        // This tab's own candidate preview adopts its result itself.
-        if (autoShowRef.current !== null) return;
-        if (projection?.referenceRun.runId !== head.runId) {
+        const gate = followGate.current;
+        const step = pinStep(true, { baseRunId: gate.baseRunId, head, busy: gate.busy, localEdits: gate.localEdits() });
+        if (step !== "follow" && step !== "stay") return;
+        const viewed = gate.viewed();
+        if (step === "follow") {
           const next = await reload(head.runId, source.head.accepted ? source.head.sourceStageRef ?? undefined : undefined,
             source.head.branchId ?? undefined, true, undefined, false);
           if (next === null || !isCurrent()) return;
         }
-        setHeadFollow(head.runId);
+        if (viewerFollows(viewed, gate.baseRunId)) setHeadFollow({ runId: head.runId, viewRequest: modelLoadRequest.current });
         return;
       }
       const rows = viewableArtifacts(listing.artifacts.filter((artifact) => artifact.runId === initialRunId));

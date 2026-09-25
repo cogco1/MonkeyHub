@@ -896,10 +896,12 @@ export const chatCopy = {
     connection: "当前连接", connectionHint: "在左下角的 Hub 设置里更改新对话的默认连接。",
     workCurrent: "项目当前", workAccepted: "已接受的 Stage", workUnaccepted: "尚未接受", workLatest: "最新工作版本", workStatus: "状态",
     workModeling: "建模跟随项目当前",
-    workDrawings: (current: number, stale: number) => stale ? `图纸：${stale} 张尚未更新到当前模型` : `图纸均为当前（${current}）`,
+    workDrawings: (current: number, stale: number, frozen: number) => [stale ? `图纸：${stale} 张尚未更新到当前模型`
+      : current ? `图纸均为当前（${current}）` : "", frozen ? `${frozen} 张固定在所选版本` : ""].filter(Boolean).join(" · "),
     workRenders: (current: number, stale: number) => stale ? `渲染：${stale} 张基于较早的模型` : `渲染均为当前（${current}）`,
     workBackground: (count: number) => `${count} 个后台任务`,
     workLines: "进行中的工作", workNone: "没有其他进行中的工作。", workUnavailable: "无法读取进行中的工作。",
+    workUnreadable: (count: number) => `${count} 项无法读取`,
     workTools: "项目工具", workUnattributed: "未标明来源", workRefresh: "刷新", recoveryDetails: "恢复详情",
     workRunning: "运行中", workQueued: "等待开始", workInterrupted: "未完成即停止", workReady: "已完成的结果",
     workBranch: (name: string, stage: string) => `独立线 ${name} · ${stage}`,

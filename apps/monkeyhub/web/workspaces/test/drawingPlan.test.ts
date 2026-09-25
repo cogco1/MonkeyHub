@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { defaultPlanForm, drawingDocumentKey, latestRevisions, liveAction, planFormFromDocument } from "../src/workspaces/monkeydiagram/drawingPlan.ts";
+import { defaultPlanForm, drawingDocumentKey, keptOnChosenVersion, latestRevisions, liveAction, planFormFromDocument } from "../src/workspaces/monkeydiagram/drawingPlan.ts";
 import type { SourceDocumentDto } from "../src/api/generated";
 
 test("a retained cut-plan restores its actual frame and keeps dimension identity, placement and hidden intent", () => {
@@ -50,4 +50,12 @@ test("a LIVE drawing rebinds once to the Working Head and never loops on its own
   assert.equal(liveAction({ live: true, dirty: false, attempted: false,
     status: { status: "unknown", bindingChanged: true, targetModelSource: head } }), "none");
   assert.equal(liveAction({ live: true, dirty: false, attempted: false, status: null }), "none");
+});
+
+test("only a drawing made from a chosen version is kept off the Working Head", () => {
+  assert.equal(keptOnChosenVersion(null), false);
+  assert.equal(keptOnChosenVersion({ viewRecipe: null }), false);
+  assert.equal(keptOnChosenVersion({ viewRecipe: { kind: "cut-plan" } }), false, "retained drawings without a choice follow");
+  assert.equal(keptOnChosenVersion({ viewRecipe: { kind: "cut-plan", follow: "live" } }), false);
+  assert.equal(keptOnChosenVersion({ viewRecipe: { kind: "cut-plan", follow: "frozen" } }), true);
 });

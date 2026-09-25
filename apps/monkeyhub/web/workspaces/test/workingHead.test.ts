@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { followStep, headOf, pinDisposition, viewerFollows, type HeadRef } from "../src/app/workingHead.ts";
+import { followStep, headOf, pinStep, viewerFollows, type HeadRef } from "../src/app/workingHead.ts";
 
 const head: HeadRef = { runId: "cand-3", stateDigest: "d3", lineage: ["cand-3", "cand-2", "stage-run"] };
 
@@ -12,14 +12,13 @@ test("headOf reads only the resolved head", () => {
     head: { runId: "cand-3", stateDigest: "d3", recordDigest: "r3", accepted: false, origin: "working-position", lineage: head.lineage } }), head);
 });
 
-test("a delivery pin on the head or an ancestor follows the head; another line stays a comparison", () => {
-  assert.equal(pinDisposition(null, head), "follow");
-  assert.equal(pinDisposition(undefined, head), "follow");
-  assert.equal(pinDisposition("cand-3", head), "follow");
-  assert.equal(pinDisposition("cand-2", head), "follow", "a stale pin never overrides the current head");
-  assert.equal(pinDisposition("stage-run", head), "follow");
-  assert.equal(pinDisposition("cand-other", head), "view");
-  assert.equal(pinDisposition("cand-3", null), "view", "without a known head a named pin is only a view");
+test("a delivered pin follows the head through the same gate; an explicit open stays a comparison", () => {
+  const idle = { baseRunId: "cand-2", head, busy: false, localEdits: false };
+  assert.equal(pinStep(true, idle), "follow");
+  assert.equal(pinStep(true, { ...idle, baseRunId: "cand-3" }), "stay");
+  assert.equal(pinStep(true, { ...idle, localEdits: true }), "defer", "unsynced local edits keep their base and view");
+  assert.equal(pinStep(true, { ...idle, busy: true }), "defer");
+  assert.equal(pinStep(false, idle), "view", "opening an earlier turn shows that turn, even on the head's own line");
 });
 
 test("the base follows the head unless this tab is working or holds unsynced edits", () => {

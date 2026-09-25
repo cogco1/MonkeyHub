@@ -939,10 +939,12 @@ export const chatCopy = {
     path: "Folder", version: "Published version", versionNumber: (value: number) => `Version ${value}`, versionUnknown: "Version not read", stage: "Stage", stageNone: "No confirmed Stage",
     workCurrent: "Current project", workAccepted: "Accepted Stage", workUnaccepted: "Not accepted yet", workLatest: "Latest working version", workStatus: "Status",
     workModeling: "Modeling follows the current project",
-    workDrawings: (current: number, stale: number) => stale ? `Drawings: ${stale} not updated to the current model` : `Drawings current (${current})`,
+    workDrawings: (current: number, stale: number, frozen: number) => [stale ? `Drawings: ${stale} not updated to the current model`
+      : current ? `Drawings current (${current})` : "", frozen ? `${frozen} kept on a chosen version` : ""].filter(Boolean).join(" · "),
     workRenders: (current: number, stale: number) => stale ? `Renders: ${stale} made from an earlier model` : `Renders current (${current})`,
     workBackground: (count: number) => count === 1 ? "1 background task" : `${count} background tasks`,
     workLines: "Work in progress", workNone: "No other work in progress.", workUnavailable: "Work in progress could not be read.",
+    workUnreadable: (count: number) => count === 1 ? "1 item could not be read" : `${count} items could not be read`,
     workTools: "Project tools", workUnattributed: "Unattributed", workRefresh: "Refresh", recoveryDetails: "Recovery details",
     workRunning: "Running", workQueued: "Waiting to start", workInterrupted: "Stopped before finishing", workReady: "Finished result",
     workBranch: (name: string, stage: string) => `Separate line ${name} · ${stage}`,

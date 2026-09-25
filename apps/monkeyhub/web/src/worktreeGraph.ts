@@ -13,13 +13,16 @@ import type { WorktreeGraphDto, WorktreeLineDto } from "../workspaces/src/api/ge
 export interface ProjectStatus {
   headLabel: string | null;
   accepted: boolean | null;
-  drawings: { current: number; stale: number };
+  /** Frozen drawings were drawn from a chosen version on purpose; they are not stale. */
+  drawings: { current: number; stale: number; frozen: number };
   renders: { current: number; stale: number; running: number };
-  /** Running or interrupted work in this project. */
+  /** Work still running or waiting in this project; interrupted work is listed, not counted. */
   background: number;
   /** Finished results that left the current line, and how many of them conflict. */
   separate: number;
   conflicts: number;
+  /** Retained project facts the runtime could not read for this view. */
+  unreadable: number;
 }
 
 export function projectStatus(graph: WorktreeGraphDto): ProjectStatus {
@@ -29,11 +32,12 @@ export function projectStatus(graph: WorktreeGraphDto): ProjectStatus {
   return {
     headLabel: graph.head?.label ?? null,
     accepted: graph.head ? graph.head.accepted : null,
-    drawings: { current: count("drawing", "current"), stale: count("drawing", "stale") },
+    drawings: { current: count("drawing", "current"), stale: count("drawing", "stale"), frozen: count("drawing", "frozen") },
     renders: { current: count("render", "current"), stale: count("render", "stale"), running: count("render", "running") },
-    background: graph.lines.filter((line) => line.kind === "running").length + count("render", "running"),
+    background: graph.lines.filter((line) => line.kind === "running" && line.status !== "interrupted").length + count("render", "running"),
     separate: results.length,
     conflicts: graph.lines.filter((line) => line.reconcile === "conflict").length,
+    unreadable: graph.warnings.length,
   };
 }
 

@@ -5,7 +5,7 @@ import type { DesignStageDto, ModelSourceDto, PlanDimensionChoicesDto, PlanStatu
 import { ErrorPanel } from "../../app/ErrorPanel";
 import { usePreferences } from "../../features/settings/preferences";
 import { DocumentSurface } from "./DocumentCanvas";
-import { defaultPlanForm, drawingDocumentKey, latestRevisions, liveAction, planFormFromDocument, type PlanForm } from "./drawingPlan";
+import { defaultPlanForm, drawingDocumentKey, keptOnChosenVersion, latestRevisions, liveAction, planFormFromDocument, type PlanForm } from "./drawingPlan";
 import { DressingControls, DressingOverlay } from "./DrawingDressing";
 import "./DrawingCanvas.css";
 
@@ -15,7 +15,7 @@ const copy = {
     rebuild: "Rebuild on this version", another: "Draw another version", anotherHint: "A version chosen here is drawn once and is not updated automatically.",
     earlier: "Earlier revisions", earlierView: "Earlier revision · not updated automatically", openLatest: "Open the current revision",
     live: "Follows the current project model", liveCurrent: "Current with the project model", updating: "Updating to the current model…",
-    stale: "Not updated", chosenView: "Drawn from a chosen version · not updated automatically", workingVersion: "Working version (not accepted)", representation: "Drawing appearance", cutHeight: "Cut height", bottom: "View bottom", scale: "Scale denominator (1 : n)",
+    stale: "Not updated", chosenView: "Drawn from a chosen version · not updated automatically", followAgain: "Follow the current model again", workingVersion: "Working version (not accepted)", representation: "Drawing appearance", cutHeight: "Cut height", bottom: "View bottom", scale: "Scale denominator (1 : n)",
     graphics: "Linework and hatch", cutLine: "Cut line (paper mm)", visibleLine: "Visible line (paper mm)", hatch: "Hatch spacing (paper mm)",
     dimensions: "Saved dimensions",
     placement: "Label offset (paper mm)", remove: "Remove dimension", apply: "Save appearance as a revision", dirty: "Save appearance changes before downloading SVG.",
@@ -31,7 +31,7 @@ const copy = {
     rebuild: "基于此版本重建", another: "绘制其他版本", anotherHint: "在这里选择的版本只按一次绘制，不会自动更新。",
     earlier: "较早版本", earlierView: "较早版本 · 不自动更新", openLatest: "打开当前版本",
     live: "跟随项目当前模型", liveCurrent: "与项目当前模型一致", updating: "正在更新到当前模型…",
-    stale: "尚未更新", chosenView: "按所选版本绘制 · 不自动更新", workingVersion: "工作版本（未接受）", representation: "图纸表达", cutHeight: "剖切高度", bottom: "视图底部", scale: "比例分母（1 : n）",
+    stale: "尚未更新", chosenView: "按所选版本绘制 · 不自动更新", followAgain: "改为跟随当前模型", workingVersion: "工作版本（未接受）", representation: "图纸表达", cutHeight: "剖切高度", bottom: "视图底部", scale: "比例分母（1 : n）",
     graphics: "线型与填充", cutLine: "剖切线宽（纸面 mm）", visibleLine: "可见线宽（纸面 mm）", hatch: "填充间距（纸面 mm）",
     dimensions: "已有尺寸标注",
     placement: "标注偏移（纸面 mm）", remove: "移除尺寸", apply: "保存表达新版本", dirty: "表达修改尚未保存，保存后可下载 SVG。",
@@ -43,6 +43,8 @@ const copy = {
     settings: "图纸设置",
     statusError: "无法读取来源状态，请刷新重试。", loading: "正在读取图纸…" },
 } as const;
+
+type PlanTarget = { modelSource: ModelSourceDto; stageRef: string | null };
 
 function PlanPreview({ source, file, vector, objects, selected, onSelect, onChange, disabled }: {
   source: SourceDocumentDto; file: File; vector: PlanVectorDto | null; objects: PlanDressingDto[];
@@ -114,15 +116,19 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
   // The drawing a status was read for; a status never answers for another revision.
   const statusFor = useRef<string | null>(null);
   const opened = useRef(false);
+  // Revisions this view wrote; a list read that began before one was written never drops it.
+  const madeHere = useRef(new Set<string>());
   const source = documents.find(document => drawingDocumentKey(document) === selected) ?? null;
   const latest = useMemo(() => latestRevisions(documents), [documents]);
   const latestKeys = useMemo(() => new Set(latest.map(drawingDocumentKey)), [latest]);
   const earlier = documents.filter(document => !latestKeys.has(drawingDocumentKey(document)));
   const historical = source !== null && !latestKeys.has(drawingDocumentKey(source));
-  const liveMode = !explicitTarget && !historical;
+  // A drawing made from a chosen version keeps it until a person rebuilds it on the current model.
+  const kept = keptOnChosenVersion(source);
+  const liveMode = !explicitTarget && !historical && !kept;
   const chosenStage = stages.find(item => item.stageRef === target) ?? null;
   const liveTarget = live?.compatible && live.source ? { modelSource: live.source, stageRef: live.stageRef ?? null } : null;
-  const stage = explicitTarget ? (chosenStage ? { modelSource: chosenStage.modelSource, stageRef: chosenStage.stageRef } : null)
+  const stage: PlanTarget | null = explicitTarget ? (chosenStage ? { modelSource: chosenStage.modelSource, stageRef: chosenStage.stageRef } : null)
     : source ? automaticTarget : liveTarget;
   const selectedTargetValue = explicitTarget ? target : "";
   const lengthUnit = choices?.lengthUnit ?? status?.lengthUnit ?? "";
@@ -139,7 +145,10 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
       if (cancelled) return;
       if (list.projectId !== projectId || history.projectId !== projectId || working.projectId !== projectId) throw new Error("The drawing workspace belongs to another project.");
       const plans = list.documents.filter(item => item.viewRecipe?.kind === "cut-plan");
-      setDocuments(plans); setStages(history.stages); setLive(working);
+      const listed = new Set(plans.map(drawingDocumentKey));
+      setDocuments(current => [...plans, ...current.filter(item =>
+        madeHere.current.has(drawingDocumentKey(item)) && !listed.has(drawingDocumentKey(item)))]);
+      setStages(history.stages); setLive(working);
       liveRevision.current = working.revisionSha256 ?? null;
       const head = history.branches.find(branch => branch.branchId === history.branchId)?.headStageRef;
       const defaultStage = head ?? history.stages.at(-1)?.stageRef ?? "";
@@ -156,8 +165,8 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
     // revision is cheap to read and changes with every retained working result.
     if (!active) return;
     const timer = window.setInterval(() => {
-      void studio.workingDraft().then(draft => {
-        if (liveRevision.current !== undefined && (draft.revisionSha256 ?? null) !== liveRevision.current) setRefresh(value => value + 1);
+      void studio.workingRevision().then(position => {
+        if (liveRevision.current !== undefined && (position.revisionSha256 ?? null) !== liveRevision.current) setRefresh(value => value + 1);
       }).catch(() => { /* The next tick or an explicit refresh reads it again. */ });
     }, 5000);
     return () => window.clearInterval(timer);
@@ -213,16 +222,19 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
   }
   function update(patch: Partial<PlanForm>) { setForm(current => ({ ...current, ...patch })); setDirty(true); }
   const dimensions = form.dimensions ?? [];
-  const generate = async (useTarget: boolean, following = false) => {
-    const modelSource = useTarget ? stage?.modelSource : source?.modelSource;
-    const stageRef = useTarget ? stage?.stageRef : source?.sourceStageRef;
+  /** Write a revision on a target, or on the drawing's own source; `follow` records a person's choice. */
+  const generate = async (target: PlanTarget | null, options: { following?: boolean; follow?: "live" | "frozen" } = {}) => {
+    const modelSource = target ? target.modelSource : source?.modelSource;
+    const stageRef = target ? target.stageRef : source?.sourceStageRef;
     if (!modelSource || busy || !active || !controls.current?.reportValidity()) return;
     const origin = scope.current;
-    setBusy(true); setLiveBusy(following); setError(null);
+    setBusy(true); setLiveBusy(Boolean(options.following)); setError(null);
     try {
       const result = await studio.drawingPlan({ projectId, modelSource, sourceStageRef: stageRef, ...form,
-        ...(source?.drawingId ? { drawingId: source.drawingId } : {}), ...(source?.revisionRef ? { previousRevisionRef: source.revisionRef } : {}) });
+        ...(source?.drawingId ? { drawingId: source.drawingId } : {}), ...(source?.revisionRef ? { previousRevisionRef: source.revisionRef } : {}),
+        ...(options.follow ? { follow: options.follow } : {}) });
       if (!mounted.current || scope.current !== origin) return;
+      madeHere.current.add(drawingDocumentKey(result));
       setDocuments(current => [...current.filter(item => drawingDocumentKey(item) !== drawingDocumentKey(result)), result]);
       if (drawingDocumentKey(result) !== selected) setVector(null);
       setSelected(drawingDocumentKey(result)); setForm(planFormFromDocument(result, lengthUnit)); setDirty(false);
@@ -235,13 +247,13 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
     const key = [drawingDocumentKey(source), status.targetModelSource?.runId, status.targetModelSource?.stateDigest].join("|");
     if (!stage || liveAction({ live: liveMode, dirty, attempted: attemptedLive.current.has(key), status }) !== "rebuild") return;
     attemptedLive.current.add(key);
-    void generate(true, true);
+    void generate(stage, { following: true, follow: "live" });
   }, [source, status, stage, busy, statusLoading, active, liveMode, dirty]);
   const sourceName = (document: SourceDocumentDto) => stages.find(item => item.stageRef === document.sourceStageRef)?.label ??
     (live?.head && document.modelSource?.runId === live.head.runId && live.head.label ? live.head.label : text.workingVersion);
   const action = source ? liveAction({ live: liveMode, dirty, attempted: false, status }) : "none";
   const statusLine = statusLoading ? text.checking : liveBusy ? text.updating
-    : historical ? text.earlierView : explicitTarget ? text.chosenView
+    : historical ? text.earlierView : explicitTarget || kept ? text.chosenView
     : action === "blocked" ? text.stale
     : status?.status === "current" && !status.bindingChanged ? text.liveCurrent : text[status?.status ?? "unknown"];
   const downloadSvg = () => {
@@ -274,11 +286,11 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
               <option value="">{text.live}</option>
               {stages.map(item => <option key={item.stageRef} value={item.stageRef}>{item.label} · {item.branchId}</option>)}</select></label>
             <p className="drawing-field__hint">{text.anotherHint}</p>
-            {explicitTarget && source && <button type="button" disabled={!stage || busy || statusLoading} onClick={() => void generate(true)}>{text.rebuild}</button>}
+            {explicitTarget && source && <button type="button" disabled={!stage || busy || statusLoading} onClick={() => void generate(stage, { follow: "frozen" })}>{text.rebuild}</button>}
           </details></div>
         </div>
         {source && <section className="drawing-status" aria-label={text.status}
-          data-follow={historical || explicitTarget ? "frozen" : "live"}
+          data-follow={historical || explicitTarget || kept ? "frozen" : "live"}
           data-status={liveBusy ? "updating" : action === "blocked" ? "outdated" : status?.status ?? "unknown"}>
           <div className="drawing-status__summary">
             <span className="drawing-source">{text.sourceOfPage}: <b>{sourceName(source)}</b></span>
@@ -287,13 +299,15 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
           </div>
           {historical && latest.some(item => item.drawingId === source.drawingId) &&
             <button type="button" disabled={busy} onClick={() => chooseDocument(drawingDocumentKey(latest.find(item => item.drawingId === source.drawingId)!))}>{text.openLatest}</button>}
+          {kept && !historical && !explicitTarget &&
+            <button type="button" disabled={busy || !liveTarget} onClick={() => void generate(liveTarget, { follow: "live" })}>{text.followAgain}</button>}
         </section>}
         </div>
         <div className="drawing-canvas">{source && file ? <PlanPreview key={selected} source={source} file={file} vector={vector} objects={form.dressing} selected={selectedDressing}
           onSelect={setSelectedDressing} onChange={dressing => update({ dressing })} disabled={busy || !active} />
           : <div className="drawing-empty" role="status">{loading || source ? text.loading : stage ? text.empty : live?.reason ?? text.noModel}</div>}</div>
       </div>
-      <form ref={controls} className="drawing-controls" aria-label={text.settings} onSubmit={event => { event.preventDefault(); void generate(!source); }}>
+      <form ref={controls} className="drawing-controls" aria-label={text.settings} onSubmit={event => { event.preventDefault(); void generate(source ? null : stage, !source && explicitTarget ? { follow: "frozen" } : {}); }}>
         <div className="drawing-controls__fields">
         <p className="drawing-unit">{lengthUnit ? `${text.sourceHint} ${lengthUnit}` : text.unitUnknown}</p>
         <fieldset disabled={busy || !active || !lengthUnit}><legend>{text.representation}</legend>

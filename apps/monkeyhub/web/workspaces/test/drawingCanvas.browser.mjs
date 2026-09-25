@@ -43,7 +43,7 @@ function App(){
    return metrics.headDrawable?{projectId:metrics.projectId,workspace,policy:'live',revisionSha256:String(metrics.revision),head,compatible:true,source:model,stageRef:metrics.head,reason:null,warnings:[]}
     :{projectId:metrics.projectId,workspace,policy:'live',revisionSha256:String(metrics.revision),head,compatible:false,source:null,stageRef:null,reason:'The current working version has no complete model to draw from yet.',warnings:[]};
   };
-  studio.workingDraft=async()=>({projectId:metrics.projectId,revisionSha256:String(metrics.revision),current:null,recovery:[],saved:[],managedRunIds:[],localDraft:null});
+  studio.workingRevision=async()=>({projectId:metrics.projectId,revisionSha256:String(metrics.revision)});
   studio.documentFile=async(runId,sha,name,revisionRef)=>{
    metrics.requests.push({kind:'bytes',runId,sha,revisionRef});
    const canvas=document.createElement('canvas');canvas.width=600;canvas.height=400;
@@ -94,6 +94,9 @@ try {
     const body = route.request().postDataJSON(); requests.push(body);
     const serial = requests.length;
     if (hold) { hold = false; await new Promise(resolve => { release = resolve; }); release = null; }
+    // Like the runtime: a chosen version is kept on later revisions until one follows again.
+    const previous = body.previousRevisionRef ? await page.evaluate(ref => window.drawingFixture.documents.find(d => d.revisionRef === ref) ?? null, body.previousRevisionRef) : null;
+    const follow = body.follow ?? previous?.viewRecipe?.follow;
     const result = { projectId: body.projectId, runId: body.modelSource.runId, assetSha256: String(serial).padStart(64, "0"),
       fileName: `floor-plan-${serial}.png`, mimeType: "image/png", sizeBytes: 200, pageCount: 1,
       pages: [{ pageIndex: 0, width: 600, height: 400, rotation: 0 }], modelSource: body.modelSource, sourceStageRef: body.sourceStageRef,
@@ -101,7 +104,8 @@ try {
       viewRecipe: { kind: "cut-plan", frame: { origin: [0, 0, body.cutHeight], far_depth: body.cutHeight - body.bottom,
         scale: `1:${body.scaleDenominator}`, crop_uv: body.cropUv ?? [0, 0, 10, 6] },
         graphics: { cutLineMm: body.cutLineMm, visibleLineMm: body.visibleLineMm, hatchSpacingMm: body.hatchSpacingMm },
-        hiddenObjectIds: body.hiddenObjectIds ?? [], dimensions: body.dimensions, dressing: body.dressing ?? [] } };
+        hiddenObjectIds: body.hiddenObjectIds ?? [], dimensions: body.dimensions, dressing: body.dressing ?? [],
+        ...(follow === "frozen" ? { follow: "frozen" } : {}) } };
     await page.evaluate(result => window.drawingFixture.documents.push(result), result);
     await route.fulfill({ status: 201, json: result });
   });
@@ -118,11 +122,12 @@ try {
   await page.route("**/api/drawings/plans/status", async route => {
     const body = route.request().postDataJSON(); statusRequests.push(body);
     const sourceDocument = await page.evaluate(body => window.drawingFixture.documents.find(d => d.revisionRef === body.revisionRef), body);
-    if (!body.targetModelSource && !body.targetStageRef && !await page.evaluate(() => window.drawingFixture.headDrawable))
+    const kept = sourceDocument.viewRecipe.follow === "frozen" && !body.targetModelSource && !body.targetStageRef;
+    if (!kept && !body.targetModelSource && !body.targetStageRef && !await page.evaluate(() => window.drawingFixture.headDrawable))
       return route.fulfill({ json: { status: "outdated", detail: "The current model cannot be drawn yet: no exact STEP.", targetModelSource: null,
         targetStageRef: null, lengthUnit: null, bindingChanged: false, dimensions: [] } });
-    const targetStageRef = body.targetStageRef ?? await page.evaluate(() => window.drawingFixture.head);
-    const targetModelSource = body.targetModelSource ?? (targetStageRef === "stage-B" ? modelB : modelA);
+    const targetStageRef = body.targetStageRef ?? (kept ? sourceDocument.sourceStageRef : await page.evaluate(() => window.drawingFixture.head));
+    const targetModelSource = body.targetModelSource ?? (kept ? sourceDocument.modelSource : targetStageRef === "stage-B" ? modelB : modelA);
     const outdated = targetModelSource.runId !== sourceDocument.modelSource.runId;
     await route.fulfill({ json: { status: broken ? "partially-broken" : outdated ? "outdated" : "current",
       detail: broken ? "Door no longer exists." : outdated ? "Selected model differs from this drawing." : "Exact source retained.",
@@ -215,6 +220,21 @@ try {
     await page.locator('.drawing-status[data-status="current"]').waitFor();
     assert.notEqual(await revision().inputValue(), oldSelection);
     assert.deepEqual(requests.at(-1).modelSource, modelA); assert.equal(requests.at(-1).dimensions[0].id, savedDimension.id);
+    assert.equal(requests.at(-1).follow, "frozen", "the chosen version is recorded with the revision");
+  });
+  await step("a drawing made from a chosen version stays on it after reopening until it follows again", async () => {
+    const generationCount = requests.length;
+    const kept = await revision().inputValue();
+    await revision().selectOption(legacyKey);
+    await revision().selectOption(kept);
+    await page.locator('.drawing-status[data-follow="frozen"][data-status="current"]').waitFor();
+    await page.getByText("Drawn from a chosen version · not updated automatically", { exact: true }).waitFor();
+    await new Promise(resolve => setTimeout(resolve, 300));
+    assert.equal(requests.length, generationCount, "reopening never rebuilds a kept drawing on the head");
+    await page.getByRole("button", { name: "Follow the current model again", exact: true }).click();
+    await until(() => Promise.resolve(requests.length), value => value === generationCount + 1, "explicit return to LIVE");
+    assert.equal(requests.at(-1).follow, "live"); assert.deepEqual(requests.at(-1).modelSource, modelB);
+    await page.locator('.drawing-status[data-follow="live"][data-status="current"]').waitFor();
   });
   await step("broken anchors remain visible and cannot drive, while prior revisions remain selectable", async () => {
     broken = true;
@@ -241,6 +261,10 @@ try {
   });
   await step("an empty representation field cannot silently reuse old values during rebuild", async () => {
     await until(() => page.getByLabel("Cut height (meter)", { exact: true }).isEnabled(), Boolean, "active form");
+    // Choose a version again: the previous step returned this drawing to LIVE.
+    const another = page.locator("details.drawing-another");
+    if (!await another.evaluate(node => node.open)) await another.locator("summary").click();
+    await source().selectOption("stage-A");
     const before = requests.length;
     await page.getByLabel("Cut height (meter)", { exact: true }).fill("");
     await page.getByRole("button", { name: "Rebuild on this version", exact: true }).click();

@@ -5542,6 +5542,12 @@ export type PlanRequestDto = {
      * Dressingoperations
      */
     dressingOperations?: Array<PlanDressingOperationDto> | null;
+    /**
+     * Follow
+     *
+     * live follows the project's Working Head; frozen keeps this drawing on its chosen source until it is rebuilt. Omitted keeps the previous revision's choice; a new drawing is live.
+     */
+    follow?: 'live' | 'frozen' | null;
 };
 
 /**
@@ -7062,7 +7068,7 @@ export type RepresentationStateDto = {
     /**
      * State
      */
-    state: 'current' | 'stale' | 'running' | 'unavailable';
+    state: 'current' | 'stale' | 'frozen' | 'running' | 'unavailable';
     /**
      * Sourcerunid
      */
@@ -10398,6 +10404,22 @@ export type WorkingHeadDto = {
      * The head run first, then each exact retained source it continued.
      */
     lineage: Array<string>;
+};
+
+/**
+ * WorkingRevisionDto
+ *
+ * Only the working position's revision: a cheap check for whether the head may have moved.
+ */
+export type WorkingRevisionDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Revisionsha256
+     */
+    revisionSha256?: string | null;
 };
 
 /**
@@ -14912,6 +14934,41 @@ export type SelectCurrentWorkingDraftApiWorkingDraftPutResponses = {
 };
 
 export type SelectCurrentWorkingDraftApiWorkingDraftPutResponse = SelectCurrentWorkingDraftApiWorkingDraftPutResponses[keyof SelectCurrentWorkingDraftApiWorkingDraftPutResponses];
+
+export type ReadWorkingRevisionApiWorkingDraftRevisionGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/working-draft/revision';
+};
+
+export type ReadWorkingRevisionApiWorkingDraftRevisionGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadWorkingRevisionApiWorkingDraftRevisionGetError = ReadWorkingRevisionApiWorkingDraftRevisionGetErrors[keyof ReadWorkingRevisionApiWorkingDraftRevisionGetErrors];
+
+export type ReadWorkingRevisionApiWorkingDraftRevisionGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: WorkingRevisionDto;
+};
+
+export type ReadWorkingRevisionApiWorkingDraftRevisionGetResponse = ReadWorkingRevisionApiWorkingDraftRevisionGetResponses[keyof ReadWorkingRevisionApiWorkingDraftRevisionGetResponses];
 
 export type SaveCurrentWorkingDraftApiWorkingDraftSavePostData = {
     body: WorkingDraftSaveDto;

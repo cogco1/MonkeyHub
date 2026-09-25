@@ -27,8 +27,9 @@ type Props = {
   workspace: ChatWorkspace | null;
   apps: readonly AppStatus[] | null;
 };
-// followHead: the tab was opened for a delivery or a restore, not to inspect that exact
-// candidate; a runtime that resolves the Working Head then shows the head instead (#271).
+// followHead: the tab was restored on a cold start, not opened to inspect that exact
+// candidate; the workspace shows the architect's editing base instead (#271). A delivered
+// result opens view-only, and only Continue makes it the base (GH-234 Q1/Q2).
 type ToolTab = { id: AppId; url: string; revision: number; projectDir?: string; projectId?: string; runtimeId?: string; candidate?: string; followHead?: boolean };
 type SavedTool = { id: AppId; candidate?: string };
 type ProjectPreparation = { promise: Promise<AppStatus[]>; apps: AppStatus[] | null; modeling?: Promise<unknown> };
@@ -819,10 +820,10 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
         const update = item.runtimeId ? updates.get(item.runtimeId) : undefined;
         // Keep the same workspace mounted, including a Board with unsent marks.
         // A manual choice made meanwhile wins; polling never reopens old results.
-        return update && item.candidate === update.previous ? { ...item, candidate: update.candidate, followHead: true } : item;
+        return update && item.candidate === update.previous ? { ...item, candidate: update.candidate, followHead: false } : item;
       });
       for (const [runtimeId, update] of updates) {
-        if (!next.some((item) => item.runtimeId === runtimeId)) next.push({ ...update.tab, candidate: update.candidate, followHead: true });
+        if (!next.some((item) => item.runtimeId === runtimeId)) next.push({ ...update.tab, candidate: update.candidate, followHead: false });
       }
       return next;
     });
@@ -1045,9 +1046,12 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
             <small>{status.accepted ? t.workAccepted : t.workUnaccepted}</small></dd>
           <dt>{t.workStatus}</dt><dd><ul className="chat-project-card__status">
             <li data-state="current">{t.workModeling}</li>
-            {status.drawings.current + status.drawings.stale > 0 && <li data-state={status.drawings.stale ? "stale" : "current"}>{t.workDrawings(status.drawings.current, status.drawings.stale)}</li>}
+            {status.drawings.current + status.drawings.stale + status.drawings.frozen > 0 && <li data-state={status.drawings.stale ? "stale" : "current"}
+              title={graph?.representations.filter((row) => row.kind === "drawing" && row.state !== "current").map((row) => `${row.label}: ${row.detail ?? ""}`).join("\n") || undefined}>
+              {t.workDrawings(status.drawings.current, status.drawings.stale, status.drawings.frozen)}</li>}
             {status.renders.current + status.renders.stale > 0 && <li data-state={status.renders.stale ? "stale" : "current"}>{t.workRenders(status.renders.current, status.renders.stale)}</li>}
             {status.background > 0 && <li data-state="running">{t.workBackground(status.background)}</li>}
+            {status.unreadable > 0 && <li data-state="stale" title={graph?.warnings.join("\n")}>{t.workUnreadable(status.unreadable)}</li>}
           </ul></dd></>}
           <dt>{t.workLines}</dt><dd className="chat-project-card__work">
             {worktreeError && !graph ? <span className="chat-muted" role="status">{t.workUnavailable}</span>

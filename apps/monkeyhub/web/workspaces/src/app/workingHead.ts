@@ -21,16 +21,6 @@ export function headOf(source: WorkingSourceDto | null | undefined): HeadRef | n
   return head ? { runId: head.runId, stateDigest: head.stateDigest, lineage: head.lineage } : null;
 }
 
-/**
- * A host pin names a delivered candidate. When it is the head or one of the
- * head's ancestors it is a stale delivery hint and the workspace follows the
- * head; a pin on any other line is a deliberate comparison and stays view-only.
- */
-export function pinDisposition(pin: string | null | undefined, head: HeadRef | null): "follow" | "view" {
-  if (!pin) return "follow";
-  return head !== null && head.lineage.includes(pin) ? "follow" : "view";
-}
-
 export interface FollowGate {
   /** The run the session is actually editing from. */
   readonly baseRunId: string | null;
@@ -47,6 +37,15 @@ export function followStep(gate: FollowGate): FollowStep {
   if (gate.head === null || gate.baseRunId === gate.head.runId) return "stay";
   if (gate.busy || gate.localEdits) return "defer";
   return "follow";
+}
+
+/**
+ * A host pin names a candidate. A delivered or restored result follows the head
+ * through the same gate as any follow; an explicit open is a view-only
+ * comparison, even of one of the head's own ancestors.
+ */
+export function pinStep(followsHead: boolean, gate: FollowGate): FollowStep | "view" {
+  return followsHead ? followStep(gate) : "view";
 }
 
 /** The viewer moves with the base only when it was showing that base, or nothing yet. */
