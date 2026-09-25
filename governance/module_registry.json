@@ -3925,7 +3925,7 @@
         "optional candidate sourceStageRef on GET /api/artifacts, read once per run from its verified retained delta, runner and committed Stage without projecting complete states",
         "the explicitly requested editable work model: POST /api/artifacts/{sha256}/rhino-export takes the exact STEP of one named run, imports it through the existing supervised Rhino host, retains the ordinary Rhino execution receipt with the source STEP digest and receipt it was made from, and answers with the work model's own artifact row; the layers, material declarations and colours come from that export's own retained preview inspection, and a copy that cannot reproduce them is refused rather than moved or recoloured",
         "the explicitly requested editable work copy of one registered document (PDF, PNG or JPEG): POST /api/documents/{asset_sha256}/work-copy seeds one P036 run-workspace file under studio-documents/work/<origin sha256>/ from the page that registration currently answers for, returns the copy already there untouched when asked again, and never overwrites it; which copies exist is derived from the registered documents plus that one path, with no second store and no workspace scan; one derivation decides whether a document can have a single editable file and carries the reason it cannot on the row itself, so opening a copy and listing the copies never disagree and a file already on disk is never dropped out of sight",
-        "one horizontal cut-plan revision over the existing SourceDocument and DrawingProjectionReceipt: retained scale, pens, hatch, semantic rectangular empty-door dimensions and explicit rebuild against a named exact source or the original Stage branch head",
+        "one horizontal cut-plan revision over the existing SourceDocument and DrawingProjectionReceipt: retained scale, pens, hatch, semantic rectangular empty-door dimensions and explicit rebuild against a named exact source or the original Stage branch head; a rebuild registers as its previous revision's whole-document replacement through the upload path's own validation",
         "Model conversion orchestration using the existing job pool, original source objects and noncanonical P036 export runs; retained progress, failure and validated-download reports.",
         "read-only paged native-object lookup by exact ModelSource and GUID; no architectural-role inference or edit admission",
         "typed representation-only SVG dressing replacement and insert/move/scale/flip/delete operations against an exact previous Drawing revision; retained SVG readback and source anchor choices",
@@ -4019,7 +4019,9 @@
         "plan_vector",
         "artifact_model_source",
         "POST /api/drawings/section-perspectives",
-        "generate_section_perspective"
+        "generate_section_perspective",
+        "drawing_revision_replacement",
+        "replacement_cause"
       ],
       "depends_on": [
         "adapters.cad_execution",
@@ -4082,6 +4084,7 @@
         "model-view is a transient orthographic PNG from a complete retained STEP bound to exact run/stateDigest/model asset; it creates no drawing or project record and refuses unsupported sources.",
         "Uploaded model registrations protect their source run permanently; generated compositions retain generated provenance, and their runs, like every run, are never removed automatically. Legacy registrations are conservatively protected.",
         "Cut-plan freshness is derived from exact source object inputs intersecting the view slab, including entering and occluding objects, and resolved dimension anchors; unknown targets and broken anchors are explicit. Rebuild preserves the recipe and immutable prior revision; no nearest-object rebinding is allowed.",
+        "A rebuilt cut plan replaces its previous revision whole unless that revision already has a replacement (a fork is a new page) or the page's visible aspect ratio changed; an identical request returns the retained revision and registers nothing. Why a page was replaced - representation, source or upload - is derived from the two registrations and never stored; Render counts only a source or upload replacement as a newer input.",
         "Design width proposals require two uniquely verified cut STEP jambs, an unlocked direct parameter with matching units and the drawing's exact source on the Working Head, or another line's latest accepted Stage. Placement edits change only paper representation and dimensions outside the view cannot drive.",
         "a drawing's default status target is the Working Head's exact drawable source; an undrawable head is reported, never rebound",
         "External imported drawings never invent design state or driving dimensions; exact source run/hash and representation edits survive restart. Missing SKP runtime and unsupported 3DM geometry are explicit errors.",

@@ -9,6 +9,8 @@ from fastapi.testclient import TestClient
 from archflow.adapters.occt_backend import occt_available
 from archflow.project.refs import record_ref_from_uri
 from monkeydiagram.drawing_elevation import read_model_axis_elevation
+from archflow_studio_api.application.artifacts import _chain_head, _page_replacements, list_documents, replacement_cause
+from archflow_studio_api.application.binding import bound_project
 from archflow_studio_api.main import create_app
 from archflow_studio_api.settings import StudioSettings
 
@@ -39,6 +41,17 @@ def room_edit():
         other["fields"]["params"]["openings"] = []
         edit["entities"].append(other)
     return edit
+
+
+def page_of(document):
+    """A drawing revision's one page, as every replacement names it."""
+    return document["runId"], document["assetSha256"], document["revisionRef"], 0
+
+
+def replacing(document):
+    """The replacesPages entry naming this revision's page as the replaced one."""
+    return {"runId": document["runId"], "assetSha256": document["assetSha256"],
+            "revisionRef": document["revisionRef"], "pageIndex": 0, "newPageIndex": 0}
 
 
 @unittest.skipUnless(occt_available(), "cadquery-ocp is not installed")
@@ -77,6 +90,11 @@ class CutPlanTests(CandidateTestCase):
             "runId": doc["runId"], "assetSha256": doc["assetSha256"], "revisionRef": doc["revisionRef"], **changes})
         self.assertEqual(result.status_code, 200, result.text)
         return result.json()
+
+    def links(self):
+        """Every registered page replacement, and the documents they were read from."""
+        documents = list_documents(bound_project(self.app.state))
+        return _page_replacements(documents), {row.revision_ref: row for row in documents}
 
     def commit_edit(self, edit, branch_id="main"):
         result = self.client.post("/api/proposals", json={"projectId": PROJECT_ID,
@@ -431,3 +449,58 @@ class CutPlanTests(CandidateTestCase):
         self.assertEqual(self.status(live)["status"], "current")
         [drawing] = [row for row in self.client.get("/api/worktrees").json()["representations"] if row["kind"] == "drawing"]
         self.assertEqual(drawing["state"], "current")
+
+    def test_a_rebuild_registers_the_replacement_of_its_previous_revision(self):
+        first = self.generate()
+        styled = self.generate(previousRevisionRef=first["revisionRef"], cutLineMm=.5)
+        self.assertEqual((first["replacesPages"], styled["replacesPages"]), ([], [replacing(first)]))
+        newer, _ = self.commit_edit({"summary": "Move the front wall", "parameters": [{"key": "front_shift", "value": .4}]})
+        rebuilt = self.generate(sourceStageRef=newer["stageRef"], previousRevisionRef=styled["revisionRef"])
+        self.assertEqual(rebuilt["replacesPages"], [replacing(styled)])
+        links, documents = self.links()
+        # The one existing chain reader walks from the first page to the newest.
+        self.assertEqual(_chain_head(links, page_of(first))[0], page_of(rebuilt))
+        causes = [replacement_cause(documents[old["revisionRef"]], documents[new["revisionRef"]])
+                  for old, new in ((first, styled), (styled, rebuilt))]
+        self.assertEqual(causes, ["representation", "source"])
+        self.assertEqual(self.repository.read_head(), self.head)
+        with TestClient(create_app(self.settings)) as client:
+            cold = {row["revisionRef"]: row for row in client.get("/api/documents").json()["documents"]}
+        self.assertEqual([cold[row["revisionRef"]]["replacesPages"] for row in (first, styled, rebuilt)],
+                         [[], [replacing(first)], [replacing(styled)]])
+
+    def test_a_rebuild_from_a_replaced_revision_forks_without_a_relation(self):
+        first = self.generate()
+        second = self.generate(previousRevisionRef=first["revisionRef"], cutLineMm=.5)
+        fork = self.generate(previousRevisionRef=first["revisionRef"], cutLineMm=.6)
+        self.assertEqual(fork["drawingId"], first["drawingId"])
+        self.assertEqual(fork["replacesPages"], [])
+        links, _ = self.links()
+        self.assertEqual(links, {page_of(first): page_of(second)})
+        self.assertEqual(self.repository.read_design_branches(), self.branches)
+
+    def test_a_crop_change_that_alters_the_aspect_registers_no_relation(self):
+        first = self.generate()
+        x0, y0, x1, y1 = first["viewRecipe"]["frame"]["crop_uv"]
+        wider = self.generate(previousRevisionRef=first["revisionRef"], cropUv=[x0 - 2, y0, x1 + 2, y1])
+        old, new = first["pages"][0], wider["pages"][0]
+        self.assertGreater(abs(old["width"] / old["height"] - new["width"] / new["height"]), .1)
+        self.assertEqual(wider["replacesPages"], [])
+        # Moving the same window keeps its page shape, and so its place on a board.
+        moved = self.generate(previousRevisionRef=wider["revisionRef"], cropUv=[x0 - 1, y0 + 1, x1 + 3, y1 + 1])
+        self.assertEqual(moved["replacesPages"], [replacing(wider)])
+        links, _ = self.links()
+        self.assertEqual(links, {page_of(wider): page_of(moved)})
+
+    def test_the_cache_hit_registers_nothing(self):
+        first = self.generate()
+        second = self.generate(previousRevisionRef=first["revisionRef"], cutLineMm=.5)
+        before = self.client.get("/api/documents").json()
+        with patch("archflow_studio_api.application.drawing_plans.freeze_cut_plan", side_effect=AssertionError("cache must not project")):
+            again = self.generate(previousRevisionRef=second["revisionRef"],
+                                  cutLineMm=first["viewRecipe"]["graphics"]["cutLineMm"])
+        self.assertEqual(again, first)
+        self.assertEqual(self.client.get("/api/documents").json(), before)
+        links, _ = self.links()
+        self.assertEqual(links, {page_of(first): page_of(second)})
+        self.assertEqual(_chain_head(links, page_of(first))[0], page_of(second))

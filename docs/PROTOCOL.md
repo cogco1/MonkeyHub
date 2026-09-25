@@ -579,6 +579,18 @@ retain unresolved objects in the recipe and report `missing` / `outside-view` in
 `POST /api/drawings/plans/status`; unresolved objects are omitted from the output
 rather than silently repositioned. Drawing revisions never advance Design HEAD.
 
+A rebuild that names `previousRevisionRef` registers the new revision as that
+revision's whole-document replacement: its `replacesPages` names the previous
+page exactly as an upload's would, so a Board page updates in place, Publish
+offers the new page and Render follows it. It registers none when the previous
+revision already has a replacement (a rebuild from a historical revision forks,
+and the fork is a new page) or when the page's visible aspect ratio changed; an
+identical request returns the retained revision and registers nothing. Why a page
+was replaced is derived, never stored: the same drawing from the same exact source
+(model, Stage and imported asset) is a representation change, which Render does
+not count as a newer input; the same drawing from another source is a source
+change; a document without `drawingId` is an upload.
+
 `GET /api/drawings/plans/vector?runId=…&assetSha256=…&revisionRef=…` reads the
 verified retained SVG, built-in vector symbols and exact source anchor choices.
 SVG `data-dressing` groups remain independently editable and do not claim the

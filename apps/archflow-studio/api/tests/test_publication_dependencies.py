@@ -28,6 +28,12 @@ def statuses(client):
     return {row["elementId"]: row["status"] for row in response.json()["sources"]}
 
 
+def replacements(client):
+    response = client.get("/api/publication")
+    assert response.status_code == 200, response.text
+    return {row["elementId"]: row["replacement"] for row in response.json()["sources"]}
+
+
 @pytest.fixture
 def room():
     if not occt_available():
@@ -68,16 +74,19 @@ def test_drawing_changes_stale_live_page_and_leave_frozen_output_and_layout_inta
     assert client.get("/api/publication").json()["pages"] == original_pages
     assert client.post("/api/publication/export", json=export_request).content == old_pdf.content
 
+    # The rebuild registers itself as the drawing's replacement (#291), so
+    # Publish names the new page itself; nothing re-points the layout.
     rebuilt = room.generate(previousRevisionRef=drawing["revisionRef"], dimensions=[])
-    edited_pages = deepcopy(original_pages)
-    edited_pages[0]["elements"][1]["source"] = publication.source(rebuilt)
-    updated = save(client, edited_pages, saved["revisionSha256"])
-    assert updated["pages"] == edited_pages
-    assert statuses(client) == {"live-image": "current", "frozen-image": "frozen"}
+    expected = {"live-image": publication.source(rebuilt), "frozen-image": publication.source(rebuilt)}
+    assert replacements(client) == expected
+    assert statuses(client) == {"live-image": "stale", "frozen-image": "frozen"}
+    current = client.get("/api/publication").json()
+    assert current["pages"] == original_pages
     reopened = create_app(room.settings)
     try:
         with TestClient(reopened) as reader:
-            assert reader.get("/api/publication").json() == updated
+            assert reader.get("/api/publication").json() == current
+            assert replacements(reader) == expected
             assert reader.post("/api/publication/export", json=export_request).content == old_pdf.content
     finally:
         reopened.state.render_jobs.shutdown()

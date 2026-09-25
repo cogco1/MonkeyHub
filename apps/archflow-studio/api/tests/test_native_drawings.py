@@ -16,9 +16,12 @@ from archflow.adapters.three_dm_inspector import inspect_three_dm_contents, insp
 from archflow.project.refs import record_ref_from_uri
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import STUDIO_MODEL_ASSET
+from archflow_studio_api.application.artifacts import list_documents, replacement_cause
+from archflow_studio_api.application.binding import bound_project
 from archflow_studio_api.main import create_app
 from archflow_studio_api.settings import StudioSettings
 from .support import PROJECT_ID, REFERENCE_RUN_ID, make_project, runner_state_digest
+from .test_drawing_plans import replacing
 
 
 class NativeDrawingTests(unittest.TestCase):
@@ -142,6 +145,26 @@ class NativeDrawingTests(unittest.TestCase):
         self.assertEqual(status.status_code, 200, status.text)
         self.assertEqual(status.json()["status"], "partially-broken")
         self.assertEqual(status.json()["unresolvedObjectIds"], [hidden_id])
+
+    def test_external_rebuilds_replace_their_revision_and_another_file_is_another_source(self):
+        asset = self.upload()
+        adapter = ThreeDM()
+        revised = adapter.read(self.data)
+        revised.meshes = revised.meshes[1:]
+        response = self.client.post("/api/model-assets", json={"projectId": PROJECT_ID,
+            "fileName": "revised.3dm", "contentBase64": base64.b64encode(adapter.write(revised)).decode()})
+        self.assertEqual(response.status_code, 201, response.text)
+        other = response.json()
+        first = self.generate(asset)
+        styled = self.generate(asset, previousRevisionRef=first["revisionRef"], hatchSpacingMm=3)
+        rebuilt = self.generate(other, previousRevisionRef=styled["revisionRef"])
+        self.assertEqual([row["replacesPages"] for row in (first, styled, rebuilt)],
+                         [[], [replacing(first)], [replacing(styled)]])
+        # modelSource is None for both files: the imported asset in the recipe is their source.
+        documents = {row.revision_ref: row for row in list_documents(bound_project(self.client.app.state))}
+        self.assertEqual([replacement_cause(documents[old["revisionRef"]], documents[new["revisionRef"]])
+                          for old, new in ((first, styled), (styled, rebuilt))], ["representation", "source"])
+        self.assertEqual(self.repository.read_head(), self.head)
 
     def test_elevation_sheet_and_tampered_native_source(self):
         asset = self.upload()

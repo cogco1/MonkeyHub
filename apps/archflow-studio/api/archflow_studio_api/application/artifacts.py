@@ -409,10 +409,18 @@ def _registered_document_bytes(binding: ProjectBinding, document: SourceDocument
     return data
 
 
+def _same_visible_aspect(old: DocumentPage, new: DocumentPage) -> bool:
+    """Whether a board can show ``new`` in the frame it drew ``old`` in, marks and all."""
+
+    return math.isclose(old.width / old.height, new.width / new.height, rel_tol=0, abs_tol=0.001)
+
+
 def _validate_page_replacements(
-    binding: ProjectBinding, run_id: str, digest: str, pages: tuple[DocumentPage, ...],
+    binding: ProjectBinding, run_id: str | None, digest: str | None, pages: tuple[DocumentPage, ...],
     replacements: tuple[DocumentPageReplacement, ...], documents: tuple[SourceDocument, ...],
 ) -> None:
+    # ``run_id``/``digest`` name the upload being registered. A drawing revision
+    # passes None: its revision ref is new, so no registered row is its own.
     old_pages: set[tuple[str, str, str | None, int]] = set()
     new_pages: set[int] = set()
     # Reading a registered source verifies its bytes against its digest, which
@@ -445,7 +453,7 @@ def _validate_page_replacements(
         if identity not in verified:
             _registered_document_bytes(binding, previous)
             verified.add(identity)
-        if not math.isclose(old.width / old.height, new.width / new.height, rel_tol=0, abs_tol=0.001):
+        if not _same_visible_aspect(old, new):
             raise StudioError(422, "DOCUMENT_REPLACEMENT_INVALID", "Replacement pages must have the same visible aspect ratio to preserve board marks.")
     for document in documents:
         if (document.run_id, document.asset_sha256, document.revision_ref) == (run_id, digest, None):
@@ -484,6 +492,52 @@ def _whole_document_replacement(
         run_id=previous.run_id, asset_sha256=previous.asset_sha256, revision_ref=previous.revision_ref,
         page_index=page.page_index, new_page_index=new.page_index,
     ) for page, new in zip(previous.pages, pages))
+
+
+def drawing_revision_replacement(
+    binding: ProjectBinding, previous: SourceDocument, pages: tuple[DocumentPage, ...],
+    documents: tuple[SourceDocument, ...],
+) -> tuple[DocumentPageReplacement, ...]:
+    """The pages a rebuilt drawing revision registers as replacing its previous revision, whole.
+
+    ``pages`` are the new revision's PNG pages; ``documents`` every registered
+    document of the project. The upload path's own validation decides the
+    rest. Two cases register nothing rather than refuse the rebuild: a
+    previous revision that already has a replacement (a rebuild from a
+    historical revision forks, and a fork is a new page), and a page whose
+    visible aspect ratio changed (a board could not show it in the old frame).
+    """
+
+    target = DocumentReplacementTarget(previous.run_id, previous.asset_sha256, previous.revision_ref)
+    replacements = _whole_document_replacement(target, PNG_MEDIA_TYPE, pages, documents)
+    replaced = _page_replacements(documents)
+    if any((page.run_id, page.asset_sha256, page.revision_ref, page.page_index) in replaced for page in replacements):
+        return ()
+    if not all(_same_visible_aspect(old, new) for old, new in zip(previous.pages, pages)):
+        return ()
+    _validate_page_replacements(binding, None, None, pages, replacements, documents)
+    return replacements
+
+
+def replacement_cause(old: SourceDocument, new: SourceDocument) -> str:
+    """Why ``new`` replaced ``old``, from the two registrations' own facts; nothing records it.
+
+    ``representation``: a revision of the same drawing from the same exact
+    source - model, Stage and imported asset - so only its view changed.
+    ``source``: a revision of the same drawing drawn from another source,
+    including a live rebuild on a newer Working Head. ``upload``: a document
+    that is not a drawing revision, such as a file placed on the Board.
+    """
+
+    if new.drawing_id is None:
+        return "upload"
+
+    def source(document: SourceDocument):
+        return (document.model_source, document.source_stage_ref, (document.view_recipe or {}).get("sourceAsset"))
+
+    if old.drawing_id == new.drawing_id and source(old) == source(new):
+        return "representation"
+    return "source"
 
 
 

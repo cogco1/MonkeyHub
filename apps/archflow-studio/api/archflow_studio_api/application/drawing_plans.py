@@ -21,7 +21,7 @@ from monkeydiagram.drawing_elevation import (
 )
 
 from .artifacts import (
-    ModelSource, _document_pages, _document_source_lock, document_bytes, list_documents,
+    ModelSource, _document_pages, _document_source_lock, document_bytes, drawing_revision_replacement, list_documents,
 )
 from .binding import retained_sources
 from .drawings import _complete_source, _elevation_view, _selected_source, _document_source, DrawingAssetSource
@@ -193,6 +193,11 @@ def generate_plan(binding, *, source_stage_ref=None, model_source=None, drawing_
             drawing = freeze_cut_plan(binding.repository, source=source, recipe=recipe,
                                       drawing_run_id=f"studio-drawing-{uuid4().hex}", dimensions=resolved,
                                       previous_revision_ref=previous_revision_ref)
+            pages = _document_pages(drawing.png, "image/png")
+            # A rebuild answers for its previous revision's page wherever that
+            # page is placed (#291); a fork or a changed page shape does not.
+            replaces = () if previous is None else drawing_revision_replacement(
+                binding, previous, pages, list_documents(binding))
             run = binding.load_run(model_source.run_id)
             binding.repository.put_json(
                 run=run, destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=run.run_id),
@@ -200,7 +205,8 @@ def generate_plan(binding, *, source_stage_ref=None, model_source=None, drawing_
                 payload={"schema": "StudioSourceDocument@1", "project_id": binding.project_id,
                          "run_id": run.run_id, "asset_sha256": drawing.png_ref.sha256,
                          "file_name": f"{drawing_id}.png", "mime_type": "image/png", "size_bytes": len(drawing.png),
-                         "pages": [asdict(page) for page in _document_pages(drawing.png, "image/png")],
+                         "pages": [asdict(page) for page in pages],
+                         "replaces_pages": [asdict(row) for row in replaces],
                          "modelSource": None if isinstance(model_source, DrawingAssetSource) else model_source.to_dict(), "sourceStageRef": selected_stage,
                          "drawingId": drawing_id, "revisionRef": drawing.receipt_ref.uri,
                          "viewRecipe": recipe, "generatedAt": datetime.now(timezone.utc).isoformat()},
