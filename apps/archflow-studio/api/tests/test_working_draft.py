@@ -127,6 +127,43 @@ class WorkingDraftTests(CandidateTestCase):
         self.assertEqual(cleared.status_code, 200, cleared.text)
         self.assertIsNone(cleared.json()["localDraft"])
 
+    def test_local_draft_saves_while_a_candidate_execution_is_protected(self):
+        # GH-293: a candidate that starts right after Sync records its execution
+        # in the working document. The autosave that read the position just
+        # before still lands; only its own source guard can refuse it.
+        from archflow_studio_api.application.binding import bound_project
+        repository = bound_project(self.app.state).repository
+        draft = {"source": self.source(), "commands": [{"kind": "translate", "offset": [1, 0, 0]}], "attempt": None}
+        first = self.local(None, draft)
+        self.assertEqual(first.status_code, 200, first.text)
+        revision = self.read()["revisionSha256"]
+        repository.protect_working_run("studio-cand-running", REFERENCE_RUN_ID)
+        saved = self.local(revision, draft | {"commands": [{"kind": "translate", "offset": [2, 0, 0]}]})
+        self.assertEqual(saved.status_code, 200, saved.text)
+        self.assertEqual(saved.json()["revisionSha256"], self.read()["revisionSha256"])
+        self.assertEqual(repository.read_working_draft()[0]["active"], {"studio-cand-running": [REFERENCE_RUN_ID]})
+        revision = saved.json()["revisionSha256"]
+        mismatch = self.local(revision, None, expectedSource=self.source() | {"stateDigest": "f" * 64})
+        self.assertEqual((mismatch.status_code, mismatch.json()["code"]), (409, "WORKING_DRAFT_SOURCE_CHANGED"))
+        repository.release_working_run("studio-cand-running")
+        cleared = self.local(revision, None, expectedSource=self.source())
+        self.assertEqual(cleared.status_code, 200, cleared.text)
+        self.assertIsNone(cleared.json()["localDraft"])
+        self.assertEqual(repository.read_working_draft()[0]["active"], {})
+
+    def test_stale_window_still_refuses_after_another_position_write(self):
+        # A real move of the position between the read and the write still refuses it.
+        draft = {"source": self.source(), "commands": [{"kind": "translate", "offset": [1, 0, 0]}], "attempt": None}
+        first = self.local(None, draft)
+        self.assertEqual(first.status_code, 200, first.text)
+        revision = first.json()["revisionSha256"]
+        selected = self.client.put("/api/working-draft", json={"projectId": PROJECT_ID,
+            "baseRevisionSha256": revision, "runId": REFERENCE_RUN_ID})
+        self.assertEqual(selected.status_code, 200, selected.text)
+        stale = self.local(revision, None, expectedSource=self.source())
+        self.assertEqual((stale.status_code, stale.json()["code"]), (409, "WORKING_DRAFT_STALE"))
+        self.assertEqual(self.read()["localDraft"]["commands"], draft["commands"])
+
     def test_wrong_exact_source_refuses_before_retaining_commands(self):
         response = self.local(None, {"source": self.source() | {"stateDigest": "b" * 64}, "commands": [], "attempt": None})
         self.assertEqual(response.status_code, 409)

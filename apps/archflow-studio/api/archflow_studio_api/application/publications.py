@@ -45,60 +45,39 @@ def _latest(records):
 
 
 def source_statuses(binding, pages):
-    from .drawing_plans import plan_status
-    from .rendering import _freshness
-    from .working_draft import WorkingSources
-    from ..transport.rendering import RenderRequestDto
+    """Each placed source's status, read from the one representation-status projection.
 
-    documents = artifacts.list_documents(binding)
-    replacements = artifacts._page_replacements(documents)
-    working = WorkingSources(binding)  # one Working Head for every source on these pages
+    Publish keeps its own words: ``frozen`` for a source it keeps, ``missing``
+    when the page's own bytes cannot be read, ``stale`` when the page is
+    outdated or its inputs cannot be verified, and ``current`` otherwise,
+    including a drawing kept on its chosen version. An explicit freeze keeps the
+    retained image usable; an unavailable current input is not missing bytes.
+    """
+    from .representation_dependencies import CURRENT, FROZEN, ReplacementCycle, RepresentationReads, representation_status
+
+    reads = RepresentationReads(binding)  # one Working Head and document listing for every source on these pages
     statuses = []
     for page in pages:
         for element in page["elements"]:
             source = element.get("source")
             if not source:
                 continue
-            key = (source["runId"], source["assetSha256"], source.get("revisionRef"), source["pageIndex"])
-            replacement = replacements.get(key)
-            visited = {key}
-            while replacement and replacement in replacements:
-                if replacement in visited:
-                    raise StudioError(409, "PUBLICATION_SOURCE_CONFLICT", "Source replacements form a cycle.")
-                visited.add(replacement)
-                replacement = replacements[replacement]
-            row = {"elementId": element["id"], "status": "frozen" if element.get("frozen") else "current", "detail": "", "replacement": None}
+            frozen = bool(element.get("frozen"))
             try:
-                document, _ = artifacts.document_bytes(binding, *key[:3])
-                if document.revision_ref != key[2] or not 0 <= key[3] < len(document.pages):
-                    raise StudioError(409, "PUBLICATION_SOURCE_MISSING", "The exact source page is unavailable.")
-            except StudioError as exc:
-                row.update(status="missing", detail=exc.detail)
+                status = representation_status(
+                    binding, (source["runId"], source["assetSha256"], source.get("revisionRef"), source["pageIndex"]),
+                    frozen=frozen, reads=reads)
+            except ReplacementCycle as exc:
+                raise StudioError(409, "PUBLICATION_SOURCE_CONFLICT", str(exc)) from exc
+            row = {"elementId": element["id"], "status": "frozen" if frozen else "current", "detail": "", "replacement": None}
+            if not status.page_available:
+                row.update(status="missing", detail=status.reason or "")
             else:
-                if replacement:
-                    row["replacement"] = dict(zip(("runId", "assetSha256", "revisionRef", "pageIndex"), replacement))
-                    if not element.get("frozen"):
-                        row.update(status="stale", detail="A replacement page exists. Update explicitly or keep this source frozen.")
-                elif not element.get("frozen"):
-                    # Read domain-owned dependencies, not a guessed latest file.
-                    # The retained old image remains usable if explicitly frozen;
-                    # an unavailable current host is not missing historical bytes.
-                    recipe = document.view_recipe or {}
-                    try:
-                        if recipe.get("kind") == "cut-plan":
-                            status = plan_status(binding, run_id=document.run_id, asset_sha256=document.asset_sha256,
-                                                 revision_ref=document.revision_ref, working=working)
-                            if status["status"] != "current":
-                                row.update(status="stale", detail=status["detail"])
-                        elif recipe.get("kind") == "ai-render":
-                            request = RenderRequestDto.model_validate(recipe["request"])
-                            if request.project_id != binding.project_id or recipe["jobId"] != document.run_id:
-                                raise ValueError("Render source binding differs")
-                            status, detail = _freshness(binding, request, recipe["sourceSnapshots"], working)
-                            if status != "current":
-                                row.update(status="stale", detail=detail)
-                    except (StudioError, KeyError, TypeError, ValueError):
-                        row.update(status="stale", detail="The current source dependencies cannot be verified. The retained image can be kept frozen.")
+                if status.replacement is not None:
+                    row["replacement"] = dict(zip(("runId", "assetSha256", "revisionRef", "pageIndex"), status.replacement))
+                if status.state not in (CURRENT, FROZEN):
+                    replaced = "A replacement page exists. Update explicitly or keep this source frozen."
+                    row.update(status="stale", detail=replaced if status.replacement is not None else status.reason or "")
             statuses.append(row)
     return statuses
 

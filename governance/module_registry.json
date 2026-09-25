@@ -4233,7 +4233,8 @@
         "Projecting a checked in-memory proposed StateRecord for another edit without writing or claiming a retained candidate",
         "Read-only element elevation facts and their actual base/top references, plus named Level datums, projected from the exact StateRecord for contextual Stage 1 editing.",
         "The current project working position (moved only by an explicit selection, never by recording a generated candidate), the automatic recovery listing of every unlabelled generated candidate however old, independent explicit saved versions and exact-source local command recovery through the P036 working-draft port; readback never executes a recovered request; every selection onto a run retains who made it as an AuditEvent@1 design.continued beside that run, ids only (actor, origin, previous head run, target run, chat message ids), and a selection whose event cannot be retained is undone.",
-        "Resolving the Working Head for ordinary work: the readable retained working position, else the main line's accepted head, else the reference run, and each workspace's compatible exact source under a LIVE or FROZEN policy; resolving writes nothing; a live rejection of the working position is reported as a warning and never moves it"
+        "Resolving the Working Head for ordinary work: the readable retained working position, else the main line's accepted head, else the reference run, and each workspace's compatible exact source under a LIVE or FROZEN policy; resolving writes nothing; a live rejection of the working position is reported as a warning and never moves it",
+        "The representation-status projection (#223): for one exact registered page, current, outdated, frozen or unavailable, the exact retained refs it was made from and its newest registered replacement, derived on every read by asking the page's owner (a cut plan's read set through plan_status, an AI render's retained request through Render's freshness, a page bound to one model state through model_is_current, a page bound to nothing through its replacements alone); it writes nothing and stores no status or dependency edge: the project-level dependency is this projection, not a second state"
       ],
       "does_not_own": [
         "issuing a project version, and direct project file writes: the ProjectBinding object stays read-only, initial authored-input preparation and configured sync use project.repository ports; runtime.project_runner is the writer of a modeling run and project.issue the only issuer. A configured pull advances this Runtime's local design branch, and it does so entirely through project.repository's transfer and branch compare-and-swap ports; this owner writes no project file itself and moves no canonical HEAD",
@@ -4241,7 +4242,8 @@
         "running a candidate - studio.candidate",
         "closure and impact - studio.validation, over archflow.state.state_record's one closure rule",
         "HTTP shapes and error bodies - studio.shell",
-        "inventing an element or a field for an object that has none - the catalog reports the gap; an authored control has to exist first (studio.intent's declare-control proposal)"
+        "inventing an element or a field for an object that has none - the catalog reports the gap; an authored control has to exist first (studio.intent's declare-control proposal)",
+        "each representation's read set and freshness rule - a cut plan's (studio.artifacts' plan_status) and an AI render's retained request (studio.render); the representation-status projection only asks them"
       ],
       "inputs": [
         "StudioSettings",
@@ -4256,7 +4258,8 @@
         "ProjectBindingDto",
         "ProjectVersionDto",
         "StateProjectionDto",
-        "ProjectListDto"
+        "ProjectListDto",
+        "RepresentationStatus"
       ],
       "public_api": [
         "GET /api/project",
@@ -4326,7 +4329,11 @@
         "WorkingHead",
         "model_is_current",
         "lineage_of",
-        "WorkingSources"
+        "WorkingSources",
+        "representation_status",
+        "RepresentationStatus",
+        "RepresentationReads",
+        "ReplacementCycle"
       ],
       "depends_on": [
         "project.inputs",
@@ -4347,7 +4354,9 @@
         "state.design_portfolio",
         "state.state_record",
         "capabilities.element_producers",
-        "contracts.canonical"
+        "contracts.canonical",
+        "studio.artifacts",
+        "studio.render"
       ],
       "used_by": [
         "apps/archflow-studio/api/archflow_studio_api/application/projection.py",
@@ -4368,7 +4377,8 @@
         "the catalog derives; it never writes: an object no element names stays MODEL_VISIBLE_CATALOG_MISSING, and no neighbouring element's field is offered in its place",
         "all actionable projections retain exact record and runner binding; historical canonical bases require a verified committed Stage source",
         "main head Stage is the default when design history exists; a successful harness run alone never becomes a default committed Stage",
-        "the Working Head is the architect's editing base, read from retained facts and never guessed from the newest file; a generated candidate is recorded and shown but never moves it, viewing history never moves it, and only the explicit working-draft selection (Continue, adopting the architect's own Sync, or the Hub Agent's Continue on the user's bound words through a Hub-managed Runtime) does; every selection onto a run is retained as an attributed design.continued event and admits no Candidate; a recorded continuation keeps its source position's branch"
+        "the Working Head is the architect's editing base, read from retained facts and never guessed from the newest file; a generated candidate is recorded and shown but never moves it, viewing history never moves it, and only the explicit working-draft selection (Continue, adopting the architect's own Sync, or the Hub Agent's Continue on the user's bound words through a Hub-managed Runtime) does; every selection onto a run is retained as an attributed design.continued event and admits no Candidate; a recorded continuation keeps its source position's branch",
+        "a page's representation status is derived on read and never stored; an explicit page replacement answers before what the page depicts; a missing or unverifiable page or input is unavailable and is never rebound; a person's keep (a drawing's follow: frozen, Publish's freeze) is frozen; each consumer keeps its own wire words"
       ],
       "status": "canonical",
       "tests": [
@@ -4382,7 +4392,8 @@
         "apps/archflow-studio/api/tests/test_boards.py",
         "apps/archflow-studio/api/tests/test_working_draft.py",
         "apps/archflow-studio/api/tests/test_working_source.py",
-        "apps/archflow-studio/api/tests/test_attributed_continue.py"
+        "apps/archflow-studio/api/tests/test_attributed_continue.py",
+        "apps/archflow-studio/api/tests/test_representation_dependencies.py"
       ],
       "notes": "Every other Studio concern reads the project through this one binding.",
       "files": [
@@ -4400,7 +4411,8 @@
         "apps/archflow-studio/api/archflow_studio_api/routes/synchronization.py",
         "apps/archflow-studio/api/archflow_studio_api/application/working_draft.py",
         "apps/archflow-studio/api/archflow_studio_api/routes/working_draft.py",
-        "apps/archflow-studio/api/archflow_studio_api/transport/working_draft.py"
+        "apps/archflow-studio/api/archflow_studio_api/transport/working_draft.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/representation_dependencies.py"
       ]
     },
     {
@@ -4424,7 +4436,7 @@
         "retaining combined candidate source ids with one normalized operator against their common Stage; replaying all sources before acceptance",
         "Read-only runtime inspection of live jobs, exact retained candidates and branch-reachable committed Stages; managed candidate admission may accept a preallocated run id without weakening exact-base checks or re-executing an existing run",
         "Protecting an executing candidate and its input from automatic cleanup, and recording its finished result in the working position for recovery and comparison without moving the editing base or accepting a Stage.",
-        "The read-only Worktree Graph: the Working Head, other accepted lines, running and interrupted candidate work with exact bases and declared read/write refs, retained results off the head's line and whether the StateRecord combine rule accepts them with the head, plus drawing and render freshness; each finished line's retained admission (admitted, rejected, superseded or none) and Study"
+        "The read-only Worktree Graph: the Working Head, other accepted lines, running and interrupted candidate work with exact bases and declared read/write refs, retained results off the head's line and whether the StateRecord combine rule accepts them with the head, plus each drawing's latest revision as studio.binding's representation-status projection reads it (what the Drawing tool says) and each render attempt's retained source state; each finished line's retained admission (admitted, rejected, superseded or none) and Study"
       ],
       "does_not_own": [
         "seat execution, geometry and every record it writes - runtime.project_runner",
@@ -4516,7 +4528,8 @@
         "studio.artifacts",
         "studio.intent",
         "adapters.cad_execution",
-        "state.design_portfolio"
+        "state.design_portfolio",
+        "studio.binding"
       ],
       "used_by": [
         "apps/archflow-studio/api/archflow_studio_api/application/validation.py",
@@ -4545,7 +4558,8 @@
         "Runtime inspection never starts a worker, replays a change, executes CAD or writes project records; a live job or an incomplete retained candidate cannot prove successful execution or a committed Stage",
         "candidate ownership continues the selected source run through its retained seat round and discipline-seat refs; only explicitly deleted Component roots retire, legacy sources without a seat schedule keep authored-pack behavior, and missing or ambiguous retained ownership is refused",
         "changed-component coverage is checked before composed-model registration and on cold candidate reads from the existing retained operator and runner receipt; a run that did not build its own changed components is not recovered as a succeeded candidate",
-        "the Worktree Graph never merges, starts, replays or writes; conflicts are compared from the nearest shared source, never from a common Stage that both lines already changed"
+        "the Worktree Graph never merges, starts, replays or writes; conflicts are compared from the nearest shared source, never from a common Stage that both lines already changed",
+        "a Worktree Graph drawing row is the representation-status projection of the drawing's latest page, so a change outside the plan's read set leaves it current; the graph says stale for outdated and keeps its other words"
       ],
       "status": "canonical",
       "tests": [
@@ -4626,7 +4640,8 @@
         "shared structured multimodal transport for its intent parser and Study RESEARCH; provider configuration, subprocess, timeout and usage remain one implementation",
         "Read-only confirmedStage projection in ContextPack from committed DesignStage and exact StateRecord content; compare declared dependencies and retained conditions to flag changed downstream work for review",
         "scoped project decisions: one architect judgement with its raw wording, disposition, strength, target, explicit scope, applicability and the exact source evidence it was said against, as an immutable revision chain in the fixed explicit studio-decisions P036 run",
-        "compiling the decisions that still apply to one next turn - same domain, exact Stage, intersection with relevant task targets, applicability and current parameter binding - into the existing ContextPack",
+        "compiling the decisions that still apply to one next turn - the domain it names, or design and drawing together when it names none, exact Stage, intersection with relevant task targets, applicability and current parameter binding - into the existing ContextPack",
+        "the project recipe as a scoped decision (correction capture, option A): a person's confirmed require decision in the drawing domain whose typedBinding kind recipe holds closed paper-space graphics values, and project_recipe, the one per-key read of it a new drawing takes between its own previous revision and the code default",
         "Composing explicitly selected exact Study evidence revisions into ContextPack separately from design facts and applicable decisions; no implicit Study scan, acceptance or project write.",
         "the source-bound, read-only visual observation channel (GH-303 V0): VisualReviewRequest over exact model or registered-page sources, EvidenceFrame values taken from the model-view and page-export owners' own answers, the strict VisualObservation answer and its validation, the VisualObservationProvider seam with the configured Studio model transport as its implementation, and the Harness review allowance VisualReviewBudget",
         "candidate admission: one CandidateAdmission@1 per closed loop (a task, one worktree of it, or one person's act) in the fixed explicit studio-admissions P036 run, written only through the completion gate Stage acceptance shares, with the boundary's actor, the stated task, Study and bound message, each result's outcome, pinned model, receipt and superseded attempts",
@@ -4657,7 +4672,7 @@
         "Optional sourceProposalId on scalar, sketch, transform, push-pull and delete proposals; ordered sketches on POST /api/proposals/sketch share one exact base and keep set; closed defaults true for existing face/prism actions, while false with zero height saves a 2+ point model curve",
         "DocumentTracingRequestDto on POST /api/proposals/sketch names exact saved run/asset/drawing revision/page/annotation revision and selected line or polyline ids, a target component, base and height; scale and direction come only from the saved two-point calibration",
         "ModelInvocationRequest and structured schema/images from Study for the existing configured transport",
-        "One scoped decision as the caller states it: rawLanguage, optional messageSource claim, disposition, strength, targetRef, scope, exact source evidence union (board revision + live element ids / document run+asset+revision+page / design run+stateDigest+optional Stage), applicability, sourceKind and an optional parameter typedBinding",
+        "One scoped decision as the caller states it: rawLanguage, optional messageSource claim, disposition, strength, targetRef, scope, exact source evidence union (board revision + live element ids / document run+asset+revision+page / design run+stateDigest+optional Stage), applicability, sourceKind and an optional typedBinding: a design parameter whose value the server reads, or a project recipe's paper-space graphics (cutLineMm, visibleLineMm, hatchSpacingMm) bounded as a cut-plan request bounds them",
         "Optional decisionContext on POST /api/intents/context: the domain this turn is about, and for a drawing or copy turn its own representation evidence",
         "VisualReviewRequest with exact SourceRef values, criteria, preserve conditions and the Harness allowance, and owner-produced EvidenceFrame PNGs (model-view answers, registered page exports)",
         "an admission request: task kind and opaque ids, an optional Study (id, label, exact base run), an optional bound chat message and the user's words, and each result's outcome, superseded attempts, label, summary and reason"
@@ -4675,6 +4690,7 @@
         "working_copy.option_added event identifying the added option source run when an event sink is supplied",
         "retained StudioScopedDecision@1 revisions and their DTOs",
         "scopedDecisions on ContextPack@1: the applicable decisions in the architect's own words with their exact provenance, never a transcript",
+        "the project recipe layer for one drawing's Stage: one RecipeValue per paper-space key with the decision and revision it came from",
         "VisualObservation bound to the frames actually sent, with ObservationUsage and a visual_observation MonkeyMonitor span over the provider's model_request row",
         "retained CandidateAdmission@1 records and their DTOs",
         "candidates[] and studies[] on the design history read"
@@ -4795,6 +4811,8 @@
         "focus_refs",
         "DecisionRevision",
         "DecisionContext",
+        "project_recipe",
+        "RecipeValue",
         "SourceRef",
         "EvidenceFrame",
         "VisualReviewRequest",
@@ -4910,6 +4928,9 @@
         "applicability 'scope' survives later revisions inside its scope; 'exact-source' applies only while the caller supplies the same source identity. A target that is gone, a parameter value or unit that moved and a released lock are derived stale at read time, and revoked, superseded and deferred decisions are never injected as requirements",
         "sourceKind and messageSource are the caller's own provenance claims, kept apart from the boundary's resolved attribution; neither is a credential and neither grants an action",
         "every applicable decision is returned without a decision-count cutoff; a target scope applies when any of its members intersects the task's relevant targets, so changing one end of a kept relation does not discard that decision",
+        "a representation decision names a closed target: copy:style, or drawing:hatch | drawing:lineweight | drawing:beyond | drawing:entourage | drawing:poche. A turn that names no domain reads design and drawing decisions together; naming one reads that one alone, and copy is read only when named",
+        "a recipe binding is retained only for sourceKind human on a require decision in the drawing domain, held hard, strong_preference or soft_preference, applying by scope to the project or one Stage, with a document page as evidence; its keys are the closed paper-space set, each under its own drawing target and bounded exactly as a cut-plan request bounds it, and no object or material is looked up. No agent, evaluator, rule or chat feedback retains one, and no correction becomes one without that confirmation",
+        "one active recipe value per key, strength and reach: a second is DECISION_RECIPE_CONFLICT when written and when read, and changing a recipe is a supersession. project_recipe reads only the decisions run, orders by strength and then a Stage over the project, enforces nothing (hard is only read first) and never orders by age; revoking the last value returns a new drawing to the code default",
         "decision focus includes declared upstream reads across retained Stages, with effective instance bindings instead of overridden Type defaults; it does not follow shared inputs into other consumers, include unrelated locks, widen writes or alter decision scope, strength and applicability",
         "a visual review refuses, before any provider call, a frame whose source is not exactly one of the request's source refs; the provider never states which source it saw, the channel binds its answer to the frames it sent",
         "the Harness allowance gives a deterministic edit no visual review, a spatial or formal task one review plus at most one follow-up after a repair that names a finding of the last review, and only an explicit polish request 1-4 reviews; a refusal spends nothing and an admitted review stays spent when the call fails",
@@ -6345,7 +6366,8 @@
         "Validating bounded, content-free context budget section estimates and request-output validation outcomes beside separate provider-reported usage",
         "Automatic numeric usage from explicitly Hub-bound Codex session identities, resolved through the local read-only Codex index and verified against session metadata",
         "TurnTrace@1 views over existing events: exact turn/session correlation, live lane waterfall and semantic activity tree, non-overlapping blocking attribution, evidence-bound diagnostics and safe trace export; first_candidate_ms requires successful same-turn generation and complete retained candidate readback separately from verification and viewport visibility, and missing child endings after a completed root remain incomplete with unknown duration",
-        "Versioned exact provider/model/billing-plan rate matching and historical diagnostic snapshots; bounded multi-process usage journal rotation"
+        "Versioned exact provider/model/billing-plan rate matching and historical diagnostic snapshots; bounded multi-process usage journal rotation",
+        "The closed billing-plan vocabulary and its one derivation from the connection a producer records"
       ],
       "does_not_own": [
         "Architectural evaluation, geometry, candidate execution or formal design acceptance",
@@ -6370,6 +6392,7 @@
         "UsageEvent",
         "RateCard",
         "quote",
+        "billing_plan",
         "iter_codex_events",
         "Budget",
         "Action",
@@ -6395,6 +6418,7 @@
       "depends_on": [],
       "used_by": [
         "apps/archflow-studio/api/archflow_studio_api/application/monitoring.py",
+        "apps/monkeyhub/api/monkeyhub_api/chat_trace.py",
         "monkeymonitor/__main__.py",
         "apps/monkeyhub/api/monkeyhub_api/applications.py",
         "apps/monkeyhub/web/src/MonitorPage.tsx"
@@ -6413,6 +6437,7 @@
         "Automatic sources are matched by exact recorded session identity, never cwd or recency; identity conflicts or unavailable sources are reported, and persisted diagnostic event identities prevent backfill double counting",
         "A Hub activity interval is not pure inference. Native token records remain the Codex usage authority; parallel spans are never added to elapsed time and ambiguous critical branches remain unassigned",
         "Pricing requires exact recorded provider/model/billing plan and a sourced effective rate; subscription equivalents never claim an account charge and unknown local compute cost is not zero",
+        "A producer records only its connection's declared billing plan, withheld when the call reports another tier; a context tier or model alias is never guessed",
         "MonkeyHub owns the product browser UI; the Monitor process serves only its loopback API and CLI diagnostics. Browser API access is limited to the exact owning Hub loopback origin."
       ],
       "status": "canonical",
@@ -7274,7 +7299,8 @@
         "Source replacement changes only the requested placed image; manual text and coordinates remain authored",
         "Saving/exporting never accepts a design Stage or advances HEAD",
         "Exports use an exact retained publication revision; missing sources refuse instead of silently substituting",
-        "PPTX text remains native; PDF source pages currently embed raster previews, explicitly not editable drawing vectors"
+        "PPTX text remains native; PDF source pages currently embed raster previews, explicitly not editable drawing vectors",
+        "A placed source's status is studio.binding's representation-status projection in Publish's words: frozen for a source Publish keeps, missing when the page's own bytes cannot be read, stale for an outdated page or unverifiable inputs (a replacement names the newest page), and current otherwise, including a drawing kept on its chosen version"
       ],
       "tests": [
         "apps/archflow-studio/api/tests/test_publications.py",

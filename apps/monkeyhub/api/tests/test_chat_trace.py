@@ -1,6 +1,7 @@
 """Actual CLI callbacks and HTTP headers produce content-free turn observations."""
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 import json
 from pathlib import Path
 import subprocess
@@ -124,6 +125,35 @@ class HubTraceTests(unittest.TestCase):
         exported = json.dumps([row.to_dict() for row in rows])
         for private in ("private-response", "private-prompt", "private-command-title"):
             self.assertNotIn(private, exported)
+
+    def test_cli_usage_carries_its_plan_and_the_shipped_catalog_prices_a_standard_call(self):
+        standard = {"input_tokens": 500, "cache_read_input_tokens": 400, "cache_creation_input_tokens": 100,
+                    "cache_creation": {"ephemeral_1h_input_tokens": 0}, "output_tokens": 200,
+                    "service_tier": "standard", "speed": "standard"}
+        cases = (("claude", "claude-opus-5", standard, "api-standard", "matched"),
+                 # Fast mode bills at other rates; the standard row must not price it.
+                 ("claude", "claude-opus-5", {**standard, "speed": "fast"}, None, "missing_identity"),
+                 ("coding-plan", "endpoint-model", standard, "coding-plan", "not_found"))
+        for provider, model, usage, plan, status in cases:
+            with self.subTest(provider=provider, speed=usage["speed"]), \
+                 patch("monkeyhub_api.chat_trace._now", return_value="2026-09-26T10:00:00+00:00"):
+                store = UsageLog(Path(self.temp) / f"{provider}-{usage['speed']}")
+                trace = HubTurnObserver(store, "turn", "project", provider, None)
+                trace.ready()
+                trace.claude_usage({"id": "message-one", "model": model, "usage": usage})
+                trace.finish("succeeded")
+                rows, warnings = store.read()
+                self.assertFalse(warnings)
+                (call,) = [row for row in rows if row.model_call]
+                self.assertEqual((call.provider, call.model), (provider, model))
+                self.assertEqual(call.details.get("billing_plan"), plan)
+                self.assertEqual(call.rate_match_status, status)
+                self.assertFalse([row for row in rows if not row.model_call and "billing_plan" in row.details])
+                if status == "matched":
+                    price = build_traces([row.to_dict() for row in rows])["traces"][0]["price"]
+                    # 500 ordinary x $5 + 400 cached x $0.50 + 100 written x $6.25 + 200 output x $25, per million.
+                    self.assertEqual(Decimal(price["amount_usd"]), Decimal("0.008325"))
+                    self.assertEqual(price["missing"], [])
 
     def test_completed_tool_without_start_keeps_tool_and_prior_agent_duration_unknown(self):
         clock = [0.0]

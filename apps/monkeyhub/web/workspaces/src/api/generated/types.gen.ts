@@ -2033,7 +2033,7 @@ export type ContextPackRequestDto = {
      */
     studyEvidence?: Array<StudyRevisionRequestDto>;
     /**
-     * what this turn is about for the scoped decisions it should be handed: the domain, and for a drawing or copy turn its own exact evidence. Absent, the design domain, this source's Stage and the focus already named above answer for it
+     * what this turn is about for the scoped decisions it should be handed: the domain, and for a drawing or copy turn its own exact evidence. Absent, the design and drawing domains (the project recipe among the drawing decisions), this source's Stage and the focus already named above answer for it; naming a domain reads that domain alone
      */
     decisionContext?: DecisionContextDto | null;
 };
@@ -2119,9 +2119,11 @@ export type DecisionAttributionDto = {
  *
  * What a next turn is about, for the decisions it should be handed.
  *
- * Absent, the design domain, the projection's own Stage and the focus the
- * request already names answer for it. Present, it is checked exactly like a
- * decision's own evidence; it never invents a Stage or a design source.
+ * Absent, the design and drawing domains (the project recipe among the drawing
+ * decisions), the projection's own Stage and the focus the request already
+ * names answer for it. Present, it names the one domain the turn reads and is
+ * checked exactly like a decision's own evidence; it never invents a Stage or a
+ * design source.
  */
 export type DecisionContextDto = {
     /**
@@ -2212,7 +2214,14 @@ export type DecisionDto = {
      * Sourcekind
      */
     sourceKind: 'human' | 'agent' | 'evaluator' | 'deterministic-rule';
-    typedBinding: DecisionTypedBindingDto | null;
+    /**
+     * Typedbinding
+     */
+    typedBinding: ({
+        kind: 'parameter';
+    } & DecisionParameterBindingDto) | ({
+        kind: 'recipe';
+    } & DecisionRecipeBindingDto) | null;
     attribution: DecisionAttributionDto;
     /**
      * Createdat
@@ -2258,6 +2267,53 @@ export type DecisionListDto = {
      * Decisions
      */
     decisions: Array<DecisionDto>;
+};
+
+/**
+ * DecisionParameterBindingDto
+ *
+ * What the record said about that parameter when the decision was made.
+ */
+export type DecisionParameterBindingDto = {
+    /**
+     * Kind
+     */
+    kind: 'parameter';
+    /**
+     * Parameterkey
+     */
+    parameterKey: string;
+    /**
+     * Value
+     */
+    value: number;
+    /**
+     * Unit
+     */
+    unit: string;
+    /**
+     * Epistemicstatus
+     */
+    epistemicStatus: string;
+    /**
+     * Lockauthority
+     *
+     * the existing lock this decision records; a decision never takes or releases one
+     */
+    lockAuthority: string | null;
+};
+
+/**
+ * DecisionRecipeBindingDto
+ *
+ * The paper-space values this project recipe sets, as the person confirmed them.
+ */
+export type DecisionRecipeBindingDto = {
+    /**
+     * Kind
+     */
+    kind: 'recipe';
+    graphics: RecipeGraphicsDto;
 };
 
 /**
@@ -2315,7 +2371,16 @@ export type DecisionRequestDto = {
      * who this decision's disposition, scope and target were settled by, as the caller claims it, kept apart from the boundary's own attribution. Use 'agent' whenever an agent interpreted any of those fields from the words: 'human' does not mean a person typed the sentence, it means a person settled every field the decision now claims
      */
     sourceKind: 'human' | 'agent' | 'evaluator' | 'deterministic-rule';
-    typedBinding?: TypedBindingRequestDto | null;
+    /**
+     * Typedbinding
+     *
+     * 'parameter' names a design parameter whose value, unit and lock the server reads itself; 'recipe' carries a project recipe's paper-space values, retained only for a person's confirmed 'require' decision in the drawing domain
+     */
+    typedBinding?: ({
+        kind: 'parameter';
+    } & ParameterBindingRequestDto) | ({
+        kind: 'recipe';
+    } & RecipeBindingRequestDto) | null;
 };
 
 /**
@@ -2369,40 +2434,6 @@ export type DecisionScopeDto = {
      * Targetrefs
      */
     targetRefs?: Array<string> | null;
-};
-
-/**
- * DecisionTypedBindingDto
- *
- * What the record said about that parameter when the decision was made.
- */
-export type DecisionTypedBindingDto = {
-    /**
-     * Kind
-     */
-    kind: 'parameter';
-    /**
-     * Parameterkey
-     */
-    parameterKey: string;
-    /**
-     * Value
-     */
-    value: number;
-    /**
-     * Unit
-     */
-    unit: string;
-    /**
-     * Epistemicstatus
-     */
-    epistemicStatus: string;
-    /**
-     * Lockauthority
-     *
-     * the existing lock this decision records; a decision never takes or releases one
-     */
-    lockAuthority: string | null;
 };
 
 /**
@@ -5335,6 +5366,22 @@ export type OptionsDto = {
 };
 
 /**
+ * ParameterBindingRequestDto
+ *
+ * The parameter a decision is bound to; the server reads its value itself.
+ */
+export type ParameterBindingRequestDto = {
+    /**
+     * Kind
+     */
+    kind: 'parameter';
+    /**
+     * Parameterkey
+     */
+    parameterKey: string;
+};
+
+/**
  * ParameterDto
  *
  * One declared parameter, with its lock and where its value comes from.
@@ -7135,6 +7182,56 @@ export type PushPullRequestDto = {
      * Sourcestageref
      */
     sourceStageRef?: string | null;
+};
+
+/**
+ * RecipeBindingRequestDto
+ *
+ * The project recipe: paper-space values a new drawing starts from.
+ *
+ * Retained only for a person's explicit confirmation (sourceKind 'human') of a
+ * 'require' decision in the drawing domain, held hard, strong_preference or
+ * soft_preference, applying by 'scope' to the project or one Stage, and
+ * evidenced by the exact document page it was confirmed on. Every value sits
+ * under its own targetRef. One key has one active value per strength and reach;
+ * supersede the decision to change it.
+ */
+export type RecipeBindingRequestDto = {
+    /**
+     * Kind
+     */
+    kind: 'recipe';
+    graphics: RecipeGraphicsDto;
+};
+
+/**
+ * RecipeGraphicsDto
+ *
+ * The paper-space values one project recipe sets; a key it leaves out is null.
+ *
+ * Closed to the drawing's own graphics keys, each bounded exactly as a cut-plan
+ * request bounds it. No object, material or model is looked up: a recipe is
+ * what a new drawing starts from, not a claim about one model.
+ */
+export type RecipeGraphicsDto = {
+    /**
+     * Cutlinemm
+     *
+     * cut line weight on paper; set under drawing:lineweight
+     */
+    cutLineMm?: number | null;
+    /**
+     * Visiblelinemm
+     *
+     * visible line weight on paper; set under drawing:lineweight
+     */
+    visibleLineMm?: number | null;
+    /**
+     * Hatchspacingmm
+     *
+     * section hatch spacing on paper; set under drawing:hatch
+     */
+    hatchSpacingMm?: number | null;
 };
 
 /**
@@ -10403,22 +10500,6 @@ export type TransformElementRequestDto = {
      * Sourcestageref
      */
     sourceStageRef?: string | null;
-};
-
-/**
- * TypedBindingRequestDto
- *
- * The parameter a decision is bound to; the server reads its value itself.
- */
-export type TypedBindingRequestDto = {
-    /**
-     * Kind
-     */
-    kind: 'parameter';
-    /**
-     * Parameterkey
-     */
-    parameterKey: string;
 };
 
 /**

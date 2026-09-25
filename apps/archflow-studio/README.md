@@ -202,6 +202,29 @@ design history rather than against the drawing it was said on) or `targets` (des
 record really declares). A `typedBinding` of kind `parameter` makes the server read that
 parameter's own value, unit, epistemic status and lock — never a value the caller claims.
 
+`targetRef` is a design ref, `copy:style`, or one of the closed drawing targets
+`drawing:hatch | drawing:lineweight | drawing:beyond | drawing:entourage | drawing:poche`.
+
+**The project recipe** is a drawing decision with a `typedBinding` of kind `recipe`: the
+paper-space values a new drawing starts from (correction capture, option A — no second
+memory, no new record kind or run).
+
+```jsonc
+"typedBinding": {"kind": "recipe", "graphics": {"hatchSpacingMm": 3}}
+```
+
+The keys are closed to `cutLineMm` and `visibleLineMm` (under `drawing:lineweight`) and
+`hatchSpacingMm` (under `drawing:hatch`), each bounded exactly as a cut-plan request bounds it;
+no object or material is looked up. Promotion is always explicit: a recipe is retained only for
+`sourceKind: "human"`, `disposition: "require"`, `strength` `hard` (a standard, read first but
+not enforced), `strong_preference` (the project recipe) or `soft_preference` (a preference),
+`applicability: "scope"`, `extent` `project` or `stage`, and a `document` page as evidence. A
+temporary correction stays on its own drawing. One key holds one active value per strength and
+reach (`DECISION_RECIPE_CONFLICT` otherwise): changing a recipe is a supersession, removing it a
+revocation. `project_recipe(binding, stage_ref=…)` is the one read of it — per key the stronger
+hold, then a Stage's own over the project's — for the drawing that sits between its own previous
+revision and the code default.
+
 **Provenance claims.** `sourceKind` says who settled the decision's *fields*: use `agent`
 whenever an agent interpreted the disposition, scope or target out of the words. `human` does
 not mean a person typed the sentence; it means a person settled every field the decision now
@@ -222,17 +245,19 @@ newest file.
 
 **The next turn.** `POST /api/intents/context` takes an optional additive
 `decisionContext: {domain, stageRef?, targetRefs?, source?}` and answers with an additive
-top-level `scopedDecisions`. Absent that field the turn is the design turn it already is: the
-source this pack projects, the Stage that source is under, and the design refs its focus really
-covers (the focused elements, the parameters their rows are explicitly bound to, and the
-relations incident to them). An explicit design `source` must be the same source this pack
-projects; a drawing or copy turn brings its own representation evidence, which is never coerced
-into a Design run — omitting it is allowed and costs exactly the `exact-source` decisions,
-which then have no current identity to be compared against. A target scope applies when it
-intersects the task's relevant targets: keeping a relation between A and B still matters when
-only A changes. Every applicable decision is returned; none is silently truncated or discarded
-to meet a decision-count limit. Explicit design evidence is compared with the already verified
-ContextPack source without another project survey.
+top-level `scopedDecisions`. Absent that field the turn reads the design and drawing domains —
+so the agent about to draw is handed the same project recipe a new drawing starts from — with
+the source this pack projects, the Stage that source is under, and the design refs its focus
+really covers (the focused elements, the parameters their rows are explicitly bound to, and the
+relations incident to them); an `exact-source` drawing decision does not follow a design source.
+Naming a `domain` reads that domain alone. An explicit design `source` must be the same source
+this pack projects; a drawing or copy turn brings its own representation evidence, which is
+never coerced into a Design run — omitting it is allowed and costs exactly the `exact-source`
+decisions, which then have no current identity to be compared against. A target scope applies
+when it intersects the task's relevant targets: keeping a relation between A and B still matters
+when only A changes. Every applicable decision is returned; none is silently truncated or
+discarded to meet a decision-count limit. Explicit design evidence is compared with the already
+verified ContextPack source without another project survey.
 
 The product loop around this — the provider tool that saves and revokes a decision from a real
 conversation, and the Hub surface that fills `messageSource` from the message the user actually

@@ -74,6 +74,57 @@ test("two windows cannot overwrite or clear each other's local draft even after 
   assert.equal(writes, 2);
 });
 
+// GH-293: the revision is only a concurrency token. A write that lost the
+// position between its read and its write reads it again; the witness and the
+// server's expected source still guard the content.
+const stale = () => Object.assign(failure("WORKING_DRAFT_STALE"), { status: 409 });
+const draftOf = (elementId: string) => ({ source, commands: [{ kind: "delete", elementId }] });
+
+test("a write that lost the position between its read and its write reads it again and lands", async () => {
+  let state: any = { projectId: "project", revisionSha256: "r0", localDraft: null };
+  const bases: string[] = [];
+  let reads = 0, moved = false;
+  const api = { workingDraft: async () => { reads += 1; return structuredClone(state); }, retainLocalDraft: async (body: any) => {
+    bases.push(body.baseRevisionSha256);
+    // A candidate starts between this editor's read and its write.
+    if (!moved) { moved = true; state = { ...state, revisionSha256: "candidate-started" }; throw stale(); }
+    assert.equal(body.baseRevisionSha256, state.revisionSha256);
+    state = { ...state, revisionSha256: "r1", localDraft: body.draft && { ...body.draft, updatedAt: "t1" } };
+    return structuredClone(state);
+  } };
+  const write = createLocalDraftWriter(api, state);
+  assert.equal((await write(draftOf("a"))).revisionSha256, "r1");
+  assert.equal(reads, 2);
+  assert.deepEqual(bases, ["r0", "candidate-started"]);
+  // The retried write is this editor's own: its next write is not another window's.
+  await write(null, source);
+  assert.equal(state.localDraft, null);
+});
+
+test("the read before a retry still refuses a local draft another window wrote in between", async () => {
+  let state: any = { projectId: "project", revisionSha256: "r0", localDraft: null };
+  let reads = 0, writes = 0;
+  const api = { workingDraft: async () => { reads += 1; return structuredClone(state); }, retainLocalDraft: async () => {
+    writes += 1;
+    state = { ...state, revisionSha256: "other", localDraft: { ...draftOf("b"), updatedAt: "t" } };
+    throw stale();
+  } };
+  await assert.rejects(createLocalDraftWriter(api, state)(draftOf("a")), /另一窗口/);
+  assert.deepEqual([reads, writes], [2, 1]);
+  assert.deepEqual(state.localDraft.commands, [{ kind: "delete", elementId: "b" }]);
+});
+
+test("only a stale position is read again, at most three times; any other refusal answers at once", async () => {
+  for (const [code, attempts] of [["WORKING_DRAFT_STALE", 3], ["WORKING_DRAFT_SOURCE_CHANGED", 1], ["NETWORK_ERROR", 1]] as const) {
+    const state = { projectId: "project", revisionSha256: "r0", localDraft: null } as any;
+    let reads = 0, writes = 0;
+    const api = { workingDraft: async () => { reads += 1; return structuredClone(state); },
+      retainLocalDraft: async () => { writes += 1; throw Object.assign(failure(code), { status: 409 }); } };
+    await assert.rejects(createLocalDraftWriter(api, state)(draftOf("a")), { code, status: 409 });
+    assert.deepEqual([reads, writes], [attempts, attempts], code);
+  }
+});
+
 test("mixed actions preserve their exact base and stable copy dependency; only the last proposal runs", async () => {
   const { api, calls } = fixture(), attempt = createModelDraftSyncAttempt(requestId);
   const frozen = snapshot(draw(),
