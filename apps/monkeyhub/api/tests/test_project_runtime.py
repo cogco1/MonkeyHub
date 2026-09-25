@@ -911,6 +911,37 @@ for _ in range(5):
                 self.assertFalse(any(call.args[1] == "/api/state" for call in reads.call_args_list))
             self.assertEqual(self.project_bytes(self.project), before)
 
+    def test_idle_watcher_rederives_work_copies_only_when_their_inputs_move(self):
+        with self.hub() as client:
+            runtime_id = self.open_project(client)
+            manager = client.app.state.runtimes
+            runtime = manager.get(runtime_id)
+            wait_for(lambda: runtime.work_copy_key is not None, "The opening pass did not bind work copies", timeout=10)
+            with patch("monkeyhub_api.runtime._WORK_COPY_CHECK_S", 0.2),                     patch.object(manager, "_work_copy_inputs", wraps=manager._work_copy_inputs) as checks,                     patch.object(manager, "bind_work_copies", wraps=manager.bind_work_copies) as binds:
+                # Deriving the list reads every record of every run (#314), so
+                # an idle watcher compares what decides it and derives nothing.
+                runtime.wake.set()
+                wait_for(lambda: checks.call_count >= 3, "The idle watcher stopped comparing its inputs", timeout=10)
+                self.assertEqual(binds.call_count, 0, "An idle pass re-derived unchanged work copies")
+
+                with patch.object(runtime.wake, "set", wraps=runtime.wake.set) as wakes:
+                    # A read changes nothing retained and wakes nobody.
+                    listed = self.proxy(client, runtime_id, "/api/documents")
+                    self.assertEqual(listed.status_code, 200, listed.text)
+                    self.assertEqual(wakes.call_count, 0, "A forwarded read woke the project watcher")
+                    # A registered document is a new input, taken on the wake.
+                    original = self.upload_image(client, runtime_id, self.png_bytes("white"))
+                    self.assertGreater(wakes.call_count, 0)
+                wait_for(lambda: binds.call_count >= 1, "A registered document was not re-derived", timeout=10)
+                self.assertEqual(manager.bind_work_copies(runtime), {})
+                derived = binds.call_count
+
+                # So is the file the Studio writes when a copy is asked for.
+                _, work = self.open_work_copy(client, runtime_id, original)
+                wait_for(lambda: str(work) in {str(row.copy.path) for row in runtime.work_copies.values()},
+                         "An opened work copy was not bound", timeout=10)
+                self.assertGreater(binds.call_count, derived)
+
     def test_idle_runtime_skips_history_scans_but_refreshes_on_request_and_crash(self):
         with self.hub() as client:
             runtime_id = self.open_project(client)
