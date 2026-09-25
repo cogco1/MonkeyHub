@@ -321,6 +321,37 @@ async function wait(predicate,label,timeout=15000) {
   throw new Error(`${label}: ${JSON.stringify(state)}`);
 }
 const button=name=>page.getByRole('button',{name,exact:true});
+// #302: Record coming or going moves no tool; Select stands for the fixed tools.
+const toolAt=async()=>{const box=await button('Select').boundingBox();assert.ok(box,'Select is not on screen');return {x:box.x,y:box.y};};
+async function steadyTools(before,label){
+  // A layout change lands within a frame or two; give it the chance to show.
+  await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+  assert.equal((await toolAt()).x,before.x,`${label} moved the tools sideways`);
+}
+/** Where the row has no room beside the tools, Record takes a line above them and still covers none. */
+async function narrowRecord(narrowBefore){
+  const size=page.viewportSize();
+  await page.setViewportSize({width:700,height:size.height});
+  await page.locator('.model-tools__sync--above').waitFor();
+  await steadyTools(narrowBefore,'Record above the tools');
+  assert.equal((await toolAt()).y,narrowBefore.y,'Record above the tools moved them down or up');
+  const record=await button('Record').boundingBox(),tools=await page.locator('.model-tools button.model-tool-button:not([data-tool-icon="sync"])').evaluateAll(nodes=>
+    nodes.map(node=>node.getBoundingClientRect()).filter(box=>box.width>0).map(({x,y,width,height})=>({x,y,width,height})));
+  assert.ok(record&&record.x>=0&&record.x+record.width<=700,'Record stays on screen at a narrow width');
+  for(const box of tools)assert.ok(record.x+record.width<=box.x||box.x+box.width<=record.x||record.y+record.height<=box.y||box.y+box.height<=record.y,
+    `Record covers a tool at ${JSON.stringify(box)}`);
+  await page.setViewportSize(size);
+  await page.locator('.model-tools__sync--above').waitFor({state:'detached'});
+}
+async function narrowToolAt(){
+  const size=page.viewportSize();
+  await page.setViewportSize({width:700,height:size.height});
+  await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+  const at=await toolAt();
+  await page.setViewportSize(size);
+  await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+  return at;
+}
 // GH-234 Q1/Q2: a generated seed never becomes the saved base on its own; the
 // architect's explicit choice of it is what opening the page restores.
 async function openSeed(label){
@@ -365,7 +396,7 @@ if (autosaveOnly) {
   await call('PUT','/api/working-draft',{projectId:listed.projectId,runId:seedRun,baseRevisionSha256:listed.revisionSha256});
   await page.goto(`http://127.0.0.1:${http.address().port}/?embedded=tool`);
   await wait(s=>s.status==='ready'&&s.loaded===seedRun&&s.base===seedRun&&!s.busy,'restored current source',120000);
-  const initial=await snap(),originalRuns=await runIds();
+  const initial=await snap(),originalRuns=await runIds(),steady=await toolAt();
   const primaryPage=page,otherPage=await context.newPage();
   page=otherPage;
   await page.goto(primaryPage.url());
@@ -379,6 +410,7 @@ if (autosaveOnly) {
   const firstSaveReleased=new Promise(resolve=>releaseFirstSave=resolve),firstSaveHeld=new Promise(resolve=>firstSaveSent=resolve);
   await page.route('**/api/working-draft/local',async route=>{firstSaveSent();await firstSaveReleased;await route.continue();},{times:1});
   const object=await rectangle(2,1.25);
+  await button('Record').waitFor();await steadyTools(steady,'Record appearing');
   await within(firstSaveHeld,15000,'the first autosave was never written');
   assert.equal(await reason(),'unsaved','an autosave still being written leaves its edits unsaved');
   assert.equal(await page.evaluate(()=>window.__workspaceDesignContext.designContext),null);
@@ -412,13 +444,13 @@ if (autosaveOnly) {
   await deselect();await page.keyboard.press('Control+z');
   await wait(s=>!s.dirty&&!s.view.drafts.some(row=>row.id===object),'Undo did not return to the original model');
   await savedDraft(d=>d.localDraft===null,'Undo to baseline did not clear recovery');
-  await button('Record').waitFor({state:'detached'});
+  await button('Record').waitFor({state:'detached'});await steadyTools(steady,'Record leaving with Undo');
   await page.keyboard.press('Control+y');
   await wait(s=>s.dirty&&s.view.drafts.some(row=>row.id===object),'Redo did not recover the local object');
   await savedDraft(d=>d.localDraft?.commands.length===1,'Redo was not retained');
   // SS-5: with its edits autosaved, Record is back with its status line.
   await page.locator('.model-tools__sync-status').filter({hasText:'Unrecorded edits · saved automatically'}).waitFor();
-  assert.equal(await button('Record').isEnabled(),true);
+  assert.equal(await button('Record').isEnabled(),true);await steadyTools(steady,'Record returning with Redo');
 
   let delayedClear=false;
   const delayClear=async route=>{
@@ -482,8 +514,10 @@ if (autosaveOnly) {
   assert.equal(authoredContext.designContext.stateDigest,initial.stateDigest);
   assert.equal(initial.view.hasBaseModel,false);assert.equal(initial.view.drafts.length,0);
   assert.equal(await button('Record').count(),0,'an empty project offers no Record');
+  const steady=await toolAt();
   console.log('0 · authored-only project: first local drawing, selection, delete/undo, then one explicit Sync');
   const first=await rectangle(2,1.25);
+  await button('Record').waitFor();await steadyTools(steady,'Record appearing');
   // Authored fixture primitives become visible with the first local snapshot;
   // they are not drawings created by these gestures.
   const authoredPrimitives=(await snap()).view.drafts.filter(object=>object.id!==first).length;
@@ -539,6 +573,7 @@ if (autosaveOnly) {
       window.__workspaceDesignContext?.unavailableReason===null);
     assert.equal(await page.evaluate(()=>window.__workspaceDesignContext.designContext.sourceRunId),state.base,
       'only a completed Sync adopted as the editing base updates chat context');
+    await button('Record').waitFor({state:'detached'});await steadyTools(steady,'Record leaving');
   }else{
     assert.equal(await page.evaluate(()=>window.__workspaceDesignContext.designContext),null,'edits during Sync remain unsaved context');
   }
@@ -925,6 +960,7 @@ releaseBoot();await opening;
 const originalRuns=await runIds(), beforeWrites=sent.length;
 // SS-5: Record is offered, by name, only while there is something to record.
 assert.equal(await button('Record').count(),0,'no dead Record icon before any edit');
+const steady=await toolAt(),narrowSteady=await narrowToolAt();
 // NA-4: a tool's shortcut is announced, not only shown in its hover tooltip.
 for(const [name,keys] of [['Select','Space'],['Rectangle','R'],['Push/Pull','P'],['Undo model','Control+Z'],['Redo model','Control+Shift+Z']])
   assert.equal(await button(name).getAttribute('aria-keyshortcuts'),keys,`${name} announces ${keys}`);
@@ -932,6 +968,7 @@ console.log('1 · completed rectangles/lines stay local and independently pickab
 const block=await rectangle(2,1), curve=await line();
 await button('Record').waitFor();assert.equal(await button('Record').isEnabled(),true);
 assert.equal(await button('Record').locator('.model-tool-button__label').innerText(),'Record','Record carries its name beside the icon');
+await steadyTools(steady,'Record appearing');await narrowRecord(narrowSteady);
 let state=await snap();assert.equal(state.view.drafts.find(o=>o.id===curve).spec.closed,false);
 assert.deepEqual(state.view.drafts.find(o=>o.id===curve).visible,[true,false,false]);
 await pick(block,true);assert.equal((await snap()).pickedStatus,'local');
@@ -1011,7 +1048,7 @@ const quietSyncStart=performance.now(),quietSyncWall=Date.now();await button('Re
   'second Sync did not show the completed model',120000);
 console.log('TIMING quiet Sync click → visible candidate',Math.round(performance.now()-quietSyncStart),'ms (no artificial hold)');
 await stages(quietSyncWall,'quiet auto display');
-await button('Record').waitFor({state:'detached'});
+await button('Record').waitFor({state:'detached'});await steadyTools(steady,'Record leaving');
 state=await snap();assert.equal(candidateCalls().length,2);assert.ok((await exported(state.candidates[1])).has('obj-'+later));
 assert.equal(state.view.drafts.length,0,'the completed batch must not overlap its saved model');
 const continuedDraft=await call('GET','/api/working-draft');
@@ -1028,6 +1065,7 @@ await page.route('**/api/proposals/sketch',async route=>{
 await button('Record').click();await within(failureHeld,15000,'failure was not held');await page.keyboard.press('Control+z');
 await wait(s=>!s.view.drafts.some(o=>o.id===failedObject),'Undo while rejected request is held');releaseFailure();
 await wait(s=>!s.syncBusy&&Boolean(s.error),'422 did not release Sync');
+await page.locator('.model-tools__sync--status-only [role="alert"]').waitFor();await steadyTools(steady,'a Record error with nothing left to record');
 assert.equal(candidateCalls().length,2,'a refused snapshot cannot start a candidate');
 const corrected=await rectangle(1.2,.7);await button('Record').click();
 await wait(s=>!s.syncBusy&&s.candidates.length===3&&s.loaded===s.candidates[2]&&s.base===s.candidates[2],'corrected Sync did not finish',120000);

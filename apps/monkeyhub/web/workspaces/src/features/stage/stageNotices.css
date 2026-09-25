@@ -36,11 +36,64 @@
   pointer-events: none;
 }
 
-/* A Record error with nothing left to record keeps its line, not an empty group. */
-.viewtools.model-tools .model-tools__group.model-tools__sync--status-only {
-  margin-left: 0;
+/* #302: Record's slot is outside the tools' row, so its coming and going moves no
+   tool. Beside the tools it is a capsule of its own against their right edge, as
+   tall as they are; its gap, padding and border add up to RECORD_FRAME in Stage.tsx. */
+.viewtools.model-tools {
+  position: relative;
+}
+
+.viewtools.model-tools .model-tools__group.model-tools__sync {
+  position: absolute;
+  top: -1px;
+  bottom: -1px;
+  left: calc(100% + 7px);
+  margin: 0;
+  padding: 0 4px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--overlay);
+}
+
+/* Where the row has no room beside the tools, Stage marks Record --above: it is
+   the tools' first line, its status beside it, and it adds no width, so the tools
+   keep their place on the line below. */
+.viewtools.model-tools .model-tools__group.model-tools__sync.model-tools__sync--above {
+  position: static;
+  order: -1;
+  flex: 1 0 100%;
+  contain: inline-size;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 4px 0;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  background: none;
+}
+
+.viewtools.model-tools .model-tools__sync--above .model-tools__sync-status {
+  position: static;
+  order: -1;
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 0;
+  max-width: none;
+  margin-inline-start: 10px;
   padding: 0;
-  border-left: 0;
+  border: 0;
+  background: none;
+}
+
+.viewtools.model-tools .model-tools__sync--above .model-tool-button {
+  margin-inline-end: 4px;
+}
+
+/* A Record error with nothing left to record keeps its line, not an empty capsule. */
+.viewtools.model-tools .model-tools__group.model-tools__sync--status-only {
+  padding: 0;
+  border: 0;
+  background: none;
 }
 
 /* R14: how long the loading overlay has waited, quieter than the caller's status.
