@@ -162,6 +162,22 @@ const runtimeSnapshot = () => ({ serverId: "fixture-hub", sequence: runtimeSeque
     state: app.state === "error" ? "crashed" : app.state === "running" ? "ready" : app.state, url: app.apiUrl ?? app.url, error: app.error ?? null }] : [],
     sessions: sessions.filter((session) => session.projectId === runtime.projectId).map(summaryOf) };
 }) });
+// PP-1: while set, a project service asked to start stays "starting" until releaseStudioStarts().
+let studioStartHold = null;
+const runStudio = (target) => {
+  const runtimeId = runtimes.get(target).runtimeId;
+  for (const item of appsFor(target).filter((row) => row.serviceId === "studio")) {
+    item.state = "running"; item.processId = 2000 + [...projectApps.keys()].indexOf(target);
+    item.url = `${origin}/?view=${item.appId === "monkeyboard" ? "board" : item.appId === "monkeyrender" ? "render" : "arch"}&runtimeId=${runtimeId}`;
+    item.apiUrl = `${origin}/api/runtime/projects/${runtimeId}/studio/`;
+  }
+};
+const releaseStudioStarts = () => {
+  const held = studioStartHold?.held ?? [];
+  studioStartHold = null;
+  for (const target of held) runStudio(target);
+  emitRuntime();
+};
 page.on("pageerror", (error) => errors.push(error.message));
 await page.route((url) => url.pathname.startsWith("/api/"), async (route) => {
   const req = route.request(), url = new URL(req.url()), method = req.method();
@@ -310,6 +326,11 @@ await page.route((url) => url.pathname.startsWith("/api/"), async (route) => {
     const currentApps = url.searchParams.has("projectDir") ? appsFor(url.searchParams.get("projectDir")) : apps;
     const app = currentApps.find((item) => item.appId === id);
     if (!app.available) return json(app);
+    if (action === "start" && app.serviceId === "studio" && studioStartHold) {
+      for (const item of currentApps.filter((row) => row.serviceId === "studio")) { item.state = "starting"; item.processId = 3000; item.url = null; item.apiUrl = null; }
+      studioStartHold.held.push(url.searchParams.get("projectDir"));
+      return json(app);
+    }
     for (const item of currentApps.filter((item) => item.serviceId === app.serviceId)) {
       item.state = action === "start" ? "running" : "stopped";
       item.processId = action === "start" ? (app.serviceId === "studio" ? 2000 + [...projectApps.keys()].indexOf(url.searchParams.get("projectDir")) : 1234) : null;
@@ -1743,11 +1764,34 @@ try {
   let releaseModeling;
   modelingResponseGate = new Promise((resolve) => { releaseModeling = resolve; });
   const delayedStart = page.waitForRequest((req) => req.url().includes("/api/project/modeling"));
-  await page.getByRole("button", { name: "Modeling", exact: true }).click();
+  const modelingEntry = page.getByRole("button", { name: "Modeling", exact: true });
+  await modelingEntry.click();
   await delayedStart;
+  // PP-1: over the surface on screen, after a moment, the skeleton of the one being opened names the step it waits on.
+  const openingSkeleton = page.locator(".chat-skeleton");
+  await openingSkeleton.getByText("Opening model…", { exact: true }).waitFor();
+  assert.equal(await openingSkeleton.locator("h2").innerText(), "Modeling");
+  assert.equal(await page.locator(".chat-composer-note").textContent(), "", "the composer no longer says it is connecting");
+  assert.equal(await modelingEntry.getAttribute("aria-pressed"), "true");
+  assert.equal(await page.getByRole("button", { name: "Render", exact: true }).getAttribute("aria-pressed"), "false");
+  // Pressing the entry being opened cancels it and gives back the surface under it (IA-6).
+  assert.equal(await modelingEntry.getAttribute("aria-description"), "Cancel opening Modeling");
+  await modelingEntry.click();
+  await openingSkeleton.waitFor({ state: "detached" });
+  await waitWorkspace("render");
+  assert.equal(await page.getByRole("button", { name: "Render", exact: true }).getAttribute("aria-pressed"), "true");
+  assert.equal(await modelingEntry.getAttribute("aria-busy"), null);
+  // Opening it again waits on the same modeling start, which Cancel never withdrew.
+  const modelingStarts = () => writes.filter(([, pathname]) => pathname === "/api/project/modeling").length;
+  const startsBeforeReopen = modelingStarts();
+  await modelingEntry.click();
+  await openingSkeleton.getByText("Opening model…", { exact: true }).waitFor();
+  assert.equal(modelingStarts(), startsBeforeReopen, "the reopened tool waits on the start already asked for");
   await page.locator(".chat-new").getByText("New chat", { exact: true }).click();
+  // The skeleton belongs to the conversation it was opened for.
+  await openingSkeleton.waitFor({ state: "detached" });
   releaseModeling(); modelingResponseGate = Promise.resolve();
-  await page.waitForFunction(() => document.querySelector('.chat-composer-note')?.textContent === "");
+  await page.waitForFunction(() => !document.querySelector(".chat-rail__tool[aria-busy]"));
   assert.equal(await page.locator(".chat-project-workspace:visible").count(), 0, "a late response cannot open the old chat workspace");
   // Archiving removes only the sidebar entry. The retained chat is readable,
   // survives a page reload and is explicitly restored before it can continue.
@@ -2712,6 +2756,39 @@ try {
   await waitingRowZh.locator(".chat-needs").waitFor({ state: "detached" });
   await treeHead.locator('.chat-project__badge[data-kind="needs"]').waitFor({ state: "detached" });
   await page.locator(".attention-toast").waitFor({ state: "detached", timeout: 10000 }).catch(() => {});
+
+  // PP-1: opening a tool shows the skeleton of its surface at once and names the step it waits on;
+  // after 3 s, how long and 取消. Cancel stops waiting; the project service it asked for goes on starting.
+  projects.push({ projectId: "S", projectDir: "D:\\fixture\\S", name: "Slow project", chatCount: 0, version: 0, stage: null });
+  studioStartHold = { held: [] };
+  emitRuntime();
+  await page.getByRole("button", { name: "Slow project", exact: true }).first().click();
+  for (const until = Date.now() + 12000; !studioStartHold.held.length; await page.waitForTimeout(50)) {
+    if (Date.now() > until) assert.fail("the project service was never asked to start");
+  }
+  const modelingZh = page.getByRole("button", { name: "建模", exact: true }), skeletonZh = page.locator(".chat-skeleton");
+  await modelingZh.click();
+  await skeletonZh.waitFor();
+  assert.equal(await skeletonZh.locator("h2").innerText(), "建模");
+  await skeletonZh.getByText("正在启动项目服务…", { exact: true }).waitFor();
+  assert.equal(await modelingZh.getAttribute("aria-pressed"), "true");
+  assert.equal(await modelingZh.getAttribute("aria-busy"), "true");
+  assert.equal(await modelingZh.getAttribute("aria-description"), "取消打开建模");
+  assert.equal(await skeletonZh.getByRole("button", { name: "取消", exact: true }).count(), 0, "no Cancel in the first 3 s");
+  await skeletonZh.getByRole("button", { name: "取消", exact: true }).waitFor();
+  assert.match(await skeletonZh.locator(".chat-skeleton__slow").innerText(), /^已等待 \d+秒/);
+  await page.screenshot({ path: path.join(temporary, "tool-skeleton-zh.png") });
+  const beforeCancel = writes.length;
+  await skeletonZh.getByRole("button", { name: "取消", exact: true }).click();
+  await skeletonZh.waitFor({ state: "detached" });
+  assert.equal(await page.locator(".chat-shell").getAttribute("data-panel"), "false", "Cancel returns to the conversation the tool was opened from");
+  assert.equal(await modelingZh.getAttribute("aria-pressed"), "false");
+  assert.equal(await modelingZh.getAttribute("aria-busy"), null);
+  assert.deepEqual(writes.slice(beforeCancel), [], "Cancel asks the Hub for nothing: the starting service is left to start");
+  releaseStudioStarts();
+  await page.waitForFunction(() => document.querySelector('.chat-rail__tool[aria-label="建模"]')?.dataset.state === "running");
+  await modelingZh.click();
+  await waitWorkspace();
   await page.getByRole("button", { name: "Hub 设置", exact: true }).click();
   await page.locator("#language").selectOption("en");
   await page.getByRole("dialog").getByRole("button", { name: "Close", exact: true }).click();

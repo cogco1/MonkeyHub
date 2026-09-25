@@ -186,5 +186,24 @@
 .chat-project__badge[data-kind=needs]{display:inline-flex;align-items:center;gap:5px;border-color:color-mix(in srgb,var(--accent) 60%,transparent);color:var(--accent);font-weight:600}
 .chat-project__badge[data-kind=needs]::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--accent)}
 
+/* GH-300 PP-1: the skeleton of the surface being opened, over the panel until it is ready. */
+.chat-skeleton{position:absolute;inset:0;z-index:4;display:flex;flex-direction:column;min-height:0;background:var(--ground);overflow:hidden}
+.chat-skeleton__frame{position:absolute;inset:0;display:flex;flex-direction:column;gap:12px;padding:12px}
+.chat-skeleton__bar,.chat-skeleton__canvas{display:block;border-radius:8px;background:var(--panel-2);animation:chat-skeleton-pulse 1.8s ease-in-out infinite}
+.chat-skeleton__bar{flex:none;height:36px}
+.chat-skeleton__canvas{flex:1;min-height:0;border:1px solid var(--line-2)}
+.chat-skeleton[data-surface=monkeyarch] .chat-skeleton__canvas{background:repeating-linear-gradient(0deg,var(--line-2) 0 1px,transparent 1px 32px),repeating-linear-gradient(90deg,var(--line-2) 0 1px,transparent 1px 32px),var(--panel-2)}
+.chat-skeleton:is([data-surface=monkeyboard],[data-surface=publish]) .chat-skeleton__canvas{background:radial-gradient(circle,var(--line) 1px,transparent 1.5px) 0 0/20px 20px,var(--panel-2)}
+.chat-skeleton:is([data-surface=drawing],[data-surface=monkeyrender],[data-surface=monkeyfab]) .chat-skeleton__canvas{box-shadow:inset 0 0 0 32px var(--ground),inset 0 0 0 33px var(--line)}
+.chat-skeleton[data-surface=tree] .chat-skeleton__canvas{background:radial-gradient(circle,var(--line) 5px,transparent 6px) 25% 50%/33% 40px no-repeat,radial-gradient(circle,var(--line) 5px,transparent 6px) 50% 50%/33% 40px no-repeat,radial-gradient(circle,var(--line) 5px,transparent 6px) 75% 50%/33% 40px no-repeat,linear-gradient(var(--line),var(--line)) 50% 50%/50% 1px no-repeat,var(--panel-2)}
+.chat-skeleton__caption{position:relative;margin:auto;display:flex;flex-direction:column;align-items:center;gap:6px;max-width:min(360px,calc(100% - 32px));padding:18px 22px;border-radius:12px;background:var(--ground);box-shadow:var(--shadow-soft);text-align:center}
+.chat-skeleton__caption h2{font-size:var(--text-heading);font-weight:600;line-height:1.4}
+.chat-skeleton__caption p{color:var(--muted);font-size:var(--text-ui);line-height:1.6}
+.chat-skeleton__slow{display:flex;align-items:center;justify-content:center;gap:10px;flex-wrap:wrap;margin-top:4px;color:var(--muted);font-size:var(--text-caption)}
+.chat-skeleton__slow .chat-activity__open{min-height:32px;padding:5px 14px}
+@keyframes chat-skeleton-pulse{0%,100%{opacity:1}50%{opacity:.6}}
+@media(prefers-reduced-motion:reduce){.chat-skeleton__bar,.chat-skeleton__canvas{animation:none}}
+@media(max-width:900px){.chat-skeleton__slow .chat-activity__open{min-height:44px}}
+
 /* GH-58: why an operation that needs recovery can still be dismissed. */
 .chat-runtime__note{color:var(--muted);font-size:var(--text-caption)}
