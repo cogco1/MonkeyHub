@@ -92,7 +92,9 @@
         "apps/monkeyhub/web/workspaces/test/workingCopy.browser.mjs",
         "apps/monkeyhub/web/workspaces/test/modelHistory.test.ts",
         "docs/2026-09-24-monkeyhub-interaction-proposal.md",
-        "apps/monkeyhub/web/workspaces/test/documentTracing.browser.mjs"
+        "apps/monkeyhub/web/workspaces/test/documentTracing.browser.mjs",
+        "apps/monkeyhub/web/workspaces/src/workspaces/monkeydiagram/DocumentTracingContext.ts",
+        "apps/monkeyhub/web/workspaces/src/workspaces/monkeydiagram/DocumentTracingPanel.tsx"
       ],
       "card": "docs/mapping/planning/GH-234-hub-ui-round.md",
       "acceptance": [
@@ -148,7 +150,9 @@
             "apps/monkeyhub/web/workspaces/test/candidatePreview.browser.mjs",
             "apps/monkeyhub/web/workspaces/test/workingCopy.browser.mjs",
             "apps/monkeyhub/web/workspaces/test/modelHistory.test.ts",
-            "apps/monkeyhub/web/workspaces/test/documentTracing.browser.mjs"
+            "apps/monkeyhub/web/workspaces/test/documentTracing.browser.mjs",
+            "apps/monkeyhub/web/workspaces/src/workspaces/monkeydiagram/DocumentTracingContext.ts",
+            "apps/monkeyhub/web/workspaces/src/workspaces/monkeydiagram/DocumentTracingPanel.tsx"
           ],
           "depends_on": [],
           "status": "active",
