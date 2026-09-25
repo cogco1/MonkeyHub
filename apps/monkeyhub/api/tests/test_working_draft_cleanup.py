@@ -1,12 +1,16 @@
-"""Hub maintenance accounts for operation admission and retained chat sources."""
+"""Hub maintenance never removes a run; it only expires superseded local recovery."""
 from pathlib import Path
 import tempfile
 from types import SimpleNamespace
 import unittest
-from uuid import uuid4
 
+from archflow.project.ports import PersistenceArea, PersistenceDestination
+from archflow.project.record_kinds import STUDIO_LOCAL_DRAFT
 from archflow.project.repository import FilesystemProjectRepository
-from monkeyhub_api.runtime import OperationManager, ProjectRuntimeManager
+from monkeyhub_api.runtime import ProjectRuntimeManager
+
+
+OLD = "2020-01-01T00:00:00+00:00"
 
 
 class WorkingDraftCleanupTests(unittest.TestCase):
@@ -14,41 +18,43 @@ class WorkingDraftCleanupTests(unittest.TestCase):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         self.repo = FilesystemProjectRepository.initialize(Path(temporary.name) / "project", project_id="building", initial_state={})
-        self.operations = OperationManager("building")
-        self.runtime = SimpleNamespace(project_id="building", project_dir=str(self.repo.layout.root), operations=self.operations,
-            binding=SimpleNamespace(repository=self.repo, run_ids=lambda: tuple(path.parent.name for path in self.repo.layout.runs.glob("*/run.json"))))
-        self.sessions = {}
-        self.chats = SimpleNamespace(list=lambda project_id, archived=False: [row for row in self.sessions.values() if row.archived == archived],
-                                     get=lambda session_id: self.sessions[session_id])
-        self.manager = ProjectRuntimeManager(SimpleNamespace(), self.chats)
+        self.runtime = SimpleNamespace(binding=SimpleNamespace(repository=self.repo))
+        self.manager = ProjectRuntimeManager(SimpleNamespace(), SimpleNamespace())
 
     def automatic(self, name):
         self.repo.create_run(name)
         value, revision = self.repo.read_working_draft()
-        value["runs"][name] = {"updatedAt": "2020-01-01T00:00:00+00:00", "sourceStageRef": None,
+        value["runs"][name] = {"updatedAt": OLD, "sourceStageRef": None,
                                "branchId": None, "label": None, "automatic": True}
         self.repo.compare_and_swap_working_draft(expected_revision=revision, value=value)
 
-    def test_admitted_proposal_without_enriched_source_defers_cleanup_and_interrupted_source_is_pinned(self):
-        self.automatic("source")
-        self.automatic("other")
-        admission, fresh = self.operations.admit(str(uuid4()), "POST", "/api/proposals/p1/candidate", b"",
-                                                 retained=None, source="studio", session_id=None)
-        self.assertTrue(fresh)
-        self.assertIsNone(admission.record.sourceRunId)
-        self.assertEqual(self.manager._clean_working_draft(self.runtime), ())
-        self.operations.interrupted(admission, "lost before proposal read")
-        self.assertEqual(self.manager._clean_working_draft(self.runtime), ())
-        self.operations.bind_proposal(admission, {"sourceRunId": "source", "baseStateDigest": "a" * 64, "recordDigest": "b" * 64}, 0)
-        self.operations.interrupted(admission, "lost after source binding")
-        self.assertEqual(self.manager._clean_working_draft(self.runtime), ("other",))
-        self.assertTrue(self.repo.layout.run("source").root.exists())
-
-    def test_archived_chat_document_and_candidate_refs_protect_exact_runs(self):
-        for name in ("candidate", "document", "expired"):
+    def test_expired_unreferenced_automatic_candidates_stay_after_scheduled_cleanup(self):
+        # GH-234 Q3: no operation is running and no conversation mentions these
+        # candidates, yet they stay until the architect explicitly rejects or
+        # archives them.
+        for name in ("modeling-candidate", "agent-candidate"):
             self.automatic(name)
-        self.sessions["conversation"] = SimpleNamespace(id="conversation", archived=True, projectDir=str(self.repo.layout.root),
-            messages=[SimpleNamespace(candidateId="candidate", documents=[SimpleNamespace(runId="document")])])
-        self.assertEqual(self.manager._clean_working_draft(self.runtime), ("expired",))
-        self.assertTrue(self.repo.layout.run("candidate").root.exists())
-        self.assertTrue(self.repo.layout.run("document").root.exists())
+        working = self.repo.read_working_draft()
+        self.assertEqual(self.manager._clean_working_draft(self.runtime), ())
+        for name in ("modeling-candidate", "agent-candidate"):
+            self.assertTrue(self.repo.layout.run(name).root.is_dir())
+        self.assertEqual(self.repo.read_working_draft(), working)
+
+    def test_scheduled_cleanup_expires_only_superseded_local_recovery(self):
+        self.automatic("source")
+        drafts = self.repo.create_run("studio-working-draft")
+
+        def snapshot(commands):
+            return self.repo.put_json(run=drafts, destination=PersistenceDestination(PersistenceArea.RUN_RECOVERY, run_id=drafts.run_id),
+                record_kind=STUDIO_LOCAL_DRAFT, payload={"schema": "StudioLocalDraft@1", "projectId": "building", "updatedAt": OLD,
+                "draft": {"source": {"projectId": "building", "sourceRunId": "source", "sourceStageRef": None, "stateDigest": "a" * 64},
+                          "commands": commands, "attempt": None}})
+
+        superseded, current = snapshot([{"id": "move"}]), snapshot([{"id": "move"}, {"id": "lift"}])
+        value, revision = self.repo.read_working_draft()
+        value["localDraftRef"] = current.to_dict()
+        self.repo.compare_and_swap_working_draft(expected_revision=revision, value=value)
+        self.assertEqual(self.manager._clean_working_draft(self.runtime), (superseded.relative_path,))
+        self.assertFalse((self.repo.layout.root / superseded.relative_path).exists())
+        self.assertTrue((self.repo.layout.root / current.relative_path).is_file())
+        self.assertTrue(self.repo.layout.run("source").root.is_dir())

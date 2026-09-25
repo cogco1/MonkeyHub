@@ -1,4 +1,4 @@
-"""Current work, bounded recovery and conservative P036 collection survive reopen."""
+"""Current work and bounded local recovery survive reopen; P036 cleanup never removes a run."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -9,7 +9,7 @@ import unittest
 
 from archflow.project.archive import restore_project_archive, write_project_archive
 from archflow.project.ports import PersistenceArea, PersistenceDestination
-from archflow.project.record_kinds import STUDIO_BOARD_SCENE, STUDIO_CANDIDATE_DELTA, STUDIO_LOCAL_DRAFT, STUDIO_MODEL_ASSET, STUDIO_SOURCE_DOCUMENT
+from archflow.project.record_kinds import STUDIO_LOCAL_DRAFT, STUDIO_MODEL_ASSET
 from archflow.project.repository import FilesystemProjectRepository, ProjectIntegrityError, StaleWorkingDraft
 
 
@@ -36,6 +36,12 @@ class WorkingDraftRepositoryTests(unittest.TestCase):
         return self.repo.put_json(run=run, destination=PersistenceDestination(area, run_id=run.run_id),
                                   record_kind=kind, payload=payload)
 
+    def snapshot(self, drafts, source, *, project="building", updated=OLD):
+        return self.put(drafts, STUDIO_LOCAL_DRAFT, {"schema": "StudioLocalDraft@1", "projectId": project,
+            "updatedAt": updated, "draft": {"source": {"projectId": project, "sourceRunId": source,
+            "sourceStageRef": None, "stateDigest": "a" * 64}, "commands": [{"id": source}], "attempt": None}},
+            PersistenceArea.RUN_RECOVERY)
+
     def test_legacy_read_is_nonmutating_and_compare_swap_rejects_second_window(self):
         value, revision = self.repo.read_working_draft()
         self.assertIsNone(revision)
@@ -46,71 +52,52 @@ class WorkingDraftRepositoryTests(unittest.TestCase):
         reopened = FilesystemProjectRepository.open(self.repo.layout.root)
         self.assertEqual(reopened.read_working_draft(), self.repo.read_working_draft())
 
-    def test_gc_keeps_current_saved_legacy_recent_ancestry_board_and_documents(self):
-        for name in ("current", "parent", "combined", "saved", "expired", "board-page", "document", "external"):
-            self.create(name, label="My version" if name == "saved" else None)
-        self.repo.create_run("legacy")
-        self.create("recent", updated="2026-01-02T12:00:00+00:00")
-        self.put(self.repo.load_run("current"), STUDIO_CANDIDATE_DELTA,
-                 {"schema": "StudioCandidateDelta@1", "source_run_ref": self.repo.load_run("parent").to_dict(),
-                  "combined_candidate_ids": ["combined"]})
-        board = self.repo.create_run("studio-board")
-        self.put(board, STUDIO_BOARD_SCENE, {"schema": "StudioBoardScene@1", "projectId": "building",
-            "elements": [{"customData": {"sourceDocument": {"runId": "board-page"}}}]})
-        self.put(self.repo.load_run("document"), STUDIO_SOURCE_DOCUMENT,
-                 {"schema": "StudioSourceDocument@1", "project_id": "building"})
-        value, revision = self.repo.read_working_draft()
-        value["current"] = "current"
-        self.repo.compare_and_swap_working_draft(expected_revision=revision, value=value)
-        self.assertEqual(self.repo.prune_working_draft(now=NOW, protected_run_ids=("external",)), ("expired",))
-        self.assertFalse(self.repo.layout.run("expired").root.exists())
-        for name in ("current", "parent", "combined", "saved", "board-page", "document", "legacy", "recent", "external"):
-            self.assertEqual(self.repo.load_run(name).run_id, name)
-        self.assertNotIn("expired", FilesystemProjectRepository.open(self.repo.layout.root).read_working_draft()[0]["runs"])
-
-    def test_original_model_imports_survive_expired_draft_collection_and_reopen(self):
-        for name, schema in (("original", "StudioModelAsset@1"), ("legacy-original", "StudioExternalModelAsset@1")):
-            run = self.create(name)
-            self.put(run, STUDIO_MODEL_ASSET, {"schema": schema, "origin": "uploaded",
-                "representation": "external", "modelSource": None, "projectId": "building"})
+    def test_cleanup_keeps_expired_unreferenced_automatic_candidates_and_their_models(self):
+        # GH-234 Q3: these automatic candidates are days old and nothing refers
+        # to them, yet they stay until the architect explicitly rejects or
+        # archives them. No run leaves the project on a timer.
         self.create("expired")
+        self.put(self.create("generated-model"), STUDIO_MODEL_ASSET, {"schema": "StudioModelAsset@1",
+            "origin": "generated", "representation": "external", "modelSource": None, "projectId": "building"})
+        self.create("saved", label="My version")
+        self.repo.create_run("legacy")
+        working = self.repo.read_working_draft()
+        self.assertEqual(self.repo.prune_working_draft(now=NOW), ())
         reopened = FilesystemProjectRepository.open(self.repo.layout.root)
-        self.assertEqual(reopened.prune_working_draft(now=NOW), ("expired",))
-        reopened = FilesystemProjectRepository.open(self.repo.layout.root)
-        for name in ("original", "legacy-original"):
+        for name in ("expired", "generated-model", "saved", "legacy"):
             self.assertEqual(reopened.load_run(name).run_id, name)
+        self.assertEqual(reopened.read_working_draft(), working)
         reopened.verify()
 
-    def test_current_local_snapshot_protects_exact_source_indefinitely_and_old_snapshots_expire(self):
+    def test_only_superseded_local_snapshots_expire_and_the_current_one_is_kept_indefinitely(self):
         self.create("source")
         self.create("obsolete")
         drafts = self.repo.create_run("studio-working-draft")
-        def snapshot(source):
-            return self.put(drafts, STUDIO_LOCAL_DRAFT, {"schema": "StudioLocalDraft@1", "projectId": "building",
-                "updatedAt": OLD, "draft": {"source": {"projectId": "building", "sourceRunId": source,
-                "sourceStageRef": None, "stateDigest": "a" * 64}, "commands": [{"id": source}], "attempt": None}},
-                PersistenceArea.RUN_RECOVERY)
-        old, current = snapshot("obsolete"), snapshot("source")
+        old = self.snapshot(drafts, "obsolete")
+        recent = self.snapshot(drafts, "obsolete", updated="2026-01-02T12:00:00+00:00")
+        current = self.snapshot(drafts, "source")
         value, revision = self.repo.read_working_draft()
         value["localDraftRef"] = current.to_dict()
         self.repo.compare_and_swap_working_draft(expected_revision=revision, value=value)
-        self.assertEqual(self.repo.prune_working_draft(now=NOW), ("obsolete",))
-        self.assertTrue((self.repo.layout.root / current.relative_path).exists())
+        self.assertEqual(self.repo.prune_working_draft(now=NOW), (old.relative_path,))
         self.assertFalse((self.repo.layout.root / old.relative_path).exists())
+        for kept in (recent, current):
+            self.assertTrue((self.repo.layout.root / kept.relative_path).exists())
+        # The expired snapshot's source is an expired, unreferenced automatic
+        # candidate as well, and it stays.
+        for name in ("source", "obsolete"):
+            self.assertEqual(self.repo.load_run(name).run_id, name)
         self.repo.verify()
 
-    def test_active_and_interrupted_inputs_are_pinned_and_bad_graph_refuses_deletion(self):
-        self.create("source")
-        self.create("combined")
-        self.repo.protect_working_run("executing", "source", dependencies=("combined",))
-        reopened = FilesystemProjectRepository.open(self.repo.layout.root)
-        self.assertEqual(reopened.prune_working_draft(now=NOW), ())
-        reopened.release_working_run("executing")
-        broken = self.repo.layout.run("source").records / "corrupt.json"
-        broken.write_text("{broken", encoding="utf-8")
+    def test_an_inconsistent_local_snapshot_refuses_expiry_and_removes_nothing(self):
+        self.create("expired")
+        drafts = self.repo.create_run("studio-working-draft")
+        snapshots = (self.snapshot(drafts, "expired"), self.snapshot(drafts, "expired", project="elsewhere"))
         with self.assertRaises(ProjectIntegrityError):
-            reopened.prune_working_draft(now=NOW)
-        self.assertTrue(self.repo.layout.run("source").root.exists())
+            self.repo.prune_working_draft(now=NOW)
+        for ref in snapshots:
+            self.assertTrue((self.repo.layout.root / ref.relative_path).exists())
+        self.assertEqual(self.repo.load_run("expired").run_id, "expired")
 
     def test_archive_restores_current_saved_and_local_commands_but_candidate_sync_does_not_override_local(self):
         source = self.create("source", label="Keep me")
@@ -135,9 +122,8 @@ class WorkingDraftRepositoryTests(unittest.TestCase):
         reopened.import_candidate_transfer(transfer)
         self.assertEqual(reopened.read_working_draft()[0], value)
 
-    def test_cleanup_waits_for_cross_process_source_validation_and_reference_write(self):
+    def test_cleanup_waits_for_the_cross_process_guard_and_keeps_the_expired_candidate(self):
         source = self.create("source")
-        board = self.repo.create_run("studio-board")
         code = """import sys
 from archflow.project.repository import FilesystemProjectRepository
 r=FilesystemProjectRepository.open(sys.argv[1])
@@ -152,33 +138,29 @@ print(r.prune_working_draft(now=sys.argv[2]),flush=True)
             self.assertEqual(child.stdout.readline().strip(), "ready")
             with self.assertRaises(subprocess.TimeoutExpired):
                 child.wait(timeout=0.2)
-            self.put(board, STUDIO_BOARD_SCENE, {"schema": "StudioBoardScene@1", "source": {"runId": "source"}})
         out, err = child.communicate(timeout=20)
         self.assertEqual(child.returncode, 0, err)
         self.assertEqual(out.strip(), "()")
         self.assertTrue(self.repo.layout.run("source").root.exists())
 
-    def test_cross_process_write_cannot_resurrect_a_run_after_cleanup(self):
+    def test_a_cross_process_write_still_reaches_an_expired_candidate_after_cleanup(self):
         self.create("expired")
         code = """import sys
-from archflow.project.repository import FilesystemProjectRepository,ProjectRepositoryError
+from archflow.project.repository import FilesystemProjectRepository
 from archflow.project.ports import PersistenceArea,PersistenceDestination
 from archflow.project.record_kinds import STUDIO_BOARD_SCENE
 r=FilesystemProjectRepository.open(sys.argv[1]); run=r.load_run('expired')
 print('read',flush=True)
-try:
- r.put_json(run=run,destination=PersistenceDestination(PersistenceArea.RUN_RECORD,run_id='expired'),record_kind=STUDIO_BOARD_SCENE,payload={'schema':'StudioBoardScene@1'})
- print('saved')
-except ProjectRepositoryError:
- print('refused')
+r.put_json(run=run,destination=PersistenceDestination(PersistenceArea.RUN_RECORD,run_id='expired'),record_kind=STUDIO_BOARD_SCENE,payload={'schema':'StudioBoardScene@1'})
+print('saved')
 """
         with self.repo.working_draft_guard():
             child = subprocess.Popen([sys.executable, "-u", "-c", code, str(self.repo.layout.root)],
                                      stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
             self.addCleanup(lambda: child.kill() if child.poll() is None else None)
             self.assertEqual(child.stdout.readline().strip(), "read")
-            self.assertEqual(self.repo.prune_working_draft(now=NOW), ("expired",))
+            self.assertEqual(self.repo.prune_working_draft(now=NOW), ())
         out, err = child.communicate(timeout=20)
         self.assertEqual(child.returncode, 0, err)
-        self.assertEqual(out.strip(), "refused")
-        self.assertFalse(self.repo.layout.run("expired").root.exists())
+        self.assertEqual(out.strip(), "saved")
+        self.assertTrue(self.repo.layout.run("expired").root.exists())
