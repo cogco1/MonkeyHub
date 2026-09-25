@@ -591,6 +591,16 @@ was replaced is derived, never stored: the same drawing from the same exact sour
 not count as a newer input; the same drawing from another source is a source
 change; a document without `drawingId` is an upload.
 
+A cut-plan request may say why it is asked for: `reason`, 1–200 characters in the
+asker's words (an agent passes the correction it was given; a direct edit omits
+it). The request boundary records who asked, as for decisions: `actorId`,
+`authenticated` and `origin`, where `hub` means a runtime the Hub manages and
+`studio` one it does not. Both are retained in the revision's drawing receipt,
+never in `viewRecipe`, so they neither make nor distinguish revisions: an identical
+request returns the retained revision as it was asked for. Every SourceDocument
+with a `revisionRef` reads `previousRevisionRef`, `attribution` and `reason` from
+that receipt, read-only; a revision retained before they were recorded reads null.
+
 `GET /api/drawings/plans/vector?runId=…&assetSha256=…&revisionRef=…` reads the
 verified retained SVG, built-in vector symbols and exact source anchor choices.
 SVG `data-dressing` groups remain independently editable and do not claim the

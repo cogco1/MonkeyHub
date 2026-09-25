@@ -3949,6 +3949,7 @@
         "optional StudioEventSink for successful API registration or option additions",
         "optional source run for project-wide discovery or project source-material upload",
         "optional exact DocumentPageReplacement values mapping registered old pages to uploaded page indices",
+        "the request boundary's ActorAttribution and an optional reason for each cut-plan revision",
         "Optional StudioMonitor for drawing generation/cache comparison and model registration stages (binding, decode, digest, lock wait, lookup, inspection, persistence and verification) through the existing application functions"
       ],
       "outputs": [
@@ -4086,6 +4087,7 @@
         "Cut-plan freshness is derived from exact source object inputs intersecting the view slab, including entering and occluding objects, and resolved dimension anchors; unknown targets and broken anchors are explicit. Rebuild preserves the recipe and immutable prior revision; no nearest-object rebinding is allowed.",
         "A rebuilt cut plan replaces its previous revision whole unless that revision already has a replacement (a fork is a new page) or the page's visible aspect ratio changed; an identical request returns the retained revision and registers nothing. Why a page was replaced - representation, source or upload - is derived from the two registrations and never stored; Render counts only a source or upload replacement as a newer input.",
         "Cut-plan status and vector reads return the projection owner's cleanup report exactly as the revision's receipt retains it, null before cleanup existed; it never enters viewRecipe or the reuse comparison.",
+        "Each cut-plan revision's receipt records who asked - the request boundary's actor and origin, never a body field - and the optional reason; neither enters viewRecipe or the reuse comparison. Documents with a revisionRef read previousRevisionRef, attribution and reason from that immutable receipt, cached per record by its digest-bearing ref; a receipt without them, or one that cannot be read, reads null.",
         "Cut-plan graphics are extended, never replaced: optional material-keyed hatch/poche rules, stored complete, and a beyond-the-cut fade are paper values taken from the request, else the previous revision; no rule, an empty byMaterial or a zero fade is an absent key, so an old recipe is unchanged and reuses its retained drawing.",
         "Design width proposals require two uniquely verified cut STEP jambs, an unlocked direct parameter with matching units and the drawing's exact source on the Working Head, or another line's latest accepted Stage. Placement edits change only paper representation and dimensions outside the view cannot drive.",
         "a drawing's default status target is the Working Head's exact drawable source; an undrawable head is reported, never rebound",

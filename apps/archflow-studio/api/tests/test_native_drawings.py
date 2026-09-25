@@ -21,11 +21,12 @@ from archflow_studio_api.application.binding import bound_project
 from archflow_studio_api.main import create_app
 from archflow_studio_api.settings import StudioSettings
 from .support import PROJECT_ID, REFERENCE_RUN_ID, make_project, runner_state_digest
-from .test_drawing_plans import replacing
+from .test_drawing_plans import replacing, stand_in_for_the_projection_receipt
 
 
 class NativeDrawingTests(unittest.TestCase):
     def setUp(self):
+        stand_in_for_the_projection_receipt(self)
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)

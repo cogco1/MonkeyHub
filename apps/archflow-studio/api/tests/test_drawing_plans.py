@@ -2,6 +2,7 @@
 
 from contextlib import contextmanager
 from copy import deepcopy
+import inspect
 import unittest
 from unittest.mock import patch
 
@@ -10,6 +11,7 @@ from fastapi.testclient import TestClient
 from archflow.adapters.occt_backend import occt_available
 from archflow.project.record_kinds import DRAWING_PROJECTION_RECEIPT
 from archflow.project.refs import record_ref_from_uri
+from monkeydiagram import drawing_elevation
 from monkeydiagram.drawing_elevation import read_model_axis_elevation
 from archflow_studio_api.application import drawing_plans
 from archflow_studio_api.application.artifacts import _chain_head, _page_replacements, list_documents, replacement_cause
@@ -57,6 +59,20 @@ def replacing(document):
             "revisionRef": document["revisionRef"], "pageIndex": 0, "newPageIndex": 0}
 
 
+def _freeze_retaining(freeze, repository, fields, kwargs):
+    """Run a real cut-plan projection whose receipt carries exactly ``fields``; None leaves one out."""
+    put_json = repository.put_json
+
+    def put(*, record_kind, payload, **rest):
+        if record_kind == DRAWING_PROJECTION_RECEIPT:
+            payload = {key: value for key, value in {**payload, **fields}.items()
+                       if key not in fields or fields[key] is not None}
+        return put_json(record_kind=record_kind, payload=payload, **rest)
+
+    with patch.object(repository, "put_json", put):
+        return freeze(repository, **kwargs)
+
+
 @contextmanager
 def receipt_fields(**fields):
     """Cut-plan receipts retained meanwhile carry exactly these fields; None leaves one out.
@@ -66,27 +82,35 @@ def receipt_fields(**fields):
     has, around the real projection so the application's reading is checked.
     """
     freeze = drawing_plans.freeze_cut_plan
-
-    def retaining(repository, **kwargs):
-        put_json = repository.put_json
-
-        def put(*, record_kind, payload, **rest):
-            if record_kind == DRAWING_PROJECTION_RECEIPT:
-                payload = {key: value for key, value in {**payload, **fields}.items()
-                           if key not in fields or fields[key] is not None}
-            return put_json(record_kind=record_kind, payload=payload, **rest)
-
-        with patch.object(repository, "put_json", put):
-            return freeze(repository, **kwargs)
-
-    with patch.object(drawing_plans, "freeze_cut_plan", retaining):
+    with patch.object(drawing_plans, "freeze_cut_plan",
+                      lambda repository, **kwargs: _freeze_retaining(freeze, repository, fields, kwargs)):
         yield
+
+
+def stand_in_for_the_projection_receipt(test):
+    """Retain who asked and why in the cut-plan receipt the way GH-244/drawing-projection will.
+
+    That lane's ``freeze_cut_plan`` takes ``attribution`` and ``reason`` into
+    its receipt (05 3.2(A)); this branch's does not yet. Once it does, this
+    stands in for nothing and the tests read the real receipt; delete it then.
+    """
+    if {"attribution", "reason"} & set(inspect.signature(drawing_elevation.freeze_cut_plan).parameters):
+        return
+
+    def retaining(repository, *, attribution=None, reason=None, **kwargs):
+        return _freeze_retaining(drawing_elevation.freeze_cut_plan, repository,
+                                 {"attribution": attribution, "reason": reason}, kwargs)
+
+    stand_in = patch.object(drawing_plans, "freeze_cut_plan", retaining)
+    stand_in.start()
+    test.addCleanup(stand_in.stop)
 
 
 @unittest.skipUnless(occt_available(), "cadquery-ocp is not installed")
 class CutPlanTests(CandidateTestCase):
     def setUp(self):
         super().setUp()
+        stand_in_for_the_projection_receipt(self)
         self.client.close()
         self.settings = StudioSettings(project_dir=self.root / PROJECT_ID, cad_export="occt")
         self.app = create_app(self.settings)
@@ -589,3 +613,31 @@ class CutPlanTests(CandidateTestCase):
                 "sourceStageRef": self.stage["stageRef"], "previousRevisionRef": first["revisionRef"], **changes})
             self.assertEqual(response.status_code, 422, response.text)
         self.assertEqual(self.client.get("/api/documents").json(), before)
+
+    def test_a_revision_records_who_asked_and_why_and_old_revisions_read_as_unknown(self):
+        with receipt_fields(attribution=None, reason=None):
+            older = self.generate()
+        self.assertEqual((older["previousRevisionRef"], older["attribution"], older["reason"]), (None, None, None))
+        why = "The cut line reads too thin against the hatch."
+        asked = self.generate(previousRevisionRef=older["revisionRef"], cutLineMm=.5, reason=why)
+        person = {"actorId": "studio:explicit-user-action", "authenticated": False, "origin": "studio"}
+        self.assertEqual((asked["previousRevisionRef"], asked["attribution"], asked["reason"]),
+                         (older["revisionRef"], person, why))
+        receipt = read_model_axis_elevation(self.repository, record_ref_from_uri(asked["revisionRef"], PROJECT_ID)).receipt
+        self.assertEqual((receipt["attribution"], receipt["reason"]), (person, why))
+        self.assertNotIn("reason", asked["viewRecipe"])
+        # Who and why never make or tell apart revisions: an identical request
+        # is the retained revision, as it was asked for.
+        with patch("archflow_studio_api.application.drawing_plans.freeze_cut_plan", side_effect=AssertionError("cache must not project")):
+            self.assertEqual(self.generate(previousRevisionRef=asked["revisionRef"], reason="Asked again."), asked)
+        # A runtime the Hub manages attributes its requests to the Hub.
+        self.app.state.managed_instance_id = "hub-1"
+        agent = self.generate(previousRevisionRef=asked["revisionRef"], cutLineMm=.6)
+        self.assertEqual((agent["attribution"]["origin"], agent["reason"]), ("hub", None))
+        with TestClient(create_app(self.settings)) as client:
+            cold = {row["revisionRef"]: row for row in client.get("/api/documents").json()["documents"]}
+        self.assertEqual([cold[row["revisionRef"]] for row in (older, asked, agent)], [older, asked, agent])
+        for reason in ("", "x" * 201):
+            response = self.client.post("/api/drawings/plans", json={"projectId": PROJECT_ID,
+                "sourceStageRef": self.stage["stageRef"], "previousRevisionRef": asked["revisionRef"], "reason": reason})
+            self.assertEqual(response.status_code, 422, response.text)
