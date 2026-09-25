@@ -45,6 +45,8 @@ const copy = {
 } as const;
 
 type PlanTarget = { modelSource: ModelSourceDto; stageRef: string | null };
+// An edited appearance is saved as a new revision once the edits pause, as Board saves itself.
+const APPEARANCE_PAUSE_MS = 800;
 
 function PlanPreview({ source, file, vector, objects, selected, onSelect, onChange, disabled }: {
   source: SourceDocumentDto; file: File; vector: PlanVectorDto | null; objects: PlanDressingDto[];
@@ -108,6 +110,9 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
   const [file, setFile] = useState<File | null>(null), [loading, setLoading] = useState(true);
   const [vector, setVector] = useState<PlanVectorDto | null>(null), [selectedDressing, setSelectedDressing] = useState("");
   const [error, setError] = useState<StudioApiError | null>(null), [busy, setBusy] = useState(false);
+  // Why edited appearance is not being saved: the pause ended on an invalid field, or the
+  // save was refused. The next edit clears it; a refusal can also be retried, never in a loop.
+  const [appearanceHeld, setAppearanceHeld] = useState<"invalid" | "refused" | null>(null);
   const [refresh, setRefresh] = useState(0);
   // #271: the Working Head this workspace follows, as the Project Runtime resolves it.
   const [live, setLive] = useState<WorkingSourceDto | null>(null), [liveBusy, setLiveBusy] = useState(false);
@@ -183,7 +188,10 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
     return () => { cancelled = true; };
   }, [studio, projectId, stage?.modelSource.runId, stage?.modelSource.assetSha256, stage?.stageRef, active, refresh]);
   useEffect(() => {
-    setFile(null); setVector(null); setSelectedDressing(""); setStatus(null); setAutomaticTarget(null);
+    // A revision this view just wrote replaces the one on screen when it has
+    // loaded; the picture and the selected object stay while it saves.
+    if (!madeHere.current.has(selected)) { setFile(null); setVector(null); setSelectedDressing(""); }
+    setStatus(null); setAutomaticTarget(null);
     if (!source) { setStatusLoading(false); return; }
     let cancelled = false;
     if (source.revisionRef) void studio.drawingPlanVector({ runId: source.runId, assetSha256: source.assetSha256, revisionRef: source.revisionRef })
@@ -211,36 +219,67 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
   }, [studio, projectId, selected, explicitTarget, target, active, refreshKey, refresh]);
 
   function openDocument(document: SourceDocumentDto | null) {
-    setSelected(document ? drawingDocumentKey(document) : ""); setVector(null); setDirty(false); setError(null);
+    setSelected(document ? drawingDocumentKey(document) : ""); setVector(null); setDirty(false); setAppearanceHeld(null); setError(null);
     setExplicitTarget(false); setAutomaticTarget(null); setStatus(null);
     if (!document) setTarget(defaultTarget);
     setForm(document ? planFormFromDocument(document, lengthUnit) : defaultPlanForm(lengthUnit));
   }
-  function chooseDocument(key: string) {
+  async function chooseDocument(key: string) {
+    // Appearance edits still waiting for their pause are saved before another revision opens.
+    if (dirty && source) {
+      if (!controls.current?.reportValidity()) return;
+      if (!await generate(null)) return;
+    }
     opened.current = true;
     openDocument(documents.find(item => drawingDocumentKey(item) === key) ?? null);
   }
-  function update(patch: Partial<PlanForm>) { setForm(current => ({ ...current, ...patch })); setDirty(true); }
+  function update(patch: Partial<PlanForm>) { setForm(current => ({ ...current, ...patch })); setDirty(true); setAppearanceHeld(null); }
   const dimensions = form.dimensions ?? [];
-  /** Write a revision on a target, or on the drawing's own source; `follow` records a person's choice. */
+  /** The revision request itself: on a target, or on the drawing's own source. */
+  const requestRevision = (modelSource: ModelSourceDto, stageRef: string | null | undefined, follow?: "live" | "frozen") =>
+    studio.drawingPlan({ projectId, modelSource, sourceStageRef: stageRef, ...form,
+      ...(source?.drawingId ? { drawingId: source.drawingId } : {}), ...(source?.revisionRef ? { previousRevisionRef: source.revisionRef } : {}),
+      ...(follow ? { follow } : {}) });
+  /** Write a revision on a target, or on the drawing's own source; `follow` records a person's choice. True once it is open. */
   const generate = async (target: PlanTarget | null, options: { following?: boolean; follow?: "live" | "frozen" } = {}) => {
     const modelSource = target ? target.modelSource : source?.modelSource;
     const stageRef = target ? target.stageRef : source?.sourceStageRef;
-    if (!modelSource || busy || !active || !controls.current?.reportValidity()) return;
+    if (!modelSource || busy || !active || !controls.current?.reportValidity()) return false;
     const origin = scope.current;
     setBusy(true); setLiveBusy(Boolean(options.following)); setError(null);
     try {
-      const result = await studio.drawingPlan({ projectId, modelSource, sourceStageRef: stageRef, ...form,
-        ...(source?.drawingId ? { drawingId: source.drawingId } : {}), ...(source?.revisionRef ? { previousRevisionRef: source.revisionRef } : {}),
-        ...(options.follow ? { follow: options.follow } : {}) });
-      if (!mounted.current || scope.current !== origin) return;
+      const result = await requestRevision(modelSource, stageRef, options.follow);
+      if (!mounted.current || scope.current !== origin) return false;
       madeHere.current.add(drawingDocumentKey(result));
       setDocuments(current => [...current.filter(item => drawingDocumentKey(item) !== drawingDocumentKey(result)), result]);
       if (drawingDocumentKey(result) !== selected) setVector(null);
-      setSelected(drawingDocumentKey(result)); setForm(planFormFromDocument(result, lengthUnit)); setDirty(false);
-    } catch (cause) { if (mounted.current && scope.current === origin) setError(asStudioApiError(cause)); }
+      setSelected(drawingDocumentKey(result)); setForm(planFormFromDocument(result, lengthUnit)); setDirty(false); setAppearanceHeld(null);
+      return true;
+    } catch (cause) {
+      if (mounted.current && scope.current === origin) { setError(asStudioApiError(cause)); if (!target) setAppearanceHeld("refused"); }
+      return false;
+    }
     finally { if (mounted.current) { setBusy(false); setLiveBusy(false); } }
   };
+  // Appearance edits save themselves as a new revision after a pause. An
+  // invalid field stays marked and unsaved; a refused save waits for the next
+  // edit or Retry. Download waits for the saved revision.
+  const appearanceSavable = Boolean(dirty && source?.modelSource && active && appearanceHeld === null);
+  useEffect(() => {
+    if (!appearanceSavable || busy) return;
+    const timer = window.setTimeout(() => {
+      if (controls.current?.checkValidity()) void generate(null); else setAppearanceHeld("invalid");
+    }, APPEARANCE_PAUSE_MS);
+    return () => window.clearTimeout(timer);
+  }, [appearanceSavable, busy, form]);
+  // Closing the drawing with edits still inside their pause saves them, without waiting for the answer.
+  const pendingAppearance = useRef<(() => void) | null>(null);
+  useEffect(() => {
+    const drawn = source?.modelSource;
+    pendingAppearance.current = appearanceSavable && !busy && drawn && controls.current?.checkValidity()
+      ? () => { void requestRevision(drawn, source.sourceStageRef).catch(() => { /* Reopening shows the last saved revision. */ }); } : null;
+  });
+  useEffect(() => () => pendingAppearance.current?.(), []);
   useEffect(() => {
     // A LIVE drawing rebinds once to each new Working Head; it never loops.
     if (!source || !status || busy || statusLoading || !active || statusFor.current !== drawingDocumentKey(source)) return;
@@ -273,7 +312,7 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
       <div className="drawing-main">
         <div className="drawing-context">
         <div className="drawing-context__fields">
-        <label className="drawing-field">{text.revision}<select value={selected} disabled={busy} onChange={event => chooseDocument(event.target.value)}>
+        <label className="drawing-field">{text.revision}<select value={selected} disabled={busy} onChange={event => { void chooseDocument(event.target.value); }}>
           <option value="">{text.fresh}</option>{latest.map(item => <option key={drawingDocumentKey(item)} value={drawingDocumentKey(item)}>
             {item.fileName}</option>)}
           {earlier.length > 0 && <optgroup label={text.earlier}>{earlier.map(item => <option key={drawingDocumentKey(item)} value={drawingDocumentKey(item)}>
@@ -298,12 +337,12 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
             <p>{status?.detail ?? (!statusLoading ? text.statusError : "")}</p>
           </div>
           {historical && latest.some(item => item.drawingId === source.drawingId) &&
-            <button type="button" disabled={busy} onClick={() => chooseDocument(drawingDocumentKey(latest.find(item => item.drawingId === source.drawingId)!))}>{text.openLatest}</button>}
+            <button type="button" disabled={busy} onClick={() => { void chooseDocument(drawingDocumentKey(latest.find(item => item.drawingId === source.drawingId)!)); }}>{text.openLatest}</button>}
           {kept && !historical && !explicitTarget &&
             <button type="button" disabled={busy || !liveTarget} onClick={() => void generate(liveTarget, { follow: "live" })}>{text.followAgain}</button>}
         </section>}
         </div>
-        <div className="drawing-canvas">{source && file ? <PlanPreview key={selected} source={source} file={file} vector={vector} objects={form.dressing} selected={selectedDressing}
+        <div className="drawing-canvas">{source && file ? <PlanPreview key={source.drawingId ?? selected} source={source} file={file} vector={vector} objects={form.dressing} selected={selectedDressing}
           onSelect={setSelectedDressing} onChange={dressing => update({ dressing })} disabled={busy || !active} />
           : <div className="drawing-empty" role="status">{loading || source ? text.loading : stage ? text.empty : live?.reason ?? text.noModel}</div>}</div>
       </div>
@@ -334,9 +373,10 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
         </fieldset>}
         </div>
         <div className="drawing-actions">
-        {dirty && <p role="status">{text.dirty}</p>}
-        <button className="btn btn--accent" type="submit" disabled={busy || loading || !lengthUnit || (!source && !stage) || Boolean(source && !source.modelSource)}>
-          {busy ? text.generating : source ? text.apply : text.generate}</button>
+        {source ? <p className="drawing-save-state" role="status">{busy || (dirty && appearanceHeld === null) ? text.generating : dirty ? text.dirty : ""}</p>
+          : <button className="btn btn--accent" type="submit" disabled={busy || loading || !lengthUnit || !stage}>
+            {busy ? text.generating : text.generate}</button>}
+        {source && appearanceHeld === "refused" && <button className="btn btn--accent" type="submit" disabled={busy || !source.modelSource}>{text.apply}</button>}
         {source && <><button className="drawing-download" type="button" disabled={busy || dirty || !active || !vector} onClick={downloadSvg}>{text.download}</button>
           <p>{text.downloadHint}</p></>}
         {error && <ErrorPanel error={error} what={text.title} />}

@@ -82,7 +82,7 @@
 .document-tracing p[role="alert"] { color: var(--violated); }
 .document-notes textarea { resize: vertical; width: 100%; min-height: 140px; padding: 10px; line-height: 1.6; }
 .document-notes textarea::placeholder { color: var(--faint); }
-.document-note-actions { display: flex; justify-content: space-between; gap: 8px; margin-top: 10px; }
+.document-note-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px; }
 .document-note-actions button, .document-error button, .document-review-banner button, .document-submitted button { padding: 6px 10px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--panel-2); color: var(--ink); }
 .document-note-actions .btn--accent { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
 .document-submitted { margin-top: 24px; border-top: 1px solid var(--line); padding-top: 12px; }

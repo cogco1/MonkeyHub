@@ -221,9 +221,9 @@ try {
     assert.deepEqual(await marks(), initial, "the visible document keeps the original stroke IDs");
   });
   currentCase = "settle the keyboard history's serial annotation saves";
+  // GH-302: the page saves itself; there is no Save button to press.
   await page.locator(".document-save-state").filter({ hasText: /^Saved$/ }).waitFor({ timeout: 90_000 });
-  await page.locator(".document-notes").getByRole("button", { name: "Save page", exact: true }).click();
-  await page.locator(".document-save-state").filter({ hasText: /^Saved$/ }).waitFor();
+  assert.equal(await page.locator(".document-notes").getByRole("button", { name: "Save page", exact: true }).count(), 0);
   const query = new URLSearchParams({ runId, assetSha256: assetSha, pageIndex: "0" });
   const saved = await context.request.get(new URL(`/api/document-annotations?${query}`, appUrl).href);
   assert.equal(saved.status(), 200);

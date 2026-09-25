@@ -70,11 +70,13 @@ const server = await createServer({ root, configFile: false, resolve: { dedupe: 
     }); },
   }],
 });
-let browser, page, hold = false, release, broken = false, current;
+let browser, page, hold = false, release, broken = false, refuseNext = false, current;
 const requests = [], statusRequests = [], drives = [], errors = [], passed = [], vectorBytes = new Map();
 async function step(name, action) { current = name; await action(); passed.push(name); console.log(`PASS ${name}`); }
 const revision = () => page.getByRole("combobox", { name: "Drawing", exact: true });
 const source = () => page.getByRole("combobox", { name: "Version to draw", exact: true });
+// GH-302: appearance saves itself; the only save button left is Retry after a refusal.
+const saveButton = () => page.getByRole("button", { name: "Save appearance as a revision", exact: true });
 const legacyKey = JSON.stringify([legacyDocument.runId, legacyDocument.assetSha256, legacyDocument.revisionRef]);
 async function until(read, accepts, label) {
   const deadline = Date.now() + 12000; let value;
@@ -94,6 +96,7 @@ try {
     const body = route.request().postDataJSON(); requests.push(body);
     const serial = requests.length;
     if (hold) { hold = false; await new Promise(resolve => { release = resolve; }); release = null; }
+    if (refuseNext) { refuseNext = false; return route.fulfill({ status: 503, json: { code: "RUNTIME_BUSY", detail: "Fixture refused this drawing revision." } }); }
     // Like the runtime: a chosen version is kept on later revisions until one follows again.
     const previous = body.previousRevisionRef ? await page.evaluate(ref => window.drawingFixture.documents.find(d => d.revisionRef === ref) ?? null, body.previousRevisionRef) : null;
     const follow = body.follow ?? previous?.viewRecipe?.follow;
@@ -161,10 +164,12 @@ try {
     await revision().selectOption(JSON.stringify([legacyDocument.runId, legacyDocument.assetSha256, legacyDocument.revisionRef]));
     await page.getByText("900 mm", { exact: true }).waitFor();
     oldRevision = await revision().inputValue();
+    assert.equal(await saveButton().count(), 0, "appearance has no Save button");
     await page.getByLabel("Scale denominator (1 : n)", { exact: true }).fill("50");
     await page.getByLabel("Label offset (paper mm)", { exact: true }).fill("16");
-    await page.getByRole("button", { name: "Save appearance as a revision", exact: true }).click();
-    await until(() => revision().inputValue(), value => value !== oldRevision, "new drawing revision opened");
+    await page.getByText("Generating…", { exact: true }).waitFor();
+    await until(() => revision().inputValue(), value => value !== oldRevision, "the edits saved themselves as a new revision");
+    assert.equal(requests.length, 2, "two edits inside one pause make one revision");
     assert.equal(requests[1].previousRevisionRef, legacyDocument.revisionRef); assert.equal(requests[1].drawingId, "floor-plan");
     assert.equal(requests[1].dimensions[0].id, savedDimension.id); assert.equal(requests[1].dimensions[0].placement.offsetMm, 16);
     assert.equal(drives.length, 0);
@@ -252,12 +257,14 @@ try {
   });
   await step("a late generation response never changes another workspace selection", async () => {
     const before = await revision().inputValue(); hold = true;
-    await page.getByRole("button", { name: "Save appearance as a revision", exact: true }).click();
+    const scale = page.getByLabel("Scale denominator (1 : n)", { exact: true });
+    await scale.fill(await scale.inputValue() === "75" ? "80" : "75");
     await until(() => Promise.resolve(Boolean(release)), Boolean, "held generation");
     await page.evaluate(() => window.drawingFixture.setActive(false)); release();
-    await page.getByRole("button", { name: "Save appearance as a revision", exact: true }).waitFor();
+    await until(() => revision().isEnabled(), Boolean, "the held answer is settled");
     assert.equal(await revision().inputValue(), before);
     await page.evaluate(() => window.drawingFixture.setActive(true));
+    await until(() => revision().inputValue(), value => value !== before, "the edit kept while hidden saves itself on return");
   });
   await step("an empty representation field cannot silently reuse old values during rebuild", async () => {
     await until(() => page.getByLabel("Cut height (meter)", { exact: true }).isEnabled(), Boolean, "active form");
@@ -288,9 +295,9 @@ try {
     await page.getByRole("button", { name: "Add tree", exact: true }).click();
     assert.equal(await page.locator('[data-dressing-id]').count(), 2);
     await page.getByLabel("Position follows", { exact: true }).selectOption("obj-wall");
-    const old = await revision().inputValue();
-    await page.getByRole("button", { name: "Save appearance as a revision", exact: true }).click();
-    await until(() => revision().inputValue(), value => value !== old, "dressing revision");
+    await until(() => Promise.resolve(requests.at(-1).dressing?.[1]?.anchorObjectId === "obj-wall"), Boolean, "dressing revision");
+    await until(() => page.getByText("Generating…", { exact: true }).count(), (value) => value === 0, "dressing revision opened");
+    const old = legacyKey;
     const newRevision = await revision().inputValue();
     assert.equal(requests.at(-1).dressing.length, 2);
     assert.equal(requests.at(-1).dressing[0].id, id); assert.equal(requests.at(-1).dressing[0].flipped, true);
@@ -300,7 +307,6 @@ try {
     await page.getByLabel("Selected object", { exact: true }).selectOption(id);
     await page.getByRole("button", { name: "Delete object", exact: true }).click();
     assert.equal(await page.locator('[data-dressing-id]').count(), 1);
-    await page.getByRole("button", { name: "Save appearance as a revision", exact: true }).click();
     await until(() => revision().inputValue(), value => value !== newRevision, "deletion retained");
     assert.equal(requests.at(-1).dressing.length, 1);
     await page.waitForFunction(() => { const image = document.querySelector(".drawing-vector-base"); return image?.complete && image.naturalWidth > 0; });
@@ -317,9 +323,11 @@ try {
     const savedScale = await page.evaluate(ref => window.drawingFixture.documents.find(d => d.revisionRef === ref).viewRecipe.frame.scale, revisionRef);
     assert.match(svg, /width="[\d.]+mm"/); assert.ok(svg.includes(`data-scale="${savedScale}"`), "the download keeps the saved revision's scale");
     assert.match(svg, /data-object="obj-wall"/); assert.match(svg, /data-dressing-id=/);
+    const beforeAdd = await revision().inputValue();
     await page.getByRole("button", { name: "Add person", exact: true }).click();
     assert.equal(await downloadButton.isDisabled(), true, "unsaved appearance cannot be downloaded as a retained version");
-    await page.getByText("Save appearance changes before downloading SVG.", { exact: true }).waitFor();
+    await until(() => revision().inputValue(), value => value !== beforeAdd, "the added person saved itself");
+    await until(() => downloadButton.isEnabled(), Boolean, "the saved revision downloads again");
     await revision().selectOption(oldRevision);
     await until(() => downloadButton.isEnabled(), Boolean, "historical SVG available");
     const [oldDownload] = await Promise.all([page.waitForEvent("download"), downloadButton.click()]);
@@ -330,24 +338,37 @@ try {
   await step("retained dimensions can be removed without rewriting their original revision", async () => {
     await page.getByRole("button", { name: "Remove dimension", exact: true }).click();
     assert.equal(await page.getByRole("group", { name: "Saved dimensions", exact: true }).count(), 0);
-    await page.getByRole("button", { name: "Save appearance as a revision", exact: true }).click();
     await until(() => revision().inputValue(), value => value !== oldRevision, "dimension removal retained");
     assert.deepEqual(requests.at(-1).dimensions, []);
     assert.deepEqual(await page.evaluate(() => window.drawingFixture.documents.find(document => document.revisionRef === "revision-legacy").viewRecipe.dimensions), [savedDimension]);
     assert.equal(drives.length, 0);
   });
+  await step("a refused appearance save keeps its edits, says so and can be retried", async () => {
+    const before = await revision().inputValue(), sent = requests.length;
+    refuseNext = true;
+    await page.getByLabel("Cut height (meter)", { exact: true }).fill("1.4");
+    await page.locator(".drawing-actions .error-panel").waitFor();
+    await page.getByText("Save appearance changes before downloading SVG.", { exact: true }).waitFor();
+    assert.equal(await page.getByLabel("Cut height (meter)", { exact: true }).inputValue(), "1.4", "the refused edit stays in its field");
+    await new Promise(resolve => setTimeout(resolve, 1200));
+    assert.equal(requests.length, sent + 1, "a refusal is not retried in a loop");
+    await saveButton().click();
+    await until(() => revision().inputValue(), value => value !== before, "retry saves the kept edit");
+    assert.equal(requests.at(-1).cutHeight, 1.4);
+    assert.equal(await saveButton().count(), 0);
+  });
   await step("keyboard controls and English/Chinese narrow layouts keep the drawing usable", async () => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.evaluate(() => window.drawingFixture.setLanguage("zh-CN"));
-    await page.getByRole("button", { name: "保存表达新版本", exact: true }).waitFor();
+    await page.getByRole("button", { name: "下载 SVG", exact: true }).waitFor();
     await page.evaluate(() => { document.querySelector('.drawing-body').scrollTop = 0; document.querySelector('.drawing-controls__fields').scrollTop = 0; });
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
     await page.screenshot({ path: join(screenshots, "drawing-narrow.png"), fullPage: true });
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.evaluate(() => { window.drawingFixture.setLanguage("en"); window.drawingFixture.setTheme("dark"); });
     await page.evaluate(() => { document.querySelector('.drawing-body').scrollTop = 0; document.querySelector('.drawing-controls__fields').scrollTop = 0; });
-    const saveBounds = await page.getByRole("button", { name: "Save appearance as a revision", exact: true }).boundingBox();
-    assert.ok(saveBounds && saveBounds.y >= 0 && saveBounds.y + saveBounds.height <= 900, "Save stays visible beside the drawing while settings scroll");
+    const actionBounds = await page.getByRole("button", { name: "Download SVG", exact: true }).boundingBox();
+    assert.ok(actionBounds && actionBounds.y >= 0 && actionBounds.y + actionBounds.height <= 900, "the drawing's actions stay visible beside it while settings scroll");
     await page.screenshot({ path: join(screenshots, "drawing-wide-dark.png"), fullPage: true });
     // Choosing another version is a disclosed, explicit action; the LIVE drawing needs no choice.
     if (!await source().isVisible()) await page.getByText("Draw another version", { exact: true }).click();
@@ -357,7 +378,8 @@ try {
   });
   await step("a response for a previous project never opens a document in the new project", async () => {
     hold = true;
-    await page.getByRole("button", { name: "Save appearance as a revision", exact: true }).click();
+    const scale = page.getByLabel("Scale denominator (1 : n)", { exact: true });
+    await scale.fill(await scale.inputValue() === "60" ? "65" : "60");
     await until(() => Promise.resolve(Boolean(release)), Boolean, "held project generation");
     await page.evaluate(() => window.drawingFixture.setProject("another-project"));
     await page.getByRole("button", { name: "Generate cut plan", exact: true }).waitFor();

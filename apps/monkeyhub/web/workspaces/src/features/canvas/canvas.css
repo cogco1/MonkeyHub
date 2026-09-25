@@ -21,3 +21,13 @@
 }
 .project-canvas .excalidraw .default-sidebar-trigger, .project-canvas .excalidraw .default-sidebar { display: none !important; }
 .project-canvas .excalidraw button { font-size: inherit; }
+/* The canvas's chrome stays on its own surface. Excalidraw forces its zoom,
+   undo and zen-mode exit to visibility: visible, which showed them through a
+   Hub panel hidden by visibility, over the chat composer; here they follow the
+   host instead. The host is its own stacking context, so Excalidraw's layers
+   never interleave with the page around it. */
+.project-canvas { isolation: isolate; }
+.project-canvas .excalidraw .zen-mode-visibility:not(.zen-mode-visibility--hidden),
+.project-canvas .excalidraw .ToolIcon_type_button--show,
+.project-canvas .excalidraw .layer-ui__wrapper .disable-zen-mode--visible,
+.project-canvas .excalidraw .ExcButton .ExcButton__statusIcon { visibility: inherit; }
