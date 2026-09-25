@@ -16,7 +16,7 @@ and, when the caller knows them, its ``data-component`` and
 ``data-material``; what role it plays is the group it is in.
 
 Cleanup.  ``clean_drawing`` sits beside ``crop_polylines`` between the
-projection and the SVG: it drops what a pen should not draw (lines shorter
+projection and the SVG: it drops what a pen should not draw (strokes shorter
 than the paper tolerance, projected edges lying on the cut, hidden lines
 under visible ones or inside the cut) and joins an object's collinear
 pieces, and it reports what it did by rule.  It never moves a vertex.
@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import math
 import base64
+import re
 from dataclasses import dataclass
 from io import BytesIO
 from typing import Any, Mapping, Sequence
@@ -233,6 +234,50 @@ class _EndIndex:
                       for end in self.cells.get((column + dx, row + dy), ()))
 
 
+def _micro(lines, tolerance: float):
+    """The lines of every stroke at least ``tolerance`` long, and how many lines the shorter strokes held.
+
+    A stroke is an object's lines of one kind that meet end to end within the
+    tolerance, taken together: a curve the solve returns as many short edges
+    is one long stroke and stays, while a speck, or a stub standing free
+    against another line, goes.  A line of no length goes whatever it touches.
+    """
+
+    kept: list[OcctDrawingPolyline] = []
+    dropped = 0
+    groups: dict[tuple[str, str], list[OcctDrawingPolyline]] = {}
+    for line in lines:
+        groups.setdefault((line.object_id, line.kind), []).append(line)
+    for members in groups.values():
+        parent = list(range(len(members)))
+
+        def root(number: int) -> int:
+            while parent[number] != number:
+                parent[number] = parent[parent[number]]
+                number = parent[number]
+            return number
+
+        index = _EndIndex(tolerance)
+        for number, line in enumerate(members):
+            index.add(number, line.points)
+        for number, line in enumerate(members):
+            for end in (line.points[0], line.points[-1]):
+                for other, other_at_end in index.near(end):
+                    meeting = members[other].points[-1] if other_at_end else members[other].points[0]
+                    if other != number and math.dist(end, meeting) <= tolerance:
+                        parent[root(other)] = root(number)
+        own = [_path_length(line.points) for line in members]
+        lengths: dict[int, float] = {}
+        for number, length in enumerate(own):
+            lengths[root(number)] = lengths.get(root(number), 0.0) + length
+        for number, line in enumerate(members):
+            if own[number] > 0.0 and lengths[root(number)] >= tolerance:
+                kept.append(line)
+            else:
+                dropped += 1
+    return kept, dropped
+
+
 def _join_collinear(lines, tolerance: float):
     """Join each object's pieces that continue one another; returns the lines and the number of joins.
 
@@ -241,9 +286,8 @@ def _join_collinear(lines, tolerance: float):
     directions to within 0.5 degrees.  All vertices stay where they were: a
     shared end point is written once, and a gap of at most the tolerance
     becomes a bridging segment.  Lines are taken in sorted order and each is
-    extended at its end, then at its start, as long as a continuation exists,
-    choosing the straightest, then the nearest, then the first; the result
-    is a fixed point, so joining again finds nothing.
+    extended at its end and at its start, again until neither end extends,
+    choosing the straightest, then the nearest, then the first continuation.
     """
 
     limit = math.cos(_COLLINEAR_RADIANS)
@@ -260,49 +304,51 @@ def _join_collinear(lines, tolerance: float):
         for number, chain in enumerate(chains):
             index.add(number, chain)
         for number in range(len(chains)):
-            if not alive[number]:
-                continue
-            for at_end in (True, False):
-                while True:
-                    chain = chains[number]
-                    joint = chain[-1] if at_end else chain[0]
-                    outward = _end_direction(chain, at_end, tolerance)
-                    if outward is None:
-                        break
-                    best = None
-                    for other, other_at_end in index.near(joint):
-                        if other == number or not alive[other]:
-                            continue
-                        candidate = chains[other]
-                        meeting = candidate[-1] if other_at_end else candidate[0]
-                        gap = math.dist(joint, meeting)
-                        leaving = _end_direction(candidate, other_at_end, tolerance)
-                        if gap > tolerance or leaving is None:
-                            continue
-                        # Continuation: the two lines leave the joint in opposite directions.
-                        straightness = -(outward[0] * leaving[0] + outward[1] * leaving[1])
-                        if straightness < limit:
-                            continue
-                        key = (-straightness, gap, other, other_at_end)
-                        if best is None or key < best:
-                            best = key
-                    if best is None:
-                        break
-                    _, _, other, other_at_end = best
-                    index.remove(number, chain)
-                    index.remove(other, chains[other])
-                    piece = chains[other]
-                    if at_end:
-                        piece = piece[::-1] if other_at_end else piece
-                        joined = chain + (piece[1:] if piece[0] == chain[-1] else piece)
-                    else:
-                        piece = piece if other_at_end else piece[::-1]
-                        joined = (piece[:-1] if piece[-1] == chain[0] else piece) + chain
-                    chains[number] = joined
-                    alive[other] = False
-                    changed[number] = True
-                    joins += 1
-                    index.add(number, joined)
+            extended = alive[number]
+            # A join at one end can turn a short chain's other end; both are tried until neither extends.
+            while extended:
+                extended = False
+                for at_end in (True, False):
+                    while True:
+                        chain = chains[number]
+                        joint = chain[-1] if at_end else chain[0]
+                        outward = _end_direction(chain, at_end, tolerance)
+                        if outward is None:
+                            break
+                        best = None
+                        for other, other_at_end in index.near(joint):
+                            if other == number or not alive[other]:
+                                continue
+                            candidate = chains[other]
+                            meeting = candidate[-1] if other_at_end else candidate[0]
+                            gap = math.dist(joint, meeting)
+                            leaving = _end_direction(candidate, other_at_end, tolerance)
+                            if gap > tolerance or leaving is None:
+                                continue
+                            # Continuation: the two lines leave the joint in opposite directions.
+                            straightness = -(outward[0] * leaving[0] + outward[1] * leaving[1])
+                            if straightness < limit:
+                                continue
+                            key = (-straightness, gap, other, other_at_end)
+                            if best is None or key < best:
+                                best = key
+                        if best is None:
+                            break
+                        _, _, other, other_at_end = best
+                        index.remove(number, chain)
+                        index.remove(other, chains[other])
+                        piece = chains[other]
+                        if at_end:
+                            piece = piece[::-1] if other_at_end else piece
+                            joined = chain + (piece[1:] if piece[0] == chain[-1] else piece)
+                        else:
+                            piece = piece if other_at_end else piece[::-1]
+                            joined = (piece[:-1] if piece[-1] == chain[0] else piece) + chain
+                        chains[number] = joined
+                        alive[other] = False
+                        changed[number] = extended = True
+                        joins += 1
+                        index.add(number, joined)
         for number, chain in enumerate(chains):
             if alive[number]:
                 points = tuple(chain)
@@ -431,6 +477,8 @@ class _RegionCover:
         self.regions = []
         for region in regions:
             points = [p for loop in region.loops for p in loop]
+            if not points:
+                continue
             edges = [(a, b) for loop in region.loops for a, b in zip(loop, loop[1:]) if a != b]
             bounds = (min(p[0] for p in points), min(p[1] for p in points),
                       max(p[0] for p in points), max(p[1] for p in points))
@@ -455,23 +503,42 @@ class _RegionCover:
         return list(zip(crossings[::2], crossings[1::2]))
 
     def covers(self, points) -> bool:
+        """Whether the line lies inside the regions all along; only its two ends may overrun, by the tolerance.
+
+        Inside stretches are measured along the whole line, so neither a line
+        of short segments nor one that leaves the material between them passes.
+        """
+
         if not self.regions:
             return False
         pad = self.tolerance
+        inside, travelled = [], 0.0
         for a, b in zip(points, points[1:]):
-            if a == b:
+            length = math.dist(a, b)
+            if length == 0.0:
                 continue
             low_x, high_x = min(a[0], b[0]) - pad, max(a[0], b[0]) + pad
             low_y, high_y = min(a[1], b[1]) - pad, max(a[1], b[1]) + pad
-            intervals = []
             for (x0, y0, x1, y1), edges in self.regions:
                 if x1 < low_x or x0 > high_x or y1 < low_y or y0 > high_y:
                     continue
-                intervals.extend(self._inside(a, b, edges))
-            # An end may overrun the boundary by up to the tolerance.
-            if not _covered(intervals, self.tolerance / math.dist(a, b)):
+                for low, high in self._inside(a, b, edges):
+                    low, high = max(low, 0.0), min(high, 1.0)
+                    if low < high:
+                        inside.append((travelled + low * length, travelled + high * length))
+            travelled += length
+        if not inside:
+            return False
+        inside.sort()
+        slack = _COVER_SLACK * travelled
+        if inside[0][0] > self.tolerance:
+            return False
+        reach = inside[0][1]
+        for low, high in inside[1:]:
+            if low > reach + slack:
                 return False
-        return True
+            reach = max(reach, high)
+        return travelled - reach <= self.tolerance
 
 
 def clean_drawing(
@@ -485,7 +552,9 @@ def clean_drawing(
     the paper tolerance times the sheet scale.  The rules run in this order,
     each on what the one before kept:
 
-    1. ``micro``: a line shorter than the tolerance is dropped;
+    1. ``micro``: a stroke shorter than the tolerance is dropped; a stroke
+       is an object's lines of one kind meeting end to end within it
+       (``_micro``), so a curve returned as many short edges stays;
     2. ``collinear``: an object's pieces that meet within the tolerance and
        continue one another to within 0.5 degrees are joined into one line
        (``_join_collinear``); no vertex moves;
@@ -495,12 +564,15 @@ def clean_drawing(
     4. ``duplicate``: a hidden line lying within the tolerance of visible
        lines all along is dropped; the visible line stays;
     5. ``hidden_under_cut``: a hidden line lying inside the section regions
-       (even-odd) is dropped.  Pass hidden lines only when they will be drawn.
+       (even-odd) all along, but for a tolerance at either end, is dropped.
+       Pass hidden lines only when they will be drawn.
 
-    A line is kept or dropped whole: a partly covered line stays.  The lines
-    come back sorted as ``crop_polylines`` sorts them, with the report;
-    cleaning them again changes nothing.  What the hidden-line solve itself
-    misjudges is outside these rules.
+    A line is kept or dropped whole: a partly covered line stays.  When a
+    rule leaves a stroke standing alone, the rules run again, in the same
+    order, until a pass changes nothing, so cleaning the result again
+    changes nothing; the counts add up over the passes.  The lines come
+    back sorted as ``crop_polylines`` sorts them, with the report.  What the
+    hidden-line solve itself misjudges is outside these rules.
     """
 
     if (isinstance(tolerance, bool) or not isinstance(tolerance, (int, float)) or not math.isfinite(tolerance)
@@ -518,22 +590,28 @@ def clean_drawing(
         distinct.add(line)
     for region in regions:
         _closed_loops(region)
-    kept = sorted(distinct, key=lambda line: (line.object_id, line.kind, line.points))
-    counts = {}
-    remaining = [line for line in kept if _path_length(line.points) >= tolerance]
-    counts["micro"] = len(kept) - len(remaining)
-    remaining, counts["collinear"] = _join_collinear(remaining, tolerance)
-    cut = _SegmentCover([line for line in remaining if line.kind == "section"], tolerance)
-    kept = [line for line in remaining if line.kind == "section" or not cut.covers(line.points)]
-    counts["cut_precedence"] = len(remaining) - len(kept)
-    seen = _SegmentCover([line for line in kept if line.kind == "visible"], tolerance)
-    remaining = [line for line in kept if line.kind != "hidden" or not seen.covers(line.points)]
-    counts["duplicate"] = len(kept) - len(remaining)
+    order = lambda line: (line.object_id, line.kind, line.points)  # noqa: E731
+    counts = dict.fromkeys(("micro", "collinear", "cut_precedence", "duplicate", "hidden_under_cut"), 0)
     under = _RegionCover(regions, tolerance)
-    kept = [line for line in remaining if line.kind != "hidden" or not under.covers(line.points)]
-    counts["hidden_under_cut"] = len(remaining) - len(kept)
-    result = tuple(sorted(kept, key=lambda line: (line.object_id, line.kind, line.points)))
-    return result, CleanupReport(tolerance=tolerance, input_lines=len(distinct), output_lines=len(result), **counts)
+    kept = sorted(distinct, key=order)
+    while True:
+        before = kept
+        remaining, dropped = _micro(kept, tolerance)
+        counts["micro"] += dropped
+        remaining, joined = _join_collinear(remaining, tolerance)
+        counts["collinear"] += joined
+        cut = _SegmentCover([line for line in remaining if line.kind == "section"], tolerance)
+        kept = [line for line in remaining if line.kind == "section" or not cut.covers(line.points)]
+        counts["cut_precedence"] += len(remaining) - len(kept)
+        seen = _SegmentCover([line for line in kept if line.kind == "visible"], tolerance)
+        remaining = [line for line in kept if line.kind != "hidden" or not seen.covers(line.points)]
+        counts["duplicate"] += len(kept) - len(remaining)
+        kept = [line for line in remaining if line.kind != "hidden" or not under.covers(line.points)]
+        counts["hidden_under_cut"] += len(remaining) - len(kept)
+        kept = sorted(kept, key=order)
+        if kept == before:
+            break
+    return tuple(kept), CleanupReport(tolerance=tolerance, input_lines=len(distinct), output_lines=len(kept), **counts)
 
 
 def _number(value: float) -> str:
@@ -577,8 +655,17 @@ def _dressing_svg(dressing, crop, paper_per_unit):
     return result
 
 
+#: What XML 1.0 cannot carry at all, not even escaped (including lone surrogates).
+_NOT_XML_TEXT = re.compile("[^\t\n\r\x20-퟿-�\U00010000-\U0010ffff]")
+
+
 def _semantic_rows(semantics) -> dict[str, tuple[str, str | None]]:
-    """Per object id: the ``data-component``/``data-material`` attributes it writes, and its material."""
+    """Per object id: the ``data-component``/``data-material`` attributes it writes, and its material.
+
+    The values are the model's own user text; a character XML cannot carry
+    is written as U+FFFD so the SVG stays well formed, while the material
+    rules still match the text as given.
+    """
 
     if semantics is None:
         return {}
@@ -590,8 +677,8 @@ def _semantic_rows(semantics) -> dict[str, tuple[str, str | None]]:
                 or not set(row) <= {"component", "material"}
                 or any(value is not None and (not isinstance(value, str) or not value) for value in row.values())):
             raise DrawingSvgError("semantics give each object id a component and a material as non-empty text, or omit them")
-        attributes = "".join(f" data-{key}={quoteattr(row[key])}" for key in ("component", "material")
-                             if row.get(key) is not None)
+        attributes = "".join(f" data-{key}={quoteattr(_NOT_XML_TEXT.sub(chr(0xFFFD), row[key]))}"
+                             for key in ("component", "material") if row.get(key) is not None)
         rows[object_id] = (attributes, row.get("material"))
     return rows
 
@@ -669,10 +756,11 @@ def drawing_svg(
     ``data-component``/``data-material`` after its ``data-object``, and a
     missing value writes nothing.  The role stays the group: ``section`` is
     the cut and, in a cut plan, ``visible`` lies beyond it.  ``graphics``
-    (paper mm) may add material rules and the beyond fade
-    (``_graphics_rules``); a region whose object's material has a rule is
-    hatched or filled by it, any other as before.  Without semantics, rules
-    and fade the bytes are the same as before they existed.
+    (paper mm) may add material rules and the beyond fade, which greys the
+    visible and hidden lines (``_graphics_rules``); a region whose object's
+    material has a rule is hatched or filled by it, any other as before.
+    Without semantics, rules and fade the bytes are the same as before they
+    existed.
     """
 
     if projection not in (None, "section-perspective"):
@@ -716,15 +804,15 @@ def drawing_svg(
         + f'data-crop-uv="{" ".join(_number(v) for v in crop)}" data-hidden-lines="{"true" if hidden_lines else "false"}">',
         f"  <title>{_escape(title)}</title>",
     ]
-    body: list[str] = []
-    if hidden_lines:
-        dash = " ".join(pen(mm) for mm in _HIDDEN_DASH_MM)
-        body.extend(group("hidden", f'stroke-width="{pen(_HIDDEN_PEN_MM)}" stroke-dasharray="{dash}"'))
     rules, fade = {}, None
     if graphics is not None:
         for key in ("visibleLineMm", "cutLineMm", "hatchSpacingMm"):
             _positive_mm(graphics.get(key), key)
         rules, fade = _graphics_rules(graphics)
+    body: list[str] = []
+    if hidden_lines:
+        dash = " ".join(pen(mm) for mm in _HIDDEN_DASH_MM)
+        body.extend(group("hidden", f'stroke-width="{pen(_HIDDEN_PEN_MM)}" stroke-dasharray="{dash}"', _grey_paint(fade)))
     body.extend(group("visible", f'stroke-width="{pen(_VISIBLE_PEN_MM if graphics is None else graphics["visibleLineMm"])}"',
                       _grey_paint(fade)))
     if graphics is not None:

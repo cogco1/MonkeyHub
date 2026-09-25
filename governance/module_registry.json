@@ -2856,7 +2856,7 @@
         "nothing is written before the source verified, the frame checked and the projection and both renderings succeeded",
         "the drawing run's base is the source run's base, never the current HEAD; a run with another base is refused",
         "HEAD is read before and after and must be the same; the SVG, PNG and receipt are read back through the repository before the result is reported",
-        "the same source and view give the same SVG/PNG bytes and the same receipt; a repeat lands on the same paths",
+        "the same source and view give the same SVG/PNG bytes; with the same attribution and reason they also give the same receipt, and a repeat lands on the same paths",
         "two identities only: the SVG/PNG content (sha256) and the source binding (run, base, STEP, CAD receipt, object ids, frame); the receipt digests nothing of itself",
         "Observations are plain values; callback failure cannot alter or repeat projection or persistence; input and emitted object ids do not claim a changed-object-only visibility solve",
         "Existing elevation/top recipe and digest bytes keep their original meaning; cut-plan is an explicit recipe kind. Missing retained visibility ids and dimension intent remain explicit in the new receipt.",

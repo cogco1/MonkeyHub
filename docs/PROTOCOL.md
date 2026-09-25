@@ -595,8 +595,8 @@ cut at its paper spacing and angle, or fills it as one stroke-free even-odd `pol
 `g#section-hatch`; other cuts keep `hatchSpacingMm` at 45 degrees, and `beyond.fade`
 (0 black to 1 white) greys the lines beyond the cut. A recipe without these keys draws
 what it drew before. Before the SVG, a deterministic cleanup at 0.05 mm on the sheet
-drops micro lines, projected edges lying on the cut and hidden lines under visible ones
-or inside the cut, and joins an object's collinear pieces. The drawing receipt keeps its
+drops strokes shorter than that, projected edges lying on the cut and hidden lines under
+visible ones or inside the cut, and joins an object's collinear pieces. The drawing receipt keeps its
 per-rule counts under `cleanup` (never in the recipe) and, when the application gives
 them, the revision's `attribution` and `reason`; receipts retained earlier have none.
 
