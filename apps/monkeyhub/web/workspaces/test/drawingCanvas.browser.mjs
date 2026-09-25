@@ -29,7 +29,7 @@ import {UserPreferencesProvider,useStudio,usePreferences} from '/test/TestProvid
 import '/src/styles.css';
 import '/@fs/${root}/../../../shared-web/src/base.css';
 const modelA=${JSON.stringify(modelA)},modelB=${JSON.stringify(modelB)};
-const metrics=window.drawingFixture={requests:[],documents:[${JSON.stringify(legacyDocument)}],handoffs:[],head:'stage-A'};
+const metrics=window.drawingFixture={requests:[],documents:[${JSON.stringify(legacyDocument)}],handoffs:[],head:'stage-A',revision:0,headDrawable:true};
 const stages=[{stageRef:'stage-A',label:'Accepted A',branchId:'main',modelSource:modelA}, {stageRef:'stage-B',label:'Accepted B',branchId:'main',modelSource:modelB}];
 function App(){
  const studio=useStudio(),[active,setActive]=useState(true),[projectId,setProjectId]=useState('drawing-project');
@@ -37,6 +37,13 @@ function App(){
  const [installed]=useState(()=>{
   studio.documents=async()=>({projectId:metrics.projectId,runId:null,documents:metrics.documents.filter(d=>d.projectId===metrics.projectId)});
   studio.designHistory=async()=>({projectId:metrics.projectId,branchId:'main',branches:[{branchId:'main',headStageRef:metrics.head}],stages});
+  studio.workingSource=async(workspace)=>{
+   const model=metrics.head==='stage-B'?modelB:modelA;
+   const head={runId:model.runId,stateDigest:model.stateDigest,recordDigest:'r',sourceStageRef:metrics.head,branchId:'main',accepted:true,origin:'working-position',label:null,modelSource:model,lineage:[model.runId]};
+   return metrics.headDrawable?{projectId:metrics.projectId,workspace,policy:'live',revisionSha256:String(metrics.revision),head,compatible:true,source:model,stageRef:metrics.head,reason:null,warnings:[]}
+    :{projectId:metrics.projectId,workspace,policy:'live',revisionSha256:String(metrics.revision),head,compatible:false,source:null,stageRef:null,reason:'The current working version has no complete model to draw from yet.',warnings:[]};
+  };
+  studio.workingDraft=async()=>({projectId:metrics.projectId,revisionSha256:String(metrics.revision),current:null,recovery:[],saved:[],managedRunIds:[],localDraft:null});
   studio.documentFile=async(runId,sha,name,revisionRef)=>{
    metrics.requests.push({kind:'bytes',runId,sha,revisionRef});
    const canvas=document.createElement('canvas');canvas.width=600;canvas.height=400;
@@ -66,8 +73,9 @@ const server = await createServer({ root, configFile: false, resolve: { dedupe: 
 let browser, page, hold = false, release, broken = false, current;
 const requests = [], statusRequests = [], drives = [], errors = [], passed = [], vectorBytes = new Map();
 async function step(name, action) { current = name; await action(); passed.push(name); console.log(`PASS ${name}`); }
-const revision = () => page.getByRole("combobox", { name: "Drawing revision", exact: true });
-const source = () => page.getByRole("combobox", { name: "Model to draw", exact: true });
+const revision = () => page.getByRole("combobox", { name: "Drawing", exact: true });
+const source = () => page.getByRole("combobox", { name: "Version to draw", exact: true });
+const legacyKey = JSON.stringify([legacyDocument.runId, legacyDocument.assetSha256, legacyDocument.revisionRef]);
 async function until(read, accepts, label) {
   const deadline = Date.now() + 12000; let value;
   do { assert.deepEqual(errors, []); value = await read(); if (accepts(value)) return value; await new Promise(resolve => setTimeout(resolve, 50)); } while (Date.now() < deadline);
@@ -110,12 +118,15 @@ try {
   await page.route("**/api/drawings/plans/status", async route => {
     const body = route.request().postDataJSON(); statusRequests.push(body);
     const sourceDocument = await page.evaluate(body => window.drawingFixture.documents.find(d => d.revisionRef === body.revisionRef), body);
+    if (!body.targetModelSource && !body.targetStageRef && !await page.evaluate(() => window.drawingFixture.headDrawable))
+      return route.fulfill({ json: { status: "outdated", detail: "The current model cannot be drawn yet: no exact STEP.", targetModelSource: null,
+        targetStageRef: null, lengthUnit: null, bindingChanged: false, dimensions: [] } });
     const targetStageRef = body.targetStageRef ?? await page.evaluate(() => window.drawingFixture.head);
     const targetModelSource = body.targetModelSource ?? (targetStageRef === "stage-B" ? modelB : modelA);
     const outdated = targetModelSource.runId !== sourceDocument.modelSource.runId;
     await route.fulfill({ json: { status: broken ? "partially-broken" : outdated ? "outdated" : "current",
       detail: broken ? "Door no longer exists." : outdated ? "Selected model differs from this drawing." : "Exact source retained.",
-      targetModelSource, targetStageRef, lengthUnit: "meter",
+      targetModelSource, targetStageRef, lengthUnit: "meter", bindingChanged: outdated,
       dimensions: sourceDocument.viewRecipe.dimensions.map(d => ({ ...d, status: broken === "outside-view" ? "outside-view" : broken ? "missing" : "resolved", value: .9, label: "900 mm",
         offsetMm: d.placement.offsetMm, canDrive: !outdated && !broken, parameterKey: "door-width", detail: broken ? "Door anchor is missing." : null })) } });
   });
@@ -124,11 +135,16 @@ try {
     return route.fulfill({ json: { proposalId: "dimension-proposal", baseStateDigest: body.targetModelSource.stateDigest } });
   });
   await page.goto(`http://127.0.0.1:${server.httpServer.address().port}/?lang=en`);
-  await step("a new cut plan starts with model and appearance choices without a door-width experiment", async () => {
-    await page.getByRole("button", { name: "Generate cut plan", exact: true }).waitFor();
-    await until(() => source().inputValue(), value => value === "stage-A", "accepted source selected");
+  await step("the newest drawing opens LIVE on the Working Head and a new cut plan draws the head", async () => {
+    await until(() => revision().inputValue(), value => value === legacyKey, "newest drawing opened without choosing a revision");
+    await page.locator('.drawing-status[data-follow="live"][data-status="current"]').waitFor();
+    await page.getByText("Current with the project model", { exact: true }).waitFor();
+    assert.equal(requests.length, 0, "a drawing already reading the head is not rebuilt");
+    assert.equal(statusRequests.at(-1).targetModelSource, undefined, "LIVE status asks the runtime for the Working Head");
     assert.equal(await page.getByRole("combobox", { name: "Choose a door", exact: true }).count(), 0);
     assert.equal(await page.getByRole("button", { name: "Add dimension", exact: true }).count(), 0);
+    await revision().selectOption("");
+    await page.getByRole("button", { name: "Generate cut plan", exact: true }).waitFor();
     assert.equal(await page.getByRole("group", { name: "Saved dimensions", exact: true }).count(), 0);
     await page.getByRole("button", { name: "Generate cut plan", exact: true }).click();
     await page.locator('.drawing-preview__viewport[data-ready="true"]').waitFor();
@@ -149,44 +165,56 @@ try {
     assert.equal(drives.length, 0);
     await revision().selectOption(oldRevision); assert.equal(await page.getByLabel("Label offset (paper mm)", { exact: true }).inputValue(), "8");
   });
-  await step("returning after a new accepted Stage follows the source branch head unless explicitly pinned", async () => {
+  await step("when the Working Head moves the LIVE drawing rebuilds once on it, while an earlier revision stays frozen", async () => {
     const generationCount = requests.length;
-    const selectedBefore = await revision().inputValue();
+    assert.equal(await revision().inputValue(), legacyKey);
+    await page.locator('.drawing-status[data-follow="frozen"]').waitFor();
+    await page.getByText("Earlier revision · not updated automatically", { exact: true }).waitFor();
     const retainedBefore = await page.evaluate(() => structuredClone(window.drawingFixture.documents.find(document => document.revisionRef === "revision-legacy")));
-    const exactPage = { runId: retainedBefore.runId, assetSha256: retainedBefore.assetSha256, revisionRef: retainedBefore.revisionRef };
-    await page.evaluate(() => { window.drawingFixture.setActive(false); window.drawingFixture.head = "stage-B"; });
+    await page.evaluate(() => { window.drawingFixture.setActive(false); window.drawingFixture.head = "stage-B"; window.drawingFixture.revision += 1; });
     await page.evaluate(() => window.drawingFixture.setActive(true));
-    await page.locator('.drawing-status[data-status="outdated"]').waitFor();
-    assert.equal(await source().inputValue(), "stage-B");
-    assert.equal(statusRequests.at(-1).targetModelSource, undefined, "the backend resolves the exact drawing's branch, not a generic latest Stage");
-    assert.deepEqual(statusRequests.at(-1), exactPage, "only the comparison target is refreshed; status still reads the original exact drawing");
-    assert.equal(await revision().inputValue(), selectedBefore, "following the branch head never selects or creates another drawing revision");
-    assert.equal(requests.length, generationCount, "returning to Drawing cannot generate or rebuild automatically");
+    await page.locator('.drawing-status[data-follow="frozen"][data-status="outdated"]').waitFor();
+    await new Promise(resolve => setTimeout(resolve, 300));
+    assert.equal(requests.length, generationCount, "an earlier revision is never rebuilt automatically");
     assert.deepEqual(await page.evaluate(() => window.drawingFixture.documents.find(document => document.revisionRef === "revision-legacy")), retainedBefore,
       "the original document's ModelSource, Stage, bytes and recipe remain unchanged");
-    assert.deepEqual(await page.evaluate(() => window.drawingFixture.requests.filter(request => request.kind === "bytes").at(-1)),
-      { kind: "bytes", runId: exactPage.runId, sha: exactPage.assetSha256, revisionRef: exactPage.revisionRef }, "the displayed file still comes from the original exact revision");
-    assert.equal(await page.locator(".drawing-preview__tools span").innerText(), retainedBefore.fileName);
-    await source().selectOption("stage-A");
-    await page.locator('.drawing-status[data-status="current"]').waitFor();
+    await page.getByRole("button", { name: "Open the current revision", exact: true }).click();
+    await until(() => Promise.resolve(requests.length), value => value === generationCount + 1, "one automatic rebuild on the moved head");
+    assert.deepEqual(requests.at(-1).modelSource, modelB); assert.equal(requests.at(-1).sourceStageRef, "stage-B");
+    assert.equal(requests.at(-1).dimensions[0].id, savedDimension.id, "rebuilding keeps the retained dimension intention");
+    await page.locator('.drawing-status[data-follow="live"][data-status="current"]').waitFor();
     await page.evaluate(() => window.drawingFixture.setActive(false));
     await page.evaluate(() => window.drawingFixture.setActive(true));
-    await page.locator('.drawing-status[data-status="current"]').waitFor();
-    assert.equal(await source().inputValue(), "stage-A", "explicit historical source survives reactivation");
-    assert.deepEqual(statusRequests.at(-1).targetModelSource, modelA);
+    await page.locator('.drawing-status[data-follow="live"][data-status="current"]').waitFor();
+    assert.equal(requests.length, generationCount + 1, "the same head is never rebuilt twice");
   });
-  await step("source change is explicit and rebuild preserves retained dimension intention", async () => {
+  await step("a Working Head that cannot be drawn is stated, not silently rebound", async () => {
+    const generationCount = requests.length;
+    await page.evaluate(() => { window.drawingFixture.setActive(false); window.drawingFixture.headDrawable = false; window.drawingFixture.revision += 1; });
+    await page.evaluate(() => window.drawingFixture.setActive(true));
+    await page.getByText("The current model cannot be drawn yet: no exact STEP.", { exact: true }).waitFor();
+    await page.getByText("Not updated", { exact: true }).waitFor();
+    assert.equal(requests.length, generationCount);
+    await page.evaluate(() => { window.drawingFixture.setActive(false); window.drawingFixture.headDrawable = true; window.drawingFixture.revision += 1; });
+    await page.evaluate(() => window.drawingFixture.setActive(true));
+    await page.locator('.drawing-status[data-follow="live"][data-status="current"]').waitFor();
+    assert.equal(requests.length, generationCount);
+  });
+  await step("drawing another version is explicit, never rebuilds by itself and preserves dimension intention", async () => {
     const generationCount = requests.length;
     const oldSelection = await revision().inputValue();
-    await source().selectOption("stage-B");
-    await page.locator('.drawing-status[data-status="outdated"]').waitFor();
+    await page.getByText("Draw another version", { exact: true }).click();
+    await source().selectOption("stage-A");
+    await page.locator('.drawing-status[data-follow="frozen"][data-status="outdated"]').waitFor();
+    await page.getByText("Drawn from a chosen version · not updated automatically", { exact: true }).waitFor();
+    assert.deepEqual(statusRequests.at(-1).targetModelSource, modelA);
+    assert.equal(requests.length, generationCount, "choosing a version never rebuilds by itself");
     assert.equal(await page.getByText("Change design width", { exact: true }).count(), 0);
-    assert.equal(await page.getByRole("button", { name: "Create design candidate", exact: true }).count(), 0);
-    await page.getByRole("button", { name: "Rebuild on selected model", exact: true }).click();
+    await page.getByRole("button", { name: "Rebuild on this version", exact: true }).click();
+    await until(() => Promise.resolve(requests.length), value => value === generationCount + 1, "explicit rebuild");
     await page.locator('.drawing-status[data-status="current"]').waitFor();
-    assert.equal(requests.length, generationCount + 1, "only the explicit rebuild creates the revision");
     assert.notEqual(await revision().inputValue(), oldSelection);
-    assert.deepEqual(requests.at(-1).modelSource, modelB); assert.equal(requests.at(-1).dimensions[0].id, savedDimension.id);
+    assert.deepEqual(requests.at(-1).modelSource, modelA); assert.equal(requests.at(-1).dimensions[0].id, savedDimension.id);
   });
   await step("broken anchors remain visible and cannot drive, while prior revisions remain selectable", async () => {
     broken = true;
@@ -194,7 +222,8 @@ try {
     await page.locator('.drawing-status[data-status="partially-broken"]').waitFor();
     assert.equal(await page.getByText("Door anchor is missing.", { exact: true }).count(), 1);
     assert.equal(await page.getByRole("button", { name: "Create design candidate", exact: true }).count(), 0);
-    assert.equal(await revision().locator("option").count(), 5);
+    assert.equal(await revision().locator("option").count(),
+      1 + await page.evaluate(() => window.drawingFixture.documents.filter(document => document.projectId === "drawing-project").length));
     broken = "outside-view";
     await page.getByRole("button", { name: "Refresh sources", exact: true }).click();
     await page.getByText("Dimension falls outside the drawing. Adjust its paper offset and save appearance.", { exact: true }).waitFor();
@@ -214,7 +243,7 @@ try {
     await until(() => page.getByLabel("Cut height (meter)", { exact: true }).isEnabled(), Boolean, "active form");
     const before = requests.length;
     await page.getByLabel("Cut height (meter)", { exact: true }).fill("");
-    await page.getByRole("button", { name: "Rebuild on selected model", exact: true }).click();
+    await page.getByRole("button", { name: "Rebuild on this version", exact: true }).click();
     assert.equal(requests.length, before);
     assert.equal(await page.getByLabel("Cut height (meter)", { exact: true }).evaluate(node => node.validity.valueMissing), true);
     await page.getByLabel("Cut height (meter)", { exact: true }).fill("1.2");
@@ -261,7 +290,8 @@ try {
     const svg = await readFile(await download.path(), "utf8");
     assert.equal(svg, vectorBytes.get(revisionRef), "download is the retained SVG, not the display with dressing removed");
     assert.match(download.suggestedFilename(), /\.svg$/);
-    assert.match(svg, /width="[\d.]+mm"/); assert.match(svg, /data-scale="1:100"/);
+    const savedScale = await page.evaluate(ref => window.drawingFixture.documents.find(d => d.revisionRef === ref).viewRecipe.frame.scale, revisionRef);
+    assert.match(svg, /width="[\d.]+mm"/); assert.ok(svg.includes(`data-scale="${savedScale}"`), "the download keeps the saved revision's scale");
     assert.match(svg, /data-object="obj-wall"/); assert.match(svg, /data-dressing-id=/);
     await page.getByRole("button", { name: "Add person", exact: true }).click();
     assert.equal(await downloadButton.isDisabled(), true, "unsaved appearance cannot be downloaded as a retained version");
@@ -295,7 +325,10 @@ try {
     const saveBounds = await page.getByRole("button", { name: "Save appearance as a revision", exact: true }).boundingBox();
     assert.ok(saveBounds && saveBounds.y >= 0 && saveBounds.y + saveBounds.height <= 900, "Save stays visible beside the drawing while settings scroll");
     await page.screenshot({ path: join(screenshots, "drawing-wide-dark.png"), fullPage: true });
-    await source().focus(); await page.keyboard.press("ArrowUp"); await page.keyboard.press("Enter");
+    // Choosing another version is a disclosed, explicit action; the LIVE drawing needs no choice.
+    if (!await source().isVisible()) await page.getByText("Draw another version", { exact: true }).click();
+    assert.equal(await source().inputValue(), "");
+    await source().focus(); await page.keyboard.press("ArrowDown"); await page.keyboard.press("Enter");
     assert.equal(await source().inputValue(), "stage-A");
   });
   await step("a response for a previous project never opens a document in the new project", async () => {

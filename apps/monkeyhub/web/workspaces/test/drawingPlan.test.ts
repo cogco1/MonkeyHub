@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { defaultPlanForm, drawingDocumentKey, planFormFromDocument } from "../src/workspaces/monkeydiagram/drawingPlan.ts";
+import { defaultPlanForm, drawingDocumentKey, latestRevisions, liveAction, planFormFromDocument } from "../src/workspaces/monkeydiagram/drawingPlan.ts";
 import type { SourceDocumentDto } from "../src/api/generated";
 
 test("a retained cut-plan restores its actual frame and keeps dimension identity, placement and hidden intent", () => {
@@ -23,4 +23,31 @@ test("the initial cut is expressed in the exact source length unit", () => {
   assert.equal(defaultPlanForm("millimeter").cutHeight, 1200);
   assert.equal(defaultPlanForm("foot").cutHeight * .3048, 1.2);
   assert.equal(defaultPlanForm("inch").cutHeight * .0254, 1.2);
+});
+
+test("the newest revision of each drawing opens by default and older revisions stay history", () => {
+  const revision = (drawingId: string | null, fileName: string, generatedAt: string) =>
+    ({ runId: "r", assetSha256: generatedAt, revisionRef: generatedAt, drawingId, fileName, generatedAt }) as SourceDocumentDto;
+  const plans = [revision("floor", "floor.png", "2026-09-24T01:00:00Z"), revision("floor", "floor.png", "2026-09-24T03:00:00Z"),
+    revision("roof", "roof.png", "2026-09-24T02:00:00Z"), revision(null, "legacy.png", "2026-09-23T00:00:00Z")];
+  assert.deepEqual(latestRevisions(plans).map((row) => row.generatedAt),
+    ["2026-09-24T03:00:00Z", "2026-09-24T02:00:00Z", "2026-09-23T00:00:00Z"]);
+});
+
+test("a LIVE drawing rebinds once to the Working Head and never loops on its own broken anchors", () => {
+  const head = { runId: "cand-2", stateDigest: "d".repeat(64), assetSha256: "e".repeat(64) };
+  const moved = { status: "outdated" as const, bindingChanged: true, targetModelSource: head };
+  assert.equal(liveAction({ live: true, dirty: false, attempted: false, status: moved }), "rebuild");
+  assert.equal(liveAction({ live: true, dirty: false, attempted: true, status: moved }), "none", "one attempt per head");
+  assert.equal(liveAction({ live: true, dirty: true, attempted: false, status: moved }), "none", "unsaved appearance edits are kept");
+  assert.equal(liveAction({ live: false, dirty: false, attempted: false, status: moved }), "none", "an earlier revision is a frozen view");
+  assert.equal(liveAction({ live: true, dirty: false, attempted: false,
+    status: { status: "current", bindingChanged: true, targetModelSource: head } }), "rebuild", "unchanged inputs still rebind to the head");
+  assert.equal(liveAction({ live: true, dirty: false, attempted: false,
+    status: { status: "partially-broken", bindingChanged: false, targetModelSource: head } }), "none");
+  assert.equal(liveAction({ live: true, dirty: false, attempted: false,
+    status: { status: "outdated", bindingChanged: false, targetModelSource: null } }), "blocked", "a head without an exact STEP is stated");
+  assert.equal(liveAction({ live: true, dirty: false, attempted: false,
+    status: { status: "unknown", bindingChanged: true, targetModelSource: head } }), "none");
+  assert.equal(liveAction({ live: true, dirty: false, attempted: false, status: null }), "none");
 });
