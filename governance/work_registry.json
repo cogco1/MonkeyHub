@@ -252,7 +252,7 @@
           "base_ref": "e183a69a",
           "contributor": "Claude",
           "reviewer": "Claude root task",
-          "handoff": "Delivered in fba8fce3 on this branch: one folded process row per turn with plain-language steps and Technical details, and chat scrolling that opens at the latest message with a jump-to-latest button. Hands the shared chat files to GH-300/sidebar; root task reviews and publishes both. GH-234/autosave-restart owns the restartBlocker lines and the updateModelBlocked copy; rebase after it merges.",
+          "handoff": "Review follow-up on this branch: a running process row in a narrow chat column must keep its step and failure counts visible, and long step lines must wrap inside the column. Then done again; root task reviews and publishes both lanes. GH-234/autosave-restart owns the restartBlocker lines and the updateModelBlocked copy; rebase after it merges.",
           "modules": [
             "hub.shell"
           ],
@@ -267,7 +267,7 @@
             "apps/monkeyhub/README.md"
           ],
           "depends_on": [],
-          "status": "done",
+          "status": "active",
           "blocked_reason": null
         }
       ]
@@ -314,7 +314,7 @@
           "base_ref": "e183a69a",
           "contributor": "Claude",
           "reviewer": "Claude root task",
-          "handoff": "Sidebar slices 1-2 of #300 plus the owner's rail regrouping (Surfaces: Modeling, Board; Tools: Drawings, Render, Fabrication, Usage) and the Board | Layout switch. Starts on this branch once GH-285/process-fold hands over the shared chat files; root task reviews and publishes both. Board.tsx, PublishWorkspace.tsx and publish.css stay with GH-66; SoftwareUpdateSettings.tsx stays with the auto-update lane.",
+          "handoff": "Delivered in ea6ba2d7 (rail: Surfaces Modeling and Board, Tools Drawings, Render, Fabrication and Usage; Layout as a Board mode behind a Board | Layout switch) and f847d0a6 (Tasks, running badges, the #294 new-schemes hook, 7-day usage from Monitor and New version ready in the footer). Root task reviews and publishes both lanes. Board.tsx, PublishWorkspace.tsx and publish.css stay with GH-66; SoftwareUpdateSettings.tsx stays with the auto-update lane.",
           "modules": [
             "hub.shell"
           ],
@@ -340,7 +340,7 @@
           "depends_on": [
             "GH-285/process-fold"
           ],
-          "status": "active",
+          "status": "done",
           "blocked_reason": null
         }
       ]
