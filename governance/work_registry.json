@@ -182,10 +182,7 @@
         "hub.shell"
       ],
       "write_scope": [
-        "apps/archflow-studio/api/archflow_studio_api/application/drawing_plans.py",
         "apps/archflow-studio/api/archflow_studio_api/application/publication_output.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/publications.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/rendering.py",
         "apps/archflow-studio/api/archflow_studio_api/routes/__init__.py",
         "apps/archflow-studio/api/archflow_studio_api/routes/drawings.py",
         "apps/archflow-studio/api/archflow_studio_api/routes/publications.py",
@@ -199,33 +196,14 @@
         "apps/archflow-studio/api/tests/test_publications.py",
         "apps/archflow-studio/api/tests/test_rendering.py",
         "apps/archflow-studio/api/tests/test_representation_dependencies.py",
-        "apps/monkeyhub/web/src/ChatShell.tsx",
-        "apps/monkeyhub/web/src/i18n/messages.en.ts",
-        "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
-        "apps/monkeyhub/web/test/chatShell.browser.mjs",
-        "apps/monkeyhub/web/workspaces/src/api/client.ts",
-        "apps/monkeyhub/web/workspaces/src/api/generated/index.ts",
-        "apps/monkeyhub/web/workspaces/src/api/generated/sdk.gen.ts",
-        "apps/monkeyhub/web/workspaces/src/api/generated/types.gen.ts",
         "apps/monkeyhub/web/workspaces/src/api/publication.ts",
-        "apps/monkeyhub/web/workspaces/src/app/App.tsx",
-        "apps/monkeyhub/web/workspaces/src/app/ProjectWorkspace.tsx",
         "apps/monkeyhub/web/workspaces/src/workspaces/monkeyarch/viewer/renderView.ts",
         "apps/monkeyhub/web/workspaces/src/workspaces/monkeyboard/Board.tsx",
-        "apps/monkeyhub/web/workspaces/src/workspaces/monkeydiagram/DrawingCanvas.css",
-        "apps/monkeyhub/web/workspaces/src/workspaces/monkeydiagram/DrawingCanvas.tsx",
         "apps/monkeyhub/web/workspaces/src/workspaces/monkeydiagram/DrawingDressing.tsx",
-        "apps/monkeyhub/web/workspaces/src/workspaces/monkeydiagram/drawingPlan.ts",
         "apps/monkeyhub/web/workspaces/src/workspaces/publish/PublishWorkspace.tsx",
         "apps/monkeyhub/web/workspaces/src/workspaces/publish/publish.css",
         "apps/monkeyhub/web/workspaces/src/workspaces/render/ModelPreview.tsx",
-        "apps/monkeyhub/web/workspaces/src/workspaces/render/RenderResults.tsx",
-        "apps/monkeyhub/web/workspaces/src/workspaces/render/RenderWorkspace.tsx",
-        "apps/monkeyhub/web/workspaces/src/workspaces/render/render.css",
-        "apps/monkeyhub/web/workspaces/test/drawingCanvas.browser.mjs",
-        "apps/monkeyhub/web/workspaces/test/drawingPlan.test.ts",
         "apps/monkeyhub/web/workspaces/test/publishWorkspace.browser.mjs",
-        "apps/monkeyhub/web/workspaces/test/renderWorkspace.browser.mjs",
         "archflow/project/record_kinds.py",
         "docs/DRAWING_V0_AUDIT.md",
         "docs/DYNAMIC_MAP.md",
@@ -240,6 +218,9 @@
       ],
       "acceptance": [
         "Project-bound pages save/reopen; exact source replacement/freeze; editable PPTX and deterministic PDF; Board selection preserves narrative page order without changing design HEAD."
+      ],
+      "notes": [
+        "2026-09-24: #273 merged the GH-66 integration. On the repository owner's instruction the Drawing, Render, Hub and shared client paths it also claimed are handed to GH-271 (#271, Working Head); GH-66 keeps its Publish paths and the broader #66 acceptance."
       ]
     },
     {
