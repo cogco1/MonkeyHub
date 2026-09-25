@@ -31,7 +31,7 @@ def event(event_id="evt-1", *, project_id="project-a", duration_ms=1200):
         tokens=TokenUsage(input_tokens=100, cached_input_tokens=40, output_tokens=20,
                           cache_write_input_tokens=0, cache_write_1h_input_tokens=0,
                           reasoning_output_tokens=5),
-        details={"blocking": True, "billing_plan": "standard"},
+        details={"blocking": True, "billing_plan": "api-standard"},
     )
 
 

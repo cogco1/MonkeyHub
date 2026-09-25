@@ -12,6 +12,42 @@ from urllib.parse import urlsplit
 
 from .usage import TokenUsage
 
+STANDARD_PLAN = "api-standard"
+# The plan each connection is billed under, keyed by the provider its producer
+# records: the Hub/Studio provider setting, or a Codex session's recorded model
+# provider. Each call these connections make runs on its provider's standard
+# synchronous tier. Gemini renders are absent: their output mixes text and
+# image tokens, which one output rate cannot price.
+_CONNECTION_PLANS = {
+    "anthropic": STANDARD_PLAN,    # Studio intent: the Anthropic Messages API
+    "claude": STANDARD_PLAN,       # Hub chat: the Claude CLI
+    "codex": STANDARD_PLAN,        # Studio intent: codex exec, user config ignored
+    "openai": STANDARD_PLAN,       # a Codex session's recorded model provider
+    "coding-plan": "coding-plan",  # Hub chat: a third-party endpoint's flat plan
+}
+# What a response may report about the tier it actually ran on and still be
+# the standard price list. Priority, batch, fast mode and US-only inference
+# bill at other rates; a model without geography pricing says not_available.
+_STANDARD_TIER = (
+    ("service_tier", (None, "standard")),
+    ("speed", (None, "standard")),
+    ("inference_geo", (None, "global", "not_available")),
+)
+
+
+def billing_plan(provider: str, usage: Mapping[str, object] | None = None) -> str | None:
+    """The plan a connection's usage is billed under, or None if not exact.
+
+    ``usage`` is the call's own provider usage metadata where it reports any.
+    The standard plan holds only while nothing reported there names another
+    tier, speed or inference geography.
+    """
+    plan = _CONNECTION_PLANS.get(provider)
+    if plan == STANDARD_PLAN and usage is not None and any(
+            usage.get(name) not in allowed for name, allowed in _STANDARD_TIER):
+        return None
+    return plan
+
 
 def _decimal(value: object, name: str) -> Decimal:
     if not isinstance(value, str):

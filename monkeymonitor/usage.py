@@ -32,6 +32,12 @@ _IDENTITY_KEYS = {
     "source_execution_ref", "source_ref", "source_stage_ref", "producer_code", "references", "model",
     "provider", "format", "representation", "record_digest", "state_digest", "seat_id",
 }
+# The only values details.billing_plan takes: the price list a connection's
+# usage is valued against (see monkeymonitor.pricing.billing_plan). A plan names
+# no account, login or key. "api-standard" is a provider's public standard
+# synchronous tier; "coding-plan" is a third-party flat plan with no public
+# per-token price. A new plan is added here and to that derivation together.
+BILLING_PLANS = frozenset({"api-standard", "coding-plan"})
 _LIST_DETAILS = {
     "input_object_ids", "recomputed_object_ids", "reused_object_ids", "emitted_object_ids", "comparison_refs",
     "output_refs", "executed_stages", "opportunity_refs", "stable_input_parts",
@@ -112,6 +118,9 @@ def diagnostic_details(value: Mapping[str, object]) -> dict[str, object]:
         elif name == "validator_scope":
             if detail is not None and detail != "request_output":
                 raise ValueError("unsupported model validator scope")
+        elif name == "billing_plan":
+            if detail is not None and (not isinstance(detail, str) or detail not in BILLING_PLANS):
+                raise ValueError("unsupported billing plan")
         elif name in _LIST_DETAILS:
             if not isinstance(detail, (list, tuple)) or any(not isinstance(item, str) or not item.strip() for item in detail):
                 raise ValueError(f"{name} must contain identifier strings")
