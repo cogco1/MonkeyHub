@@ -2123,7 +2123,8 @@
         "the StudioModelAsset@1, StudioDocumentModelSource@1, StudioModelAnnotations@1 and StudioWorkingCopy@1 run-record kinds",
         "seat-blender-execution (BlenderExecutionReceipt@1): the existing runner retains a verified Blender scene export and its exact source binding in the run-record area",
         "audit-event (AuditEvent@1): the actor/origin binding the studio retains beside an authoritative decision, in the review area of the run that decision produced",
-        "studio-scoped-decision (StudioScopedDecision@1): one immutable revision of one scoped project decision, written by the studio into the review area of its fixed studio-decisions run"
+        "studio-scoped-decision (StudioScopedDecision@1): one immutable revision of one scoped project decision, written by the studio into the review area of its fixed studio-decisions run",
+        "candidate-admission (CandidateAdmission@1): one closed loop's admission verdict, written by the studio into the review area of its fixed studio-admissions run"
       ],
       "does_not_own": [
         "the file name a record is stored under, and reading a kind back out of one - project.refs",
@@ -4188,7 +4189,7 @@
         "Projecting a checked in-memory proposed StateRecord for another edit without writing or claiming a retained candidate",
         "Read-only element elevation facts and their actual base/top references, plus named Level datums, projected from the exact StateRecord for contextual Stage 1 editing.",
         "The current project working position (moved only by an explicit selection, never by recording a generated candidate), the automatic recovery listing of every unlabelled generated candidate however old, independent explicit saved versions and exact-source local command recovery through the P036 working-draft port; readback never executes a recovered request.",
-        "Resolving the Working Head for ordinary work: the readable retained working position, else the main line's accepted head, else the reference run, and each workspace's compatible exact source under a LIVE or FROZEN policy; resolving writes nothing"
+        "Resolving the Working Head for ordinary work: the readable retained working position, else the main line's accepted head, else the reference run, and each workspace's compatible exact source under a LIVE or FROZEN policy; resolving writes nothing; a live rejection of the working position is reported as a warning and never moves it"
       ],
       "does_not_own": [
         "issuing a project version, and direct project file writes: the ProjectBinding object stays read-only, initial authored-input preparation and configured sync use project.repository ports; runtime.project_runner is the writer of a modeling run and project.issue the only issuer. A configured pull advances this Runtime's local design branch, and it does so entirely through project.repository's transfer and branch compare-and-swap ports; this owner writes no project file itself and moves no canonical HEAD",
@@ -4378,7 +4379,7 @@
         "retaining combined candidate source ids with one normalized operator against their common Stage; replaying all sources before acceptance",
         "Read-only runtime inspection of live jobs, exact retained candidates and branch-reachable committed Stages; managed candidate admission may accept a preallocated run id without weakening exact-base checks or re-executing an existing run",
         "Protecting an executing candidate and its input from automatic cleanup, and recording its finished result in the working position for recovery and comparison without moving the editing base or accepting a Stage.",
-        "The read-only Worktree Graph: the Working Head, other accepted lines, running and interrupted candidate work with exact bases and declared read/write refs, retained results off the head's line and whether the StateRecord combine rule accepts them with the head, plus drawing and render freshness"
+        "The read-only Worktree Graph: the Working Head, other accepted lines, running and interrupted candidate work with exact bases and declared read/write refs, retained results off the head's line and whether the StateRecord combine rule accepts them with the head, plus drawing and render freshness; each finished line's retained admission (admitted, rejected, superseded or none) and Study"
       ],
       "does_not_own": [
         "seat execution, geometry and every record it writes - runtime.project_runner",
@@ -4563,7 +4564,7 @@
         "retaining local work-item options, common comparison base, explicit scope and selected option in the common-base run; checking scope and unchanged composed contents without issuing or superseding other work items",
         "preparing transient client-rendered document page and saved-ink PNGs for the existing Codex and Anthropic compilers; distinguishing one exact edit page from explicitly selected reference pages and retaining their metadata in the existing document comment",
         "explicit initial Stage acceptance, candidate acceptance and historical fork through portfolio rules and P036; WorkingCopy remains Exploration",
-        "preserving optional exact baseStageRef on new Explorations while legacy WorkingCopy labels and choices remain readable without inferred acceptance",
+        "retained Explorations (WorkingCopy) stay readable and selectable after their creation was retired (#294 Q4); their labels and choices are never read as acceptance, and their non-base options read only as a legacy Study",
         "Compiling scalar/component numeric actions or a complete design request; the StateRecord dependency closure remains private while model-facing facts expose only requested controls and relevant design consequences; at most two exact-reference supplements preserve writable targets and the original checkpoint",
         "Preflight text-section budget estimates and response-schema/request-scope checks before the existing proposal compiler; repeated JSON subschemas are shared without changing their accepted values",
         "Offline context-size benchmark using the same request preparation with an in-memory provider capture, with tokenizer identity or an explicit heuristic and no inference call",
@@ -4582,7 +4583,9 @@
         "scoped project decisions: one architect judgement with its raw wording, disposition, strength, target, explicit scope, applicability and the exact source evidence it was said against, as an immutable revision chain in the fixed explicit studio-decisions P036 run",
         "compiling the decisions that still apply to one next turn - same domain, exact Stage, intersection with relevant task targets, applicability and current parameter binding - into the existing ContextPack",
         "Composing explicitly selected exact Study evidence revisions into ContextPack separately from design facts and applicable decisions; no implicit Study scan, acceptance or project write.",
-        "the source-bound, read-only visual observation channel (GH-303 V0): VisualReviewRequest over exact model or registered-page sources, EvidenceFrame values taken from the model-view and page-export owners' own answers, the strict VisualObservation answer and its validation, the VisualObservationProvider seam with the configured Studio model transport as its implementation, and the Harness review allowance VisualReviewBudget"
+        "the source-bound, read-only visual observation channel (GH-303 V0): VisualReviewRequest over exact model or registered-page sources, EvidenceFrame values taken from the model-view and page-export owners' own answers, the strict VisualObservation answer and its validation, the VisualObservationProvider seam with the configured Studio model transport as its implementation, and the Harness review allowance VisualReviewBudget",
+        "candidate admission: one CandidateAdmission@1 per closed loop (a task, one worktree of it, or one person's act) in the fixed explicit studio-admissions P036 run, written only through the completion gate Stage acceptance shares, with the boundary's actor, the stated task, Study and bound message, each result's outcome, pinned model, receipt and superseded attempts",
+        "the Candidate Pool read for the Design Tree: admitted Candidates and their Studies from admission records and from legacy facts that already prove admission (a committed Stage's run, a retained Exploration's non-base option, an accepted episode's produced run), with lineage-derived continuedFrom and acceptedStageRef and Working Head membership"
       ],
       "does_not_own": [
         "running the proposal - studio.candidate",
@@ -4611,7 +4614,8 @@
         "ModelInvocationRequest and structured schema/images from Study for the existing configured transport",
         "One scoped decision as the caller states it: rawLanguage, optional messageSource claim, disposition, strength, targetRef, scope, exact source evidence union (board revision + live element ids / document run+asset+revision+page / design run+stateDigest+optional Stage), applicability, sourceKind and an optional parameter typedBinding",
         "Optional decisionContext on POST /api/intents/context: the domain this turn is about, and for a drawing or copy turn its own representation evidence",
-        "VisualReviewRequest with exact SourceRef values, criteria, preserve conditions and the Harness allowance, and owner-produced EvidenceFrame PNGs (model-view answers, registered page exports)"
+        "VisualReviewRequest with exact SourceRef values, criteria, preserve conditions and the Harness allowance, and owner-produced EvidenceFrame PNGs (model-view answers, registered page exports)",
+        "an admission request: task kind and opaque ids, an optional Study (id, label, exact base run), an optional bound chat message and the user's words, and each result's outcome, superseded attempts, label, summary and reason"
       ],
       "outputs": [
         "ParsedIntent",
@@ -4626,7 +4630,9 @@
         "working_copy.option_added event identifying the added option source run when an event sink is supplied",
         "retained StudioScopedDecision@1 revisions and their DTOs",
         "scopedDecisions on ContextPack@1: the applicable decisions in the architect's own words with their exact provenance, never a transcript",
-        "VisualObservation bound to the frames actually sent, with ObservationUsage and a visual_observation MonkeyMonitor span over the provider's model_request row"
+        "VisualObservation bound to the frames actually sent, with ObservationUsage and a visual_observation MonkeyMonitor span over the provider's model_request row",
+        "retained CandidateAdmission@1 records and their DTOs",
+        "candidates[] and studies[] on the design history read"
       ],
       "public_api": [
         "POST /api/intents",
@@ -4693,12 +4699,10 @@
         "WorkingCopyOption",
         "list_working_copies",
         "read_working_copy",
-        "create_working_copy",
         "select_working_copy_option",
         "add_working_copy_option",
         "GET /api/working-copies",
         "GET /api/working-copies/{group_id}",
-        "POST /api/working-copies",
         "PUT /api/working-copies/{group_id}/selection",
         "POST /api/working-copies/{group_id}/options",
         "DocumentVisual",
@@ -4756,7 +4760,23 @@
         "bind_frames",
         "model_view_frame",
         "page_frame",
-        "observe_frames"
+        "observe_frames",
+        "POST /api/admissions",
+        "GET /api/admissions",
+        "admit_results",
+        "list_admissions",
+        "admission_store",
+        "rejected_by",
+        "completed_result",
+        "CompletedResult",
+        "ClauseRefused",
+        "AdmissionRefused",
+        "AdmissionRecord",
+        "candidate_pool",
+        "admission_index",
+        "CandidatePool",
+        "PoolCandidate",
+        "PoolStudy"
       ],
       "depends_on": [
         "contracts.canonical",
@@ -4848,7 +4868,12 @@
         "decision focus includes declared upstream reads across retained Stages, with effective instance bindings instead of overridden Type defaults; it does not follow shared inputs into other consumers, include unrelated locks, widen writes or alter decision scope, strength and applicability",
         "a visual review refuses, before any provider call, a frame whose source is not exactly one of the request's source refs; the provider never states which source it saw, the channel binds its answer to the frames it sent",
         "the Harness allowance gives a deterministic edit no visual review, a spatial or formal task one review plus at most one follow-up after a repair that names a finding of the last review, and only an explicit polish request 1-4 reviews; a refusal spends nothing and an admitted review stays spent when the call fails",
-        "a visual observation writes nothing and carries no State, Stage or Candidate authority and no provider reasoning; its findings point only at the request's own criterion and preserve refs"
+        "a visual observation writes nothing and carries no State, Stage or Candidate authority and no provider reasoning; its findings point only at the request's own criterion and preserve refs",
+        "a Candidate is made only by a retained CandidateAdmission@1 or read from a legacy fact that already proves admission; a finished run, a recovery or saved row, a chat candidate id, a pin or the newest file never makes one, and nothing is written for a legacy fact",
+        "admissions are read only from the fixed studio-admissions run, never by enumerating runs; a run is in at most one live record as a result or a superseded attempt; an identical retry returns the retained record and any other claim on a claimed run, or rejecting or superseding a committed Stage's run, is ADMISSION_CONFLICT",
+        "the admission gate is Stage acceptance's own preflight (C1 replay, C2 completed and not executing, C3 review readiness against the exact base, C5 one complete model) plus C4 object readback and C7 supersession; if any result fails nothing is retained and every failing clause is named",
+        "a person (ui or retroactive) may admit a result that is not review-ready as a comparison option, retaining the failing clauses as its marker; an Agent (hub-chat) admission is review-ready, needs the Hub-managed boundary and a bound message, and rejects only on the user's bound words; Stage acceptance still requires review readiness and refuses a run with a live rejection",
+        "admission accepts no Stage, advances no branch, moves no Working Head and writes no working position; a Runtime connected to a shared project refuses admissions until they synchronize"
       ],
       "status": "canonical",
       "tests": [
@@ -4883,7 +4908,8 @@
         "apps/monkeyhub/web/workspaces/test/elevation.browser.mjs",
         "apps/archflow-studio/api/tests/test_decisions.py",
         "tests/test_nonadjacent_stage_context.py",
-        "apps/archflow-studio/api/tests/test_visual_observation.py"
+        "apps/archflow-studio/api/tests/test_visual_observation.py",
+        "apps/archflow-studio/api/tests/test_candidate_admission.py"
       ],
       "notes": "CANONICAL_SPINE 2.1 makes this the door live-model authoring re-enters by: typed intent, then record, then runner. clarification.py retired require_grammatical: the same two refusals, in the same words, with the target the agent had just worked out kept instead of thrown away.",
       "files": [
@@ -5133,7 +5159,8 @@
         "an actor identity a caller supplies is never an actor: attribution comes from the authenticated actor the middleware resolved, or states the local unauthenticated boundary's own identity; no credential byte leaves this module",
         "Configuration comes only from the environment the launcher resolved (StudioSettings.from_env); the preference file is served over the settings routes and never consulted for the runtime's own behavior",
         "One process binds one project directory, keyed and supervised by MonkeyHub; in production it is reached only through the Hub's forwarding path, and it never grows a persistent user-settings file, a launcher, a tray or a UI of its own",
-        "The Runtime parameter-lock proposal route uses the existing accept actor grant; local unauthenticated attribution identifies only the process boundary and does not prove a human caller"
+        "The Runtime parameter-lock proposal route uses the existing accept actor grant; local unauthenticated attribution identifies only the process boundary and does not prove a human caller",
+        "POST /api/admissions uses the existing accept grant on a local-role Runtime; a shared project service does not expose it"
       ],
       "status": "canonical",
       "tests": [

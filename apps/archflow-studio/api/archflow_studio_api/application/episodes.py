@@ -89,6 +89,22 @@ class WorkingCopy:
 
 _working_copy_lock = threading.RLock()
 
+# Retained Explorations and accepted episodes are also legacy admission
+# evidence (#294 section 4.4), which design history reads without an index and
+# remembers per run. Every write of either kind in this process says so.
+_evidence_writes = 0
+
+
+def evidence_generation() -> int:
+    """How many Exploration or episode records this process has written."""
+
+    return _evidence_writes
+
+
+def _wrote_evidence() -> None:
+    global _evidence_writes
+    _evidence_writes += 1
+
 
 def _working_copy_revisions(binding: ProjectBinding, group_id: str | None = None) -> dict[str, dict[str, Mapping]]:
     groups: dict[str, dict[str, Mapping]] = {}
@@ -222,25 +238,13 @@ def _retain_working_copy(binding: ProjectBinding, item: WorkingCopy, previous: s
                  "scope": list(item.scope), "options": [option.to_dict() for option in item.options],
                  "selectedOptionId": item.selected_option_id, "previousRevisionSha256": previous},
     )
+    _wrote_evidence()
     return replace(item, revision_sha256=ref.sha256)
 
 
-@retained_sources
-def create_working_copy(
-    binding: ProjectBinding, group_id: str, label: str, stage_id: str, common_base: ModelSource,
-    scope: Sequence[str], options: Sequence[WorkingCopyOption],
-) -> WorkingCopy:
-    if len({option.id for option in options}) != len(options) or not any(option.model_source == common_base for option in options):
-        raise StudioError(422, "WORKING_COPY_OPTIONS_INVALID", "The options need distinct ids and must include the common base unchanged.")
-    for option in options:
-        _require_working_option(binding, common_base, scope, option)
-    with _working_copy_lock:
-        if group_id in _working_copy_revisions(binding, group_id):
-            raise StudioError(409, "WORKING_COPY_EXISTS", "This work item is already retained.")
-        base_stage = project_state(binding, common_base.run_id).source_stage_ref
-        return _retain_working_copy(binding, WorkingCopy(binding.project_id, group_id, label, stage_id, common_base,
-                                                        tuple(scope), tuple(options), None, "",
-                                                        None if base_stage is None else base_stage.uri), None)
+# Creating an Exploration is retired (#294 owner decision Q4): a Study is now
+# declared on a CandidateAdmission@1. Retained Explorations stay readable and
+# selectable, and their non-base options read as a legacy Study.
 
 
 @retained_sources
@@ -617,6 +621,7 @@ class EpisodeStore:
             record_kind=DELIBERATION_EPISODE,
             payload=bound.to_dict(),
         )
+        _wrote_evidence()
         with self._lock:
             for index, held in enumerate(self._episodes):
                 if held.episode_id == bound.episode_id:

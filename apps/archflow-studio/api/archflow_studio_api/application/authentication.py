@@ -173,6 +173,11 @@ def request_action(method: str, path: str, *, shared_project: bool) -> str | Non
         # An explicit constraint decision uses the existing decision grant;
         # it still produces only a detached candidate, never Stage acceptance.
         return "accept"
+    if not shared_project and method == "POST" and path == "/api/admissions":
+        # Admitting or rejecting a closed loop's results is an explicit
+        # judgement: it uses the existing decision grant and accepts no Stage.
+        # A shared project service takes none yet: admissions do not sync.
+        return "accept"
     if method in {"GET", "HEAD"}:
         if not shared_project or any(re.fullmatch(pattern, path) for pattern in _SHARED_READ_PATHS):
             return "read"

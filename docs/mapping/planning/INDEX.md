@@ -17,5 +17,6 @@
 | GH-300 | active | Give the Hub sidebar its first cross-project entries: 7-day usage from Monitor and a ready update in the footer, a Tasks list of running and queued Agent work with running badges on project rows, and the approved rail groups with Layout as a Board mode. | [GH-300](GH-300-sidebar.md) |
 | GH-304 | active | Launch the configured Codex executable on Windows, where npm installs codex.cmd. | [GH-304](GH-304-codex-exe.md) |
 | GH-301 | active | Let the architect send a message while the Agent is working and have it change the turn's direction: Claude reads it from its stream-json stdin at the next step; Codex takes it mid-turn through the adapter's steering or, where that is unavailable, cancels the current step and continues with it as the next prompt. | [GH-301](GH-301-steer.md) |
+| GH-294 | active | Implement candidate admission slices S1 and S2 from the 2026-09-25 audit: the CandidateAdmission@1 record in the fixed studio-admissions run and the gate it shares with Stage acceptance, then the Candidate Pool readers for the #284 Design Tree (candidates and studies on design history, admission on Worktree result lines, a warning on a rejected Working Head) and the retirement of Exploration creation. | [GH-294](GH-294-admission-record.md) |
 
 [Back to RMPA](../README.md)

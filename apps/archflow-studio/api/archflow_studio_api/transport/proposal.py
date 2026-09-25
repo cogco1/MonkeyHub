@@ -37,17 +37,6 @@ class WorkingCopyOptionDto(BaseModel):
     model_source: ModelSourceDto = Field(alias="modelSource")
 
 
-class WorkingCopyCreateRequestDto(BaseModel):
-    model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
-    project_id: str = Field(alias="projectId", min_length=1)
-    group_id: str = Field(alias="groupId", min_length=1, max_length=128, pattern=r"^[a-zA-Z0-9][a-zA-Z0-9_-]*$")
-    label: str = Field(min_length=1, max_length=240)
-    stage_id: str = Field(alias="stageId", min_length=1, max_length=128)
-    common_base: ModelSourceDto = Field(alias="commonBase", description="The explicitly chosen comparison base; does not rewrite retained kernel lineage.")
-    scope: list[str] = Field(min_length=1, max_length=2000)
-    options: list[WorkingCopyOptionDto] = Field(min_length=2, max_length=32)
-
-
 class WorkingCopySelectionRequestDto(BaseModel):
     model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
     project_id: str = Field(alias="projectId", min_length=1)

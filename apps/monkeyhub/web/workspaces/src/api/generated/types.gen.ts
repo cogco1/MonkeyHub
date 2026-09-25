@@ -71,6 +71,224 @@ export type AcceptanceEvidenceDto = {
 };
 
 /**
+ * AdmissionActorDto
+ *
+ * Who closed a loop and through which surface, as the boundary resolved it.
+ */
+export type AdmissionActorDto = {
+    /**
+     * Actorid
+     */
+    actorId: string;
+    /**
+     * Authenticated
+     *
+     * Null only where a legacy fact does not say.
+     */
+    authenticated: boolean | null;
+    /**
+     * Origin
+     *
+     * studio or hub for a person's act, hub-agent for the Hub Agent, retroactive for a one-time review; null only where a legacy fact does not say.
+     */
+    origin: string | null;
+};
+
+/**
+ * AdmissionListDto
+ */
+export type AdmissionListDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Admissions
+     */
+    admissions: Array<CandidateAdmissionDto>;
+    /**
+     * Warnings
+     */
+    warnings: Array<string>;
+};
+
+/**
+ * AdmissionRequestDto
+ *
+ * One closed loop's verdict: each result it produced, admitted or rejected.
+ */
+export type AdmissionRequestDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    task: AdmissionTaskDto;
+    study?: AdmissionStudyRequestDto | null;
+    /**
+     * The chat message this loop answers, as the Hub binds it; provenance, never a credential.
+     */
+    messageSource?: MessageSourceDto | null;
+    /**
+     * Rawlanguage
+     *
+     * The user's own words that carry the decision; required for an Agent's rejection.
+     */
+    rawLanguage?: string | null;
+    /**
+     * Results
+     */
+    results: Array<AdmissionResultRequestDto>;
+};
+
+/**
+ * AdmissionResultDto
+ */
+export type AdmissionResultDto = {
+    /**
+     * Runid
+     */
+    runId: string;
+    /**
+     * Outcome
+     */
+    outcome: 'admitted' | 'rejected';
+    /**
+     * Pinned for an admitted result.
+     */
+    modelSource: ModelSourceDto | null;
+    /**
+     * Receiptref
+     */
+    receiptRef: string;
+    /**
+     * Recorddigest
+     */
+    recordDigest: string;
+    /**
+     * Basestageref
+     */
+    baseStageRef: string | null;
+    /**
+     * Supersedes
+     */
+    supersedes: Array<string>;
+    /**
+     * Label
+     */
+    label: string | null;
+    /**
+     * Summary
+     */
+    summary: string | null;
+    /**
+     * Reason
+     */
+    reason: string | null;
+    /**
+     * Blockedby
+     *
+     * Review-readiness clauses that did not hold; null for a rejection.
+     */
+    blockedBy: Array<string> | null;
+};
+
+/**
+ * AdmissionResultRequestDto
+ */
+export type AdmissionResultRequestDto = {
+    /**
+     * Runid
+     */
+    runId: string;
+    /**
+     * Outcome
+     */
+    outcome: 'admitted' | 'rejected';
+    /**
+     * Supersedes
+     *
+     * Attempt runs this result replaced within the loop; they leave the tree and stay readable.
+     */
+    supersedes?: Array<string>;
+    /**
+     * Label
+     */
+    label?: string | null;
+    /**
+     * Summary
+     */
+    summary?: string | null;
+    /**
+     * Reason
+     */
+    reason?: string | null;
+};
+
+/**
+ * AdmissionStudyDto
+ */
+export type AdmissionStudyDto = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Label
+     */
+    label: string | null;
+    /**
+     * Baserunid
+     */
+    baseRunId: string | null;
+    /**
+     * Basestageref
+     */
+    baseStageRef: string | null;
+};
+
+/**
+ * AdmissionStudyRequestDto
+ */
+export type AdmissionStudyRequestDto = {
+    /**
+     * Id
+     *
+     * The Study's id; later loops of the same Study repeat it.
+     */
+    id: string;
+    /**
+     * Label
+     */
+    label: string;
+    /**
+     * Baserunid
+     *
+     * The exact run every result of the Study is built from.
+     */
+    baseRunId: string;
+};
+
+/**
+ * AdmissionTaskDto
+ *
+ * Which closed loop a verdict belongs to, as the caller states it.
+ */
+export type AdmissionTaskDto = {
+    /**
+     * Kind
+     *
+     * ui: a person's act; hub-chat: the Hub Agent closing a chat task on the user's behalf, which must be review-ready; retroactive: a one-time review a person confirms.
+     */
+    kind: 'ui' | 'hub-chat' | 'retroactive';
+    /**
+     * Ids
+     *
+     * Opaque task ids, such as Hub operation or turn ids.
+     */
+    ids?: Array<string>;
+};
+
+/**
  * AgentReadingDto
  *
  * What the agent said and how it was obtained — the agent's, not the record's.
@@ -440,6 +658,46 @@ export type CandidateAcceptedDto = {
      * Status
      */
     status: string;
+};
+
+/**
+ * CandidateAdmissionDto
+ *
+ * One retained CandidateAdmission@1: a closed loop's verdict, facts only.
+ */
+export type CandidateAdmissionDto = {
+    /**
+     * Admissionid
+     */
+    admissionId: string;
+    /**
+     * Admissionref
+     */
+    admissionRef: string;
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Previousrevisionref
+     */
+    previousRevisionRef: string | null;
+    /**
+     * Occurredat
+     */
+    occurredAt: string;
+    actor: AdmissionActorDto;
+    messageSource: MessageSourceDto | null;
+    /**
+     * Rawlanguage
+     */
+    rawLanguage: string | null;
+    task: AdmissionTaskDto;
+    study: AdmissionStudyDto | null;
+    /**
+     * Results
+     */
+    results: Array<AdmissionResultDto>;
 };
 
 /**
@@ -2249,6 +2507,95 @@ export type DesignBranchDto = {
 };
 
 /**
+ * DesignCandidateDto
+ *
+ * One admitted Candidate of the project's pool (#294).
+ */
+export type DesignCandidateDto = {
+    /**
+     * Candidateid
+     *
+     * The result run.
+     */
+    candidateId: string;
+    /**
+     * Outcome
+     *
+     * Always admitted unless include=rejected also asked for retained rejections.
+     */
+    outcome: 'admitted' | 'rejected';
+    /**
+     * Label
+     */
+    label: string | null;
+    /**
+     * Summary
+     */
+    summary: string | null;
+    /**
+     * Basestageref
+     *
+     * The Stage it was built from (its retained change's source Stage); null under the Unstaged root.
+     */
+    baseStageRef: string | null;
+    /**
+     * Studyid
+     *
+     * The Study it belongs to; null when ungrouped.
+     */
+    studyId: string | null;
+    /**
+     * The exact complete model it was admitted with; anchors previews.
+     */
+    modelSource: ModelSourceDto | null;
+    admittedBy: AdmissionActorDto | null;
+    /**
+     * Admittedat
+     */
+    admittedAt: string | null;
+    /**
+     * Admissionref
+     *
+     * The retained fact that admits it: its CandidateAdmission@1, or for legacy the Stage, Exploration or episode record.
+     */
+    admissionRef: string | null;
+    /**
+     * Legacy
+     *
+     * Which earlier fact admits it when no admission record does; null for a record.
+     */
+    legacy: 'stage' | 'working-copy' | 'episode' | null;
+    /**
+     * Acceptedstageref
+     *
+     * The Stage it became, or the Stage whose accepted run it is the nearest admitted ancestor of.
+     */
+    acceptedStageRef: string | null;
+    /**
+     * Continuedfrom
+     *
+     * Its nearest admitted ancestor Candidate, from retained lineage.
+     */
+    continuedFrom: string | null;
+    /**
+     * Inworkingheadlineage
+     */
+    inWorkingHeadLineage: boolean;
+    /**
+     * Blockedby
+     *
+     * The review-readiness clauses that did not hold when a person admitted it as a comparison option (the violation marker, owner decision Q2); empty when it was review-ready.
+     */
+    blockedBy: Array<string>;
+    /**
+     * Supersedes
+     *
+     * Attempts this result replaced within its loop; hidden by default.
+     */
+    supersedes: Array<string>;
+};
+
+/**
  * DesignDecisionSourceDto
  *
  * A real retained design run, its state digest and its Stage when named.
@@ -2292,6 +2639,22 @@ export type DesignHistoryDto = {
      * Stages
      */
     stages: Array<DesignStageDto>;
+    /**
+     * Candidates
+     *
+     * The project's admitted Candidates, from admission records and legacy facts; never every run.
+     */
+    candidates: Array<DesignCandidateDto>;
+    /**
+     * Studies
+     */
+    studies: Array<DesignStudyDto>;
+    /**
+     * Warnings
+     *
+     * Admission facts that could not be read or compete; those runs are left out.
+     */
+    warnings: Array<string>;
 };
 
 /**
@@ -2363,6 +2726,38 @@ export type DesignStageDto = {
      */
     acceptedBy: string;
     acceptance?: AcceptanceEvidenceDto | null;
+};
+
+/**
+ * DesignStudyDto
+ *
+ * One Study: a declared group, one closed loop's own group, or a retained Exploration.
+ */
+export type DesignStudyDto = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Label
+     */
+    label: string | null;
+    /**
+     * Baserunid
+     */
+    baseRunId: string | null;
+    /**
+     * Basestageref
+     */
+    baseStageRef: string | null;
+    /**
+     * Candidateids
+     */
+    candidateIds: Array<string>;
+    /**
+     * Source
+     */
+    source: 'declared' | 'admission' | 'working-copy';
 };
 
 /**
@@ -10121,40 +10516,6 @@ export type VolumesDto = {
 };
 
 /**
- * WorkingCopyCreateRequestDto
- */
-export type WorkingCopyCreateRequestDto = {
-    /**
-     * Projectid
-     */
-    projectId: string;
-    /**
-     * Groupid
-     */
-    groupId: string;
-    /**
-     * Label
-     */
-    label: string;
-    /**
-     * Stageid
-     */
-    stageId: string;
-    /**
-     * The explicitly chosen comparison base; does not rewrite retained kernel lineage.
-     */
-    commonBase: ModelSourceDto;
-    /**
-     * Scope
-     */
-    scope: Array<string>;
-    /**
-     * Options
-     */
-    options: Array<WorkingCopyOptionDto>;
-};
-
-/**
  * WorkingCopyDto
  */
 export type WorkingCopyDto = {
@@ -10580,6 +10941,18 @@ export type WorktreeLineDto = {
      * Updatedat
      */
     updatedAt: string | null;
+    /**
+     * Admission
+     *
+     * The line's retained verdict: an admitted Candidate (legacy Stage, Exploration and accepted-episode facts count), a result the architect turned down, an attempt a closed loop replaced, or none yet. Running work is always none.
+     */
+    admission: 'admitted' | 'rejected' | 'superseded' | 'none';
+    /**
+     * Studyid
+     *
+     * The Study that verdict grouped the run into, if any.
+     */
+    studyId: string | null;
 };
 
 export type ReadHealthApiHealthGetData = {
@@ -14111,6 +14484,12 @@ export type ReadCommittedDesignHistoryApiDesignHistoryGetData = {
          * Branchid
          */
         branchId?: string;
+        /**
+         * Include
+         *
+         * rejected also lists retained rejections, for advanced views.
+         */
+        include?: 'rejected' | null;
     };
     url: '/api/design-history';
 };
@@ -14208,6 +14587,83 @@ export type AcceptCommittedDesignApiCandidatesCandidateIdAcceptPostResponses = {
 
 export type AcceptCommittedDesignApiCandidatesCandidateIdAcceptPostResponse = AcceptCommittedDesignApiCandidatesCandidateIdAcceptPostResponses[keyof AcceptCommittedDesignApiCandidatesCandidateIdAcceptPostResponses];
 
+export type ReadCandidateAdmissionsApiAdmissionsGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Include
+         *
+         * rejected also lists retained rejections, for advanced views.
+         */
+        include?: 'rejected' | null;
+    };
+    url: '/api/admissions';
+};
+
+export type ReadCandidateAdmissionsApiAdmissionsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadCandidateAdmissionsApiAdmissionsGetError = ReadCandidateAdmissionsApiAdmissionsGetErrors[keyof ReadCandidateAdmissionsApiAdmissionsGetErrors];
+
+export type ReadCandidateAdmissionsApiAdmissionsGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: AdmissionListDto;
+};
+
+export type ReadCandidateAdmissionsApiAdmissionsGetResponse = ReadCandidateAdmissionsApiAdmissionsGetResponses[keyof ReadCandidateAdmissionsApiAdmissionsGetResponses];
+
+export type AdmitCandidateResultsApiAdmissionsPostData = {
+    body: AdmissionRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/admissions';
+};
+
+export type AdmitCandidateResultsApiAdmissionsPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AdmitCandidateResultsApiAdmissionsPostError = AdmitCandidateResultsApiAdmissionsPostErrors[keyof AdmitCandidateResultsApiAdmissionsPostErrors];
+
+export type AdmitCandidateResultsApiAdmissionsPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: CandidateAdmissionDto;
+};
+
+export type AdmitCandidateResultsApiAdmissionsPostResponse = AdmitCandidateResultsApiAdmissionsPostResponses[keyof AdmitCandidateResultsApiAdmissionsPostResponses];
+
 export type ForkCommittedDesignApiDesignBranchesPostData = {
     body: ForkDesignBranchRequestDto;
     headers?: {
@@ -14277,41 +14733,6 @@ export type ReadWorkingCopiesApiWorkingCopiesGetResponses = {
 };
 
 export type ReadWorkingCopiesApiWorkingCopiesGetResponse = ReadWorkingCopiesApiWorkingCopiesGetResponses[keyof ReadWorkingCopiesApiWorkingCopiesGetResponses];
-
-export type CreateWorkingCopyGroupApiWorkingCopiesPostData = {
-    body: WorkingCopyCreateRequestDto;
-    headers?: {
-        /**
-         * X-Monkey-Operation
-         */
-        'x-monkey-operation'?: string | null;
-        /**
-         * X-Monkey-Parent
-         */
-        'x-monkey-parent'?: string | null;
-    };
-    path?: never;
-    query?: never;
-    url: '/api/working-copies';
-};
-
-export type CreateWorkingCopyGroupApiWorkingCopiesPostErrors = {
-    /**
-     * Validation Error
-     */
-    422: HttpValidationError;
-};
-
-export type CreateWorkingCopyGroupApiWorkingCopiesPostError = CreateWorkingCopyGroupApiWorkingCopiesPostErrors[keyof CreateWorkingCopyGroupApiWorkingCopiesPostErrors];
-
-export type CreateWorkingCopyGroupApiWorkingCopiesPostResponses = {
-    /**
-     * Successful Response
-     */
-    201: WorkingCopyDto;
-};
-
-export type CreateWorkingCopyGroupApiWorkingCopiesPostResponse = CreateWorkingCopyGroupApiWorkingCopiesPostResponses[keyof CreateWorkingCopyGroupApiWorkingCopiesPostResponses];
 
 export type ReadWorkingCopyGroupApiWorkingCopiesGroupIdGetData = {
     body?: never;

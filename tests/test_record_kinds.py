@@ -17,6 +17,7 @@ from pathlib import Path
 
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import (
+    CANDIDATE_ADMISSION,
     COMPONENT_TEMPLATE,
     DELIBERATION_EPISODE,
     RECORD_KINDS,
@@ -240,6 +241,39 @@ class PutJsonRegistrationTests(unittest.TestCase):
         self.assertEqual(ref.record_kind, DELIBERATION_EPISODE)
         self.assertEqual(
             self.repository.load_json(ref)["schema"], "DeliberationEpisode@1"
+        )
+
+    def test_the_studio_may_retain_a_candidate_admission_for_review(self) -> None:
+        """One closed loop's admission verdict (#294), in a review area.
+
+        Registered because ``put_json`` refuses a kind the table does not
+        hold. It lands in the review area of its fixed run, not beside the
+        run records a candidate retains, and it is listed by its own kind.
+        """
+
+        entry = require_registered(CANDIDATE_ADMISSION)
+        self.assertEqual(entry.schema, "CandidateAdmission@1")
+        self.assertEqual(entry.area, PersistenceArea.RUN_REVIEW.value)
+        self.assertIn("studio-admissions", entry.note)
+        run = self.repository.create_run("studio-admissions")
+        review = PersistenceDestination(PersistenceArea.RUN_REVIEW, run_id=run.run_id)
+        ref = self.repository.put_json(
+            run=run,
+            destination=review,
+            record_kind=CANDIDATE_ADMISSION,
+            payload={"schema": entry.schema, "admissionId": "adm-000000000000"},
+        )
+        self.assertEqual(ref.record_kind, CANDIDATE_ADMISSION)
+        self.assertEqual(
+            self.repository.list_json(run=run, destination=review, record_kind=CANDIDATE_ADMISSION),
+            (ref,),
+        )
+        self.assertEqual(
+            self.repository.list_json(
+                run=run,
+                destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=run.run_id),
+            ),
+            (),
         )
 
     def test_an_unregistered_kind_is_refused_and_nothing_is_written(self) -> None:
