@@ -7,11 +7,13 @@ from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timezone
 import hashlib
 from io import BytesIO
+from collections import OrderedDict
 from itertools import product
 import json
-from math import ceil
+from math import ceil, sqrt
 import os
 from pathlib import Path
+import threading
 from typing import Any
 from uuid import uuid4
 
@@ -130,12 +132,16 @@ def _elevation_view(
 ) -> ElevationView:
     # Coordinates are the Z-up frame used by the verified source model. The
     # crop follows the retained cold-read bounds of every physical object.
+    # ``axon`` is the isometric view from the -X, -Y, +Z side, Z up on the
+    # sheet; only the transient model view offers it.
     right, up, look = {
         "front": ((1, 0, 0), (0, 0, 1), (0, 1, 0)),
         "back": ((-1, 0, 0), (0, 0, 1), (0, -1, 0)),
         "left": ((0, -1, 0), (0, 0, 1), (1, 0, 0)),
         "right": ((0, 1, 0), (0, 0, 1), (-1, 0, 0)),
         "top": ((1, 0, 0), (0, 1, 0), (0, 0, -1)),
+        "axon": ((1 / sqrt(2), -1 / sqrt(2), 0), (1 / sqrt(6), 1 / sqrt(6), 2 / sqrt(6)),
+                 (1 / sqrt(3), 1 / sqrt(3), -1 / sqrt(3))),
     }[direction]
     try:
         physical = receipt["physical_object_ids"]
@@ -159,12 +165,31 @@ def _elevation_view(
         raise StudioError(409, "DRAWING_SOURCE_INVALID", "The exact model has no complete retained bounds for this elevation.") from exc
 
 
+# Recent model views by exact verified source and view name. The projection is
+# the slow part of a model view and depends on nothing else; the source is
+# verified again on every read. Transient process memory, never project data.
+_MODEL_VIEWS: OrderedDict[tuple[Any, str], tuple[bytes, int, int]] = OrderedDict()
+_MODEL_VIEW_LIMIT = 32
+_model_views_lock = threading.Lock()
+
+
 def model_view(binding: ProjectBinding, *, model_source: ModelSource, view: str) -> tuple[bytes, int, int]:
-    """Read one exact retained model as a bounded line projection, without retaining a drawing."""
+    """Read one exact retained model as a bounded line projection, without retaining a drawing.
+
+    A repeated view of the same run, state and model asset is served from an
+    in-process cache once ``_complete_source`` has verified that source again.
+    The key is the exact STEP or native model and receipt those three resolve
+    to, with the view name, so equal keys always draw equal lines.
+    """
 
     from PIL import Image
 
     source, receipt = _complete_source(binding, model_source, None)
+    key = (source, view)
+    with _model_views_lock:
+        if key in _MODEL_VIEWS:
+            _MODEL_VIEWS.move_to_end(key)
+            return _MODEL_VIEWS[key]
     try:
         verified = read_elevation_source(binding.repository, source)
         recipe = _elevation_view(receipt, view, hidden_lines=False, scale_denominator=1)
@@ -181,6 +206,11 @@ def model_view(binding: ProjectBinding, *, model_source: ModelSource, view: str)
         raise StudioError(409, "DRAWING_SOURCE_INVALID", str(exc)) from exc
     with Image.open(BytesIO(projected.png)) as image:
         width, height = image.size
+    with _model_views_lock:
+        _MODEL_VIEWS[key] = (projected.png, width, height)
+        _MODEL_VIEWS.move_to_end(key)
+        while len(_MODEL_VIEWS) > _MODEL_VIEW_LIMIT:
+            _MODEL_VIEWS.popitem(last=False)
     return projected.png, width, height
 
 

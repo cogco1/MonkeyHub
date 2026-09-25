@@ -244,6 +244,10 @@ class PlanDimensionProposalRequestDto(PlanStatusRequestDto):
 
 DrawingStyleId = Literal["arch400-white", "arch364-technical"]
 
+# The five model-axis directions and one isometric axonometric: the view from
+# the -X, -Y, +Z side, Z up on the sheet. All are orthographic line projections.
+ModelViewName = Literal["front", "back", "left", "right", "top", "axon"]
+
 
 class ModelViewDto(BaseModel):
     """Transient pixels from a verified model, not a material render or saved drawing."""
@@ -251,7 +255,7 @@ class ModelViewDto(BaseModel):
     model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
 
     source: ModelSourceDto
-    view: Literal["front", "back", "left", "right", "top"]
+    view: ModelViewName
     mime_type: Literal["image/png"] = Field(alias="mimeType", default="image/png")
     data: str = Field(description="Base64 PNG bytes from the exact source model's orthographic line projection.")
     width: int = Field(ge=1, le=1024)
