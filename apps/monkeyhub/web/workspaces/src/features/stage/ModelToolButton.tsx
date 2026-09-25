@@ -142,13 +142,23 @@ export type ModelToolButtonProps = Omit<ComponentProps<"button">, "children" | "
   showLabel?: boolean;
 };
 
+/**
+ * The shortcut the tooltip shows, in `aria-keyshortcuts` words (NA-4): the
+ * modifier is `Control`, not `Ctrl`. Letters and `Space` are already spelled
+ * the way the attribute expects.
+ */
+function keyShortcuts(shortcut: string | undefined): string | undefined {
+  if (!shortcut) return undefined;
+  return shortcut.split("+").map((key) => key === "Ctrl" ? "Control" : key).join("+");
+}
+
 /** A local toolbar control; the caller continues to own its action and state. */
 export function ModelToolButton({ icon, label, shortcut, showLabel = false, className, type = "button", ...props }: ModelToolButtonProps) {
   useEffect(() => { installStageToolbarPolicy(); }, []);
   if (HIDDEN_FROM_STAGE1_TOOLBAR.has(icon)) return null;
 
   return (
-    <button {...props} type={type} aria-label={label} data-tool-icon={icon}
+    <button aria-keyshortcuts={keyShortcuts(shortcut)} {...props} type={type} aria-label={label} data-tool-icon={icon}
       className={`model-tool-button${showLabel ? " model-tool-button--labelled" : ""}${className ? ` ${className}` : ""}`}>
       <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor"
         strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">

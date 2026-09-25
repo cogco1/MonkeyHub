@@ -906,6 +906,9 @@ await openSeed('initial model');
 const originalRuns=await runIds(), beforeWrites=sent.length;
 // SS-5: Record is offered, by name, only while there is something to record.
 assert.equal(await button('Record').count(),0,'no dead Record icon before any edit');
+// NA-4: a tool's shortcut is announced, not only shown in its hover tooltip.
+for(const [name,keys] of [['Select','Space'],['Rectangle','R'],['Push/Pull','P'],['Undo model','Control+Z'],['Redo model','Control+Shift+Z']])
+  assert.equal(await button(name).getAttribute('aria-keyshortcuts'),keys,`${name} announces ${keys}`);
 console.log('1 · completed rectangles/lines stay local and independently pickable');
 const block=await rectangle(2,1), curve=await line();
 await button('Record').waitFor();assert.equal(await button('Record').isEnabled(),true);
@@ -1012,6 +1015,8 @@ assert.notEqual(state.base,failedBase);assert.equal(candidateCalls().length,3);
 console.log('7 · annotation and document keys cannot act on the local model');
 const inkObject=await rectangle(.8,.6);await pick(inkObject);const inkModelIndex=(await snap()).index;
 const annotate=page.locator('button[aria-controls="annotation-tools"]');await annotate.click();
+assert.deepEqual(await page.getByRole('group',{name:'Annotation colour',exact:true}).getByRole('button').evaluateAll(nodes=>nodes.map(node=>node.getAttribute('aria-label'))),
+  ['Red','Blue','Yellow','White'],'annotation swatches announce colour names, not hex codes');
 const inkTool=page.locator('#annotation-tools').getByRole('button',{name:'╱ Line',exact:true});await inkTool.click();
 const inkBox=await page.locator('canvas.annotate[data-armed="true"]').boundingBox();assert.ok(inkBox);
 await page.mouse.move(inkBox.x+inkBox.width*.4,inkBox.y+inkBox.height*.55);await page.mouse.down();

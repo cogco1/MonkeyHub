@@ -105,6 +105,18 @@ export interface ReviewSummary {
 
 export type CaptureState = "idle" | "busy" | "success" | "error";
 
+/**
+ * The annotation swatches, each announced by its colour's name rather than its
+ * hex code (NA-4). The names stay here until the catalogs can take new copy
+ * (review §4 step 1).
+ */
+const ANNOTATION_COLOURS = [
+  { value: "#e5534b", "zh-CN": "红色", en: "Red" },
+  { value: "#2f80ed", "zh-CN": "蓝色", en: "Blue" },
+  { value: "#f2c94c", "zh-CN": "黄色", en: "Yellow" },
+  { value: "#ffffff", "zh-CN": "白色", en: "White" },
+] as const;
+
 function sketchControls(state: SketchState) {
   return {
     tool: state.tool, phase: state.phase, typed: state.typed, axisLock: state.axisLock,
@@ -1787,12 +1799,12 @@ export function Stage({
               </button>
             ))}
             <span className="viewtools__sep" aria-hidden="true" />
-            <span className="annotation-style" aria-label={t("stage.tools.colour")}>
-              {["#e5534b", "#2f80ed", "#f2c94c", "#ffffff"].map((color) => (
-                <button key={color} type="button" className="annotation-style__colour" aria-label={color} aria-pressed={annotationStyle.color === color} onClick={() => setAnnotationStyle((current) => ({ ...current, color }))} style={{ "--annotation-colour": color } as CSSProperties} />
+            <span className="annotation-style" role="group" aria-label={t("stage.tools.colour")}>
+              {ANNOTATION_COLOURS.map(({ value: color, ...names }) => (
+                <button key={color} type="button" className="annotation-style__colour" aria-label={names[language]} title={names[language]} aria-pressed={annotationStyle.color === color} onClick={() => setAnnotationStyle((current) => ({ ...current, color }))} style={{ "--annotation-colour": color } as CSSProperties} />
               ))}
             </span>
-            <span className="annotation-style" aria-label={t("stage.tools.lineWidth")}>
+            <span className="annotation-style" role="group" aria-label={t("stage.tools.lineWidth")}>
               {([2, 4, 6] as const).map((lineWidth) => (
                 <button key={lineWidth} type="button" className="annotation-style__width" aria-label={`${lineWidth}px`} aria-pressed={annotationStyle.lineWidth === lineWidth} onClick={() => setAnnotationStyle((current) => ({ ...current, lineWidth }))}><span style={{ height: lineWidth }} /></button>
               ))}
