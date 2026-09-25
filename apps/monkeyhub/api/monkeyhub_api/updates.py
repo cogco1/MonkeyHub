@@ -321,6 +321,10 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+# A prepared update is applicable, and so ready, only in these transaction states.
+_USABLE = frozenset({"ready", "activated", "applied"})
+
+
 class DesktopUpdates:
     def __init__(self, source_root: Path, directory: Path, *, managed: bool,
                  busy: Callable[[], str | None], feed: ReleaseFeed | None = None,
@@ -469,19 +473,24 @@ class DesktopUpdates:
         except ValidationError:
             view = UpdateCheck()
         if self._progress is not None:
+            # A check in progress knows only the version it is working on.
             state, version = self._progress
-            view = view.model_copy(update={"state": state, "latestVersion": version or view.latestVersion, "detail": None})
+            view = view.model_copy(update={"state": state, "latestVersion": version, "detail": None})
         return view
 
     def status(self) -> UpdateStatus:
         with self._lock:
             record = self._record
-            prepared = None
-            if record.get("baseCommit") == self.revision and record.get("prepared"):
-                prepared = PreparedUpdate.model_validate(record["prepared"])
             applying = bool(self._verifying or self._restart_commit or self._activation_pending())
-            state = "applying" if applying else "preparing" if self._preparing else "failed" if self._error else "ready" if prepared else "idle"
-            busy = self._busy() if self.supported and prepared and not applying and not self._preparing else None
+            # A failed, undone or unfinished transaction is not a prepared update:
+            # it is reported as failed with its reason, never as ready or applicable.
+            prepared = None
+            if (record.get("baseCommit") == self.revision and record.get("prepared")
+                    and (record.get("state") in _USABLE or applying)):
+                prepared = PreparedUpdate.model_validate(record["prepared"])
+            state = ("applying" if applying else "preparing" if self._preparing
+                     else "ready" if prepared else "failed" if self._error else "idle")
+            busy = self._busy() if self.supported and state == "ready" else None
             auto = self._auto_enabled() if self.supported else False
             message = busy
             if not self.supported:
@@ -494,8 +503,9 @@ class DesktopUpdates:
                 currentRevision=self.revision, currentVersion=self.revision[:12] if self.revision else "development",
                 releaseVersion=self.release_version,
                 mode="local" if self.supported else "unsupported", state=state, prepared=prepared,
-                canApply=bool(self.supported and prepared and not applying and not self._preparing and not busy
-                              and not self._writes and not self._finishing),
+                canApply=bool(self.supported and state == "ready" and not busy and not self._writes and not self._finishing),
+                # A later failure (a newer download, a chosen patch) keeps its
+                # reason here while the earlier prepared update stays ready.
                 message=message, error=self._error,
                 channel=CHANNEL if self.supported else None, autoUpdate=auto,
                 # Switched in at quit when on; already switched once activated.
@@ -531,8 +541,13 @@ class DesktopUpdates:
         self._discard_upload(path)
 
     def _prepare_patch(self, path: Path, extra: dict | None = None,
-                       cancelled: Callable[[], bool] | None = None) -> Exception | None:
-        """Stage one received patch beside this version and record it as ready; return what stopped it."""
+                       cancelled: Callable[[], bool] | None = None, *, trial: bool = False) -> Exception | None:
+        """Stage one received patch beside this version and record it as ready; return what stopped it.
+
+        With ``trial`` the new version's runtime must also load before the
+        update is recorded as ready, so preparing ends in ready or in failed
+        with its reason, and a ready update is never turned failed afterwards.
+        """
         from apps.monkeyhub.installer.patch import PatchCancelled, describe_patch, stage_patch
         try:
             metadata = describe_patch(path)
@@ -551,10 +566,22 @@ class DesktopUpdates:
                 releaseVersion=(extra or {}).get("releaseVersion"),
             )
             # Keep the exact patch for a last readback before activation.
+            record = {"baseCommit": self.revision, "targetCommit": metadata["targetCommit"],
+                      "state": "ready", "prepared": prepared.model_dump(), "patch": path.parent.name,
+                      **(extra or {})}
+            if trial:
+                try:
+                    self._preflight(target)
+                except ValueError as error:
+                    failure = HubError(code="UPDATE_PREFLIGHT_FAILED", detail=str(error))
+                    # Recorded, so this release is not fetched again automatically.
+                    with self._lock:
+                        self._save({**record, "state": "failed", "error": failure.model_dump()})
+                        self._error = failure
+                    return error
+                record["preflight"] = "passed"
             with self._lock:
-                self._save({"baseCommit": self.revision, "targetCommit": metadata["targetCommit"],
-                            "state": "ready", "prepared": prepared.model_dump(), "patch": path.parent.name,
-                            **(extra or {})})
+                self._save(record)
             return None
         except PatchCancelled as error:
             self._discard_upload(path)
@@ -613,6 +640,8 @@ class DesktopUpdates:
             result = subprocess.run(
                 ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script,
                  "-ActivateInstalled", "-CreateDesktopShortcut"],
+                # The Hub's stdin is the desktop's control pipe; no child may read it.
+                stdin=subprocess.DEVNULL,
                 capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60,
                 creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
             )
@@ -849,11 +878,18 @@ class DesktopUpdates:
         try:
             result = subprocess.run(
                 [_command_path(target / "_runtime/python/python.exe"), "-B", _command_path(target / ENTRY), "--help"],
+                # The packaged Hub's --managed-stdin thread always waits on its
+                # stdin pipe; a Python child that inherits that pipe does not
+                # start on Windows until the read returns, so the trial load
+                # timed out in every packaged check.
+                stdin=subprocess.DEVNULL,
                 cwd=_command_path(target), env=environment, capture_output=True, text=True, encoding="utf-8",
                 errors="replace", timeout=PREFLIGHT_SECONDS,
                 creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
             )
-        except (OSError, subprocess.TimeoutExpired) as error:
+        except subprocess.TimeoutExpired as error:
+            raise ValueError(f"The new version's runtime did not finish loading within {PREFLIGHT_SECONDS:.0f} s.") from error
+        except OSError as error:
             raise ValueError(f"The new version's runtime could not be started: {error}") from error
         if result.returncode or "--runtime-root" not in result.stdout:
             tail = " / ".join((result.stderr or result.stdout).strip().splitlines()[-3:])
@@ -958,7 +994,7 @@ class DesktopUpdates:
                 return {"state": "ready", "latestVersion": version, "releaseUrl": page}
             if record.get("state") == "failed" and not explicit:
                 return {"state": "error", "latestVersion": version, "releaseUrl": page, "sticky": True,
-                        "detail": f"Release {version} did not start correctly here before; choose Check now to try it again."}
+                        "detail": f"Release {version} did not complete here before; choose Check again to retry it."}
         if (not explicit and isinstance(last, dict) and last.get("sticky") and last.get("latestVersion") == version
                 and last.get("state") == "error"):
             return {key: value for key, value in last.items() if key != "checkedAt"}
@@ -1000,31 +1036,20 @@ class DesktopUpdates:
             self.fail_upload(path, str(refusal), code="UPDATE_DOWNLOAD_REFUSED")
             refusal.version = version
             raise refusal from error
-        failure = self._prepare_patch(path, {"source": "auto", "releaseVersion": version}, cancelled=self._stop.is_set)
+        with self._lock:
+            # Downloaded: what remains is verifying, staging and loading the new runtime once.
+            self._progress = ("checking", version)
+        failure = self._prepare_patch(path, {"source": "auto", "releaseVersion": version},
+                                      cancelled=self._stop.is_set, trial=True)
         if failure is not None:
             if self._stop.is_set():
                 return None
             # A refused file operation (disk space, a lock that outlasted the
             # wait) is retried by the next check; a patch that does not match
-            # this installation is not downloaded again automatically.
+            # this installation, or a runtime that does not load, is not
+            # downloaded again automatically.
             raise UpdateCheckError(str(failure), version=version,
                                    transient=isinstance(failure, OSError) or isinstance(failure.__cause__, OSError))
-        prepared_root = self.source_root.parent / (target[:12] + "-desktop")
-        try:
-            self._preflight(prepared_root)
-            passed = True
-        except ValueError as error:
-            passed, failure = False, HubError(code="UPDATE_PREFLIGHT_FAILED", detail=str(error))
-        with self._lock:
-            # A restart-now that started meanwhile keeps its own transaction.
-            if self._record.get("targetCommit") == target and self._record.get("state") == "ready":
-                if passed:
-                    self._save({**self._record, "preflight": "passed"})
-                else:
-                    self._save({**self._record, "state": "failed", "error": failure.model_dump()})
-                    self._error = failure
-        if not passed:
-            raise UpdateCheckError(failure.detail, version=version)
         return {"state": "ready", "latestVersion": version, "releaseUrl": page}
 
     def shutdown(self) -> None:
