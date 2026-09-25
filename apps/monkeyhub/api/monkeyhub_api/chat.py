@@ -54,8 +54,10 @@ from archflow.project.repository import FilesystemProjectRepository
 from archflow.state.state_record import StateRecord
 from archflow_studio_api.settings import read_application_settings
 
+from pydantic import Field
+
 from .models import (
-    ChatAttachment, ChatCreateRequest, ChatDesignContext, ChatDetail, ChatMessage, ChatPostRequest, ChatProject,
+    ChatAttachment, ChatAttention, ChatCreateRequest, ChatDesignContext, ChatDetail, ChatMessage, ChatPostRequest, ChatProject,
     ChatDocument, ChatDocumentRef, ChatPresentationBindRequest, ChatPresentationBinding, ChatPresentationRequest,
     ChatPermission, ChatPermissionOption, ChatPermissionRequest,
     ChatProjectRequest, ChatProvider, ChatSummary, ChatUsageSource, ChatWorkspace, HubError, HubFailure,
@@ -330,6 +332,23 @@ class _SavedChat(ChatDetail):
     transport: Literal["cli", "acp"] = "cli"
     acpSessionId: str | None = None
     acpDefaultModel: str | None = None
+    # Read from the transcript on every summary (#300); a record never stores it.
+    attention: ChatAttention | None = Field(default=None, exclude=True)
+
+
+# A summary is these fields of the record, plus its attention read fresh.
+_SUMMARY_FIELDS = set(ChatSummary.model_fields) - {"attention"}
+
+
+def _attention(session: _SavedChat) -> ChatAttention | None:
+    """What this conversation waits for from the architect (#300).
+
+    A permission request waits exactly while its message still carries it:
+    the request the conversation shows with its options. Answering, stopping,
+    a withdrawn step and a Hub restart all clear it. The record is already in
+    memory, so asking reads no file.
+    """
+    return "permission" if any(message.permission is not None for message in session.messages) else None
 
 
 # What a tool result is asked for by name. Anything else stays in the result
@@ -1019,10 +1038,12 @@ class ChatStore:
                                chatCount=0, version=version, stage=stage)
 
     def list(self, project_id: str | None = None, *, archived: bool = False) -> list[ChatSummary]:
+        # Polled by every open Hub view (#300): only the summary fields are
+        # copied, never a whole transcript.
         with self._lock:
             self._load()
-            return [ChatSummary.model_validate(row.model_dump()) for row in
-                    sorted(self._sessions.values(), key=lambda item: item.updatedAt, reverse=True)
+            return [ChatSummary.model_validate({**row.model_dump(include=_SUMMARY_FIELDS), "attention": _attention(row)})
+                    for row in sorted(self._sessions.values(), key=lambda item: item.updatedAt, reverse=True)
                     if row.archived == archived and (project_id is None or row.projectId == project_id)]
 
     def usage_sources(self) -> list[ChatUsageSource]:
@@ -1048,7 +1069,8 @@ class ChatStore:
 
     def get(self, session_id: str) -> ChatDetail:
         with self._lock:
-            detail = ChatDetail.model_validate(self._session(session_id).model_dump())
+            session = self._session(session_id)
+            detail = ChatDetail.model_validate({**session.model_dump(), "attention": _attention(session)})
             extra = [row.model_copy(deep=True) for row in self._progress_rows.get(session_id, {}).values()]
             if detail.status != "running":
                 ending = "interrupted" if detail.status == "interrupted" else "failed" if detail.status == "failed" else "complete"
@@ -1677,6 +1699,9 @@ class ChatStore:
                 id=f"{self._answering(session)}:permission:{permission.id}", role="tool", content=permission.title,
                 createdAt=_now(), status="streaming", permission=permission,
             ))
+            # A request is a change of its own (#300): two requests in a row are
+            # two moments in the summary, never one.
+            session.updatedAt = _now()
             self._permissions[(session_id, permission.id)] = future
             if running.trace:
                 running.trace.permission(permission.id)
@@ -1699,6 +1724,7 @@ class ChatStore:
                 future.set_result(request.optionId)
             except InvalidStateError:
                 message.permission, message.status = None, "interrupted"
+                session.updatedAt = _now()
                 self._permissions.pop((session_id, permission_id), None)
                 self._save(session)
                 raise HubFailure(409, "CHAT_PERMISSION_EXPIRED", "This permission request is no longer waiting for a decision.") from None
@@ -1707,6 +1733,7 @@ class ChatStore:
             if active.trace:
                 active.trace.permission(permission_id, completed=True)
             message.permission, message.status = None, "complete"
+            session.updatedAt = _now()
             self._save(session)
             self._permissions.pop((session_id, permission_id))
             return self.get(session_id)

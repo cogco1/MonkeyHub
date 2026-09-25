@@ -338,6 +338,10 @@ export type ChatDetail = {
      */
     sourceSessionId?: string | null;
     /**
+     * Attention
+     */
+    attention?: 'permission' | null;
+    /**
      * Messages
      */
     messages?: Array<ChatMessage>;
@@ -794,6 +798,10 @@ export type ChatSummary = {
      * Sourcesessionid
      */
     sourceSessionId?: string | null;
+    /**
+     * Attention
+     */
+    attention?: 'permission' | null;
 };
 
 /**
