@@ -10,6 +10,7 @@ import inspect
 from time import perf_counter
 from uuid import uuid4
 
+from monkeymonitor.pricing import billing_plan
 from monkeymonitor.store import UsageLog
 from monkeymonitor.usage import TokenUsage, UsageEvent
 
@@ -85,6 +86,12 @@ class StudioMonitor:
             current = self.current()
             if parent_event_id is None:
                 parent_event_id = current.get("parent_event_id") if event_id == current.get("event_id") else current.get("event_id")
+            details = {} if details is None else dict(details)
+            if model_call is True and "billing_plan" not in details:
+                # The plan this connection bills under, so Monitor can price the call.
+                plan = billing_plan(provider)
+                if plan is not None:
+                    details["billing_plan"] = plan
             event = UsageEvent(
                 event_id=event_id or str(uuid4()), source="studio",
                 provider=provider, model=model, phase=phase, status=status,
@@ -97,7 +104,7 @@ class StudioMonitor:
                 parent_session_id=parent_session_id, turn_id=turn_id or current.get("turn_id"),
                 billing_mode=billing_mode,
                 operation_id=operation_id or current.get("operation_id"), parent_event_id=parent_event_id,
-                details={} if details is None else details,
+                details=details,
             )
             self.store.append(event)
             return event.event_id

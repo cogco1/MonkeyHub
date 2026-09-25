@@ -277,6 +277,8 @@
       "issue": "https://github.com/cogco1/MonkeyHub/issues/252",
       "write_scope": [
         "apps/archflow-studio/api/archflow_studio_api/application/monitoring.py",
+        "apps/monkeyhub/api/monkeyhub_api/chat_trace.py",
+        "apps/monkeyhub/api/tests/test_chat_trace.py",
         "docs/mapping/planning/GH-252-billing-plan.md",
         "monkeymonitor/"
       ],
@@ -295,11 +297,14 @@
           "reviewer": "Claude root task",
           "handoff": "The Monitor billing_plan fix in V4_RUNTIME handoff/260925_next-batch-plan/07_252-268-investigation.md.",
           "modules": [
-            "monkeymonitor"
+            "monkeymonitor",
+            "hub.shell"
           ],
           "write_scope": [
             "monkeymonitor/",
-            "apps/archflow-studio/api/archflow_studio_api/application/monitoring.py"
+            "apps/archflow-studio/api/archflow_studio_api/application/monitoring.py",
+            "apps/monkeyhub/api/monkeyhub_api/chat_trace.py",
+            "apps/monkeyhub/api/tests/test_chat_trace.py"
           ],
           "depends_on": [],
           "status": "active",

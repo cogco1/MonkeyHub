@@ -17,6 +17,7 @@ from pathlib import Path
 import sqlite3
 from typing import Iterable, Iterator, Mapping
 
+from .pricing import billing_plan
 from .usage import TokenUsage, UsageEvent
 
 
@@ -368,9 +369,12 @@ def _session_events(rows: list[_Row], inherited_turns: set[str]) -> Iterator[Usa
         if inherited:
             continue
         counts = ",".join("?" if value is None else str(value) for value in (current or last).to_dict().values())
+        # The session's recorded model provider names the plan; an unknown one names none.
+        plan = billing_plan(row.provider)
         events.append(UsageEvent(event_id=f"codex:{row.session_key}:token:{row.timestamp}:{counts}",
             phase="agent", status=status, started_at=row.timestamp, tokens=usage,
-            model_call=True, timing_scope="model_call", **common))
+            model_call=True, timing_scope="model_call", details={} if plan is None else {"billing_plan": plan},
+            **common))
     for event in events:
         turn = turns.get(event.turn_id) if event.turn_id is not None else None
         yield replace(event, related_event_id=turn.event_id) if turn is not None else event

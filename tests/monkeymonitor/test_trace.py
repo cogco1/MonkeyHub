@@ -1,6 +1,7 @@
 """Observable trace attribution, exact usage and shared diagnostic journal behavior."""
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 import json
 from pathlib import Path
 import subprocess
@@ -13,11 +14,11 @@ from urllib.error import HTTPError
 from urllib.parse import quote as encode
 from urllib.request import urlopen
 
-from monkeymonitor.pricing import RateCard, match_rate
+from monkeymonitor.pricing import RateCard, billing_plan, load_rates, match_rate
 from monkeymonitor.server import MonitorData, make_server
 from monkeymonitor.store import UsageLog
 from monkeymonitor.trace import build_traces
-from monkeymonitor.usage import TokenUsage, UsageEvent
+from monkeymonitor.usage import BILLING_PLANS, TokenUsage, UsageEvent, diagnostic_details
 
 
 START = datetime(2026, 9, 13, tzinfo=timezone.utc)
@@ -377,6 +378,59 @@ class HistoricalPricingTests(unittest.TestCase):
             retained = store.read()[0][0]
             self.assertEqual(retained.tokens.input_tokens, 100)
             self.assertEqual(retained.rate_match_status, "not_found")
+
+
+class BillingPlanTests(unittest.TestCase):
+    CONNECTIONS = ("anthropic", "claude", "codex", "openai", "coding-plan")
+
+    def test_details_take_only_a_declared_plan(self):
+        for plan in (*BILLING_PLANS, None):
+            self.assertEqual(diagnostic_details({"billing_plan": plan}), {"billing_plan": plan})
+        for plan in ("standard", "API-Standard", "", " api-standard", ["api-standard"], 1):
+            with self.subTest(plan=plan), self.assertRaisesRegex(ValueError, "billing plan"):
+                diagnostic_details({"billing_plan": plan})
+        self.assertLessEqual({billing_plan(provider) for provider in self.CONNECTIONS}, BILLING_PLANS)
+
+    def test_connection_names_its_plan_and_a_reported_other_tier_withholds_it(self):
+        self.assertEqual({provider: billing_plan(provider) for provider in self.CONNECTIONS}, {
+            "anthropic": "api-standard", "claude": "api-standard", "codex": "api-standard",
+            "openai": "api-standard", "coding-plan": "coding-plan"})
+        # Renders mix text and image output; unknown and local providers bill nothing exact.
+        for provider in ("gemini", "deterministic", "unknown", "none", "Claude"):
+            self.assertIsNone(billing_plan(provider))
+        standard = {"service_tier": "standard", "speed": "standard", "inference_geo": "global"}
+        self.assertEqual(billing_plan("claude", {}), "api-standard")
+        self.assertEqual(billing_plan("claude", standard), "api-standard")
+        self.assertEqual(billing_plan("claude", {"inference_geo": "not_available"}), "api-standard")
+        for other in ({"speed": "fast"}, {"inference_geo": "us"}, {"service_tier": "priority"},
+                      {"service_tier": "batch"}, {"speed": {"unexpected": True}}):
+            with self.subTest(other=other):
+                self.assertIsNone(billing_plan("claude", {**standard, **other}))
+        # A flat third-party plan is not a standard price list.
+        self.assertEqual(billing_plan("coding-plan", {"speed": "fast"}), "coding-plan")
+
+    def test_shipped_catalog_prices_standard_usage_and_does_not_guess_a_context_tier(self):
+        rates, observed = load_rates(), "2026-09-25T12:00:00+00:00"
+        for row in rates:
+            with self.subTest(label=row.label):
+                self.assertIn(row.billing_plan, BILLING_PLANS)
+                self.assertEqual(match_rate(row.provider, row.model, row.billing_plan, observed, (row,)), (row, "matched"),
+                                 "every row is an exact identity with a dated public source")
+                if row.provider in {"anthropic", "claude"}:
+                    # Published cache-write multipliers: 1.25x (5 minutes) and 2x (1 hour) of base input.
+                    self.assertEqual(Decimal(row.cache_write_input), Decimal(row.input) * Decimal("1.25"))
+                    self.assertEqual(Decimal(row.cache_write_1h_input), Decimal(row.input) * 2)
+        for provider in ("anthropic", "claude"):
+            for model in ("claude-fable-5-1", "claude-opus-5-5", "claude-opus-5", "claude-sonnet-5", "claude-haiku-4-5-20251001"):
+                with self.subTest(provider=provider, model=model):
+                    self.assertEqual(match_rate(provider, model, "api-standard", observed, rates)[1], "matched")
+                    self.assertEqual(match_rate(provider, model, "api-standard", "2026-09-24T23:59:59+00:00", rates)[1], "not_found")
+        # Short and long context bill differently and one usage event cannot say which it was.
+        for model in ("gpt-6-astra", "gpt-5.6-sol"):
+            self.assertEqual(match_rate("openai", model, "api-standard", observed, rates)[1], "ambiguous")
+        # No alias across connections, and a flat plan has no per-token price.
+        self.assertEqual(match_rate("codex", "gpt-6-astra", "api-standard", observed, rates)[1], "not_found")
+        self.assertEqual(match_rate("coding-plan", "claude-opus-5", "coding-plan", observed, rates)[1], "not_found")
 
 
 class JournalTests(unittest.TestCase):

@@ -6366,7 +6366,8 @@
         "Validating bounded, content-free context budget section estimates and request-output validation outcomes beside separate provider-reported usage",
         "Automatic numeric usage from explicitly Hub-bound Codex session identities, resolved through the local read-only Codex index and verified against session metadata",
         "TurnTrace@1 views over existing events: exact turn/session correlation, live lane waterfall and semantic activity tree, non-overlapping blocking attribution, evidence-bound diagnostics and safe trace export; first_candidate_ms requires successful same-turn generation and complete retained candidate readback separately from verification and viewport visibility, and missing child endings after a completed root remain incomplete with unknown duration",
-        "Versioned exact provider/model/billing-plan rate matching and historical diagnostic snapshots; bounded multi-process usage journal rotation"
+        "Versioned exact provider/model/billing-plan rate matching and historical diagnostic snapshots; bounded multi-process usage journal rotation",
+        "The closed billing-plan vocabulary and its one derivation from the connection a producer records"
       ],
       "does_not_own": [
         "Architectural evaluation, geometry, candidate execution or formal design acceptance",
@@ -6391,6 +6392,7 @@
         "UsageEvent",
         "RateCard",
         "quote",
+        "billing_plan",
         "iter_codex_events",
         "Budget",
         "Action",
@@ -6416,6 +6418,7 @@
       "depends_on": [],
       "used_by": [
         "apps/archflow-studio/api/archflow_studio_api/application/monitoring.py",
+        "apps/monkeyhub/api/monkeyhub_api/chat_trace.py",
         "monkeymonitor/__main__.py",
         "apps/monkeyhub/api/monkeyhub_api/applications.py",
         "apps/monkeyhub/web/src/MonitorPage.tsx"
@@ -6434,6 +6437,7 @@
         "Automatic sources are matched by exact recorded session identity, never cwd or recency; identity conflicts or unavailable sources are reported, and persisted diagnostic event identities prevent backfill double counting",
         "A Hub activity interval is not pure inference. Native token records remain the Codex usage authority; parallel spans are never added to elapsed time and ambiguous critical branches remain unassigned",
         "Pricing requires exact recorded provider/model/billing plan and a sourced effective rate; subscription equivalents never claim an account charge and unknown local compute cost is not zero",
+        "A producer records only its connection's declared billing plan, withheld when the call reports another tier; a context tier or model alias is never guessed",
         "MonkeyHub owns the product browser UI; the Monitor process serves only its loopback API and CLI diagnostics. Browser API access is limited to the exact owning Hub loopback origin."
       ],
       "status": "canonical",

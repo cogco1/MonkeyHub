@@ -8,6 +8,7 @@ import re
 from functools import wraps
 from time import perf_counter
 
+from monkeymonitor.pricing import billing_plan
 from monkeymonitor.store import UsageLog
 from monkeymonitor.usage import TokenUsage, UsageEvent
 from archflow.contracts.canonical import canonical_digest
@@ -200,8 +201,11 @@ class HubTurnObserver:
             return
         self.usage_ids.add(identifier)
         event_id = f"{self.root_id}:usage:{identifier}"
+        # The connection's plan, withheld when the message reports another tier.
+        plan = billing_plan(self.provider, usage)
         self.spans[event_id] = dict(phase="model_usage", started_at=_now(), clock=perf_counter(),
-                                   timing_scope="unknown", parent_event_id=self.round_id or self.root_id, details={})
+                                   timing_scope="unknown", parent_event_id=self.round_id or self.root_id,
+                                   details={} if plan is None else {"billing_plan": plan})
         if isinstance(message.get("model"), str):
             self.model = message["model"]
         self._emit(event_id, status="succeeded", tokens=tokens, model_call=True)

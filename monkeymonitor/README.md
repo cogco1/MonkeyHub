@@ -110,6 +110,18 @@ Hub 管理的 Monitor 启动参数包含：
 
 `rates.json` 是带来源与生效日期的参考目录，不是某个账户的账单。自动历史价格只有在 provider、model、billing plan 与日期可以精确匹配时才成立；匹配不到就保持未知。
 
+写入方按自己的连接记录 `details.billing_plan`，取值只来自封闭词表 `usage.BILLING_PLANS`，推导只有 `pricing.billing_plan()` 一处：
+
+| 事件的 provider（连接） | 写入方 | billing_plan |
+| --- | --- | --- |
+| `anthropic` | Studio 意图编译，Anthropic Messages API | `api-standard` |
+| `codex` | Studio 意图编译，`codex exec`（忽略用户配置） | `api-standard` |
+| `claude` | Hub 对话，Claude CLI | `api-standard`；消息 usage 报告 fast、priority、batch 或 US-only 推理时不写 |
+| `coding-plan` | Hub 对话，第三方兼容端点 | `coding-plan`（包月，没有公开的逐 token 价） |
+| `openai` | Codex 会话日志记录的 model provider | `api-standard` |
+
+`api-standard` 指该 provider 公开价目表的标准同步档。Gemini 出图不写 plan：输出混合文本与图像 token，单一输出费率无法计价。目录为 Anthropic API 与 Claude CLI 两个连接各列 Claude 标准价（2026-09-25 读取官方价目表）。OpenAI 行分短、长上下文两档，单个事件无法判定属于哪档，因此匹配结果是 `ambiguous`，不猜档位；`codex` 连接没有自己的行，也不借用 `openai` 的行。
+
 页面中的手动计算器要求用户明确选择费率。`quote()` 只对互不重叠的 token bucket 计价：普通输入、缓存读取、短缓存写入、1h 写入、输出。任一所需计数或费率缺失时，`amount_usd` 保持 `null`，同时返回已知小计与缺失项。
 
 ## 算法建议接口
