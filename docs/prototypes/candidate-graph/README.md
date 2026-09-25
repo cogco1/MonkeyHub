@@ -50,11 +50,10 @@ Also captured: `screenshots/07-narrow.png` (390×844, state 2). At that width th
 tree is a full-height sheet under the dev bar. `screenshots/08-dark-tree-open.png`
 shows state 2 in the dark theme.
 
-Screenshots 01–08 record the list view as reviewed in PR #298, so they are kept
-byte-identical. Since then the list rows show only a thumbnail, letter, name
-and one status dot; the summary, author and time appear on the selected row
-only (`screenshots/12-list-compact.png`, state 2). The drawer header also has
-the `List | Growth tree` toggle.
+Screenshots 01–08 show the current list. Its rows have only a thumbnail,
+letter, name and one status dot. The summary, author and time appear only on
+the selected row (see also `screenshots/12-list-compact.png`, state 2). The
+drawer header has the `List | Growth tree` toggle.
 
 ## Growth tree
 
