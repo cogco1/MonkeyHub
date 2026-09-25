@@ -251,6 +251,18 @@ await page.route((url) => url.pathname.startsWith("/api/"), async (route) => {
     }
     return json(runtimeSnapshot().projects.find((item) => item.projectDir === body.projectDir));
   }
+  const dismissal = url.pathname.match(/^\/api\/runtime\/operations\/([^/]+)\/acknowledge$/);
+  if (dismissal) {
+    assert.equal(method, "POST");
+    const runtime = [...runtimes.values()].find((item) => item.runtimeId === data().runtimeId);
+    assert.equal(data().projectId, runtime?.projectId, "a dismissal names its runtime and that runtime's project");
+    const operation = runtime.operations.find((item) => item.operationId === decodeURIComponent(dismissal[1]));
+    if (!operation) return json({ code: "OPERATION_NOT_FOUND", detail: "This project runtime has no operation with that id." }, 404);
+    if (!["failed", "stale"].includes(operation.status)) return json({ code: "OPERATION_NOT_ACKNOWLEDGEABLE",
+      detail: "Only a failed or stale operation can be dismissed. An operation that needs recovery stays until it is recovered." }, 409);
+    operation.acknowledgedAt ??= new Date().toISOString();
+    return json(operation);
+  }
   if (/^\/api\/runtime\/projects\/[^/]+\/recover$/.test(url.pathname)) {
     const runtime = [...runtimes.values()].find((item) => url.pathname.includes(item.runtimeId));
     assert.equal(data().projectId, runtime.projectId);
@@ -2462,6 +2474,101 @@ try {
   await page.getByRole("button", { name: "Stop", exact: true }).waitFor();
   assert.equal(await keptDraft(treeChat.id), null, "a sent message leaves no kept draft");
   await page.getByRole("button", { name: "Stop", exact: true }).click();
+
+  // #285: the unfinished-operation notice names the operation and when it was asked for,
+  // links the chat that asked, and Dismiss is recorded with the operation in the Hub
+  // runtime, so it stays dismissed after a restart. One that needs recovery stays.
+  const runtimeT = runtimes.get("D:\\fixture\\T");
+  sessions.push({ id: "tree-earlier", projectId: "T", projectDir: "D:\\fixture\\T", title: "Earlier drawing request", provider: "codex",
+    model: null, status: "idle", archived: false, createdAt: "2026-09-25", updatedAt: "2026-09-25", messages: [] });
+  const sheetAskedAt = "2026-09-25T06:02:00Z";
+  runtimeT.operations = [
+    { operationId: "candidate-waiting", projectId: "T", kind: "POST /api/proposals/prop-1/candidate", source: "chat", status: "needs_recovery",
+      committed: false, admissionSequence: 1, createdAt: "2026-09-25T05:00:00Z" },
+    // Admitted before admission times were kept: no time is shown for it.
+    { operationId: "proposal-stale", projectId: "T", kind: "POST /api/proposals", source: "studio", status: "stale", committed: false, admissionSequence: 2 },
+    { operationId: "sheet-failed", projectId: "T", kind: "POST /api/drawings/sheets", source: "chat", status: "failed", committed: false,
+      admissionSequence: 3, createdAt: sheetAskedAt, sessionId: "tree-earlier" },
+  ];
+  emitRuntime();
+  const notice = page.locator(".chat-runtime--operation");
+  const askedAt = await page.evaluate((value) => new Date(value).toLocaleString("en", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }), sheetAskedAt);
+  await notice.locator("p").filter({ hasText: "An operation did not complete" }).waitFor();
+  assert.equal(await notice.locator("small").innerText(), `Make a drawing sheet · ${askedAt} · 2 more`);
+  assert.doesNotMatch(await notice.innerText(), /sheet-failed|POST|\/api\//, "the notice names the operation in words, not its id or route");
+  await notice.getByRole("button", { name: "Open chat: Earlier drawing request", exact: true }).click();
+  await page.locator(".chat-header h1").filter({ hasText: "Earlier drawing request" }).waitFor();
+  assert.equal(await notice.getByRole("button", { name: /^Open chat/ }).count(), 0, "the chat it came from is the one on screen");
+  const beforeDismiss = writes.length;
+  await notice.getByRole("button", { name: "Dismiss", exact: true }).click();
+  await notice.locator("p").filter({ hasText: "An operation has an outdated base" }).waitFor();
+  assert.equal(await notice.locator("small").innerText(), "Draft a model change · 1 more");
+  assert.deepEqual(writes.slice(beforeDismiss).filter(([, pathname]) => pathname.includes("/acknowledge")),
+    [["POST", "/api/runtime/operations/sheet-failed/acknowledge", { runtimeId: runtimeT.runtimeId, projectId: "T" }, null]]);
+  await page.reload();
+  await notice.locator("p").filter({ hasText: "An operation has an outdated base" }).waitFor();
+  await notice.getByRole("button", { name: "Dismiss", exact: true }).click();
+  await notice.locator("p").filter({ hasText: "An operation needs recovery review" }).waitFor();
+  assert.equal(await notice.locator("small").innerText(), `Generate a scheme · ${await page.evaluate(() => new Date("2026-09-25T05:00:00Z")
+    .toLocaleString("en", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }))}`);
+  assert.equal(await notice.getByRole("button", { name: "Dismiss", exact: true }).count(), 0, "one that needs recovery cannot be dismissed");
+  assert.ok(runtimeT.operations.filter((row) => row.status !== "needs_recovery").every((row) => row.acknowledgedAt));
+
+  // The same composer states and notice in Chinese, for review.
+  await page.getByRole("button", { name: "Hub settings", exact: true }).click();
+  await page.locator("#language").selectOption("zh-CN");
+  await page.getByRole("dialog").getByRole("button", { name: "关闭", exact: true }).click();
+  runtimeT.operations.push({ operationId: "sheet-failed-again", projectId: "T", kind: "POST /api/drawings/sheets", source: "chat",
+    status: "failed", committed: false, admissionSequence: 4, createdAt: sheetAskedAt, sessionId: treeChat.id });
+  emitRuntime();
+  const askedAtZh = await page.evaluate((value) => new Date(value).toLocaleString("zh-CN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }), sheetAskedAt);
+  await notice.locator("p").filter({ hasText: "有操作未完成" }).waitFor();
+  assert.equal(await notice.locator("small").innerText(), `出图 · ${askedAtZh} · 另有 1 个`);
+  await notice.getByRole("button", { name: `打开对话: ${treeChat.title}`, exact: true }).waitFor();
+  await notice.getByRole("button", { name: "知道了", exact: true }).waitFor();
+  await contextReady();
+  await page.locator(".chat-composer .chat-target").filter({ hasText: "将修改：当前 · S2 之后 3 次修改" }).waitFor();
+  // A loading model's status shows through a hidden panel (BilingualText sets visibility: visible); wait it out.
+  const modelSettled = () => page.waitForFunction(() => !document.querySelector(".chat-browser")?.innerText.includes("Parsing"));
+  await modelSettled();
+  if (await page.getByRole("button", { name: "收起工具", exact: true }).count()) await page.getByRole("button", { name: "收起工具", exact: true }).click();
+  await page.locator(".chat-main").screenshot({ path: path.join(temporary, "composer-notice-zh.png") });
+  await composerMenu("附件与新话题").click();
+  await page.getByRole("menuitemcheckbox", { name: "新话题", exact: true }).waitFor();
+  await page.locator(".chat-main").screenshot({ path: path.join(temporary, "composer-menu-zh.png") });
+  await page.getByRole("menuitemcheckbox", { name: "新话题", exact: true }).click();
+  await page.locator(".chat-composer .chat-topic").filter({ hasText: "新话题" }).waitFor();
+  await page.getByRole("button", { name: "状态树", exact: true }).click();
+  const treeSurfaceZh = visibleWorkspace().locator(".design-tree");
+  await treeSurfaceZh.getByRole("button", { name: "列表", exact: true }).click();
+  await treeSurfaceZh.locator('[role="treeitem"][data-node="stage:project://T/runs/tree-s0/review/design-stage.json"]').click();
+  await treeSurfaceZh.getByRole("button", { name: "查看", exact: true }).click();
+  await page.locator(".chat-composer .chat-target__viewing").filter({ hasText: "正在查看 S0，这条消息仍会修改当前" }).waitFor();
+  await visibleWorkspace().locator(".boot").waitFor({ state: "hidden" });
+  await modelSettled();
+  await page.getByRole("button", { name: "收起工具", exact: true }).click();
+  await page.locator(".chat-main").screenshot({ path: path.join(temporary, "composer-viewing-topic-zh.png") });
+  await page.getByRole("button", { name: "展开工具", exact: true }).click();
+  await visibleWorkspace().getByRole("button", { name: "回到当前", exact: true }).click();
+  await page.locator(".chat-composer .chat-target__viewing").waitFor({ state: "detached" });
+  await page.getByRole("button", { name: "移除新话题", exact: true }).click();
+  await page.getByRole("button", { name: "收起工具", exact: true }).click();
+  let releaseZhSend;
+  chatMessageResponseGate = new Promise((resolve) => { releaseZhSend = resolve; });
+  await page.locator("#chat-input").fill("把阅览室加宽一跨");
+  const heldZhSend = page.waitForRequest((req) => req.method() === "POST" && new URL(req.url()).pathname.endsWith("/messages"));
+  await page.getByRole("button", { name: "发送", exact: true }).click();
+  await heldZhSend;
+  await page.waitForFunction(() => document.querySelector(".chat-composer-note")?.textContent === "发送中…");
+  await page.locator(".chat-main").screenshot({ path: path.join(temporary, "composer-sending-zh.png") });
+  releaseZhSend(); chatMessageResponseGate = Promise.resolve();
+  await page.getByRole("button", { name: "停止", exact: true }).waitFor();
+  await page.getByRole("button", { name: "停止", exact: true }).click();
+  runtimeT.operations = []; emitRuntime();
+  await notice.waitFor({ state: "detached" });
+  await page.getByRole("button", { name: "Hub 设置", exact: true }).click();
+  await page.locator("#language").selectOption("en");
+  await page.getByRole("dialog").getByRole("button", { name: "Close", exact: true }).click();
 
   // With no building project, machine tools remain available and report a
   // missing dependency directly instead of asking the person to bind Studio.

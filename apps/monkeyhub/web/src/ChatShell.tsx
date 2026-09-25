@@ -4,7 +4,7 @@ import { Fragment, lazy, Suspense, useCallback, useEffect, useLayoutEffect, useM
 import { applicationUrl, type AppearancePreferences } from "../../../shared-web/src/appearance.js";
 import type { WorktreeGraphDto } from "../workspaces/src/api/generated";
 import { projectStatus } from "./worktreeGraph";
-import type { AppStatus, ChatArchiveRequest, ChatCreateRequest, ChatDetail, ChatMessage, ChatPostRequest, ChatProject, ChatProvider, ChatSummary, ChatWorkspace, HubError, HubRuntimeDto, ProjectArchiveExportRequest, ProjectArchiveRestoreRequest, ProjectArchiveRestoreResult, ProjectArchiveSummary, ProjectRuntimeDto, RuntimeEvent, UpdateStatus } from "./api/generated";
+import type { AppStatus, ChatArchiveRequest, ChatCreateRequest, ChatDetail, ChatMessage, ChatPostRequest, ChatProject, ChatProvider, ChatSummary, ChatWorkspace, HubError, HubRuntimeDto, OperationRecord, ProjectArchiveExportRequest, ProjectArchiveRestoreRequest, ProjectArchiveRestoreResult, ProjectArchiveSummary, ProjectRuntimeDto, RuntimeEvent, UpdateStatus } from "./api/generated";
 import { ProjectRuntimeProvider } from "../workspaces/src/api/ProjectRuntimeContext";
 import type { WorkspaceDesignContext, WorkspacePosition } from "../workspaces/src/app/ProjectWorkspace";
 import { MonitorPage } from "./MonitorPage";
@@ -12,7 +12,7 @@ import { ChatMarkdown, ChatMessageFiles, type ChatDocument } from "./ChatMessage
 import type { PageSource } from "../workspaces/src/workspaces/monkeyboard/boardScene";
 const ProjectWorkspace = lazy(() => import("../workspaces/src/app/ProjectWorkspace").then((module) => ({ default: module.ProjectWorkspace })));
 import { presentFailure } from "./chatError";
-import { clock, currentStep, describeCall, describeStep, rawDetail, rawLine, resultCandidates, stepText, turnsOf, workedSeconds, type ProcessTurn, type ProcessWords } from "./chatProcess";
+import { clock, currentStep, describeCall, describeStep, operationStep, rawDetail, rawLine, resultCandidates, stepText, turnsOf, unfinishedOperations, workedSeconds, type ProcessTurn, type ProcessWords } from "./chatProcess";
 import { recentUsage, serialMonitorRead, type MonitorEvent, type RecentUsage } from "./monitorData";
 import { activeWork, newSchemes, sidebarTasks, type SidebarTask } from "./sidebarTasks";
 import { SoftwareUpdateSettings, type RestartBlocker } from "./SoftwareUpdateSettings";
@@ -39,6 +39,13 @@ type ToolTab = { id: AppId; url: string; revision: number; projectDir?: string; 
   returnTo?: AppId; focus?: { runIds: string[]; request: number } };
 type SavedTool = { id: AppId; candidate?: string };
 type ProjectPreparation = { promise: Promise<AppStatus[]>; apps: AppStatus[] | null; modeling?: Promise<unknown> };
+/** GH-285: the admission time and dismissal the Hub now reports, until the generated client carries them. */
+type OperationRow = OperationRecord & { createdAt?: string | null; acknowledgedAt?: string | null };
+/** "25 Sep, 14:02" in the reader's language; nothing for a record that kept no readable time. */
+const operationTime = (value: string | null | undefined, language: string) => {
+  const date = value ? new Date(value) : null;
+  return date && !Number.isNaN(date.getTime()) ? date.toLocaleString(language, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : null;
+};
 const VIEW_KEY = "monkeyhub.chat-view.v1";
 /** SS-9: unsent composer text by conversation (`new:<project>` before one exists), with when it last changed. */
 const DRAFTS_KEY = "monkeyhub.chat-drafts.v1", DRAFT_LIMIT = 50;
@@ -55,6 +62,8 @@ const composerWords = {
     composerMenu: "附件与新话题", newTopic: "新话题", newTopicDetail: "下一条消息从项目状态开始，不带之前的对话",
     newTopicRemove: "移除新话题",
     target: "将修改：当前", targetUnrecorded: "未记录的修改不包括在内", sending: "发送中…",
+    operationOpenChat: "打开对话", operationDismiss: "知道了",
+    operationMore: (count: number) => `另有 ${count} 个`,
     targetViewing: (name: string) => `正在查看 ${name}，这条消息仍会修改当前`,
   },
   en: {
@@ -62,6 +71,8 @@ const composerWords = {
     newTopicDetail: "The next message starts from the project state, without this conversation's context",
     newTopicRemove: "Remove New topic",
     target: "Changes: Current", targetUnrecorded: "unrecorded edits not included", sending: "Sending…",
+    operationOpenChat: "Open chat", operationDismiss: "Dismiss",
+    operationMore: (count: number) => `${count} more`,
     targetViewing: (name: string) => `Viewing ${name}; this message still changes Current`,
   },
 } as const;
@@ -433,7 +444,10 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
   const projectRuntime = runtime?.projects.find((item) => item.projectDir === projectDir && item.projectId === project?.projectId);
   const studioWorker = projectRuntime?.workers?.find((item) => item.serviceId === "studio");
   const crashed = studioWorker?.state === "crashed";
-  const recoverableOperation = projectRuntime?.operations?.find((item) => ["needs_recovery", "failed", "stale"].includes(item.status));
+  // #285: the operations that did not finish; the notice names the first, links its chat and can dismiss it.
+  const unfinished = unfinishedOperations((projectRuntime?.operations ?? []) as OperationRow[]);
+  const unfinishedOperation = unfinished[0] ?? null;
+  const [dismissing, setDismissing] = useState<string | null>(null);
   // An edited work copy the project would not take is the architect's own save
   // going nowhere. It is said here, on the runtime strip that already reports
   // what this attachment knows, and nowhere else.
@@ -903,6 +917,18 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
     } catch (cause) { setError(asFailure(cause)); void refresh(); }
     finally { actionLock.current = false; setBusy(false); setSending(null); }
   };
+  /** #285: dismiss one failed or stale operation's notice; the Hub keeps that with the operation, past restarts. */
+  const dismissOperation = async (operation: OperationRow) => {
+    if (!projectRuntime || dismissing) return;
+    const target = projectRuntime;
+    setDismissing(operation.operationId); setError(null);
+    try {
+      await request<OperationRow>(`/api/runtime/operations/${encodeURIComponent(operation.operationId)}/acknowledge`,
+        { runtimeId: target.runtimeId, projectId: target.projectId });
+      await refresh();
+    } catch (cause) { if (selection.current.projectDir === target.projectDir) setError(asFailure(cause)); }
+    finally { setDismissing(null); }
+  };
   /** Record the edits that keep project state out of chat; the new context the architect chose then starts. */
   const recordForContext = async () => {
     if (!recordContext || recordingContext) return;
@@ -1223,14 +1249,32 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
     </aside>
     <main className="chat-main">
       <header className="chat-header"><button className="chat-icon mobile-project-toggle" aria-label={sidebar ? t.collapse : t.expand} onClick={() => setSidebar(!sidebar)}><Icon name="sidebar" /></button><div><span className="chat-header__project">{project?.name ?? "MonkeyHub"}</span><h1>{chat?.id === chatId ? chat.title : t.newChat}{external && <small className="chat-external-badge">{t.externalChat}</small>}</h1></div></header>
-      {(!eventsConnected || crashed || recovering || recoverableOperation || workCopyRefusal) && <div className="chat-runtime" role="status" aria-live="polite">
+      {(!eventsConnected || crashed || recovering || workCopyRefusal) && <div className="chat-runtime" role="status" aria-live="polite">
         <div>{!eventsConnected && <p>{t.reconnecting}</p>}
           {(crashed || recovering) && <><p>{recovering ? t.recovering : t.workerCrashed}</p><small>{t.recoveryHint}</small></>}
-          {recoverableOperation && <p>{recoverableOperation.status === "needs_recovery" ? t.operationRecovery : recoverableOperation.status === "stale" ? t.operationStale : t.operationFailed}</p>}
           {workCopyRefusal && <><p>{t.workCopyRefused}</p><small>{workCopyRefusal.detail}</small></>}
         </div>
         {crashed && <button type="button" className="chat-activity__open" disabled={recovering || busy || Boolean(toolBusy)} onClick={() => void recoverWorker()}><Icon name="refresh" />{recovering ? t.recovering : t.recoverWorker}</button>}
       </div>}
+      {unfinishedOperation && (() => {
+        // #285: which operation did not finish, when, and the chat that asked for it. A failed or
+        // stale one can be dismissed; one that needs recovery stays until it is recovered.
+        const operation = unfinishedOperation;
+        const step = operationStep(operation.kind);
+        const source = operation.sessionId ? projectRuntime?.sessions?.find((row) => row.id === operation.sessionId) : undefined;
+        const detail = [step.key === "generic" ? null : stepText(step, processWords(t)), operationTime(operation.createdAt, preferences.language),
+          unfinished.length > 1 ? w.operationMore(unfinished.length - 1) : null].filter(Boolean).join(" · ");
+        return <div className="chat-runtime chat-runtime--operation" role="status" aria-live="polite" data-status={operation.status}>
+          <div><p>{operation.status === "needs_recovery" ? t.operationRecovery : operation.status === "stale" ? t.operationStale : t.operationFailed}</p>
+            {detail && <small>{detail}</small>}</div>
+          <div className="chat-runtime__actions">
+            {source && source.id !== chatId && <button type="button" className="chat-activity__open" title={source.title}
+              aria-label={`${w.operationOpenChat}: ${source.title}`} onClick={() => selectChat(source)}><Icon name="chat" />{w.operationOpenChat}</button>}
+            {operation.status !== "needs_recovery" && <button type="button" className="chat-activity__open" disabled={dismissing !== null}
+              aria-busy={dismissing === operation.operationId} onClick={() => void dismissOperation(operation)}>{w.operationDismiss}</button>}
+          </div>
+        </div>;
+      })()}
       <div className="chat-messages" ref={messages} role="log" aria-live="polite" aria-relevant="additions text" onScroll={readPosition}
         onWheel={() => { jumping.current = false; }} onTouchStart={() => { jumping.current = false; }}>
         {!shownMessages?.length ? <div className="chat-welcome"><div className="chat-welcome__mark"><Icon name="chat" /></div><h2>{project ? t.empty : t.noProject}</h2><p>{t.emptyHint}</p>{!project && <div className="chat-welcome__actions"><button className="btn btn--primary" onClick={() => { setDialogError(null); newDialog.current?.showModal(); }}>{t.newProject}</button><button className="btn" onClick={() => { setDialogError(null); addDialog.current?.showModal(); }}>{t.addExisting}</button></div>}</div>
@@ -1428,7 +1472,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
           onClick={() => { setProjectInfo(false); void openTool("tree"); }}><Icon name="tree" /><span>{t.openInTree}</span></button>}
         {/* The local address of the page on the right is a connection detail:
             available when it is asked for, not on screen all the time. */}
-        {Boolean(projectRuntime?.operations?.length) && <details className="chat-project-card__connection" open={Boolean(recoverableOperation) || undefined}>
+        {Boolean(projectRuntime?.operations?.length) && <details className="chat-project-card__connection" open={Boolean(unfinishedOperation) || undefined}>
           <summary>{t.recoveryDetails}</summary>
           <p className="chat-muted">{t.runtimeOperations}</p>
           {projectRuntime!.operations!.map((operation) => <div className="chat-project-card__operation" key={operation.operationId}>
