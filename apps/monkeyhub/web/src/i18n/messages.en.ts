@@ -173,6 +173,7 @@ export const messagesEn = {
   "stage.versions.completeModel": "Complete model",
   "stage.versions.nativeExport": "Native export",
   "stage.versions.showAllExports": "Show all exports",
+  "stage.tree.open": "Open in Design tree",
   "stage.base.current": "Next edit starts from",
   "stage.base.ready": "Editing base ready",
   "stage.base.loading": "Loading editing base…",

@@ -181,7 +181,8 @@ export function ProjectWorkspace({ workspace, expectedProjectId, candidateRunId 
         initialDocumentIntent={documentIntent} initialSketchRequest={sketchRequest}
         active={active && modelVisible} refreshKey={refreshKey + attempt + headMoves} onReturnToBoard={openBoard} onOpenBoard={openBoard} onChatRequest={onChatRequest}
         onDesignContextChange={designContextChanged} onRenderReader={registerRenderReader}
-        onView={(view) => viewRun({ ...view, back: false }, true)} onRecorder={registerRecorder} />
+        onView={(view) => viewRun({ ...view, back: false }, true)} onRecorder={registerRecorder}
+        onOpenTree={designTree.available ? () => onWorkspaceChange("tree") : undefined} />
     </div>}
     {/* #300: Board and its Layout mode share one rail entry; this switch moves between the two
         mounted surfaces, and view=publish links still land on Layout. */}

@@ -60,6 +60,7 @@ export function VersionsStrip({
   workingCopies = [],
   onOpenWorkingOption,
   design,
+  onOpenTree,
 }: {
   groups: readonly VersionGroup[];
   loadingSha: string | null;
@@ -75,6 +76,8 @@ export function VersionsStrip({
   workingCopies?: readonly WorkingCopyDto[];
   onOpenWorkingOption?(option: WorkingCopyOptionDto): void;
   design?: DesignHistoryControls;
+  /** The project's Design Tree: when it exists, the design history is one link to it (#302). */
+  onOpenTree?: () => void;
 }) {
   const t = useT();
   const connection = useConnection();
@@ -117,6 +120,14 @@ export function VersionsStrip({
         <p className="quiet">普通修改更新工作草稿。自动恢复点不会过期；重点版本与已确认 Stage 另行列出。</p>
         {draft.recovery?.map((row) => draftRow(row, "恢复点"))}
       </details>}
+      {/* #302: Stages, lines, explorations and candidates are the Design Tree's; only the first Stage starts here. */}
+      {onOpenTree ? <div className="vcard" data-design-tree-link>
+        <div className="vcard__exports">
+          <button type="button" className="btn btn--small" onClick={onOpenTree}>{t("stage.tree.open")}</button>
+          {history?.branches.length === 0 && <button className="btn btn--small" disabled={design.busy || !design.currentModelSource}
+            onClick={design.onInitialize}>确认当前模型为 S0</button>}
+        </div>{design.error && <p role="alert">{design.error}</p>}
+      </div> : <>
       <div className="vcard"><div className="vcard__head"><strong>设计历史</strong>
         {history && history.branches.length > 0 && <select aria-label="Branch" value={history.branchId} disabled={design.busy}
           onChange={(event) => design.onBranch(event.target.value)}>{history.branches.map((item) =>
@@ -161,6 +172,7 @@ export function VersionsStrip({
           </div></div>;
       })}
       </details>
+      </>}
       {legacy.length > 0 && <details className="vcard"><summary>已有模型与历史运行 · 尚未归入 Stage</summary>
         <VersionsStrip groups={legacy} loadingSha={loadingSha} loadedShas={loadedShas} loadedRunId={loadedRunId}
           onOpen={onOpen} onOpenRun={onOpenRun} onCompare={onCompare} />

@@ -246,7 +246,7 @@ export type WorkspaceDesignContext = {
   record?: () => Promise<void>;
 };
 
-export default function App({ server, expectedProjectId, initialDocumentIntent, initialSketchRequest, initialRunId, initialRunAsset = null, initialRunRequest = 0, initialRunFollowsHead = false, documentSource = null, active = true, refreshKey = 0, onReturnToBoard, onOpenBoard, onChatRequest, onDesignContextChange, onRenderReader, onView, onRecorder }: {
+export default function App({ server, expectedProjectId, initialDocumentIntent, initialSketchRequest, initialRunId, initialRunAsset = null, initialRunRequest = 0, initialRunFollowsHead = false, documentSource = null, active = true, refreshKey = 0, onReturnToBoard, onOpenBoard, onChatRequest, onDesignContextChange, onRenderReader, onView, onRecorder, onOpenTree }: {
   onRenderReader?: (reader: (() => RenderView | null) | null) => void;
   /**
    * Open one retained run read-only through the project's View path, the one
@@ -255,6 +255,8 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
   onView?: (view: { runId: string; name: string; assetSha256?: string | null }) => void;
   /** Hands the host this workspace's Record edits and continue, for refusals shown outside Modeling (#302). */
   onRecorder?: (record: (() => Promise<void>) | null) => void;
+  /** Opens the project's Design Tree, when it has one: the one entry to its history (#302). */
+  onOpenTree?: () => void;
   server: ServerIdentity; initialDocumentIntent?: BoardDesignRequest;
   expectedProjectId?: string;
   /** One calibrated board sketch frame, to be run as a sketch proposal once the session is ready. */
@@ -3613,6 +3615,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
             active={active}
             onOpenBoard={onOpenBoard}
             onChatRequest={onChatRequest}
+            onOpenTree={onOpenTree}
             hasModel={sourceLabel !== null || hasLocalGeometry}
             onSketch={runSketch}
             parameterLocks={{ parameters: projection?.parameters ?? [], contextKey, busy: parameterLockBusy || modelRunPending !== null,

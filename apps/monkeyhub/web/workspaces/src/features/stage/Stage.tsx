@@ -117,6 +117,7 @@ export function Stage({
   active = true,
   onOpenBoard,
   onChatRequest,
+  onOpenTree,
   viewportRef,
   message,
   status,
@@ -197,6 +198,13 @@ export function Stage({
   onEvidence,
 }: {
   viewportRef: RefObject<ViewportController | null>;
+  /**
+   * Opens the project's Design Tree. When there is one, it is the only entry to the
+   * design history (#302): the footer's Stage count, viewing label and "new" badge,
+   * and the Versions panel's Stages, lines, explorations and candidates give way to
+   * one link to it. Versions keeps the working draft, recovery points and files.
+   */
+  onOpenTree?: () => void;
   message: string;
   status: ViewportStatus;
   artifactError: StudioApiError | null;
@@ -2074,10 +2082,14 @@ export function Stage({
             <div className="stage__context-summary">
               <button type="button" className="btn stage__versions-toggle" aria-expanded={versionsOpen} aria-controls="stage-versions-panel"
                 onClick={() => { if (!versionsOpen) onVersionsOpen?.(); setVersionsOpen((open) => !open); setAnnotationToolsOpen(false); setViewToolsOpen(false); setParameterLocksOpen(false); }}>
-                {t("stage.versions.open")} <span className="quiet">{versionCount}</span>
-                {!documentOpen && hasModel && contextLabel && <span className="stage__versions-current"><span className="quiet">{t("stage.context.viewing")} </span>{contextLabel}</span>}
-                {hasNewVersions && <span className="stage__versions-new" role="status">{t("stage.versions.new")}</span>}
+                {t("stage.versions.open")}
+                {!onOpenTree && <>
+                  <span className="quiet">{versionCount}</span>
+                  {!documentOpen && hasModel && contextLabel && <span className="stage__versions-current"><span className="quiet">{t("stage.context.viewing")} </span>{contextLabel}</span>}
+                  {hasNewVersions && <span className="stage__versions-new" role="status">{t("stage.versions.new")}</span>}
+                </>}
               </button>
+              {onOpenTree && <button type="button" className="btn btn--small stage__tree-link" onClick={onOpenTree}>{t("stage.tree.open")}</button>}
               {!documentOpen && pickedStatus}
               {!onReturnToBoard && picked && onOpenBoard && <button type="button" className="btn btn--small"
                 onClick={onOpenBoard}>{t("workspace.monkeyboard")}</button>}
@@ -2090,7 +2102,7 @@ export function Stage({
             </div>
             <div className="stage__versions-session">{sessionStatus}</div>
             <VersionsStrip
-              design={designHistory}
+              design={designHistory} onOpenTree={onOpenTree}
               workingCopies={workingCopies} onOpenWorkingOption={onOpenWorkingOption}
               groups={versions} loadingSha={loadingSha} loadedShas={loadedShas} loadedRunId={loadedRunId}
               onOpen={onOpenVersion} onOpenRun={onOpenRun} onCompare={onCompareVersion}

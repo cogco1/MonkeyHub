@@ -235,8 +235,11 @@ What the lane landed, by finding:
 - **SS-5 (name), SS-6.** Sync reads 记录 / Record. Each "sync first" refusal now offers 记录修改并继续 / Record edits and continue, which records the edits and retries the refused action. The restart prompt stays with #234.
 - **FN-1, DC-2, R5.** A result no longer switches the surface, opens the panel or replaces the model. Each request gets one Study card whose View opens the Design Tree. The Stage chip shows "N 个方案就绪 · 查看".
 - **R4 (work rows only), R13 (catalog names).** The project card's work lines are now one Open in Design tree link. The catalogs call the Board 画板.
+- **R1, R3 (with a Design Tree), FN-3.** Where the runtime has a Design Tree, the footer's Stage count, viewing label and "new" badge become one Open in Design tree link. So do the Versions panel's Stages, lines, explorations and candidates. Versions keeps the working draft, recovery points, the first-Stage button and the files.
 
 Still open:
 
-- **R1–R3 and FN-3.** The Modeling footer and the VersionsStrip design section still carry S0 set-up, Combine, recovery points and the Continue for a viewed model; the Design Tree does not offer them yet.
+- **R2.** The editing-base row stays: it carries Continue from here and Record edits and continue for a viewed model. The chip's viewing state offers only Back to Current.
+- **Combine.** With a Design Tree, manual Combine has no entry until the tree offers it. The API and the Agent's combine step are unchanged.
+- **R3 without a Design Tree.** Runtimes without `working-source` keep the old design section.
 - **Board.tsx and ModelPreview.tsx.** Their hard-coded 画布, 图墙 and 同步 copy belongs to GH-66.

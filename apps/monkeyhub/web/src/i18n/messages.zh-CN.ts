@@ -175,6 +175,7 @@ export const messagesZhCN = {
   "stage.versions.completeModel": "完整模型",
   "stage.versions.nativeExport": "原生导出",
   "stage.versions.showAllExports": "显示全部导出",
+  "stage.tree.open": "在状态树中查看",
   "stage.base.current": "下次修改起点",
   "stage.base.ready": "修改起点已就绪",
   "stage.base.loading": "正在读取修改起点…",
