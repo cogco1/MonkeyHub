@@ -356,6 +356,11 @@ print(json.dumps({"unit": str(model.Settings.ModelUnitSystem), "objects": object
     stateElement.drawnShape, "The earlier candidate remains an unchanged revision");
 
   // A fresh browser page re-reads retained vectors and calibration; it does not reuse the editor's React draft.
+  // GH-234 Q1/Q2: the regenerated candidate is shown, not continued; tracing names
+  // the view-only reason until the architect continues from it explicitly.
+  await tracing().getByText("Viewing only.", { exact: false }).waitFor();
+  assert.equal(await generate().isEnabled(), false, "Tracing does not build on the regenerated candidate before Continue");
+  await tracing().getByRole("button", { name: "Continue from this version", exact: true }).click();
   await until(() => generate().isEnabled(), Boolean, "The second candidate left the page busy");
   await tracing().getByRole("button", { name: "View model and progress", exact: true }).click();
   await page.locator(".stage-model").waitFor({ state: "visible" });
