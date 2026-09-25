@@ -69,7 +69,7 @@
       "goal": "Record the current MonkeyHub UI reality and its functional contradictions, propose the Hub-level interaction architecture for the expanded workspace set, and deliver bounded fixes for proven contradictions outside files claimed by other live work.",
       "depends_on": [],
       "write_scope": [
-        "docs/2026-09-24-monkeyhub-ui-reality-and-hub-architecture.md",
+        "docs/2026-09-24-monkeyhub-ui-reality-audit.md",
         "docs/mapping/planning/GH-234-hub-ui-round.md",
         "apps/monkeyhub/web/workspaces/src/app/App.tsx",
         "apps/monkeyhub/web/workspaces/src/app/useSession.ts",
@@ -106,7 +106,7 @@
             "hub.shell"
           ],
           "write_scope": [
-            "docs/2026-09-24-monkeyhub-ui-reality-and-hub-architecture.md",
+            "docs/2026-09-24-monkeyhub-ui-reality-audit.md",
             "docs/mapping/planning/GH-234-hub-ui-round.md"
           ],
           "depends_on": [],
