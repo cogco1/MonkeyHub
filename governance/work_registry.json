@@ -314,6 +314,7 @@
       "depends_on": [],
       "issue": "https://github.com/cogco1/MonkeyHub/issues/284",
       "write_scope": [
+        "apps/monkeyhub/web/workspaces/src/app/ProjectWorkspace.tsx",
         "apps/monkeyhub/web/workspaces/src/features/designTree/",
         "apps/monkeyhub/web/workspaces/test/designTree.browser.mjs",
         "apps/monkeyhub/web/workspaces/test/designTree.test.ts",
@@ -339,6 +340,7 @@
             "hub.shell"
           ],
           "write_scope": [
+            "apps/monkeyhub/web/workspaces/src/app/ProjectWorkspace.tsx",
             "apps/monkeyhub/web/workspaces/src/features/designTree/",
             "apps/monkeyhub/web/workspaces/test/designTree.browser.mjs",
             "apps/monkeyhub/web/workspaces/test/designTree.test.ts"
