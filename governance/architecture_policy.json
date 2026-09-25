@@ -366,6 +366,27 @@
       "reason": "Retains the locked ACP dependency release notices only under the external candidate bundle third-party directory."
     },
     {
+      "path": "tools/package_monkeyapps.py",
+      "function": "_unpacked_release",
+      "operations": [
+        "mkdir"
+      ],
+      "kind": "distribution_build",
+      "owner": "tools.package_monkeyapps",
+      "reason": "Extracts one verified published candidate archive only into its own new subdirectory of the external work directory update_index() created; it is removed after its patch is written."
+    },
+    {
+      "path": "tools/package_monkeyapps.py",
+      "function": "update_index",
+      "operations": [
+        "mkdir",
+        "write_text"
+      ],
+      "kind": "distribution_build",
+      "owner": "tools.package_monkeyapps",
+      "reason": "Creates the external --update-output and --update-work directories main() validated outside the source checkout, and writes one new MonkeyHub-<version>-update-index.json beside the patches create_patch wrote there."
+    },
+    {
       "path": "archflow/adapters/blender_cad.py",
       "function": "execute",
       "operations": [
