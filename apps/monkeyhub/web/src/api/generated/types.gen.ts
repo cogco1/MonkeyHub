@@ -1418,6 +1418,10 @@ export type PreparedUpdate = {
      * Reusedfiles
      */
     reusedFiles: number;
+    /**
+     * Releaseversion
+     */
+    releaseVersion?: string | null;
 };
 
 /**
@@ -1736,6 +1740,44 @@ export type RuntimeProjectRequest = {
 };
 
 /**
+ * UpdateCheck
+ *
+ * The last automatic or requested check of the unsigned prerelease channel.
+ */
+export type UpdateCheck = {
+    /**
+     * State
+     */
+    state?: 'never' | 'checking' | 'up-to-date' | 'downloading' | 'ready' | 'needs-full-update' | 'error';
+    /**
+     * Checkedat
+     */
+    checkedAt?: string | null;
+    /**
+     * Latestversion
+     */
+    latestVersion?: string | null;
+    /**
+     * Detail
+     */
+    detail?: string | null;
+    /**
+     * Releaseurl
+     */
+    releaseUrl?: string | null;
+};
+
+/**
+ * UpdateSettings
+ */
+export type UpdateSettings = {
+    /**
+     * Autoupdate
+     */
+    autoUpdate: boolean;
+};
+
+/**
  * UpdateStatus
  */
 export type UpdateStatus = {
@@ -1747,6 +1789,10 @@ export type UpdateStatus = {
      * Currentrevision
      */
     currentRevision: string | null;
+    /**
+     * Releaseversion
+     */
+    releaseVersion?: string | null;
     /**
      * Mode
      */
@@ -1765,6 +1811,19 @@ export type UpdateStatus = {
      */
     message?: string | null;
     error?: HubError | null;
+    /**
+     * Channel
+     */
+    channel?: 'unsigned-prerelease' | null;
+    /**
+     * Autoupdate
+     */
+    autoUpdate?: boolean;
+    /**
+     * Nextlaunch
+     */
+    nextLaunch?: boolean;
+    check?: UpdateCheck;
 };
 
 /**
@@ -1817,6 +1876,10 @@ export type UserSettingsDto = {
      * Chatmodel
      */
     chatModel?: string | null;
+    /**
+     * Autoupdate
+     */
+    autoUpdate?: boolean | null;
 };
 
 /**
@@ -2057,6 +2120,47 @@ export type RollbackUpdateApiUpdatesRollbackPostResponses = {
 };
 
 export type RollbackUpdateApiUpdatesRollbackPostResponse = RollbackUpdateApiUpdatesRollbackPostResponses[keyof RollbackUpdateApiUpdatesRollbackPostResponses];
+
+export type CheckUpdatesApiUpdatesCheckPostData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/updates/check';
+};
+
+export type CheckUpdatesApiUpdatesCheckPostResponses = {
+    /**
+     * Successful Response
+     */
+    202: UpdateStatus;
+};
+
+export type CheckUpdatesApiUpdatesCheckPostResponse = CheckUpdatesApiUpdatesCheckPostResponses[keyof CheckUpdatesApiUpdatesCheckPostResponses];
+
+export type UpdateSettingsApiUpdatesSettingsPutData = {
+    body: UpdateSettings;
+    path?: never;
+    query?: never;
+    url: '/api/updates/settings';
+};
+
+export type UpdateSettingsApiUpdatesSettingsPutErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type UpdateSettingsApiUpdatesSettingsPutError = UpdateSettingsApiUpdatesSettingsPutErrors[keyof UpdateSettingsApiUpdatesSettingsPutErrors];
+
+export type UpdateSettingsApiUpdatesSettingsPutResponses = {
+    /**
+     * Successful Response
+     */
+    200: UpdateStatus;
+};
+
+export type UpdateSettingsApiUpdatesSettingsPutResponse = UpdateSettingsApiUpdatesSettingsPutResponses[keyof UpdateSettingsApiUpdatesSettingsPutResponses];
 
 export type ListAppsApiAppsGetData = {
     body?: never;

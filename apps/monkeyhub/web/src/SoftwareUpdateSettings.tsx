@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Language } from "../../../shared-web/src/appearance.js";
+import { translateMessage } from "../../../shared-web/src/i18n.js";
 import { hubCopyCatalog } from "./i18n/catalogs";
 import type { UpdateStatus } from "./api/generated/types.gen";
 
@@ -19,7 +20,7 @@ async function updateRequest(path: string, options?: RequestInit): Promise<Updat
 export function SoftwareUpdateSettings({ language, open, restartBlocker, onRestarting }: Props) {
   const t = hubCopyCatalog[language];
   const [status, setStatus] = useState<UpdateStatus | null>(null);
-  const [request, setRequest] = useState<"status" | "upload" | "apply" | null>(null);
+  const [request, setRequest] = useState<"status" | "upload" | "apply" | "check" | "auto" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [restartRequested, setRestartRequested] = useState(false);
@@ -49,14 +50,22 @@ export function SoftwareUpdateSettings({ language, open, restartBlocker, onResta
     finally { requestLock.current = false; setRequest(null); }
   }, [reconcileStatus]);
   useEffect(() => { if (open) void refresh(); }, [open, refresh]);
-  // A prepared patch can take time to verify. Status reads never apply it or
-  // restart the application, even when the user closes this settings dialog.
+  // A check, download or prepared patch can take time. Status reads never
+  // apply it or restart the application, even when this dialog is closed.
+  const checking = status?.check?.state === "checking" || status?.check?.state === "downloading";
   useEffect(() => {
-    if (!open || (status?.state !== "preparing" && status?.state !== "applying" && !restartRequested)) return;
+    if (!open || (status?.state !== "preparing" && status?.state !== "applying" && !restartRequested && !checking)) return;
     const timer = window.setInterval(() => { void refresh(); }, 1000);
     return () => window.clearInterval(timer);
-  }, [open, status?.state, restartRequested, refresh]);
+  }, [open, status?.state, restartRequested, checking, refresh]);
 
+  async function send(kind: "check" | "auto", path: string, options: RequestInit) {
+    if (requestLock.current || restartRequested) return;
+    requestLock.current = true; setRequest(kind); setError(null);
+    try { setStatus(await updateRequest(path, options)); }
+    catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
+    finally { requestLock.current = false; setRequest(null); }
+  }
   async function prepare(file: File) {
     if (requestLock.current || restartRequested) return;
     if (!file.name.toLowerCase().endsWith(".zip")) { setError(t.updateZipRequired); return; }
@@ -93,20 +102,46 @@ export function SoftwareUpdateSettings({ language, open, restartBlocker, onResta
   const blocked = restartBlocker === "drafts" ? t.updateDraftsBlocked : restartBlocker === "model" ? t.updateModelBlocked
     : restartBlocker === "settings" ? t.updateSettingsBlocked : restartBlocker === "busy" ? t.updateBusyBlocked : null;
   const working = request === "upload" || request === "apply" || status?.state === "preparing" || status?.state === "applying" || restartRequested;
+  const preparedName = status?.prepared?.releaseVersion ?? status?.prepared?.targetVersion ?? "";
   const phase = request === "upload" ? t.updateUploading : restartRequested || status?.state === "applying" ? t.updateApplying
-    : status?.state === "preparing" ? t.updatePreparing : status?.state === "ready" ? t.updateReady
+    : status?.state === "preparing" ? t.updatePreparing
+      : status?.state === "ready" ? (status.nextLaunch ? translateMessage(t, "updateNextLaunch", { version: preparedName }) : t.updateReady)
       : status?.state === "failed" ? t.updateFailed : request === "status" && !status ? t.updateLoading : null;
+  const check = status?.check;
+  const latest = check?.latestVersion ?? "";
+  const version = { version: latest };
+  const checkResult = !check || check.state === "never" ? t.updateNeverChecked : check.state === "checking" ? t.updateChecking
+    : check.state === "downloading" ? translateMessage(t, "updateDownloading", version)
+      : check.state === "ready" ? translateMessage(t, "updateCheckReady", version)
+        : check.state === "needs-full-update" ? translateMessage(t, "updateNeedsFull", version)
+          : check.state === "error" ? t.updateCheckFailed : t.updateUpToDate;
+  const checkedAt = check?.checkedAt ? new Date(check.checkedAt).toLocaleString(language, { dateStyle: "medium", timeStyle: "short" }) : null;
   return <section className="settings software-update" aria-labelledby="software-update-heading">
     <div className="settings-section">
       <h2 id="software-update-heading">{t.softwareUpdate}</h2>
       <dl className="software-update__versions">
-        <div><dt>{t.updateCurrent}</dt><dd title={status?.currentRevision ?? undefined}>{status?.currentVersion ?? "—"}</dd></div>
+        <div><dt>{t.updateCurrent}</dt><dd title={status?.currentRevision ?? undefined}>{status?.releaseVersion
+          ? `${status.releaseVersion} · ${status.currentVersion}` : status?.currentVersion ?? "—"}</dd></div>
         {status?.prepared && <>
-          <div><dt>{t.updateTarget}</dt><dd title={status.prepared.targetRevision}>{status.prepared.targetVersion}</dd></div>
+          <div><dt>{t.updateTarget}</dt><dd title={status.prepared.targetRevision}>{status.prepared.releaseVersion
+            ? `${status.prepared.releaseVersion} · ${status.prepared.targetVersion}` : status.prepared.targetVersion}</dd></div>
           <div><dt>{t.updateChangedBytes}</dt><dd>{sizeOf(status.prepared.changedBytes)}</dd></div>
         </>}
       </dl>
-      {status && <p className="help">{status.mode === "unsupported" ? t.updateUnsupported : t.updateLocalMode}</p>}
+      {status?.mode === "unsupported" && <p className="help">{t.updateUnsupported}</p>}
+      {status?.mode === "local" && <div className="software-update__auto">
+        <label className="software-update__toggle">
+          <input type="checkbox" role="switch" checked={Boolean(status.autoUpdate)} disabled={Boolean(request) || working}
+            aria-describedby="software-update-auto-help" onChange={(event) => void send("auto", "settings", {
+              method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ autoUpdate: event.target.checked }),
+            })} />
+          <span>{status.autoUpdate ? t.updateAutoOn : t.updateAutoOff}</span>
+        </label>
+        <p className="software-update__check">{translateMessage(t, "updateLastCheck", { result: checkedAt ? `${checkedAt} · ${checkResult}` : checkResult })}</p>
+        {check?.state === "needs-full-update" && check.releaseUrl && <p className="help">{t.updateFullHelp} <span className="software-update__url">{check.releaseUrl}</span></p>}
+        {check?.state === "error" && check.detail && <p className="help">{check.detail}</p>}
+        <p className="help" id="software-update-auto-help">{t.updateAutoHelp}</p>
+      </div>}
       {status?.mode === "local" && <p className="help" id="software-update-trust">{t.updateTrustLocal}</p>}
       {selectedFile && <p className="software-update__file">{selectedFile}</p>}
       <p className="software-update__status" role="status" aria-live="polite">{phase ?? status?.message ?? ""}</p>
@@ -118,6 +153,8 @@ export function SoftwareUpdateSettings({ language, open, restartBlocker, onResta
           const file = event.target.files?.[0]; event.target.value = ""; if (file) void prepare(file);
         }} />
       <div className="actions software-update__actions">
+        {status?.mode === "local" && <button type="button" className="btn" disabled={Boolean(request) || working || checking}
+          onClick={() => void send("check", "check", { method: "POST" })}>{t.updateCheckNow}</button>}
         <button type="button" className="btn" disabled={Boolean(request) || working} onClick={() => void refresh()}>{t.updateRefresh}</button>
         {status?.mode === "local" && <button type="button" className="btn" disabled={Boolean(request) || working}
           aria-describedby="software-update-trust" onClick={() => fileInput.current?.click()}>{t.updateChoosePatch}</button>}

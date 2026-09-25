@@ -9862,6 +9862,10 @@ export type UserSettingsDto = {
      * Chatmodel
      */
     chatModel?: string | null;
+    /**
+     * Autoupdate
+     */
+    autoUpdate?: boolean | null;
 };
 
 /**

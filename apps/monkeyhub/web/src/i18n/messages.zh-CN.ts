@@ -843,7 +843,6 @@ export const messagesZhCN = {
 
 export const hubCopy = {
     softwareUpdate: "软件更新", updateCurrent: "当前版本", updateTarget: "已准备版本", updateChangedBytes: "变更文件体积",
-    updateLocalMode: "本地补丁模式 · 尚未配置自动下载更新。",
     updateUnsupported: "补丁更新需要使用已安装的 MonkeyHub 桌面客户端。",
     updateTrustLocal: "本地开发补丁包含可执行代码，请选择来源可信的 ZIP 包（最大 256 MiB）。",
     updateChoosePatch: "选择补丁 ZIP", updateRefresh: "刷新状态", updateRestart: "重启更新",
@@ -877,6 +876,12 @@ export const hubCopy = {
     catalogSignIn: "登录这个 CLI 后才能读取它的模型目录。", catalogChecking: "正在向这个 CLI 读取可用模型…",
     workspace: "工作区", workspaceDir: "新项目所在文件夹", saveSettings: "保存显示与连接", saveWorkspace: "保存工作区与启动",
     workspaceHelp: "「新建项目」会在这个文件夹里创建项目。留空则使用当前项目所在的文件夹。",
+    updateAutoOn: "自动更新：开 · 未签名预发布通道", updateAutoOff: "自动更新：关 · 未签名预发布通道",
+    updateAutoHelp: "MonkeyHub 约每 6 小时检查一次 GitHub 预发布版本，并下载从当前版本出发的补丁。补丁经 SHA-256 与发行清单核对后准备在当前版本旁边，下次启动 MonkeyHub 时生效；不会中途重启正在进行的工作。未签名：这些核对能发现下载损坏或不一致，不能证明发布者身份。",
+    updateCheckNow: "立即检查", updateLastCheck: "上次检查：{result}", updateNeverChecked: "尚未检查", updateChecking: "正在检查…",
+    updateUpToDate: "已是最新版本", updateDownloading: "正在下载 {version}…", updateCheckReady: "已准备 {version}", updateCheckFailed: "未成功",
+    updateNeedsFull: "{version} 需要完整更新", updateFullHelp: "请从发布页下载完整安装包：",
+    updateNextLaunch: "{version} 已就绪，下次启动 MonkeyHub 时生效。",
   } as const;
 
 export const chatCopy = {
