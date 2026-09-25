@@ -222,7 +222,7 @@
       "id": "GH-294",
       "stream": "planning",
       "status": "active",
-      "goal": "Implement candidate admission slices S1 and S2 from the 2026-09-25 audit: the CandidateAdmission@1 record in the fixed studio-admissions run and the gate it shares with Stage acceptance, then the Candidate Pool readers for the #284 Design Tree (candidates and studies on design history, admission on Worktree result lines, a warning on a rejected Working Head) and the retirement of Exploration creation.",
+      "goal": "Implement candidate admission from the 2026-09-25 audit. S1 and S2: the CandidateAdmission@1 record in the fixed studio-admissions run and the gate it shares with Stage acceptance, the Candidate Pool readers for the #284 Design Tree and the retirement of Exploration creation. S3 and S4 (owner decision Q3, bounded automatic Agent authority): the Hub Agent closes each completed loop with one admission bound to the user's message, rejects or continues only on the user's bound words, and every Continue retains an attributed design.continued event.",
       "depends_on": [],
       "write_scope": [
         "apps/archflow-studio/api/archflow_studio_api/application/authentication.py",
@@ -232,11 +232,16 @@
         "apps/archflow-studio/api/archflow_studio_api/application/working_draft.py",
         "apps/archflow-studio/api/archflow_studio_api/protocol.py",
         "apps/archflow-studio/api/archflow_studio_api/routes/episodes.py",
+        "apps/archflow-studio/api/archflow_studio_api/routes/working_draft.py",
         "apps/archflow-studio/api/archflow_studio_api/transport/design_history.py",
         "apps/archflow-studio/api/archflow_studio_api/transport/proposal.py",
         "apps/archflow-studio/api/archflow_studio_api/transport/runtime.py",
+        "apps/archflow-studio/api/archflow_studio_api/transport/working_draft.py",
+        "apps/archflow-studio/api/tests/test_attributed_continue.py",
         "apps/archflow-studio/api/tests/test_candidate_admission.py",
         "apps/archflow-studio/api/tests/test_working_copies.py",
+        "apps/monkeyhub/api/monkeyhub_api/chat.py",
+        "apps/monkeyhub/api/tests/test_chat_admission.py",
         "apps/monkeyhub/web/workspaces/src/api/generated/",
         "archflow/project/record_kinds.py",
         "docs/DYNAMIC_MAP.md",
@@ -247,14 +252,17 @@
         "docs/mapping/planning/INDEX.md",
         "governance/module_registry.json",
         "governance/work_registry.json",
-        "tests/test_record_kinds.py"
+        "tests/test_record_kinds.py",
+        "tests/test_version_refs.py"
       ],
       "card": "docs/mapping/planning/GH-294-admission-record.md",
       "acceptance": [
         "POST /api/admissions retains one CandidateAdmission@1 per closed loop in studio-admissions through the accept preflight; a run is in at most one live record, an identical retry returns the record, a conflicting one is 409 ADMISSION_CONFLICT, and accept refuses a run with a live rejection.",
         "A human may admit a result with a recorded relation violation, which carries the failing clauses as its marker; Agent admissions and Accept-as-Stage still require review readiness.",
         "GET /api/design-history lists admitted Candidates and their Studies (with legacy Stage, Exploration and accepted-episode derivation) identically after restart; a TESTMODEL-shaped project lists none; Worktree result lines carry admission and studyId.",
-        "Exploration creation (POST /api/working-copies) is retired while retained StudioWorkingCopy@1 readers stay; the generated clients match their schemas and archcheck passes."
+        "Exploration creation (POST /api/working-copies) is retired while retained StudioWorkingCopy@1 readers stay; the generated clients match their schemas and archcheck passes.",
+        "S3: through studio_request the Agent admits with POST /api/admissions (task kind hub-chat) and continues with PUT /api/working-draft; Hub binds messageSource to the last user message the Agent was given and rawLanguage where the user's words carry the decision, refuses provider-supplied provenance and a Continue without the user's message or words, and the prompt asks for one admission per completed loop with its declared Study and superseded attempts, never intermediate runs.",
+        "S4: every Continue retains AuditEvent@1 design.continued beside its run with ids only (actor, origin, previous head run, target run, message ids); the Agent's needs a Hub-managed Runtime and the user's bound words; the event survives restart and is ignored by the acceptance reader; a Continue admits nothing, and generation never moves the head."
       ],
       "lanes": [
         {
@@ -265,7 +273,7 @@
           "base_ref": "e183a69a",
           "contributor": "Claude",
           "reviewer": "Claude root task",
-          "handoff": "S1 and S2 backend; the #284 Design Tree UI lane (codex/284-design-tree-ui) consumes the design-history candidates and studies DTO. S3 (Hub Agent contract) and S4 (attributed Continue) are not in this lane.",
+          "handoff": "Delivered S1 and S2 in f0b44082, 4844129c and 1e56cd3d, merged onto batch A in 7cc3aef9; the #284 Design Tree UI lane (codex/284-design-tree-ui) consumes the design-history candidates and studies DTO. S3 and S4 continue in GH-294/agent-admission.",
           "modules": [
             "studio.intent",
             "project.record_kinds",
@@ -297,6 +305,45 @@
             "governance/module_registry.json",
             "governance/work_registry.json",
             "tests/test_record_kinds.py"
+          ],
+          "depends_on": [],
+          "status": "done",
+          "blocked_reason": null
+        },
+        {
+          "id": "agent-admission",
+          "issue": "https://github.com/cogco1/MonkeyHub/issues/294",
+          "branch": "codex/294-agent-admission",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-294-agent-admission",
+          "base_ref": "7cc3aef9",
+          "contributor": "Claude (sub-agent P)",
+          "reviewer": "Claude root task",
+          "handoff": "S3 and S4: the Hub Agent's hub-chat admissions and its Continue on the user's bound words through studio_request, the prompt contract, and an attributed design.continued event for every Continue. The ChatShell half of the audit's S3 row (auto-open only admitted results, 'open result' wording) is not in this lane. Root task reviews and publishes; not pushed.",
+          "modules": [
+            "hub.shell",
+            "studio.binding",
+            "studio.intent",
+            "studio.shell"
+          ],
+          "write_scope": [
+            "apps/archflow-studio/api/archflow_studio_api/application/authentication.py",
+            "apps/archflow-studio/api/archflow_studio_api/application/design_history.py",
+            "apps/archflow-studio/api/archflow_studio_api/application/working_draft.py",
+            "apps/archflow-studio/api/archflow_studio_api/routes/working_draft.py",
+            "apps/archflow-studio/api/archflow_studio_api/transport/working_draft.py",
+            "apps/archflow-studio/api/tests/test_attributed_continue.py",
+            "apps/monkeyhub/api/monkeyhub_api/chat.py",
+            "apps/monkeyhub/api/tests/test_chat_admission.py",
+            "apps/monkeyhub/web/workspaces/src/api/generated/sdk.gen.ts",
+            "apps/monkeyhub/web/workspaces/src/api/generated/types.gen.ts",
+            "docs/DYNAMIC_MAP.md",
+            "docs/PROTOCOL.md",
+            "docs/SYSTEM_MAP.md",
+            "docs/mapping/planning/GH-294-admission-record.md",
+            "docs/mapping/planning/INDEX.md",
+            "governance/module_registry.json",
+            "governance/work_registry.json",
+            "tests/test_version_refs.py"
           ],
           "depends_on": [],
           "status": "active",
