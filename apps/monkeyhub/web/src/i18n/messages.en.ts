@@ -1036,7 +1036,7 @@ export const hubCopy = {
     apps: "Workspaces", settings: "Settings", refresh: "Refresh", connected: "Hub connected", connecting: "Connecting", disconnected: "Cannot read workspace status",
     closeNote: "Closing this page does not stop workspaces. Use their Stop buttons, or quit MonkeyHub from the system tray.",
     archTitle: "Modeling", diagramTitle: "Drawings", monitorTitle: "Usage", boardTitle: "Presentation", fabTitle: "Fabrication",
-    arch: "3D modelling and spatial changes", diagram: "Drawings, images and annotations", monitor: "Call usage and cost estimates", board: "Drawing board, markup and meeting presentation", fab: "Print model scaling, splitting and file upload",
+    arch: "3D modelling and spatial changes", diagram: "Drawings, images and annotations", monitor: "Call usage and cost estimates", board: "Board layout, markup and meeting presentation", fab: "Print model scaling, splitting and file upload",
     shared: "Modeling, drawings and presentation share one project and service. Stopping any one stops all three workspaces.",
     stopped: "Stopped", starting: "Starting", running: "Running", stopping: "Stopping", error: "Failed", unavailable: "Not included in this version", ready: "Ready",
     open: "Enter workspace", start: "Start", stop: "Stop", stopShared: "Stop shared service", details: "Details", noProject: "No project selected",
