@@ -1,6 +1,7 @@
 import asyncio
 from dataclasses import replace
 from datetime import datetime, timezone
+from decimal import Decimal
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
@@ -23,6 +24,7 @@ from archflow.project.refs import record_ref_from_uri
 from monkeyarch.runtime import project_runner
 from monkeymonitor.store import BUSY_NOTICE, UsageLog
 from monkeymonitor.trace import build_traces
+from monkeymonitor.usage import TokenUsage
 from archflow_studio_api.main import create_app
 from archflow_studio_api.settings import StudioSettings
 
@@ -113,6 +115,45 @@ class MonitoringTests(unittest.TestCase):
             self.assertFalse(warnings)
             self.assertEqual([event.phase for event in events], ["intent_compile"])
             self.assertFalse(events[0].model_call)
+
+    def test_model_call_records_its_connection_plan_and_the_shipped_catalog_prices_it(self):
+        usage = dict(input_tokens=1000, output_tokens=200, cached_input_tokens=400, cache_write_input_tokens=100,
+                     cache_write_1h_input_tokens=0, reasoning_output_tokens=50)
+        # codex has a plan but no catalog row of its own: OpenAI's rows are not its alias.
+        for provider, model, status in (("anthropic", "claude-sonnet-5", "matched"), ("codex", "gpt-6-astra", "not_found")):
+            with self.subTest(provider=provider), TemporaryDirectory() as directory:
+                class Compiler:
+                    def __init__(self):
+                        self.provider, self.model = provider, model
+                    def compile(self, *, operation_observer=None, **kwargs):
+                        operation_observer(dict(phase="model_request", status="succeeded", started_at="2026-09-26T10:00:00+00:00",
+                                                ended_at="2026-09-26T10:00:01+00:00", duration_ms=1000, usage=usage))
+                        return SimpleNamespace(receipt=None, status="compiled", provider=self.provider, model=self.model)
+                self.run_call(Compiler(), Path(directory))
+                events, warnings = UsageLog(Path(directory)).read()
+                self.assertFalse(warnings)
+                call = next(event for event in events if event.model_call)
+                self.assertEqual((call.provider, call.model), (provider, model))
+                self.assertEqual(call.details["billing_plan"], "api-standard")
+                self.assertEqual(call.rate_match_status, status)
+                self.assertFalse([event for event in events if not event.model_call and "billing_plan" in event.details])
+                if status == "matched":
+                    self.assertEqual((call.rate_snapshot["provider"], call.rate_snapshot["model"]), (provider, model))
+                    price = build_traces([event.to_dict() for event in events])["traces"][0]["price"]
+                    # 500 ordinary x $2 + 400 cached x $0.20 + 100 written x $2.50 + 200 output x $10, per million.
+                    self.assertEqual(Decimal(price["amount_usd"]), Decimal("0.00333"))
+                    self.assertEqual(price["missing"], [])
+
+    def test_render_usage_has_no_single_output_rate_and_stays_unpriced(self):
+        with TemporaryDirectory() as directory:
+            observed = StudioMonitor(UsageLog(Path(directory))).observer(project_id="example", run_id="render-job")
+            observed(dict(phase="image_render", status="succeeded", started_at="2026-09-26T10:00:00+00:00",
+                          model_call=True, provider="gemini", model="image-model", billing_mode="unknown",
+                          tokens=TokenUsage(input_tokens=10, output_tokens=20)))
+            (event,), warnings = UsageLog(Path(directory)).read()
+            self.assertFalse(warnings)
+            self.assertNotIn("billing_plan", event.details)
+            self.assertEqual(event.rate_match_status, "missing_identity")
 
     def test_diagnostic_failure_does_not_repeat_or_fail_compilation(self):
         class BrokenStore:
