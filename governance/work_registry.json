@@ -155,49 +155,6 @@
       ]
     },
     {
-      "id": "GH-314",
-      "stream": "planning",
-      "status": "active",
-      "goal": "An idle Hub stops re-reading every open project: the project watcher re-derives which work copies exist only when the runs, their document records or the files in their copy workspaces change, and a read forwarded to Studio no longer wakes the watcher.",
-      "depends_on": [],
-      "issue": "https://github.com/cogco1/MonkeyHub/issues/314",
-      "write_scope": [
-        "apps/monkeyhub/README.md",
-        "apps/monkeyhub/api/monkeyhub_api/runtime.py",
-        "apps/monkeyhub/api/tests/test_project_runtime.py",
-        "docs/mapping/planning/GH-314-hub-idle-reads.md"
-      ],
-      "card": "docs/mapping/planning/GH-314-hub-idle-reads.md",
-      "acceptance": [
-        "An idle due pass compares a key of run ids, document record refs and copy-workspace files and re-derives work copies only when it moved.",
-        "A forwarded GET/HEAD or read-only POST does not wake the project watcher; admitted mutations still do.",
-        "Existing work-copy binding, observation and refresh tests still pass; a new test pins both rules."
-      ],
-      "lanes": [
-        {
-          "id": "hub-idle-reads",
-          "issue": "https://github.com/cogco1/MonkeyHub/issues/314",
-          "branch": "codex/314-hub-idle-reads",
-          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-314-hub-idle-reads",
-          "base_ref": "82192a41",
-          "contributor": "Claude",
-          "reviewer": "Claude root task",
-          "handoff": "Hub side of #314 only; list_documents selecting its record kinds waits for GH-244/drawing-application to release artifacts.py.",
-          "modules": [
-            "hub.shell"
-          ],
-          "write_scope": [
-            "apps/monkeyhub/api/monkeyhub_api/runtime.py",
-            "apps/monkeyhub/api/tests/test_project_runtime.py",
-            "apps/monkeyhub/README.md"
-          ],
-          "depends_on": [],
-          "status": "active",
-          "blocked_reason": null
-        }
-      ]
-    },
-    {
       "id": "GH-66",
       "stream": "planning",
       "status": "active",
