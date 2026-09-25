@@ -3352,6 +3352,16 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
         stage={
           <DocumentTracingContext.Provider value={{ levels: tracingLevels,
             blockedReason: viewOnlyReason ?? (localModel && unsynced(localModel) ? t("document.trace.unsynced") : null),
+            // The same explicit Continue as the editing-base row, offered where the refusal is
+            // read; the open page stays open and a refusal is reported in the panel.
+            continueViewed: viewOnlyReason === null || !loadedArtifact || (viewingExternalModel && loadedModelSource === null) ? null
+              : async () => {
+                const refused = { reason: null as string | null };
+                const next = loadedModelSource
+                  ? await changeEditingBase(loadedModelSource.runId, loadedModelSource, undefined, undefined, true, (reason) => { refused.reason = reason; })
+                  : await changeEditingBase(loadedArtifact.runId, undefined, undefined, undefined, true, (reason) => { refused.reason = reason; });
+                if (next === null) throw new Error(refused.reason ?? t("stage.base.switchFailed"));
+              },
             generate: generateDocumentTracing, showModel: () => setDocumentView(current => ({ ...current, open: false })) }}>
           <Stage
             key={binding?.projectId ?? "unbound"}
