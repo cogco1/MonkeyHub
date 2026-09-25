@@ -163,6 +163,26 @@ def _finite(value, label: str) -> float:
     return float(value)
 
 
+def object_semantics(receipt: Mapping[str, Any]) -> dict[str, dict[str, str]]:
+    """Each physical object's component and material, as its CAD receipt's expected semantics state them.
+
+    They are the ``archflow:component`` and ``archflow:material`` user text
+    the CAD program gave the object; an object with neither is left out.  A
+    native model has no expected semantics, so its drawing names objects only.
+    """
+
+    semantics = {}
+    for object_id, row in (receipt.get("expected_semantics") or {}).get("objects", {}).items():
+        text = row.get("user_text") if isinstance(row, Mapping) else None
+        if not isinstance(text, Mapping):
+            continue
+        values = {key: text.get(f"archflow:{key}") for key in ("component", "material")}
+        values = {key: value for key, value in values.items() if isinstance(value, str) and value}
+        if values:
+            semantics[object_id] = values
+    return semantics
+
+
 def _cleaned(lines, regions, *, crop_uv, hidden_lines: bool, unit: str, scale_denominator: int):
     """The lines one drawing draws, cropped to its window and cleaned at the paper tolerance, with the report.
 
@@ -335,7 +355,7 @@ class ElevationProjection:
 def project_model_axis_elevation(
     entries: Sequence[StepEntry], *, object_ids: Sequence[str], view: ElevationView, unit: str,
     operation_observer: Callable[[Mapping[str, Any]], None] | None = None,
-    parent_event_id: str | None = None,
+    parent_event_id: str | None = None, semantics: Mapping[str, Mapping[str, str]] | None = None,
 ) -> ElevationProjection:
     """Solve, crop and render one elevation of the named shapes; writes nothing.
 
@@ -343,7 +363,7 @@ def project_model_axis_elevation(
     (restricted to the view's near/far slab); the crop then clips the
     result to the sheet window and ``clean_drawing`` cleans it.  The SVG
     holds visible polylines, plus hidden ones when the view asks for them,
-    each naming its object.
+    each naming its object and, from ``semantics``, its component and material.
     """
 
     if not isinstance(view, ElevationView):
@@ -364,7 +384,7 @@ def project_model_axis_elevation(
                                         scale_denominator=view.scale_denominator)
             svg = drawing_svg(
                 cleaned, crop_uv=view.crop_uv, unit=unit, scale_denominator=view.scale_denominator,
-                hidden_lines=view.hidden_lines, title=view.name,
+                hidden_lines=view.hidden_lines, title=view.name, semantics=semantics,
             )
             observation["emitted_object_ids"] = list(svg_objects(svg))
         with _observed_stage(operation_observer, "drawing.png", parent_event_id=parent_event_id):
@@ -726,7 +746,8 @@ def freeze_cut_plan(
                                     unit=verified.length_unit, scale_denominator=view.scale_denominator)
         svg = drawing_svg(cleaned, crop_uv=view.crop_uv, unit=verified.length_unit,
                           scale_denominator=view.scale_denominator, hidden_lines=view.hidden_lines,
-                          title=recipe["name"], regions=regions, graphics=graphics, dimensions=resolved, dressing=dressing)
+                          title=recipe["name"], regions=regions, graphics=graphics, dimensions=resolved, dressing=dressing,
+                          semantics=object_semantics(verified.receipt))
         projection = ElevationProjection(lines=lines, svg=svg, png=render_svg_png(svg), cleanup=cleanup)
     except (OcctBackendError, DrawingSvgError) as exc:
         raise DrawingElevationError(f"cut-plan {view.name}: {exc}") from exc
@@ -776,7 +797,7 @@ def freeze_model_axis_elevation(
         observation["input_object_ids"] = list(verified.physical_object_ids)
     projection = project_model_axis_elevation(
         verified.entries, object_ids=verified.physical_object_ids, view=view, unit=verified.length_unit,
-        operation_observer=observer, parent_event_id=parent_event_id,
+        operation_observer=observer, parent_event_id=parent_event_id, semantics=object_semantics(verified.receipt),
     )
     with _observed_stage(observer, "drawing.persist", parent_event_id=parent_event_id) as observation:
         drawing = _retain_projection(
@@ -1061,14 +1082,15 @@ def _perspective_image(point, frame, eye, focus) -> tuple[float, float]:
 def project_section_perspective(
     entries: Sequence[StepEntry], *, object_ids: Sequence[str], view: SectionPerspectiveView, unit: str,
     operation_observer: Callable[[Mapping[str, Any]], None] | None = None,
-    parent_event_id: str | None = None,
+    parent_event_id: str | None = None, semantics: Mapping[str, Mapping[str, str]] | None = None,
 ) -> SectionPerspectiveProjection:
     """Cut, solve and render one section perspective of the named shapes; writes nothing.
 
     The plane's section of the selected objects places the default camera
     and must exist: a plane that misses them is refused by name.  The
     resolved view (plane, frame, camera and crop) is returned with the
-    drawing so the receipt records exactly what was drawn.
+    drawing so the receipt records exactly what was drawn.  ``semantics``
+    names each object's component and material in the SVG.
     """
 
     if not isinstance(view, SectionPerspectiveView):
@@ -1145,7 +1167,7 @@ def project_section_perspective(
             svg = drawing_svg(
                 cleaned, crop_uv=crop, unit=unit, scale_denominator=view.scale_denominator,
                 hidden_lines=False, title=view.name, regions=perspective.regions, graphics=view.graphics,
-                projection=SECTION_PERSPECTIVE_KIND,
+                projection=SECTION_PERSPECTIVE_KIND, semantics=semantics,
             )
             observation["emitted_object_ids"] = list(svg_objects(svg))
         with _observed_stage(operation_observer, "drawing.png", parent_event_id=parent_event_id):
@@ -1213,7 +1235,7 @@ def freeze_section_perspective(
         observation["input_object_ids"] = list(selected)
     projection = project_section_perspective(
         verified.entries, object_ids=selected, view=view, unit=verified.length_unit,
-        operation_observer=observer, parent_event_id=parent_event_id,
+        operation_observer=observer, parent_event_id=parent_event_id, semantics=object_semantics(verified.receipt),
     )
     with _observed_stage(observer, "drawing.persist", parent_event_id=parent_event_id) as observation:
         drawing = _retain_projection(
@@ -1290,6 +1312,7 @@ __all__ = [
     "freeze_model_axis_elevation",
     "freeze_cut_plan",
     "freeze_section_perspective",
+    "object_semantics",
     "plan_dressing_anchors",
     "resolve_plan_dressing",
     "list_model_axis_elevations",

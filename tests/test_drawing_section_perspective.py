@@ -27,6 +27,7 @@ from monkeydiagram.drawing_elevation import (
     SectionPerspectiveView,
     freeze_section_perspective,
     list_model_axis_elevations,
+    object_semantics,
     project_section_perspective,
     read_elevation_source,
     read_model_axis_elevation,
@@ -399,14 +400,16 @@ class FreezeSectionPerspectiveTests(unittest.TestCase):
         self.assertEqual((cold.svg, cold.png, cold.receipt), (drawing.svg, drawing.png, receipt))
         self.assertEqual(receipt["artifacts"]["svg"]["sha256"], hashlib.sha256(cold.svg).hexdigest())
         self.assertEqual(receipt["artifacts"]["png"]["sha256"], hashlib.sha256(cold.png).hexdigest())
-        # The receipt's request, on its verified source, draws the retained files again.
+        # The receipt's request, on its verified source and that source's semantics, draws the retained files again.
         request = view["request"]
+        verified = read_elevation_source(reopened, self.source)
         replay = project_section_perspective(
-            read_elevation_source(reopened, self.source).entries, object_ids=projection["selected_object_ids"], unit="meter",
+            verified.entries, object_ids=projection["selected_object_ids"], unit="meter",
             view=SectionPerspectiveView(name=request["name"], section=request["section"], camera=request["camera"],
                                         depth=request["depth"], hidden_object_ids=tuple(request["hiddenObjectIds"]),
                                         scale_denominator=int(request["scale"].split(":")[1]), graphics=request["graphics"],
-                                        linear_deflection=request["linear_deflection"]))
+                                        linear_deflection=request["linear_deflection"]),
+            semantics=object_semantics(verified.receipt))
         self.assertEqual((replay.svg, replay.png), (cold.svg, cold.png))
         again = freeze_section_perspective(reopened, source=self.source, view=self.view(), drawing_run_id="drawing-run")
         self.assertEqual((again.receipt_ref, again.svg_ref, again.png_ref), (drawing.receipt_ref, drawing.svg_ref, drawing.png_ref))
@@ -477,6 +480,10 @@ class NativeSectionPerspectiveRetentionTests(unittest.TestCase):
                 self.assertEqual(drawing.receipt["projection"]["cut_object_ids"], [object_id])
                 self.assertGreater(drawing.receipt["projection"]["section_regions"], 0)
                 self.assertEqual(svg_objects(drawing.svg), (object_id,))
+                # A native model has no expected semantics: its lines name their object and nothing more.
+                self.assertIn(b"data-object=", drawing.svg)
+                self.assertNotIn(b"data-component", drawing.svg)
+                self.assertNotIn(b"data-material", drawing.svg)
                 self.assertTrue(all(event["details"]["input_identity"]["model_sha256"] == digest for event in observations))
                 reopened = FilesystemProjectRepository.open(root)
                 cold = read_model_axis_elevation(reopened, drawing.receipt_ref)
