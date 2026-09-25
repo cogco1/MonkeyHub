@@ -155,6 +155,154 @@
       ]
     },
     {
+      "id": "GH-302",
+      "stream": "planning",
+      "status": "active",
+      "goal": "Modeling says only what matters: Record appears with its label only when there are unrecorded edits, errors state the reason and the next step, tool shortcuts are announced, and the loading overlay names what it waits for.",
+      "depends_on": [],
+      "issue": "https://github.com/cogco1/MonkeyHub/issues/302",
+      "write_scope": [
+        "apps/monkeyhub/web/workspaces/src/app/ErrorPanel.tsx",
+        "apps/monkeyhub/web/workspaces/src/app/LoadingOverlay.tsx",
+        "apps/monkeyhub/web/workspaces/src/features/stage/ModelToolButton.tsx",
+        "apps/monkeyhub/web/workspaces/src/features/stage/Stage.tsx",
+        "apps/monkeyhub/web/workspaces/src/features/stage/stageNotices.css",
+        "apps/monkeyhub/web/workspaces/test/modelSync.browser.mjs",
+        "docs/mapping/planning/GH-302-stage-feedback.md"
+      ],
+      "card": "docs/mapping/planning/GH-302-stage-feedback.md",
+      "acceptance": [
+        "Record is labelled and shown only while edits are unrecorded (SS-5).",
+        "ErrorPanel shows the reason and a next step in normal mode (FN-4 first half).",
+        "Tool buttons expose aria-keyshortcuts (NA-4); the loading overlay names its step (R14)."
+      ],
+      "lanes": [
+        {
+          "id": "stage-feedback",
+          "issue": "https://github.com/cogco1/MonkeyHub/issues/302",
+          "branch": "codex/302-stage-feedback",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-302-stage-feedback",
+          "base_ref": "4bd8ec32",
+          "contributor": "Claude",
+          "reviewer": "Claude root task",
+          "handoff": "Modeling chrome and shared error/loading panels; copy stays local while GH-244 claims the catalogs.",
+          "modules": [
+            "hub.shell"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/web/workspaces/src/features/stage/Stage.tsx",
+            "apps/monkeyhub/web/workspaces/src/features/stage/ModelToolButton.tsx",
+            "apps/monkeyhub/web/workspaces/src/features/stage/stageNotices.css",
+            "apps/monkeyhub/web/workspaces/src/app/ErrorPanel.tsx",
+            "apps/monkeyhub/web/workspaces/src/app/LoadingOverlay.tsx",
+            "apps/monkeyhub/web/workspaces/test/modelSync.browser.mjs"
+          ],
+          "depends_on": [],
+          "status": "active",
+          "blocked_reason": null
+        }
+      ]
+    },
+    {
+      "id": "GH-58",
+      "stream": "planning",
+      "status": "active",
+      "goal": "The update status says what is actually true: a prepared, applicable update is never reported as failed, and Settings words each state plainly.",
+      "depends_on": [],
+      "issue": "https://github.com/cogco1/MonkeyHub/issues/58",
+      "write_scope": [
+        "apps/monkeyhub/api/monkeyhub_api/updates.py",
+        "apps/monkeyhub/api/tests/test_updates.py",
+        "apps/monkeyhub/web/src/SoftwareUpdateSettings.tsx",
+        "docs/mapping/planning/GH-58-update-status.md"
+      ],
+      "card": "docs/mapping/planning/GH-58-update-status.md",
+      "acceptance": [
+        "A check that ends after a successful stage leaves the status ready, not failed; the reason for any failure is kept and shown.",
+        "Software Update in Settings shows one clear line per state and the next action."
+      ],
+      "lanes": [
+        {
+          "id": "update-status",
+          "issue": "https://github.com/cogco1/MonkeyHub/issues/58",
+          "branch": "codex/58-update-status",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-58-update-status",
+          "base_ref": "4bd8ec32",
+          "contributor": "Claude",
+          "reviewer": "Claude root task",
+          "handoff": "Update state machine and its Settings view; copy stays local in SoftwareUpdateSettings.tsx.",
+          "modules": [
+            "hub.shell"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/api/monkeyhub_api/updates.py",
+            "apps/monkeyhub/api/tests/test_updates.py",
+            "apps/monkeyhub/web/src/SoftwareUpdateSettings.tsx"
+          ],
+          "depends_on": [],
+          "status": "active",
+          "blocked_reason": null
+        }
+      ]
+    },
+    {
+      "id": "GH-285",
+      "stream": "planning",
+      "status": "active",
+      "goal": "The chat composer says what a message will change, keeps drafts across restarts, offers New topic from the + menu instead of a standing checkbox, says Sending while it sends, and the unfinished-operation notice names the operation and can be cleared.",
+      "depends_on": [],
+      "issue": "https://github.com/cogco1/MonkeyHub/issues/285",
+      "write_scope": [
+        "apps/monkeyhub/api/monkeyhub_api/main.py",
+        "apps/monkeyhub/api/monkeyhub_api/runtime.py",
+        "apps/monkeyhub/api/monkeyhub_api/runtime_models.py",
+        "apps/monkeyhub/api/tests/test_runtime_operations.py",
+        "apps/monkeyhub/web/src/ChatShell.css",
+        "apps/monkeyhub/web/src/ChatShell.tsx",
+        "apps/monkeyhub/web/src/chatProcess.ts",
+        "apps/monkeyhub/web/test/chatProcess.test.ts",
+        "apps/monkeyhub/web/test/chatShell.browser.mjs",
+        "apps/monkeyhub/web/test/projectWorkspaceFixture.mjs",
+        "docs/mapping/planning/GH-285-composer.md"
+      ],
+      "card": "docs/mapping/planning/GH-285-composer.md",
+      "acceptance": [
+        "The composer shows the design target above the input and a New topic entry in the + menu; the checkbox is gone.",
+        "Unsent text survives a reload and no longer blocks the update restart; attachments still do.",
+        "A failed or stale operation notice names the operation, links its chat and can be acknowledged; acknowledged ones stay out of the banner."
+      ],
+      "lanes": [
+        {
+          "id": "composer",
+          "issue": "https://github.com/cogco1/MonkeyHub/issues/285",
+          "branch": "codex/285-composer",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-285-composer",
+          "base_ref": "4bd8ec32",
+          "contributor": "Claude",
+          "reviewer": "Claude root task",
+          "handoff": "Hub shell composer and operation notice; copy stays in local objects in ChatShell.tsx while GH-244 claims the catalogs.",
+          "modules": [
+            "hub.shell"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/web/src/ChatShell.tsx",
+            "apps/monkeyhub/web/src/ChatShell.css",
+            "apps/monkeyhub/web/src/chatProcess.ts",
+            "apps/monkeyhub/web/test/chatShell.browser.mjs",
+            "apps/monkeyhub/web/test/chatProcess.test.ts",
+            "apps/monkeyhub/web/test/projectWorkspaceFixture.mjs",
+            "apps/monkeyhub/api/monkeyhub_api/main.py",
+            "apps/monkeyhub/api/monkeyhub_api/runtime.py",
+            "apps/monkeyhub/api/monkeyhub_api/runtime_models.py",
+            "apps/monkeyhub/api/tests/test_runtime_operations.py"
+          ],
+          "depends_on": [],
+          "status": "active",
+          "blocked_reason": null
+        }
+      ]
+    },
+    {
       "id": "GH-66",
       "stream": "planning",
       "status": "active",
