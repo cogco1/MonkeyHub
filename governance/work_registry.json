@@ -174,7 +174,6 @@
         "apps/monkeyhub/web/workspaces/test/designTree.browser.mjs",
         "apps/monkeyhub/web/workspaces/test/designTree.test.ts",
         "docs/2026-09-25-candidate-graph-interaction.md",
-        "docs/WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.md",
         "docs/mapping/planning/GH-284-design-tree-ui.md"
       ],
       "card": "docs/mapping/planning/GH-284-design-tree-ui.md",
@@ -212,7 +211,6 @@
             "apps/monkeyhub/web/workspaces/test/designTree.browser.mjs",
             "apps/monkeyhub/web/workspaces/test/designTree.test.ts",
             "docs/2026-09-25-candidate-graph-interaction.md",
-            "docs/WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.md",
             "docs/mapping/planning/GH-284-design-tree-ui.md"
           ],
           "depends_on": [],
@@ -223,7 +221,8 @@
       "notes": [
         "2026-09-25: overlaps GH-66 on Board.tsx; canvas-host extraction only; coordinated by root task.",
         "2026-09-25: owner decision relayed by the root task: the rail's primary surfaces are 建模, 画板 and 状态树, so the Design Tree is a surface with a rail entry; the Stage chip stays as the position indicator.",
-        "2026-09-25: on the root task's instruction this branch merged codex/294-admission-record (GH-294 S1+S2) and reads its Candidate Pool; landing it lands those commits too."
+        "2026-09-25: on the root task's instruction this branch merged codex/294-admission-record (GH-294 S1+S2) and reads its Candidate Pool; landing it lands those commits too.",
+        "2026-09-25: the Design tree (状态树) naming-table row is committed; the guide is released to GH-294/admission-record, which also claims it."
       ]
     },
     {
