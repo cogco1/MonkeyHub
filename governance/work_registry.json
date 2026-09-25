@@ -314,7 +314,7 @@
           "base_ref": "e183a69a",
           "contributor": "Claude",
           "reviewer": "Claude root task",
-          "handoff": "Review follow-up on this branch: a Tasks caption cut at the sidebar edge lost its running or waiting state; the state goes before the step. Then done again; root task reviews and publishes both lanes. Board.tsx, PublishWorkspace.tsx and publish.css stay with GH-66; SoftwareUpdateSettings.tsx stays with the auto-update lane.",
+          "handoff": "Delivered in ea6ba2d7 (rail: Surfaces Modeling and Board, Tools Drawings, Render, Fabrication and Usage; Layout as a Board mode behind a Board | Layout switch), f847d0a6 (Tasks, running badges, the #294 new-schemes hook, 7-day usage from Monitor and New version ready in the footer) and the Tasks caption follow-up. Root task reviews and publishes both lanes. Board.tsx, PublishWorkspace.tsx and publish.css stay with GH-66; SoftwareUpdateSettings.tsx stays with the auto-update lane.",
           "modules": [
             "hub.shell"
           ],
@@ -340,7 +340,7 @@
           "depends_on": [
             "GH-285/process-fold"
           ],
-          "status": "active",
+          "status": "done",
           "blocked_reason": null
         }
       ]

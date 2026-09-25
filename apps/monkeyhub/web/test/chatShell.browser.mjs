@@ -2144,7 +2144,7 @@ try {
   await tasksEntry.click();
   const taskList = page.getByRole("list", { name: "Tasks", exact: true });
   assert.deepEqual(await taskList.locator(".chat-task__title").allInnerTexts(), [bChat.title, "Make a drawing sheet"]);
-  assert.deepEqual(await taskList.locator(".chat-task small").allInnerTexts(), ["Project B · Generate a scheme · Running", "Project A · Waiting to start"]);
+  assert.deepEqual(await taskList.locator(".chat-task small").allInnerTexts(), ["Project B · Running · Generate a scheme", "Project A · Waiting to start"]);
   assert.equal(await taskList.getByText(/task-running|task-queued|prop-9/).count(), 0, "no raw ids in Tasks");
   // Footer: usage from Monitor's own records, and no update while none is ready.
   const usageEntry = page.locator(".chat-usage");
@@ -2200,7 +2200,7 @@ try {
   await page.getByRole("dialog").getByRole("button", { name: "关闭", exact: true }).click();
   await page.getByRole("button", { name: "收起工具", exact: true }).click();
   await tasksEntry.click();
-  await page.getByRole("list", { name: "任务", exact: true }).locator(".chat-task small").filter({ hasText: "Project B · 生成方案 · 进行中" }).waitFor();
+  await page.getByRole("list", { name: "任务", exact: true }).locator(".chat-task small").filter({ hasText: "Project B · 进行中 · 生成方案" }).waitFor();
   await page.waitForFunction(() => document.querySelector(".chat-usage")?.getAttribute("aria-label") === "用量：近 7 天 8,510 tokens");
   assert.equal(await usageEntry.locator(".chat-usage__figure").innerText(), "近 7 天 8510 tokens");
   assert.equal(await projectBadge("Project B").innerText(), "运行中");

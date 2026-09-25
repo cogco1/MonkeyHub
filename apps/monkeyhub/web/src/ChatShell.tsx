@@ -1087,10 +1087,12 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
         {tasksOpen && <ul className="chat-tasks" id="chat-tasks" aria-label={t.tasks}>
           {tasks.length ? tasks.map((task) => {
             const action = task.action ? stepText(describeCall(task.action), processWords(t)) : null;
-            return <li key={task.key}><button type="button" className="chat-task" data-state={task.state} onClick={() => openTask(task)}>
+            const title = task.chat?.title ?? action ?? t.workTools;
+            // Where and whether it runs come before what it is doing: a narrow sidebar cuts the end.
+            const caption = [task.projectName, task.state === "running" ? t.taskRunning : t.taskQueued, task.chat ? action : null].filter(Boolean).join(" · ");
+            return <li key={task.key}><button type="button" className="chat-task" data-state={task.state} title={`${title}\n${caption}`} onClick={() => openTask(task)}>
               <span className="chat-thread__dot" data-status={task.state === "running" ? "running" : "idle"} />
-              <span className="chat-task__text"><span className="chat-task__title">{task.chat?.title ?? action ?? t.workTools}</span>
-                <small>{[task.projectName, task.chat ? action : null, task.state === "running" ? t.taskRunning : t.taskQueued].filter(Boolean).join(" · ")}</small></span>
+              <span className="chat-task__text"><span className="chat-task__title">{title}</span><small>{caption}</small></span>
             </button></li>;
           }) : <li className="chat-muted chat-tasks__empty">{t.tasksEmpty}</li>}
         </ul>}
