@@ -343,6 +343,17 @@ class CodexTests(unittest.TestCase):
         self.assertEqual(events[0].billing_mode, "subscription_equivalent")
         self.assertNotIn("private-path", json.dumps([event.to_dict() for event in events]))
 
+    def test_token_events_carry_the_plan_of_their_recorded_model_provider(self):
+        events = self.read([boundary_row("task_started", "2026-09-09T11:59:59Z", "turn-1"),
+                            token_row(counts(100, 10), counts(100, 10))])
+        self.assertEqual([event.details for event in events if event.model_call], [{"billing_plan": "api-standard"}])
+        self.assertEqual([event.details for event in events if not event.model_call], [{}])
+        # A session that records no model provider names no plan.
+        (event,) = self.read_selected([{"type": "session_meta", "payload": {"id": "session-id"}},
+                                       {"type": "turn_context", "payload": {"model": "exact-model"}},
+                                       token_row(counts(100, 10), counts(100, 10))])
+        self.assertEqual((event.provider, event.details), ("unknown", {}))
+
     def test_reset_uses_reported_last_and_marks_uncertainty(self):
         events = self.read([
             token_row(counts(1000, 100), counts(1000, 100)),
