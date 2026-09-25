@@ -914,6 +914,13 @@ await boot.locator('.boot__elapsed').waitFor();
 assert.equal(await boot.locator('.boot__title').innerText(),'Opening…','the boot overlay is headed by what it does');
 assert.match(await boot.locator('.boot__elapsed').innerText(),/^Still waiting · \d+ s$/);
 assert.equal(await boot.locator('[role="status"] .boot__elapsed').count(),0,'the count is not a live region');
+// #302 (NA-1): the waiting line is bilingual text. The Hub keeps a project it hides mounted
+// under visibility: hidden, and the line must hide with it instead of showing through.
+const waiting=boot.locator('[role="status"] .bilingual-text__layer--active').first(),visibility=node=>getComputedStyle(node).visibility;
+assert.equal(await waiting.evaluate(visibility),'visible');
+await page.locator('.project-workspace').evaluate(node=>{node.parentElement.style.visibility='hidden';});
+assert.equal(await waiting.evaluate(visibility),'hidden','a hidden workspace hides its loading line');
+await page.locator('.project-workspace').evaluate(node=>{node.parentElement.style.visibility='';});
 releaseBoot();await opening;
 const originalRuns=await runIds(), beforeWrites=sent.length;
 // SS-5: Record is offered, by name, only while there is something to record.
