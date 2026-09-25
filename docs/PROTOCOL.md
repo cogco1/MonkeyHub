@@ -1072,6 +1072,19 @@ itself. The original message ID remains bound on both creation and revocation.
 Lock, supersede and Stage acceptance are not exposed by this capability. Runtime
 authorization and CAS remain authoritative. Its schema tool derives these
 narrowed inputs from the actual Runtime OpenAPI rather than another Decision DTO.
+
+The same tool closes the Agent's loops and continues only on the user's words (#294 Q3). It
+exposes `POST /api/admissions` with `task.kind` fixed to `hub-chat`, and `PUT
+/api/working-draft`; it reads `GET /api/admissions`, `GET /api/working-source` and `GET
+/api/working-draft/revision`. Hub fills `messageSource` from the last user message the Agent was
+given; an interjection still waiting for its next step binds nothing. It binds `rawLanguage`
+where the user's words carry the decision: a `feedbackQuote` passage, the whole message for a
+rejection, and always for a Continue. A Continue with no such message or words is refused (`409
+CHAT_FEEDBACK_SOURCE`), as is provider-supplied provenance, another task kind or a Continue
+without a run (`422`). The schema tool hides the bound fields, and the Continue reply carries only
+`projectId`, `revisionSha256` and `current`. The Hub prompt asks for one admission per completed
+loop: a declared Study for several alternatives, each result's superseded attempts, no
+intermediate runs, and a rejection or Continue only on the user's own words.
 Drawing/copy work explicitly selects `decisionContext.domain` on the existing
 context read; the prepared default remains design. Full applicable decision
 slices pass through, while revoked, deferred or inapplicable records do not.

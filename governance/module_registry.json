@@ -6530,6 +6530,7 @@
         "External source-bound conversation presentation through the existing chat store and stdio adapter: transient public progress, revisioned result upserts, session-scoped raster previews and exact retained document review; native CLI/ACP remains the provider owner.",
         "Scheduling project working-draft cleanup along the existing project watcher; it expires only superseded local recovery and never asks P036 to remove a run.",
         "A narrow ordinary-chat feedback capability over studio.intent decisions: current user wording/message provenance is bound by Hub, interpreted avoid/keep fields stay attributed to the agent, and revocation verifies the original project/message without exposing lock, supersede or Stage acceptance.",
+        "The Agent's closed-loop admissions and Continue through the existing studio_request tool: POST /api/admissions fixed to task kind hub-chat and PUT /api/working-draft, each bound by Hub to the last user message the Agent was given, with the user's exact words where they carry the decision (a quoted passage, a rejection, every Continue); provider-supplied provenance, other task kinds and a Continue without the user's message or words are refused, and the Hub prompt asks for one admission per completed loop with its Study and superseded attempts.",
         "User-selected local desktop patch preparation, idle restart admission, owned host trial activation and startup rollback; update files and transaction state live only under the explicitly supplied nonproject runtime/updates directory and sibling application versions.",
         "Forwarding explicitly selected Study revisions into prepared task context and exposing the existing project-bound Study read for exact evidence reopening; no Study mutation tool.",
         "Drawing as a project-bound page in the same Hub: retained cut-plan revisions and representation controls, explicit source comparison/rebuild, saved-revision SVG download and editing placement/removal of retained dimensions",
@@ -6632,6 +6633,7 @@
         "GET /api/chat/sessions/{id}/documents/{messageId}/{index}",
         "presentation_bind and chat_present: local MCP binding and result presentation without provider invocation",
         "studio_request /api/decisions: GET latest/history, POST current-user avoid/keep feedback and POST feedback-only revoke through existing Runtime authorization; studio_schema derives the narrowed inputs from Runtime OpenAPI",
+        "studio_request POST /api/admissions (hub-chat, message-bound) and PUT /api/working-draft (a Continue on the user's bound words), with GET /api/admissions, /api/working-source and /api/working-draft/revision; studio_schema hides the bound fields",
         "GET /api/updates/status",
         "GET /api/updates/restart",
         "POST /api/updates/prepare",
@@ -6776,7 +6778,8 @@
         "apps/monkeyhub/web/workspaces/test/renderWorkspace.browser.mjs",
         "apps/monkeyhub/web/workspaces/test/renderView.test.ts",
         "apps/monkeyhub/web/workspaces/test/workingHead.test.ts",
-        "apps/monkeyhub/web/test/worktreeGraph.test.ts"
+        "apps/monkeyhub/web/test/worktreeGraph.test.ts",
+        "apps/monkeyhub/api/tests/test_chat_admission.py"
       ],
       "depends_on": [
         "project.repository",
