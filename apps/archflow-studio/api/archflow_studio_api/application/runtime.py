@@ -22,6 +22,7 @@ from .design_history import (
     StageView,
     _exact_runner,
     _retained_acceptance_attribution,
+    admission_index,
     read_acceptance,
 )
 from .jobs import FAILED, QUEUED, RUNNING, Job, JobRegistry
@@ -220,6 +221,9 @@ class WorktreeLine:
     conflicts: tuple[str, ...] = ()
     detail: str | None = None
     updated_at: str | None = None
+    # admitted | rejected | superseded | none, from retained admission facts (#294)
+    admission: str = "none"
+    study_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -379,6 +383,22 @@ def _result_lines(binding: ProjectBinding, value: dict, head: WorkingHead | None
     return lines
 
 
+def _with_admissions(binding: ProjectBinding, lines: list[WorktreeLine], warnings: list[str]) -> list[WorktreeLine]:
+    """Each finished line's retained verdict and Study; running work has none yet."""
+
+    try:
+        index, found = admission_index(binding)
+    except (StudioError, ProjectRepositoryError, KeyError, TypeError, ValueError, OSError) as exc:
+        warnings.append(f"Candidate admissions could not be read: {getattr(exc, 'detail', exc)}")
+        return lines
+    warnings.extend(warning for warning in found if warning not in warnings)
+    return [
+        replace(line, admission=index[line.run_id][0], study_id=index[line.run_id][1])
+        if line.kind != "running" and line.run_id in index else line
+        for line in lines
+    ]
+
+
 def _representations(binding: ProjectBinding, head: WorkingHead | None, render_jobs,
                      warnings: list[str]) -> list[RepresentationState]:
     rows: list[RepresentationState] = []
@@ -444,6 +464,7 @@ def worktree_graph(binding: ProjectBinding, *, jobs: JobRegistry | None = None, 
         ))
     lines.extend(_running_lines(binding, value["active"], jobs, head))
     lines.extend(_result_lines(binding, value, head, warnings))
+    lines = _with_admissions(binding, lines, warnings)
     representations = _representations(binding, head, render_jobs, warnings)
     return WorktreeGraph(binding.project_id, head, resolved.revision_sha256, tuple(lines),
                          tuple(representations), tuple(warnings))

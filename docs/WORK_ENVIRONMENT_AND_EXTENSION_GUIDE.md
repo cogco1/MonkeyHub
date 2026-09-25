@@ -501,6 +501,7 @@ Python 代码按 [PEP 8](https://peps.python.org/pep-0008/#package-and-module-na
 | **MonkeyArch** | 三维建模、模型候选与续改 | `monkeyarch/`；Hub `appId: monkeyarch` |
 | **MonkeyDiagram** | 图纸、图解、平立剖表达与单页批注 | `monkeydiagram/`；Hub rail「工具」组的「图纸」（与渲染、制作、用量并列）；Board 双击已登记图页进入精确页面编辑 |
 | **MonkeyBoard** | 图版排布、方案比较、会议展示与画布批注；含「排版」模式（排版与导出，即 Publish 界面） | Hub `appId: monkeyboard`；同页项目工作区；左上角「画板 \| 排版」切换两种模式 |
+| **Design tree（状态树）** | 项目的设计历史：当前线上的阶段与已选方案连成主干，未选方案为短枝，进行中的 Agent 任务在起点处占位；查看不移动“当前”，从这里继续与接受为下一阶段分开 | Hub rail 第一组的第三项（建模、画板、状态树，2026-09-25 决定）；项目工作区 `view=tree`；项目工作区顶部的阶段标签也打开它 |
 | **MonkeyMonitor** | 用量、费用、耗时与计算过程查看 | `monkeymonitor/`；Hub `appId: monkeymonitor` |
 | **MonkeyFab** | 制作与打印准备；当前支持分件及已切片文件发送 | 同仓 `apps/monkeyfab/` CLI；Hub `appId: monkeyfab`、`?view=fab` |
 
@@ -528,10 +529,12 @@ MonkeyMonitor 诊断服务仍独立运行，Usage 与 MonkeyFab 页面由 Hub �
 | --- | --- | --- |
 | **Stage** | 已接受、已提交且不可原地修改的完整设计状态节点 | `S0`、`S1`、`S2`；可附“总体建筑”“柜体调整”等说明 |
 | **Branch** | 一条要持续保留和演化的历史线 | `main`、`cabinet-alt-A` |
-| **Candidate** | 从确切起点生成的尚未接受提交的候选修改 | `Candidate A`、`Candidate B` |
-| **Exploration** | 围绕同一起点的一次比较或决定，组织相关候选 | “柜体布局比较”；复用既有 WorkingCopy |
+| **Candidate** | 已准入的闭环结果：从确切起点生成、经准入门判定并记为 `CandidateAdmission@1` 的方案；一次运行或执行成功本身不是 Candidate | `Candidate A`、`Candidate B` |
+| **Study**（方案组） | 围绕同一起点的一次比较或一组备选，归组已准入的 Candidate；由准入记录声明，旧的 Exploration（WorkingCopy）只作为历史方案组读取 | “入口方案组 · 3 个方案” |
 
 普通 A/B 备选称为 Candidate；一次柜体修改或多个 Agent 并行生成不自动创建 Branch。
+任务中的尝试、修正和被否定的结果仍作为运行保留，可恢复、可诊断，但不进入方案组；
+新建 Exploration 已停止（#294 Q4），协议见 [PROTOCOL §5.5](PROTOCOL.md#55-candidate-admission)。
 接受候选后才得到下一 Stage；从历史 Stage 另开一条持续演化路线时才创建 Branch。
 `S0/S1` 是显示编号，不替代唯一
 Stage 引用，也不表示正式 issue；设计 Branch 与 Git 源码分支是不同的历史。

@@ -6,6 +6,7 @@ consistency, not publisher identity; no network release is trusted here.
 """
 from __future__ import annotations
 
+from collections.abc import Callable, Iterator
 import hashlib
 import json
 import os
@@ -14,6 +15,7 @@ import re
 import shutil
 import stat
 import tempfile
+import time
 from typing import BinaryIO
 import zipfile
 import zlib
@@ -23,6 +25,8 @@ PATCH_SCHEMA = "MonkeyHubPatch@1"
 PATCH_TRUST = "local-developer-unsigned"
 MANIFEST_NAME = "patch-manifest.json"
 MAX_MANIFEST_BYTES = 32 * 1024 * 1024
+# How long a finished staging copy waits for Windows to release it before the rename.
+RENAME_SECONDS = 120.0
 REQUIRED_FILES = (
     "source-version.txt", "build-info.json", "MonkeyHub.exe",
     "OPEN_MONKEYHUB.cmd", "_runtime/python/python.exe", "_runtime/desktop-Cargo.lock",
@@ -34,6 +38,17 @@ REQUIRED_FILES = (
 
 class PatchError(ValueError):
     """The patch, base installation or requested destination is not usable."""
+
+
+class PatchCancelled(PatchError):
+    """The caller stopped the work; nothing was found wrong with the patch."""
+
+
+def _proceed(cancelled: Callable[[], bool] | None) -> None:
+    # A caller that is shutting down stops between files; the enclosing
+    # function then removes only what it created, as for any other refusal.
+    if cancelled is not None and cancelled():
+        raise PatchCancelled("Stopped before the prepared version was complete; nothing was activated.")
 
 
 def _path_name(value: object) -> str:
@@ -113,21 +128,32 @@ def _file_fact(path: Path) -> dict:
     return {"size": size, "sha256": digest}
 
 
-def _inventory(root: Path) -> dict[str, dict]:
+def _files(root: Path, cancelled: Callable[[], bool] | None = None) -> Iterator[tuple[str, Path, os.stat_result]]:
+    """Every distributed file under root; links and reparse points are refused."""
     def inaccessible(error: OSError) -> None:
         raise error
-    files: dict[str, dict] = {}
     for directory, children, filenames in os.walk(root, followlinks=False, onerror=inaccessible):
         for name in children:
             _check_plain(Path(directory) / name)
         for name in filenames:
+            _proceed(cancelled)
             path = Path(directory) / name
-            _check_plain(path)
+            info = _check_plain(path)
             relative = path.relative_to(root).as_posix()
             if not _cache_file(relative):
-                files[relative] = _file_fact(path)
+                yield relative, path, info
+
+
+def _inventory(root: Path, cancelled: Callable[[], bool] | None = None) -> dict[str, dict]:
+    files = {relative: _file_fact(path) for relative, path, _ in _files(root, cancelled)}
     _check_names(list(files))
     return dict(sorted(files.items()))
+
+
+def _layout(root: Path) -> dict[str, int]:
+    sizes = {relative: info.st_size for relative, _, info in _files(root)}
+    _check_names(list(sizes))
+    return dict(sorted(sizes.items()))
 
 
 def _json(data: bytes) -> dict:
@@ -241,16 +267,21 @@ def _summary(document: dict) -> dict:
         "reusedFiles": len(target) - len(document["changed"]),
         "targetBytes": sum(fact["size"] for fact in target.values()),
         "payloadBytes": sum(target[name]["size"] for name in document["changed"]),
+        # A release manifest binds this same digest, so a caller can tie the
+        # version this patch reconstructs to that release before staging it.
+        "targetBuildInfoSha256": target["build-info.json"]["sha256"] if "build-info.json" in target else None,
     }
 
 
-def _verify(archive: zipfile.ZipFile, document: dict, base: Path) -> None:
-    actual = _inventory(base)
+def _verify(archive: zipfile.ZipFile, document: dict, base: Path,
+            cancelled: Callable[[], bool] | None = None) -> None:
+    actual = _inventory(base, cancelled)
     if actual != document["baseFiles"]:
         raise PatchError("Base installation files differ from the patch base; use a matching complete version.")
     if _root_identity(base, actual) != document["baseCommit"]:
         raise PatchError("Base source commit does not match this patch.")
     for name in document["changed"]:
+        _proceed(cancelled)
         with archive.open("payload/" + name) as source:
             size, digest = _digest(source)
         if {"size": size, "sha256": digest} != document["targetFiles"][name]:
@@ -284,28 +315,59 @@ def inspect_patch(path: Path, base_root: Path) -> dict:
         raise PatchError(f"Cannot verify patch: {error}") from error
 
 
-def _verify_target_files(document: dict, target_root: Path) -> None:
+def _verify_target_files(document: dict, target_root: Path,
+                         cancelled: Callable[[], bool] | None = None) -> None:
     target = _plain_path(target_root, directory=True)
-    actual = _inventory(target)
+    actual = _inventory(target, cancelled)
     if actual != document["targetFiles"]:
         raise PatchError("Prepared version files changed; refusing reuse or activation.")
     if _root_identity(target, actual) != document["targetCommit"]:
         raise PatchError("Prepared source commit does not match this patch.")
 
 
-def verify_target(path: Path, target_root: Path) -> dict:
+def verify_target(path: Path, target_root: Path, *, cancelled: Callable[[], bool] | None = None) -> dict:
     """Recheck a staged directory immediately before activation or completion."""
     try:
         with zipfile.ZipFile(_plain_path(path, directory=False)) as archive:
             document = _manifest(archive)
-            _verify_target_files(document, target_root)
+            _verify_target_files(document, target_root, cancelled)
             return _summary(document)
     except (OSError, zipfile.BadZipFile, zlib.error, RuntimeError) as error:
         raise PatchError(f"Cannot verify prepared version: {error}") from error
 
 
-def stage_patch(path: Path, base_root: Path, destination_parent: Path) -> Path:
-    """Stage or reverify an identical existing target; never overwrite or activate."""
+def verify_target_layout(path: Path, target_root: Path, *, exact: tuple[str, ...] = ()) -> dict:
+    """Quickly recheck a staged directory before its entry is switched to it.
+
+    Staging already hashed every file. This rechecks the closed file set and
+    every size, and the exact bytes of the identity files plus any file named
+    in ``exact`` (a script about to be executed, for example). It reads a few
+    files instead of the whole tree, so it does not replace verify_target.
+    """
+    try:
+        with zipfile.ZipFile(_plain_path(path, directory=False)) as archive:
+            document = _manifest(archive)
+        target = _plain_path(target_root, directory=True)
+        expected = document["targetFiles"]
+        if _layout(target) != {name: fact["size"] for name, fact in expected.items()}:
+            raise PatchError("Prepared version files changed; refusing activation.")
+        for name in ("source-version.txt", "build-info.json", "MonkeyHub.exe", *exact):
+            if name not in expected or _file_fact(target / name) != expected[name]:
+                raise PatchError(f"Prepared version file changed or is not part of it: {name}")
+        if _root_identity(target, expected) != document["targetCommit"]:
+            raise PatchError("Prepared source commit does not match this patch.")
+        return _summary(document)
+    except (OSError, zipfile.BadZipFile, zlib.error, RuntimeError) as error:
+        raise PatchError(f"Cannot check prepared version: {error}") from error
+
+
+def stage_patch(path: Path, base_root: Path, destination_parent: Path, *,
+                cancelled: Callable[[], bool] | None = None) -> Path:
+    """Stage or reverify an identical existing target; never overwrite or activate.
+
+    ``cancelled`` is polled between files; answering True stops with a refusal
+    and removes only the temporary directory this call created.
+    """
     temporary: Path | None = None
     try:
         base = _plain_path(base_root, directory=True)
@@ -315,13 +377,15 @@ def stage_patch(path: Path, base_root: Path, destination_parent: Path) -> Path:
         with zipfile.ZipFile(_plain_path(path, directory=False)) as archive:
             document = _manifest(archive)
             final = _plain_path(parent / document["targetVersion"])
-            _verify(archive, document, base)
+            _verify(archive, document, base, cancelled)
             if final.exists() or final.is_symlink():
                 # Staging may have succeeded before Hub could save its update
                 # transaction. Re-selecting that patch can recover the version,
                 # but only after the same full verification used at activation.
                 try:
-                    _verify_target_files(document, final)
+                    _verify_target_files(document, final, cancelled)
+                except PatchCancelled:
+                    raise
                 except PatchError as error:
                     raise PatchError(f"Existing target does not match this patch; left unchanged: {error}") from error
                 return final
@@ -330,6 +394,7 @@ def stage_patch(path: Path, base_root: Path, destination_parent: Path) -> Path:
             temporary = Path(tempfile.mkdtemp(prefix=".monkeyhub-patch-", dir=parent))
             changed = set(document["changed"])
             for name in document["targetFiles"]:
+                _proceed(cancelled)
                 destination = temporary / name
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 if name in changed:
@@ -338,13 +403,26 @@ def stage_patch(path: Path, base_root: Path, destination_parent: Path) -> Path:
                 else:
                     _plain_path(base / name, directory=False)
                     shutil.copyfile(base / name, destination)
-            target_files = _inventory(temporary)
+            target_files = _inventory(temporary, cancelled)
             if target_files != document["targetFiles"] or _root_identity(temporary, target_files) != document["targetCommit"]:
                 raise PatchError("Reconstructed version did not pass full file verification.")
             _plain_path(final)
-            if final.exists() or final.is_symlink():
-                raise PatchError(f"Target appeared during staging; refusing to overwrite: {final}")
-            temporary.rename(final)
+            # Windows scanners and indexers briefly hold newly written files
+            # open, and a directory cannot be renamed until they let go. Retry
+            # only that refusal; the checked target still must not exist.
+            deadline, delay = time.monotonic() + RENAME_SECONDS, 0.25
+            while True:
+                if final.exists() or final.is_symlink():
+                    raise PatchError(f"Target appeared during staging; refusing to overwrite: {final}")
+                try:
+                    temporary.rename(final)
+                    break
+                except PermissionError:
+                    if time.monotonic() >= deadline:
+                        raise
+                    _proceed(cancelled)
+                    time.sleep(delay)
+                    delay = min(delay * 2, 5.0)
             temporary = None
             return final
     except (OSError, zipfile.BadZipFile, zlib.error, RuntimeError) as error:

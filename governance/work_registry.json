@@ -198,7 +198,6 @@
         "apps/monkeyhub/web/workspaces/src/workspaces/publish/publish.css",
         "apps/monkeyhub/web/workspaces/src/workspaces/render/ModelPreview.tsx",
         "apps/monkeyhub/web/workspaces/test/publishWorkspace.browser.mjs",
-        "archflow/project/record_kinds.py",
         "docs/DRAWING_V0_AUDIT.md",
         "docs/DYNAMIC_MAP.md",
         "docs/PROTOCOL.md",
@@ -215,7 +214,8 @@
       ],
       "notes": [
         "2026-09-24: #273 merged the GH-66 integration. On the repository owner's instruction the Drawing, Render, Hub and shared client paths it also claimed are handed to GH-271 (#271, Working Head); GH-66 keeps its Publish paths and the broader #66 acceptance.",
-        "2026-09-25: the cut-plan request DTO (transport/drawings.py) is handed to GH-271 as well, for the drawing follow choice found in the #277 review; GH-66 keeps its Publish paths."
+        "2026-09-25: the cut-plan request DTO (transport/drawings.py) is handed to GH-271 as well, for the drawing follow choice found in the #277 review; GH-66 keeps its Publish paths.",
+        "2026-09-25: archflow/project/record_kinds.py is handed to GH-294/admission-record, which registers the owner-approved candidate-admission kind (audit Q1); GH-66 reclaims it if Publish needs another kind."
       ]
     }
   ]

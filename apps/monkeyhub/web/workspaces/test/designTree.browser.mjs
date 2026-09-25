@@ -1,0 +1,488 @@
+/** The Design Tree (#284) in the real ProjectWorkspace and the real Hub rail, on Excalidraw.
+ * The Project Runtime is a stub serving the typed fixture (features/designTree/fixture.ts)
+ * in the #294 design-history contract until codex/294-admission-record lands; it answers
+ * Continue (PUT /api/working-draft) and Accept (POST /api/candidates/{id}/accept) with the
+ * existing routes' rules. Arch and Board are replaced by stubs so the tree is what runs.
+ * DESIGN_TREE_SCREENSHOTS=<dir> writes review screenshots; --serve keeps the page open.
+ */
+import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { createServer as createHttpServer } from "node:http";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import react from "@vitejs/plugin-react";
+import { createServer } from "vite";
+
+const webRoot = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
+const workspacesRoot = path.join(webRoot, "workspaces");
+const slash = (value) => value.replaceAll("\\", "/");
+const cacheDir = await mkdtemp(path.join(tmpdir(), "design-tree-"));
+const shots = process.env.DESIGN_TREE_SCREENSHOTS ? path.resolve(process.env.DESIGN_TREE_SCREENSHOTS) : null;
+const serveOnly = process.argv.includes("--serve");
+const errors = [], unexpected = [], external = [], writes = [];
+const http = createHttpServer();
+let vite, browser, fixture, fixtureModule, runtimeId = null;
+const PROJECT = "riverside-library";
+
+const page = (entry) => `<!doctype html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<style>html,body,#root{height:100%;margin:0}</style></head><body><div id="root"></div>
+<script type="module">import "/@fs/${slash(path.resolve(webRoot, "../../shared-web/src/base.css"))}";</script>
+<script type="module" src="${entry}"></script></body></html>`;
+
+// The tree's runtime reads and the two writes it may make, over the fixture's retained facts.
+async function runtime(request, response, url, body) {
+  const json = (value, status = 200) => { response.writeHead(status, { "content-type": "application/json" }); response.end(JSON.stringify(value)); };
+  const name = url.pathname, method = request.method;
+  try {
+    if (method === "GET" && name === "/api/protocol") return json({ protocol: "archflow/2", server: "design-tree-fixture", serverVersion: "test", mode: "local",
+      capabilities: ["candidate-admission", "design-history", "working-draft", "working-source"] });
+    if (method === "GET" && name === "/api/project") return json({ projectId: PROJECT, projectDir: "D:\\fixture\\riverside-library",
+      published: { version: 2, stateSha256: "0".repeat(64) }, referenceRun: { runId: "run-site", baseVersion: 2, baseSha256: "0".repeat(64) },
+      intentProvider: "fixture", intentModel: "fixture" });
+    if (method === "GET" && name === "/api/working-source") return json(fixture.workingSource(url.searchParams.get("workspace") ?? "modeling"));
+    if (method === "GET" && name === "/api/design-history") return json(fixture.designHistory(url.searchParams.get("branchId") ?? "main"));
+    if (method === "GET" && name === "/api/worktrees") return json(fixture.worktrees());
+    // The project's event stream, which other workspace code subscribes to; the fixture has no events to send.
+    if (method === "GET" && name === "/api/events") {
+      response.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" });
+      response.write(": fixture\n\n");
+      return;
+    }
+    if (method === "GET" && name === "/api/working-draft") return json(fixture.workingDraft());
+    if (method === "PUT" && name === "/api/working-draft") { writes.push({ method, name, body }); return json(fixture.selectWorkingDraft(body)); }
+    const accept = name.match(/^\/api\/candidates\/([^/]+)\/accept$/);
+    if (method === "POST" && accept) { writes.push({ method, name, body }); return json(fixture.accept(decodeURIComponent(accept[1]), body)); }
+  } catch (error) {
+    if (error instanceof fixtureModule.FixtureRefusal) return json({ code: error.code, detail: error.message }, error.status);
+    throw error;
+  }
+  unexpected.push(`${method} ${name}`);
+  return json({ code: "FIXTURE_UNEXPECTED", detail: `Unexpected request ${method} ${name}` }, 404);
+}
+
+// Just enough of the Hub for its rail to open one project's workspaces.
+const hub = { projects: [{ projectId: PROJECT, projectDir: "D:\\fixture\\riverside-library", name: "Riverside Library", chatCount: 0, version: 2, stage: "S2" }] };
+const hubApps = (origin) => ["monkeyarch", "monkeyboard", "monkeyrender", "monkeyfab", "monkeymonitor"].map((appId) => ({
+  appId, title: appId, serviceId: appId === "monkeyfab" ? "hub" : appId === "monkeymonitor" ? "monitor" : "studio", state: "running", processId: 4242,
+  available: true, url: `${origin}/?view=${appId === "monkeyboard" ? "board" : "arch"}${runtimeId ? `&runtimeId=${runtimeId}` : ""}`,
+  apiUrl: runtimeId ? `${origin}/api/runtime/projects/${runtimeId}/studio/` : null }));
+const hubRuntime = (origin) => ({ serverId: "design-tree-hub", sequence: 1, workers: [], projects: runtimeId === null ? [] : [{
+  runtimeId, projectDir: hub.projects[0].projectDir, projectId: PROJECT, state: "open", operations: [], retained: null, projection: "ready", clients: 1, error: null,
+  workers: [{ workerId: runtimeId, serviceId: "studio", projectId: PROJECT, projectDir: hub.projects[0].projectDir, instanceId: "instance-1", processId: 4242,
+    desiredState: "running", healthy: true, state: "ready", url: `${origin}/api/runtime/projects/${runtimeId}/studio/`, error: null }], sessions: [] }] });
+async function hubApi(request, response, url, body, origin) {
+  const json = (value, status = 200) => { response.writeHead(status, { "content-type": "application/json" }); response.end(JSON.stringify(value)); };
+  const name = url.pathname;
+  if (name === "/api/runtime/events") {
+    response.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" });
+    response.write(`retry: 500\nevent: runtime\ndata: ${JSON.stringify({ serverId: "design-tree-hub", sequence: 1, kind: "snapshot", snapshot: hubRuntime(origin) })}\n\n`);
+    return;
+  }
+  if (name === "/api/apps") return json(hubApps(origin));
+  if (name === "/api/settings/user") return json({ language: "en", theme: "light", fontScale: 1 });
+  if (name === "/api/settings/apps") return json({ projectDir: hub.projects[0].projectDir, referenceRun: null, cadExport: "off", studioPort: 18789, monitorPort: 18790 });
+  if (name === "/api/chat/providers") return json([{ id: "codex", label: "Codex CLI", available: true, detail: "Fixture only", installed: true, signedIn: true, models: [], modelCatalog: "ready", modelDetail: "" }]);
+  if (name === "/api/chat/workspace") return json({ workspaceDir: "D:\\fixture", configured: true, projects: [PROJECT] });
+  if (name === "/api/chat/projects") return json(hub.projects);
+  if (name === "/api/chat/sessions") return json([]);
+  if (name === "/api/runtime") return json(hubRuntime(origin));
+  if (name === "/api/runtime/projects/open") {
+    assert.equal(body.projectId, PROJECT);
+    runtimeId ??= randomUUID();
+    return json(hubRuntime(origin).projects[0]);
+  }
+  if (name === "/api/updates/status") return json({ currentVersion: "fixture", currentRevision: "f".repeat(40), mode: "local", state: "idle", prepared: null, canApply: false, message: null, error: null });
+  unexpected.push(`hub ${request.method} ${name}`);
+  return json({ code: "FIXTURE_UNEXPECTED", detail: name }, 404);
+}
+
+const readBody = (request) => new Promise((resolve) => {
+  const chunks = [];
+  request.on("data", (chunk) => chunks.push(chunk));
+  request.on("end", () => resolve(chunks.length ? JSON.parse(Buffer.concat(chunks).toString("utf8")) : null));
+});
+
+try {
+  vite = await createServer({ root: webRoot, configFile: false, resolve: { dedupe: ["react", "react-dom"] }, logLevel: "error", cacheDir,
+    publicDir: ".generated/public", define: { "import.meta.env.VITE_ARCHFLOW_API_URL": JSON.stringify("") },
+    plugins: [{ name: "design-tree-fixture", enforce: "pre", transform(source, id) {
+      const file = slash(id.split("?")[0]), root = slash(workspacesRoot);
+      if (file === `${root}/src/app/App.tsx`) return { code: `
+        export default function App(props) {
+          window.__arch = { initialRunId: props.initialRunId ?? null, followsHead: Boolean(props.initialRunFollowsHead), refreshKey: props.refreshKey, active: props.active };
+          return <div data-testid="arch-stub" style={{ padding: 24 }}>Modeling · {props.initialRunId ?? "Working Head"}</div>;
+        }`, map: null };
+      if (file === `${root}/src/workspaces/monkeyboard/Board.tsx`) return { code: `export default function Board() { return <div data-testid="board-stub">Board</div>; }`, map: null };
+      if (file === `${root}/src/features/designTree/DesignTreeCanvas.tsx`) {
+        const callback = "excalidrawAPI={(api) => { canvas.current = api; setReady(true); }}";
+        assert.equal(source.split(callback).length, 2, "the test reads the tree canvas through its one Excalidraw callback");
+        return { code: source.replace(callback, "excalidrawAPI={(api) => { canvas.current = api; Object.assign(window, { __treeApi: api }); setReady(true); }}"), map: null };
+      }
+    } }, react()],
+    server: { middlewareMode: true, hmr: false, ws: { server: http }, watch: null } });
+  fixtureModule = await vite.ssrLoadModule("/workspaces/src/features/designTree/fixture.ts");
+  fixture = fixtureModule.createDesignTreeFixture();
+  const handle = async (request, response) => {
+    const url = new URL(request.url, "http://fixture.test");
+    if (url.pathname === "/tree-workspace") {
+      response.setHeader("content-type", "text/html");
+      response.end(await vite.transformIndexHtml(url.pathname, page("/workspaces/test/workspace-fixture.tsx"))); return;
+    }
+    if (url.pathname === "/" && !url.searchParams.has("raw")) {
+      response.setHeader("content-type", "text/html");
+      response.end(await vite.transformIndexHtml(url.pathname, page("/src/main.tsx"))); return;
+    }
+    const body = request.method === "GET" || request.method === "HEAD" ? null : await readBody(request);
+    const forwarded = url.pathname.match(/^\/api\/runtime\/projects\/([^/]+)\/studio(\/api\/.*)$/);
+    if (forwarded) {
+      assert.equal(forwarded[1], runtimeId, "workspace requests use the attached project runtime");
+      return runtime(request, response, new URL(`${forwarded[2]}${url.search}`, "http://fixture.test"), body);
+    }
+    if (url.pathname.startsWith("/api/")) {
+      const hubRoute = /^\/api\/(apps|settings|chat|runtime|updates)(\/|$)/.test(url.pathname);
+      return hubRoute ? hubApi(request, response, url, body, `http://127.0.0.1:${http.address().port}`) : runtime(request, response, url, body);
+    }
+    vite.middlewares(request, response);
+  };
+  http.on("request", (request, response) => {
+    handle(request, response).catch((error) => {
+      errors.push(`server: ${error?.stack ?? error}`);
+      if (!response.headersSent) response.writeHead(500, { "content-type": "text/plain" });
+      response.end(String(error));
+    });
+  });
+  await new Promise((resolve) => http.listen(0, "127.0.0.1", resolve));
+  const origin = `http://127.0.0.1:${http.address().port}`;
+  if (serveOnly) {
+    console.log(`Design tree fixture: ${origin}/tree-workspace?lang=en   Hub: ${origin}/`);
+    await new Promise(() => {});
+  }
+  const { chromium } = await import(process.env.PLAYWRIGHT_MODULE ? pathToFileURL(process.env.PLAYWRIGHT_MODULE).href : "playwright");
+  browser = await chromium.launch({ headless: true, channel: "chrome" });
+  if (shots) await mkdir(shots, { recursive: true });
+  const shoot = async (target, name) => { if (shots) { await target.screenshot({ path: path.join(shots, `${name}.png`) }); console.log(`design tree: ${name}.png`); } };
+
+  // ------------------------------------------------------------------ Part A: the tree in ProjectWorkspace.
+  const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: "en-US" });
+  await context.route((url) => ["http:", "https:"].includes(url.protocol) && url.origin !== origin, (route) => {
+    external.push(route.request().url()); return route.abort("blockedbyclient");
+  });
+  const tab = await context.newPage();
+  tab.setDefaultTimeout(20_000);
+  tab.on("pageerror", (error) => errors.push(error.message));
+  tab.on("console", (message) => { if (message.type() === "error") errors.push(message.text()); });
+  const loaded = [];
+  tab.on("request", (request) => loaded.push(request.url()));
+  await tab.goto(`${origin}/tree-workspace?lang=en&theme=light`, { waitUntil: "domcontentloaded", timeout: 240_000 });
+  const chip = tab.locator(".stage-chip");
+  await chip.waitFor({ timeout: 120_000 });
+  await tab.getByTestId("arch-stub").waitFor();
+  await tab.waitForFunction(() => /S2 · Layout — Current/.test(document.querySelector(".stage-chip")?.textContent ?? ""));
+  assert.equal((await chip.innerText()).replace(/\s+/g, " ").trim(), "S2 · Layout — Current · 1 new · 2 running", "the chip reads Stage, position and attention");
+  assert.equal(await chip.getAttribute("aria-pressed"), "false");
+  assert.ok(!loaded.some((url) => /excalidraw/i.test(url)), "Excalidraw is not loaded until the tree opens");
+  assert.equal(await tab.locator(".chat-rail").count(), 0, "the entry is project chrome, not a rail of its own here");
+  await shoot(tab, "01-chip-over-modeling");
+
+  // The chip opens the tree surface and keeps itself.
+  await chip.click();
+  const surface = tab.locator('[data-project-surface="tree"]');
+  await surface.locator(".design-tree__canvas canvas").first().waitFor();
+  await tab.waitForFunction(() => window.__treeApi?.getSceneElements().length > 20);
+  assert.equal(await chip.getAttribute("aria-pressed"), "true");
+  assert.equal(await tab.getByTestId("arch-stub").isVisible(), false, "the tree replaces the view, it is not drawn over it");
+  assert.ok(loaded.some((url) => /excalidraw/i.test(url)), "the canvas loads with the tree");
+  const scene = (target = tab) => target.evaluate(() => {
+    const api = window.__treeApi, state = api.getAppState();
+    return { elements: api.getSceneElements().map((element) => ({ id: element.id, type: element.type, x: element.x, y: element.y, width: element.width,
+      height: element.height, points: element.points ?? null, opacity: element.opacity, strokeStyle: element.strokeStyle, text: element.text ?? null,
+      data: element.customData?.tree ?? null })), zoom: state.zoom.value, scrollX: state.scrollX, scrollY: state.scrollY,
+      offsetLeft: state.offsetLeft, offsetTop: state.offsetTop };
+  });
+  /** A real click on a node's card, where the canvas draws it now. */
+  const clickCanvasNode = async (target, host, id) => {
+    // The side card sits over the canvas; close it so it cannot cover the node.
+    if (await host.locator(".design-tree-card").count()) {
+      await target.keyboard.press("Escape");
+      await host.locator(".design-tree-card").waitFor({ state: "detached" });
+    }
+    // A surface shown again is measured by Excalidraw a frame later; click where the canvas is now.
+    await target.waitForFunction(() => {
+      const state = window.__treeApi?.getAppState();
+      const box = [...document.querySelectorAll(".design-tree__canvas .excalidraw")].find((element) => element.getClientRects().length)
+        ?.getBoundingClientRect();
+      return Boolean(state && box && state.width > 40 && Math.abs(state.offsetLeft - box.left) < 1 && Math.abs(state.offsetTop - box.top) < 1);
+    });
+    const current = await scene(target);
+    const card = current.elements.find((element) => element.id === `${id}:card`);
+    assert.ok(card, `${id} is on the canvas`);
+    await target.mouse.click((card.x + card.width / 2 + current.scrollX) * current.zoom + current.offsetLeft,
+      (card.y + card.height / 2 + current.scrollY) * current.zoom + current.offsetTop);
+    const opened = host.locator(`.design-tree-card[data-node="${id}"]`);
+    await opened.waitFor();
+    return opened;
+  };
+  const level = () => surface.locator(".design-tree__canvas").getAttribute("data-level");
+  const stage = (run) => `stage:${fixture.state.stages.find((row) => row.run === run).ref}`;
+  const S0 = stage("run-site"), S1 = stage("run-s1-massing"), S2 = stage("run-s2-layout");
+
+  /** One trunk stroke left to right through the trunk cards; N-1 twigs per Study; no crossings or overlaps. */
+  const checkTree = (view, trunkNodes, studies) => {
+    const trunks = view.elements.filter((element) => element.data?.role === "trunk");
+    assert.equal(trunks.length, 1, "the trunk is one stroke");
+    const points = trunks[0].points.map(([x, y]) => [trunks[0].x + x, trunks[0].y + y]);
+    for (let index = 1; index < points.length; index += 1) {
+      assert.ok(points[index][0] > points[index - 1][0] && Math.abs(points[index][1] - points[0][1]) < 1e-6, `the trunk turns back at ${index}`);
+    }
+    const centres = trunkNodes.map((id) => {
+      const card = view.elements.find((element) => element.id === `${id}:card`);
+      assert.ok(card, `${id} is drawn`);
+      return card.x + card.width / 2;
+    });
+    assert.deepEqual(points.map(([x]) => Math.round(x)), centres.map(Math.round), "the trunk runs through the chosen path, in order");
+    for (const [study, twigs] of Object.entries(studies)) {
+      const members = fixture.state.studies.find((row) => row.id === study).candidateIds.map((run) => `candidate:${run}`);
+      const drawn = view.elements.filter((element) => element.data?.role === "edge" && element.data.edge === "twig" && members.includes(element.data.node)).length;
+      assert.equal(drawn, twigs, `${study}: ${drawn} twigs for ${members.length} options`);
+    }
+    const segments = view.elements.filter((element) => element.type === "line" && element.points).flatMap((element) => {
+      const abs = element.points.map(([x, y]) => [element.x + x, element.y + y]);
+      return abs.slice(1).map((point, index) => [abs[index], point]);
+    });
+    const inside = (value, a, b) => value > Math.min(a, b) + 1e-6 && value < Math.max(a, b) - 1e-6;
+    const shared = (a1, a2, b1, b2) => Math.min(Math.max(a1, a2), Math.max(b1, b2)) - Math.max(Math.min(a1, a2), Math.min(b1, b2));
+    let crossings = 0;
+    for (let i = 0; i < segments.length; i += 1) for (let j = i + 1; j < segments.length; j += 1) {
+      const [a, b] = [segments[i], segments[j]];
+      const aH = Math.abs(a[0][1] - a[1][1]) < 1e-6, bH = Math.abs(b[0][1] - b[1][1]) < 1e-6;
+      if (aH !== bH) { const [h, v] = aH ? [a, b] : [b, a]; if (inside(v[0][0], h[0][0], h[1][0]) && inside(h[0][1], v[0][1], v[1][1])) crossings += 1; }
+      else if (aH && Math.abs(a[0][1] - b[0][1]) < 1e-6 && shared(a[0][0], a[1][0], b[0][0], b[1][0]) > 1e-6) crossings += 1;
+      else if (!aH && Math.abs(a[0][0] - b[0][0]) < 1e-6 && shared(a[0][1], a[1][1], b[0][1], b[1][1]) > 1e-6) crossings += 1;
+    }
+    assert.equal(crossings, 0, "no two strokes cross");
+    const cards = view.elements.filter((element) => element.id.endsWith(":card"));
+    for (let i = 0; i < cards.length; i += 1) for (let j = i + 1; j < cards.length; j += 1) {
+      const [p, q] = [cards[i], cards[j]];
+      assert.ok(!(p.x < q.x + q.width && q.x < p.x + p.width && p.y < q.y + q.height && q.y < p.y + p.height), `${p.id} overlaps ${q.id}`);
+    }
+  };
+  let view = await scene();
+  assert.equal(await level(), "mid", "the tree fits at the middle level: letters and short names");
+  checkTree(view, [S0, "candidate:run-massing-c", S1, "candidate:run-facade-b", S2, "current"], { "study-massing": 4, "study-facade": 2, "study-entrance": 1 });
+  assert.equal(view.elements.filter((element) => element.data?.edge === "pending").length, 2, "running and queued work are placeholders");
+  assert.equal(view.elements.filter((element) => element.data?.role === "summary" && element.data.node !== "current").length, 0, "no summaries at this distance");
+  assert.ok(!view.elements.some((element) => /run-|rev-|project:\/\/|[0-9a-f]{16}/.test(element.text ?? "")), "no ids or hashes on the canvas");
+  await shoot(tab, "02-tree-fit");
+
+  // Semantic zoom: far shows the trunk and counts; close adds summaries and status.
+  const box = await surface.locator(".design-tree__canvas").boundingBox();
+  await tab.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await tab.mouse.wheel(0, 320);
+  await tab.waitForFunction(() => document.querySelector(".design-tree__canvas")?.dataset.level === "far");
+  view = await scene();
+  assert.ok(view.elements.some((element) => element.data?.role === "dot") && view.elements.some((element) => element.data?.role === "fork"), "far: dots and counts");
+  assert.equal(view.elements.filter((element) => element.data?.role === "letter").length, 0, "far: no option cards");
+  assert.ok(view.elements.some((element) => element.data?.role === "fork" && /5 options · 1 continued/.test(element.text ?? "")));
+  await shoot(tab, "03-tree-far");
+  await tab.mouse.wheel(0, -760);
+  await tab.waitForFunction(() => document.querySelector(".design-tree__canvas")?.dataset.level === "close");
+  view = await scene();
+  assert.ok(view.elements.filter((element) => element.data?.role === "summary").length >= 3, "close: summaries");
+  assert.ok(view.elements.some((element) => element.data?.role === "status"), "close: status");
+  await shoot(tab, "04-tree-close");
+  await surface.getByRole("button", { name: "Fit", exact: true }).click();
+  await tab.waitForFunction(() => document.querySelector(".design-tree__canvas")?.dataset.level === "mid");
+
+  // Clicking a node shows its side card; Accept exists on Current only.
+  const clickNode = (id) => clickCanvasNode(tab, surface, id);
+  let card = await clickNode("candidate:run-massing-d");
+  assert.equal(await card.locator("strong").innerText(), "D · Terraced wedge");
+  assert.match(await card.innerText(), /Option · Massing Study/);
+  assert.match(await card.innerText(), /Admitted by\s*Arch Agent/);
+  assert.equal(await card.getByRole("button", { name: "View", exact: true }).isEnabled(), true);
+  assert.equal(await card.getByRole("button", { name: /Compare this Study/ }).isDisabled(), true, "Compare is marked for later");
+  assert.equal(await card.locator('[data-action="accept"]').count(), 0, "an option cannot be accepted");
+  await shoot(tab, "05-side-card");
+  card = await clickNode(S1);
+  assert.match(await card.innerText(), /Stage · accepted checkpoint/);
+  assert.equal(await card.locator('[data-action="accept"]').count(), 0, "a Stage cannot be accepted again");
+  card = await clickNode("candidate:run-facade-c");
+  assert.match(await card.locator(".design-tree-card__warning").innerText(), /review checks were still open \(1\)/,
+    "an option admitted with review checks open says so in its side card");
+  assert.equal(await surface.locator(".design-tree__notice").count(), 0, "this runtime reports admitted options");
+  card = await clickNode("current");
+  assert.equal(await card.locator('[data-action="accept"]').count(), 1, "Current offers Accept");
+  assert.equal(await card.locator('[data-action="accept"]').isDisabled(), true, "Current is exactly S2, so there is nothing new to accept");
+  assert.match(await card.innerText(), /Current is exactly S2 · Layout/);
+
+  // View is read-only: Modeling opens it, the Working Head stays.
+  card = await clickNode("candidate:run-massing-d");
+  const headBefore = fixture.state.head;
+  await card.getByRole("button", { name: "View", exact: true }).click();
+  await tab.getByTestId("arch-stub").filter({ hasText: "run-massing-d" }).waitFor();
+  assert.deepEqual(await tab.evaluate(() => [window.__arch.initialRunId, window.__arch.followsHead]), ["run-massing-d", false]);
+  assert.equal(fixture.state.head, headBefore, "View never moves the Working Head");
+  assert.equal(writes.length, 0);
+  await tab.locator(".stage-chip__viewing").filter({ hasText: "Viewing D · Terraced wedge · read-only" }).waitFor();
+  await shoot(tab, "06-viewing-read-only");
+  await tab.getByRole("button", { name: "Back to Current", exact: true }).click();
+  await tab.waitForFunction(() => window.__arch.initialRunId === "run-s2-layout");
+  assert.equal(await tab.locator(".stage-chip__viewing").count(), 0);
+
+  // Continue moves the Working Head through PUT /api/working-draft, and the trunk re-roots.
+  await chip.click();
+  card = await clickNode("candidate:run-massing-d");
+  const archRefresh = await tab.evaluate(() => window.__arch.refreshKey);
+  await card.getByRole("button", { name: "Continue from here", exact: true }).click();
+  await card.getByText("Current now continues from D · Terraced wedge. Nothing was accepted.").waitFor();
+  assert.deepEqual(writes.at(-1), { method: "PUT", name: "/api/working-draft",
+    body: { projectId: PROJECT, runId: "run-massing-d", baseRevisionSha256: "rev-0001", branchId: null } });
+  assert.equal(fixture.state.head, "run-massing-d");
+  await tab.waitForFunction(() => window.__treeApi.getSceneElements().find((element) => element.customData?.tree?.role === "trunk")?.points.length === 3);
+  view = await scene();
+  checkTree(view, [S0, "candidate:run-massing-d", "current"], { "study-massing": 4 });
+  assert.ok(view.elements.find((element) => element.id === `${S2}:card`).opacity < 100, "the future left behind stays, faded");
+  assert.ok(await tab.evaluate((before) => window.__arch.refreshKey > before, archRefresh), "Modeling re-reads the moved head");
+  assert.equal((await chip.innerText()).replace(/\s+/g, " ").trim(), "S0 · Site — Current · 3 new · 2 running");
+  card = await clickNode("current");
+  assert.equal(await card.locator('[data-action="accept"]').isDisabled(), true);
+  assert.match(await card.innerText(), /Current comes from S0 · Site, but this line's newest Stage is S2 · Layout/);
+  await shoot(tab, "07-continued-rerooted");
+
+  // Continue on the newest Stage's option, then Accept as next Stage from Current only.
+  card = await clickNode("candidate:run-entrance-a");
+  assert.match(await card.innerText(), /Study\s+Study from S2 · Layout/, "a Study without a name is named after where it started");
+  await card.getByRole("button", { name: "Continue from here", exact: true }).click();
+  await card.getByText(/Current now continues from A · Courtyard gate/).waitFor();
+  await tab.waitForFunction(() => window.__treeApi.getSceneElements().find((element) => element.customData?.tree?.role === "trunk")?.points.length === 7);
+  checkTree(await scene(), [S0, "candidate:run-massing-c", S1, "candidate:run-facade-b", S2, "candidate:run-entrance-a", "current"], { "study-massing": 4, "study-facade": 2 });
+  card = await clickNode("current");
+  const acceptButton = card.locator('[data-action="accept"]');
+  assert.equal(await acceptButton.innerText(), "Accept as S3");
+  await acceptButton.click();
+  await card.getByText("Accept Current as S3? This creates an immutable Stage from the current work.").waitFor();
+  await shoot(tab, "08-accept-confirm");
+  await card.locator('[data-action="accept-confirm"]').click();
+  await card.getByText("S3 accepted. Current follows it.").waitFor();
+  assert.deepEqual(writes.at(-1), { method: "POST", name: "/api/candidates/run-entrance-a/accept",
+    body: { projectId: PROJECT, branchId: "main", expectedHeadStageRef: fixture.state.stages.find((row) => row.run === "run-s2-layout").ref } });
+  const S3 = `stage:${fixture.state.branchHead}`;
+  await tab.waitForFunction(() => window.__treeApi.getSceneElements().find((element) => element.customData?.tree?.role === "trunk")?.points.length === 8);
+  checkTree(await scene(), [S0, "candidate:run-massing-c", S1, "candidate:run-facade-b", S2, "candidate:run-entrance-a", S3, "current"], { "study-massing": 4, "study-facade": 2 });
+  assert.equal((await chip.innerText()).replace(/\s+/g, " ").trim(), "S3 — Current · 2 running");
+  await shoot(tab, "09-accepted-s3");
+
+  // The list shows the same nodes to the keyboard.
+  await surface.getByRole("button", { name: "List", exact: true }).click();
+  const items = surface.getByRole("treeitem");
+  await items.first().waitFor();
+  // Four Stages, ten admitted options, two running lines and Current.
+  const nodeCount = await tab.evaluate(() => document.querySelectorAll('.design-tree-list [role="treeitem"]').length);
+  assert.equal(nodeCount, 17, "every node of the tree is a list item");
+  await items.first().focus();
+  await tab.keyboard.press("ArrowDown");
+  assert.equal(await tab.evaluate(() => document.activeElement?.dataset.node), await items.nth(1).getAttribute("data-node"));
+  await tab.keyboard.press("End");
+  assert.equal(await tab.evaluate(() => document.activeElement?.dataset.node), await items.last().getAttribute("data-node"));
+  await tab.keyboard.press("Enter");
+  await surface.locator(".design-tree-card").waitFor();
+  await shoot(tab, "10-list");
+  await surface.getByRole("button", { name: "Canvas", exact: true }).click();
+  await tab.waitForFunction(() => window.__treeApi?.getSceneElements().length > 20);
+
+  // Leaving returns to the previous surface; the chip reopens the tree.
+  await surface.getByRole("button", { name: "Back to Modeling" }).click();
+  await tab.getByTestId("arch-stub").waitFor();
+  assert.equal(await chip.getAttribute("aria-pressed"), "false");
+  await tab.getByTestId("workspace-board").click();
+  await tab.getByTestId("board-stub").waitFor();
+  await chip.click();
+  await surface.getByRole("button", { name: "Back to Board" }).click();
+  await tab.getByTestId("board-stub").waitFor();
+  await chip.click();
+  await surface.getByRole("button", { name: "Back to Board" }).waitFor();
+  await chip.click();
+  await tab.getByTestId("board-stub").waitFor();
+
+  // The same copy in Chinese.
+  await tab.evaluate(() => window.__workspaceFixture.setLanguage("zh-CN"));
+  await tab.waitForFunction(() => (document.querySelector(".stage-chip")?.textContent ?? "").includes("当前"));
+  assert.equal((await chip.innerText()).replace(/\s+/g, " ").trim(), "S3 · 当前 · 2 个运行中");
+  await chip.click();
+  await surface.getByRole("heading", { name: "状态树" }).waitFor();
+  await surface.getByRole("button", { name: "列表", exact: true }).waitFor();
+  await surface.getByRole("button", { name: "返回画板" }).waitFor();
+  await shoot(tab, "11-zh");
+
+  // A result the architect turned down cannot become a Stage: Current's card says so before anyone asks.
+  const acceptedHead = fixture.state.head;
+  fixture.state.runs.set("run-entrance-x", { parent: acceptedHead, sourceStage: fixture.state.branchHead });
+  fixture.state.rejected.add("run-entrance-x");
+  fixture.state.head = "run-entrance-x";
+  fixture.state.revision += 1;
+  await tab.evaluate(() => window.dispatchEvent(new Event("focus")));
+  card = await clickNode("current");
+  await card.getByText("当前是已被否定的结果，不能成为阶段。请先从已准入的方案继续。").waitFor();
+  assert.equal(await card.locator('[data-action="accept"]').isDisabled(), true);
+  fixture.state.head = acceptedHead;
+  fixture.state.revision += 1;
+  await context.close();
+
+  // ------------------------------------------------------------------ Part B: the Hub rail's 状态树 entry.
+  const hubContext = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: "en-US" });
+  await hubContext.route((url) => ["http:", "https:"].includes(url.protocol) && url.origin !== origin, (route) => {
+    external.push(route.request().url()); return route.abort("blockedbyclient");
+  });
+  const hubPage = await hubContext.newPage();
+  hubPage.setDefaultTimeout(20_000);
+  hubPage.on("pageerror", (error) => errors.push(`hub: ${error.message}`));
+  await hubPage.goto(origin, { waitUntil: "domcontentloaded", timeout: 240_000 });
+  const rail = hubPage.getByRole("navigation", { name: "Project tools" });
+  await rail.locator('.chat-rail__tool[aria-label="Modeling"]').waitFor({ timeout: 120_000 });
+  const workspaces = await rail.getByRole("group", { name: "Surfaces", exact: true }).locator(".chat-rail__tool").evaluateAll((nodes) => nodes.map((node) => node.getAttribute("aria-label")));
+  assert.ok(workspaces.includes("Design tree"), `the rail's primary group offers the Design tree: ${workspaces}`);
+  const railButton = (name) => rail.getByRole("button", { name, exact: true });
+  await hubPage.waitForFunction(() => ["Modeling", "Design tree"].every((label) => {
+    const button = document.querySelector(`.chat-rail__tool[aria-label="${label}"]`);
+    return button && !button.disabled && button.dataset.state === "running";
+  }));
+  await railButton("Modeling").click();
+  await hubPage.getByTestId("arch-stub").waitFor();
+  await railButton("Design tree").click();
+  const hubSurface = hubPage.locator('.chat-project-workspace:not([hidden]) [data-project-surface="tree"]');
+  await hubSurface.locator(".design-tree__canvas canvas").first().waitFor();
+  assert.equal(await railButton("Design tree").getAttribute("aria-pressed"), "true");
+  assert.match(hubPage.url(), /view=tree/, "the tree has its own deep link");
+  await hubPage.waitForFunction(() => window.__treeApi?.getSceneElements().length > 20);
+  await hubPage.waitForFunction(() => document.querySelector('.chat-project-workspace:not([hidden]) .design-tree__canvas')?.dataset.level === "mid");
+  const hubCard = await clickCanvasNode(hubPage, hubSurface, "current");
+  assert.match(await hubCard.innerText(), /Current is exactly S3/, "a narrow panel opens on the growing tip, and its nodes answer clicks");
+  await shoot(hubPage, "12-hub-rail-tree");
+  await hubSurface.getByRole("button", { name: "Back to Modeling" }).click();
+  await hubPage.getByTestId("arch-stub").waitFor();
+  assert.equal(await railButton("Modeling").getAttribute("aria-pressed"), "true", "leaving returns to the surface it came from");
+  await hubPage.locator(".chat-project-workspace:not([hidden]) .stage-chip").click();
+  await hubSurface.locator(".design-tree__canvas canvas").first().waitFor();
+  assert.equal(await railButton("Design tree").getAttribute("aria-pressed"), "true", "the chip opens the same surface");
+  await hubPage.locator(".chat-project-workspace:not([hidden]) .stage-chip").click();
+  await hubPage.getByTestId("arch-stub").waitFor();
+  await hubContext.close();
+
+  assert.deepEqual(unexpected, [], "the tree reads only what it declares");
+  assert.deepEqual(external, [], "no external request");
+  assert.deepEqual(errors.filter((message) => !/Failed to load resource: the server responded with a status of 404/.test(message)), []);
+  console.log(JSON.stringify({ passed: "chip → tree, trunk, twigs, planar, three zoom levels, side card, review-open warning, View read-only, Continue re-roots via PUT /api/working-draft, Accept on Current only via POST accept, a rejected Current cannot be accepted, keyboard list, return to previous surface, zh copy, Hub rail entry and deep link",
+    writes: writes.map((row) => `${row.method} ${row.name}`) }));
+} catch (error) {
+  console.error("FAILED:", error);
+  console.error(JSON.stringify({ errors, unexpected, external, writes: writes.map((row) => `${row.method} ${row.name}`) }, null, 1));
+  process.exitCode = 1;
+} finally {
+  await browser?.close();
+  await vite?.close();
+  http.closeAllConnections?.();
+  await new Promise((resolve) => http.close(resolve));
+  await rm(cacheDir, { recursive: true, force: true });
+}

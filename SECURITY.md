@@ -80,8 +80,9 @@ with its own archive, is accepted in full — nothing compares versions or signi
 times. An
 installation performed without `-RequireSignedRelease` prints
 `Trust: candidate-unsigned` and is not a supported production release.
-Candidates have no automatic update or security patch channel; a fix reaches an
-installation only through a newly built and installed candidate.
+Installed desktop candidates update themselves from an unsigned prerelease channel (HTTPS, SHA-256 and
+ReleaseManifest@1 checks, no publisher signature, so exactly the trust of a manually downloaded
+prerelease); it can be turned off in Settings > Software update, see apps/monkeyhub/installer/README.md.
 
 ## Credentials and private data
 

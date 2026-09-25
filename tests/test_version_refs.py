@@ -72,6 +72,8 @@ MAPPING = {LEGACY: SEMANTIC}
 # rather than making a migration quietly refuse the project that holds it.
 NO_VERSION_IDENTITY = {
     "AuditEvent@1": "an actor/action record; names no canonical version",
+    "CandidateAdmission@1": "a closed loop's verdict: run ids, receipt and Stage record refs and content digests; "
+    "no canonical version",
     "CatalogConfrontationReceipt@1": "compares a catalog to a program; no base",
     "ComponentCatalog@1": "a library listing; no project version",
     "ComponentTemplate@1": "a library template; no project version",

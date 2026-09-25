@@ -112,13 +112,16 @@ tolerate it.
 | GET | `/api/jobs/{jobId}` | that job as the server last saw it, failures included | server memory | stable |
 | GET | `/api/candidates/{candidateId}` | the finished candidate, read back out of the records its run retained | reads shared | stable |
 | POST | `/api/candidates/combine` → 202 | a new candidate from independent saved component changes sharing one Stage (§5.4) | writes shared | provisional |
-| GET | `/api/design-history?branchId=main` | design branch pointers and their reachable committed Stages | reads shared + design refs | provisional |
+| GET | `/api/design-history?branchId=main` | design branch pointers, their reachable committed Stages, and the project's admitted `candidates[]` and `studies[]` with `warnings[]` (§5.5); `include=rejected` also lists retained rejections | reads shared + design refs + the admissions review | provisional |
 | POST | `/api/design-stages/initialize` → 201 | explicit initial Stage from a complete exact model | writes review + design ref | provisional |
-| POST | `/api/candidates/{candidateId}/accept` | immutable Stage and atomic advancement of its expected design branch head | writes review + design ref | provisional |
+| POST | `/api/candidates/{candidateId}/accept` | immutable Stage and atomic advancement of its expected design branch head; a run with a live rejection is refused (§5.5) | writes review + design ref | provisional |
+| POST | `/api/admissions` → 201 | one closed loop's `CandidateAdmission@1` through the completion gate Stage acceptance shares (§5.5); an identical retry answers 200 with the record it repeats | **writes the `studio-admissions` review** | provisional |
+| GET | `/api/admissions?include=rejected` | every live admission record, admitted results only unless `include=rejected`, with `warnings[]` (§5.5) | reads the admissions review | provisional |
 | POST | `/api/design-branches` → 201 | a sustained branch forked from a reachable historical Stage | writes design ref | provisional |
 | GET | `/api/working-source?workspace=` | the Working Head (§4.1) and the exact source one workspace (`modeling`, `drawing`, `render`, `board`) follows: `head{runId, stateDigest, sourceStageRef, branchId, accepted, origin, lineage}`, `compatible`, `source`, `stageRef` (only for an exact accepted Stage model), `reason`, `warnings`. `policy=frozen` with `runId`/`stateDigest`/`assetSha256` keeps that pin and says whether the head moved past it | reads the working position + shared + design refs | provisional |
 | GET | `/api/working-draft/revision` | `{projectId, revisionSha256}` of the working position alone, for polling whether the head may have moved; no local draft and no project guard | reads the working position | provisional |
-| GET | `/api/worktrees` | read-only Worktree Graph V0 (§4.1): the head line, other accepted lines, running and interrupted changes with their exact base and declared read/write refs, retained results off the head's line with `relation` and `reconcile` (`can-combine`, `conflict` with the shared refs, `unknown`), and drawing/render `current`/`stale`/`running` states. Nothing is merged or started | reads the working position + shared + design refs + server memory | provisional |
+| PUT | `/api/working-draft` | Continue: the working position, and so the Working Head, moves onto `runId`, or back to the default with `null`, under the `baseRevisionSha256` compare-and-swap; a move onto a run retains who made it as `AuditEvent@1` `design.continued` beside that run (§4.1). `messageSource` with `rawLanguage` marks the Hub Agent continuing on the user's bound words | **writes the working position + that run's review** | provisional |
+| GET | `/api/worktrees` | read-only Worktree Graph V0 (§4.1): the head line, other accepted lines, running and interrupted changes with their exact base and declared read/write refs, retained results off the head's line with `relation` and `reconcile` (`can-combine`, `conflict` with the shared refs, `unknown`), each finished line's `admission` (`admitted`, `rejected`, `superseded`, `none`) and `studyId` (§5.5), and drawing/render `current`/`stale`/`running` states. Nothing is merged or started | reads the working position + shared + design refs + the admissions review + server memory | provisional |
 | POST | `/api/drawings/elevations` → 201 | exact-model elevation document with drawing/revision/Stage/view references | writes shared drawing artifacts and document registration | provisional |
 | GET | `/api/candidates/{candidateId}/validation` | the kernel's validation receipt and the server's review readiness (§5) | reads shared + published | stable |
 | POST | `/api/intents` → 201 | one of four outcomes: the resolved target and the proposal it became, or the pending intent the refusal belongs to (§5.1) | reads work in progress + shared | provisional |
@@ -612,6 +615,78 @@ the internal XZ plan and Y height to the saved model's XY plan and Z height. The
 no inferred scale, north or perspective correction. Omitting calibration saves a
 page without a tracing scale, and legacy annotations retain their serialized shape.
 
+### 5.5 Candidate admission
+
+A run that succeeded is not a Candidate; a Candidate is a closed-loop result plus admission.
+Servers advertising `candidate-admission` retain one `CandidateAdmission@1` per closed loop (a
+task, one worktree of a task, or one person's act) in the review area of the fixed
+`studio-admissions` run, read by name and never by scanning runs. Admission accepts no Stage,
+advances no branch, moves no Working Head and writes no working position. Lineage is still
+derived from each run's retained change, never recorded again.
+
+`POST /api/admissions` takes `{projectId, task: {kind, ids?}, study?: {id, label, baseRunId},
+messageSource?: {sessionId, messageId}, rawLanguage?, results: [{runId, outcome, supersedes?,
+label?, summary?, reason?}]}`. `outcome` is `admitted` or `rejected`; `supersedes` names the
+attempt runs a result replaced within the loop. `task.kind` is `ui` (a person's act), `hub-chat`
+(the Hub Agent closing a chat task on the user's behalf) or `retroactive` (a one-time review a
+person confirms). The record keeps the boundary's actor (`actorId`, `authenticated`) with the
+origin `studio` or `hub` for `ui`, `hub-agent` for `hub-chat` and `retroactive` for a review.
+`hub-chat` is refused outside a Hub-managed Runtime, names its `messageSource`, and rejects only
+with the user's bound `rawLanguage`. The answer is the retained record: `admissionId`,
+`admissionRef`, `previousRevisionRef` (null in this version), `occurredAt`, `actor`,
+`messageSource`, `rawLanguage`, `task`, `study` with the server's `baseStageRef`, and each result
+with `modelSource` (pinned for an admitted result), `receiptRef`, `recordDigest`, `baseStageRef`,
+`supersedes`, `label`, `summary`, `reason` and `blockedBy`. Facts only: no authority block and
+no digest of itself.
+
+The gate is Stage acceptance's own preflight. An admitted result is a completed Studio result
+that is not executing or interrupted (C2), replays from its retained change (C1), is validated
+against its exact base Stage or, unstaged, against the published version (C3), reads back an
+object inspection for every seat that exported (C4) and has exactly one complete model (C5).
+Every superseded run is a retained candidate result in the result's lineage or built from the same
+base, and neither another record nor a committed Stage claims it (C7). With a Study, every result
+is built from `study.baseRunId` and continues one base Stage. A
+rejection needs only C2. A person (`ui`, `retroactive`) may admit a result that is not
+review-ready as a comparison option: the failing review-readiness clauses are retained as its
+`blockedBy` marker. An Agent's admission must be review-ready, and Accept-as-Stage still
+requires review readiness. When any result fails, nothing is retained: `409
+ADMISSION_GATE_REFUSED` adds `failures[]`, one `{runId, clause, code, detail}` per failing clause.
+
+A run is in at most one live record, as a result or as a superseded attempt. An identical retry
+answers `200` with the record it repeats. Any other claim on a claimed run, rejecting or
+superseding a committed Stage's run, or declaring a Study id again with another label or base is
+`409 ADMISSION_CONFLICT`; changing a retained disposition is a later revision. A malformed
+combination is `422 ADMISSION_INVALID`, an unreadable admission record refuses every further
+write with `409 ADMISSION_RECORD_INVALID`, and a failed write is `409 ADMISSION_WRITE_FAILED`.
+`POST /api/candidates/{candidateId}/accept` refuses a run with a live rejection with `409
+CANDIDATE_REJECTED`. Admissions are not synchronized yet: a Runtime connected to a shared project
+answers `409 SYNC_ADMISSION_UNSUPPORTED`, and a shared project service does not expose the route.
+
+`GET /api/admissions` lists the live records with their admitted results; `include=rejected`
+adds the rejections, which stay readable as "already tried". `warnings[]` names unreadable
+records and runs that more than one live record claims; those runs are left out of every read.
+
+`GET /api/design-history` adds the project's `candidates[]` and `studies[]`, the same on every
+branch except that `acceptedStageRef` prefers the requested line. A Candidate has `candidateId`,
+`outcome`, `label`, `summary`, `baseStageRef` (null under the Unstaged root), `studyId`,
+`modelSource`, `admittedBy` (`actorId`, `authenticated`, `origin`), `admittedAt`,
+`admissionRef`, `legacy`, `acceptedStageRef` (the Stage it became, or the Stage whose accepted
+run it is the nearest admitted ancestor of), `continuedFrom` (its nearest admitted ancestor),
+`inWorkingHeadLineage`, `blockedBy` and `supersedes`. Only admitted results are listed;
+`include=rejected` adds rejections. A Study has `id`, `label`, `baseRunId`, `baseStageRef`,
+`candidateIds` and `source`: `declared` by a record, `admission` for a record that declared none
+(its results form one group keyed by its `admissionId`, based at the nearest run outside the
+loop), or `working-copy` for a retained Exploration. Runs are never grouped on a shared base
+alone.
+
+Earlier facts that already prove admission are read and never written: a committed Stage's run
+(`legacy: stage`), a non-base option of a retained `StudioWorkingCopy@1` (`legacy:
+working-copy`, grouped as a legacy Study) and the run an accepted `DeliberationEpisode@1`
+produced (`legacy: episode`). An admission record is stronger than any of them. Saved and
+recovery rows, chat candidate ids, pins and newest files prove nothing, so a project with many
+runs and none of these facts lists no Candidate. Creating an Exploration (`POST
+/api/working-copies`) is retired; retained Explorations stay readable and selectable.
+
 ## 6. Pick and gesture resolution
 
 A pick sends what the object on screen claims about itself — its `archflow:*` user strings, the
@@ -733,7 +808,7 @@ wherever a server offers it.
 
 `capabilities` is how a client hides what a server cannot do instead of discovering it as a 404.
 A capability name is a feature, not a route: `projection`, `pick`, `gestures`, `intents`,
-`proposals`, `candidates`, `captures`, `compare`, `artifacts`, `program`, `validation`, `events`, and
+`proposals`, `candidates`, `candidate-admission` (§5.5), `captures`, `compare`, `artifacts`, `program`, `validation`, `events`, and
 `cad-export` when geometry export is enabled, `rhino-export` when Rhino is explicitly selected,
 and `user-settings` in local mode only.
 
@@ -932,10 +1007,12 @@ runner's developed-design digest. Neither is silently substituted for a third id
 
 The Working Head is the architect's editing base, which ordinary Modeling, Drawing, Render and
 Board work follows. It is read from the retained working position (`design/working.json`
-`current`), which only the explicit `PUT /api/working-draft` moves: Continue on a shown result, or
-adopting the architect's own Sync. A generated candidate, including a continuation of the base,
+`current`), which only the explicit `PUT /api/working-draft` moves: Continue on a shown result,
+adopting the architect's own Sync, or the Hub Agent continuing on the user's bound words (#294
+Q3). A generated candidate, including a continuation of the base,
 is recorded and shown but never adopted (GH-234 Q1/Q2). An unreadable position falls back to the
-main line's accepted head and then the reference run, with a warning. Resolving it writes nothing, takes no project
+main line's accepted head and then the reference run, with a warning. A position whose run has a live
+rejection (§5.5) stays the head and adds a warning; only Continue moves it. Resolving it writes nothing, takes no project
 guard and never picks a newest file. A continuation keeps its source position's branch, so a
 fork's work stays on the fork although it shares the parent's earlier Stages. A candidate's
 lineage follows its source and any results it combined. Drawing status targets, drawing-driven
@@ -945,6 +1022,18 @@ chosen version (`follow: "frozen"` in its recipe) stays on that version until it
 candidate deltas and the job queue; its `reconcile` is the StateRecord combine rule applied as a
 dry run from the nearest shared source. Owner attribution belongs to the Hub journal, not to
 project records.
+
+Continue is an attributed act, whoever makes it (#294 S4). Each move onto a run retains one
+`AuditEvent@1` with `action: design.continued` in that run's review area. It names ids only:
+`actorId` and `authenticatedActor` from the request boundary, `origin` (`studio` or `hub` for
+the architect, `hub-agent` for the Agent), `previousHeadRunId` (the resolved head before the
+move), `targetRunId` and `messageSource`. Returning to the default names no run and retains
+nothing. When the event cannot be retained, the move is undone and the request answers `500
+CONTINUE_NOT_RETAINED`. The Agent's Continue carries the chat `messageSource` and the user's
+`rawLanguage`, both bound by Hub; a Runtime no Hub manages, a missing half, or no named run
+answers `422 WORKING_DRAFT_ATTRIBUTION_INVALID`. The event keeps the message ids, not the words.
+A Continue admits no Candidate and accepts no Stage, and the acceptance reader ignores the event
+because it names no `resultStageRef`.
 
 `POST /api/runtime/projects/{runtime_id}/recover` with `{projectId}` inspects retained outcomes
 before replacing one crashed owned Studio on the same port. It rebuilds the state projection
@@ -983,6 +1072,19 @@ itself. The original message ID remains bound on both creation and revocation.
 Lock, supersede and Stage acceptance are not exposed by this capability. Runtime
 authorization and CAS remain authoritative. Its schema tool derives these
 narrowed inputs from the actual Runtime OpenAPI rather than another Decision DTO.
+
+The same tool closes the Agent's loops and continues only on the user's words (#294 Q3). It
+exposes `POST /api/admissions` with `task.kind` fixed to `hub-chat`, and `PUT
+/api/working-draft`; it reads `GET /api/admissions`, `GET /api/working-source` and `GET
+/api/working-draft/revision`. Hub fills `messageSource` from the last user message the Agent was
+given; an interjection still waiting for its next step binds nothing. It binds `rawLanguage`
+where the user's words carry the decision: a `feedbackQuote` passage, the whole message for a
+rejection, and always for a Continue. A Continue with no such message or words is refused (`409
+CHAT_FEEDBACK_SOURCE`), as is provider-supplied provenance, another task kind or a Continue
+without a run (`422`). The schema tool hides the bound fields, and the Continue reply carries only
+`projectId`, `revisionSha256` and `current`. The Hub prompt asks for one admission per completed
+loop: a declared Study for several alternatives, each result's superseded attempts, no
+intermediate runs, and a rejection or Continue only on the user's own words.
 Drawing/copy work explicitly selects `decisionContext.domain` on the existing
 context read; the prepared default remains design. Full applicable decision
 slices pass through, while revoked, deferred or inapplicable records do not.

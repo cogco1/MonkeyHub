@@ -46,6 +46,10 @@ _SHARED_READ_PATHS = (
 # it was launched with - and never a request header, which any caller can set.
 ORIGIN_STUDIO = "studio"
 ORIGIN_HUB = "hub"
+# The Hub Agent acting for the user of its bound chat (#294 owner decision Q3).
+# No boundary resolves it: a request that says the Agent acted on a chat message
+# is retained under this origin only when it came through a Runtime a Hub manages.
+ORIGIN_HUB_AGENT = "hub-agent"
 
 # What an explicit action is attributed to where the process runs with no actor
 # credentials configured at all: the local unauthenticated boundary itself,
@@ -172,6 +176,11 @@ def request_action(method: str, path: str, *, shared_project: bool) -> str | Non
     if not shared_project and method == "POST" and path == "/api/proposals/parameter-locks":
         # An explicit constraint decision uses the existing decision grant;
         # it still produces only a detached candidate, never Stage acceptance.
+        return "accept"
+    if not shared_project and method == "POST" and path == "/api/admissions":
+        # Admitting or rejecting a closed loop's results is an explicit
+        # judgement: it uses the existing decision grant and accepts no Stage.
+        # A shared project service takes none yet: admissions do not sync.
         return "accept"
     if method in {"GET", "HEAD"}:
         if not shared_project or any(re.fullmatch(pattern, path) for pattern in _SHARED_READ_PATHS):
