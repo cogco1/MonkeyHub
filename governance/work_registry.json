@@ -304,6 +304,122 @@
       ]
     },
     {
+      "id": "GH-244",
+      "stream": "planning",
+      "status": "active",
+      "goal": "Drawings carry their semantics: rebuilds replace their previous revision (#291), a deterministic cleanup report, component and material attributes with material-keyed hatch and poché in paper mm, who and why on each revision, and an axonometric model view with a cache for visual review.",
+      "depends_on": [],
+      "issue": "https://github.com/cogco1/MonkeyHub/issues/244",
+      "write_scope": [
+        "apps/archflow-studio/api/archflow_studio_api/application/artifacts.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/drawing_plans.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/drawings.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/rendering.py",
+        "apps/archflow-studio/api/archflow_studio_api/routes/drawings.py",
+        "apps/archflow-studio/api/archflow_studio_api/transport/drawings.py",
+        "docs/mapping/planning/GH-244-drawing-semantics.md",
+        "monkeydiagram/drawing_elevation.py",
+        "monkeydiagram/drawing_svg.py"
+      ],
+      "card": "docs/mapping/planning/GH-244-drawing-semantics.md",
+      "acceptance": [
+        "291-S1: a rebuilt plan registers as the whole-document replacement of its previous revision, with the cause derived as planned.",
+        "244-S1/S2: clean_drawing returns a CleanupReport kept in the receipt; polylines carry data-component/material; hatch and poché are keyed by material in paper mm.",
+        "05-S1: each drawing revision records who and why; 303-S1 axonometric view and model-view cache exist for the visual-review route.",
+        "The two lanes meet at the interfaces pinned in 03 §3 C1–C3 and 05 §3.2(A)."
+      ],
+      "lanes": [
+        {
+          "id": "drawing-application",
+          "issue": "https://github.com/cogco1/MonkeyHub/issues/244",
+          "branch": "codex/244-drawing-application",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-244-drawing-application",
+          "base_ref": "132a618b",
+          "contributor": "Claude",
+          "reviewer": "Claude root task",
+          "handoff": "291-S1, the DP/TD parts of 244-S2 and 05-S1, and 303-S1's axonometric view and model-view cache, per V4_RUNTIME handoff/260925_next-batch-plan/02, 03, 05, 06. 05-S3b waits for GH-223/recipe-decision.",
+          "modules": [
+            "studio.artifacts"
+          ],
+          "write_scope": [
+            "apps/archflow-studio/api/archflow_studio_api/application/drawing_plans.py",
+            "apps/archflow-studio/api/archflow_studio_api/application/artifacts.py",
+            "apps/archflow-studio/api/archflow_studio_api/application/rendering.py",
+            "apps/archflow-studio/api/archflow_studio_api/application/drawings.py",
+            "apps/archflow-studio/api/archflow_studio_api/transport/drawings.py",
+            "apps/archflow-studio/api/archflow_studio_api/routes/drawings.py"
+          ],
+          "depends_on": [],
+          "status": "active",
+          "blocked_reason": null
+        },
+        {
+          "id": "drawing-projection",
+          "issue": "https://github.com/cogco1/MonkeyHub/issues/244",
+          "branch": "codex/244-drawing-projection",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-244-drawing-projection",
+          "base_ref": "132a618b",
+          "contributor": "Claude",
+          "reviewer": "Claude root task",
+          "handoff": "244-S1, the SVG/DE part of 244-S2 and 05-S1's receipt fields, per V4_RUNTIME handoff/260925_next-batch-plan/03 and 05.",
+          "modules": [
+            "adapters.drawing_svg",
+            "runtime.drawing_elevation"
+          ],
+          "write_scope": [
+            "monkeydiagram/drawing_svg.py",
+            "monkeydiagram/drawing_elevation.py"
+          ],
+          "depends_on": [],
+          "status": "active",
+          "blocked_reason": null
+        }
+      ]
+    },
+    {
+      "id": "GH-303",
+      "stream": "planning",
+      "status": "active",
+      "goal": "Visual observation reaches production: a visual-review route renders the source-bound frames in-process and returns findings through the existing channel, starting with the five orthographic views.",
+      "depends_on": [],
+      "issue": "https://github.com/cogco1/MonkeyHub/issues/303",
+      "write_scope": [
+        "apps/archflow-studio/api/archflow_studio_api/application/visual_observation.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/visual_reviews.py",
+        "apps/archflow-studio/api/archflow_studio_api/routes/intents.py",
+        "apps/archflow-studio/api/archflow_studio_api/transport/intent.py",
+        "docs/mapping/planning/GH-303-visual-route.md"
+      ],
+      "card": "docs/mapping/planning/GH-303-visual-route.md",
+      "acceptance": [
+        "POST /api/visual-reviews renders the requested frames from the exact source and returns the V0 findings shape; tests pin refusals and budgets as planned in 06."
+      ],
+      "lanes": [
+        {
+          "id": "visual-route",
+          "issue": "https://github.com/cogco1/MonkeyHub/issues/303",
+          "branch": "codex/303-visual-route",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-303-visual-route",
+          "base_ref": "132a618b",
+          "contributor": "Claude",
+          "reviewer": "Claude root task",
+          "handoff": "303-S1 route per V4_RUNTIME handoff/260925_next-batch-plan/06_303.md; axonometric frames join when drawing-application lands.",
+          "modules": [
+            "studio.intent"
+          ],
+          "write_scope": [
+            "apps/archflow-studio/api/archflow_studio_api/application/visual_observation.py",
+            "apps/archflow-studio/api/archflow_studio_api/application/visual_reviews.py",
+            "apps/archflow-studio/api/archflow_studio_api/routes/intents.py",
+            "apps/archflow-studio/api/archflow_studio_api/transport/intent.py"
+          ],
+          "depends_on": [],
+          "status": "active",
+          "blocked_reason": null
+        }
+      ]
+    },
+    {
       "id": "GH-66",
       "stream": "planning",
       "status": "active",
