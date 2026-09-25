@@ -7,7 +7,7 @@
 ## 当前任务编号规则
 
 MonkeyHub 的新任务以 **GitHub Issue** 为唯一 canonical task identity；Pull Request 是实现与 review 单元。
-历史上的 R/M/P 工作卡继续有效，但编号已经冻结：已有 `R###`、`M###`、`P###` 可继续收尾，**不再创建 `P116+` 或新的 M/R 卡**。`P115` 只保留既有 capability-consolidation 工作，不再作为所有未来需求的默认容器。
+历史上的 R/M/P 工作卡继续有效，但编号已经冻结：已有 `R###`、`M###`、`P###` 可继续收尾，**不再创建 `P116+` 或新的 M/R 卡**。`P115` 已冻结为历史索引：不占写入路径，不从中推导当前任务，也不在其中登记新工作；其仍有效的剩余验收由卡中列出的 GitHub Issue 承接。
 
 需要在提交或机器登记中表达 GitHub Issue 时，使用 `GH-<issue-number>`；同一 Issue 有并行 lane 时可使用 `GH-<issue-number>/<lane>`。`archcheck --changed` 对 GH work id 与既有 P 卡执行同一套历史 write-scope 校验；既有 P 卡提交继续沿用原身份，不重编号历史 commit/card。
 
@@ -55,15 +55,13 @@ MonkeyHub 的第一方代码以 **AGPL-3.0-only** 发布，同时保留未来提
 
 ```powershell
 python tools/devctl.py work
-python tools/devctl.py work GH-56
-python tools/devctl.py work P115
-python tools/devctl.py work P115/team-lanes
 python tools/devctl.py work --json
 ```
 
+查看一项时写精确 id：`work GH-<issue>`、`work GH-<issue>/<lane>`；legacy 卡用 `work P###`。
 这些命令只读已登记的当前任务、基线、责任与重叠，不联网确认合并，不创建 worktree 或改 registry。现有 legacy 卡继续沿用原结构直到自然关闭；**不要为了新 GitHub Issue 创建 P116。**
 
-`active` 与 `review` 是当前写入范围声明；`planned`、`blocked`、`done` 不占并发路径。两个当前任务声明相同非共享生产路径时，缩窄范围，或把后行工作标为 `blocked`、加入 `depends_on` 并在 `handoff` 写明先后顺序。依赖未完成的工作不能标为 active/review。上游合入后核实实际提交、更新基线和依赖，再继续；完成后释放对应 live scope，GitHub Issue/PR 仍保留历史。
+`active` 与 `review` 是当前写入范围声明；`planned`、`blocked`、`done` 不占并发路径。没有 `lanes` 的登记项（如 legacy 卡）只在 `active`／`ready` 时占用其 `write_scope`，`blocked` 项不占路径。两个当前任务声明相同非共享生产路径时，缩窄范围，或把后行工作标为 `blocked`、加入 `depends_on` 并在 `handoff` 写明先后顺序。依赖未完成的工作不能标为 active/review。上游合入后核实实际提交、更新基线和依赖，再继续；完成后释放对应 live scope，GitHub Issue/PR 仍保留历史。
 
 `archcheck --changed <base>` 按每次提交当时的 policy 与 work scope 检查，因此历史 P 卡不会被重编号或追溯改写。新 Issue 使用 `GH-<n>` / `GH-<n>/<lane>` claim；未知或格式不完整的 GH id 不会部分匹配其他 Issue。仅规则与说明维护可明确写 `P000-governance`，准确路径由 [`tools/archcheck.py`](tools/archcheck.py) 定义。
 
@@ -76,4 +74,4 @@ python tools/devctl.py work --json
 - [`docs/WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.md`](docs/WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.md) — 环境搭建与首次跑通（队友从第 8 节开始）。
 - [`docs/PROTOCOL.md`](docs/PROTOCOL.md) — 对外协议，客户端能依赖什么。
 - [`apps/archflow-studio/README.md`](apps/archflow-studio/README.md) — Studio 的 api / web 与 `api:check`、`typecheck`、`build`。
-- [`docs/mapping/planning/`](docs/mapping/planning/) — 仍在收尾的 legacy 工作卡；它们不是新任务编号池。
+- [`docs/mapping/planning/`](docs/mapping/planning/) — 登记中的 GH 任务卡与仍在收尾的 legacy 工作卡；它们不是新任务编号池。P115 是冻结的历史索引，不从中推导当前任务。

@@ -311,6 +311,8 @@ def _print_work_lookup(result: dict) -> None:
             continue
         for field in ("worktree", "reviewer", "handoff", "modules", "write_scope", "depends_on", "blocked_reason", "card"):
             value = row.get(field)
+            if field == "blocked_reason" and value is None and row.get("status") == "blocked" and "/" not in row["id"] and row.get("card"):
+                value = "see card"  # a card row keeps its reason in the card, not in a lane field
             if isinstance(value, list):
                 value = ", ".join(str(entry) for entry in value) or "none"
             print(f"  {field}: {value if value is not None else 'unassigned'}")

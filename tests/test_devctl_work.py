@@ -184,6 +184,17 @@ class WorkLookupTests(unittest.TestCase):
         self.assertEqual(result, {"query": None, "items": [], "findings": []})
         self.assertEqual(self._json("P114")[0], 1)
 
+    def test_blocked_legacy_card_points_to_its_card_for_the_reason(self):
+        self.legacy["status"] = "blocked"
+        self._save()
+        code, text = self._run("P114")
+        self.assertEqual(code, 0)
+        self.assertIn("  blocked_reason: see card\n", text)
+        self.assertNotIn("blocked_reason: unassigned", text)
+        code, result = self._json("P114")
+        self.assertEqual(code, 0)
+        self.assertEqual(result["items"], [self.legacy], "JSON keeps the registry record unchanged")
+
     def test_malformed_lane_metadata_reports_findings_instead_of_crashing(self):
         original = deepcopy(self.data)
         for label, lanes in (

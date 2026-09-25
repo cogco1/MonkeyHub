@@ -96,15 +96,17 @@ applications it may touch, and it writes no project state: see [computer use](do
 The current implementation does not establish complete architectural reasoning.
 Declared relationships can be checked and propagated, but their completeness and
 design adequacy still need architectural judgment and real project trials. See the
-[architecture](docs/ARCHITECTURE.md), [repository layout](docs/REPO_LAYOUT.md) and
-[live work](docs/DYNAMIC_MAP.md) for implemented behavior and remaining work.
+[architecture](docs/ARCHITECTURE.md) and [repository layout](docs/REPO_LAYOUT.md) for
+implemented behavior; remaining work and its acceptance are tracked in
+[GitHub Issues](https://github.com/cogco1/MonkeyHub/issues).
 
 ## Start here
 
 - **One application entry:** open MonkeyHub. For agent access and source work, follow the [Hub entry and bounded lookup sequence](docs/WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.md#0-monkeyhub-统一入口).
   It connects the source checkout, external project, capability registries and existing commands.
 - [Vision](docs/VISION.md) — long-term research, technology and product direction.
-- [Development map](docs/DYNAMIC_MAP.md) — live work and acceptance criteria.
+- [Development map](docs/DYNAMIC_MAP.md) — source work currently registered for
+  coordination; requirements and acceptance live in the GitHub Issues.
 - [System map](docs/SYSTEM_MAP.md) — current capability owners and public APIs.
 - [Architecture](docs/ARCHITECTURE.md) — implemented responsibilities, concrete
   gaps, and the next architectural revision to develop.
@@ -129,7 +131,7 @@ The team shares two source repositories:
 | [Shared toolbox](https://github.com/cogco1/huaguoshan-digital-infrastructure) | Research CLI, reusable Skills, experiment record tools and figure/report generators |
 | [MonkeyHub](https://github.com/cogco1/MonkeyHub) | Shared project infrastructure, ArchFlow runtime, MonkeyArch modeling, MonkeyDiagram drawings and related applications |
 
-Take one scoped task in the relevant repository, work on a short branch, open a
+Take one GitHub Issue in the relevant repository, work on a short branch, open a
 pull request, and have another member review the change and its Actions checks
 before integration. Each member has an independent clone and runtime. Shared
 code does not mean sharing one live project directory or another member's credentials.
