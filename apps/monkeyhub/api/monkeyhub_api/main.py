@@ -42,7 +42,8 @@ from .applications import Applications
 from .chat import ChatStore
 from .computer_tools import ComputerService
 from .runtime import ProjectRuntimeManager
-from .runtime_models import HubRuntimeDto, ProjectRuntimeDto, OpenRuntimeRequest, RuntimeProjectRequest, RuntimeEvent
+from .runtime_models import (HubRuntimeDto, OperationAcknowledgeRequest, OperationRecord, ProjectRuntimeDto,
+                             OpenRuntimeRequest, RuntimeProjectRequest, RuntimeEvent)
 from .fabrication import Fabrication
 from .updates import (
     DesktopUpdates, UpdateStatus, CompleteUpdate, RollbackUpdate, UpdateSettings, MAX_PATCH_BYTES,
@@ -570,6 +571,11 @@ def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> Fas
     @app.post("/api/runtime/projects/{runtime_id}/close", response_model=ProjectRuntimeDto, status_code=202)
     def close_runtime(runtime_id: str, body: RuntimeProjectRequest):
         return runtimes.close(runtimes.get(runtime_id, body.projectId))
+
+    @app.post("/api/runtime/operations/{operation_id}/acknowledge", response_model=OperationRecord)
+    def acknowledge_operation(operation_id: str, body: OperationAcknowledgeRequest):
+        # A dismissed notice, kept in the runtime's journal; the operation itself is unchanged.
+        return runtimes.acknowledge(runtimes.get(body.runtimeId, body.projectId), operation_id)
 
     @app.get("/api/runtime/events", response_class=StreamingResponse, response_model=RuntimeEvent,
              responses={200: {"description": "Runtime SSE; every attachment begins with a coherent snapshot.",

@@ -1044,6 +1044,16 @@ candidate completion and formal project issue remain separate. `close` at the sa
 cancels only its attached agents/permissions and drains its owned Studio. Normal Hub shutdown
 preserves the existing accepted-work drain.
 
+Each operation record carries `createdAt`, when this Hub admitted the request; rows admitted
+before admission times were kept, and observations of retained runs, have none.
+`POST /api/runtime/operations/{operation_id}/acknowledge` with `{runtimeId, projectId}` records
+that a person dismissed the notice of one failed or stale operation of that runtime (#285). The
+dismissal is kept in the runtime's operation journal by operation id, so it survives a Hub
+restart, and the record reports it as `acknowledgedAt` while it stays failed or stale. Nothing is
+sent or replayed, and the operation's status, reason and result are unchanged. An operation that
+needs recovery answers `409 OPERATION_NOT_ACKNOWLEDGEABLE` and stays until a retained result
+resolves it; an unknown id answers `404 OPERATION_NOT_FOUND`.
+
 A chat message may carry an optional `designContext` with `stateDigest` and the same optional
 source, focus and supplement fields as `/api/intents/context`. When it is there,
 Hub prepares that one turn against the bound Studio's `POST /api/intents/context` (§4) and appends

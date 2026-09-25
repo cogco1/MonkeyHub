@@ -42,6 +42,8 @@ _CANDIDATE_REQUEST = re.compile(
 _ACCEPT_REQUEST = re.compile(r"^/api/candidates/([^/]+)/accept$")
 _PROPOSAL_CANDIDATE = re.compile(r"^/api/proposals/([^/]+)/candidate$")
 _ACTIVE = {"queued", "planning", "validated", "executing", "committing"}
+# Outcomes a person can read and dismiss. One that needs recovery stays until it is recovered.
+_ACKNOWLEDGEABLE = {"failed", "stale"}
 _IDLE_RETAINED_REFRESH_S = 30
 _WORKING_CLEANUP_INTERVAL_S = 15 * 60
 # A sample must remain unchanged for this interval before bytes are read.
@@ -118,6 +120,8 @@ class OperationManager:
         self._lock = threading.RLock()
         self._operations: dict[str, _Admission] = {}
         self._retained: dict[str, OperationRecord] = {}
+        # Dismissed notices by operation id, for admitted requests and observed runs alike.
+        self._acknowledged: dict[str, str] = {}
         self._restore()
 
     def _restore(self) -> None:
@@ -148,6 +152,12 @@ class OperationManager:
                                        row["branchId"], row["acceptingCandidate"])
                 admission.finished.set()  # A prior process cannot deliver its HTTP response.
                 self._operations[record.operationId] = admission
+            # A dismissal is a person's reading of a finished failure, not a
+            # recovery fact: an unreadable entry only brings its notice back.
+            acknowledged = saved.get("acknowledged", {})
+            if isinstance(acknowledged, dict):
+                self._acknowledged = {key: value for key, value in acknowledged.items()
+                                      if isinstance(key, str) and isinstance(value, str)}
         except (OSError, ValueError, KeyError, TypeError) as exc:
             raise HubFailure(503, "OPERATION_LOG_INVALID", "The saved operation identities could not be read for this project. Requests were not replayed.") from exc
 
@@ -157,10 +167,13 @@ class OperationManager:
         # Only recovery metadata crosses this Hub-runtime boundary. Request
         # bodies and successful project results stay with their existing owners.
         saved = {"projectId": self.project_id, "projectDir": self.project_dir, "operations": [{
-            "record": row.record.model_dump(exclude={"committed", "resultDigest", "resultRevision", "reason", "admissionSequence"}),
+            "record": row.record.model_dump(exclude={"committed", "resultDigest", "resultRevision", "reason",
+                                                     "admissionSequence", "acknowledgedAt"}),
             "signature": row.signature, "expectedStage": row.expected_stage,
             "branchId": row.branch_id, "acceptingCandidate": row.accepting_candidate,
         } for row in self._operations.values()]}
+        if self._acknowledged:
+            saved["acknowledged"] = self._acknowledged
         temporary = self.journal_path.with_suffix(".tmp")
         try:
             self.journal_path.parent.mkdir(parents=True, exist_ok=True)
@@ -211,6 +224,7 @@ class OperationManager:
                 sourceStageRef=payload.get("sourceStageRef") or payload.get("expectedHeadStageRef"),
                 proposalId=proposal.group(1) if proposal else None,
                 candidateId=candidate, sessionId=session_id,
+                createdAt=datetime.now(timezone.utc).isoformat(),
             )
             expected_stage, branch_id = payload.get("expectedHeadStageRef"), payload.get("branchId", "main")
             admission = _Admission(record, signature,
@@ -336,17 +350,52 @@ class OperationManager:
                 )
             self._retained = observed
 
+    def _shown(self, record: OperationRecord, **update) -> OperationRecord:
+        # A dismissal speaks only for the failure it dismissed: an observation
+        # that later reads as needing recovery is reported again, undismissed.
+        acknowledged = self._acknowledged.get(record.operationId) if record.status in _ACKNOWLEDGEABLE else None
+        return record.model_copy(update={**update, "acknowledgedAt": acknowledged}, deep=True)
+
     def records(self) -> list[OperationRecord]:
         with self._lock:
             # The existing journal retains this admission order across Hub
             # restarts. Derive it before the bounded/reordered display window;
             # it supplies no result status and is never written back to disk.
-            values = [row.record.model_copy(update={"admissionSequence": index})
+            values = [self._shown(row.record, admissionSequence=index)
                       for index, row in enumerate(self._operations.values(), start=1)]
             # Keep active work visible even after many completed requests.
             active = [row for row in values if row.status in _ACTIVE or row.status == "needs_recovery"]
             recent = [row for row in values if row not in active][-50:]
-            return [row.model_copy(deep=True) for row in [*active, *recent, *self._retained.values()]]
+            return [*active, *recent, *(self._shown(row) for row in self._retained.values())]
+
+    def acknowledge(self, operation_id: str) -> OperationRecord:
+        """Dismiss one failed or stale operation's notice; its record and outcome stay as they are.
+
+        The dismissal is kept in this journal, so it outlasts a Hub restart. An
+        operation that needs recovery cannot be dismissed: it stays until a
+        retained result resolves it.
+        """
+        with self._lock:
+            order = list(self._operations)
+            if operation_id in self._operations:
+                record, sequence = self._operations[operation_id].record, order.index(operation_id) + 1
+            else:
+                record = next((row for row in self._retained.values() if row.operationId == operation_id), None)
+                sequence = None
+            if record is None:
+                raise HubFailure(404, "OPERATION_NOT_FOUND", "This project runtime has no operation with that id.")
+            if record.status not in _ACKNOWLEDGEABLE:
+                raise HubFailure(409, "OPERATION_NOT_ACKNOWLEDGEABLE",
+                                 "Only a failed or stale operation can be dismissed. An operation that needs recovery stays until it is recovered.")
+            if operation_id not in self._acknowledged:
+                self._acknowledged[operation_id] = datetime.now(timezone.utc).isoformat()
+                try:
+                    self._save()
+                except HubFailure as exc:
+                    del self._acknowledged[operation_id]
+                    raise HubFailure(503, "OPERATION_LOG_UNAVAILABLE",
+                                     "The dismissal could not be saved, so the notice stays. Nothing else changed.") from exc
+            return self._shown(record, admissionSequence=sequence)
 
     def candidate_ids(self) -> tuple[str, ...]:
         with self._lock:
@@ -992,6 +1041,13 @@ class ProjectRuntimeManager:
             self.emit("worker/recovering", runtime.runtime_id)
         runtime.wake.set()
         return self.project_snapshot(runtime)
+
+    def acknowledge(self, runtime: ProjectRuntime, operation_id: str) -> OperationRecord:
+        """Record that a person read a failed or stale operation's notice. No request is sent or replayed."""
+        record = runtime.operations.acknowledge(operation_id)
+        self.emit("operation/acknowledged", runtime.runtime_id)
+        runtime.wake.set()
+        return record
 
     def close(self, runtime: ProjectRuntime) -> ProjectRuntimeDto:
         runtime.state = "closed"

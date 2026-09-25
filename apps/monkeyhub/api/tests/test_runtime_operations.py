@@ -1,6 +1,7 @@
 """Hub operation recovery uses real Studio runs and committed P036 history."""
 
 import base64
+from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 from pathlib import Path
@@ -170,6 +171,118 @@ class OperationRecoveryTests(unittest.TestCase):
         self.assertIn("private input text", self.record(admission).reason)
         self.assertNotIn("private input text", self.manager.journal_path.read_text(encoding="utf-8"))
         self.assertEqual(self.durable_manager().records()[0].status, "failed")
+
+    def test_new_operation_keeps_its_admission_time_and_older_rows_have_none(self):
+        self.manager = self.durable_manager()
+        before = datetime.now(timezone.utc)
+        admission, _ = self.admission("/api/drawings/sheets", {})
+        admitted = self.record(admission).createdAt
+        self.assertTrue(before <= datetime.fromisoformat(admitted) <= datetime.now(timezone.utc))
+        self.assertEqual(self.durable_manager().records()[0].createdAt, admitted, "the time is kept with the journal row")
+        # A journal written before admission times were kept still restores, without one.
+        saved = json.loads(self.manager.journal_path.read_text(encoding="utf-8"))
+        del saved["operations"][0]["record"]["createdAt"]
+        self.manager.journal_path.write_text(json.dumps(saved), encoding="utf-8")
+        self.assertIsNone(self.durable_manager().records()[0].createdAt)
+
+    def test_dismissed_failure_stays_dismissed_after_restart_and_is_otherwise_unchanged(self):
+        self.manager = self.durable_manager()
+        admission, _ = self.admission("/api/drawings/sheets", {"private": "private sheet request"})
+        self.manager.replied(admission, HttpResult(422, b'{"code":"SHEET_REFUSED","detail":"private refusal text"}', {}))
+        before = self.record(admission)
+        self.assertIsNone(before.acknowledgedAt)
+        dismissed = self.manager.acknowledge(admission.record.operationId)
+        self.assertTrue(dismissed.acknowledgedAt)
+        self.assertEqual(dismissed.model_dump(exclude={"acknowledgedAt"}), before.model_dump(exclude={"acknowledgedAt"}),
+                         "a dismissal changes no status, reason, order or result")
+        self.assertEqual(self.record(admission).acknowledgedAt, dismissed.acknowledgedAt)
+        self.assertEqual(self.manager.acknowledge(admission.record.operationId).acknowledgedAt, dismissed.acknowledgedAt,
+                         "dismissing again keeps the first time")
+        self.assertNotIn("private", self.manager.journal_path.read_text(encoding="utf-8"))
+        restored = self.durable_manager().records()[0]
+        self.assertEqual((restored.status, restored.acknowledgedAt), ("failed", dismissed.acknowledgedAt))
+
+    def test_stale_operation_can_be_dismissed(self):
+        admission, _ = self.admission("/api/proposals", {})
+        self.manager.replied(admission, HttpResult(409, b'{"code":"PROPOSAL_BASE_STALE","detail":"The base moved."}', {}))
+        self.assertEqual(self.record(admission).status, "stale")
+        self.assertTrue(self.manager.acknowledge(admission.record.operationId).acknowledgedAt)
+        self.assertTrue(self.record(admission).acknowledgedAt)
+
+    def test_operation_that_needs_recovery_cannot_be_dismissed(self):
+        self.manager = self.durable_manager()
+        admission, _ = self.admission("/api/proposals", {})
+        self.manager.interrupted(admission, "lost reply")
+        for operation_id, code in ((admission.record.operationId, "OPERATION_NOT_ACKNOWLEDGEABLE"),
+                                   (str(uuid4()), "OPERATION_NOT_FOUND")):
+            with self.subTest(code=code), self.assertRaises(HubFailure) as refusal:
+                self.manager.acknowledge(operation_id)
+            self.assertEqual(refusal.exception.error.code, code)
+        self.assertNotIn("acknowledged", json.loads(self.manager.journal_path.read_text(encoding="utf-8")))
+        restored = self.durable_manager().records()[0]
+        self.assertEqual((restored.status, restored.acknowledgedAt), ("needs_recovery", None))
+
+    def test_dismissal_that_cannot_be_saved_leaves_the_notice(self):
+        self.manager = self.durable_manager()
+        admission, _ = self.admission("/api/drawings/sheets", {})
+        self.manager.replied(admission, HttpResult(422, b'{"detail":"refused"}', {}))
+        with patch("monkeyhub_api.runtime.os.replace", side_effect=OSError("disk write failed")), \
+             self.assertRaises(HubFailure) as failure:
+            self.manager.acknowledge(admission.record.operationId)
+        self.assertEqual(failure.exception.error.code, "OPERATION_LOG_UNAVAILABLE")
+        self.assertIsNone(self.record(admission).acknowledgedAt)
+        self.assertIsNone(self.durable_manager().records()[0].acknowledgedAt)
+
+    def test_dismissed_retained_failure_is_kept_by_id_until_it_reads_otherwise(self):
+        self.manager = self.durable_manager()
+        retained = {"candidates": [{"candidateId": "old-run", "status": "failed", "error": "incomplete"}],
+                    "jobs": [], "stages": [], "branches": []}
+        self.manager.reconcile(retained, worker_alive=False)
+        dismissed = self.manager.acknowledge("candidate:old-run")
+        self.assertEqual((dismissed.source, dismissed.status), ("retained", "failed"))
+        restarted = self.durable_manager()
+        restarted.reconcile(retained, worker_alive=False)
+        observed = lambda manager: next(row for row in manager.records() if row.operationId == "candidate:old-run")
+        self.assertEqual(observed(restarted).acknowledgedAt, dismissed.acknowledgedAt)
+        # The same run read later as needing recovery is reported again, undismissed.
+        restarted.reconcile({**retained, "candidates": [{"candidateId": "old-run", "status": "needs_recovery"}]}, worker_alive=False)
+        self.assertEqual((observed(restarted).status, observed(restarted).acknowledgedAt), ("needs_recovery", None))
+
+    def test_dismiss_route_is_bound_to_its_runtime_and_project(self):
+        from monkeyhub_api.chat import _project
+        from monkeyhub_api.main import HubSettings, create_app as create_hub
+        hub = create_hub(HubSettings(runtime_root=self.root / "hub-app-runtime"))
+        client = TestClient(hub, base_url="http://127.0.0.1:8790")  # Without its lifespan, nothing is started.
+        self.addCleanup(client.close)
+        project_id, project_dir = _project(str(self.settings.project_dir))
+        self.manager = self.durable_manager()
+        runtime = ProjectRuntime("route-runtime", project_id, project_dir, self.manager, ProjectBinding.open(self.settings))
+        hub.state.runtimes._projects[runtime.runtime_id] = runtime
+        failed, _ = self.admission("/api/drawings/sheets", {})
+        self.manager.replied(failed, HttpResult(422, b'{"detail":"refused"}', {}))
+        waiting, _ = self.admission("/api/proposals", {})
+        self.manager.interrupted(waiting, "lost reply")
+
+        def dismiss(operation_id, **body):
+            return client.post(f"/api/runtime/operations/{operation_id}/acknowledge",
+                               json={"runtimeId": runtime.runtime_id, "projectId": project_id, **body})
+
+        answered = dismiss(failed.record.operationId)
+        self.assertEqual(answered.status_code, 200, answered.text)
+        self.assertEqual((answered.json()["operationId"], answered.json()["status"]), (failed.record.operationId, "failed"))
+        self.assertTrue(answered.json()["acknowledgedAt"])
+        listed = {row["operationId"]: row for row in client.get(f"/api/runtime/projects/{runtime.runtime_id}").json()["operations"]}
+        self.assertEqual(listed[failed.record.operationId]["acknowledgedAt"], answered.json()["acknowledgedAt"])
+        self.assertIsNone(listed[waiting.record.operationId]["acknowledgedAt"])
+        for operation_id, body, status, code in (
+                (waiting.record.operationId, {}, 409, "OPERATION_NOT_ACKNOWLEDGEABLE"),
+                (str(uuid4()), {}, 404, "OPERATION_NOT_FOUND"),
+                (failed.record.operationId, {"projectId": "another-project"}, 409, "PROJECT_MISMATCH"),
+                (failed.record.operationId, {"runtimeId": "another-runtime"}, 404, "RUNTIME_NOT_FOUND")):
+            with self.subTest(code=code):
+                refused = dismiss(operation_id, **body)
+                self.assertEqual((refused.status_code, refused.json()["code"]), (status, code))
+        self.assertEqual(dismiss(failed.record.operationId, note="extra").status_code, 422)
 
     def test_cold_operation_binding_refuses_other_project_or_same_id_at_other_path(self):
         self.manager = self.durable_manager()
