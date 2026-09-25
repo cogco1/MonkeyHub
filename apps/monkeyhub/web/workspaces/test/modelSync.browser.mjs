@@ -945,7 +945,8 @@ let releaseBoot;const bootHeld=new Promise(resolve=>releaseBoot=resolve);
 await page.route('**/api/project',async route=>{await bootHeld;await route.continue();},{times:1});
 const opening=openSeed('initial model');opening.catch(()=>{});// awaited below; a failure still surfaces there
 const boot=page.locator('.boot[data-mode="boot"]');
-await boot.locator('.boot__elapsed').waitFor();
+// This is the mode's first navigation, so the overlay also waits for Vite's dependency scan.
+await boot.locator('.boot__elapsed').waitFor({timeout:180000});
 assert.equal(await boot.locator('.boot__title').innerText(),'Opening…','the boot overlay is headed by what it does');
 assert.match(await boot.locator('.boot__elapsed').innerText(),/^Still waiting · \d+ s$/);
 assert.equal(await boot.locator('[role="status"] .boot__elapsed').count(),0,'the count is not a live region');
