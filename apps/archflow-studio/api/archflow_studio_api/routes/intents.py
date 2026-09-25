@@ -54,6 +54,7 @@ from ..application.intent_requests import action_preflight
 from ..application.study import read_study, study_evidence_context
 from ..application.projection import StateProjection, project_state, require_actionable
 from ..application.proposals import proposal_from
+from ..application.visual_reviews import review_sources, visual_provider
 from ..transport.errors import (
     BlockedNeedsHuman,
     MissingEditableControl,
@@ -73,6 +74,7 @@ from ..transport.intent import (
     IntentRequestDto,
     IntentTimingsDto,
     ModelAnnotationsDto, ModelAnnotationsRequestDto, model_annotations_dto,
+    VisualReviewDto, VisualReviewRefusalDto, VisualReviewRequestDto, visual_review_dto, visual_review_from,
     agent_dto,
     document_annotation_ref_from,
     document_annotations_dto,
@@ -652,3 +654,34 @@ def compile_intent(request: Request, body: IntentRequestDto) -> IntentDto:
         pending_intent=pending_dto(resolution.pending),
         document_comment_ref=None if document_comment_ref is None else document_comment_ref.uri,
     )
+
+
+@router.post(
+    "/visual-reviews",
+    response_model=VisualReviewDto,
+    response_model_by_alias=True,
+    responses={
+        409: {"model": VisualReviewRefusalDto,
+              "description": "Refused before the provider was called; the allowance is unchanged"},
+        502: {"model": VisualReviewRefusalDto,
+              "description": "The provider call failed; budgetState counts the spent review and usage its cost"},
+    },
+)
+def review_visual_sources(request: Request, body: VisualReviewRequestDto) -> VisualReviewDto:
+    """Render the named exact sources through their owners, then look at them once (GH-303).
+
+    The caller sends source identities, never pixels. A model source is drawn by
+    the model-view projection in each view of the recipe; a registered page is
+    rasterized by the page export. Each owner verifies its exact source before
+    it draws, so a stale or foreign source is refused before the provider is
+    called. The loop's allowance travels with the request and comes back
+    updated: this route keeps no loop state and writes nothing to the project.
+    """
+
+    binding = bound_project(request.app.state)
+    _require_bound_project(binding, body.project_id)
+    provider = visual_provider(request.app.state.intent_compiler)
+    review, budget = visual_review_from(body)
+    result = review_sources(binding, review, reason=body.reason, budget=budget, provider=provider,
+                            addressed=tuple(body.addressed_finding_ids), monitor=request.app.state.monitor)
+    return visual_review_dto(result, budget)

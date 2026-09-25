@@ -24,6 +24,11 @@ from ..application.gestures import (
     DocumentAnnotationPage, DocumentAnnotationRef, DocumentGesture, DocumentTracingCalibration, Gesture, GestureHit,
 )
 from ..application.intent_agent import Compilation
+from ..application.visual_observation import (
+    MAX_CRITERIA, MAX_FACT_TEXT, MAX_FACTS, MAX_FINDINGS, MAX_FRAMES, MAX_PRESERVE, MAX_PRIOR, MAX_TEXT, POLISH_CAP,
+    Criterion, PriorFinding, SourceRef, VisualReviewBudget, VisualReviewRequest, VisualReviewResult,
+)
+from ..application.visual_reviews import planned_frames
 from .capability import CapabilitySourceDto, CapabilityTargetDto, KeepScopeDto, detail_dto
 from .decisions import DecisionContextDto, DecisionDto, decision_dto
 from .proposal import STATE_DIGEST_PATTERN, ProposalDto
@@ -922,3 +927,238 @@ def agent_dto(compilation: Compilation) -> AgentReadingDto:
         receipt_id=None if receipt is None else receipt.receipt_id,
         status=None if receipt is None else receipt.status.value,
     )
+
+
+# ---- POST /api/visual-reviews (GH-303) ----------------------------------------------
+#
+# The request names exact sources and has no field for pixels: the runtime
+# renders every frame from those sources through their projection owners.
+
+VisualDomain = Literal["modeling", "board", "drawing", "render"]
+FindingType = Literal["spatial", "proportion", "relation", "preserve", "artifact", "legibility", "composition"]
+VisualView = Annotated[str, Field(pattern=r"^[a-z0-9][a-z0-9-]{0,31}$")]
+
+
+class ModelSourceRefDto(BaseModel):
+    """One exact retained model: its run, the State digest it projects to and the model asset it exported."""
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
+
+    kind: Literal["model"]
+    run_id: str = Field(alias="runId", min_length=1, max_length=200)
+    state_digest: str = Field(alias="stateDigest", pattern=STATE_DIGEST_PATTERN)
+    asset_sha256: str = Field(alias="assetSha256", pattern=STATE_DIGEST_PATTERN)
+
+
+class PageSourceRefDto(BaseModel):
+    """One page of an exact registered document revision (a drawing, a render result, an upload)."""
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
+
+    kind: Literal["page"]
+    run_id: str = Field(alias="runId", min_length=1, max_length=200)
+    asset_sha256: str = Field(alias="assetSha256", pattern=STATE_DIGEST_PATTERN)
+    revision_ref: Annotated[str, Field(min_length=1, max_length=400)] | None = Field(
+        alias="revisionRef",
+        description="The registration's exact revisionRef, as GET /api/documents lists it; null names the "
+        "registration that carries none and is never a wildcard.",
+    )
+    page_index: int = Field(alias="pageIndex", ge=0, strict=True)
+
+
+VisualSourceRefDto = Annotated[ModelSourceRefDto | PageSourceRefDto, Field(discriminator="kind")]
+
+
+class VisualCriterionDto(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
+
+    criterion_id: str = Field(alias="criterionId", pattern=r"^[a-z0-9][a-z0-9-]{0,39}$")
+    text: str = Field(min_length=1, max_length=300)
+
+
+class PriorFindingDto(BaseModel):
+    """One compact unresolved finding of an earlier review in the same loop."""
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
+
+    finding_ref: str = Field(alias="findingRef", min_length=1, max_length=40)
+    type: FindingType
+    description: str = Field(min_length=1, max_length=300)
+
+
+class VisualBudgetStateDto(BaseModel):
+    """One task loop's Harness allowance, held by the caller between reviews.
+
+    The runtime keeps no loop state: send the ``budgetState`` of the last answer
+    (or a fresh one for a new loop) with each review of the loop.
+    """
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
+
+    task_class: Literal["deterministic_edit", "spatial_formal", "polish"] = Field(
+        alias="taskClass",
+        description="deterministic_edit takes no review; spatial_formal allows a first_bundle review and one "
+        "after_repair follow-up; polish allows the 1-4 polish rounds an explicit request named.",
+    )
+    allowed: int = Field(ge=0, le=POLISH_CAP, strict=True,
+                         description="The policy's allowance for taskClass: 0, 2, or the polish rounds.")
+    used: int = Field(ge=0, strict=True, description="Reviews this loop has spent; at or past allowed is exhausted.")
+    last_finding_ids: list[Annotated[str, Field(pattern=r"^f[1-9][0-9]?$")]] = Field(
+        alias="lastFindingIds", default_factory=list, max_length=MAX_FINDINGS,
+        description="The finding ids of the loop's last review, which an after_repair review must address.",
+    )
+
+
+class VisualReviewRequestDto(BaseModel):
+    """One bounded visual review of exact sources, which the runtime renders itself."""
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
+
+    project_id: str = Field(alias="projectId", min_length=1)
+    domain: VisualDomain
+    source_refs: list[VisualSourceRefDto] = Field(
+        alias="sourceRefs", min_length=1, max_length=MAX_FRAMES,
+        description="A modeling review names one exact model; board, drawing and render reviews name 1-4 "
+        "registered pages with distinct page indexes.",
+    )
+    view_recipe: list[VisualView] = Field(
+        alias="viewRecipe", min_length=1, max_length=MAX_FRAMES,
+        description="For a model, the model-view directions to render (front, back, left, right, top); for "
+        "pages, page-<pageIndex> of each named page.",
+    )
+    task: str = Field(min_length=1, max_length=MAX_TEXT)
+    criteria: list[VisualCriterionDto] = Field(min_length=1, max_length=MAX_CRITERIA)
+    preserve: list[Annotated[str, Field(min_length=1, max_length=300)]] = Field(
+        default_factory=list, max_length=MAX_PRESERVE)
+    prior_observations: list[PriorFindingDto] = Field(
+        alias="priorObservations", default_factory=list, max_length=MAX_PRIOR)
+    known_facts: list[Annotated[str, Field(min_length=1, max_length=MAX_FACT_TEXT)]] = Field(
+        alias="knownFacts", default_factory=list, max_length=MAX_FACTS,
+        description="Short exact readback values (elevations, clear dimensions) the observer should not ask "
+        "about again.",
+    )
+    reason: Literal["first_bundle", "after_repair", "polish_round"]
+    addressed_finding_ids: list[str] = Field(
+        alias="addressedFindingIds", default_factory=list, max_length=MAX_FINDINGS,
+        description="For after_repair only: the findings of the last review that the repair addressed.",
+    )
+    budget_state: VisualBudgetStateDto = Field(alias="budgetState")
+
+    @model_validator(mode="after")
+    def exact_review(self) -> VisualReviewRequestDto:
+        if self.addressed_finding_ids and self.reason != "after_repair":
+            raise ValueError("addressedFindingIds belong to an after_repair review")
+        visual_review_from(self)
+        return self
+
+
+class EvidenceRegionDto(BaseModel):
+    """A normalized box, top-left origin, on one frame this review sent."""
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True)
+
+    view_ref: str = Field(alias="viewRef")
+    x0: float
+    y0: float
+    x1: float
+    y1: float
+
+
+class VisualFindingDto(BaseModel):
+    """What is visible about the request's own criteria or preserve conditions: evidence, never a verdict."""
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True)
+
+    finding_id: str = Field(alias="findingId")
+    type: FindingType
+    target_refs: list[str] = Field(alias="targetRefs")
+    description: str
+    confidence: float
+    severity: Literal["info", "minor", "major"]
+    evidence_region: EvidenceRegionDto | None = Field(alias="evidenceRegion")
+
+
+class VisualObservationDto(BaseModel):
+    """The observation bound to the frames the runtime rendered and sent; the provider never names its source."""
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True)
+
+    review_id: str = Field(alias="reviewId")
+    review_index: int = Field(alias="reviewIndex")
+    domain: VisualDomain
+    source_refs: list[VisualSourceRefDto] = Field(alias="sourceRefs")
+    view_refs: list[str] = Field(alias="viewRefs")
+    frame_sha256: list[str] = Field(alias="frameSha256", description="SHA-256 of each frame sent, in viewRefs order.")
+    observations: list[VisualFindingDto]
+    unresolved_questions: list[str] = Field(alias="unresolvedQuestions")
+    suggested_checks: list[str] = Field(alias="suggestedChecks")
+
+
+class ObservationUsageDto(BaseModel):
+    """What one review cost, as the provider reported it."""
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True)
+
+    provider: str
+    model: str
+    provider_calls: int = Field(alias="providerCalls")
+    image_inputs: int = Field(alias="imageInputs")
+    image_bytes: int = Field(alias="imageBytes")
+    input_tokens: int | None = Field(alias="inputTokens")
+    cached_input_tokens: int | None = Field(alias="cachedInputTokens")
+    output_tokens: int | None = Field(alias="outputTokens")
+    reasoning_output_tokens: int | None = Field(alias="reasoningOutputTokens")
+    duration_ms: int | None = Field(alias="durationMs")
+    receipt_id: str | None = Field(alias="receiptId")
+
+
+class VisualReviewDto(BaseModel):
+    """The wire form of ``POST /api/visual-reviews``."""
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True)
+
+    observation: VisualObservationDto
+    usage: ObservationUsageDto
+    budget_state: VisualBudgetStateDto = Field(alias="budgetState",
+                                               description="The loop's allowance after this review; send it back with the next.")
+
+
+class VisualReviewRefusalDto(BaseModel):
+    """A refused or failed visual review: the error body, plus what the caller needs to go on."""
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True)
+
+    code: str
+    detail: str
+    source_ref: VisualSourceRefDto | None = Field(
+        alias="sourceRef", default=None,
+        description="VISUAL_SOURCE_MISMATCH: the named source its owner does not retain exactly.")
+    budget_state: VisualBudgetStateDto | None = Field(
+        alias="budgetState", default=None,
+        description="The allowance as it now stands: unchanged by a refusal, one review spent by a failed provider call.")
+    usage: ObservationUsageDto | None = Field(default=None, description="What a failed provider call still cost.")
+
+
+def visual_review_from(dto: VisualReviewRequestDto) -> tuple[VisualReviewRequest, VisualReviewBudget]:
+    """The channel's own request and the loop's resumed allowance, refusing what the channel refuses."""
+
+    state = dto.budget_state
+    budget = VisualReviewBudget.resume(state.task_class, allowed=state.allowed, used=state.used,
+                                       last_findings=state.last_finding_ids)
+    request = VisualReviewRequest(
+        domain=dto.domain,
+        source_refs=tuple(SourceRef.from_dict(row.model_dump(by_alias=True)) for row in dto.source_refs),
+        view_recipe=tuple(dto.view_recipe), task=dto.task,
+        criteria=tuple(Criterion(row.criterion_id, row.text) for row in dto.criteria),
+        preserve=tuple(dto.preserve), budget=budget.allowed,
+        prior_observations=tuple(PriorFinding(row.finding_ref, row.type, row.description)
+                                 for row in dto.prior_observations),
+        known_facts=tuple(dto.known_facts),
+    )
+    planned_frames(request)
+    return request, budget
+
+
+def visual_review_dto(result: VisualReviewResult, budget: VisualReviewBudget) -> VisualReviewDto:
+    return VisualReviewDto.model_validate({"observation": result.observation.to_dict(),
+                                           "usage": result.usage.to_dict(), "budgetState": budget.to_dict()})
