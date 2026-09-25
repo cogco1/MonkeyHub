@@ -109,7 +109,7 @@ class RestoredContinuationWithoutCadTests(unittest.TestCase):
         return client
 
     def test_a_restored_project_continues_from_its_restored_run(self) -> None:
-        # A: one candidate on the source, then export it.
+        # A: one candidate on the source, explicitly continued, then export it.
         with self.client(self.source) as source_client:
             _, job_a = continue_candidate(
                 source_client,
@@ -118,10 +118,12 @@ class RestoredContinuationWithoutCadTests(unittest.TestCase):
                 element_id="portico-base",
             )
             self.assertEqual(job_a["status"], "succeeded", job_a)
-            # The architect continues from A explicitly; a result alone never moves the position.
-            position = source_client.get("/api/working-draft").json()
-            chosen = source_client.put("/api/working-draft", json={"projectId": PROJECT_ID,
-                                       "runId": job_a["candidateId"], "baseRevisionSha256": position["revisionSha256"]})
+            # Only an explicit choice moves the saved working position (GH-234 Q2).
+            working = source_client.get("/api/working-draft").json()
+            chosen = source_client.put("/api/working-draft", json={
+                "projectId": PROJECT_ID, "runId": job_a["candidateId"],
+                "baseRevisionSha256": working["revisionSha256"],
+            })
             self.assertEqual(chosen.status_code, 200, chosen.text)
         run_a = job_a["candidateId"]
         source_head = self.repository.read_head()
@@ -169,8 +171,9 @@ class RestoredContinuationWithoutCadTests(unittest.TestCase):
             )
         )
         self.assertEqual(delta["source_run_ref"]["run_id"], run_a)
-        # B is recorded for recovery without moving the position (GH-234 Q2), while
-        # A and every other archived file remain byte-identical to the restored source.
+        # B is listed for recovery but leaves the saved working position on A,
+        # while A and every other archived file remain byte-identical to the
+        # restored source.
         working_b, _ = restored.read_working_draft()
         self.assertEqual(working_b["current"], run_a)
         self.assertEqual(working_b["runs"][run_a], working_a["runs"][run_a])

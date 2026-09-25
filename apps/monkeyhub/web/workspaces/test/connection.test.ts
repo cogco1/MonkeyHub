@@ -202,6 +202,8 @@ async function editingSessionHarness(t: TestContext) {
     workingCopiesReply: null as null | (() => Response | Promise<Response>),
     workingDraft: null as WorkingDraftDto | null,
     draftWriteStatus: 200,
+    /** Selections refused as stale because an autosave wrote first. */
+    staleDraftWrites: 0,
     draftWrites: [] as Record<string, unknown>[],
   };
   Object.defineProperty(globalThis, "window", { configurable: true, value: {
@@ -241,6 +243,11 @@ async function editingSessionHarness(t: TestContext) {
       if (request.method === "PUT") {
         const body = await request.json();
         control.draftWrites.push(body);
+        if (control.staleDraftWrites > 0) {
+          control.staleDraftWrites -= 1;
+          control.workingDraft = { ...control.workingDraft!, revisionSha256: `${control.workingDraft?.revisionSha256}+autosave` };
+          return Response.json({ code: "WORKING_DRAFT_STALE", detail: "An autosave wrote first." }, { status: 409 });
+        }
         if (control.draftWriteStatus !== 200) return Response.json({ code: "STALE_WORKING_DRAFT", detail: "The draft changed in another window." }, { status: control.draftWriteStatus });
         assert.equal(body.baseRevisionSha256, control.workingDraft?.revisionSha256);
         control.workingDraft = { ...control.workingDraft!, revisionSha256: "updated",
@@ -326,7 +333,7 @@ test("a project mismatch in the retained draft refuses cold recovery", async (t)
   assert.ok(!h.requests.some(request => request.startsWith("GET /api/state")));
 });
 
-test("quiet adoption of the position already retained by the worker does not write twice", async (t) => {
+test("a quiet adoption the saved position already names does not write it again", async (t) => {
   const h = await editingSessionHarness(t);
   h.control.workingDraft = { projectId: "project-a", revisionSha256: "worker-position",
     current: { runId: "chosen-a", updatedAt: "2026-09-21T00:00:00Z" } };
@@ -336,6 +343,58 @@ test("quiet adoption of the position already retained by the worker does not wri
   await controller.reload("candidate-b", undefined, undefined, true);
   assert.equal(h.control.draftWrites.length, 0);
   assert.equal(controller.getSnapshot().session.value.sourceRunId, "candidate-b");
+});
+
+const syncedFromChosen = { projectId: "project-a", sourceRunId: "chosen-a", stateDigest: "a".repeat(64), sourceStageRef: null };
+
+test("the architect's own Sync becomes the saved base without re-projecting the tab", async (t) => {
+  const h = await editingSessionHarness(t);
+  h.control.workingDraft = { projectId: "project-a", revisionSha256: "first",
+    current: { runId: "chosen-a", updatedAt: "2026-09-21T00:00:00Z" } };
+  const controller = h.createSessionController("", ["working-draft"]);
+  await controller.reload();
+  h.requests.length = 0;
+  assert.equal(await controller.saveSyncedBase("synced-c", syncedFromChosen), true);
+  assert.deepEqual(h.control.draftWrites.map(row => [row.runId, row.baseRevisionSha256]), [["synced-c", "first"]]);
+  const value = controller.getSnapshot().session.value;
+  assert.equal(value.sourceRunId, "chosen-a", "The tab keeps its editing base and what it shows");
+  assert.equal(value.workingDraft.current.runId, "synced-c");
+  assert.ok(!h.requests.some(request => request.startsWith("GET /api/state")), "Saving the base never re-projects the tab");
+  const reopened = h.createSessionController("", ["working-draft"]);
+  assert.equal((await reopened.reload()).sourceRunId, "synced-c", "Reopening starts from the Sync result");
+});
+
+test("a Sync result never overrides a base chosen in another window or one this tab moved to", async (t) => {
+  const h = await editingSessionHarness(t);
+  h.control.workingDraft = { projectId: "project-a", revisionSha256: "first",
+    current: { runId: "chosen-a", updatedAt: "2026-09-21T00:00:00Z" } };
+  const controller = h.createSessionController("", ["working-draft"]);
+  await controller.reload();
+  h.control.workingDraft = { ...h.control.workingDraft, revisionSha256: "elsewhere",
+    current: { runId: "candidate-b", updatedAt: "2026-09-21T00:02:00Z" } };
+  assert.equal(await controller.saveSyncedBase("synced-c", syncedFromChosen), false);
+  assert.equal(h.control.draftWrites.length, 0, "Another window's explicit choice stands");
+  assert.equal(controller.getSnapshot().session.value.workingDraft.current.runId, "candidate-b");
+  await controller.reload("default-a");
+  const writes = h.control.draftWrites.length;
+  assert.equal(await controller.saveSyncedBase("synced-c", syncedFromChosen), false);
+  assert.equal(h.control.draftWrites.length, writes, "This tab's own later choice stands");
+  const legacy = h.createSessionController("", []);
+  await legacy.reload();
+  assert.equal(await legacy.saveSyncedBase("synced-c", syncedFromChosen), false);
+  assert.equal(h.control.draftWrites.length, writes, "Without a project working draft nothing is saved");
+});
+
+test("saving a Sync result over an empty position rereads once an autosave moved the revision", async (t) => {
+  const h = await editingSessionHarness(t);
+  h.control.workingDraft = { projectId: "project-a", revisionSha256: "first", current: null };
+  const controller = h.createSessionController("", ["working-draft"]);
+  assert.equal((await controller.reload()).projection.referenceRun.runId, "default-a");
+  h.control.staleDraftWrites = 1;
+  const fromDefault = { projectId: "project-a", sourceRunId: "default-a", stateDigest: "b".repeat(64), sourceStageRef: null };
+  assert.equal(await controller.saveSyncedBase("synced-c", fromDefault), true);
+  assert.deepEqual(h.control.draftWrites.map(row => row.baseRevisionSha256), ["first", "first+autosave"]);
+  assert.equal(h.control.workingDraft.current?.runId, "synced-c");
 });
 
 test("working-copy capability permits a cold list read without selecting its option as the editing base", async (t) => {

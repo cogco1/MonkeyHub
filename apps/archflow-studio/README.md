@@ -448,9 +448,7 @@ project moved under you" in the transcript.
   rejected by `require_project_relative_path`.
 - **Preview Slice 01 is retired.** The stdlib gateway, the presence-probe kernel, the
   monolithic shell and the old launcher were deleted in Task 9 and are retained at the tag
-  `studio-preview-slice-01`. P108 plans an archive note at
-  `docs/mapping/archive/studio-preview-slice-01.md`; until it is written, the tag is the
-  record.
+  `studio-preview-slice-01`; the tag is the record.
 
 ## 8. Verify
 

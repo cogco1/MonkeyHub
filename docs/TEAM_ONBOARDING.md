@@ -21,14 +21,14 @@ ArchFlow 源码接入默认从 GitHub `main` 开始，记录实际提交和对�
 **第一次默认任务：接入复现。** 使用应用从 Hub 开始；开发时只准备本次任务需要的仓库与环境。
 把版本、实际结果和最卡的一步回传到约定的 Issue/PR。没有发现真实问题，就不为了“交第一个 PR”制造代码改动。
 
-整合包按包内 `source-version.txt` 标明的版本运行，更新源码不会自动更新已安装的包。第二台干净 Windows 和第二位使用者的实际验收仍需完成；下面的源码接入回路也不替代真实项目试用。
+整合包按包内 `source-version.txt` 标明的版本运行，更新源码不会自动更新已安装的包。干净环境安装由每个 PR 必跑的 Windows 桌面包检查演练（见 #21 的关闭说明）；第二位使用者的首次使用验收由 [#86](https://github.com/cogco1/MonkeyHub/issues/86) 承接。下面的源码接入回路也不替代真实项目试用。
 
 ## 今天按什么顺序收口
 
 - [ ] **主线负责人：给出接入版本。** 给出所选仓库的准确提交、任务和审查人。不要让新成员猜维护者本机的未提交版本。
 - [ ] **主线负责人：核对所选版本的检查结果。** ArchFlow 的 [远端工作流](../.github/workflows/verify.yml) 已包含架构检查、核心与 Studio API 测试、Web 检查及 Windows/Linux 首次接入检查；以该提交实际 Actions 结果为准。
 - [ ] **新成员与她的 Agent：独立复现。** 从 GitHub 获取代码，在自己的环境完成所选仓库的最小回路。
-- [ ] **双方：交接一个真实小任务。** 依据复现中实际遇到的问题，在现有卡下登记一个 Issue/lane、明确基线、窄路径、责任人与审查/交接对象，再使用独立 worktree 和短分支。第二人复跑或审查后才算完成交接；未指定的人选如实标明。
+- [ ] **双方：交接一个真实小任务。** 依据复现中实际遇到的问题，先开或选定一个 GitHub Issue；需要源码并发协调时再在 registry 登记 `GH-<issue>` lane，明确基线、窄路径、责任人与审查/交接对象，再使用独立 worktree 和短分支。第二人复跑或审查后才算完成交接；未指定的人选如实标明。
 
 这四项完成后，再决定新的模型功能。第一天不要求跑完整建筑、接入外部模型服务或增加通用框架。
 
@@ -76,11 +76,10 @@ git -C $ToolboxSource rev-parse HEAD
 
 ```powershell
 python tools/devctl.py work
-python tools/devctl.py work P115
 python tools/devctl.py module compiled-cad-execution
 ```
 
-上例查询 CAD 任务；按自己的任务更换卡号与模块，用 `work P###/lane` 查看具体 lane。用返回的精确 module id 再查契约与真实调用方，确认本 lane 的路径及当前重叠，再从记录的基线创建或复用自己的 worktree。字段、状态和交接方式见[协作流程](../CONTRIBUTING.md#登记与查看并行任务)。共享契约不够时，先让现有 owner 的上游 PR 合入 `main`，再更新依赖分支；不复制接口、不吸收另一人的 WIP，也不要求每天 rebase。
+上例查询 CAD 任务；按自己的任务更换模块，用 `work GH-<issue>/<lane>` 查看具体 lane。`work` 只列登记中的 lane 和不占路径的 legacy 卡；[P115](mapping/planning/P115-capability-consolidation.md) 是冻结的历史索引，不从中推导当前任务。用返回的精确 module id 再查契约与真实调用方，确认本 lane 的路径及当前重叠，再从记录的基线创建或复用自己的 worktree。字段、状态和交接方式见[协作流程](../CONTRIBUTING.md#登记与查看并行任务)。共享契约不够时，先让现有 owner 的上游 PR 合入 `main`，再更新依赖分支；不复制接口、不吸收另一人的 WIP，也不要求每天 rebase。
 
 ## 3. 先跑工具箱
 
@@ -257,9 +256,9 @@ python -m unittest tests.test_blender_cad tests.test_cad_backend_contract -v
 
 测试使用临时 workspace/project，通过两个独立后台进程先保存、再打开检查。未设置该变量时，真实宿主用例会 skip，不能将其写成通过。已有精确输出可由 runner 复用；有 source 时保留来源文件并按当前程序完整重建，不承诺增量 patch 或 `.blend` 字节重现。
 
-PR #18 已在 Blender 4.3.2 完成 15 项测试，包括真实保存/冷读、重启复用和候选修改；其公共 CAD、runner、record kinds 与 CLI 的另外 112 项检查通过。Rhino 独立执行按[真实宿主验收命令](../archflow/adapters/README.md#rhino-host-acceptance)显式启用，默认 skip 不算验收。**新同事在自己环境独立复跑和接手仍待完成**。
+PR #18 已在 Blender 4.3.2 完成 15 项测试，包括真实保存/冷读、重启复用和候选修改；其公共 CAD、runner、record kinds 与 CLI 的另外 112 项检查通过。Rhino 独立执行按[真实宿主验收命令](../archflow/adapters/README.md#rhino-host-acceptance)显式启用，默认 skip 不算验收。#13 已于 2026-09-15 关闭：第二个账号从 fresh clone 在真实 Blender 4.3.0 上复跑通过（由 agent 执行），关闭时未要求真人交接。
 
-接手时先运行 `python tools/devctl.py work` 与 `work P115/blender`，把 lane 的 GitHub PR 是否已合入和实际 `main` 核对清楚；历史 `review` 状态不代表该实现尚未合入。用 `python -m unittest tests.test_devctl_work tests.test_archcheck_scopes -v` 可复跑三条独立模拟 lane、故意生产路径重叠与明确先后交接。测试演练不代替真人接手：新成员应在自己的 worktree 复现选定任务，将版本、结果和遇到的问题交给约定 reviewer。开发继续沿公共 CAD 契约；缺少共享契约时先提交上游 PR，再更新依赖分支，Blender lane 不修改 Hub/App Server 实现。
+接手时先读 #13 与已合入的 #15、#17、#18，再运行 `python tools/devctl.py work` 确认有无登记中的 Blender lane；原 `P115/blender` lane 已关闭。用 `python -m unittest tests.test_devctl_work tests.test_archcheck_scopes -v` 可复跑三条独立模拟 lane、故意生产路径重叠与明确先后交接。测试演练不代替真人接手：新成员应在自己的 worktree 复现选定任务，将版本、结果和遇到的问题交给约定 reviewer。开发继续沿公共 CAD 契约；缺少共享契约时先提交上游 PR，再更新依赖分支，Blender lane 不修改 Hub/App Server 实现。
 
 ## 6. 把这段发给她的 Agent
 
@@ -284,7 +283,7 @@ https://github.com/cogco1/ARCHFLOW_V4/blob/main/docs/TEAM_ONBOARDING.md
 
 ```text
 任务：接入复现 / 已约定的小修改
-Issue/lane：#<issue> / P###/<lane>；仅接入复现可写不涉及修改
+Issue/lane：#<issue> / GH-<issue>/<lane>（续做 legacy 卡才写 P###）；仅接入复现可写不涉及修改
 源码：ArchFlow <SHA>；共享工具箱 <SHA>
 分支/检出/基线：<branch>；<worktree>；<base SHA>
 责任/审查/交接：<实际对象与顺序，未指定则明说>

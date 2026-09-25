@@ -45,6 +45,14 @@ interface SessionSnapshot {
   readonly persistenceFailed: boolean;
 }
 
+/** The exact base a local Sync batch started from. */
+export interface SyncedBaseSource {
+  readonly projectId: string;
+  readonly sourceRunId: string | null;
+  readonly stateDigest: string;
+  readonly sourceStageRef?: string | null;
+}
+
 export interface SessionHandle extends SessionSnapshot {
   /**
    * `persist: false` follows a position the server already holds (the Working
@@ -55,6 +63,13 @@ export interface SessionHandle extends SessionSnapshot {
   /** Refresh version choices without re-projecting or selecting an editing base. */
   refreshWorkingCopies(): Promise<readonly WorkingCopyDto[] | null>;
   refreshWorkingDraft(): Promise<WorkingDraftDto | null>;
+  /**
+   * Save the architect's own completed Sync as the next editing base without
+   * re-projecting this tab or changing what it shows. Answers false, writing
+   * nothing, when the batch no longer starts from this tab's editing base or
+   * the saved position names another explicit choice; that choice stands.
+   */
+  saveSyncedBase(runId: string, source: SyncedBaseSource): Promise<boolean>;
   /** Re-project when the error says the base moved. Answers whether it did. */
   recoverFromStaleBase(error: StudioApiError): boolean;
 }
@@ -148,8 +163,9 @@ export function createSessionController(studio: StudioClient, serverBaseUrl = ""
         throw new StudioApiError({ status: 0, code: "EDITING_BASE_UNAVAILABLE", detail:
           `Run ${runId} cannot currently be restored as an editing base. Its verified state must match its receipt and current published base. ` + projection.honesty.join(" ") });
       }
-      // The worker usually retains this position already. A later local batch
-      // can still start from the original source and must advance it explicitly.
+      // Only an explicit choice moves the saved position: finishing a generated
+      // candidate never does (GH-234 Q2). A quiet background adoption of the
+      // architect's own Sync selects it here unless the position already names it.
       if (workingDraft && persistEditingBase && persist &&
         ((requestedRunId !== undefined && (!background || workingDraft.current?.runId !== runId)) ||
           (workingDraft.revisionSha256 == null && legacyChoice !== null))) {
@@ -199,6 +215,57 @@ export function createSessionController(studio: StudioClient, serverBaseUrl = ""
     return workingDraft;
   };
 
+  /** This tab's session while its editing base is still exactly `source`. */
+  const sessionOn = (source: SyncedBaseSource): Session | null => {
+    if (snapshot.session.status !== "ready") return null;
+    const value = snapshot.session.value;
+    const { projection } = value;
+    const baseRunId = projection.referenceRunSource === "none" ? null : projection.referenceRun.runId;
+    return value.project.projectId === source.projectId && baseRunId === source.sourceRunId &&
+      projection.stateDigest === source.stateDigest &&
+      (projection.sourceStageRef ?? null) === (source.sourceStageRef ?? null) ? value : null;
+  };
+  const publishWorkingDraft = (projectId: string, workingDraft: WorkingDraftDto) => {
+    if (snapshot.session.status === "ready" && snapshot.session.value.project.projectId === projectId) {
+      publish({ ...snapshot, session: ready({ ...snapshot.session.value, workingDraft }) });
+    }
+  };
+
+  const saveSyncedBase = async (runId: string, source: SyncedBaseSource): Promise<boolean> => {
+    if (!persistEditingBase || !capabilities.includes("working-draft")) return false;
+    for (let attempt = 1; ; attempt += 1) {
+      if (!sessionOn(source)) return false;
+      const workingDraft = await studio.workingDraft();
+      // The architect moved this tab's base while the batch ran: that choice stands.
+      const session = sessionOn(source);
+      if (!session) return false;
+      const projectId = session.project.projectId;
+      if (workingDraft.projectId !== projectId) {
+        throw new StudioApiError({ status: 0, code: "EDITING_PROJECT_CHANGED", detail: "The saved draft belongs to another project." });
+      }
+      const saved = workingDraft.current?.runId ?? null;
+      if (saved === runId) {
+        publishWorkingDraft(projectId, workingDraft);
+        return true;
+      }
+      // ...or chose another base in another window: that choice stands too.
+      if (saved !== null && saved !== source.sourceRunId) {
+        publishWorkingDraft(projectId, workingDraft);
+        return false;
+      }
+      try {
+        publishWorkingDraft(projectId, await studio.selectWorkingDraft({ projectId, runId,
+          branchId: session.projection.sourceStageRef ? session.designHistory?.branchId ?? null : null,
+          baseRevisionSha256: workingDraft.revisionSha256 ?? null }));
+        return true;
+      } catch (cause) {
+        const error = asStudioApiError(cause);
+        // An autosave may have written between the read and this selection.
+        if (error.code !== "WORKING_DRAFT_STALE" || attempt >= 3) throw error;
+      }
+    }
+  };
+
   const refreshWorkingCopies = async (): Promise<readonly WorkingCopyDto[] | null> => {
     if (!capabilities.includes("working-copies") || snapshot.session.status !== "ready" || snapshot.changingBase) return null;
     const currentRead = ++workingCopiesRead;
@@ -232,6 +299,7 @@ export function createSessionController(studio: StudioClient, serverBaseUrl = ""
     reload,
     refreshWorkingCopies,
     refreshWorkingDraft,
+    saveSyncedBase,
     cancel() { request += 1; workingCopiesRead += 1; },
   };
 }
@@ -278,6 +346,7 @@ export function useSession(notice: (line: string) => void, capabilities: readonl
     reload,
     refreshWorkingCopies: controller.refreshWorkingCopies,
     refreshWorkingDraft: controller.refreshWorkingDraft,
+    saveSyncedBase: controller.saveSyncedBase,
     recoverFromStaleBase,
   };
 }

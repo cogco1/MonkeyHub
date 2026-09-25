@@ -1,25 +1,23 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@2",
-  "phase": "Delivered namespace, Stage/Branch/Candidate and UI slices are Git history. Legacy cards below retain only unresolved acceptance or unselected follow-ups; P108 and P115 have no source execution or reserved paths. Current source tasks are identified by GitHub Issue/PR and actual work lanes. Real project acceptance and formal issue remain explicit user actions.",
+  "phase": "GitHub Issues are the work items (#60); this registry records live source-edit coordination only. The remaining legacy P cards are blocked and claim no path; P115 is a frozen historical index. Real project acceptance and formal issue are explicit user actions.",
   "items": [
     {
       "id": "P115",
       "stream": "planning",
       "status": "blocked",
-      "goal": "No active source task or reserved paths. Await a concrete task or acceptance input for the unresolved historical C06, C08-C10, C12 and real-project trials; their completion has not been established. The dated six-group interaction pause does not block separately authorized UI work. New development follows its current GitHub Issue/PR and existing module owner.",
+      "goal": "Frozen legacy index (#60); claims no path and is not a task list. Derive no current work from it: new work starts from a GitHub Issue and live coordination is the active/review lanes shown by devctl work. The card names the open Issues that carry the remaining P115 acceptance and the questions left open at the freeze.",
       "depends_on": [],
       "write_scope": [],
       "card": "docs/mapping/planning/P115-capability-consolidation.md",
       "acceptance": [
-        "Close unresolved historical items only after checking their actual implementation, current Issue/PR and remaining acceptance; do not replay delivered work or treat an unchecked historical checkbox as a new implementation request.",
-        "Real-project revision, architectural effect and independent-member trials require their own completion evidence; local automated checks do not replace them.",
-        "Resume source work only for a concrete authorized task with an actual branch, worktree, base and narrow scope. Preserve unrelated work, exact-base binding, candidate continuation, explicit design acceptance and independent formal issue."
+        "The card claims no path and holds no task list; new work starts from a GitHub Issue.",
+        "Every still-valid P115 acceptance item is findable through an open Issue or registered legacy card named in the card; open questions are one line each and are not tasks.",
+        "Remove this entry and the card only after those Issues have closed and the owner has answered or dropped the listed questions."
       ],
       "notes": [
-        "2026-09-24: corrected stale root active status with lanes: []; released the historical parent source scope. No current execution lane was removed.",
-        "Delivered slices and dated authorizations remain in Git history and the historical card. This calibration neither marks unresolved product acceptance complete nor authorizes the unselected six-group expansion."
-      ],
-      "lanes": []
+        "2026-09-24 GH-60: frozen per #60. All lanes had already closed, so the empty lanes list is removed and devctl status and devctl work show the same blocked card. The 386-path historical write_scope is released; delivered records and the full C/F checklist remain at 04e71961. Kept rather than removed because ARCHITECTURE.md, the Stage plan and the P111 card still link it."
+      ]
     },
     {
       "id": "P105",
@@ -49,27 +47,24 @@
         "Roof and entablature fields are arrays over reference lines, not authored per member.",
         "Every producer publishes the datum its neighbour binds; engagements declared, no unexplained epsilon.",
         "Full unittest suite and the architecture firewall pass."
-      ],
-      "notes": [
-        "2026-09-08: feature follow-ups wait for P115 namespace/workspace migration. P108/P114 source handoff is frozen at b5e6677; its verification does not certify later migration changes."
       ]
     },
     {
       "id": "P108",
       "stream": "planning",
       "status": "blocked",
-      "goal": "No active source task or reserved paths. Independent-member trial and real-project revision acceptance remain unverified. Await a confirmed current Hub/project source and a new concrete revision request; the old page activation failure is historical, not evidence that the current Hub is unavailable.",
+      "goal": "Legacy card; claims no path. The Studio edit-and-review round is delivered and now runs inside MonkeyHub; its record is Git history. Blocked on one owner decision: whether the ARCHITECTURE 'Development order' stair and side-passage revision is still the first real-project trial. The independent first-user trial is carried by #86 and real-revision acceptance by #185.",
       "depends_on": [],
       "write_scope": [],
       "card": "docs/mapping/planning/P108-vibe-modeling-frontend.md",
       "acceptance": [
-        "Confirm the currently supplied Hub/project source, then complete one newly requested real-model revision and continuation with the stated keep conditions; do not replay a completed request.",
-        "Verify the actual visual and architectural result and independent-member trial separately; old API, browser and build results do not sign off the remaining project acceptance.",
-        "Keep candidate continuation, explicit design acceptance and formal issue separate. Any newly needed source fix follows the current Issue/PR, module owner and a narrowly registered source task."
+        "An independent first-time user completes one real edit-and-review workflow (#86); automated tests do not substitute for it.",
+        "A real-project revision is judged by its architectural result on that project (#185), not by candidate generation, API success or passing tests.",
+        "Page-image, annotation-overlay and reference-page input to a real model is checked on one real revision before it is claimed to work for drawings.",
+        "The owner decides whether the stair and side-passage revision in ARCHITECTURE 'Development order' step 1 is still wanted; until then it is not scheduled."
       ],
       "notes": [
-        "2026-09-24: removed historical frontend scopes and retired P102/P103 prerequisites; P108 was already blocked and did not claim live paths.",
-        "Old framework migration, reserved-port, tag and page-launch tasks are not current acceptance requirements. Delivered behavior remains in the card and Git history; unresolved real-user acceptance is retained without reserving source paths."
+        "2026-09-24 GH-60: kept as a blocked legacy card rather than removed, because ARCHITECTURE.md names P108 for the real-project trial, the P110/P111 cards and the Stage plan still reference it, and one owner decision is open. Released: the 71-path Studio write_scope, the finished P102/P103 dependencies, the wait for the retired Studio page, the P115 migration wait and the b5e6677 handoff freeze. The delivered record remains at 04e71961."
       ]
     },
     {
@@ -108,7 +103,7 @@
       "id": "P111",
       "stream": "planning",
       "status": "blocked",
-      "goal": "Follow up the existing-project trial of delivered candidate continuation: the selected run remains the next edit's exact base and preserves the prior revision. Implementation and isolated verification are complete; The remaining user trial is blocked pending the current page and a new specific edit. This does not establish whole-assembly usability or correct architectural dependencies.",
+      "goal": "Follow up the existing-project trial of delivered candidate continuation: the selected run remains the next edit's exact base and preserves the prior revision. Implementation and isolated verification are complete; The remaining user trial runs in the MonkeyHub Modeling workspace (the Studio page it named is retired) and waits for a new specific edit. This does not establish whole-assembly usability or correct architectural dependencies.",
       "depends_on": [],
       "write_scope": [
         "docs/mapping/",
@@ -125,7 +120,7 @@
         "Implementation and isolated verification are complete: A-to-B API regressions and six browser interactions pass, along with web tests, type/build, OpenAPI consistency and archcheck. Program and massing-option APIs and client calls also carry an explicit retained source after the 2026-09-06 repair, indexed in P115 C02; the client requires matching source and binding identity before generation. This card follows user trial rather than reopening implementation.",
         "This card replaces the earlier all-in-one acceptance bundle. P108/P110 retain their own obligations; no architectural check or formal-issue boundary is waived by permitting a local trial.",
         "The user selected whole-stair usability and revision as the next capability direction. Its bounded task, evaluation boundary and owner mapping are in docs/ARCHITECTURE.md. This card does not expand to implement it.",
-        "Internal simplification progress is maintained only in P115 C03/C09/C10. These items do not block P111 trial; preserve real validation and retained-data readers.",
+        "Internal simplification items P115 C03 (delivered), C09 and C10 (open questions in the frozen P115 index) do not block the P111 trial; preserve real validation and retained-data readers.",
         "Development order lives in docs/ARCHITECTURE.md, not this delivery card. Reuse existing drawing/environment proposals. Formal issue and cross-project comparisons are separate tasks.",
         "2026-09-06: write_scope narrowed to the ledgers only — the implementation is delivered; problems found in the trial go to the owning card, not this one.",
         "2026-09-08 rule alignment: Implementation and isolated verification are complete. The remaining live-page trial awaits a restored page and a new specific edit; do not replay the completed request."

@@ -127,6 +127,7 @@ import { EVIDENCE_PINNED_KEY, type EvidenceTab } from "./evidence";
 import { failed, idle, loading, ready, type Loadable } from "./loadable";
 import { LoadingOverlay } from "./LoadingOverlay";
 import { editingDigestForView, useSession } from "./useSession";
+import { EMPTY_MODEL_HISTORY, recordEditingBase, redoTarget, undoTarget, type ModelHistory } from "./modelHistory";
 import { followStep, headOf, pinStep, viewerFollows } from "./workingHead";
 import { useTranscript, type SystemTextPart } from "./transcript";
 import { useCandidateRuns } from "./useCandidateRuns";
@@ -257,7 +258,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
     },
     [append],
   );
-  const { binding, session, changingBase, baseError, reload, refreshWorkingCopies, refreshWorkingDraft, recoverFromStaleBase } = useSession(pushNotice, server.capabilities,
+  const { binding, session, changingBase, baseError, persistenceFailed, reload, refreshWorkingCopies, refreshWorkingDraft, saveSyncedBase, recoverFromStaleBase } = useSession(pushNotice, server.capabilities,
     initialDocumentIntent ? { runId: initialDocumentIntent.modelSource.runId, sourceStageRef: initialDocumentIntent.sourceStageRef }
       : undefined, true, expectedProjectId);
   const [documentIntentStatus, setDocumentIntentStatus] = useState<"pending" | "switching" | "ready" | "done">(initialDocumentIntent ? "pending" : "done");
@@ -371,7 +372,6 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
   const autoShowRef = useRef<{
     candidateId: string | null; context: number; viewRequest: number; started?: boolean;
     timing?: EditTimingTicket | null;
-    preserveDocument?: boolean;
   } | null>(null);
   const monitorDiagnostics = server.capabilities.includes("operation-diagnostics");
   const activeEditTiming = useRef<EditTimingTicket | null>(null);
@@ -393,6 +393,17 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
     session, changingBase, loadedArtifact?.runId ?? null,
     sourceLabel === LOCAL_SOURCE_LABEL, modelLoading,
   );
+  // One reason for every edit of the editing base while another model is on
+  // screen: sketch and model tools, Delete, elevation, Undo/Redo model,
+  // parameter locks, Trace to 3D and the composer. Looking stays free; the
+  // architect's explicit Continue is what lets the picture be edited.
+  const viewOnlyReason = viewingAnotherBase ? t("stage.base.viewOnly") : null;
+  const viewOnlyRef = useRef(viewOnlyReason);
+  viewOnlyRef.current = viewOnlyReason;
+  // What the editing-base row says about the architect's last refused base
+  // action: an edit tried on a viewed model, or a base switch that could not
+  // start. It stays until the picture or the base changes.
+  const [baseNotice, setBaseNotice] = useState<string | null>(null);
   // Every digest on screen, for the strip to say which of its buttons is the
   // picture: one seat's, or all of a run's.
   const loadedShas = loadedArtifacts
@@ -536,6 +547,10 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
     viewportRef.current?.ghost(null);
     refinePending.current.clear();
   }, [project?.projectId, projection?.stateDigest, projection?.sourceStageRef]);
+  // A refusal answers one attempt against one picture and one base; showing
+  // another model or settling on another base retires it.
+  useEffect(() => { setBaseNotice(null); },
+    [project?.projectId, projection?.referenceRun.runId, projection?.stateDigest, loadedArtifact?.runId, sourceLabel]);
   const [viewerProjection, setViewerProjection] = useState<StateProjectionDto | null>(null);
   const modelSources = useMemo(() => {
     const options = workingCopies.flatMap((copy) => copy.options.map((option) => ({
@@ -574,14 +589,15 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
     return loadedArtifact.modelSource ?? modelSources.find((row) => row.modelSource.runId === loadedArtifact.runId &&
       row.modelSource.assetSha256 === loadedArtifact.sha256)?.modelSource ?? null;
   }, [loadedArtifact, loadedArtifacts.length, modelSources]);
-  // What is on screen and can be worked on.
+  // What is on screen and can be pointed at.
   //
   // Looking at a candidate is not editing it, and this changes neither: it is
   // the exact source the viewer is showing, read off the model it loaded. A
-  // pick is resolved against *that* state, and a change made by pointing at it
-  // continues from it — because the object under the ray belongs to the picture
-  // on screen and to no other run. Nothing here accepts, issues or moves HEAD;
-  // it asks nobody to press Continue first to be allowed to point at something.
+  // pick is resolved against *that* state, because the object under the ray
+  // belongs to the picture on screen and to no other run; nobody has to press
+  // Continue to point at something. Changing it is another matter: a direct
+  // edit continues only from the editing base, so a viewed model is edited
+  // after the architect's explicit Continue (see viewOnlyReason).
   //
   // A local file, or a model with no retained source, has no run to continue
   // from and stays outside this: those keep the existing boundary.
@@ -801,6 +817,14 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
   if (workingDraft && recoveryWriter.current?.projectId !== workingDraft.projectId) {
     recoveryWriter.current = { projectId: workingDraft.projectId, write: createLocalDraftWriter(studio, workingDraft) };
   }
+  // This tab's working-draft writes share one CAS revision, so local recovery
+  // and saving a Sync result as the base queue behind each other, never race.
+  const workingDraftWrites = useRef<Promise<unknown>>(Promise.resolve());
+  const queueWorkingDraftWrite = useCallback(<T,>(write: () => Promise<T>): Promise<T> => {
+    const next = workingDraftWrites.current.catch(() => undefined).then(write);
+    workingDraftWrites.current = next;
+    return next;
+  }, []);
   const retainLocalModel = useCallback((local: LocalModelSession, clear = false) => {
     if (!autosaveEnabled) return Promise.resolve();
     const key = `${local.source.projectId}:${local.source.sourceRunId}:${local.source.stateDigest}:${local.source.sourceStageRef ?? ""}`;
@@ -810,16 +834,15 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
         pending: local.pending ? { commands: local.pending.snapshot.commands,
           attempt: { ...local.pending.attempt, inFlight: undefined } } : null } }));
     const savedSnapshot = currentDraft(local.history);
-    const pending = (async () => {
+    return queueWorkingDraftWrite(async () => {
       const writer = recoveryWriter.current;
       if (!writer || writer.projectId !== local.source.projectId) throw new Error("工作草稿尚未读取，无法自动保存。");
       await writer.write(draft, clear ? local.source : undefined);
       local.recoverySaved = savedSnapshot;
       if (local.error?.startsWith("自动恢复保存失败：")) local.error = null;
       refreshLocalModel();
-    })();
-    return pending;
-  }, [autosaveEnabled, studio, refreshLocalModel]);
+    });
+  }, [autosaveEnabled, studio, refreshLocalModel, queueWorkingDraftWrite]);
   useEffect(() => {
     if (!autosaveEnabled || !localModel) return;
     const timer = window.setTimeout(() => {
@@ -839,6 +862,9 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
     });
   }, [draftKey, draftSnapshot, localRevision, sourceLabel]);
   const commitLocalCommand = useCallback((command: DraftCommand) => {
+    // Every direct edit enters here, so no entry can start a draft on a model
+    // that is only being viewed; the entries themselves say why beforehand.
+    if (viewOnlyRef.current) throw new Error(viewOnlyRef.current);
     const session = ensureLocalModel();
     session.history = applyDraftCommand(session.history, command);
     modelInteractionEpoch.current += 1;
@@ -1937,10 +1963,24 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
     [append, documentContinuation, editingModelSource, loadedModelSource, propose, selectSemanticTarget, stateDigest],
   );
 
-  const changeEditingBase = useCallback(async (runId: string | null, modelSource?: ModelSourceDto, sourceStageRef?: string, branchId?: string, keepDocument = false) => {
-    if (changingBase || selectingWorkingCopy || proposalBusy || candidateBusy || refiningEntryId !== null) return null;
-    if (autosaveEnabled && [...localModels.current.values()].some(unsynced)) {
-      setHistoryError("当前编辑已留在工作草稿中，请先同步模型，再切换版本。");
+  /**
+   * Make one run the base the next edit starts from. A switch that cannot start
+   * changes nothing and hands its reason and recovery step to `onRefused`, so
+   * each caller shows it once, where the architect asked for the switch.
+   */
+  const changeEditingBase = useCallback(async (runId: string | null, modelSource?: ModelSourceDto, sourceStageRef?: string, branchId?: string, keepDocument = false,
+    onRefused?: (message: string) => void) => {
+    const drafts = [...localModels.current.values()];
+    const unsyncedDrafts = autosaveEnabled && drafts.some(unsynced);
+    if (changingBase || selectingWorkingCopy || proposalBusy || candidateBusy || refiningEntryId !== null ||
+        (unsyncedDrafts && drafts.some((draft) => draft.busy))) {
+      onRefused?.(t("stage.base.refusedBusy"));
+      return null;
+    }
+    // The working draft keeps unsynced edits bound to their own source; they
+    // are synced or undone before the base moves.
+    if (unsyncedDrafts) {
+      onRefused?.(t("stage.base.refusedUnsynced"));
       return null;
     }
     pickRequestRef.current += 1;
@@ -2000,7 +2040,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
       }
     }
     return next;
-  }, [artifacts, autosaveEnabled, candidateBusy, changingBase, clearComparison, loadedArtifact, loadedModelSource, loadArtifactIntoViewer, loadRunIntoViewer, modelSources, proposalBusy, refiningEntryId, reload, runSourceLabel, selectingWorkingCopy, workingCopies]);
+  }, [artifacts, autosaveEnabled, candidateBusy, changingBase, clearComparison, loadedArtifact, loadedModelSource, loadArtifactIntoViewer, loadRunIntoViewer, modelSources, proposalBusy, refiningEntryId, reload, runSourceLabel, selectingWorkingCopy, t, workingCopies]);
 
   const refreshed = useRef(refreshKey);
   useEffect(() => {
@@ -2110,13 +2150,14 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
       if (project?.projectId !== initialDocumentIntent.projectId) {
         throw new Error("The board request belongs to another project. Its marks are saved; this design instruction has not been submitted.");
       }
+      const refused = { reason: null as string | null };
       const next = await changeEditingBase(initialDocumentIntent.modelSource.runId, initialDocumentIntent.modelSource,
-        initialDocumentIntent.sourceStageRef ?? undefined, undefined, true);
+        initialDocumentIntent.sourceStageRef ?? undefined, undefined, true, (reason) => { refused.reason = reason; });
       if (!next || next.project.projectId !== initialDocumentIntent.projectId ||
           next.projection.stateDigest !== initialDocumentIntent.modelSource.stateDigest ||
           next.projection.referenceRun.runId !== initialDocumentIntent.modelSource.runId ||
           (initialDocumentIntent.sourceStageRef !== null && next.projection.sourceStageRef !== initialDocumentIntent.sourceStageRef)) {
-        throw new Error("The drawing's exact model and Stage could not be restored. Its marks are saved; this design instruction has not been submitted.");
+        throw new Error(refused.reason ?? "The drawing's exact model and Stage could not be restored. Its marks are saved; this design instruction has not been submitted.");
       }
       setDocumentIntentStatus("ready");
     })().catch((cause) => {
@@ -2145,8 +2186,10 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
     });
   }, [append, changingBase, documentIntentStatus, editingModelSource, initialDocumentIntent, project?.projectId, projection, propose]);
 
+  // Every Versions row that changes the editing base reports a refusal on the
+  // design-history card it was chosen from.
   const openDesignStage = async (stage: DesignStageDto, branchId = designHistory?.branchId) => {
-    await changeEditingBase(stage.modelSource.runId, stage.modelSource, stage.stageRef, branchId);
+    await changeEditingBase(stage.modelSource.runId, stage.modelSource, stage.stageRef, branchId, false, setHistoryError);
   };
   const updateDesignHistory = async (operation: () => Promise<DesignStageDto>) => {
     if (historyBusy) return;
@@ -2382,7 +2425,6 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
         activeEditTiming.current = timing;
       }
       const preview = beginCandidatePreview(timing);
-      if (autoShowRef.current) autoShowRef.current.preserveDocument = preserveDocument;
       try {
         const accepted = await studio.startCandidate(proposalId, timing?.candidate?.trace);
         setModelRunPending(accepted.candidateId);
@@ -2428,6 +2470,8 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
   if (tracingScope.current.key !== tracingScopeKey) tracingScope.current = { key: tracingScopeKey };
   const generateDocumentTracing = async (tracing: DocumentTracingSourceDto, height: number, requestedLevel: string) => {
     if (!project || session.status !== "ready" || changingBase || modelLoading || proposalBusy || candidateBusy) throw new Error(t("document.trace.busy"));
+    // Tracing builds on the model last shown, so it is an edit of that model.
+    if (viewOnlyRef.current) throw new Error(viewOnlyRef.current);
     if (localModel && unsynced(localModel)) throw new Error(t("document.trace.unsynced"));
     const scope = tracingScope.current;
     const epoch = modelInteractionEpoch.current;
@@ -2544,8 +2588,15 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
   // Completed gestures update local geometry and history synchronously. Only
   // the explicit Sync action below crosses the proposal/candidate boundary.
   const sketchSnapPoints = useMemo<readonly (readonly [number, number])[]>(() => [], []);
+  // Every direct edit entry refuses on a viewed model with the one reason, shown
+  // beside Continue in the editing-base row.
+  const refuseViewedEdit = useCallback(() => {
+    if (viewOnlyRef.current === null) return false;
+    setBaseNotice(viewOnlyRef.current);
+    return true;
+  }, []);
   const runSketch = useCallback(async (action: FinishedSketch, gestureCurrent: () => boolean = () => true) => {
-    if (!gestureCurrent() || changingBase || modelLoading) return;
+    if (!gestureCurrent() || changingBase || modelLoading || refuseViewedEdit()) return;
     try {
       const componentId = selection?.componentId ?? draftProjection?.elements[0]?.componentId;
       if (!componentId) throw new Error(t("stage.sketch.noComponent"));
@@ -2555,16 +2606,17 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
       setSelection({ componentId, elementId });
       setArtifactError(null);
     } catch (cause) { setArtifactError(asStudioApiError(cause)); }
-  }, [changingBase, modelLoading, selection?.componentId, draftProjection, commitLocalCommand, t, draftSource?.stateDigest]);
+  }, [changingBase, modelLoading, selection?.componentId, draftProjection, commitLocalCommand, refuseViewedEdit, t, draftSource?.stateDigest]);
 
   const [directTool, setDirectTool] = useState<DirectModelTool | null>(null);
   const [directError, setDirectError] = useState<string | null>(null);
   const directToolEpoch = useRef(0);
   const chooseDirectTool = useCallback((next: "select" | DirectModelTool) => {
+    if (next !== "select" && refuseViewedEdit()) return;
     directToolEpoch.current += 1;
     setDirectTool(next === "select" ? null : next);
     setDirectError(null);
-  }, []);
+  }, [refuseViewedEdit]);
   const pickedShape = (picked?.status === "resolved" || picked?.status === "local") && picked.elementId
     ? viewedProjection?.elements.find((row) => row.elementId === picked.elementId) : null;
   const localPickedObject = picked?.elementId ? draftSnapshot?.objects.get(picked.elementId) : null;
@@ -2581,37 +2633,22 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
       ? { elementId: picked.elementId, shape: drawnShapeFromSpec(localPickedObject.spec, localPickedObject.parameterBoundFields) } : null;
     return pickedShape?.drawnShape ? { elementId: picked.elementId, shape: pickedShape.drawnShape } : null;
   }, [picked, localPickedObject, pickedShape, loadedModelSource, project?.projectId]);
-  // What this tab has moved through, in order, as run ids. It is navigation,
-  // not a second copy of the design: which run is current is still the
-  // session's projection, and every run named here stays in the project
-  // whether or not this list still points at it.
-  const [modelHistory, setModelHistory] = useState<{ runs: readonly string[]; index: number }>(
-    { runs: [], index: -1 },
-  );
+  // The editing bases this tab has settled on, for Undo/Redo model. The key is
+  // the projection's reference run and never the picture: showing another run
+  // is not a model step (modelHistory.ts). An authored-only projection has no
+  // retained run to record.
+  const [modelHistory, setModelHistory] = useState<ModelHistory>(EMPTY_MODEL_HISTORY);
   const navigatingHistory = useRef<string | null>(null);
-  // The run on screen, which is what a step back has to return to: a change
-  // made while looking at a candidate was made *from* that candidate, and undo
-  // means the picture before it. A local file or an authored-only projection
-  // has no retained run to add to this history.
-  const baseRunId = viewingExternalModel ? null : loadedArtifact?.runId ?? sourceRunId ?? null;
+  const historyBaseRunId = projection && projection.referenceRunSource !== "none" ? projection.referenceRun.runId : null;
   useEffect(() => {
-    if (baseRunId === null) return;
+    if (historyBaseRunId === null) return;
     // Read once, outside the update: whether this base is one an undo or a redo
     // moved to is a fact about the action that just happened, and the updater
     // itself stays a pure function of the history it is given.
     const navigatedTo = navigatingHistory.current;
     navigatingHistory.current = null;
-    setModelHistory((current) => {
-      const known = current.runs.indexOf(baseRunId);
-      if (navigatedTo === baseRunId && known !== -1) return { ...current, index: known };
-      if (current.runs[current.index] === baseRunId) return current;
-      // A new edit from here: what was undone stops being reachable forwards.
-      // The runs themselves are untouched — they are still in the project and
-      // still in the versions list; only this tab's way back to them is gone.
-      const kept = current.runs.slice(0, current.index + 1).filter((runId) => runId !== baseRunId);
-      return { runs: [...kept, baseRunId], index: kept.length };
-    });
-  }, [baseRunId]);
+    setModelHistory((current) => recordEditingBase(current, historyBaseRunId, navigatedTo));
+  }, [historyBaseRunId]);
 
   const modelNavigationBusy = changingBase || selectingWorkingCopy || modelLoading;
   const [parameterLockBusy, setParameterLockBusy] = useState(false);
@@ -2622,9 +2659,10 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
     : unsavedChatDraft ? (lockZh ? "请先同步当前模型修改。" : "Sync the current model edits first.")
     : modelNavigationBusy || candidateBusy || modelRunPending !== null || proposalBusy || modelSyncBusy
       ? (lockZh ? "请等待当前模型操作完成。" : "Wait for the current model operation to finish.")
-      : loadedArtifact && (!viewedProjection || loadedArtifacts.some((artifact) => artifact.runId !== projection.referenceRun.runId) ||
-          viewedProjection.stateDigest !== projection.stateDigest)
-        ? (lockZh ? "请先选择从当前查看的版本继续编辑。" : "Choose to continue editing from the viewed version first.") : null;
+      // The same view-only reason as every direct edit; locks also wait until
+      // the picture's own projection has been read.
+      : viewOnlyReason ?? (loadedArtifact && (!viewedProjection || loadedArtifacts.some((artifact) => artifact.runId !== projection.referenceRun.runId) ||
+          viewedProjection.stateDigest !== projection.stateDigest) ? t("stage.base.viewOnly") : null);
   const parameterLockContext = useRef({ key: contextKey, reason: parameterLockReason });
   parameterLockContext.current = { key: contextKey, reason: parameterLockReason };
   useEffect(() => { setParameterLockError(null); }, [contextKey]);
@@ -2651,14 +2689,19 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
       append({ kind: "refusal", error, what: "POST /api/proposals/parameter-locks" });
     } finally { setParameterLockBusy(false); }
   }, [parameterLockBusy, parameterLockReason, project, projection, contextKey, studio, append, runCandidate, recoverFromStaleBase]);
-  const canUndoModel = !viewingExternalModel && sourceLabel !== LOCAL_SOURCE_LABEL && (localModel ? localModel.history.index > 0 : modelHistory.index > 0) && !modelNavigationBusy;
-  const canRedoModel = !viewingExternalModel && sourceLabel !== LOCAL_SOURCE_LABEL && (localModel ? localModel.history.index + 1 < localModel.history.snapshots.length :
-    modelHistory.index >= 0 && modelHistory.index < modelHistory.runs.length - 1) && !modelNavigationBusy;
+  // Undo and Redo model act on the editing base: the local draft on it, else
+  // the bases recorded above. They stay available whenever there is a step, so
+  // pressing one while another model is on screen answers with the same
+  // view-only reason as every other edit, beside the Continue that lifts it.
+  const baseUndoTarget = undoTarget(modelHistory), baseRedoTarget = redoTarget(modelHistory);
+  const canUndoModel = (localModel ? localModel.history.index > 0 : baseUndoTarget !== null) && !modelNavigationBusy;
+  const canRedoModel = (localModel ? localModel.history.index + 1 < localModel.history.snapshots.length : baseRedoTarget !== null) &&
+    !modelNavigationBusy;
 
   /** Show one retained run as both the picture and the base edits continue from. */
   const showRunAsBase = useCallback(async (runId: string) => {
     navigatingHistory.current = runId;
-    const next = await changeEditingBase(runId);
+    const next = await changeEditingBase(runId, undefined, undefined, undefined, false, setBaseNotice);
     if (next === null) {
       navigatingHistory.current = null;
       return false;
@@ -2674,49 +2717,45 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
   }, [artifacts, changeEditingBase, loadRunIntoViewer, runSourceLabel]);
 
   const undoModel = useCallback(async () => {
-    if (!canUndoModel) return;
+    if (!canUndoModel || refuseViewedEdit()) return;
     if (localModel) {
       localModel.history = undoDraft(localModel.history);
       if (!localModel.busy && localModel.pending && !localModel.pending.attempt.finalProposalId) localModel.pending = null;
       localModel.error = null; refreshLocalModel(); setPicked(null); setSelection(null); return;
     }
-    const runId = modelHistory.runs[modelHistory.index - 1];
-    if (runId === undefined) return;
+    if (baseUndoTarget === null || !await showRunAsBase(baseUndoTarget)) return;
     append({ kind: "system", ...systemText([
-      { kind: "prose", text: "Undo · back to " }, { kind: "technical", text: runId },
+      { kind: "prose", text: "Undo · back to " }, { kind: "technical", text: baseUndoTarget },
       { kind: "prose", text: " · the run you left is still there" },
     ]) });
-    await showRunAsBase(runId);
-  }, [append, canUndoModel, modelHistory, showRunAsBase, localModel, refreshLocalModel]);
+  }, [append, baseUndoTarget, canUndoModel, refuseViewedEdit, showRunAsBase, localModel, refreshLocalModel]);
 
   const redoModel = useCallback(async () => {
-    if (!canRedoModel) return;
+    if (!canRedoModel || refuseViewedEdit()) return;
     if (localModel) {
       localModel.history = redoDraft(localModel.history);
       if (!localModel.busy && localModel.pending && !localModel.pending.attempt.finalProposalId) localModel.pending = null;
       localModel.error = null; refreshLocalModel(); setPicked(null); setSelection(null); return;
     }
-    const runId = modelHistory.runs[modelHistory.index + 1];
-    if (runId === undefined) return;
+    if (baseRedoTarget === null || !await showRunAsBase(baseRedoTarget)) return;
     append({ kind: "system", ...systemText([
-      { kind: "prose", text: "Redo · forward to " }, { kind: "technical", text: runId },
+      { kind: "prose", text: "Redo · forward to " }, { kind: "technical", text: baseRedoTarget },
     ]) });
-    await showRunAsBase(runId);
-  }, [append, canRedoModel, modelHistory, showRunAsBase, localModel, refreshLocalModel]);
+  }, [append, baseRedoTarget, canRedoModel, refuseViewedEdit, showRunAsBase, localModel, refreshLocalModel]);
 
   const deletableElementId = picked?.status === "resolved" || picked?.status === "local" ? picked.elementId : null;
   const canDeleteModel = deletableElementId !== null && draftKey !== null && !modelNavigationBusy;
   const deleteSelected = useCallback(() => {
-    if (!canDeleteModel || !deletableElementId) return;
+    if (!canDeleteModel || !deletableElementId || refuseViewedEdit()) return;
     try {
       commitLocalCommand({ kind: "delete", elementId: deletableElementId });
       setPicked(null); setSelection(null); setDirectError(null);
       viewportRef.current?.highlight(null);
     } catch (cause) { setDirectError(asStudioApiError(cause).detail); }
-  }, [canDeleteModel, deletableElementId, commitLocalCommand]);
+  }, [canDeleteModel, deletableElementId, commitLocalCommand, refuseViewedEdit]);
 
   const applyDirectModelAction = useCallback((action: DirectModelAction) => {
-    if (!canDeleteModel || !deletableElementId) return;
+    if (!canDeleteModel || !deletableElementId || refuseViewedEdit()) return;
     if (action.target && action.target !== pushPullTarget) return;
     try {
       const normal = action.kind === "pushPull" ? action.normal ?? viewportRef.current?.workPlaneFromSelection()?.normal : null;
@@ -2734,7 +2773,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
       }
       setDirectError(null); setArtifactError(null);
     } catch (cause) { setDirectError(asStudioApiError(cause).detail); }
-  }, [canDeleteModel, deletableElementId, pushPullTarget, commitLocalCommand, picked]);
+  }, [canDeleteModel, deletableElementId, pushPullTarget, commitLocalCommand, picked, refuseViewedEdit]);
 
   const syncLocalModel = useCallback(async () => {
     if (!localModel || localModel.busy || modelSyncBusy) return;
@@ -2783,42 +2822,63 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
       if (candidate) session.synced = pending.snapshot;
       else session.error = run.job.value.error ?? `Sync ${status}`;
       session.pending = null; session.busy = false; changed = true;
-      const persisted = retainLocalModel(session, status === "succeeded" && !unsynced(session));
-      void persisted.then(() => refreshWorkingDraft()).catch((cause) => {
+      const recovered = (write: Promise<unknown>) => write.then(() => refreshWorkingDraft()).catch((cause) => {
         session.error = `自动恢复保存失败：${asStudioApiError(cause).detail}`; refreshLocalModel();
       });
-      if (candidate) {
-        // A quiet, completed batch naturally becomes the next editing base.
-        // Bytes and parsing run behind the old interactive model. Any input
-        // since Sync cancels adoption, including an unfinished next gesture.
-        const stable = () => modelInteractionEpoch.current === pending.interactionEpoch &&
-          currentDraft(session.history) === pending.snapshot;
-        if (stable() && localModel === session && modelLoadRequest.current === pending.viewRequest) {
-          const model = viewableArtifacts(candidate.artifacts).find(row => row.representation === "composed") ??
-            viewableArtifacts(candidate.artifacts)[0];
-          if (model) void (async () => {
-            try {
-              await persisted;
-              if (!stable() || modelLoadRequest.current !== pending.viewRequest) return;
-              const nextProjection = await studio.state(model.runId);
-              if (!stable() || modelLoadRequest.current !== pending.viewRequest) return;
-              const shown = await loadArtifactIntoViewer(model, candidateSourceLabel(accepted.candidateId), true,
-                stable, undefined, true);
-              if (!shown) return;
-              if (draftKey && localModels.current.get(draftKey) === session && stable()) localModels.current.delete(draftKey);
-              setViewerProjection(nextProjection);
-              refreshLocalModel();
-              await reload(model.runId, undefined, undefined, true, nextProjection);
-            } catch (cause) { session.error = asStudioApiError(cause).detail; refreshLocalModel(); }
-          })();
+      if (!candidate) { void recovered(retainLocalModel(session)); continue; }
+      // The architect's own completed batch becomes the next saved editing base
+      // (GH-234 Q2). Edits made since Sync keep their recovery now; a fully synced
+      // recovery is cleared only once the saved base holds the batch, so its
+      // edits never end up reachable only as a listed candidate.
+      const retained = unsynced(session) ? recovered(retainLocalModel(session)) : Promise.resolve();
+      // A quiet batch also becomes this tab's editing base. Bytes and parsing run
+      // behind the old interactive model. Any input since Sync cancels that
+      // adoption, including an unfinished next gesture, and so does another view.
+      const stable = () => modelInteractionEpoch.current === pending.interactionEpoch &&
+        currentDraft(session.history) === pending.snapshot;
+      const quiet = stable() && localModel === session && modelLoadRequest.current === pending.viewRequest;
+      const model = viewableArtifacts(candidate.artifacts).find(row => row.representation === "composed") ??
+        viewableArtifacts(candidate.artifacts)[0];
+      const adopt = async () => {
+        if (!model || !stable() || modelLoadRequest.current !== pending.viewRequest) return false;
+        const nextProjection = await studio.state(model.runId);
+        if (!stable() || modelLoadRequest.current !== pending.viewRequest) return false;
+        const shown = await loadArtifactIntoViewer(model, candidateSourceLabel(accepted.candidateId), true,
+          stable, undefined, true);
+        if (!shown) return false;
+        if (draftKey && localModels.current.get(draftKey) === session && stable()) localModels.current.delete(draftKey);
+        setViewerProjection(nextProjection);
+        refreshLocalModel();
+        return (await reload(model.runId, undefined, undefined, true, nextProjection))?.sourceRunId === model.runId;
+      };
+      void (async () => {
+        await retained;
+        let adopted = false;
+        if (quiet) {
+          try { adopted = await adopt(); }
+          catch (cause) { session.error = asStudioApiError(cause).detail; refreshLocalModel(); }
         }
-      }
+        try {
+          // Not adopted into the view, the batch still becomes the saved base without
+          // changing what is on screen. A base the architect chose meanwhile stands,
+          // and the result stays a listed candidate.
+          if (!adopted) await queueWorkingDraftWrite(() => saveSyncedBase(accepted.candidateId, session.source));
+        } catch (cause) {
+          // The saved base could not take the batch: its recovery keeps its exact
+          // source and synced commands, so reopening still shows the edits.
+          session.error = `同步结果未能保存为修改起点：${asStudioApiError(cause).detail}`;
+          refreshLocalModel();
+          await recovered(retainLocalModel(session));
+          return;
+        }
+        if (!unsynced(session)) await recovered(retainLocalModel(session, true));
+      })();
     }
     if (changed) {
       setModelSyncBusy([...localModels.current.values()].some(session => session.busy));
       refreshLocalModel();
     }
-  }, [candidateRuns.runs, candidates, draftKey, localModel, loadArtifactIntoViewer, reload, refreshLocalModel, retainLocalModel, refreshWorkingDraft]);
+  }, [candidateRuns.runs, candidates, draftKey, localModel, loadArtifactIntoViewer, reload, refreshLocalModel, retainLocalModel, refreshWorkingDraft, saveSyncedBase, queueWorkingDraftWrite]);
 
   // A different model on screen is a different set of objects. What was *picked*
   // belonged to the picture that went away, so it stops being picked, its mark
@@ -2891,6 +2951,9 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
 
   // Show the completed model without waiting for validation. Only the latest
   // requested candidate may replace its unchanged launch view and context.
+  // Showing it is only looking (GH-234 Q1/Q2): a generated candidate -- an Arch
+  // proposal, combine, parameter locks, tracing or a Board sketch -- becomes the
+  // editing base, and the saved one, only after an explicit Continue.
   useEffect(() => {
     const preview = autoShowRef.current;
     if (!preview?.candidateId || preview.started) return;
@@ -2940,13 +3003,10 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
       if (autoShowRef.current !== preview || preview.context !== previewContext.current.revision || manualLoadRef.current) return false;
       return loadArtifactIntoViewer(twin, candidateSourceLabel(candidateId), loadedArtifact !== null,
         () => autoShowRef.current === preview && preview.context === previewContext.current.revision, preview.timing?.candidate);
-    })().then(async (shown) => {
+    })().then((shown) => {
       finishEditTiming(preview.timing, shown ? "succeeded" :
         autoShowRef.current !== preview || preview.context !== previewContext.current.revision || manualLoadRef.current ? "cancelled" : "failed");
       if (shown && preview.context === previewContext.current.revision) {
-        if (designHistoryEnabled) await reload(twin.runId).then((next) => {
-          if (next && !preview.preserveDocument) setDocumentView((current) => ({ ...current, runId: twin.runId, sourceSha: null, revisionRef: null, pageIndex: 0 }));
-        });
         append({
         kind: "system",
         ...systemText([
@@ -2962,7 +3022,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
     }).finally(() => {
       setModelRunPending((current) => current === candidateId ? null : current);
     });
-  }, [append, candidates, designHistoryEnabled, loadArtifactIntoViewer, loadedArtifact, sourceLabel, reload]);
+  }, [append, candidates, loadArtifactIntoViewer, loadedArtifact, sourceLabel]);
 
   // Which candidate the drawer shows: the one whose card was clicked, else
   // the latest this tab launched. A card's "receipts" opens its own run.
@@ -3094,8 +3154,8 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
   const disabledReason =
     changingBase
       ? t("stage.base.loading")
-      : viewingAnotherBase && documentContinuation === null
-        ? t("stage.base.viewOnly")
+      : viewOnlyReason !== null && documentContinuation === null
+        ? viewOnlyReason
       : modelLoading
         ? t("stage.base.loading")
       : session.status === "failed"
@@ -3223,12 +3283,13 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
           {initialDocumentIntent && (documentIntentStatus !== "done" || draft === initialDocumentIntent.utterance) && <p>{initialDocumentIntent.utterance}</p>}
           {developerMode && sourceRunId !== null && <p className="mono">{sourceRunId}</p>}
           {error && <ErrorPanel error={error} />}
+          {baseNotice && <p className="refusal__lead" role="alert">{baseNotice}</p>}
           <button type="button" className="btn" disabled={changingBase}
             onClick={() => { if (missingChosenModel) void loadArtifacts(); else void reload(); }}>
             {t("stage.base.retry")}
           </button>
           <button type="button" className="btn" disabled={changingBase}
-            onClick={() => void changeEditingBase(null)}>
+            onClick={() => void changeEditingBase(null, undefined, undefined, undefined, false, setBaseNotice)}>
             {t("stage.base.default")}
           </button>
           {binding && documentView.mounted && <button type="button" className="btn"
@@ -3280,6 +3341,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
             sessionError={null}
             projection={projection}
             currentStateDigest={stateDigest}
+            viewingOtherVersion={viewingAnotherBase}
             selection={selection}
             disabledReason={disabledReason}
             busy={proposalBusy}
@@ -3350,7 +3412,17 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
         ) : null}
         stage={
           <DocumentTracingContext.Provider value={{ levels: tracingLevels,
-            blockedReason: localModel && unsynced(localModel) ? t("document.trace.unsynced") : null,
+            blockedReason: viewOnlyReason ?? (localModel && unsynced(localModel) ? t("document.trace.unsynced") : null),
+            // The same explicit Continue as the editing-base row, offered where the refusal is
+            // read; the open page stays open and a refusal is reported in the panel.
+            continueViewed: viewOnlyReason === null || !loadedArtifact || (viewingExternalModel && loadedModelSource === null) ? null
+              : async () => {
+                const refused = { reason: null as string | null };
+                const next = loadedModelSource
+                  ? await changeEditingBase(loadedModelSource.runId, loadedModelSource, undefined, undefined, true, (reason) => { refused.reason = reason; })
+                  : await changeEditingBase(loadedArtifact.runId, undefined, undefined, undefined, true, (reason) => { refused.reason = reason; });
+                if (next === null) throw new Error(refused.reason ?? t("stage.base.switchFailed"));
+              },
             generate: generateDocumentTracing, showModel: () => setDocumentView(current => ({ ...current, open: false })) }}>
           <Stage
             key={binding?.projectId ?? "unbound"}
@@ -3375,6 +3447,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
               onClearSelection: clearModelSelection,
               hasSelection: selection !== null || picked !== null,
               onTool: chooseDirectTool,
+              editLock: viewOnlyReason, onEditLocked: refuseViewedEdit,
               directTool, busy: modelNavigationBusy, error: directError,
               interactionBlocked: modelNavigationBusy,
               onInteraction: () => { modelInteractionEpoch.current += 1; },
@@ -3385,7 +3458,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
               onApply: (action) => void applyDirectModelAction(action),
               elevation: elevationObject && draftKey ? { object: elevationObject, objects: elevationObjects,
                 levels: draftSnapshot?.levels ?? draftProjection?.levels ?? [], onApply: command => {
-                  if (modelNavigationBusy) return false;
+                  if (modelNavigationBusy || refuseViewedEdit()) return false;
                   try { commitLocalCommand(command); setDirectError(null); return true; }
                   catch (cause) { setDirectError(asStudioApiError(cause).detail); return false; }
                 } } : null,
@@ -3424,8 +3497,10 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
             viewedModelSource={loadedModelSource}
             editingModelSource={editingModelSource}
             onContinueModelSource={async (source) => {
-              const next = await changeEditingBase(source.runId, source, undefined, undefined, true);
-              if (next === null) throw asStudioApiError(new Error("The editing base could not be changed. Retry after resolving the reported error."));
+              // The drawing's own Continue shows the refusal in the drawing panel.
+              const refused = { reason: null as string | null };
+              const next = await changeEditingBase(source.runId, source, undefined, undefined, true, (reason) => { refused.reason = reason; });
+              if (next === null) throw asStudioApiError(new Error(refused.reason ?? t("stage.base.switchFailed")));
             }}
             documentVisualInputAvailable={server.capabilities.includes("document-visual-input")}
             onDocumentSubmit={(utterance, refs, source, visuals) => {
@@ -3446,7 +3521,11 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
               currentModelSource: loadedModelSource,
               candidates: retainedCandidates,
               workingDraft,
-              onRestoreDraft: (runId) => { void changeEditingBase(runId, modelSources.find((row) => row.modelSource.runId === runId)?.modelSource); },
+              onRestoreDraft: (runId) => {
+                setHistoryError(null);
+                void changeEditingBase(runId, modelSources.find((row) => row.modelSource.runId === runId)?.modelSource,
+                  undefined, undefined, false, setHistoryError);
+              },
               onSaveDraft: (runId, label) => {
                 if (!project) return;
                 setHistoryBusy(true); setHistoryError(null);
@@ -3461,7 +3540,10 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
               onInitialize: () => { if (project && loadedModelSource) void updateDesignHistory(() => studio.initializeStage({ projectId: project.projectId, modelSource: loadedModelSource, branchId: "main", label: "S0" })); },
               onStage: (stage) => { void openDesignStage(stage); },
               onBranch: (branchId) => { void selectDesignBranch(branchId); },
-              onCandidate: (source) => { void changeEditingBase(source.runId, source); },
+              onCandidate: (source) => {
+                setHistoryError(null);
+                void changeEditingBase(source.runId, source, undefined, undefined, false, setHistoryError);
+              },
               onAccept: (candidateId) => {
                 const branch = designHistory?.branches.find((item) => item.branchId === designHistory.branchId);
                 if (project && branch) void updateDesignHistory(async () => {
@@ -3488,9 +3570,14 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
             explicitBase={sourceRunId !== null}
             changingBase={changingBase || selectingWorkingCopy}
             baseError={baseError}
+            baseNotice={baseNotice}
+            baseNotSaved={persistenceFailed}
             baseActionBusy={session.status !== "ready" || missingChosenModel || proposalBusy || candidateBusy || refiningEntryId !== null || selectingWorkingCopy}
-            onContinue={viewingExternalModel ? null : (runId) => void changeEditingBase(runId)}
-            onDefaultBase={() => void changeEditingBase(null)}
+            /* The editing-base row's own actions answer in that row, never by throwing. */
+            onContinue={viewingExternalModel && loadedModelSource === null ? null : (runId, source) => void (source
+              ? changeEditingBase(source.runId, source, undefined, undefined, true, setBaseNotice)
+              : changeEditingBase(runId, undefined, undefined, undefined, false, setBaseNotice))}
+            onDefaultBase={() => void changeEditingBase(null, undefined, undefined, undefined, false, setBaseNotice)}
             evidenceCounts={evidenceCounts}
             review={review}
             drawer={developerMode && evidencePinned ? null : drawer}

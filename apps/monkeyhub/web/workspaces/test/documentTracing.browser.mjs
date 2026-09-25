@@ -291,10 +291,15 @@ print(json.dumps({"unit": str(model.Settings.ModelUnitSystem), "objects": object
   }
   near(high[2] - low[2], 2.4, "3DM height", 1e-5);
 
-  // Candidate preview completes behind the same page, so continuing binds the next run to it.
+  // The completed candidate is shown behind the same page. Viewing it is not editing it: tracing
+  // refuses to build on it, with its reason, until the architect explicitly continues from it.
   await until(() => requests, rows => rows.some(row => row.method === "GET" && row.path === "/api/state"
-    && row.query.includes(first.job.candidateId) && row.status === 200), "The model never adopted its completed candidate", 300);
-  await until(() => generate().isEnabled(), Boolean, "The editor stayed busy after the candidate completed");
+    && row.query.includes(first.job.candidateId) && row.status === 200), "The completed candidate was never shown", 300);
+  await tracing().getByText("Viewing only.", { exact: false }).waitFor();
+  assert.equal(await generate().isEnabled(), false, "Tracing does not build on a candidate that is only being viewed");
+  // The recovery step is offered where the refusal is read, and the page stays open.
+  await tracing().getByRole("button", { name: "Continue from this version", exact: true }).click();
+  await until(() => generate().isEnabled(), Boolean, "Tracing stayed blocked after continuing from the candidate");
   await editor();
   const pageIdentity = await page.locator(".document-viewport").getAttribute("aria-label");
   const strokePath = () => page.locator(`.document-page__ink [data-stroke-id="${outlineId}"]`).getAttribute("d");
@@ -351,6 +356,11 @@ print(json.dumps({"unit": str(model.Settings.ModelUnitSystem), "objects": object
     stateElement.drawnShape, "The earlier candidate remains an unchanged revision");
 
   // A fresh browser page re-reads retained vectors and calibration; it does not reuse the editor's React draft.
+  // GH-234 Q1/Q2: the regenerated candidate is shown, not continued; tracing names
+  // the view-only reason until the architect continues from it explicitly.
+  await tracing().getByText("Viewing only.", { exact: false }).waitFor();
+  assert.equal(await generate().isEnabled(), false, "Tracing does not build on the regenerated candidate before Continue");
+  await tracing().getByRole("button", { name: "Continue from this version", exact: true }).click();
   await until(() => generate().isEnabled(), Boolean, "The second candidate left the page busy");
   await tracing().getByRole("button", { name: "View model and progress", exact: true }).click();
   await page.locator(".stage-model").waitFor({ state: "visible" });

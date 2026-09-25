@@ -178,6 +178,8 @@ export function Stage({
   explicitBase,
   changingBase,
   baseError,
+  baseNotice = null,
+  baseNotSaved = false,
   baseActionBusy,
   onContinue,
   onDefaultBase,
@@ -260,8 +262,13 @@ export function Stage({
   explicitBase: boolean;
   changingBase: boolean;
   baseError: StudioApiError | null;
+  /** The shell's answer to the last refused base action, shown in the editing-base row. */
+  baseNotice?: string | null;
+  /** The chosen editing base applies to this tab only: the browser could not save it. */
+  baseNotSaved?: boolean;
   baseActionBusy: boolean;
-  onContinue: ((runId: string) => void) | null;
+  /** Continue from the model on screen: its exact source when it has one, else its run. */
+  onContinue: ((runId: string, source: ModelSourceDto | null) => void) | null;
   onDefaultBase(): void;
   onCompareVersion(artifact: ProjectArtifactDto): void;
   /** A cross-fade in progress: before is the loaded run, after the candidate. */
@@ -320,6 +327,13 @@ export function Stage({
     canRedo: boolean;
     onClearSelection(): void;
     hasSelection: boolean;
+    /**
+     * Why no direct edit may start on the picture now, or null. The shell owns
+     * the one reason; a sketch tool asked for while it applies stays unarmed
+     * and `onEditLocked` has the shell show that reason beside Continue.
+     */
+    editLock?: string | null;
+    onEditLocked?(): void;
     onTool?(tool: "select" | "pushPull" | "move" | "rotate" | "scale" | "copy"): void;
     directTool?: DirectModelTool | null;
     busy?: boolean;
@@ -889,7 +903,18 @@ export function Stage({
     const epoch = sketchEpoch.current;
     void onSketch(action, () => sketchEpoch.current === epoch);
   }, [onSketch, stopSketching]);
+  // A drawing is an edit: on a model that is only being viewed no tool arms
+  // and no shape starts, and the shell says why beside Continue. A tool armed
+  // earlier stays armed, so the picture settling on a new base (an adopted
+  // result arrives before its base does) never drops it.
+  const refuseLockedEdit = useCallback(() => {
+    const keys = modelKeysRef.current;
+    if (!keys?.editLock) return false;
+    keys.onEditLocked?.();
+    return true;
+  }, []);
   const chooseDrawingTool = useCallback((next: SketchTool | null) => {
+    if (next !== null && refuseLockedEdit()) { setLineToolsOpen(false); return; }
     sketchEpoch.current += 1;
     setLineToolsOpen(false);
     stopPushPull();
@@ -900,7 +925,7 @@ export function Stage({
     onTool(null); setEraser(false); setMeasuring(false); stopMeasuring();
     model?.onTool?.("select");
     showSketch({ ...cancelledSketch(interaction.current.sketch), tool: next });
-  }, [onTool, model?.onTool, showSketch, stopMeasuring, stopPushPull, stopMove, stopRotate, stopScale]);
+  }, [onTool, model?.onTool, refuseLockedEdit, showSketch, stopMeasuring, stopPushPull, stopMove, stopRotate, stopScale]);
   const chooseMeasure = useCallback(() => {
     chooseDrawingTool(null);
     setMeasuring(true);
@@ -1141,19 +1166,26 @@ export function Stage({
   const viewedCandidate = designHistory?.candidates.find((candidate) => candidate.modelSource.runId === loadedRunId && loadedShas.includes(candidate.modelSource.assetSha256));
   const contextLabel = designHistory?.workingDraft?.current?.runId === loadedRunId ? t("stage.context.workingDraft") : designHistory ? acceptedStage?.label ?? (viewedCandidate
     ? `${designHistory.history?.stages.find((stage) => stage.stageRef === viewedCandidate.sourceStageRef)?.label ?? t("stage.context.historyStage")} · ${t("stage.context.candidate")}` : t("stage.context.noStage")) : loadedOptionLabel;
-  const editingStatus = editingBaseRunId !== null && (
+  // What was asked of the editing base here and not done: a refused switch or
+  // edit, and a choice this browser could not keep. One line each, in the row
+  // where it was asked, beside the Continue that usually resolves it.
+  const baseNotices = <>
+    {baseNotice && <p className="editing-base__notice" role="alert">{baseNotice}</p>}
+    {baseNotSaved && <p className="editing-base__notice" role="status">{t("stage.base.notSaved")}</p>}
+  </>;
+  const editingStatus = editingBaseRunId !== null ? (
       <div className="editing-base" data-source-match={sameSource ? "same" : "different"}>
         <span role="status" aria-live="polite">
           {changingBase ? t("stage.base.loading") : sameSource ? t("stage.base.sameSource") : t("stage.base.current")}
           {!sameSource && <strong className="editing-base__name" title={editingLabel ?? undefined}> {editingLabel}</strong>}
         </span>
-        {loadedRunId !== null && !sameSource && (viewedModelSource !== null || onContinue !== null) && (
+        {loadedRunId !== null && !sameSource && onContinue !== null && (
           <button
             type="button"
             className="btn btn--small"
             disabled={changingBase || baseActionBusy || loadingSha !== null || status === "loading" || blend !== null}
             title={t("stage.base.continueTitle")}
-            onClick={() => viewedModelSource ? void onContinueModelSource(viewedModelSource) : onContinue?.(loadedRunId)}
+            onClick={() => onContinue(loadedRunId, viewedModelSource)}
           >
             {t("stage.base.continue")}
           </button>
@@ -1163,9 +1195,10 @@ export function Stage({
             {t("stage.base.default")}
           </button>
         )}
+        {baseNotices}
         {baseError && <ErrorPanel error={baseError} what="GET /api/state" />}
       </div>
-    );
+    ) : baseNotice || baseNotSaved ? <div className="editing-base">{baseNotices}</div> : null;
   const pickedStatus = picked && (
     <div className="picked" title={developerMode ? t("stage.picked.title", {
       status: picked.status, sourceState: picked.sourceState,
@@ -1509,8 +1542,9 @@ export function Stage({
           onPointerDown={(event) => {
             if (transferNavigation(event)) return;
             if (event.button !== 0 || sketchBusy) return;
-            event.currentTarget.setPointerCapture(event.pointerId);
             const current = interaction.current.sketch;
+            if (current.tool === "freehand" && current.phase === "idle" && refuseLockedEdit()) return;
+            event.currentTarget.setPointerCapture(event.pointerId);
             if (current.tool !== "freehand" || current.phase === "height") return;
             const world = current.plane ? viewportRef.current?.pointOnSketchPlane(event.clientX, event.clientY, current.plane)
               : viewportRef.current?.pointOnWorkPlane(event.clientX, event.clientY, current.base);
@@ -1565,7 +1599,7 @@ export function Stage({
               interaction.current.sketch = sketch;
             }
             if (sketch.phase === "idle" || sketch.anchor === null) {
-              if (!world) return;
+              if (!world || refuseLockedEdit()) return;
               const start = planCursor(sketch, world, onModel, event.shiftKey);
               setSnapNote(start.snapped ? start.snapped.kind : null);
               showSketch({ ...sketch, phase: "profile", anchor: start.point, vertices: [start.point], cursor: start.point, profile: [], height: 0, typed: "" });

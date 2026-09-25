@@ -1243,6 +1243,16 @@ button.chip:hover {
   white-space: nowrap;
 }
 
+/* A refused base action or an unsaved choice takes a full line of the row and
+   wraps. The footer's measured height lifts the toolbar above it. */
+.stage__context .editing-base > .editing-base__notice {
+  display: block;
+  flex: 1 1 100%;
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
 .stage__versions-toggle {
   display: flex;
   flex-wrap: wrap;

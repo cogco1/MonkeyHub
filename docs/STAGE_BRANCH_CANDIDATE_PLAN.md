@@ -1,7 +1,7 @@
 # Stage / Branch / Candidate 工程收敛方案
 
 2026-09-09。核对基线：`main@959a9284f0474664620510b241c7b27050c8c64f`。
-这是经用户同意后实施的工程方案。2026-09-09 已完成本地实现与对应 API、OCCT、浏览器、构建和架构检查。沿用现有 P108、P111、P115 的工作归属，不另设执行清单；当前用户项目尚未执行迁移或建立新 Stage。
+这是经用户同意后实施的工程方案。2026-09-09 已完成本地实现与对应 API、OCCT、浏览器、构建和架构检查。沿用现有 P108、P111、P115 的工作归属，不另设执行清单（2026-09-24 起 P/M/R 编号冻结，后续工作以 GitHub Issue 登记，P115 为冻结的历史索引，见 #60）；当前用户项目尚未执行迁移或建立新 Stage。
 
 **本次重构语义与调用链，保留现有建模、验证和 P036 持久化底座。第一项先修复“候选生成成功但 Studio 不更新模型”，不让这个修复等待版本系统重构。**
 
@@ -203,7 +203,7 @@ Checkout 旧 Stage 只读。若从当前 head 做局部墙体修改，保留完�
 
 测试沿用现有模块的行为测试和 UI 测试，新增只覆盖上述真实缺口：接受原子性、断线/迟到结果、图纸精确来源、增量执行和旧数据读回。代码改动运行相应检查与 `python tools/archcheck.py`；API 契约变动同步 OpenAPI 生成客户端；本方案文档只查链接和 scoped diff。
 
-现有 P111 的候选续改能力继续使用，不重开已完成迁移。实施登记沿 [P115](mapping/planning/P115-capability-consolidation.md)、[P108](mapping/planning/P108-vibe-modeling-frontend.md) 和 [P111](mapping/planning/P111-continuing-design-cycle.md) 的现有归属收拢，不为四个名词新增四张平台建设卡。
+现有 P111 的候选续改能力继续使用，不重开已完成迁移。实施登记沿 [P115](mapping/planning/P115-capability-consolidation.md)、[P108](mapping/planning/P108-vibe-modeling-frontend.md) 和 [P111](mapping/planning/P111-continuing-design-cycle.md) 的现有归属收拢，不为四个名词新增四张平台建设卡。2026-09-24 起，后续工作按 #60 以 GitHub Issue 登记，不再回填这些卡。
 
 ## 11. 本次核对的主要代码依据
 

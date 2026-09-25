@@ -17,6 +17,7 @@ export function DocumentTracingPanel({ draft, disabled, onSendingChange }: {
   const [chosen, setChosen] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [submitted, setSubmitted] = useState(false);
+  const [continuing, setContinuing] = useState(false);
   if (!modeling) return null;
   const lines = draft.annotations.filter(mark => mark.kind === "line" && mark.points.length === 2);
   const shapes = draft.annotations.filter(mark => mark.kind === "polyline" || mark.kind === "line");
@@ -46,6 +47,13 @@ export function DocumentTracingPanel({ draft, disabled, onSendingChange }: {
       setSubmitted(true);
     } catch (cause) { setError(asStudioApiError(cause).detail); }
     finally { onSendingChange(false); }
+  };
+  const continueViewed = async () => {
+    if (!modeling.continueViewed || continuing) return;
+    setContinuing(true); setError(null);
+    try { await modeling.continueViewed(); }
+    catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
+    finally { setContinuing(false); }
   };
   return <section className="document-tracing" aria-label={t("document.trace.title")}>
     <strong>{t("document.trace.title")}</strong>
@@ -84,6 +92,8 @@ export function DocumentTracingPanel({ draft, disabled, onSendingChange }: {
       </select>
     </label>}
     {modeling.blockedReason && <p role="status">{modeling.blockedReason}</p>}
+    {modeling.blockedReason && modeling.continueViewed && <button type="button" className="btn" disabled={disabled || continuing}
+      onClick={() => void continueViewed()}>{t(continuing ? "document.modelSource.continuing" : "stage.base.continue")}</button>}
     <button type="button" className="btn btn--accent" disabled={locked || !!modeling.blockedReason || !draft.tracingCalibration || selected.length === 0}
       onClick={() => void generate()}>{t(disabled ? "document.trace.generating" : "document.trace.generate")}</button>
     {submitted && <p role="status">{t("document.trace.submitted")}</p>}

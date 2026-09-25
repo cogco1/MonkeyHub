@@ -113,8 +113,8 @@ export function VersionsStrip({
     return <div className="versions" role="list" aria-label="Stage 历史">
       {draft?.current && draftRow(draft.current, "当前工作草稿 · 自动保存", true)}
       {draft?.saved?.map((row) => draftRow(row, row.label || "已保存版本"))}
-      {draft && <details className="vcard"><summary>最近 24 小时的自动恢复 · {(draft.recovery ?? []).length}</summary>
-        <p className="quiet">普通修改更新工作草稿。重点版本与已确认 Stage 长期保留。</p>
+      {draft && <details className="vcard"><summary>自动恢复点 · {(draft.recovery ?? []).length}</summary>
+        <p className="quiet">普通修改更新工作草稿。自动恢复点不会过期；重点版本与已确认 Stage 另行列出。</p>
         {draft.recovery?.map((row) => draftRow(row, "恢复点"))}
       </details>}
       <div className="vcard"><div className="vcard__head"><strong>设计历史</strong>

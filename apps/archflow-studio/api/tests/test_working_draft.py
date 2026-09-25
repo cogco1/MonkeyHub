@@ -29,27 +29,62 @@ class WorkingDraftTests(CandidateTestCase):
         from archflow_studio_api.protocol import BASE_CAPABILITIES
         self.assertIn("working-draft", BASE_CAPABILITIES)
         head = self.repository.read_head()
+        # GH-234 Q2: a generated candidate is retained and listed for recovery,
+        # but it never becomes the saved working position by itself.
         accepted, job = self.run_candidate("set height to 2.2", elementId="portico-base")
         self.assertEqual(job["status"], "succeeded", job)
+        listed = self.read()
+        self.assertIsNone(listed["current"])
+        self.assertIn(accepted["candidateId"], listed["managedRunIds"])
+        self.assertEqual([row["runId"] for row in listed["recovery"]], [accepted["candidateId"]])
+        # Only the explicit select route moves it: Continue, Return to default,
+        # a Versions choice or an adopted Sync.
+        selected = self.client.put("/api/working-draft", json={"projectId": PROJECT_ID,
+            "baseRevisionSha256": listed["revisionSha256"], "runId": accepted["candidateId"]})
+        self.assertEqual(selected.status_code, 200, selected.text)
+        self.assertEqual(selected.json()["current"]["runId"], accepted["candidateId"])
+        # A candidate generated from that very base is listed beside it and
+        # leaves the architect's base where it was.
+        digest = self.client.get("/api/state", params={"run": accepted["candidateId"]}).json()["stateDigest"]
+        generated, job = self.run_candidate("set height to 0.5", elementId="portico-cornice",
+                                            sourceRunId=accepted["candidateId"], stateDigest=digest)
+        self.assertEqual(job["status"], "succeeded", job)
+        self.assertTrue(self.repository.layout.run(generated["candidateId"]).root.is_dir())
         current = self.read()
-        # GH-234 Q2: a generated candidate is listed for recovery, never adopted.
-        self.assertIsNone(current["current"])
-        self.assertIn(accepted["candidateId"], current["managedRunIds"])
-        self.assertEqual(len(current["recovery"]), 1)
-        chosen = self.client.put("/api/working-draft", json={"projectId": PROJECT_ID, "runId": accepted["candidateId"],
-                                 "baseRevisionSha256": current["revisionSha256"]})
-        self.assertEqual(chosen.status_code, 200, chosen.text)
-        current = chosen.json()
         self.assertEqual(current["current"]["runId"], accepted["candidateId"])
+        self.assertIn(generated["candidateId"], current["managedRunIds"])
+        self.assertEqual({row["runId"] for row in current["recovery"]}, {accepted["candidateId"], generated["candidateId"]})
         saved = self.client.post("/api/working-draft/save", json={"projectId": PROJECT_ID,
             "baseRevisionSha256": current["revisionSha256"], "runId": accepted["candidateId"], "label": "Study A"})
         self.assertEqual(saved.status_code, 200, saved.text)
         self.assertEqual(saved.json()["saved"][0]["label"], "Study A")
-        self.assertEqual(saved.json()["recovery"], [])
+        self.assertEqual([row["runId"] for row in saved.json()["recovery"]], [generated["candidateId"]])
+        self.assertEqual(saved.json()["current"]["runId"], accepted["candidateId"])
         self.assertEqual(self.repository.read_head(), head)
         self.assertEqual(self.repository.read_design_branches(), {})
         with TestClient(create_app(StudioSettings(project_dir=self.repository.layout.root, cad_export="off"))) as cold:
-            self.assertEqual(self.read(cold), saved.json())
+            reopened = self.read(cold)
+            self.assertEqual(reopened, saved.json())
+            self.assertEqual(reopened["current"]["runId"], accepted["candidateId"])
+
+    def test_an_automatic_candidate_older_than_24_hours_stays_listed_for_recovery(self):
+        # GH-234 Q3: a generated candidate stays an alternative until the architect
+        # explicitly rejects or archives it; age alone never drops it from the list.
+        older, job = self.run_candidate("set height to 2.2", elementId="portico-base")
+        self.assertEqual(job["status"], "succeeded", job)
+        newer, job = self.run_candidate("set height to 2.4", elementId="portico-base")
+        self.assertEqual(job["status"], "succeeded", job)
+        value, revision = self.repository.read_working_draft()
+        value["runs"][older["candidateId"]]["updatedAt"] = "2020-01-01T00:00:00+00:00"
+        self.repository.compare_and_swap_working_draft(expected_revision=revision, value=value)
+        newest_first = [newer["candidateId"], older["candidateId"]]
+        self.assertEqual([row["runId"] for row in self.read()["recovery"]], newest_first)
+        with TestClient(create_app(StudioSettings(project_dir=self.repository.layout.root, cad_export="off"))) as cold:
+            reopened = self.read(cold)
+            self.assertEqual([row["runId"] for row in reopened["recovery"]], newest_first)
+            self.assertEqual(reopened["recovery"][-1]["updatedAt"], "2020-01-01T00:00:00+00:00")
+            self.assertEqual(reopened["managedRunIds"], sorted(newest_first))
+            self.assertIsNone(reopened["current"])
 
     def test_select_clear_and_stale_window_never_overwrite_current(self):
         body = {"projectId": PROJECT_ID, "runId": REFERENCE_RUN_ID, "baseRevisionSha256": None}
@@ -98,7 +133,7 @@ class WorkingDraftTests(CandidateTestCase):
         self.assertIsNone(self.read()["localDraft"])
         self.assertFalse(self.repository.layout.run("studio-working-draft").root.exists())
 
-    def test_uploaded_model_is_permanent_but_generated_composition_can_expire(self):
+    def test_uploaded_model_and_generated_composition_both_stay_after_cleanup(self):
         import base64
         from pathlib import Path
         from archflow_studio_api.application.artifacts import register_model_asset
@@ -114,8 +149,11 @@ class WorkingDraftTests(CandidateTestCase):
             value["current"] = None
             value["runs"][run_id]["updatedAt"] = "2020-01-01T00:00:00+00:00"
             self.repository.compare_and_swap_working_draft(expected_revision=revision, value=value)
-            removed = self.repository.prune_working_draft(now="2026-01-03T00:00:00+00:00")
-            self.assertEqual(removed, (run_id,) if generated else ())
+            # GH-234 Q3: an expired automatic candidate nothing refers to stays
+            # until the architect explicitly rejects or archives it.
+            self.assertEqual(self.repository.prune_working_draft(now="2026-01-03T00:00:00+00:00"), ())
+            self.assertTrue(self.repository.layout.run(run_id).root.is_dir())
+            self.assertIn(run_id, self.repository.read_working_draft()[0]["runs"])
 
 
 class InitialProjectionRecoveryTests(CandidateArchiveTests):
@@ -133,15 +171,25 @@ class InitialProjectionRecoveryTests(CandidateArchiveTests):
             recovered = cold.get("/api/working-draft")
             self.assertEqual(recovered.status_code, 200, recovered.text)
             self.assertEqual(recovered.json()["localDraft"]["source"], source)
-            # The finished candidate is listed; it did not become the position (GH-234 Q2).
+            # The finished batch is retained and listed; it does not become the
+            # saved position until the client adopts it explicitly (GH-234 Q2).
             self.assertIsNone(recovered.json()["current"])
-            self.assertIn(accepted["candidateId"], [row["runId"] for row in recovered.json()["recovery"]])
+            self.assertIn(accepted["candidateId"], recovered.json()["managedRunIds"])
             restored_source = cold.get("/api/state")
             self.assertEqual(restored_source.status_code, 200, restored_source.text)
             self.assertEqual(restored_source.json()["stateDigest"], self.state_digest)
             again = cold.put("/api/working-draft/local", json={"projectId": PROJECT_ID,
                 "baseRevisionSha256": recovered.json()["revisionSha256"], "draft": draft})
             self.assertEqual(again.status_code, 200, again.text)
+            adopted = cold.put("/api/working-draft", json={"projectId": PROJECT_ID,
+                "baseRevisionSha256": again.json()["revisionSha256"], "runId": accepted["candidateId"]})
+            self.assertEqual(adopted.status_code, 200, adopted.text)
+            self.assertEqual(adopted.json()["current"]["runId"], accepted["candidateId"])
+        with TestClient(create_app(StudioSettings(project_dir=self.repository.layout.root, cad_export="off"))) as reopened:
+            kept = reopened.get("/api/working-draft")
+            self.assertEqual(kept.status_code, 200, kept.text)
+            self.assertEqual(kept.json()["current"]["runId"], accepted["candidateId"])
+            self.assertEqual(kept.json()["localDraft"]["source"], source)
 
 
 class BranchWorkingDraftTests(DesignHistoryFixture):
@@ -149,6 +197,7 @@ class BranchWorkingDraftTests(DesignHistoryFixture):
         s0 = self.initialize()
         self.fork(s0, branch_id="alternative")
         candidate = self.candidate_from(s0)
+        unreferenced = self.candidate_from(s0, height=2.4)
         current = self.client.get("/api/working-draft").json()
         selected = self.client.put("/api/working-draft", json={"projectId": PROJECT_ID,
             "baseRevisionSha256": current["revisionSha256"], "runId": candidate, "branchId": "alternative"})
@@ -158,7 +207,12 @@ class BranchWorkingDraftTests(DesignHistoryFixture):
         self.assertEqual(accepted.status_code, 200, accepted.text)
         value, revision = self.repository.read_working_draft()
         value["current"] = None
-        value["runs"][candidate]["updatedAt"] = "2020-01-01T00:00:00+00:00"
+        for run_id in (candidate, unreferenced):
+            value["runs"][run_id]["updatedAt"] = "2020-01-01T00:00:00+00:00"
         self.repository.compare_and_swap_working_draft(expected_revision=revision, value=value)
+        # GH-234 Q3: cleanup removes no run. The confirmed Stage's candidate and
+        # an expired alternative that nothing refers to both stay.
         self.assertEqual(self.repository.prune_working_draft(now="2026-01-03T00:00:00+00:00"), ())
+        for run_id in (candidate, unreferenced):
+            self.assertTrue(self.repository.layout.run(run_id).root.is_dir())
         self.assertEqual(self.history("alternative")["stages"][-1]["stageRef"], accepted.json()["stageRef"])

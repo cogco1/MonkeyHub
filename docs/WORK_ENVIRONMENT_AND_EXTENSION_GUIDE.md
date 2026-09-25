@@ -80,11 +80,11 @@ module registry 管软件归口与公开契约，work registry 只管未完成�
 | 当前需要 | 固定入口 | 接着读取什么 |
 | --- | --- | --- |
 | 了解 ArchFlow 做什么 | README 的概述与当前状态 | 涉及架构决定时才读 `docs/ARCHITECTURE.md` 的对应部分 |
-| 梳理功能或准备补一段用户操作 | 当前用户请求及对应 GitHub Issue／PR | 确认这次操作与验收，再用 `devctl.py work` 查实际并发、`module` 查现有契约和调用方；[P115 功能节点图](mapping/planning/P115-capability-consolidation.md#功能节点图与开发校准) 仅作历史参考 |
-| 按目标查已有操作 | `python tools/devctl.py capability <目标或能力-id>` | 读取匹配项的范围与入口；绑定项目内使用 `GET /api/capabilities?goal=...`，再描述具体来源和目标。实际支持范围以 owner 的公开契约、调用方及当前 Issue／PR 的验收为准 |
+| 开始或接续一项工作 | 对应的 GitHub Issue，再运行 `python tools/devctl.py work` | Issue 记录需求、验收与讨论；`work` 列出登记中的 active／review lane（谁在改哪些路径）和不占路径的 legacy 卡。[P115](mapping/planning/P115-capability-consolidation.md) 是冻结的历史索引，不从中推导当前任务，也不回填进度 |
+| 按目标查已有操作 | `python tools/devctl.py capability <目标或能力-id>` | 读取匹配项的范围与入口；绑定项目内使用 `GET /api/capabilities?goal=...`，再描述具体来源和目标。首项为已有对象的数值修改；已支持和缺少的部分见返回的 `works`／`missing` |
 | 查建模、图纸、项目或应用的代码归属 | `python tools/devctl.py module <关键词>` | 用返回的精确 module id 再查契约；按 `--section`、`--offset` 补齐被省略的相关项 |
 | 修改已有实现 | owner 的 `source_paths`、`public_api`、`tests` | 目标实现及真实调用方；只有存在具体疑问时才在相关包中 `rg` |
-| 接续开发任务 | 当前 Issue／PR 与 `python tools/devctl.py work` | 核对实际 branch／worktree／base／窄路径；`status` 只显示登记摘要，旧卡 blocked 或历史父级范围不代表正在占用代码 |
+| 查看全部登记项 | `python tools/devctl.py status` | 每项一行；blocked 的 legacy 卡不占路径，卡片状态不代表能力可用性 |
 | 创建或复用源码 worktree | `python tools/workspace.py create --branch codex/<task>` | 从一次配置的开发根取得目录；已有任务继续使用其原检出，详见下方“开发目录只配置一次” |
 | 查看打包目录或构建候选包 | `python tools/package_monkeyapps.py --show-paths` | 共用开发根配置；确认来源后用 `--source-ref <ref>` 构建，仍需打包工具所需的 Node/npm |
 | 查共享工具箱 Skill | `hgs skills list <关键词> --path <toolbox-root>/skills` | `hgs skills show <id> --path <toolbox-root>/skills`，再按需读取示例或调用入口 |
@@ -852,7 +852,8 @@ npm.cmd run build  # 包含 typecheck
 ### 8.7 从一个小修改到审查与集成
 
 1. 先按第 2 节找到现有 owner，查看它的 inputs/outputs/public_api/invariants 和真实调用方。
-   复用已有 live 工作卡，在任务或 PR 中约定问题、明确文件范围、接口是否改变、验收动作和审查人；无合适归属时才新建卡。
+   在对应的 GitHub Issue（没有就新开）或 PR 中约定问题、明确文件范围、接口是否改变、验收动作和审查人；
+   需要源码并发协调时才在 work registry 登记 `GH-<issue>` lane，不新建 P 卡。
 2. 成员在自己的 clone 从约定基线建立短分支，如 `git switch -c codex/first-setup-fix`。
    首次源码修改选一个已经复现的小问题；与其他人重叠同一文件时先交接范围再编辑。
 3. 检查工作 diff，显式暂存自己的文件。例如只修改 README 时：

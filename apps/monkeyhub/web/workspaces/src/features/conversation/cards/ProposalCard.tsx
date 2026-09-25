@@ -53,6 +53,7 @@ export function ProposalCard({
   refining,
   busy,
   inactive,
+  inactiveReason = inactive ? "otherBase" : null,
   onRun,
   onAdjust,
   onRefine,
@@ -68,6 +69,11 @@ export function ProposalCard({
   refining: boolean;
   busy: boolean;
   inactive: boolean;
+  /**
+   * Why an inactive proposal cannot be applied: it was made on another editing
+   * base, or its base is not the model on screen. Null says nothing.
+   */
+  inactiveReason?: "otherBase" | "viewing" | null;
   onRun(): void;
   onAdjust(utterance: string): void;
   onRefine(value: number): void;
@@ -213,7 +219,8 @@ export function ProposalCard({
           </p>
         </div>
       )}
-      {inactive && <p className="card__row quiet">{t("proposal.otherBase")}</p>}
+      {inactive && inactiveReason && <p className="card__row quiet" data-inactive-reason={inactiveReason}>
+        {t(inactiveReason === "viewing" ? "stage.base.proposalViewing" : "proposal.otherBase")}</p>}
       {!inactive && change.kind !== "edit_components" && target.key !== null &&
         typeof change.old === "number" &&
         typeof change.new === "number" &&

@@ -182,6 +182,10 @@ export const messagesEn = {
   "stage.base.notSaved": "This editing choice could not be saved in this browser; it applies to this tab only.",
   "stage.base.programUnavailable": "Program-sheet editing still uses the default base. Return to it to edit the sheet.",
   "stage.base.optionsReadOnly": "Candidate massing is read-only here. Option generation still uses the default editing base.",
+  "stage.base.refusedBusy": "The editing base was not changed: another model operation is still running. Wait for it to finish, then try again.",
+  "stage.base.refusedUnsynced": "The editing base was not changed: local model edits are not synced yet and are kept in the working draft. Sync or undo them on the model you edited, then try again.",
+  "stage.base.switchFailed": "The editing base was not changed. Resolve the reported error, then try again.",
+  "stage.base.proposalViewing": "This proposal applies to the editing base, not to the version on screen. Return to the editing base to apply it, or continue from this version and propose again.",
   "proposal.otherBase": "This proposal belongs to another editing base. Adjust its sentence to propose it here.",
 
   "common.apply": "Apply",
