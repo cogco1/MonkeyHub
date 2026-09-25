@@ -13,7 +13,8 @@
  * "queued" are Agent worktrees, not Candidates; runs, repairs, redo attempts
  * and results rejected before admission appear only in Advanced details.
  *
- * Hash parameters: #state=1..6, #theme=system|light|dark, #data=<name>.
+ * Hash parameters: #state=1..6, #theme=system|light|dark, #data=<name>,
+ * #view=tree|list (the Design Tree's List or Growth tree view).
  */
 (function () {
   "use strict";
@@ -77,6 +78,7 @@
   let idx = null;
   let toastTimer = null;
   let appliedState = null;
+  let appliedView = null;
 
   function index() {
     idx = { stage: new Map(), study: new Map(), item: new Map(), line: new Map(), studyOf: new Map() };
@@ -93,7 +95,7 @@
   function parentOf(id) {
     switch (kindOf(id)) {
       case "stage": return idx.stage.get(id).parent || null;
-      case "item": return idx.studyOf.get(id).stage;
+      case "item": return studyBaseOf(idx.studyOf.get(id));
       case "line": return idx.line.get(id).parent || null;
       default: return null;
     }
@@ -110,6 +112,19 @@
     return D.stages[0];
   }
   const lastStage = () => D.stages[D.stages.length - 1];
+  /* A Study starts from `base` (a Stage, a Candidate or a line); `stage` is the
+     Stage it is listed under. Older datasets give only `stage`. */
+  const studyBaseOf = (study) => study.base || study.stage;
+  function studyStageOf(study) {
+    if (study.stage && idx.stage.has(study.stage)) return study.stage;
+    const line = lineageOf(study.base || "");
+    for (let i = line.length - 1; i >= 0; i -= 1) if (kindOf(line[i]) === "stage") return line[i];
+    return D.stages[0].id;
+  }
+  const fromLabel = (study) => {
+    const b = studyBaseOf(study);
+    return kindOf(b) === "stage" ? stageLabel(idx.stage.get(b)) : shortLabel(b);
+  };
   const stageLabel = (stage) => `${stage.label} · ${stage.name}`;
   const studyShort = (study) => study.short || study.name.replace(/\s+Study$/i, "");
   const itemLabel = (item) => `${item.letter ? `${item.letter} · ` : ""}${item.name}`;
@@ -159,7 +174,7 @@
     for (const study of D.studies) {
       for (const item of study.items) {
         if (item.status === "working") { out.running += 1; out.runStudy = out.runStudy || study.id; }
-        if (study.stage === stage.id && item.status === "ready" && !line.has(item.id)) { out.ready += 1; out.readyStudy = out.readyStudy || study.id; }
+        if (studyStageOf(study) === stage.id && item.status === "ready" && !line.has(item.id)) { out.ready += 1; out.readyStudy = out.readyStudy || study.id; }
       }
     }
     return out;
@@ -189,12 +204,14 @@
       sidebar: false,
       panel: !compactQuery.matches,
       surface: "arch",
+      mode: "list",
       projection: "axon",
       accept: null,
       toast: null,
-      scrollTo: p.scroll || (focusStudy ? `node:${focusStudy.stage}` : p.select ? `node:${p.select}` : null),
+      scrollTo: p.scroll || (focusStudy ? `node:${studyStageOf(focusStudy)}` : p.select ? `node:${p.select}` : null),
       chatTo: p.focus ? `res:${p.focus}` : "bottom",
     };
+    GT.fitted = false;
     if (p.continue && nodeOf(p.continue.id)) continueFrom(p.continue.id, p.continue, true);
     if (S.view || S.compare) revealTools();
   }
@@ -278,7 +295,7 @@
     S.tree = true;
     S.focus = studyId;
     S.collapsed.delete(studyId);
-    S.scrollTo = `node:${study.stage}`;
+    S.scrollTo = `node:${studyStageOf(study)}`;
   }
 
   function simAdmit(id) {
@@ -445,6 +462,334 @@
     return projection === "plan" ? planSvg(shape) : axonSvg(shape);
   }
 
+  /* ---------------------------------------------------------- growth tree */
+
+  /* The Design Tree as one growing branch. The Working Head's lineage is the
+     trunk: one continuous stroke from left to right. At each decision point
+     the options not taken are short twigs alternating above and below. A line
+     continued later from a twig grows from that twig, muted, and so does the
+     future left behind by a fork. Every side subtree gets its own x-range on
+     its side, so the drawing never crosses (a tree has E = V - 1).
+     Navigation follows MonkeyBoard's canvas: wheel zoom at the cursor, drag,
+     Space-drag or middle-mouse pan, a "- 100% +" bar and Fit. */
+  const GS = { itemSlot: 128, stageSlot: 168, lineSlot: 138, tipSlot: 310, gap: 34, elbow: 14, lane: 130, subLane: 140, labelGap: 18 };
+  const VIS = { item: [88, 60], stage: [150, 34], line: [120, 44], head: [290, 124] };
+  const LABEL_H = { item: 64, line: 64 };
+  const GT = { z: 1, tx: 0, ty: 0, fitted: false, box: null, pan: null, space: false, moved: false, fitFor: "" };
+  const Z_MIN = 0.15, Z_MAX = 4;
+  const levelOf = (z) => (z < 0.5 ? "far" : z < 1.25 ? "mid" : "close");
+  const growthOpen = () => S.tree && S.mode === "growth";
+  const growthWide = () => growthOpen() && !S.view && !S.compare;
+
+  function childIndex() {
+    const kids = new Map();
+    const add = (parent, entry) => {
+      if (!parent) return;
+      if (!kids.has(parent)) kids.set(parent, []);
+      kids.get(parent).push(entry);
+    };
+    for (const study of D.studies) for (const item of study.items) add(studyBaseOf(study), { id: item.id, study: study.id });
+    for (const line of D.lines) add(line.parent, { id: line.id, study: null });
+    for (const stage of D.stages) add(stage.parent, { id: stage.id, study: null });
+    return kids;
+  }
+
+  function weightOf(id, kids, memo) {
+    if (memo.has(id)) return memo.get(id);
+    memo.set(id, 0);
+    let w = 1 + (kindOf(id) === "stage" ? 1000 : 0);
+    for (const k of kids.get(id) || []) w += weightOf(k.id, kids, memo);
+    memo.set(id, w);
+    return w;
+  }
+
+  /* A branch off the trunk keeps growing through whatever was continued:
+     Stages, lines and options that have descendants. Leaf options stay twigs. */
+  function chainFrom(id, kids, memo) {
+    const path = [id], seen = new Set([id]);
+    for (let cur = id; ;) {
+      const next = (kids.get(cur) || []).filter((k) => !seen.has(k.id) && (kindOf(k.id) !== "item" || (kids.get(k.id) || []).length));
+      if (!next.length) break;
+      next.sort((a, b) => weightOf(b.id, kids, memo) - weightOf(a.id, kids, memo));
+      cur = next[0].id;
+      seen.add(cur);
+      path.push(cur);
+    }
+    return path;
+  }
+
+  function sideGroups(id, next, kids) {
+    const groups = [], byStudy = new Map();
+    for (const k of kids.get(id) || []) {
+      if (k.id === next) continue;
+      if (k.study) {
+        if (!byStudy.has(k.study)) { const g = { study: k.study, members: [] }; byStudy.set(k.study, g); groups.push(g); }
+        byStudy.get(k.study).members.push(k.id);
+      } else groups.push({ study: null, members: [k.id] });
+    }
+    const nextStudy = next && kindOf(next) === "item" ? idx.studyOf.get(next) : null;
+    if (nextStudy) {
+      const i = groups.findIndex((g) => g.study === nextStudy.id);
+      groups.push(i >= 0 ? groups.splice(i, 1)[0] : { study: nextStudy.id, members: [] });
+    }
+    return groups;
+  }
+
+  const gtKind = (id) => (id === "head" ? "head" : kindOf(id));
+  const slotOf = (id) => ({ head: GS.tipSlot, stage: GS.stageSlot, line: GS.lineSlot }[gtKind(id)] || GS.itemSlot);
+
+  function growthLayout() {
+    const kids = childIndex(), memo = new Map();
+    const out = { nodes: [], edges: [], labels: [], trunk: [] };
+    const pending = (id) => kindOf(id) === "item" && idx.item.get(id).status !== "ready";
+
+    /* side 0 is the trunk; -1 / +1 a branch above / below whose own twigs grow further out. */
+    function lay(path, x0, y, side, fromTrunk) {
+      const cursor = { [-1]: x0, [1]: x0 };
+      let x = x0, prev = null, right = x0;
+      path.forEach((id, i) => {
+        const kind = gtKind(id);
+        const role = side === 0 ? "trunk" : i === 0 ? (fromTrunk ? "twig" : "option") : "branch";
+        const node = { id, kind, x, y, side, role, muted: side !== 0 && !(fromTrunk && i === 0),
+          study: kind === "item" ? idx.studyOf.get(id).id : null };
+        out.nodes.push(node);
+        const [w] = VIS[kind];
+        if (side === 0) out.trunk.push([x + w / 2, y]);
+        else if (prev) out.edges.push({ kind: "branch", pts: [[prev.x + VIS[prev.kind][0], y], [x, y]] });
+        const next = path[i + 1];
+        let decision = x + slotOf(id) + GS.labelGap, lastStem = null;
+        for (const group of sideGroups(id, next, kids)) {
+          let parity = 0, first = null;
+          for (const member of group.members) {
+            const sigma = side === 0 ? (parity++ % 2 === 0 ? -1 : 1) : side;
+            const col = Math.max(decision, cursor[sigma]);
+            const childY = y + sigma * (side === 0 ? GS.lane : GS.subLane);
+            const sub = lay(chainFrom(member, kids, memo), col + GS.elbow, childY, sigma, side === 0);
+            out.edges.push({ kind: side !== 0 ? "muted-twig" : pending(member) ? "pending" : "twig", pts: [[col, y], [col, childY], [col + GS.elbow, childY]] });
+            cursor[sigma] = sub.right + GS.gap;
+            lastStem = lastStem === null ? col : Math.max(lastStem, col);
+            if (first === null) first = col;
+            right = Math.max(right, sub.right);
+          }
+          if (group.study) {
+            const study = idx.study.get(group.study);
+            out.labels.push({ study: study.id, x: first ?? decision, y, side, muted: side !== 0, twigs: group.members.length, total: study.items.length, name: study.name, noun: study.noun || "options" });
+          }
+          if (lastStem !== null) decision = Math.max(decision, lastStem);
+        }
+        right = Math.max(right, x + slotOf(id));
+        prev = node;
+        x = Math.max(x + slotOf(id) + GS.gap, lastStem === null ? 0 : lastStem + GS.elbow + GS.gap);
+      });
+      return { right };
+    }
+
+    lay(lineageOf(D.head.parent).concat(["head"]), 0, 0, 0, false);
+    const box = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
+    for (const n of out.nodes) {
+      const r = nodeRect(n);
+      box.minX = Math.min(box.minX, r.x); box.minY = Math.min(box.minY, r.y);
+      box.maxX = Math.max(box.maxX, r.x + r.w); box.maxY = Math.max(box.maxY, r.y + r.h);
+    }
+    out.box = box;
+    return out;
+  }
+
+  /* The node's footprint in canvas units: its card plus the labels on its outer side. */
+  function nodeRect(n) {
+    const [, h] = VIS[n.kind];
+    const labels = LABEL_H[n.kind] || 0;
+    const w = slotOf(n.id);
+    if (n.side < 0) return { x: n.x, y: n.y - h / 2 - labels, w, h: h + labels, labelsFirst: true };
+    return { x: n.x, y: n.y - h / 2, w, h: h + labels, labelsFirst: false };
+  }
+
+  function gtNode(n, line) {
+    const r = nodeRect(n);
+    const selected = S.selected === n.id, viewing = S.view === n.id;
+    let body = "";
+    if (n.kind === "stage") {
+      const stage = idx.stage.get(n.id);
+      body = `<button type="button" class="gtn__hit gtn__pill" data-act="gt-select" data-id="${esc(n.id)}" title="${esc(stageLabel(stage))}"><b class="gtn__badge">${esc(stage.label)}</b><span class="gtn__stname">${esc(stage.name)}</span></button>`;
+    } else if (n.kind === "head") {
+      const from = D.head.parent, canAccept = kindOf(from) !== "stage";
+      body = `<div class="gtn__tip"><button type="button" class="gtn__hit gtn__tiphit" data-act="gt-select" data-id="head"><span class="gtn__tiptitle">Current</span><span class="gtn__tipsub">${esc(headLabel())}</span></button>
+        <button type="button" class="gtn__accept" data-act="accept-ask" data-id="head"${canAccept ? "" : ' disabled title="Continue from an option first: a Stage is accepted from the Working Head"'}>Accept as next Stage</button></div>`;
+    } else if (n.kind === "line") {
+      const node = idx.line.get(n.id);
+      const labels = `<span class="gtn__labels"><span class="gtn__name">${esc(node.name)}</span><span class="gtn__sum">${esc(node.summary || "")}</span></span>`;
+      body = `<button type="button" class="gtn__hit gtn__stack" data-act="gt-select" data-id="${esc(n.id)}">${r.labelsFirst ? labels : ""}<span class="gtn__card gtn__card--line"><span class="gtn__thumb">${preview(node.preview)}</span><span class="gtn__linetag">${line.has(n.id) ? "line" : "left"}</span></span>${r.labelsFirst ? "" : labels}</button><span class="gtn__fardot" data-act="gt-select" data-id="${esc(n.id)}" aria-hidden="true"></span>`;
+    } else {
+      const item = idx.item.get(n.id);
+      const [dot, text] = statusOf(item, line);
+      const pendingCard = item.status !== "ready";
+      const labels = `<span class="gtn__labels"><span class="gtn__name">${esc(item.name)}</span><span class="gtn__sum">${esc(item.summary || "")}</span><span class="gtn__status">${statusDot(dot, text)}${esc(text)}</span></span>`;
+      body = `<button type="button" class="gtn__hit gtn__stack" data-act="gt-select" data-id="${esc(n.id)}">${r.labelsFirst ? labels : ""}<span class="gtn__card"${pendingCard ? ` data-pending="${esc(item.status)}"` : ""}>${pendingCard ? `<span class="gtn__slot">${item.status === "working" ? "Agent working…" : "Queued"}</span>` : `<span class="gtn__thumb">${preview(item.preview)}</span>`}${item.letter ? `<b class="gtn__letter">${esc(item.letter)}</b>` : ""}${statusDot(dot, text)}</span>${r.labelsFirst ? "" : labels}</button><span class="gtn__fardot" data-s="${dot}" data-act="gt-select" data-id="${esc(n.id)}" aria-hidden="true"></span>`;
+    }
+    return `<foreignObject x="${r.x}" y="${r.y}" width="${r.w}" height="${r.h}"><div class="gtn gtn--${n.kind}" data-role="${n.role}" data-id="${esc(n.id)}" data-study="${esc(n.study || "")}" data-side="${n.side}" data-muted="${n.muted}" data-selected="${selected}" data-viewing="${viewing}" data-line="${line.has(n.id) || n.id === "head"}">${body}</div></foreignObject>`;
+  }
+
+  function gtLabel(l) {
+    const far = l.twigs === l.total ? `${l.total} ${l.noun}` : `${l.total} ${l.noun} · 1 continued`;
+    return `<text class="gt-count gt-count--far${l.muted ? " gt-muted" : ""}" x="${l.x + 6}" y="${l.y}" dy="${l.side < 0 ? "-0.9em" : "1.7em"}" data-study="${esc(l.study)}" data-twigs="${l.twigs}" data-total="${l.total}">${esc(far)}</text>`;
+  }
+
+  function gtCard(line) {
+    const id = S.selected;
+    if (!id) return "";
+    const close = `<button type="button" class="icon-btn gt-card__close" data-act="gt-deselect" aria-label="Close details">${icon("close")}</button>`;
+    let title, facts = [], runs = null, actions = "", thumb = "";
+    if (id === "head") {
+      const from = D.head.parent, canAccept = kindOf(from) !== "stage";
+      title = "Current · Working Head";
+      facts = [["At", headLabel()], ["Based on", stageLabel(currentStage())]];
+      actions = `<button type="button" class="act act--stage" data-act="accept-ask" data-id="head"${canAccept ? "" : " disabled"}>${icon("flag")}Accept as next Stage</button>`;
+      if (S.accept === "head") actions += acceptConfirm();
+      else if (!canAccept) actions += '<p class="gt-card__note">Continue from an option first. Accepting a Stage is its own step.</p>';
+    } else {
+      const kind = kindOf(id);
+      if (!kind) return "";
+      const node = nodeOf(id);
+      thumb = kind === "item" && node.status !== "ready" ? "" : `<span class="thumb">${preview(node.preview)}</span>`;
+      if (kind === "stage") {
+        title = stageLabel(node);
+        facts = [["Accepted", `${node.acceptedAt || ""} · ${node.acceptedBy || ""}`], ["From", node.parent ? shortLabel(node.parent) : "project start"]];
+        actions = `<button type="button" class="act" data-act="view" data-id="${esc(id)}">${icon("eye")}View</button><button type="button" class="act act--primary" data-act="continue" data-id="${esc(id)}"${D.head.parent === id ? " disabled" : ""}>${icon("arrow")}Continue from here</button>`;
+      } else if (kind === "line") {
+        title = node.name;
+        facts = [["By", node.by || ""], ["At", node.at || ""]];
+        actions = `<button type="button" class="act" data-act="view" data-id="${esc(id)}">${icon("eye")}View</button><button type="button" class="act act--primary" data-act="continue" data-id="${esc(id)}"${D.head.parent === id ? " disabled" : ""}>${icon("arrow")}Continue from here</button>`;
+      } else {
+        const study = idx.studyOf.get(id);
+        title = itemLabel(node);
+        facts = [["Study", `${study.name} · from ${fromLabel(study)}`], ["By", node.by || ""], ["At", node.at || ""], ["Status", statusOf(node, line)[1]]];
+        runs = node.advanced && Array.isArray(node.advanced.runs) ? node.advanced.runs : null;
+        const readyCount = study.items.filter((item) => item.status === "ready").length;
+        actions = node.status === "ready"
+          ? `<button type="button" class="act" data-act="view" data-id="${esc(id)}">${icon("eye")}View</button><button type="button" class="act" data-act="compare" data-id="${esc(study.id)}"${readyCount < 2 ? " disabled" : ""}>${icon("compare")}Compare this Study</button><button type="button" class="act act--primary" data-act="continue" data-id="${esc(id)}"${D.head.parent === id ? " disabled" : ""}>${icon("arrow")}Continue from here</button>`
+          : '<p class="gt-card__note">An Agent worktree, not a Candidate until it completes and is admitted.</p>';
+      }
+    }
+    const result = (r) => (r === "ok" ? "ok" : r === "running" ? "running" : "bad");
+    return `<aside class="gt-card" aria-label="Selected: ${esc(title)}">
+      <div class="gt-card__head">${thumb}<strong>${esc(title)}</strong>${close}</div>
+      <dl class="gt-card__facts">${facts.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("")}</dl>
+      ${runs ? `<div class="adv gt-card__runs"><h4>Runs · not Candidates</h4>${runs.length ? `<ul>${runs.map(([rid, what, r]) => `<li data-result="${result(r)}"><span>${esc(rid)}</span><span>${esc(what)}</span><span>${esc(r)}</span></li>`).join("")}</ul>` : "<p>No runs yet.</p>"}</div>` : ""}
+      <div class="gt-card__acts">${actions}</div>
+    </aside>`;
+  }
+
+  function growthCanvas() {
+    const L = growthLayout();
+    GT.box = L.box;
+    const line = onLine();
+    const zc = Math.min(1, Math.max(0.5, GT.z));
+    const path = (pts) => `M${pts.map((p) => `${p[0]} ${p[1]}`).join(" L")}`;
+    const farStages = L.nodes.filter((n) => n.kind === "stage").map((n) => `<text class="gt-far${n.muted ? " gt-muted" : ""}" x="${n.x}" y="${n.y}" dy="${n.side > 0 ? "2.2em" : "-1.3em"}">${esc(stageLabel(idx.stage.get(n.id)))}</text>`).join("");
+    window.__candidateGraph = {
+      trunk: L.nodes.filter((n) => n.role === "trunk").map((n) => n.id),
+      studies: D.studies.map((study) => ({ id: study.id, base: studyBaseOf(study), items: study.items.map((item) => item.id) })),
+    };
+    return `<div class="gt" data-level="${levelOf(GT.z)}" style="--k:${(1 / zc).toFixed(4)};--kf:${(1 / GT.z).toFixed(4)}">
+      <svg class="gt__svg" role="img" aria-label="Growth tree of ${esc(D.project.name)}"><g class="gt__world" transform="translate(${GT.tx} ${GT.ty}) scale(${GT.z})">
+        <path class="gt-trunk" data-trunk="true" d="${path(L.trunk)}"/>
+        ${L.edges.map((e) => `<path class="gt-edge gt-edge--${e.kind}" d="${path(e.pts)}"/>`).join("")}
+        ${L.labels.map(gtLabel).join("")}${farStages}
+        ${L.nodes.map((n) => gtNode(n, line)).join("")}
+      </g></svg>
+      ${gtCard(line)}
+      <div class="gt__tools"><div class="gt__zoom" role="group" aria-label="Zoom"><button type="button" data-act="gt-zoom" data-id="out" aria-label="Zoom out">−</button><button type="button" class="gt__pct" data-act="gt-zoom" data-id="reset" title="Reset zoom">${Math.round(GT.z * 100)}%</button><button type="button" data-act="gt-zoom" data-id="in" aria-label="Zoom in">+</button></div><button type="button" class="gt__fit" data-act="gt-fit">Fit</button></div>
+      <div class="gt__foot"><span>Wheel to zoom · Space or middle mouse to pan</span><span>Solid: the chosen path · Dashed: options not taken · Muted: earlier lines, kept</span></div>
+    </div>`;
+  }
+
+  function applyView() {
+    const el = app.querySelector(".gt");
+    if (!el) return;
+    el.querySelector(".gt__world").setAttribute("transform", `translate(${GT.tx.toFixed(2)} ${GT.ty.toFixed(2)}) scale(${GT.z.toFixed(4)})`);
+    const zc = Math.min(1, Math.max(0.5, GT.z));
+    el.style.setProperty("--k", (1 / zc).toFixed(4));
+    el.style.setProperty("--kf", (1 / GT.z).toFixed(4));
+    el.dataset.level = levelOf(GT.z);
+    const minor = 20 * GT.z, major = 100 * GT.z;
+    el.style.backgroundSize = `${major}px ${major}px, ${major}px ${major}px, ${minor}px ${minor}px, ${minor}px ${minor}px`;
+    el.style.backgroundPosition = `${GT.tx}px ${GT.ty}px`;
+    const pct = el.querySelector(".gt__pct");
+    if (pct) pct.textContent = `${Math.round(GT.z * 100)}%`;
+  }
+
+  function fitView() {
+    const el = app.querySelector(".gt");
+    if (!el || !GT.box) return;
+    const W = el.clientWidth, H = el.clientHeight - 34, pad = 44;
+    const b = GT.box, bw = Math.max(1, b.maxX - b.minX), bh = Math.max(1, b.maxY - b.minY);
+    const fit = (w, h) => Math.max(Z_MIN, Math.min(1.25, (w - pad * 2) / bw, (h - pad * 2) / bh));
+    /* An open selection card keeps its corner: the tree fits below it, or beside it when too tall. */
+    const card = el.querySelector(".gt-card");
+    const below = card ? card.offsetTop + card.offsetHeight : 0;
+    let top = 0, left = 0, width = W, height = H;
+    if (card && fit(W, H - below) >= fit(W - card.offsetWidth - 12, H)) { top = below; height = H - below; }
+    else if (card) width = W - card.offsetWidth - 12;
+    GT.z = fit(width, height);
+    GT.tx = left + (width - bw * GT.z) / 2 - b.minX * GT.z;
+    GT.ty = top + (height - bh * GT.z) / 2 - b.minY * GT.z;
+    GT.fitted = true;
+    applyView();
+  }
+
+  function zoomAt(px, py, z) {
+    const next = Math.max(Z_MIN, Math.min(Z_MAX, z));
+    GT.tx = px - (px - GT.tx) * (next / GT.z);
+    GT.ty = py - (py - GT.ty) * (next / GT.z);
+    GT.z = next;
+    applyView();
+  }
+
+  function onWheel(event) {
+    const el = event.target.closest && event.target.closest(".gt");
+    if (!el || event.target.closest(".gt-card")) return;
+    event.preventDefault();
+    const r = el.getBoundingClientRect();
+    const delta = event.deltaY * (event.deltaMode === 1 ? 16 : 1);
+    zoomAt(event.clientX - r.left, event.clientY - r.top, GT.z * Math.exp(-delta * 0.0015));
+  }
+
+  function onPointerDown(event) {
+    const el = event.target.closest && event.target.closest(".gt");
+    if (!el || event.target.closest(".gt-card, .gt__tools")) return;
+    if (event.button !== 0 && event.button !== 1) return;
+    if (event.button === 1 || GT.space) event.preventDefault();
+    GT.pan = { x: event.clientX, y: event.clientY, tx: GT.tx, ty: GT.ty };
+    GT.moved = false;
+  }
+
+  function onPointerMove(event) {
+    if (!GT.pan) return;
+    const dx = event.clientX - GT.pan.x, dy = event.clientY - GT.pan.y;
+    if (!GT.moved && Math.hypot(dx, dy) < 4) return;
+    GT.moved = true;
+    GT.tx = GT.pan.tx + dx;
+    GT.ty = GT.pan.ty + dy;
+    const el = app.querySelector(".gt");
+    if (el) el.dataset.panning = "true";
+    applyView();
+  }
+
+  function onPointerUp() {
+    if (!GT.pan) return;
+    GT.pan = null;
+    const el = app.querySelector(".gt");
+    if (el) delete el.dataset.panning;
+  }
+
+  function onSpace(event) {
+    if (event.code !== "Space" || /^(INPUT|TEXTAREA|SELECT)$/.test(event.target.tagName) || !S || !growthOpen()) return;
+    GT.space = event.type === "keydown";
+    const el = app.querySelector(".gt");
+    if (el) el.dataset.space = String(GT.space);
+    if (GT.space) event.preventDefault();
+  }
+
   /* ---------------------------------------------------------- rendering */
 
   const LABELS = {
@@ -481,6 +826,18 @@
   }
 
   const viewingPill = () => `<span class="pill pill--accent pill--icon">${icon("eye")}Viewing</span>`;
+
+  /* One status dot per row: its colour carries what the pills say on selection. */
+  function statusOf(item, line) {
+    if (item.status === "working") return ["run", "Agent working…"];
+    if (item.status === "queued") return ["queued", "Queued"];
+    const became = D.stages.find((stage) => stage.parent === item.id);
+    if (D.head.parent === item.id) return ["head", `Working Head · ${continuedText(item.continued) || "current"}`];
+    if (line.has(item.id)) return ["line", `${continuedText(item.continued) || "On the current line"}${became ? ` · accepted as ${became.label}` : ""}`];
+    if (item.continued) return ["left", `${continuedText(item.continued)} · left${became ? ` · accepted as ${became.label}` : ""}`];
+    return ["ready", "Ready"];
+  }
+  const statusDot = (kind, text) => `<span class="sdot" data-s="${kind}" title="${esc(text)}"><span class="sr-only">${esc(text)}</span></span>`;
 
   function itemPills(item, line) {
     const out = [];
@@ -562,9 +919,8 @@
       ? `${n} ${noun} ready`
       : `${t.ready} of ${n} ready${t.working ? ` · ${t.working} Agent working…` : ""}${t.queued ? ` · ${t.queued} queued` : ""}`);
     const thumbs = study.items.map((item) => `<span class="result__thumb" data-status="${esc(item.status)}">${item.status === "ready" ? preview(item.preview) : ""}<b>${esc(item.letter || "")}</b></span>`).join("");
-    const stage = idx.stage.get(study.stage);
     return `<article class="result" data-study="${esc(study.id)}" aria-label="Agent result: ${esc(study.name)}">
-      <div class="result__head">${icon("tree")}<div><strong>${esc(study.name)}</strong><span>from ${esc(stage ? stageLabel(stage) : study.stage)} · ${esc(study.agent)}</span></div></div>
+      <div class="result__head">${icon("tree")}<div><strong>${esc(study.name)}</strong><span>from ${esc(fromLabel(study))} · ${esc(study.agent)}</span></div></div>
       <div class="result__thumbs">${thumbs}</div>
       <div class="result__foot"><span class="result__line">${esc(headline)}</span><span class="result__arrow" aria-hidden="true">→</span><button type="button" class="result__open" data-act="show-study" data-id="${esc(study.id)}">Show in Design Tree</button></div>
     </article>`;
@@ -646,11 +1002,12 @@
     return `<div class="oldline" data-anchor="node:${esc(lineNode.id)}" data-selected="${selected}" data-viewing="${viewing}" data-line="${current}">
       <button type="button" class="crow__main" data-act="select" data-id="${esc(lineNode.id)}" aria-expanded="${selected}">
         <span class="thumb">${preview(lineNode.preview)}</span>
-        <span class="crow__text"><span class="crow__title"><span>${current ? "" : "Earlier line · "}${esc(lineNode.name)}</span></span>
-          <span class="crow__sum">${esc(lineNode.summary || "")}</span>
-          <span class="crow__meta"><span>${esc(lineNode.by || "")} · ${esc(lineNode.at || "")}</span>${isHead ? '<span class="pill pill--solid">Working Head</span>' : current ? "" : '<span class="pill pill--queued">Not current · kept</span>'}${viewing ? viewingPill() : ""}</span></span>
+        <span class="crow__text"><span class="crow__title"><span class="crow__name">${current ? "" : "Earlier line · "}${esc(lineNode.name)}</span>${statusDot(isHead ? "head" : current ? "line" : "left", isHead ? "Working Head" : current ? "On the current line" : "Not current · kept")}</span>
+          ${selected ? `<span class="crow__sum">${esc(lineNode.summary || "")}</span>
+          <span class="crow__meta"><span>${esc(lineNode.by || "")} · ${esc(lineNode.at || "")}</span>${isHead ? '<span class="pill pill--solid">Working Head</span>' : current ? "" : '<span class="pill pill--queued">Not current · kept</span>'}${viewing ? viewingPill() : ""}</span>` : ""}</span>
       </button>
       ${actions}
+      ${D.lines.filter((l) => l.parent === lineNode.id).map((l) => lineRow(l, line)).join("")}
     </div>`;
   }
 
@@ -669,9 +1026,9 @@
     const lines = D.lines.filter((l) => l.parent === item.id);
     return `<li class="crow" data-anchor="node:${esc(item.id)}" data-status="${esc(item.status)}" data-line="${current}" data-selected="${selected}" data-viewing="${viewing}">
       <div class="crow__row">${check}<button type="button" class="crow__main" data-act="select" data-id="${esc(item.id)}" aria-expanded="${selected}">${thumb}<span class="crow__text">
-        <span class="crow__title">${item.letter ? `<span class="crow__letter">${esc(item.letter)}</span>` : ""}<span>${esc(item.name)}</span></span>
-        <span class="crow__sum">${esc(item.summary || "")}</span>
-        <span class="crow__meta"><span>${esc(item.by || "")} · ${esc(item.at || "")}</span>${itemPills(item, line)}</span>${not}</span></button></div>
+        <span class="crow__title">${item.letter ? `<span class="crow__letter">${esc(item.letter)}</span>` : ""}<span class="crow__name">${esc(item.name)}</span>${statusDot(...statusOf(item, line))}</span>
+        ${selected ? `<span class="crow__sum">${esc(item.summary || "")}</span>
+        <span class="crow__meta"><span>${esc(item.by || "")} · ${esc(item.at || "")}</span>${itemPills(item, line)}</span>${not}` : ""}</span></button></div>
       ${selected ? itemActions(item, study) : ""}
       ${lines.map((l) => lineRow(l, line)).join("")}
     </li>`;
@@ -695,7 +1052,7 @@
         <button type="button" class="study__toggle" data-act="study-toggle" data-id="${esc(study.id)}" aria-expanded="${!collapsed}" aria-label="${collapsed ? "Expand" : "Collapse"} ${esc(study.name)}">${icon("chevron")}</button>
         <div class="study__title">${esc(study.name)} <span>· ${count(n, "option", "options")}</span></div>
         <div class="study__compare">${compareButton(study)}</div>
-        <div class="study__meta">${esc(study.agent || "")} · asked by ${esc(study.askedBy || "")} · ${esc(study.createdAt || "")}</div>
+        <div class="study__meta">${studyBaseOf(study) !== studyStageOf(study) ? `from ${esc(fromLabel(study))} · ` : ""}${esc(study.agent || "")} · asked by ${esc(study.askedBy || "")} · ${esc(study.createdAt || "")}</div>
         <div class="study__status">${status}</div>
       </div>
       ${body}
@@ -704,7 +1061,7 @@
 
   function stageNode(stage, current, segment, line) {
     const selected = S.selected === stage.id, viewing = S.view === stage.id, isHead = D.head.parent === stage.id;
-    const studies = D.studies.filter((study) => study.stage === stage.id);
+    const studies = D.studies.filter((study) => studyStageOf(study) === stage.id);
     const lines = D.lines.filter((l) => l.parent === stage.id);
     const from = stage.parent ? stage.fromNote || `Accepted from ${shortLabel(stage.parent)}` : "";
     const tag = isHead ? '<span class="pill pill--solid">Working Head</span>'
@@ -771,6 +1128,15 @@
 
   function drawer() {
     const line = onLine();
+    const growth = S.mode === "growth";
+    const toggle = `<div class="seg drawer__mode" role="group" aria-label="Design Tree view"><button type="button" data-act="mode" data-id="list" aria-pressed="${!growth}">List</button><button type="button" data-act="mode" data-id="growth" aria-pressed="${growth}">Growth tree</button></div>`;
+    const close = `<button type="button" class="icon-btn" data-act="tree-close" aria-label="Close Design Tree">${icon("close")}</button>`;
+    if (growth) {
+      return `<aside class="drawer drawer--growth" id="design-tree" aria-label="Design Tree">
+      <div class="drawer__head"><div class="drawer__title"><h2>Design Tree</h2><p>${esc(D.project.name)} · admitted Candidates only</p></div>${toggle}${close}</div>
+      <div class="drawer__body drawer__body--canvas">${growthCanvas()}</div>
+    </aside>`;
+    }
     const nodes = D.stages.map((stage, i) => {
       const next = D.stages[i + 1];
       const current = line.has(stage.id);
@@ -778,7 +1144,7 @@
       return stageNode(stage, current, segment, line);
     }).join("");
     return `<aside class="drawer" id="design-tree" aria-label="Design Tree">
-      <div class="drawer__head"><div class="drawer__title"><h2>Design Tree</h2><p>${esc(D.project.name)} · admitted Candidates only</p></div><button type="button" class="icon-btn" data-act="tree-close" aria-label="Close Design Tree">${icon("close")}</button></div>
+      <div class="drawer__head"><div class="drawer__title"><h2>Design Tree</h2><p>${esc(D.project.name)} · admitted Candidates only</p></div>${toggle}${close}</div>
       ${spineStrip(line)}
       <div class="drawer__body">${nodes}${headNode(line)}
         <div class="drawer__legend" aria-label="Legend"><span class="legend"><i class="lg-line"></i>Current line</span><span class="legend"><i class="lg-view"></i>Viewing</span><span class="legend"><i class="lg-run"></i>Agent worktree, not a Candidate yet</span><span class="legend"><i class="lg-old"></i>Earlier line, kept</span></div>
@@ -805,7 +1171,6 @@
     const ids = S.compare.ids.filter((id) => idx.item.has(id));
     const chosen = ids.includes(S.compare.chosen) ? S.compare.chosen : null;
     const readyCount = study.items.filter((item) => item.status === "ready").length;
-    const stage = idx.stage.get(study.stage);
     const tiles = ids.map((id) => {
       const item = idx.item.get(id), isChosen = chosen === id;
       return `<article class="ctile" data-chosen="${isChosen}" aria-label="${esc(itemLabel(item))}">
@@ -824,7 +1189,7 @@
         <p>Choosing does not move the Working Head or accept anything. Continue moves the Working Head to ${esc(shortLabel(chosen))}${left.length ? `; ${esc(left.join(" and "))} stay in history` : ""}. Accepting a Stage stays a separate step.</p></div>`;
     }
     return `<div class="compare" role="region" aria-label="Compare ${esc(study.name)}">
-      <div class="compare__head"><div><h2>Compare · ${esc(study.name)}</h2><p>${ids.length} of ${readyCount} · from ${esc(stage ? stageLabel(stage) : study.stage)} · selection kept in the tree</p></div>
+      <div class="compare__head"><div><h2>Compare · ${esc(study.name)}</h2><p>${ids.length} of ${readyCount} · from ${esc(fromLabel(study))} · selection kept in the tree</p></div>
         ${S.tree ? "" : `<button type="button" class="btn btn--small" data-act="show-study" data-id="${esc(study.id)}">${icon("tree")}Back to tree</button>`}
         <button type="button" class="btn btn--small" data-act="compare-exit">Exit compare</button></div>
       <p class="compare__frame">${icon("camera")}Same camera for every option · ${S.projection === "plan" ? "plan at a site-fixed scale" : "south-east axonometric at a site-fixed scale"}</p>
@@ -874,7 +1239,7 @@
     const active = document.activeElement && app.contains(document.activeElement) && document.activeElement.dataset
       ? { act: document.activeElement.dataset.act, id: document.activeElement.dataset.id } : null;
 
-    app.innerHTML = `${devbar()}<div class="hub" data-sidebar="${S.sidebar ? "open" : "closed"}" data-tree="${S.tree ? "open" : "closed"}" data-panel="${S.panel ? "open" : "closed"}">
+    app.innerHTML = `${devbar()}<div class="hub" data-sidebar="${S.sidebar ? "open" : "closed"}" data-tree="${S.tree ? "open" : "closed"}" data-panel="${S.panel ? "open" : "closed"}" data-mode="${growthWide() ? "growth" : "list"}">
       ${sidebar()}
       <div class="main">${topbar()}<div class="content">${chat()}${S.tree ? drawer() : ""}<div class="resizer" aria-hidden="true"></div>${workspace()}</div></div>
       ${rail()}
@@ -902,6 +1267,10 @@
       const el = app.querySelector(selector);
       if (el) el.focus({ preventScroll: true });
     }
+    if (app.querySelector(".gt")) {
+      const fitFor = growthWide() ? "wide" : "narrow";
+      if (!GT.fitted || GT.fitFor !== fitFor) { GT.fitFor = fitFor; fitView(); } else applyView();
+    }
     document.documentElement.dataset.state = String(S.n);
     document.documentElement.dataset.ready = "1";
   }
@@ -909,6 +1278,7 @@
   /* -------------------------------------------------------------- events */
 
   function onClick(event) {
+    if (GT.moved && event.target.closest && event.target.closest(".gt")) { GT.moved = false; return; }
     const el = event.target.closest("[data-act]");
     if (!el || el.disabled || !app.contains(el)) return;
     if (el.tagName === "INPUT" || el.tagName === "SELECT") return;
@@ -925,6 +1295,17 @@
         if (S.tree) { S.scrollTo = `node:${currentStage().id}`; if (narrowQuery.matches) S.panel = false; }
         break;
       case "tree-close": S.tree = false; break;
+      case "mode": S.mode = id === "growth" ? "growth" : "list"; S.tree = true; GT.fitted = false; break;
+      case "gt-select": S.selected = S.selected === id ? null : id; S.accept = null; break;
+      case "gt-deselect": S.selected = null; S.accept = null; break;
+      case "gt-zoom": {
+        const gt = app.querySelector(".gt");
+        if (!gt) return;
+        const w = gt.clientWidth / 2, h = (gt.clientHeight - 34) / 2;
+        zoomAt(w, h, id === "reset" ? 1 : id === "in" ? GT.z * 1.25 : GT.z / 1.25);
+        return;
+      }
+      case "gt-fit": fitView(); return;
       case "show-study": showStudy(id); if (narrowQuery.matches) S.panel = false; break;
       case "jump": S.scrollTo = `node:${id}`; break;
       case "select": S.selected = S.selected === id ? null : id; S.accept = null; break;
@@ -936,10 +1317,14 @@
       case "compare-exit": S.compare = null; break;
       case "continue":
         continueFrom(id, { by: "you" });
+        GT.fitted = false;
         if (narrowQuery.matches) { S.panel = false; S.tree = true; S.scrollTo = `node:${id}`; }
         break;
-      case "accept-ask": S.accept = id === "head" ? "head" : id; break;
-      case "accept-confirm": acceptHead(); break;
+      case "accept-ask":
+        S.accept = id === "head" ? "head" : id;
+        if (id === "head" && growthOpen()) S.selected = "head";
+        break;
+      case "accept-confirm": acceptHead(); GT.fitted = false; break;
       case "accept-cancel": S.accept = null; break;
       case "study-toggle": if (S.collapsed.has(id)) S.collapsed.delete(id); else S.collapsed.add(id); break;
       case "sidebar": S.sidebar = !S.sidebar; break;
@@ -977,6 +1362,7 @@
     if (event.key !== "Escape" || !S) return;
     if (S.accept) S.accept = null;
     else if (S.compare) S.compare = null;
+    else if (growthOpen() && S.selected) S.selected = null;
     else if (S.view) S.view = null;
     else if (S.tree) S.tree = false;
     else return;
@@ -988,7 +1374,14 @@
     if (safeName(p.get("data")) !== dataName) { location.reload(); return; }
     applyTheme(p.get("theme"));
     const n = Math.min(6, Math.max(1, parseInt(p.get("state") || "1", 10) || 1));
-    if (n !== appliedState || !S) { preset(n); appliedState = n; }
+    if (n !== appliedState || !S) { preset(n); appliedState = n; appliedView = null; }
+    const view = p.get("view") === "tree" ? "growth" : p.get("view") === "list" ? "list" : null;
+    if (view && view !== appliedView) {
+      S.mode = view;
+      if (view === "growth") S.tree = true;
+      appliedView = view;
+      GT.fitted = false;
+    }
     render();
   }
 
@@ -1016,6 +1409,14 @@
     document.addEventListener("change", onChange);
     document.addEventListener("toggle", onToggle, true);
     document.addEventListener("keydown", onKey);
+    document.addEventListener("keydown", onSpace);
+    document.addEventListener("keyup", onSpace);
+    document.addEventListener("wheel", onWheel, { passive: false });
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("mousedown", (event) => { if (event.button === 1 && event.target.closest && event.target.closest(".gt")) event.preventDefault(); });
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", onPointerUp);
+    window.addEventListener("pointercancel", onPointerUp);
     window.addEventListener("hashchange", applyHash);
     compactQuery.addEventListener("change", () => { if (!S) return; S.panel = !compactQuery.matches || Boolean(S.view || S.compare); render(); });
     applyHash();

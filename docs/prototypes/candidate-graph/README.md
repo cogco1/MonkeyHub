@@ -26,6 +26,7 @@ Hash parameters:
 | `#state=` | `1` … `6`, the review states below | `1` |
 | `#theme=` | `system`, `light`, `dark` | `system` |
 | `#data=` | a dataset name; the page loads `data/<name>.js` | `issue-fixture` |
+| `#view=` | `tree` opens the Design Tree as the growth tree; `list` opens the list | `list` |
 
 Example: `index.html#state=3&theme=dark`. The amber dev bar at the top switches
 states, theme and dataset. It also simulates the Agent events for state 6. The
@@ -48,6 +49,52 @@ UI, and `capture.mjs` walks both routes.
 Also captured: `screenshots/07-narrow.png` (390×844, state 2). At that width the
 tree is a full-height sheet under the dev bar. `screenshots/08-dark-tree-open.png`
 shows state 2 in the dark theme.
+
+Screenshots 01–08 show the current list. Its rows have only a thumbnail,
+letter, name and one status dot. The summary, author and time appear only on
+the selected row (see also `screenshots/12-list-compact.png`, state 2). The
+drawer header has the `List | Growth tree` toggle.
+
+## Growth tree
+
+`List | Growth tree` in the Design Tree header, or `#view=tree`, opens the tree
+as one growing branch. The canvas opens wide over the workspace, the way
+Compare does; the project bar and its chip stay. View or Compare narrows the
+canvas back to the drawer column and shows the result in the workspace.
+
+- **The trunk** is the Working Head's lineage, one continuous stroke from left
+  to right: Stage milestones, the option chosen at each decision, lines of
+  continued edits, and the Current tip.
+- **Twigs** are the options not taken. At each decision point they alternate
+  above and below the trunk: N − 1 per Study, or N when none was continued.
+  Running and queued Agent worktrees are dashed placeholders among them.
+- **Earlier lines.** Continuing from an old twig makes it the trunk again; the
+  future left behind stays on the canvas as a muted branch. So does a line
+  continued once from a twig and later left (Facade A + 2 edits).
+- **No crossings.** A tree has E = V − 1 edges. Every side subtree gets its own
+  x-range on its side of its parent path, and each branch grows its own twigs
+  outward, so no edge crosses another and no two nodes overlap.
+- **Five element kinds**: trunk, Stage milestones, option twigs (thumbnail and
+  letter), the Current tip with `Accept as next Stage`, and running or queued
+  placeholders.
+- **Semantic zoom.** Zoomed out (below 50 %): the trunk, Stage labels and counts
+  such as "5 schemes · 1 continued". Middle: thumbnails and short names.
+  Close (125 % and above): one-line summary and status.
+- **Details on selection only.** Selecting a node opens a small side card with
+  author, time and runs, and the actions View · Compare this Study · Continue
+  from here. `Accept as next Stage` exists only on Current.
+- **Navigation** follows MonkeyBoard's canvas (Excalidraw 0.18.1 in the product):
+  wheel zoom anchored at the cursor, drag, Space-drag or middle-mouse pan, the
+  `− 100% +` bar with Fit, the hint "Wheel to zoom · Space or middle mouse to
+  pan", and the same 20-unit grid with 5-step major lines. This static page
+  emulates that behaviour; it does not load Excalidraw.
+
+| Screenshot | Shows |
+| --- | --- |
+| `screenshots/09-growth-tree.png` | Fit, with Massing D selected: its side card, runs and actions |
+| `screenshots/10-growth-tree-close.png` | Wheel-zoomed near the Current tip: summaries and status |
+| `screenshots/11-growth-tree-overview.png` | Zoomed out: trunk, Stage labels and counts only |
+| `screenshots/12-list-compact.png` | The compact list rows (state 2) |
 
 Other things to try in the UI:
 
@@ -139,7 +186,11 @@ The shape, as used by `data/issue-fixture.js`:
 - `project`: `{ name, chatTitle, threads[] }`
 - `stages[]`: `{ id, label, name, summary, acceptedAt, acceptedBy, preview, parent, fromNote?, advanced? }`.
   `parent` is the Candidate or line the Stage was accepted from, or `null`.
-- `studies[]`: `{ id, stage, name, noun?, ask, askedBy, agent, createdAt, items[], hidden[], advanced? }`
+- `studies[]`: `{ id, stage, base?, name, noun?, ask, askedBy, agent, createdAt, items[], hidden[], advanced? }`.
+  `base` is where the Study started when that is not a Stage: a Candidate or a
+  line, such as an unaccepted continued result. Its options then hang from
+  `base`, labels read "from <base>", and `stage` is still the Stage the list
+  shows it under.
   - `items[]`: `{ id, letter?, name, summary, status: "ready" | "working" | "queued", by, at, preview, metrics?, continued?, progress?, admitted?, advanced? }`.
     Only `ready` items are Candidates. `continued` is `{ by: "you" | "<actor>", onRequest?, at }`.
     For a `working` item, `admitted` holds what the item becomes when the dev
@@ -159,14 +210,19 @@ Names are arbitrary UTF-8 strings, for example `D 房架之家`.
 ## Screenshots and checks
 
 ```text
-node docs/prototypes/candidate-graph/capture.mjs
+node docs/prototypes/candidate-graph/capture.mjs            # writes 09–12, runs every check
+node docs/prototypes/candidate-graph/capture.mjs --states   # also rewrites 01–08
 ```
 
 The script uses Playwright from `PLAYWRIGHT_MODULE`, which defaults to
 `D:/MONKEYHUB_DEV/cache/headless-tests/node_modules/playwright/index.mjs`, and
 installed Chrome (`channel: "chrome"`). It opens `index.html` through `file://`,
-checks each state's defining elements, and writes `screenshots/01`–`08`. It runs
-all six states again in the dark theme and walks the states through the UI.
+checks each state's defining elements, runs all six states again in the dark
+theme and walks the states through the UI. For the growth tree it checks that
+the trunk is one continuous left-to-right path through the lineage, that each
+Study shows N − 1 twigs off the trunk (N when none was continued), and that
+no edges cross and no nodes overlap, before and after a fork and an Accept.
+It writes `screenshots/09`–`12`; `01`–`08` are rewritten only with `--states`.
 It exits non-zero on any console error, page error, failed load or non-file
 request.
 
@@ -179,3 +235,5 @@ request.
   shared camera, not synchronized 3D viewports or a full ReviewContext (#271).
 - Only the English copy exists. Medium widths overlay the tree on the chat
   rather than being tuned layouts.
+- The growth tree emulates MonkeyBoard's canvas in plain SVG. Real Excalidraw
+  reuse is being tested separately.
