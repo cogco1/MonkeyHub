@@ -10,7 +10,8 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { asStudioApiError, StudioApiError, type StudioClient } from "../../api/client";
-import type { DesignHistoryReading, DesignTreeSource } from "./contract";
+import type { DesignHistoryDto } from "../../api/generated";
+import type { DesignTreeSource } from "./contract";
 import { buildGrowthTree, type GrowthTree } from "./model";
 
 /** How often an open project re-reads its tree while it is on screen. */
@@ -31,6 +32,8 @@ export interface DesignTreeOutcome {
 export interface DesignTreeData {
   /** The runtime serves what the tree reads; without it there is no chip and no tree. */
   readonly available: boolean;
+  /** The runtime reports admitted Candidates (#294); without it the tree has Stages, Current and running work only. */
+  readonly admissions: boolean;
   readonly status: "loading" | "ready" | "failed";
   readonly source: DesignTreeSource | null;
   readonly tree: GrowthTree | null;
@@ -54,28 +57,30 @@ export async function readDesignTreeSource(studio: StudioClient, projectId: stri
   if (workingSource.projectId !== projectId) throw projectChanged();
   const line = workingSource.head?.branchId ?? "main";
   const [history, worktrees] = await Promise.all([
-    (studio.designHistory(line, signal) as Promise<DesignHistoryReading>).catch((cause) => {
+    studio.designHistory(line, signal).catch((cause) => {
       if (line === "main") throw cause;
-      return studio.designHistory("main", signal) as Promise<DesignHistoryReading>;
+      return studio.designHistory("main", signal);
     }),
     studio.worktrees(signal).catch(() => null),
   ]);
   if (history.projectId !== projectId || (worktrees && worktrees.projectId !== projectId)) throw projectChanged();
   // A future that a fork left behind lives on another line: read those Stages too.
   const others = await Promise.all(history.branches.filter((branch) => branch.branchId !== history.branchId)
-    .map((branch) => (studio.designHistory(branch.branchId, signal) as Promise<DesignHistoryReading>).catch(() => null)));
+    .map((branch) => studio.designHistory(branch.branchId, signal).catch(() => null)));
+  // A runtime from before #294 answers without the admission arrays: read them as empty.
   const stages = new Map(history.stages.map((stage) => [stage.stageRef, stage]));
   const candidates = new Map((history.candidates ?? []).map((candidate) => [candidate.candidateId, candidate]));
   const studies = new Map((history.studies ?? []).map((study) => [study.id, study]));
+  const warnings = new Set(history.warnings ?? []);
   for (const other of others) {
     if (!other || other.projectId !== projectId) continue;
     for (const stage of other.stages) if (!stages.has(stage.stageRef)) stages.set(stage.stageRef, stage);
     for (const candidate of other.candidates ?? []) if (!candidates.has(candidate.candidateId)) candidates.set(candidate.candidateId, candidate);
     for (const study of other.studies ?? []) if (!studies.has(study.id)) studies.set(study.id, study);
+    for (const warning of other.warnings ?? []) warnings.add(warning);
   }
-  const merged: DesignHistoryReading = { ...history, stages: [...stages.values()],
-    ...(history.candidates === undefined ? {} : { candidates: [...candidates.values()] }),
-    ...(history.studies === undefined ? {} : { studies: [...studies.values()] }) };
+  const merged: DesignHistoryDto = { ...history, stages: [...stages.values()], candidates: [...candidates.values()],
+    studies: [...studies.values()], warnings: [...warnings] };
   return { projectId, history: merged, workingSource, worktrees };
 }
 
@@ -91,6 +96,7 @@ export function useDesignTree({ studio, capabilities, projectId, active, refresh
   const available = Boolean(projectId) && capabilities !== null &&
     capabilities.includes("design-history") && capabilities.includes("working-source");
   const canContinue = available && capabilities!.includes("working-draft");
+  const admissions = available && capabilities!.includes("candidate-admission");
   const [source, setSource] = useState<DesignTreeSource | null>(null);
   const [status, setStatus] = useState<DesignTreeData["status"]>("loading");
   const [error, setError] = useState<StudioApiError | null>(null);
@@ -190,7 +196,7 @@ export function useDesignTree({ studio, capabilities, projectId, active, refresh
   }, [projectId, run, studio, tree]);
 
   return {
-    available, status: available ? status : "loading", source, tree, error, canContinue, busy, outcome,
+    available, admissions, status: available ? status : "loading", source, tree, error, canContinue, busy, outcome,
     reload: () => setNudge((value) => value + 1),
     continueFrom, acceptCurrent,
     clearOutcome: () => setOutcome(null),

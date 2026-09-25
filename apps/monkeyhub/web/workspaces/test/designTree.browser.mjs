@@ -37,7 +37,7 @@ async function runtime(request, response, url, body) {
   const name = url.pathname, method = request.method;
   try {
     if (method === "GET" && name === "/api/protocol") return json({ protocol: "archflow/2", server: "design-tree-fixture", serverVersion: "test", mode: "local",
-      capabilities: ["design-history", "working-draft", "working-source"] });
+      capabilities: ["candidate-admission", "design-history", "working-draft", "working-source"] });
     if (method === "GET" && name === "/api/project") return json({ projectId: PROJECT, projectDir: "D:\\fixture\\riverside-library",
       published: { version: 2, stateSha256: "0".repeat(64) }, referenceRun: { runId: "run-site", baseVersion: 2, baseSha256: "0".repeat(64) },
       intentProvider: "fixture", intentModel: "fixture" });
@@ -202,6 +202,13 @@ try {
       await target.keyboard.press("Escape");
       await host.locator(".design-tree-card").waitFor({ state: "detached" });
     }
+    // A surface shown again is measured by Excalidraw a frame later; click where the canvas is now.
+    await target.waitForFunction(() => {
+      const state = window.__treeApi?.getAppState();
+      const box = [...document.querySelectorAll(".design-tree__canvas .excalidraw")].find((element) => element.getClientRects().length)
+        ?.getBoundingClientRect();
+      return Boolean(state && box && state.width > 40 && Math.abs(state.offsetLeft - box.left) < 1 && Math.abs(state.offsetTop - box.top) < 1);
+    });
     const current = await scene(target);
     const card = current.elements.find((element) => element.id === `${id}:card`);
     assert.ok(card, `${id} is on the canvas`);
@@ -295,6 +302,10 @@ try {
   card = await clickNode(S1);
   assert.match(await card.innerText(), /Stage · accepted checkpoint/);
   assert.equal(await card.locator('[data-action="accept"]').count(), 0, "a Stage cannot be accepted again");
+  card = await clickNode("candidate:run-facade-c");
+  assert.match(await card.locator(".design-tree-card__warning").innerText(), /review checks were still open \(1\)/,
+    "an option admitted with review checks open says so in its side card");
+  assert.equal(await surface.locator(".design-tree__notice").count(), 0, "this runtime reports admitted options");
   card = await clickNode("current");
   assert.equal(await card.locator('[data-action="accept"]').count(), 1, "Current offers Accept");
   assert.equal(await card.locator('[data-action="accept"]').isDisabled(), true, "Current is exactly S2, so there is nothing new to accept");
@@ -336,6 +347,7 @@ try {
 
   // Continue on the newest Stage's option, then Accept as next Stage from Current only.
   card = await clickNode("candidate:run-entrance-a");
+  assert.match(await card.innerText(), /Study\s+Study from S2 · Layout/, "a Study without a name is named after where it started");
   await card.getByRole("button", { name: "Continue from here", exact: true }).click();
   await card.getByText(/Current now continues from A · Courtyard gate/).waitFor();
   await tab.waitForFunction(() => window.__treeApi.getSceneElements().find((element) => element.customData?.tree?.role === "trunk")?.points.length === 7);
@@ -397,6 +409,19 @@ try {
   await surface.getByRole("button", { name: "列表", exact: true }).waitFor();
   await surface.getByRole("button", { name: "返回画板" }).waitFor();
   await shoot(tab, "11-zh");
+
+  // A result the architect turned down cannot become a Stage: Current's card says so before anyone asks.
+  const acceptedHead = fixture.state.head;
+  fixture.state.runs.set("run-entrance-x", { parent: acceptedHead, sourceStage: fixture.state.branchHead });
+  fixture.state.rejected.add("run-entrance-x");
+  fixture.state.head = "run-entrance-x";
+  fixture.state.revision += 1;
+  await tab.evaluate(() => window.dispatchEvent(new Event("focus")));
+  card = await clickNode("current");
+  await card.getByText("当前是已被否定的结果，不能成为阶段。请先从已准入的方案继续。").waitFor();
+  assert.equal(await card.locator('[data-action="accept"]').isDisabled(), true);
+  fixture.state.head = acceptedHead;
+  fixture.state.revision += 1;
   await context.close();
 
   // ------------------------------------------------------------------ Part B: the Hub rail's 状态树 entry.
@@ -442,7 +467,7 @@ try {
   assert.deepEqual(unexpected, [], "the tree reads only what it declares");
   assert.deepEqual(external, [], "no external request");
   assert.deepEqual(errors.filter((message) => !/Failed to load resource: the server responded with a status of 404/.test(message)), []);
-  console.log(JSON.stringify({ passed: "chip → tree, trunk, twigs, planar, three zoom levels, side card, View read-only, Continue re-roots via PUT /api/working-draft, Accept on Current only via POST accept, keyboard list, return to previous surface, zh copy, Hub rail entry and deep link",
+  console.log(JSON.stringify({ passed: "chip → tree, trunk, twigs, planar, three zoom levels, side card, review-open warning, View read-only, Continue re-roots via PUT /api/working-draft, Accept on Current only via POST accept, a rejected Current cannot be accepted, keyboard list, return to previous surface, zh copy, Hub rail entry and deep link",
     writes: writes.map((row) => `${row.method} ${row.name}`) }));
 } catch (error) {
   console.error("FAILED:", error);

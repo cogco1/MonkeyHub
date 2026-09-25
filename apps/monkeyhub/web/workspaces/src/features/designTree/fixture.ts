@@ -3,15 +3,15 @@
  *
  * The #284 prototype's Riverside Library project (docs/prototypes/
  * candidate-graph/data/issue-fixture.js), recast as the Project Runtime facts
- * the Design Tree reads: design history with the #294 `candidates[]` and
- * `studies[]` contract, the working source and the Worktree Graph. It keeps
- * the facts a real runtime keeps (run lineage, Stage acceptance, the working
- * position) and answers Continue and Accept the way the existing routes do,
- * so a stubbed API can serve it until `codex/294-admission-record` lands.
- * Everything in it is invented.
+ * the Design Tree reads, in the generated client's shapes: design history with
+ * the #294 `candidates[]` and `studies[]`, the working source and the Worktree
+ * Graph with admission verdicts. It keeps the facts a real runtime keeps (run
+ * lineage, Stage acceptance, the working position, rejected results) and
+ * answers Continue and Accept the way the existing routes do, so browser and
+ * unit tests can serve it from a stubbed runtime. Everything in it is invented.
  */
-import type { DesignBranchDto, DesignStageDto, WorkingDraftDto, WorkingHeadDto, WorkingSourceDto, WorktreeGraphDto, WorktreeLineDto } from "../../api/generated";
-import type { AdmittedCandidateDto, DesignHistoryReading, DesignStudyDto } from "./contract";
+import type { DesignBranchDto, DesignCandidateDto, DesignHistoryDto, DesignStageDto, DesignStudyDto, WorkingDraftDto, WorkingHeadDto,
+  WorkingSourceDto, WorktreeGraphDto, WorktreeLineDto } from "../../api/generated";
 
 export const FIXTURE_PROJECT = "riverside-library";
 const ref = (run: string, record = "design-stage") => `project://${FIXTURE_PROJECT}/runs/${run}/review/${record}.json`;
@@ -41,6 +41,8 @@ interface CandidateFact {
   readonly admittedAt: string;
   continuedFrom: string | null;
   acceptedStage: string | null;
+  /** Review checks still open when a person admitted it for comparison (#294 Q2). */
+  readonly blockedBy: readonly string[];
 }
 
 interface RunningFact {
@@ -56,6 +58,8 @@ export interface DesignTreeFixtureState {
   readonly stages: StageFact[];
   readonly candidates: CandidateFact[];
   readonly studies: DesignStudyDto[];
+  /** Results the architect turned down: never Candidates, and never a Stage. */
+  readonly rejected: Set<string>;
   running: RunningFact[];
   branchHead: string;
   head: string;
@@ -83,8 +87,8 @@ export function riversideLibraryFacts(): DesignTreeFixtureState {
     ["run-entrance-a", { parent: "run-s2-layout", sourceStage: S2 }],
   ]);
   const option = (run: string, label: string, summary: string, studyId: string | null, admittedAt: string,
-    extra: Partial<Pick<CandidateFact, "continuedFrom" | "acceptedStage" | "admittedBy">> = {}): CandidateFact =>
-    ({ run, label, summary, studyId, admittedBy: "Arch Agent", admittedAt, continuedFrom: null, acceptedStage: null, ...extra });
+    extra: Partial<Pick<CandidateFact, "continuedFrom" | "acceptedStage" | "admittedBy" | "blockedBy">> = {}): CandidateFact =>
+    ({ run, label, summary, studyId, admittedBy: "Arch Agent", admittedAt, continuedFrom: null, acceptedStage: null, blockedBy: [], ...extra });
   return {
     runs,
     stages: [
@@ -100,17 +104,21 @@ export function riversideLibraryFacts(): DesignTreeFixtureState {
       option("run-massing-e", "Pavilion cluster", "Five linked pavilions around a public garden; the lowest scale.", "study-massing", "2026-09-13T14:36:00Z"),
       option("run-facade-a", "Brick pier rhythm", "Brick piers at 3 m with deep reveals; heavy and quiet.", "study-facade", "2026-09-17T09:48:00Z"),
       option("run-facade-b", "Deep timber fins", "Timber fins at 1.5 m shade the reading room; light and warm.", "study-facade", "2026-09-17T09:52:00Z", { acceptedStage: S2 }),
-      option("run-facade-c", "Perforated terracotta screen", "A continuous terracotta screen; the most uniform elevation.", "study-facade", "2026-09-17T09:57:00Z"),
+      option("run-facade-c", "Perforated terracotta screen", "A continuous terracotta screen; the most uniform elevation.", "study-facade", "2026-09-17T09:57:00Z",
+        { admittedBy: "Kaiwen", blockedBy: ["daylight:reading-room"] }),
       option("run-facade-a2", "Facade A + 2 edits", "Brick piers with a rooftop reading room; left when B was continued.", null, "2026-09-17T18:40:00Z",
         { continuedFrom: "run-facade-a", admittedBy: "Kaiwen" }),
       option("run-entrance-a", "Courtyard gate on the south bar", "A canopy opens the low south bar; you enter through the courtyard.", "study-entrance", "2026-09-25T21:44:00Z"),
     ],
     studies: [
       { id: "study-massing", label: "Massing Study", baseRunId: "run-site", baseStageRef: S0,
-        candidateIds: ["run-massing-a", "run-massing-b", "run-massing-c", "run-massing-d", "run-massing-e"] },
-      { id: "study-facade", label: "Facade Study", baseRunId: "run-s1-massing", baseStageRef: S1, candidateIds: ["run-facade-a", "run-facade-b", "run-facade-c"] },
-      { id: "study-entrance", label: "Entrance Study", baseRunId: "run-s2-layout", baseStageRef: S2, candidateIds: ["run-entrance-a"] },
+        candidateIds: ["run-massing-a", "run-massing-b", "run-massing-c", "run-massing-d", "run-massing-e"], source: "admission" },
+      { id: "study-facade", label: "Facade Study", baseRunId: "run-s1-massing", baseStageRef: S1,
+        candidateIds: ["run-facade-a", "run-facade-b", "run-facade-c"], source: "admission" },
+      // A closed loop's own Study carries no name, as the runtime reports it.
+      { id: "study-entrance", label: null, baseRunId: "run-s2-layout", baseStageRef: S2, candidateIds: ["run-entrance-a"], source: "admission" },
     ],
+    rejected: new Set(),
     running: [
       { lineId: "running:job-entrance-b", base: "run-s2-layout", label: "Corner entrance at the south-east", status: "running", detail: "Repairing a stair clash · run 3" },
       { lineId: "running:job-entrance-c", base: "run-s2-layout", label: "River promenade entrance", status: "queued", detail: null },
@@ -154,19 +162,28 @@ export function createDesignTreeFixture(state: DesignTreeFixtureState = riversid
   });
   return {
     state,
-    designHistory(branchId = "main"): DesignHistoryReading {
+    designHistory(branchId = "main"): DesignHistoryDto {
       if (branchId !== "main") throw new FixtureRefusal(404, "DESIGN_BRANCH_NOT_FOUND", "The design branch does not exist.");
       const branch: DesignBranchDto = { branchId: "main", parentBranch: null, forkStageRef: S0, headStageRef: state.branchHead };
       const inHead = new Set(lineageOf(state.head));
-      const candidates: AdmittedCandidateDto[] = state.candidates.map((candidate) => ({
-        candidateId: candidate.run, label: candidate.label, summary: candidate.summary,
-        baseStageRef: state.runs.get(candidate.run)?.sourceStage ?? null, studyId: candidate.studyId,
-        modelSource: modelSource(candidate.run), admittedBy: { actorId: candidate.admittedBy, origin: candidate.admittedBy === "Arch Agent" ? "hub-agent" : "studio" },
+      const candidates: DesignCandidateDto[] = state.candidates.map((candidate) => ({
+        candidateId: candidate.run, outcome: "admitted", label: candidate.label, summary: candidate.summary,
+        baseStageRef: state.runs.get(candidate.run)?.sourceStage ?? null, studyId: candidate.studyId, modelSource: modelSource(candidate.run),
+        admittedBy: { actorId: candidate.admittedBy, authenticated: false, origin: candidate.admittedBy === "Arch Agent" ? "hub-agent" : "studio" },
         admittedAt: candidate.admittedAt, admissionRef: ref("studio-admissions", `candidate-admission-${candidate.run}`), legacy: null,
         acceptedStageRef: candidate.acceptedStage, continuedFrom: candidate.continuedFrom, inWorkingHeadLineage: inHead.has(candidate.run),
+        blockedBy: [...candidate.blockedBy], supersedes: [],
       }));
+      // Each Stage's own run is listed too, as the runtime lists it: a legacy "stage" Candidate of that Stage.
+      for (const stage of historyOrder()) {
+        if (state.candidates.some((candidate) => candidate.run === stage.run)) continue;
+        candidates.push({ candidateId: stage.run, outcome: "admitted", label: stage.label, summary: null, baseStageRef: stage.parent,
+          studyId: null, modelSource: modelSource(stage.run), admittedBy: { actorId: stage.acceptedBy, authenticated: null, origin: null },
+          admittedAt: stage.acceptedAt, admissionRef: stage.ref, legacy: "stage", acceptedStageRef: stage.ref, continuedFrom: null,
+          inWorkingHeadLineage: inHead.has(stage.run), blockedBy: [], supersedes: [] });
+      }
       return { projectId: FIXTURE_PROJECT, branches: [branch], branchId: "main", stages: historyOrder().map(stageDto),
-        candidates, studies: state.studies.map((study) => ({ ...study, candidateIds: [...(study.candidateIds ?? [])] })) };
+        candidates, studies: state.studies.map((study) => ({ ...study, candidateIds: [...study.candidateIds] })), warnings: [] };
     },
     workingSource(workspace: WorkingSourceDto["workspace"] = "modeling"): WorkingSourceDto {
       const current = head();
@@ -175,13 +192,19 @@ export function createDesignTreeFixture(state: DesignTreeFixtureState = riversid
     },
     worktrees(): WorktreeGraphDto {
       const current = head();
+      const admitted = state.candidates.find((candidate) => candidate.run === state.head);
+      const verdict: WorktreeLineDto["admission"] = state.rejected.has(state.head) ? "rejected"
+        : admitted || stageOfRun(state.head) ? "admitted" : "none";
       const lines: WorktreeLineDto[] = [
         { lineId: `head:${state.head}`, kind: "head", runId: state.head, jobId: null, label: null, baseRunId: null, baseStageRef: null,
-          branchId: "main", status: "current", relation: "head", reads: [], writes: [], reconcile: "none", conflicts: [], detail: null, updatedAt: null },
+          branchId: "main", status: "current", relation: "head", reads: [], writes: [], reconcile: "none", conflicts: [], detail: null, updatedAt: null,
+          admission: verdict, studyId: admitted?.studyId ?? null },
+        // Running work has no verdict yet.
         ...state.running.map((line): WorktreeLineDto => ({
           lineId: line.lineId, kind: "running", runId: null, jobId: line.lineId.replace(/^running:/, ""), label: line.label, baseRunId: line.base,
           baseStageRef: stageOfRun(line.base)?.ref ?? state.runs.get(line.base)?.sourceStage ?? null, branchId: null, status: line.status,
-          relation: "ahead", reads: [], writes: [], reconcile: "unknown", conflicts: [], detail: line.detail, updatedAt: "2026-09-25T21:40:00Z" })),
+          relation: "ahead", reads: [], writes: [], reconcile: "unknown", conflicts: [], detail: line.detail, updatedAt: "2026-09-25T21:40:00Z",
+          admission: "none", studyId: null })),
       ];
       return { projectId: FIXTURE_PROJECT, head: current, revisionSha256: revision(), lines, representations: [], warnings: [] };
     },
@@ -202,6 +225,7 @@ export function createDesignTreeFixture(state: DesignTreeFixtureState = riversid
     /** POST /api/candidates/{id}/accept: a Stage from the Working Head, on the line's newest Stage only. */
     accept(candidateId: string, body: { projectId: string; branchId?: string; expectedHeadStageRef: string; label?: string | null }): DesignStageDto {
       if (body.projectId !== FIXTURE_PROJECT) throw new FixtureRefusal(409, "PROJECT_MISMATCH", "The request belongs to another project.");
+      if (state.rejected.has(candidateId)) throw new FixtureRefusal(409, "CANDIDATE_REJECTED", "The architect turned this result down; it cannot become a Stage.");
       if (body.expectedHeadStageRef !== state.branchHead) throw new FixtureRefusal(409, "DESIGN_BRANCH_STALE", "The design branch changed. Review the candidate against its new head.");
       if (state.runs.get(candidateId)?.sourceStage !== body.expectedHeadStageRef) {
         throw new FixtureRefusal(409, "CANDIDATE_STAGE_MISMATCH", "The candidate was not produced from this exact committed Stage.");

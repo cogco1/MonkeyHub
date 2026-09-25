@@ -67,7 +67,9 @@ export default function DesignTreeSurface({ data, markSeen, active, returnTo, on
       </div>
       {mode === "canvas" && tree && <button type="button" className="btn btn--small" onClick={() => setFitRequest((value) => value + 1)}>{t("designTree.fit")}</button>}
     </header>
-    {data.source && data.source.history.candidates === undefined && <p className="design-tree__notice">{t("designTree.noAdmissions")}</p>}
+    {data.source && !data.admissions && <p className="design-tree__notice">{t("designTree.noAdmissions")}</p>}
+    {data.source && data.admissions && (data.source.history.warnings?.length ?? 0) > 0 &&
+      <p className="design-tree__notice">{t("designTree.admissionWarnings")}</p>}
     {tree && data.error && <p className="design-tree__notice" role="status">{t("designTree.failed")}
       <button type="button" className="btn btn--small" onClick={data.reload}>{t("designTree.retry")}</button></p>}
     <div className="design-tree__body">

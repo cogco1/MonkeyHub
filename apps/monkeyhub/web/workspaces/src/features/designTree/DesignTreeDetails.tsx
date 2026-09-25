@@ -26,18 +26,19 @@ export function DesignTreeDetails({ tree, node, words, data, confirmAccept, onCo
   const title = words.title(node);
   const parent = words.byId(node.parent);
   const study = node.studyId ? tree.studies.get(node.studyId) : undefined;
+  const studyName = words.studyName(node.studyId);
   // Off the trunk and not a twig straight off it: part of a future a Continue left behind.
   const earlier = !tree.onTrunk.has(node.id) && !(node.parent !== null && tree.onTrunk.has(node.parent));
   const role = node.kind === "stage" ? t("designTree.role.stage")
-    : node.kind === "candidate" ? (earlier ? t("designTree.role.earlier") : study?.label ? t("designTree.role.option", { study: study.label }) : t("designTree.role.optionAlone"))
+    : node.kind === "candidate" ? (earlier ? t("designTree.role.earlier") : studyName ? t("designTree.role.option", { study: studyName }) : t("designTree.role.optionAlone"))
       : node.kind === "pending" ? t("designTree.role.pending")
         : node.kind === "current" ? t("designTree.role.current") : t("designTree.role.origin");
   const facts: [string, string][] = [];
   const add = (label: string, value: string | null | undefined) => { if (value) facts.push([label, value]); };
   if (node.kind === "candidate") {
     const base = parent ? words.title(parent) : null;
-    add(t("designTree.fact.study"), study?.label ? (base ? t("designTree.fact.studyFrom", { study: study.label, base }) : study.label) : null);
-    if (!study?.label) add(t("designTree.fact.from"), base);
+    add(t("designTree.fact.study"), study?.label && base ? t("designTree.fact.studyFrom", { study: study.label, base }) : studyName);
+    if (!study) add(t("designTree.fact.from"), base);
     add(t("designTree.fact.admittedBy"), words.actor(node.candidate!.admittedBy));
     add(t("designTree.fact.admittedAt"), whenText(node.candidate!.admittedAt, language));
     add(t("designTree.fact.status"), words.status(node));
@@ -49,6 +50,7 @@ export function DesignTreeDetails({ tree, node, words, data, confirmAccept, onCo
     add(t("designTree.fact.at"), words.currentAt());
     add(t("designTree.fact.stage"), tree.currentStage ? words.title(tree.nodes.get(tree.currentStage)!) : t("designTree.chip.noStage"));
   } else if (node.kind === "pending") {
+    add(t("designTree.fact.study"), studyName);
     add(t("designTree.fact.status"), words.pendingText(node.pending!.status));
     add(t("designTree.fact.progress"), node.pending!.detail);
     add(t("designTree.fact.from"), parent ? words.title(parent) : null);
@@ -59,10 +61,13 @@ export function DesignTreeDetails({ tree, node, words, data, confirmAccept, onCo
   const isAnchor = tree.nodes.get(CURRENT)?.parent === node.id && tree.nodes.get(CURRENT)?.current?.editsAfter === 0;
   const outcome = data.outcome && (data.outcome.node === node.id || (node.kind === "current" && data.outcome.kind === "accepted")) ? data.outcome : null;
   const refusal = outcome?.kind === "refused" && outcome.error
-    ? outcome.error.code === DESIGN_TREE_UNSYNCED ? t("designTree.outcome.unsynced") : t("designTree.outcome.refused", { reason: outcome.error.detail })
+    ? outcome.error.code === DESIGN_TREE_UNSYNCED ? t("designTree.outcome.unsynced")
+      : outcome.error.code === "CANDIDATE_REJECTED" ? t("designTree.outcome.rejected")
+        : t("designTree.outcome.refused", { reason: outcome.error.detail })
     : null;
   const accept = tree.accept;
   const acceptBlocked = accept.block === "already-stage" ? t("designTree.accept.alreadyStage", { stage: words.title(tree.nodes.get(tree.currentStage ?? "") ?? node) })
+    : accept.block === "rejected" ? t("designTree.accept.rejected")
     : accept.block === "older-stage" ? t("designTree.accept.olderStage", {
       base: accept.baseStage && tree.nodes.get(accept.baseStage) ? words.title(tree.nodes.get(accept.baseStage)!) : "—",
       head: accept.lineHeadStage && tree.nodes.get(accept.lineHeadStage) ? words.title(tree.nodes.get(accept.lineHeadStage)!) : "—" })
@@ -75,6 +80,8 @@ export function DesignTreeDetails({ tree, node, words, data, confirmAccept, onCo
       <button type="button" className="design-tree-card__close" aria-label={t("designTree.action.close")} onClick={onClose}>×</button>
     </div>
     {node.kind !== "pending" && node.summary && <p className="design-tree-card__summary">{node.summary}</p>}
+    {(node.candidate?.blockedBy.length ?? 0) > 0 && <p className="design-tree-card__warning" role="note">
+      <span aria-hidden="true">!</span> {t("designTree.review.note", { count: node.candidate!.blockedBy.length })}</p>}
     {facts.length > 0 && <dl className="design-tree-card__facts">{facts.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>}
     {(node.kind === "candidate" || node.kind === "stage") && <>
       <div className="design-tree-card__actions">
@@ -117,6 +124,7 @@ function technical(node: TreeNode): [string, string][] {
   const rows: [string, string | null | undefined][] = [
     ["node", node.id], ["run", node.runId], ["stageRef", node.stage?.ref], ["branch", node.stage?.branchId],
     ["candidate", node.candidate?.candidateId], ["legacy", node.candidate?.legacy], ["baseStageRef", node.candidate?.baseStageRef],
+    ["blockedBy", node.candidate?.blockedBy.join(", ")],
     ["line", node.pending?.lineId], ["head", node.current?.headRunId],
   ];
   return rows.filter((row): row is [string, string] => typeof row[1] === "string" && row[1].length > 0);

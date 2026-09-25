@@ -54,7 +54,8 @@ export function DesignTreeList({ tree, words, selected, onSelect }: {
     <ul role="tree" aria-label={t("designTree.list.label")}>
       {rows.map((row) => {
         const node = tree.nodes.get(row.id)!;
-        const status = words.status(node);
+        const review = node.candidate?.blockedBy.length ? t("designTree.review.short", { count: node.candidate.blockedBy.length }) : null;
+        const status = [words.status(node), review].filter(Boolean).join(" · ");
         return <li key={row.id} role="treeitem" aria-level={row.depth + 1} aria-selected={selected === row.id} tabIndex={active === row.id ? 0 : -1}
           ref={(element) => { if (element) items.current.set(row.id, element); else items.current.delete(row.id); }}
           data-node={row.id} data-group={row.group} data-kind={node.kind} style={{ paddingInlineStart: `${10 + row.depth * 22}px` }}

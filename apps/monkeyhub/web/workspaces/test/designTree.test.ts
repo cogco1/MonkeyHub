@@ -105,6 +105,10 @@ test("the Riverside Library fixture grows one trunk through the chosen options",
   assert.ok(tree.continued.has("candidate:run-massing-c") && tree.continued.has("candidate:run-facade-b"));
   assert.equal(tree.accept.allowed, false);
   assert.equal(tree.accept.block, "already-stage");
+  // The runtime lists each Stage's own run as a legacy "stage" Candidate; it is drawn as that Stage, never as a twig.
+  assert.equal(fixture.designHistory().candidates.filter((row) => row.legacy === "stage").length, 3);
+  assert.deepEqual(["run-site", "run-s1-massing", "run-s2-layout"].filter((run) => tree.nodes.has(`candidate:${run}`)), []);
+  assert.deepEqual(tree.nodes.get("candidate:run-facade-c")!.candidate!.blockedBy, ["daylight:reading-room"]);
   const drawing = api.layoutGrowthTree(tree);
   assert.deepEqual(planarProblems(tree, drawing), []);
   assert.equal(drawing.nodes.get("candidate:run-facade-a2")!.role, "option", "an option continued from a twig is a muted option of that twig");
@@ -150,6 +154,22 @@ test("Accept after Continue adds the next Stage on the trunk, from the chosen op
   assert.equal(tree.nodes.get(s3)!.stage!.number, 3);
   assert.equal(tree.accept.block, "already-stage");
   assert.deepEqual(planarProblems(tree, api.layoutGrowthTree(tree)), []);
+});
+
+test("a turned-down result cannot become a Stage: Accept says so first, and the runtime refuses it", async (t) => {
+  const api = await harness(t);
+  const fixture = api.createDesignTreeFixture();
+  fixture.state.runs.set("run-entrance-x", { parent: "run-s2-layout", sourceStage: fixture.state.branchHead });
+  fixture.state.rejected.add("run-entrance-x");
+  fixture.selectWorkingDraft({ projectId: "riverside-library", runId: "run-entrance-x", baseRevisionSha256: fixture.workingDraft().revisionSha256 ?? null });
+  const tree = api.buildGrowthTree(sourceOf(fixture));
+  assert.equal(tree.nodes.has("candidate:run-entrance-x"), false, "a rejected result is never a Candidate");
+  assert.equal(tree.nodes.get("current")!.parent, `stage:${fixture.state.branchHead}`);
+  assert.equal(tree.nodes.get("current")!.current!.editsAfter, 1);
+  assert.equal(tree.accept.allowed, false);
+  assert.equal(tree.accept.block, "rejected");
+  assert.throws(() => fixture.accept("run-entrance-x", { projectId: "riverside-library", branchId: "main", expectedHeadStageRef: fixture.state.branchHead }),
+    (error: { code?: string }) => error.code === "CANDIDATE_REJECTED");
 });
 
 test("a runtime without the admission contract shows Stages, Current and running work only", async (t) => {
@@ -205,7 +225,7 @@ test("a long history stays planar at every fork", async (t) => {
     for (const id of ids) {
       state.runs.set(id, { parent: base, sourceStage: stageRef });
       state.candidates.push({ run: id, label: `Round ${round + 1} option`, summary: "Synthetic option.", studyId: study,
-        admittedBy: "Arch Agent", admittedAt: "2026-09-25T00:00:00Z", continuedFrom: null, acceptedStage: null });
+        admittedBy: "Arch Agent", admittedAt: "2026-09-25T00:00:00Z", continuedFrom: null, acceptedStage: null, blockedBy: [] });
     }
     state.studies.push({ id: study, label: `Round ${round + 1}`, baseRunId: base, baseStageRef: stageRef, candidateIds: ids });
     const chosen = ids[round % 5];
@@ -219,7 +239,7 @@ test("a long history stays planar at every fork", async (t) => {
       const child = `run-r${round}-deep`;
       state.runs.set(child, { parent: sibling, sourceStage: stageRef });
       state.candidates.push({ run: child, label: "Deeper sibling", summary: "", studyId: null, admittedBy: "Kaiwen",
-        admittedAt: "2026-09-25T00:00:00Z", continuedFrom: sibling, acceptedStage: null });
+        admittedAt: "2026-09-25T00:00:00Z", continuedFrom: sibling, acceptedStage: null, blockedBy: [] });
     }
     base = chosen;
   }
@@ -259,6 +279,9 @@ test("the scene draws three levels of detail and hit targets for every node", as
   assert.ok(roles(close, "summary").length > 5, "close adds summaries");
   assert.ok(roles(close, "status").length > 5, "close adds status");
   assert.ok(mid.hits.some((hit) => hit.node === "current" && hit.action === "accept"));
+  const ids = (result: ReturnType<typeof scene>) => result.skeletons.map((element) => (element as { id?: string }).id ?? "");
+  assert.ok(ids(mid).includes("candidate:run-facade-c:review"), "an option admitted with review checks open carries a small mark");
+  assert.equal(ids(far).some((id) => id.endsWith(":review")), false);
   assert.equal(roles(mid, "ring").length, 1, "the selection is drawn once");
   for (const id of tree.nodes.keys()) assert.ok(mid.hits.some((hit) => hit.node === id), `${id} can be clicked`);
   const massingD = drawing.nodes.get("candidate:run-massing-d")!;

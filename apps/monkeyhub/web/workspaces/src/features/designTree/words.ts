@@ -25,6 +25,14 @@ export function treeWords(t: TFunction, tree: GrowthTree | null) {
       : node.kind === "pending" ? node.label ?? t("designTree.pending.unnamed")
         : node.kind === "current" ? t("designTree.current") : t("designTree.origin");
   const byId = (id: string | null) => (id && tree?.nodes.get(id)) || null;
+  // A Study a closed loop admitted has no name of its own: it is named after where it started.
+  const studyName = (id: string | null): string | null => {
+    const study = id ? tree?.studies.get(id) : undefined;
+    if (!study) return null;
+    if (study.label) return study.label;
+    const base = byId(byId(study.members[0] ?? null)?.parent ?? null);
+    return base ? t("designTree.study.from", { base: title(base) }) : t("designTree.study.unnamed");
+  };
   const actor = (value: string | null) => !value ? null : value === LOCAL_ACTOR ? t("designTree.actor.you") : value;
   const currentAt = (): string => {
     const current = byId(CURRENT);
@@ -64,7 +72,7 @@ export function treeWords(t: TFunction, tree: GrowthTree | null) {
     accept: accept?.nextLabel ? t("designTree.action.accept", { stage: accept.nextLabel }) : t("designTree.action.acceptNext"),
     acceptBlocked: t("designTree.action.acceptNext"), status, fork,
   };
-  return { stageName, optionName, title, actor, currentAt, status, fork, pendingText, scene, byId };
+  return { stageName, optionName, studyName, title, actor, currentAt, status, fork, pendingText, scene, byId };
 }
 
 export type TreeWords = ReturnType<typeof treeWords>;

@@ -14,8 +14,8 @@
  * before admission never do. This module is pure and has no copy: the
  * surfaces word it.
  */
-import type { DesignStageDto, WorkingHeadDto, WorktreeLineDto } from "../../api/generated";
-import type { AdmittedCandidateDto, CandidateActorDto, DesignStudyDto, DesignTreeSource } from "./contract";
+import type { AdmissionActorDto, DesignCandidateDto, DesignStageDto, DesignStudyDto, WorkingHeadDto, WorktreeLineDto } from "../../api/generated";
+import type { DesignTreeSource } from "./contract";
 
 export type TreeNodeKind = "origin" | "stage" | "candidate" | "pending" | "current";
 
@@ -35,10 +35,12 @@ export interface CandidateFacts {
   readonly admittedBy: string | null;
   readonly admittedOrigin: string | null;
   readonly admittedAt: string | null;
-  readonly legacy: AdmittedCandidateDto["legacy"] | null;
+  readonly legacy: DesignCandidateDto["legacy"];
   readonly baseStageRef: string | null;
   /** The Stage later accepted from this Candidate's line, as its node id. */
   readonly acceptedStage: string | null;
+  /** Review checks that did not hold when a person admitted it for comparison (#294 Q2); empty when review-ready. */
+  readonly blockedBy: readonly string[];
 }
 
 export type PendingStatus = "running" | "queued" | "interrupted";
@@ -84,7 +86,7 @@ export interface TreeStudy {
 }
 
 /** Why Current cannot be accepted as the next Stage right now. */
-export type AcceptBlock = "no-head" | "already-stage" | "no-stage" | "older-stage";
+export type AcceptBlock = "no-head" | "already-stage" | "no-stage" | "rejected" | "older-stage";
 
 export interface AcceptState {
   readonly allowed: boolean;
@@ -127,10 +129,7 @@ export const pendingNodeId = (lineId: string) => `pending:${lineId}`;
 
 const LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 const letterAt = (index: number) => index < LETTERS.length ? LETTERS[index] : `${LETTERS[index % LETTERS.length]}${Math.floor(index / LETTERS.length)}`;
-const actorOf = (value: AdmittedCandidateDto["admittedBy"]): { actor: string | null; origin: string | null } =>
-  value === null || value === undefined ? { actor: null, origin: null }
-    : typeof value === "string" ? { actor: value, origin: null }
-      : { actor: (value as CandidateActorDto).actorId ?? null, origin: (value as CandidateActorDto).origin ?? null };
+const actorOf = (value: AdmissionActorDto | null | undefined) => ({ actor: value?.actorId ?? null, origin: value?.origin ?? null });
 const PENDING: ReadonlySet<string> = new Set(["running", "queued", "interrupted"]);
 
 /** The growth tree of one project, from what its runtime retained. */
@@ -200,7 +199,8 @@ export function buildGrowthTree(source: DesignTreeSource): GrowthTree {
     nodes.set(id, { id, kind: "candidate", parent: null, runId: candidate.candidateId, label: candidate.label?.trim() || null,
       summary: candidate.summary?.trim() || null, letter: letters.get(id) ?? null, studyId: candidate.studyId ?? null,
       candidate: { candidateId: candidate.candidateId, admittedBy: actor, admittedOrigin: origin, admittedAt: candidate.admittedAt ?? null,
-        legacy: candidate.legacy ?? null, baseStageRef: candidate.baseStageRef ?? null, acceptedStage: stageLabel(candidate.acceptedStageRef) } });
+        legacy: candidate.legacy ?? null, baseStageRef: candidate.baseStageRef ?? null, acceptedStage: stageLabel(candidate.acceptedStageRef),
+        blockedBy: [...(candidate.blockedBy ?? [])] } });
     // Where the option grew from: the option it continued, else its Study's
     // start (its base run when that is on the tree, else its Stage), else the
     // Stage its work began on.
@@ -260,7 +260,8 @@ export function buildGrowthTree(source: DesignTreeSource): GrowthTree {
     else parent = nodeOfRun(base) ?? (head && base && lineage.includes(base) ? CURRENT : null) ??
       stageLabel(line.baseStageRef) ?? (head ? CURRENT : null);
     nodes.set(id, { id, kind: "pending", parent: null, runId: line.runId, label: line.label?.trim() || null, summary: line.detail?.trim() || null,
-      letter: null, studyId: null, pending: { lineId: line.lineId, status: line.status, detail: line.detail ?? null, updatedAt: line.updatedAt ?? null } });
+      letter: null, studyId: line.studyId ?? null,
+      pending: { lineId: line.lineId, status: line.status, detail: line.detail ?? null, updatedAt: line.updatedAt ?? null } });
     parents.set(id, parent);
   }
 
@@ -355,6 +356,9 @@ function acceptState(source: DesignTreeSource, head: WorkingHeadDto | null, node
   const lineHead = nodes.get(stageNodeId(branch.headStageRef));
   const nextLabel = lineHead?.stage ? `S${lineHead.stage.number + 1}` : null;
   if (head.accepted) return refused("already-stage", { lineHeadStage: lineHead?.id ?? null, nextLabel });
+  // The runtime refuses a run the architect turned down (409 CANDIDATE_REJECTED); say so before asking.
+  const verdict = source.worktrees?.lines.find((line) => line.kind === "head" && line.runId === head.runId)?.admission;
+  if (verdict === "rejected") return refused("rejected", { lineHeadStage: lineHead?.id ?? null, nextLabel });
   if ((head.sourceStageRef ?? null) !== branch.headStageRef) {
     return refused("older-stage", { baseStage: head.sourceStageRef ? stageNodeId(head.sourceStageRef) : null,
       lineHeadStage: lineHead?.id ?? null, nextLabel });

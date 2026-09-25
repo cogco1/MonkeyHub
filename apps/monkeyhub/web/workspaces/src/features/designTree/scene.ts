@@ -61,7 +61,7 @@ export interface TreeElementData {
 }
 
 const INK = "#29352d", INK_2 = "#41414a", ACCENT = "#356b9e", ACCENT_SOFT = "#e8eff6", TWIG = "#7b837a";
-const MUTED = "#9ea39c", PAPER = "#ffffff", TILE = "#eceee8", FAINT = "#6b716a", RUNNING = "#8d948c", WHITE = "#ffffff";
+const MUTED = "#9ea39c", PAPER = "#ffffff", TILE = "#eceee8", FAINT = "#6b716a", RUNNING = "#8d948c", WHITE = "#ffffff", WARN = "#a86a12";
 const LINE_HEIGHT = 1.2;
 
 const WIDE = /[ᄀ-ᅟ⺀-꓏가-힣豈-﫿︰-﹏＀-｠￠-￦]/u;
@@ -278,6 +278,10 @@ export function buildTreeScene(tree: GrowthTree, layout: GrowthLayout, options: 
       ellipse(`${node.id}:state`, { x: card.x + card.width - 15, y: card.y + 5, width: 10, height: 10 },
         onLine ? { backgroundColor: trunk ? ACCENT : PAPER, strokeColor: trunk ? ACCENT : TWIG, strokeWidth: 1.5, opacity } : { backgroundColor: MUTED, strokeColor: MUTED, opacity },
         data("status", { node: node.id }));
+      // Admitted for comparison with review checks still open (#294 Q2): a small mark, explained in the side card.
+      if (node.candidate?.blockedBy.length) {
+        text(`${node.id}:review`, card.x + 10, card.y + 6, "!", 14, WARN, data("status", { node: node.id }), opacity);
+      }
     }
     const labels = placed.labels!;
     const close = level === "close";
