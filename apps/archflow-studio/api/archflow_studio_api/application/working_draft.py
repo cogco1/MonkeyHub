@@ -1,6 +1,6 @@
 """Working positions use P036; generation, acceptance and issue keep their owners."""
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 from archflow.contracts.canonical import canonical_json
 from archflow.project.ports import PersistenceArea, PersistenceDestination
@@ -52,8 +52,12 @@ def _validate_local_source(binding: ProjectBinding, source: LocalDraftSourceDto)
 
 @retained_sources
 def read_working_draft(binding: ProjectBinding) -> WorkingDraftDto:
+    """Read the working position; ``recovery`` lists every unlabelled automatic run.
+
+    Generated candidates stay listed, newest first, however old they are, until
+    the architect explicitly rejects or archives them (GH-234 Q3).
+    """
     value, revision = binding.repository.read_working_draft()
-    cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
     entries = {run_id: WorkingDraftEntryDto(runId=run_id, **{key: item for key, item in row.items() if key != "automatic"})
                for run_id, row in value["runs"].items()}
     local = None
@@ -64,8 +68,7 @@ def read_working_draft(binding: ProjectBinding) -> WorkingDraftDto:
         local = LocalDraftDto.model_validate(payload["draft"] | {"updatedAt": payload["updatedAt"]})
     return WorkingDraftDto(projectId=binding.project_id, revisionSha256=revision,
         current=entries.get(value["current"]),
-        recovery=sorted((entries[key] for key, row in value["runs"].items()
-                         if row["automatic"] and row["label"] is None and datetime.fromisoformat(row["updatedAt"]) >= cutoff),
+        recovery=sorted((entries[key] for key, row in value["runs"].items() if row["automatic"] and row["label"] is None),
                         key=lambda item: item.updatedAt, reverse=True),
         saved=sorted((entries[key] for key, row in value["runs"].items() if row["label"] is not None),
                      key=lambda item: item.updatedAt, reverse=True),
@@ -104,6 +107,14 @@ def save_working_draft(binding: ProjectBinding, run_id: str, revision: str | Non
 
 @retained_sources
 def record_candidate_draft(binding: ProjectBinding, run_id: str, source_run_id: str | None) -> None:
+    """List a finished candidate for recovery; never move the working position.
+
+    ``current`` is the architect's own editing base and only
+    ``select_working_draft`` moves it (Continue, Return to default, a Versions
+    choice, an adopted Sync). Recording a generated candidate -- Hub agent, Arch
+    proposal, options, program or combine -- leaves it alone, even when the
+    candidate was generated from that base (``source_run_id``).
+    """
     row = _entry(binding, run_id)
     row["automatic"] = True
     for _ in range(8):
@@ -112,14 +123,13 @@ def record_candidate_draft(binding: ProjectBinding, run_id: str, source_run_id: 
         if previous:
             row["label"] = previous["label"]
         value["runs"][run_id] = row
-        if value["current"] is None or value["current"] == source_run_id:
-            value["current"] = run_id
         try:
             binding.repository.compare_and_swap_working_draft(expected_revision=revision, value=value)
             return
         except StaleWorkingDraft:
             continue
-    raise StudioError(409, "WORKING_DRAFT_STALE", "The candidate is retained, but its working position changed concurrently. Reopen its result.")
+    raise StudioError(409, "WORKING_DRAFT_STALE",
+                      "The candidate is retained, but the working draft changed concurrently before it was listed. Reopen its result.")
 
 
 @retained_sources

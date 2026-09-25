@@ -255,7 +255,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
     },
     [append],
   );
-  const { binding, session, changingBase, baseError, persistenceFailed, reload, refreshWorkingCopies, refreshWorkingDraft, recoverFromStaleBase } = useSession(pushNotice, server.capabilities,
+  const { binding, session, changingBase, baseError, persistenceFailed, reload, refreshWorkingCopies, refreshWorkingDraft, saveSyncedBase, recoverFromStaleBase } = useSession(pushNotice, server.capabilities,
     initialDocumentIntent ? { runId: initialDocumentIntent.modelSource.runId, sourceStageRef: initialDocumentIntent.sourceStageRef }
       : undefined, true, expectedProjectId);
   const [documentIntentStatus, setDocumentIntentStatus] = useState<"pending" | "switching" | "ready" | "done">(initialDocumentIntent ? "pending" : "done");
@@ -369,7 +369,6 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
   const autoShowRef = useRef<{
     candidateId: string | null; context: number; viewRequest: number; started?: boolean;
     timing?: EditTimingTicket | null;
-    preserveDocument?: boolean;
   } | null>(null);
   const monitorDiagnostics = server.capabilities.includes("operation-diagnostics");
   const activeEditTiming = useRef<EditTimingTicket | null>(null);
@@ -815,6 +814,14 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
   if (workingDraft && recoveryWriter.current?.projectId !== workingDraft.projectId) {
     recoveryWriter.current = { projectId: workingDraft.projectId, write: createLocalDraftWriter(studio, workingDraft) };
   }
+  // This tab's working-draft writes share one CAS revision, so local recovery
+  // and saving a Sync result as the base queue behind each other, never race.
+  const workingDraftWrites = useRef<Promise<unknown>>(Promise.resolve());
+  const queueWorkingDraftWrite = useCallback(<T,>(write: () => Promise<T>): Promise<T> => {
+    const next = workingDraftWrites.current.catch(() => undefined).then(write);
+    workingDraftWrites.current = next;
+    return next;
+  }, []);
   const retainLocalModel = useCallback((local: LocalModelSession, clear = false) => {
     if (!autosaveEnabled) return Promise.resolve();
     const key = `${local.source.projectId}:${local.source.sourceRunId}:${local.source.stateDigest}:${local.source.sourceStageRef ?? ""}`;
@@ -824,16 +831,15 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
         pending: local.pending ? { commands: local.pending.snapshot.commands,
           attempt: { ...local.pending.attempt, inFlight: undefined } } : null } }));
     const savedSnapshot = currentDraft(local.history);
-    const pending = (async () => {
+    return queueWorkingDraftWrite(async () => {
       const writer = recoveryWriter.current;
       if (!writer || writer.projectId !== local.source.projectId) throw new Error("工作草稿尚未读取，无法自动保存。");
       await writer.write(draft, clear ? local.source : undefined);
       local.recoverySaved = savedSnapshot;
       if (local.error?.startsWith("自动恢复保存失败：")) local.error = null;
       refreshLocalModel();
-    })();
-    return pending;
-  }, [autosaveEnabled, studio, refreshLocalModel]);
+    });
+  }, [autosaveEnabled, studio, refreshLocalModel, queueWorkingDraftWrite]);
   useEffect(() => {
     if (!autosaveEnabled || !localModel) return;
     const timer = window.setTimeout(() => {
@@ -2347,7 +2353,6 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
         activeEditTiming.current = timing;
       }
       const preview = beginCandidatePreview(timing);
-      if (autoShowRef.current) autoShowRef.current.preserveDocument = preserveDocument;
       try {
         const accepted = await studio.startCandidate(proposalId, timing?.candidate?.trace);
         setModelRunPending(accepted.candidateId);
@@ -2745,42 +2750,63 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
       if (candidate) session.synced = pending.snapshot;
       else session.error = run.job.value.error ?? `Sync ${status}`;
       session.pending = null; session.busy = false; changed = true;
-      const persisted = retainLocalModel(session, status === "succeeded" && !unsynced(session));
-      void persisted.then(() => refreshWorkingDraft()).catch((cause) => {
+      const recovered = (write: Promise<unknown>) => write.then(() => refreshWorkingDraft()).catch((cause) => {
         session.error = `自动恢复保存失败：${asStudioApiError(cause).detail}`; refreshLocalModel();
       });
-      if (candidate) {
-        // A quiet, completed batch naturally becomes the next editing base.
-        // Bytes and parsing run behind the old interactive model. Any input
-        // since Sync cancels adoption, including an unfinished next gesture.
-        const stable = () => modelInteractionEpoch.current === pending.interactionEpoch &&
-          currentDraft(session.history) === pending.snapshot;
-        if (stable() && localModel === session && modelLoadRequest.current === pending.viewRequest) {
-          const model = viewableArtifacts(candidate.artifacts).find(row => row.representation === "composed") ??
-            viewableArtifacts(candidate.artifacts)[0];
-          if (model) void (async () => {
-            try {
-              await persisted;
-              if (!stable() || modelLoadRequest.current !== pending.viewRequest) return;
-              const nextProjection = await studio.state(model.runId);
-              if (!stable() || modelLoadRequest.current !== pending.viewRequest) return;
-              const shown = await loadArtifactIntoViewer(model, candidateSourceLabel(accepted.candidateId), true,
-                stable, undefined, true);
-              if (!shown) return;
-              if (draftKey && localModels.current.get(draftKey) === session && stable()) localModels.current.delete(draftKey);
-              setViewerProjection(nextProjection);
-              refreshLocalModel();
-              await reload(model.runId, undefined, undefined, true, nextProjection);
-            } catch (cause) { session.error = asStudioApiError(cause).detail; refreshLocalModel(); }
-          })();
+      if (!candidate) { void recovered(retainLocalModel(session)); continue; }
+      // The architect's own completed batch becomes the next saved editing base
+      // (GH-234 Q2). Edits made since Sync keep their recovery now; a fully synced
+      // recovery is cleared only once the saved base holds the batch, so its
+      // edits never end up reachable only as a listed candidate.
+      const retained = unsynced(session) ? recovered(retainLocalModel(session)) : Promise.resolve();
+      // A quiet batch also becomes this tab's editing base. Bytes and parsing run
+      // behind the old interactive model. Any input since Sync cancels that
+      // adoption, including an unfinished next gesture, and so does another view.
+      const stable = () => modelInteractionEpoch.current === pending.interactionEpoch &&
+        currentDraft(session.history) === pending.snapshot;
+      const quiet = stable() && localModel === session && modelLoadRequest.current === pending.viewRequest;
+      const model = viewableArtifacts(candidate.artifacts).find(row => row.representation === "composed") ??
+        viewableArtifacts(candidate.artifacts)[0];
+      const adopt = async () => {
+        if (!model || !stable() || modelLoadRequest.current !== pending.viewRequest) return false;
+        const nextProjection = await studio.state(model.runId);
+        if (!stable() || modelLoadRequest.current !== pending.viewRequest) return false;
+        const shown = await loadArtifactIntoViewer(model, candidateSourceLabel(accepted.candidateId), true,
+          stable, undefined, true);
+        if (!shown) return false;
+        if (draftKey && localModels.current.get(draftKey) === session && stable()) localModels.current.delete(draftKey);
+        setViewerProjection(nextProjection);
+        refreshLocalModel();
+        return (await reload(model.runId, undefined, undefined, true, nextProjection))?.sourceRunId === model.runId;
+      };
+      void (async () => {
+        await retained;
+        let adopted = false;
+        if (quiet) {
+          try { adopted = await adopt(); }
+          catch (cause) { session.error = asStudioApiError(cause).detail; refreshLocalModel(); }
         }
-      }
+        try {
+          // Not adopted into the view, the batch still becomes the saved base without
+          // changing what is on screen. A base the architect chose meanwhile stands,
+          // and the result stays a listed candidate.
+          if (!adopted) await queueWorkingDraftWrite(() => saveSyncedBase(accepted.candidateId, session.source));
+        } catch (cause) {
+          // The saved base could not take the batch: its recovery keeps its exact
+          // source and synced commands, so reopening still shows the edits.
+          session.error = `同步结果未能保存为修改起点：${asStudioApiError(cause).detail}`;
+          refreshLocalModel();
+          await recovered(retainLocalModel(session));
+          return;
+        }
+        if (!unsynced(session)) await recovered(retainLocalModel(session, true));
+      })();
     }
     if (changed) {
       setModelSyncBusy([...localModels.current.values()].some(session => session.busy));
       refreshLocalModel();
     }
-  }, [candidateRuns.runs, candidates, draftKey, localModel, loadArtifactIntoViewer, reload, refreshLocalModel, retainLocalModel, refreshWorkingDraft]);
+  }, [candidateRuns.runs, candidates, draftKey, localModel, loadArtifactIntoViewer, reload, refreshLocalModel, retainLocalModel, refreshWorkingDraft, saveSyncedBase, queueWorkingDraftWrite]);
 
   // A different model on screen is a different set of objects. What was *picked*
   // belonged to the picture that went away, so it stops being picked, its mark
@@ -2853,6 +2879,9 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
 
   // Show the completed model without waiting for validation. Only the latest
   // requested candidate may replace its unchanged launch view and context.
+  // Showing it is only looking (GH-234 Q1/Q2): a generated candidate -- an Arch
+  // proposal, combine, parameter locks, tracing or a Board sketch -- becomes the
+  // editing base, and the saved one, only after an explicit Continue.
   useEffect(() => {
     const preview = autoShowRef.current;
     if (!preview?.candidateId || preview.started) return;
@@ -2902,13 +2931,10 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
       if (autoShowRef.current !== preview || preview.context !== previewContext.current.revision || manualLoadRef.current) return false;
       return loadArtifactIntoViewer(twin, candidateSourceLabel(candidateId), loadedArtifact !== null,
         () => autoShowRef.current === preview && preview.context === previewContext.current.revision, preview.timing?.candidate);
-    })().then(async (shown) => {
+    })().then((shown) => {
       finishEditTiming(preview.timing, shown ? "succeeded" :
         autoShowRef.current !== preview || preview.context !== previewContext.current.revision || manualLoadRef.current ? "cancelled" : "failed");
       if (shown && preview.context === previewContext.current.revision) {
-        if (designHistoryEnabled) await reload(twin.runId).then((next) => {
-          if (next && !preview.preserveDocument) setDocumentView((current) => ({ ...current, runId: twin.runId, sourceSha: null, revisionRef: null, pageIndex: 0 }));
-        });
         append({
         kind: "system",
         ...systemText([
@@ -2924,7 +2950,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
     }).finally(() => {
       setModelRunPending((current) => current === candidateId ? null : current);
     });
-  }, [append, candidates, designHistoryEnabled, loadArtifactIntoViewer, loadedArtifact, sourceLabel, reload]);
+  }, [append, candidates, loadArtifactIntoViewer, loadedArtifact, sourceLabel]);
 
   // Which candidate the drawer shows: the one whose card was clicked, else
   // the latest this tab launched. A card's "receipts" opens its own run.

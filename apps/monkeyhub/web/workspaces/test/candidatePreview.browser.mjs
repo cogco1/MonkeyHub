@@ -35,12 +35,21 @@ let historyEnabled = false, acceptFailure = false, annotationFailure = false, la
 let monitorFailure = false, historyGate = null;
 let diagnosticsEnabled = false, nextIntent = null, intentGate = null, documentGate = null, timingGate = null;
 let projectionOnly = false;
-// The server's working draft: the saved editing base and one retained local draft,
-// each written with the revision it was read at.
-let workingDraftEnabled = viewBaseOnly, nextDelete = null;
-const workingDraft = { revisionSha256: null, current: null, localDraft: null };
+// The server's working draft: the saved editing base, one retained local draft and
+// the finished candidates listed for recovery, each written with the revision it was
+// read at. As in the Studio API (GH-234 Q2), a finished candidate is only listed:
+// `current` moves solely through an explicit PUT /api/working-draft.
+let workingDraftEnabled = viewBaseOnly, nextDelete = null, failNextSelect = false;
+const workingDraft = { revisionSha256: null, current: null, localDraft: null, listed: new Map() };
 const workingDraftDto = () => ({ projectId, revisionSha256: workingDraft.revisionSha256, current: workingDraft.current,
-  recovery: [], saved: [], managedRunIds: [], localDraft: workingDraft.localDraft });
+  recovery: [...workingDraft.listed.values()].reverse(), saved: [], managedRunIds: [...workingDraft.listed.keys()].sort(),
+  localDraft: workingDraft.localDraft });
+function listFinishedCandidate(candidateId) {
+  if (!workingDraftEnabled) return;
+  workingDraft.listed.set(candidateId, { runId: candidateId, sourceStageRef: candidateBases.get(candidateId) ?? null,
+    branchId: null, label: null, updatedAt: new Date().toISOString() });
+  workingDraft.revisionSha256 = digest(JSON.stringify([workingDraft.revisionSha256, "candidate", candidateId]));
+}
 const branches = new Map(), stages = new Map(), candidateBases = new Map(), documents = [], annotations = new Map();
 const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aDWsAAAAASUVORK5CYII=", "base64");
 function historyDto(branchId = "main") {
@@ -127,6 +136,7 @@ async function emit(type, candidateId = null) {
 async function complete(candidate) {
   jobs.get(candidate.jobId).status = "succeeded";
   allArtifacts.push(...candidate.artifacts);
+  listFinishedCandidate(candidate.candidateId);
   await emit("candidate.succeeded", candidate.candidateId);
 }
 async function until(read, accepts, message, timeout = 20_000) {
@@ -190,9 +200,19 @@ async function rendered(id, fileName = `${id}.3dm`) {
     `${id} did not finish parsing and become the displayed model`, 45_000);
 }
 async function diagnosticRendered(candidate) {
+  const base = (await snapshot()).editingRunId;
   await rendered(candidate.candidateId);
-  if (historyEnabled) await until(snapshot, (value) => value.editingRunId === candidate.candidateId && !value.changingBase,
-    "The displayed candidate did not finish binding its editing source");
+  // GH-234 Q1/Q2: a finished candidate is shown automatically but becomes the
+  // editing base only through the architect's explicit Continue.
+  await delay(300);
+  const after = await snapshot();
+  assert.equal(after.editingRunId, base, `${candidate.candidateId} became the editing base without Continue`);
+  assert.equal(after.changingBase, false);
+}
+/** The architect's explicit "Continue from this version" on the model on screen. */
+async function continueFromViewed(runId) {
+  await page.locator(".stage__foot .editing-base").getByRole("button", { name: "Continue from this version", exact: true }).click();
+  await until(snapshot, (value) => value.editingRunId === runId && !value.changingBase, `Continue did not make ${runId} the editing base`);
 }
 async function view(artifact) {
   await page.evaluate((value) => window.__candidatePreview.view(value), artifactDto(artifact));
@@ -246,14 +266,6 @@ try {
               (window as unknown as { __openCandidate: unknown }).__openCandidate = (runId: string) =>
                 setRequest(current => ({ runId, refreshKey: current.refreshKey + 1 }));
               return <CandidateApp {...props} initialRunId={request.runId} refreshKey={request.refreshKey} />;
-            }
-          `;
-        } else {
-          source = source.replace("export default function App(", "function CandidateApp(") + `
-            export default function DrawingHandoffFixture(props: Parameters<typeof CandidateApp>[0]) {
-              const [request, setRequest] = useState<DrawingDesignRequest>();
-              (window as unknown as { __openDrawingProposal: unknown }).__openDrawingProposal = setRequest;
-              return <CandidateApp {...props} initialDrawingRequest={request} />;
             }
           `;
         }
@@ -412,6 +424,10 @@ try {
         assert.ok(workingDraftEnabled); assert.equal(body.projectId, projectId);
         if (body.baseRevisionSha256 !== workingDraft.revisionSha256) {
           return await json({ code: "WORKING_DRAFT_CONFLICT", detail: "The working draft changed; read it again." }, 409);
+        }
+        if (name === "/api/working-draft" && failNextSelect) {
+          failNextSelect = false;
+          return await json({ code: "WORKING_DRAFT_UNAVAILABLE", detail: "The working position could not be saved." }, 503);
         }
         if (name === "/api/working-draft") {
           workingDraft.current = body.runId === null ? null
@@ -677,6 +693,149 @@ try {
       assert.equal(await footer().getAttribute("data-source-match"), "same");
       await page.reload({ waitUntil: "domcontentloaded" });
       await settled(c1.candidateId); await rendered(c1.candidateId);
+    });
+
+    // GH-234 Q2: only the architect's own Sync results advance the saved working
+    // position; a generated candidate never does. This fixture has no design history.
+    await step("a finished proposal candidate is only listed: no working-draft select, and reopening keeps the architect's base", async () => {
+      const writes = baseWrites().length, base = workingDraft.current;
+      const generated = prepare("view-base-generated");
+      await launch(generated); // an Arch proposal's Run: the normal candidate lifecycle
+      await complete(generated);
+      await rendered(generated.candidateId); // shown once finished, never continued
+      assert.match(await footer().innerText(), /Next edit starts from\s+view-base-c1\.3dm/, "The footer still names the architect's base");
+      assert.equal((await snapshot()).editingRunId, c1.candidateId, "Showing a finished candidate keeps the editing base");
+      assert.ok(workingDraft.listed.has(generated.candidateId), "The finished candidate is listed for recovery");
+      assert.deepEqual(workingDraft.current, base, "Finishing a candidate never moves the saved working position");
+      await page.reload({ waitUntil: "domcontentloaded" });
+      await settled(c1.candidateId); await rendered(c1.candidateId);
+      assert.equal(await footer().getAttribute("data-source-match"), "same", "Reopening shows the architect's base as the model being edited");
+      await view(generated.artifacts[0]);
+      assert.match(await footer().innerText(), /Next edit starts from\s+view-base-c1\.3dm/, "After reopening the footer still names the architect's base");
+      assert.equal(baseWrites().length, writes, "Neither the candidate nor reopening posted a working-draft select");
+    });
+
+    await step("a quietly adopted Sync posts exactly one working-draft select for its run, and reopening starts from it", async () => {
+      const writes = baseWrites().length;
+      await view(c1.artifacts[0]);
+      await until(snapshot, (value) => value.draftReady && value.editingRunId === c1.candidateId, "The architect's base is not editable");
+      await page.evaluate(() => window.__candidatePreview.edit({ kind: "delete", elementId: "fixture-floor" }));
+      await until(() => workingDraft.localDraft?.commands?.length ?? 0, (count) => count === 1, "The local edit was not kept in the working draft");
+      const sync = nextDelete = prepare("view-base-adopted-sync");
+      await page.getByRole("button", { name: "Sync", exact: true }).click();
+      await until(() => requests.findLast((row) => row.name === "/api/proposals/delete"), (row) => row?.body.sourceRunId === c1.candidateId,
+        "Sync did not submit from the architect's base");
+      await until(snapshot, (value) => value.runs[sync.candidateId]?.job.status === "ready", "Sync did not start its candidate");
+      await complete(sync);
+      await settled(sync.candidateId); await rendered(sync.candidateId);
+      await until(() => workingDraft.localDraft, (draft) => draft === null, "The synced draft was not released");
+      assert.deepEqual(baseWrites().slice(writes).map((row) => row.body.runId), [sync.candidateId],
+        "Adopting the Sync result posts exactly one working-draft select, for that run");
+      assert.equal(workingDraft.current?.runId, sync.candidateId);
+      await page.reload({ waitUntil: "domcontentloaded" });
+      await settled(sync.candidateId); await rendered(sync.candidateId);
+      assert.equal(await footer().getAttribute("data-source-match"), "same", "Reopening shows the Sync result as the model being edited");
+      await view(c1.artifacts[0]);
+      assert.match(await footer().innerText(), /Next edit starts from\s+view-base-adopted-sync\.3dm/, "After reopening the footer names the Sync result as the base");
+      assert.equal(baseWrites().length, writes + 1, "Reopening posts no further working-draft select");
+    });
+
+    const nextEdit = async (file) => assert.ok((await footer().innerText()).replace(/\s+/g, " ").includes(`Next edit starts from ${file}`),
+      `The footer does not name ${file} as the base: ${await footer().innerText()}`);
+    const localClears = () => requests.filter((row) => row.method === "PUT" && row.name === "/api/working-draft/local" && row.body.draft === null);
+    const editBase = async (base) => {
+      await until(snapshot, (value) => value.draftReady && value.editingRunId === base && value.loadedRunId === base && !value.changingBase,
+        `${base} is not the editable model on screen`);
+      await page.evaluate(() => window.__candidatePreview.edit({ kind: "delete", elementId: "fixture-floor" }));
+      await until(() => workingDraft.localDraft?.commands?.length ?? 0, (count) => count === 1, "The local edit was not kept in the working draft");
+    };
+    const syncWhileLooking = async (id, base) => {
+      const sync = nextDelete = prepare(id);
+      await page.getByRole("button", { name: "Sync", exact: true }).click();
+      await until(() => requests.findLast((row) => row.name === "/api/proposals/delete"), (row) => row?.body.sourceRunId === base,
+        "Sync did not submit from the architect's base");
+      await until(snapshot, (value) => value.runs[sync.candidateId]?.job.status === "ready", "Sync did not start its candidate");
+      await view(c2.artifacts[0]); // looking at another model while the batch runs
+      return sync;
+    };
+
+    // The Studio API advertises design history. With it too, a finished proposal
+    // candidate is only shown until the architect's explicit Continue.
+    await step("with design history, a finished proposal candidate is shown but becomes the saved base only through Continue", async () => {
+      const base = workingDraft.current.runId;
+      historyEnabled = true;
+      await page.reload({ waitUntil: "domcontentloaded" });
+      await settled(base); await rendered(base);
+      const writes = baseWrites().length;
+      const generated = prepare("view-base-history-generated");
+      await launch(generated); await complete(generated); await diagnosticRendered(generated);
+      await nextEdit(`${base}.3dm`);
+      assert.equal(await continueButton().isVisible(), true);
+      assert.equal(baseWrites().length, writes, "Showing a generated candidate posts no working-draft select");
+      await page.reload({ waitUntil: "domcontentloaded" });
+      await settled(base); await rendered(base);
+      assert.equal(baseWrites().length, writes, "Reopening keeps the architect's base and writes nothing");
+      await view(generated.artifacts[0]);
+      await continueFromViewed(generated.candidateId);
+      assert.deepEqual(baseWrites().slice(writes).map((row) => row.body.runId), [generated.candidateId], "Continue saves exactly that choice");
+      await page.reload({ waitUntil: "domcontentloaded" });
+      await settled(generated.candidateId); await rendered(generated.candidateId);
+    });
+
+    await step("a Sync that finishes while another model is on screen still becomes the saved base without changing what is shown", async () => {
+      const base = workingDraft.current.runId, writes = baseWrites().length;
+      await editBase(base);
+      const sync = await syncWhileLooking("view-base-unadopted-sync", base);
+      const clears = localClears().length;
+      await complete(sync);
+      await until(() => workingDraft.current?.runId, (runId) => runId === sync.candidateId, "The architect's own Sync did not become the saved base");
+      await until(() => workingDraft.localDraft, (draft) => draft === null, "The recovery was not released once the saved base held the batch");
+      const after = await snapshot();
+      assert.equal(after.loadedRunId, c2.candidateId, "What is on screen does not change");
+      assert.equal(after.editingRunId, base, "The tab is not re-projected underneath the architect");
+      const selects = baseWrites().slice(writes);
+      assert.deepEqual(selects.map((row) => row.body.runId), [sync.candidateId], "Exactly one working-draft select, for the Sync result");
+      assert.ok(requests.indexOf(selects[0]) < requests.indexOf(localClears()[clears]),
+        "The recovery is cleared only after the saved base holds the batch");
+      await page.reload({ waitUntil: "domcontentloaded" });
+      await settled(sync.candidateId); await rendered(sync.candidateId);
+      await view(c1.artifacts[0]);
+      await nextEdit(`${sync.candidateId}.3dm`);
+      assert.equal(baseWrites().length, writes + 1);
+      await view(sync.artifacts[0]);
+    });
+
+    await step("a Sync never overrides a base chosen in another window meanwhile; its result stays listed", async () => {
+      const base = workingDraft.current.runId, writes = baseWrites().length;
+      await editBase(base);
+      const sync = await syncWhileLooking("view-base-overridden-sync", base);
+      // The architect continues from c1 in another window while this batch runs.
+      workingDraft.current = { runId: c1.candidateId, sourceStageRef: null, branchId: null, updatedAt: new Date().toISOString() };
+      workingDraft.revisionSha256 = digest(JSON.stringify([workingDraft.revisionSha256, "another window", c1.candidateId]));
+      await complete(sync);
+      await until(() => workingDraft.localDraft, (draft) => draft === null, "The synced recovery was not released");
+      assert.deepEqual(baseWrites().slice(writes), [], "The other window's explicit choice stands");
+      assert.equal(workingDraft.current.runId, c1.candidateId);
+      assert.ok(workingDraft.listed.has(sync.candidateId), "The Sync result stays a listed candidate");
+      await page.reload({ waitUntil: "domcontentloaded" });
+      await settled(c1.candidateId); await rendered(c1.candidateId);
+    });
+
+    await step("a Sync result the saved base cannot take keeps its recovery, so reopening still shows the edits", async () => {
+      const base = c1.candidateId, writes = baseWrites().length;
+      await editBase(base);
+      const sync = await syncWhileLooking("view-base-unsaved-sync", base);
+      failNextSelect = true;
+      await complete(sync);
+      await until(() => workingDraft.localDraft, (draft) => draft?.attempt?.pending === null && draft.commands.length === 1,
+        "The recovery was not kept with its synced commands");
+      assert.equal(failNextSelect, false, "The saved base was asked to take the batch");
+      assert.deepEqual(baseWrites().slice(writes).map((row) => row.body.runId), [sync.candidateId]);
+      assert.equal(workingDraft.current.runId, base, "The refused selection left the saved base alone");
+      await page.reload({ waitUntil: "domcontentloaded" });
+      await settled(base); await rendered(base);
+      await until(snapshot, (value) => value.localCommands.length === 1, "Reopening did not restore the synced edits on their exact source");
+      historyEnabled = false;
     });
 
     await step("a base choice this browser cannot save is reported in the editing-base row", async () => {
@@ -1069,10 +1228,10 @@ try {
     await openVersions();
   });
 
-  await step("a preview becomes the editable candidate context while retaining its actual source Stage", async () => {
+  await step("a finished preview becomes the editable candidate context only after Continue, retaining its actual source Stage", async () => {
     historyA = prepare("history-a"); candidateBases.set(historyA.candidateId, s0.stageRef);
-    await launch(historyA); await complete(historyA); await rendered(historyA.candidateId);
-    await until(snapshot, (value) => value.editingRunId === historyA.candidateId, "Preview did not become the candidate editing context");
+    await launch(historyA); await complete(historyA); await diagnosticRendered(historyA);
+    await continueFromViewed(historyA.candidateId);
     assert.equal((await snapshot()).sourceStageRef, s0.stageRef);
     await openVersions();
     await page.locator('[data-design-stage="S0"]').getByRole("button", { name: "S0 · 当前提交", exact: true }).click();
@@ -1200,8 +1359,8 @@ try {
     await until(snapshot, (value) => value.runs[combined.candidateId]?.job.status === "ready", "Combined job was not observed");
     const request = requests.findLast((row) => row.name === "/api/candidates/combine");
     assert.deepEqual(request.body.candidateIds.sort(), [historyB.candidateId, historyC.candidateId]);
-    await complete(combined); await rendered(combined.candidateId);
-    await until(snapshot, (value) => value.editingRunId === combined.candidateId, "Combined preview was not editable");
+    await complete(combined); await diagnosticRendered(combined);
+    await continueFromViewed(combined.candidateId);
     assert.equal((await snapshot()).sourceStageRef, s0.stageRef); assert.equal(branches.size, 2);
     assert.deepEqual(unselectedStateReads(), [], "Previewing the combined result must not load the unviewed source candidates");
   });
@@ -1427,50 +1586,6 @@ try {
     assert.equal(requests.findLast((row) => /^\/api\/documents\/.+\/bytes$/.test(row.name)).query.revisionRef, older.revisionRef);
   });
 
-  await step("a Drawing dimension restores its exact Stage model and starts one normal candidate", async () => {
-    await page.reload({ waitUntil: "domcontentloaded" }); await rendered(historyA.candidateId);
-    await page.evaluate(({ source, stageRef }) => window.__candidatePreview.changeBase(source.runId, source, stageRef),
-      { source: currentHome.modelSource, stageRef: s0.stageRef });
-    await rendered(currentHome.runId);
-    const candidate = prepare("drawing-dimension"); candidateBases.set(candidate.candidateId, s1.stageRef);
-    const source = historyA.artifacts[0].modelSource;
-    const request = { projectId, modelSource: source, sourceStageRef: s1.stageRef, proposal: {
-      proposalId: candidate.proposalId, status: "proposed", modelSource: source, sourceRunId: source.runId, sourceStageRef: s1.stageRef,
-      baseStateDigest: source.stateDigest, recordDigest: digest(`record:${source.runId}`),
-      target: { componentId: "fixture-room", elementId: "fixture-floor", ref: "entity:fixture-room", key: "height" },
-      change: { kind: "set_scalar", old: 0.2, new: 0.3, unit: "meter" }, protected: [], decisionOperator: null,
-      impact: { direct: [], propagated: [], protected: [], conflicts: [], locks: [], honesty: [], unknownCoverage: { count: 0, componentIds: [], parameterIds: [] } },
-      utterance: "Change the bound drawing dimension", persistence: "fixture", createdAt: new Date().toISOString(),
-    } };
-    const start = requests.length, retainedDocuments = structuredClone(documents), retainedAnnotations = structuredClone([...annotations]);
-    const head = branches.get("main").headStageRef;
-    const starts = () => requests.slice(start).filter(row => row.name === `/api/proposals/${candidate.proposalId}/candidate`);
-    await page.evaluate(value => window.__openDrawingProposal(value), request);
-    await until(snapshot, value => value.runs[candidate.candidateId]?.job.status === "ready", "Drawing proposal did not enter the existing candidate lifecycle");
-    const restored = await snapshot();
-    assert.equal(restored.editingRunId, source.runId);
-    assert.equal(restored.sourceStageRef, s1.stageRef);
-    assert.deepEqual(restored.editingModelSource, source, "The Stage's exact asset wins over another saved working option in the same run");
-    const traffic = requests.slice(start);
-    const restoredAt = traffic.findIndex(row => row.name === "/api/state" && row.query.run === source.runId && row.query.sourceStageRef === s1.stageRef);
-    const startedAt = traffic.findIndex(row => row.name === `/api/proposals/${candidate.proposalId}/candidate`);
-    assert.ok(restoredAt >= 0 && restoredAt < startedAt, "The exact retained state must be restored before candidate submission");
-    assert.equal(starts().length, 1);
-    await page.evaluate(value => window.__openDrawingProposal(value), request);
-    await complete(candidate); await diagnosticRendered(candidate);
-    await until(snapshot, value => value.runs[candidate.candidateId]?.candidate.status === "ready", "The Drawing candidate was not read back");
-    const preview = await snapshot();
-    assert.deepEqual(preview.loadedModelSource, candidate.artifacts[0].modelSource);
-    assert.equal(preview.sourceStageRef, s1.stageRef, "The unaccepted candidate retains its source Stage");
-    assert.ok(requests.slice(start).some(row => row.name === `/api/candidates/${candidate.candidateId}`));
-    assert.ok(requests.slice(start).some(row => row.name === `/api/artifacts/${candidate.artifacts[0].sha256}/bytes`));
-    assert.equal(starts().length, 1, "Rerendering the same drawing proposal must not submit it twice");
-    assert.equal(preview.candidateEntries.filter(row => row.candidateId === candidate.candidateId).length, 1);
-    assert.equal(branches.get("main").headStageRef, head, "Preview must leave the accepted Stage unchanged");
-    assert.deepEqual(documents, retainedDocuments);
-    assert.deepEqual([...annotations], retainedAnnotations, "Design preview must preserve retained page notes");
-  });
-
   }
   diagnosticsEnabled = true;
   await page.reload({ waitUntil: "domcontentloaded" });
@@ -1564,6 +1679,7 @@ try {
   });
 
   await step("applying the same proposal twice gives the second candidate an independent action", async () => {
+    await view(currentHome); // the composer asks from the editing base, not the candidate on screen
     const first = prepare("diagnostic-apply-first"), second = prepare("diagnostic-apply-second");
     second.proposalId = first.proposalId; jobs.get(second.jobId).proposalId = first.proposalId;
     candidateStartQueues.set(first.proposalId, [first, second]); nextIntent = first;
@@ -1637,7 +1753,7 @@ try {
   }
 
   if (!modelTimingOnly) {
-    await step("parameter locks retain the selected values on an exact candidate, reopen, and unlock without accepting a Stage", async () => {
+    await step("parameter locks retain the selected values on an exact candidate continued explicitly, reopen, and unlock without accepting a Stage", async () => {
       projectionOnly = false; historyEnabled = true; diagnosticsEnabled = false; projectId = "parameter-lock-fixture";
       branches.clear(); stages.clear(); candidateBases.clear();
       currentHome = makeArtifact("parameter-lock-base"); allArtifacts.push(currentHome);
@@ -1658,6 +1774,7 @@ try {
       assert.deepEqual(request.body.parameterKeys, ["height"]);
       assert.equal(request.body.sourceRunId, currentHome.runId); assert.equal(request.body.sourceStageRef, stage.stageRef);
       await complete(candidate); await diagnosticRendered(candidate);
+      await continueFromViewed(candidate.candidateId);
       assert.equal(stages.size, 1);
       await page.reload({ waitUntil: "domcontentloaded" }); await rendered(candidate.candidateId);
       await openViewTools(); await page.getByRole("button", { name: "Parameter locks", exact: true }).click();
@@ -1669,6 +1786,7 @@ try {
       await panel.getByRole("button", { name: "Unlock selected", exact: true }).click();
       await until(snapshot, value => value.runs[unlocked.candidateId]?.job.status === "ready", "Unlock action did not start the retained candidate");
       await complete(unlocked); await diagnosticRendered(unlocked);
+      await continueFromViewed(unlocked.candidateId);
       assert.equal(parameterStates.get(unlocked.candidateId)[0].lockAuthority, null);
       assert.equal(stages.size, 1);
     });

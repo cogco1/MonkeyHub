@@ -4184,7 +4184,7 @@
         "explicitly preparing an empty project for its first modeling candidate through P036 initial-input persistence: a modeling root, zero level, setup basis and seat; existing authored or retained design and Board assets are preserved",
         "Projecting a checked in-memory proposed StateRecord for another edit without writing or claiming a retained candidate",
         "Read-only element elevation facts and their actual base/top references, plus named Level datums, projected from the exact StateRecord for contextual Stage 1 editing.",
-        "The current project working position, 24-hour automatic recovery listing, independent explicit saved versions and exact-source local command recovery through the P036 working-draft port; readback never executes a recovered request."
+        "The current project working position (moved only by an explicit selection, never by recording a generated candidate), the automatic recovery listing of every unlabelled generated candidate however old, independent explicit saved versions and exact-source local command recovery through the P036 working-draft port; readback never executes a recovered request."
       ],
       "does_not_own": [
         "issuing a project version, and direct project file writes: the ProjectBinding object stays read-only, initial authored-input preparation and configured sync use project.repository ports; runtime.project_runner is the writer of a modeling run and project.issue the only issuer. A configured pull advances this Runtime's local design branch, and it does so entirely through project.repository's transfer and branch compare-and-swap ports; this owner writes no project file itself and moves no canonical HEAD",
