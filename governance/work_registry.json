@@ -187,7 +187,6 @@
         "apps/archflow-studio/api/archflow_studio_api/routes/drawings.py",
         "apps/archflow-studio/api/archflow_studio_api/routes/publications.py",
         "apps/archflow-studio/api/archflow_studio_api/routes/rendering.py",
-        "apps/archflow-studio/api/archflow_studio_api/transport/drawings.py",
         "apps/archflow-studio/api/archflow_studio_api/transport/publications.py",
         "apps/archflow-studio/api/archflow_studio_api/transport/rendering.py",
         "apps/archflow-studio/api/requirements.txt",
@@ -220,7 +219,8 @@
         "Project-bound pages save/reopen; exact source replacement/freeze; editable PPTX and deterministic PDF; Board selection preserves narrative page order without changing design HEAD."
       ],
       "notes": [
-        "2026-09-24: #273 merged the GH-66 integration. On the repository owner's instruction the Drawing, Render, Hub and shared client paths it also claimed are handed to GH-271 (#271, Working Head); GH-66 keeps its Publish paths and the broader #66 acceptance."
+        "2026-09-24: #273 merged the GH-66 integration. On the repository owner's instruction the Drawing, Render, Hub and shared client paths it also claimed are handed to GH-271 (#271, Working Head); GH-66 keeps its Publish paths and the broader #66 acceptance.",
+        "2026-09-25: the cut-plan request DTO (transport/drawings.py) is handed to GH-271 as well, for the drawing follow choice found in the #277 review; GH-66 keeps its Publish paths."
       ]
     },
     {
@@ -238,6 +238,7 @@
         "apps/archflow-studio/api/archflow_studio_api/routes/runtime.py",
         "apps/archflow-studio/api/archflow_studio_api/application/drawing_plans.py",
         "apps/archflow-studio/api/archflow_studio_api/application/rendering.py",
+        "apps/archflow-studio/api/archflow_studio_api/transport/drawings.py",
         "apps/archflow-studio/api/archflow_studio_api/protocol.py",
         "apps/monkeyhub/api/monkeyhub_api/chat.py",
         "apps/monkeyhub/web/workspaces/src/api/client.ts",
@@ -306,6 +307,7 @@
             "apps/archflow-studio/api/archflow_studio_api/routes/runtime.py",
             "apps/archflow-studio/api/archflow_studio_api/application/drawing_plans.py",
             "apps/archflow-studio/api/archflow_studio_api/application/rendering.py",
+            "apps/archflow-studio/api/archflow_studio_api/transport/drawings.py",
             "apps/archflow-studio/api/archflow_studio_api/protocol.py",
             "apps/monkeyhub/api/monkeyhub_api/chat.py",
             "apps/monkeyhub/web/workspaces/src/api/client.ts",
