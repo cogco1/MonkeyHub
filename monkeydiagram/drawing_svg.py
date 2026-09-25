@@ -10,6 +10,12 @@ groups and dimension text with its embedded font). Section hatch strokes
 come from each solid's even-odd cut boundaries. It is not a screenshot,
 not a re-projection, and knows no project, run or path.
 
+Cleanup.  ``clean_drawing`` sits beside ``crop_polylines`` between the
+projection and the SVG: it drops what a pen should not draw (lines shorter
+than the paper tolerance, projected edges lying on the cut, hidden lines
+under visible ones or inside the cut) and joins an object's collinear
+pieces, and it reports what it did by rule.  It never moves a vertex.
+
 Byte determinism.  The same polylines, crop and options give the same SVG
 bytes: coordinates are written with fixed decimals, elements are sorted by
 (object id, points), there is no timestamp, id counter or random value.
@@ -25,8 +31,9 @@ from __future__ import annotations
 
 import math
 import base64
+from dataclasses import dataclass
 from io import BytesIO
-from typing import Mapping, Sequence
+from typing import Any, Mapping, Sequence
 from xml.etree import ElementTree
 from xml.sax.saxutils import quoteattr
 
@@ -119,6 +126,409 @@ def crop_polylines(lines: Sequence[OcctDrawingPolyline], crop_uv) -> tuple[OcctD
         if len(run) > 1:
             kept.append(OcctDrawingPolyline(line.object_id, line.kind, tuple(run)))
     return tuple(sorted(set(kept), key=lambda line: (line.object_id, line.kind, line.points)))
+
+
+# ---------------------------------------------------------------- cleanup between projection and SVG
+
+#: Joined pieces may turn by at most this much where they meet.
+_COLLINEAR_RADIANS = math.radians(0.5)
+#: Numeric slack when a line's parameter range is checked for full cover.
+_COVER_SLACK = 1e-9
+_CLEANED_KINDS = ("visible", "hidden", "section")
+
+
+@dataclass(frozen=True, slots=True)
+class CleanupReport:
+    """What ``clean_drawing`` did, counted per rule in the order the rules ran.
+
+    ``tolerance`` is in drawing units.  ``input_lines`` counts the distinct
+    lines given and ``output_lines`` those returned; each other line was
+    dropped by ``micro``, ``cut_precedence``, ``duplicate`` or
+    ``hidden_under_cut`` or joined to a neighbour by ``collinear``, so the
+    five counts add up to ``input_lines - output_lines``.
+    """
+
+    tolerance: float
+    input_lines: int
+    output_lines: int
+    micro: int
+    collinear: int
+    cut_precedence: int
+    duplicate: int
+    hidden_under_cut: int
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "tolerance": self.tolerance, "input_lines": self.input_lines, "output_lines": self.output_lines,
+            "micro": self.micro, "collinear": self.collinear, "cut_precedence": self.cut_precedence,
+            "duplicate": self.duplicate, "hidden_under_cut": self.hidden_under_cut,
+        }
+
+
+def _finite_points(points, minimum: int) -> bool:
+    try:
+        return len(points) >= minimum and all(len(p) == 2 and math.isfinite(p[0]) and math.isfinite(p[1]) for p in points)
+    except TypeError:
+        return False
+
+
+def _closed_loops(region) -> None:
+    if not isinstance(region, OcctDrawingRegion):
+        raise DrawingSvgError("section regions must be OcctDrawingRegion values")
+    for loop in region.loops:
+        if not _finite_points(loop, 4) or loop[0] != loop[-1]:
+            raise DrawingSvgError("section material needs explicitly closed finite loops")
+
+
+def _path_length(points) -> float:
+    return sum(math.dist(a, b) for a, b in zip(points, points[1:]))
+
+
+def _end_direction(points, at_end: bool, tolerance: float):
+    """The unit direction in which a line leaves through one of its ends, or None.
+
+    It is measured from the first vertex at least ``tolerance`` inside that end
+    (or the far end), so a short final chord cannot swing it.
+    """
+
+    ordered = points[::-1] if at_end else points
+    end = ordered[0]
+    inner = ordered[-1]
+    for point in ordered[1:]:
+        if math.dist(point, end) >= tolerance:
+            inner = point
+            break
+    length = math.dist(inner, end)
+    if length == 0.0:
+        return None
+    return (end[0] - inner[0]) / length, (end[1] - inner[1]) / length
+
+
+class _EndIndex:
+    """Line ends on a grid of tolerance-sized cells: every end within ``tolerance`` is in the 3 x 3 block."""
+
+    def __init__(self, tolerance: float) -> None:
+        self.tolerance = tolerance
+        self.cells: dict[tuple[int, int], set[tuple[int, bool]]] = {}
+
+    def _cell(self, point) -> tuple[int, int]:
+        return math.floor(point[0] / self.tolerance), math.floor(point[1] / self.tolerance)
+
+    def add(self, number: int, points) -> None:
+        for at_end, point in ((False, points[0]), (True, points[-1])):
+            self.cells.setdefault(self._cell(point), set()).add((number, at_end))
+
+    def remove(self, number: int, points) -> None:
+        for at_end, point in ((False, points[0]), (True, points[-1])):
+            self.cells[self._cell(point)].discard((number, at_end))
+
+    def near(self, point) -> list[tuple[int, bool]]:
+        column, row = self._cell(point)
+        return sorted(end for dx in (-1, 0, 1) for dy in (-1, 0, 1)
+                      for end in self.cells.get((column + dx, row + dy), ()))
+
+
+def _join_collinear(lines, tolerance: float):
+    """Join each object's pieces that continue one another; returns the lines and the number of joins.
+
+    Two lines of one object and kind are joined where an end of each lies
+    within ``tolerance`` of the other and they leave that joint in opposite
+    directions to within 0.5 degrees.  All vertices stay where they were: a
+    shared end point is written once, and a gap of at most the tolerance
+    becomes a bridging segment.  Lines are taken in sorted order and each is
+    extended at its end, then at its start, as long as a continuation exists,
+    choosing the straightest, then the nearest, then the first; the result
+    is a fixed point, so joining again finds nothing.
+    """
+
+    limit = math.cos(_COLLINEAR_RADIANS)
+    groups: dict[tuple[str, str], list[OcctDrawingPolyline]] = {}
+    for line in lines:
+        groups.setdefault((line.object_id, line.kind), []).append(line)
+    result: list[OcctDrawingPolyline] = []
+    joins = 0
+    for (object_id, kind), members in groups.items():
+        chains = [list(line.points) for line in members]
+        changed = [False] * len(chains)
+        alive = [True] * len(chains)
+        index = _EndIndex(tolerance)
+        for number, chain in enumerate(chains):
+            index.add(number, chain)
+        for number in range(len(chains)):
+            if not alive[number]:
+                continue
+            for at_end in (True, False):
+                while True:
+                    chain = chains[number]
+                    joint = chain[-1] if at_end else chain[0]
+                    outward = _end_direction(chain, at_end, tolerance)
+                    if outward is None:
+                        break
+                    best = None
+                    for other, other_at_end in index.near(joint):
+                        if other == number or not alive[other]:
+                            continue
+                        candidate = chains[other]
+                        meeting = candidate[-1] if other_at_end else candidate[0]
+                        gap = math.dist(joint, meeting)
+                        leaving = _end_direction(candidate, other_at_end, tolerance)
+                        if gap > tolerance or leaving is None:
+                            continue
+                        # Continuation: the two lines leave the joint in opposite directions.
+                        straightness = -(outward[0] * leaving[0] + outward[1] * leaving[1])
+                        if straightness < limit:
+                            continue
+                        key = (-straightness, gap, other, other_at_end)
+                        if best is None or key < best:
+                            best = key
+                    if best is None:
+                        break
+                    _, _, other, other_at_end = best
+                    index.remove(number, chain)
+                    index.remove(other, chains[other])
+                    piece = chains[other]
+                    if at_end:
+                        piece = piece[::-1] if other_at_end else piece
+                        joined = chain + (piece[1:] if piece[0] == chain[-1] else piece)
+                    else:
+                        piece = piece if other_at_end else piece[::-1]
+                        joined = (piece[:-1] if piece[-1] == chain[0] else piece) + chain
+                    chains[number] = joined
+                    alive[other] = False
+                    changed[number] = True
+                    joins += 1
+                    index.add(number, joined)
+        for number, chain in enumerate(chains):
+            if alive[number]:
+                points = tuple(chain)
+                if changed[number]:
+                    points = min(points, points[::-1])
+                result.append(OcctDrawingPolyline(object_id, kind, points))
+    distinct = sorted(set(result), key=lambda line: (line.object_id, line.kind, line.points))
+    # Two chains that came out identical are one line: the join that made the second absorbed it.
+    return distinct, joins + len(result) - len(distinct)
+
+
+def _slab(start: float, step: float, low: float, high: float):
+    """The parameters t with low <= start + t * step <= high, or None."""
+
+    if step == 0.0:
+        return (-math.inf, math.inf) if low <= start <= high else None
+    first, second = (low - start) / step, (high - start) / step
+    return (first, second) if first <= second else (second, first)
+
+
+def _capsule_interval(a, b, c, d, tolerance: float):
+    """The parameters t in [0, 1] where a + t (b - a) lies within ``tolerance`` of the segment c-d, or None.
+
+    The points within the tolerance of a segment form a convex capsule (a
+    rectangle along it and a disc at each end), so the answer is one
+    interval: from the lowest entry to the highest exit over the three parts.
+    """
+
+    ex, ey = b[0] - a[0], b[1] - a[1]
+    found = []
+    for centre in (c, d):
+        ox, oy = a[0] - centre[0], a[1] - centre[1]
+        quadratic, linear = ex * ex + ey * ey, 2.0 * (ox * ex + oy * ey)
+        constant = ox * ox + oy * oy - tolerance * tolerance
+        discriminant = linear * linear - 4.0 * quadratic * constant
+        if quadratic > 0.0 and discriminant >= 0.0:
+            root = math.sqrt(discriminant)
+            found.append(((-linear - root) / (2.0 * quadratic), (-linear + root) / (2.0 * quadratic)))
+    length = math.dist(c, d)
+    if length > 0.0:
+        ux, uy = (d[0] - c[0]) / length, (d[1] - c[1]) / length
+        ox, oy = a[0] - c[0], a[1] - c[1]
+        along = _slab(ox * ux + oy * uy, ex * ux + ey * uy, 0.0, length)
+        across = _slab(oy * ux - ox * uy, ey * ux - ex * uy, -tolerance, tolerance)
+        if along is not None and across is not None and max(along[0], across[0]) <= min(along[1], across[1]):
+            found.append((max(along[0], across[0]), min(along[1], across[1])))
+    if not found:
+        return None
+    low, high = max(0.0, min(row[0] for row in found)), min(1.0, max(row[1] for row in found))
+    return (low, high) if low <= high else None
+
+
+def _covered(intervals, slack: float) -> bool:
+    """Whether the intervals leave no gap longer than ``slack`` in [0, 1]."""
+
+    reach = 0.0
+    for low, high in sorted(intervals):
+        if reach >= 1.0 - slack:
+            break
+        if low > reach + slack:
+            return False
+        reach = max(reach, high)
+    return reach >= 1.0 - slack
+
+
+class _SegmentCover:
+    """The segments of some lines, to ask whether another line lies within ``tolerance`` of them all along."""
+
+    _MAX_CELLS = 1024
+
+    def __init__(self, lines, tolerance: float) -> None:
+        self.tolerance = tolerance
+        self.segments = [(a, b) for line in lines for a, b in zip(line.points, line.points[1:]) if a != b]
+        xs = [p[0] for segment in self.segments for p in segment]
+        ys = [p[1] for segment in self.segments for p in segment]
+        extent = max(max(xs) - min(xs), max(ys) - min(ys)) if xs else 0.0
+        self.cell = max(4.0 * tolerance, extent / 256.0)
+        self.cells: dict[tuple[int, int], list[int]] = {}
+        self.large: list[int] = []
+        for number, (a, b) in enumerate(self.segments):
+            keys = self._keys(a, b)
+            if keys is None:
+                self.large.append(number)
+            else:
+                for key in keys:
+                    self.cells.setdefault(key, []).append(number)
+
+    def _keys(self, a, b):
+        pad = self.tolerance
+        x0, x1 = math.floor((min(a[0], b[0]) - pad) / self.cell), math.floor((max(a[0], b[0]) + pad) / self.cell)
+        y0, y1 = math.floor((min(a[1], b[1]) - pad) / self.cell), math.floor((max(a[1], b[1]) + pad) / self.cell)
+        if (x1 - x0 + 1) * (y1 - y0 + 1) > self._MAX_CELLS:
+            return None
+        return [(x, y) for x in range(x0, x1 + 1) for y in range(y0, y1 + 1)]
+
+    def _candidates(self, a, b):
+        keys = self._keys(a, b)
+        if keys is None:
+            return range(len(self.segments))
+        found = set(self.large)
+        for key in keys:
+            found.update(self.cells.get(key, ()))
+        return sorted(found)
+
+    def covers(self, points) -> bool:
+        if not self.segments:
+            return False
+        for a, b in zip(points, points[1:]):
+            if a == b:
+                continue
+            intervals = []
+            for number in self._candidates(a, b):
+                interval = _capsule_interval(a, b, *self.segments[number], self.tolerance)
+                if interval is not None:
+                    intervals.append(interval)
+            if not _covered(intervals, _COVER_SLACK):
+                return False
+        return True
+
+
+class _RegionCover:
+    """Section regions, to ask whether a line lies inside them (even-odd) all along."""
+
+    def __init__(self, regions, tolerance: float) -> None:
+        self.tolerance = tolerance
+        self.regions = []
+        for region in regions:
+            points = [p for loop in region.loops for p in loop]
+            edges = [(a, b) for loop in region.loops for a, b in zip(loop, loop[1:]) if a != b]
+            bounds = (min(p[0] for p in points), min(p[1] for p in points),
+                      max(p[0] for p in points), max(p[1] for p in points))
+            self.regions.append((bounds, edges))
+
+    @staticmethod
+    def _inside(a, b, edges):
+        """The parameter intervals of the line through a and b that lie inside one region, even-odd."""
+
+        ex, ey = b[0] - a[0], b[1] - a[1]
+        squared = ex * ex + ey * ey
+        crossings = []
+        for c, d in edges:
+            side_c = ex * (c[1] - a[1]) - ey * (c[0] - a[0])
+            side_d = ex * (d[1] - a[1]) - ey * (d[0] - a[0])
+            # Half-open, like the hatch: a vertex on the line is counted once or not at all.
+            if (side_c > 0.0) != (side_d > 0.0):
+                share = side_c / (side_c - side_d)
+                x, y = c[0] + share * (d[0] - c[0]), c[1] + share * (d[1] - c[1])
+                crossings.append(((x - a[0]) * ex + (y - a[1]) * ey) / squared)
+        crossings.sort()
+        return list(zip(crossings[::2], crossings[1::2]))
+
+    def covers(self, points) -> bool:
+        if not self.regions:
+            return False
+        pad = self.tolerance
+        for a, b in zip(points, points[1:]):
+            if a == b:
+                continue
+            low_x, high_x = min(a[0], b[0]) - pad, max(a[0], b[0]) + pad
+            low_y, high_y = min(a[1], b[1]) - pad, max(a[1], b[1]) + pad
+            intervals = []
+            for (x0, y0, x1, y1), edges in self.regions:
+                if x1 < low_x or x0 > high_x or y1 < low_y or y0 > high_y:
+                    continue
+                intervals.extend(self._inside(a, b, edges))
+            # An end may overrun the boundary by up to the tolerance.
+            if not _covered(intervals, self.tolerance / math.dist(a, b)):
+                return False
+        return True
+
+
+def clean_drawing(
+    lines: Sequence[OcctDrawingPolyline], regions: Sequence[OcctDrawingRegion], *, tolerance: float,
+) -> tuple[tuple[OcctDrawingPolyline, ...], CleanupReport]:
+    """Remove what a projection draws that no drawing should; a pure step between projection and SVG.
+
+    ``lines`` are ``visible``, ``hidden`` and ``section`` polylines in the
+    drawing frame, as ``crop_polylines`` returns them; ``regions`` are the
+    section regions of the same view.  ``tolerance`` is in drawing units:
+    the paper tolerance times the sheet scale.  The rules run in this order,
+    each on what the one before kept:
+
+    1. ``micro``: a line shorter than the tolerance is dropped;
+    2. ``collinear``: an object's pieces that meet within the tolerance and
+       continue one another to within 0.5 degrees are joined into one line
+       (``_join_collinear``); no vertex moves;
+    3. ``cut_precedence``: a visible or hidden line lying within the
+       tolerance of section lines all along is dropped, so the cut edge is
+       drawn once, by the section;
+    4. ``duplicate``: a hidden line lying within the tolerance of visible
+       lines all along is dropped; the visible line stays;
+    5. ``hidden_under_cut``: a hidden line lying inside the section regions
+       (even-odd) is dropped.  Pass hidden lines only when they will be drawn.
+
+    A line is kept or dropped whole: a partly covered line stays.  The lines
+    come back sorted as ``crop_polylines`` sorts them, with the report;
+    cleaning them again changes nothing.  What the hidden-line solve itself
+    misjudges is outside these rules.
+    """
+
+    if (isinstance(tolerance, bool) or not isinstance(tolerance, (int, float)) or not math.isfinite(tolerance)
+            or tolerance <= 0.0):
+        raise DrawingSvgError("the cleanup tolerance must be a positive distance in drawing units")
+    tolerance = float(tolerance)
+    distinct = set()
+    for line in lines:
+        if not isinstance(line, OcctDrawingPolyline):
+            raise DrawingSvgError("lines must be OcctDrawingPolyline values")
+        if line.kind not in _CLEANED_KINDS:
+            raise DrawingSvgError(f"clean_drawing takes visible, hidden and section lines, not {line.kind!r}")
+        if not _finite_points(line.points, 2):
+            raise DrawingSvgError("a drawing line needs at least two finite points")
+        distinct.add(line)
+    for region in regions:
+        _closed_loops(region)
+    kept = sorted(distinct, key=lambda line: (line.object_id, line.kind, line.points))
+    counts = {}
+    remaining = [line for line in kept if _path_length(line.points) >= tolerance]
+    counts["micro"] = len(kept) - len(remaining)
+    remaining, counts["collinear"] = _join_collinear(remaining, tolerance)
+    cut = _SegmentCover([line for line in remaining if line.kind == "section"], tolerance)
+    kept = [line for line in remaining if line.kind == "section" or not cut.covers(line.points)]
+    counts["cut_precedence"] = len(remaining) - len(kept)
+    seen = _SegmentCover([line for line in kept if line.kind == "visible"], tolerance)
+    remaining = [line for line in kept if line.kind != "hidden" or not seen.covers(line.points)]
+    counts["duplicate"] = len(kept) - len(remaining)
+    under = _RegionCover(regions, tolerance)
+    kept = [line for line in remaining if line.kind != "hidden" or not under.covers(line.points)]
+    counts["hidden_under_cut"] = len(remaining) - len(kept)
+    result = tuple(sorted(kept, key=lambda line: (line.object_id, line.kind, line.points)))
+    return result, CleanupReport(tolerance=tolerance, input_lines=len(distinct), output_lines=len(result), **counts)
 
 
 def _number(value: float) -> str:
@@ -530,9 +940,11 @@ def render_svg_png(svg: bytes, *, dots_per_inch: int = 150) -> bytes:
 
 
 __all__ = [
+    "CleanupReport",
     "DrawingSvgError",
     "PNG_MEDIA_TYPE",
     "SVG_MEDIA_TYPE",
+    "clean_drawing",
     "crop_polylines",
     "drawing_svg",
     "dimension_placement_fits",

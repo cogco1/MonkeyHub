@@ -22,6 +22,8 @@ What this module decides and nothing else:
 - the frame is checked to be right-handed and consistent (``look`` is the
   opposite of ``right x up``), the crop window and near/far are finite and
   ordered, and the receipt records exactly what was applied;
+- the drawn lines are cleaned at ``CLEANUP_TOLERANCE_MM`` on the sheet
+  (``clean_drawing``) and the receipt's ``cleanup`` says what was removed;
 - the drawing run is created with ``base = source run base`` or, when it
   exists, is used only if it already carries that base;
 - nothing is written until the projection and both renderings succeeded;
@@ -70,7 +72,10 @@ from archflow.adapters.occt_backend import OcctSectionPerspective, project_occt_
 from monkeydiagram.drawing_svg import (
     PNG_MEDIA_TYPE,
     SVG_MEDIA_TYPE,
+    CleanupReport,
     DrawingSvgError,
+    clean_drawing,
+    crop_polylines,
     drawing_svg,
     render_svg_png,
     svg_objects,
@@ -96,6 +101,8 @@ STEP_MEDIA_TYPE = "model/step"
 _STEP_FILE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._@-]{0,159}\.step$")
 _UNITS = ("meter", "millimeter", "inch", "foot")
 _TOLERANCE = 1e-9
+#: Paper tolerance of the drawing cleanup: at any sheet scale, what differs by less is not seen.
+CLEANUP_TOLERANCE_MM = 0.05
 
 
 class DrawingElevationError(ValueError):
@@ -154,6 +161,18 @@ def _finite(value, label: str) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
         raise DrawingElevationError(f"{label} must be a finite number")
     return float(value)
+
+
+def _cleaned(lines, regions, *, crop_uv, hidden_lines: bool, unit: str, scale_denominator: int):
+    """The lines one drawing draws, cropped to its window and cleaned at the paper tolerance, with the report.
+
+    The tolerance is ``CLEANUP_TOLERANCE_MM`` on the sheet, in the source's
+    unit at the drawing's scale.  Hidden lines take part only when drawn.
+    """
+
+    drawn = lines if hidden_lines else tuple(line for line in lines if line.kind != "hidden")
+    tolerance = CLEANUP_TOLERANCE_MM * scale_denominator / (1000.0 * UNIT_METRES[unit])
+    return clean_drawing(crop_polylines(drawn, crop_uv), regions, tolerance=tolerance)
 
 
 @dataclass(frozen=True, slots=True)
@@ -290,11 +309,16 @@ class ElevationView:
 
 @dataclass(frozen=True, slots=True)
 class ElevationProjection:
-    """The in-memory result: every solved polyline, and the SVG and PNG of the cropped drawing."""
+    """The in-memory result: every solved polyline, and the SVG and PNG of the cropped, cleaned drawing.
+
+    ``lines`` stay as solved, so the receipt's counts keep their meaning;
+    ``cleanup`` reports what ``clean_drawing`` removed before the SVG.
+    """
 
     lines: tuple[OcctDrawingPolyline, ...]
     svg: bytes
     png: bytes
+    cleanup: CleanupReport | None = None
 
     def counts(self) -> dict[str, Any]:
         visible = [line for line in self.lines if line.kind == "visible"]
@@ -317,8 +341,9 @@ def project_model_axis_elevation(
 
     Every object in ``object_ids`` takes part in the one visibility solve
     (restricted to the view's near/far slab); the crop then clips the
-    result to the sheet window.  The SVG holds visible polylines, plus
-    hidden ones when the view asks for them, each naming its object.
+    result to the sheet window and ``clean_drawing`` cleans it.  The SVG
+    holds visible polylines, plus hidden ones when the view asks for them,
+    each naming its object.
     """
 
     if not isinstance(view, ElevationView):
@@ -335,8 +360,10 @@ def project_model_axis_elevation(
             observation["emitted_object_ids"] = sorted({line.object_id for line in lines})
         with _observed_stage(operation_observer, "drawing.svg", parent_event_id=parent_event_id,
                              details={"input_object_ids": sorted({line.object_id for line in lines})}) as observation:
+            cleaned, cleanup = _cleaned(lines, (), crop_uv=view.crop_uv, hidden_lines=view.hidden_lines, unit=unit,
+                                        scale_denominator=view.scale_denominator)
             svg = drawing_svg(
-                lines, crop_uv=view.crop_uv, unit=unit, scale_denominator=view.scale_denominator,
+                cleaned, crop_uv=view.crop_uv, unit=unit, scale_denominator=view.scale_denominator,
                 hidden_lines=view.hidden_lines, title=view.name,
             )
             observation["emitted_object_ids"] = list(svg_objects(svg))
@@ -344,7 +371,7 @@ def project_model_axis_elevation(
             png = render_svg_png(svg)
     except (OcctBackendError, DrawingSvgError) as exc:
         raise DrawingElevationError(f"elevation {view.name}: {exc}") from exc
-    return ElevationProjection(lines=lines, svg=svg, png=png)
+    return ElevationProjection(lines=lines, svg=svg, png=png, cleanup=cleanup)
 
 
 @dataclass(frozen=True, slots=True)
@@ -358,6 +385,12 @@ class ElevationDrawing:
     png_ref: ProjectArtifactRef
     svg: bytes
     png: bytes
+
+    @property
+    def cleanup(self) -> Mapping[str, Any] | None:
+        """The receipt's ``CleanupReport`` counts; None for a drawing retained before cleanup was recorded."""
+
+        return self.receipt.get("cleanup")
 
 
 @dataclass(frozen=True, slots=True)
@@ -569,6 +602,9 @@ def _retain_projection(repository, *, source, verified, projection, view, name, 
             },
             "artifacts": {"svg": _ref_dict(svg_ref), "png": _ref_dict(png_ref)},
         }
+        # What the cleanup removed describes this drawing, not its recipe: it is kept here only.
+        if projection.cleanup is not None:
+            payload["cleanup"] = projection.cleanup.to_dict()
         if previous_revision_ref is not None:
             payload["previousRevisionRef"] = previous_revision_ref
         receipt_ref = repository.put_json(
@@ -685,10 +721,13 @@ def freeze_cut_plan(
         regions = section_occt_regions(verified.entries, **common)
         background = project_occt_lines(verified.entries, **common, depth_range=(0, view.far_depth))
         lines = background + sections
-        svg = drawing_svg(lines, crop_uv=view.crop_uv, unit=verified.length_unit,
+        # The clipped slab's top edges lie on the cut; the cleanup leaves them to the section.
+        cleaned, cleanup = _cleaned(lines, regions, crop_uv=view.crop_uv, hidden_lines=view.hidden_lines,
+                                    unit=verified.length_unit, scale_denominator=view.scale_denominator)
+        svg = drawing_svg(cleaned, crop_uv=view.crop_uv, unit=verified.length_unit,
                           scale_denominator=view.scale_denominator, hidden_lines=view.hidden_lines,
                           title=recipe["name"], regions=regions, graphics=graphics, dimensions=resolved, dressing=dressing)
-        projection = ElevationProjection(lines=lines, svg=svg, png=render_svg_png(svg))
+        projection = ElevationProjection(lines=lines, svg=svg, png=render_svg_png(svg), cleanup=cleanup)
     except (OcctBackendError, DrawingSvgError) as exc:
         raise DrawingElevationError(f"cut-plan {view.name}: {exc}") from exc
     return _retain_projection(
@@ -961,12 +1000,17 @@ class SectionPerspectiveView:
 
 @dataclass(frozen=True, slots=True)
 class SectionPerspectiveProjection:
-    """The in-memory section perspective: the resolved view, the exact solve, and its SVG and PNG."""
+    """The in-memory section perspective: the resolved view, the exact solve, and its SVG and PNG.
+
+    ``perspective`` stays as solved; ``cleanup`` reports what ``clean_drawing``
+    removed before the SVG.
+    """
 
     view: Mapping[str, Any]
     perspective: OcctSectionPerspective
     svg: bytes
     png: bytes
+    cleanup: CleanupReport | None = None
 
     @property
     def lines(self) -> tuple[OcctDrawingPolyline, ...]:
@@ -1095,8 +1139,11 @@ def project_section_perspective(
         }
         with _observed_stage(operation_observer, "drawing.svg", parent_event_id=parent_event_id,
                              details={"input_object_ids": sorted({line.object_id for line in perspective.lines})}) as observation:
+            # The scale holds at the section plane, so the paper tolerance is measured there.
+            cleaned, cleanup = _cleaned(perspective.lines, perspective.regions, crop_uv=crop, hidden_lines=False,
+                                        unit=unit, scale_denominator=view.scale_denominator)
             svg = drawing_svg(
-                perspective.lines, crop_uv=crop, unit=unit, scale_denominator=view.scale_denominator,
+                cleaned, crop_uv=crop, unit=unit, scale_denominator=view.scale_denominator,
                 hidden_lines=False, title=view.name, regions=perspective.regions, graphics=view.graphics,
                 projection=SECTION_PERSPECTIVE_KIND,
             )
@@ -1107,7 +1154,7 @@ def project_section_perspective(
         raise
     except (OcctBackendError, DrawingSvgError) as exc:
         raise DrawingElevationError(f"section perspective {view.name}: {exc}") from exc
-    return SectionPerspectiveProjection(view=resolved, perspective=perspective, svg=svg, png=png)
+    return SectionPerspectiveProjection(view=resolved, perspective=perspective, svg=svg, png=png, cleanup=cleanup)
 
 
 def section_perspective_objects(verified: VerifiedElevationSource, hidden_object_ids: Sequence[str]) -> tuple[str, ...]:
@@ -1221,6 +1268,7 @@ def list_model_axis_elevations(repository: FilesystemProjectRepository, drawing_
 
 
 __all__ = [
+    "CLEANUP_TOLERANCE_MM",
     "CUT_PLAN_KIND",
     "DEFAULT_SECTION_EYE_HEIGHT_M",
     "DEFAULT_SECTION_FOV_DEG",

@@ -7,7 +7,9 @@ from io import BytesIO
 from xml.etree import ElementTree
 
 from monkeydiagram.drawing_svg import (
+    CleanupReport,
     DrawingSvgError,
+    clean_drawing,
     crop_polylines,
     drawing_svg,
     dimension_placement_fits,
@@ -40,6 +42,90 @@ class CropTests(unittest.TestCase):
         for crop in ((0, 0, 0, 4), (4, 0, 0, 4), (0, 0, 4), (0, float("nan"), 4, 4)):
             with self.subTest(crop=crop), self.assertRaises(DrawingSvgError):
                 crop_polylines((_line("wall", "visible", (0, 0), (1, 1)),), crop)
+
+
+class CleanupTests(unittest.TestCase):
+    """clean_drawing on synthetic lines at 0.05 mm on a 1:100 sheet: 5 mm in metres."""
+
+    tolerance = 0.005
+    # A slab cut at the plan plane: its region is the material the section lines outline.
+    regions = (OcctDrawingRegion("slab", (((0.0, 2.0), (4.0, 2.0), (4.0, 3.0), (0.0, 3.0), (0.0, 2.0)),)),)
+    lines = (
+        # One wall face in pieces: a 3 mm gap and an exact joint continue it; a 0.9 degree turn does not.
+        _line("wall", "visible", (0, 0), (1, 0)),
+        _line("wall", "visible", (1.003, 0), (2, 0)),
+        _line("wall", "visible", (2, 0), (3, 0.0156)),
+        _line("wall", "visible", (3, 1), (2.5, 1)),
+        _line("wall", "visible", (2.5, 1), (1, 1)),
+        # A return meeting the joint square-on, and a 2 mm stub.
+        _line("wall", "visible", (1, 0), (1, 1)),
+        _line("wall", "visible", (5, 5), (5.002, 5)),
+        # The slab's cut edge, and the clipped slab's top edge drawn again in two pieces 0.1 mm off it.
+        _line("slab", "section", (0, 2), (4, 2), (4, 3), (0, 3), (0, 2)),
+        _line("slab", "visible", (0, 2.0001), (2, 2.0001)),
+        _line("slab", "visible", (2, 2.0001), (4, 2.0001)),
+        # A slab edge running past the cut is only partly on it: it stays.
+        _line("slab", "visible", (0, 1.9999), (6, 1.9999)),
+        # Behind the wall face: a hidden line of another object under the visible one.
+        _line("rear", "hidden", (0.2, 0), (0.8, 0)),
+        # A footing under the cut: inside the cut material, and leaving it.
+        _line("footing", "hidden", (1.2, 2.5), (1.8, 2.5)),
+        _line("footing", "hidden", (1.2, 2.5), (1.2, 5.5)),
+    )
+
+    def test_cleanup_merges_collinear_drops_micro_and_prefers_cut_edges(self) -> None:
+        cleaned, report = clean_drawing(self.lines, self.regions, tolerance=self.tolerance)
+        self.assertEqual(cleaned, (
+            _line("footing", "hidden", (1.2, 2.5), (1.2, 5.5)),
+            _line("slab", "section", (0, 2), (4, 2), (4, 3), (0, 3), (0, 2)),
+            _line("slab", "visible", (0, 1.9999), (6, 1.9999)),
+            # Joined pieces keep every vertex; the 3 mm gap is bridged, nothing moves.
+            _line("wall", "visible", (0, 0), (1, 0), (1.003, 0), (2, 0)),
+            _line("wall", "visible", (1, 0), (1, 1)),
+            _line("wall", "visible", (1, 1), (2.5, 1), (3, 1)),
+            _line("wall", "visible", (2, 0), (3, 0.0156)),
+        ))
+        self.assertEqual(report, CleanupReport(
+            tolerance=0.005, input_lines=14, output_lines=7, micro=1, collinear=3, cut_precedence=1,
+            duplicate=1, hidden_under_cut=1))
+        self.assertEqual(report.input_lines - report.output_lines,
+                         report.micro + report.collinear + report.cut_precedence + report.duplicate + report.hidden_under_cut)
+        self.assertEqual(report.to_dict(), {
+            "tolerance": 0.005, "input_lines": 14, "output_lines": 7, "micro": 1, "collinear": 3,
+            "cut_precedence": 1, "duplicate": 1, "hidden_under_cut": 1})
+        # The tolerance is paper space: a 30 mm post is drawn at 1:100 and is micro at 1:1000 (50 mm),
+        # while a 0.9 degree turn stays a turn at any scale.
+        post = _line("post", "visible", (8, 8), (8.03, 8))
+        self.assertIn(post, clean_drawing(self.lines + (post,), self.regions, tolerance=self.tolerance)[0])
+        coarse, coarse_report = clean_drawing(self.lines + (post,), self.regions, tolerance=0.05)
+        self.assertNotIn(post, coarse)
+        self.assertEqual(coarse_report.micro, 2)
+        self.assertIn(_line("wall", "visible", (2, 0), (3, 0.0156)), coarse)
+
+    def test_cleanup_is_deterministic_and_idempotent(self) -> None:
+        cleaned, report = clean_drawing(self.lines, self.regions, tolerance=self.tolerance)
+        for order in (tuple(reversed(self.lines)), self.lines[1::2] + self.lines[::2], self.lines + self.lines):
+            with self.subTest(order=order[:2]):
+                self.assertEqual(clean_drawing(order, self.regions, tolerance=self.tolerance), (cleaned, report))
+        again, second = clean_drawing(cleaned, self.regions, tolerance=self.tolerance)
+        self.assertEqual(again, cleaned, "cleaning a clean drawing changes nothing")
+        self.assertEqual(second, CleanupReport(0.005, 7, 7, 0, 0, 0, 0, 0))
+        # A hidden line is dropped under the cut only when regions are given; without hidden lines nothing hides.
+        without_regions, _ = clean_drawing(self.lines, (), tolerance=self.tolerance)
+        self.assertIn(_line("footing", "hidden", (1.2, 2.5), (1.8, 2.5)), without_regions)
+        self.assertEqual(clean_drawing((), (), tolerance=self.tolerance), ((), CleanupReport(0.005, 0, 0, 0, 0, 0, 0, 0)))
+
+    def test_cleanup_refuses_what_it_cannot_clean(self) -> None:
+        for tolerance in (0, -1, float("nan"), True, "5"):
+            with self.subTest(tolerance=tolerance), self.assertRaises(DrawingSvgError):
+                clean_drawing(self.lines, self.regions, tolerance=tolerance)
+        for bad in (_line("wall", "hatch", (0, 0), (1, 0)), _line("wall", "visible", (0, 0)),
+                    _line("wall", "visible", (0, 0), (float("inf"), 0)), ("wall", "visible", ((0, 0), (1, 0)))):
+            with self.subTest(line=bad), self.assertRaises(DrawingSvgError):
+                clean_drawing((bad,), (), tolerance=self.tolerance)
+        with self.assertRaises(DrawingSvgError):
+            clean_drawing(self.lines, (OcctDrawingRegion("slab", (((0.0, 0.0), (1.0, 0.0), (1.0, 1.0)),)),),
+                          tolerance=self.tolerance)
 
 
 class SvgTests(unittest.TestCase):

@@ -549,6 +549,7 @@
       "purpose": "Serialise drawing polylines, orthographic or a section perspective, as one deterministic SVG that names each polyline's source object, and render a PNG from those SVG bytes.",
       "owns": [
         "cropping projected polylines to the view window after visibility was solved (crop_polylines)",
+        "the deterministic cleanup between projection and SVG, rules micro, collinear, cut_precedence, duplicate and hidden_under_cut at a tolerance in drawing units, and its per-rule CleanupReport (clean_drawing)",
         "the SVG document of a drawing: viewBox in frame units, physical mm size at the sheet scale, hidden group under visible group, data-object per polyline, fixed-decimal coordinates, no timestamp (drawing_svg)",
         "rasterising that SVG's own polylines to a PNG at its physical size (render_svg_png), and reading the object ids an SVG names (svg_objects)",
         "even-odd section hatching and measured dimension strokes/native text with one embedded font; shared paper-placement bounds reject clipped dimensions",
@@ -569,12 +570,15 @@
       ],
       "outputs": [
         "OcctDrawingPolyline tuple (cropped)",
+        "OcctDrawingPolyline tuple (cleaned) and CleanupReport",
         "SVG bytes",
         "PNG bytes",
         "object id tuple"
       ],
       "public_api": [
         "crop_polylines",
+        "clean_drawing",
+        "CleanupReport",
         "drawing_svg",
         "render_svg_png",
         "svg_objects",
@@ -596,6 +600,7 @@
         "the same polylines, crop and options give the same SVG bytes; the same SVG gives the same PNG bytes",
         "the PNG is rendered only from what the SVG holds; an SVG element the renderer does not draw is an error, never skipped",
         "hidden lines are omitted entirely unless asked for; geometry and hatch strokes name their source object, while dimension marks and native text name their dimension id",
+        "clean_drawing keeps or drops a line whole and moves no vertex (a joint gap within the tolerance is bridged); its output is sorted, its counts add up to the lines removed, and cleaning again changes nothing",
         "no project, run or filesystem path is known here"
       ],
       "status": "canonical",
@@ -2766,6 +2771,7 @@
         "the in-memory projection value (project_model_axis_elevation): polylines, SVG and PNG, minting nothing",
         "the drawing run: created with base = source run base, or reused only when it already carries that base",
         "DrawingProjectionReceipt@1 (retained as drawing-projection-receipt): source binding, frame, backend, counts and the two artifact refs",
+        "the drawing cleanup tolerance, CLEANUP_TOLERANCE_MM on the sheet in the source unit at the view's scale, applied by all three freeze paths to the cropped lines they draw, with the CleanupReport kept in the receipt's cleanup and never in the recipe",
         "cold readback of a retained drawing (read_model_axis_elevation, list_model_axis_elevations) with every sha verified",
         "horizontal cut-plan composition: section boundaries, one material hatch and below-cut visible lines, with caller-resolved semantic dimensions and retained representation recipe",
         "representation-only SVG entourage in the existing cut-plan recipe; exact physical-object-centre anchors, explicit missing/outside-view status and immutable dressing readback across source rebuilds",
@@ -2822,7 +2828,8 @@
         "SECTION_PERSPECTIVE_KIND",
         "CUT_PLAN_KIND",
         "DRAWING_VIEW_KINDS",
-        "NativeModelSource"
+        "NativeModelSource",
+        "CLEANUP_TOLERANCE_MM"
       ],
       "depends_on": [
         "adapters.cad_execution",
@@ -2848,7 +2855,8 @@
         "Existing elevation/top recipe and digest bytes keep their original meaning; cut-plan is an explicit recipe kind. Missing retained visibility ids and dimension intent remain explicit in the new receipt.",
         "Dressing has independent object ids, uses fixed view coordinates or exact physical-object anchors, never creates design entities and never silently rebinds missing anchors.",
         "A section perspective's picture plane is its section plane: the cut is true to scale at the recorded 1:N, nothing on the eye's side is drawn, and the receipt records the request, the exact plane and the resolved camera (eye, target, up, field of view) that draw the same bytes again; a plane that misses the drawn objects and an eye on the kept side or on the plane are refused by name before anything is written.",
-        "Native source receipts name the original model and its registration, GUID instance paths and geometry quality; STEP-derived receipt fields and old digest meanings remain unchanged."
+        "Native source receipts name the original model and its registration, GUID instance paths and geometry quality; STEP-derived receipt fields and old digest meanings remain unchanged.",
+        "The receipt's projection counts stay those of the solve; the SVG draws the cleaned lines and the receipt's cleanup says what was removed. A receipt retained before cleanup reads cold with cleanup None."
       ],
       "status": "canonical",
       "tests": [

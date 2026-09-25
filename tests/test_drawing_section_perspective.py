@@ -385,6 +385,11 @@ class FreezeSectionPerspectiveTests(unittest.TestCase):
         self.assertEqual(projection["removed_object_ids"], ["table", "wall-south"])
         self.assertEqual(projection["cut_object_ids"], sorted(CUT_BOXES))
         self.assertEqual(projection["hidden_polylines"], 0)
+        # The kept parts' faces on the picture plane repeat the cut; it is drawn once, by the section,
+        # at 0.05 mm on the sheet measured where the scale holds.
+        self.assertEqual(receipt["cleanup"]["tolerance"], 0.05 * 25 / 1000)
+        self.assertGreater(receipt["cleanup"]["cut_precedence"], 0)
+        self.assertEqual(drawing.cleanup, receipt["cleanup"])
         self.assertEqual(self.repository.read_head(), self.head)
         self.assertEqual(drawing.run.base, self.source_run.base)
 
