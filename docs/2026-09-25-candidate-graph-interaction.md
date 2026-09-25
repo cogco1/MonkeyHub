@@ -150,6 +150,8 @@ No single pattern passes every row. P1 and P3 together do. P2's rail button fail
 
 ## 6. Recommended entry point
 
+> **Owner decision, 2026-09-25 (relayed by the root task):** "工作面分为 建模 画板 状态树三个，其他的都放到工具". The rail's primary surfaces are Modeling (建模), Board (画板) and the Design Tree (状态树); everything else moves to Tools. The Design Tree is therefore a project surface with its own rail entry and deep link (`view=tree`), not only a drawer, which overrides "no rail button" below. The Stage chip stays as the project's position indicator in the project workspace header; clicking it opens the same surface, and leaving the tree returns to the surface it was opened from. The first product version is GH-284/design-tree-ui.
+
 **Where is the Design Tree entry in daily use?** It is the **Stage chip** at the left of the **project bar**, above whatever surface is open (Arch, Diagram or a Tool). That chip is the only persistent entry. Contextual doorways (the Study result card, the "ready" notice, Drawing's source label) open the same drawer at the relevant node. There is no rail button, and nothing inside Drawing or the Modeling footer.
 
 This agrees with the prototype lane's hybrid. The refinements it implies are listed in §9.

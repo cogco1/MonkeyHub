@@ -6489,7 +6489,9 @@
         "Render as a peer project workspace with lazy first mount and preserved per-project inputs/history; hidden views suspend polling without cancelling image attempts",
         "Explicit Render result handoff to the existing Board using its exact SourceDocument page identity",
         "Nonsecret Render preferences through existing Hub settings; only MONKEYHUB_RENDER_API_KEY is mapped to the configured Gemini Runtime, never exposed over HTTP",
-        "Modeling-to-Render preview borrows the mounted project scene and camera; explicit capture freezes an exact retained model view as the AI source. Local edits, loading and blended/unbound views cannot claim a saved model source."
+        "Modeling-to-Render preview borrows the mounted project scene and camera; explicit capture freezes an exact retained model view as the AI source. Local edits, loading and blended/unbound views cannot claim a saved model source.",
+        "The project Design Tree (状态树) surface and its Stage chip: a planar growth tree of Stages, admitted Candidates and Studies (the #294 design-history contract), the Working Head and running work; View is read-only, Continue uses the working-draft route and Accept as next Stage the existing accept route, on Current only",
+        "The shared project canvas host (features/canvas): Excalidraw mount defaults, the local font path, theme mapping, wheel zoom and scene-point click hit testing, used by MonkeyBoard and the Design Tree"
       ],
       "does_not_own": [
         "Building project state, geometry, drawing algorithms, model gateways, provider credentials or project creation",
@@ -6576,7 +6578,7 @@
         "apps/shared-web/src/browserTranslator.js: prepareEnglishToChinese, translateEnglishToChinese and subscribeToEnglishToChineseReadiness",
         "apps/shared-web/src/base.css: appearance tokens and base controls",
         "ProjectRuntimeProvider / useStudio / useConnection: project-bound client and protocol identity",
-        "ProjectWorkspace: Arch/Board navigation, exact Board page visit and candidate preview without editing-base change",
+        "ProjectWorkspace: Arch/Board/Design tree navigation, exact Board page visit and candidate preview without editing-base change",
         "studio_request POST /api/board/export: one registered clean-source page as a native MCP PNG image; studio_schema exposes the existing export request",
         "POST /api/chat/presentation/bind",
         "POST /api/chat/sessions/{id}/presentation",
@@ -6688,7 +6690,24 @@
         "apps/monkeyhub/web/workspaces/src/workspaces/render/render.css",
         "apps/monkeyhub/web/workspaces/src/workspaces/render/ModelPreview.tsx",
         "apps/monkeyhub/web/workspaces/src/workspaces/monkeyarch/viewer/renderView.ts",
-        "apps/monkeyhub/web/workspaces/src/workspaces/monkeydiagram/DrawingDressing.tsx"
+        "apps/monkeyhub/web/workspaces/src/workspaces/monkeydiagram/DrawingDressing.tsx",
+        "apps/monkeyhub/web/workspaces/src/features/canvas/ProjectCanvas.tsx",
+        "apps/monkeyhub/web/workspaces/src/features/canvas/canvasAssets.ts",
+        "apps/monkeyhub/web/workspaces/src/features/canvas/sceneHit.ts",
+        "apps/monkeyhub/web/workspaces/src/features/canvas/canvas.css",
+        "apps/monkeyhub/web/workspaces/src/features/designTree/contract.ts",
+        "apps/monkeyhub/web/workspaces/src/features/designTree/model.ts",
+        "apps/monkeyhub/web/workspaces/src/features/designTree/layout.ts",
+        "apps/monkeyhub/web/workspaces/src/features/designTree/scene.ts",
+        "apps/monkeyhub/web/workspaces/src/features/designTree/words.ts",
+        "apps/monkeyhub/web/workspaces/src/features/designTree/useDesignTree.ts",
+        "apps/monkeyhub/web/workspaces/src/features/designTree/DesignTreeBar.tsx",
+        "apps/monkeyhub/web/workspaces/src/features/designTree/DesignTreeSurface.tsx",
+        "apps/monkeyhub/web/workspaces/src/features/designTree/DesignTreeCanvas.tsx",
+        "apps/monkeyhub/web/workspaces/src/features/designTree/DesignTreeDetails.tsx",
+        "apps/monkeyhub/web/workspaces/src/features/designTree/DesignTreeList.tsx",
+        "apps/monkeyhub/web/workspaces/src/features/designTree/designTree.css",
+        "apps/monkeyhub/web/workspaces/src/features/designTree/fixture.ts"
       ],
       "tests": [
         "apps/monkeyhub/api/tests/test_monkeyhub_lifecycle.py",
@@ -6727,7 +6746,9 @@
         "apps/monkeyhub/web/workspaces/test/renderWorkspace.browser.mjs",
         "apps/monkeyhub/web/workspaces/test/renderView.test.ts",
         "apps/monkeyhub/web/workspaces/test/workingHead.test.ts",
-        "apps/monkeyhub/web/test/worktreeGraph.test.ts"
+        "apps/monkeyhub/web/test/worktreeGraph.test.ts",
+        "apps/monkeyhub/web/workspaces/test/designTree.test.ts",
+        "apps/monkeyhub/web/workspaces/test/designTree.browser.mjs"
       ],
       "depends_on": [
         "project.repository",

@@ -501,6 +501,7 @@ Python 代码按 [PEP 8](https://peps.python.org/pep-0008/#package-and-module-na
 | **MonkeyArch** | 三维建模、模型候选与续改 | `monkeyarch/`；Hub `appId: monkeyarch` |
 | **MonkeyDiagram** | 图纸、图解、平立剖表达与单页批注 | `monkeydiagram/`；Hub rail「工具」组的「图纸」（与用量并列）；Board 双击已登记图页进入精确页面编辑 |
 | **MonkeyBoard** | 图版排布、方案比较、会议展示与画布批注 | Hub `appId: monkeyboard`；同页项目工作区 |
+| **Design tree（状态树）** | 项目的设计历史：当前线上的阶段与已选方案连成主干，未选方案为短枝，进行中的 Agent 任务在起点处占位；查看不移动“当前”，从这里继续与接受为下一阶段分开 | Hub rail 第一组的第三项（建模、画板、状态树，2026-09-25 决定）；项目工作区 `view=tree`；项目工作区顶部的阶段标签也打开它 |
 | **MonkeyMonitor** | 用量、费用、耗时与计算过程查看 | `monkeymonitor/`；Hub `appId: monkeymonitor` |
 | **MonkeyFab** | 制作与打印准备；当前支持分件及已切片文件发送 | 同仓 `apps/monkeyfab/` CLI；Hub `appId: monkeyfab`、`?view=fab` |
 
