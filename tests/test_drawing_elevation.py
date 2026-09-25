@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import math
 import tempfile
 import unittest
 from dataclasses import replace
@@ -16,7 +17,7 @@ from xml.etree import ElementTree
 
 from archflow.adapters import occt_backend
 from monkeydiagram import drawing_elevation
-from monkeydiagram.drawing_svg import svg_objects
+from monkeydiagram.drawing_svg import render_svg_png, svg_objects
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import DRAWING_PROJECTION_RECEIPT, SEAT_OCCT_EXECUTION
 from archflow.project.repository import FilesystemProjectRepository
@@ -58,6 +59,30 @@ def _shapes() -> dict[str, object]:
         "far": BRepPrimAPI_MakeBox(gp_Pnt(1, 20, 4), 1, 1, 1).Shape(),
         "skin": BRepBuilderAPI_MakeFace(polygon.Wire(), True).Face(),
     }
+
+
+SVG_NS = "{http://www.w3.org/2000/svg}"
+
+
+def _group_lines(svg: bytes, group: str) -> list[tuple[str, list[tuple[float, float]]]]:
+    """Each polyline of one SVG group: its object and points, in SVG user units."""
+
+    root = ElementTree.fromstring(svg)
+    return [(line.get("data-object"), [tuple(float(v) for v in pair.split(",")) for pair in line.get("points").split()])
+            for line in root.findall(f"{SVG_NS}g[@id='{group}']/{SVG_NS}polyline")]
+
+
+def _lies_on(points, segments, tolerance: float) -> bool:
+    """Independently of the cleanup: every sampled point of the line is within the tolerance of some segment."""
+
+    def distance(p, a, b):
+        dx, dy = b[0] - a[0], b[1] - a[1]
+        t = max(0.0, min(1.0, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / (dx * dx + dy * dy or 1.0)))
+        return math.dist(p, (a[0] + t * dx, a[1] + t * dy))
+
+    samples = [(a[0] + (b[0] - a[0]) * i / 40, a[1] + (b[1] - a[1]) * i / 40)
+               for a, b in zip(points, points[1:]) for i in range(41)]
+    return all(any(distance(p, a, b) <= tolerance for a, b in segments) for p in samples)
 
 
 def _view(**overrides) -> ElevationView:
@@ -282,6 +307,12 @@ class FreezeElevationTests(unittest.TestCase):
         )
         self.assertEqual(svg_objects(second.svg), ("far", "rear", "skin", "wall"))
         self.assertIs(second.receipt["view"]["hidden_lines"], True)
+        # A box's back edges lie under its front edges: drawn once, as visible. Undrawn hidden lines are not cleaned.
+        self.assertGreater(second.cleanup["duplicate"], 0)
+        self.assertEqual(first.cleanup["duplicate"], 0)
+        visible = [segment for _, points in _group_lines(second.svg, "visible") for segment in zip(points, points[1:])]
+        for object_id, points in _group_lines(second.svg, "hidden"):
+            self.assertFalse(_lies_on(points, visible, drawing_elevation.CLEANUP_TOLERANCE_MM * 100 / 1000), object_id)
         self.assertEqual(len(list_model_axis_elevations(self.repository, "drawing-run")), 2)
         self.assertNotEqual(first.svg_ref.relative_path, second.svg_ref.relative_path)
 
@@ -417,12 +448,52 @@ class CutPlanTests(unittest.TestCase):
         self.assertIn(b"1000 mm", drawing.svg)
         self.assertEqual(drawing.run.base, self.repository.load_run(SOURCE_RUN).base)
         self.assertEqual(self.repository.read_head(), self.head)
+        # The cut edge is drawn once, by the section: no visible line lies on it within 0.05 mm on the sheet.
+        tolerance = drawing_elevation.CLEANUP_TOLERANCE_MM * 50 / 1000
+        section = [segment for _, points in _group_lines(drawing.svg, "section") for segment in zip(points, points[1:])]
+        for object_id, points in _group_lines(drawing.svg, "visible"):
+            self.assertFalse(_lies_on(points, section, tolerance), (object_id, points))
+        cleanup = drawing.receipt["cleanup"]
+        self.assertEqual(drawing.cleanup, cleanup)
+        self.assertEqual(cleanup["tolerance"], tolerance)
+        self.assertGreater(cleanup["cut_precedence"], 0)
+        self.assertEqual(cleanup["input_lines"] - cleanup["output_lines"],
+                         sum(cleanup[rule] for rule in ("micro", "collinear", "cut_precedence", "duplicate", "hidden_under_cut")))
+        self.assertNotIn("cleanup", drawing.receipt["view"], "the cleanup describes the drawing, not its recipe")
         reopened = FilesystemProjectRepository.open(self.root)
         cold = read_model_axis_elevation(reopened, drawing.receipt_ref)
         self.assertEqual((drawing.receipt, drawing.svg, drawing.png), (cold.receipt, cold.svg, cold.png))
         repeated = freeze_cut_plan(reopened, source=self.source, recipe=self.recipe,
                                    drawing_run_id="plan-run", dimensions=(self.dimension,))
         self.assertEqual(repeated.receipt_ref, drawing.receipt_ref)
+
+    def test_the_cleaned_plan_draws_the_cut_once_and_only_the_floor_seen_through_the_door(self):
+        drawing = freeze_cut_plan(self.repository, source=self.source, recipe=self.recipe,
+                                  drawing_run_id="plan-run", dimensions=(self.dimension,))
+        solved = drawing.receipt["projection"]["visible_polylines"]
+        visible = _group_lines(drawing.svg, "visible")
+        # Every wall's clipped top edge lay on its own cut; only the floor edge in the door opening is beyond it.
+        self.assertLess(len(visible), solved)
+        self.assertEqual(drawing.receipt["cleanup"]["cut_precedence"], solved - len(visible))
+        self.assertEqual({object_id for object_id, _ in visible}, {"floor"})
+        for _, points in visible:
+            # SVG u = x + 1 and y = 3 - v in the crop (-1, -1, 5, 4): the door spans x 1..2 at y = 0.
+            self.assertTrue(all(2 - 1e-4 <= u <= 3 + 1e-4 and abs(v - 4) <= 1e-4 for u, v in points), points)
+        # The cut itself is drawn as solved.
+        self.assertEqual(drawing.receipt["projection"]["section_polylines"], len(_group_lines(drawing.svg, "section")))
+        # The PNG is rendered from these SVG bytes and nothing else.
+        self.assertEqual(drawing.png, render_svg_png(drawing.svg))
+
+    def test_a_receipt_retained_before_cleanup_still_reads_cold(self):
+        drawing = freeze_cut_plan(self.repository, source=self.source, recipe=self.recipe,
+                                  drawing_run_id="plan-run", dimensions=(self.dimension,))
+        earlier = {key: value for key, value in drawing.receipt.items() if key != "cleanup"}
+        ref = self.repository.put_json(
+            run=drawing.run, destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=drawing.run.run_id),
+            record_kind=DRAWING_PROJECTION_RECEIPT, payload=earlier)
+        cold = read_model_axis_elevation(FilesystemProjectRepository.open(self.root), ref)
+        self.assertIsNone(cold.cleanup)
+        self.assertEqual((cold.receipt, cold.svg, cold.png), (earlier, drawing.svg, drawing.png))
 
     def test_revision_preserves_recipe_intent_and_explicit_missing_dimension_without_a_number(self):
         first = freeze_cut_plan(self.repository, source=self.source, recipe=self.recipe,
