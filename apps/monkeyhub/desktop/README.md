@@ -121,6 +121,13 @@ pipe before commit also stops the trial cleanly. This rollback covers the
 initial, unopened trial; it does not downgrade a version after users have
 continued project work in it.
 
+Automatic updates add no desktop code. After a normal quit the Hub itself
+switches the desktop entry to a staged, verified sibling version through that
+version's `install.ps1 -ActivateInstalled`; the next launch opens the new
+`MonkeyHub.exe` like any start. Its Hub then finishes the transaction on its
+own (health, full verification, entry) or restores the previous entry, with
+writes open throughout. Only the restart-now path above uses the trial helper.
+
 The main window's navigation is restricted to the verified Hub origin and the
 embedded status page. Existing Stage comparisons and Board source links can open
 child native windows only on the same Hub or on a healthy worker origin currently
