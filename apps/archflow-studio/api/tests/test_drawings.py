@@ -7,6 +7,7 @@ import base64
 from dataclasses import replace
 from datetime import datetime, timezone
 from io import BytesIO
+from itertools import product
 import json
 import unittest
 from unittest.mock import patch
@@ -19,7 +20,9 @@ from archflow.project.refs import record_ref_from_uri
 from monkeydiagram.drawing_elevation import read_model_axis_elevation
 from archflow_studio_api.main import create_app
 from archflow_studio_api.settings import StudioSettings
+from archflow_studio_api.application.artifacts import ModelSource
 from archflow_studio_api.application.binding import bound_project
+from archflow_studio_api.application.drawings import _complete_source
 from archflow_studio_api.application.gestures import require_document_comment_source
 from archflow_studio_api.application.projection import project_state
 
@@ -66,7 +69,7 @@ class DrawingTests(CandidateTestCase):
 
         project_root = self.repository.layout.root
         before = {path.relative_to(project_root): path.read_bytes() for path in project_root.rglob("*") if path.is_file()}
-        for view in ("front", "back", "left", "right", "top"):
+        for view in ("front", "back", "left", "right", "top", "axon"):
             with self.subTest(view=view), patch(
                 "archflow_studio_api.application.drawings.project_model_axis_elevation",
                 wraps=project_model_axis_elevation,
@@ -86,6 +89,47 @@ class DrawingTests(CandidateTestCase):
                 self.assertEqual(project.call_count, 1, "one observation projects once")
         after = {path.relative_to(project_root): path.read_bytes() for path in project_root.rglob("*") if path.is_file()}
         self.assertEqual(after, before, "observation creates no project files or records and does not change HEAD")
+
+    def test_axon_reads_the_top_view_source_and_bounds_and_a_repeat_is_not_projected_again(self):
+        from monkeydiagram.drawing_elevation import project_model_axis_elevation
+
+        def read(client, view):
+            response = client.get("/api/drawings/model-view", params={**self.model, "view": view})
+            self.assertEqual(response.status_code, 200, response.text)
+            return response.json()
+
+        with patch("archflow_studio_api.application.drawings.project_model_axis_elevation",
+                   wraps=project_model_axis_elevation) as project:
+            top, axon = read(self.client, "top"), read(self.client, "axon")
+            again = read(self.client, "axon")
+            with TestClient(create_app(self.settings)) as reopened:
+                cold = read(reopened, "axon")
+        self.assertEqual(project.call_count, 2, "a repeated view of the same exact source is not projected again")
+        self.assertEqual((again, cold), (axon, axon))
+        self.assertEqual((top["source"], axon["source"]), (self.model, self.model))
+        self.assertNotEqual(top["data"], axon["data"])
+        top_call, axon_call = project.call_args_list
+        # One exact source: the same physical objects of the same verified STEP.
+        self.assertEqual((top_call.kwargs["object_ids"], top_call.kwargs["unit"]),
+                         (axon_call.kwargs["object_ids"], axon_call.kwargs["unit"]))
+        self.assertEqual([entry.name for entry in top_call.args[0]], [entry.name for entry in axon_call.args[0]])
+        # One crop rule: every physical object's retained bounds on the view's own
+        # sheet axes, with the same 5% margin.
+        _, receipt = _complete_source(bound_project(self.app.state), ModelSource.from_dict(self.model), None)
+        corners = [corner for name in receipt["physical_object_ids"] for corner in product(*zip(
+            receipt["readback"][name]["bbox"]["min"], receipt["readback"][name]["bbox"]["max"]))]
+        for call in (top_call, axon_call):
+            view = call.kwargs["view"]
+            us = [sum(a * b for a, b in zip(corner, view.right)) for corner in corners]
+            vs = [sum(a * b for a, b in zip(corner, view.up)) for corner in corners]
+            margin = max(max(us) - min(us), max(vs) - min(vs), .001) * .05
+            for actual, expected in zip(view.crop_uv, (min(us) - margin, min(vs) - margin,
+                                                        max(us) + margin, max(vs) + margin)):
+                self.assertAlmostEqual(actual, expected, places=9)
+        # The axonometric view looks down across the model, Z up on the sheet.
+        self.assertLess(axon_call.kwargs["view"].look[2], 0)
+        self.assertGreater(axon_call.kwargs["view"].up[2], 0)
+        self.assertEqual(self.client.get("/api/documents", params={"runId": self.model["runId"]}).json()["documents"], [])
 
     def test_model_view_keeps_the_named_run_after_a_new_candidate_and_bounds_large_models(self):
         original = self.client.get("/api/drawings/model-view", params=self.model)

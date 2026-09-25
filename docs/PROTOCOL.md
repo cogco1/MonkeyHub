@@ -239,10 +239,14 @@ is available through the existing project-bound Hub MCP tool; no Study writer is
 Hub `designContext.studyEvidence` forwards the same references when preparing a fresh task.
 
 For visual observation, `GET /api/drawings/model-view` requires exact `runId`, `stateDigest` and
-`assetSha256` from a complete `ModelSource`, plus `view=front|back|left|right|top` (default front).
+`assetSha256` from a complete `ModelSource`, plus `view=front|back|left|right|top|axon` (default
+front); `axon` is the isometric view from the -X, -Y, +Z side with Z up, cropped by the same rule
+as the others: every physical object's retained bounds plus a 5% margin.
 It returns source metadata and an inline PNG (base64 `data`, `mimeType`, width/height, and
 `representation=orthographic-line-projection`), with longest dimension at most 1024 pixels.
-It reuses the retained STEP projection and creates no drawing record or project file.
+It reuses the retained STEP projection and creates no drawing record or project file. The
+source is verified on every read; the projection of a view already drawn for the same exact
+source is reused from process memory, never written.
 Incomplete/composed-only, Rhino-only or mismatched sources refuse; no bounding-box image stands
 in for missing geometry. MonkeyHub exposes the image as native MCP image content and keeps
 source metadata in a separate text block.

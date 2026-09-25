@@ -1,7 +1,6 @@
 """Observe exact models and generate their retained drawing revisions."""
 
 import base64
-from typing import Literal
 
 from fastapi import APIRouter, Query
 from starlette.requests import Request
@@ -12,7 +11,7 @@ from ..application.drawings import generate_elevation, generate_section_perspect
 from ..application.drawing_plans import generate_plan, plan_status, plan_dimension_choices, dimension_proposal, plan_vector
 from ..transport.artifacts import ModelSourceDto, SourceDocumentDto, document_dto, model_source_from
 from ..transport.drawings import (
-    DrawingStylesDto, ElevationRequestDto, ModelViewDto, SheetRequestDto,
+    DrawingStylesDto, ElevationRequestDto, ModelViewDto, ModelViewName, SheetRequestDto,
     PlanRequestDto, PlanStatusRequestDto, PlanStatusDto,
     PlanDimensionChoicesDto, PlanDimensionProposalRequestDto, PlanVectorDto, SectionPerspectiveRequestDto,
 )
@@ -91,12 +90,15 @@ def read_model_view(
     run_id: str = Query(alias="runId", min_length=1),
     state_digest: str = Query(alias="stateDigest", pattern=r"^[0-9a-f]{64}$"),
     asset_sha256: str = Query(alias="assetSha256", pattern=r"^[0-9a-f]{64}$"),
-    view: Literal["front", "back", "left", "right", "top"] = Query(default="front"),
+    view: ModelViewName = Query(default="front"),
 ) -> ModelViewDto:
     """Observe an exact complete model without creating a run, drawing or project record.
 
     The image is a visible-line orthographic projection, not a material render;
-    top is an uncut projection, not a floor plan. Its longest edge is at most 1024 pixels.
+    top is an uncut projection, not a floor plan, and axon is the isometric
+    view from the -X, -Y, +Z side with Z up. Its longest edge is at most 1024
+    pixels. A repeated view of the same exact source is reused from process
+    memory after the source verifies again.
     """
 
     source = ModelSourceDto(run_id=run_id, state_digest=state_digest, asset_sha256=asset_sha256)

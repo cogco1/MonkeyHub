@@ -5193,7 +5193,7 @@ export type ModelViewDto = {
     /**
      * View
      */
-    view: 'front' | 'back' | 'left' | 'right' | 'top';
+    view: 'front' | 'back' | 'left' | 'right' | 'top' | 'axon';
     /**
      * Mimetype
      */
@@ -13408,7 +13408,7 @@ export type ReadModelViewApiDrawingsModelViewGetData = {
         /**
          * View
          */
-        view?: 'front' | 'back' | 'left' | 'right' | 'top';
+        view?: 'front' | 'back' | 'left' | 'right' | 'top' | 'axon';
     };
     url: '/api/drawings/model-view';
 };
