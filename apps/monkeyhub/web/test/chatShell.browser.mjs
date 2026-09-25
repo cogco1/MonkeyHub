@@ -527,6 +527,13 @@ try {
   for (const label of ["Modeling", "Drawings", "Board", "Fabrication", "Usage"]) {
     assert.equal(await page.getByRole("button", { name: label, exact: true }).count(), 1, `${label} appears once`);
   }
+  // #295: Drawing is a tool over the project, listed with Usage, not a peer of
+  // the project's primary surfaces.
+  const railEntries = (group) => rail.getByRole("group", { name: group, exact: true }).locator(".chat-rail__tool")
+    .evaluateAll((nodes) => nodes.map((node) => node.getAttribute("aria-label")));
+  assert.deepEqual(await railEntries("Workspaces"), ["Modeling", "Render", "Publish", "Board", "Fabrication"],
+    "the primary project surfaces no longer include Drawing");
+  assert.deepEqual(await railEntries("Tools"), ["Drawings", "Usage"], "Drawing sits in Tools beside Usage");
   assert.ok(await railWidth() > 40, "the rail stays on screen while the tool content is closed");
   assert.equal(await page.locator(".chat-browser:visible").count(), 0);
   await page.waitForFunction(() => !document.querySelector('.chat-composer input[type="checkbox"]')?.disabled);
@@ -610,6 +617,8 @@ try {
   await page.getByRole("button", { name: "Hub settings", exact: true }).click();
   await page.locator("#language").selectOption("zh-CN");
   assert.equal(await missingEndSpan.locator("dd").first().textContent(), "结束时间未观测");
+  assert.deepEqual(await page.locator('.chat-rail__group[aria-label="工具"] .chat-rail__tool').evaluateAll((nodes) =>
+    nodes.map((node) => node.getAttribute("aria-label"))), ["图纸", "用量"], "the Tools group is named in the Chinese catalog too");
   assert.equal(await page.locator(".monitor-trace-summary > span").filter({ has: page.getByText("首个候选", { exact: true }) }).locator("strong").textContent(), "—");
   await page.locator("#language").selectOption("en");
   await page.getByRole("dialog").getByRole("button", { name: "Close", exact: true }).click();
@@ -794,6 +803,45 @@ try {
       assert.equal(await visibleWorkspace().locator('[data-project-surface="board"]').isVisible(), false);
     }
   }
+  // #295: Drawing opens over the surface already shown, in this same mounted
+  // project workspace, and reads this project's Working Head. Pressing it again
+  // leaves it for that surface, with the editing base and the Board unchanged.
+  const runtimeA = runtimes.get("D:\\fixture\\A").runtimeId;
+  const drawingTool = page.getByRole("button", { name: "Drawings", exact: true });
+  const editingBase = async () => [(await visibleWorkspace().locator(".editing-base__name").innerText()).trim(),
+    await visibleWorkspace().locator(".editing-base").getAttribute("data-source-match")];
+  const baseBeforeDrawing = await editingBase();
+  for (const [label, kind] of [["Board", "board"], ["Modeling", "arch"]]) {
+    const surface = page.getByRole("button", { name: label, exact: true });
+    await surface.click();
+    await waitWorkspace(kind);
+    const readsBefore = workspaceFixture.requests.length;
+    await drawingTool.click();
+    await waitWorkspace("drawing");
+    assert.equal(await drawingTool.getAttribute("aria-pressed"), "true");
+    assert.equal(await surface.getAttribute("aria-pressed"), "false");
+    assert.equal(await drawingTool.getAttribute("title"), `Close Drawings and return to ${label}`);
+    assert.equal(new URL(page.url()).searchParams.get("runtimeId"), runtimeA, "Drawing stays on this project's runtime");
+    assert.equal(await page.locator(".chat-header__project").innerText(), "Project A");
+    assert.equal(await visibleWorkspace().evaluate((element) => element.switchMarker), "retained",
+      "Drawing is the same mounted project workspace, not a new project context");
+    const headReads = () => workspaceFixture.requests.slice(readsBefore)
+      .filter((row) => row.name === "/api/working-source" && row.query.workspace === "drawing");
+    for (const until = Date.now() + 5000; !headReads().length;) {
+      if (Date.now() > until) assert.fail("Drawing did not read the project's Working Head");
+      await page.waitForTimeout(50);
+    }
+    assert.ok(headReads().every((row) => row.runtimeId === runtimeA && row.projectId === "A"),
+      "Drawing reads the Working Head of this same project");
+    await drawingTool.click();
+    await waitWorkspace(kind);
+    assert.equal(await surface.getAttribute("aria-pressed"), "true", `leaving Drawing returns to ${label}`);
+    assert.equal(await drawingTool.getAttribute("aria-pressed"), "false");
+    assert.equal(new URL(page.url()).searchParams.get("view"), kind);
+    assert.equal(new URL(page.url()).searchParams.get("runtimeId"), runtimeA);
+    if (kind === "board") assert.equal(await visibleWorkspace().getByLabel("Board title", { exact: true }).inputValue(), "Board A retained");
+  }
+  assert.deepEqual(await editingBase(), baseBeforeDrawing, "visiting Drawing leaves the editing base and the viewed model as they were");
   assert.equal(writes.length, beforePeerWorkspaces, "workspace switches never restart or prepare the project");
   assert.equal(await visibleWorkspace().evaluate((element) => element.retainedCanvas === element.querySelector(".stage canvas")), true);
   await page.mouse.move(10, 10);
@@ -1645,6 +1693,16 @@ try {
   await page.reload();
   await page.waitForFunction(() => document.querySelector('.chat-project[data-selected="true"] .chat-project__name')?.textContent === "Project B");
   assert.equal(await visibleWorkspace().count(), 0, "an unopened B workspace stays unopened after refreshing from A");
+  // #295: opened straight from the conversation, Drawing has no surface to go
+  // back to; leaving it closes the panel again and keeps the project selected.
+  const drawingsB = page.getByRole("button", { name: "Drawings", exact: true });
+  await drawingsB.click();
+  await waitWorkspace("drawing");
+  assert.equal(await drawingsB.getAttribute("title"), "Close Drawings");
+  await drawingsB.click();
+  await page.waitForFunction(() => document.querySelector(".chat-shell")?.dataset.panel === "false");
+  assert.equal(await drawingsB.getAttribute("aria-pressed"), "false");
+  assert.equal(await page.locator('.chat-project[data-selected="true"] .chat-project__name').innerText(), "Project B");
   await page.getByRole("button", { name: "Modeling", exact: true }).click();
   await waitWorkspace();
   await page.getByRole("button", { name: "Fabrication", exact: true }).click();

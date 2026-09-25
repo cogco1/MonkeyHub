@@ -30,24 +30,27 @@ type Props = {
 // followHead: the tab was restored on a cold start, not opened to inspect that exact
 // candidate; the workspace shows the architect's editing base instead (#271). A delivered
 // result opens view-only, and only Continue makes it the base (GH-234 Q1/Q2).
-type ToolTab = { id: AppId; url: string; revision: number; projectDir?: string; projectId?: string; runtimeId?: string; candidate?: string; followHead?: boolean };
+// returnTo: the primary surface this project's Drawing tool was opened from (#295).
+type ToolTab = { id: AppId; url: string; revision: number; projectDir?: string; projectId?: string; runtimeId?: string; candidate?: string; followHead?: boolean; returnTo?: AppId };
 type SavedTool = { id: AppId; candidate?: string };
 type ProjectPreparation = { promise: Promise<AppStatus[]>; apps: AppStatus[] | null; modeling?: Promise<unknown> };
 const VIEW_KEY = "monkeyhub.chat-view.v1";
 /** The rail is always on screen; the conversation never shrinks past this. */
 const RAIL_WIDTH = 76, RESIZER_WIDTH = 5, CHAT_MIN_WIDTH = 360;
 import { chatCopyCatalog as words } from "./i18n/catalogs";
-/** The rail's two kinds of entry: places you work in this project, and the
-    tools that report on the machine rather than on the design. */
-const tools: { id: AppId; label: "model" | "diagram" | "board" | "render" | "publish" | "fab" | "monitor"; icon: string; group: "workspace" | "system" }[] = [
+/** The rail's two kinds of entry: the places you work in this project, and the
+    tools used over it (#295). Drawing is a tool on the same project: a projection
+    of its current state, not another architectural surface. Usage reports on the
+    machine rather than on the design. */
+const tools: { id: AppId; label: "model" | "drawing" | "board" | "render" | "publish" | "fab" | "monitor"; icon: string; group: "workspace" | "tools" }[] = [
   { id: "monkeyarch", label: "model", icon: "cube", group: "workspace" },
   { id: "monkeyrender", label: "render", icon: "render", group: "workspace" },
-  { id: "drawing", label: "diagram", icon: "drawing", group: "workspace" },
   { id: "publish", label: "publish", icon: "drawing", group: "workspace" },
   { id: "monkeyboard", label: "board", icon: "board", group: "workspace" }, { id: "monkeyfab", label: "fab", icon: "fab", group: "workspace" },
-  { id: "monkeymonitor", label: "monitor", icon: "chart", group: "system" },
+  { id: "drawing", label: "drawing", icon: "drawing", group: "tools" },
+  { id: "monkeymonitor", label: "monitor", icon: "chart", group: "tools" },
 ];
-const railGroups = [{ id: "workspace", caption: "railWorkspaces" }, { id: "system", caption: "railSystem" }] as const;
+const railGroups = [{ id: "workspace", caption: "railWorkspaces" }, { id: "tools", caption: "railTools" }] as const;
 
 function Icon({ name }: { name: string }) {
   const paths: Record<string, ReactNode> = {
@@ -668,6 +671,8 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
     const existing = tabs.find((item) => needsProject ? item.projectDir === projectDir : item.id === id);
     if (existing && id !== "monkeyarch") {
       setTabs((items) => items.map((item) => item === existing ? { ...item, id,
+        // Drawing opens over the surface already shown, in this same project workspace.
+        returnTo: id !== "drawing" ? undefined : item.id === "drawing" ? item.returnTo : item.id,
         candidate: view?.candidate ?? item.candidate, followHead: view?.candidate ? view.follow === "head" : item.followHead,
         url: needsProject ? `${window.location.origin}/?${new URLSearchParams({ runtimeId: item.runtimeId!, view: id === "monkeyboard" ? "board" : id === "publish" ? "publish" : id === "drawing" ? "drawing" : id === "monkeyrender" ? "render" : "arch" })}` : item.url } : item));
       setPanel(true); setActiveTool(id); setError(null);
@@ -708,6 +713,11 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
     }
     finally { actionLock.current = false; setToolBusy(null); }
   };
+  /** Leaving the Drawing tool goes back to the surface it was opened over, in the
+      same mounted project workspace. Opened straight from the conversation, it
+      closes the panel again. The project, its editing base and drawings stay. */
+  const drawingReturn = selectedTab?.id === "drawing" ? selectedTab.returnTo : undefined;
+  const leaveDrawing = () => { if (drawingReturn) void openTool(drawingReturn); else setPanel(false); };
 
   const initialRuntimeRoute = useRef(new URLSearchParams(window.location.search).get("runtimeId")).current;
   const initialMonitorRoute = useRef(new URLSearchParams(window.location.search).get("view") === "monitor").current;
@@ -1016,8 +1026,9 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
     {/* One column of entries for the whole right-hand side: the tools, this
         conversation's project, and whether the tool content is open at all. */}
     <nav className="chat-rail" aria-label={t.rail}>
-      {/* The workspaces of this project, then the tools that answer about the
-          machine: one rail, two kinds of entry, told apart on sight. */}
+      {/* The workspaces of this project, then the tools used over it (Drawing on
+          the project's state, Usage on the machine): one rail, two kinds of
+          entry, told apart on sight. */}
       {railGroups.map((group) => <div className="chat-rail__group" key={group.id} role="group" aria-label={t[group.caption]}>
         <span className="chat-rail__caption">{t[group.caption]}</span>
         {tools.filter((item) => item.group === group.id).map((item) => {
@@ -1028,9 +1039,12 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
           const stateText = state === "unavailable" ? t.toolUnavailable : state === "error" ? t.toolError
             : state === "starting" ? t.toolStarting : state === "stopping" ? t.toolStopping
             : state === "running" || state === "stopped" ? undefined : t.toolUnknown;
+          // Pressing the open Drawing tool again leaves it (#295).
+          const leaves = item.id === "drawing" && panel && activeTool === "drawing" && selectedTab?.id === "drawing";
+          const leaveText = !leaves ? undefined : drawingReturn ? t.drawingReturn(t[tools.find((tool) => tool.id === drawingReturn)!.label]) : t.drawingClose;
           return <button key={item.id} className="chat-rail__tool" aria-label={t[item.label]} aria-pressed={panel && item.id === activeTool}
-            title={status?.error?.detail ?? stateText} data-state={state} disabled={(needsProject && !project) || (!currentTabs.some((tab) => tab.runtimeId || tab.id === item.id) && (busy || Boolean(toolBusy)))}
-            onClick={() => void openTool(item.id)}><Icon name={item.icon} /><span>{t[item.label]}</span>{stateText && <small aria-hidden="true">{stateText}</small>}</button>;
+            title={status?.error?.detail ?? stateText ?? leaveText} data-state={state} disabled={(needsProject && !project) || (!currentTabs.some((tab) => tab.runtimeId || tab.id === item.id) && (busy || Boolean(toolBusy)))}
+            onClick={() => { if (leaves) leaveDrawing(); else void openTool(item.id); }}><Icon name={item.icon} /><span>{t[item.label]}</span>{stateText && <small aria-hidden="true">{stateText}</small>}</button>;
         })}
       </div>)}
       <div className="chat-rail__spacer" />
