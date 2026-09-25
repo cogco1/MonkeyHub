@@ -39,7 +39,7 @@ from .monitoring import StudioMonitor
 DOMAINS = ("modeling", "board", "drawing", "render")
 FINDING_TYPES = ("spatial", "proportion", "relation", "preserve", "artifact", "legibility", "composition")
 SEVERITIES = ("info", "minor", "major")
-MODEL_VIEWS = ("front", "back", "left", "right", "top")
+MODEL_VIEWS = ("front", "back", "left", "right", "top", "axon")
 
 # The same image bounds the Studio already applies to document visuals.
 MAX_FRAMES = 4
@@ -207,7 +207,7 @@ def model_view_frame(answer: Mapping[str, Any]) -> EvidenceFrame:
         source = answer["source"]
         view = answer["view"]
         if view not in MODEL_VIEWS or answer.get("mimeType", "image/png") != "image/png":
-            raise VisualReviewInvalid("model-view frames are PNG front/back/left/right/top projections")
+            raise VisualReviewInvalid("model-view frames are PNG front/back/left/right/top/axon projections")
         png = base64.b64decode(answer["data"], validate=True)
         return EvidenceFrame(
             SourceRef.model(source["runId"], source["stateDigest"], source["assetSha256"]),

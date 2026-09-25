@@ -278,8 +278,8 @@ conditions, up to 6 `priorObservations`, up to 8 `knownFacts` of at most 120 cha
 readback values the observer should not ask about again), `reason` (`first_bundle`,
 `after_repair` or `polish_round`), `addressedFindingIds` for an `after_repair` review, and
 `budgetState` (`taskClass`, `allowed`, `used`, `lastFindingIds`). A modeling review names one
-model (`kind: "model"` with `runId`, `stateDigest`, `assetSha256`) and model-view directions;
-the other domains name registered pages (`kind: "page"` with `runId`, `assetSha256`, an explicit
+model (`kind: "model"` with `runId`, `stateDigest`, `assetSha256`) and model-view directions
+(`front`, `back`, `left`, `right`, `top` or the axonometric `axon`); the other domains name registered pages (`kind: "page"` with `runId`, `assetSha256`, an explicit
 `revisionRef` and `pageIndex`) and the recipe `page-<pageIndex>` of each. No field carries
 pixels and every object refuses unknown fields: the runtime renders each frame in process, with
 `model_view` for each recipe view or a one-page PNG export at 1600 px, and each owner verifies

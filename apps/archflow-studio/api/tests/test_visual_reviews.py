@@ -344,9 +344,10 @@ class ModelReviewTests(CandidateTestCase):
         self.assertEqual(response.status_code, 200, response.text)
         return base64.b64decode(response.json()["data"], validate=True)
 
-    def test_a_model_review_renders_each_orthographic_view_of_the_exact_model(self):
+    def test_a_model_review_renders_each_view_of_the_exact_model(self):
         self.enable_monitor()
-        views = ["top", "front", "right"]
+        # Three orthographic views and the axonometric one, each drawn by the model-view owner.
+        views = ["top", "front", "right", "axon"]
         expected = [self.owner_view(view) for view in views]
         project = self.repository.layout.root
         before = files(project)
@@ -357,7 +358,7 @@ class ModelReviewTests(CandidateTestCase):
         observation = response.json()["observation"]
         self.assertEqual((observation["sourceRefs"], observation["viewRefs"]), ([{"kind": "model", **self.model}], views))
         self.assertEqual(observation["frameSha256"], [hashlib.sha256(png).hexdigest() for png in expected])
-        self.assertEqual(response.json()["usage"]["imageInputs"], 3)
+        self.assertEqual(response.json()["usage"]["imageInputs"], len(views))
         self.assertEqual(files(project), before, "a visual review writes nothing to the project")
         events, warnings = self.app.state.monitor.store.read()
         self.assertFalse(warnings)
