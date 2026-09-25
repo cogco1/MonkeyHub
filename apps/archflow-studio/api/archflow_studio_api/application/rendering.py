@@ -32,7 +32,7 @@ from .render_contract import (
     RenderPageRef, RenderProviderError,
 )
 from .drawing_plans import plan_status
-from .working_draft import model_is_current, resolve_working_source
+from .working_draft import WorkingSources, model_is_current
 from .projection import project_state
 
 
@@ -88,7 +88,7 @@ def _snapshot(document):
     }
 
 
-def _freshness(binding, request, snapshots):
+def _freshness(binding, request, snapshots, working=None):
     """Follow retained inputs, without rebinding outputs or writing a global graph.
 
     A Render result can itself be a later Render's source/reference. Its inherited
@@ -96,7 +96,7 @@ def _freshness(binding, request, snapshots):
     inspect the actual retained request instead.
     """
     try:
-        head = resolve_working_source(binding).head
+        working = working or WorkingSources(binding)
         documents = list_documents(binding)
         replaced = {_page_key(page) for doc in documents for page in doc.replaces_pages}
         checked = set()
@@ -126,7 +126,7 @@ def _freshness(binding, request, snapshots):
                 # Drawing owns its geometric read-set and semantic anchors. A
                 # change outside this crop must not invalidate its render too.
                 status = plan_status(binding, run_id=document.run_id, asset_sha256=document.asset_sha256,
-                                     revision_ref=document.revision_ref)
+                                     revision_ref=document.revision_ref, working=working)
                 if status["status"] != "current":
                     return ("outdated" if status["status"] == "outdated" else "unavailable"), status["detail"]
             else:
@@ -141,7 +141,7 @@ def _freshness(binding, request, snapshots):
             if snapshot["modelSource"]:
                 model = ModelSource.from_dict(snapshot["modelSource"])
                 require_model_source(binding, model)
-                return model_is_current(binding, model.run_id, model.state_digest, head=head)
+                return model_is_current(binding, model.run_id, model.state_digest, head=working.head)
             return "current", None
 
         for page, snapshot in zip([request.source, *request.references], snapshots, strict=True):
@@ -198,7 +198,7 @@ class RenderJobRecords:
             raise StudioError(409, "RENDER_RECORD_INVALID", "The retained render task has a different binding or unsupported schema.")
         return row
 
-    def get(self, binding, job_id):
+    def get(self, binding, job_id, working=None):
         with self.lock:
             row = self._load(binding, job_id)
         if row["schema"] == "StudioRenderJob@1":
@@ -225,7 +225,7 @@ class RenderJobRecords:
         if status == "succeeded" and document is None:
             error = "The retained result registration is unavailable; this attempt will not be replayed."
         request = RenderRequestDto.model_validate(row["request"])
-        source_state, reason = _freshness(binding, request, row["sourceSnapshots"])
+        source_state, reason = _freshness(binding, request, row["sourceSnapshots"], working)
         return RenderJobDto(
             projectId=binding.project_id, jobId=job_id, requestId=request.request_id,
             status=status, execution=row["execution"], providerId=row["providerId"], model=row["model"],
@@ -266,7 +266,8 @@ class RenderJobRecords:
             run_ids = [run_id for run_id in binding.run_ids()
                        if re.fullmatch(r"render-[0-9a-f]{32}", run_id)
                        and any(ref.record_kind == STUDIO_RENDER_JOB for ref in binding.record_refs(run_id))]
-        jobs = [self.get(binding, run_id) for run_id in run_ids]
+        working = WorkingSources(binding)  # every result is judged against the same head
+        jobs = [self.get(binding, run_id, working) for run_id in run_ids]
         return sorted(jobs, key=lambda job: (job.created_at, job.job_id), reverse=True)
 
     def submit(self, binding, payload):

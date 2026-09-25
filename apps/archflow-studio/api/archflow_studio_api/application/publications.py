@@ -47,10 +47,12 @@ def _latest(records):
 def source_statuses(binding, pages):
     from .drawing_plans import plan_status
     from .rendering import _freshness
+    from .working_draft import WorkingSources
     from ..transport.rendering import RenderRequestDto
 
     documents = artifacts.list_documents(binding)
     replacements = artifacts._page_replacements(documents)
+    working = WorkingSources(binding)  # one Working Head for every source on these pages
     statuses = []
     for page in pages:
         for element in page["elements"]:
@@ -85,14 +87,14 @@ def source_statuses(binding, pages):
                     try:
                         if recipe.get("kind") == "cut-plan":
                             status = plan_status(binding, run_id=document.run_id, asset_sha256=document.asset_sha256,
-                                                 revision_ref=document.revision_ref)
+                                                 revision_ref=document.revision_ref, working=working)
                             if status["status"] != "current":
                                 row.update(status="stale", detail=status["detail"])
                         elif recipe.get("kind") == "ai-render":
                             request = RenderRequestDto.model_validate(recipe["request"])
                             if request.project_id != binding.project_id or recipe["jobId"] != document.run_id:
                                 raise ValueError("Render source binding differs")
-                            status, detail = _freshness(binding, request, recipe["sourceSnapshots"])
+                            status, detail = _freshness(binding, request, recipe["sourceSnapshots"], working)
                             if status != "current":
                                 row.update(status="stale", detail=detail)
                     except (StudioError, KeyError, TypeError, ValueError):
@@ -109,8 +111,10 @@ def read_publication(binding: ProjectBinding, revision: str | None = None):
             raise StudioError(404, "PUBLICATION_NOT_FOUND", "This publication revision is not retained in the project.")
         revision = revision or latest
         content = records.get(revision, {"title": "Untitled", "spec": DEFAULT_SPEC, "pages": []})
-        return {"projectId": binding.project_id, "revisionSha256": revision, "title": content["title"],
-                "spec": content["spec"], "pages": content["pages"], "sources": source_statuses(binding, content["pages"])}
+    # Source status reads other owners; a saver takes the project guard before
+    # this lock, so a reader never holds this lock while waiting for the guard.
+    return {"projectId": binding.project_id, "revisionSha256": revision, "title": content["title"],
+            "spec": content["spec"], "pages": content["pages"], "sources": source_statuses(binding, content["pages"])}
 
 
 @retained_sources

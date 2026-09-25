@@ -15,6 +15,7 @@ from archflow_studio_api.settings import StudioSettings
 from .support import PROJECT_ID, REFERENCE_RUN_ID
 from .test_candidate import CandidateTestCase
 from .test_intents import semantic_wall_edit
+from .test_working_source import adopt
 
 
 def room_edit():
@@ -239,7 +240,10 @@ class CutPlanTests(CandidateTestCase):
         self.assertEqual(self.repository.read_design_branches(), self.branches)
         own = self.status(document, targetModelSource=self.model, targetStageRef=self.stage["stageRef"])
         self.assertEqual(own["dimensions"][0]["label"], "2000 mm")
-        # The candidate became the Working Head; the retained drawing is stale, not relabelled.
+        # Shown, not adopted: the drawing still reads the editing base.
+        self.assertEqual(self.status(document)["status"], "current")
+        adopt(self.client, job["candidateId"])
+        # Continued: the retained drawing is stale on the new base, not relabelled.
         live = self.status(document)
         self.assertEqual((live["status"], live["dimensions"][0]["label"]), ("outdated", "1200 mm"))
 
@@ -360,6 +364,7 @@ class CutPlanTests(CandidateTestCase):
     def test_status_follows_the_working_head_before_anything_is_accepted(self):
         first = self.generate()
         candidate, model = self.propose_move(.4)
+        adopt(self.client, candidate)
         self.assertEqual(self.client.get("/api/working-source").json()["head"]["runId"], candidate)
         stale = self.status(first)
         self.assertEqual(stale["status"], "outdated", stale)
@@ -394,3 +399,33 @@ class CutPlanTests(CandidateTestCase):
         retained = next(row for row in self.client.get("/api/documents").json()["documents"]
                         if row["revisionRef"] == first["revisionRef"])
         self.assertEqual(retained, first)
+
+    def test_each_new_cut_plan_is_its_own_drawing(self):
+        first = self.generate(drawingId=None)
+        second = self.generate(drawingId=None, cutHeight=1.0)
+        self.assertEqual((first["drawingId"], second["drawingId"]), ("floor-plan", "floor-plan-2"))
+        revised = self.generate(drawingId=None, previousRevisionRef=first["revisionRef"], scaleDenominator=100)
+        self.assertEqual(revised["drawingId"], "floor-plan")
+
+    def test_a_drawing_kept_on_a_chosen_version_stays_there_until_rebuilt(self):
+        kept = self.generate(follow="frozen")
+        self.assertEqual(kept["viewRecipe"]["follow"], "frozen")
+        candidate, model = self.propose_move(.4)
+        adopt(self.client, candidate)
+        self.assertEqual(self.client.get("/api/working-source").json()["head"]["runId"], candidate)
+        status = self.status(kept)
+        self.assertEqual((status["status"], status["bindingChanged"]), ("current", False), status)
+        self.assertEqual(status["targetStageRef"], self.stage["stageRef"])
+        self.assertIn("stays on the version", status["detail"])
+        self.assertFalse(status["dimensions"][0]["canDrive"], status)
+        [drawing] = [row for row in self.client.get("/api/worktrees").json()["representations"] if row["kind"] == "drawing"]
+        self.assertEqual((drawing["itemId"], drawing["state"]), ("room-plan", "frozen"))
+
+        # Later revisions keep the choice; only an explicit live rebuild follows the head again.
+        styled = self.generate(previousRevisionRef=kept["revisionRef"], scaleDenominator=100)
+        self.assertEqual(styled["viewRecipe"]["follow"], "frozen")
+        live = self.generate(sourceStageRef=None, modelSource=model, previousRevisionRef=styled["revisionRef"], follow="live")
+        self.assertNotIn("follow", live["viewRecipe"])
+        self.assertEqual(self.status(live)["status"], "current")
+        [drawing] = [row for row in self.client.get("/api/worktrees").json()["representations"] if row["kind"] == "drawing"]
+        self.assertEqual(drawing["state"], "current")

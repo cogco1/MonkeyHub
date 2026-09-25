@@ -90,7 +90,7 @@ class RepresentationStateDto(BaseModel):
     kind: Literal["drawing", "render"]
     item_id: str = Field(alias="itemId")
     label: str
-    state: Literal["current", "stale", "running", "unavailable"]
+    state: Literal["current", "stale", "frozen", "running", "unavailable"]
     source_run_id: str | None = Field(alias="sourceRunId")
     detail: str | None
 

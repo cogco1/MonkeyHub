@@ -7,10 +7,11 @@ from ..application.artifacts import ModelSource
 from ..application.binding import bound_project
 from ..application.working_draft import (
     read_working_draft, resolve_working_source, retain_local_draft, save_working_draft, select_working_draft,
+    working_revision,
 )
 from ..transport.working_draft import (
-    LocalDraftRequestDto, WorkingDraftDto, WorkingDraftSaveDto, WorkingDraftSelectionDto, WorkingSourceDto,
-    working_source_dto,
+    LocalDraftRequestDto, WorkingDraftDto, WorkingDraftSaveDto, WorkingDraftSelectionDto, WorkingRevisionDto,
+    WorkingSourceDto, working_source_dto,
 )
 from .proposals import _require_bound_project
 
@@ -20,6 +21,13 @@ router = APIRouter(tags=["working-draft"])
 @router.get("/working-draft", response_model=WorkingDraftDto)
 def read_current_working_draft(request: Request) -> WorkingDraftDto:
     return read_working_draft(bound_project(request.app.state))
+
+
+@router.get("/working-draft/revision", response_model=WorkingRevisionDto)
+def read_working_revision(request: Request) -> WorkingRevisionDto:
+    """Poll this, not the whole position: it carries no local draft and takes no project guard."""
+    binding = bound_project(request.app.state)
+    return WorkingRevisionDto(projectId=binding.project_id, revisionSha256=working_revision(binding))
 
 
 @router.put("/working-draft", response_model=WorkingDraftDto)

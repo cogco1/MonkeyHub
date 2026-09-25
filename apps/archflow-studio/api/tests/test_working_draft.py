@@ -23,7 +23,7 @@ class WorkingDraftTests(CandidateTestCase):
         return self.client.put("/api/working-draft/local", json={"projectId": PROJECT_ID,
             "baseRevisionSha256": revision, "draft": draft, **extra})
 
-    def test_candidate_becomes_current_and_manual_save_is_not_stage_or_issue(self):
+    def test_candidate_is_listed_without_moving_current_and_manual_save_is_not_stage_or_issue(self):
         initial = self.read()
         self.assertIsNone(initial["revisionSha256"])
         from archflow_studio_api.protocol import BASE_CAPABILITIES
@@ -32,9 +32,15 @@ class WorkingDraftTests(CandidateTestCase):
         accepted, job = self.run_candidate("set height to 2.2", elementId="portico-base")
         self.assertEqual(job["status"], "succeeded", job)
         current = self.read()
-        self.assertEqual(current["current"]["runId"], accepted["candidateId"])
+        # GH-234 Q2: a generated candidate is listed for recovery, never adopted.
+        self.assertIsNone(current["current"])
         self.assertIn(accepted["candidateId"], current["managedRunIds"])
         self.assertEqual(len(current["recovery"]), 1)
+        chosen = self.client.put("/api/working-draft", json={"projectId": PROJECT_ID, "runId": accepted["candidateId"],
+                                 "baseRevisionSha256": current["revisionSha256"]})
+        self.assertEqual(chosen.status_code, 200, chosen.text)
+        current = chosen.json()
+        self.assertEqual(current["current"]["runId"], accepted["candidateId"])
         saved = self.client.post("/api/working-draft/save", json={"projectId": PROJECT_ID,
             "baseRevisionSha256": current["revisionSha256"], "runId": accepted["candidateId"], "label": "Study A"})
         self.assertEqual(saved.status_code, 200, saved.text)
@@ -127,7 +133,9 @@ class InitialProjectionRecoveryTests(CandidateArchiveTests):
             recovered = cold.get("/api/working-draft")
             self.assertEqual(recovered.status_code, 200, recovered.text)
             self.assertEqual(recovered.json()["localDraft"]["source"], source)
-            self.assertEqual(recovered.json()["current"]["runId"], accepted["candidateId"])
+            # The finished candidate is listed; it did not become the position (GH-234 Q2).
+            self.assertIsNone(recovered.json()["current"])
+            self.assertIn(accepted["candidateId"], [row["runId"] for row in recovered.json()["recovery"]])
             restored_source = cold.get("/api/state")
             self.assertEqual(restored_source.status_code, 200, restored_source.text)
             self.assertEqual(restored_source.json()["stateDigest"], self.state_digest)

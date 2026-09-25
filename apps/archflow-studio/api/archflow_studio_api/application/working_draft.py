@@ -1,8 +1,11 @@
 """Working positions use P036; generation, acceptance and issue keep their owners.
 
-The current position is also the project's **Working Head**: the latest valid
-working state ordinary Modeling, Drawing and Render work follows (#271). It is
-read here from the retained position, never guessed from the newest file.
+The current position is also the project's **Working Head**: the architect's
+editing base, which ordinary Modeling, Drawing, Render and Board work follows
+(#271). Only an explicit select moves it: Continue on a shown result, or adopting
+the architect's own Sync. A generated result is recorded and shown, never adopted
+(GH-234 Q1/Q2). It is read here from the retained position, never guessed from
+the newest file.
 """
 
 from dataclasses import dataclass
@@ -52,6 +55,16 @@ def _entry(binding: ProjectBinding, run_id: str, *, branch_id: str | None = None
             "branchId": branch_id, "label": None, "automatic": False}
 
 
+def _entry_on_line(binding: ProjectBinding, run_id: str, line: str | None) -> dict:
+    """The entry on a remembered line; the Stage's own line when that one no longer holds it."""
+    try:
+        return _entry(binding, run_id, branch_id=line)
+    except StudioError as exc:
+        if line is None or exc.code != "WORKING_DRAFT_BRANCH_MISMATCH":
+            raise
+        return _entry(binding, run_id)
+
+
 def _validate_local_source(binding: ProjectBinding, source: LocalDraftSourceDto) -> None:
     if source.projectId != binding.project_id:
         raise StudioError(409, "PROJECT_MISMATCH", "The local draft belongs to another project.")
@@ -89,8 +102,10 @@ def select_working_draft(binding: ProjectBinding, run_id: str | None, revision: 
     if actual != revision:
         raise StudioError(409, "WORKING_DRAFT_STALE", "The working position changed; read it before selecting another source.")
     if run_id is not None:
-        row = _entry(binding, run_id, branch_id=branch_id)
         previous = value["runs"].get(run_id)
+        # Without a named branch, a recorded result keeps the line it was recorded on.
+        row = (_entry(binding, run_id, branch_id=branch_id) if branch_id is not None
+               else _entry_on_line(binding, run_id, (previous or {}).get("branchId")))
         if previous:
             row.update(label=previous["label"], automatic=previous["automatic"])
         value["runs"][run_id] = row
@@ -114,7 +129,16 @@ def save_working_draft(binding: ProjectBinding, run_id: str, revision: str | Non
 
 @retained_sources
 def record_candidate_draft(binding: ProjectBinding, run_id: str, source_run_id: str | None) -> None:
-    row = _entry(binding, run_id)
+    """Record a finished candidate for recovery and comparison; never move the position.
+
+    The architect adopts a result explicitly (``select_working_draft``); a generated
+    result, including a continuation of the current base, is shown, not adopted.
+    """
+    value, _ = binding.repository.read_working_draft()
+    # A continuation stays on its source's line: a fork's first result shares its
+    # parent's Stage but is not the parent line's work.
+    line = (value["runs"].get(source_run_id) or {}).get("branchId") if source_run_id else None
+    row = _entry_on_line(binding, run_id, line)
     row["automatic"] = True
     for _ in range(8):
         value, revision = binding.repository.read_working_draft()
@@ -122,8 +146,6 @@ def record_candidate_draft(binding: ProjectBinding, run_id: str, source_run_id: 
         if previous:
             row["label"] = previous["label"]
         value["runs"][run_id] = row
-        if value["current"] is None or value["current"] == source_run_id:
-            value["current"] = run_id
         try:
             binding.repository.compare_and_swap_working_draft(expected_revision=revision, value=value)
             return
@@ -165,6 +187,9 @@ LIVE = "live"
 FROZEN = "frozen"
 _LINEAGE_LIMIT = 64
 _UNREADABLE = (StudioError, ProjectRepositoryError, KeyError, TypeError, ValueError, OSError)
+# Retained changes never change, so each run's parents are read once per process.
+_PARENTS: dict[tuple[str, str], tuple[str, ...]] = {}
+_PARENTS_LIMIT = 4096
 
 
 @dataclass(frozen=True, slots=True)
@@ -210,19 +235,38 @@ def _detail(exc: Exception) -> str:
     return exc.detail if isinstance(exc, StudioError) else str(exc) or type(exc).__name__
 
 
+def _parents(binding: ProjectBinding, run_id: str) -> tuple[str, ...]:
+    """The exact runs one candidate continued: its source, then any results it combined."""
+
+    key = (str(binding.repository.layout.root), run_id)
+    known = _PARENTS.get(key)
+    if known is not None:
+        return known
+    delta = binding.candidate_delta(run_id)
+    if delta is None:
+        # Not remembered: a run's change may still be being retained.
+        return ()
+    parents = tuple(dict.fromkeys((delta["source_run_ref"]["run_id"], *delta.get("combined_candidate_ids", ()))))
+    if len(_PARENTS) >= _PARENTS_LIMIT:
+        _PARENTS.clear()
+    _PARENTS[key] = parents
+    return parents
+
+
 def lineage_of(binding: ProjectBinding, run_id: str) -> tuple[str, ...]:
-    """The run and the exact retained sources it continued, newest first."""
+    """The run and the exact retained runs it continued or combined, nearest first."""
 
     runs = [run_id]
-    while len(runs) < _LINEAGE_LIMIT:
+    for current in runs:
+        if len(runs) >= _LINEAGE_LIMIT:
+            break
         try:
-            delta = binding.candidate_delta(runs[-1])
-            parent = None if delta is None else delta["source_run_ref"]["run_id"]
+            parents = _parents(binding, current)
         except _UNREADABLE:
-            break
-        if parent is None or parent in runs:
-            break
-        runs.append(parent)
+            continue
+        for parent in parents:
+            if parent not in runs and len(runs) < _LINEAGE_LIMIT:
+                runs.append(parent)
     return tuple(runs)
 
 
@@ -250,19 +294,24 @@ def _complete_model(binding: ProjectBinding, projection: StateProjection, stage)
 
 def _head_at(binding: ProjectBinding, run_id: str, *, branch_id: str | None, origin: str,
              label: str | None) -> WorkingHead:
-    stage_ref = None
+    stage_ref, history = None, ()
     if branch_id is not None and branch_id in binding.repository.read_design_branches():
+        history = tuple(binding.design_history(branch_id))
         # A run accepted into several lines answers as the Stage of its own line.
-        stage_ref = next((ref for ref, stage in binding.design_history(branch_id) if stage.candidate_id == run_id), None)
+        stage_ref = next((ref for ref, stage in history if stage.candidate_id == run_id), None)
     projection = project_state(binding, run_id=run_id, source_stage_ref=stage_ref)
     if projection.run.run_id != run_id or not projection.reference_state_exact or projection.state_digest is None:
         raise StudioError(409, "WORKING_SOURCE_UNAVAILABLE", f"Run {run_id} has no exact finished state.")
     stage = None if projection.source_stage_ref is None else binding.design_stage(projection.source_stage_ref)
     accepted = stage is not None and stage.candidate_id == run_id
+    # A fork shares its parent's earlier Stages. The position's own line answers
+    # while the Stage is in its history, not the line that first created it.
+    if stage is not None and not any(ref == projection.source_stage_ref for ref, _ in history):
+        branch_id = stage.branch_id
     return WorkingHead(
         run_id=run_id, state_digest=projection.state_digest, record_digest=projection.record_digest,
         source_stage_ref=None if projection.source_stage_ref is None else projection.source_stage_ref.uri,
-        branch_id=stage.branch_id if stage is not None else branch_id, accepted=accepted, origin=origin,
+        branch_id=branch_id, accepted=accepted, origin=origin,
         label=label or (stage.label if accepted else None),
         model_source=_complete_model(binding, projection, stage if accepted else None),
         lineage=lineage_of(binding, run_id),
@@ -347,13 +396,20 @@ def model_is_current(binding: ProjectBinding, run_id: str, state_digest: str, *,
     return "outdated", "The project model has changed since this was made."
 
 
-@retained_sources
+def working_revision(binding: ProjectBinding) -> str | None:
+    """The retained position's revision alone; it changes whenever the head can have moved."""
+
+    return binding.repository.read_working_draft()[1]
+
+
 def resolve_working_source(binding: ProjectBinding, workspace: str = "modeling", *, policy: str = LIVE,
                            pinned: ModelSource | None = None) -> WorkingSource:
     """Resolve the current working source for one workspace from retained facts only.
 
     LIVE answers the head's compatible exact source; FROZEN keeps an exact pinned
-    model and says whether the head has moved past it. Nothing is written.
+    model and says whether the head has moved past it. Nothing is written or
+    retained, so it takes no project guard: a reader never waits for a writer
+    and never holds a lock a writer needs.
     """
 
     if workspace not in WORKSPACES:
@@ -393,3 +449,25 @@ def resolve_working_source(binding: ProjectBinding, workspace: str = "modeling",
         return answer(True, source, stage_ref, None)
     return answer(source is not None, source, stage_ref,
                   None if source is not None else "The current working version has no complete model to show yet.")
+
+
+class WorkingSources:
+    """One request's resolutions of the Working Head, each workspace read at most once.
+
+    A listing that judges many results against one head reads it once. The head does
+    not depend on the workspace; only its compatible source does.
+    """
+
+    def __init__(self, binding: ProjectBinding) -> None:
+        self._binding = binding
+        self._resolved: dict[str, WorkingSource] = {}
+
+    def __call__(self, workspace: str = "modeling") -> WorkingSource:
+        if workspace not in self._resolved:
+            self._resolved[workspace] = resolve_working_source(self._binding, workspace)
+        return self._resolved[workspace]
+
+    @property
+    def head(self) -> WorkingHead | None:
+        known = next(iter(self._resolved.values()), None)
+        return (known if known is not None else self()).head

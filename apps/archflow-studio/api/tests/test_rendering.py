@@ -20,6 +20,7 @@ from archflow.project.record_kinds import STUDIO_RENDER_JOB
 
 from .support import make_project, PROJECT_ID
 from .test_design_history import DesignHistoryFixture
+from .test_working_source import adopt
 
 
 def png(color="blue"):
@@ -450,7 +451,10 @@ class RenderModelFreshnessTests(DesignHistoryFixture):
         page = {"runId": source.run_id, "assetSha256": source.asset_sha256, "revisionRef": None, "pageIndex": 0}
         result = finished(self.client, submit(self.client, request(page)))
         self.assertEqual(result["sourceState"], "current")
-        self.candidate_from(stage)
+        moved = self.candidate_from(stage)
+        # A generated result alone is not the base (GH-234 Q2); the render stays current.
+        self.assertEqual(self.client.get("/api/render/jobs/" + result["jobId"]).json()["sourceState"], "current")
+        adopt(self.client, moved)
         # Nothing is accepted: the branch still names this Stage, but the working model moved on.
         self.assertEqual(self.history()["branches"][0]["headStageRef"], stage["stageRef"])
         stale = self.client.get("/api/render/jobs/" + result["jobId"]).json()

@@ -348,6 +348,9 @@ def _result_lines(binding: ProjectBinding, value: dict, head: WorkingHead | None
         if entry.runId in skip or entry.runId in seen:
             continue
         seen.add(entry.runId)
+        # A result the head already contains is its history, not another line.
+        if head is not None and entry.runId in head.lineage:
+            continue
         if len(lines) == _RESULT_LIMIT:
             warnings.append("More retained working results exist than this view lists.")
             break
@@ -376,16 +379,26 @@ def _result_lines(binding: ProjectBinding, value: dict, head: WorkingHead | None
     return lines
 
 
-def _representations(binding: ProjectBinding, head: WorkingHead | None, render_jobs) -> list[RepresentationState]:
+def _representations(binding: ProjectBinding, head: WorkingHead | None, render_jobs,
+                     warnings: list[str]) -> list[RepresentationState]:
     rows: list[RepresentationState] = []
     latest = {}
-    for document in list_documents(binding):
+    try:
+        documents = list_documents(binding)
+    except (StudioError, ProjectRepositoryError, KeyError, TypeError, ValueError, OSError) as exc:
+        warnings.append(f"Drawings could not be read: {getattr(exc, 'detail', exc)}")
+        documents = []
+    for document in documents:
         if (document.view_recipe or {}).get("kind") != "cut-plan" or document.model_source is None:
             continue
         key = document.drawing_id or document.file_name
         if key not in latest or (document.generated_at or "") > (latest[key].generated_at or ""):
             latest[key] = document
     for key, document in sorted(latest.items()):
+        if document.view_recipe.get("follow") == "frozen":
+            rows.append(RepresentationState("drawing", key, key, "frozen", document.model_source.run_id,
+                                            "Kept on the version it was drawn from."))
+            continue
         state, reason = model_is_current(binding, document.model_source.run_id, document.model_source.state_digest, head=head)
         rows.append(RepresentationState("drawing", key, key, {"current": "current", "outdated": "stale"}.get(state, "unavailable"),
                                         document.model_source.run_id, reason))
@@ -431,5 +444,6 @@ def worktree_graph(binding: ProjectBinding, *, jobs: JobRegistry | None = None, 
         ))
     lines.extend(_running_lines(binding, value["active"], jobs, head))
     lines.extend(_result_lines(binding, value, head, warnings))
+    representations = _representations(binding, head, render_jobs, warnings)
     return WorktreeGraph(binding.project_id, head, resolved.revision_sha256, tuple(lines),
-                         tuple(_representations(binding, head, render_jobs)), tuple(warnings))
+                         tuple(representations), tuple(warnings))

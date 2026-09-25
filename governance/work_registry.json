@@ -276,7 +276,7 @@
       ],
       "card": "docs/mapping/planning/GH-271-working-head.md",
       "acceptance": [
-        "A valid continuation becomes the head and Modeling shows and edits it without choosing a candidate; history viewing never moves the head.",
+        "The Working Head is the architect's editing base: generated results are shown and recorded, Continue adopts one, and Modeling, Drawing, Render and Board follow the base; history viewing never moves it.",
         "A LIVE drawing refreshes on the Working Head or states why it cannot; a retained render becomes stale when the head moves past its source.",
         "The Worktree Graph shows the head, running work, bases, scopes, forks, reconcilable results and conflicts without writing or merging.",
         "Affected API tests, web unit tests, typecheck/build, generated client check and archcheck pass."

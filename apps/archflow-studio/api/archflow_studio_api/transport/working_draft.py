@@ -91,6 +91,13 @@ class WorkingHeadDto(BaseModel):
     lineage: list[str] = Field(description="The head run first, then each exact retained source it continued.")
 
 
+class WorkingRevisionDto(BaseModel):
+    """Only the working position's revision: a cheap check for whether the head may have moved."""
+
+    projectId: str
+    revisionSha256: str | None = None
+
+
 class WorkingSourceDto(BaseModel):
     """One workspace's current source under a LIVE or FROZEN policy."""
 
