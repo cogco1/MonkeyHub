@@ -68,9 +68,10 @@ storage, candidate continuation and formal issue serve all four areas. Developme
 research tooling remain cross-cutting, not additional architectural workflow stages.
 Detailed ownership stays in SYSTEM_MAP and the existing registries.
 
-The current-and-planned capability inventory and item-by-item consolidation checklist
-are indexed by [P115](mapping/planning/P115-capability-consolidation.md). Existing P cards
-keep their own acceptance; delivered behavior is not reopened merely to fill the plan.
+Remaining work and its acceptance are tracked in GitHub Issues (#60).
+[P115](mapping/planning/P115-capability-consolidation.md) is a frozen historical index that
+names the Issues carrying its remaining acceptance; derive no current task from it.
+Delivered behavior is not reopened merely to fill a plan.
 
 ## The spine
 

@@ -274,7 +274,7 @@
       "id": "P111",
       "stream": "planning",
       "status": "blocked",
-      "goal": "Follow up the existing-project trial of delivered candidate continuation: the selected run remains the next edit's exact base and preserves the prior revision. Implementation and isolated verification are complete; The remaining user trial is blocked pending the current page and a new specific edit. This does not establish whole-assembly usability or correct architectural dependencies.",
+      "goal": "Follow up the existing-project trial of delivered candidate continuation: the selected run remains the next edit's exact base and preserves the prior revision. Implementation and isolated verification are complete; The remaining user trial runs in the MonkeyHub Modeling workspace (the Studio page it named is retired) and waits for a new specific edit. This does not establish whole-assembly usability or correct architectural dependencies.",
       "depends_on": [],
       "write_scope": [
         "docs/mapping/",
