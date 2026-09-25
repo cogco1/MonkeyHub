@@ -1,6 +1,6 @@
 # Candidate admission: audit and minimum migration plan (2026-09-25)
 
-**Issue:** [#294](https://github.com/cogco1/MonkeyHub/issues/294), lane `GH-294/admission-audit`, card [GH-294](mapping/planning/GH-294-candidate-admission.md).
+**Issue:** [#294](https://github.com/cogco1/MonkeyHub/issues/294), lane `GH-294/admission-audit`.
 **Base:** `origin/main` `cc9397fa`. Documentation only. No code, record or API changes.
 **Method:** the author read the backend paths directly. A read-only sub-agent located the frontend call sites, and the author re-read every frontend line cited here. The root task checked the TESTMODEL replay (§3) read-only, and the author spot-checked it.
 
