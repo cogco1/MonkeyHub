@@ -76,7 +76,7 @@ async function step(name, action) { current = name; await action(); passed.push(
 const revision = () => page.getByRole("combobox", { name: "Drawing", exact: true });
 const source = () => page.getByRole("combobox", { name: "Version to draw", exact: true });
 // GH-302: appearance saves itself; the only save button left is Retry after a refusal.
-const saveButton = () => page.getByRole("button", { name: "Save appearance as a revision", exact: true });
+const saveButton = () => page.getByRole("button", { name: "Retry saving", exact: true });
 const legacyKey = JSON.stringify([legacyDocument.runId, legacyDocument.assetSha256, legacyDocument.revisionRef]);
 async function until(read, accepts, label) {
   const deadline = Date.now() + 12000; let value;
@@ -164,7 +164,7 @@ try {
     await revision().selectOption(JSON.stringify([legacyDocument.runId, legacyDocument.assetSha256, legacyDocument.revisionRef]));
     await page.getByText("900 mm", { exact: true }).waitFor();
     oldRevision = await revision().inputValue();
-    assert.equal(await saveButton().count(), 0, "appearance has no Save button");
+    assert.equal(await saveButton().count(), 0, "appearance has no Save button, only a retry after a refusal");
     await page.getByLabel("Scale denominator (1 : n)", { exact: true }).fill("50");
     await page.getByLabel("Label offset (paper mm)", { exact: true }).fill("16");
     await page.getByText("Generating…", { exact: true }).waitFor();
@@ -251,7 +251,7 @@ try {
       1 + await page.evaluate(() => window.drawingFixture.documents.filter(document => document.projectId === "drawing-project").length));
     broken = "outside-view";
     await page.getByRole("button", { name: "Refresh sources", exact: true }).click();
-    await page.getByText("Dimension falls outside the drawing. Adjust its paper offset and save appearance.", { exact: true }).waitFor();
+    await page.getByText("Dimension falls outside the drawing. Adjust its paper offset.", { exact: true }).waitFor();
     assert.equal(await page.getByLabel("Label offset (paper mm)", { exact: true }).isEnabled(), true);
     broken = false;
   });
@@ -296,7 +296,7 @@ try {
     assert.equal(await page.locator('[data-dressing-id]').count(), 2);
     await page.getByLabel("Position follows", { exact: true }).selectOption("obj-wall");
     await until(() => Promise.resolve(requests.at(-1).dressing?.[1]?.anchorObjectId === "obj-wall"), Boolean, "dressing revision");
-    await until(() => page.getByText("Generating…", { exact: true }).count(), (value) => value === 0, "dressing revision opened");
+    await until(() => page.getByText("Saving appearance…", { exact: true }).count(), (value) => value === 0, "dressing revision opened");
     const old = legacyKey;
     const newRevision = await revision().inputValue();
     assert.equal(requests.at(-1).dressing.length, 2);
@@ -348,7 +348,7 @@ try {
     refuseNext = true;
     await page.getByLabel("Cut height (meter)", { exact: true }).fill("1.4");
     await page.locator(".drawing-actions .error-panel").waitFor();
-    await page.getByText("Save appearance changes before downloading SVG.", { exact: true }).waitFor();
+    await page.getByText("Appearance changes are not saved yet; fix the marked field or retry.", { exact: true }).waitFor();
     assert.equal(await page.getByLabel("Cut height (meter)", { exact: true }).inputValue(), "1.4", "the refused edit stays in its field");
     await new Promise(resolve => setTimeout(resolve, 1200));
     assert.equal(requests.length, sent + 1, "a refusal is not retried in a loop");

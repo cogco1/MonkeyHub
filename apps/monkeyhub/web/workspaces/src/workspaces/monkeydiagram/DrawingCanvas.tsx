@@ -18,10 +18,10 @@ const copy = {
     stale: "Not updated", chosenView: "Drawn from a chosen version · not updated automatically", followAgain: "Follow the current model again", workingVersion: "Working version (not accepted)", representation: "Drawing appearance", cutHeight: "Cut height", bottom: "View bottom", scale: "Scale denominator (1 : n)",
     graphics: "Linework and hatch", cutLine: "Cut line (paper mm)", visibleLine: "Visible line (paper mm)", hatch: "Hatch spacing (paper mm)",
     dimensions: "Saved dimensions",
-    placement: "Label offset (paper mm)", remove: "Remove dimension", apply: "Save appearance as a revision", dirty: "Save appearance changes before downloading SVG.",
+    placement: "Label offset (paper mm)", remove: "Remove dimension", saving: "Saving appearance…", held: "Appearance changes are not saved yet; fix the marked field or retry.", retry: "Retry saving",
     status: "Source status", current: "Current", outdated: "Outdated", "partially-broken": "Some anchors are broken", unknown: "Source status unknown",
     checking: "Checking source…", sourceHint: "Heights use the source model unit:", unitUnknown: "Waiting for model units",
-    broken: "Unresolved anchor", outsideView: "Dimension falls outside the drawing. Adjust its paper offset and save appearance.", empty: "Choose a model and generate a cut plan.",
+    broken: "Unresolved anchor", outsideView: "Dimension falls outside the drawing. Adjust its paper offset.", empty: "Choose a model and generate a cut plan.",
     zoomOut: "Zoom out", zoomIn: "Zoom in", fit: "Fit page", sourceOfPage: "This drawing's source",
     download: "Download SVG", downloadHint: "Saved vector drawing, with its scale and entourage, for further editing in Illustrator.",
     settings: "Drawing settings",
@@ -34,10 +34,10 @@ const copy = {
     stale: "尚未更新", chosenView: "按所选版本绘制 · 不自动更新", followAgain: "改为跟随当前模型", workingVersion: "工作版本（未接受）", representation: "图纸表达", cutHeight: "剖切高度", bottom: "视图底部", scale: "比例分母（1 : n）",
     graphics: "线型与填充", cutLine: "剖切线宽（纸面 mm）", visibleLine: "可见线宽（纸面 mm）", hatch: "填充间距（纸面 mm）",
     dimensions: "已有尺寸标注",
-    placement: "标注偏移（纸面 mm）", remove: "移除尺寸", apply: "保存表达新版本", dirty: "表达修改尚未保存，保存后可下载 SVG。",
+    placement: "标注偏移（纸面 mm）", remove: "移除尺寸", saving: "正在保存表达…", held: "表达修改尚未保存：请修正标出的字段或重试。", retry: "重试保存",
     status: "来源状态", current: "当前有效", outdated: "来源已更新", "partially-broken": "部分锚点断开", unknown: "来源状态未知",
     checking: "正在核对来源…", sourceHint: "高度使用模型单位：", unitUnknown: "正在读取模型单位",
-    broken: "锚点未解析", outsideView: "标注超出图框，请调整纸面偏移后保存表达。", empty: "选择模型并生成剖切平面。",
+    broken: "锚点未解析", outsideView: "标注超出图框，请调整纸面偏移。", empty: "选择模型并生成剖切平面。",
     zoomOut: "缩小", zoomIn: "放大", fit: "适合页面", sourceOfPage: "此图来源",
     download: "下载 SVG", downloadHint: "下载已保存的矢量图，保留比例和配景，可在 Illustrator 中继续编辑。",
     settings: "图纸设置",
@@ -373,10 +373,10 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
         </fieldset>}
         </div>
         <div className="drawing-actions">
-        {source ? <p className="drawing-save-state" role="status">{busy || (dirty && appearanceHeld === null) ? text.generating : dirty ? text.dirty : ""}</p>
+        {source ? <p className="drawing-save-state" role="status">{busy || (dirty && appearanceHeld === null) ? text.saving : dirty ? text.held : ""}</p>
           : <button className="btn btn--accent" type="submit" disabled={busy || loading || !lengthUnit || !stage}>
             {busy ? text.generating : text.generate}</button>}
-        {source && appearanceHeld === "refused" && <button className="btn btn--accent" type="submit" disabled={busy || !source.modelSource}>{text.apply}</button>}
+        {source && appearanceHeld === "refused" && <button className="btn btn--accent" type="submit" disabled={busy || !source.modelSource}>{text.retry}</button>}
         {source && <><button className="drawing-download" type="button" disabled={busy || dirty || !active || !vector} onClick={downloadSvg}>{text.download}</button>
           <p>{text.downloadHint}</p></>}
         {error && <ErrorPanel error={error} what={text.title} />}

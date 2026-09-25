@@ -32,6 +32,8 @@ const knownErrors: Record<string, string> = {
   HUB_STOPPING: "Hub 正在等待工作区结束，请稍候。", SETTINGS_UNAVAILABLE: "本地设置暂时无法读取或保存。",
   APP_SETTINGS_INVALID: "保存的启动设置无效，请检查项目目录和端口。", LOCAL_IO_FAILED: "无法访问本地设置或运行记录目录。",
   FAB_UNAVAILABLE: "此运行环境未包含 MonkeyFab，请使用整合安装包。", APP_HOSTED_BY_HUB: "MonkeyFab 使用 Hub 页面，无需单独停止。",
+  WORKSPACE_DIR_INVALID: "新项目所在文件夹需要填写完整路径，例如 D:\\Projects。", STUDIO_PORT_INVALID: "项目服务端口需为 1024–65535 之间的整数。",
+  RENDER_TIMEOUT_INVALID: "渲染请求超时需在 1–300 秒之间。",
   VALIDATION_ERROR: "请检查设置格式，项目目录必须为绝对路径，端口需在 1024–65535 之间。", NETWORK_ERROR: "无法连接本地 Hub 服务，请确认它仍在运行。",
 };
 function issueOf(cause: unknown): Issue {
@@ -99,9 +101,9 @@ function useAutosave(save: () => Promise<void>) {
 const isAbsolutePath = (value: string) => /^(?:[A-Za-z]:[\\/]|\\\\[^\\/]+[\\/][^\\/]+|\/)/.test(value);
 /** What the Hub would refuse in launch settings, found before asking it: such a value stays in its field, unsaved. */
 function launchProblem(draft: ApplicationSettingsDto): FieldIssue | null {
-  if (draft.workspaceDir && !isAbsolutePath(draft.workspaceDir)) return { field: "workspace-dir", code: "VALIDATION_ERROR", detail: "The folder for new projects must be a full path, such as D:\\Projects." };
+  if (draft.workspaceDir && !isAbsolutePath(draft.workspaceDir)) return { field: "workspace-dir", code: "WORKSPACE_DIR_INVALID", detail: "The folder for new projects must be a full path, such as D:\\Projects." };
   const port = draft.studioPort ?? initialLaunch.studioPort!;
-  if (!Number.isInteger(port) || port < 1024 || port > 65535) return { field: "studio-port", code: "VALIDATION_ERROR", detail: "The project runtime port must be a whole number from 1024 to 65535." };
+  if (!Number.isInteger(port) || port < 1024 || port > 65535) return { field: "studio-port", code: "STUDIO_PORT_INVALID", detail: "The project runtime port must be a whole number from 1024 to 65535." };
   if (port === draft.monitorPort || String(port) === window.location.port) return { field: "studio-port", code: "PORT_CONFLICT", detail: "Hub, Studio and Monitor must use different ports." };
   return null;
 }
