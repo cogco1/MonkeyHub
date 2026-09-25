@@ -15,6 +15,7 @@ import re
 import shutil
 import stat
 import tempfile
+import time
 from typing import BinaryIO
 import zipfile
 import zlib
@@ -24,6 +25,8 @@ PATCH_SCHEMA = "MonkeyHubPatch@1"
 PATCH_TRUST = "local-developer-unsigned"
 MANIFEST_NAME = "patch-manifest.json"
 MAX_MANIFEST_BYTES = 32 * 1024 * 1024
+# How long a finished staging copy waits for Windows to release it before the rename.
+RENAME_SECONDS = 120.0
 REQUIRED_FILES = (
     "source-version.txt", "build-info.json", "MonkeyHub.exe",
     "OPEN_MONKEYHUB.cmd", "_runtime/python/python.exe", "_runtime/desktop-Cargo.lock",
@@ -404,9 +407,22 @@ def stage_patch(path: Path, base_root: Path, destination_parent: Path, *,
             if target_files != document["targetFiles"] or _root_identity(temporary, target_files) != document["targetCommit"]:
                 raise PatchError("Reconstructed version did not pass full file verification.")
             _plain_path(final)
-            if final.exists() or final.is_symlink():
-                raise PatchError(f"Target appeared during staging; refusing to overwrite: {final}")
-            temporary.rename(final)
+            # Windows scanners and indexers briefly hold newly written files
+            # open, and a directory cannot be renamed until they let go. Retry
+            # only that refusal; the checked target still must not exist.
+            deadline, delay = time.monotonic() + RENAME_SECONDS, 0.25
+            while True:
+                if final.exists() or final.is_symlink():
+                    raise PatchError(f"Target appeared during staging; refusing to overwrite: {final}")
+                try:
+                    temporary.rename(final)
+                    break
+                except PermissionError:
+                    if time.monotonic() >= deadline:
+                        raise
+                    _proceed(cancelled)
+                    time.sleep(delay)
+                    delay = min(delay * 2, 5.0)
             temporary = None
             return final
     except (OSError, zipfile.BadZipFile, zlib.error, RuntimeError) as error:

@@ -324,6 +324,28 @@ class DesktopPatchTests(unittest.TestCase):
         with self.assertRaises(patch.PatchCancelled):
             patch.verify_target(self.output, installed, cancelled=lambda: True)
 
+    def test_a_briefly_held_staging_copy_is_renamed_once_windows_releases_it(self):
+        # A scanner holding new files open makes Windows refuse the directory
+        # rename with ERROR_ACCESS_DENIED; staging waits instead of failing.
+        rename, refusals = Path.rename, []
+
+        def held(path, target):
+            if Path(target).name == "b" * 12 + "-desktop" and len(refusals) < 2:
+                refusals.append(path)
+                raise PermissionError(13, "Access is denied")
+            return rename(path, target)
+
+        with mock_patch.object(Path, "rename", held), mock_patch.object(patch.time, "sleep") as slept:
+            installed = patch.stage_patch(self.output, self.base, self.versions)
+        self.assertEqual((len(refusals), slept.call_count), (2, 2))
+        self.assertEqual(self.snapshot(installed), self.snapshot(self.target))
+        shutil.rmtree(installed)
+        with (mock_patch.object(Path, "rename", side_effect=PermissionError(13, "Access is denied")),
+              mock_patch.object(patch, "RENAME_SECONDS", 0), mock_patch.object(patch.time, "sleep")):
+            with self.assertRaisesRegex(patch.PatchError, "Access is denied"):
+                patch.stage_patch(self.output, self.base, self.versions)
+        self.assertEqual(list(self.versions.iterdir()), [self.base], "a lasting refusal leaves only the base")
+
     def test_layout_recheck_reads_identity_files_and_named_scripts_only(self):
         installed = patch.stage_patch(self.output, self.base, self.versions)
         script = "apps/monkeyhub/run.py"
