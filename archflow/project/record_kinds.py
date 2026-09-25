@@ -115,6 +115,13 @@ STUDIO_BOARD_SCENE = "studio-board-scene"
 STUDIO_PUBLICATION = "studio-publication"
 STUDIO_SCOPED_DECISION = "studio-scoped-decision"
 AUDIT_EVENT = "audit-event"
+# A Candidate is a closed-loop result plus admission (#294; owner decision Q1,
+# 2026-09-25). No existing kind can hold that verdict: a working-draft row is
+# mutable position metadata with no actor, a DeliberationEpisode judges a
+# proposal before execution, an Exploration's options must stay inside an
+# existing scope, a scoped decision is compiled into later turns, and a Stage
+# advances a branch.
+CANDIDATE_ADMISSION = "candidate-admission"
 
 # ---- read by the spine, written by nobody on it
 
@@ -167,6 +174,16 @@ _TABLE: tuple[RecordKind, ...] = (
         "strength, target, scope and exact source evidence it was said "
         "against, and the revision it supersedes; it accepts no Stage, "
         "acquires no lock and changes no design state",
+    ),
+    RecordKind(
+        CANDIDATE_ADMISSION,
+        "CandidateAdmission@1",
+        PersistenceArea.RUN_REVIEW.value,
+        "one closed loop's admission verdict in the fixed studio-admissions "
+        "run: each result run admitted or rejected, the attempts it "
+        "superseded, its Study, the exact model and receipt it was admitted "
+        "with, and the actor, origin and message it is bound to; it accepts "
+        "no Stage, moves no Working Head and changes no design state",
     ),
     RecordKind(
         DESIGN_STAGE,
