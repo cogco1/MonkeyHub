@@ -2001,7 +2001,7 @@ try {
   await page.locator(".chat-message--user").getByText("Project context", { exact: true }).waitFor();
   await page.getByRole("button", { name: "Stop", exact: true }).click();
   await visibleWorkspace().locator(".stage__versions-toggle").click();
-  await visibleWorkspace().getByRole("button", { name: "Continue from this version", exact: true }).click();
+  await visibleWorkspace().getByRole("button", { name: "Continue from here", exact: true }).click();
   await page.waitForFunction(() => document.querySelector('.chat-project-workspace:not([hidden]) .editing-base')?.dataset.sourceMatch === "same");
   await visibleWorkspace().locator(".stage__versions-toggle").click();
   assert.equal(await projectContext.isChecked(), false, "the new-context option applies to one message");

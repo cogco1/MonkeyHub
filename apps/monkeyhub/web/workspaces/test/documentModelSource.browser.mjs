@@ -339,7 +339,7 @@ try {
     const before = await snapshot();
     assert.deepEqual(before.continues, []);
     assert.deepEqual(before.editing, modelB);
-    await page.getByRole("button", { name: "从此模型继续", exact: true }).click();
+    await page.getByRole("button", { name: "从这里继续", exact: true }).click();
     await until(status, (value) => value === "ready", "explicit model continuation resolved");
     const after = await snapshot();
     assert.deepEqual(after.continues, [modelA]);

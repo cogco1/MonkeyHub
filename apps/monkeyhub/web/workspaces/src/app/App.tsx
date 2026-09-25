@@ -242,14 +242,23 @@ export type WorkspaceDesignContext = {
   unavailableReason: "unsaved" | "unsynced" | "loading" | "unavailable" | null;
 };
 
-export default function App({ server, expectedProjectId, initialDocumentIntent, initialSketchRequest, initialRunId, initialRunFollowsHead = false, documentSource = null, active = true, refreshKey = 0, onReturnToBoard, onOpenBoard, onChatRequest, onDesignContextChange, onRenderReader }: {
+export default function App({ server, expectedProjectId, initialDocumentIntent, initialSketchRequest, initialRunId, initialRunAsset = null, initialRunRequest = 0, initialRunFollowsHead = false, documentSource = null, active = true, refreshKey = 0, onReturnToBoard, onOpenBoard, onChatRequest, onDesignContextChange, onRenderReader, onView }: {
   onRenderReader?: (reader: (() => RenderView | null) | null) => void;
+  /**
+   * Open one retained run read-only through the project's View path, the one
+   * the Design Tree uses. Viewing never moves the editing base (#302).
+   */
+  onView?: (view: { runId: string; name: string; assetSha256?: string | null }) => void;
   server: ServerIdentity; initialDocumentIntent?: BoardDesignRequest;
   expectedProjectId?: string;
   /** One calibrated board sketch frame, to be run as a sketch proposal once the session is ready. */
   initialSketchRequest?: BoardSketchRequest;
   /** The exact run this page was opened on, such as a candidate named by the host. */
   initialRunId?: string | null;
+  /** The one model of that run to show, when the host named it exactly (a viewed Stage). */
+  initialRunAsset?: string | null;
+  /** Changes each time the host asks to show that run again, so viewing it twice shows it twice. */
+  initialRunRequest?: number;
   /** The host named that run only as a delivery or restore hint, not as a comparison. */
   initialRunFollowsHead?: boolean;
   /** Go back to the board this tab opened its page from, once the page is saved. */
@@ -274,10 +283,11 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
     },
     [append],
   );
+  // The session opens on the saved position even when a Board note brought this
+  // page up: a note on another model version asks before the base moves (#302).
   const { binding, session, changingBase, baseError, persistenceFailed, reload, refreshWorkingCopies, refreshWorkingDraft, saveSyncedBase, recoverFromStaleBase } = useSession(pushNotice, server.capabilities,
-    initialDocumentIntent ? { runId: initialDocumentIntent.modelSource.runId, sourceStageRef: initialDocumentIntent.sourceStageRef }
-      : undefined, true, expectedProjectId);
-  const [documentIntentStatus, setDocumentIntentStatus] = useState<"pending" | "switching" | "ready" | "done">(initialDocumentIntent ? "pending" : "done");
+    undefined, true, expectedProjectId);
+  const [documentIntentStatus, setDocumentIntentStatus] = useState<"pending" | "asking" | "switching" | "ready" | "done">(initialDocumentIntent ? "pending" : "done");
   const documentIntentStarted = useRef(false);
   const documentIntentSubmitted = useRef(false);
   const sketchSubmitted = useRef(false);
@@ -1360,6 +1370,24 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
     void loadArtifactIntoViewer(artifact, option.label, true);
   }, [artifacts, loadArtifactIntoViewer]);
 
+  /**
+   * Look at one retained model without editing it (#302): through the project's
+   * View path when the host has one, so the Stage chip names it, otherwise in
+   * this viewer. Either way the editing base stays where it is.
+   */
+  const viewModel = useCallback((source: ModelSourceDto, name: string) => {
+    if (onView) { onView({ runId: source.runId, name, assetSha256: source.assetSha256 }); return; }
+    if (artifacts.status !== "ready") return;
+    const artifact = artifacts.value.artifacts.find((row) => row.runId === source.runId &&
+      row.sha256 === source.assetSha256 && row.available && isViewable(row));
+    if (!artifact) {
+      setArtifactError(asStudioApiError(new Error("The selected model's exact file is unavailable.")));
+      return;
+    }
+    manualLoadRef.current = true;
+    void loadArtifactIntoViewer(artifact, name, true);
+  }, [onView, artifacts, loadArtifactIntoViewer]);
+
   // The listing can lag behind the candidate already downloaded and shown.
   // Keep that exact model visible while the independent listing catches up.
   const chosenModelAlreadyShown = viewerStatus === "ready" && loadedModelSource !== null &&
@@ -2073,9 +2101,10 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
     void loadArtifacts();
   }, [refreshKey, session.status, reload, loadArtifacts]);
 
-  const candidateSelection = useMemo(() => ({ runId: initialRunId }), [initialRunId]);
+  const candidateSelection = useMemo(() => ({ runId: initialRunId, asset: initialRunAsset, request: initialRunRequest }),
+    [initialRunId, initialRunAsset, initialRunRequest]);
   const installedCandidate = useRef<{ selection: typeof candidateSelection; viewRequest: number } | null>(null);
-  const candidateRequestKey = JSON.stringify([initialRunId, refreshKey]);
+  const candidateRequestKey = JSON.stringify([initialRunId, initialRunAsset, refreshKey]);
   const candidateRequest = useRef({ key: candidateRequestKey, selection: candidateSelection });
   candidateRequest.current = { key: candidateRequestKey, selection: candidateSelection };
   useEffect(() => {
@@ -2112,7 +2141,8 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
         if (viewerFollows(viewed, gate.baseRunId)) setHeadFollow({ runId: head.runId, viewRequest: modelLoadRequest.current });
         return;
       }
-      const rows = viewableArtifacts(listing.artifacts.filter((artifact) => artifact.runId === initialRunId));
+      const rows = viewableArtifacts(listing.artifacts.filter((artifact) => artifact.runId === initialRunId &&
+        (initialRunAsset === null || artifact.sha256 === initialRunAsset)));
       if (!rows.length) throw new Error("The selected candidate has no available registered model export.");
       // Refreshing the runtime only rereads an already opened choice. Its mounted
       // camera, local edits and any later manual version selection stay in place.
@@ -2124,11 +2154,12 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
       }
     }).catch((cause) => { if (isCurrent()) setArtifactError(asStudioApiError(cause)); });
     return () => { live = false; controller.abort(); };
-  }, [initialRunId, initialRunFollowsHead, candidateSelection, candidateRequestKey, session.status, project?.projectId, studio, loadRunIntoViewer, active, followsHead, reload]);
+  }, [initialRunId, initialRunAsset, initialRunFollowsHead, candidateSelection, candidateRequestKey, session.status, project?.projectId, studio, loadRunIntoViewer, active, followsHead, reload]);
 
   useEffect(() => {
     const installed = installedCandidate.current;
-    if (!active || !initialRunId || session.status !== "ready" || artifacts.status !== "ready" ||
+    // A model named exactly stays that model; only a whole-run view upgrades to its complete model.
+    if (!active || !initialRunId || initialRunAsset !== null || session.status !== "ready" || artifacts.status !== "ready" ||
         artifacts.value.projectId !== project?.projectId || viewerStatus !== "ready" ||
         installed?.selection !== candidateSelection || installed.viewRequest !== modelLoadRequest.current ||
         localEditingRef.current || loadedArtifacts.length === 0 ||
@@ -2151,8 +2182,49 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
     void loading.then(() => {
       if (isCurrent() && modelLoadRequest.current === viewRequest) installed.viewRequest = viewRequest;
     });
-  }, [active, initialRunId, session.status, project?.projectId, artifacts, loadedArtifacts, viewerStatus,
+  }, [active, initialRunId, initialRunAsset, session.status, project?.projectId, artifacts, loadedArtifacts, viewerStatus,
     candidateSelection, candidateRequestKey, loadArtifactIntoViewer]);
+
+  /**
+   * Continue from the Board note's own model, then submit the note: the drawing's
+   * exact model and Stage become the editing base first. This is the explicit
+   * Continue; a note on the model already being edited takes it directly.
+   */
+  const continueDocumentIntent = useCallback(() => {
+    const intent = initialDocumentIntent;
+    if (!intent) return;
+    setDocumentIntentStatus("switching");
+    void (async () => {
+      const refused = { reason: null as string | null };
+      const next = await changeEditingBase(intent.modelSource.runId, intent.modelSource,
+        intent.sourceStageRef ?? undefined, undefined, true, (reason) => { refused.reason = reason; });
+      if (!next || next.project.projectId !== intent.projectId ||
+          next.projection.stateDigest !== intent.modelSource.stateDigest ||
+          next.projection.referenceRun.runId !== intent.modelSource.runId ||
+          (intent.sourceStageRef !== null && next.projection.sourceStageRef !== intent.sourceStageRef)) {
+        throw new Error(refused.reason ?? "The drawing's exact model and Stage could not be restored. Its marks are saved; this design instruction has not been submitted.");
+      }
+      setDocumentIntentStatus("ready");
+    })().catch((cause) => {
+      setDocumentIntentStatus("done");
+      setDraft(intent.utterance);
+      append({ kind: "refusal", error: asStudioApiError(cause), what: "MonkeyBoard" });
+    });
+  }, [append, changeEditingBase, initialDocumentIntent]);
+  // How the note's model is named where the choice is asked: its Stage, else its listed version.
+  const documentIntentModel = initialDocumentIntent ? designHistory?.stages.find((stage) =>
+    sameModelSource(stage.modelSource, initialDocumentIntent.modelSource))?.label ??
+    modelSources.find((row) => sameModelSource(row.modelSource, initialDocumentIntent.modelSource))?.label ??
+    t("board.feedback.otherModel") : null;
+  /** Only look at the note's model: the base stays, the note waits in the composer and its marks on the Board. */
+  const viewDocumentIntent = useCallback(() => {
+    const intent = initialDocumentIntent;
+    if (!intent) return;
+    setDocumentIntentStatus("done");
+    setDraft(intent.utterance);
+    append({ kind: "system", text: t("board.feedback.viewedOnly") });
+    viewModel(intent.modelSource, documentIntentModel ?? "");
+  }, [append, documentIntentModel, initialDocumentIntent, t, viewModel]);
 
   useEffect(() => {
     if (!initialDocumentIntent || documentIntentStarted.current || documentIntentStatus !== "pending" ||
@@ -2168,27 +2240,20 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
     }
     if (session.status !== "ready" || artifacts.status !== "ready") return;
     documentIntentStarted.current = true;
-    setDocumentIntentStatus("switching");
-    void (async () => {
-      if (project?.projectId !== initialDocumentIntent.projectId) {
-        throw new Error("The board request belongs to another project. Its marks are saved; this design instruction has not been submitted.");
-      }
-      const refused = { reason: null as string | null };
-      const next = await changeEditingBase(initialDocumentIntent.modelSource.runId, initialDocumentIntent.modelSource,
-        initialDocumentIntent.sourceStageRef ?? undefined, undefined, true, (reason) => { refused.reason = reason; });
-      if (!next || next.project.projectId !== initialDocumentIntent.projectId ||
-          next.projection.stateDigest !== initialDocumentIntent.modelSource.stateDigest ||
-          next.projection.referenceRun.runId !== initialDocumentIntent.modelSource.runId ||
-          (initialDocumentIntent.sourceStageRef !== null && next.projection.sourceStageRef !== initialDocumentIntent.sourceStageRef)) {
-        throw new Error(refused.reason ?? "The drawing's exact model and Stage could not be restored. Its marks are saved; this design instruction has not been submitted.");
-      }
-      setDocumentIntentStatus("ready");
-    })().catch((cause) => {
+    if (project?.projectId !== initialDocumentIntent.projectId) {
       setDocumentIntentStatus("done");
       setDraft(initialDocumentIntent.utterance);
-      append({ kind: "refusal", error: asStudioApiError(cause), what: "MonkeyBoard" });
-    });
-  }, [append, artifacts.status, changeEditingBase, changingBase, documentIntentStatus, initialDocumentIntent, project?.projectId, session]);
+      append({ kind: "refusal", error: asStudioApiError(new Error("The board request belongs to another project. Its marks are saved; this design instruction has not been submitted.")), what: "MonkeyBoard" });
+      return;
+    }
+    // A note on the model being edited goes on. A note on another model version
+    // asks first, and only looking at that version is the default (#302).
+    const sameBase = sameModelSource(editingModelSource, initialDocumentIntent.modelSource) &&
+      (initialDocumentIntent.sourceStageRef === null || projection?.sourceStageRef === initialDocumentIntent.sourceStageRef);
+    if (sameBase) continueDocumentIntent();
+    else setDocumentIntentStatus("asking");
+  }, [append, artifacts.status, changingBase, continueDocumentIntent, documentIntentStatus, editingModelSource, initialDocumentIntent,
+    project?.projectId, projection?.sourceStageRef, session]);
 
   useEffect(() => {
     if (!initialDocumentIntent || documentIntentStatus !== "ready" || documentIntentSubmitted.current || changingBase) return;
@@ -3561,7 +3626,8 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
                 (autosaveEnabled && (modelSyncBusy || chatDraft !== null)),
               error: historyError,
               onInitialize: () => { if (project && loadedModelSource) void updateDesignHistory(() => studio.initializeStage({ projectId: project.projectId, modelSource: loadedModelSource, branchId: "main", label: "S0" })); },
-              onStage: (stage) => { void openDesignStage(stage); },
+              // A Stage row only shows that Stage; Continue from here is what moves the base (#302).
+              onStage: (stage) => viewModel(stage.modelSource, stage.label),
               onBranch: (branchId) => { void selectDesignBranch(branchId); },
               onCandidate: (source) => {
                 setHistoryError(null);
@@ -3597,9 +3663,16 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
             baseNotSaved={persistenceFailed}
             baseActionBusy={session.status !== "ready" || missingChosenModel || proposalBusy || candidateBusy || refiningEntryId !== null || selectingWorkingCopy}
             /* The editing-base row's own actions answer in that row, never by throwing. */
-            onContinue={viewingExternalModel && loadedModelSource === null ? null : (runId, source) => void (source
-              ? changeEditingBase(source.runId, source, undefined, undefined, true, setBaseNotice)
-              : changeEditingBase(runId, undefined, undefined, undefined, false, setBaseNotice))}
+            onContinue={viewingExternalModel && loadedModelSource === null ? null : (runId, source) => {
+              // Continuing from a viewed Stage starts from that Stage on its own line, and
+              // the drawing follows it there as it did when a Stage row moved the base.
+              const stage = source ? designHistory?.stages.find((row) => sameModelSource(row.modelSource, source)) : undefined;
+              void (source
+                ? changeEditingBase(source.runId, source, stage?.stageRef, stage?.branchId, !stage, setBaseNotice)
+                : changeEditingBase(runId, undefined, undefined, undefined, false, setBaseNotice));
+            }}
+            baseChoice={documentIntentStatus === "asking" && documentIntentModel !== null ? { model: documentIntentModel,
+              busy: changingBase || selectingWorkingCopy, onView: viewDocumentIntent, onContinue: continueDocumentIntent } : null}
             onDefaultBase={() => void changeEditingBase(null, undefined, undefined, undefined, false, setBaseNotice)}
             evidenceCounts={evidenceCounts}
             review={review}

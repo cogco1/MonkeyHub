@@ -422,7 +422,7 @@ try {
     allowedMutation = { kind: "selection" };
     await openVersions();
     await editingBase()
-      .getByRole("button", { name: "Continue from this version", exact: true }).click();
+      .getByRole("button", { name: "Continue from here", exact: true }).click();
     await until(() => selectionWrites.length, (count) => count === 1, "Continue must write exactly one working-copy selection");
     await until(editingRun, (runId) => runId === sourceB.runId, "The editing base must become B");
     await ready(optionB);

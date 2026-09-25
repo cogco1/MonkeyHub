@@ -298,7 +298,7 @@ print(json.dumps({"unit": str(model.Settings.ModelUnitSystem), "objects": object
   await tracing().getByText("Viewing only.", { exact: false }).waitFor();
   assert.equal(await generate().isEnabled(), false, "Tracing does not build on a candidate that is only being viewed");
   // The recovery step is offered where the refusal is read, and the page stays open.
-  await tracing().getByRole("button", { name: "Continue from this version", exact: true }).click();
+  await tracing().getByRole("button", { name: "Continue from here", exact: true }).click();
   await until(() => generate().isEnabled(), Boolean, "Tracing stayed blocked after continuing from the candidate");
   await editor();
   const pageIdentity = await page.locator(".document-viewport").getAttribute("aria-label");
@@ -360,7 +360,7 @@ print(json.dumps({"unit": str(model.Settings.ModelUnitSystem), "objects": object
   // the view-only reason until the architect continues from it explicitly.
   await tracing().getByText("Viewing only.", { exact: false }).waitFor();
   assert.equal(await generate().isEnabled(), false, "Tracing does not build on the regenerated candidate before Continue");
-  await tracing().getByRole("button", { name: "Continue from this version", exact: true }).click();
+  await tracing().getByRole("button", { name: "Continue from here", exact: true }).click();
   await until(() => generate().isEnabled(), Boolean, "The second candidate left the page busy");
   await tracing().getByRole("button", { name: "View model and progress", exact: true }).click();
   await page.locator(".stage-model").waitFor({ state: "visible" });

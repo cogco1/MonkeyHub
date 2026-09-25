@@ -40,6 +40,7 @@ import { ParameterLocksPanel, type ParameterLockControls } from "./ParameterLock
 import { ElevationPanel, type ElevationControls } from "./ElevationPanel";
 import { ModelToolButton } from "./ModelToolButton";
 import { preparePushPull } from "./pushPull";
+import "./stageNotices.css";
 import type { NormalDragController } from "../../workspaces/monkeyarch/viewer/normalDrag";
 import { constrainedTranslation, type TranslationConstraint } from "../../workspaces/monkeyarch/viewer/translationGizmo";
 import { draftTransformCenter, previewDirectModel, specFromDrawnShape } from "./modelDraft";
@@ -179,6 +180,7 @@ export function Stage({
   changingBase,
   baseError,
   baseNotice = null,
+  baseChoice = null,
   baseNotSaved = false,
   baseActionBusy,
   onContinue,
@@ -264,6 +266,12 @@ export function Stage({
   baseError: StudioApiError | null;
   /** The shell's answer to the last refused base action, shown in the editing-base row. */
   baseNotice?: string | null;
+  /**
+   * A Board note made on another model version, asking before the base moves
+   * (#302): only look at that version (the default), or continue from it and
+   * submit the note.
+   */
+  baseChoice?: { model: string; busy: boolean; onView(): void; onContinue(): void } | null;
   /** The chosen editing base applies to this tab only: the browser could not save it. */
   baseNotSaved?: boolean;
   baseActionBusy: boolean;
@@ -2040,6 +2048,16 @@ export function Stage({
       <div ref={footerElement} className="stage__foot">
         <div className="stage__versions">
           <div className="stage__context">
+            {baseChoice && <div className="base-choice" role="group" aria-label={t("board.feedback.choice")}>
+              <p className="base-choice__text">{t("board.feedback.otherBase", { model: baseChoice.model })}</p>
+              <div className="base-choice__actions">
+                {/* Only looking is the default: it is first, primary and focused. */}
+                <button type="button" className="btn btn--small btn--primary" autoFocus disabled={baseChoice.busy}
+                  onClick={baseChoice.onView}>{t("board.feedback.viewOnly")}</button>
+                <button type="button" className="btn btn--small" disabled={baseChoice.busy}
+                  onClick={baseChoice.onContinue}>{t("stage.base.continue")}</button>
+              </div>
+            </div>}
             <div className="stage__context-summary">
               <button type="button" className="btn stage__versions-toggle" aria-expanded={versionsOpen} aria-controls="stage-versions-panel"
                 onClick={() => { if (!versionsOpen) onVersionsOpen?.(); setVersionsOpen((open) => !open); setAnnotationToolsOpen(false); setViewToolsOpen(false); setParameterLocksOpen(false); }}>

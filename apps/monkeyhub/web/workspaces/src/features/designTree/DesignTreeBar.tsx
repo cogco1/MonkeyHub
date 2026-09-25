@@ -19,6 +19,8 @@ export interface DesignTreeView {
   readonly runId: string;
   readonly name: string;
   readonly back: boolean;
+  /** The one model of the run to show, when the view names it exactly (a Stage's own model). */
+  readonly assetSha256?: string | null;
 }
 
 /** The Working Head's own model, read-only in Modeling: the way back from a viewed node. */

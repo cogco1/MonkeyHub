@@ -157,7 +157,7 @@ try {
   });
   await step('external viewing cannot become a semantic edit base or an accepted Stage', async () => {
     const panel=await versions();
-    const continuing=panel.getByRole('button',{name:'Continue from this version',exact:true});
+    const continuing=panel.getByRole('button',{name:'Continue from here',exact:true});
     assert.equal(await continuing.count()===0 || await continuing.isDisabled(),true,'external source must not offer an exact-state continuation');
     assert.equal(await surface().getByRole('button',{name:'Undo model',exact:true}).isDisabled(),true);
     assert.equal(await surface().getByRole('button',{name:'Redo model',exact:true}).isDisabled(),true);

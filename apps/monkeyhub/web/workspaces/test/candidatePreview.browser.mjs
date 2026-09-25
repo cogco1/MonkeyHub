@@ -19,7 +19,7 @@ const candidateDeliveryOnly = process.argv.includes("--candidate-delivery");
 // Viewing, Undo, Continue, Sync and an unsaved base choice, walked as one flow.
 const viewBaseOnly = process.argv.includes("--view-base");
 // The one reason every direct edit gives while the picture is not the editing base.
-const VIEW_ONLY = "Viewing only. Choose “Continue from this version”, or return to the editing base before making changes.";
+const VIEW_ONLY = "Viewing only. Choose “Continue from here”, or return to the editing base before making changes.";
 const cacheDir = await mkdtemp(path.join(tmpdir(), "monkeyarch-candidate-preview-test-"));
 const rhino = await rhino3dm();
 const published = { version: 0, stateSha256: "1".repeat(64) };
@@ -209,10 +209,27 @@ async function diagnosticRendered(candidate) {
   assert.equal(after.editingRunId, base, `${candidate.candidateId} became the editing base without Continue`);
   assert.equal(after.changingBase, false);
 }
-/** The architect's explicit "Continue from this version" on the model on screen. */
+/** The architect's explicit "Continue from here" on the model on screen. */
 async function continueFromViewed(runId) {
-  await page.locator(".stage__foot .editing-base").getByRole("button", { name: "Continue from this version", exact: true }).click();
+  await page.locator(".stage__foot .editing-base").getByRole("button", { name: "Continue from here", exact: true }).click();
   await until(snapshot, (value) => value.editingRunId === runId && !value.changingBase, `Continue did not make ${runId} the editing base`);
+}
+/**
+ * #302: a Stage row in Versions only shows that Stage, read-only; the editing-base
+ * row's Continue from here is what makes it the base. `label` is the row's button name.
+ */
+async function stageAsBase(stage, label, runId) {
+  const before = await snapshot(), writes = requests.filter((row) => row.method !== "GET" && !row.name.startsWith("/api/events/")).length;
+  await openVersions();
+  await page.locator(`[data-design-stage="${stage}"]`).getByRole("button", { name: label, exact: true }).click();
+  await rendered(runId);
+  const viewed = await snapshot();
+  assert.equal(requests.filter((row) => row.method !== "GET" && !row.name.startsWith("/api/events/")).length, writes,
+    `Viewing ${stage} wrote to the project`);
+  assert.equal(viewed.editingRunId, before.editingRunId, `Viewing ${stage} moved the editing base`);
+  assert.equal(viewed.sourceStageRef, before.sourceStageRef, `Viewing ${stage} moved the editing Stage`);
+  if (viewed.editingModelSource?.runId === runId && viewed.editingModelSource.assetSha256 === viewed.loadedModelSource?.assetSha256) return;
+  await continueFromViewed(runId);
 }
 async function view(artifact) {
   await page.evaluate((value) => window.__candidatePreview.view(value), artifactDto(artifact));
@@ -235,9 +252,10 @@ try {
           return { code: `import "/@fs/${path.resolve(webRoot, "../../../shared-web/src/base.css").replaceAll("\\", "/")}";\n${source}`, map: null };
         }
         if (modulePath === `${webRoot.replaceAll("\\", "/")}/src/workspaces/monkeyboard/Board.tsx`) {
-          return { code: `export default function Board({onOpenDocument}) {
-            return <button onClick={() => onOpenDocument({source: window.__candidateDocumentSource,
-              view:{scrollX:0,scrollY:0,zoom:1,selectedElementIds:{},selectedGroupIds:{}}})}>Open registered drawing</button>;
+          return { code: `export default function Board({onOpenDocument, onSubmit}) {
+            return <><button onClick={() => onOpenDocument({source: window.__candidateDocumentSource,
+              view:{scrollX:0,scrollY:0,zoom:1,selectedElementIds:{},selectedGroupIds:{}}})}>Open registered drawing</button>
+              <button onClick={() => onSubmit(window.__boardNote)}>Send board note</button></>;
           }`, map: null };
         }
         if (modulePath === `${webRoot.replaceAll("\\", "/")}/src/workspaces/monkeydiagram/DocumentCanvas.tsx`) {
@@ -554,7 +572,7 @@ try {
     const NOT_SAVED = "This editing choice could not be saved in this browser; it applies to this tab only.";
     const footer = () => page.locator(".stage__foot .editing-base");
     const notices = () => footer().locator(".editing-base__notice").allInnerTexts();
-    const continueButton = () => footer().getByRole("button", { name: "Continue from this version", exact: true });
+    const continueButton = () => footer().getByRole("button", { name: "Continue from here", exact: true });
     const undoButton = () => page.getByRole("button", { name: "Undo model", exact: true });
     const rectangle = () => page.locator('button[data-tool-icon="rectangle"]');
     const baseWrites = () => requests.filter((row) => row.method === "PUT" && row.name === "/api/working-draft");
@@ -884,7 +902,7 @@ try {
     // Opening a chat result only shows it; editing it follows the explicit Continue.
     const notice = () => page.locator(".stage__foot .editing-base .editing-base__notice");
     const continueFromView = async (runId) => {
-      await page.locator(".stage__foot .editing-base").getByRole("button", { name: "Continue from this version", exact: true }).click();
+      await page.locator(".stage__foot .editing-base").getByRole("button", { name: "Continue from here", exact: true }).click();
       await until(snapshot, value => value.editingRunId === runId && !value.changingBase, "Continue did not make the viewed candidate the editing base");
     };
 
@@ -1233,9 +1251,7 @@ try {
     await launch(historyA); await complete(historyA); await diagnosticRendered(historyA);
     await continueFromViewed(historyA.candidateId);
     assert.equal((await snapshot()).sourceStageRef, s0.stageRef);
-    await openVersions();
-    await page.locator('[data-design-stage="S0"]').getByRole("button", { name: "S0 · 当前提交", exact: true }).click();
-    await rendered(currentHome.runId);
+    await stageAsBase("S0", "S0 · 当前提交", currentHome.runId);
     const continueReadStart = requests.length;
     await openVersions();
     await page.locator('[data-preview-candidate="history-a"]').getByRole("button", { name: "预览并继续修改", exact: true }).click();
@@ -1267,6 +1283,49 @@ try {
     await openVersions();
   });
 
+  // #302: a Board note made on another model version asks before the editing base moves.
+  const sendBoardNote = async (utterance) => {
+    await page.evaluate((value) => { window.__boardNote = value; }, { projectId, utterance, modelSource: s0.modelSource,
+      sourceStageRef: s0.stageRef, source: { runId: s0.modelSource.runId, assetSha256: "a".repeat(64), revisionRef: null, pageIndex: 0 },
+      documentAnnotations: [], documentVisuals: [] });
+    await page.getByTestId("workspace-board").click();
+    await page.getByRole("button", { name: "Send board note", exact: true }).click();
+    const choice = page.getByRole("group", { name: "The Board note's model version", exact: true });
+    await choice.waitFor();
+    return choice;
+  };
+  const intentCount = () => requests.filter((row) => row.name === "/api/intents").length;
+
+  await step("a Board note on another model version asks first; View only is the default and moves nothing", async () => {
+    const before = await snapshot(), intents = intentCount();
+    const choice = await sendBoardNote("Open the west porch");
+    assert.match(await choice.innerText(), /made on another model version: S0\./);
+    assert.equal(await page.evaluate(() => document.activeElement?.textContent), "View only", "Only looking is the default choice");
+    await delay(200);
+    assert.equal((await snapshot()).editingRunId, before.editingRunId, "Asking moves nothing");
+    assert.equal(intentCount(), intents, "Nothing is submitted before the architect chooses");
+    await choice.getByRole("button", { name: "View only", exact: true }).click();
+    await rendered(currentHome.runId);
+    await choice.waitFor({ state: "detached" });
+    const after = await snapshot();
+    assert.equal(after.editingRunId, before.editingRunId, "View only keeps the editing base");
+    assert.equal(after.sourceStageRef, before.sourceStageRef);
+    assert.equal(intentCount(), intents, "View only submits nothing");
+    assert.ok(after.entries.some((entry) => /Current did not move and the note was not submitted/.test(entry)));
+  });
+
+  await step("Continue from here on a Board note makes its model the base, submits it, and a Stage restores the base", async () => {
+    const choice = await sendBoardNote("Close the west porch");
+    await choice.getByRole("button", { name: "Continue from here", exact: true }).click();
+    await until(snapshot, (value) => value.editingRunId === currentHome.runId && value.sourceStageRef === s0.stageRef && !value.changingBase,
+      "Continue from here did not make the note's model the editing base");
+    const intent = await until(() => requests.findLast((row) => row.name === "/api/intents" && row.body.utterance === "Close the west porch"),
+      Boolean, "The Board note was not submitted after Continue");
+    assert.equal(intent.body.sourceStageRef, s0.stageRef);
+    assert.deepEqual(intent.body.modelSource, s0.modelSource);
+    await stageAsBase("S1", "S1 · 当前提交", historyA.candidateId);
+  });
+
   await step("viewing a historical candidate labels its own source Stage without moving the editing base", async () => {
     const historical = prepare("history-source-label");
     candidateBases.set(historical.candidateId, s0.stageRef);
@@ -1282,10 +1341,8 @@ try {
     await view(historyA.artifacts[0]);
   });
 
-  await step("historical Stage selection changes the real editing source and branch creation is explicit", async () => {
-    await openVersions();
-    await page.locator('[data-design-stage="S0"]').getByRole("button", { name: "S0", exact: true }).click();
-    await rendered(currentHome.runId);
+  await step("a historical Stage opens read-only, Continue makes it the real editing source, and branch creation is explicit", async () => {
+    await stageAsBase("S0", "S0", currentHome.runId);
     await page.evaluate(() => window.__candidatePreview.propose("record historical context"));
     const intent = requests.findLast((row) => row.name === "/api/intents");
     assert.equal(intent.body.sourceRunId, currentHome.runId); assert.equal(intent.body.sourceStageRef, s0.stageRef);
@@ -1450,24 +1507,26 @@ try {
     assert.equal(await page.getByRole("combobox", { name: "Source document", exact: true }).inputValue(), drawing.revisionRef);
   });
 
-  await step("failed drawing autosave blocks a Stage switch and a retry preserves the comment", async () => {
+  await step("failed drawing autosave blocks Continue from a viewed Stage and a retry preserves the comment", async () => {
     annotationFailure = true;
     await page.locator("#document-comment").fill("Keep the terrace line.");
     await until(async () => page.locator(".document-error").count(), (value) => value > 0, "Autosave failure did not remain visible");
-    await openVersions();
-    await page.locator('[data-design-stage="S0"]').getByRole("button", { name: "S0", exact: true }).click();
-    await delay(150); await rendered(historyA.candidateId);
-    assert.equal((await snapshot()).documentView.revisionRef, lastDrawing.revisionRef);
-    assert.equal(await page.locator("#document-comment").inputValue(), "Keep the terrace line.");
-    annotationFailure = false;
-    // A refused switch leaves history open. Dismiss the overlay before reaching
-    // the drawing's autosave error; a longer retained history may cover it.
-    await page.locator("#stage-versions-panel").getByRole("button", { name: "Close", exact: true }).click();
-    await page.locator(".document-error button").first().click();
-    await until(async () => page.locator(".document-error").count(), (value) => value === 0, "Retry did not save the retained draft");
+    // Viewing S0 saves and moves nothing (#302); Continue from here is the switch the failed save refuses.
     await openVersions();
     await page.locator('[data-design-stage="S0"]').getByRole("button", { name: "S0", exact: true }).click();
     await rendered(currentHome.runId);
+    assert.equal((await snapshot()).editingRunId, historyA.candidateId);
+    // Dismiss the overlay before reaching the drawing's autosave error; a longer retained history may cover it.
+    await page.locator("#stage-versions-panel").getByRole("button", { name: "Close", exact: true }).click();
+    await page.locator(".stage__foot .editing-base").getByRole("button", { name: "Continue from here", exact: true }).click();
+    await delay(150);
+    assert.equal((await snapshot()).editingRunId, historyA.candidateId, "A drawing that could not be saved keeps the editing base");
+    assert.equal((await snapshot()).documentView.revisionRef, lastDrawing.revisionRef);
+    assert.equal(await page.locator("#document-comment").inputValue(), "Keep the terrace line.");
+    annotationFailure = false;
+    await page.locator(".document-error button").first().click();
+    await until(async () => page.locator(".document-error").count(), (value) => value === 0, "Retry did not save the retained draft");
+    await continueFromViewed(currentHome.runId);
     assert.equal((await snapshot()).documentView.runId, currentHome.runId);
     assert.ok([...annotations.values()].some((saved) => saved.comment === "Keep the terrace line."));
   });
@@ -1480,31 +1539,25 @@ try {
       revisionRef: `${lastDrawing.revisionRef}-different-model`, generatedAt: "2026-09-09T10:00:00.000Z" };
     // The first row is older; the globally newest row belongs to another exact model.
     documents.splice(0, documents.length, old, latest, mismatched);
-    await openVersions();
-    await page.locator('[data-design-stage="S1"]').getByRole("button", { name: "S1 · 当前提交", exact: true }).click();
-    await rendered(historyA.candidateId);
+    await stageAsBase("S1", "S1 · 当前提交", historyA.candidateId);
     await page.locator('.document-viewport[data-ready="true"]').waitFor();
     assert.equal(await page.getByRole("combobox", { name: "Source document", exact: true }).inputValue(), JSON.stringify([latest.runId, latest.assetSha256, latest.revisionRef]));
     assert.equal(requests.findLast((row) => /^\/api\/documents\/.+\/bytes$/.test(row.name)).query.revisionRef, latest.revisionRef);
   });
 
   await step("an only drawing from a different model stays unselected, and undated matching revisions are not guessed", async () => {
-    await openVersions();
-    await page.locator('[data-design-stage="S0"]').getByRole("button", { name: "S0", exact: true }).click(); await rendered(currentHome.runId);
+    await stageAsBase("S0", "S0", currentHome.runId);
     documents.splice(0, documents.length, { ...lastDrawing, modelSource: { ...lastDrawing.modelSource, assetSha256: "e".repeat(64) }, generatedAt: "2026-09-09T11:00:00.000Z" });
     const before = requests.filter((row) => /^\/api\/documents\/.+\/bytes$/.test(row.name)).length;
-    await openVersions();
-    await page.locator('[data-design-stage="S1"]').getByRole("button", { name: "S1 · 当前提交", exact: true }).click(); await rendered(historyA.candidateId);
+    await stageAsBase("S1", "S1 · 当前提交", historyA.candidateId);
     await page.getByRole("combobox", { name: "Source document", exact: true }).waitFor();
     assert.equal(await page.getByRole("combobox", { name: "Source document", exact: true }).inputValue(), "");
     assert.equal(await page.locator(".document-viewport").count(), 0);
     assert.equal(requests.filter((row) => /^\/api\/documents\/.+\/bytes$/.test(row.name)).length, before);
-    await openVersions();
-    await page.locator('[data-design-stage="S0"]').getByRole("button", { name: "S0", exact: true }).click(); await rendered(currentHome.runId);
+    await stageAsBase("S0", "S0", currentHome.runId);
     documents.splice(0, documents.length, { ...lastDrawing, revisionRef: `${lastDrawing.revisionRef}-undated-a`, generatedAt: null },
       { ...lastDrawing, revisionRef: `${lastDrawing.revisionRef}-undated-b`, generatedAt: null });
-    await openVersions();
-    await page.locator('[data-design-stage="S1"]').getByRole("button", { name: "S1 · 当前提交", exact: true }).click(); await rendered(historyA.candidateId);
+    await stageAsBase("S1", "S1 · 当前提交", historyA.candidateId);
     await page.getByRole("combobox", { name: "Source document", exact: true }).waitFor();
     assert.equal(await page.getByRole("combobox", { name: "Source document", exact: true }).inputValue(), "");
     assert.equal(await page.locator(".document-viewport").count(), 0);

@@ -1,0 +1,21 @@
+/* Choices asked in the footer's context card, above the editing-base row (#302). */
+
+/* A Board note on another model version asks before the base moves. */
+.base-choice {
+  display: grid;
+  gap: 6px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line);
+  font-size: calc(12px * var(--font-scale, 1));
+}
+
+.base-choice__text {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.base-choice__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
