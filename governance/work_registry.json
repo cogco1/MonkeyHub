@@ -168,6 +168,7 @@
         "apps/monkeyhub/web/test/chatProcess.test.ts",
         "apps/monkeyhub/web/test/chatShell.browser.mjs",
         "apps/monkeyhub/web/test/projectWorkspaceFixture.mjs",
+        "apps/monkeyhub/web/workspaces/src/app/ProjectWorkspace.tsx",
         "docs/mapping/planning/GH-300-needs-you.md"
       ],
       "card": "docs/mapping/planning/GH-300-needs-you.md",
@@ -197,7 +198,8 @@
             "apps/monkeyhub/web/src/chatProcess.ts",
             "apps/monkeyhub/web/test/chatShell.browser.mjs",
             "apps/monkeyhub/web/test/chatProcess.test.ts",
-            "apps/monkeyhub/web/test/projectWorkspaceFixture.mjs"
+            "apps/monkeyhub/web/test/projectWorkspaceFixture.mjs",
+            "apps/monkeyhub/web/workspaces/src/app/ProjectWorkspace.tsx"
           ],
           "depends_on": [],
           "status": "active",
