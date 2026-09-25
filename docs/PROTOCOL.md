@@ -957,6 +957,24 @@ for both external and native conversations. The adapter alone can read an explic
 local attachment path and convert it to the existing bounded upload. Provider summaries,
 public commentary and document views confer no design acceptance or Board write authority.
 
+### Conversation attention
+
+Chat summaries (`GET /api/chat/sessions`, and `GET /api/chat/sessions/{id}`) carry
+`attention: "permission" | null` (#300). It is `"permission"` exactly while a permission request
+in that conversation waits for a decision, the request the conversation shows with its options;
+answering, stopping, a withdrawn step and a Hub restart clear it. It is read from the transcript
+already in memory on every read and never stored. A permission request and its answer each move
+`updatedAt`, so two requests in a row are two moments.
+
+The Hub frontend reads this list about every 4 s and raises one notice per transition after its
+first reading: a permission became pending, a running turn became idle, or a turn failed or gained
+a new error (a stop the architect asked for is not one). A moment is keyed by chat, kind and
+`updatedAt` and announced once; the conversation on screen raises none. While the window is hidden
+the same moments become OS notifications and a count in the window title. A notice opens its chat
+through the cancelable window event `monkeyhub:open-chat` (`detail: {chatId, projectDir}`): the page
+showing conversations opens it and calls `preventDefault()`; unanswered within 300 ms, the Hub loads
+`?chatId=`. Notices never change the visible surface by themselves.
+
 ### Runtime lifecycle
 
 The runtime's process contract — what the Hub supplies, what it owns, identity, isolation and
