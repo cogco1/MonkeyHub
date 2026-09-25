@@ -155,6 +155,90 @@
       ]
     },
     {
+      "id": "GH-294",
+      "stream": "planning",
+      "status": "active",
+      "goal": "Implement candidate admission slices S1 and S2 from the 2026-09-25 audit: the CandidateAdmission@1 record in the fixed studio-admissions run and the gate it shares with Stage acceptance, then the Candidate Pool readers for the #284 Design Tree (candidates and studies on design history, admission on Worktree result lines, a warning on a rejected Working Head) and the retirement of Exploration creation.",
+      "depends_on": [],
+      "write_scope": [
+        "apps/archflow-studio/api/archflow_studio_api/application/authentication.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/design_history.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/episodes.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/runtime.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/working_draft.py",
+        "apps/archflow-studio/api/archflow_studio_api/protocol.py",
+        "apps/archflow-studio/api/archflow_studio_api/routes/episodes.py",
+        "apps/archflow-studio/api/archflow_studio_api/transport/design_history.py",
+        "apps/archflow-studio/api/archflow_studio_api/transport/proposal.py",
+        "apps/archflow-studio/api/archflow_studio_api/transport/runtime.py",
+        "apps/archflow-studio/api/tests/test_candidate_admission.py",
+        "apps/archflow-studio/api/tests/test_working_copies.py",
+        "apps/monkeyhub/web/workspaces/src/api/generated/",
+        "archflow/project/record_kinds.py",
+        "docs/DYNAMIC_MAP.md",
+        "docs/PROTOCOL.md",
+        "docs/SYSTEM_MAP.md",
+        "docs/mapping/planning/GH-294-admission-record.md",
+        "docs/mapping/planning/INDEX.md",
+        "governance/module_registry.json",
+        "governance/work_registry.json",
+        "tests/test_record_kinds.py"
+      ],
+      "card": "docs/mapping/planning/GH-294-admission-record.md",
+      "acceptance": [
+        "POST /api/admissions retains one CandidateAdmission@1 per closed loop in studio-admissions through the accept preflight; a run is in at most one live record, an identical retry returns the record, a conflicting one is 409 ADMISSION_CONFLICT, and accept refuses a run with a live rejection.",
+        "A human may admit a result with a recorded relation violation, which carries the failing clauses as its marker; Agent admissions and Accept-as-Stage still require review readiness.",
+        "GET /api/design-history lists admitted Candidates and their Studies (with legacy Stage, Exploration and accepted-episode derivation) identically after restart; a TESTMODEL-shaped project lists none; Worktree result lines carry admission and studyId.",
+        "Exploration creation (POST /api/working-copies) is retired while retained StudioWorkingCopy@1 readers stay; the generated clients match their schemas and archcheck passes."
+      ],
+      "lanes": [
+        {
+          "id": "admission-record",
+          "issue": "https://github.com/cogco1/MonkeyHub/issues/294",
+          "branch": "codex/294-admission-record",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-294-admission-record",
+          "base_ref": "e183a69a",
+          "contributor": "Claude",
+          "reviewer": "Claude root task",
+          "handoff": "S1 and S2 backend; the #284 Design Tree UI lane (codex/284-design-tree-ui) consumes the design-history candidates and studies DTO. S3 (Hub Agent contract) and S4 (attributed Continue) are not in this lane.",
+          "modules": [
+            "studio.intent",
+            "project.record_kinds",
+            "studio.candidate",
+            "studio.binding",
+            "studio.shell"
+          ],
+          "write_scope": [
+            "apps/archflow-studio/api/archflow_studio_api/application/authentication.py",
+            "apps/archflow-studio/api/archflow_studio_api/application/design_history.py",
+            "apps/archflow-studio/api/archflow_studio_api/application/episodes.py",
+            "apps/archflow-studio/api/archflow_studio_api/application/runtime.py",
+            "apps/archflow-studio/api/archflow_studio_api/application/working_draft.py",
+            "apps/archflow-studio/api/archflow_studio_api/protocol.py",
+            "apps/archflow-studio/api/archflow_studio_api/routes/episodes.py",
+            "apps/archflow-studio/api/archflow_studio_api/transport/design_history.py",
+            "apps/archflow-studio/api/archflow_studio_api/transport/proposal.py",
+            "apps/archflow-studio/api/archflow_studio_api/transport/runtime.py",
+            "apps/archflow-studio/api/tests/test_candidate_admission.py",
+            "apps/archflow-studio/api/tests/test_working_copies.py",
+            "apps/monkeyhub/web/workspaces/src/api/generated/",
+            "archflow/project/record_kinds.py",
+            "docs/DYNAMIC_MAP.md",
+            "docs/PROTOCOL.md",
+            "docs/SYSTEM_MAP.md",
+            "docs/mapping/planning/GH-294-admission-record.md",
+            "docs/mapping/planning/INDEX.md",
+            "governance/module_registry.json",
+            "governance/work_registry.json",
+            "tests/test_record_kinds.py"
+          ],
+          "depends_on": [],
+          "status": "active",
+          "blocked_reason": null
+        }
+      ]
+    },
+    {
       "id": "GH-66",
       "stream": "planning",
       "status": "active",
@@ -198,7 +282,6 @@
         "apps/monkeyhub/web/workspaces/src/workspaces/publish/publish.css",
         "apps/monkeyhub/web/workspaces/src/workspaces/render/ModelPreview.tsx",
         "apps/monkeyhub/web/workspaces/test/publishWorkspace.browser.mjs",
-        "archflow/project/record_kinds.py",
         "docs/DRAWING_V0_AUDIT.md",
         "docs/DYNAMIC_MAP.md",
         "docs/PROTOCOL.md",
@@ -215,7 +298,8 @@
       ],
       "notes": [
         "2026-09-24: #273 merged the GH-66 integration. On the repository owner's instruction the Drawing, Render, Hub and shared client paths it also claimed are handed to GH-271 (#271, Working Head); GH-66 keeps its Publish paths and the broader #66 acceptance.",
-        "2026-09-25: the cut-plan request DTO (transport/drawings.py) is handed to GH-271 as well, for the drawing follow choice found in the #277 review; GH-66 keeps its Publish paths."
+        "2026-09-25: the cut-plan request DTO (transport/drawings.py) is handed to GH-271 as well, for the drawing follow choice found in the #277 review; GH-66 keeps its Publish paths.",
+        "2026-09-25: archflow/project/record_kinds.py is handed to GH-294/admission-record, which registers the owner-approved candidate-admission kind (audit Q1); GH-66 reclaims it if Publish needs another kind."
       ]
     }
   ]
