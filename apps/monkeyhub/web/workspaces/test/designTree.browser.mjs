@@ -435,7 +435,7 @@ try {
   await hubPage.goto(origin, { waitUntil: "domcontentloaded", timeout: 240_000 });
   const rail = hubPage.getByRole("navigation", { name: "Project tools" });
   await rail.locator('.chat-rail__tool[aria-label="Modeling"]').waitFor({ timeout: 120_000 });
-  const workspaces = await rail.getByRole("group", { name: "Workspaces", exact: true }).locator(".chat-rail__tool").evaluateAll((nodes) => nodes.map((node) => node.getAttribute("aria-label")));
+  const workspaces = await rail.getByRole("group", { name: "Surfaces", exact: true }).locator(".chat-rail__tool").evaluateAll((nodes) => nodes.map((node) => node.getAttribute("aria-label")));
   assert.ok(workspaces.includes("Design tree"), `the rail's primary group offers the Design tree: ${workspaces}`);
   const railButton = (name) => rail.getByRole("button", { name, exact: true });
   await hubPage.waitForFunction(() => ["Modeling", "Design tree"].every((label) => {
