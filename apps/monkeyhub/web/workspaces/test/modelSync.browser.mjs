@@ -902,7 +902,16 @@ if (autosaveOnly) {
   for(const transform of transforms)assert.equal(transform.body.sourceRunId,seedRun);
   console.log('PASS pointer Move/Copy: base-point capture without jump, reused preview/zero pointer commits, latest pointer Click, exact XYZ/Enter, stable copy identity, Esc/Undo/Redo, zero local writes and one frozen OCCT candidate');
 } else {
-await openSeed('initial model');
+// R14: a boot that runs long says what it does, not a brand, and how long it has waited.
+let releaseBoot;const bootHeld=new Promise(resolve=>releaseBoot=resolve);
+await page.route('**/api/project',async route=>{await bootHeld;await route.continue();},{times:1});
+const opening=openSeed('initial model');opening.catch(()=>{});// awaited below; a failure still surfaces there
+const boot=page.locator('.boot[data-mode="boot"]');
+await boot.locator('.boot__elapsed').waitFor();
+assert.equal(await boot.locator('.boot__title').innerText(),'Opening…','the boot overlay is headed by what it does');
+assert.match(await boot.locator('.boot__elapsed').innerText(),/^Still waiting · \d+ s$/);
+assert.equal(await boot.locator('[role="status"] .boot__elapsed').count(),0,'the count is not a live region');
+releaseBoot();await opening;
 const originalRuns=await runIds(), beforeWrites=sent.length;
 // SS-5: Record is offered, by name, only while there is something to record.
 assert.equal(await button('Record').count(),0,'no dead Record icon before any edit');

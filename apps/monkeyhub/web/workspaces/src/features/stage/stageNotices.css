@@ -42,3 +42,11 @@
   padding: 0;
   border-left: 0;
 }
+
+/* R14: how long the loading overlay has waited, quieter than the caller's status.
+   Without this sheet the line keeps the status style it is built on. */
+.boot__status.boot__elapsed {
+  margin-top: 2px;
+  color: var(--faint);
+  font-variant-numeric: tabular-nums;
+}

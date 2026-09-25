@@ -1,13 +1,41 @@
 /**
  * The client's one loading surface. Callers own the status sentence because only they
- * know what is actually pending; this component supplies an indeterminate rail and the
- * quiet shell around it. The launcher has a determinate rail because it knows its eight
- * startup steps, while the browser must not invent a percentage for network or 3DM work.
+ * know what is actually pending; this component supplies an indeterminate rail, the
+ * quiet shell around it and, once a wait runs long, how long it has lasted. The
+ * launcher has a determinate rail because it knows its eight startup steps, while the
+ * browser must not invent a percentage for network or 3DM work.
  */
 
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
+import { usePreferences, type Language } from "../features/settings/preferences";
 import { BilingualProse } from "./ErrorPanel";
+
+/** A wait this long starts showing how long it has lasted (R14). */
+const ELAPSED_AFTER_SECONDS = 3;
+
+/** The overlay's own words; they stay here until the catalogs can take them (review §4 step 1). */
+const COPY: Record<Language, { opening: string; waited(seconds: number): string }> = {
+  "zh-CN": {
+    opening: "正在打开…",
+    waited: (seconds) => `已等待 ${seconds < 60 ? `${seconds} 秒` : `${Math.floor(seconds / 60)} 分 ${seconds % 60} 秒`}`,
+  },
+  en: {
+    opening: "Opening…",
+    waited: (seconds) => `Still waiting · ${seconds < 60 ? `${seconds} s` : `${Math.floor(seconds / 60)} min ${seconds % 60} s`}`,
+  },
+};
+
+/** Whole seconds since the overlay appeared; one wait keeps counting across its steps. */
+function useElapsedSeconds(): number {
+  const [seconds, setSeconds] = useState(0);
+  useEffect(() => {
+    const started = Date.now();
+    const timer = window.setInterval(() => setSeconds(Math.floor((Date.now() - started) / 1000)), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+  return seconds;
+}
 
 function DraftMonkeyMark() {
   return (
@@ -35,12 +63,22 @@ function DraftMonkeyMark() {
 export function LoadingOverlay({
   mode,
   status,
+  label,
 }: {
   /** `boot` covers the window; `stage` preserves the model while blocking stale gestures. */
   mode: "boot" | "stage";
   /** What is actually being waited for, in the words of whoever is waiting. */
   status: ReactNode;
+  /**
+   * What is being opened, named for the person, such as a surface or a model. It
+   * heads the boot readout in place of a brand; without it the heading is a plain
+   * "Opening…" and the status names the rest.
+   */
+  label?: string;
 }) {
+  const { language } = usePreferences();
+  const copy = COPY[language];
+  const seconds = useElapsedSeconds();
   return (
     <div
       className="boot"
@@ -57,13 +95,15 @@ export function LoadingOverlay({
         {mode === "boot" && (
           <div className="boot__brand">
             <DraftMonkeyMark />
-            <p className="boot__title">MonkeyArch</p>
+            <p className="boot__title">{label ?? copy.opening}</p>
           </div>
         )}
         <span className="activity-rail" aria-hidden="true" />
         <p className="boot__status mono" role="status" aria-live="polite">
           {typeof status === "string" ? <BilingualProse source={status} /> : status}
         </p>
+        {/* Outside the live region: the count is there to read, not announced every second. */}
+        {seconds >= ELAPSED_AFTER_SECONDS && <p className="boot__status boot__elapsed">{copy.waited(seconds)}</p>}
       </div>
     </div>
   );
