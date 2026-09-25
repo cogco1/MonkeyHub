@@ -1,14 +1,19 @@
 """Real Drawing/P036 inputs and Render dependency propagation; image transport is injected."""
 
+import base64
 from copy import deepcopy
 
 from fastapi.testclient import TestClient
 import pytest
 
 from archflow.adapters.occt_backend import occt_available
+from archflow_studio_api.application.artifacts import ModelSource, save_document
+from archflow_studio_api.application.binding import bound_project
+from archflow_studio_api.application.representation_dependencies import RepresentationReads, representation_status
 from archflow_studio_api.main import create_app
 
 from . import test_drawing_plans as plans
+from . import test_publications as publication
 from . import test_rendering as renders
 from .support import PROJECT_ID
 from .test_document_annotations import stroke
@@ -18,6 +23,19 @@ setup = renders.setup
 
 def page(document):
     return {key: document[key] for key in ("runId", "assetSha256", "revisionRef")} | {"pageIndex": 0}
+
+
+def key(ref):
+    return ref["runId"], ref["assetSha256"], ref["revisionRef"], ref["pageIndex"]
+
+
+def distant_wall():
+    """A real wall far outside every plan crop in the room fixture."""
+    wall = deepcopy(plans.room_edit()["entities"][1])
+    wall["entity_id"] = "distant-wall"
+    wall["fields"]["references"]["line"] = {
+        "from": {"point": [0, 20]}, "to": {"point": [4, 20]}, "inward": [0, 1]}
+    return {"summary": "Add unrelated distant wall", "entities": [wall]}
 
 
 def render(client, source, **changes):
@@ -168,3 +186,69 @@ def test_missing_drawing_host_makes_descendant_unavailable_without_rebinding(roo
     assert reading["sourceState"] == "unavailable", reading
     assert "anchor" in reading["sourceStateReason"]
     assert reading["document"] == job["document"] and reading["resultAvailable"]
+
+
+def test_one_status_vocabulary_for_drawing_render_and_upload_pages(room):
+    fixture, _ = room
+    client = fixture.client
+    binding = bound_project(fixture.app.state)
+    stage_ref, model = fixture.stage["stageRef"], fixture.model
+    drawing = fixture.generate(dimensions=[])
+    kept = fixture.generate(drawingId="kept-plan", dimensions=[], follow="frozen")
+    rendered = render(client, page(drawing))
+    view = save_document(binding, model["runId"], "exact-view.png", "image/png",
+                         base64.b64encode(renders.png("green")).decode(), model_source=ModelSource.from_dict(model),
+                         source_stage_ref=stage_ref, view_recipe={"kind": "model-view", "camera": {"projection": "orthographic"}})
+    upload = renders.upload(client)
+    pages = {"drawing": page(drawing), "kept": page(kept), "render": page(rendered["document"]),
+             "view": {"runId": view.run_id, "assetSha256": view.asset_sha256, "revisionRef": None, "pageIndex": 0},
+             "upload": upload}
+
+    def statuses(frozen=()):
+        reads = RepresentationReads(binding)  # one Working Head and one document listing, as one request reads them
+        return {name: representation_status(binding, key(ref), frozen=name in frozen, reads=reads)
+                for name, ref in pages.items()}
+
+    kept_upload = publication.page("kept-upload", "Kept", upload)
+    kept_upload["elements"][1]["frozen"] = True
+    saved = client.put("/api/publication", json=publication.request(
+        [*(publication.page(name, name, ref) for name, ref in pages.items()), kept_upload]))
+    assert saved.status_code == 200, saved.text
+
+    def published():
+        return {row["elementId"].removesuffix("-image"): (row["status"], row["replacement"])
+                for row in client.get("/api/publication").json()["sources"]}
+
+    before = statuses()
+    assert {name: status.state for name, status in before.items()} == {
+        "drawing": "current", "kept": "frozen", "render": "current", "view": "current", "upload": "current"}
+    # Each page names only the exact inputs its own owner retained.
+    assert before["drawing"].upstream == ({"modelSource": model}, {"sourceStageRef": stage_ref})
+    assert before["render"].upstream == ({"source": page(drawing)},)
+    assert before["upload"].upstream == ()
+    # Publish reads the same answers in its own words; a drawing kept on its
+    # version is a current source, and only Publish's own freeze says frozen.
+    assert published() == {name: ("current", None) for name in pages} | {"kept-upload": ("frozen", None)}
+
+    # A new Stage outside every crop, and a newer registered page for the upload.
+    fixture.stage, fixture.model = fixture.commit_edit(distant_wall())
+    newer = renders.upload(client, "red", replacesPages=[upload | {"newPageIndex": 0}])
+    after = statuses()
+    assert {name: status.state for name, status in after.items()} == {
+        "drawing": "current", "kept": "frozen", "render": "current", "view": "outdated", "upload": "outdated"}
+    # Each answer is its owner's: the plan's read set, the render's retained
+    # request, the viewed model state, the page's own replacement.
+    assert after["drawing"].reason == fixture.status(drawing)["detail"]
+    assert reread(client, rendered)["sourceState"] == after["render"].state
+    assert after["upload"].replacement == key(newer)
+    assert statuses(frozen={"upload"})["upload"].state == "frozen"
+    assert published() == {name: ("current", None) for name in pages} | {
+        "view": ("stale", None), "upload": ("stale", newer), "kept-upload": ("frozen", newer)}
+
+    # A page whose own bytes can no longer be read is unavailable; Publish says missing.
+    digest = upload["assetSha256"]
+    fixture.repository.layout.resolve_relative(f"objects/sha256/{digest[:2]}/{digest}").write_bytes(b"damaged")
+    lost = representation_status(binding, key(upload))
+    assert (lost.state, lost.page_available) == ("unavailable", False)
+    assert published()["upload"][0] == published()["kept-upload"][0] == "missing"
+    assert fixture.repository.read_head() == fixture.head

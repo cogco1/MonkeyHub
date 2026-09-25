@@ -4233,7 +4233,8 @@
         "Projecting a checked in-memory proposed StateRecord for another edit without writing or claiming a retained candidate",
         "Read-only element elevation facts and their actual base/top references, plus named Level datums, projected from the exact StateRecord for contextual Stage 1 editing.",
         "The current project working position (moved only by an explicit selection, never by recording a generated candidate), the automatic recovery listing of every unlabelled generated candidate however old, independent explicit saved versions and exact-source local command recovery through the P036 working-draft port; readback never executes a recovered request; every selection onto a run retains who made it as an AuditEvent@1 design.continued beside that run, ids only (actor, origin, previous head run, target run, chat message ids), and a selection whose event cannot be retained is undone.",
-        "Resolving the Working Head for ordinary work: the readable retained working position, else the main line's accepted head, else the reference run, and each workspace's compatible exact source under a LIVE or FROZEN policy; resolving writes nothing; a live rejection of the working position is reported as a warning and never moves it"
+        "Resolving the Working Head for ordinary work: the readable retained working position, else the main line's accepted head, else the reference run, and each workspace's compatible exact source under a LIVE or FROZEN policy; resolving writes nothing; a live rejection of the working position is reported as a warning and never moves it",
+        "The representation-status projection (#223): for one exact registered page, current, outdated, frozen or unavailable, the exact retained refs it was made from and its newest registered replacement, derived on every read by asking the page's owner (a cut plan's read set through plan_status, an AI render's retained request through Render's freshness, a page bound to one model state through model_is_current, a page bound to nothing through its replacements alone); it writes nothing and stores no status or dependency edge: the project-level dependency is this projection, not a second state"
       ],
       "does_not_own": [
         "issuing a project version, and direct project file writes: the ProjectBinding object stays read-only, initial authored-input preparation and configured sync use project.repository ports; runtime.project_runner is the writer of a modeling run and project.issue the only issuer. A configured pull advances this Runtime's local design branch, and it does so entirely through project.repository's transfer and branch compare-and-swap ports; this owner writes no project file itself and moves no canonical HEAD",
@@ -4241,7 +4242,8 @@
         "running a candidate - studio.candidate",
         "closure and impact - studio.validation, over archflow.state.state_record's one closure rule",
         "HTTP shapes and error bodies - studio.shell",
-        "inventing an element or a field for an object that has none - the catalog reports the gap; an authored control has to exist first (studio.intent's declare-control proposal)"
+        "inventing an element or a field for an object that has none - the catalog reports the gap; an authored control has to exist first (studio.intent's declare-control proposal)",
+        "each representation's read set and freshness rule - a cut plan's (studio.artifacts' plan_status) and an AI render's retained request (studio.render); the representation-status projection only asks them"
       ],
       "inputs": [
         "StudioSettings",
@@ -4256,7 +4258,8 @@
         "ProjectBindingDto",
         "ProjectVersionDto",
         "StateProjectionDto",
-        "ProjectListDto"
+        "ProjectListDto",
+        "RepresentationStatus"
       ],
       "public_api": [
         "GET /api/project",
@@ -4326,7 +4329,11 @@
         "WorkingHead",
         "model_is_current",
         "lineage_of",
-        "WorkingSources"
+        "WorkingSources",
+        "representation_status",
+        "RepresentationStatus",
+        "RepresentationReads",
+        "ReplacementCycle"
       ],
       "depends_on": [
         "project.inputs",
@@ -4347,7 +4354,9 @@
         "state.design_portfolio",
         "state.state_record",
         "capabilities.element_producers",
-        "contracts.canonical"
+        "contracts.canonical",
+        "studio.artifacts",
+        "studio.render"
       ],
       "used_by": [
         "apps/archflow-studio/api/archflow_studio_api/application/projection.py",
@@ -4368,7 +4377,8 @@
         "the catalog derives; it never writes: an object no element names stays MODEL_VISIBLE_CATALOG_MISSING, and no neighbouring element's field is offered in its place",
         "all actionable projections retain exact record and runner binding; historical canonical bases require a verified committed Stage source",
         "main head Stage is the default when design history exists; a successful harness run alone never becomes a default committed Stage",
-        "the Working Head is the architect's editing base, read from retained facts and never guessed from the newest file; a generated candidate is recorded and shown but never moves it, viewing history never moves it, and only the explicit working-draft selection (Continue, adopting the architect's own Sync, or the Hub Agent's Continue on the user's bound words through a Hub-managed Runtime) does; every selection onto a run is retained as an attributed design.continued event and admits no Candidate; a recorded continuation keeps its source position's branch"
+        "the Working Head is the architect's editing base, read from retained facts and never guessed from the newest file; a generated candidate is recorded and shown but never moves it, viewing history never moves it, and only the explicit working-draft selection (Continue, adopting the architect's own Sync, or the Hub Agent's Continue on the user's bound words through a Hub-managed Runtime) does; every selection onto a run is retained as an attributed design.continued event and admits no Candidate; a recorded continuation keeps its source position's branch",
+        "a page's representation status is derived on read and never stored; an explicit page replacement answers before what the page depicts; a missing or unverifiable page or input is unavailable and is never rebound; a person's keep (a drawing's follow: frozen, Publish's freeze) is frozen; each consumer keeps its own wire words"
       ],
       "status": "canonical",
       "tests": [
@@ -4382,7 +4392,8 @@
         "apps/archflow-studio/api/tests/test_boards.py",
         "apps/archflow-studio/api/tests/test_working_draft.py",
         "apps/archflow-studio/api/tests/test_working_source.py",
-        "apps/archflow-studio/api/tests/test_attributed_continue.py"
+        "apps/archflow-studio/api/tests/test_attributed_continue.py",
+        "apps/archflow-studio/api/tests/test_representation_dependencies.py"
       ],
       "notes": "Every other Studio concern reads the project through this one binding.",
       "files": [
@@ -4400,7 +4411,8 @@
         "apps/archflow-studio/api/archflow_studio_api/routes/synchronization.py",
         "apps/archflow-studio/api/archflow_studio_api/application/working_draft.py",
         "apps/archflow-studio/api/archflow_studio_api/routes/working_draft.py",
-        "apps/archflow-studio/api/archflow_studio_api/transport/working_draft.py"
+        "apps/archflow-studio/api/archflow_studio_api/transport/working_draft.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/representation_dependencies.py"
       ]
     },
     {
@@ -7274,7 +7286,8 @@
         "Source replacement changes only the requested placed image; manual text and coordinates remain authored",
         "Saving/exporting never accepts a design Stage or advances HEAD",
         "Exports use an exact retained publication revision; missing sources refuse instead of silently substituting",
-        "PPTX text remains native; PDF source pages currently embed raster previews, explicitly not editable drawing vectors"
+        "PPTX text remains native; PDF source pages currently embed raster previews, explicitly not editable drawing vectors",
+        "A placed source's status is studio.binding's representation-status projection in Publish's words: frozen for a source Publish keeps, missing when the page's own bytes cannot be read, stale for an outdated page or unverifiable inputs (a replacement names the newest page), and current otherwise, including a drawing kept on its chosen version"
       ],
       "tests": [
         "apps/archflow-studio/api/tests/test_publications.py",
