@@ -63,6 +63,8 @@ export interface DesignTreeFixtureState {
   running: RunningFact[];
   branchHead: string;
   head: string;
+  /** No saved working position: the line's accepted head answers for the Working Head, as before any Continue. */
+  followsLine: boolean;
   revision: number;
   /** Modeling's edits the working draft holds and no candidate has recorded yet; they hold Continue back. */
   localDraft: WorkingDraftDto["localDraft"];
@@ -127,6 +129,7 @@ export function riversideLibraryFacts(): DesignTreeFixtureState {
     ],
     branchHead: S2,
     head: "run-s2-layout",
+    followsLine: false,
     revision: 1,
     localDraft: null,
   };
@@ -155,7 +158,7 @@ export function createDesignTreeFixture(state: DesignTreeFixtureState = riversid
     const stage = stageOfRun(state.head);
     return { runId: state.head, stateDigest: digest(`state:${state.head}`), recordDigest: digest(`record:${state.head}`),
       sourceStageRef: stage ? stage.ref : state.runs.get(state.head)?.sourceStage ?? null, branchId: "main", accepted: stage !== null,
-      origin: "working-position", label: null, modelSource: modelSource(state.head), lineage: lineageOf(state.head) };
+      origin: state.followsLine ? "branch-head" : "working-position", label: null, modelSource: modelSource(state.head), lineage: lineageOf(state.head) };
   };
   const stageDto = (stage: StageFact): DesignStageDto => ({
     stageRef: stage.ref, parentStageRef: stage.parent, branchId: "main", label: stage.label, candidateId: stage.run,
@@ -213,15 +216,17 @@ export function createDesignTreeFixture(state: DesignTreeFixtureState = riversid
     },
     workingDraft(): WorkingDraftDto {
       const current = head();
-      return { projectId: FIXTURE_PROJECT, revisionSha256: revision(), current: { runId: state.head, sourceStageRef: current.sourceStageRef ?? null,
-        branchId: "main", updatedAt: "2026-09-25T22:00:00Z", label: null }, recovery: [], saved: [], managedRunIds: [], localDraft: state.localDraft };
+      return { projectId: FIXTURE_PROJECT, revisionSha256: revision(), current: state.followsLine ? null : { runId: state.head,
+        sourceStageRef: current.sourceStageRef ?? null, branchId: "main", updatedAt: "2026-09-25T22:00:00Z", label: null },
+        recovery: [], saved: [], managedRunIds: [], localDraft: state.localDraft };
     },
-    /** PUT /api/working-draft: the Working Head moves to an exact finished run. */
+    /** PUT /api/working-draft: the Working Head moves to an exact finished run, or back to the line's head with none. */
     selectWorkingDraft(body: { projectId: string; runId: string | null; baseRevisionSha256: string | null; branchId?: string | null }): WorkingDraftDto {
       if (body.projectId !== FIXTURE_PROJECT) throw new FixtureRefusal(409, "PROJECT_MISMATCH", "The request belongs to another project.");
       if (body.baseRevisionSha256 !== revision()) throw new FixtureRefusal(409, "WORKING_DRAFT_STALE", "The working position changed; read it before selecting another source.");
-      if (!body.runId || !state.runs.has(body.runId)) throw new FixtureRefusal(409, "WORKING_DRAFT_UNAVAILABLE", "This run has no exact finished state to continue.");
-      state.head = body.runId;
+      if (body.runId !== null && !state.runs.has(body.runId)) throw new FixtureRefusal(409, "WORKING_DRAFT_UNAVAILABLE", "This run has no exact finished state to continue.");
+      state.followsLine = body.runId === null;
+      state.head = body.runId ?? state.stages.find((stage) => stage.ref === state.branchHead)!.run;
       state.revision += 1;
       return this.workingDraft();
     },
