@@ -62,9 +62,10 @@ print(json.dumps({"pdf": base64.b64encode(two_page_pdf()).decode()}))
   api.stdout.on("data", (chunk) => { apiLog = (apiLog + chunk).slice(-8000); });
   api.stderr.on("data", (chunk) => { apiLog = (apiLog + chunk).slice(-8000); });
   const apiOrigin = `http://127.0.0.1:${apiPort}`;
-  for (let attempt = 0; attempt < 150; attempt++) {
+  // A loaded machine can take a minute to import the Studio API; wait while its process lives, up to 5 minutes.
+  for (let attempt = 0; attempt < 3000; attempt++) {
     if (await fetch(`${apiOrigin}/api/health`).then((response) => response.ok).catch(() => false)) break;
-    assert.ok(attempt < 149 && api.exitCode === null, `Studio startup failed: ${apiLog}`);
+    assert.ok(attempt < 2999 && api.exitCode === null, `Studio startup failed: ${apiLog}`);
     await delay(100);
   }
   async function call(method, route, body) {
@@ -376,7 +377,8 @@ print(json.dumps({"pdf": base64.b64encode(two_page_pdf()).decode()}))
   // Undo still belongs to the same local draft after the workspace round trip.
   await page.getByRole("button", { name: "Undo model", exact: true }).click();
   await syncStatus.waitFor({ state: "hidden" });
-  assert.equal(await syncButton.isEnabled(), false, "Nothing is left to Sync after undoing the drawing");
+  // Record is shown only while edits are unrecorded (SS-5), so nothing left means no Record at all.
+  await syncButton.waitFor({ state: "hidden" });
   for (let attempt = 0; attempt < 100 && await localDraft() !== null; attempt++) await delay(100);
   assert.equal(await localDraft(), null, "Undoing the drawing clears its working-draft recovery");
   await page.getByTestId("workspace-board").click();

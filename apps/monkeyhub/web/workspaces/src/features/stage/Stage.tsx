@@ -117,6 +117,12 @@ const ANNOTATION_COLOURS = [
   { value: "#ffffff", "zh-CN": "白色", en: "White" },
 ] as const;
 
+/**
+ * What Record needs beside the tools besides its button: the 6px gap and its
+ * capsule's 4px padding and 1px border on each side (stageNotices.css).
+ */
+const RECORD_FRAME = 16;
+
 function sketchControls(state: SketchState) {
   return {
     tool: state.tool, phase: state.phase, typed: state.typed, axisLock: state.axisLock,
@@ -438,6 +444,24 @@ export function Stage({
       for (const [name] of properties) stage.style.removeProperty(name);
     };
   }, []);
+  // #302: Record never moves a tool. It sits beside the tools while their row has
+  // room for it, else on a line of its own above them (stageNotices.css).
+  const recordShown = Boolean(model?.sync && (model.sync.dirty || model.sync.busy || model.sync.error));
+  const recordNamed = Boolean(model?.sync && (model.sync.dirty || model.sync.busy));
+  const modelToolsElement = useRef<HTMLDivElement>(null);
+  const recordElement = useRef<HTMLDivElement>(null);
+  const [recordAbove, setRecordAbove] = useState(false);
+  useLayoutEffect(() => {
+    const wrap = toolsElement.current, tools = modelToolsElement.current, record = recordElement.current;
+    if (!recordShown || !wrap || !tools || !record) return;
+    const button = record.querySelector<HTMLElement>(".model-tool-button");
+    const place = () => setRecordAbove((button?.offsetWidth ?? 0) + RECORD_FRAME >
+      wrap.getBoundingClientRect().right - tools.getBoundingClientRect().right);
+    place();
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(place);
+    for (const element of [wrap, tools, button]) if (element) observer?.observe(element);
+    return () => observer?.disconnect();
+  }, [recordShown, recordNamed]);
   // One drawing action at a time, entirely local until it is finished.
   const [sketch, setSketch] = useState(() => sketchControls(SKETCH_IDLE));
   const [workPlaneName, setWorkPlaneName] = useState<"xy" | "xz" | "yz" | "face">("xy");
@@ -1718,7 +1742,7 @@ export function Stage({
           )}
         </div>
         <div ref={toolsElement} className="viewtools-wrap">
-          <div className="viewtools model-tools">
+          <div ref={modelToolsElement} className="viewtools model-tools">
             <div className="model-tools__group" role="group" aria-label={zh ? "选择与绘制" : "Select and draw"}>
             <ModelToolButton icon="select" label={t("stage.sketch.select")} shortcut="Space" aria-pressed={sketch.tool === null && !measuring && !model?.directTool && !tool && !eraser}
               onClick={() => chooseDrawingTool(null)} />
@@ -1773,10 +1797,11 @@ export function Stage({
             </div>
             {/* SS-5: Record is a design act, not a save. It appears, named, only while
                 edits wait to be recorded or are being recorded; a Record error with
-                nothing left to record keeps its line without the button. */}
-            {model?.sync && (model.sync.dirty || model.sync.busy || model.sync.error) && <div
-              className={`model-tools__group model-tools__sync${model.sync.dirty || model.sync.busy ? "" : " model-tools__sync--status-only"}`}>
-              {(model.sync.dirty || model.sync.busy) && <ModelToolButton icon="sync" label={t("stage.sync.label")} showLabel
+                nothing left to record keeps its line without the button. Its slot
+                (#302) is outside the tools' row, so its coming and going moves none. */}
+            {model?.sync && recordShown && <div ref={recordElement}
+              className={`model-tools__group model-tools__sync${recordNamed ? "" : " model-tools__sync--status-only"}${recordAbove ? " model-tools__sync--above" : ""}`}>
+              {recordNamed && <ModelToolButton icon="sync" label={t("stage.sync.label")} showLabel
                 disabled={model.sync.busy} onClick={model.sync.onSync} />}
               <span className="model-tools__sync-status" role={model.sync.error ? "alert" : "status"}>
                 {model.sync.error ?? (model.sync.busy ? t("stage.sync.busy") : model.sync.autosave

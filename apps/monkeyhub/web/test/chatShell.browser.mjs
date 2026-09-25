@@ -153,13 +153,31 @@ const appsFor = (target) => {
   if (!projectApps.has(target)) projectApps.set(target, apps.map((app) => app.serviceId === "studio" ? { ...app, state: "stopped", processId: null, url: null, apiUrl: null } : app));
   return projectApps.get(target);
 };
+// #300: a summary says whether its conversation waits on the architect, read from its transcript as the Hub does.
+const summaryOf = (session) => ({ ...session, attention: session.messages?.some((message) => message.permission) ? "permission" : null });
 const runtimeSnapshot = () => ({ serverId: "fixture-hub", sequence: runtimeSequence, workers: [], projects: [...runtimes.values()].map((runtime) => {
   const app = appsFor(runtime.projectDir).find((app) => app.appId === "monkeyarch");
   return { ...runtime, workers: app.processId || app.state === "error" ? [{ workerId: runtime.runtimeId, serviceId: "studio", projectId: runtime.projectId,
     projectDir: runtime.projectDir, instanceId: `instance-${app.processId}`, processId: app.processId, desiredState: "running", healthy: app.state === "running",
     state: app.state === "error" ? "crashed" : app.state === "running" ? "ready" : app.state, url: app.apiUrl ?? app.url, error: app.error ?? null }] : [],
-    sessions: sessions.filter((session) => session.projectId === runtime.projectId) };
+    sessions: sessions.filter((session) => session.projectId === runtime.projectId).map(summaryOf) };
 }) });
+// PP-1: while set, a project service asked to start stays "starting" until releaseStudioStarts().
+let studioStartHold = null;
+const runStudio = (target) => {
+  const runtimeId = runtimes.get(target).runtimeId;
+  for (const item of appsFor(target).filter((row) => row.serviceId === "studio")) {
+    item.state = "running"; item.processId = 2000 + [...projectApps.keys()].indexOf(target);
+    item.url = `${origin}/?view=${item.appId === "monkeyboard" ? "board" : item.appId === "monkeyrender" ? "render" : "arch"}&runtimeId=${runtimeId}`;
+    item.apiUrl = `${origin}/api/runtime/projects/${runtimeId}/studio/`;
+  }
+};
+const releaseStudioStarts = () => {
+  const held = studioStartHold?.held ?? [];
+  studioStartHold = null;
+  for (const target of held) runStudio(target);
+  emitRuntime();
+};
 page.on("pageerror", (error) => errors.push(error.message));
 await page.route((url) => url.pathname.startsWith("/api/"), async (route) => {
   const req = route.request(), url = new URL(req.url()), method = req.method();
@@ -258,8 +276,11 @@ await page.route((url) => url.pathname.startsWith("/api/"), async (route) => {
     assert.equal(data().projectId, runtime?.projectId, "a dismissal names its runtime and that runtime's project");
     const operation = runtime.operations.find((item) => item.operationId === decodeURIComponent(dismissal[1]));
     if (!operation) return json({ code: "OPERATION_NOT_FOUND", detail: "This project runtime has no operation with that id." }, 404);
-    if (!["failed", "stale"].includes(operation.status)) return json({ code: "OPERATION_NOT_ACKNOWLEDGEABLE",
-      detail: "Only a failed or stale operation can be dismissed. An operation that needs recovery stays until it is recovered." }, 409);
+    // GH-58: one that needs recovery can be dismissed only when the Hub marks it unrecoverable.
+    if (!["failed", "stale"].includes(operation.status) && !(operation.status === "needs_recovery" && operation.recoverable === false)) {
+      return json({ code: "OPERATION_NOT_ACKNOWLEDGEABLE",
+        detail: "Only a failed or stale operation can be dismissed. An operation that needs recovery stays until it is recovered." }, 409);
+    }
     operation.acknowledgedAt ??= new Date().toISOString();
     return json(operation);
   }
@@ -305,6 +326,11 @@ await page.route((url) => url.pathname.startsWith("/api/"), async (route) => {
     const currentApps = url.searchParams.has("projectDir") ? appsFor(url.searchParams.get("projectDir")) : apps;
     const app = currentApps.find((item) => item.appId === id);
     if (!app.available) return json(app);
+    if (action === "start" && app.serviceId === "studio" && studioStartHold) {
+      for (const item of currentApps.filter((row) => row.serviceId === "studio")) { item.state = "starting"; item.processId = 3000; item.url = null; item.apiUrl = null; }
+      studioStartHold.held.push(url.searchParams.get("projectDir"));
+      return json(app);
+    }
     for (const item of currentApps.filter((item) => item.serviceId === app.serviceId)) {
       item.state = action === "start" ? "running" : "stopped";
       item.processId = action === "start" ? (app.serviceId === "studio" ? 2000 + [...projectApps.keys()].indexOf(url.searchParams.get("projectDir")) : 1234) : null;
@@ -341,7 +367,7 @@ await page.route((url) => url.pathname.startsWith("/api/"), async (route) => {
     projects.push(made); return json(made, 201);
   }
   if (url.pathname === "/api/chat/sessions") {
-    if (method === "GET") return json(sessions.filter((session) => Boolean(session.archived) === (url.searchParams.get("archived") === "true")));
+    if (method === "GET") return json(sessions.filter((session) => Boolean(session.archived) === (url.searchParams.get("archived") === "true")).map(summaryOf));
     const body = data();
     if (body.projectDir === chatCreationFailureFor) return json({ code: "CHAT_PROVIDER_UNAVAILABLE", detail: "The CLI connection is temporarily unavailable." }, 503);
     let project = projects.find((item) => item.projectDir === body.projectDir);
@@ -470,9 +496,24 @@ const waitWorkspace = async (kind = "arch") => {
   await visibleWorkspace().locator(kind === "board" ? ".monkeyboard-canvas canvas" : kind === "drawing" ? ".drawing-workspace" : kind === "render" ? ".render-workspace" : ".stage canvas").first().waitFor();
   assert.equal(await page.locator(".chat-project-workspace iframe").count(), 0, "project workspaces mount directly in the Hub");
 };
+/**
+ * IA-6: pressing the rail entry on screen steps back, so a walk that only needs an entry on
+ * screen presses it when it is not. A restore that lands just before the press makes it the
+ * entry on screen, which the press then closes; one more press brings it back.
+ */
+const showEntry = async (name) => {
+  const entry = page.getByRole("button", { name, exact: true });
+  await page.waitForFunction((label) => {
+    const node = document.querySelector(`.chat-rail__tool[aria-label="${label}"]`);
+    return node && !node.disabled && !node.hasAttribute("aria-busy");
+  }, name);
+  if (await entry.getAttribute("aria-pressed") === "true") return;
+  await entry.click();
+  if (await page.locator(".chat-shell").getAttribute("data-panel") === "false") await entry.click();
+};
 /** The architect opens a result read-only from Modeling's Versions: results never open themselves (#302). */
 const viewCandidate = async (runId) => {
-  await page.getByRole("button", { name: "Modeling", exact: true }).click();
+  await showEntry("Modeling");
   await waitWorkspace();
   await page.waitForFunction(() => !document.querySelector('.chat-project-workspace:not([hidden]) .boot'));
   const toggle = visibleWorkspace().locator(".stage__versions-toggle");
@@ -937,6 +978,18 @@ try {
   await choices.waitFor();
   assert.deepEqual(await choices.getByRole("button").allInnerTexts(), ["Allow once", "Reject", "Cancel"]);
   assert.equal(permissionWrites().length, 0, "rendering a permission never agrees to it");
+  // FN-2: the waiting conversation's row says so in words and colour; its project row carries a smaller
+  // mark in place of Running. Both are on buttons a keyboard reaches, whose descriptions say it aloud.
+  const waitingThread = page.locator(".chat-thread-row").filter({ hasText: "Widen the courtyard" });
+  await waitingThread.locator(".chat-needs").filter({ hasText: /^Needs you$/ }).waitFor();
+  assert.equal(await waitingThread.locator(".chat-thread").getAttribute("aria-description"), "Needs your permission");
+  const projectAHead = page.locator(".chat-project__head").filter({ has: page.getByRole("button", { name: "Project A", exact: true }) });
+  assert.equal(await projectAHead.locator('.chat-project__badge[data-kind="needs"]').innerText(), "Needs you");
+  assert.equal(await projectAHead.locator('.chat-project__badge[data-kind="running"]').count(), 0, "the mark stands in for Running");
+  assert.match(await projectAHead.getByRole("button", { name: "Project A", exact: true }).getAttribute("aria-description"), /1 chat needs you$/);
+  await waitingThread.locator(".chat-thread").focus();
+  assert.equal(await page.evaluate(() => document.activeElement?.getAttribute("aria-description")), "Needs your permission");
+  assert.equal(await page.locator(".chat-thread-row[data-attention]").count(), 1, "only the conversation that asked is marked");
   await page.screenshot({ path: path.join(temporary, "permission-pending.png") });
   let releasePermission;
   permissionResponseGate = new Promise((resolve) => { releasePermission = resolve; });
@@ -949,6 +1002,9 @@ try {
   releasePermission();
   await choices.waitFor({ state: "hidden" });
   permissionResponseGate = Promise.resolve();
+  // Answered, the marks leave with the request.
+  await waitingThread.locator(".chat-needs").waitFor({ state: "detached" });
+  await projectAHead.locator('.chat-project__badge[data-kind="needs"]').waitFor({ state: "detached" });
 
   pendingActivity.permission = { ...permission, id: "permission-cancel" };
   emitRuntime();
@@ -1170,6 +1226,64 @@ try {
   await waitWorkspace();
   assert.equal(await visibleWorkspace().evaluate((element) => element.collapseMarker), "retained");
 
+  // IA-6: pressing the entry on screen steps back one level. A surface leaves the panel and keeps its
+  // workspace; a Tool returns to the surface it was opened over, or leaves the panel when it was
+  // opened from the conversation. The keyboard does the same, and says what a press will do.
+  const entry = (name) => page.getByRole("button", { name, exact: true });
+  const panelClosed = () => page.waitForFunction(() => document.querySelector(".chat-shell")?.dataset.panel === "false");
+  const treeShown = () => visibleWorkspace().locator('[data-project-surface="tree"]:not([hidden])').waitFor();
+  assert.equal(await entry("Modeling").getAttribute("aria-description"), "Close Modeling");
+  await entry("Modeling").click();
+  await panelClosed();
+  assert.equal(await entry("Modeling").getAttribute("aria-pressed"), "false");
+  assert.equal(await entry("Modeling").getAttribute("aria-description"), null);
+  assert.equal(await page.locator(".chat-project-workspace").count(), mountedProjects, "stepping out keeps the workspace");
+  await entry("Modeling").click();
+  await waitWorkspace();
+  assert.equal(await visibleWorkspace().evaluate((element) => element.collapseMarker), "retained");
+  for (const [label, shownNow] of [["Design tree", treeShown], ["Board", () => waitWorkspace("board")]]) {
+    await entry(label).click();
+    await shownNow();
+    await entry(label).focus();
+    await page.keyboard.press("Enter");
+    await panelClosed();
+    assert.equal(await entry(label).getAttribute("aria-pressed"), "false", `${label} steps out of the panel`);
+    assert.ok(await entry(label).evaluate((node) => node === document.activeElement), "focus stays on the entry");
+    await page.keyboard.press("Enter");
+    await shownNow();
+    assert.equal(await entry(label).getAttribute("aria-pressed"), "true", `${label} comes back from the keyboard`);
+  }
+  // Board is on screen: Usage over it returns to it.
+  await entry("Usage").click();
+  await waitMonitor();
+  assert.equal(await entry("Usage").getAttribute("aria-description"), "Close Usage and return to Board");
+  assert.equal(await entry("Usage").getAttribute("title"), "Close Usage and return to Board");
+  await entry("Usage").focus();
+  await page.keyboard.press("Space");
+  await waitWorkspace("board");
+  assert.equal(await entry("Board").getAttribute("aria-pressed"), "true");
+  assert.equal(await entry("Usage").getAttribute("aria-pressed"), "false");
+  // A Tool opened over another Tool returns to the surface under both.
+  await entry("Drawings").click();
+  await waitWorkspace("drawing");
+  await entry("Fabrication").click();
+  await page.waitForFunction(() => document.querySelector("iframe:not([hidden])")?.src.includes("app=monkeyfab"));
+  assert.equal(await entry("Fabrication").getAttribute("aria-description"), "Close Fabrication and return to Board");
+  await entry("Fabrication").click();
+  await waitWorkspace("board");
+  assert.equal(await entry("Board").getAttribute("aria-pressed"), "true");
+  // Opened from the conversation, a Tool leaves the panel again.
+  await entry("Board").click();
+  await panelClosed();
+  await entry("Usage").click();
+  await waitMonitor();
+  assert.equal(await entry("Usage").getAttribute("aria-description"), "Close Usage");
+  await entry("Usage").click();
+  await panelClosed();
+  assert.equal(await entry("Usage").getAttribute("aria-pressed"), "false");
+  await entry("Modeling").click();
+  await waitWorkspace();
+
   // C — the project gear answers for the bound project, not for the tools.
   await page.getByRole("button", { name: /Project A/ }).last().click();
   const card = page.getByRole("dialog", { name: "Project" });
@@ -1300,7 +1414,8 @@ try {
   await waitWorkspace("board");
   assert.equal(await visibleWorkspace().getByLabel("Board title", { exact: true }).inputValue(), "Board A retained");
   await page.getByRole("button", { name: "Project B", exact: true }).first().click();
-  await page.getByRole("button", { name: "Board", exact: true }).click();
+  // Back in B, its Board is on screen again; pressing it now would step out of the panel (IA-6).
+  await showEntry("Board");
   await waitWorkspace("board");
   assert.equal(await visibleWorkspace().getByLabel("Board title", { exact: true }).inputValue(), "Board B retained");
   assert.equal(runningA.status, "running", "Board navigation does not interrupt another project's task");
@@ -1596,7 +1711,7 @@ try {
   await page.screenshot({ path: path.join(temporary, "failure.png") });
 
   // Workspaces share the host document and have no second settings surface.
-  await page.getByRole("button", { name: "Modeling", exact: true }).click();
+  await showEntry("Modeling");
   await waitWorkspace();
   assert.equal(await page.getByRole("button", { name: "Hub settings", exact: true }).count(), 1);
   assert.equal(workspaceFixture.requests.filter((row) => row.name === "/api/settings/user").length, 0);
@@ -1649,11 +1764,34 @@ try {
   let releaseModeling;
   modelingResponseGate = new Promise((resolve) => { releaseModeling = resolve; });
   const delayedStart = page.waitForRequest((req) => req.url().includes("/api/project/modeling"));
-  await page.getByRole("button", { name: "Modeling", exact: true }).click();
+  const modelingEntry = page.getByRole("button", { name: "Modeling", exact: true });
+  await modelingEntry.click();
   await delayedStart;
+  // PP-1: over the surface on screen, after a moment, the skeleton of the one being opened names the step it waits on.
+  const openingSkeleton = page.locator(".chat-skeleton");
+  await openingSkeleton.getByText("Opening model…", { exact: true }).waitFor();
+  assert.equal(await openingSkeleton.locator("h2").innerText(), "Modeling");
+  assert.equal(await page.locator(".chat-composer-note").textContent(), "", "the composer no longer says it is connecting");
+  assert.equal(await modelingEntry.getAttribute("aria-pressed"), "true");
+  assert.equal(await page.getByRole("button", { name: "Render", exact: true }).getAttribute("aria-pressed"), "false");
+  // Pressing the entry being opened cancels it and gives back the surface under it (IA-6).
+  assert.equal(await modelingEntry.getAttribute("aria-description"), "Cancel opening Modeling");
+  await modelingEntry.click();
+  await openingSkeleton.waitFor({ state: "detached" });
+  await waitWorkspace("render");
+  assert.equal(await page.getByRole("button", { name: "Render", exact: true }).getAttribute("aria-pressed"), "true");
+  assert.equal(await modelingEntry.getAttribute("aria-busy"), null);
+  // Opening it again waits on the same modeling start, which Cancel never withdrew.
+  const modelingStarts = () => writes.filter(([, pathname]) => pathname === "/api/project/modeling").length;
+  const startsBeforeReopen = modelingStarts();
+  await modelingEntry.click();
+  await openingSkeleton.getByText("Opening model…", { exact: true }).waitFor();
+  assert.equal(modelingStarts(), startsBeforeReopen, "the reopened tool waits on the start already asked for");
   await page.locator(".chat-new").getByText("New chat", { exact: true }).click();
+  // The skeleton belongs to the conversation it was opened for.
+  await openingSkeleton.waitFor({ state: "detached" });
   releaseModeling(); modelingResponseGate = Promise.resolve();
-  await page.waitForFunction(() => document.querySelector('.chat-composer-note')?.textContent === "");
+  await page.waitForFunction(() => !document.querySelector(".chat-rail__tool[aria-busy]"));
   assert.equal(await page.locator(".chat-project-workspace:visible").count(), 0, "a late response cannot open the old chat workspace");
   // Archiving removes only the sidebar entry. The retained chat is readable,
   // survives a page reload and is explicitly restored before it can continue.
@@ -2513,6 +2651,23 @@ try {
     .toLocaleString("en", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }))}`);
   assert.equal(await notice.getByRole("button", { name: "Dismiss", exact: true }).count(), 0, "one that needs recovery cannot be dismissed");
   assert.ok(runtimeT.operations.filter((row) => row.status !== "needs_recovery").every((row) => row.acknowledgedAt));
+  // GH-58: one the Hub marks unrecoverable says so beside Dismiss, and once dismissed it leaves; the
+  // one that can still be recovered stays without Dismiss. Rows that say nothing keep today's rule.
+  runtimeT.operations.push({ operationId: "candidate-lost", projectId: "T", kind: "POST /api/proposals/prop-2/candidate", source: "chat",
+    status: "needs_recovery", recoverable: false, committed: false, admissionSequence: 5, createdAt: sheetAskedAt });
+  emitRuntime();
+  const unrecoverableNote = notice.getByText("Cannot be recovered automatically", { exact: true });
+  await unrecoverableNote.waitFor();
+  assert.equal(await notice.locator("p").innerText(), "An operation needs recovery review");
+  const dismissLost = notice.getByRole("button", { name: "Dismiss", exact: true });
+  assert.equal(await dismissLost.getAttribute("aria-describedby"), await unrecoverableNote.getAttribute("id"), "Dismiss is described by why");
+  const beforeLost = writes.length;
+  await dismissLost.click();
+  await unrecoverableNote.waitFor({ state: "detached" });
+  assert.deepEqual(writes.slice(beforeLost).filter(([, pathname]) => pathname.includes("/acknowledge")).map(([, pathname]) => pathname),
+    ["/api/runtime/operations/candidate-lost/acknowledge"]);
+  await notice.locator("p").filter({ hasText: "An operation needs recovery review" }).waitFor();
+  assert.equal(await notice.getByRole("button", { name: "Dismiss", exact: true }).count(), 0, "the one that can still be recovered stays");
 
   // The same composer states and notice in Chinese, for review.
   await page.getByRole("button", { name: "Hub settings", exact: true }).click();
@@ -2566,6 +2721,119 @@ try {
   await page.getByRole("button", { name: "停止", exact: true }).click();
   runtimeT.operations = []; emitRuntime();
   await notice.waitFor({ state: "detached" });
+
+  // GH-300 batch F, in Chinese for review. GH-58: an operation that needs recovery the Hub cannot
+  // give it says so beside 知道了, and can be dismissed.
+  runtimeT.operations = [{ operationId: "candidate-lost-zh", projectId: "T", kind: "POST /api/proposals/prop-6/candidate", source: "chat",
+    status: "needs_recovery", recoverable: false, committed: false, admissionSequence: 9, createdAt: sheetAskedAt }];
+  emitRuntime();
+  await notice.getByText("无法自动恢复", { exact: true }).waitFor();
+  assert.equal(await notice.locator("p").innerText(), "有操作需要检查恢复结果");
+  await page.locator(".chat-main").screenshot({ path: path.join(temporary, "operation-unrecoverable-zh.png") });
+  await notice.getByRole("button", { name: "知道了", exact: true }).click();
+  await notice.waitFor({ state: "detached" });
+
+  // FN-2: a conversation waiting on the architect's permission is marked 需要你 in words and colour,
+  // and its project row carries the smaller mark.
+  const shownChatId = new URL(page.url()).searchParams.get("chatId");
+  const waitingChat = sessions.find((row) => row.projectId === "T" && row.id !== shownChatId && !row.archived);
+  waitingChat.status = "running";
+  waitingChat.messages.push({ id: "needs-you-permission", role: "tool", status: "streaming", content: "studio_request · POST /api/proposals · in_progress",
+    permission: { id: "permission-needs-you", title: "允许修改模型？", options: [{ optionId: "allow", name: "允许一次", kind: "allow_once" }] } });
+  emitRuntime();
+  const waitingRowZh = page.locator(".chat-thread-row").filter({ hasText: waitingChat.title });
+  await waitingRowZh.locator(".chat-needs").filter({ hasText: /^需要你$/ }).waitFor();
+  assert.equal(await waitingRowZh.locator(".chat-thread").getAttribute("aria-description"), "需要你的授权");
+  const treeHead = page.locator(".chat-project__head").filter({ has: page.getByRole("button", { name: "Tree project", exact: true }) });
+  assert.equal(await treeHead.locator('.chat-project__badge[data-kind="needs"]').innerText(), "需要你");
+  assert.match(await treeHead.getByRole("button", { name: "Tree project", exact: true }).getAttribute("aria-description"), /1 个对话需要你$/);
+  // The notice layer announces the same moment; it is only waited for here, for the picture.
+  await page.locator('.attention-toast[data-kind="permission"]').waitFor({ timeout: 6000 }).catch(() => {});
+  await treeHead.scrollIntoViewIfNeeded();
+  await page.screenshot({ path: path.join(temporary, "needs-you-zh-1440.png") });
+  waitingChat.messages.at(-1).permission = null; waitingChat.status = "idle";
+  emitRuntime();
+  await waitingRowZh.locator(".chat-needs").waitFor({ state: "detached" });
+  await treeHead.locator('.chat-project__badge[data-kind="needs"]').waitFor({ state: "detached" });
+  await page.locator(".attention-toast").waitFor({ state: "detached", timeout: 10000 }).catch(() => {});
+
+  // PP-1: opening a tool shows the skeleton of its surface at once and names the step it waits on;
+  // after 3 s, how long and 取消. Cancel stops waiting; the project service it asked for goes on starting.
+  projects.push({ projectId: "S", projectDir: "D:\\fixture\\S", name: "Slow project", chatCount: 0, version: 0, stage: null });
+  studioStartHold = { held: [] };
+  emitRuntime();
+  await page.getByRole("button", { name: "Slow project", exact: true }).first().click();
+  for (const until = Date.now() + 12000; !studioStartHold.held.length; await page.waitForTimeout(50)) {
+    if (Date.now() > until) assert.fail("the project service was never asked to start");
+  }
+  const modelingZh = page.getByRole("button", { name: "建模", exact: true }), skeletonZh = page.locator(".chat-skeleton");
+  await modelingZh.click();
+  await skeletonZh.waitFor();
+  assert.equal(await skeletonZh.locator("h2").innerText(), "建模");
+  await skeletonZh.getByText("正在启动项目服务…", { exact: true }).waitFor();
+  assert.equal(await modelingZh.getAttribute("aria-pressed"), "true");
+  assert.equal(await modelingZh.getAttribute("aria-busy"), "true");
+  assert.equal(await modelingZh.getAttribute("aria-description"), "取消打开建模");
+  assert.equal(await skeletonZh.getByRole("button", { name: "取消", exact: true }).count(), 0, "no Cancel in the first 3 s");
+  await skeletonZh.getByRole("button", { name: "取消", exact: true }).waitFor();
+  assert.match(await skeletonZh.locator(".chat-skeleton__slow").innerText(), /^已等待 \d+秒/);
+  await page.screenshot({ path: path.join(temporary, "tool-skeleton-zh.png") });
+  const beforeCancel = writes.length;
+  await skeletonZh.getByRole("button", { name: "取消", exact: true }).click();
+  await skeletonZh.waitFor({ state: "detached" });
+  assert.equal(await page.locator(".chat-shell").getAttribute("data-panel"), "false", "Cancel returns to the conversation the tool was opened from");
+  assert.equal(await modelingZh.getAttribute("aria-pressed"), "false");
+  assert.equal(await modelingZh.getAttribute("aria-busy"), null);
+  assert.deepEqual(writes.slice(beforeCancel), [], "Cancel asks the Hub for nothing: the starting service is left to start");
+  releaseStudioStarts();
+  await page.waitForFunction(() => document.querySelector('.chat-rail__tool[aria-label="建模"]')?.dataset.state === "running");
+  await modelingZh.click();
+  await waitWorkspace();
+
+  // NA-2: below 900 px the chat header stays above an open panel and names the project; the Stage chip
+  // is in whichever header is on top: the project surface's own bar when one is open, else this header.
+  await page.getByRole("button", { name: "Tree project", exact: true }).first().click();
+  const onTop = (locator) => locator.evaluate((node) => {
+    const box = node.getBoundingClientRect();
+    if (!box.width || !box.height) return false;
+    const hit = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
+    return Boolean(hit) && (hit === node || node.contains(hit));
+  });
+  const headerProject = page.locator(".chat-header__project"), headerChipZh = page.locator(".chat-header__chip");
+  const barChip = visibleWorkspace().locator(".stage-chip");
+  for (const [width, height] of [[800, 900], [390, 844]]) {
+    await page.setViewportSize({ width, height });
+    if (await page.locator(".chat-sidebar").isVisible()) await page.getByRole("button", { name: "收起项目栏", exact: true }).first().click();
+    if (await page.locator(".chat-shell").getAttribute("data-panel") === "true") await page.getByRole("button", { name: "收起工具", exact: true }).click();
+    await headerChipZh.waitFor();
+    assert.equal(await headerProject.innerText(), "Tree project");
+    const chipWords = await headerChipZh.innerText();
+    assert.match(chipWords, /^S2\b.* · 当前$/);
+    assert.ok(await onTop(headerProject) && await onTop(headerChipZh), `${width} px: the conversation's header names the project and carries the chip`);
+    if (width === 390) await page.screenshot({ path: path.join(temporary, "narrow-chat-390-zh.png") });
+    await page.getByRole("button", { name: "建模", exact: true }).click();
+    await waitWorkspace();
+    await barChip.waitFor();
+    assert.equal(await headerChipZh.count(), 0, `${width} px: one chip on screen`);
+    assert.equal(await barChip.locator(".stage-chip__position").innerText(), chipWords, "the header says what the chip says");
+    assert.ok(await onTop(headerProject), `${width} px: the project stays in view over Modeling`);
+    assert.ok(await onTop(barChip), `${width} px: the Stage chip stays in view over Modeling`);
+    await page.screenshot({ path: path.join(temporary, `narrow-modeling-${width}-zh.png`) });
+    // Over a Tool without a project bar the chip is back in the header; IA-6 then returns to Modeling.
+    await page.getByRole("button", { name: "用量", exact: true }).click();
+    await page.locator(".chat-browser .monitor-page").waitFor();
+    await headerChipZh.waitFor();
+    assert.ok(await onTop(headerProject) && await onTop(headerChipZh), `${width} px: over Usage the chip is in the header`);
+    await page.getByRole("button", { name: "用量", exact: true }).click();
+    await waitWorkspace();
+    await page.getByRole("button", { name: "收起工具", exact: true }).click();
+  }
+  // The header's chip opens the Design Tree, as the chip does.
+  await headerChipZh.click();
+  await visibleWorkspace().locator('[data-project-surface="tree"]:not([hidden])').waitFor();
+  assert.equal(await page.getByRole("button", { name: "状态树", exact: true }).getAttribute("aria-pressed"), "true");
+  await page.setViewportSize({ width: 1440, height: 960 });
+  await page.getByRole("button", { name: "展开项目栏", exact: true }).first().click();
   await page.getByRole("button", { name: "Hub 设置", exact: true }).click();
   await page.locator("#language").selectOption("en");
   await page.getByRole("dialog").getByRole("button", { name: "Close", exact: true }).click();

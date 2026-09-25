@@ -49,6 +49,8 @@ export interface WorkspacePosition {
   readonly current: string | null;
   /** The model open read-only in Modeling when it is not Current, by its tree name; the next message still changes Current. */
   readonly viewing: string | null;
+  /** The Stage chip's own position words, "S2 · Current", for a header on top while the chip is not on screen (NA-2); null without a tree. */
+  readonly chip: string | null;
 }
 
 /** One mounted project: the Board, its page editor and the same local model draft. */
@@ -124,9 +126,16 @@ export function ProjectWorkspace({ workspace, expectedProjectId, candidateRunId 
   // #285: the chat composer names the same position as the chip, in the chip's words.
   const t = useT();
   const currentAt = useMemo(() => designTree.tree ? treeWords(t, designTree.tree).currentAt() : "", [t, designTree.tree]);
+  // NA-2: the chip's position words as DesignTreeBar states them, for the chat header while the chip is out of view.
+  const chip = useMemo(() => {
+    const tree = designTree.tree;
+    if (!tree) return null;
+    const stage = tree.currentStage ? treeWords(t, tree).stageName(tree.nodes.get(tree.currentStage)!) : t("designTree.chip.noStage");
+    return t("designTree.chip.position", { stage, position: t("designTree.current") });
+  }, [t, designTree.tree]);
   useEffect(() => {
-    onPositionChange?.(server.status === "ready" ? { current: currentAt || null, viewing: viewing?.name || null } : null);
-  }, [onPositionChange, server.status, currentAt, viewing?.name]);
+    onPositionChange?.(server.status === "ready" ? { current: currentAt || null, viewing: viewing?.name || null, chip } : null);
+  }, [onPositionChange, server.status, currentAt, viewing?.name, chip]);
   useEffect(() => () => onPositionChange?.(null), [onPositionChange]);
   // The node the tree opens on (#302): the chip's ready options, or a chat Study card's.
   const [treeNodeFocus, setTreeNodeFocus] = useState<{ node: string; request: number } | null>(null);

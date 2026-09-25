@@ -2374,7 +2374,7 @@ def _stop_process(process: subprocess.Popen) -> None:
         return
     try:
         if os.name == "nt":
-            subprocess.run(["taskkill", "/T", "/F", "/PID", str(process.pid)], capture_output=True,
+            subprocess.run(["taskkill", "/T", "/F", "/PID", str(process.pid)], stdin=subprocess.DEVNULL, capture_output=True,
                            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0), timeout=10, check=False)
         else:
             os.killpg(process.pid, signal.SIGKILL)

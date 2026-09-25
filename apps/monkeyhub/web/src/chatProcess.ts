@@ -157,19 +157,28 @@ export interface OperationNotice {
   admissionSequence?: number | null;
   createdAt?: string | null;
   acknowledgedAt?: string | null;
+  /** GH-58: false when the Hub has no way to recover the operation; absent from Hubs that do not say. */
+  recoverable?: boolean | null;
 }
+
+/** An operation that needs recovery the Hub says it cannot recover (GH-58). */
+export const unrecoverable = (row: OperationNotice) => row.status === "needs_recovery" && row.recoverable === false;
+
+/** The notice can be dismissed: a failed or stale operation, or one that needs recovery nothing can give it. */
+export const dismissible = (row: OperationNotice) => row.status === "failed" || row.status === "stale" || unrecoverable(row);
 
 /**
  * The operations the "did not finish" notice stands for (#285): failed or stale
  * ones nobody dismissed, newest first, then those that need recovery, newest
- * first. A dismissal never hides one that needs recovery; it stays until it is
- * recovered. Retained runs without an admission come after admitted requests.
+ * first. A dismissal never hides one that can still be recovered; it stays until
+ * it is. One the Hub cannot recover leaves once dismissed (GH-58). Retained runs
+ * without an admission come after admitted requests.
  */
 export function unfinishedOperations<T extends OperationNotice>(operations: readonly T[]): T[] {
   const newest = (a: T, b: T) => (b.admissionSequence ?? 0) - (a.admissionSequence ?? 0);
   return [
     ...operations.filter((row) => (row.status === "failed" || row.status === "stale") && !row.acknowledgedAt).sort(newest),
-    ...operations.filter((row) => row.status === "needs_recovery").sort(newest),
+    ...operations.filter((row) => row.status === "needs_recovery" && !(unrecoverable(row) && row.acknowledgedAt)).sort(newest),
   ];
 }
 

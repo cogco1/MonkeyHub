@@ -35,9 +35,14 @@ def source_revision(root: Path) -> str | None:
         if marker.exists():
             value = marker.read_text(encoding="utf-8-sig").strip()
         else:
+            # The Hub's own stdin is the desktop's stop pipe, with a read
+            # always pending on it. A git that inherited it would wait for
+            # that read and outlast this timeout (#58). Git writes UTF-8,
+            # whatever the console code page.
             value = subprocess.run(
                 ["git", "-C", str(root), "rev-parse", "HEAD"],
-                capture_output=True, text=True, timeout=5, check=True,
+                stdin=subprocess.DEVNULL, capture_output=True, encoding="utf-8", errors="replace",
+                timeout=5, check=True,
                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
             ).stdout.strip()
     except (OSError, UnicodeError, subprocess.SubprocessError):

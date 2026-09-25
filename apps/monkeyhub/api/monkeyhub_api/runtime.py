@@ -42,7 +42,8 @@ _CANDIDATE_REQUEST = re.compile(
 _ACCEPT_REQUEST = re.compile(r"^/api/candidates/([^/]+)/accept$")
 _PROPOSAL_CANDIDATE = re.compile(r"^/api/proposals/([^/]+)/candidate$")
 _ACTIVE = {"queued", "planning", "validated", "executing", "committing"}
-# Outcomes a person can read and dismiss. One that needs recovery stays until it is recovered.
+# Finished outcomes a person can read and dismiss. One that needs recovery joins
+# them only when the Hub has no way to recover it; otherwise it stays until it is.
 _ACKNOWLEDGEABLE = {"failed", "stale"}
 _IDLE_RETAINED_REFRESH_S = 30
 _WORKING_CLEANUP_INTERVAL_S = 15 * 60
@@ -56,6 +57,10 @@ _WORK_COPY_CONTENT_REFRESH_NS = _IDLE_RETAINED_REFRESH_S * 1_000_000_000
 
 def project_key(path: str) -> str:
     return os.path.normcase(str(Path(path).resolve()))
+
+
+def _dismissible(record: OperationRecord) -> bool:
+    return record.status in _ACKNOWLEDGEABLE or (record.status == "needs_recovery" and not record.recoverable)
 
 
 def worker_dto(row) -> WorkerStatus:
@@ -105,6 +110,16 @@ class _Admission:
     accepting_candidate: bool = False
     response: HttpResult | None = None
     finished: threading.Event = field(default_factory=threading.Event)
+    # Whether the latest retained read left what recovery needs to resolve this
+    # request: the run it named with its runner receipt and, for an acceptance,
+    # a branch head its commit can still land on. None until a read after this
+    # Hub started or lost the reply.
+    resolvable: bool | None = None
+
+    @property
+    def expects_stage(self) -> bool:
+        """An acceptance that named the Stage it succeeds: the only one whose commit can be found."""
+        return self.accepting_candidate and bool(self.expected_stage)
 
 
 class OperationManager:
@@ -120,8 +135,9 @@ class OperationManager:
         self._lock = threading.RLock()
         self._operations: dict[str, _Admission] = {}
         self._retained: dict[str, OperationRecord] = {}
-        # Dismissed notices by operation id, for admitted requests and observed runs alike.
-        self._acknowledged: dict[str, str] = {}
+        # Dismissed notices by operation id, for admitted requests and observed
+        # runs alike: when, and the status the person read.
+        self._acknowledged: dict[str, tuple[str, str]] = {}
         self._restore()
 
     def _restore(self) -> None:
@@ -152,12 +168,21 @@ class OperationManager:
                                        row["branchId"], row["acceptingCandidate"])
                 admission.finished.set()  # A prior process cannot deliver its HTTP response.
                 self._operations[record.operationId] = admission
-            # A dismissal is a person's reading of a finished failure, not a
-            # recovery fact: an unreadable entry only brings its notice back.
+            # A dismissal is a person's reading of one outcome, not a recovery
+            # fact: an unreadable entry only brings its notice back.
             acknowledged = saved.get("acknowledged", {})
-            if isinstance(acknowledged, dict):
-                self._acknowledged = {key: value for key, value in acknowledged.items()
-                                      if isinstance(key, str) and isinstance(value, str)}
+            for key, value in (acknowledged.items() if isinstance(acknowledged, dict) else ()):
+                if isinstance(value, str):
+                    # Kept before a dismissal named its status, when only a failed
+                    # or stale one could be dismissed. A request keeps that status;
+                    # an observed run could only have failed.
+                    admitted = self._operations.get(key)
+                    value = {"acknowledgedAt": value, "status": admitted.record.status if admitted else "failed"}
+                    if value["status"] not in _ACKNOWLEDGEABLE:
+                        continue
+                if (isinstance(value, dict) and isinstance(value.get("acknowledgedAt"), str)
+                        and value.get("status") in _ACKNOWLEDGEABLE | {"needs_recovery"}):
+                    self._acknowledged[key] = (value["acknowledgedAt"], value["status"])
         except (OSError, ValueError, KeyError, TypeError) as exc:
             raise HubFailure(503, "OPERATION_LOG_INVALID", "The saved operation identities could not be read for this project. Requests were not replayed.") from exc
 
@@ -168,12 +193,13 @@ class OperationManager:
         # bodies and successful project results stay with their existing owners.
         saved = {"projectId": self.project_id, "projectDir": self.project_dir, "operations": [{
             "record": row.record.model_dump(exclude={"committed", "resultDigest", "resultRevision", "reason",
-                                                     "admissionSequence", "acknowledgedAt"}),
+                                                     "admissionSequence", "recoverable", "acknowledgedAt"}),
             "signature": row.signature, "expectedStage": row.expected_stage,
             "branchId": row.branch_id, "acceptingCandidate": row.accepting_candidate,
         } for row in self._operations.values()]}
         if self._acknowledged:
-            saved["acknowledged"] = self._acknowledged
+            saved["acknowledged"] = {key: {"acknowledgedAt": at, "status": status}
+                                     for key, (at, status) in self._acknowledged.items()}
         temporary = self.journal_path.with_suffix(".tmp")
         try:
             self.journal_path.parent.mkdir(parents=True, exist_ok=True)
@@ -268,6 +294,8 @@ class OperationManager:
         with self._lock:
             admission.record.status = "needs_recovery"
             admission.record.reason = reason
+            # Only a read after the lost reply can say whether it left a run to recover.
+            admission.resolvable = None
             try:
                 self._save()
             finally:
@@ -292,17 +320,24 @@ class OperationManager:
         # intentionally absent from the existing inspector's answer.
         if not stages:
             stages = [stage for branch in retained.get("branches", []) for stage in branch.get("stages", [])]
+        heads = {branch.get("branchId"): branch.get("headStageRef") for branch in retained.get("branches", [])}
         with self._lock:
             for admission in self._operations.values():
                 record = admission.record
                 if record.status in {"failed", "stale", "cancelled"}:
                     continue
                 candidate = candidates.get(record.candidateId)
+                # All that recovery can find again: the named run with its receipt.
+                # An acceptance commits by compare-and-swap on the head it expected,
+                # so once its branch has moved on without it, it never will.
+                admission.resolvable = bool(candidate and candidate.get("receiptRef")) and (
+                    not admission.expects_stage
+                    or heads.get(admission.branch_id, admission.expected_stage) == admission.expected_stage)
                 job = jobs.get(record.candidateId)
                 if job:
                     record.jobId = job.get("jobId")
                     record.proposalId = record.proposalId or job.get("proposalId")
-                if admission.accepting_candidate and isinstance(admission.expected_stage, str) and admission.expected_stage:
+                if admission.expects_stage:
                     committed = next((stage for stage in stages
                         if stage.get("candidateId") == record.candidateId
                         and stage.get("branchId") == admission.branch_id
@@ -337,65 +372,105 @@ class OperationManager:
                 if candidate_id in tracked:
                     continue
                 status = candidate.get("status", "needs_recovery")
+                status = {"succeeded": "completed", "running": "executing"}.get(status, status)
                 observed[candidate_id] = OperationRecord(
                     operationId=f"candidate:{candidate_id}", projectId=self.project_id,
-                    kind="candidate", source="retained", candidateId=candidate_id,
-                    status={"succeeded": "completed", "running": "executing"}.get(status, status),
+                    kind="candidate", source="retained", candidateId=candidate_id, status=status,
                     baseRevision=(candidate.get("base") or {}).get("version"),
                     baseRecordDigest=candidate.get("baseRecordDigest"),
                     baseDigest=candidate.get("baseStateDigest"), resultDigest=candidate.get("resultStateDigest"),
                     jobId=candidate.get("jobId"), proposalId=candidate.get("proposalId"),
                     committed=bool(candidate.get("commitStageRefs")),
                     reason=candidate.get("error"),
+                    # An observed run is never replayed either; only its receipt can resolve it.
+                    recoverable=status == "needs_recovery" and bool(candidate.get("receiptRef")),
                 )
             self._retained = observed
 
-    def _shown(self, record: OperationRecord, **update) -> OperationRecord:
-        # A dismissal speaks only for the failure it dismissed: an observation
-        # that later reads as needing recovery is reported again, undismissed.
-        acknowledged = self._acknowledged.get(record.operationId) if record.status in _ACKNOWLEDGEABLE else None
-        return record.model_copy(update={**update, "acknowledgedAt": acknowledged}, deep=True)
+    def _recoverable(self, admission: _Admission) -> bool:
+        """Whether reading retained results can still resolve this operation.
+
+        Recovery replays nothing. It reconciles a lost reply against the run
+        the request named and that run's runner receipt, and an acceptance
+        against a commit under the Stage it named. A request that named no run,
+        such as a proposal or a drawing sheet, leaves nothing to reconcile; nor
+        does a run no read finds with its receipt, since whatever would have
+        written that receipt is never run again, nor an acceptance whose branch
+        has moved past the Stage it expected.
+        """
+        record = admission.record
+        if record.status != "needs_recovery" or not record.candidateId:
+            return False
+        if admission.accepting_candidate and not admission.expects_stage:
+            return False
+        if admission.resolvable is None:
+            # Not read since the reply was lost or this Hub started: the notice
+            # stays, unless a person already read it as unrecoverable.
+            return self._acknowledged.get(record.operationId, ("", ""))[1] != "needs_recovery"
+        return admission.resolvable
+
+    def _shown(self, record: OperationRecord, admission: _Admission | None = None, **update) -> OperationRecord:
+        shown = record.model_copy(update={**update, "acknowledgedAt": None}, deep=True)
+        if admission is not None:
+            shown.recoverable = self._recoverable(admission)
+        # A dismissal speaks only for the status it read: an operation that
+        # later reads otherwise, or turns out recoverable, is reported again.
+        at, status = self._acknowledged.get(record.operationId, (None, None))
+        if status == shown.status and _dismissible(shown):
+            shown.acknowledgedAt = at
+        return shown
 
     def records(self) -> list[OperationRecord]:
         with self._lock:
             # The existing journal retains this admission order across Hub
             # restarts. Derive it before the bounded/reordered display window;
             # it supplies no result status and is never written back to disk.
-            values = [self._shown(row.record, admissionSequence=index)
+            values = [self._shown(row.record, row, admissionSequence=index)
                       for index, row in enumerate(self._operations.values(), start=1)]
-            # Keep active work visible even after many completed requests.
-            active = [row for row in values if row.status in _ACTIVE or row.status == "needs_recovery"]
+            # Keep active work visible even after many completed requests, and
+            # recovery until it is recovered or a person dismissed it.
+            active = [row for row in values if row.status in _ACTIVE
+                      or (row.status == "needs_recovery" and row.acknowledgedAt is None)]
             recent = [row for row in values if row not in active][-50:]
             return [*active, *recent, *(self._shown(row) for row in self._retained.values())]
 
     def acknowledge(self, operation_id: str) -> OperationRecord:
-        """Dismiss one failed or stale operation's notice; its record and outcome stay as they are.
+        """Dismiss one operation's notice; its record and outcome stay as they are.
 
-        The dismissal is kept in this journal, so it outlasts a Hub restart. An
-        operation that needs recovery cannot be dismissed: it stays until a
-        retained result resolves it.
+        A failed or stale operation can be dismissed, and one that needs
+        recovery when the Hub has no way to recover it. The dismissal is kept
+        in this journal with the status it read, so it outlasts a Hub restart
+        and ends if the operation reads otherwise. An operation the Hub can
+        still recover cannot be dismissed: it stays until a retained result
+        resolves it.
         """
         with self._lock:
-            order = list(self._operations)
-            if operation_id in self._operations:
-                record, sequence = self._operations[operation_id].record, order.index(operation_id) + 1
+            admission = self._operations.get(operation_id)
+            if admission is not None:
+                record, sequence = admission.record, list(self._operations).index(operation_id) + 1
             else:
                 record = next((row for row in self._retained.values() if row.operationId == operation_id), None)
                 sequence = None
             if record is None:
                 raise HubFailure(404, "OPERATION_NOT_FOUND", "This project runtime has no operation with that id.")
-            if record.status not in _ACKNOWLEDGEABLE:
+            shown = self._shown(record, admission)
+            if not _dismissible(shown):
                 raise HubFailure(409, "OPERATION_NOT_ACKNOWLEDGEABLE",
-                                 "Only a failed or stale operation can be dismissed. An operation that needs recovery stays until it is recovered.")
-            if operation_id not in self._acknowledged:
-                self._acknowledged[operation_id] = datetime.now(timezone.utc).isoformat()
+                                 "Only a failed or stale operation, or one the Hub cannot recover, can be dismissed. "
+                                 "An operation that can still be recovered stays until it is.")
+            if shown.acknowledgedAt is None:
+                previous = self._acknowledged.get(operation_id)
+                self._acknowledged[operation_id] = (datetime.now(timezone.utc).isoformat(), shown.status)
                 try:
                     self._save()
                 except HubFailure as exc:
-                    del self._acknowledged[operation_id]
+                    if previous is None:
+                        del self._acknowledged[operation_id]
+                    else:
+                        self._acknowledged[operation_id] = previous
                     raise HubFailure(503, "OPERATION_LOG_UNAVAILABLE",
                                      "The dismissal could not be saved, so the notice stays. Nothing else changed.") from exc
-            return self._shown(record, admissionSequence=sequence)
+            return self._shown(record, admission, admissionSequence=sequence)
 
     def candidate_ids(self) -> tuple[str, ...]:
         with self._lock:
@@ -1043,7 +1118,10 @@ class ProjectRuntimeManager:
         return self.project_snapshot(runtime)
 
     def acknowledge(self, runtime: ProjectRuntime, operation_id: str) -> OperationRecord:
-        """Record that a person read a failed or stale operation's notice. No request is sent or replayed."""
+        """Record that a person read the notice of an operation that failed, went stale or cannot be recovered.
+
+        No request is sent or replayed.
+        """
         record = runtime.operations.acknowledge(operation_id)
         self.emit("operation/acknowledged", runtime.runtime_id)
         runtime.wake.set()

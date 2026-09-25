@@ -12,7 +12,7 @@ import { ChatMarkdown, ChatMessageFiles, type ChatDocument } from "./ChatMessage
 import type { PageSource } from "../workspaces/src/workspaces/monkeyboard/boardScene";
 const ProjectWorkspace = lazy(() => import("../workspaces/src/app/ProjectWorkspace").then((module) => ({ default: module.ProjectWorkspace })));
 import { presentFailure } from "./chatError";
-import { clock, currentStep, describeCall, describeStep, operationStep, rawDetail, rawLine, resultCandidates, stepText, turnsOf, unfinishedOperations, workedSeconds, type ProcessTurn, type ProcessWords } from "./chatProcess";
+import { clock, currentStep, describeCall, describeStep, dismissible, operationStep, rawDetail, rawLine, resultCandidates, stepText, turnsOf, unfinishedOperations, unrecoverable, workedSeconds, type ProcessTurn, type ProcessWords } from "./chatProcess";
 import { recentUsage, serialMonitorRead, type MonitorEvent, type RecentUsage } from "./monitorData";
 import { activeWork, newSchemes, sidebarTasks, type SidebarTask } from "./sidebarTasks";
 import { SoftwareUpdateSettings, type RestartBlocker } from "./SoftwareUpdateSettings";
@@ -33,14 +33,26 @@ type Props = {
 // followHead: the tab was restored on a cold start, not opened to inspect that exact
 // candidate; the workspace shows the architect's editing base instead (#271). An opened
 // result is view-only, and only Continue makes it the base (GH-234 Q1/Q2).
-// returnTo: the primary surface this project's Drawing tool was opened from (#295).
+// returnTo: the surface a Tool steps back to when pressed again: the one on screen when it
+// opened (#295, IA-6). Fabrication and Usage keep it on their own tab, with its project.
 // focus: the options a Study card asked the Design Tree to show, once per request (#302).
 type ToolTab = { id: AppId; url: string; revision: number; projectDir?: string; projectId?: string; runtimeId?: string; candidate?: string; followHead?: boolean;
-  returnTo?: AppId; focus?: { runIds: string[]; request: number } };
+  returnTo?: AppId; returnProject?: string; focus?: { runIds: string[]; request: number } };
 type SavedTool = { id: AppId; candidate?: string };
 type ProjectPreparation = { promise: Promise<AppStatus[]>; apps: AppStatus[] | null; modeling?: Promise<unknown> };
-/** GH-285: the admission time and dismissal the Hub now reports, until the generated client carries them. */
-type OperationRow = OperationRecord & { createdAt?: string | null; acknowledgedAt?: string | null };
+/** PP-1: the step a project's start path is on, named on the skeleton of the surface being opened. */
+type PreparationStep = "connect" | "service" | "model";
+/**
+ * PP-1: a tool being opened. Its skeleton is `shown` after a moment, so a switch that is
+ * ready at once never flashes it; `panelBefore` is where Cancel returns. `abort` stops only
+ * this page's own waiting, never a service that is starting.
+ */
+type Opening = { token: number; id: AppId; projectDir: string | null; chatId: string | null; startedAt: number; panelBefore: boolean; shown: boolean; abort: AbortController };
+/**
+ * GH-285: the admission time and dismissal the Hub now reports; GH-58: whether an operation that
+ * needs recovery can be recovered at all. Read here until the generated client carries them.
+ */
+type OperationRow = OperationRecord & { createdAt?: string | null; acknowledgedAt?: string | null; recoverable?: boolean | null };
 /** "25 Sep, 14:02" in the reader's language; nothing for a record that kept no readable time. */
 const operationTime = (value: string | null | undefined, language: string) => {
   const date = value ? new Date(value) : null;
@@ -76,6 +88,28 @@ const composerWords = {
     targetViewing: (name: string) => `Viewing ${name}; this message still changes Current`,
   },
 } as const;
+/**
+ * GH-300 (batch F): the sidebar's needs-you marks, the skeleton of a tool being opened,
+ * and an operation that cannot be recovered. Local for the same reason as composerWords.
+ */
+const shellWords = {
+  "zh-CN": {
+    needsYou: "需要你", needsYouThread: "需要你的授权",
+    needsYouProject: (count: number) => `${count} 个对话需要你`,
+    stepConnect: "正在连接项目…", stepService: "正在启动项目服务…", stepModel: "正在打开模型…", stepApp: "正在启动服务…", stepPage: "正在载入页面…",
+    waited: (elapsed: string) => `已等待 ${elapsed}`,
+    openingCancel: (tool: string) => `取消打开${tool}`,
+    operationUnrecoverable: "无法自动恢复",
+  },
+  en: {
+    needsYou: "Needs you", needsYouThread: "Needs your permission",
+    needsYouProject: (count: number) => count === 1 ? "1 chat needs you" : `${count} chats need you`,
+    stepConnect: "Connecting the project…", stepService: "Starting project service…", stepModel: "Opening model…", stepApp: "Starting the service…", stepPage: "Loading the page…",
+    waited: (elapsed: string) => `${elapsed} so far`,
+    openingCancel: (tool: string) => `Cancel opening ${tool}`,
+    operationUnrecoverable: "Cannot be recovered automatically",
+  },
+} as const;
 /** The rail's two kinds of entry (#295, regrouped by the owner for #300): the
     surfaces you work on in this project (Modeling, Board and the Design Tree,
     #284), and the tools that produce output over it or report on the machine.
@@ -94,8 +128,13 @@ const tools: { id: AppId; label: "model" | "drawing" | "board" | "render" | "pub
 ];
 const railGroups = [{ id: "workspace", caption: "railSurfaces" }, { id: "tools", caption: "railTools" }] as const;
 const labelOf = (id: AppId) => tools.find((tool) => tool.id === id)!.label;
-/** Project tools that open over a surface and hand the panel back to it when pressed again (#295). */
-const returnsToSurface = (id: AppId | undefined) => id === "drawing" || id === "monkeyrender";
+/**
+ * IA-6: the rail's Tools open over a surface and, pressed again, hand the panel back to it
+ * (#295); a surface pressed again leaves the panel. Layout is Board's mode, so a surface.
+ */
+const isTool = (id: AppId | undefined) => id === "drawing" || id === "monkeyrender" || id === "monkeyfab" || id === "monkeymonitor";
+/** The surface under what a tab shows: its own, or the one the Tool on it steps back to. */
+const surfaceUnder = (tab: ToolTab | undefined) => !tab ? undefined : isTool(tab.id) ? tab.returnTo : tab.id;
 
 function Icon({ name }: { name: string }) {
   const paths: Record<string, ReactNode> = {
@@ -329,8 +368,35 @@ function ProcessRow({ turn, running, open, t, onToggle }: {
   </div>;
 }
 
+/**
+ * PP-1: the surface being opened, at once: a light placeholder of it with its name
+ * and the step the start path is on. After 3 s it says how long it has waited and
+ * offers Cancel, which stops waiting; the service goes on starting. Without
+ * `startedAt` it is the brief stand-in while a mounted surface loads its page.
+ */
+function SurfaceSkeleton({ surface, name, step, startedAt = null, words, onCancel }: {
+  surface: AppId; name: string; step: string; startedAt?: number | null;
+  words?: { cancel: string; waited: (elapsed: string) => string; elapsed: (seconds: number) => string }; onCancel?: () => void;
+}) {
+  const now = useNow(startedAt !== null);
+  const seconds = startedAt === null ? 0 : Math.floor(Math.max(0, now - startedAt) / 1000);
+  const slow = startedAt !== null && seconds >= 3 && words !== undefined;
+  return <div className="chat-skeleton" data-surface={surface} aria-busy="true">
+    <div className="chat-skeleton__frame" aria-hidden="true"><span className="chat-skeleton__bar" /><span className="chat-skeleton__canvas" /></div>
+    <div className="chat-skeleton__caption">
+      <h2>{name}</h2>
+      {/* The step is announced when it changes; the ticking time is for the eye only. */}
+      <p role="status">{step}</p>
+      {slow && <div className="chat-skeleton__slow">
+        <span aria-hidden="true">{words.waited(words.elapsed(seconds))}</span>
+        {onCancel && <button type="button" className="chat-activity__open" onClick={onCancel}>{words.cancel}</button>}
+      </div>}
+    </div>
+  </div>;
+}
+
 export function ChatShell({ preferences, settings, settingsDirty = false, configuredProject, defaults, workspace, apps }: Props) {
-  const t = words[preferences.language], w = composerWords[preferences.language];
+  const t = words[preferences.language], w = composerWords[preferences.language], s = shellWords[preferences.language];
   const [initial] = useState(readView);
   const [projects, setProjects] = useState<ChatProject[]>([]);
   const [sessions, setSessions] = useState<ChatSummary[]>([]);
@@ -399,6 +465,17 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
   const documentRequestSequence = useRef(0);
   const [panelWidth, setPanelWidth] = useState(() => initial.panelWidth ?? 620);
   const [toolBusy, setToolBusy] = useState<AppId | null>(null);
+  // PP-1: the tool being opened, and the step each project's start path is on.
+  const [opening, setOpening] = useState<Opening | null>(null);
+  const openingRef = useRef<Opening | null>(null);
+  const openings = useRef(0);
+  const [preparing, setPreparing] = useState<Record<string, PreparationStep>>({});
+  const prepareStep = useCallback((target: string, step: PreparationStep | null) => setPreparing((current) => {
+    if ((current[target] ?? null) === step) return current;
+    const next = { ...current };
+    if (step) next[target] = step; else delete next[target];
+    return next;
+  }), []);
   const [folder, setFolder] = useState("");
   const [projectName, setProjectName] = useState("");
   const [projectInfo, setProjectInfo] = useState(false);
@@ -768,7 +845,8 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
     else { const view = tabs.find((tab) => tab.projectDir === item.projectDir); setProjectDir(item.projectDir); setChatId(null); setActiveTool(view?.id ?? null); setPanel(Boolean(view)); }
   };
 
-  const startTool = useCallback(async (appId: AppId, target?: string) => {
+  /** Ask the Hub to start an application and poll until it runs. `signal` stops only this polling (PP-1 Cancel). */
+  const startTool = useCallback(async (appId: AppId, target?: string, signal?: AbortSignal) => {
     const query = target ? `?${new URLSearchParams({ projectDir: target })}` : "";
     let status = await request<AppStatus>(`/api/apps/${appId}/start${query}`, {});
     const deadline = Date.now() + 60000;
@@ -778,6 +856,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
       }
       if (Date.now() > deadline) throw new Error("The service did not become ready.");
       await wait();
+      signal?.throwIfAborted();
       status = (await request<AppStatus[]>(`/api/apps${query}`)).find((item) => item.appId === appId)!;
     }
     return status.url;
@@ -788,7 +867,9 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
     let preparation = projectPreparations.current.get(target);
     if (!preparation) {
       const query = new URLSearchParams({ projectDir: target });
+      // PP-1: each step is named on the skeleton of a tool being opened for this project.
       const entry: ProjectPreparation = { apps: null, promise: (async () => {
+        prepareStep(target, "connect");
         const opened = await request<ProjectRuntimeDto>("/api/runtime/projects/open", { projectDir: target, projectId });
         // Open acknowledges attachment without a sequence. Only a versioned
         // snapshot may update worker state or supersede an event already read.
@@ -799,13 +880,13 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
         if (worker?.state === "crashed" || (worker?.state === "unavailable" && worker.processId)) {
           throw Object.assign(new Error("The project service needs recovery."), { failure: worker.error ?? { code: "WORKER_NEEDS_RECOVERY", detail: "The project service exited. Recover it to read saved results." } });
         }
-        if (!worker?.healthy) await startTool("monkeyrender", target);
+        if (!worker?.healthy) { prepareStep(target, "service"); await startTool("monkeyrender", target); }
         const statuses = await request<AppStatus[]>(`/api/apps?${query}`);
         if (!statuses.some((item) => item.appId === "monkeyarch" && item.state === "running" && item.url)) throw new Error("The project service did not become ready.");
         const binding = await request<{ projectId: string }>(`/api/runtime/projects/${opened.runtimeId}/studio/api/project`);
         if (binding.projectId !== projectId) throw new Error("The running application belongs to a different project.");
         return statuses;
-      })() };
+      })().finally(() => prepareStep(target, null)) };
       preparation = entry;
       projectPreparations.current.set(target, entry);
     }
@@ -814,7 +895,8 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
       preparation.apps = statuses;
       if (appId === "monkeyarch" && runtimeAttachments.current.get(target)?.projection !== "ready") {
         preparation.modeling ??= request(`/api/project/modeling?${new URLSearchParams({ projectDir: target })}`, { projectId });
-        await preparation.modeling;
+        prepareStep(target, "model");
+        try { await preparation.modeling; } finally { prepareStep(target, null); }
       }
       if (selection.current.projectDir === target) setProjectApps({ projectDir: target, apps: statuses });
       const url = statuses.find((item) => item.appId === (!appId || (appId === "drawing" || appId === "publish" || appId === "tree") ? "monkeyarch" : appId) && item.state === "running")?.url;
@@ -824,7 +906,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
       if (projectPreparations.current.get(target) === preparation) projectPreparations.current.delete(target);
       throw cause;
     }
-  }, [receiveRuntime, startTool]);
+  }, [receiveRuntime, startTool, prepareStep]);
   useEffect(() => {
     if (!project) return;
     let cancelled = false;
@@ -1058,6 +1140,33 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
     {summary.verified && <p className="chat-muted">{t.archiveSummaryVerified}</p>}
   </>;
   /**
+   * PP-1: stop waiting for the tool being opened. Nothing it finishes afterwards is
+   * shown or kept, and its own polling stops; a project service it asked for goes on
+   * starting, and the next open reuses what that start prepared.
+   */
+  const stopOpening = () => {
+    const current = openingRef.current;
+    if (!current) return null;
+    openingRef.current = null; openings.current++;
+    current.abort.abort();
+    actionLock.current = false; setToolBusy(null); setOpening(null);
+    return current;
+  };
+  /** Cancel, on the skeleton or by pressing the entry again: back to what was on screen before. */
+  const cancelOpening = () => { const stopped = stopOpening(); if (stopped) setPanel(stopped.panelBefore); };
+  // The skeleton, and the panel it needs, wait a moment: a tool ready at once opens straight onto its
+  // surface, with no flash of a placeholder or of what the closed panel last held.
+  useEffect(() => {
+    if (!opening || opening.shown) return;
+    const entry = opening;
+    const timer = window.setTimeout(() => {
+      if (openingRef.current?.token !== entry.token) return;
+      setOpening((current) => current?.token === entry.token ? { ...current, shown: true } : current);
+      if (entry.projectDir === null || (selection.current.projectDir === entry.projectDir && selection.current.chatId === entry.chatId)) setPanel(true);
+    }, 120);
+    return () => window.clearTimeout(timer);
+  }, [opening]);
+  /**
    * `view` names what this page should open: a candidate to show (`candidate`), or
    * the options a Study card asks the Design Tree to show (`focus`, comma-separated).
    */
@@ -1065,13 +1174,18 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
     const focus = view?.focus ? { runIds: view.focus.split(","), request: ++focusRequests.current } : undefined;
     const needsProject = id !== "monkeyfab" && id !== "monkeymonitor";
     if (needsProject && !projectDir) return false;
+    // A new choice replaces a tool still being opened; what was on screen before that one stays the way back.
+    const superseded = stopOpening();
+    const panelBefore = superseded ? superseded.panelBefore : panel;
+    // IA-6: a Tool steps back to the surface on screen when it opened, through another Tool on screen then.
+    const shown = panelBefore ? selectedTab : undefined;
+    const under = isTool(id) && (shown?.projectDir ?? shown?.returnProject) === projectDir ? surfaceUnder(shown) : undefined;
+    const returnProject = !needsProject && under ? projectDir ?? undefined : undefined;
     // An explicit system-page choice supersedes even a stale project link.
     if (id === "monkeymonitor") routeRestored.current = true;
     const existing = tabs.find((item) => needsProject ? item.projectDir === projectDir : item.id === id);
     if (existing && id !== "monkeyarch") {
-      setTabs((items) => items.map((item) => item === existing ? { ...item, id,
-        // Drawing and Render open over the surface already shown, in this same project workspace.
-        returnTo: !returnsToSurface(id) ? undefined : returnsToSurface(item.id) ? item.returnTo : item.id,
+      setTabs((items) => items.map((item) => item === existing ? { ...item, id, returnTo: under, returnProject,
         candidate: view?.candidate ?? item.candidate, followHead: view?.candidate ? view.follow === "head" : item.followHead, focus: focus ?? item.focus,
         url: needsProject ? `${window.location.origin}/?${new URLSearchParams({ runtimeId: item.runtimeId!, view: id === "monkeyboard" ? "board" : id === "publish" ? "publish" : id === "drawing" ? "drawing" : id === "monkeyrender" ? "render" : id === "tree" ? "tree" : "arch" })}` : item.url } : item));
       setPanel(true); setActiveTool(id); setError(null);
@@ -1081,42 +1195,67 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
     // service cannot replace application navigation or prevent leaving the page.
     if (id === "monkeymonitor") {
       setTabs((items) => [...items.filter((item) => item.id !== id), { id,
-        url: `${window.location.origin}/?view=monitor`, revision: 0 }]);
+        url: `${window.location.origin}/?view=monitor`, revision: 0, returnTo: under, returnProject }]);
       setPanel(true); setActiveTool(id); setError(null);
       return true;
     }
     if (actionLock.current) return false;
-    setPanel(true);
     const target = projectDir, targetChat = chatId;
+    // PP-1: the skeleton of this surface stands in the panel until it is ready, or until Cancel.
+    const token = ++openings.current;
+    const entry: Opening = { token, id, projectDir: needsProject ? target : null, chatId: targetChat, startedAt: Date.now(), panelBefore,
+      shown: false, abort: new AbortController() };
+    const current = () => openings.current === token;
+    openingRef.current = entry; setOpening(entry);
     actionLock.current = true; setToolBusy(id); setError(null);
     try {
       const location = needsProject ? await ensureProject(target!, project!.projectId, id)
-        : apps?.find((item) => item.appId === id && item.state === "running")?.url ?? await startTool(id);
+        : apps?.find((item) => item.appId === id && item.state === "running")?.url ?? await startTool(id, undefined, entry.abort.signal);
+      if (!current()) return false;
       let tab: ToolTab;
       if (needsProject) {
         const attached = runtimeAttachments.current.get(target!);
         if (!attached || attached.projectId !== project!.projectId) throw new Error("The project runtime has not been attached.");
         tab = { id, projectDir: target!, projectId: attached.projectId, runtimeId: attached.runtimeId, candidate: view?.candidate ?? existing?.candidate,
           followHead: view?.candidate ? view.follow === "head" : existing?.followHead, focus: focus ?? existing?.focus, revision: existing?.revision ?? 0,
+          returnTo: under,
           url: `${window.location.origin}/?${new URLSearchParams({ runtimeId: attached.runtimeId, view: id === "monkeyboard" ? "board" : id === "publish" ? "publish" : id === "drawing" ? "drawing" : id === "monkeyrender" ? "render" : id === "tree" ? "tree" : "arch" })}` };
       } else {
-        tab = { id, url: applicationUrl(location, preferences), revision: 0 };
+        tab = { id, url: applicationUrl(location, preferences), revision: 0, returnTo: under, returnProject };
       }
       // A late result remains attached to the project that requested it.
       setTabs((items) => [...items.filter((item) => needsProject ? item.projectDir !== target : item.id !== id), tab]);
-      if (!needsProject || (selection.current.projectDir === target && selection.current.chatId === targetChat)) setActiveTool(id);
+      if (!needsProject || (selection.current.projectDir === target && selection.current.chatId === targetChat)) { setActiveTool(id); setPanel(true); }
       return true;
     } catch (cause) {
-      if (!needsProject || (selection.current.projectDir === target && selection.current.chatId === targetChat)) setError(asFailure(cause));
+      if (!current()) return false;
+      if (!needsProject || (selection.current.projectDir === target && selection.current.chatId === targetChat)) {
+        setError(asFailure(cause));
+        // What was on screen before comes back; opened from the conversation, the failure is in view there.
+        setPanel(panelBefore);
+      }
       return false;
     }
-    finally { actionLock.current = false; setToolBusy(null); }
+    finally { if (current()) { openingRef.current = null; actionLock.current = false; setToolBusy(null); setOpening(null); } }
   };
-  /** Leaving the Drawing tool goes back to the surface it was opened over, in the
-      same mounted project workspace. Opened straight from the conversation, it
-      closes the panel again. The project, its editing base and drawings stay. */
-  const toolReturn = returnsToSurface(selectedTab?.id) ? selectedTab!.returnTo : undefined;
-  const leaveTool = () => { if (toolReturn) void openTool(toolReturn); else setPanel(false); };
+  /**
+   * IA-6: pressing the entry on screen steps back one level. A Tool returns to the surface
+   * it was opened over, in the same mounted workspace, while this project still has it;
+   * a surface, and a Tool opened straight from the conversation, leave the panel. The
+   * project, its editing base and what each surface holds stay as they are.
+   */
+  const back = panel && selectedTab && isTool(selectedTab.id) && selectedTab.returnTo
+    && (selectedTab.projectDir ?? selectedTab.returnProject) === projectDir && currentTabs.some((tab) => tab.runtimeId) ? selectedTab.returnTo : undefined;
+  const stepBack = () => { if (back) void openTool(back); else setPanel(false); };
+  // PP-1: the opening this conversation is waiting for, and its skeleton once it shows.
+  const openingHere = opening && (opening.projectDir === null || (opening.projectDir === projectDir && opening.chatId === chatId)) ? opening : null;
+  const skeleton = openingHere?.shown ? openingHere : null;
+  const skeletonStep = !skeleton ? "" : skeleton.projectDir === null ? s.stepApp
+    : { connect: s.stepConnect, service: s.stepService, model: s.stepModel }[preparing[skeleton.projectDir] ?? "connect"];
+  /** The rail entry whose content is on screen: the skeleton's while one shows. */
+  const railShown = skeleton ? skeleton.id : panel && selectedTab ? activeTool : null;
+  /** NA-2: the Stage chip's words for the chat header, unless a project surface with its own chip is on screen. */
+  const headerChip = position?.chip && !(panel && !skeleton && selectedTab?.runtimeId) ? position.chip : null;
 
   const initialRuntimeRoute = useRef(new URLSearchParams(window.location.search).get("runtimeId")).current;
   const initialMonitorRoute = useRef(new URLSearchParams(window.location.search).get("view") === "monitor").current;
@@ -1227,12 +1366,19 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
         <div className="chat-project-label"><span>{archivedView ? t.archivedChats : t.projects}</span><button className="chat-icon" aria-label={t.addExisting} title={t.addExisting} onClick={() => { setDialogError(null); addDialog.current?.showModal(); }}><Icon name="plus" /></button></div>
         {!projects.length && <p className="chat-muted chat-project-empty">{loading ? t.loading : t.emptyProjects}</p>}
         {archivedView && !visibleSessions.length && <p className="chat-muted chat-project-empty">{t.archiveEmpty}</p>}
-        {projects.filter((item) => !archivedView || visibleSessions.some((session) => session.projectDir === item.projectDir)).map((item) => <section className="chat-project" key={item.projectDir} data-selected={item.projectDir === projectDir}>
+        {projects.filter((item) => !archivedView || visibleSessions.some((session) => session.projectDir === item.projectDir)).map((item) => {
+          const threads = visibleSessions.filter((session) => session.projectDir === item.projectDir);
+          // FN-2: conversations whose turn waits on the architect's permission; the project row carries their count.
+          const waiting = threads.filter((session) => session.attention === "permission").length;
+          const working = busyProjects.get(item.projectDir);
+          return <section className="chat-project" key={item.projectDir} data-selected={item.projectDir === projectDir} data-attention={waiting ? "permission" : undefined}>
           <div className="chat-project__head">
             <button className="chat-project__name" title={item.projectDir} onClick={() => selectProject(item)}
-              aria-description={busyProjects.get(item.projectDir) ? t.projectBusy(busyProjects.get(item.projectDir)!) : undefined}><Icon name="folder" /><span>{item.name}</span></button>
+              aria-description={[working ? t.projectBusy(working) : null, waiting ? s.needsYouProject(waiting) : null].filter(Boolean).join(" · ") || undefined}><Icon name="folder" /><span>{item.name}</span></button>
+            {/* A turn waiting on the architect is not running for them: its mark stands in for Running. */}
+            {waiting > 0 && <span className="chat-project__badge" data-kind="needs" aria-hidden="true">{s.needsYou}</span>}
             {/* #300: a small badge while the project has work running or waiting, on the project's own line. */}
-            {busyProjects.has(item.projectDir) && <span className="chat-project__badge" data-kind="running" aria-hidden="true">{t.projectBusyBadge}</span>}
+            {!waiting && working !== undefined && <span className="chat-project__badge" data-kind="running" aria-hidden="true">{t.projectBusyBadge}</span>}
             {/* #300 hook: the "N new" schemes badge, drawn from #294's admission data (S1–S2);
                 newSchemes() answers null until the runtime reports it, so no number is guessed. */}
             {(() => {
@@ -1240,16 +1386,23 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
               return count ? <span className="chat-project__badge" data-kind="new">{t.projectNewSchemes(count)}</span> : null;
             })()}
           </div>
-          {visibleSessions.filter((session) => session.projectDir === item.projectDir).map((session) => <div key={session.id} className="chat-thread-row">
-            <button className="chat-thread" aria-current={session.id === chatId ? "page" : undefined} onClick={() => selectChat(session)} title={session.title}>
-              <span className="chat-thread__dot" data-status={session.status} /><span>{session.title}{session.sourceSessionId && <small className="chat-external-badge">{t.externalChat}</small>}</span>
+          {threads.map((session) => {
+            const needsYou = session.attention === "permission";
+            return <div key={session.id} className="chat-thread-row" data-attention={needsYou ? "permission" : undefined}>
+            <button className="chat-thread" aria-current={session.id === chatId ? "page" : undefined} onClick={() => selectChat(session)} title={session.title}
+              aria-description={needsYou ? s.needsYouThread : undefined}>
+              <span className="chat-thread__dot" data-status={session.status} /><span className="chat-thread__title">{session.title}{session.sourceSessionId && <small className="chat-external-badge">{t.externalChat}</small>}</span>
+              {/* FN-2: text and colour, not colour alone; the row's description says it to a screen reader. */}
+              {needsYou && <span className="chat-needs" aria-hidden="true">{s.needsYou}</span>}
             </button>
             <button className="chat-icon chat-thread-action" aria-label={`${session.archived ? t.restore : t.archive}: ${session.title}`}
               title={session.status === "running" ? t.archiveRunning : session.archived ? t.restore : t.archive}
               disabled={session.status === "running" || busy || modelBusy || archiveBusy !== null}
               onClick={() => void setArchived(session, !session.archived)}><Icon name={session.archived ? "restore" : "archive"} /></button>
-          </div>)}
-        </section>)}
+          </div>;
+          })}
+        </section>;
+        })}
       </div>
       <div className="chat-sidebar__footer">
         {/* #300: the last seven days of model usage, as MonkeyMonitor recorded it. */}
@@ -1262,7 +1415,11 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
       </div>
     </aside>
     <main className="chat-main">
-      <header className="chat-header"><button className="chat-icon mobile-project-toggle" aria-label={sidebar ? t.collapse : t.expand} onClick={() => setSidebar(!sidebar)}><Icon name="sidebar" /></button><div><span className="chat-header__project">{project?.name ?? "MonkeyHub"}</span><h1>{chat?.id === chatId ? chat.title : t.newChat}{external && <small className="chat-external-badge">{t.externalChat}</small>}</h1></div></header>
+      <header className="chat-header"><button className="chat-icon mobile-project-toggle" aria-label={sidebar ? t.collapse : t.expand} onClick={() => setSidebar(!sidebar)}><Icon name="sidebar" /></button><div className="chat-header__text"><span className="chat-header__project">{project?.name ?? "MonkeyHub"}</span><h1>{chat?.id === chatId ? chat.title : t.newChat}{external && <small className="chat-external-badge">{t.externalChat}</small>}</h1></div>
+        {/* NA-2: below 900 px this header stays above an open panel. It carries the Stage chip whenever no
+            project surface, whose bar has the chip, is on screen, so exactly one chip shows. */}
+        {headerChip && <button type="button" className="chat-header__chip" aria-description={t.openInTree} title={t.openInTree}
+          onClick={() => void openTool("tree")}><Icon name="tree" /><span>{headerChip}</span></button>}</header>
       {(!eventsConnected || crashed || recovering || workCopyRefusal) && <div className="chat-runtime" role="status" aria-live="polite">
         <div>{!eventsConnected && <p>{t.reconnecting}</p>}
           {(crashed || recovering) && <><p>{recovering ? t.recovering : t.workerCrashed}</p><small>{t.recoveryHint}</small></>}
@@ -1272,7 +1429,8 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
       </div>}
       {unfinishedOperation && (() => {
         // #285: which operation did not finish, when, and the chat that asked for it. A failed or
-        // stale one can be dismissed; one that needs recovery stays until it is recovered.
+        // stale one can be dismissed; one that needs recovery stays until it is recovered, unless
+        // the Hub says it cannot be (GH-58).
         const operation = unfinishedOperation;
         const step = operationStep(operation.kind);
         const source = operation.sessionId ? projectRuntime?.sessions?.find((row) => row.id === operation.sessionId) : undefined;
@@ -1284,7 +1442,10 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
           <div className="chat-runtime__actions">
             {source && source.id !== chatId && <button type="button" className="chat-activity__open" title={source.title}
               aria-label={`${w.operationOpenChat}: ${source.title}`} onClick={() => selectChat(source)}><Icon name="chat" />{w.operationOpenChat}</button>}
-            {operation.status !== "needs_recovery" && <button type="button" className="chat-activity__open" disabled={dismissing !== null}
+            {/* GH-58: one that needs recovery the Hub cannot give it says so, and can be dismissed like a failure. */}
+            {unrecoverable(operation) && <span className="chat-runtime__note" id="chat-operation-unrecoverable">{s.operationUnrecoverable}</span>}
+            {dismissible(operation) && <button type="button" className="chat-activity__open" disabled={dismissing !== null}
+              aria-describedby={unrecoverable(operation) ? "chat-operation-unrecoverable" : undefined}
               aria-busy={dismissing === operation.operationId} onClick={() => void dismissOperation(operation)}>{w.operationDismiss}</button>}
           </div>
         </div>;
@@ -1400,7 +1561,8 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
           <button type="submit" className="btn">{t.modelApply}</button>
           <button type="button" className="btn" onClick={() => setCustomModel(null)}>{t.cancel}</button>
         </form>}
-        <p className="chat-composer-note" role="status">{sending === "posting" ? w.sending : busy || toolBusy ? t.working : !availableProvider?.available && !chatId ? availableProvider?.detail ?? (loading ? "" : t.noProvider) : ""}</p>
+        {/* PP-1: a tool being opened says so on its own skeleton, not here. */}
+        <p className="chat-composer-note" role="status">{sending === "posting" ? w.sending : busy ? t.working : !availableProvider?.available && !chatId ? availableProvider?.detail ?? (loading ? "" : t.noProvider) : ""}</p>
       </div>
     </main>
     {panel && <div className="chat-resizer" role="separator" aria-label={t.resize} aria-orientation="vertical" aria-valuemin={320} aria-valuemax={Math.max(320, window.innerWidth - 400)} aria-valuenow={panelWidth} tabIndex={0}
@@ -1414,7 +1576,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
         </div>;
         if (item.runtimeId) return <div className="chat-project-workspace project-workspace" key={item.runtimeId} hidden={!visible} inert={!visible}>
           <ProjectRuntimeProvider baseUrl={`${window.location.origin}/api/runtime/projects/${item.runtimeId}/studio`}>
-            <ErrorBoundary label={t.tools}><Suspense fallback={<div role="status">{t.working}</div>}>
+            <ErrorBoundary label={t.tools}><Suspense fallback={<SurfaceSkeleton surface={item.id} name={t[labelOf(item.id)]} step={s.stepPage} />}>
               <ProjectWorkspace workspace={item.id === "monkeyboard" ? "board" : item.id === "publish" ? "publish" : item.id === "drawing" ? "drawing" : item.id === "monkeyrender" ? "render" : item.id === "tree" ? "tree" : "arch"} active={visible}
                 expectedProjectId={item.projectId} candidateRunId={item.candidate} candidateFollowsHead={item.followHead} treeFocus={item.focus ?? null}
                 refreshKey={item.revision} onChatRequest={focusConversation}
@@ -1430,8 +1592,13 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
         </div>;
         return <iframe key={`${item.id}:${item.revision}`} src={item.url} title={t[tools.find((tool) => tool.id === item.id)!.label]}
           hidden={!visible} inert={!visible} allow="clipboard-read; clipboard-write" />;
-      })}</div>
-      {!selectedTab && <div className="chat-browser__empty"><Icon name="panel" /><h2>{toolBusy ? t.working : t.toolEmpty}</h2><p>{t.toolHint}</p></div>}
+      })}
+        {/* PP-1: over what was on screen until the surface being opened is ready. */}
+        {skeleton && <SurfaceSkeleton key={skeleton.token} surface={skeleton.id} name={t[labelOf(skeleton.id)]} step={skeletonStep} startedAt={skeleton.startedAt}
+          words={{ cancel: t.cancel, waited: s.waited, elapsed: t.elapsed }} onCancel={cancelOpening} />}
+      </div>
+      {/* While a tool opens, the panel stays blank for the moment before its skeleton shows. */}
+      {!selectedTab && !openingHere && <div className="chat-browser__empty"><Icon name="panel" /><h2>{t.toolEmpty}</h2><p>{t.toolHint}</p></div>}
     </aside>}
     {/* One column of entries for the whole right-hand side: the tools, this
         conversation's project, and whether the tool content is open at all. */}
@@ -1449,14 +1616,16 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
           const stateText = state === "unavailable" ? t.toolUnavailable : state === "error" ? t.toolError
             : state === "starting" ? t.toolStarting : state === "stopping" ? t.toolStopping
             : state === "running" || state === "stopped" ? undefined : t.toolUnknown;
-          // Pressing an open Drawing or Render again leaves it for the surface it was opened over (#295).
-          const leaves = returnsToSurface(item.id) && panel && activeTool === item.id && selectedTab?.id === item.id;
-          const leaveText = !leaves ? undefined : toolReturn ? t.toolReturn(t[item.label], t[labelOf(toolReturn)]) : t.toolClose(t[item.label]);
-          // Board stays pressed in its Layout mode.
-          const pressed = panel && (item.id === activeTool || (item.id === "monkeyboard" && activeTool === "publish"));
-          return <button key={item.id} className="chat-rail__tool" aria-label={t[item.label]} aria-pressed={pressed}
-            title={status?.error?.detail ?? stateText ?? leaveText} data-state={state} disabled={(needsProject && !project) || (!currentTabs.some((tab) => tab.runtimeId || tab.id === item.id) && (busy || Boolean(toolBusy)))}
-            onClick={() => { if (leaves) leaveTool(); else void openTool(item.id); }}><Icon name={item.icon} /><span>{t[item.label]}</span>{stateText && <small aria-hidden="true">{stateText}</small>}</button>;
+          // Pressed is what is on screen, the skeleton of one being opened included; Board stays pressed in its Layout mode.
+          const pressed = item.id === railShown || (item.id === "monkeyboard" && railShown === "publish");
+          // IA-6: pressing the entry on screen steps back one level; pressing the one being opened cancels it (PP-1).
+          const pending = opening?.id === item.id;
+          const hint = pending ? s.openingCancel(t[item.label]) : !pressed ? undefined
+            : isTool(item.id) && back ? t.toolReturn(t[item.label], t[labelOf(back)]) : t.toolClose(t[item.label]);
+          return <button key={item.id} className="chat-rail__tool" aria-label={t[item.label]} aria-pressed={pressed} aria-busy={pending || undefined}
+            aria-description={hint} title={status?.error?.detail ?? stateText ?? hint} data-state={state}
+            disabled={!pending && ((needsProject && !project) || (!currentTabs.some((tab) => tab.runtimeId || tab.id === item.id) && (busy || Boolean(toolBusy))))}
+            onClick={() => { if (pending) cancelOpening(); else if (pressed) stepBack(); else void openTool(item.id); }}><Icon name={item.icon} /><span>{t[item.label]}</span>{stateText && <small aria-hidden="true">{stateText}</small>}</button>;
         })}
       </div>)}
       <div className="chat-rail__spacer" />
