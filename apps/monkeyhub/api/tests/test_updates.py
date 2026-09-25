@@ -781,6 +781,10 @@ class AutomaticUpdateTests(unittest.TestCase):
         wait_until(lambda: client.get("/api/updates/status").json()["check"]["state"] == "ready", "check did not finish")
         status = client.get("/api/updates/status").json()
         self.assertEqual((status["state"], status["nextLaunch"]), ("ready", False))
+        # Turning it back on removes the field, so older versions still read the file.
+        self.assertIs(client.put("/api/updates/settings", json={"autoUpdate": True}).json()["nextLaunch"], True)
+        saved = json.loads((self.root / "roaming/MonkeyArch/settings.json").read_text(encoding="utf-8"))
+        self.assertNotIn("autoUpdate", saved)
 
 
 if __name__ == "__main__":

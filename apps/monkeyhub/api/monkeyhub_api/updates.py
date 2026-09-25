@@ -121,7 +121,9 @@ class UserPreference:
 
     def set(self, enabled: bool) -> None:
         from archflow_studio_api.settings import read_user_settings, save_user_settings
-        save_user_settings(read_user_settings().model_copy(update={"auto_update": enabled}))
+        # Only "off" is written: the default stays absent, which versions
+        # older than this setting can still read.
+        save_user_settings(read_user_settings().model_copy(update={"auto_update": None if enabled else False}))
 
 
 class UpdateCheckError(Exception):
