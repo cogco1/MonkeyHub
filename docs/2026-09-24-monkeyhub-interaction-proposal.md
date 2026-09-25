@@ -226,7 +226,7 @@ Agent：已把主入口移到南立面中段，加了 3 m 深的雨棚；东侧�
 
 **跟踪：** 总 issue [#278](https://github.com/cogco1/MonkeyHub/issues/278)；A1 [#279](https://github.com/cogco1/MonkeyHub/issues/279) · A2 [#283](https://github.com/cogco1/MonkeyHub/issues/283) · A3 [#284](https://github.com/cogco1/MonkeyHub/issues/284) · A4 [#285](https://github.com/cogco1/MonkeyHub/issues/285) · A5 [#286](https://github.com/cogco1/MonkeyHub/issues/286) · A6 [#287](https://github.com/cogco1/MonkeyHub/issues/287) · A7 [#288](https://github.com/cogco1/MonkeyHub/issues/288) · B1 [#280](https://github.com/cogco1/MonkeyHub/issues/280) · B2 [#281](https://github.com/cogco1/MonkeyHub/issues/281) · B3 [#282](https://github.com/cogco1/MonkeyHub/issues/282)。
 
-**待立的能力 Issue（本轮不实现）：** Candidate 拒绝 / 归档（Q3）；持久化的「认可方向」（F7）；图纸重建作为后继文档（审计 9.2c）；runtime 预览图。
+**能力 Issue（切片依赖，本轮不在切片内实现）：** Candidate 拒绝 / 归档（Q3）[#289](https://github.com/cogco1/MonkeyHub/issues/289)；可归属、重启后可读的「认可方向」（F7）[#290](https://github.com/cogco1/MonkeyHub/issues/290)；图纸重建登记为上一修订的替换（审计 9.2c）[#291](https://github.com/cogco1/MonkeyHub/issues/291)；每个模型版本的预览图 [#292](https://github.com/cogco1/MonkeyHub/issues/292)。
 
 **顺序与协调：**
 
