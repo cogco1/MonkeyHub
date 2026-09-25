@@ -1319,6 +1319,22 @@ export type OpenRuntimeRequest = {
 };
 
 /**
+ * OperationAcknowledgeRequest
+ *
+ * The runtime and project whose operation notice a person dismissed.
+ */
+export type OperationAcknowledgeRequest = {
+    /**
+     * Runtimeid
+     */
+    runtimeId: string;
+    /**
+     * Projectid
+     */
+    projectId: string;
+};
+
+/**
  * OperationRecord
  */
 export type OperationRecord = {
@@ -1400,6 +1416,18 @@ export type OperationRecord = {
      * Project-scoped request order projected from the existing Hub admission journal. Not a completion order or design version; null for observations without a journal entry.
      */
     admissionSequence?: number | null;
+    /**
+     * Createdat
+     *
+     * When this Hub admitted the request (ISO 8601, UTC). Null for requests admitted before admission times were kept and for observations of retained runs.
+     */
+    createdAt?: string | null;
+    /**
+     * Acknowledgedat
+     *
+     * When a person dismissed the notice of this failed or stale operation. Reported only while the operation is failed or stale; it changes no status, reason or result.
+     */
+    acknowledgedAt?: string | null;
 };
 
 /**
@@ -3339,6 +3367,36 @@ export type CloseRuntimeApiRuntimeProjectsRuntimeIdClosePostResponses = {
 };
 
 export type CloseRuntimeApiRuntimeProjectsRuntimeIdClosePostResponse = CloseRuntimeApiRuntimeProjectsRuntimeIdClosePostResponses[keyof CloseRuntimeApiRuntimeProjectsRuntimeIdClosePostResponses];
+
+export type AcknowledgeOperationApiRuntimeOperationsOperationIdAcknowledgePostData = {
+    body: OperationAcknowledgeRequest;
+    path: {
+        /**
+         * Operation Id
+         */
+        operation_id: string;
+    };
+    query?: never;
+    url: '/api/runtime/operations/{operation_id}/acknowledge';
+};
+
+export type AcknowledgeOperationApiRuntimeOperationsOperationIdAcknowledgePostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AcknowledgeOperationApiRuntimeOperationsOperationIdAcknowledgePostError = AcknowledgeOperationApiRuntimeOperationsOperationIdAcknowledgePostErrors[keyof AcknowledgeOperationApiRuntimeOperationsOperationIdAcknowledgePostErrors];
+
+export type AcknowledgeOperationApiRuntimeOperationsOperationIdAcknowledgePostResponses = {
+    /**
+     * Successful Response
+     */
+    200: OperationRecord;
+};
+
+export type AcknowledgeOperationApiRuntimeOperationsOperationIdAcknowledgePostResponse = AcknowledgeOperationApiRuntimeOperationsOperationIdAcknowledgePostResponses[keyof AcknowledgeOperationApiRuntimeOperationsOperationIdAcknowledgePostResponses];
 
 export type RuntimeEventsApiRuntimeEventsGetData = {
     body?: never;
