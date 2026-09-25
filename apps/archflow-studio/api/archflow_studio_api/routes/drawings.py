@@ -8,12 +8,12 @@ from starlette.requests import Request
 
 from ..application.binding import bound_project
 from ..application.drawings import generate_elevation, generate_sheet, model_view
-from ..application.drawing_plans import generate_plan, plan_status, plan_dimension_choices, dimension_proposal
+from ..application.drawing_plans import generate_plan, plan_status, plan_dimension_choices, dimension_proposal, plan_vector
 from ..transport.artifacts import ModelSourceDto, SourceDocumentDto, document_dto, model_source_from
 from ..transport.drawings import (
     DrawingStylesDto, ElevationRequestDto, ModelViewDto, SheetRequestDto,
     PlanRequestDto, PlanStatusRequestDto, PlanStatusDto,
-    PlanDimensionChoicesDto, PlanDimensionProposalRequestDto,
+    PlanDimensionChoicesDto, PlanDimensionProposalRequestDto, PlanVectorDto,
 )
 from ..transport.errors import StudioError
 from ..transport.proposal import ProposalDto, to_dto as proposal_dto
@@ -26,10 +26,20 @@ def create_plan(request: Request, payload: PlanRequestDto) -> SourceDocumentDto:
     binding = bound_project(request.app.state)
     if payload.project_id != binding.project_id:
         raise StudioError(403, "PROJECT_MISMATCH", "The drawing names another project.")
-    values = payload.model_dump(exclude={"project_id", "model_source", "dimensions"})
+    values = payload.model_dump(exclude={"project_id", "model_source", "dimensions", "dressing", "dressing_operations"})
     return document_dto(generate_plan(binding, **values,
         model_source=None if payload.model_source is None else model_source_from(payload.model_source),
-        dimensions=None if payload.dimensions is None else [row.model_dump(by_alias=True) for row in payload.dimensions]))
+        dimensions=None if payload.dimensions is None else [row.model_dump(by_alias=True) for row in payload.dimensions],
+        dressing=None if payload.dressing is None else [row.model_dump(by_alias=True) for row in payload.dressing],
+        dressing_operations=None if payload.dressing_operations is None else [row.model_dump(by_alias=True) for row in payload.dressing_operations]))
+
+
+@router.get("/drawings/plans/vector", response_model=PlanVectorDto, response_model_by_alias=True)
+def read_plan_vector(request: Request, run_id: str = Query(alias="runId", min_length=1),
+                     asset_sha256: str = Query(alias="assetSha256", pattern=r"^[0-9a-f]{64}$"),
+                     revision_ref: str = Query(alias="revisionRef", min_length=1)) -> PlanVectorDto:
+    return PlanVectorDto(**plan_vector(bound_project(request.app.state), run_id=run_id,
+                                      asset_sha256=asset_sha256, revision_ref=revision_ref))
 
 
 @router.post("/drawings/plans/status", response_model=PlanStatusDto, response_model_by_alias=True)

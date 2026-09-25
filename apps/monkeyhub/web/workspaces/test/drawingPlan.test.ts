@@ -11,7 +11,7 @@ test("a retained cut-plan restores its actual frame and keeps dimension identity
   } } as SourceDocumentDto;
   const form = planFormFromDocument(document, "millimeter");
   assert.deepEqual(form, { cutHeight: 1500, bottom: 200, scaleDenominator: 50,
-    cutLineMm: .5, visibleLineMm: .2, hatchSpacingMm: 3, dimensions: [dimension], cropUv: [-2, -3, 12, 8], hiddenObjectIds: ["hidden-object"] });
+    cutLineMm: .5, visibleLineMm: .2, hatchSpacingMm: 3, dimensions: [dimension], dressing: [], cropUv: [-2, -3, 12, 8], hiddenObjectIds: ["hidden-object"] });
   form.dimensions[0].placement!.offsetMm = 20;
   assert.equal(dimension.placement.offsetMm, -12, "editing the form never mutates its saved source recipe");
   assert.notEqual(drawingDocumentKey(document), drawingDocumentKey({ ...document, revisionRef: "new-revision" }),

@@ -126,10 +126,46 @@ def _number(value: float) -> str:
     return "0." + "0" * _DECIMALS if text == "-0." + "0" * _DECIMALS else text
 
 
+
+def dressing_assets() -> list[dict]:
+    """Small editable plan symbols. Coordinates use a centred one-unit square."""
+    def circle(cx, cy, rx, ry, count=24):
+        return [(round(cx + rx * math.cos(i * 2 * math.pi / count), 6),
+                 round(cy + ry * math.sin(i * 2 * math.pi / count), 6)) for i in range(count + 1)]
+    return [
+        {"id": "person-plan", "polylines": [circle(0, .12, .16, .18),
+            [(-.4, -.1), (-.28, -.25), (.18, -.3), (.38, -.15), (.28, .02)],
+            [(-.2, -.28), (-.27, -.48)], [( .12, -.3), (.26, -.42)]]},
+        {"id": "tree-plan", "polylines": [
+            [(round((.44 + .04 * math.sin(i * 10 * math.pi / 48)) * math.cos(i * 2 * math.pi / 48), 6),
+              round((.44 + .04 * math.sin(i * 10 * math.pi / 48)) * math.sin(i * 2 * math.pi / 48), 6)) for i in range(49)],
+            [(-.18, -.22), (0, 0), (.17, .25)], [(0, 0), (-.27, .16)], [(0, 0), (.31, -.08)]]},
+    ]
+
+
+def _dressing_svg(dressing, crop, paper_per_unit):
+    assets = {row["id"]: row["polylines"] for row in dressing_assets()}
+    u0, _, _, v1 = crop
+    result = ['  <g id="dressing" fill="none" stroke="#000" stroke-linecap="round" stroke-linejoin="round" '
+              f'stroke-width="{_number(.15 / paper_per_unit)}">']
+    for item in dressing:
+        if item["status"] != "resolved":
+            continue
+        u, v = item["resolvedUv"]
+        factor = -1 if item.get("flipped", False) else 1
+        result.append(f'    <g data-dressing={quoteattr(item["id"])} data-asset={quoteattr(item["assetId"])}>')
+        for line in assets[item["assetId"]]:
+            points = " ".join(f"{_number(u + x * item['size'] * factor - u0)},{_number(v1 - v - y * item['size'])}" for x, y in line)
+            result.append(f'      <polyline points="{points}"/>')
+        result.append('    </g>')
+    result.append('  </g>')
+    return result
+
+
 def drawing_svg(
     lines: Sequence[OcctDrawingPolyline], *, crop_uv, unit: str, scale_denominator: int,
     hidden_lines: bool, title: str, regions: Sequence[OcctDrawingRegion] = (),
-    graphics: Mapping | None = None, dimensions: Sequence[Mapping] = (),
+    graphics: Mapping | None = None, dimensions: Sequence[Mapping] = (), dressing: Sequence[Mapping] = (),
 ) -> bytes:
     """One SVG of the cropped polylines: hidden lines (dashed, optional) under visible lines.
 
@@ -195,6 +231,8 @@ def drawing_svg(
         body.extend(group("section", f'stroke-width="{pen(graphics["cutLineMm"])}"'))
     if dimensions:
         body.extend(_dimension_svg(dimensions, crop, paper_per_unit))
+    if dressing:
+        body.extend(_dressing_svg(dressing, crop, paper_per_unit))
     return ("\n".join(head + body + ["</svg>", ""])).encode("utf-8")
 
 
@@ -491,6 +529,7 @@ __all__ = [
     "crop_polylines",
     "drawing_svg",
     "dimension_placement_fits",
+    "dressing_assets",
     "render_svg_png",
     "svg_objects",
 ]

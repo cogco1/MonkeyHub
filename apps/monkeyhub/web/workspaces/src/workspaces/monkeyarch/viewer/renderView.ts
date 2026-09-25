@@ -1,5 +1,7 @@
 import type { Scene, Vector3 } from "three";
+import { ACESFilmicToneMapping, SRGBColorSpace, WebGLRenderer } from "three";
 import type { ViewCamera } from "./cameraProjection";
+import type { ModelSourceDto, RenderCameraDto } from "../../../api/generated";
 
 /** A borrowed display scene, never a second model or persistent project state. */
 export interface RenderView {
@@ -9,6 +11,27 @@ export interface RenderView {
   readonly fov: number;
   readonly aspect: number;
   readonly exposure: number;
+  readonly modelSource?: ModelSourceDto | null;
+  readonly sourceStageRef?: string | null;
+  readonly sourceIssue?: "unsaved" | "loading" | "unbound" | null;
+}
+
+/** Freeze pixels now; later model/view changes cannot alter the saved input. */
+export async function renderViewImage(view: RenderView): Promise<{ png: Blob; screenSize: [number, number]; camera: RenderCameraDto }> {
+  const screenSize: [number, number] = view.aspect >= 1 ? [2048, Math.max(1, Math.round(2048 / view.aspect))]
+    : [Math.max(1, Math.round(2048 * view.aspect)), 2048];
+  const renderer = new WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+  try {
+    renderer.setPixelRatio(1); renderer.setSize(...screenSize, false);
+    renderer.outputColorSpace = SRGBColorSpace; renderer.toneMapping = ACESFilmicToneMapping;
+    renderer.toneMappingExposure = view.exposure;
+    renderer.render(view.scene, view.camera);
+    const camera: RenderCameraDto = { projection: "isOrthographicCamera" in view.camera ? "orthographic" : "perspective",
+      worldMatrix: view.camera.matrixWorld.toArray(), projectionMatrix: view.camera.projectionMatrix.toArray(), exposure: view.exposure };
+    const png = await new Promise<Blob>((resolve, reject) => renderer.domElement.toBlob(
+      blob => blob ? resolve(blob) : reject(new Error("Could not capture the modeling view.")), "image/png"));
+    return { png, screenSize, camera };
+  } finally { renderer.dispose(); renderer.forceContextLoss(); }
 }
 
 export function captureRenderView(scene: Scene, camera: ViewCamera, target: Vector3, fov: number, exposure: number): RenderView {

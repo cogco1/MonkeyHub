@@ -555,6 +555,29 @@ new candidate goes through the same generation, preview, validation and acceptan
 Candidate workspaces may compute overlapping scopes independently; queue limits are
 worker capacity and the single Rhino export resource.
 
+`POST /api/drawings/plans` also accepts representation-only `dressing` objects
+(`id`, `assetId: person-plan | tree-plan`, `positionUv`, `size`, `flipped`, optional
+`anchorObjectId`). Coordinates and size use the exact source STEP length unit. An
+unanchored position is fixed in the plan view; an anchored position is an offset
+from the named physical object's projected bounding-box centre. No nearest-object
+matching or architectural semantic promotion takes place.
+
+For agent edits, provide `previousRevisionRef` and `dressingOperations` instead of
+replacement `dressing`: `insert` requires an `object` with matching `id`, `move`
+requires `positionUv`, `scale` requires `size`, `flip` requires `flipped`, and
+`delete` requires only `id`. The batch applies atomically to that retained drawing
+recipe; unknown ids, new unknown anchors, duplicate ids and malformed operations
+are rejected before persistence. A maximum of 100 objects is supported. Rebuilds
+retain unresolved objects in the recipe and report `missing` / `outside-view` in
+`POST /api/drawings/plans/status`; unresolved objects are omitted from the output
+rather than silently repositioned. Drawing revisions never advance Design HEAD.
+
+`GET /api/drawings/plans/vector?runId=…&assetSha256=…&revisionRef=…` reads the
+verified retained SVG, built-in vector symbols and exact source anchor choices.
+SVG `data-dressing` groups remain independently editable and do not claim the
+architectural `data-object` identity used by projected model vectors. The PNG and
+SVG share one rendering input. This read does not regenerate or create a revision.
+
 Servers advertising `drawing-elevations` accept `{projectId, sourceStageRef, view}`
 or an exact candidate `modelSource` instead of `sourceStageRef`. Views are front,
 back, left and right. An optional `drawingId` groups revisions; the response's
@@ -1177,3 +1200,33 @@ YNNAP-HelloWorld's PR #235, commit `6f39e67116a2716c2dac70bb4ee3cf1b369afd9d`.
 The AI lane does not import its Native WebGL2 executor or claim Physical acceptance.
 Offline tests inject an adapter; only an explicitly authorized real provider call
 can complete online acceptance.
+
+## Publication pages
+
+`GET /api/publication` reads the project's current communication document.
+`PUT /api/publication` saves ordered pages and editable text/image placements,
+using `baseRevisionSha256` for optimistic concurrency. `PublicationDocument@1`
+is retained through P036 in the named `studio-publication` run. Saving it does
+not accept a Design Stage or advance `HEAD`.
+
+The embedded `spec` supplies point-based page width/height and the supported
+`hero` layout. Each image names an exact registered document page through
+`runId`, `assetSha256`, nullable `revisionRef`, and `pageIndex`. Placement and
+crop are presentation choices. Derived source status is `current`, `stale`,
+`missing`, or explicitly `frozen`; updating a source requires a deliberate
+save and does not rewrite other elements. Drawing/Render freshness comes
+from those owners. A missing file cannot be made available by freezing it.
+
+`POST /api/publication/from-board` takes an exact Board revision and selected
+element/frame ids. Registered image pages are appended top-to-bottom then
+left-to-right using the same hero rule. Repeating the same retained selection
+does not duplicate pages. This bounded handoff consumes clean source pages,
+not Board review marks or freehand drawings.
+
+`POST /api/publication/export` requires an exact saved publication revision
+and `format: pptx | pdf`. It returns transient download bytes, not a design
+issue. Both compilers use the same page coordinates and measured text lines.
+PPTX has native editable text boxes and separate images; PDF is deterministic
+for the same retained inputs. The first slice embeds Drawing/PDF pages as
+raster images (up to 2048 pixels), not editable CAD/vector objects. Text that
+does not fit its box and unavailable exact sources cause explicit refusal.

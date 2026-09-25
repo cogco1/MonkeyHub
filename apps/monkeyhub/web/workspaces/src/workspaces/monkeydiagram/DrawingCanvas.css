@@ -41,6 +41,7 @@
 .drawing-preview__paper { position: relative; margin: 0 auto; flex: none; background: white; box-shadow: 0 2px 8px #0002; }
 .drawing-actions { flex: none; border-top: 1px solid var(--line); padding: 12px 14px; }
 .drawing-actions > .btn--accent { width: 100%; background: var(--accent-soft); border-color: var(--accent); }
+.drawing-actions > .drawing-download { width: 100%; margin-top: 8px; }
 @container drawing (max-width: 900px) {
   .drawing-body { flex-direction: column; overflow: auto; }
   .drawing-controls { flex: none; overflow: visible; border-left: 0; border-top: 1px solid var(--line); }
@@ -53,3 +54,11 @@
   .drawing-context__fields { grid-template-columns: minmax(0, 1fr); }
   .drawing-status { align-items: stretch; flex-direction: column; }
 }
+
+.drawing-vector-base { display: block; width: 100%; height: 100%; }
+.drawing-dressing-overlay { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: hidden; }
+.drawing-dressing-object { pointer-events: all; cursor: move; touch-action: none; }
+.drawing-dressing-object:focus-visible { outline: none; }
+.drawing-dressing-object:focus-visible > rect { stroke: var(--accent); stroke-width: 2; }
+.drawing-dressing-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.drawing-dressing-actions > button { flex: 1; }

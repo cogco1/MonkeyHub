@@ -54,6 +54,9 @@
 .render-image p { color: var(--muted); font-size: 12px; text-align: center; }
 .render-detail footer { padding: 12px; border-top: 1px solid var(--line); overflow: auto; overflow-wrap: anywhere; max-height: 38%; font-size: 12px; }
 .render-detail footer p { margin: 0 0 8px; }
+.render-metadata { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 12px; margin: 0 0 12px; }
+.render-metadata dt { color: var(--muted); }
+.render-metadata dd { margin: 0; overflow-wrap: anywhere; }
 .render-detail footer details { margin-top: 8px; }
 .render-detail summary { cursor: pointer; color: var(--muted); }
 .render-detail pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 180px; overflow: auto; font-size: 11px; }
@@ -88,5 +91,6 @@
 
 .render-model-preview { flex: 0 0 auto; padding: 12px; border-bottom: 1px solid var(--line); }
 .render-model-preview header { display: flex; justify-content: space-between; gap: 12px; align-items: center; }
+.render-model-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
 .render-model-canvas { height: 280px; display: flex; align-items: center; justify-content: center; overflow: hidden; background: #171717; margin: 8px 0; }
 .render-model-canvas canvas { display: block; max-width: 100%; }

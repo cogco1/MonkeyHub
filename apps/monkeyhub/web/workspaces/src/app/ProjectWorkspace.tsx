@@ -12,9 +12,9 @@ export type { WorkspaceDesignContext } from "./App";
 import { ErrorPanel } from "./ErrorPanel";
 import { LoadingOverlay } from "./LoadingOverlay";
 import { failed, loading, ready, type Loadable } from "./loadable";
-import type { DrawingDesignRequest } from "../workspaces/monkeydiagram/DrawingCanvas";
 
 const Drawing = lazy(() => import("../workspaces/monkeydiagram/DrawingCanvas"));
+const Publish = lazy(() => import("../workspaces/publish/PublishWorkspace"));
 const Render = lazy(() => import("../workspaces/render/RenderWorkspace"));
 
 const Board = lazy(async () => {
@@ -24,13 +24,13 @@ const Board = lazy(async () => {
 });
 
 export interface ProjectWorkspaceProps {
-  workspace: "arch" | "board" | "drawing" | "render";
+  workspace: "arch" | "board" | "drawing" | "render" | "publish";
   expectedProjectId?: string;
   candidateRunId?: string | null;
   active?: boolean;
   refreshKey?: number;
   documentRequest?: { source: PageSource; requestId: number } | null;
-  onWorkspaceChange(workspace: "arch" | "board" | "drawing" | "render"): void;
+  onWorkspaceChange(workspace: "arch" | "board" | "drawing" | "render" | "publish"): void;
   onChatRequest?: () => void;
   onDesignContextChange?: (context: WorkspaceDesignContext | null) => void;
 }
@@ -51,10 +51,11 @@ export function ProjectWorkspace({ workspace, expectedProjectId, candidateRunId 
   const openedDocumentRequest = useRef<number | null>(null);
   const [documentIntent, setDocumentIntent] = useState<BoardDesignRequest | undefined>();
   const [sketchRequest, setSketchRequest] = useState<BoardSketchRequest | undefined>();
-  const [drawingRequest, setDrawingRequest] = useState<DrawingDesignRequest | undefined>();
   const [drawingVisited, setDrawingVisited] = useState(workspace === "drawing");
   const [boardVisited, setBoardVisited] = useState(workspace === "board");
-  const [archVisited, setArchVisited] = useState(workspace !== "render");
+  const [archVisited, setArchVisited] = useState((workspace !== "render" && workspace !== "publish"));
+  const [publishRequest, setPublishRequest] = useState<{ revision: string; ids: string[]; requestId: string } | null>(null);
+  const [publishVisited, setPublishVisited] = useState(workspace === "publish");
   const [renderVisited, setRenderVisited] = useState(workspace === "render");
   const [boardRefresh, setBoardRefresh] = useState(0);
   const [boardPage, setBoardPage] = useState<BoardPageRequest | null>(null);
@@ -65,7 +66,8 @@ export function ProjectWorkspace({ workspace, expectedProjectId, candidateRunId 
     if (workspace === "board") setBoardVisited(true);
     if (workspace === "drawing") setDrawingVisited(true);
     if (workspace === "render") setRenderVisited(true);
-    if (workspace !== "render") setArchVisited(true);
+    if (workspace === "publish") setPublishVisited(true);
+    if ((workspace !== "render" && workspace !== "publish")) setArchVisited(true);
   }, [workspace]);
   useEffect(() => {
     if (workspace === "arch") setVisit(null);
@@ -94,15 +96,11 @@ export function ProjectWorkspace({ workspace, expectedProjectId, candidateRunId 
     onWorkspaceChange("board");
   }, [onWorkspaceChange]);
   const submitFeedback = useCallback((request: BoardDesignRequest) => {
-    setDrawingRequest(undefined); setSketchRequest(undefined); setDocumentIntent(request); setVisit(null);
+    setSketchRequest(undefined); setDocumentIntent(request); setVisit(null);
     onWorkspaceChange("arch");
   }, [onWorkspaceChange]);
   const submitSketch = useCallback((request: BoardSketchRequest) => {
-    setDrawingRequest(undefined); setDocumentIntent(undefined); setSketchRequest(request); setVisit(null);
-    onWorkspaceChange("arch");
-  }, [onWorkspaceChange]);
-  const submitDrawing = useCallback((request: DrawingDesignRequest) => {
-    setDocumentIntent(undefined); setSketchRequest(undefined); setDrawingRequest(request); setVisit(null);
+    setDocumentIntent(undefined); setSketchRequest(request); setVisit(null);
     onWorkspaceChange("arch");
   }, [onWorkspaceChange]);
   useEffect(() => {
@@ -123,9 +121,15 @@ export function ProjectWorkspace({ workspace, expectedProjectId, candidateRunId 
     {(archVisited || modelVisible) && <div data-project-surface="arch" hidden={!modelVisible} inert={!active || !modelVisible}
       style={{ height: "100%", minHeight: 0, display: modelVisible ? "block" : "none" }}>
       <App server={server.value} expectedProjectId={boundProjectId.current} initialRunId={candidateRunId} documentSource={pageOpen ? visit.source : null}
-        initialDocumentIntent={documentIntent} initialSketchRequest={sketchRequest} initialDrawingRequest={drawingRequest}
+        initialDocumentIntent={documentIntent} initialSketchRequest={sketchRequest}
         active={active && modelVisible} refreshKey={refreshKey + attempt} onReturnToBoard={openBoard} onOpenBoard={openBoard} onChatRequest={onChatRequest}
         onDesignContextChange={onDesignContextChange} onRenderReader={registerRenderReader} />
+    </div>}
+    {(publishVisited || workspace === "publish") && <div data-project-surface="publish" hidden={workspace !== "publish"} inert={!active || workspace !== "publish"}
+      style={{ height: "100%", minHeight: 0, display: workspace === "publish" ? "block" : "none" }}>
+      <Suspense fallback={<LoadingOverlay mode="boot" status="Publish" />}>
+        <Publish projectId={boundProjectId.current!} active={active && workspace === "publish"} refreshKey={refreshKey + attempt} boardRequest={publishRequest} />
+      </Suspense>
     </div>}
     {(renderVisited || workspace === "render") && <div data-project-surface="render" hidden={workspace !== "render"} inert={!active || workspace !== "render"}
       style={{ height: "100%", minHeight: 0, display: workspace === "render" ? "block" : "none" }}>
@@ -137,13 +141,13 @@ export function ProjectWorkspace({ workspace, expectedProjectId, candidateRunId 
     {(drawingVisited || workspace === "drawing") && <div data-project-surface="drawing" hidden={workspace !== "drawing"} inert={!active || workspace !== "drawing"}
       style={{ height: "100%", minHeight: 0, display: workspace === "drawing" ? "block" : "none" }}>
       <Suspense fallback={<LoadingOverlay mode="boot" status="Drawing" />}>
-        <Drawing projectId={boundProjectId.current!} active={active && workspace === "drawing"} refreshKey={refreshKey + attempt} onDesignRequest={submitDrawing} />
+        <Drawing projectId={boundProjectId.current!} active={active && workspace === "drawing"} refreshKey={refreshKey + attempt} />
       </Suspense>
     </div>}
     {(boardVisited || workspace === "board") && <div data-project-surface="board" hidden={workspace !== "board" || pageOpen} inert={!active || workspace !== "board" || pageOpen}
       style={{ height: "100%", minHeight: 0, display: workspace === "board" && !pageOpen ? "block" : "none" }}>
       <Suspense fallback={<LoadingOverlay mode="boot" status="MonkeyBoard" />}>
-        <Board expectedProjectId={boundProjectId.current} refreshKey={refreshKey + attempt + boardRefresh} active={active && workspace === "board" && !pageOpen} onSubmit={submitFeedback} onSketch={submitSketch} onOpenDocument={setVisit} pageRequest={boardPage} />
+        <Board onPublish={(revision, ids) => { setPublishRequest({ revision, ids, requestId: crypto.randomUUID() }); onWorkspaceChange("publish"); }} expectedProjectId={boundProjectId.current} refreshKey={refreshKey + attempt + boardRefresh} active={active && workspace === "board" && !pageOpen} onSubmit={submitFeedback} onSketch={submitSketch} onOpenDocument={setVisit} pageRequest={boardPage} />
       </Suspense>
     </div>}
   </div>;
