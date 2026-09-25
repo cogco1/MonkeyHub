@@ -6,9 +6,14 @@ the drawing frame); this module crops them to the view's window and
 serialises them as one SVG whose every polyline still names its source
 physical object.  The PNG is rasterised from those SVG bytes and nothing
 else: the renderer parses the SVG back (viewBox, physical size, the polyline
-groups and dimension text with its embedded font). Section hatch strokes
-come from each solid's even-odd cut boundaries. It is not a screenshot,
-not a re-projection, and knows no project, run or path.
+groups, poché polygons and dimension text with its embedded font). Section
+hatch strokes and poché come from each solid's even-odd cut boundaries, by
+its material's rule in paper millimetres when the view has one. It is not a
+screenshot, not a re-projection, and knows no project, run or path.
+
+Semantics.  A polyline or poché names its source object in ``data-object``
+and, when the caller knows them, its ``data-component`` and
+``data-material``; what role it plays is the group it is in.
 
 Cleanup.  ``clean_drawing`` sits beside ``crop_polylines`` between the
 projection and the SVG: it drops what a pen should not draw (lines shorter
@@ -572,11 +577,81 @@ def _dressing_svg(dressing, crop, paper_per_unit):
     return result
 
 
+def _semantic_rows(semantics) -> dict[str, tuple[str, str | None]]:
+    """Per object id: the ``data-component``/``data-material`` attributes it writes, and its material."""
+
+    if semantics is None:
+        return {}
+    if not isinstance(semantics, Mapping):
+        raise DrawingSvgError("semantics must map object ids to their component and material")
+    rows = {}
+    for object_id, row in semantics.items():
+        if (not isinstance(object_id, str) or not object_id or not isinstance(row, Mapping)
+                or not set(row) <= {"component", "material"}
+                or any(value is not None and (not isinstance(value, str) or not value) for value in row.values())):
+            raise DrawingSvgError("semantics give each object id a component and a material as non-empty text, or omit them")
+        attributes = "".join(f" data-{key}={quoteattr(row[key])}" for key in ("component", "material")
+                             if row.get(key) is not None)
+        rows[object_id] = (attributes, row.get("material"))
+    return rows
+
+
+def _positive_mm(value, label: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value <= 0:
+        raise DrawingSvgError(f"{label} must be a positive paper millimetre value")
+    return value
+
+
+def _graphics_rules(graphics: Mapping):
+    """The material hatch rules and the beyond fade in ``graphics``, checked; an older recipe has neither.
+
+    ``hatch.byMaterial[<material>]`` is ``{spacingMm, angleDeg, poche}``: the
+    perpendicular stroke spacing in paper mm (default ``hatchSpacingMm``),
+    the stroke direction in degrees anticlockwise from the sheet's right
+    (default 45) and whether the cut is filled solid instead (default false).
+    ``beyond.fade`` greys what lies beyond the cut from 0 (black) to 1 (white).
+    """
+
+    rules: dict[str, tuple[float, float, bool]] = {}
+    hatch = graphics.get("hatch")
+    if hatch is not None:
+        by_material = hatch.get("byMaterial", {}) if isinstance(hatch, Mapping) else None
+        if not isinstance(hatch, Mapping) or not set(hatch) <= {"byMaterial"} or not isinstance(by_material, Mapping):
+            raise DrawingSvgError("graphics.hatch takes byMaterial: {material: {spacingMm, angleDeg, poche}}")
+        for material, rule in by_material.items():
+            if (not isinstance(material, str) or not material or not isinstance(rule, Mapping)
+                    or not set(rule) <= {"spacingMm", "angleDeg", "poche"}):
+                raise DrawingSvgError("each hatch.byMaterial rule names a material and takes spacingMm, angleDeg and poche")
+            spacing = _positive_mm(rule.get("spacingMm", graphics["hatchSpacingMm"]), f"the {material} hatch spacingMm")
+            angle, poche = rule.get("angleDeg", 45.0), rule.get("poche", False)
+            if isinstance(angle, bool) or not isinstance(angle, (int, float)) or not math.isfinite(angle):
+                raise DrawingSvgError(f"the {material} hatch angleDeg must be a finite number of degrees")
+            if not isinstance(poche, bool):
+                raise DrawingSvgError(f"the {material} hatch poche must be true or false")
+            rules[material] = (spacing, float(angle), poche)
+    fade = None
+    beyond = graphics.get("beyond")
+    if beyond is not None:
+        value = beyond.get("fade", 0.0) if isinstance(beyond, Mapping) else None
+        if (not isinstance(beyond, Mapping) or not set(beyond) <= {"fade"} or isinstance(value, bool)
+                or not isinstance(value, (int, float)) or not math.isfinite(value) or not 0.0 <= value <= 1.0):
+            raise DrawingSvgError("graphics.beyond takes fade, from 0 (black) to 1 (white)")
+        fade = float(value)
+    return rules, fade
+
+
+def _grey_paint(fade: float | None) -> str:
+    """The stroke colour of lines faded toward white; unfaded lines keep their black."""
+
+    level = 0 if fade is None else round(255 * fade)
+    return "#000" if level == 0 else f"#{level:02x}{level:02x}{level:02x}"
+
+
 def drawing_svg(
     lines: Sequence[OcctDrawingPolyline], *, crop_uv, unit: str, scale_denominator: int,
     hidden_lines: bool, title: str, regions: Sequence[OcctDrawingRegion] = (),
     graphics: Mapping | None = None, dimensions: Sequence[Mapping] = (), dressing: Sequence[Mapping] = (),
-    projection: str | None = None,
+    projection: str | None = None, semantics: Mapping[str, Mapping[str, str]] | None = None,
 ) -> bytes:
     """One SVG of the cropped polylines: hidden lines (dashed, optional) under visible lines.
 
@@ -588,6 +663,16 @@ def drawing_svg(
     ``projection`` "section-perspective" marks a perspective whose scale holds
     at its section plane (``data-projection``, ``data-scale-at``); an
     orthographic drawing, the default, keeps its bytes.
+
+    ``semantics`` maps an object id to its ``component`` and ``material``;
+    every polyline and poché of that object writes them as
+    ``data-component``/``data-material`` after its ``data-object``, and a
+    missing value writes nothing.  The role stays the group: ``section`` is
+    the cut and, in a cut plan, ``visible`` lies beyond it.  ``graphics``
+    (paper mm) may add material rules and the beyond fade
+    (``_graphics_rules``); a region whose object's material has a rule is
+    hatched or filled by it, any other as before.  Without semantics, rules
+    and fade the bytes are the same as before they existed.
     """
 
     if projection not in (None, "section-perspective"):
@@ -602,6 +687,7 @@ def drawing_svg(
     unit_mm = {"meter": 1000.0, "millimeter": 1.0, "inch": 25.4, "foot": 304.8}.get(unit)
     if unit_mm is None:
         raise DrawingSvgError(f"unit {unit!r} has no paper size conversion")
+    rows = _semantic_rows(semantics)
     kept = crop_polylines(lines, crop)
     u0, v0, u1, v1 = crop
     width, height = u1 - u0, v1 - v0
@@ -611,13 +697,13 @@ def drawing_svg(
     def points_attribute(points) -> str:
         return " ".join(f"{_number(u - u0)},{_number(v1 - v)}" for u, v in points)
 
-    def group(kind: str, style: str) -> list[str]:
+    def named(object_id: str) -> str:
+        return f"data-object={quoteattr(object_id)}{rows.get(object_id, ('', None))[0]}"
+
+    def group(kind: str, style: str, stroke: str = "#000") -> list[str]:
         members = [line for line in kept if line.kind == kind]
-        out = [f'  <g id="{kind}" fill="none" stroke="#000" stroke-linecap="round" stroke-linejoin="round" {style}>']
-        out.extend(
-            f'    <polyline data-object={quoteattr(line.object_id)} points="{points_attribute(line.points)}"/>'
-            for line in members
-        )
+        out = [f'  <g id="{kind}" fill="none" stroke="{stroke}" stroke-linecap="round" stroke-linejoin="round" {style}>']
+        out.extend(f'    <polyline {named(line.object_id)} points="{points_attribute(line.points)}"/>' for line in members)
         out.append("  </g>")
         return out
 
@@ -634,16 +720,20 @@ def drawing_svg(
     if hidden_lines:
         dash = " ".join(pen(mm) for mm in _HIDDEN_DASH_MM)
         body.extend(group("hidden", f'stroke-width="{pen(_HIDDEN_PEN_MM)}" stroke-dasharray="{dash}"'))
+    rules, fade = {}, None
     if graphics is not None:
         for key in ("visibleLineMm", "cutLineMm", "hatchSpacingMm"):
-            value = graphics.get(key)
-            if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value <= 0:
-                raise DrawingSvgError(f"{key} must be a positive paper millimetre value")
-    body.extend(group("visible", f'stroke-width="{pen(_VISIBLE_PEN_MM if graphics is None else graphics["visibleLineMm"])}"'))
+            _positive_mm(graphics.get(key), key)
+        rules, fade = _graphics_rules(graphics)
+    body.extend(group("visible", f'stroke-width="{pen(_VISIBLE_PEN_MM if graphics is None else graphics["visibleLineMm"])}"',
+                      _grey_paint(fade)))
     if graphics is not None:
-        hatch = _section_hatch(regions, crop, graphics["hatchSpacingMm"] / paper_per_unit)
+        materials = {object_id: row[1] for object_id, row in rows.items()}
+        poche, hatch = _section_material(regions, crop, paper_per_unit, graphics["hatchSpacingMm"], rules, materials)
         body.append(f'  <g id="section-hatch" fill="none" stroke="#000" stroke-width="{pen(0.1)}">')
-        body.extend(f'    <polyline data-object={quoteattr(line.object_id)} points="{points_attribute(line.points)}"/>' for line in hatch)
+        body.extend(f'    <polygon {named(object_id)} fill="#000" fill-rule="evenodd" stroke="none" '
+                    f'points="{points_attribute(points)}"/>' for object_id, points in poche)
+        body.extend(f'    <polyline {named(line.object_id)} points="{points_attribute(line.points)}"/>' for line in hatch)
         body.append("  </g>")
         body.extend(group("section", f'stroke-width="{pen(graphics["cutLineMm"])}"'))
     if dimensions:
@@ -653,43 +743,148 @@ def drawing_svg(
     return ("\n".join(head + body + ["</svg>", ""])).encode("utf-8")
 
 
-def _section_hatch(regions, crop, spacing):
-    """45 degree strokes clipped by each solid's even-odd loops, including holes."""
+def _section_material(regions, crop, paper_per_unit, spacing_mm, rules, materials):
+    """Each cut region's poché or hatch strokes, by its object's material rule; paper mm become drawing units.
+
+    A region whose object has no material, or a material without a rule, is
+    hatched at ``spacing_mm`` and 45 degrees exactly as before rules existed.
+    Returns the poché polygons as ``(object_id, points)`` and the strokes.
+    """
+
+    poche, strokes = [], []
+    for region in regions:
+        _closed_loops(region)
+        rule = rules.get(materials.get(region.object_id))
+        spacing, angle, solid = (spacing_mm, 45.0, False) if rule is None else rule
+        if solid:
+            points = _poche_points(region, crop)
+            if points:
+                poche.append((region.object_id, region.loops, points))
+        else:
+            strokes.extend(_hatch_strokes(region, crop, spacing / paper_per_unit, angle))
+    poche.sort(key=lambda row: (row[0], row[1]))
+    return ([(object_id, points) for object_id, _, points in poche],
+            tuple(sorted(set(strokes), key=lambda row: (row.object_id, row.points))))
+
+
+def _hatch_strokes(region, crop, spacing, angle):
+    """Strokes ``spacing`` apart (drawing units, perpendicular) at ``angle`` degrees anticlockwise from u,
+    clipped by the region's even-odd loops, holes included, and by the crop."""
+
+    if angle % 180.0 == 45.0:
+        return _hatch_45(region, crop, spacing)
+    return _hatch_rotated(region, crop, spacing, angle % 180.0)
+
+
+def _hatch_45(region, crop, spacing):
+    """The 45 degree strokes, computed as they always were so their bytes do not change."""
+
     result = []
     # y - x is constant on a hatch line; the perpendicular spacing is explicit on paper.
     step = spacing * math.sqrt(2)
-    for region in regions:
-        if not isinstance(region, OcctDrawingRegion):
-            raise DrawingSvgError("section regions must be OcctDrawingRegion values")
+    coordinates = [y - x for loop in region.loops for x, y in loop]
+    if not coordinates:
+        return result
+    low = max(min(coordinates), crop[1] - crop[2])
+    high = min(max(coordinates), crop[3] - crop[0])
+    first, last = math.ceil(low / step), math.floor(high / step)
+    if last - first > 100_000:
+        raise DrawingSvgError("the section hatch exceeds 100000 strokes")
+    for index in range(first, last + 1):
+        level = index * step
+        crossings = []
         for loop in region.loops:
-            if (len(loop) < 4 or loop[0] != loop[-1]
-                    or any(len(p) != 2 or any(not math.isfinite(v) for v in p) for p in loop)):
-                raise DrawingSvgError("section material needs explicitly closed finite loops")
-        coordinates = [y - x for loop in region.loops for x, y in loop]
-        if not coordinates:
-            continue
-        low = max(min(coordinates), crop[1] - crop[2])
-        high = min(max(coordinates), crop[3] - crop[0])
-        first, last = math.ceil(low / step), math.floor(high / step)
-        if last - first > 100_000:
-            raise DrawingSvgError("the section hatch exceeds 100000 strokes")
-        for index in range(first, last + 1):
-            level = index * step
-            crossings = []
-            for loop in region.loops:
-                for a, b in zip(loop, loop[1:]):
-                    da, db = a[1] - a[0], b[1] - b[0]
-                    if (da <= level < db) or (db <= level < da):
-                        t = (level - da) / (db - da)
-                        crossings.append(a[0] + t * (b[0] - a[0]))
-            crossings.sort()
-            if len(crossings) % 2:
-                raise DrawingSvgError("section material does not have even-odd hatch intersections")
-            for a, b in zip(crossings[::2], crossings[1::2]):
-                clipped = _clip_segment((a, a + level), (b, b + level), crop)
-                if clipped is not None and math.dist(*clipped) > 1e-10:
-                    result.append(OcctDrawingPolyline(region.object_id, "hatch", clipped))
-    return tuple(sorted(set(result), key=lambda row: (row.object_id, row.points)))
+            for a, b in zip(loop, loop[1:]):
+                da, db = a[1] - a[0], b[1] - b[0]
+                if (da <= level < db) or (db <= level < da):
+                    t = (level - da) / (db - da)
+                    crossings.append(a[0] + t * (b[0] - a[0]))
+        crossings.sort()
+        if len(crossings) % 2:
+            raise DrawingSvgError("section material does not have even-odd hatch intersections")
+        for a, b in zip(crossings[::2], crossings[1::2]):
+            clipped = _clip_segment((a, a + level), (b, b + level), crop)
+            if clipped is not None and math.dist(*clipped) > 1e-10:
+                result.append(OcctDrawingPolyline(region.object_id, "hatch", clipped))
+    return result
+
+
+def _hatch_rotated(region, crop, spacing, angle):
+    """Strokes at any other angle: the loops are measured along (s) and across (w) the stroke direction."""
+
+    if angle in (0.0, 90.0):
+        # Exact axes: no trigonometric residue on horizontal or vertical strokes.
+        cosine, sine = (1.0, 0.0) if angle == 0.0 else (0.0, 1.0)
+    else:
+        cosine, sine = math.cos(math.radians(angle)), math.sin(math.radians(angle))
+    loops = [[(x * cosine + y * sine, y * cosine - x * sine) for x, y in loop] for loop in region.loops]
+    levels = [w for loop in loops for _, w in loop]
+    if not levels:
+        return []
+    window = [y * cosine - x * sine for x in (crop[0], crop[2]) for y in (crop[1], crop[3])]
+    low, high = max(min(levels), min(window)), min(max(levels), max(window))
+    first, last = math.ceil(low / spacing), math.floor(high / spacing)
+    if last - first > 100_000:
+        raise DrawingSvgError("the section hatch exceeds 100000 strokes")
+    result = []
+    for index in range(first, last + 1):
+        level = index * spacing
+        crossings = []
+        for loop in loops:
+            for (sa, wa), (sb, wb) in zip(loop, loop[1:]):
+                if (wa <= level < wb) or (wb <= level < wa):
+                    crossings.append(sa + (level - wa) / (wb - wa) * (sb - sa))
+        crossings.sort()
+        if len(crossings) % 2:
+            raise DrawingSvgError("section material does not have even-odd hatch intersections")
+        for a, b in zip(crossings[::2], crossings[1::2]):
+            start = (a * cosine - level * sine, a * sine + level * cosine)
+            end = (b * cosine - level * sine, b * sine + level * cosine)
+            clipped = _clip_segment(start, end, crop)
+            if clipped is not None and math.dist(*clipped) > 1e-10:
+                result.append(OcctDrawingPolyline(region.object_id, "hatch", clipped))
+    return result
+
+
+def _clip_ring(ring, crop):
+    """One closed ring (without its repeated first point) clipped to the crop rectangle, Sutherland-Hodgman."""
+
+    u0, v0, u1, v1 = crop
+    points = list(ring)
+    for axis, bound, keep_above in ((0, u0, True), (0, u1, False), (1, v0, True), (1, v1, False)):
+        inside = (lambda p: p[axis] >= bound) if keep_above else (lambda p: p[axis] <= bound)
+        clipped = []
+        for index, current in enumerate(points):
+            previous = points[index - 1]
+            if inside(current) != inside(previous):
+                share = (bound - previous[axis]) / (current[axis] - previous[axis])
+                crossing = [previous[0] + share * (current[0] - previous[0]), previous[1] + share * (current[1] - previous[1])]
+                crossing[axis] = bound
+                clipped.append(tuple(crossing))
+            if inside(current):
+                clipped.append(current)
+        points = clipped
+    return [point for index, point in enumerate(points) if point != points[index - 1]]
+
+
+def _poche_points(region, crop):
+    """One region's cut as the points of one even-odd polygon inside the crop, or [] when none of it is inside.
+
+    Each loop is clipped to the window.  Later loops are reached from the
+    first loop's start and left back to it, so every joining edge is drawn
+    twice in opposite directions and even-odd filling cancels it: holes stay
+    open and separate pieces stay separate.
+    """
+
+    rings = [ring for ring in (_clip_ring(loop[:-1], crop) for loop in region.loops) if len(ring) >= 3]
+    if not rings:
+        return []
+    anchor = rings[0][0]
+    points = list(rings[0])
+    for ring in rings[1:]:
+        points.extend([anchor, *ring, ring[0]])
+    # The polygon closes itself back to the anchor, so the last joining edge needs no point.
+    return [point for index, point in enumerate(points) if index == 0 or point != points[index - 1]]
 
 
 _DIMENSION_FONT_PREFIX = "@font-face{font-family:DrawingDimension;src:url(data:font/ttf;base64,"
@@ -811,30 +1006,79 @@ def _millimetres(text: str) -> float:
     return float(text[:-2])
 
 
-def _svg_polylines(root):
-    """Every polyline with its inherited stroke width and dash array, in document order."""
+_POLYLINE, _POLYGON = f"{{{SVG_NS}}}polyline", f"{{{SVG_NS}}}polygon"
+_PAINT = ("stroke-width", "stroke-dasharray", "stroke", "fill", "fill-rule")
+
+
+def _svg_marks(root):
+    """Every polyline and polygon in document order: (is polygon, object id, points, stroke width, dash array,
+    and the stroke, fill and fill rule it inherits)."""
 
     found = []
 
-    def walk(element, stroke_width, dasharray):
-        stroke_width = element.get("stroke-width", stroke_width)
-        dasharray = element.get("stroke-dasharray", dasharray)
-        if element.tag == f"{{{SVG_NS}}}polyline":
+    def walk(element, inherited):
+        paint = {**inherited, **{key: element.get(key) for key in _PAINT if element.get(key) is not None}}
+        if element.tag in (_POLYLINE, _POLYGON):
             try:
                 points = tuple(
                     (float(pair.split(",")[0]), float(pair.split(",")[1]))
                     for pair in element.get("points", "").split()
                 )
-                width = float(stroke_width) if stroke_width is not None else 0.0
-                dashes = tuple(float(v) for v in dasharray.split()) if dasharray else ()
+                width = float(paint["stroke-width"]) if "stroke-width" in paint else 0.0
+                dashes = tuple(float(v) for v in paint["stroke-dasharray"].split()) if paint.get("stroke-dasharray") else ()
             except (ValueError, IndexError) as exc:
-                raise DrawingSvgError("an SVG polyline has invalid points or stroke") from exc
-            found.append((element.get("data-object"), points, width, dashes))
+                kind = "polygon" if element.tag == _POLYGON else "polyline"
+                raise DrawingSvgError(f"an SVG {kind} has invalid points or stroke") from exc
+            found.append((element.tag == _POLYGON, element.get("data-object"), points, width, dashes, paint))
         for child in element:
-            walk(child, stroke_width, dasharray)
+            walk(child, paint)
 
-    walk(root, None, None)
+    walk(root, {})
     return found
+
+
+def _grey(paint: str, what: str) -> int | None:
+    """The grey level of a paint ``drawing_svg`` writes (#rgb or #rrggbb with equal channels), None for none."""
+
+    if paint == "none":
+        return None
+    digits = paint[1:] if paint.startswith("#") else ""
+    if len(digits) == 3:
+        digits = "".join(digit * 2 for digit in digits)
+    if len(digits) != 6 or any(digit not in "0123456789abcdefABCDEF" for digit in digits):
+        raise DrawingSvgError(f"the SVG {what} {paint!r} is not a paint the renderer draws")
+    red, green, blue = (int(digits[index:index + 2], 16) for index in (0, 2, 4))
+    if not red == green == blue:
+        raise DrawingSvgError(f"the SVG {what} {paint!r} is not grey; the preview is drawn in grey levels")
+    return red
+
+
+def _fill_even_odd(draw, pixels, level: int, size) -> None:
+    """Fill a polygon (image pixels, closing itself) by the even-odd rule at pixel centres.
+
+    Each edge crosses the rows whose centre lies in its half-open vertical
+    range, computed from its lower end so an edge and its reverse give the
+    same crossings; pairs of crossings bound the filled runs.  A joining
+    edge drawn there and back therefore cancels, and horizontal edges fill
+    nothing on their own.
+    """
+
+    width, height = size
+    rows: dict[int, list[float]] = {}
+    for index, end in enumerate(pixels):
+        start = pixels[index - 1]
+        if start[1] == end[1]:
+            continue
+        low, high = (start, end) if start[1] < end[1] else (end, start)
+        slope = (high[0] - low[0]) / (high[1] - low[1])
+        for row in range(max(0, math.ceil(low[1])), min(height, math.ceil(high[1]))):
+            rows.setdefault(row, []).append(low[0] + (row - low[1]) * slope)
+    for row in sorted(rows):
+        crossings = sorted(rows[row])
+        for enter, leave in zip(crossings[::2], crossings[1::2]):
+            first, last = max(0, math.ceil(enter)), min(width, math.ceil(leave)) - 1
+            if first <= last:
+                draw.line([(first, row), (last, row)], fill=level, width=1)
 
 
 def _dashed(points, dashes):
@@ -873,17 +1117,19 @@ def svg_objects(svg: bytes) -> tuple[str, ...]:
     """The distinct source object ids the SVG's polylines name, sorted."""
 
     root, _, _ = _parse_svg(svg)
-    return tuple(sorted({name for name, _, _, _ in _svg_polylines(root) if name}))
+    return tuple(sorted({name for is_polygon, name, *_ in _svg_marks(root) if not is_polygon and name}))
 
 
 def render_svg_png(svg: bytes, *, dots_per_inch: int = 150) -> bytes:
-    """Rasterise the SVG's own polylines to a PNG at the SVG's physical size.
+    """Rasterise the SVG's own polylines and poché to a PNG at the SVG's physical size.
 
     Only what ``drawing_svg`` writes is understood: the viewBox, the mm
-    size, nested groups carrying stroke-width and stroke-dasharray, and
-    polylines and dimension text with an embedded font. Anything else is an error, not silently
-    skipped.  Lines are drawn black on white, 3x supersampled and
-    box-filtered down, so the PNG is a faithful preview of the vector file.
+    size, nested groups carrying stroke, stroke-width and stroke-dasharray,
+    polylines, even-odd filled polygons without stroke, and dimension text
+    with an embedded font; paint is grey (#rgb or #rrggbb with equal
+    channels).  Anything else is an error, not silently skipped.  Marks are
+    drawn in document order on white, 3x supersampled and box-filtered
+    down, so the PNG is a faithful preview of the vector file.
     """
 
     try:
@@ -894,7 +1140,7 @@ def render_svg_png(svg: bytes, *, dots_per_inch: int = 150) -> bytes:
         raise DrawingSvgError("dots_per_inch must be a positive integer")
     root, (min_x, min_y, width, height), (width_mm, height_mm) = _parse_svg(svg)
     for element in root.iter():
-        if element.tag not in {f"{{{SVG_NS}}}{name}" for name in ("svg", "title", "g", "polyline", "style", "text")}:
+        if element.tag not in {f"{{{SVG_NS}}}{name}" for name in ("svg", "title", "g", "polyline", "polygon", "style", "text")}:
             raise DrawingSvgError(f"the SVG carries an element the renderer does not draw: {element.tag}")
     supersample = 3
     pixels_x = max(1, round(width_mm / 25.4 * dots_per_inch))
@@ -905,13 +1151,22 @@ def render_svg_png(svg: bytes, *, dots_per_inch: int = 150) -> bytes:
     scale_y = pixels_y * supersample / height
     image = Image.new("L", (pixels_x * supersample, pixels_y * supersample), 255)
     draw = ImageDraw.Draw(image)
-    for _, points, stroke_width, dashes in _svg_polylines(root):
-        if len(points) < 2:
+    for is_polygon, _, points, stroke_width, dashes, paint in _svg_marks(root):
+        if is_polygon:
+            if paint.get("fill-rule") != "evenodd" or paint.get("stroke") != "none":
+                raise DrawingSvgError("an SVG polygon is drawn only as an even-odd fill without stroke")
+            level = _grey(paint.get("fill", "#000"), "fill")
+            if level is not None and len(points) >= 3:
+                _fill_even_odd(draw, [((x - min_x) * scale_x, (y - min_y) * scale_y) for x, y in points], level, image.size)
+            continue
+        # An unpainted polyline is drawn black, as it always was.
+        level = _grey(paint.get("stroke", "#000"), "stroke")
+        if level is None or len(points) < 2:
             continue
         pixel_width = max(1, round(stroke_width * scale_x))
         for piece in _dashed(points, dashes):
             pixels = [((x - min_x) * scale_x, (y - min_y) * scale_y) for x, y in piece]
-            draw.line(pixels, fill=0, width=pixel_width, joint="curve")
+            draw.line(pixels, fill=level, width=pixel_width, joint="curve")
     texts = list(root.iter(f"{{{SVG_NS}}}text"))
     styles = list(root.iter(f"{{{SVG_NS}}}style"))
     if texts or styles:

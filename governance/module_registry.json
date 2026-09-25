@@ -553,6 +553,7 @@
         "the SVG document of a drawing: viewBox in frame units, physical mm size at the sheet scale, hidden group under visible group, data-object per polyline, fixed-decimal coordinates, no timestamp (drawing_svg)",
         "rasterising that SVG's own polylines to a PNG at its physical size (render_svg_png), and reading the object ids an SVG names (svg_objects)",
         "even-odd section hatching and measured dimension strokes/native text with one embedded font; shared paper-placement bounds reject clipped dimensions",
+        "data-component and data-material after data-object on every polyline and poché of an object the caller's semantics name; material-keyed hatch spacing and angle or solid even-odd poché polygons, and the beyond fade, all in paper mm from graphics.hatch.byMaterial and graphics.beyond",
         "built-in person/tree plan SVG polylines and independent data-dressing groups, rendered through the same SVG-to-PNG path without architectural data-object identity"
       ],
       "does_not_own": [
@@ -565,6 +566,7 @@
         "crop window, unit, scale, hidden-line switch, title",
         "SVG bytes",
         "optional section regions, section polylines and paper pen/hatch settings",
+        "optional semantics {object id: {component, material}} and graphics hatch.byMaterial {material: {spacingMm, angleDeg, poche}} and beyond.fade 0..1",
         "resolved dimension values with anchors, label and paper offset",
         "optional section-perspective marker: data-projection and data-scale-at on the root; orthographic bytes unchanged"
       ],
@@ -598,7 +600,8 @@
       ],
       "invariants": [
         "the same polylines, crop and options give the same SVG bytes; the same SVG gives the same PNG bytes",
-        "the PNG is rendered only from what the SVG holds; an SVG element the renderer does not draw is an error, never skipped",
+        "the PNG is rendered only from what the SVG holds, in document order: polylines, stroke-free even-odd polygons and grey paint; an SVG element or paint the renderer does not draw is an error, never skipped",
+        "a recipe without hatch rules or fade, drawn without semantics, gives the bytes it gave before they existed; a material without a rule is hatched at hatchSpacingMm and 45 degrees as before",
         "hidden lines are omitted entirely unless asked for; geometry and hatch strokes name their source object, while dimension marks and native text name their dimension id",
         "clean_drawing keeps or drops a line whole and moves no vertex (a joint gap within the tolerance is bridged); its output is sorted, its counts add up to the lines removed, and cleaning again changes nothing",
         "no project, run or filesystem path is known here"
@@ -2772,6 +2775,7 @@
         "the drawing run: created with base = source run base, or reused only when it already carries that base",
         "DrawingProjectionReceipt@1 (retained as drawing-projection-receipt): source binding, frame, backend, counts and the two artifact refs",
         "the drawing cleanup tolerance, CLEANUP_TOLERANCE_MM on the sheet in the source unit at the view's scale, applied by all three freeze paths to the cropped lines they draw, with the CleanupReport kept in the receipt's cleanup and never in the recipe",
+        "the semantics a drawing writes (object_semantics): each physical object's archflow:component and archflow:material user text from the CAD receipt's expected_semantics, passed by all three freeze paths; a native model has none",
         "cold readback of a retained drawing (read_model_axis_elevation, list_model_axis_elevations) with every sha verified",
         "horizontal cut-plan composition: section boundaries, one material hatch and below-cut visible lines, with caller-resolved semantic dimensions and retained representation recipe",
         "representation-only SVG entourage in the existing cut-plan recipe; exact physical-object-centre anchors, explicit missing/outside-view status and immutable dressing readback across source rebuilds",
@@ -2791,7 +2795,7 @@
         "drawing run id",
         "ProjectRecordRef",
         "Optional operation_observer and parent event id for source load, global hidden-line solve, SVG, PNG and persistence intervals",
-        "cut-plan recipe and verified dimension read values; optional previous drawing revision ref",
+        "cut-plan recipe (graphics may add hatch.byMaterial and beyond.fade) and verified dimension read values; optional previous drawing revision ref",
         "SectionPerspectiveView: section, camera, depth, hidden objects, scale and pens"
       ],
       "outputs": [
@@ -2829,7 +2833,8 @@
         "CUT_PLAN_KIND",
         "DRAWING_VIEW_KINDS",
         "NativeModelSource",
-        "CLEANUP_TOLERANCE_MM"
+        "CLEANUP_TOLERANCE_MM",
+        "object_semantics"
       ],
       "depends_on": [
         "adapters.cad_execution",

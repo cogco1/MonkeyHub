@@ -363,8 +363,11 @@ class FreezeElevationTests(unittest.TestCase):
             read_model_axis_elevation(FilesystemProjectRepository.open(self.root), drawing.receipt_ref)
 
 
-def _room_plan_source(root, *, hidden_witnesses=False):
-    """A retained exact room with a real door cut; also used for visual inspection."""
+def _room_plan_source(root, *, hidden_witnesses=False, user_text=None):
+    """A retained exact room with a real door cut; also used for visual inspection.
+
+    ``user_text`` gives objects the ``archflow:`` user text a CAD program writes (component, material).
+    """
     from OCP.BRepAlgoAPI import BRepAlgoAPI_Cut
     from OCP.BRepPrimAPI import BRepPrimAPI_MakeBox
     from OCP.gp import gp_Pnt
@@ -404,7 +407,9 @@ def _room_plan_source(root, *, hidden_witnesses=False):
             "exact_artifact": {"relative_path": STEP_NAME, "sha256": digest, "exact_brep": True,
                                "deliveries": {name: "closed_solid" for name in shapes}},
             "physical_object_ids": sorted(shapes),
-            "expected_semantics": {"objects": {name: {"visible": name not in witnesses} for name in shapes}},
+            "expected_semantics": {"objects": {
+                name: {"visible": name not in witnesses, **({"user_text": user_text[name]} if name in (user_text or {}) else {})}
+                for name in shapes}},
         },
     )
     source = ElevationSource(SOURCE_RUN, f"runs/{SOURCE_RUN}/workspaces/{WORKSPACE}/{STEP_NAME}", digest,
@@ -494,6 +499,47 @@ class CutPlanTests(unittest.TestCase):
         cold = read_model_axis_elevation(FilesystemProjectRepository.open(self.root), ref)
         self.assertIsNone(cold.cleanup)
         self.assertEqual((cold.receipt, cold.svg, cold.png), (earlier, drawing.svg, drawing.png))
+
+    def test_the_plan_names_components_and_materials_and_draws_their_hatch_poche_and_fade(self):
+        from PIL import Image
+
+        text = {name: {"archflow:component": name, "archflow:material": "brick", "archflow:producer_op": "wall"}
+                for name in ("north-wall", "west-wall", "east-wall")}
+        text["south-wall"] = {"archflow:component": "south-wall", "archflow:material": "concrete"}
+        text["floor"] = {"archflow:component": "ground-slab"}
+        repository, source, recipe, dimension = _room_plan_source(self.root.parent / "semantic-room", user_text=text)
+        recipe = {**recipe, "graphics": {**recipe["graphics"], "hatch": {"byMaterial": {"concrete": {"poche": True}}},
+                                         "beyond": {"fade": 0.5}}}
+        drawing = freeze_cut_plan(repository, source=source, recipe=recipe, drawing_run_id="plan-run", dimensions=(dimension,))
+        self.assertEqual(drawing.receipt["view"], recipe, "graphics rules are representation intent, retained as given")
+        root = ElementTree.fromstring(drawing.svg)
+        named = [element for element in root.iter() if element.get("data-object") is not None]
+        self.assertTrue(named)
+        for element in named:
+            row = text.get(element.get("data-object"), {})
+            self.assertEqual((element.get("data-component"), element.get("data-material")),
+                             (row.get("archflow:component"), row.get("archflow:material")), element.attrib)
+        # Concrete is filled: one even-odd polygon for the south wall's two pieces either side of the door;
+        # brick keeps the default hatch strokes; nothing below the cut is either.
+        material = root.find(f"{SVG_NS}g[@id='section-hatch']")
+        self.assertEqual([(p.get("data-object"), p.get("fill-rule")) for p in material.findall(f"{SVG_NS}polygon")],
+                         [("south-wall", "evenodd")])
+        self.assertEqual({line.get("data-object") for line in material.findall(f"{SVG_NS}polyline")},
+                         {"north-wall", "west-wall", "east-wall"})
+        self.assertEqual(root.find(f"{SVG_NS}g[@id='visible']").get("stroke"), "#808080")
+        self.assertEqual(root.find(f"{SVG_NS}g[@id='section']").get("stroke"), "#000")
+        self.assertEqual(drawing.png, render_svg_png(drawing.svg))
+        with Image.open(BytesIO(render_svg_png(drawing.svg, dots_per_inch=254))) as image:
+            # 1:50 at 254 dpi: 200 pixels per metre, from the crop's corner (-1, 4).
+            pixel = lambda x, y: image.getpixel((round((x + 1) * 200), round((4 - y) * 200)))  # noqa: E731
+            self.assertEqual(pixel(0.5, 0.1), 0, "the concrete south wall is poché")
+            self.assertEqual(pixel(3.0, 0.1), 0)
+            self.assertEqual(pixel(1.5, 0.1), 255, "the door between its two pieces stays open")
+            self.assertEqual(pixel(2.0, 1.5), 255, "the room is empty")
+            # Inside the north wall (x 0.5..3.5, y 2.8..3.0), clear of its cut outline.
+            north = image.crop((300, 205, 900, 235))
+            self.assertLess(north.getextrema()[0], 128, "the brick north wall keeps its hatch")
+            self.assertGreater(north.getextrema()[1], 128)
 
     def test_revision_preserves_recipe_intent_and_explicit_missing_dimension_without_a_number(self):
         first = freeze_cut_plan(self.repository, source=self.source, recipe=self.recipe,
