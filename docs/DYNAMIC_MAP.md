@@ -5,10 +5,10 @@
 
 Phase: Delivered namespace, Stage/Branch/Candidate and UI slices are Git history. Legacy cards below retain only unresolved acceptance or unselected follow-ups; P108 and P115 have no source execution or reserved paths. Current source tasks are identified by GitHub Issue/PR and actual work lanes. Real project acceptance and formal issue remain explicit user actions.
 
-- active: GH-66
+- active: GH-66, GH-271
 - ready: none
 - blocked: P115, P105, P108, P110, P111, P113
-- next: continue active work: GH-66
+- next: continue active work: GH-66, GH-271
 
 ## Live work
 
@@ -21,3 +21,4 @@ Phase: Delivered namespace, Stage/Branch/Candidate and UI slices are Git history
 | P111 | blocked | Follow up the existing-project trial of delivered candidate continuation: the selected run remains the next edit's exact base and preserves the prior revision. Implementation and isolated verification are complete; The remaining user trial is blocked pending the current page and a new specific edit. This does not establish whole-assembly usability or correct architectural dependencies. | [P111](mapping/planning/P111-continuing-design-cycle.md) |
 | P113 | blocked | Make retained research evidence usable by one identified design or export consumer. First check existing Reading and source references; extend their existing owner if sufficient. The earlier ledger/import/export design is a proposal to revisit only if that consumer demonstrates a missing contract. | [P113](mapping/planning/P113-evidence-ledger.md) |
 | GH-66 | active | Implement the first project-bound Publish composition slice, with Drawing/Render source freshness and bounded Board handoff. Related consumer fixes follow #223/#216/#244 in the same integration review. | [GH-66](https://github.com/cogco1/MonkeyHub/issues/66) |
+| GH-271 | active | Follow the project's current valid Working Head in Modeling, Drawing and Render by default: one resolver over the existing P036 working position, drawing and render freshness judged against it, plain LIVE/FROZEN/STALE wording instead of candidate ids, and a read-only Worktree Graph V0 of current head, active work, bases, scopes and conflicts. | [GH-271](mapping/planning/GH-271-working-head.md) |
