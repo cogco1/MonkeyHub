@@ -57,7 +57,8 @@ type FailureKind =
   | "network" | "version" | "crash" | "stale" | "project" | "base" | "pending" | "rejected"
   | "sectionMisses" | "sectionEye" | "section"
   | "drawingFont" | "drawingEmpty" | "drawingSource" | "drawing"
-  | "unsupported" | "notFound" | "tooLarge" | "conflict" | "invalid" | "server" | "unknown";
+  | "unsupported" | "write" | "record"
+  | "notFound" | "tooLarge" | "conflict" | "invalid" | "server" | "unknown";
 
 interface FailureCopy { readonly reason: string; readonly next: string }
 
@@ -131,6 +132,14 @@ const FAILURES: Record<FailureKind, Record<Language, FailureCopy>> = {
     "zh-CN": { reason: "这项修改目前无法自动完成。", next: "换一种说法，或直接在模型上修改。" },
     en: { reason: "This change cannot be made automatically yet.", next: "Describe it another way, or edit the model directly." },
   },
+  write: {
+    "zh-CN": { reason: "这一步没能保存到项目里。", next: "再试一次；如果仍然失败，检查项目文件夹能否写入。" },
+    en: { reason: "This step could not be saved in the project.", next: "Try again. If it keeps failing, check that the project folder can be written to." },
+  },
+  record: {
+    "zh-CN": { reason: "项目里保存的记录前后不一致，这一步无法使用它。", next: "换一个结果或版本再试；技术详情说明了哪里不一致。" },
+    en: { reason: "A record saved in the project is inconsistent, so this step cannot use it.", next: "Try another result or version; Technical details say what does not match." },
+  },
   notFound: {
     "zh-CN": { reason: "这一步要用的内容已不在项目中。", next: "从当前列表重新选择后再试。" },
     en: { reason: "Something this step needs is no longer in the project.", next: "Choose again from the current list, then try again." },
@@ -191,6 +200,9 @@ function failureKind(error: StudioApiError): FailureKind {
   // The client also files its own local preconditions under UNSUPPORTED_REQUEST,
   // with no status; only the server's answer means the change itself.
   if (code === MISSING_EDITABLE_CONTROL || (code === UNSUPPORTED_REQUEST && status > 0)) return "unsupported";
+  if (code.endsWith("_WRITE_FAILED")) return "write";
+  // A 409 `*_INVALID` is a retained record that contradicts itself, not a bad request.
+  if (status === 409 && code.endsWith("_INVALID")) return "record";
   if (status === 404) return "notFound";
   if (status === 413) return "tooLarge";
   if (status === 409) return "conflict";
