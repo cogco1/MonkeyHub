@@ -409,6 +409,15 @@ def _sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+def _position_revision(value: Mapping[str, Any]) -> str:
+    """The working position's revision: the whole document but its ``active`` execution ledger.
+
+    A candidate's start and end rewrite ``active`` in the same document; they
+    never move the position, so they never refuse a position writer (GH-293).
+    """
+    return _sha256(_json_bytes({key: item for key, item in value.items() if key != "active"}))
+
+
 def _read_bytes(path: Path) -> bytes:
     try:
         return path.read_bytes()
@@ -1899,7 +1908,7 @@ class FilesystemProjectRepository:
                     "current": None, "runs": {}, "active": {}, "localDraftRef": None}, None
         value = _read_shared_json(path)
         self._require_working_draft(value)
-        return value, _sha256(_json_bytes(value))
+        return value, _position_revision(value)
 
     def _require_working_draft(self, value: Mapping[str, Any]) -> None:
         if (not isinstance(value, Mapping) or set(value) != {
@@ -1940,16 +1949,26 @@ class FilesystemProjectRepository:
             raise ProjectIntegrityError("working draft timestamp is invalid") from exc
 
     def compare_and_swap_working_draft(
-        self, *, expected_revision: str | None, value: Mapping[str, Any],
+        self, *, expected_revision: str | None, value: Mapping[str, Any], ledger: bool = False,
     ) -> tuple[dict[str, Any], str]:
+        """Replace the document while its position is still ``expected_revision``.
+
+        A position writer never carries the ``active`` ledger: the retained one
+        is kept, so an execution recorded after its read is never dropped. Only
+        ``protect_working_run`` and ``release_working_run`` write the ledger, and
+        they read it under this same lock.
+        """
         with self._lock, self._design_lock:
-            _, actual = self.read_working_draft()
+            current, actual = self.read_working_draft()
             if actual != expected_revision:
                 raise StaleWorkingDraft("the working draft changed; read it before updating this position")
+            if not ledger:
+                value = {**value, "active": current["active"]}
             self._require_working_draft(value)
             data = _json_bytes(value)
             _replace_atomic(self.layout.working_draft, data)
-            return _parse_json_document(data, "working draft"), _sha256(data)
+            written = _parse_json_document(data, "working draft")
+            return written, _position_revision(written)
 
     def protect_working_run(self, run_id: str, source_run_id: str | None, *, dependencies: tuple[str, ...] = ()) -> None:
         """Record a candidate's execution and exact inputs before they are read, without serializing workers."""
@@ -1962,14 +1981,14 @@ class FilesystemProjectRepository:
             if run_id in value["active"]:
                 raise ProjectRepositoryError("this candidate already has an active or interrupted execution")
             value["active"][run_id] = sources
-            self.compare_and_swap_working_draft(expected_revision=revision, value=value)
+            self.compare_and_swap_working_draft(expected_revision=revision, value=value, ledger=True)
 
     def release_working_run(self, run_id: str) -> None:
         with self._lock, self._design_lock:
             value, revision = self.read_working_draft()
             if run_id in value["active"]:
                 del value["active"][run_id]
-                self.compare_and_swap_working_draft(expected_revision=revision, value=value)
+                self.compare_and_swap_working_draft(expected_revision=revision, value=value, ledger=True)
 
     def prune_working_draft(self, *, now: str) -> tuple[str, ...]:
         """Expire superseded local recovery snapshots; never remove a run.

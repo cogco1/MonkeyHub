@@ -1,6 +1,7 @@
 """Current work and bounded local recovery survive reopen; P036 cleanup never removes a run."""
 from __future__ import annotations
 
+import json
 from pathlib import Path
 import subprocess
 import sys
@@ -49,6 +50,42 @@ class WorkingDraftRepositoryTests(unittest.TestCase):
         self.create("a")
         with self.assertRaises(StaleWorkingDraft):
             self.repo.compare_and_swap_working_draft(expected_revision=None, value=value)
+        reopened = FilesystemProjectRepository.open(self.repo.layout.root)
+        self.assertEqual(reopened.read_working_draft(), self.repo.read_working_draft())
+
+    def test_protect_and_release_do_not_move_the_position_revision(self):
+        # GH-293: a candidate's execution is a ledger beside the position. Its
+        # start and its end leave the revision that position writers compare, so
+        # a write that read the position just before either one still lands.
+        self.create("source")
+        value, revision = self.repo.read_working_draft()
+        self.repo.protect_working_run("running", "source")
+        protected, unchanged = self.repo.read_working_draft()
+        self.assertEqual((protected["active"], unchanged), ({"running": ["source"]}, revision))
+        value["current"] = "source"
+        written, moved = self.repo.compare_and_swap_working_draft(expected_revision=revision, value=value)
+        self.assertNotEqual(moved, revision, "a position write still moves the revision")
+        self.assertEqual(written["active"], {"running": ["source"]})
+        self.repo.release_working_run("running")
+        released, still = self.repo.read_working_draft()
+        self.assertEqual((released["current"], released["active"], still), ("source", {}, moved))
+        value["current"] = None
+        cleared, _ = self.repo.compare_and_swap_working_draft(expected_revision=moved, value=value)
+        self.assertEqual((cleared["current"], cleared["active"]), (None, {}))
+
+    def test_a_position_write_never_drops_an_active_execution(self):
+        # A position writer's value may carry a ledger read before the run
+        # started. The execution it never saw stays recorded; the ledger stays in
+        # the same retained document, in the same bytes, and reopens unchanged.
+        self.create("source")
+        value, _ = self.repo.read_working_draft()
+        self.repo.protect_working_run("running", "source")
+        value["current"] = "source"
+        self.repo.compare_and_swap_working_draft(expected_revision=self.repo.read_working_draft()[1], value=value)
+        data = self.repo.layout.working_draft.read_bytes()
+        kept = json.loads(data)
+        self.assertEqual((kept["current"], kept["active"]), ("source", {"running": ["source"]}))
+        self.assertEqual(data, (json.dumps(kept, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n").encode())
         reopened = FilesystemProjectRepository.open(self.repo.layout.root)
         self.assertEqual(reopened.read_working_draft(), self.repo.read_working_draft())
 
