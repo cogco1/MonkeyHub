@@ -10,3 +10,5 @@ Files claimed by the open Publish integration (GH-66, PR #270) are not edited in
 Lane `view-base`: viewing a model never moves the editing base. Undo/Redo steps only through editing-base changes, and a refused or unsaved base switch is reported where the architect asked for it.
 
 Lane `ui-audit`: `docs/2026-09-24-monkeyhub-ui-reality-audit.md` records the current UI reality and the functional contradictions, with evidence and verification status.
+
+Lane `interaction-proposal`: a separate session writes the new Hub-level interaction proposal in `docs/2026-09-24-monkeyhub-interaction-proposal.md`, starting from the audit.
