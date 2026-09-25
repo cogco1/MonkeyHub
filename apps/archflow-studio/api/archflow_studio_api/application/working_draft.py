@@ -1,6 +1,6 @@
 """Working positions use P036; generation, acceptance and issue keep their owners."""
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 from archflow.contracts.canonical import canonical_json
 from archflow.project.ports import PersistenceArea, PersistenceDestination
@@ -52,8 +52,12 @@ def _validate_local_source(binding: ProjectBinding, source: LocalDraftSourceDto)
 
 @retained_sources
 def read_working_draft(binding: ProjectBinding) -> WorkingDraftDto:
+    """Read the working position; ``recovery`` lists every unlabelled automatic run.
+
+    Generated candidates stay listed, newest first, however old they are, until
+    the architect explicitly rejects or archives them (GH-234 Q3).
+    """
     value, revision = binding.repository.read_working_draft()
-    cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
     entries = {run_id: WorkingDraftEntryDto(runId=run_id, **{key: item for key, item in row.items() if key != "automatic"})
                for run_id, row in value["runs"].items()}
     local = None
@@ -64,8 +68,7 @@ def read_working_draft(binding: ProjectBinding) -> WorkingDraftDto:
         local = LocalDraftDto.model_validate(payload["draft"] | {"updatedAt": payload["updatedAt"]})
     return WorkingDraftDto(projectId=binding.project_id, revisionSha256=revision,
         current=entries.get(value["current"]),
-        recovery=sorted((entries[key] for key, row in value["runs"].items()
-                         if row["automatic"] and row["label"] is None and datetime.fromisoformat(row["updatedAt"]) >= cutoff),
+        recovery=sorted((entries[key] for key, row in value["runs"].items() if row["automatic"] and row["label"] is None),
                         key=lambda item: item.updatedAt, reverse=True),
         saved=sorted((entries[key] for key, row in value["runs"].items() if row["label"] is not None),
                      key=lambda item: item.updatedAt, reverse=True),

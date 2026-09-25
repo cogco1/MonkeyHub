@@ -67,6 +67,25 @@ class WorkingDraftTests(CandidateTestCase):
             self.assertEqual(reopened, saved.json())
             self.assertEqual(reopened["current"]["runId"], accepted["candidateId"])
 
+    def test_an_automatic_candidate_older_than_24_hours_stays_listed_for_recovery(self):
+        # GH-234 Q3: a generated candidate stays an alternative until the architect
+        # explicitly rejects or archives it; age alone never drops it from the list.
+        older, job = self.run_candidate("set height to 2.2", elementId="portico-base")
+        self.assertEqual(job["status"], "succeeded", job)
+        newer, job = self.run_candidate("set height to 2.4", elementId="portico-base")
+        self.assertEqual(job["status"], "succeeded", job)
+        value, revision = self.repository.read_working_draft()
+        value["runs"][older["candidateId"]]["updatedAt"] = "2020-01-01T00:00:00+00:00"
+        self.repository.compare_and_swap_working_draft(expected_revision=revision, value=value)
+        newest_first = [newer["candidateId"], older["candidateId"]]
+        self.assertEqual([row["runId"] for row in self.read()["recovery"]], newest_first)
+        with TestClient(create_app(StudioSettings(project_dir=self.repository.layout.root, cad_export="off"))) as cold:
+            reopened = self.read(cold)
+            self.assertEqual([row["runId"] for row in reopened["recovery"]], newest_first)
+            self.assertEqual(reopened["recovery"][-1]["updatedAt"], "2020-01-01T00:00:00+00:00")
+            self.assertEqual(reopened["managedRunIds"], sorted(newest_first))
+            self.assertIsNone(reopened["current"])
+
     def test_select_clear_and_stale_window_never_overwrite_current(self):
         body = {"projectId": PROJECT_ID, "runId": REFERENCE_RUN_ID, "baseRevisionSha256": None}
         first = self.client.put("/api/working-draft", json=body)
