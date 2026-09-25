@@ -112,7 +112,11 @@ class DesignBranchStore(Protocol):
 
 
 class WorkingDraftStore(Protocol):
-    """P036 owns mutable working positions and cleanup of explicitly automatic runs."""
+    """P036 owns mutable working positions and expiry of superseded local recovery.
+
+    No run is ever removed here, however old or unreferenced: an automatic
+    candidate stays until the architect explicitly rejects or archives it.
+    """
 
     def working_draft_guard(self) -> ContextManager[None]: ...
 
@@ -126,7 +130,7 @@ class WorkingDraftStore(Protocol):
 
     def release_working_run(self, run_id: str) -> None: ...
 
-    def prune_working_draft(self, *, now: str, protected_run_ids: tuple[str, ...] = ()) -> tuple[str, ...]: ...
+    def prune_working_draft(self, *, now: str) -> tuple[str, ...]: ...
 
 
 class ProjectTransferStore(Protocol):

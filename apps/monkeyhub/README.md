@@ -97,7 +97,7 @@ The default runtime root is LOCALAPPDATA/MonkeyHub; --runtime-root selects anoth
 
 Completed local modeling gestures automatically update one project working draft. Reopening restores the exact source and local preview; editing alone does not create a candidate. **Sync** submits one frozen batch through the existing candidate workflow. The version panel shows the current draft, explicitly saved milestones and confirmed Stages, with automatic recovery points grouped under **Last 24 hours**. Saving a milestone does not accept a Stage or issue the project.
 
-P036 retains the working position and local recovery inside the project. Hub periodically asks it to remove expired automatic data only when no retained source depends on it. Current drafts, named saves, Stages, issued history, source documents, Board references and unfinished work remain protected; old unclassified runs are retained. Consequently a model's required ancestors may remain on disk longer than 24 hours. Concurrent or failed saves report an error and preserve the previous recovery record.
+P036 retains the working position and local recovery inside the project. It never deletes a run: a candidate made in Modeling or by the agent stays in the project whether or not a conversation, saved version or Stage refers to it. Hub periodically asks P036 to delete only superseded local recovery snapshots older than 24 hours: crash-recovery copies of unsynced edits that a later autosave has replaced or cleared. Only the current snapshot is ever restored, and it is kept however old it is. Concurrent or failed saves report an error and preserve the previous recovery record.
 
 | Content | Owner and location |
 | --- | --- |

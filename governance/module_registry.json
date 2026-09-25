@@ -2413,7 +2413,7 @@
         "Read-only classification of the declared project format as current, supported legacy, too new or invalid",
         "Ephemeral retained-format inventories, preserved retained kinds and migration blockers through the existing guarded transfer closure; no second format manifest",
         "Forward format-1 to format-2 migration into a new empty directory from a disposable staging copy: the source is never written; every retained record is restated at the pointers its schema owner declares (project.version_refs) and re-hashed, and the rename cascades to a fixed point so every record ref, project:// URI and design branch naming it moves with it; a record carrying a legacy identity no owner declares blocks the migration; everything the declarations do not own is copied byte for byte; the migration retains its own ProjectFormatMigration@1 receipt in a format-migration run inside the project it produced",
-        "The project working position and explicit retention choices in design/working.json; CAS updates and reference-safe removal of expired, explicitly automatic runs and local recovery snapshots."
+        "The project working position and explicit retention choices in design/working.json; CAS updates and expiry of superseded local recovery snapshots. No run is removed automatically."
       ],
       "does_not_own": [
         "path naming inside a project (project.layout)",
@@ -2514,7 +2514,7 @@
         "design branch creation expects no existing branch; advancement compares the exact Stage ref and preserves fork identity; canonical HEAD is unchanged",
         "candidate transfer installs immutable dependencies only and never accepts a Stage or changes published HEAD; pull checks the expected local branch mapping, preserves local runs and inputs, and refuses a different published HEAD",
         "Format planning refuses a source missing the existing advisory lock files rather than creating them; declared schema inventory is not a typed reference migration plan, and a supported legacy format 1 is upgradeable only through migrate_project_format into a new directory; the source is never written",
-        "Current work, explicitly saved runs, all retained references, recent 24-hour recovery and unfinished executions protect their complete run ancestry; unclassified runs, inputs and shared objects are never cleanup candidates.",
+        "Working-draft cleanup never removes a run, input or shared object: an automatic candidate stays whether or not anything refers to it. It removes only local recovery snapshots that are neither the current localDraftRef nor updated within the last 24 hours, and one inconsistent snapshot refuses the whole expiry.",
         "Source validation and reference writes share the same cross-process guard as cleanup; in-process and filesystem locks are acquired in project, HEAD, design order. Full project archives preserve working metadata and local recovery; candidate synchronization never replaces the local working position."
       ],
       "status": "canonical",
@@ -4037,7 +4037,7 @@
         "registered source bytes stay immutable: edited work-copy bytes become a new registered document through the existing save_document replacement path, declaring the whole document they replace, with no modelSource, drawingId, sourceStageRef or revisionRef inherited and no change to canonical HEAD",
         "an upload names either the pages it replaces or the one document it replaces whole, never both; a declared whole-document replacement must be the same kind of file with the same page count as the document it replaces, so a file that gained or lost a page is refused visibly instead of registering pages that are placed on no board; a page-by-page upload may still take any page of a longer file, and no two old pages may be answered for by one uploaded page",
         "model-view is a transient orthographic PNG from a complete retained STEP bound to exact run/stateDigest/model asset; it creates no drawing or project record and refuses unsupported sources.",
-        "Uploaded model registrations protect their source run permanently; generated compositions retain generated provenance and remain eligible for unreferenced automatic cleanup. Legacy registrations are conservatively protected.",
+        "Uploaded model registrations protect their source run permanently; generated compositions retain generated provenance, and their runs, like every run, are never removed automatically. Legacy registrations are conservatively protected.",
         "Cut-plan freshness is derived from exact source object inputs intersecting the view slab, including entering and occluding objects, and resolved dimension anchors; unknown targets and broken anchors are explicit. Rebuild preserves the recipe and immutable prior revision; no nearest-object rebinding is allowed.",
         "Design width proposals require two uniquely verified cut STEP jambs, an unlocked direct parameter with matching units and the original exact source at its accepted branch head. Placement edits change only paper representation and dimensions outside the view cannot drive."
       ],
@@ -6456,7 +6456,7 @@
         "Native MCP image reads of one exact registered PDF/image page through studio.board export, with explicit revision/page identity, bounded PNG transport and no mutation admission or project write.",
         "At an exact explicitly accepted Stage boundary, prepare project facts and replace native provider continuity once; retain visible chat and usage identities, with no Stage acceptance or project write.",
         "External source-bound conversation presentation through the existing chat store and stdio adapter: transient public progress, revisioned result upserts, session-scoped raster previews and exact retained document review; native CLI/ACP remains the provider owner.",
-        "Scheduling project working-draft cleanup along the existing project watcher, preserving active/recovery operations and exact document/candidate links retained by conversations.",
+        "Scheduling project working-draft cleanup along the existing project watcher; it expires only superseded local recovery and never asks P036 to remove a run.",
         "A narrow ordinary-chat feedback capability over studio.intent decisions: current user wording/message provenance is bound by Hub, interpreted avoid/keep fields stay attributed to the agent, and revocation verifies the original project/message without exposing lock, supersede or Stage acceptance.",
         "User-selected local desktop patch preparation, idle restart admission, owned host trial activation and startup rollback; update files and transaction state live only under the explicitly supplied nonproject runtime/updates directory and sibling application versions.",
         "Forwarding explicitly selected Study revisions into prepared task context and exposing the existing project-bound Study read for exact evidence reopening; no Study mutation tool.",

@@ -1879,7 +1879,10 @@ class FilesystemProjectRepository:
 
     @contextmanager
     def working_draft_guard(self):
-        """Keep exact source reads and retaining their references atomic with GC.
+        """Keep exact source reads and retaining their references atomic with cleanup.
+
+        Cleanup removes no run; it takes these locks too, so a guarded read of
+        the current local recovery snapshot never races that snapshot's expiry.
 
         HEAD already exists for every project. Do not create a design lock merely
         to validate a first request that may be refused without a project write.
@@ -1949,7 +1952,7 @@ class FilesystemProjectRepository:
             return _parse_json_document(data, "working draft"), _sha256(data)
 
     def protect_working_run(self, run_id: str, source_run_id: str | None, *, dependencies: tuple[str, ...] = ()) -> None:
-        """Pin a candidate's exact input before it is read, without serializing workers."""
+        """Record a candidate's execution and exact inputs before they are read, without serializing workers."""
         require_identifier(run_id, "active run_id")
         with self._lock, self._design_lock:
             sources = sorted(set(dependencies) | ({source_run_id} if source_run_id is not None else set()))
@@ -1968,108 +1971,35 @@ class FilesystemProjectRepository:
                 del value["active"][run_id]
                 self.compare_and_swap_working_draft(expected_revision=revision, value=value)
 
-    def prune_working_draft(self, *, now: str, protected_run_ids: tuple[str, ...] = ()) -> tuple[str, ...]:
-        """Remove only expired automatic runs unreachable from every retained source.
+    def prune_working_draft(self, *, now: str) -> tuple[str, ...]:
+        """Expire superseded local recovery snapshots; never remove a run.
 
-        Old/unclassified runs, shared objects and input files are never collection
-        candidates. The graph also follows bare run ids used by Board pages,
-        WorkingCopy options and combined candidates, alongside exact project URIs.
+        Every run stays, including an automatic candidate that nothing refers
+        to: an alternative leaves only by the architect's explicit act, never
+        on a timer (ADR-007: old runs are archived, and nobody deletes them).
+        A snapshot is a crash-recovery copy of unsynced local commands and only
+        the one ``localDraftRef`` names is ever read back, so that one is kept
+        however old it is; any other snapshot expires 24 hours after its
+        ``updatedAt``. Returns the removed snapshots' project-relative paths.
         """
         cutoff = self._working_time(now) - timedelta(hours=24)
         with self._lock, self._head_lock, self._design_lock:
-            value, revision = self.read_working_draft()
-            eligible = {run_id for run_id, row in value["runs"].items()
-                        if row["automatic"] and row["label"] is None and self._working_time(row["updatedAt"]) < cutoff}
-            runs = {path.parent.name for path in self.layout.runs.glob("*/run.json")}
-            roots = (runs - eligible) | set(protected_run_ids) | set(value["active"])
-            roots.update(source for sources in value["active"].values() for source in sources)
-            if value["current"] is not None:
-                roots.add(value["current"])
-
-            def references(item: Any) -> set[str]:
-                if isinstance(item, Mapping):
-                    return set().union(*(references(child) for child in item.values())) if item else set()
-                if isinstance(item, (list, tuple)):
-                    return set().union(*(references(child) for child in item)) if item else set()
-                if isinstance(item, str):
-                    if item in runs:
-                        return {item}
-                    path = item
-                    if item.startswith("project://"):
-                        uri = urlsplit(item)
-                        if uri.netloc != self.layout.project_id:
-                            return set()
-                        path = unquote(uri.path.lstrip("/"))
-                    parts = PurePosixPath(path.replace("\\", "/")).parts
-                    if len(parts) >= 2 and parts[0] == "runs" and parts[1] in runs:
-                        return {parts[1]}
-                return set()
-
-            def read(path: Path) -> dict:
-                return _parse_json_document(_read_bytes(path), path.name)
-
-            # The current local draft survives even when older than the recovery
-            # window. Other frozen command snapshots protect inputs for 24 hours.
-            current_local = value["localDraftRef"]
-            current_path = None if current_local is None else current_local["relative_path"]
-            expired_recovery: list[Path] = []
-            for path in self.layout.runs.glob(f"*/recovery/{STUDIO_LOCAL_DRAFT}-*.json"):
-                payload = read(path)
+            value, _ = self.read_working_draft()
+            current = None if value["localDraftRef"] is None else value["localDraftRef"]["relative_path"]
+            expired: list[Path] = []
+            for path in sorted(self.layout.runs.glob(f"*/recovery/{STUDIO_LOCAL_DRAFT}-*.json")):
+                payload = _parse_json_document(_read_bytes(path), path.name)
                 if payload.get("schema") != "StudioLocalDraft@1" or payload.get("projectId") != self.layout.project_id:
                     raise ProjectIntegrityError("local recovery has an inconsistent project binding")
-                if path.relative_to(self.layout.root).as_posix() == current_path or self._working_time(payload["updatedAt"]) >= cutoff:
-                    roots.update(references(payload))
-                else:
-                    expired_recovery.append(path)
-            if not eligible and not expired_recovery:
-                return ()
-            for base in (self.layout.inputs, self.layout.events, self.layout.canonical, self.layout.exports):
-                if base.exists():
-                    for path in base.rglob("*.json"):
-                        roots.update(references(read(path)))
-            if self.layout.design_branches.exists():
-                roots.update(references(read(self.layout.design_branches)))
-            graph: dict[str, set[str]] = {}
-            for run_id in runs:
-                deps = references(read(self.layout.run(run_id).manifest))
-                for area in ("records", "reviews", "candidates", "branches"):
-                    for path in (self.layout.run(run_id).root / area).rglob("*.json"):
-                        payload = read(path)
-                        # Original source material, including documents registered
-                        # inside an automatic model run, is a permanent root.
-                        if (payload.get("schema") in {"StudioSourceDocument@1", "StudioBoardScene@1", "StudioWorkingCopy@1", "StudioExternalModelAsset@1"}
-                                or (payload.get("schema") == "StudioModelAsset@1" and payload.get("origin") != "generated")):
-                            roots.add(run_id)
-                        deps.update(references(payload))
-                graph[run_id] = deps
-            pending = list(roots)
-            reachable = set()
-            while pending:
-                run_id = pending.pop()
-                if run_id not in reachable:
-                    reachable.add(run_id)
-                    pending.extend(graph.get(run_id, ()))
-            removed = tuple(sorted(eligible - reachable))
-            paths = []
-            for run_id in removed:
-                path = self.layout.run(run_id).root
-                if path.exists():
-                    if path.resolve().parent != self.layout.runs.resolve() or path.is_symlink():
-                        raise ProjectIntegrityError("automatic cleanup target escaped the project runs directory")
-                    paths.append(path)
-                value["runs"].pop(run_id, None)
-            if removed:
-                # Publish the retirement before removal. A crash can leave extra
-                # unclassified files, but never a current pointer to deleted data.
-                self.compare_and_swap_working_draft(expected_revision=revision, value=value)
-                for path in paths:
-                    shutil.rmtree(path)
-            for path in expired_recovery:
-                if path.exists():
-                    if not path.resolve().is_relative_to(self.layout.runs.resolve()) or path.is_symlink():
-                        raise ProjectIntegrityError("recovery cleanup target escaped the project")
-                    path.unlink()
-            return removed
+                if path.relative_to(self.layout.root).as_posix() != current and self._working_time(payload["updatedAt"]) < cutoff:
+                    expired.append(path)
+            runs = self.layout.runs.resolve()
+            for path in expired:
+                if not path.resolve().is_relative_to(runs) or path.is_symlink():
+                    raise ProjectIntegrityError("recovery cleanup target escaped the project")
+            for path in expired:
+                path.unlink(missing_ok=True)
+            return tuple(path.relative_to(self.layout.root).as_posix() for path in expired)
 
     def read_design_branches(self) -> dict[str, dict[str, Any]]:
         """Read verified design references, including projects predating them."""

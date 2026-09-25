@@ -133,7 +133,7 @@ class WorkingDraftTests(CandidateTestCase):
         self.assertIsNone(self.read()["localDraft"])
         self.assertFalse(self.repository.layout.run("studio-working-draft").root.exists())
 
-    def test_uploaded_model_is_permanent_but_generated_composition_can_expire(self):
+    def test_uploaded_model_and_generated_composition_both_stay_after_cleanup(self):
         import base64
         from pathlib import Path
         from archflow_studio_api.application.artifacts import register_model_asset
@@ -149,8 +149,11 @@ class WorkingDraftTests(CandidateTestCase):
             value["current"] = None
             value["runs"][run_id]["updatedAt"] = "2020-01-01T00:00:00+00:00"
             self.repository.compare_and_swap_working_draft(expected_revision=revision, value=value)
-            removed = self.repository.prune_working_draft(now="2026-01-03T00:00:00+00:00")
-            self.assertEqual(removed, (run_id,) if generated else ())
+            # GH-234 Q3: an expired automatic candidate nothing refers to stays
+            # until the architect explicitly rejects or archives it.
+            self.assertEqual(self.repository.prune_working_draft(now="2026-01-03T00:00:00+00:00"), ())
+            self.assertTrue(self.repository.layout.run(run_id).root.is_dir())
+            self.assertIn(run_id, self.repository.read_working_draft()[0]["runs"])
 
 
 class InitialProjectionRecoveryTests(CandidateArchiveTests):
@@ -194,6 +197,7 @@ class BranchWorkingDraftTests(DesignHistoryFixture):
         s0 = self.initialize()
         self.fork(s0, branch_id="alternative")
         candidate = self.candidate_from(s0)
+        unreferenced = self.candidate_from(s0, height=2.4)
         current = self.client.get("/api/working-draft").json()
         selected = self.client.put("/api/working-draft", json={"projectId": PROJECT_ID,
             "baseRevisionSha256": current["revisionSha256"], "runId": candidate, "branchId": "alternative"})
@@ -203,7 +207,12 @@ class BranchWorkingDraftTests(DesignHistoryFixture):
         self.assertEqual(accepted.status_code, 200, accepted.text)
         value, revision = self.repository.read_working_draft()
         value["current"] = None
-        value["runs"][candidate]["updatedAt"] = "2020-01-01T00:00:00+00:00"
+        for run_id in (candidate, unreferenced):
+            value["runs"][run_id]["updatedAt"] = "2020-01-01T00:00:00+00:00"
         self.repository.compare_and_swap_working_draft(expected_revision=revision, value=value)
+        # GH-234 Q3: cleanup removes no run. The confirmed Stage's candidate and
+        # an expired alternative that nothing refers to both stay.
         self.assertEqual(self.repository.prune_working_draft(now="2026-01-03T00:00:00+00:00"), ())
+        for run_id in (candidate, unreferenced):
+            self.assertTrue(self.repository.layout.run(run_id).root.is_dir())
         self.assertEqual(self.history("alternative")["stages"][-1]["stageRef"], accepted.json()["stageRef"])
