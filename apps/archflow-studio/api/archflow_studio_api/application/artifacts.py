@@ -64,6 +64,7 @@ from archflow.project.repository import ProjectRepositoryError
 
 from ..ports import StudioEventSink
 from ..transport.errors import StudioError, error_sentence
+from .authentication import ActorAttribution
 from .binding import retained_sources
 from .binding import ProjectBinding, ReferenceRun, record_kind
 from .projection import StateProjection, project_state, require_actionable
@@ -266,6 +267,47 @@ class SourceDocument:
     view_recipe: dict[str, Any] | None = None
     generated_at: str | None = None
     replaces_pages: tuple[DocumentPageReplacement, ...] = ()
+    # What a drawing revision's own receipt says: the revision it continued,
+    # who asked for it and why. Read, never registered; None where it says none.
+    previous_revision_ref: str | None = None
+    attribution: ActorAttribution | None = None
+    reason: str | None = None
+
+
+# Receipt fields a listing reads, by record URI. A record's name carries its
+# digest, so one read answers for the life of the process.
+_REVISION_PROVENANCE: dict[str, dict[str, Any]] = {}
+_revision_provenance_lock = threading.Lock()
+
+
+def _revision_provenance(binding: ProjectBinding, revision_ref: str) -> dict[str, Any]:
+    """The revision a drawing continued, who asked for it and why, from its receipt.
+
+    A receipt that cannot be read says nothing here: serving the revision's
+    bytes refuses it by name, and one damaged revision must not cost a
+    listing every other document.
+    """
+
+    with _revision_provenance_lock:
+        known = _REVISION_PROVENANCE.get(revision_ref)
+    if known is not None:
+        return known
+    try:
+        receipt = binding.repository.load_json(record_ref_from_uri(revision_ref, binding.project_id))
+    except (ProjectRepositoryError, OSError, TypeError, ValueError):
+        return {}
+    who = receipt.get("attribution")
+    attribution = None
+    if (isinstance(who, Mapping) and isinstance(who.get("actorId"), str)
+            and isinstance(who.get("authenticated"), bool) and isinstance(who.get("origin"), str)):
+        attribution = ActorAttribution(who["actorId"], who["authenticated"], who["origin"])
+    known = {"previous_revision_ref": _text(receipt.get("previousRevisionRef")),
+             "attribution": attribution, "reason": _text(receipt.get("reason"))}
+    with _revision_provenance_lock:
+        if len(_REVISION_PROVENANCE) >= 100_000:
+            _REVISION_PROVENANCE.clear()
+        _REVISION_PROVENANCE[revision_ref] = known
+    return known
 
 
 def _document_pages(data: bytes, mime_type: str) -> tuple[DocumentPage, ...]:
@@ -337,6 +379,8 @@ def list_documents(binding: ProjectBinding, run_id: str | None = None) -> tuple[
             generated_at=payload.get("generatedAt"),
             replaces_pages=tuple(DocumentPageReplacement(**page) for page in payload.get("replaces_pages", ())),
         )
+        if document.revision_ref is not None:
+            document = replace(document, **_revision_provenance(binding, document.revision_ref))
         key = document.revision_ref or document.asset_sha256
         previous = documents.get(key)
         if previous is None:
@@ -637,6 +681,7 @@ def save_document(
                 payload={"schema": "StudioSourceDocument@1", **{
                     key: value for key, value in asdict(document).items() if key not in (
                         "model_source", "model_source_binding_ref", "drawing_id", "revision_ref", "source_stage_ref", "view_recipe", "generated_at",
+                        "previous_revision_ref", "attribution", "reason",
                     )
                 }, **({"modelSource": model_source.to_dict()} if model_source else {}),
                 **({"drawingId": drawing_id} if drawing_id is not None else {}),

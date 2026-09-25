@@ -110,6 +110,27 @@ class CollaborationAuthTests(unittest.TestCase):
         self.assertEqual(denied.status_code, 403)
         self.assertEqual(denied.json()["code"], "SERVICE_ROLE_FORBIDDEN")
 
+    def test_a_drawing_revision_is_attributed_to_the_authenticated_actor_and_its_surface(self) -> None:
+        from archflow_studio_api.application.artifacts import DocumentPage, SourceDocument
+        from archflow_studio_api.application.authentication import ActorAttribution
+
+        drawn = SourceDocument(PROJECT_ID, "drawing-run", "a" * 64, "plan.png", "image/png", 1, (DocumentPage(0, 4, 3),))
+        body = {"projectId": PROJECT_ID, "sourceStageRef": "retained-stage", "reason": "Match the section's pens."}
+        for instance, origin in ((None, "studio"), ("hub-1", "hub")):
+            client = self.client(shared=False)
+            client.app.state.managed_instance_id = instance
+            with self.subTest(origin=origin), patch("archflow_studio_api.routes.drawings.generate_plan",
+                                                    return_value=drawn) as generate:
+                path = "/api/drawings/plans"
+                self.assertEqual(client.post(path, headers=self.headers("reader"), json=body).status_code, 403)
+                # Who asked is the bearer's actor and this process, never a body field.
+                forged = client.post(path, headers=self.headers("designer"), json={**body, "actorId": "reviewer"})
+                self.assertEqual(forged.status_code, 422, forged.text)
+                created = client.post(path, headers=self.headers("designer"), json=body)
+                self.assertEqual(created.status_code, 201, created.text)
+                self.assertEqual(generate.call_args.kwargs["attribution"], ActorAttribution("designer", True, origin))
+                self.assertEqual(generate.call_args.kwargs["reason"], "Match the section's pens.")
+
     def test_accept_does_not_follow_from_propose_or_release(self) -> None:
         client = self.client()
         for path in ("/api/candidates/candidate-1/accept", "/api/design-stages/initialize", "/api/design-branches"):

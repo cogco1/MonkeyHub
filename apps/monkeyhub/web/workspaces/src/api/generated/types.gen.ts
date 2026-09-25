@@ -6066,6 +6066,12 @@ export type PlanRequestDto = {
      * live follows the project's Working Head; frozen keeps this drawing on its chosen source until it is rebuilt. Omitted keeps the previous revision's choice; a new drawing is live.
      */
     follow?: 'live' | 'frozen' | null;
+    /**
+     * Reason
+     *
+     * Why this revision is asked for, in the asker's own words, such as the correction an agent was given; omit it for a direct edit. Retained with the revision beside who asked, never in its recipe.
+     */
+    reason?: string | null;
 };
 
 /**
@@ -7612,6 +7618,28 @@ export type RepresentationStateDto = {
      * Detail
      */
     detail: string | null;
+};
+
+/**
+ * RevisionAttributionDto
+ *
+ * Who asked for a drawing revision, as the request boundary knew it.
+ */
+export type RevisionAttributionDto = {
+    /**
+     * Actorid
+     */
+    actorId: string;
+    /**
+     * Authenticated
+     */
+    authenticated: boolean;
+    /**
+     * Origin
+     *
+     * hub: through a runtime the Hub manages (its Agent or its window); studio: a runtime no Hub manages.
+     */
+    origin: string;
 };
 
 /**
@@ -9576,6 +9604,22 @@ export type SourceDocumentDto = {
      * Replacespages
      */
     replacesPages?: Array<DocumentPageReplacementDto>;
+    /**
+     * Previousrevisionref
+     *
+     * Read only: the drawing revision this revision continued, from its receipt.
+     */
+    previousRevisionRef?: string | null;
+    /**
+     * Read only: who asked for this drawing revision, from its receipt; null when it was not recorded.
+     */
+    attribution?: RevisionAttributionDto | null;
+    /**
+     * Reason
+     *
+     * Read only: why this drawing revision was asked for, from its receipt; null when none was given or recorded.
+     */
+    reason?: string | null;
 };
 
 /**

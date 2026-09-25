@@ -166,6 +166,9 @@ class PlanRequestDto(DrawingSourceRequestDto):
     follow: Literal["live", "frozen"] | None = Field(default=None, description=(
         "live follows the project's Working Head; frozen keeps this drawing on its chosen source until it is "
         "rebuilt. Omitted keeps the previous revision's choice; a new drawing is live."))
+    reason: str | None = Field(default=None, min_length=1, max_length=200, description=(
+        "Why this revision is asked for, in the asker's own words, such as the correction an agent was given; "
+        "omit it for a direct edit. Retained with the revision beside who asked, never in its recipe."))
 
     @model_validator(mode="after")
     def one_dressing_edit(self):

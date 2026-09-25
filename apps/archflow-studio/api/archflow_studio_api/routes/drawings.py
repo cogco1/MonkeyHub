@@ -6,6 +6,7 @@ from typing import Literal
 from fastapi import APIRouter, Query
 from starlette.requests import Request
 
+from ..application.authentication import request_attribution
 from ..application.binding import bound_project
 from ..application.drawings import generate_elevation, generate_section_perspective, generate_sheet, model_view
 from ..application.drawing_plans import generate_plan, plan_status, plan_dimension_choices, dimension_proposal, plan_vector
@@ -28,7 +29,7 @@ def create_plan(request: Request, payload: PlanRequestDto) -> SourceDocumentDto:
         raise StudioError(403, "PROJECT_MISMATCH", "The drawing names another project.")
     values = payload.model_dump(exclude={"project_id", "model_source", "source_asset", "dimensions", "dressing", "dressing_operations",
                                          "hatch", "beyond"})
-    return document_dto(generate_plan(binding, **values,
+    return document_dto(generate_plan(binding, **values, attribution=request_attribution(request),
         hatch=None if payload.hatch is None else payload.hatch.model_dump(by_alias=True),
         beyond=None if payload.beyond is None else payload.beyond.model_dump(by_alias=True),
         source_asset=None if payload.source_asset is None else payload.source_asset.model_dump(by_alias=True),
