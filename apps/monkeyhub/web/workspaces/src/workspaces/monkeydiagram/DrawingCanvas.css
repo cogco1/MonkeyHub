@@ -24,6 +24,8 @@
 .drawing-status__summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; min-width: 0; }
 .drawing-source { color: var(--muted); overflow-wrap: anywhere; }
 .drawing-source b { font-weight: 500; color: var(--ink); }
+.drawing-import-note { flex-basis: 100%; margin: 6px 0; padding-left: 8px; border-left: 2px solid var(--accent); color: var(--muted); font-size: var(--text-caption); line-height: 1.5; overflow-wrap: anywhere; }
+.drawing-import-note ul { margin: 4px 0 0; padding-left: 18px; }
 .drawing-status > button { flex: none; }
 .drawing-status[data-status="outdated"], .drawing-status[data-status="partially-broken"] { border-left: 3px solid var(--accent); }
 .drawing-status[data-follow="frozen"] { border-style: dashed; }

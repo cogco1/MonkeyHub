@@ -969,7 +969,7 @@ export const ThreeDmViewport = forwardRef<
   const [dragActive, setDragActive] = useState(false);
   const [visualStatus, setVisualStatus] = useState<ViewportStatus>("idle");
   const [hasDraft, setHasDraft] = useState(false);
-  const [visualMessage, setVisualMessage] = useState("No model on screen · reference brings the reference run back, or choose a version below, or drop a .3dm from this machine here");
+  const [visualMessage, setVisualMessage] = useState("No model on screen · reference brings the reference run back, or choose a version below, or drop a .3dm or .skp from this machine here");
 
   callbacksRef.current = { onInspection, onStatus, onSource, onPick };
 
@@ -1021,7 +1021,7 @@ export const ThreeDmViewport = forwardRef<
     }
     if (!runtime?.model) {
       callbacksRef.current.onInspection(null);
-      reportStatus("idle", "No model on screen · reference brings the reference run back, or choose a version below, or drop a .3dm from this machine here");
+      reportStatus("idle", "No model on screen · reference brings the reference run back, or choose a version below, or drop a .3dm or .skp from this machine here");
       return;
     }
     runtime.scene.remove(runtime.model);
@@ -1032,7 +1032,7 @@ export const ThreeDmViewport = forwardRef<
     runtime.appearance = null;
     runtime.render();
     callbacksRef.current.onInspection(null);
-    reportStatus("idle", "No model on screen · reference brings the reference run back, or choose a version below, or drop a .3dm from this machine here");
+    reportStatus("idle", "No model on screen · reference brings the reference run back, or choose a version below, or drop a .3dm or .skp from this machine here");
   }, [clearHover, interaction, reportStatus]);
 
   const removeGhost = useCallback(() => {
@@ -2185,7 +2185,7 @@ export const ThreeDmViewport = forwardRef<
             <p aria-live="polite">{visualMessage}</p>
             {(visualStatus === "idle" || visualStatus === "error") && (
               <button className="button" type="button" onClick={onRequestFile}>
-                Open a local .3dm
+                Open a local .3dm or .skp
               </button>
             )}
           </>}

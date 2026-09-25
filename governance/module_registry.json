@@ -245,7 +245,9 @@
         "one process-wide Rhino host lock: a candidate's export and an explicitly requested work export are the same machine resource and take the same lock",
         "Blender solid and straight-extrusion meshes, explicit speculative .blend save in one background process, fresh-process geometry/semantic/binding readback, and the native retained receipt reader; no backend-specific project state",
         "Full Blender visualization rebuild from verified OCCT STEP, stable source IDs, explicit presentation settings, independent saved-scene render and source-bound artifact receipt; no geometry authoring",
-        "Bounded 3DM/GLB mesh format adapters and conversion readback; runtime-qualified provider selection and discovery-only native SKP/DWG executors with no project writes."
+        "Bounded 3DM/GLB mesh format adapters and conversion readback; runtime-qualified conversion-provider selection; provider execution remains separate from the standalone SKP reader, with no project writes.",
+        "native 3DM drawing-shape decoding (planar BRep, linear extrusion, supported curves and meshes), with block transforms, visibility, units and explicit faceted/mesh approximation quality; unsupported geometry is refused",
+        "independent local SketchUp C API reading of visible face geometry into meters/Z-up meshes; nested instances, transformations, holes and visibility, without launching a desktop host"
       ],
       "does_not_own": [
         "translating the program into a script - adapters.cad_program",
@@ -325,7 +327,9 @@
         "BlenderPresentation",
         "execute_blender_projection",
         "verify_projection_artifacts",
-        "archflow.adapters.model_formats.convert"
+        "archflow.adapters.model_formats.convert",
+        "read_three_dm",
+        "read_skp"
       ],
       "depends_on": [
         "adapters.cad_patch",
@@ -379,7 +383,9 @@
         "Blender supports positive solids and straight extrusions of simple planar profiles in the initial slice; all other operations fail before host execution or workspace writes. Complete rebuilds preserve source artifacts; cached exact requests verify retained proof and bytes without starting a host",
         "retained polyline curves are verified from cold STEP and native 3DM readback against all authored points, endpoints and length; curve delivery claims no face or solid, and existing solid/surface receipt fields retain their meaning",
         "Blender projection consumes OCCT tessellation without architectural reconstruction; full rebuild preserves source IDs and explicit presentation settings. Geometry edits require MonkeyHub reconcile, never blend-file promotion.",
-        "composed-model replacement retains the source GUID for each rebuilt logical object; newly added objects cannot reuse any source GUID, including retired ones; saved readback verifies the expected identity"
+        "composed-model replacement retains the source GUID for each rebuilt logical object; newly added objects cannot reuse any source GUID, including retired ones; saved readback verifies the expected identity",
+        "Imported meshes and saved render meshes retain their faceted/approximation quality; no native reader creates a STEP or an OCCT execution receipt. SKP originals remain with the application owner; the reader does not write project data.",
+        "SKP-derived mesh object IDs follow persistent instance paths and tag IDs within the same model; names and geometry changes do not mint new object identities. Unsupported or missing persistent IDs are refused."
       ],
       "status": "canonical",
       "tests": [
@@ -391,7 +397,9 @@
         "tests/test_blender_projection.py",
         "tests/test_model_formats.py",
         "tests/model_export_glb_reader.mjs",
-        "tests/test_model_providers.py"
+        "tests/test_model_providers.py",
+        "tests/test_occt_native_models.py",
+        "tests/test_sketchup_reader.py"
       ],
       "notes": "P115 #13: Phase 0 contract merged in PR15 and Phase 1 lanes in PR17. Blender extends the same registration and request/result protocol; its runner-written receipt uses the existing P036 kind table. No runner dispatch, compiler, State, Stage or Hub/App Server mechanism is added.",
       "files": [
@@ -403,7 +411,8 @@
         "archflow/adapters/blender_projection.py",
         "archflow/adapters/model_formats.py",
         "archflow/adapters/model_providers.py",
-        "archflow/adapters/local_cad_discovery.py"
+        "archflow/adapters/local_cad_discovery.py",
+        "archflow/adapters/sketchup_reader.py"
       ]
     },
     {
@@ -2743,7 +2752,7 @@
     {
       "module_id": "runtime.drawing_elevation",
       "owner_path": "monkeydiagram/drawing_elevation.py",
-      "purpose": "Freeze model-axis orthographic projections or one horizontal cut plan from retained exact STEP into SVG, PNG and an existing drawing receipt, without changing design state.",
+      "purpose": "Freeze model-axis projections and horizontal cut plans from verified STEP or registered native model geometry into SVG/PNG and the existing drawing receipt, without changing design state.",
       "owns": [
         "ElevationSource: the retained STEP and OcctExecutionReceipt@1 a drawing is derived from, and the verification that they agree (SHA, run, base, unit, Z-up, STEP names = physical object ids)",
         "ElevationView: origin, look/right/up along the model axes, crop window, near/far depths, hidden-line switch, chord deflection and sheet scale, checked for consistency",
@@ -2752,7 +2761,8 @@
         "DrawingProjectionReceipt@1 (retained as drawing-projection-receipt): source binding, frame, backend, counts and the two artifact refs",
         "cold readback of a retained drawing (read_model_axis_elevation, list_model_axis_elevations) with every sha verified",
         "horizontal cut-plan composition: section boundaries, one material hatch and below-cut visible lines, with caller-resolved semantic dimensions and retained representation recipe",
-        "representation-only SVG entourage in the existing cut-plan recipe; exact physical-object-centre anchors, explicit missing/outside-view status and immutable dressing readback across source rebuilds"
+        "representation-only SVG entourage in the existing cut-plan recipe; exact physical-object-centre anchors, explicit missing/outside-view status and immutable dressing readback across source rebuilds",
+        "NativeModelSource: verify original 3DM bytes against their explicit registration and derive drawing shapes without fabricating semantic state or CAD execution provenance"
       ],
       "does_not_own": [
         "the hidden-line solve - adapters.cad_execution",
@@ -2792,7 +2802,8 @@
         "DOCUMENTATION_WORKSPACE",
         "freeze_cut_plan",
         "plan_dressing_anchors",
-        "resolve_plan_dressing"
+        "resolve_plan_dressing",
+        "NativeModelSource"
       ],
       "depends_on": [
         "adapters.cad_execution",
@@ -2801,7 +2812,8 @@
         "project.record_kinds",
         "project.refs",
         "project.repository",
-        "project.version_refs"
+        "project.version_refs",
+        "archflow.adapters.occt_backend"
       ],
       "used_by": [
         "tests/test_drawing_elevation.py",
@@ -2815,7 +2827,8 @@
         "two identities only: the SVG/PNG content (sha256) and the source binding (run, base, STEP, CAD receipt, object ids, frame); the receipt digests nothing of itself",
         "Observations are plain values; callback failure cannot alter or repeat projection or persistence; input and emitted object ids do not claim a changed-object-only visibility solve",
         "Existing elevation/top recipe and digest bytes keep their original meaning; cut-plan is an explicit recipe kind. Missing retained visibility ids and dimension intent remain explicit in the new receipt.",
-        "Dressing has independent object ids, uses fixed view coordinates or exact physical-object anchors, never creates design entities and never silently rebinds missing anchors."
+        "Dressing has independent object ids, uses fixed view coordinates or exact physical-object anchors, never creates design entities and never silently rebinds missing anchors.",
+        "Native source receipts name the original model and its registration, GUID instance paths and geometry quality; STEP-derived receipt fields and old digest meanings remain unchanged."
       ],
       "status": "canonical",
       "tests": [
@@ -3894,7 +3907,9 @@
         "one horizontal cut-plan revision over the existing SourceDocument and DrawingProjectionReceipt: retained scale, pens, hatch, semantic rectangular empty-door dimensions and explicit rebuild against a named exact source or the original Stage branch head",
         "Model conversion orchestration using the existing job pool, original source objects and noncanonical P036 export runs; retained progress, failure and validated-download reports.",
         "read-only paged native-object lookup by exact ModelSource and GUID; no architectural-role inference or edit admission",
-        "typed representation-only SVG dressing replacement and insert/move/scale/flip/delete operations against an exact previous Drawing revision; retained SVG readback and source anchor choices"
+        "typed representation-only SVG dressing replacement and insert/move/scale/flip/delete operations against an exact previous Drawing revision; retained SVG readback and source anchor choices",
+        "direct native model drawing selection: registered external sourceAsset stays frozen and has no modelSource; state-bound composed 3DM uses its own geometry, never a partial paired STEP",
+        "SKP upload through the local standalone SDK, retaining original SKP and derived 3DM face geometry in the same P036 registration; retries reuse the verified original content"
       ],
       "does_not_own": [
         "producing the export or its receipt - adapters.cad_execution through runtime.project_runner",
@@ -4010,7 +4025,8 @@
         "state.design_portfolio",
         "state.record",
         "archflow.adapters.model_formats",
-        "archflow.adapters.model_providers"
+        "archflow.adapters.model_providers",
+        "archflow.adapters.sketchup_reader"
       ],
       "used_by": [
         "apps/archflow-studio/api/archflow_studio_api/application/candidate.py",
@@ -4043,7 +4059,9 @@
         "Uploaded model registrations protect their source run permanently; generated compositions retain generated provenance, and their runs, like every run, are never removed automatically. Legacy registrations are conservatively protected.",
         "Cut-plan freshness is derived from exact source object inputs intersecting the view slab, including entering and occluding objects, and resolved dimension anchors; unknown targets and broken anchors are explicit. Rebuild preserves the recipe and immutable prior revision; no nearest-object rebinding is allowed.",
         "Design width proposals require two uniquely verified cut STEP jambs, an unlocked direct parameter with matching units and the drawing's exact source on the Working Head, or another line's latest accepted Stage. Placement edits change only paper representation and dimensions outside the view cannot drive.",
-        "a drawing's default status target is the Working Head's exact drawable source; a head with no exact STEP is reported, never rebound"
+        "a drawing's default status target is the Working Head's exact drawable source; an undrawable head is reported, never rebound",
+        "External imported drawings never invent design state or driving dimensions; exact source run/hash and representation edits survive restart. Missing SKP runtime and unsupported 3DM geometry are explicit errors.",
+        "SKP sourceImport metadata exposes the original file name and source artifact plus conversion warnings through model upload/listing and drawing receipts; import loss is never hidden by a successful projection."
       ],
       "status": "canonical",
       "tests": [
@@ -4058,7 +4076,8 @@
         "apps/archflow-studio/api/tests/test_model_exports.py",
         "apps/archflow-studio/api/tests/test_model_source_index.py",
         "apps/archflow-studio/api/tests/test_model_load_monitoring.py",
-        "apps/monkeyhub/web/workspaces/test/externalModelImport.browser.mjs"
+        "apps/monkeyhub/web/workspaces/test/externalModelImport.browser.mjs",
+        "apps/archflow-studio/api/tests/test_native_drawings.py"
       ],
       "notes": "The viewer's only source of model bytes; digests are the identity, filenames are not.",
       "files": [

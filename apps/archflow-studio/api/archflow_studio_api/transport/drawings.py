@@ -83,7 +83,24 @@ class PlanVectorDto(BaseModel):
     anchors: list[PlanDressingAnchorDto]
 
 
-class PlanRequestDto(BaseModel):
+class DrawingAssetSourceDto(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
+    run_id: str = Field(alias="runId", min_length=1)
+    asset_sha256: str = Field(alias="assetSha256", pattern=r"^[0-9a-f]{64}$")
+
+
+class DrawingSourceRequestDto(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
+    source_asset: DrawingAssetSourceDto | None = Field(alias="sourceAsset", default=None)
+
+    @model_validator(mode="after")
+    def separate_imported_source(self):
+        if self.source_asset is not None and (self.model_source is not None or self.source_stage_ref is not None):
+            raise ValueError("Choose sourceAsset or a design model/Stage, not both")
+        return self
+
+
+class PlanRequestDto(DrawingSourceRequestDto):
     model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
     project_id: str = Field(alias="projectId", min_length=1)
     source_stage_ref: str | None = Field(alias="sourceStageRef", default=None)
@@ -194,7 +211,7 @@ class ModelViewDto(BaseModel):
     representation: Literal["orthographic-line-projection"] = "orthographic-line-projection"
 
 
-class ElevationRequestDto(BaseModel):
+class ElevationRequestDto(DrawingSourceRequestDto):
     model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
     project_id: str = Field(alias="projectId", min_length=1)
     source_stage_ref: str | None = Field(alias="sourceStageRef", default=None)
@@ -225,7 +242,7 @@ class DrawingStylesDto(BaseModel):
     styles: list[DrawingStyleDto]
 
 
-class SheetRequestDto(BaseModel):
+class SheetRequestDto(DrawingSourceRequestDto):
     model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
     project_id: str = Field(alias="projectId", min_length=1)
     source_stage_ref: str | None = Field(alias="sourceStageRef", default=None)

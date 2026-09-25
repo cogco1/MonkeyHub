@@ -763,7 +763,7 @@ export const messagesEn = {
   "stage.source.meshes": "{count} meshes",
   "stage.source.objects": "{count} objects",
   "stage.source.status.noModel":
-    "No model on screen · return to the reference run, choose a version below, or drop a local .3dm here",
+    "No model on screen · return to the reference run, choose a version below, or drop a local .3dm or .skp here",
   "stage.view.ghost": "Ghost preview",
   "stage.view.validated": "Review-ready",
   "stage.view.checked": "Checked",

@@ -186,6 +186,8 @@ class ArtifactRecord:
     # module recognizes a work model as this delivery's own, materials and all,
     # rather than one made from a different receipt of the same bytes.
     source_receipt_ref: str | None = None
+    # Original import and conversion limits, retained beside the viewable model.
+    source_import: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -1530,6 +1532,8 @@ def register_model_asset(
     if run_id is None:
         if generated:
             raise StudioError(422, "MODEL_SOURCE_REQUIRED", "Generated geometry requires an exact retained state.")
+        if file_name.lower().endswith(".skp"):
+            return _register_external_skp(binding, file_name, content_base64, monitor, event_sink)
         return _register_external_model_asset(binding, file_name, content_base64, monitor, event_sink)
     with monitor.measure("model_ingest", project_id=binding.project_id, run_id=run_id,
                          details={"cache_status": "unknown"}) as operation:
@@ -1594,7 +1598,43 @@ def register_model_asset(
             _model_asset_lock.release()
 
 
-def _register_external_model_asset(binding, file_name, content_base64, monitor, event_sink):
+def _register_external_skp(binding, file_name, content_base64, monitor, event_sink):
+    from archflow.adapters.model_formats import ConversionError, ThreeDM
+    from archflow.adapters.sketchup_reader import read_skp
+
+    if len(file_name) > 240 or any(char in file_name for char in "/\\\r\n\x00"):
+        raise StudioError(422, "MODEL_ASSET_INVALID", "Provide a model file name, not a server path.")
+    if len(content_base64) > 4 * ((128 * 1024 * 1024 + 2) // 3):
+        raise StudioError(413, "MODEL_ASSET_TOO_LARGE", "A model asset may contain at most 128 MiB.")
+    try:
+        original = base64.b64decode(content_base64, validate=True)
+    except (ValueError, binascii.Error) as exc:
+        raise StudioError(422, "MODEL_ASSET_INVALID", "The model bytes are not valid base64.") from exc
+    if not original:
+        raise StudioError(422, "MODEL_ASSET_INVALID", "Choose a non-empty SKP file.")
+    digest = hashlib.sha256(original).hexdigest()
+    with _model_asset_lock:
+        for row in list_artifacts(binding).artifacts:
+            if row.representation != "external":
+                continue
+            retained = binding.repository.load_json(record_ref_from_uri(row.receipt_ref, binding.project_id))
+            source = retained.get("sourceArtifact", {})
+            if source.get("sha256") == digest:
+                source_path = binding.repository.layout.resolve_relative(source["relative_path"])
+                if not source_path.is_file() or hashlib.sha256(source_path.read_bytes()).hexdigest() != digest:
+                    raise StudioError(409, "ARTIFACT_DIGEST_MISMATCH", "The retained SKP original no longer matches its registration.")
+                return artifact_bytes(binding, row.sha256, run_id=row.run_id)[0]
+        try:
+            scene = read_skp(original)
+            scene.metrics()
+            converted = ThreeDM().write(scene)
+        except ConversionError as exc:
+            raise StudioError(422, "MODEL_ASSET_SKP_UNAVAILABLE", str(exc)) from exc
+        return _register_external_model_asset(binding, file_name[:-4] + ".3dm", base64.b64encode(converted).decode("ascii"),
+            monitor, event_sink, original=(file_name, original, scene.warnings))
+
+
+def _register_external_model_asset(binding, file_name, content_base64, monitor, event_sink, *, original=None):
     """Retain exact external bytes without inventing a semantic design state."""
     with monitor.measure("model_ingest", project_id=binding.project_id,
                          details={"cache_status": "unknown"}) as operation:
@@ -1628,6 +1668,14 @@ def _register_external_model_asset(binding, file_name, content_base64, monitor, 
                        else binding.repository.create_run(source_run_id))
                 artifact = binding.repository.ingest(run=run, destination=PersistenceDestination(PersistenceArea.OBJECT),
                     artifact_id=f"external-model-{digest}", media_type="model/vnd.rhino", source=BytesIO(data))
+                provenance = {}
+                if original is not None:
+                    source_name, source_bytes, warnings = original
+                    source_artifact = binding.repository.ingest(run=run, destination=PersistenceDestination(PersistenceArea.OBJECT),
+                        artifact_id="source-skp", media_type="application/vnd.sketchup.skp", source=BytesIO(source_bytes))
+                    provenance = {"sourceArtifact": asdict(source_artifact), "sourceFileName": source_name,
+                                  "conversion": {"provider": "SketchUp C API", "sourceFormat": "skp", "targetFormat": "3dm",
+                                                 "representation": "face-mesh", "warnings": warnings}}
                 binding.repository.put_json(run=run,
                     destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=run.run_id),
                     record_kind=STUDIO_MODEL_ASSET, payload={
@@ -1636,6 +1684,7 @@ def _register_external_model_asset(binding, file_name, content_base64, monitor, 
                         "runId": run.run_id, "assetSha256": digest, "origin": "uploaded",
                         "artifact": asdict(artifact), "fileName": file_name, "sizeBytes": len(data),
                         "objectCount": inspected.object_count, "lengthUnit": unit,
+                        **provenance,
                     })
             with monitor.measure("model_ingest.verify"):
                 registered = next(row for row in _registered_model_assets(binding, run.run_id) if row.sha256 == digest)
@@ -1684,6 +1733,8 @@ def _registered_model_assets(
             branch_id=None, branch_epoch=None, program_ref=None, program_digest=None,
             design_state_digest=None if external else source.state_digest, length_unit=payload["lengthUnit"], up_axis="Z-up",
             receipt_ref=ref.uri, format=FORMAT_3DM, representation="external" if external else "composed", model_source=source,
+            source_import=({key: payload[key] for key in ("sourceArtifact", "sourceFileName", "conversion")}
+                           if payload.get("sourceArtifact") is not None else None),
         ))
     unique = {}
     for record in records:

@@ -3509,7 +3509,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
         ref={fileInputRef}
         className="visually-hidden"
         type="file"
-        accept=".3dm"
+        accept=".3dm,.skp"
         onChange={(event) => {
           const file = event.target.files?.item(0);
           if (file) openLocalFile(file);

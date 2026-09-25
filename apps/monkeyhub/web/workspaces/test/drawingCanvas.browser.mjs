@@ -13,6 +13,15 @@ const screenshots = await mkdtemp(join(tmpdir(), "archflow-drawing-canvas-"));
 const assets = JSON.parse(execFileSync(process.env.PYTHON ?? "python", ["-c", "import json; from monkeydiagram.drawing_svg import dressing_assets; print(json.dumps(dressing_assets()))"], { cwd: resolve(root, "../../../.."), encoding: "utf8" }));
 const modelA = { runId: "model-A", stateDigest: "a".repeat(64), assetSha256: "b".repeat(64) };
 const modelB = { runId: "model-B", stateDigest: "c".repeat(64), assetSha256: "d".repeat(64) };
+const externalAsset = { runId: "imported-model", assetSha256: "e".repeat(64) };
+const externalArtifact = { ...externalAsset, sha256: externalAsset.assetSha256, projectId: "drawing-project",
+  artifactId: externalAsset.assetSha256, fileName: "imported-house.3dm", format: "3dm", representation: "external",
+  modelSource: null, sourceStageRef: null, available: true,
+  sourceImport: { sourceFileName: "imported-house.skp", sourceArtifact: { runId: "imported-model", assetSha256: "8".repeat(64) },
+    conversion: { provider: "SketchUp C API", sourceFormat: "skp", targetFormat: "3dm", representation: "external",
+      warnings: ["Layer Roof was skipped."] } } };
+const unsupportedExact = { ...externalArtifact, runId: "seat-rhino-run", sha256: "9".repeat(64),
+  artifactId: "9".repeat(64), fileName: "seat-rhino.3dm", representation: "exact" };
 const savedDimension = { id: "saved-door-width", entityRef: "entity:wall", openingId: "door", placement: { offsetMm: 8 } };
 const legacyDocument = { projectId: "drawing-project", runId: modelA.runId, assetSha256: "0".repeat(64),
   fileName: "retained-floor-plan.png", mimeType: "image/png", sizeBytes: 200, pageCount: 1,
@@ -29,13 +38,15 @@ import {UserPreferencesProvider,useStudio,usePreferences} from '/test/TestProvid
 import '/src/styles.css';
 import '/@fs/${root}/../../../shared-web/src/base.css';
 const modelA=${JSON.stringify(modelA)},modelB=${JSON.stringify(modelB)};
-const metrics=window.drawingFixture={requests:[],documents:[${JSON.stringify(legacyDocument)}],handoffs:[],head:'stage-A',revision:0,headDrawable:true};
+const metrics=window.drawingFixture={requests:[],documents:[${JSON.stringify(legacyDocument)}],artifacts:[${JSON.stringify(externalArtifact)},${JSON.stringify(unsupportedExact)}],uploads:[],handoffs:[],head:'stage-A',revision:0,headDrawable:true};
 const stages=[{stageRef:'stage-A',label:'Accepted A',branchId:'main',modelSource:modelA}, {stageRef:'stage-B',label:'Accepted B',branchId:'main',modelSource:modelB}];
 function App(){
  const studio=useStudio(),[active,setActive]=useState(true),[projectId,setProjectId]=useState('drawing-project');
  const preferences=usePreferences();
  const [installed]=useState(()=>{
   studio.documents=async()=>({projectId:metrics.projectId,runId:null,documents:metrics.documents.filter(d=>d.projectId===metrics.projectId)});
+  studio.artifacts=async()=>({projectId:metrics.projectId,artifacts:metrics.artifacts.filter(a=>a.projectId===metrics.projectId),skippedRuns:[]});
+  studio.uploadModel=async(projectId,file)=>{ metrics.uploads.push(file.name); const artifact={...metrics.artifacts[0],projectId,fileName:'house.3dm',runId:'uploaded-skp',sha256:'f'.repeat(64),sourceImport:{...metrics.artifacts[0].sourceImport,sourceFileName:file.name}}; metrics.artifacts.push(artifact); return artifact; };
   studio.designHistory=async()=>({projectId:metrics.projectId,branchId:'main',branches:[{branchId:'main',headStageRef:metrics.head}],stages});
   studio.workingSource=async(workspace)=>{
    const model=metrics.head==='stage-B'?modelB:modelA;
@@ -71,7 +82,7 @@ const server = await createServer({ root, configFile: false, resolve: { dedupe: 
   }],
 });
 let browser, page, hold = false, release, broken = false, refuseNext = false, current;
-const requests = [], statusRequests = [], drives = [], errors = [], passed = [], vectorBytes = new Map();
+const requests = [], statusRequests = [], dimensionQueries = [], drives = [], errors = [], passed = [], vectorBytes = new Map();
 async function step(name, action) { current = name; await action(); passed.push(name); console.log(`PASS ${name}`); }
 const revision = () => page.getByRole("combobox", { name: "Drawing", exact: true });
 const source = () => page.getByRole("combobox", { name: "Version to draw", exact: true });
@@ -89,9 +100,12 @@ try {
   page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
   page.setDefaultTimeout(12000);
   page.on("pageerror", error => errors.push(String(error)));
-  await page.route("**/api/drawings/plans/dimensions?*", route => route.fulfill({ json: { lengthUnit: "meter", dimensions: [
+  await page.route("**/api/drawings/plans/dimensions?*", route => {
+    dimensionQueries.push(Object.fromEntries(new URL(route.request().url()).searchParams));
+    return route.fulfill({ json: { lengthUnit: "meter", dimensions: [
     { entityRef: "entity:wall", openingId: "door", label: "Entry wall / Door", parameterKey: "door-width", canDrive: true },
-  ] } }));
+  ] } });
+  });
   await page.route("**/api/drawings/plans", async route => {
     const body = route.request().postDataJSON(); requests.push(body);
     const serial = requests.length;
@@ -100,14 +114,15 @@ try {
     // Like the runtime: a chosen version is kept on later revisions until one follows again.
     const previous = body.previousRevisionRef ? await page.evaluate(ref => window.drawingFixture.documents.find(d => d.revisionRef === ref) ?? null, body.previousRevisionRef) : null;
     const follow = body.follow ?? previous?.viewRecipe?.follow;
-    const result = { projectId: body.projectId, runId: body.modelSource.runId, assetSha256: String(serial).padStart(64, "0"),
+    const result = { projectId: body.projectId, runId: body.modelSource?.runId ?? body.sourceAsset.runId, assetSha256: String(serial).padStart(64, "0"),
       fileName: `floor-plan-${serial}.png`, mimeType: "image/png", sizeBytes: 200, pageCount: 1,
-      pages: [{ pageIndex: 0, width: 600, height: 400, rotation: 0 }], modelSource: body.modelSource, sourceStageRef: body.sourceStageRef,
+      pages: [{ pageIndex: 0, width: 600, height: 400, rotation: 0 }], modelSource: body.modelSource ?? null, sourceStageRef: body.sourceStageRef ?? null,
       drawingId: "floor-plan", revisionRef: `revision-${serial}`, generatedAt: `2026-09-23T00:00:0${serial}Z`,
       viewRecipe: { kind: "cut-plan", frame: { origin: [0, 0, body.cutHeight], far_depth: body.cutHeight - body.bottom,
         scale: `1:${body.scaleDenominator}`, crop_uv: body.cropUv ?? [0, 0, 10, 6] },
         graphics: { cutLineMm: body.cutLineMm, visibleLineMm: body.visibleLineMm, hatchSpacingMm: body.hatchSpacingMm },
         hiddenObjectIds: body.hiddenObjectIds ?? [], dimensions: body.dimensions, dressing: body.dressing ?? [],
+        ...(body.sourceAsset ? { sourceAsset: body.sourceAsset } : {}),
         ...(follow === "frozen" ? { follow: "frozen" } : {}) } };
     await page.evaluate(result => window.drawingFixture.documents.push(result), result);
     await route.fulfill({ status: 201, json: result });
@@ -125,6 +140,8 @@ try {
   await page.route("**/api/drawings/plans/status", async route => {
     const body = route.request().postDataJSON(); statusRequests.push(body);
     const sourceDocument = await page.evaluate(body => window.drawingFixture.documents.find(d => d.revisionRef === body.revisionRef), body);
+    if (sourceDocument.viewRecipe.sourceAsset) return route.fulfill({ json: { status: "current", detail: "Original object geometry retained.",
+      targetModelSource: null, targetStageRef: null, lengthUnit: "meter", bindingChanged: false, dimensions: [] } });
     const kept = sourceDocument.viewRecipe.follow === "frozen" && !body.targetModelSource && !body.targetStageRef;
     if (!kept && !body.targetModelSource && !body.targetStageRef && !await page.evaluate(() => window.drawingFixture.headDrawable))
       return route.fulfill({ json: { status: "outdated", detail: "The current model cannot be drawn yet: no exact STEP.", targetModelSource: null,
@@ -372,9 +389,53 @@ try {
     await page.screenshot({ path: join(screenshots, "drawing-wide-dark.png"), fullPage: true });
     // Choosing another version is a disclosed, explicit action; the LIVE drawing needs no choice.
     if (!await source().isVisible()) await page.getByText("Draw another version", { exact: true }).click();
+    assert.equal(await source().locator("option").filter({ hasText: /^seat-rhino\.3dm$/ }).count(), 0);
     assert.equal(await source().inputValue(), "");
     await source().focus(); await page.keyboard.press("ArrowDown"); await page.keyboard.press("Enter");
     assert.equal(await source().inputValue(), "stage-A");
+  });
+  await step("an imported 3DM draws from its retained asset and reopens without following HEAD", async () => {
+    await revision().selectOption("");
+    if (!await source().isVisible()) await page.getByText("Draw another version", { exact: true }).click();
+    await source().selectOption(`asset:${externalAsset.runId}:${externalAsset.assetSha256}`);
+    assert.equal(await source().locator("option").filter({ hasText: /^imported-house\.skp$/ }).count(), 1);
+    await page.getByText("Layer Roof was skipped.", { exact: true }).waitFor();
+    await until(() => Promise.resolve(dimensionQueries.at(-1)), value => value?.sourceAssetRunId === externalAsset.runId, "external model units queried");
+    assert.equal(dimensionQueries.at(-1).sourceAssetSha256, externalAsset.assetSha256);
+    assert.equal(dimensionQueries.at(-1).stateDigest, undefined);
+    await page.getByRole("button", { name: "Generate cut plan", exact: true }).click();
+    await until(() => revision().inputValue(), value => value !== "", "external drawing saved");
+    assert.deepEqual(requests.at(-1).sourceAsset, externalAsset);
+    assert.equal(requests.at(-1).modelSource, undefined);
+    assert.equal(requests.at(-1).sourceStageRef, undefined);
+    assert.equal(requests.at(-1).follow, "frozen");
+    const saved = await revision().inputValue(), count = requests.length;
+    await revision().selectOption("");
+    await revision().selectOption(saved);
+    await page.getByRole("region", { name: "Source status" }).getByText("imported-house.skp", { exact: true }).waitFor();
+    await page.getByRole("region", { name: "Source status" }).getByText("Layer Roof was skipped.", { exact: true }).waitFor();
+    await page.locator('.drawing-status[data-follow="frozen"][data-status="current"]').waitFor();
+    await page.evaluate(() => { window.drawingFixture.setActive(false); window.drawingFixture.head = "stage-B"; window.drawingFixture.revision += 1; });
+    await page.evaluate(() => window.drawingFixture.setActive(true));
+    await page.locator('.drawing-status[data-follow="frozen"][data-status="current"]').waitFor();
+    assert.equal(requests.length, count, "reopening an external drawing never rebinds the Working Head");
+    assert.equal(await page.getByText("Follow the current model again", { exact: true }).count(), 0);
+    await page.getByLabel("Scale denominator (1 : n)", { exact: true }).fill("75");
+    await until(() => revision().inputValue(), value => value !== saved, "external appearance revision saved");
+    assert.deepEqual(requests.at(-1).sourceAsset, externalAsset);
+    assert.equal(requests.at(-1).modelSource, undefined);
+    assert.equal(requests.at(-1).follow, "frozen");
+  });
+  await step("a SketchUp upload selects the server-returned 3DM for drawing", async () => {
+    await revision().selectOption("");
+    await page.locator('input[type="file"][accept=".3dm,.skp"]').setInputFiles({ name: "house.skp", mimeType: "application/octet-stream", buffer: Buffer.from("skp") });
+    await until(() => source().inputValue(), value => value === `asset:uploaded-skp:${"f".repeat(64)}`, "uploaded model selected");
+    assert.deepEqual(await page.evaluate(() => window.drawingFixture.uploads), ["house.skp"]);
+    assert.equal(await source().locator("option").filter({ hasText: /^house\.skp$/ }).count(), 1);
+    await page.getByRole("button", { name: "Generate cut plan", exact: true }).click();
+    await until(() => revision().inputValue(), value => value !== "", "uploaded model drawing saved");
+    assert.deepEqual(requests.at(-1).sourceAsset, { runId: "uploaded-skp", assetSha256: "f".repeat(64) });
+    assert.equal(requests.at(-1).modelSource, undefined);
   });
   await step("a response for a previous project never opens a document in the new project", async () => {
     hold = true;

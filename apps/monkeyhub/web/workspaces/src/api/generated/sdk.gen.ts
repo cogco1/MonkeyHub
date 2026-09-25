@@ -551,7 +551,7 @@ export const readPlanStatusApiDrawingsPlansStatusPost = <ThrowOnError extends bo
 /**
  * Read Plan Dimension Choices
  */
-export const readPlanDimensionChoicesApiDrawingsPlansDimensionsGet = <ThrowOnError extends boolean = false>(options: Options<ReadPlanDimensionChoicesApiDrawingsPlansDimensionsGetData, ThrowOnError>): RequestResult<ReadPlanDimensionChoicesApiDrawingsPlansDimensionsGetResponses, ReadPlanDimensionChoicesApiDrawingsPlansDimensionsGetErrors, ThrowOnError> => (options.client ?? client).get<ReadPlanDimensionChoicesApiDrawingsPlansDimensionsGetResponses, ReadPlanDimensionChoicesApiDrawingsPlansDimensionsGetErrors, ThrowOnError>({ url: '/api/drawings/plans/dimensions', ...options });
+export const readPlanDimensionChoicesApiDrawingsPlansDimensionsGet = <ThrowOnError extends boolean = false>(options?: Options<ReadPlanDimensionChoicesApiDrawingsPlansDimensionsGetData, ThrowOnError>): RequestResult<ReadPlanDimensionChoicesApiDrawingsPlansDimensionsGetResponses, ReadPlanDimensionChoicesApiDrawingsPlansDimensionsGetErrors, ThrowOnError> => (options?.client ?? client).get<ReadPlanDimensionChoicesApiDrawingsPlansDimensionsGetResponses, ReadPlanDimensionChoicesApiDrawingsPlansDimensionsGetErrors, ThrowOnError>({ url: '/api/drawings/plans/dimensions', ...options });
 
 /**
  * Create Plan Dimension Proposal

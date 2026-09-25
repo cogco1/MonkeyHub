@@ -6,6 +6,7 @@ import base64
 import json
 import math
 import struct
+from uuid import UUID
 
 FORMATS = ("3dm", "skp", "glb", "dwg")
 VERSION = "monkeyhub-mesh/1"
@@ -21,6 +22,7 @@ class Mesh:
     vertices: list
     triangles: list
     layer: str = "Default"
+    source_object_id: str | None = None
 
 
 @dataclass
@@ -85,7 +87,8 @@ class ThreeDM:
                     if c != d:
                         triangles.append((a + offset, c + offset, d + offset))
             layer = model.Layers.FindIndex(item.Attributes.LayerIndex)
-            meshes.append(Mesh(item.Attributes.Name or "Mesh", vertices, triangles, layer.Name if layer else "Default"))
+            meshes.append(Mesh(item.Attributes.Name or "Mesh", vertices, triangles, layer.Name if layer else "Default",
+                               str(item.Attributes.Id)))
         warnings.append("Materials, textures, custom normals, CAD metadata and layer hierarchy are not preserved; layers are flattened into the default layer in GLB.")
         scene = Scene(meshes, str(units), list(dict.fromkeys(warnings)))
         scene.metrics()
@@ -96,6 +99,7 @@ class ThreeDM:
         model = r.File3dm()
         model.Settings.ModelUnitSystem = r.UnitSystem.Meters
         layers = {}
+        object_ids = set()
         for item in scene.meshes:
             if item.layer not in layers:
                 layer = r.Layer()
@@ -108,6 +112,15 @@ class ThreeDM:
                 mesh.Faces.AddFace(*t)
             attr = r.ObjectAttributes()
             attr.Name, attr.LayerIndex = item.name, layers[item.layer]
+            if item.source_object_id is not None:
+                try:
+                    object_id = UUID(item.source_object_id)
+                except (ValueError, TypeError, AttributeError) as exc:
+                    raise ConversionError("The source object ID must be a valid UUID.") from exc
+                if not object_id.int or object_id in object_ids:
+                    raise ConversionError("Source object IDs must be nonzero and unique within a 3DM.")
+                object_ids.add(object_id)
+                attr.Id = object_id
             model.Objects.AddMesh(mesh, attr)
         return base64.b64decode(model.Encode())
 

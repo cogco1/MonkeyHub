@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useStudio } from "../../api/ProjectRuntimeContext";
 import { asStudioApiError, type StudioApiError } from "../../api/client";
-import type { DesignStageDto, ModelSourceDto, PlanDimensionChoicesDto, PlanStatusDto, PlanVectorDto, PlanDressingDto, SourceDocumentDto, WorkingSourceDto } from "../../api/generated";
+import type { DesignStageDto, ModelSourceDto, PlanDimensionChoicesDto, PlanStatusDto, PlanVectorDto, PlanDressingDto, ProjectArtifactDto, SourceDocumentDto, WorkingSourceDto } from "../../api/generated";
 import { ErrorPanel } from "../../app/ErrorPanel";
 import { usePreferences } from "../../features/settings/preferences";
 import { DocumentSurface } from "./DocumentCanvas";
@@ -24,7 +24,8 @@ const copy = {
     broken: "Unresolved anchor", outsideView: "Dimension falls outside the drawing. Adjust its paper offset.", empty: "Choose a model and generate a cut plan.",
     zoomOut: "Zoom out", zoomIn: "Zoom in", fit: "Fit page", sourceOfPage: "This drawing's source",
     download: "Download SVG", downloadHint: "Saved vector drawing, with its scale and entourage, for further editing in Illustrator.",
-    settings: "Drawing settings",
+    settings: "Drawing settings", imported: "Imported models", importModel: "Import 3DM or SKP", importing: "Importing model…",
+    converted: "Converted from {source} to {target} for drawing; the original file is retained.",
     statusError: "Source status could not be read. Refresh to try again.", loading: "Loading drawing…" },
   "zh-CN": { title: "Drawing · 图纸", intro: "跟随项目当前模型的剖切平面。", source: "出图版本", revision: "图纸", fresh: "新建剖切平面",
     noModel: "项目当前模型还没有可出图的精确几何。", refresh: "刷新来源", generating: "正在生成…", generate: "生成剖切平面",
@@ -40,11 +41,24 @@ const copy = {
     broken: "锚点未解析", outsideView: "标注超出图框，请调整纸面偏移。", empty: "选择模型并生成剖切平面。",
     zoomOut: "缩小", zoomIn: "放大", fit: "适合页面", sourceOfPage: "此图来源",
     download: "下载 SVG", downloadHint: "下载已保存的矢量图，保留比例和配景，可在 Illustrator 中继续编辑。",
-    settings: "图纸设置",
+    settings: "图纸设置", imported: "已导入模型", importModel: "导入 3DM 或 SKP", importing: "正在导入模型…",
+    converted: "已将 {source} 转换为可出图的 {target}，原文件仍被保留。",
     statusError: "无法读取来源状态，请刷新重试。", loading: "正在读取图纸…" },
 } as const;
 
-type PlanTarget = { modelSource: ModelSourceDto; stageRef: string | null };
+type SourceAsset = { runId: string; assetSha256: string };
+type PlanTarget = { modelSource: ModelSourceDto; stageRef: string | null } | { sourceAsset: SourceAsset };
+const assetKey = (asset: SourceAsset) => `asset:${asset.runId}:${asset.assetSha256}`;
+function documentAsset(document: SourceDocumentDto | null): SourceAsset | null {
+  const value = document?.viewRecipe?.sourceAsset;
+  if (!value || typeof value !== "object") return null;
+  const source = value as Record<string, unknown>;
+  return typeof source.runId === "string" && typeof source.assetSha256 === "string"
+    ? { runId: source.runId, assetSha256: source.assetSha256 } : null;
+}
+const targetSource = (target: PlanTarget) => "modelSource" in target
+  ? { modelSource: target.modelSource, sourceStageRef: target.stageRef }
+  : { sourceAsset: target.sourceAsset };
 // An edited appearance is saved as a new revision once the edits pause, as Board saves itself.
 const APPEARANCE_PAUSE_MS = 800;
 
@@ -100,6 +114,8 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
   const studio = useStudio(), { language } = usePreferences(), text = copy[language];
   const controls = useRef<HTMLFormElement>(null);
   const [documents, setDocuments] = useState<SourceDocumentDto[]>([]), [stages, setStages] = useState<DesignStageDto[]>([]);
+  const [assets, setAssets] = useState<ProjectArtifactDto[]>([]), [importing, setImporting] = useState(false);
+  const importInput = useRef<HTMLInputElement>(null);
   const [selected, setSelected] = useState(""), [target, setTarget] = useState("");
   const [explicitTarget, setExplicitTarget] = useState(false), [defaultTarget, setDefaultTarget] = useState("");
   const targetWasChosen = useRef(false); targetWasChosen.current = explicitTarget;
@@ -128,13 +144,19 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
   const latestKeys = useMemo(() => new Set(latest.map(drawingDocumentKey)), [latest]);
   const earlier = documents.filter(document => !latestKeys.has(drawingDocumentKey(document)));
   const historical = source !== null && !latestKeys.has(drawingDocumentKey(source));
+  const drawableAssets = assets.filter(item => item.available && (item.representation === "external" || item.representation === "composed"));
   // A drawing made from a chosen version keeps it until a person rebuilds it on the current model.
   const kept = keptOnChosenVersion(source);
   const liveMode = !explicitTarget && !historical && !kept;
   const chosenStage = stages.find(item => item.stageRef === target) ?? null;
+  const chosenAsset = drawableAssets.find(item => item.sha256 && assetKey({ runId: item.runId, assetSha256: item.sha256 }) === target) ?? null;
+  const sourceAsset = documentAsset(source);
+  const savedArtifact = sourceAsset ? assets.find(item => item.runId === sourceAsset.runId && item.sha256 === sourceAsset.assetSha256) ?? null : null;
   const liveTarget = live?.compatible && live.source ? { modelSource: live.source, stageRef: live.stageRef ?? null } : null;
-  const stage: PlanTarget | null = explicitTarget ? (chosenStage ? { modelSource: chosenStage.modelSource, stageRef: chosenStage.stageRef } : null)
-    : source ? automaticTarget : liveTarget;
+  const stage: PlanTarget | null = explicitTarget ? (chosenStage ? { modelSource: chosenStage.modelSource, stageRef: chosenStage.stageRef }
+    : chosenAsset?.sha256 ? chosenAsset.modelSource ? { modelSource: chosenAsset.modelSource, stageRef: chosenAsset.sourceStageRef ?? null }
+      : { sourceAsset: { runId: chosenAsset.runId, assetSha256: chosenAsset.sha256 } } : null)
+    : source ? (documentAsset(source) ? { sourceAsset: documentAsset(source)! } : automaticTarget) : liveTarget;
   const selectedTargetValue = explicitTarget ? target : "";
   const lengthUnit = choices?.lengthUnit ?? status?.lengthUnit ?? "";
   const scopeKey = JSON.stringify([projectId, selected, selectedTargetValue, explicitTarget, active]);
@@ -146,19 +168,22 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
     if (!active) return;
     let cancelled = false;
     setLoading(true); setError(null);
-    void Promise.all([studio.documents(), studio.designHistory(), studio.workingSource("drawing")]).then(([list, history, working]) => {
+    void Promise.all([studio.documents(), studio.designHistory(), studio.workingSource("drawing"), studio.artifacts()]).then(([list, history, working, available]) => {
       if (cancelled) return;
-      if (list.projectId !== projectId || history.projectId !== projectId || working.projectId !== projectId) throw new Error("The drawing workspace belongs to another project.");
+      if (list.projectId !== projectId || history.projectId !== projectId || working.projectId !== projectId || available.projectId !== projectId) throw new Error("The drawing workspace belongs to another project.");
       const plans = list.documents.filter(item => item.viewRecipe?.kind === "cut-plan");
       const listed = new Set(plans.map(drawingDocumentKey));
       setDocuments(current => [...plans, ...current.filter(item =>
         madeHere.current.has(drawingDocumentKey(item)) && !listed.has(drawingDocumentKey(item)))]);
       setStages(history.stages); setLive(working);
+      setAssets(available.artifacts.filter(item => item.format === "3dm" && item.sha256 !== null));
       liveRevision.current = working.revisionSha256 ?? null;
       const head = history.branches.find(branch => branch.branchId === history.branchId)?.headStageRef;
       const defaultStage = head ?? history.stages.at(-1)?.stageRef ?? "";
       setDefaultTarget(defaultStage);
-      setTarget(current => targetWasChosen.current && history.stages.some(item => item.stageRef === current) ? current : defaultStage);
+      setTarget(current => targetWasChosen.current && (history.stages.some(item => item.stageRef === current) ||
+        available.artifacts.some(item => item.available && (item.representation === "external" || item.representation === "composed")
+          && item.sha256 && assetKey({ runId: item.runId, assetSha256: item.sha256 }) === current)) ? current : defaultStage);
       // Open the newest drawing instead of asking which revision is current.
       const newest = latestRevisions(plans)[0];
       if (!opened.current && newest) { opened.current = true; openDocument(newest); }
@@ -180,13 +205,13 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
     setChoices(null);
     if (!stage || !active) return;
     let cancelled = false;
-    void studio.drawingPlanDimensions(stage.modelSource, stage.stageRef ?? undefined).then(value => {
+    void studio.drawingPlanDimensions(stage).then(value => {
       if (cancelled) return;
       setChoices(value);
       if (!source && !dirty) setForm(defaultPlanForm(value.lengthUnit));
     }).catch(cause => { if (!cancelled) setError(asStudioApiError(cause)); });
     return () => { cancelled = true; };
-  }, [studio, projectId, stage?.modelSource.runId, stage?.modelSource.assetSha256, stage?.stageRef, active, refresh]);
+  }, [studio, projectId, JSON.stringify(stage), active, refresh]);
   useEffect(() => {
     // A revision this view just wrote replaces the one on screen when it has
     // loaded; the picture and the selected object stay while it saves.
@@ -207,7 +232,7 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
     let cancelled = false;
     setStatusLoading(true);
     void studio.drawingPlanStatus({ runId: source.runId, assetSha256: source.assetSha256, revisionRef: source.revisionRef,
-      ...(explicitTarget && stage ? { targetModelSource: stage.modelSource, targetStageRef: stage.stageRef } : {}) }).then(value => {
+      ...(explicitTarget && stage && "modelSource" in stage ? { targetModelSource: stage.modelSource, targetStageRef: stage.stageRef } : {}) }).then(value => {
       if (!cancelled) {
         statusFor.current = drawingDocumentKey(source);
         setStatus(value);
@@ -233,22 +258,37 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
     opened.current = true;
     openDocument(documents.find(item => drawingDocumentKey(item) === key) ?? null);
   }
+  async function importModel(file: File) {
+    if (busy || importing || !active) return;
+    const origin = scope.current;
+    setImporting(true); setError(null);
+    try {
+      const artifact = await studio.uploadModel(projectId, file);
+      if (artifact.sha256 === null || !artifact.available || artifact.format !== "3dm") throw new Error("The imported model has no viewable retained 3DM source.");
+      if (!mounted.current || scope.current !== origin) return;
+      setAssets(current => [artifact, ...current.filter(item => item.runId !== artifact.runId || item.sha256 !== artifact.sha256)]);
+      setTarget(assetKey({ runId: artifact.runId, assetSha256: artifact.sha256 }));
+      setExplicitTarget(true);
+    } catch (cause) { if (mounted.current && scope.current === origin) setError(asStudioApiError(cause)); }
+    finally { if (mounted.current) setImporting(false); }
+  }
   function update(patch: Partial<PlanForm>) { setForm(current => ({ ...current, ...patch })); setDirty(true); setAppearanceHeld(null); }
   const dimensions = form.dimensions ?? [];
   /** The revision request itself: on a target, or on the drawing's own source. */
-  const requestRevision = (modelSource: ModelSourceDto, stageRef: string | null | undefined, follow?: "live" | "frozen") =>
-    studio.drawingPlan({ projectId, modelSource, sourceStageRef: stageRef, ...form,
+  const requestRevision = (drawn: PlanTarget, follow?: "live" | "frozen") =>
+    studio.drawingPlan({ projectId, ...targetSource(drawn), ...form,
       ...(source?.drawingId ? { drawingId: source.drawingId } : {}), ...(source?.revisionRef ? { previousRevisionRef: source.revisionRef } : {}),
       ...(follow ? { follow } : {}) });
   /** Write a revision on a target, or on the drawing's own source; `follow` records a person's choice. True once it is open. */
   const generate = async (target: PlanTarget | null, options: { following?: boolean; follow?: "live" | "frozen" } = {}) => {
-    const modelSource = target ? target.modelSource : source?.modelSource;
-    const stageRef = target ? target.stageRef : source?.sourceStageRef;
-    if (!modelSource || busy || !active || !controls.current?.reportValidity()) return false;
+    const drawn: PlanTarget | null = target ?? (source?.modelSource
+      ? { modelSource: source.modelSource, stageRef: source.sourceStageRef ?? null }
+      : documentAsset(source) ? { sourceAsset: documentAsset(source)! } : null);
+    if (!drawn || busy || !active || !controls.current?.reportValidity()) return false;
     const origin = scope.current;
     setBusy(true); setLiveBusy(Boolean(options.following)); setError(null);
     try {
-      const result = await requestRevision(modelSource, stageRef, options.follow);
+      const result = await requestRevision(drawn, "sourceAsset" in drawn ? "frozen" : options.follow);
       if (!mounted.current || scope.current !== origin) return false;
       madeHere.current.add(drawingDocumentKey(result));
       setDocuments(current => [...current.filter(item => drawingDocumentKey(item) !== drawingDocumentKey(result)), result]);
@@ -264,7 +304,7 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
   // Appearance edits save themselves as a new revision after a pause. An
   // invalid field stays marked and unsaved; a refused save waits for the next
   // edit or Retry. Download waits for the saved revision.
-  const appearanceSavable = Boolean(dirty && source?.modelSource && active && appearanceHeld === null);
+  const appearanceSavable = Boolean(dirty && (source?.modelSource || documentAsset(source)) && active && appearanceHeld === null);
   useEffect(() => {
     if (!appearanceSavable || busy) return;
     const timer = window.setTimeout(() => {
@@ -275,9 +315,10 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
   // Closing the drawing with edits still inside their pause saves them, without waiting for the answer.
   const pendingAppearance = useRef<(() => void) | null>(null);
   useEffect(() => {
-    const drawn = source?.modelSource;
+    const drawn: PlanTarget | null = source?.modelSource ? { modelSource: source.modelSource, stageRef: source.sourceStageRef ?? null }
+      : documentAsset(source) ? { sourceAsset: documentAsset(source)! } : null;
     pendingAppearance.current = appearanceSavable && !busy && drawn && controls.current?.checkValidity()
-      ? () => { void requestRevision(drawn, source.sourceStageRef).catch(() => { /* Reopening shows the last saved revision. */ }); } : null;
+      ? () => { void requestRevision(drawn, "sourceAsset" in drawn ? "frozen" : undefined).catch(() => { /* Reopening shows the last saved revision. */ }); } : null;
   });
   useEffect(() => () => pendingAppearance.current?.(), []);
   useEffect(() => {
@@ -288,13 +329,26 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
     attemptedLive.current.add(key);
     void generate(stage, { following: true, follow: "live" });
   }, [source, status, stage, busy, statusLoading, active, liveMode, dirty]);
-  const sourceName = (document: SourceDocumentDto) => stages.find(item => item.stageRef === document.sourceStageRef)?.label ??
-    (live?.head && document.modelSource?.runId === live.head.runId && live.head.label ? live.head.label : text.workingVersion);
+  const sourceName = (document: SourceDocumentDto) => {
+    const imported = documentAsset(document);
+    if (imported) {
+      const artifact = assets.find(item => item.runId === imported.runId && item.sha256 === imported.assetSha256);
+      return artifact?.sourceImport?.sourceFileName ?? artifact?.fileName ?? `${text.imported} · ${imported.assetSha256.slice(0, 8)}`;
+    }
+    return stages.find(item => item.stageRef === document.sourceStageRef)?.label ??
+      (live?.head && document.modelSource?.runId === live.head.runId && live.head.label ? live.head.label : text.workingVersion);
+  };
   const action = source ? liveAction({ live: liveMode, dirty, attempted: false, status }) : "none";
   const statusLine = statusLoading ? text.checking : liveBusy ? text.updating
     : historical ? text.earlierView : explicitTarget || kept ? text.chosenView
     : action === "blocked" ? text.stale
     : status?.status === "current" && !status.bindingChanged ? text.liveCurrent : text[status?.status ?? "unknown"];
+  const importNotice = (artifact: ProjectArtifactDto) => artifact.sourceImport && <div className="drawing-import-note" role="note">
+    <span>{text.converted.replace("{source}", artifact.sourceImport.conversion.sourceFormat.toUpperCase())
+      .replace("{target}", artifact.sourceImport.conversion.targetFormat.toUpperCase())}</span>
+    {artifact.sourceImport.conversion.warnings.length > 0 && <ul>{artifact.sourceImport.conversion.warnings.map((warning, index) =>
+      <li key={`${index}:${warning}`}>{warning}</li>)}</ul>}
+  </div>;
   const downloadSvg = () => {
     if (!source || !vector || busy || dirty || !active) return;
     const url = URL.createObjectURL(new Blob([vector.svg], { type: "image/svg+xml;charset=utf-8" }));
@@ -323,7 +377,14 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
             <label className="drawing-field">{text.source}<select value={selectedTargetValue} disabled={busy || loading || statusLoading}
               onChange={event => { setTarget(event.target.value); setExplicitTarget(event.target.value !== ""); setError(null); }}>
               <option value="">{text.live}</option>
-              {stages.map(item => <option key={item.stageRef} value={item.stageRef}>{item.label} · {item.branchId}</option>)}</select></label>
+              {stages.map(item => <option key={item.stageRef} value={item.stageRef}>{item.label} · {item.branchId}</option>)}
+              {drawableAssets.length > 0 && <optgroup label={text.imported}>{drawableAssets.map(item => item.sha256 && <option key={`${item.runId}:${item.sha256}`}
+                value={assetKey({ runId: item.runId, assetSha256: item.sha256 })}>{item.sourceImport?.sourceFileName ?? item.fileName}</option>)}</optgroup>}</select></label>
+            {chosenAsset?.sourceImport && chosenAsset !== savedArtifact && importNotice(chosenAsset)}
+            <input ref={importInput} className="visually-hidden" type="file" accept=".3dm,.skp" onChange={event => {
+              const file = event.currentTarget.files?.[0]; if (file) void importModel(file); event.currentTarget.value = "";
+            }} />
+            <button type="button" disabled={busy || importing || !active} onClick={() => importInput.current?.click()}>{importing ? text.importing : text.importModel}</button>
             <p className="drawing-field__hint">{text.anotherHint}</p>
             {explicitTarget && source && <button type="button" disabled={!stage || busy || statusLoading} onClick={() => void generate(stage, { follow: "frozen" })}>{text.rebuild}</button>}
           </details></div>
@@ -335,6 +396,7 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
             <span className="drawing-source">{text.sourceOfPage}: <b>{sourceName(source)}</b></span>
             <strong role="status">{statusLine}</strong>
             <p>{status?.detail ?? (!statusLoading ? text.statusError : "")}</p>
+            {savedArtifact?.sourceImport && importNotice(savedArtifact)}
           </div>
           {historical && latest.some(item => item.drawingId === source.drawingId) &&
             <button type="button" disabled={busy} onClick={() => { void chooseDocument(drawingDocumentKey(latest.find(item => item.drawingId === source.drawingId)!)); }}>{text.openLatest}</button>}
@@ -376,7 +438,7 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
         {source ? <p className="drawing-save-state" role="status">{busy || (dirty && appearanceHeld === null) ? text.saving : dirty ? text.held : ""}</p>
           : <button className="btn btn--accent" type="submit" disabled={busy || loading || !lengthUnit || !stage}>
             {busy ? text.generating : text.generate}</button>}
-        {source && appearanceHeld === "refused" && <button className="btn btn--accent" type="submit" disabled={busy || !source.modelSource}>{text.retry}</button>}
+        {source && appearanceHeld === "refused" && <button className="btn btn--accent" type="submit" disabled={busy || !(source.modelSource || documentAsset(source))}>{text.retry}</button>}
         {source && <><button className="drawing-download" type="button" disabled={busy || dirty || !active || !vector} onClick={downloadSvg}>{text.download}</button>
           <p>{text.downloadHint}</p></>}
         {error && <ErrorPanel error={error} what={text.title} />}

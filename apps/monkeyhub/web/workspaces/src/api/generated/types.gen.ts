@@ -3357,6 +3357,20 @@ export type DocumentWorkCopyRequestDto = {
 };
 
 /**
+ * DrawingAssetSourceDto
+ */
+export type DrawingAssetSourceDto = {
+    /**
+     * Runid
+     */
+    runId: string;
+    /**
+     * Assetsha256
+     */
+    assetSha256: string;
+};
+
+/**
  * DrawingStyleDto
  */
 export type DrawingStyleDto = {
@@ -3609,6 +3623,7 @@ export type ElevationReferenceDto = {
  * ElevationRequestDto
  */
 export type ElevationRequestDto = {
+    sourceAsset?: DrawingAssetSourceDto | null;
     /**
      * Projectid
      */
@@ -5005,6 +5020,49 @@ export type ModelGestureDto = {
 };
 
 /**
+ * ModelImportConversionDto
+ */
+export type ModelImportConversionDto = {
+    /**
+     * Provider
+     */
+    provider: string;
+    /**
+     * Sourceformat
+     */
+    sourceFormat: string;
+    /**
+     * Targetformat
+     */
+    targetFormat: string;
+    /**
+     * Representation
+     */
+    representation: string;
+    /**
+     * Warnings
+     */
+    warnings: Array<string>;
+};
+
+/**
+ * ModelImportDto
+ */
+export type ModelImportDto = {
+    /**
+     * Sourceartifact
+     */
+    sourceArtifact: {
+        [key: string]: string;
+    };
+    /**
+     * Sourcefilename
+     */
+    sourceFileName: string;
+    conversion: ModelImportConversionDto;
+};
+
+/**
  * ModelLoadTimingDto
  *
  * Client elapsed time from artifact download to viewport load completion.
@@ -5869,6 +5927,7 @@ export type PlanDressingReadDto = {
  * PlanRequestDto
  */
 export type PlanRequestDto = {
+    sourceAsset?: DrawingAssetSourceDto | null;
     /**
      * Projectid
      */
@@ -6301,6 +6360,7 @@ export type ProjectArtifactDto = {
      */
     runId: string;
     modelSource?: ModelSourceDto | null;
+    sourceImport?: ModelImportDto | null;
     /**
      * Sourcestageref
      *
@@ -8897,6 +8957,7 @@ export type ServerIdentityDto = {
  * SheetRequestDto
  */
 export type SheetRequestDto = {
+    sourceAsset?: DrawingAssetSourceDto | null;
     /**
      * Projectid
      */
@@ -12943,23 +13004,31 @@ export type ReadPlanDimensionChoicesApiDrawingsPlansDimensionsGetData = {
         'x-monkey-parent'?: string | null;
     };
     path?: never;
-    query: {
+    query?: {
         /**
          * Sourcerunid
          */
-        sourceRunId: string;
+        sourceRunId?: string | null;
         /**
          * Statedigest
          */
-        stateDigest: string;
+        stateDigest?: string | null;
         /**
          * Assetsha256
          */
-        assetSha256: string;
+        assetSha256?: string | null;
         /**
          * Sourcestageref
          */
         sourceStageRef?: string | null;
+        /**
+         * Sourceassetrunid
+         */
+        sourceAssetRunId?: string | null;
+        /**
+         * Sourceassetsha256
+         */
+        sourceAssetSha256?: string | null;
     };
     url: '/api/drawings/plans/dimensions';
 };

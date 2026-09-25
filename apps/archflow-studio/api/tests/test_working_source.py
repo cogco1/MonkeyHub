@@ -120,13 +120,14 @@ class WorkingSourceTests(WorkingSourceFixture):
         head = self.working_source()["head"]
         self.assertEqual((head["origin"], head["runId"]), ("working-position", stage["candidateId"]))
 
-    def test_drawing_needs_an_exact_step_and_says_why_it_cannot_follow(self):
+    def test_drawing_follows_the_complete_registered_model_without_a_step(self):
         stage = self.initialize()
         body = self.working_source("drawing")
         self.assertEqual(body["head"]["runId"], stage["candidateId"])
-        self.assertFalse(body["compatible"])
-        self.assertIsNone(body["source"])
-        self.assertIn("STEP", body["reason"])
+        self.assertTrue(body["compatible"])
+        self.assertEqual(body["source"], stage["modelSource"])
+        self.assertEqual(body["stageRef"], stage["stageRef"])
+        self.assertIsNone(body["reason"])
         self.assertTrue(self.working_source("board")["compatible"])
         self.assertTrue(self.working_source("render")["compatible"])
 
