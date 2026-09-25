@@ -5,15 +5,16 @@
 
 Phase: GitHub Issues are the work items (#60); this registry records live source-edit coordination only. The remaining legacy P cards are blocked and claim no path; P115 is a frozen historical index. Real project acceptance and formal issue are explicit user actions.
 
-- active: GH-66
+- active: GH-234, GH-66
 - ready: none
 - blocked: P115, P105, P108, P110, P111, P113
-- next: continue active work: GH-66
+- next: continue active work: GH-234, GH-66
 
 ## Live work
 
 | ID | Status | Goal | Card |
 | --- | --- | --- | --- |
+| GH-234 | active | Review the whole MonkeyHub UI/UX against the owner's 2026-09-25 principles (one growing Design Tree, low density, autosave, cross-project sidebar, Drawing as a Tool, one canonical entry per concept) and write a prioritized, evidence-based optimization list with an order of slices that does not collide with work in flight. | [GH-234](mapping/planning/GH-234-ux-review.md) |
 | P115 | blocked | Frozen legacy index (#60); claims no path and is not a task list. Derive no current work from it: new work starts from a GitHub Issue and live coordination is the active/review lanes shown by devctl work. The card names the open Issues that carry the remaining P115 acceptance and the questions left open at the freeze. | [P115](mapping/planning/P115-capability-consolidation.md) |
 | P105 | blocked | Give the canonical producers the vocabulary the monuments are written in: solids of revolution and the boolean chain the Pantheon's dome and drum need, and the Doric and Ionic member families plus the roof and entablature fields the Parthenon's 687 retained operations are made of, dimensioned by a derivation table in module ratios and placed by grid reference. Retires that vocabulary as operation kinds invented inside a per-building tool. | [P105](mapping/planning/P105-classical-order-producers.md) |
 | P108 | blocked | Legacy card; claims no path. The Studio edit-and-review round is delivered and now runs inside MonkeyHub; its record is Git history. Blocked on one owner decision: whether the ARCHITECTURE 'Development order' stair and side-passage revision is still the first real-project trial. The independent first-user trial is carried by #86 and real-revision acceptance by #185. | [P108](mapping/planning/P108-vibe-modeling-frontend.md) |
