@@ -5,17 +5,16 @@
 
 Phase: GitHub Issues are the work items (#60); this registry records live source-edit coordination only. The remaining legacy P cards are blocked and claim no path; P115 is a frozen historical index. Real project acceptance and formal issue are explicit user actions.
 
-- active: GH-60, GH-234
+- active: GH-234
 - ready: none
 - blocked: P115, P105, P108, P110, P111, P113
-- next: continue active work: GH-60, GH-234
+- next: continue active work: GH-234
 
 ## Live work
 
 | ID | Status | Goal | Card |
 | --- | --- | --- | --- |
-| GH-60 | active | Close out the P108 and P115 registrations so historical cards and broad write scopes are not read as current locks; point live-work lookup and onboarding at GitHub Issues and active lanes. | [GH-60](mapping/planning/GH-60-legacy-card-closeout.md) |
-| GH-234 | active | Record the current MonkeyHub UI reality and its functional contradictions, propose the Hub-level interaction architecture for the expanded workspace set, and deliver bounded fixes for proven contradictions outside files claimed by other live work. | [GH-234](mapping/planning/GH-234-hub-ui-round.md) |
+| GH-234 | active | Propose the Hub-level interaction architecture for the expanded workspace set from the recorded UI audit; the audit and the view-base fixes are delivered. | [GH-234](mapping/planning/GH-234-hub-ui-round.md) |
 | P115 | blocked | Frozen legacy index (#60); claims no path and is not a task list. Derive no current work from it: new work starts from a GitHub Issue and live coordination is the active/review lanes shown by devctl work. The card names the open Issues that carry the remaining P115 acceptance and the questions left open at the freeze. | [P115](mapping/planning/P115-capability-consolidation.md) |
 | P105 | blocked | Give the canonical producers the vocabulary the monuments are written in: solids of revolution and the boolean chain the Pantheon's dome and drum need, and the Doric and Ionic member families plus the roof and entablature fields the Parthenon's 687 retained operations are made of, dimensioned by a derivation table in module ratios and placed by grid reference. Retires that vocabulary as operation kinds invented inside a per-building tool. | [P105](mapping/planning/P105-classical-order-producers.md) |
 | P108 | blocked | Legacy card; claims no path. The Studio edit-and-review round is delivered and now runs inside MonkeyHub; its record is Git history. Blocked on one owner decision: whether the ARCHITECTURE 'Development order' stair and side-passage revision is still the first real-project trial. The independent first-user trial is carried by #86 and real-revision acceptance by #185. | [P108](mapping/planning/P108-vibe-modeling-frontend.md) |

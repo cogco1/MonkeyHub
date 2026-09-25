@@ -3,161 +3,22 @@
   "phase": "GitHub Issues are the work items (#60); this registry records live source-edit coordination only. The remaining legacy P cards are blocked and claim no path; P115 is a frozen historical index. Real project acceptance and formal issue are explicit user actions.",
   "items": [
     {
-      "id": "GH-60",
-      "stream": "planning",
-      "status": "active",
-      "goal": "Close out the P108 and P115 registrations so historical cards and broad write scopes are not read as current locks; point live-work lookup and onboarding at GitHub Issues and active lanes.",
-      "depends_on": [],
-      "write_scope": [
-        "governance/work_registry.json",
-        "docs/mapping/planning/GH-60-legacy-card-closeout.md",
-        "docs/mapping/planning/P108-vibe-modeling-frontend.md",
-        "docs/mapping/planning/P115-capability-consolidation.md",
-        "docs/WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.md",
-        "docs/TEAM_ONBOARDING.md",
-        "CONTRIBUTING.md",
-        "README.md",
-        "AGENTS.md",
-        ".github/pull_request_template.md",
-        "tools/devctl.py",
-        "tests/",
-        "docs/ARCHITECTURE.md",
-        "docs/STAGE_BRANCH_CANDIDATE_PLAN.md",
-        "apps/archflow-studio/README.md"
-      ],
-      "card": "docs/mapping/planning/GH-60-legacy-card-closeout.md",
-      "acceptance": [
-        "devctl status and devctl work agree on what is live; a card without active or review lanes is not presented as occupying paths.",
-        "Delivered P108/P115 execution scope is released; still-valid product acceptance points to the Issue that carries it; obsolete waits and pauses are removed; unknowns are stated briefly.",
-        "Onboarding no longer derives current tasks from P115, and historical commit scope checks still pass.",
-        "archcheck passes and the generated maps match the registry."
-      ],
-      "lanes": [
-        {
-          "id": "legacy-closeout",
-          "issue": "https://github.com/cogco1/MonkeyHub/issues/60",
-          "branch": "codex/60-legacy-card-closeout",
-          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-60-legacy-card-closeout",
-          "base_ref": "04e719617d6aa20507b5c1846de3059b5c57a451",
-          "contributor": "Claude",
-          "reviewer": null,
-          "handoff": "Root task codex/234-ui-round reviews and integrates this lane.",
-          "modules": [
-            "tools.devctl"
-          ],
-          "write_scope": [
-            "governance/work_registry.json",
-            "docs/mapping/planning/GH-60-legacy-card-closeout.md",
-            "docs/mapping/planning/P108-vibe-modeling-frontend.md",
-            "docs/mapping/planning/P115-capability-consolidation.md",
-            "docs/WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.md",
-            "docs/TEAM_ONBOARDING.md",
-            "CONTRIBUTING.md",
-            "README.md",
-            "AGENTS.md",
-            ".github/pull_request_template.md",
-            "tools/devctl.py",
-            "tests/",
-            "docs/ARCHITECTURE.md",
-            "docs/STAGE_BRANCH_CANDIDATE_PLAN.md",
-            "apps/archflow-studio/README.md"
-          ],
-          "depends_on": [],
-          "status": "active",
-          "blocked_reason": null
-        }
-      ]
-    },
-    {
       "id": "GH-234",
       "stream": "planning",
       "status": "active",
-      "goal": "Record the current MonkeyHub UI reality and its functional contradictions, propose the Hub-level interaction architecture for the expanded workspace set, and deliver bounded fixes for proven contradictions outside files claimed by other live work.",
+      "goal": "Propose the Hub-level interaction architecture for the expanded workspace set from the recorded UI audit; the audit and the view-base fixes are delivered.",
       "depends_on": [],
       "write_scope": [
-        "docs/2026-09-24-monkeyhub-ui-reality-audit.md",
-        "docs/mapping/planning/GH-234-hub-ui-round.md",
-        "apps/monkeyhub/web/workspaces/src/app/App.tsx",
-        "apps/monkeyhub/web/workspaces/src/app/useSession.ts",
-        "apps/monkeyhub/web/workspaces/src/app/modelHistory.ts",
-        "apps/monkeyhub/web/workspaces/src/features/stage/Stage.tsx",
-        "apps/monkeyhub/web/workspaces/src/features/stage/VersionsStrip.tsx",
-        "apps/monkeyhub/web/workspaces/src/features/conversation/Conversation.tsx",
-        "apps/monkeyhub/web/workspaces/src/features/conversation/cards/ProposalCard.tsx",
-        "apps/monkeyhub/web/workspaces/src/styles.css",
-        "apps/monkeyhub/web/src/i18n/messages.en.ts",
-        "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
-        "apps/monkeyhub/web/workspaces/test/intentViewSource.browser.mjs",
-        "apps/monkeyhub/web/workspaces/test/candidatePreview.browser.mjs",
-        "apps/monkeyhub/web/workspaces/test/workingCopy.browser.mjs",
-        "apps/monkeyhub/web/workspaces/test/modelHistory.test.ts",
         "docs/2026-09-24-monkeyhub-interaction-proposal.md",
-        "apps/monkeyhub/web/workspaces/test/documentTracing.browser.mjs",
-        "apps/monkeyhub/web/workspaces/src/workspaces/monkeydiagram/DocumentTracingContext.ts",
-        "apps/monkeyhub/web/workspaces/src/workspaces/monkeydiagram/DocumentTracingPanel.tsx"
+        "docs/mapping/planning/GH-234-hub-ui-round.md"
       ],
       "card": "docs/mapping/planning/GH-234-hub-ui-round.md",
       "acceptance": [
-        "The reality matrix classifies current UI behaviour with file-level evidence; every functional contradiction states the expected semantics, the actual behaviour and a user scenario.",
-        "The Hub-level architecture states how workspaces share project, source and edit-base context, and how chat, Modeling, Board and Drawing, Render, Monitor and Fab are entered and left.",
-        "Each delivered fix is verified through the complete user action it repairs; affected tests, typecheck and archcheck pass."
+        "The proposal states how workspaces share project, source and edit-base context, and how chat, Modeling, Board and Drawing, Render, Publish, Monitor and Fab are entered and left.",
+        "Each design point is tied to an audited finding, a documented rule or an Issue, and is classified as existing-but-hidden, UI-only, missing interaction, missing capability or rejected.",
+        "Delivery slices are complete user actions mapped to owners and files; slices touching files claimed by GH-66 are marked."
       ],
       "lanes": [
-        {
-          "id": "ui-audit",
-          "issue": "https://github.com/cogco1/MonkeyHub/issues/234",
-          "branch": "codex/234-ui-round",
-          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-234-ui-round",
-          "base_ref": "04e719617d6aa20507b5c1846de3059b5c57a451",
-          "contributor": "Claude",
-          "reviewer": null,
-          "handoff": "Root task integrates all lanes; the user reviews before any push.",
-          "modules": [
-            "hub.shell"
-          ],
-          "write_scope": [
-            "docs/2026-09-24-monkeyhub-ui-reality-audit.md",
-            "docs/mapping/planning/GH-234-hub-ui-round.md"
-          ],
-          "depends_on": [],
-          "status": "active",
-          "blocked_reason": null
-        },
-        {
-          "id": "view-base",
-          "issue": "https://github.com/cogco1/MonkeyHub/issues/234",
-          "branch": "codex/234-view-base",
-          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-234-view-base",
-          "base_ref": "ca4c8e89",
-          "contributor": "Claude",
-          "reviewer": "Claude root task",
-          "handoff": "Root task codex/234-ui-round reviews, integrates and re-runs the complete view/continue/undo flow.",
-          "modules": [
-            "hub.shell"
-          ],
-          "write_scope": [
-            "apps/monkeyhub/web/workspaces/src/app/App.tsx",
-            "apps/monkeyhub/web/workspaces/src/app/useSession.ts",
-            "apps/monkeyhub/web/workspaces/src/app/modelHistory.ts",
-            "apps/monkeyhub/web/workspaces/src/features/stage/Stage.tsx",
-            "apps/monkeyhub/web/workspaces/src/features/stage/VersionsStrip.tsx",
-            "apps/monkeyhub/web/workspaces/src/features/conversation/Conversation.tsx",
-            "apps/monkeyhub/web/workspaces/src/features/conversation/cards/ProposalCard.tsx",
-            "apps/monkeyhub/web/workspaces/src/styles.css",
-            "apps/monkeyhub/web/src/i18n/messages.en.ts",
-            "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
-            "apps/monkeyhub/web/workspaces/test/intentViewSource.browser.mjs",
-            "apps/monkeyhub/web/workspaces/test/candidatePreview.browser.mjs",
-            "apps/monkeyhub/web/workspaces/test/workingCopy.browser.mjs",
-            "apps/monkeyhub/web/workspaces/test/modelHistory.test.ts",
-            "apps/monkeyhub/web/workspaces/test/documentTracing.browser.mjs",
-            "apps/monkeyhub/web/workspaces/src/workspaces/monkeydiagram/DocumentTracingContext.ts",
-            "apps/monkeyhub/web/workspaces/src/workspaces/monkeydiagram/DocumentTracingPanel.tsx"
-          ],
-          "depends_on": [],
-          "status": "active",
-          "blocked_reason": null
-        },
         {
           "id": "interaction-proposal",
           "issue": "https://github.com/cogco1/MonkeyHub/issues/234",
