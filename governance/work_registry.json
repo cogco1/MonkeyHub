@@ -91,7 +91,8 @@
         "apps/monkeyhub/web/workspaces/test/candidatePreview.browser.mjs",
         "apps/monkeyhub/web/workspaces/test/workingCopy.browser.mjs",
         "apps/monkeyhub/web/workspaces/test/modelHistory.test.ts",
-        "docs/2026-09-24-monkeyhub-interaction-proposal.md"
+        "docs/2026-09-24-monkeyhub-interaction-proposal.md",
+        "apps/monkeyhub/web/workspaces/test/documentTracing.browser.mjs"
       ],
       "card": "docs/mapping/planning/GH-234-hub-ui-round.md",
       "acceptance": [
@@ -146,7 +147,8 @@
             "apps/monkeyhub/web/workspaces/test/intentViewSource.browser.mjs",
             "apps/monkeyhub/web/workspaces/test/candidatePreview.browser.mjs",
             "apps/monkeyhub/web/workspaces/test/workingCopy.browser.mjs",
-            "apps/monkeyhub/web/workspaces/test/modelHistory.test.ts"
+            "apps/monkeyhub/web/workspaces/test/modelHistory.test.ts",
+            "apps/monkeyhub/web/workspaces/test/documentTracing.browser.mjs"
           ],
           "depends_on": [],
           "status": "active",
