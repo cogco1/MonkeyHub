@@ -585,6 +585,21 @@ SVG `data-dressing` groups remain independently editable and do not claim the
 architectural `data-object` identity used by projected model vectors. The PNG and
 SVG share one rendering input. This read does not regenerate or create a revision.
 
+A projected vector (`polyline` or poché `polygon`) names its physical object in
+`data-object` and, for a model compiled from design state, its `data-component` and
+`data-material` (the CAD program's `archflow:component` / `archflow:material`); an
+imported native model names objects only. The group is the role: `section` is the cut
+and a cut plan's `visible` lies beyond it. In the cut-plan `graphics`,
+`hatch.byMaterial.<material>` = `{spacingMm, angleDeg, poche}` hatches that material's
+cut at its paper spacing and angle, or fills it as one stroke-free even-odd `polygon` in
+`g#section-hatch`; other cuts keep `hatchSpacingMm` at 45 degrees, and `beyond.fade`
+(0 black to 1 white) greys the lines beyond the cut. A recipe without these keys draws
+what it drew before. Before the SVG, a deterministic cleanup at 0.05 mm on the sheet
+drops micro lines, projected edges lying on the cut and hidden lines under visible ones
+or inside the cut, and joins an object's collinear pieces. The drawing receipt keeps its
+per-rule counts under `cleanup` (never in the recipe) and, when the application gives
+them, the revision's `attribution` and `reason`; receipts retained earlier have none.
+
 Servers advertising `drawing-elevations` accept `{projectId, sourceStageRef, view}`
 or an exact candidate `modelSource` instead of `sourceStageRef`. Views are front,
 back, left and right. An optional `drawingId` groups revisions; the response's
