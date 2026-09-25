@@ -4436,7 +4436,7 @@
         "retaining combined candidate source ids with one normalized operator against their common Stage; replaying all sources before acceptance",
         "Read-only runtime inspection of live jobs, exact retained candidates and branch-reachable committed Stages; managed candidate admission may accept a preallocated run id without weakening exact-base checks or re-executing an existing run",
         "Protecting an executing candidate and its input from automatic cleanup, and recording its finished result in the working position for recovery and comparison without moving the editing base or accepting a Stage.",
-        "The read-only Worktree Graph: the Working Head, other accepted lines, running and interrupted candidate work with exact bases and declared read/write refs, retained results off the head's line and whether the StateRecord combine rule accepts them with the head, plus drawing and render freshness; each finished line's retained admission (admitted, rejected, superseded or none) and Study"
+        "The read-only Worktree Graph: the Working Head, other accepted lines, running and interrupted candidate work with exact bases and declared read/write refs, retained results off the head's line and whether the StateRecord combine rule accepts them with the head, plus each drawing's latest revision as studio.binding's representation-status projection reads it (what the Drawing tool says) and each render attempt's retained source state; each finished line's retained admission (admitted, rejected, superseded or none) and Study"
       ],
       "does_not_own": [
         "seat execution, geometry and every record it writes - runtime.project_runner",
@@ -4528,7 +4528,8 @@
         "studio.artifacts",
         "studio.intent",
         "adapters.cad_execution",
-        "state.design_portfolio"
+        "state.design_portfolio",
+        "studio.binding"
       ],
       "used_by": [
         "apps/archflow-studio/api/archflow_studio_api/application/validation.py",
@@ -4557,7 +4558,8 @@
         "Runtime inspection never starts a worker, replays a change, executes CAD or writes project records; a live job or an incomplete retained candidate cannot prove successful execution or a committed Stage",
         "candidate ownership continues the selected source run through its retained seat round and discipline-seat refs; only explicitly deleted Component roots retire, legacy sources without a seat schedule keep authored-pack behavior, and missing or ambiguous retained ownership is refused",
         "changed-component coverage is checked before composed-model registration and on cold candidate reads from the existing retained operator and runner receipt; a run that did not build its own changed components is not recovered as a succeeded candidate",
-        "the Worktree Graph never merges, starts, replays or writes; conflicts are compared from the nearest shared source, never from a common Stage that both lines already changed"
+        "the Worktree Graph never merges, starts, replays or writes; conflicts are compared from the nearest shared source, never from a common Stage that both lines already changed",
+        "a Worktree Graph drawing row is the representation-status projection of the drawing's latest page, so a change outside the plan's read set leaves it current; the graph says stale for outdated and keeps its other words"
       ],
       "status": "canonical",
       "tests": [

@@ -188,6 +188,36 @@ def test_missing_drawing_host_makes_descendant_unavailable_without_rebinding(roo
     assert reading["document"] == job["document"] and reading["resultAvailable"]
 
 
+def drawing_row(client, drawing_id):
+    [row] = [row for row in client.get("/api/worktrees").json()["representations"]
+             if row["kind"] == "drawing" and row["itemId"] == drawing_id]
+    return row
+
+
+def test_the_worktree_graph_and_the_drawing_agree_on_read_set_changes(room):
+    fixture, _ = room
+    client = fixture.client
+    drawing = fixture.generate(dimensions=[])
+
+    def agree(drawing_state, graph_state):
+        status, row = fixture.status(drawing), drawing_row(client, drawing["drawingId"])
+        assert (status["status"], row["state"]) == (drawing_state, graph_state), (status, row)
+        return status, row
+
+    agree("current", "current")
+    # The Working Head moves to a new accepted Stage that changes nothing this
+    # plan reads: the Drawing tool and the project's graph both keep it current.
+    fixture.stage, fixture.model = fixture.commit_edit(distant_wall())
+    assert client.get("/api/working-source").json()["head"]["runId"] == fixture.stage["candidateId"]
+    agree("current", "current")
+    # A wall inside the crop moves: both say the plan is out of date, for the same reason.
+    fixture.stage, fixture.model = fixture.commit_edit({"summary": "Move front wall",
+        "parameters": [{"key": "front_shift", "value": .4}]})
+    status, row = agree("outdated", "stale")
+    assert row["detail"] == status["detail"]
+    assert fixture.repository.read_head() == fixture.head
+
+
 def test_one_status_vocabulary_for_drawing_render_and_upload_pages(room):
     fixture, _ = room
     client = fixture.client
