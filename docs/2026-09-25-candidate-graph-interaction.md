@@ -248,16 +248,26 @@ Continue never accepts, and Accept is offered only on Current. Accepting a Candi
 
 ## 9. Prototype
 
-A separate lane builds a static, dev-only prototype on fixture data (admitted Candidates only, no API calls) in `docs/prototypes/candidate-graph/`. It uses the hybrid entry: a project-bar Stage/Current chip opens a Design Tree drawer beside the workspace, and an Agent result card also leads there. Its screenshots cover the issue's six states. The root task confirms the exact file names at integration.
+The prototype is at [`prototypes/candidate-graph/`](prototypes/candidate-graph/README.md). It is static and dev-only: fixture data, admitted Candidates only, no API calls. Open `index.html` directly; each state also opens by URL hash (`#state=1` … `#state=6`). It uses the hybrid entry: a project-bar Stage/Current chip opens a Design Tree drawer beside the workspace, and the Agent's Study card leads to the same drawer. `capture.mjs` re-renders every screenshot and checks each state. It also walks the chain through the UI (result card → Compare → Continue → Accept as next Stage) and reports console errors or network requests.
 
 | # | State | Screenshot |
 |---|---|---|
-| 1 | Normal project, tree closed | `docs/prototypes/candidate-graph/screenshots/01-closed.png` |
-| 2 | Tree open with the Stage spine and 5 Candidates | `docs/prototypes/candidate-graph/screenshots/02-*.png` |
-| 3 | Compare mode | `docs/prototypes/candidate-graph/screenshots/03-*.png` |
-| 4 | Old Stage selected, read-only | `docs/prototypes/candidate-graph/screenshots/04-*.png` |
-| 5 | One Candidate continued into the current line | `docs/prototypes/candidate-graph/screenshots/05-*.png` |
-| 6 | Running Agent worktree under a Study | `docs/prototypes/candidate-graph/screenshots/06-running.png` |
+| 1 | Normal project, tree closed | [01-closed.png](prototypes/candidate-graph/screenshots/01-closed.png) |
+| 2 | Tree open with the Stage spine and 5 Candidates | [02-tree-open.png](prototypes/candidate-graph/screenshots/02-tree-open.png) |
+| 3 | Compare mode | [03-compare.png](prototypes/candidate-graph/screenshots/03-compare.png) |
+| 4 | Old Stage selected, read-only | [04-old-stage-readonly.png](prototypes/candidate-graph/screenshots/04-old-stage-readonly.png) |
+| 5 | One Candidate continued into the current line | [05-continued.png](prototypes/candidate-graph/screenshots/05-continued.png) |
+| 6 | Running Agent worktree under a Study | [06-running.png](prototypes/candidate-graph/screenshots/06-running.png) |
+| — | 390 px sheet; dark theme | [07-narrow.png](prototypes/candidate-graph/screenshots/07-narrow.png), [08-dark-tree-open.png](prototypes/candidate-graph/screenshots/08-dark-tree-open.png) |
+
+![State 2: the Design Tree open beside the workspace, with the Stage spine and the Massing Study's five admitted Candidates](prototypes/candidate-graph/screenshots/02-tree-open.png)
+
+![State 5: Entrance A continued into the current line; Accept as next Stage is now offered as a separate step](prototypes/candidate-graph/screenshots/05-continued.png)
+
+The prototype differs from this note in two small ways:
+
+- At 1440 px the drawer sits between the chat and the workspace, narrowing the chat to 340 px, instead of being drawn over the conversation (Q4).
+- The chip's attention counts follow the fixture: "1 alternative ready · 1 task running".
 
 This research supports the hybrid. When reviewing the screenshots, check that:
 
