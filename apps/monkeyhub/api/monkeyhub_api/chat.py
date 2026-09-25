@@ -2357,7 +2357,7 @@ def _stop_process(process: subprocess.Popen) -> None:
 
 
 _READ = re.compile(r"^/api/(exports(?:/[A-Za-z0-9_-]+)?|project|state(?:/frame|/volumes)?|semantics|program|options|board|artifacts|model-assets/[0-9a-f]{64}/index|documents|document-annotations|studies/[A-Za-z0-9][A-Za-z0-9._-]{0,79}|decisions(?:/[A-Za-z0-9_-]+)?|drawings/(?:styles|model-view)|capabilities(?:/[A-Za-z0-9_.-]+)?|proposals/[A-Za-z0-9_-]+|jobs/[A-Za-z0-9_-]+|candidates/[A-Za-z0-9_-]+(?:/compare)?|admissions|working-source|working-draft/revision)$")
-_POST = re.compile(r"^/api/(exports|project/modeling|intents/context|board/export|decisions(?:/[A-Za-z0-9_-]+/revisions)?|state/closure|capabilities/[A-Za-z0-9_.-]+/run|proposals|proposals/(sketch|transform|push-pull|delete|elevation)|proposals/[A-Za-z0-9_-]+/candidate|program|options|options/[A-Za-z0-9_-]+/select|candidates/combine|drawings/(elevations|sheets)|admissions)$")
+_POST = re.compile(r"^/api/(exports|project/modeling|intents/context|board/export|decisions(?:/[A-Za-z0-9_-]+/revisions)?|state/closure|capabilities/[A-Za-z0-9_.-]+/run|proposals|proposals/(sketch|transform|push-pull|delete|elevation)|proposals/[A-Za-z0-9_-]+/candidate|program|options|options/[A-Za-z0-9_-]+/select|candidates/combine|drawings/(elevations|sheets|section-perspectives)|admissions)$")
 _WRITE = re.compile(r"^/api/(board|document-annotations|working-draft)$")
 # Besides retained feedback, the Agent's judgments Hub binds to the user's own
 # message (#294 Q3): a closed loop's admission, and a Continue on the user's words.
@@ -3299,6 +3299,16 @@ def _mcp(hub: str, chat_id: str | None, external: ChatPresentationBindRequest | 
         "Use each decision once for its relevant effect: preserve/filter for supported hard constraints, a generation preference for soft wording, or defer for unsupported effects. Inspect the next artifact and name any remaining gap; a context entry alone proves no behavior changed.",
         "PUT /api/board, /api/document-annotations. Use their schemas for exact inputs.",
         "DRAWINGS: POST /api/drawings/elevations automatically registers results in MonkeyDiagram's documents list.",
+        "SECTION PERSPECTIVE (剖透视): POST /api/drawings/section-perspectives cuts the exact model with a section plane, removes the side the eye is on,",
+        "and draws the kept side in true perspective: the cut filled (poché) and true to scale at 1:scaleDenominator, farther geometry smaller,",
+        "lines perpendicular to the cut converging at the eye's point on it. Minimal body: {projectId, sourceStageRef or modelSource,",
+        "section: {line: [[x1, y1], [x2, y2]], keep: 'left'|'right'}}. The line is a plan line with the same plan numbers as profile/wall points",
+        "(the exact STEP's X/Y in its unit, Z up); keep is the side kept walking from the first point to the second; the eye stands on the other side.",
+        "The default camera looks straight through the cut from 1.6 m above the lowest cut point, fitting the cut's width in 55 degrees.",
+        "Optional: camera {eyeHeight, fovDeg} or {eye, target, up?, fovDeg?}; section {origin, normal} for any plane (normal points toward the eye);",
+        "depth, hiddenObjectIds, scaleDenominator (e.g. 50 for a room) and drawingId. Like elevations it registers the drawing in the documents list",
+        "and returns that document; see it with POST /api/board/export using its runId, assetSha256, revisionRef and pageIndex 0.",
+        "Refusals are named, e.g. SECTION_PLANE_MISSES_MODEL or SECTION_EYE_ON_KEPT_SIDE; correct the plane or camera rather than retrying.",
         "OBSERVE: GET /api/drawings/model-view?runId=<id>&stateDigest=<digest>&assetSha256=<3dm sha256>&view=front returns an MCP image with exact source metadata.",
         "Read modelSource from the awaited result's artifacts or the candidate's 3dm artifact. Views: front/back/left/right/top. This is a read-only orthographic line projection from complete retained STEP; unsupported sources refuse rather than show a proxy.",
         "GET /api/drawings/styles and POST /api/drawings/sheets compose a sheet from exact modelSource, styleId and scaleDenominator.",
