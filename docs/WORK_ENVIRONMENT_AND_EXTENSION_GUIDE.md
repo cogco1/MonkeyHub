@@ -499,8 +499,8 @@ Python 代码按 [PEP 8](https://peps.python.org/pep-0008/#package-and-module-na
 | **ArchFlow** | 共享项目底座、建筑事实、技术契约与正式发布 | `archflow/` |
 | **MonkeyHub** | 唯一对外应用入口；启动、工作区切换、服务管理与共享设置，Agent 接入也沿此入口 | `apps/monkeyhub/`；`OPEN_MONKEYHUB.cmd` |
 | **MonkeyArch** | 三维建模、模型候选与续改 | `monkeyarch/`；Hub `appId: monkeyarch` |
-| **MonkeyDiagram** | 图纸、图解、平立剖表达与单页批注 | `monkeydiagram/`；Hub rail「工具」组的「图纸」（与用量并列）；Board 双击已登记图页进入精确页面编辑 |
-| **MonkeyBoard** | 图版排布、方案比较、会议展示与画布批注 | Hub `appId: monkeyboard`；同页项目工作区 |
+| **MonkeyDiagram** | 图纸、图解、平立剖表达与单页批注 | `monkeydiagram/`；Hub rail「工具」组的「图纸」（与渲染、制作、用量并列）；Board 双击已登记图页进入精确页面编辑 |
+| **MonkeyBoard** | 图版排布、方案比较、会议展示与画布批注；含「排版」模式（排版与导出，即 Publish 界面） | Hub `appId: monkeyboard`；同页项目工作区；左上角「画板 \| 排版」切换两种模式 |
 | **MonkeyMonitor** | 用量、费用、耗时与计算过程查看 | `monkeymonitor/`；Hub `appId: monkeymonitor` |
 | **MonkeyFab** | 制作与打印准备；当前支持分件及已切片文件发送 | 同仓 `apps/monkeyfab/` CLI；Hub `appId: monkeyfab`、`?view=fab` |
 
@@ -509,10 +509,11 @@ Python 代码按 [PEP 8](https://peps.python.org/pep-0008/#package-and-module-na
 Hub 中渲染，Diagram 是画板中的图页编辑器。每个项目拥有独立运行时和客户端，
 MonkeyMonitor 诊断服务仍独立运行，Usage 与 MonkeyFab 页面由 Hub 承载。
 
-上表是产品名，不是导航层级。Hub rail 分两组（#295）：「工作区」是项目的主要界面
-（建模、渲染、排版、画板，以及不需要项目的制作）；「工具」是作用于当前项目的图纸与用量。
+上表是产品名，不是导航层级。Hub rail 分两组（#295，#300 再定）：「工作面」是项目的主要界面，
+现为建模与画板；排版是画板的模式，从画板左上角的「画板 | 排版」切换，不单列入口。状态树将作为
+第三个工作面加入（#284）。「工具」作用于当前项目或本机：图纸、渲染、制作与用量。
 图纸是当前设计状态的二维投影，不是与 MonkeyArch 并列的建筑权威：它在同一项目工作区、
-同一 Project Runtime 与修改起点上打开，再按一次回到打开前的界面，来源与保存方式不变。
+同一 Project Runtime 与修改起点上打开，再按一次回到打开前的界面，来源与保存方式不变；渲染同样如此。
 
 在 MonkeyBoard 中双击一页已登记图纸，会在**同一个标签页内**打开现有的图纸编辑器
 （通过项目上下文传递该页的 run / asset / revision / page），批注与来源绑定沿用原有 owner；

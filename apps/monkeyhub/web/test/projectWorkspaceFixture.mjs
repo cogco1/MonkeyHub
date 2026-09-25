@@ -69,6 +69,9 @@ export async function createProjectWorkspaceFixture(runtimes, sessions) {
       if (name === "/api/render/jobs") return json({ projectId, jobs: [] });
       if (name === "/api/design-history") return json({ projectId, branchId: "main", branches: [], stages: [] });
       if (name === "/api/board") return json(current.board);
+      // #300: Layout, Board's second mode, reads the project's publication; none is saved yet.
+      if (name === "/api/publication") return json({ projectId, revisionSha256: null, title: `Layout ${projectId}`,
+        spec: { width: 1280, height: 720, template: "hero" }, pages: [], sources: [] });
       if (name === "/api/drawings/styles") return json({ styles: [] });
       // #271: the head a real runtime would resolve for this fixture, and its read-only Worktree Graph.
       const home = current.assets.get(current.home).dto;

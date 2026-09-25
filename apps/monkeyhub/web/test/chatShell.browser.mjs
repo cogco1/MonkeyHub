@@ -528,16 +528,17 @@ try {
   // is no second copy of them anywhere.
   const rail = page.getByRole("navigation", { name: "Project tools" });
   await rail.waitFor();
-  for (const label of ["Modeling", "Drawings", "Board", "Fabrication", "Usage"]) {
+  for (const label of ["Modeling", "Drawings", "Render", "Board", "Fabrication", "Usage"]) {
     assert.equal(await page.getByRole("button", { name: label, exact: true }).count(), 1, `${label} appears once`);
   }
-  // #295: Drawing is a tool over the project, listed with Usage, not a peer of
-  // the project's primary surfaces.
+  // #295, regrouped for #300: the project's surfaces are Modeling and Board;
+  // everything that produces output over the project, or reports on the
+  // machine, is a Tool. Layout is Board's mode and has no rail entry.
   const railEntries = (group) => rail.getByRole("group", { name: group, exact: true }).locator(".chat-rail__tool")
     .evaluateAll((nodes) => nodes.map((node) => node.getAttribute("aria-label")));
-  assert.deepEqual(await railEntries("Workspaces"), ["Modeling", "Render", "Publish", "Board", "Fabrication"],
-    "the primary project surfaces no longer include Drawing");
-  assert.deepEqual(await railEntries("Tools"), ["Drawings", "Usage"], "Drawing sits in Tools beside Usage");
+  assert.deepEqual(await railEntries("Surfaces"), ["Modeling", "Board"], "the surfaces are Modeling and Board");
+  assert.deepEqual(await railEntries("Tools"), ["Drawings", "Render", "Fabrication", "Usage"], "output tools and Usage share Tools");
+  assert.equal(await rail.getByRole("button", { name: /Publish|Layout/ }).count(), 0, "Layout is not a rail entry");
   assert.ok(await railWidth() > 40, "the rail stays on screen while the tool content is closed");
   assert.equal(await page.locator(".chat-browser:visible").count(), 0);
   await page.waitForFunction(() => !document.querySelector('.chat-composer input[type="checkbox"]')?.disabled);
@@ -621,8 +622,11 @@ try {
   await page.getByRole("button", { name: "Hub settings", exact: true }).click();
   await page.locator("#language").selectOption("zh-CN");
   assert.equal(await missingEndSpan.locator("dd").first().textContent(), "结束时间未观测");
+  assert.deepEqual(await page.locator('.chat-rail__group[aria-label="工作面"] .chat-rail__tool').evaluateAll((nodes) =>
+    nodes.map((node) => node.getAttribute("aria-label"))), ["建模", "画板"], "the Surfaces group is named in the Chinese catalog too");
   assert.deepEqual(await page.locator('.chat-rail__group[aria-label="工具"] .chat-rail__tool').evaluateAll((nodes) =>
-    nodes.map((node) => node.getAttribute("aria-label"))), ["图纸", "用量"], "the Tools group is named in the Chinese catalog too");
+    nodes.map((node) => node.getAttribute("aria-label"))), ["图纸", "渲染", "制作", "用量"], "the Tools group is named in the Chinese catalog too");
+  assert.equal(await page.locator(".chat-rail").getByRole("button", { name: "排版", exact: true }).count(), 0, "no rail 排版");
   assert.equal(await page.locator(".monitor-trace-summary > span").filter({ has: page.getByText("首个候选", { exact: true }) }).locator("strong").textContent(), "—");
   await page.locator("#language").selectOption("en");
   await page.getByRole("dialog").getByRole("button", { name: "Close", exact: true }).click();
@@ -1090,6 +1094,27 @@ try {
   await page.getByRole("button", { name: "Board", exact: true }).click(); await waitWorkspace("board");
   assert.deepEqual(new Set(workspaceFixture.requests.filter((row) => row.name === "/api/board").map((row) => row.projectId)), new Set(["A", "B"]));
   await page.screenshot({ path: path.join(temporary, "hub-board.png") });
+  // #300: Layout is Board's second mode. The Board | Layout switch moves between
+  // the two mounted surfaces; the rail keeps Board pressed and has no Layout entry.
+  const boardModes = visibleWorkspace().getByRole("radiogroup", { name: "Board mode", exact: true });
+  assert.deepEqual(await boardModes.getByRole("radio").allInnerTexts(), ["Board", "Layout"]);
+  assert.equal(await boardModes.getByRole("radio", { name: "Board", exact: true }).getAttribute("aria-checked"), "true");
+  await boardModes.getByRole("radio", { name: "Layout", exact: true }).click();
+  const layoutTitle = visibleWorkspace().getByLabel("Publication title", { exact: true });
+  await layoutTitle.waitFor();
+  assert.equal(new URL(page.url()).searchParams.get("view"), "publish");
+  assert.equal(await page.getByRole("button", { name: "Board", exact: true }).getAttribute("aria-pressed"), "true", "Board stays pressed in Layout");
+  assert.equal(await boardModes.getByRole("radio", { name: "Layout", exact: true }).getAttribute("aria-checked"), "true");
+  await layoutTitle.fill("Layout B draft");
+  await page.screenshot({ path: path.join(temporary, "board-layout-mode.png") });
+  await boardModes.getByRole("radio", { name: "Layout", exact: true }).press("ArrowLeft");
+  await waitWorkspace("board");
+  assert.equal(await visibleWorkspace().getByLabel("Board title", { exact: true }).inputValue(), "Board B retained", "Board keeps its state across Layout");
+  await boardModes.getByRole("radio", { name: "Layout", exact: true }).click();
+  await layoutTitle.waitFor();
+  assert.equal(await layoutTitle.inputValue(), "Layout B draft", "Layout keeps its unsaved draft across Board");
+  await boardModes.getByRole("radio", { name: "Board", exact: true }).click();
+  await waitWorkspace("board");
   await page.getByRole("button", { name: "Modeling", exact: true }).click();
   await waitWorkspace();
 

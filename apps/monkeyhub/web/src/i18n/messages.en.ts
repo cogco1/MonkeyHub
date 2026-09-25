@@ -876,6 +876,9 @@ export const messagesEn = {
   "settings.user.invalidTimeout": "Timeout must be a finite number greater than zero.",
   "settings.user.invalidModel": "Model name cannot contain only spaces; leave empty to clear.",
   "settings.badges.user": "User",
+  "workspace.boardMode": "Board mode",
+  "workspace.boardMode.board": "Board",
+  "workspace.boardMode.layout": "Layout",
 } as const;
 
 export type MessageKey = keyof typeof messagesEn;
@@ -933,9 +936,9 @@ export const chatCopy = {
     previewImage: "Enlarge image", download: "Download", imageLoading: "Loading image…", imageFailed: "This image could not be loaded. You can still download the file.", openDocument: "Open document",
     externalChat: "External conversation", externalNotice: "Replies and progress from your connected agent appear here. Continue the conversation in the source application.",
     attachmentCount: "Add up to 8 attachments per message.", attachmentSize: "Each attachment must be 20 MiB or smaller.", attachmentTotal: "Attachments must total 40 MiB or less.", attachmentRead: "Could not read the attachment. Select it again.",
-    working: "Connecting the project…", tools: "Project tools", hideTools: "Hide tools", publish: "Publish", render: "Render", model: "Modeling", drawing: "Drawings", board: "Board", fab: "Fabrication", monitor: "Usage",
+    working: "Connecting the project…", tools: "Project tools", hideTools: "Hide tools", publish: "Layout", render: "Render", model: "Modeling", drawing: "Drawings", board: "Board", fab: "Fabrication", monitor: "Usage",
     refresh: "Reload page", browser: "Project browser", modelName: "Model (leave empty for CLI default)", defaultModel: "CLI default model", provider: "Connection",
-    toolEmpty: "Project tools", toolHint: "Choose modeling, rendering, publishing, board or fabrication, or open drawings from Tools.",
+    toolEmpty: "Project tools", toolHint: "Choose Modeling or Board, or open a tool: Drawings, Render, Fabrication or Usage.",
     loading: "Loading…", retry: "Reload", projectRequired: "Add or choose a project first.", expand: "Show projects", collapse: "Hide projects",
     openCandidate: "Open this candidate on the right", candidateHint: "View the candidate in the modeling page.",
     resize: "Resize right panel", noProvider: "No CLI connection is available", emptyProjects: "No projects yet", sessionError: "Could not read the conversation", complete: "Complete",
@@ -969,8 +972,8 @@ export const chatCopy = {
     modelLabel: "Model", modelCliDefault: "CLI default model", modelCustom: "Custom model id…", modelCustomLabel: "Model id",
     modelChecking: "Checking which models are available…", modelSaving: "Switching…", modelRunning: "The model can be changed once this reply finishes.", modelApply: "Use",
     modelSince: "This applies to the next messages in this conversation.",
-    railWorkspaces: "Workspaces", railTools: "Tools", railProject: "This project",
-    drawingReturn: (surface: string) => `Close Drawings and return to ${surface}`, drawingClose: "Close Drawings",
+    railSurfaces: "Surfaces", railTools: "Tools", railProject: "This project",
+    toolReturn: (tool: string, surface: string) => `Close ${tool} and return to ${surface}`, toolClose: (tool: string) => `Close ${tool}`,
     errorDetails: "Technical details", changeModel: "Change the model",
     startingDraft: "Help me start a massing for this project: ",
     newProject: "New project", newProjectHeading: "New project", projectName: "Project name", projectNamePlaceholder: "for example harbour-study",
