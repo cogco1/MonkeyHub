@@ -171,7 +171,8 @@ export function ProjectWorkspace({ workspace, expectedProjectId, candidateRunId 
     {designTree.available && <DesignTreeBar data={designTree} seen={seenCandidates.seen} open={workspace === "tree"}
       viewing={treeView && !treeView.back && treeView.runId !== editingRunId ? treeView : null}
       onToggle={() => onWorkspaceChange(workspace === "tree" ? treeReturn.current : "tree")}
-      onBackToCurrent={() => viewRun(currentView(designTree))} onShowReady={showReady} />}
+      onBackToCurrent={() => viewRun(currentView(designTree))} onShowReady={showReady}
+      onRecordEdits={recordEdits} />}
     {refreshError && <ErrorPanel error={refreshError} what="GET /api/protocol" />}
     {(archVisited || modelVisible) && <div data-project-surface="arch" hidden={!modelVisible} inert={!active || !modelVisible}
       style={{ height: "100%", minHeight: 0, display: modelVisible ? "block" : "none" }}>
