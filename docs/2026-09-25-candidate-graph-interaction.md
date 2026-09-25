@@ -9,7 +9,7 @@ Terms used below:
 | Term | Meaning here |
 |---|---|
 | **Stage** | Accepted, immutable checkpoint on the spine (`S0`, `S1`, …). |
-| **Study** | One request that produced alternatives from one exact base, such as "Entrance Study · 5 options". The registered term is **Exploration**, backed by WorkingCopy ([naming table](WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.md#产品名称与版本用语), [plan §1](STAGE_BRANCH_CANDIDATE_PLAN.md)). See Q1. |
+| **Study** | One request for alternatives, such as "Entrance Study · 5 options". It starts from one point, but its results need not share one exact base (§11, slice 1). The registered term is **Exploration**, backed by WorkingCopy ([naming table](WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.md#产品名称与版本用语), [plan §1](STAGE_BRANCH_CANDIDATE_PLAN.md)). See Q1. |
 | **Candidate** | A completed result that has been admitted (#294). Runs, repair attempts, failed jobs and results rejected before admission are never nodes. |
 | **Current** | The user-facing name for the Working Head (#277): the point the next edit starts from (修改起点). |
 | **Line** | A lineage. A new line starts only when someone continues from an older point. The naming table calls this a Branch. |
@@ -294,7 +294,9 @@ This research supports the hybrid. When reviewing the screenshots, check that:
 
 The smallest real slices, after review:
 
-1. **One read model.** Build a Design Tree view on the server from retained facts: design history (Stages and lines), Studies (WorkingCopy/Exploration, `episodes.py:67-130`, falling back to same exact base plus same task), admitted Candidates (#294), running Study work (#277 running lines), dispositions (#289) and the Working Head resolver (#277). Extend the Worktree Graph endpoint (`runtime.py:417-449`) rather than adding a second version store. The UI never infers admission or stores structure.
+1. **One read model.** Build a Design Tree view on the server from retained facts: design history (Stages and lines), Studies (WorkingCopy/Exploration, `episodes.py:67-130`, falling back to the originating task), admitted Candidates (#294), running Study work (#277 running lines), dispositions (#289) and the Working Head resolver (#277). Extend the Worktree Graph endpoint (`runtime.py:417-449`) rather than adding a second version store. The UI never infers admission or stores structure.
+
+   Don't group by exact base alone. A read-only replay of a real test project found two problems. One Agent request for five schemes left three redo runs, each based on its own first attempt. An earlier two-option comparison had been built as a chain, with B made on top of A. So grouping by base would both split Studies and miss them. The retained base bindings do recover lineage; which run is a task's result is exactly the fact #294 has to add.
 2. **Always-on status.** Drive the chip from the runtime event stream the shell already consumes (`ChatShell:355-379`), and stop gating the graph read on the project card being open (`ChatShell:287-289`).
 3. **Viewing is not continuing.** Stage clicks must be view-only; today they go through `changeEditingBase` (`App:2191-2193`). Reuse the #277 view and follow-head semantics (`ChatShell:30-33`).
 4. **Retire parallel entries in the same change** (one canonical in, one out):
