@@ -20,8 +20,10 @@ from urllib.parse import parse_qs, urlencode, urlsplit
 from urllib.request import ProxyHandler, Request, build_opener
 from uuid import UUID, uuid4, uuid5, NAMESPACE_URL
 
+from archflow.project.record_kinds import STUDIO_DOCUMENT_MODEL_SOURCE, STUDIO_SOURCE_DOCUMENT
 from archflow.project.repository import FilesystemProjectRepository, ProjectRepositoryError
 from archflow_studio_api.application.artifacts import (
+    WORK_COPY_WORKSPACE,
     DocumentWorkCopy,
     document_bytes,
     list_document_work_copies,
@@ -53,6 +55,11 @@ _WORK_COPY_SETTLED_NS = 2_000_000_000
 # Unchanged stat metadata is only a fast path, not proof of unchanged content.
 # Recheck occasionally for in-place saves that preserve both size and mtime.
 _WORK_COPY_CONTENT_REFRESH_NS = _IDLE_RETAINED_REFRESH_S * 1_000_000_000
+# The only records the document list reads (studio.artifacts list_documents).
+# If it ever reads another kind, the work-copy key below has to name it too.
+_DOCUMENT_RECORD_KINDS = (STUDIO_SOURCE_DOCUMENT, STUDIO_DOCUMENT_MODEL_SOURCE)
+# How often an unwoken watcher compares that key; a wake compares it at once.
+_WORK_COPY_CHECK_S = _IDLE_RETAINED_REFRESH_S
 
 
 def project_key(path: str) -> str:
@@ -524,6 +531,8 @@ class ProjectRuntime:
     # A project whose documents will not list at all. Separate from ``error``
     # because it is not a fact about the retained projection.
     work_copy_error: HubError | None = None
+    # What the last successful derivation of ``work_copies`` was read from.
+    work_copy_key: tuple | None = None
     next_working_cleanup: float = 0.0
 
 
@@ -762,6 +771,28 @@ class ProjectRuntimeManager:
                         self.emit("artifact/updated", runtime.runtime_id)
         return {key: str(copy.path) for key, copy in copies.items()}
 
+    def _work_copy_inputs(self, runtime: ProjectRuntime) -> tuple:
+        """Everything that decides which work copies exist, without deriving them.
+
+        Deriving them lists the project's documents, which reads every record
+        of every run: seconds, and most of the project's bytes, on a large
+        project (#314). The rows depend on nothing else than the runs, their
+        document records and which files each run's copy workspace holds.
+        A record is named by its content digest, so a changed record is a
+        changed ref; this reads those refs and the names of the copy files and
+        nothing else. It only says when to derive again: the derivation stays
+        the one answer to which copies exist.
+        """
+
+        binding, inputs = runtime.binding, []
+        for run_id in binding.run_ids():
+            records = tuple(ref.uri for kind in _DOCUMENT_RECORD_KINDS
+                            for ref in binding.record_refs(run_id, kind=kind))
+            workspace = binding.repository.layout.run(run_id).workspaces / WORK_COPY_WORKSPACE
+            files = tuple(sorted(str(Path(folder, name)) for folder, _, names in os.walk(workspace) for name in names))
+            inputs.append((run_id, records, files))
+        return tuple(inputs)
+
     def _stable_work_copy_bytes(self, observed: _WorkCopyObservation) -> bytes | None:
         """The copy's settled contents, or ``None`` while it is still moving.
 
@@ -947,7 +978,7 @@ class ProjectRuntimeManager:
         return repository.prune_working_draft(now=datetime.now(timezone.utc).isoformat())
 
     def _watch(self, runtime: ProjectRuntime):
-        next_retained_read = 0.0
+        next_retained_read = next_work_copy_check = 0.0
         while not self._closing.is_set():
             force_read = runtime.wake.is_set()
             runtime.wake.clear()
@@ -976,11 +1007,17 @@ class ProjectRuntimeManager:
             # or a file that will not open therefore says nothing about whether
             # the project is stale, and never delays the next retained read.
             try:
-                if due:
-                    # Which copies exist is re-derived on the retained cadence;
-                    # their metadata is watched every heartbeat, with bounded
-                    # content reads after a copy has settled.
-                    self.bind_work_copies(runtime)
+                if force_read or drained or time.monotonic() >= next_work_copy_check:
+                    # Which copies exist is re-derived only when what decides
+                    # it moved, checked on a wake and on the idle cadence, not
+                    # on every heartbeat of active work. Their metadata is still
+                    # watched every heartbeat, with bounded content reads after
+                    # a copy has settled.
+                    next_work_copy_check = time.monotonic() + _WORK_COPY_CHECK_S
+                    inputs = self._work_copy_inputs(runtime)
+                    if inputs != runtime.work_copy_key:
+                        self.bind_work_copies(runtime)
+                        runtime.work_copy_key = inputs
                 self._observe_work_copies(runtime)
             except (StudioError, ProjectRepositoryError, OSError, ValueError, KeyError, TypeError) as exc:
                 with runtime.lock:
@@ -1088,7 +1125,10 @@ class ProjectRuntimeManager:
                 result.headers["X-Monkey-Operation-Id"] = admission.record.operationId
                 runtime.operations.replied(admission, result)
                 self.emit("operation/progress" if admission.record.status in _ACTIVE else f"operation/{admission.record.status}", runtime.runtime_id)
-            runtime.wake.set()
+            if mutation:
+                # A read changes nothing retained. Waking on every one made each
+                # page poll re-read the project's history (#314).
+                runtime.wake.set()
             return result
         except (OSError, TimeoutError, HTTPException, HubFailure) as exc:
             if admission:

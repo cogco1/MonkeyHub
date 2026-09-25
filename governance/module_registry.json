@@ -6783,7 +6783,8 @@
         "An automatic update never restarts the running application and never runs while a transaction is preparing, applying or finishing; it is switched in only after a normal quit. A next-launch activation never refuses writes, and a start left in applying by a lost restart-now helper finishes or rolls back itself, so no path stays in applying with writes refused. Preparing covers the download, staging and one load of the new runtime (no child of the Hub inherits its stdin); ready means applicable, and a failed, undone or unfinished transaction keeps its reason and offers no restart or next launch. Checksums and the release manifest establish consistency, not the publisher.",
         "Render, Board and Arch share one project Runtime; image execution and persistence remain studio.render and studio.artifacts, with no Render process or store",
         "A new Render attempt gets a new requestId; status refresh and workspace/project switches never resend an uncertain paid call",
-        "Automatic project selection, chat and first Render entry attach and verify the Runtime without seeding authored modeling inputs; explicit Arch entry initializes only when the modeling projection is not ready, including after Render-first navigation"
+        "Automatic project selection, chat and first Render entry attach and verify the Runtime without seeding authored modeling inputs; explicit Arch entry initializes only when the modeling projection is not ready, including after Render-first navigation",
+        "A project watcher derives which work copies exist again only when the runs, their document records or the files in their copy workspaces change, compared on a wake and every 30 s without reading other records; a read forwarded to Studio never wakes it (#314)"
       ],
       "used_by": [
         "apps/monkeyhub/run.py",
@@ -6921,6 +6922,7 @@
       "depends_on": [
         "project.repository",
         "project.refs",
+        "project.record_kinds",
         "state.record",
         "project.manifest",
         "studio.binding",

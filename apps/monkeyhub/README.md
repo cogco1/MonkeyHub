@@ -236,7 +236,7 @@ Hub keeps one runtime for each exact project identity and resolved path. Switchi
 
 Owned local workers verify their project, process, instance and source revision in the same lightweight health response. Worker liveness does not survey retained design history through `/api/project`; the full project summary keeps its existing behavior.
 
-Worker and session observation continues every second. Retained history refreshes for active work, submitted mutations, attachment and worker changes; an idle runtime reuses its current projection and checks external project changes every 30 seconds. Status reads verify retained receipts and exact sources without rebuilding candidate previews. The Hub entry point closes SSE subscriptions before draining accepted HTTP work and owned processes during shutdown.
+Worker and session observation continues every second. Retained history refreshes for active work, submitted mutations, attachment and worker changes; an idle runtime reuses its current projection and checks external project changes every 30 seconds. A read forwarded to Studio wakes nothing, and which work copies exist is derived again only when the runs, their document records or the files in their copy workspaces change (#314). Status reads verify retained receipts and exact sources without rebuilding candidate previews. The Hub entry point closes SSE subscriptions before draining accepted HTTP work and owned processes during shutdown.
 
 | Request | Result |
 | --- | --- |
