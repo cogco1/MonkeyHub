@@ -22,7 +22,7 @@ from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import DESIGN_STAGE, SEAT_OCCT_EXECUTION, STUDIO_SOURCE_DOCUMENT
 from archflow.project.refs import ProjectRecordRef, record_ref_from_uri, require_identifier
 from monkeydiagram.drawing_elevation import (
-    SECTION_PERSPECTIVE_KIND, DrawingElevationError, ElevationSource, ElevationView, SectionPerspectiveError,
+    SECTION_PERSPECTIVE_KIND, UNIT_METRES, DrawingElevationError, ElevationSource, ElevationView, SectionPerspectiveError,
     SectionPerspectiveView, freeze_model_axis_elevation, freeze_section_perspective,
     project_model_axis_elevation, read_elevation_source,
 )
@@ -278,9 +278,6 @@ def generate_elevation(
                                    freeze=freeze)
 
 
-_UNIT_METRES = {"meter": 1.0, "millimeter": 0.001, "inch": 0.0254, "foot": 0.3048}
-
-
 @retained_sources
 def generate_section_perspective(
     binding: ProjectBinding, *, source_stage_ref: str | None, model_source: ModelSource | None,
@@ -316,7 +313,7 @@ def generate_section_perspective(
             view = SectionPerspectiveView(
                 name=drawing_id, section=section, camera=camera, depth=depth, hidden_object_ids=tuple(hidden_object_ids),
                 scale_denominator=scale_denominator, graphics=graphics,
-                linear_deflection=0.0001 / _UNIT_METRES[cad_receipt["identity"]["length_unit"]],
+                linear_deflection=0.0001 / UNIT_METRES[cad_receipt["identity"]["length_unit"]],
             )
         except SectionPerspectiveError as exc:
             details.update(cache_status="refused", cache_reason="request_invalid")

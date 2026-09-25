@@ -687,7 +687,8 @@ def freeze_model_axis_elevation(
 DEFAULT_SECTION_FOV_DEG = 55.0
 DEFAULT_SECTION_EYE_HEIGHT_M = 1.6
 DEFAULT_SECTION_GRAPHICS = {"cutLineMm": 0.5, "visibleLineMm": 0.25, "hatchSpacingMm": 0.5}
-_UNIT_METRES = {"meter": 1.0, "millimeter": 0.001, "inch": 0.0254, "foot": 0.3048}
+#: Metres per CAD length unit, for defaults stated in metres.
+UNIT_METRES = {"meter": 1.0, "millimeter": 0.001, "inch": 0.0254, "foot": 0.3048}
 _SECTION_MARGIN = 0.05
 
 
@@ -989,7 +990,7 @@ def project_section_perspective(
                 # One-point perspective: the eye's foot is centred on the cut at eye height, and the target is
                 # the cut's centre, so the frame is the cut with its margin.
                 placement = "default"
-                height = camera.get("eyeHeight", DEFAULT_SECTION_EYE_HEIGHT_M / _UNIT_METRES[unit])
+                height = camera.get("eyeHeight", DEFAULT_SECTION_EYE_HEIGHT_M / UNIT_METRES[unit])
                 distance = ((u1 - u0) / 2.0 + margin) / half
                 eye = tuple(o + (u0 + u1) / 2.0 * r + (v0 + height) * w + distance * n
                             for o, r, w, n in zip(origin, right, up, normal))
@@ -1160,6 +1161,7 @@ __all__ = [
     "DRAWING_VIEW_KINDS",
     "ELEVATION_KIND",
     "SECTION_PERSPECTIVE_KIND",
+    "UNIT_METRES",
     "DrawingElevationError",
     "ElevationDrawing",
     "ElevationProjection",
