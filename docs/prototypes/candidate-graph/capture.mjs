@@ -112,7 +112,7 @@ const shots = [
 for (const [file, state] of shots) {
   const { page, context, label } = await open(`state=${state}&theme=light`);
   await check(page, label, state);
-  await page.screenshot({ path: path.join(outDir, file) });
+  await page.screenshot({ path: path.join(outDir, file), animations: "disabled" });
   await context.close();
   console.log(`captured ${file}`);
 }
@@ -126,7 +126,7 @@ for (const [file, state] of shots) {
     return drawer ? { position: getComputedStyle(drawer).position, width: box.width, bottom: box.bottom } : null;
   });
   if (!sheet || sheet.position !== "fixed" || sheet.width !== NARROW.width || sheet.bottom !== NARROW.height) problems.push(`${label}: tree is not a full-height sheet ${JSON.stringify(sheet)}`);
-  await page.screenshot({ path: path.join(outDir, "07-narrow.png") });
+  await page.screenshot({ path: path.join(outDir, "07-narrow.png"), animations: "disabled" });
   await context.close();
   console.log("captured 07-narrow.png");
 }
@@ -137,7 +137,7 @@ for (let state = 1; state <= 6; state += 1) {
   await check(page, label, state);
   const ground = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
   if (ground !== "rgb(32, 32, 34)") problems.push(`${label}: dark ground is ${ground}`);
-  if (state === 2) { await page.screenshot({ path: path.join(outDir, "08-dark-tree-open.png") }); console.log("captured 08-dark-tree-open.png"); }
+  if (state === 2) { await page.screenshot({ path: path.join(outDir, "08-dark-tree-open.png"), animations: "disabled" }); console.log("captured 08-dark-tree-open.png"); }
   await context.close();
 }
 
