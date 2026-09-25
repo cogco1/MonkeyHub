@@ -1042,6 +1042,14 @@ candidate deltas and the job queue; its `reconcile` is the StateRecord combine r
 dry run from the nearest shared source. Owner attribution belongs to the Hub journal, not to
 project records.
 
+The position's `revisionSha256` (from `GET /api/working-draft`, `/api/working-draft/revision` and
+`/api/working-source`) is the compare-and-swap token that `PUT /api/working-draft`, `POST
+/api/working-draft/save` and `PUT /api/working-draft/local` check. It covers the head, the listed
+runs and the local recovery, not the `active` ledger of executing or interrupted candidates that
+`working.json` also keeps, so a candidate starting or ending never refuses a write that read the
+position before it (GH-293). Listing a finished candidate does move it; the local draft writer
+reads again on `WORKING_DRAFT_STALE`, while its own witness and `expectedSource` guard the content.
+
 Continue is an attributed act, whoever makes it (#294 S4). Each move onto a run retains one
 `AuditEvent@1` with `action: design.continued` in that run's review area. It names ids only:
 `actorId` and `authenticatedActor` from the request boundary, `origin` (`studio` or `hub` for
