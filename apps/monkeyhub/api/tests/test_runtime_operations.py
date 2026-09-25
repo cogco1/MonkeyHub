@@ -201,6 +201,13 @@ class OperationRecoveryTests(unittest.TestCase):
         self.assertNotIn("private", self.manager.journal_path.read_text(encoding="utf-8"))
         restored = self.durable_manager().records()[0]
         self.assertEqual((restored.status, restored.acknowledgedAt), ("failed", dismissed.acknowledgedAt))
+        # A journal kept before a dismissal named the status it read still restores it.
+        saved = json.loads(self.manager.journal_path.read_text(encoding="utf-8"))
+        self.assertEqual(saved["acknowledged"], {admission.record.operationId: {
+            "acknowledgedAt": dismissed.acknowledgedAt, "status": "failed"}})
+        saved["acknowledged"] = {admission.record.operationId: dismissed.acknowledgedAt}
+        self.manager.journal_path.write_text(json.dumps(saved), encoding="utf-8")
+        self.assertEqual(self.durable_manager().records()[0].acknowledgedAt, dismissed.acknowledgedAt)
 
     def test_stale_operation_can_be_dismissed(self):
         admission, _ = self.admission("/api/proposals", {})
@@ -209,18 +216,87 @@ class OperationRecoveryTests(unittest.TestCase):
         self.assertTrue(self.manager.acknowledge(admission.record.operationId).acknowledgedAt)
         self.assertTrue(self.record(admission).acknowledgedAt)
 
-    def test_operation_that_needs_recovery_cannot_be_dismissed(self):
+    def test_lost_candidate_reply_stays_until_a_read_finds_no_run_to_recover(self):
         self.manager = self.durable_manager()
-        admission, _ = self.admission("/api/proposals", {})
+        admission, _ = self.admission("/api/proposals/unexecuted/candidate")
         self.manager.interrupted(admission, "lost reply")
+        # Unread, the run this request named may yet be retained with its receipt.
+        self.assertEqual((self.record(admission).status, self.record(admission).recoverable), ("needs_recovery", True))
         for operation_id, code in ((admission.record.operationId, "OPERATION_NOT_ACKNOWLEDGEABLE"),
                                    (str(uuid4()), "OPERATION_NOT_FOUND")):
             with self.subTest(code=code), self.assertRaises(HubFailure) as refusal:
                 self.manager.acknowledge(operation_id)
             self.assertEqual(refusal.exception.error.code, code)
         self.assertNotIn("acknowledged", json.loads(self.manager.journal_path.read_text(encoding="utf-8")))
-        restored = self.durable_manager().records()[0]
-        self.assertEqual((restored.status, restored.acknowledgedAt), ("needs_recovery", None))
+        restored = self.durable_manager()
+        self.assertEqual([(row.status, row.recoverable, row.acknowledgedAt) for row in restored.records()],
+                         [("needs_recovery", True, None)], "a restarted Hub has read nothing yet either")
+        # The project retains no such run, and nothing will run that request again.
+        restored.reconcile(self.snapshot(), worker_alive=False)
+        self.assertEqual([(row.status, row.recoverable) for row in restored.records()], [("needs_recovery", False)])
+        dismissed = restored.acknowledge(admission.record.operationId)
+        self.assertEqual((dismissed.status, dismissed.recoverable), ("needs_recovery", False))
+        self.assertTrue(dismissed.acknowledgedAt)
+        self.assertEqual(json.loads(self.manager.journal_path.read_text(encoding="utf-8"))["acknowledged"],
+                         {admission.record.operationId: {"acknowledgedAt": dismissed.acknowledgedAt, "status": "needs_recovery"}})
+        # After another restart it stays dismissed before and after the next read.
+        self.manager = self.durable_manager()
+        for read in (False, True):
+            if read:
+                self.manager.reconcile(self.snapshot(), worker_alive=False)
+            with self.subTest(read=read):
+                row = self.record(admission)
+                self.assertEqual((row.status, row.recoverable, row.acknowledgedAt),
+                                 ("needs_recovery", False, dismissed.acknowledgedAt))
+        self.assertEqual(bound_project(self.app.state).run_ids(), (self.fixture.REFERENCE_RUN_ID,))
+
+    def test_interrupted_request_that_named_no_run_cannot_be_recovered_and_can_be_dismissed(self):
+        self.manager = self.durable_manager()
+        proposal, _ = self.admission("/api/proposals", {})
+        sheet, _ = self.admission("/api/drawings/sheets", {})
+        for admission in (proposal, sheet):
+            self.manager.interrupted(admission, "lost reply")
+            # No run was named, so no read is needed to know nothing retained can resolve it.
+            self.assertEqual((self.record(admission).status, self.record(admission).recoverable), ("needs_recovery", False))
+        before = self.record(proposal)
+        dismissed = self.manager.acknowledge(proposal.record.operationId)
+        self.assertTrue(dismissed.acknowledgedAt)
+        self.assertEqual(dismissed.model_dump(exclude={"acknowledgedAt"}), before.model_dump(exclude={"acknowledgedAt"}),
+                         "a dismissal changes no status, reason, order or result")
+        self.assertEqual(self.manager.acknowledge(proposal.record.operationId).acknowledgedAt, dismissed.acknowledgedAt,
+                         "dismissing again keeps the first time")
+        self.manager.reconcile(self.snapshot(), worker_alive=False)
+        self.assertEqual(self.record(proposal).acknowledgedAt, dismissed.acknowledgedAt)
+        restarted = self.durable_manager()
+        rows = restarted.records()
+        # Dismissed, it no longer holds its place ahead of finished requests.
+        self.assertEqual([row.operationId for row in rows], [sheet.record.operationId, proposal.record.operationId])
+        self.assertEqual([(row.status, row.recoverable, row.acknowledgedAt) for row in rows],
+                         [("needs_recovery", False, None), ("needs_recovery", False, dismissed.acknowledgedAt)])
+
+    def test_dismissal_of_an_unrecoverable_operation_ends_when_it_reads_otherwise(self):
+        admission, _ = self.admission("/api/program", {})
+        operation_id, candidate_id = admission.record.operationId, admission.record.candidateId
+        self.manager.interrupted(admission, "lost reply")
+
+        def read(**candidate):
+            self.manager.reconcile({"candidates": [{"candidateId": candidate_id, "status": "needs_recovery", **candidate}],
+                                    "jobs": [], "stages": [], "branches": []}, worker_alive=False)
+            row = self.record(admission)
+            return row.status, row.recoverable, row.acknowledgedAt
+
+        self.assertEqual(read(), ("needs_recovery", False, None))
+        dismissed = self.manager.acknowledge(operation_id).acknowledgedAt
+        # Its run turns up with a receipt that does not verify yet: recoverable after all.
+        receipt = f"project://{self.fixture.PROJECT_ID}/runs/{candidate_id}/receipt.json"
+        self.assertEqual(read(receiptRef=receipt), ("needs_recovery", True, None))
+        with self.assertRaises(HubFailure) as refusal:
+            self.manager.acknowledge(operation_id)
+        self.assertEqual(refusal.exception.error.code, "OPERATION_NOT_ACKNOWLEDGEABLE")
+        self.assertEqual(read(), ("needs_recovery", False, dismissed), "the receipt is gone again")
+        # A failure is news the dismissal never read.
+        self.assertEqual(read(receiptRef=receipt, status="failed", error="incomplete seat execution"),
+                         ("failed", False, None))
 
     def test_dismissal_that_cannot_be_saved_leaves_the_notice(self):
         self.manager = self.durable_manager()
@@ -247,6 +323,16 @@ class OperationRecoveryTests(unittest.TestCase):
         # The same run read later as needing recovery is reported again, undismissed.
         restarted.reconcile({**retained, "candidates": [{"candidateId": "old-run", "status": "needs_recovery"}]}, worker_alive=False)
         self.assertEqual((observed(restarted).status, observed(restarted).acknowledgedAt), ("needs_recovery", None))
+        # Retained without a receipt, nothing can recover it, so that reading can be dismissed in turn;
+        # one with its receipt can still be verified and cannot.
+        self.assertFalse(observed(restarted).recoverable)
+        self.assertTrue(restarted.acknowledge("candidate:old-run").acknowledgedAt)
+        restarted.reconcile({**retained, "candidates": [{"candidateId": "old-run", "status": "needs_recovery",
+                                                         "receiptRef": "project://old-run/receipt"}]}, worker_alive=False)
+        self.assertEqual((observed(restarted).recoverable, observed(restarted).acknowledgedAt), (True, None))
+        with self.assertRaises(HubFailure) as refusal:
+            restarted.acknowledge("candidate:old-run")
+        self.assertEqual(refusal.exception.error.code, "OPERATION_NOT_ACKNOWLEDGEABLE")
 
     def test_dismiss_route_is_bound_to_its_runtime_and_project(self):
         from monkeyhub_api.chat import _project
@@ -260,20 +346,32 @@ class OperationRecoveryTests(unittest.TestCase):
         hub.state.runtimes._projects[runtime.runtime_id] = runtime
         failed, _ = self.admission("/api/drawings/sheets", {})
         self.manager.replied(failed, HttpResult(422, b'{"detail":"refused"}', {}))
-        waiting, _ = self.admission("/api/proposals", {})
+        waiting, _ = self.admission("/api/proposals/unexecuted/candidate")
         self.manager.interrupted(waiting, "lost reply")
+        lost, _ = self.admission("/api/proposals", {})
+        self.manager.interrupted(lost, "lost reply")
 
         def dismiss(operation_id, **body):
             return client.post(f"/api/runtime/operations/{operation_id}/acknowledge",
                                json={"runtimeId": runtime.runtime_id, "projectId": project_id, **body})
 
+        def listed():
+            return {row["operationId"]: row for row in client.get(f"/api/runtime/projects/{runtime.runtime_id}").json()["operations"]}
+
+        rows = listed()
+        self.assertEqual([(rows[row.record.operationId]["status"], rows[row.record.operationId]["recoverable"])
+                          for row in (failed, waiting, lost)],
+                         [("failed", False), ("needs_recovery", True), ("needs_recovery", False)])
         answered = dismiss(failed.record.operationId)
         self.assertEqual(answered.status_code, 200, answered.text)
         self.assertEqual((answered.json()["operationId"], answered.json()["status"]), (failed.record.operationId, "failed"))
         self.assertTrue(answered.json()["acknowledgedAt"])
-        listed = {row["operationId"]: row for row in client.get(f"/api/runtime/projects/{runtime.runtime_id}").json()["operations"]}
-        self.assertEqual(listed[failed.record.operationId]["acknowledgedAt"], answered.json()["acknowledgedAt"])
-        self.assertIsNone(listed[waiting.record.operationId]["acknowledgedAt"])
+        self.assertEqual(listed()[failed.record.operationId]["acknowledgedAt"], answered.json()["acknowledgedAt"])
+        self.assertIsNone(listed()[waiting.record.operationId]["acknowledgedAt"])
+        unrecoverable = dismiss(lost.record.operationId)
+        self.assertEqual(unrecoverable.status_code, 200, unrecoverable.text)
+        self.assertEqual((unrecoverable.json()["status"], unrecoverable.json()["recoverable"]), ("needs_recovery", False))
+        self.assertEqual(listed()[lost.record.operationId]["acknowledgedAt"], unrecoverable.json()["acknowledgedAt"])
         for operation_id, body, status, code in (
                 (waiting.record.operationId, {}, 409, "OPERATION_NOT_ACKNOWLEDGEABLE"),
                 (str(uuid4()), {}, 404, "OPERATION_NOT_FOUND"),
@@ -489,6 +587,7 @@ class OperationRecoveryTests(unittest.TestCase):
         self.assertNotEqual(self.record(admission).status, "completed")
         self.manager.reconcile(self.snapshot(), worker_alive=False)
         self.assertEqual(self.record(admission).status, "needs_recovery")
+        self.assertFalse(self.record(admission).recoverable, "no run was retained, and none will be")
         self.assertEqual(bound_project(self.app.state).run_ids(), (self.fixture.REFERENCE_RUN_ID,))
 
     def test_truncated_http_response_is_interrupted_and_duplicate_is_not_dispatched(self):
@@ -593,6 +692,18 @@ class OperationRecoveryTests(unittest.TestCase):
         self.manager.reconcile(retained, worker_alive=False)
         self.assertEqual(self.record(admission).status, "needs_recovery")
         self.assertFalse(self.record(admission).committed)
+        # The accepted run is retained with its receipt and its branch still ends at the
+        # Stage the acceptance named, so a read can still find its commit: it stays.
+        self.assertTrue(self.record(admission).recoverable)
+        with self.assertRaises(HubFailure) as refusal:
+            self.manager.acknowledge(admission.record.operationId)
+        self.assertEqual(refusal.exception.error.code, "OPERATION_NOT_ACKNOWLEDGEABLE")
+        # Once the branch has moved past that Stage, its compare-and-swap can never land.
+        moved = {**retained, "branches": [{**branch, "headStageRef": f"{branch['headStageRef']}-successor"}
+                                          for branch in retained["branches"]]}
+        self.manager.reconcile(moved, worker_alive=False)
+        self.assertEqual((self.record(admission).status, self.record(admission).recoverable), ("needs_recovery", False))
+        self.assertTrue(self.manager.acknowledge(admission.record.operationId).acknowledgedAt)
 
     def test_retained_seat_failure_is_not_relabelled_as_unknown_worker_failure(self):
         admission, accepted = self.candidate()
@@ -621,6 +732,9 @@ class OperationRecoveryTests(unittest.TestCase):
         self.manager.reconcile(self.snapshot(), worker_alive=False)
         self.assertEqual(self.record(admission).status, "needs_recovery")
         self.assertFalse(self.record(admission).committed)
+        # Without a parent Stage there is no commit a read could find for it.
+        self.assertFalse(self.record(admission).recoverable)
+        self.assertTrue(self.manager.acknowledge(admission.record.operationId).acknowledgedAt)
 
     def test_refused_redispatch_after_hub_restart_cannot_claim_old_candidate_result(self):
         original, _ = self.candidate()

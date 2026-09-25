@@ -1064,13 +1064,28 @@ preserves the existing accepted-work drain.
 
 Each operation record carries `createdAt`, when this Hub admitted the request; rows admitted
 before admission times were kept, and observations of retained runs, have none.
+
+An operation that needs recovery also says whether the Hub can still recover it (#58).
+`recoverable` is true only while the retained project could still resolve it: the candidate run
+the request named is retained with its runner receipt, and an acceptance named the Stage it
+expected to succeed and its branch has not moved past that Stage. Recovery never replays a
+request, so an operation that named no run (for example `POST /api/proposals` or
+`POST /api/drawings/sheets`), a run retained without its receipt, and an acceptance that named no
+parent Stage or whose compare-and-swap can no longer land are not recoverable. Until the Hub has
+read the project since the reply was lost or since it started, an operation that named a run
+counts as recoverable, unless a person already dismissed it as unrecoverable. `recoverable` is
+false for every other status.
+
 `POST /api/runtime/operations/{operation_id}/acknowledge` with `{runtimeId, projectId}` records
-that a person dismissed the notice of one failed or stale operation of that runtime (#285). The
-dismissal is kept in the runtime's operation journal by operation id, so it survives a Hub
-restart, and the record reports it as `acknowledgedAt` while it stays failed or stale. Nothing is
-sent or replayed, and the operation's status, reason and result are unchanged. An operation that
-needs recovery answers `409 OPERATION_NOT_ACKNOWLEDGEABLE` and stays until a retained result
-resolves it; an unknown id answers `404 OPERATION_NOT_FOUND`.
+that a person dismissed the notice of one operation of that runtime that failed, went stale or
+needs recovery and is not recoverable (#285, #58). The dismissal is kept in the runtime's operation
+journal by operation id together with the status it read, so it survives a Hub restart, and the
+record reports it as `acknowledgedAt` only while it still reads that way: a failure that follows
+an unrecoverable interruption, or an interruption that turns out recoverable, is reported again.
+A dismissed operation that needs recovery no longer holds its place ahead of finished ones in the
+record list. Nothing is sent or replayed, and the operation's status, reason and result are
+unchanged. A recoverable operation answers `409 OPERATION_NOT_ACKNOWLEDGEABLE` and stays until a
+retained result resolves it; an unknown id answers `404 OPERATION_NOT_FOUND`.
 
 A chat message may carry an optional `designContext` with `stateDigest` and the same optional
 source, focus and supplement fields as `/api/intents/context`. When it is there,

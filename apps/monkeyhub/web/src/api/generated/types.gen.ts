@@ -1423,9 +1423,15 @@ export type OperationRecord = {
      */
     createdAt?: string | null;
     /**
+     * Recoverable
+     *
+     * True only while this operation needs recovery and the Hub can still resolve it from retained results: the candidate run the request named is retained with its runner receipt, and an acceptance named the Stage it expected to succeed and its branch has not moved past it. False for every other status and for a request that named no run, such as POST /api/proposals or POST /api/drawings/sheets. Before the Hub has read the project since the reply was lost or it started, an operation that named a run counts as recoverable unless its notice was dismissed.
+     */
+    recoverable?: boolean;
+    /**
      * Acknowledgedat
      *
-     * When a person dismissed the notice of this failed or stale operation. Reported only while the operation is failed or stale; it changes no status, reason or result.
+     * When a person dismissed this operation's notice: a failed or stale one, or one that needs recovery and is not recoverable. Reported only while the operation still reads that way; it changes no status, reason or result.
      */
     acknowledgedAt?: string | null;
 };
