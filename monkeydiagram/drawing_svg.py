@@ -1,4 +1,4 @@
-"""Deterministic SVG for orthographic drawing polylines, and a PNG rendered from that SVG.
+"""Deterministic SVG for drawing polylines, and a PNG rendered from that SVG.
 
 The first real drawing consumer: ``adapters.cad_execution`` returns plain
 ``OcctDrawingPolyline`` values (object id, ``visible``/``hidden``, points in
@@ -166,6 +166,7 @@ def drawing_svg(
     lines: Sequence[OcctDrawingPolyline], *, crop_uv, unit: str, scale_denominator: int,
     hidden_lines: bool, title: str, regions: Sequence[OcctDrawingRegion] = (),
     graphics: Mapping | None = None, dimensions: Sequence[Mapping] = (), dressing: Sequence[Mapping] = (),
+    projection: str | None = None,
 ) -> bytes:
     """One SVG of the cropped polylines: hidden lines (dashed, optional) under visible lines.
 
@@ -174,8 +175,13 @@ def drawing_svg(
     ``unit`` names the frame unit; ``scale_denominator`` gives the sheet
     scale 1:N for the physical size.  ``hidden_lines`` False omits the hidden
     group entirely; the polylines still carry their object ids either way.
+    ``projection`` "section-perspective" marks a perspective whose scale holds
+    at its section plane (``data-projection``, ``data-scale-at``); an
+    orthographic drawing, the default, keeps its bytes.
     """
 
+    if projection not in (None, "section-perspective"):
+        raise DrawingSvgError("projection must be None (orthographic) or section-perspective")
     crop = _crop(crop_uv)
     if not isinstance(unit, str) or not unit.strip():
         raise DrawingSvgError("unit must name the drawing frame unit")
@@ -210,7 +216,8 @@ def drawing_svg(
         f'<svg xmlns="{SVG_NS}" width="{_number(width * paper_per_unit)}mm" height="{_number(height * paper_per_unit)}mm" '
         f'viewBox="0 0 {_number(width)} {_number(height)}" '
         f'data-unit={quoteattr(unit)} data-scale="1:{scale_denominator}" '
-        f'data-crop-uv="{" ".join(_number(v) for v in crop)}" data-hidden-lines="{"true" if hidden_lines else "false"}">',
+        + ('data-projection="section-perspective" data-scale-at="section-plane" ' if projection else "")
+        + f'data-crop-uv="{" ".join(_number(v) for v in crop)}" data-hidden-lines="{"true" if hidden_lines else "false"}">',
         f"  <title>{_escape(title)}</title>",
     ]
     body: list[str] = []
