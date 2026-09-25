@@ -240,10 +240,14 @@ is available through the existing project-bound Hub MCP tool; no Study writer is
 Hub `designContext.studyEvidence` forwards the same references when preparing a fresh task.
 
 For visual observation, `GET /api/drawings/model-view` requires exact `runId`, `stateDigest` and
-`assetSha256` from a complete `ModelSource`, plus `view=front|back|left|right|top` (default front).
+`assetSha256` from a complete `ModelSource`, plus `view=front|back|left|right|top|axon` (default
+front); `axon` is the isometric view from the -X, -Y, +Z side with Z up, cropped by the same rule
+as the others: every physical object's retained bounds plus a 5% margin.
 It returns source metadata and an inline PNG (base64 `data`, `mimeType`, width/height, and
 `representation=orthographic-line-projection`), with longest dimension at most 1024 pixels.
-It reuses the retained STEP projection and creates no drawing record or project file.
+It reuses the retained STEP projection and creates no drawing record or project file. The
+source is verified on every read; the projection of a view already drawn for the same exact
+source is reused from process memory, never written.
 Incomplete/composed-only, Rhino-only or mismatched sources refuse; no bounding-box image stands
 in for missing geometry. MonkeyHub exposes the image as native MCP image content and keeps
 source metadata in a separate text block.
@@ -611,11 +615,53 @@ retain unresolved objects in the recipe and report `missing` / `outside-view` in
 `POST /api/drawings/plans/status`; unresolved objects are omitted from the output
 rather than silently repositioned. Drawing revisions never advance Design HEAD.
 
+A rebuild that names `previousRevisionRef` registers the new revision as that
+revision's whole-document replacement: its `replacesPages` names the previous
+page exactly as an upload's would, so a Board page updates in place, Publish
+offers the new page and Render follows it. It registers none when the previous
+revision already has a replacement (a rebuild from a historical revision forks,
+and the fork is a new page) or when the page's visible aspect ratio changed; an
+identical request returns the retained revision and registers nothing. Why a page
+was replaced is derived, never stored: the same drawing from the same exact source
+(model, Stage and imported asset) is a representation change, which Render does
+not count as a newer input; the same drawing from another source is a source
+change; a document without `drawingId` is an upload.
+
+A cut-plan request may say why it is asked for: `reason`, 1–200 characters in the
+asker's words (an agent passes the correction it was given; a direct edit omits
+it). The request boundary records who asked, as for decisions: `actorId`,
+`authenticated` and `origin`, where `hub` means a runtime the Hub manages and
+`studio` one it does not. Both are retained in the revision's drawing receipt,
+never in `viewRecipe`, so they neither make nor distinguish revisions: an identical
+request returns the retained revision as it was asked for. Every SourceDocument
+with a `revisionRef` reads `previousRevisionRef`, `attribution` and `reason` from
+that receipt, read-only; a revision retained before they were recorded reads null.
+
 `GET /api/drawings/plans/vector?runId=…&assetSha256=…&revisionRef=…` reads the
 verified retained SVG, built-in vector symbols and exact source anchor choices.
 SVG `data-dressing` groups remain independently editable and do not claim the
 architectural `data-object` identity used by projected model vectors. The PNG and
 SVG share one rendering input. This read does not regenerate or create a revision.
+
+Cut-plan pens and hatch are paper values in `viewRecipe.graphics`: `cutLineMm`,
+`visibleLineMm` and `hatchSpacingMm`, and, optionally, `hatch` and `beyond`, which
+the request names in the same form. `hatch: {byMaterial: {<material>: {spacingMm?,
+angleDeg?, poche?}}}` draws the cut of each named model material with its own hatch
+(spacing 0.5–20 mm, angle 0–180 degrees) or solid poché; a rule is stored complete,
+an omitted spacing taking the revision's `hatchSpacingMm` and an omitted angle 45
+degrees, and a material without a rule keeps `hatchSpacingMm` at 45 degrees.
+`beyond: {fade}` (0–1) greys the lines below the cut. A request without them keeps
+the previous revision's; an empty `byMaterial` or a zero `fade` removes them, and a
+recipe without them is exactly the recipe it was before they existed, so it keeps
+its retained drawing and bytes. Paper values do not change with the scale. Imported
+models carry no material semantics, so their cuts keep the general hatch.
+
+`POST /api/drawings/plans/status` and `GET /api/drawings/plans/vector` also return
+`cleanup`: the deterministic line cleanup the projection owner retained with that
+revision's receipt (per-rule counts and input/output line counts), passed through
+unchanged, or null for a revision drawn before cleanup existed. It is kept in the
+receipt only, never in `viewRecipe`, so it never decides which revision a request
+reuses.
 
 Servers advertising `drawing-elevations` accept `{projectId, sourceStageRef, view}`
 or an exact candidate `modelSource` instead of `sourceStageRef`. Views are front,

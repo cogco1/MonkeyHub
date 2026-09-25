@@ -64,6 +64,7 @@ from archflow.project.repository import ProjectRepositoryError
 
 from ..ports import StudioEventSink
 from ..transport.errors import StudioError, error_sentence
+from .authentication import ActorAttribution
 from .binding import retained_sources
 from .binding import ProjectBinding, ReferenceRun, record_kind
 from .projection import StateProjection, project_state, require_actionable
@@ -266,6 +267,47 @@ class SourceDocument:
     view_recipe: dict[str, Any] | None = None
     generated_at: str | None = None
     replaces_pages: tuple[DocumentPageReplacement, ...] = ()
+    # What a drawing revision's own receipt says: the revision it continued,
+    # who asked for it and why. Read, never registered; None where it says none.
+    previous_revision_ref: str | None = None
+    attribution: ActorAttribution | None = None
+    reason: str | None = None
+
+
+# Receipt fields a listing reads, by record URI. A record's name carries its
+# digest, so one read answers for the life of the process.
+_REVISION_PROVENANCE: dict[str, dict[str, Any]] = {}
+_revision_provenance_lock = threading.Lock()
+
+
+def _revision_provenance(binding: ProjectBinding, revision_ref: str) -> dict[str, Any]:
+    """The revision a drawing continued, who asked for it and why, from its receipt.
+
+    A receipt that cannot be read says nothing here: serving the revision's
+    bytes refuses it by name, and one damaged revision must not cost a
+    listing every other document.
+    """
+
+    with _revision_provenance_lock:
+        known = _REVISION_PROVENANCE.get(revision_ref)
+    if known is not None:
+        return known
+    try:
+        receipt = binding.repository.load_json(record_ref_from_uri(revision_ref, binding.project_id))
+    except (ProjectRepositoryError, OSError, TypeError, ValueError):
+        return {}
+    who = receipt.get("attribution")
+    attribution = None
+    if (isinstance(who, Mapping) and isinstance(who.get("actorId"), str)
+            and isinstance(who.get("authenticated"), bool) and isinstance(who.get("origin"), str)):
+        attribution = ActorAttribution(who["actorId"], who["authenticated"], who["origin"])
+    known = {"previous_revision_ref": _text(receipt.get("previousRevisionRef")),
+             "attribution": attribution, "reason": _text(receipt.get("reason"))}
+    with _revision_provenance_lock:
+        if len(_REVISION_PROVENANCE) >= 100_000:
+            _REVISION_PROVENANCE.clear()
+        _REVISION_PROVENANCE[revision_ref] = known
+    return known
 
 
 def _document_pages(data: bytes, mime_type: str) -> tuple[DocumentPage, ...]:
@@ -337,6 +379,8 @@ def list_documents(binding: ProjectBinding, run_id: str | None = None) -> tuple[
             generated_at=payload.get("generatedAt"),
             replaces_pages=tuple(DocumentPageReplacement(**page) for page in payload.get("replaces_pages", ())),
         )
+        if document.revision_ref is not None:
+            document = replace(document, **_revision_provenance(binding, document.revision_ref))
         key = document.revision_ref or document.asset_sha256
         previous = documents.get(key)
         if previous is None:
@@ -409,10 +453,18 @@ def _registered_document_bytes(binding: ProjectBinding, document: SourceDocument
     return data
 
 
+def _same_visible_aspect(old: DocumentPage, new: DocumentPage) -> bool:
+    """Whether a board can show ``new`` in the frame it drew ``old`` in, marks and all."""
+
+    return math.isclose(old.width / old.height, new.width / new.height, rel_tol=0, abs_tol=0.001)
+
+
 def _validate_page_replacements(
-    binding: ProjectBinding, run_id: str, digest: str, pages: tuple[DocumentPage, ...],
+    binding: ProjectBinding, run_id: str | None, digest: str | None, pages: tuple[DocumentPage, ...],
     replacements: tuple[DocumentPageReplacement, ...], documents: tuple[SourceDocument, ...],
 ) -> None:
+    # ``run_id``/``digest`` name the upload being registered. A drawing revision
+    # passes None: its revision ref is new, so no registered row is its own.
     old_pages: set[tuple[str, str, str | None, int]] = set()
     new_pages: set[int] = set()
     # Reading a registered source verifies its bytes against its digest, which
@@ -445,7 +497,7 @@ def _validate_page_replacements(
         if identity not in verified:
             _registered_document_bytes(binding, previous)
             verified.add(identity)
-        if not math.isclose(old.width / old.height, new.width / new.height, rel_tol=0, abs_tol=0.001):
+        if not _same_visible_aspect(old, new):
             raise StudioError(422, "DOCUMENT_REPLACEMENT_INVALID", "Replacement pages must have the same visible aspect ratio to preserve board marks.")
     for document in documents:
         if (document.run_id, document.asset_sha256, document.revision_ref) == (run_id, digest, None):
@@ -484,6 +536,52 @@ def _whole_document_replacement(
         run_id=previous.run_id, asset_sha256=previous.asset_sha256, revision_ref=previous.revision_ref,
         page_index=page.page_index, new_page_index=new.page_index,
     ) for page, new in zip(previous.pages, pages))
+
+
+def drawing_revision_replacement(
+    binding: ProjectBinding, previous: SourceDocument, pages: tuple[DocumentPage, ...],
+    documents: tuple[SourceDocument, ...],
+) -> tuple[DocumentPageReplacement, ...]:
+    """The pages a rebuilt drawing revision registers as replacing its previous revision, whole.
+
+    ``pages`` are the new revision's PNG pages; ``documents`` every registered
+    document of the project. The upload path's own validation decides the
+    rest. Two cases register nothing rather than refuse the rebuild: a
+    previous revision that already has a replacement (a rebuild from a
+    historical revision forks, and a fork is a new page), and a page whose
+    visible aspect ratio changed (a board could not show it in the old frame).
+    """
+
+    target = DocumentReplacementTarget(previous.run_id, previous.asset_sha256, previous.revision_ref)
+    replacements = _whole_document_replacement(target, PNG_MEDIA_TYPE, pages, documents)
+    replaced = _page_replacements(documents)
+    if any((page.run_id, page.asset_sha256, page.revision_ref, page.page_index) in replaced for page in replacements):
+        return ()
+    if not all(_same_visible_aspect(old, new) for old, new in zip(previous.pages, pages)):
+        return ()
+    _validate_page_replacements(binding, None, None, pages, replacements, documents)
+    return replacements
+
+
+def replacement_cause(old: SourceDocument, new: SourceDocument) -> str:
+    """Why ``new`` replaced ``old``, from the two registrations' own facts; nothing records it.
+
+    ``representation``: a revision of the same drawing from the same exact
+    source - model, Stage and imported asset - so only its view changed.
+    ``source``: a revision of the same drawing drawn from another source,
+    including a live rebuild on a newer Working Head. ``upload``: a document
+    that is not a drawing revision, such as a file placed on the Board.
+    """
+
+    if new.drawing_id is None:
+        return "upload"
+
+    def source(document: SourceDocument):
+        return (document.model_source, document.source_stage_ref, (document.view_recipe or {}).get("sourceAsset"))
+
+    if old.drawing_id == new.drawing_id and source(old) == source(new):
+        return "representation"
+    return "source"
 
 
 
@@ -583,6 +681,7 @@ def save_document(
                 payload={"schema": "StudioSourceDocument@1", **{
                     key: value for key, value in asdict(document).items() if key not in (
                         "model_source", "model_source_binding_ref", "drawing_id", "revision_ref", "source_stage_ref", "view_recipe", "generated_at",
+                        "previous_revision_ref", "attribution", "reason",
                     )
                 }, **({"modelSource": model_source.to_dict()} if model_source else {}),
                 **({"drawingId": drawing_id} if drawing_id is not None else {}),

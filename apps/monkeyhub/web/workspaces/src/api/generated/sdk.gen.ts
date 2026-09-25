@@ -571,7 +571,10 @@ export const createPlanDimensionProposalApiDrawingsPlansDimensionProposalPost = 
  * Observe an exact complete model without creating a run, drawing or project record.
  *
  * The image is a visible-line orthographic projection, not a material render;
- * top is an uncut projection, not a floor plan. Its longest edge is at most 1024 pixels.
+ * top is an uncut projection, not a floor plan, and axon is the isometric
+ * view from the -X, -Y, +Z side with Z up. Its longest edge is at most 1024
+ * pixels. A repeated view of the same exact source is reused from process
+ * memory after the source verifies again.
  */
 export const readModelViewApiDrawingsModelViewGet = <ThrowOnError extends boolean = false>(options: Options<ReadModelViewApiDrawingsModelViewGetData, ThrowOnError>): RequestResult<ReadModelViewApiDrawingsModelViewGetResponses, ReadModelViewApiDrawingsModelViewGetErrors, ThrowOnError> => (options.client ?? client).get<ReadModelViewApiDrawingsModelViewGetResponses, ReadModelViewApiDrawingsModelViewGetErrors, ThrowOnError>({ url: '/api/drawings/model-view', ...options });
 

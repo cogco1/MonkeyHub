@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 import pytest
 
 from archflow.adapters.occt_backend import occt_available
-from archflow_studio_api.application.artifacts import ModelSource, save_document
+from archflow_studio_api.application.artifacts import ModelSource, _page_replacements, list_documents, save_document
 from archflow_studio_api.application.binding import bound_project
 from archflow_studio_api.application.representation_dependencies import RepresentationReads, representation_status
 from archflow_studio_api.main import create_app
@@ -175,6 +175,35 @@ def test_three_exact_design_representations_reopen_and_only_follow_read_geometry
         reopened.state.jobs.shutdown()
     assert fixture.repository.read_head() == fixture.head
     assert len(adapter.calls) == 5
+
+
+def test_a_live_rebuild_on_a_new_source_outdates_its_render_and_leads_to_the_new_page(room):
+    fixture, adapter = room
+    client = fixture.client
+    drawing = fixture.generate(dimensions=[])
+    job = render(client, page(drawing))
+    # An accepted design change outside the view leaves the drawing's read
+    # inputs, and so its render, current.
+    wall = deepcopy(plans.room_edit()["entities"][1])
+    wall["entity_id"] = "distant-wall"
+    wall["fields"]["references"]["line"] = {
+        "from": {"point": [0, 20]}, "to": {"point": [4, 20]}, "inward": [0, 1]}
+    fixture.stage, fixture.model = fixture.commit_edit({"summary": "Add unrelated distant wall", "entities": [wall]})
+    assert reread(client, job)["sourceState"] == "current"
+
+    # Following the new source replaces the page the render was made from.
+    rebuilt = fixture.generate(previousRevisionRef=drawing["revisionRef"], dimensions=[], follow="live")
+    assert rebuilt["modelSource"] == fixture.model
+    assert rebuilt["replacesPages"] == [page(drawing) | {"newPageIndex": 0}]
+    reading = reread(client, job)
+    assert reading["sourceState"] == "outdated", reading
+    assert "replacement" in reading["sourceStateReason"]
+    assert reading["document"] == job["document"] and reading["resultAvailable"]
+    # The relation Render's source update follows names the new page.
+    replacements = _page_replacements(list_documents(bound_project(fixture.app.state)))
+    assert replacements[plans.page_of(drawing)] == plans.page_of(rebuilt)
+    assert fixture.repository.read_head() == fixture.head
+    assert len(adapter.calls) == 1
 
 
 def test_missing_drawing_host_makes_descendant_unavailable_without_rebinding(room):

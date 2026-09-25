@@ -26,7 +26,7 @@ from monkeymonitor.usage import TokenUsage
 from ..transport.artifacts import document_dto
 from ..transport.errors import StudioError
 from ..transport.rendering import RenderCapabilityDto, RenderJobDto, RenderRequestDto
-from .artifacts import document_bytes, list_documents, save_document, require_model_source, ModelSource
+from .artifacts import document_bytes, list_documents, replacement_cause, save_document, require_model_source, ModelSource
 from .render_contract import (
     ImageRenderAdapter, RenderImage, RenderInput, RenderOutputOptions,
     RenderPageRef, RenderProviderError,
@@ -98,7 +98,12 @@ def _freshness(binding, request, snapshots, working=None):
     try:
         working = working or WorkingSources(binding)
         documents = list_documents(binding)
-        replaced = {_page_key(page) for doc in documents for page in doc.replaces_pages}
+        registered = {(doc.run_id, doc.asset_sha256, doc.revision_ref): doc for doc in documents}
+        # A revision that only redraws the same source is not a newer input:
+        # the cut plan's own read-set decides its freshness below (#291).
+        replaced = {_page_key(page) for doc in documents for page in doc.replaces_pages
+                    if (old := registered.get(_page_key(page)[:3])) is None
+                    or replacement_cause(old, doc) != "representation"}
         checked = set()
 
         def visit(page, snapshot, active):

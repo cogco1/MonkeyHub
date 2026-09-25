@@ -5224,7 +5224,7 @@ export type ModelViewDto = {
     /**
      * View
      */
-    view: 'front' | 'back' | 'left' | 'right' | 'top';
+    view: 'front' | 'back' | 'left' | 'right' | 'top' | 'axon';
     /**
      * Mimetype
      */
@@ -5630,6 +5630,20 @@ export type PickResolutionDto = {
 };
 
 /**
+ * PlanBeyondDto
+ *
+ * How lines below the cut plane read against the cut.
+ */
+export type PlanBeyondDto = {
+    /**
+     * Fade
+     *
+     * Grey level of the lines below the cut: 0 draws them black like visible lines (and removes the rule), 1 fades them out.
+     */
+    fade: number;
+};
+
+/**
  * PlanDimensionChoiceDto
  */
 export type PlanDimensionChoiceDto = {
@@ -5971,6 +5985,48 @@ export type PlanDressingReadDto = {
 };
 
 /**
+ * PlanHatchDto
+ *
+ * Material-keyed hatch and poché for cut solids; a material without a rule keeps hatchSpacingMm at 45 degrees.
+ */
+export type PlanHatchDto = {
+    /**
+     * Bymaterial
+     *
+     * Rules by the model's material name. Each is stored complete; an empty map removes every rule.
+     */
+    byMaterial: {
+        [key: string]: PlanHatchRuleDto;
+    };
+};
+
+/**
+ * PlanHatchRuleDto
+ *
+ * How the cut of one material is drawn, in paper units.
+ */
+export type PlanHatchRuleDto = {
+    /**
+     * Spacingmm
+     *
+     * Perpendicular hatch spacing on paper, mm. Omitted takes this revision's hatchSpacingMm.
+     */
+    spacingMm?: number | null;
+    /**
+     * Angledeg
+     *
+     * Hatch direction, degrees anticlockwise from the sheet's x axis. Omitted is 45.
+     */
+    angleDeg?: number | null;
+    /**
+     * Poche
+     *
+     * Fill this material's cut solid (poché) instead of hatching it.
+     */
+    poche?: boolean;
+};
+
+/**
  * PlanRequestDto
  */
 export type PlanRequestDto = {
@@ -6028,6 +6084,14 @@ export type PlanRequestDto = {
      */
     hatchSpacingMm?: number | null;
     /**
+     * Material hatch and poché rules on paper, beside the pens and hatchSpacingMm. Omitted keeps the previous revision's rules; an empty byMaterial removes them.
+     */
+    hatch?: PlanHatchDto | null;
+    /**
+     * Fading of the lines below the cut. Omitted keeps the previous revision's; fade 0 removes it.
+     */
+    beyond?: PlanBeyondDto | null;
+    /**
      * Hiddenobjectids
      */
     hiddenObjectIds?: Array<string> | null;
@@ -6049,6 +6113,12 @@ export type PlanRequestDto = {
      * live follows the project's Working Head; frozen keeps this drawing on its chosen source until it is rebuilt. Omitted keeps the previous revision's choice; a new drawing is live.
      */
     follow?: 'live' | 'frozen' | null;
+    /**
+     * Reason
+     *
+     * Why this revision is asked for, in the asker's own words, such as the correction an agent was given; omit it for a direct edit. Retained with the revision beside who asked, never in its recipe.
+     */
+    reason?: string | null;
 };
 
 /**
@@ -6088,6 +6158,14 @@ export type PlanStatusDto = {
      * Dressing
      */
     dressing?: Array<PlanDressingReadDto>;
+    /**
+     * Cleanup
+     *
+     * The deterministic cleanup the projection owner applied to this revision's lines - per-rule counts and input/output line counts - exactly as the revision's receipt retains it; null for a revision drawn before cleanup existed. It is never part of viewRecipe.
+     */
+    cleanup?: {
+        [key: string]: unknown;
+    } | null;
 };
 
 /**
@@ -6129,6 +6207,14 @@ export type PlanVectorDto = {
      * Anchors
      */
     anchors: Array<PlanDressingAnchorDto>;
+    /**
+     * Cleanup
+     *
+     * The deterministic cleanup the projection owner applied to this revision's lines - per-rule counts and input/output line counts - exactly as the revision's receipt retains it; null for a revision drawn before cleanup existed. It is never part of viewRecipe.
+     */
+    cleanup?: {
+        [key: string]: unknown;
+    } | null;
 };
 
 /**
@@ -7629,6 +7715,28 @@ export type RepresentationStateDto = {
      * Detail
      */
     detail: string | null;
+};
+
+/**
+ * RevisionAttributionDto
+ *
+ * Who asked for a drawing revision, as the request boundary knew it.
+ */
+export type RevisionAttributionDto = {
+    /**
+     * Actorid
+     */
+    actorId: string;
+    /**
+     * Authenticated
+     */
+    authenticated: boolean;
+    /**
+     * Origin
+     *
+     * hub: through a runtime the Hub manages (its Agent or its window); studio: a runtime no Hub manages.
+     */
+    origin: string;
 };
 
 /**
@@ -9593,6 +9701,22 @@ export type SourceDocumentDto = {
      * Replacespages
      */
     replacesPages?: Array<DocumentPageReplacementDto>;
+    /**
+     * Previousrevisionref
+     *
+     * Read only: the drawing revision this revision continued, from its receipt.
+     */
+    previousRevisionRef?: string | null;
+    /**
+     * Read only: who asked for this drawing revision, from its receipt; null when it was not recorded.
+     */
+    attribution?: RevisionAttributionDto | null;
+    /**
+     * Reason
+     *
+     * Read only: why this drawing revision was asked for, from its receipt; null when none was given or recorded.
+     */
+    reason?: string | null;
 };
 
 /**
@@ -13365,7 +13489,7 @@ export type ReadModelViewApiDrawingsModelViewGetData = {
         /**
          * View
          */
-        view?: 'front' | 'back' | 'left' | 'right' | 'top';
+        view?: 'front' | 'back' | 'left' | 'right' | 'top' | 'axon';
     };
     url: '/api/drawings/model-view';
 };

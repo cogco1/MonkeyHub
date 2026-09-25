@@ -1,17 +1,17 @@
 """Observe exact models and generate their retained drawing revisions."""
 
 import base64
-from typing import Literal
 
 from fastapi import APIRouter, Query
 from starlette.requests import Request
 
+from ..application.authentication import request_attribution
 from ..application.binding import bound_project
 from ..application.drawings import generate_elevation, generate_section_perspective, generate_sheet, model_view
 from ..application.drawing_plans import generate_plan, plan_status, plan_dimension_choices, dimension_proposal, plan_vector
 from ..transport.artifacts import ModelSourceDto, SourceDocumentDto, document_dto, model_source_from
 from ..transport.drawings import (
-    DrawingStylesDto, ElevationRequestDto, ModelViewDto, SheetRequestDto,
+    DrawingStylesDto, ElevationRequestDto, ModelViewDto, ModelViewName, SheetRequestDto,
     PlanRequestDto, PlanStatusRequestDto, PlanStatusDto,
     PlanDimensionChoicesDto, PlanDimensionProposalRequestDto, PlanVectorDto, SectionPerspectiveRequestDto,
 )
@@ -26,8 +26,11 @@ def create_plan(request: Request, payload: PlanRequestDto) -> SourceDocumentDto:
     binding = bound_project(request.app.state)
     if payload.project_id != binding.project_id:
         raise StudioError(403, "PROJECT_MISMATCH", "The drawing names another project.")
-    values = payload.model_dump(exclude={"project_id", "model_source", "source_asset", "dimensions", "dressing", "dressing_operations"})
-    return document_dto(generate_plan(binding, **values,
+    values = payload.model_dump(exclude={"project_id", "model_source", "source_asset", "dimensions", "dressing", "dressing_operations",
+                                         "hatch", "beyond"})
+    return document_dto(generate_plan(binding, **values, attribution=request_attribution(request),
+        hatch=None if payload.hatch is None else payload.hatch.model_dump(by_alias=True),
+        beyond=None if payload.beyond is None else payload.beyond.model_dump(by_alias=True),
         source_asset=None if payload.source_asset is None else payload.source_asset.model_dump(by_alias=True),
         model_source=None if payload.model_source is None else model_source_from(payload.model_source),
         dimensions=None if payload.dimensions is None else [row.model_dump(by_alias=True) for row in payload.dimensions],
@@ -87,12 +90,15 @@ def read_model_view(
     run_id: str = Query(alias="runId", min_length=1),
     state_digest: str = Query(alias="stateDigest", pattern=r"^[0-9a-f]{64}$"),
     asset_sha256: str = Query(alias="assetSha256", pattern=r"^[0-9a-f]{64}$"),
-    view: Literal["front", "back", "left", "right", "top"] = Query(default="front"),
+    view: ModelViewName = Query(default="front"),
 ) -> ModelViewDto:
     """Observe an exact complete model without creating a run, drawing or project record.
 
     The image is a visible-line orthographic projection, not a material render;
-    top is an uncut projection, not a floor plan. Its longest edge is at most 1024 pixels.
+    top is an uncut projection, not a floor plan, and axon is the isometric
+    view from the -X, -Y, +Z side with Z up. Its longest edge is at most 1024
+    pixels. A repeated view of the same exact source is reused from process
+    memory after the source verifies again.
     """
 
     source = ModelSourceDto(run_id=run_id, state_digest=state_digest, asset_sha256=asset_sha256)

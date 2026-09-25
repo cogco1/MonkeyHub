@@ -167,7 +167,10 @@
         "apps/archflow-studio/api/archflow_studio_api/application/drawings.py",
         "apps/archflow-studio/api/archflow_studio_api/application/rendering.py",
         "apps/archflow-studio/api/archflow_studio_api/routes/drawings.py",
+        "apps/archflow-studio/api/archflow_studio_api/transport/artifacts.py",
         "apps/archflow-studio/api/archflow_studio_api/transport/drawings.py",
+        "apps/monkeyhub/web/workspaces/src/api/client.ts",
+        "apps/monkeyhub/web/workspaces/src/api/generated/",
         "docs/mapping/planning/GH-244-drawing-semantics.md",
         "monkeydiagram/drawing_elevation.py",
         "monkeydiagram/drawing_svg.py"
@@ -198,7 +201,10 @@
             "apps/archflow-studio/api/archflow_studio_api/application/rendering.py",
             "apps/archflow-studio/api/archflow_studio_api/application/drawings.py",
             "apps/archflow-studio/api/archflow_studio_api/transport/drawings.py",
-            "apps/archflow-studio/api/archflow_studio_api/routes/drawings.py"
+            "apps/archflow-studio/api/archflow_studio_api/routes/drawings.py",
+            "apps/monkeyhub/web/workspaces/src/api/generated/",
+            "apps/monkeyhub/web/workspaces/src/api/client.ts",
+            "apps/archflow-studio/api/archflow_studio_api/transport/artifacts.py"
           ],
           "depends_on": [],
           "status": "active",

@@ -362,6 +362,17 @@ class SourceDocumentRequestDto(BaseModel):
         return self
 
 
+class RevisionAttributionDto(BaseModel):
+    """Who asked for a drawing revision, as the request boundary knew it."""
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True)
+
+    actor_id: str = Field(alias="actorId")
+    authenticated: bool
+    origin: str = Field(description=(
+        "hub: through a runtime the Hub manages (its Agent or its window); studio: a runtime no Hub manages."))
+
+
 class SourceDocumentDto(BaseModel):
     """An imported reference document, separate from certified model artifacts."""
 
@@ -383,6 +394,12 @@ class SourceDocumentDto(BaseModel):
     view_recipe: dict[str, Any] | None = Field(alias="viewRecipe", default=None)
     generated_at: str | None = Field(alias="generatedAt", default=None)
     replaces_pages: list[DocumentPageReplacementDto] = Field(alias="replacesPages", default_factory=list)
+    previous_revision_ref: str | None = Field(alias="previousRevisionRef", default=None, description=(
+        "Read only: the drawing revision this revision continued, from its receipt."))
+    attribution: RevisionAttributionDto | None = Field(default=None, description=(
+        "Read only: who asked for this drawing revision, from its receipt; null when it was not recorded."))
+    reason: str | None = Field(default=None, description=(
+        "Read only: why this drawing revision was asked for, from its receipt; null when none was given or recorded."))
 
 
 class SourceDocumentListDto(BaseModel):
@@ -409,6 +426,11 @@ def document_dto(document: SourceDocument) -> SourceDocumentDto:
             page_index=page.page_index, new_page_index=page.new_page_index,
         ) for page in document.replaces_pages],
         pages=[DocumentPageDto(page_index=page.page_index, width=page.width, height=page.height, rotation=page.rotation) for page in document.pages],
+        previous_revision_ref=document.previous_revision_ref,
+        attribution=None if document.attribution is None else RevisionAttributionDto(
+            actor_id=document.attribution.actor_id, authenticated=document.attribution.authenticated,
+            origin=document.attribution.origin),
+        reason=document.reason,
     )
 
 
