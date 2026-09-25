@@ -3,7 +3,7 @@ import { ErrorBoundary } from "../workspaces/src/app/ErrorBoundary";
 import { lazy, Suspense, useCallback, useEffect, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from "react";
 import { applicationUrl, type AppearancePreferences } from "../../../shared-web/src/appearance.js";
 import type { WorktreeGraphDto } from "../workspaces/src/api/generated";
-import { projectStatus, workRows } from "./worktreeGraph";
+import { projectStatus, refLabel, workRows } from "./worktreeGraph";
 import type { AppStatus, ChatArchiveRequest, ChatCreateRequest, ChatDetail, ChatPostRequest, ChatProject, ChatProvider, ChatSummary, ChatWorkspace, HubError, HubRuntimeDto, ProjectArchiveExportRequest, ProjectArchiveRestoreRequest, ProjectArchiveRestoreResult, ProjectArchiveSummary, ProjectRuntimeDto, RuntimeEvent } from "./api/generated";
 import { ProjectRuntimeProvider } from "../workspaces/src/api/ProjectRuntimeContext";
 import type { WorkspaceDesignContext } from "../workspaces/src/app/ProjectWorkspace";
@@ -27,7 +27,9 @@ type Props = {
   workspace: ChatWorkspace | null;
   apps: readonly AppStatus[] | null;
 };
-type ToolTab = { id: AppId; url: string; revision: number; projectDir?: string; projectId?: string; runtimeId?: string; candidate?: string };
+// followHead: the tab was opened for a delivery or a restore, not to inspect that exact
+// candidate; a runtime that resolves the Working Head then shows the head instead (#271).
+type ToolTab = { id: AppId; url: string; revision: number; projectDir?: string; projectId?: string; runtimeId?: string; candidate?: string; followHead?: boolean };
 type SavedTool = { id: AppId; candidate?: string };
 type ProjectPreparation = { promise: Promise<AppStatus[]>; apps: AppStatus[] | null; modeling?: Promise<unknown> };
 const VIEW_KEY = "monkeyhub.chat-view.v1";
@@ -292,7 +294,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
   }, [projectInfo, projectRuntime?.runtimeId, projectRuntime?.projection, operationSignature, worktreeRead]);
   const graph = worktrees?.runtimeId === projectRuntime?.runtimeId ? worktrees?.graph ?? null : null;
   const status = graph ? projectStatus(graph) : null;
-  const rows = graph ? workRows(graph, projectRuntime?.operations ?? [], sessions, { you: t.workYou, unattributed: t.workUnattributed }) : [];
+  const rows = graph ? workRows(graph, projectRuntime?.operations ?? [], sessions, { tools: t.workTools, unattributed: t.workUnattributed }) : [];
 
   const receiveRuntime = useCallback((snapshot: HubRuntimeDto) => {
     const previous = runtimeRef.current;
@@ -665,7 +667,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
     const existing = tabs.find((item) => needsProject ? item.projectDir === projectDir : item.id === id);
     if (existing && id !== "monkeyarch") {
       setTabs((items) => items.map((item) => item === existing ? { ...item, id,
-        candidate: view?.candidate ?? item.candidate,
+        candidate: view?.candidate ?? item.candidate, followHead: view?.candidate ? view.follow === "head" : item.followHead,
         url: needsProject ? `${window.location.origin}/?${new URLSearchParams({ runtimeId: item.runtimeId!, view: id === "monkeyboard" ? "board" : id === "publish" ? "publish" : id === "drawing" ? "drawing" : id === "monkeyrender" ? "render" : "arch" })}` : item.url } : item));
       setPanel(true); setActiveTool(id); setError(null);
       return true;
@@ -689,7 +691,8 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
       if (needsProject) {
         const attached = runtimeAttachments.current.get(target!);
         if (!attached || attached.projectId !== project!.projectId) throw new Error("The project runtime has not been attached.");
-        tab = { id, projectDir: target!, projectId: attached.projectId, runtimeId: attached.runtimeId, candidate: view?.candidate ?? existing?.candidate, revision: existing?.revision ?? 0,
+        tab = { id, projectDir: target!, projectId: attached.projectId, runtimeId: attached.runtimeId, candidate: view?.candidate ?? existing?.candidate,
+          followHead: view?.candidate ? view.follow === "head" : existing?.followHead, revision: existing?.revision ?? 0,
           url: `${window.location.origin}/?${new URLSearchParams({ runtimeId: attached.runtimeId, view: id === "monkeyboard" ? "board" : id === "publish" ? "publish" : id === "drawing" ? "drawing" : id === "monkeyrender" ? "render" : "arch" })}` };
       } else {
         tab = { id, url: applicationUrl(location, preferences), revision: 0 };
@@ -755,7 +758,8 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
     void (async () => {
       for (const item of initial.tools) {
         if (selection.current.projectDir !== initial.projectDir) return;
-        await openTool(item.id, item.candidate ? { candidate: item.candidate } : undefined);
+        // A restored pin is not today's choice: the workspace follows the project's head.
+        await openTool(item.id, item.candidate ? { candidate: item.candidate, follow: "head" } : undefined);
       }
       if (selection.current.projectDir === initial.projectDir) { setActiveTool(initial.activeTool); setPanel(initial.panel ?? false); }
     })();
@@ -815,10 +819,10 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
         const update = item.runtimeId ? updates.get(item.runtimeId) : undefined;
         // Keep the same workspace mounted, including a Board with unsent marks.
         // A manual choice made meanwhile wins; polling never reopens old results.
-        return update && item.candidate === update.previous ? { ...item, candidate: update.candidate } : item;
+        return update && item.candidate === update.previous ? { ...item, candidate: update.candidate, followHead: true } : item;
       });
       for (const [runtimeId, update] of updates) {
-        if (!next.some((item) => item.runtimeId === runtimeId)) next.push({ ...update.tab, candidate: update.candidate });
+        if (!next.some((item) => item.runtimeId === runtimeId)) next.push({ ...update.tab, candidate: update.candidate, followHead: true });
       }
       return next;
     });
@@ -992,7 +996,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
           <ProjectRuntimeProvider baseUrl={`${window.location.origin}/api/runtime/projects/${item.runtimeId}/studio`}>
             <ErrorBoundary label={t.tools}><Suspense fallback={<div role="status">{t.working}</div>}>
               <ProjectWorkspace workspace={item.id === "monkeyboard" ? "board" : item.id === "publish" ? "publish" : item.id === "drawing" ? "drawing" : item.id === "monkeyrender" ? "render" : "arch"} active={visible}
-                expectedProjectId={item.projectId} candidateRunId={item.candidate} refreshKey={item.revision} onChatRequest={focusConversation}
+                expectedProjectId={item.projectId} candidateRunId={item.candidate} candidateFollowsHead={item.followHead} refreshKey={item.revision} onChatRequest={focusConversation}
                 documentRequest={item.projectDir ? documentRequests[item.projectDir] : undefined}
                 onDesignContextChange={workspaceContextCallback(item.runtimeId)}
                 onWorkspaceChange={(workspace) => { const id = workspace === "board" ? "monkeyboard" : workspace === "publish" ? "publish" : workspace === "drawing" ? "drawing" : workspace === "render" ? "monkeyrender" : "monkeyarch";
@@ -1037,7 +1041,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
           <dt>{t.version}</dt><dd>{project.version === null || project.version === undefined ? t.versionUnknown : t.versionNumber(project.version)}</dd>
           <dt>{t.stage}</dt><dd>{project.stage ?? t.stageNone}</dd>
           {/* #271: people see the current project, what is stale and what is running; candidate ids stay internal. */}
-          {status && <><dt>{t.workCurrent}</dt><dd className="chat-project-card__head-line">{status.headLabel ?? project.stage ?? t.workUnaccepted}
+          {status && <><dt>{t.workCurrent}</dt><dd className="chat-project-card__head-line">{status.headLabel ?? t.workLatest}
             <small>{status.accepted ? t.workAccepted : t.workUnaccepted}</small></dd>
           <dt>{t.workStatus}</dt><dd><ul className="chat-project-card__status">
             <li data-state="current">{t.workModeling}</li>
@@ -1052,9 +1056,9 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
                 <span>{row.kind === "branch" ? t.workBranch(graph?.lines.find((line) => line.lineId === row.key)?.branchId ?? "", row.label ?? "")
                   : `${row.owner} · ${row.status === "running" ? t.workRunning : row.status === "queued" ? t.workQueued : row.status === "interrupted" ? t.workInterrupted : t.workReady}`}</span>
                 {row.kind !== "branch" && <small>{row.relation === "ahead" ? t.workAhead : row.relation === "behind" ? t.workBehind
-                  : row.relation === "diverged" ? t.workDiverged : t.workSeparate}{row.kind === "result" && row.reconcile !== "none"
-                  ? ` · ${row.reconcile === "can-combine" ? t.workCombine : row.reconcile === "conflict" ? "" : t.workReview}` : ""}</small>}
-                {row.conflicts.length > 0 && <small className="chat-project-card__conflict" role="note">{t.workConflict(row.conflicts.join(", "))}</small>}
+                  : row.relation === "diverged" ? t.workDiverged : t.workSeparate}{row.kind === "result" && row.reconcile !== "none" && row.reconcile !== "conflict"
+                  ? ` · ${row.reconcile === "can-combine" ? t.workCombine : t.workReview}` : ""}</small>}
+                {row.conflicts.length > 0 && <small className="chat-project-card__conflict" role="note">{t.workConflict(row.conflicts.map(refLabel).join(", "))}</small>}
                 {row.kind === "result" && row.runId && <button type="button" className="chat-activity__open" disabled={Boolean(toolBusy)}
                   onClick={() => { setProjectInfo(false); void openTool("monkeyarch", { candidate: row.runId! }); }}><Icon name="cube" /><span>{t.openCandidate}</span></button>}
               </div>)}

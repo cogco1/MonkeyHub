@@ -225,7 +225,7 @@ export type WorkspaceDesignContext = {
   unavailableReason: "unsaved" | "loading" | "unavailable" | null;
 };
 
-export default function App({ server, expectedProjectId, initialDocumentIntent, initialSketchRequest, initialRunId, documentSource = null, active = true, refreshKey = 0, onReturnToBoard, onOpenBoard, onChatRequest, onDesignContextChange, onRenderReader }: {
+export default function App({ server, expectedProjectId, initialDocumentIntent, initialSketchRequest, initialRunId, initialRunFollowsHead = false, documentSource = null, active = true, refreshKey = 0, onReturnToBoard, onOpenBoard, onChatRequest, onDesignContextChange, onRenderReader }: {
   onRenderReader?: (reader: (() => RenderView | null) | null) => void;
   server: ServerIdentity; initialDocumentIntent?: BoardDesignRequest;
   expectedProjectId?: string;
@@ -233,6 +233,8 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
   initialSketchRequest?: BoardSketchRequest;
   /** The exact run this page was opened on, such as a candidate named by the host. */
   initialRunId?: string | null;
+  /** The host named that run only as a delivery or restore hint, not as a comparison. */
+  initialRunFollowsHead?: boolean;
   /** Go back to the board this tab opened its page from, once the page is saved. */
   onReturnToBoard?: () => void;
   documentSource?: PageSource | null;
@@ -2018,7 +2020,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
       if (listing.projectId !== projectId) throw new Error("The candidate model list belongs to another project.");
       setArtifacts(ready(listing));
       const head = source?.projectId === projectId ? headOf(source) : null;
-      if (head !== null && source?.head && pinDisposition(initialRunId, head) === "follow") {
+      if (head !== null && source?.head && (initialRunFollowsHead || pinDisposition(initialRunId, head) === "follow")) {
         // A delivered result on the Working Head, or a stale pin on one of its
         // ancestors, is the current project: show and edit the head (#271).
         if (installedCandidate.current?.selection === candidateSelection) return;
@@ -2045,7 +2047,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
       }
     }).catch((cause) => { if (isCurrent()) setArtifactError(asStudioApiError(cause)); });
     return () => { live = false; controller.abort(); };
-  }, [initialRunId, candidateSelection, candidateRequestKey, session.status, project?.projectId, studio, loadRunIntoViewer, active, followsHead, reload]);
+  }, [initialRunId, initialRunFollowsHead, candidateSelection, candidateRequestKey, session.status, project?.projectId, studio, loadRunIntoViewer, active, followsHead, reload]);
 
   useEffect(() => {
     const installed = installedCandidate.current;
