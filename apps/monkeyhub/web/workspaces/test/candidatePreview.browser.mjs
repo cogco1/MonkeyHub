@@ -16,6 +16,10 @@ const webRoot = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 // Run the independent model timing cases without requiring the drawing/history UI tour.
 const modelTimingOnly = process.argv.includes("--model-timing");
 const candidateDeliveryOnly = process.argv.includes("--candidate-delivery");
+// Viewing, Undo, Continue, Sync and an unsaved base choice, walked as one flow.
+const viewBaseOnly = process.argv.includes("--view-base");
+// The one reason every direct edit gives while the picture is not the editing base.
+const VIEW_ONLY = "Viewing only. Choose “Continue from this version”, or return to the editing base before making changes.";
 const cacheDir = await mkdtemp(path.join(tmpdir(), "monkeyarch-candidate-preview-test-"));
 const rhino = await rhino3dm();
 const published = { version: 0, stateSha256: "1".repeat(64) };
@@ -31,6 +35,12 @@ let historyEnabled = false, acceptFailure = false, annotationFailure = false, la
 let monitorFailure = false, historyGate = null;
 let diagnosticsEnabled = false, nextIntent = null, intentGate = null, documentGate = null, timingGate = null;
 let projectionOnly = false;
+// The server's working draft: the saved editing base and one retained local draft,
+// each written with the revision it was read at.
+let workingDraftEnabled = viewBaseOnly, nextDelete = null;
+const workingDraft = { revisionSha256: null, current: null, localDraft: null };
+const workingDraftDto = () => ({ projectId, revisionSha256: workingDraft.revisionSha256, current: workingDraft.current,
+  recovery: [], saved: [], managedRunIds: [], localDraft: workingDraft.localDraft });
 const branches = new Map(), stages = new Map(), candidateBases = new Map(), documents = [], annotations = new Map();
 const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aDWsAAAAASUVORK5CYII=", "base64");
 function historyDto(branchId = "main") {
@@ -200,6 +210,10 @@ try {
       name: "observe-actual-candidate-shell", enforce: "pre",
       transform(source, id) {
         const modulePath = id.split("?")[0].replaceAll("\\", "/");
+        if (viewBaseOnly && modulePath === `${webRoot.replaceAll("\\", "/")}/test/workspace-fixture.tsx`) {
+          // The footer layout is checked against the real Hub theme.
+          return { code: `import "/@fs/${path.resolve(webRoot, "../../../shared-web/src/base.css").replaceAll("\\", "/")}";\n${source}`, map: null };
+        }
         if (modulePath === `${webRoot.replaceAll("\\", "/")}/src/workspaces/monkeyboard/Board.tsx`) {
           return { code: `export default function Board({onOpenDocument}) {
             return <button onClick={() => onOpenDocument({source: window.__candidateDocumentSource,
@@ -224,7 +238,8 @@ try {
 ` + marker), map: null };
         }
         if (modulePath !== `${webRoot.replaceAll("\\", "/")}/src/app/App.tsx`) return;
-        if (candidateDeliveryOnly) {
+        if (candidateDeliveryOnly || viewBaseOnly) {
+          // The Hub chat's "Open this candidate on the right" names one run to show.
           source = source.replace("export default function App(", "function CandidateApp(") + `
             export default function DeliveryFixture(props: Parameters<typeof CandidateApp>[0]) {
               const [request, setRequest] = useState({ runId: props.initialRunId, refreshKey: 0 });
@@ -248,8 +263,9 @@ try {
           (window as unknown as { __candidatePreview: unknown }).__candidatePreview = {
             camera: () => viewportRef.current?.camera(), run: runCandidate, changeBase: changeEditingBase, reload, propose,
             view: (artifact: ProjectArtifactDto) => { manualLoadRef.current = true; return loadArtifactIntoViewer(artifact, artifact.fileName); },
-            edit: commitLocalCommand,
+            edit: commitLocalCommand, pick: resolvePick,
             snapshot: { loadedRunId: loadedArtifact?.runId, loadedFileName: loadedArtifact?.fileName, status: viewerStatus, loadingSha: artifactLoadingSha,
+              baseNotice, persistenceFailed, picked: picked?.elementId ?? null,
               projectId: project?.projectId, editingRunId: projection?.referenceRun.runId, changingBase, runs: candidateRuns.runs,
               sourceStageRef: projection?.sourceStageRef, history: designHistory, historyError, documentView,
               loadedModelSource, editingModelSource, baseError: baseError?.code ?? null,
@@ -284,6 +300,9 @@ try {
       close() { sources.delete(this); }
     }
     window.EventSource = FakeEventSource;
+    // A promise nobody handles is a failure of the action that made it.
+    window.__unhandled = [];
+    window.addEventListener("unhandledrejection", (event) => window.__unhandled.push(String(event.reason?.message ?? event.reason)));
     window.__previewParseGates = {};
     window.__previewEvents = { emit(value) { for (const source of sources) source.listeners.get(value.type)?.({ data: JSON.stringify(value) }); } };
   }, { projectId, runId: home.runId });
@@ -298,7 +317,9 @@ try {
       const json = (body, status = 200) => route.fulfill({ status, json: body });
       if (method === "GET") {
         if (name === "/api/protocol") return await json({ protocol: "archflow/2", server: "fixture", serverVersion: "test", mode: "local",
-          capabilities: ["working-copies", "model-annotations", "events", "operation-timing", ...(diagnosticsEnabled ? ["operation-diagnostics"] : []), ...(historyEnabled ? ["design-history", "drawing-elevations", "document-visual-input"] : [])] });
+          capabilities: ["working-copies", "model-annotations", "events", "operation-timing", ...(diagnosticsEnabled ? ["operation-diagnostics"] : []), ...(historyEnabled ? ["design-history", "drawing-elevations", "document-visual-input"] : []),
+            ...(workingDraftEnabled ? ["working-draft"] : [])] });
+        if (name === "/api/working-draft") return await json(workingDraftDto());
         if (name === "/api/project") return await json(binding());
         if (name === "/api/drawings/styles") return await json({ styles: [] });
         if (name === "/api/state") {
@@ -386,6 +407,38 @@ try {
         const result = { ...body, revisionSha256: digest(JSON.stringify(body)) }; annotations.set(`${body.runId}:${body.assetSha256}:${body.pageIndex}:${body.drawingRevisionRef ?? ""}`, result);
         return await json(result);
       }
+      if (method === "PUT" && (name === "/api/working-draft" || name === "/api/working-draft/local")) {
+        const body = request.postDataJSON();
+        assert.ok(workingDraftEnabled); assert.equal(body.projectId, projectId);
+        if (body.baseRevisionSha256 !== workingDraft.revisionSha256) {
+          return await json({ code: "WORKING_DRAFT_CONFLICT", detail: "The working draft changed; read it again." }, 409);
+        }
+        if (name === "/api/working-draft") {
+          workingDraft.current = body.runId === null ? null
+            : { runId: body.runId, sourceStageRef: null, branchId: body.branchId ?? null, updatedAt: new Date().toISOString() };
+        } else {
+          workingDraft.localDraft = body.draft === null ? null : { ...body.draft, updatedAt: new Date().toISOString() };
+        }
+        workingDraft.revisionSha256 = digest(JSON.stringify([workingDraft.revisionSha256, name, body]));
+        return await json(workingDraftDto());
+      }
+      if (method === "POST" && name === "/api/proposals/delete") {
+        // Sync's one delete command; its candidate is the one the step prepared.
+        const body = request.postDataJSON(), candidate = nextDelete;
+        assert.ok(candidate, "Sync was not expected here"); nextDelete = null;
+        assert.equal(body.projectId, projectId);
+        return await json({ proposalId: candidate.proposalId, status: "proposed", modelSource: null, sourceRunId: body.sourceRunId,
+          sourceStageRef: body.sourceStageRef ?? null, baseStateDigest: body.stateDigest, recordDigest: digest(`record:${body.sourceRunId}`),
+          target: { componentId: "fixture-room", elementId: body.elementId, ref: `entity:${body.elementId}`, key: null },
+          change: { kind: "edit_components", summary: "delete", kept: [], edits: { entities: [], parameters: [], relations: [], removeEntityIds: [body.elementId], removeParameterKeys: [], removeRelationIds: [] }, changes: [] },
+          protected: [], decisionOperator: null,
+          impact: { direct: [], propagated: [], protected: [], conflicts: [], locks: [], honesty: [], unknownCoverage: { count: 0, componentIds: [], parameterIds: [] } },
+          utterance: "delete", persistence: "fixture", createdAt: new Date().toISOString() }, 201);
+      }
+      if (method === "POST" && name === "/api/pick/resolve") {
+        const body = request.postDataJSON();
+        return await json({ componentId: "fixture-room", elementId: body.objectName, status: "resolved", sourceState: "current", detail: "fixture pick" });
+      }
       if (method === "PUT" && /^\/api\/working-copies\/[^/]+\/selection$/.test(name)) {
         const copy = workingCopies.find((item) => item.groupId === name.split("/")[3]); const body = request.postDataJSON();
         assert.ok(copy); assert.equal(body.baseRevisionSha256, copy.revisionSha256);
@@ -442,6 +495,19 @@ try {
           impact: { direct: [], propagated: [], protected: [], conflicts: [], locks: [], honesty: [], unknownCoverage: { count: 0, componentIds: [], parameterIds: [] } },
           utterance: `${body.action} parameter`, persistence: "fixture", createdAt: new Date().toISOString() }, 201);
       }
+      if (method === "POST" && name === "/api/model-assets") {
+        // A dropped or chosen local file is retained as an external model of its
+        // own upload run, as the runtime registers it: no design state, no source.
+        const body = request.postDataJSON(); assert.equal(body.projectId, projectId);
+        const bytes = Buffer.from(body.contentBase64, "base64"), sha256 = digest(bytes);
+        models.set(sha256, bytes);
+        const imported = { artifactId: sha256, projectId, runId: `model-upload-${sha256}`, stageId: null, seatId: null,
+          fileName: body.fileName, sha256, sizeBytes: bytes.length, available: true, unavailableReason: null,
+          lengthUnit: "meters", programRef: null, programDigest: null, designStateDigest: null, receiptRef: "fixture-upload",
+          format: "3dm", representation: "external", modelSource: null };
+        if (!allArtifacts.some((row) => row.runId === imported.runId)) allArtifacts.push(imported);
+        return await json(artifactDto(imported), 201);
+      }
       if (method === "POST" && name === "/api/candidates/combine") {
         assert.ok(nextCombined); const candidate = nextCombined; nextCombined = null;
         return await json({ candidateId: candidate.candidateId, jobId: candidate.jobId, status: "running" }, 202);
@@ -457,10 +523,184 @@ try {
       errors.push(error.stack ?? String(error)); await route.fulfill({ status: 500, body: String(error) }).catch(() => {});
     }
   });
+  // Two finished candidates beside the editing base; neither is continued yet.
+  const viewBaseCandidates = viewBaseOnly ? ["view-base-c1", "view-base-c2"].map((id) => {
+    const candidate = prepare(id);
+    jobs.get(candidate.jobId).status = "succeeded"; allArtifacts.push(...candidate.artifacts);
+    return candidate;
+  }) : [];
   await page.goto(`${origin}/?lang=en`, { waitUntil: "domcontentloaded" });
   await rendered(home.runId);
 
-  if (candidateDeliveryOnly) {
+  if (viewBaseOnly) {
+    const [c1, c2] = viewBaseCandidates;
+    const REFUSED_UNSYNCED = "The editing base was not changed: local model edits are not synced yet and are kept in the working draft. Sync or undo them on the model you edited, then try again.";
+    const NOT_SAVED = "This editing choice could not be saved in this browser; it applies to this tab only.";
+    const footer = () => page.locator(".stage__foot .editing-base");
+    const notices = () => footer().locator(".editing-base__notice").allInnerTexts();
+    const continueButton = () => footer().getByRole("button", { name: "Continue from this version", exact: true });
+    const undoButton = () => page.getByRole("button", { name: "Undo model", exact: true });
+    const rectangle = () => page.locator('button[data-tool-icon="rectangle"]');
+    const baseWrites = () => requests.filter((row) => row.method === "PUT" && row.name === "/api/working-draft");
+    const storedBases = () => page.evaluate(() => JSON.parse(localStorage.getItem("archflow-studio.user-preferences")).editingBases);
+    const settled = (runId) => until(snapshot, (value) => value.editingRunId === runId && !value.changingBase,
+      `The editing base did not settle on ${runId}`);
+    const shown = (text, message) => until(notices, (texts) => texts.includes(text), message);
+    const screenshots = process.env.VIEW_BASE_SCREENSHOTS ? path.resolve(process.env.VIEW_BASE_SCREENSHOTS) : null;
+    if (screenshots) await mkdir(screenshots, { recursive: true });
+
+    await step("opening and previewing candidates, then Undo, leave the editing base, its saved choice and the picture alone", async () => {
+      await settled(home.runId);
+      const writes = baseWrites().length, bases = await storedBases();
+      await page.evaluate((runId) => window.__openCandidate(runId), c1.candidateId); // the Hub chat's "Open this candidate on the right"
+      await rendered(c1.candidateId);
+      await view(c2.artifacts[0]); // a candidate card's preview
+      assert.equal(await undoButton().isDisabled(), true, "Looking is not a model step, so nothing can be undone");
+      await page.keyboard.press("Control+z");
+      await delay(300);
+      const after = await snapshot();
+      assert.equal(after.editingRunId, home.runId, "Undo after looking keeps the editing base");
+      assert.equal(after.loadedRunId, c2.candidateId, "Undo after looking keeps the picture");
+      assert.match(await footer().innerText(), /Next edit starts from\s+original\.3dm/);
+      assert.equal(baseWrites().length, writes, "No working-draft selection is written while only looking");
+      assert.deepEqual(await storedBases(), bases, "No base preference is written while only looking");
+    });
+
+    await step("a viewed candidate refuses every direct edit with one reason beside Continue, while looking stays free", async () => {
+      await rectangle().click();
+      await shown(VIEW_ONLY, "The drawing tool's refusal is not beside Continue");
+      assert.equal(await rectangle().getAttribute("aria-pressed"), "false", "A drawing tool must not arm on a viewed candidate");
+      await page.keyboard.press("l"); await page.keyboard.press("c");
+      for (const icon of ["line", "circle"]) assert.equal(await page.locator(`button[data-tool-icon="${icon}"]`).getAttribute("aria-pressed"), "false");
+      await page.locator('button[data-model-tool="pushPull"]').click();
+      await page.keyboard.press("m");
+      for (const tool of ["pushPull", "move"]) assert.equal(await page.locator(`button[data-model-tool="${tool}"]`).getAttribute("aria-pressed"), "false");
+      await page.evaluate(() => window.__candidatePreview.pick({ objectName: "fixture-floor", object: { parent: null }, userStrings: {} }));
+      await until(snapshot, (value) => value.picked === "fixture-floor", "Picking on a viewed model must stay available");
+      await page.keyboard.press("Delete");
+      assert.deepEqual((await snapshot()).localCommands, [], "A refused Delete starts no draft");
+      assert.equal((await snapshot()).picked, "fixture-floor", "A refused Delete removes nothing");
+      await page.keyboard.press("t");
+      await page.locator('.stage-sketch[data-phase="from"]').waitFor(); // measuring still arms
+      await page.keyboard.press("Escape");
+      assert.deepEqual(await notices(), [VIEW_ONLY], "One reason, shown once");
+      assert.equal(await continueButton().isVisible(), true, "The next step is one click away");
+      assert.equal((await snapshot()).editingRunId, home.runId);
+      if (screenshots) await page.screenshot({ path: path.join(screenshots, "view-only-refusal.png") });
+    });
+
+    await step("Continue makes the viewed candidate the editing base, and its tools then work", async () => {
+      const writes = baseWrites().length;
+      await continueButton().click();
+      await settled(c2.candidateId);
+      assert.equal(await footer().getAttribute("data-source-match"), "same");
+      assert.deepEqual(await notices(), [], "A successful Continue retires the refusal");
+      assert.equal(baseWrites().length, writes + 1);
+      assert.equal(baseWrites().at(-1).body.runId, c2.candidateId);
+      await rectangle().click();
+      assert.equal(await rectangle().getAttribute("aria-pressed"), "true");
+      await page.keyboard.press("Escape");
+      assert.equal(await rectangle().getAttribute("aria-pressed"), "false");
+    });
+
+    await step("Undo is refused beside Continue while another version is on screen and steps through bases on the base", async () => {
+      await view(c1.artifacts[0]);
+      const writes = baseWrites().length;
+      assert.equal(await undoButton().isEnabled(), true, "Continuing was a model step");
+      await page.keyboard.press("Control+z");
+      await shown(VIEW_ONLY, "Undo's refusal is not beside Continue");
+      await undoButton().click();
+      await delay(200);
+      const refused = await snapshot();
+      assert.equal(refused.editingRunId, c2.candidateId, "A refused Undo keeps the editing base");
+      assert.equal(refused.loadedRunId, c1.candidateId, "A refused Undo keeps the picture");
+      assert.equal(baseWrites().length, writes, "A refused Undo writes nothing");
+      await view(c2.artifacts[0]);
+      await page.keyboard.press("Control+z");
+      await settled(home.runId); await rendered(home.runId);
+      assert.equal(baseWrites().at(-1).body.runId, home.runId, "Undo on the base returns to the previous base and saves it");
+      await page.keyboard.press("Control+Shift+Z");
+      await settled(c2.candidateId); await rendered(c2.candidateId);
+      assert.equal(baseWrites().at(-1).body.runId, c2.candidateId);
+    });
+
+    await step("with unsynced local edits, Continue is refused in the editing-base row with its recovery step and no page error", async () => {
+      await page.evaluate(() => window.__candidatePreview.edit({ kind: "delete", elementId: "fixture-floor" }));
+      await until(() => workingDraft.localDraft?.commands?.length ?? 0, (count) => count === 1, "The local edit was not kept in the working draft");
+      await view(c1.artifacts[0]);
+      const writes = baseWrites().length;
+      await continueButton().click();
+      await shown(REFUSED_UNSYNCED, "The unsynced refusal and its recovery step are not beside Continue");
+      assert.equal((await snapshot()).editingRunId, c2.candidateId);
+      assert.equal(baseWrites().length, writes, "A refused Continue writes nothing");
+      assert.deepEqual(await page.evaluate(() => window.__unhandled), [], "A refused Continue leaves no unhandled rejection");
+      assert.deepEqual(errors, []);
+      for (const width of [1440, 800, 390]) {
+        await page.setViewportSize({ width, height: 900 });
+        await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+        const layout = await page.locator(".stage__context").evaluate((node) => {
+          if (!getComputedStyle(node).getPropertyValue("--ink").trim()) throw new Error("Load the real Hub theme before checking layout");
+          const box = node.getBoundingClientRect(), notice = node.querySelector(".editing-base__notice");
+          const line = notice.getBoundingClientRect(), lineHeight = parseFloat(getComputedStyle(notice).lineHeight);
+          const tools = document.querySelector(".stage-model .viewtools").getBoundingClientRect();
+          return { left: box.left, right: box.right, width: box.width, top: box.top, bottom: box.bottom,
+            lineLeft: line.left, lineRight: line.right, lineRows: Math.round(line.height / lineHeight),
+            toolsBottom: tools.bottom, overflow: document.documentElement.scrollWidth > innerWidth,
+            overlap: Math.min(box.right, tools.right) > Math.max(box.left, tools.left) && Math.min(box.bottom, tools.bottom) > Math.max(box.top, tools.top) };
+        });
+        assert.ok(layout.width <= 761 && layout.left >= 0 && layout.right <= width + 1 && layout.bottom <= 900 && !layout.overflow,
+          `The footer box must stay within 760px and the page at ${width}px: ${JSON.stringify(layout)}`);
+        assert.ok(!layout.overlap && layout.toolsBottom <= layout.top, `The notice must not push the footer over the toolbar at ${width}px: ${JSON.stringify(layout)}`);
+        assert.ok(layout.lineLeft >= layout.left && layout.lineRight <= layout.right + 1, `The notice must wrap inside its box at ${width}px`);
+        if (width === 390) assert.ok(layout.lineRows > 1, `The notice must wrap at phone width: ${JSON.stringify(layout)}`);
+        if (screenshots) await page.screenshot({ path: path.join(screenshots, `unsynced-refusal-${width}.png`) });
+      }
+      await page.setViewportSize({ width: 1440, height: 900 });
+    });
+
+    await step("after Sync, Continue from the viewed candidate succeeds and survives reopening", async () => {
+      await view(c2.artifacts[0]);
+      await until(snapshot, (value) => value.localCommands.length === 1, "The edited base did not show its draft again");
+      const sync = nextDelete = prepare("view-base-sync");
+      await page.getByRole("button", { name: "Sync", exact: true }).click();
+      const submitted = await until(() => requests.findLast((row) => row.name === "/api/proposals/delete"), Boolean, "Sync did not submit");
+      assert.equal(submitted.body.sourceRunId, c2.candidateId, "Sync starts from the base the edit was made on");
+      await until(snapshot, (value) => value.runs[sync.candidateId]?.job.status === "ready", "Sync did not start its candidate");
+      await complete(sync);
+      await settled(sync.candidateId); await rendered(sync.candidateId);
+      await until(() => workingDraft.localDraft, (draft) => draft === null, "The synced draft was not released");
+      await view(c1.artifacts[0]);
+      await continueButton().click();
+      await settled(c1.candidateId);
+      assert.equal(baseWrites().at(-1).body.runId, c1.candidateId);
+      assert.deepEqual(await notices(), []);
+      assert.equal(await footer().getAttribute("data-source-match"), "same");
+      await page.reload({ waitUntil: "domcontentloaded" });
+      await settled(c1.candidateId); await rendered(c1.candidateId);
+    });
+
+    await step("a base choice this browser cannot save is reported in the editing-base row", async () => {
+      workingDraftEnabled = false;
+      await page.reload({ waitUntil: "domcontentloaded" });
+      await settled(home.runId); await rendered(home.runId); // this browser's saved choice
+      await page.evaluate(() => {
+        const save = Storage.prototype.setItem;
+        window.__restoreStorage = () => { Storage.prototype.setItem = save; };
+        Storage.prototype.setItem = function () { throw new DOMException("The quota has been exceeded.", "QuotaExceededError"); };
+      });
+      await view(c2.artifacts[0]);
+      await continueButton().click();
+      await settled(c2.candidateId);
+      await shown(NOT_SAVED, "The unsaved choice is not reported in the editing-base row");
+      assert.equal((await snapshot()).persistenceFailed, true);
+      if (screenshots) await page.screenshot({ path: path.join(screenshots, "not-saved.png") });
+      await page.evaluate(() => window.__restoreStorage());
+      await page.reload({ waitUntil: "domcontentloaded" });
+      await settled(home.runId); // as the row said: the choice applied to that tab only
+      assert.deepEqual(await notices(), []);
+      assert.deepEqual(await page.evaluate(() => window.__unhandled), []);
+    });
+  } else if (candidateDeliveryOnly) {
     const bytesReads = artifact => requests.filter(row => row.name === `/api/artifacts/${artifact.sha256}/bytes`).length;
     const delivery = (id) => {
       const native = { ...makeArtifact(id, 3), fileName: `${id}-native.3dm`, representation: "preview", modelSource: null };
@@ -471,7 +711,7 @@ try {
     const open = async ({ native }) => {
       await page.evaluate(runId => window.__openCandidate(runId), native.runId);
       await rendered(native.runId, native.fileName);
-      await until(snapshot, value => value.draftReady, "The candidate state did not become editable");
+      await until(snapshot, value => value.draftReady, "The candidate's own state was not read");
     };
     const register = async artifact => {
       allArtifacts.push(artifact);
@@ -482,6 +722,47 @@ try {
       await page.evaluate(() => window.__candidatePreview.edit({ kind: "delete", elementId: "fixture-floor" }));
       await until(snapshot, value => value.localCommands.length === 1, "The local command was not retained");
     };
+    // Opening a chat result only shows it; editing it follows the explicit Continue.
+    const notice = () => page.locator(".stage__foot .editing-base .editing-base__notice");
+    const continueFromView = async (runId) => {
+      await page.locator(".stage__foot .editing-base").getByRole("button", { name: "Continue from this version", exact: true }).click();
+      await until(snapshot, value => value.editingRunId === runId && !value.changingBase, "Continue did not make the viewed candidate the editing base");
+    };
+
+    await step("an opened candidate refuses direct edits beside Continue until it is continued; Sync then starts from it", async () => {
+      const value = delivery("delivery-continue"); await open(value);
+      const before = await snapshot();
+      assert.notEqual(before.editingRunId, value.native.runId, "Opening a chat result only shows it");
+      const rectangle = page.locator('button[data-tool-icon="rectangle"]');
+      await rectangle.click();
+      await until(() => notice().allInnerTexts(), texts => texts.includes(VIEW_ONLY), "The refusal was not shown beside Continue");
+      assert.equal(await rectangle.getAttribute("aria-pressed"), "false", "A drawing tool must not arm on a viewed candidate");
+      await page.keyboard.press("p");
+      assert.equal(await page.locator('button[data-model-tool="pushPull"]').getAttribute("aria-pressed"), "false");
+      const refused = await page.evaluate(() => {
+        try { window.__candidatePreview.edit({ kind: "delete", elementId: "fixture-floor" }); return null; }
+        catch (error) { return error.message; }
+      });
+      assert.equal(refused, VIEW_ONLY, "A commit that reaches the draft layer is refused with the same reason");
+      assert.deepEqual((await snapshot()).localCommands, []);
+      assert.equal((await snapshot()).editingRunId, before.editingRunId, "Refusing an edit never moves the editing base");
+      await continueFromView(value.native.runId);
+      assert.equal(await notice().count(), 0, "A successful Continue retires the refusal");
+      await rectangle.click();
+      assert.equal(await rectangle.getAttribute("aria-pressed"), "true", "The continued candidate's own tools work");
+      await page.keyboard.press("Escape");
+      await edit();
+      const sync = nextDelete = prepare("delivery-continue-sync");
+      await page.getByRole("button", { name: "Sync", exact: true }).click();
+      const submitted = await until(() => requests.findLast(row => row.name === "/api/proposals/delete"), Boolean, "Sync did not submit its edit");
+      assert.equal(submitted.body.sourceRunId, value.native.runId, "Sync is based on the continued run");
+      assert.equal(submitted.body.stateDigest, stateDigest(value.native.runId));
+      await until(snapshot, v => v.runs[sync.candidateId]?.job.status === "ready", "Sync did not start its candidate");
+      await complete(sync);
+      await until(snapshot, v => v.editingRunId === sync.candidateId && !v.changingBase, "The synced result did not become the editing base");
+      await rendered(sync.candidateId);
+      assert.deepEqual(await page.evaluate(() => window.__unhandled), []);
+    });
 
     await step("a late composed asset replaces the automatic native preview once, preserving its camera", async () => {
       const value = delivery("delivery-upgrade"); await open(value);
@@ -532,8 +813,8 @@ try {
       assert.equal(bytesReads(mismatch), 0);
     });
 
-    await step("unsubmitted local model edits survive late composed delivery", async () => {
-      const value = delivery("delivery-edited"); await open(value); await edit();
+    await step("unsubmitted local model edits on a continued candidate survive late composed delivery", async () => {
+      const value = delivery("delivery-edited"); await open(value); await continueFromView(value.native.runId); await edit();
       await register(value.composed); await delay(300);
       assert.equal((await snapshot()).loadedFileName, value.native.fileName);
       assert.deepEqual((await snapshot()).localCommands, [{ kind: "delete", elementId: "fixture-floor" }]);
@@ -541,7 +822,7 @@ try {
     });
 
     await step("editing during the composed download cancels installation without losing the draft", async () => {
-      const value = delivery("delivery-edit-in-flight"); await open(value);
+      const value = delivery("delivery-edit-in-flight"); await open(value); await continueFromView(value.native.runId);
       const gate = deferred(); modelGates.set(value.composed.sha256, gate);
       await register(value.composed);
       await until(() => bytesReads(value.composed), count => count === 1, "The complete model download did not start");
@@ -1308,11 +1589,12 @@ try {
       const transfer = new DataTransfer(); transfer.items.add(new File([new Uint8Array(bytes)], "dropped-local.3dm"));
       document.querySelector(".viewport-host").dispatchEvent(new DragEvent("drop", { bubbles: true, dataTransfer: transfer }));
     }, [...models.get(currentHome.sha256)]);
-    await until(snapshot, (value) => value.status === "ready" && value.loadedRunId == null, "Local drop did not become the displayed model");
+    const imported = `model-upload-${currentHome.sha256}`;
+    await until(snapshot, (value) => value.status === "ready" && value.loadedRunId === imported, "Local drop did not become the displayed model");
     await finishedDiagnostic("design_edit", root.operationId, "cancelled");
     await page.evaluate((name) => window.__previewParseGates[name].resolve(), candidate.artifacts[0].fileName);
     await finishedDiagnostic("model_load", root.operationId, "cancelled");
-    assert.equal((await snapshot()).loadedRunId, undefined);
+    assert.equal((await snapshot()).loadedRunId, imported, "The retained local file stays on screen, not the cancelled candidate");
     assert.equal(diagnosticEvents("design_edit").filter((row) => row.operationId === root.operationId && row.status === "succeeded").length, 0);
     await view(currentHome);
   });
@@ -1426,7 +1708,8 @@ try {
         const transfer = new DataTransfer(); transfer.items.add(new File([new Uint8Array(bytes)], "local-parameters.3dm"));
         document.querySelector(".viewport-host").dispatchEvent(new DragEvent("drop", { bubbles: true, dataTransfer: transfer }));
       }, [...models.get(currentHome.sha256)]);
-      await until(snapshot, value => value.status === "ready" && value.loadedRunId == null, "Local model was not displayed");
+      await until(snapshot, value => value.status === "ready" && value.loadedRunId === `model-upload-${currentHome.sha256}`,
+        "Local model was not displayed");
       assert.equal(await panel.getByRole("button", { name: "Lock selected", exact: true }).isDisabled(), true);
       assert.equal(requests.filter(row => row.name === "/api/proposals/parameter-locks").length, requestCount);
       await view(currentHome);

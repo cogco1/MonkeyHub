@@ -562,6 +562,15 @@ try {
     const beforeQuestion = await viewState();
     assert.equal(beforeQuestion.match, "different");
     assert.ok(beforeQuestion.editing.includes(optionB.label));
+    // B's proposals stay unappliable while C is on screen, and say so truthfully:
+    // they belong to the editing base, which is simply not the picture.
+    const inactiveNotes = page.locator(".card--proposal [data-inactive-reason]");
+    assert.ok(await inactiveNotes.count() > 0, "The earlier proposals must be in the conversation");
+    assert.deepEqual([...new Set(await inactiveNotes.evaluateAll((nodes) => nodes.map((node) => node.dataset.inactiveReason)))], ["viewing"]);
+    assert.equal(await inactiveNotes.first().innerText(), "This proposal applies to the editing base, not to the version on screen. " +
+      "Return to the editing base to apply it, or continue from this version and propose again.");
+    assert.equal(await page.locator(".card--proposal").first().getByRole("button", { name: "Apply", exact: true }).isDisabled(), true,
+      "Viewing C keeps B's proposals disabled");
     await until(() => frameReads.at(-1), (run) => run === sourceC.runId,
       "The open document must recalibrate tracing against the displayed cross-run C frame");
     await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
