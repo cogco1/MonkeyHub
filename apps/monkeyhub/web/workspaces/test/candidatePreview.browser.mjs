@@ -35,12 +35,21 @@ let historyEnabled = false, acceptFailure = false, annotationFailure = false, la
 let monitorFailure = false, historyGate = null;
 let diagnosticsEnabled = false, nextIntent = null, intentGate = null, documentGate = null, timingGate = null;
 let projectionOnly = false;
-// The server's working draft: the saved editing base and one retained local draft,
-// each written with the revision it was read at.
+// The server's working draft: the saved editing base, one retained local draft and
+// the finished candidates listed for recovery, each written with the revision it was
+// read at. As in the Studio API (GH-234 Q2), a finished candidate is only listed:
+// `current` moves solely through an explicit PUT /api/working-draft.
 let workingDraftEnabled = viewBaseOnly, nextDelete = null;
-const workingDraft = { revisionSha256: null, current: null, localDraft: null };
+const workingDraft = { revisionSha256: null, current: null, localDraft: null, listed: new Map() };
 const workingDraftDto = () => ({ projectId, revisionSha256: workingDraft.revisionSha256, current: workingDraft.current,
-  recovery: [], saved: [], managedRunIds: [], localDraft: workingDraft.localDraft });
+  recovery: [...workingDraft.listed.values()].reverse(), saved: [], managedRunIds: [...workingDraft.listed.keys()].sort(),
+  localDraft: workingDraft.localDraft });
+function listFinishedCandidate(candidateId) {
+  if (!workingDraftEnabled) return;
+  workingDraft.listed.set(candidateId, { runId: candidateId, sourceStageRef: candidateBases.get(candidateId) ?? null,
+    branchId: null, label: null, updatedAt: new Date().toISOString() });
+  workingDraft.revisionSha256 = digest(JSON.stringify([workingDraft.revisionSha256, "candidate", candidateId]));
+}
 const branches = new Map(), stages = new Map(), candidateBases = new Map(), documents = [], annotations = new Map();
 const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aDWsAAAAASUVORK5CYII=", "base64");
 function historyDto(branchId = "main") {
@@ -127,6 +136,7 @@ async function emit(type, candidateId = null) {
 async function complete(candidate) {
   jobs.get(candidate.jobId).status = "succeeded";
   allArtifacts.push(...candidate.artifacts);
+  listFinishedCandidate(candidate.candidateId);
   await emit("candidate.succeeded", candidate.candidateId);
 }
 async function until(read, accepts, message, timeout = 20_000) {
@@ -669,6 +679,51 @@ try {
       assert.equal(await footer().getAttribute("data-source-match"), "same");
       await page.reload({ waitUntil: "domcontentloaded" });
       await settled(c1.candidateId); await rendered(c1.candidateId);
+    });
+
+    // GH-234 Q2: only the architect's own Sync results advance the saved working
+    // position; a generated candidate never does. This fixture has no design history.
+    await step("a finished proposal candidate is only listed: no working-draft select, and reopening keeps the architect's base", async () => {
+      const writes = baseWrites().length, base = workingDraft.current;
+      const generated = prepare("view-base-generated");
+      await launch(generated); // an Arch proposal's Run: the normal candidate lifecycle
+      await complete(generated);
+      await rendered(generated.candidateId); // shown once finished, never continued
+      assert.match(await footer().innerText(), /Next edit starts from\s+view-base-c1\.3dm/, "The footer still names the architect's base");
+      assert.equal((await snapshot()).editingRunId, c1.candidateId, "Showing a finished candidate keeps the editing base");
+      assert.ok(workingDraft.listed.has(generated.candidateId), "The finished candidate is listed for recovery");
+      assert.deepEqual(workingDraft.current, base, "Finishing a candidate never moves the saved working position");
+      await page.reload({ waitUntil: "domcontentloaded" });
+      await settled(c1.candidateId); await rendered(c1.candidateId);
+      assert.equal(await footer().getAttribute("data-source-match"), "same", "Reopening shows the architect's base as the model being edited");
+      await view(generated.artifacts[0]);
+      assert.match(await footer().innerText(), /Next edit starts from\s+view-base-c1\.3dm/, "After reopening the footer still names the architect's base");
+      assert.equal(baseWrites().length, writes, "Neither the candidate nor reopening posted a working-draft select");
+    });
+
+    await step("a quietly adopted Sync posts exactly one working-draft select for its run, and reopening starts from it", async () => {
+      const writes = baseWrites().length;
+      await view(c1.artifacts[0]);
+      await until(snapshot, (value) => value.draftReady && value.editingRunId === c1.candidateId, "The architect's base is not editable");
+      await page.evaluate(() => window.__candidatePreview.edit({ kind: "delete", elementId: "fixture-floor" }));
+      await until(() => workingDraft.localDraft?.commands?.length ?? 0, (count) => count === 1, "The local edit was not kept in the working draft");
+      const sync = nextDelete = prepare("view-base-adopted-sync");
+      await page.getByRole("button", { name: "Sync", exact: true }).click();
+      await until(() => requests.findLast((row) => row.name === "/api/proposals/delete"), (row) => row?.body.sourceRunId === c1.candidateId,
+        "Sync did not submit from the architect's base");
+      await until(snapshot, (value) => value.runs[sync.candidateId]?.job.status === "ready", "Sync did not start its candidate");
+      await complete(sync);
+      await settled(sync.candidateId); await rendered(sync.candidateId);
+      await until(() => workingDraft.localDraft, (draft) => draft === null, "The synced draft was not released");
+      assert.deepEqual(baseWrites().slice(writes).map((row) => row.body.runId), [sync.candidateId],
+        "Adopting the Sync result posts exactly one working-draft select, for that run");
+      assert.equal(workingDraft.current?.runId, sync.candidateId);
+      await page.reload({ waitUntil: "domcontentloaded" });
+      await settled(sync.candidateId); await rendered(sync.candidateId);
+      assert.equal(await footer().getAttribute("data-source-match"), "same", "Reopening shows the Sync result as the model being edited");
+      await view(c1.artifacts[0]);
+      assert.match(await footer().innerText(), /Next edit starts from\s+view-base-adopted-sync\.3dm/, "After reopening the footer names the Sync result as the base");
+      assert.equal(baseWrites().length, writes + 1, "Reopening posts no further working-draft select");
     });
 
     await step("a base choice this browser cannot save is reported in the editing-base row", async () => {

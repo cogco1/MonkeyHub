@@ -104,6 +104,14 @@ def save_working_draft(binding: ProjectBinding, run_id: str, revision: str | Non
 
 @retained_sources
 def record_candidate_draft(binding: ProjectBinding, run_id: str, source_run_id: str | None) -> None:
+    """List a finished candidate for recovery; never move the working position.
+
+    ``current`` is the architect's own editing base and only
+    ``select_working_draft`` moves it (Continue, Return to default, a Versions
+    choice, an adopted Sync). Recording a generated candidate -- Hub agent, Arch
+    proposal, options, program or combine -- leaves it alone, even when the
+    candidate was generated from that base (``source_run_id``).
+    """
     row = _entry(binding, run_id)
     row["automatic"] = True
     for _ in range(8):
@@ -112,14 +120,13 @@ def record_candidate_draft(binding: ProjectBinding, run_id: str, source_run_id: 
         if previous:
             row["label"] = previous["label"]
         value["runs"][run_id] = row
-        if value["current"] is None or value["current"] == source_run_id:
-            value["current"] = run_id
         try:
             binding.repository.compare_and_swap_working_draft(expected_revision=revision, value=value)
             return
         except StaleWorkingDraft:
             continue
-    raise StudioError(409, "WORKING_DRAFT_STALE", "The candidate is retained, but its working position changed concurrently. Reopen its result.")
+    raise StudioError(409, "WORKING_DRAFT_STALE",
+                      "The candidate is retained, but the working draft changed concurrently before it was listed. Reopen its result.")
 
 
 @retained_sources
