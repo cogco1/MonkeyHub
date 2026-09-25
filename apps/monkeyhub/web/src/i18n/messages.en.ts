@@ -1038,4 +1038,5 @@ export const chatCopy = {
     usageName: (value: string | null) => value === null ? "Usage in the last 7 days" : `Usage: ${value} tokens in the last 7 days`,
     usageTitle: "Model input and output tokens in the last 7 days, as MonkeyMonitor recorded them. Opens Usage.",
     updateReady: "New version ready", updateReadyHint: "Opens Software Update to restart into it.",
+    interject: "Interject", interjectPlaceholder: "Add a message to change direction…", interjected: "Interjected", interjectionPending: "Delivers at the next step", interjectionDelivered: "Delivered", interjectionRestarted: "Stopped the current step and continued with this message", interjectionUndelivered: "Not delivered",
   } as const;

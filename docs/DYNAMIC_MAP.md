@@ -5,10 +5,10 @@
 
 Phase: GitHub Issues are the work items (#60); this registry records live source-edit coordination only. The remaining legacy P cards are blocked and claim no path; P115 is a frozen historical index. Real project acceptance and formal issue are explicit user actions.
 
-- active: GH-234, GH-303, GH-66, GH-285, GH-300, GH-304
+- active: GH-234, GH-303, GH-66, GH-285, GH-300, GH-304, GH-301
 - ready: none
 - blocked: P115, P105, P108, P110, P111, P113
-- next: continue active work: GH-234, GH-303, GH-66, GH-285, GH-300, GH-304
+- next: continue active work: GH-234, GH-303, GH-66, GH-285, GH-300, GH-304, GH-301
 
 ## Live work
 
@@ -26,3 +26,4 @@ Phase: GitHub Issues are the work items (#60); this registry records live source
 | GH-285 | active | Fold each Agent turn's tool calls into one plain-language process row so the Agent's answer, results, permission prompts and errors stay readable, and open conversations at their latest message. | [GH-285](mapping/planning/GH-285-process-fold.md) |
 | GH-300 | active | Give the Hub sidebar its first cross-project entries: 7-day usage from Monitor and a ready update in the footer, a Tasks list of running and queued Agent work with running badges on project rows, and the approved rail groups with Layout as a Board mode. | [GH-300](mapping/planning/GH-300-sidebar.md) |
 | GH-304 | active | Launch the configured Codex executable on Windows, where npm installs codex.cmd. | [GH-304](mapping/planning/GH-304-codex-exe.md) |
+| GH-301 | active | Let the architect send a message while the Agent is working and have it change the turn's direction: Claude reads it from its stream-json stdin at the next step; Codex takes it mid-turn through the adapter's steering or, where that is unavailable, cancels the current step and continues with it as the next prompt. | [GH-301](mapping/planning/GH-301-steer.md) |

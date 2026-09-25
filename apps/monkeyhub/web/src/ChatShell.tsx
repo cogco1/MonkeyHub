@@ -712,7 +712,24 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
 
   const send = async (event?: FormEvent) => {
     event?.preventDefault();
-    if (!projectDir || (!draft.trim() && !attachments.length) || actionLock.current || running || archived || external) return;
+    if (!projectDir || (!draft.trim() && !attachments.length) || actionLock.current || archived || external) return;
+    if (running && chat) {
+      // #301: while the Agent works, a message goes into the running turn. It
+      // carries only its text: no new design source, and files being gathered
+      // stay in the draft for the next turn. The composer stays open.
+      if (!draft.trim()) return;
+      const target = chat.id, content = draft.trim(), key = draftKey;
+      actionLock.current = true; setError(null);
+      setDrafts((value) => ({ ...value, [key]: "" }));
+      try {
+        const body: ChatPostRequest = { content, projectId: chat.projectId };
+        const posted = await request<ChatDetail>(`/api/chat/sessions/${encodeURIComponent(target)}/messages`, body);
+        if (selection.current.chatId === target) setChat(posted);
+        requestAnimationFrame(() => { if (messages.current) messages.current.scrollTop = messages.current.scrollHeight; });
+      } catch (cause) { setDrafts((value) => ({ ...value, [key]: value[key] || content })); setError(asFailure(cause)); }
+      finally { actionLock.current = false; }
+      return;
+    }
     const target = projectDir, content = draft.trim(), key = draftKey, files = attachments;
     const requestedContext = designContext, requestedContextMode = contextMode, contextProjectId = workspaceContext?.projectId;
     if (requestedContextMode === "project" && !requestedContext) {
@@ -1062,6 +1079,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
   const messageEntry = (message: ChatMessage) => <article className={`chat-message chat-message--${message.role}`} key={message.id}>
     {message.role === "user" && message.contextMode === "project" && <p className="chat-muted">{t.contextProjectMessage}</p>}
     {message.role === "user" && message.contextMode === "stage" && <p className="chat-muted">{t.contextStageMessage}: {message.confirmedStageLabel}</p>}
+    {message.role === "user" && message.interjection && <p className="chat-muted" data-interjection={message.interjection}>{t.interjected} · {{ pending: t.interjectionPending, delivered: t.interjectionDelivered, restarted: t.interjectionRestarted, undelivered: t.interjectionUndelivered }[message.interjection]}</p>}
     <ChatMarkdown text={message.content} />
     <ChatMessageFiles sessionId={chat!.id} messageId={message.id} attachments={message.attachments} documents={message.documents} labels={t}
       documentBusy={busy || Boolean(toolBusy)} onOpenDocument={project && project.projectId === chat!.projectId ? (document: ChatDocument) => {
@@ -1201,8 +1219,8 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
               input.current?.focus();
             }}><Icon name="close" /></button>
           </li>)}</ul>}
-          <label className="sr-only" htmlFor="chat-input">{t.placeholder}</label><textarea id="chat-input" ref={input} value={draft} placeholder={project ? t.placeholder : t.projectRequired} disabled={!project || busy}
-            onChange={(event) => setDrafts((value) => ({ ...value, [draftKey]: event.target.value }))} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); if (!running) void send(); } }} />
+          <label className="sr-only" htmlFor="chat-input">{t.placeholder}</label><textarea id="chat-input" ref={input} value={draft} placeholder={!project ? t.projectRequired : running ? t.interjectPlaceholder : t.placeholder} disabled={!project || busy}
+            onChange={(event) => setDrafts((value) => ({ ...value, [draftKey]: event.target.value }))} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void send(); } }} />
           <input ref={fileInput} type="file" multiple hidden aria-label={t.attach} disabled={!project || busy} onChange={(event) => { addAttachments(Array.from(event.target.files ?? [])); event.target.value = ""; }} />
           <label className="chat-context-option" title={designContext ? t.contextProjectHint : contextUnavailable}>
             <input type="checkbox" checked={contextMode === "project"} aria-description={designContext ? t.contextProjectHint : contextUnavailable} disabled={busy || running || (!designContext && contextMode !== "project")}
@@ -1222,7 +1240,8 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
             {availableProvider?.modelCatalog === "checking" && <span className="chat-connection__note">{t.modelChecking}</span>}
             {modelBusy && <span className="chat-connection__note" role="status">{t.modelSaving}</span>}
           </div>
-          {running ? <button className="chat-send" type="button" aria-label={t.stop} onClick={() => void stop()}><Icon name="stop" /></button> : <button className="chat-send" type="submit" aria-label={t.send} disabled={busy || !project || (!draft.trim() && !attachments.length) || (!chatId && !availableProvider?.available)}><Icon name="send" /></button>}</div>
+          {running ? <><button className="chat-icon chat-stop" type="button" aria-label={t.stop} title={t.stop} onClick={() => void stop()}><Icon name="stop" /></button>
+            <button className="chat-send" type="submit" aria-label={t.interject} title={t.interject} disabled={!draft.trim()}><Icon name="send" /></button></> : <button className="chat-send" type="submit" aria-label={t.send} disabled={busy || !project || (!draft.trim() && !attachments.length) || (!chatId && !availableProvider?.available)}><Icon name="send" /></button>}</div>
         </form>}
         {!archived && customModel !== null && <form className="chat-custom-model" onSubmit={(event) => { event.preventDefault(); const value = customModel.trim(); if (value) void chooseModel(value); else setCustomModel(null); }}>
           <label htmlFor="chat-custom-model">{t.modelCustomLabel}</label>

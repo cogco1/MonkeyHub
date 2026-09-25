@@ -624,7 +624,11 @@ class ChatTests(unittest.TestCase):
                     native = self.store._sessions[session.id].nativeSessionId
                 self.post(session)
                 self.assertEqual(self.finished(session).status, "idle")
-                self.assertIsNone(self.calls()[-1]["input_message"])
+                # A turn without files reads the same stream-json stdin (#301),
+                # with its prompt as the only block.
+                plain = self.calls()[-1]["input_message"]["message"]["content"]
+                self.assertEqual([block["type"] for block in plain], ["text"])
+                self.assertIn("--replay-user-messages", self.calls()[-1]["args"])
                 self.assertNotIn("view.png", self.calls()[-1]["prompt"])
 
     def test_turn_envelope_reuses_connected_action_contract(self):
@@ -2872,6 +2876,213 @@ class AcpCommandTests(unittest.TestCase):
                 adapter.touch()
                 sdk.return_value = None
                 self.assertIsNone(chat._codex_acp_command())
+
+
+# A Claude-shaped CLI that keeps reading stream-json user messages while its
+# turn runs, as the installed CLI does with --input-format stream-json: a message
+# read at the next step is echoed back with isReplay, and after its result the CLI
+# answers what it already read and exits when stdin closes (#301).
+STEER_CLI = r'''
+import json, sys, time
+from pathlib import Path
+sys.stdin.reconfigure(encoding="utf-8")
+log_path, args = Path(sys.argv[1]), sys.argv[2:]
+def log(**fields):
+    with log_path.open("a", encoding="utf-8") as out:
+        out.write(json.dumps(fields) + "\n")
+def emit(value):
+    print(json.dumps(value), flush=True)
+def read_user():
+    for line in sys.stdin:
+        try:
+            message = json.loads(line)
+        except ValueError:
+            continue
+        if message.get("type") == "user":
+            return message
+    return None
+if args[args.index("--input-format") + 1] != "stream-json" or "--replay-user-messages" not in args:
+    sys.exit(2)
+first = read_user()
+prompt = first["message"]["content"][0]["text"]
+native = args[args.index("--resume" if "--resume" in args else "--session-id") + 1]
+log(event="turn", args=args, prompt=prompt)
+emit({"type": "system", "subtype": "init", "session_id": native})
+def tool(result=None):
+    if result is None:
+        emit({"type": "assistant", "session_id": native, "message": {"content": [
+            {"type": "tool_use", "id": "toolu_before", "name": "mcp__monkeyhub__studio_request",
+             "input": {"method": "GET", "path": "/api/jobs/job-1"}}]}})
+    else:
+        emit({"type": "user", "session_id": native, "message": {"content": [
+            {"type": "tool_result", "tool_use_id": "toolu_before", "content": [{"type": "text", "text": json.dumps(result)}]}]}})
+heard = []
+if "steer-wait" in prompt or "steer-hold" in prompt:
+    expected = 2 if "steer-wait-2" in prompt else 1
+    tool()
+    while len(heard) < expected:
+        message = read_user()
+        if message is None:
+            break
+        text = message["message"]["content"][0]["text"]
+        log(event="stdin", uuid=message.get("uuid"), text=text)
+        if "steer-hold" in prompt:
+            continue
+        emit({"type": "user", "isReplay": True, "uuid": message.get("uuid"), "session_id": native,
+              "message": message["message"]})
+        if not heard:
+            # The call opened before the interjection finishes after it was read.
+            tool({"status": "succeeded", "candidateId": "cand-before", "jobId": "job-1"})
+        heard.append(text)
+    answer = "heard: " + " | ".join(heard)
+    emit({"type": "assistant", "session_id": native, "message": {"content": [{"type": "text", "text": answer}]}})
+    emit({"type": "result", "session_id": native, "result": answer, "is_error": False})
+else:
+    emit({"type": "result", "session_id": native, "result": "answer: " + prompt.rsplit("\n\n", 1)[-1], "is_error": False})
+rest = read_user()
+log(event="closed", after=None if rest is None else rest.get("uuid"))
+if "steer-late" in prompt:
+    time.sleep(3)
+'''
+
+
+class InterjectionTests(unittest.TestCase):
+    """#301: a message sent while a turn runs reaches it, or becomes the next prompt."""
+
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory(prefix="MonkeyHub 插话 ")
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+        self.project = self.root / "project"
+        FilesystemProjectRepository.initialize(
+            self.project, project_id="chat-project", initial_state={"project_id": "chat-project", "version": 0},
+        )
+        environment = patch.dict(os.environ, {
+            "CODEX_HOME": str(self.root / "codex"), "CLAUDE_CONFIG_DIR": str(self.root / "claude"),
+            "CHAT_TEST_SECRET": "fake-private-token-12345",
+        })
+        environment.start()
+        self.addCleanup(environment.stop)
+        (self.root / "codex.py").write_text(FAKE_CLI, encoding="utf-8")
+        (self.root / "claude.py").write_text(STEER_CLI, encoding="utf-8")
+        self.codex_log, self.claude_log = self.root / "codex.jsonl", self.root / "claude.jsonl"
+        self.store = chat.ChatStore(self.root / "runtime", "http://127.0.0.1:8790", commands={
+            "codex": (sys.executable, str(self.root / "codex.py"), str(self.codex_log)),
+            "claude": (sys.executable, str(self.root / "claude.py"), str(self.claude_log)),
+        })
+        self.addCleanup(self.close_store)
+
+    def close_store(self):
+        for row in self.store.list():
+            self.store.stop(row.id)
+        self.store.shutdown()
+
+    def start(self, provider, content):
+        session = self.store.create(ChatCreateRequest(projectDir=str(self.project), provider=provider))
+        self.say(session, content)
+        return session
+
+    def say(self, session, content):
+        return self.store.post(session.id, ChatPostRequest(projectId=session.projectId, content=content))
+
+    def finished(self, session):
+        return wait_for(lambda: self.store.get(session.id), lambda row: row.status != "running", timeout=90)
+
+    def calls(self, path, event=None):
+        rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()] if path.exists() else []
+        return [row for row in rows if event is None or row.get("event") == event]
+
+    def test_claude_interjections_reach_the_running_turn_in_order(self):
+        session = self.start("claude", "steer-wait-2")
+        wait_for(lambda: self.store.get(session.id), lambda row: any(m.role == "tool" for m in row.messages), timeout=60)
+        first = self.say(session, "Make the courtyard square")
+        # The message is in the conversation at once, marked, before the Agent has it.
+        self.assertEqual([(m.content, m.interjection) for m in first.messages if m.role == "user"][-1],
+                         ("Make the courtyard square", "pending"))
+        self.assertEqual(first.status, "running")
+        self.say(session, "and keep the porch")
+        detail = self.finished(session)
+        self.assertEqual((detail.status, detail.error), ("idle", None))
+        users = [m for m in detail.messages if m.role == "user"]
+        self.assertEqual([(m.content, m.interjection) for m in users], [
+            ("steer-wait-2", None), ("Make the courtyard square", "delivered"), ("and keep the porch", "delivered")])
+        # One process, no restart: both arrived on its stdin, in order, as themselves.
+        self.assertEqual(len(self.calls(self.claude_log, "turn")), 1)
+        self.assertEqual([(row["uuid"], row["text"]) for row in self.calls(self.claude_log, "stdin")],
+                         [(users[1].id, users[1].content), (users[2].id, users[2].content)])
+        # The call opened before the interjection keeps its one row and its candidate.
+        calls = [m for m in detail.messages if m.role == "tool"]
+        self.assertEqual(len(calls), 1)
+        self.assertEqual((calls[0].id, calls[0].status, calls[0].candidateId),
+                         (f"{users[0].id}:toolu_before", "complete", "cand-before"))
+        answer = next(m for m in detail.messages if m.role == "assistant")
+        self.assertEqual(answer.content, "heard: Make the courtyard square | and keep the porch")
+        self.assertTrue(answer.id.startswith(users[2].id + ":"), "the answer follows the message it answers")
+        saved = json.loads((self.root / "runtime" / "chats" / f"{session.id}.json").read_text(encoding="utf-8"))
+        self.assertEqual([row.get("interjection") for row in saved["messages"] if row["role"] == "user"],
+                         [None, "delivered", "delivered"])
+
+    def test_claude_interjection_after_the_result_becomes_the_next_prompt(self):
+        session = self.start("claude", "steer-late")
+        wait_for(lambda: self.store.get(session.id),
+                 lambda row: any(m.role == "assistant" and m.content == "answer: steer-late" for m in row.messages), timeout=60)
+        running = self.store._running[session.id]
+        wait_for(lambda: running.stdin, lambda channel: channel is None)
+        late = self.say(session, "one more thing")
+        self.assertEqual([m.interjection for m in late.messages if m.role == "user"], [None, "pending"])
+        wait_for(lambda: self.calls(self.claude_log, "turn"), lambda rows: len(rows) == 2, timeout=60)
+        detail = self.finished(session)
+        self.assertEqual((detail.status, detail.error), ("idle", None))
+        turns = self.calls(self.claude_log, "turn")
+        native = self.store._sessions[session.id].nativeSessionId
+        self.assertEqual(turns[1]["args"][turns[1]["args"].index("--resume") + 1], native)
+        self.assertTrue(turns[1]["prompt"].endswith("\n\none more thing"))
+        message = [m for m in detail.messages if m.role == "user"][-1]
+        self.assertEqual(message.interjection, "delivered")
+        answer = next(m for m in detail.messages if m.content == "answer: one more thing")
+        self.assertTrue(answer.id.startswith(message.id + ":"))
+
+    def test_stop_still_stops_a_turn_with_an_interjection_waiting(self):
+        session = self.start("claude", "steer-hold")
+        wait_for(lambda: self.store.get(session.id), lambda row: any(m.role == "tool" for m in row.messages), timeout=60)
+        self.say(session, "change direction")
+        wait_for(lambda: self.calls(self.claude_log, "stdin"), lambda rows: len(rows) == 1, timeout=60)
+        self.store.stop(session.id)
+        detail = self.finished(session)
+        self.assertEqual((detail.status, detail.error.code), ("interrupted", "CHAT_STOPPED"))
+        self.assertEqual([m.interjection for m in detail.messages if m.role == "user"], [None, "undelivered"])
+        self.assertEqual([m.status for m in detail.messages if m.role == "tool"], ["interrupted"])
+        time.sleep(0.5)
+        self.assertEqual(len(self.calls(self.claude_log, "turn")), 1, "a stopped turn starts nothing after it")
+        self.assertNotIn(session.id, self.store._running)
+
+    def test_codex_cli_turn_is_stopped_and_continued_with_the_interjection(self):
+        session = self.start("codex", "pause-test")
+        wait_for(lambda: self.store.get(session.id), lambda row: any(m.content == "ready" for m in row.messages), timeout=60)
+        posted = self.say(session, "switch to plan B")
+        self.assertEqual([m.interjection for m in posted.messages if m.role == "user"], [None, "restarted"])
+        detail = self.finished(session)
+        self.assertEqual((detail.status, detail.error), ("idle", None))
+        turns = self.calls(self.codex_log)
+        self.assertEqual(len(turns), 2)
+        native = self.store._sessions[session.id].nativeSessionId
+        self.assertEqual(turns[1]["args"][turns[1]["args"].index("resume") + 1], native)
+        self.assertTrue(turns[1]["prompt"].rstrip().endswith("switch to plan B"))
+        self.assertIn("stopped your previous step", turns[1]["prompt"])
+        # What the stopped step already said stays; the continuation answers after it.
+        self.assertTrue(any(m.content == "ready" for m in detail.messages))
+        self.assertEqual([m.interjection for m in detail.messages if m.role == "user"], [None, "restarted"])
+        self.assertTrue(any(m.content == "response to the conversation" for m in detail.messages))
+
+    def test_interjection_is_refused_only_for_files(self):
+        session = self.start("claude", "steer-hold")
+        wait_for(lambda: self.store.get(session.id), lambda row: any(m.role == "tool" for m in row.messages), timeout=60)
+        with self.assertRaises(HubFailure) as refused:
+            self.store.post(session.id, ChatPostRequest(projectId=session.projectId, content="see this",
+                            attachments=[{"name": "a.txt", "mimeType": "text/plain", "data": "YQ=="}]))
+        self.assertEqual(refused.exception.error.code, "CHAT_INTERJECTION_FILES")
+        self.assertEqual([m.content for m in self.store.get(session.id).messages if m.role == "user"], ["steer-hold"])
+        self.store.stop(session.id)
 
 
 if __name__ == "__main__":

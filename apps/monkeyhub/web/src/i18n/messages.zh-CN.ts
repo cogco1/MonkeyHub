@@ -993,4 +993,5 @@ export const chatCopy = {
     usageName: (value: string | null) => value === null ? "近 7 天用量" : `用量：近 7 天 ${value} tokens`,
     usageTitle: "MonkeyMonitor 记录的近 7 天模型输入与输出 tokens。点击打开用量。",
     updateReady: "新版本已就绪", updateReadyHint: "打开「软件更新」，重启到新版本。",
+    interject: "插话", interjectPlaceholder: "补充一句，改变方向…", interjected: "插话", interjectionPending: "将在下一步送达", interjectionDelivered: "已送达", interjectionRestarted: "已停止当前步骤，按新消息继续", interjectionUndelivered: "未送达",
   } as const;

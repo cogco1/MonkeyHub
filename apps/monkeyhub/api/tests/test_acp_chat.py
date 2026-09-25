@@ -24,15 +24,57 @@ HUB_AGENT = FAKE_AGENT.replace("asyncio.run(main())", "") + r'''
 from acp.schema import ToolCallProgress
 BaseAgent = FakeAgent
 class FakeAgent(BaseAgent):
+    def __init__(self):
+        super().__init__()
+        self.steered = asyncio.Queue()
+
     async def initialize(self, **kwargs):
         log("config", codex=os.environ["CODEX_PATH"], config=json.loads(os.environ["CODEX_CONFIG"]),
             mode=os.environ["INITIAL_AGENT_MODE"])
-        return await super().initialize(**kwargs)
+        response = await super().initialize(**kwargs)
+        if os.environ.get("ACP_STEERING") == "1":
+            # The pinned codex-acp adapter advertises its steering extension so.
+            response.field_meta = {"steering": {"supported": True}}
+        return response
+
+    async def ext_method(self, method, params):
+        # codex-acp's `_session/steering`: the prompt joins the live turn.
+        log("steer", method=method, sessionId=params.get("sessionId"), text=params["prompt"][0]["text"])
+        await self.steered.put(params["prompt"][0]["text"])
+        return {"outcome": "injected"}
+
+    async def tool(self, session_id, identifier, candidate=None):
+        """Open one bound call, or finish it with a read-back candidate."""
+        if candidate is None:
+            update = ToolCallStart(session_update="tool_call", tool_call_id=identifier, title="Studio call",
+                                   kind="execute", status="in_progress", _meta={"is_mcp_tool_call": True},
+                                   raw_input={"server": "monkeyhub", "tool": "studio_request",
+                                              "arguments": {"method": "GET", "path": "/api/jobs/job-1"}})
+        else:
+            update = ToolCallProgress(session_update="tool_call_update", tool_call_id=identifier, status="completed",
+                                      raw_output={"result": {"content": [{"type": "text", "text": json.dumps({
+                                          "status": "succeeded", "candidateId": candidate, "readback": "ok"})}]},
+                                          "error": None})
+        await self.client.session_update(session_id=session_id, update=update)
 
     async def prompt(self, session_id, prompt, **kwargs):
         log("hub_prompt", sessionId=session_id,
             blocks=[block.model_dump(by_alias=True, exclude_none=True) for block in prompt])
         text = prompt[0].text.rsplit("\n\n", 1)[-1]
+        if text == "work-then-stall":
+            # Completed work, then a step that runs until it is cancelled.
+            self.cancelled.clear()
+            await self.tool(session_id, "done-tool")
+            await self.tool(session_id, "done-tool", candidate="candidate-done")
+            await self.emit("working")
+            await self.cancelled.wait()
+            return PromptResponse(stop_reason="cancelled")
+        if text.startswith("steer-wait"):
+            await self.tool(session_id, "steer-tool")
+            heard = [await asyncio.wait_for(self.steered.get(), 10) for _ in range(2 if text == "steer-wait-2" else 1)]
+            await self.tool(session_id, "steer-tool", candidate="candidate-steer")
+            await self.emit("heard: " + " | ".join(heard))
+            return PromptResponse(stop_reason="end_turn")
         if text != "candidate":
             return await super().prompt(session_id, [prompt[0].model_copy(update={"text": text}), *prompt[1:]], **kwargs)
         for identifier, server, readback in (("bound", "monkeyhub", "ok"), ("failed", "monkeyhub", "failed"),
@@ -119,9 +161,9 @@ class AcpChatTests(unittest.TestCase):
         self.store = self.open_store()
         self.addCleanup(self.close_store)
 
-    def open_store(self):
+    def open_store(self, timeout_s=15):
         return chat.ChatStore(self.runtime, "http://127.0.0.1:8790", commands=self.commands,
-                             acp_command=(sys.executable, "-u", str(self.agent)), timeout_s=15)
+                             acp_command=(sys.executable, "-u", str(self.agent)), timeout_s=timeout_s)
 
     def close_store(self):
         for row in self.store.list():
@@ -370,6 +412,138 @@ class AcpChatTests(unittest.TestCase):
             self.store.stop(other.id)
         self.assertEqual(before, {str(p): p.read_bytes() for root in (self.project, other_project)
                                  for p in root.rglob("*") if p.is_file()})
+
+    # #301: a message sent while a Codex turn runs.
+
+    def working(self, session, predicate):
+        # Generous: a fresh fake adapter spends seconds importing the ACP SDK.
+        return wait_for(lambda: self.store.get(session.id), lambda row: predicate(row) or row.status != "running",
+                        timeout=90)
+
+    def reopen(self):
+        # A fresh fake adapter can spend many seconds importing the ACP SDK on a
+        # loaded machine; the adapter's inactivity limit must not end the turn.
+        self.store.shutdown()
+        self.store = self.open_store(timeout_s=120)
+
+    def logged(self, event):
+        path = self.root / "calls.jsonl"
+        rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()] if path.exists() else []
+        return [row for row in rows if row["event"] == event]
+
+    def settled(self, session):
+        result = wait_for(lambda: self.store.get(session.id), lambda row: row.status != "running", timeout=90)
+        self.assertEqual(result.status, "idle", result.error)
+        return result
+
+    def test_steering_adapter_takes_interjections_into_the_live_turn_in_order(self):
+        with patch.dict(os.environ, {"ACP_STEERING": "1"}):
+            self.reopen()
+            session = self.create()
+            self.post(session, "steer-wait-2")
+            self.working(session, lambda row: any(m.role == "tool" for m in row.messages))
+            first = self.post(session, "Make the courtyard square")
+            self.assertEqual([m.interjection for m in first.messages if m.role == "user"], [None, "pending"])
+            self.post(session, "and keep the porch")
+            result = self.settled(session)
+        calls = self.calls()
+        self.assertEqual([(c["method"], c["text"]) for c in calls if c["event"] == "steer"],
+                         [("session/steering", "Make the courtyard square"), ("session/steering", "and keep the porch")])
+        self.assertEqual({c["sessionId"] for c in calls if c["event"] == "steer"}, {"fixture/session:not-a-uuid"})
+        self.assertEqual(len([c for c in calls if c["event"] == "hub_prompt"]), 1, "steering sends no new prompt")
+        self.assertFalse(any(c["event"] == "cancel" for c in calls))
+        users = [m for m in result.messages if m.role == "user"]
+        self.assertEqual([m.interjection for m in users], [None, "delivered", "delivered"])
+        tool = next(m for m in result.messages if m.role == "tool")
+        self.assertEqual((tool.id, tool.status, tool.candidateId), (f"{users[0].id}:steer-tool", "complete", "candidate-steer"))
+        answer = next(m for m in result.messages if m.role == "assistant")
+        self.assertEqual(answer.content, "heard: Make the courtyard square | and keep the porch")
+        self.assertTrue(answer.id.startswith(users[2].id + ":"))
+
+    def test_adapter_without_steering_cancels_the_step_and_continues_with_the_interjection(self):
+        self.reopen()
+        session = self.create()
+        self.post(session, "work-then-stall")
+        self.working(session, lambda row: any(m.content == "working" for m in row.messages))
+        posted = self.post(session, "go with plan B")
+        # Shown at once; once the adapter shows it has no steering, the step stops for it.
+        self.assertEqual([m.interjection for m in posted.messages if m.role == "user"], [None, "pending"])
+        result = self.settled(session)
+        calls = self.calls()
+        prompts = [c for c in calls if c["event"] == "hub_prompt"]
+        self.assertEqual(len(prompts), 2)
+        self.assertEqual(len({c["pid"] for c in calls}), 1, "the same adapter and ACP session continue")
+        self.assertEqual({c["sessionId"] for c in prompts}, {"fixture/session:not-a-uuid"})
+        self.assertEqual([c["event"] for c in calls if c["event"] in {"cancel", "hub_prompt"}], ["hub_prompt", "cancel", "hub_prompt"])
+        self.assertTrue(prompts[1]["blocks"][0]["text"].endswith("\n\ngo with plan B"))
+        self.assertIn("stopped your previous step", prompts[1]["blocks"][0]["text"])
+        # Work the cancelled step completed stays, with its candidate.
+        done = next(m for m in result.messages if m.id.endswith(":done-tool"))
+        self.assertEqual((done.status, done.candidateId), ("complete", "candidate-done"))
+        self.assertTrue(any(m.content == "working" for m in result.messages))
+        self.assertEqual([m.interjection for m in result.messages if m.role == "user"], [None, "restarted"])
+        interjection = [m for m in result.messages if m.role == "user"][-1]
+        answer = next(m for m in result.messages if m.content == "answer: go with plan B")
+        self.assertTrue(answer.id.startswith(interjection.id + ":"))
+
+    def test_interjection_as_the_prompt_returns_becomes_the_next_prompt(self):
+        with patch.dict(os.environ, {"ACP_STEERING": "1"}):
+            self.reopen()
+            session = self.create()
+            original = self.store._run_acp
+
+            def finish_then_interject(session_id, prompt, running):
+                answer = original(session_id, prompt, running)
+                if len(self.logged("hub_prompt")) == 1:
+                    # The first prompt has returned; its turn has not ended yet.
+                    self.post(session, "one more thing")
+                return answer
+
+            with patch.object(self.store, "_run_acp", side_effect=finish_then_interject):
+                self.post(session, "first")
+                self.working(session, lambda row: len(self.logged("hub_prompt")) == 2)
+            result = self.settled(session)
+        prompts = [c for c in self.calls() if c["event"] == "hub_prompt"]
+        self.assertEqual(len(prompts), 2)
+        self.assertTrue(prompts[1]["blocks"][0]["text"].endswith("\n\none more thing"))
+        self.assertNotIn("stopped your previous step", prompts[1]["blocks"][0]["text"])
+        self.assertFalse(any(c["event"] in {"steer", "cancel"} for c in self.calls()))
+        self.assertEqual([m.interjection for m in result.messages if m.role == "user"], [None, "delivered"])
+        self.assertEqual([m.content for m in result.messages if m.role == "assistant"], ["answer: first", "answer: one more thing"])
+
+    def test_cancelled_step_withdraws_its_permission_request(self):
+        self.reopen()
+        session = self.create()
+        self.post(session, "permission")
+        self.working(session, lambda row: any(m.permission for m in row.messages))
+        permission = self.permission(session)
+        self.post(session, "never mind, do this instead")
+        result = self.settled(session)
+        self.assertFalse(any(m.permission for m in result.messages))
+        asked = next(m for m in result.messages if m.id.endswith(f":permission:{permission.id}"))
+        self.assertEqual(asked.status, "interrupted")
+        with self.assertRaises(chat.HubFailure) as expired:
+            self.store.resolve_permission(session.id, permission.id,
+                                          chat.ChatPermissionRequest(projectId=session.projectId, optionId="allow"))
+        self.assertEqual(expired.exception.error.code, "CHAT_PERMISSION_EXPIRED")
+        outcomes = [c["outcome"]["outcome"] for c in self.calls() if c["event"] == "permission"]
+        self.assertEqual(outcomes, ["cancelled"])
+        self.assertTrue(any(m.content == "answer: never mind, do this instead" for m in result.messages))
+
+    def test_stop_still_stops_a_steered_turn(self):
+        with patch.dict(os.environ, {"ACP_STEERING": "1"}):
+            self.reopen()
+            session = self.create()
+            self.post(session, "stall")
+            self.working(session, lambda row: any(m.content == "waiting" for m in row.messages))
+            self.post(session, "change direction")
+            wait_for(lambda: self.logged("steer"), bool, timeout=90)
+            self.store.stop(session.id)
+            stopped = wait_for(lambda: self.store.get(session.id), lambda row: row.status != "running", timeout=90)
+        self.assertEqual((stopped.status, stopped.error.code), ("interrupted", "CHAT_STOPPED"))
+        self.assertEqual([m.interjection for m in stopped.messages if m.role == "user"], [None, "delivered"])
+        self.assertEqual(len([c for c in self.calls() if c["event"] == "hub_prompt"]), 1, "a stopped turn starts nothing after it")
+        self.assertNotIn(session.id, self.store._running)
 
 
 if __name__ == "__main__":

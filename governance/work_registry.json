@@ -522,6 +522,66 @@
           "blocked_reason": null
         }
       ]
+    },
+    {
+      "id": "GH-301",
+      "stream": "planning",
+      "status": "active",
+      "goal": "Let the architect send a message while the Agent is working and have it change the turn's direction: Claude reads it from its stream-json stdin at the next step; Codex takes it mid-turn through the adapter's steering or, where that is unavailable, cancels the current step and continues with it as the next prompt.",
+      "depends_on": [],
+      "write_scope": [
+        "apps/monkeyhub/api/monkeyhub_api/chat.py",
+        "apps/monkeyhub/api/monkeyhub_api/acp_session.py",
+        "apps/monkeyhub/api/monkeyhub_api/models.py",
+        "apps/monkeyhub/api/tests/test_chat.py",
+        "apps/monkeyhub/api/tests/test_acp_chat.py",
+        "apps/monkeyhub/api/tests/test_chat_presentation.py",
+        "apps/monkeyhub/web/src/ChatShell.tsx",
+        "apps/monkeyhub/web/src/i18n/messages.en.ts",
+        "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
+        "apps/monkeyhub/web/src/api/generated/types.gen.ts",
+        "apps/monkeyhub/web/test/chatShell.browser.mjs",
+        "apps/monkeyhub/README.md",
+        "docs/mapping/planning/GH-301-steer.md"
+      ],
+      "card": "docs/mapping/planning/GH-301-steer.md",
+      "acceptance": [
+        "An interjection during a Claude turn reaches the running session, with no restart and no lost context.",
+        "An interjection during a Codex turn redirects the work immediately, either within the turn or by cancelling it and sending the new prompt at once.",
+        "It works in the desktop Hub. Covered by API tests with fake providers and the chatShell browser test."
+      ],
+      "lanes": [
+        {
+          "id": "steer",
+          "issue": "https://github.com/cogco1/MonkeyHub/issues/301",
+          "branch": "codex/mid-turn-steer",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-mid-turn-steer",
+          "base_ref": "e183a69a",
+          "contributor": "Claude",
+          "reviewer": "Claude root task",
+          "handoff": "Backend accepts a send while a turn runs and records it as an interjection; Claude stdin, Codex ACP steering with cancel-and-continue fallback; composer stays usable with Stop as a secondary button. Parent integrates; expect a rebase against the sidebar and restart lanes editing ChatShell.tsx.",
+          "modules": [
+            "hub.shell"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/api/monkeyhub_api/chat.py",
+            "apps/monkeyhub/api/monkeyhub_api/acp_session.py",
+            "apps/monkeyhub/api/monkeyhub_api/models.py",
+            "apps/monkeyhub/api/tests/test_chat.py",
+            "apps/monkeyhub/api/tests/test_acp_chat.py",
+            "apps/monkeyhub/api/tests/test_chat_presentation.py",
+            "apps/monkeyhub/web/src/ChatShell.tsx",
+            "apps/monkeyhub/web/src/i18n/messages.en.ts",
+            "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
+            "apps/monkeyhub/web/src/api/generated/types.gen.ts",
+            "apps/monkeyhub/web/test/chatShell.browser.mjs",
+            "apps/monkeyhub/README.md"
+          ],
+          "depends_on": [],
+          "status": "active",
+          "blocked_reason": null
+        }
+      ]
     }
   ]
 }
