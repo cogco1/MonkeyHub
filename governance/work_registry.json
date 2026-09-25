@@ -167,7 +167,9 @@
         "apps/monkeyhub/web/workspaces/src/features/stage/ModelToolButton.tsx",
         "apps/monkeyhub/web/workspaces/src/features/stage/Stage.tsx",
         "apps/monkeyhub/web/workspaces/src/features/stage/stageNotices.css",
+        "apps/monkeyhub/web/workspaces/test/errorPanel.test.ts",
         "apps/monkeyhub/web/workspaces/test/modelSync.browser.mjs",
+        "apps/monkeyhub/web/workspaces/test/proposalCard.test.ts",
         "docs/mapping/planning/GH-302-stage-feedback.md"
       ],
       "card": "docs/mapping/planning/GH-302-stage-feedback.md",
@@ -195,7 +197,9 @@
             "apps/monkeyhub/web/workspaces/src/features/stage/stageNotices.css",
             "apps/monkeyhub/web/workspaces/src/app/ErrorPanel.tsx",
             "apps/monkeyhub/web/workspaces/src/app/LoadingOverlay.tsx",
-            "apps/monkeyhub/web/workspaces/test/modelSync.browser.mjs"
+            "apps/monkeyhub/web/workspaces/test/modelSync.browser.mjs",
+            "apps/monkeyhub/web/workspaces/test/proposalCard.test.ts",
+            "apps/monkeyhub/web/workspaces/test/errorPanel.test.ts"
           ],
           "depends_on": [],
           "status": "active",
