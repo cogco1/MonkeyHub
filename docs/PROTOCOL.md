@@ -121,7 +121,7 @@ tolerate it.
 | GET | `/api/working-source?workspace=` | the Working Head (§4.1) and the exact source one workspace (`modeling`, `drawing`, `render`, `board`) follows: `head{runId, stateDigest, sourceStageRef, branchId, accepted, origin, lineage}`, `compatible`, `source`, `stageRef` (only for an exact accepted Stage model), `reason`, `warnings`. `policy=frozen` with `runId`/`stateDigest`/`assetSha256` keeps that pin and says whether the head moved past it | reads the working position + shared + design refs | provisional |
 | GET | `/api/working-draft/revision` | `{projectId, revisionSha256}` of the working position alone, for polling whether the head may have moved; no local draft and no project guard | reads the working position | provisional |
 | PUT | `/api/working-draft` | Continue: the working position, and so the Working Head, moves onto `runId`, or back to the default with `null`, under the `baseRevisionSha256` compare-and-swap; a move onto a run retains who made it as `AuditEvent@1` `design.continued` beside that run (§4.1). `messageSource` with `rawLanguage` marks the Hub Agent continuing on the user's bound words | **writes the working position + that run's review** | provisional |
-| GET | `/api/worktrees` | read-only Worktree Graph V0 (§4.1): the head line, other accepted lines, running and interrupted changes with their exact base and declared read/write refs, retained results off the head's line with `relation` and `reconcile` (`can-combine`, `conflict` with the shared refs, `unknown`), each finished line's `admission` (`admitted`, `rejected`, `superseded`, `none`) and `studyId` (§5.5), and drawing/render `current`/`stale`/`running` states. Nothing is merged or started | reads the working position + shared + design refs + the admissions review + server memory | provisional |
+| GET | `/api/worktrees` | read-only Worktree Graph V0 (§4.1): the head line, other accepted lines, running and interrupted changes with their exact base and declared read/write refs, retained results off the head's line with `relation` and `reconcile` (`can-combine`, `conflict` with the shared refs, `unknown`), each finished line's `admission` (`admitted`, `rejected`, `superseded`, `none`) and `studyId` (§5.5), and drawing/render `current`/`stale`/`frozen`/`running`/`unavailable` states, a drawing's as the Drawing tool reads it (§4.1). Nothing is merged or started | reads the working position + shared + design refs + the admissions review + server memory | provisional |
 | POST | `/api/drawings/elevations` → 201 | exact-model elevation document with drawing/revision/Stage/view references | writes shared drawing artifacts and document registration | provisional |
 | POST | `/api/drawings/section-perspectives` → 201 | exact-model section perspective document: `section` (`{line, keep}` or `{origin, normal}`) cuts the retained STEP, the kept side is drawn in perspective with the section plane as picture plane (true to scale at `scaleDenominator`), the cut in poché; optional `camera` (`{eye, target, up?, fovDeg?}` or the default one-point `{eyeHeight?, fovDeg?}`), `depth`, `hiddenObjectIds`; the view recipe records the request, plane and resolved camera; refusals are named (`SECTION_PLANE_MISSES_MODEL`, `SECTION_EYE_ON_KEPT_SIDE`, …) | writes shared drawing artifacts and document registration | provisional |
 | GET | `/api/candidates/{candidateId}/validation` | the kernel's validation receipt and the server's review readiness (§5) | reads shared + published | stable |
@@ -1050,6 +1050,16 @@ runs and the local recovery, not the `active` ledger of executing or interrupted
 position before it (GH-293). Listing a finished candidate does move it; the local draft writer
 reads again on `WORKING_DRAFT_STALE`, while its own witness and `expectedSource` guard the content.
 
+Whether a representation page is still current is one read-only projection
+(`representation_status`, #223), derived on every read and never stored. An explicit page
+replacement answers first; then a cut plan answers through the Drawing owner's read set, an AI
+render through its retained request, a page bound to one model state through this head, and a
+page bound to nothing by its replacements alone. Its words are `current`, `outdated`, `frozen`
+(kept on a chosen version) and `unavailable`; the Worktree Graph says `stale` for `outdated`,
+and Publish keeps its own words (Publication pages). A Worktree Graph drawing row is this
+projection of the drawing's latest page, so it agrees with the Drawing tool: a change outside
+the plan's read set leaves it current. A render row is the render owner's `sourceState`.
+
 Continue is an attributed act, whoever makes it (#294 S4). Each move onto a run retains one
 `AuditEvent@1` with `action: design.continued` in that run's review area. It names ids only:
 `actorId` and `authenticatedActor` from the request boundary, `origin` (`studio` or `hub` for
@@ -1340,10 +1350,14 @@ transport timeout or ambiguous upstream response cannot cause a second paid call
 GET and repeated POST for the same request only recover status. A new explicit
 attempt needs a new UUID. `errorCode` and `error` contain only bounded safe reasons;
 raw provider errors, credentials and image bytes never enter diagnostics.
-`sourceState` is derived as `current`, `outdated` or `unavailable`: explicit source
-page replacement or advancement of its declared Stage branch makes it outdated.
-For a source with no declared Stage, current means the exact registered source
-remains available, not that it matches an untracked external model or active view.
+`sourceState` is derived as `current`, `outdated` or `unavailable` by following the
+retained request through every source and reference, transitively: an explicit
+replacement of one of those pages makes it outdated; so does a model-bound page whose
+exact state is no longer the Working Head's design (§4.1), and a cut-plan page whose
+drawing reads changed geometry, anchors or dimensions. A later accepted Stage alone
+changes nothing unless it becomes the Working Head. For a page bound to no model state,
+current means the exact registered page remains available and unreplaced, not that it
+matches an untracked external model or active view.
 Old output registrations remain readable independently of source availability.
 `document` is the retained SourceDocument, and `resultAvailable` independently
 reports whether its immutable bytes can still be read. Usage and cost stay null
@@ -1389,8 +1403,11 @@ The embedded `spec` supplies point-based page width/height and the supported
 `runId`, `assetSha256`, nullable `revisionRef`, and `pageIndex`. Placement and
 crop are presentation choices. Derived source status is `current`, `stale`,
 `missing`, or explicitly `frozen`; updating a source requires a deliberate
-save and does not rewrite other elements. Drawing/Render freshness comes
-from those owners. A missing file cannot be made available by freezing it.
+save and does not rewrite other elements. It is the one representation-status
+projection (§4.1) in Publish's words: `stale` for an outdated page or inputs that
+cannot be verified, `missing` when the page's own bytes cannot be read, and
+`current` for a drawing kept on its chosen version. Drawing, Render and model-bound
+pages answer through their owners. A missing file cannot be made available by freezing it.
 
 `POST /api/publication/from-board` takes an exact Board revision and selected
 element/frame ids. Registered image pages are appended top-to-bottom then

@@ -15,7 +15,7 @@ from archflow.project.repository import ProjectRepositoryError
 from archflow.state.design_portfolio import DesignBranch
 from archflow.state.state_record import StateRecord, StateRecordError, changed_refs, combine_component_changes
 
-from .artifacts import ModelSource, list_artifacts, list_documents, require_complete_model
+from .artifacts import ModelSource, list_artifacts, require_complete_model
 from .binding import ProjectBinding, ReferenceRun, record_kind
 from .candidate import _receipt
 from .design_history import (
@@ -26,7 +26,10 @@ from .design_history import (
     read_acceptance,
 )
 from .jobs import FAILED, QUEUED, RUNNING, Job, JobRegistry
-from .working_draft import WorkingHead, lineage_of, model_is_current, read_working_draft, resolve_working_source
+from .representation_dependencies import (
+    CURRENT, FROZEN, OUTDATED, UNAVAILABLE, ReplacementCycle, RepresentationReads, representation_status,
+)
+from .working_draft import WorkingHead, lineage_of, read_working_draft, resolve_working_source
 from ..transport.errors import StudioError
 
 
@@ -232,7 +235,7 @@ class RepresentationState:
     kind: str
     item_id: str
     label: str
-    # current | stale | running | unavailable
+    # current | stale | frozen | running | unavailable
     state: str
     source_run_id: str | None
     detail: str | None
@@ -399,15 +402,27 @@ def _with_admissions(binding: ProjectBinding, lines: list[WorktreeLine], warning
     ]
 
 
-def _representations(binding: ProjectBinding, head: WorkingHead | None, render_jobs,
-                     warnings: list[str]) -> list[RepresentationState]:
+# The graph's words for the representation-status vocabulary.
+_GRAPH_STATE = {CURRENT: "current", OUTDATED: "stale", FROZEN: "frozen", UNAVAILABLE: "unavailable"}
+
+
+def _representations(binding: ProjectBinding, render_jobs, warnings: list[str]) -> list[RepresentationState]:
+    """Each drawing's latest revision and each render attempt, in one status vocabulary.
+
+    A drawing row is the representation-status projection of its latest page,
+    so it says what the Drawing tool says: a change outside the plan's read set
+    leaves it current. A render row is the render owner's reading of the
+    attempt's retained request, the reader that projection uses for an AI page.
+    """
+
     rows: list[RepresentationState] = []
+    reads = RepresentationReads(binding)  # one Working Head and document listing for every row
     latest = {}
     try:
-        documents = list_documents(binding)
+        documents = reads.documents
     except (StudioError, ProjectRepositoryError, KeyError, TypeError, ValueError, OSError) as exc:
         warnings.append(f"Drawings could not be read: {getattr(exc, 'detail', exc)}")
-        documents = []
+        documents = ()
     for document in documents:
         if (document.view_recipe or {}).get("kind") != "cut-plan" or document.model_source is None:
             continue
@@ -415,18 +430,18 @@ def _representations(binding: ProjectBinding, head: WorkingHead | None, render_j
         if key not in latest or (document.generated_at or "") > (latest[key].generated_at or ""):
             latest[key] = document
     for key, document in sorted(latest.items()):
-        if document.view_recipe.get("follow") == "frozen":
-            rows.append(RepresentationState("drawing", key, key, "frozen", document.model_source.run_id,
-                                            "Kept on the version it was drawn from."))
-            continue
-        state, reason = model_is_current(binding, document.model_source.run_id, document.model_source.state_digest, head=head)
-        rows.append(RepresentationState("drawing", key, key, {"current": "current", "outdated": "stale"}.get(state, "unavailable"),
-                                        document.model_source.run_id, reason))
+        try:
+            status = representation_status(
+                binding, (document.run_id, document.asset_sha256, document.revision_ref, 0), reads=reads)
+            state, detail = status.state, status.reason
+        except ReplacementCycle as exc:
+            state, detail = UNAVAILABLE, str(exc)
+        rows.append(RepresentationState("drawing", key, key, _GRAPH_STATE[state], document.model_source.run_id, detail))
     for job in render_jobs or ():
         if job.status in ("queued", "running"):
             state = "running"
         elif job.status == "succeeded" and job.document is not None:
-            state = {"current": "current", "outdated": "stale"}.get(job.source_state, "unavailable")
+            state = _GRAPH_STATE.get(job.source_state, "unavailable")
         else:
             continue
         label = job.document.file_name if job.document is not None else "AI Render"
@@ -465,6 +480,6 @@ def worktree_graph(binding: ProjectBinding, *, jobs: JobRegistry | None = None, 
     lines.extend(_running_lines(binding, value["active"], jobs, head))
     lines.extend(_result_lines(binding, value, head, warnings))
     lines = _with_admissions(binding, lines, warnings)
-    representations = _representations(binding, head, render_jobs, warnings)
+    representations = _representations(binding, render_jobs, warnings)
     return WorktreeGraph(binding.project_id, head, resolved.revision_sha256, tuple(lines),
                          tuple(representations), tuple(warnings))

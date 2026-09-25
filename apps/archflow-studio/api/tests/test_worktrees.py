@@ -167,9 +167,26 @@ class WorktreeGraphTests(WorkingSourceFixture):
         job = finished(self.client, submit(self.client, request(page)))["jobId"]
         [render] = self.graph()["representations"]
         self.assertEqual((render["kind"], render["itemId"], render["state"]), ("render", job, "current"))
+        # A plan cut from the Stage's registered model reads that model's bytes.
+        drawn = self.client.post("/api/drawings/plans", json={
+            "projectId": PROJECT_ID, "sourceStageRef": stage["stageRef"], "drawingId": "stage-plan",
+            "cutHeight": 1.2, "bottom": 0, "scaleDenominator": 50, "dimensions": []})
+        self.assertEqual(drawn.status_code, 201, drawn.text)
+        drawing = drawn.json()
+        rows = {row["kind"]: row for row in self.graph()["representations"]}
+        self.assertEqual((rows["drawing"]["itemId"], rows["drawing"]["state"], rows["drawing"]["sourceRunId"]),
+                         ("stage-plan", "current", stage["candidateId"]))
         self.adopt(self.candidate_from(stage))
-        [render] = self.graph()["representations"]
-        self.assertEqual(render["state"], "stale")
+        rows = {row["kind"]: row for row in self.graph()["representations"]}
+        self.assertEqual(rows["render"]["state"], "stale")
+        # The continued result registers the same model bytes, so nothing the plan
+        # reads changed: its row says what the Drawing tool says, although the
+        # design state it would compare as a whole has moved.
+        status = self.client.post("/api/drawings/plans/status", json={
+            name: drawing[name] for name in ("runId", "assetSha256", "revisionRef")})
+        self.assertEqual(status.status_code, 200, status.text)
+        self.assertEqual((rows["drawing"]["state"], status.json()["status"]), ("current", "current"))
+        self.assertEqual(rows["drawing"]["detail"], status.json()["detail"])
 
     def test_a_combined_result_contains_the_work_it_combined(self):
         stage = self.initialize()
