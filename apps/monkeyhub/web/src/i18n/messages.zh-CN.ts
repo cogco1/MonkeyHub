@@ -984,4 +984,13 @@ export const chatCopy = {
       command: "运行命令", planSteps: "整理步骤", webFetch: "打开网页", generic: "其他操作",
     },
     jumpLatest: "跳到最新消息", jumpLatestNew: (count: number) => `跳到最新消息（${count} 条新消息）`,
+    // GH-300：侧栏的跨项目入口。
+    tasks: "任务", tasksActive: (count: number) => `${count} 项进行中或排队`, tasksEmpty: "没有正在进行或排队的工作。",
+    taskRunning: "进行中", taskQueued: "排队中",
+    projectBusy: (count: number) => `${count} 项工作进行中或排队`, projectBusyBadge: "运行中",
+    projectNewSchemes: (count: number) => `${count} 个新方案`,
+    usageWeek: (value: string) => `近 7 天 ${value} tokens`,
+    usageName: (value: string | null) => value === null ? "近 7 天用量" : `用量：近 7 天 ${value} tokens`,
+    usageTitle: "MonkeyMonitor 记录的近 7 天模型输入与输出 tokens。点击打开用量。",
+    updateReady: "新版本已就绪", updateReadyHint: "打开「软件更新」，重启到新版本。",
   } as const;

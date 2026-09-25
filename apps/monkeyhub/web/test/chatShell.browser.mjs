@@ -82,12 +82,13 @@ const errors = [], writes = [], sessions = [], providerReads = [];
 const monitorReads = [];
 const monitorTokens = { input_tokens: 200, cached_input_tokens: 50, output_tokens: 30,
   cache_write_input_tokens: 0, cache_write_1h_input_tokens: 0, reasoning_output_tokens: 0 };
+const monitorDay = new Date(Date.now() - 86_400_000).toISOString();
 const monitorEvents = [
   ...Array.from({ length: 4 }, (_, i) => ({ event_id: `turn-${i}`, source: "codex", provider: "openai", model: "test",
-    phase: "agent_turn", timing_scope: "agent_turn", model_call: null, status: "completed", started_at: "2026-09-20T00:00:00Z",
+    phase: "agent_turn", timing_scope: "agent_turn", model_call: null, status: "completed", started_at: monitorDay,
     tokens: Object.fromEntries(Object.keys(monitorTokens).map((key) => [key, null])) })),
   ...Array.from({ length: 37 }, (_, i) => ({ event_id: `call-${i}`, source: "codex", provider: "openai", model: "test",
-    phase: "agent", model_call: true, status: "observed", started_at: "2026-09-20T00:00:00Z", tokens: monitorTokens })),
+    phase: "agent", model_call: true, status: "observed", started_at: monitorDay, tokens: monitorTokens })),
 ];
 const monitorTrace = { trace_id: "finished-with-missing-end", started_at: "2026-09-20T00:00:00Z", ended_at: "2026-09-20T00:00:02Z",
   status: "succeeded", summary: { elapsed_ms: 2000, first_candidate_ms: null, verified_ms: 1200 }, spans: [
@@ -2104,6 +2105,103 @@ try {
   await page.setViewportSize({ width: 1440, height: 960 });
   await page.getByRole("button", { name: "展开项目栏", exact: true }).first().click();
   await lastRow.click();
+  await page.getByRole("button", { name: "Hub 设置", exact: true }).click();
+  await page.locator("#language").selectOption("en");
+  await page.getByRole("dialog").getByRole("button", { name: "Close", exact: true }).click();
+
+  // #300: Tasks lists the Agent work running or waiting in every open project,
+  // and opens its project and conversation; project rows carry a running badge.
+  // The footer shows the last 7 days of usage from Monitor and a ready update.
+  for (const session of sessions) if (session.status === "running") session.status = "idle";
+  const tasksB = runtimes.get("D:\\fixture\\B"), tasksA = runtimes.get("D:\\fixture\\A");
+  const bChat = sessions.find((row) => row.projectId === "B" && !row.sourceSessionId && !row.archived);
+  tasksB.operations.push({ operationId: "task-running", projectId: "B", kind: "POST /api/proposals/prop-9/candidate", source: "hub",
+    status: "executing", committed: false, sessionId: bChat.id });
+  tasksA.operations.push({ operationId: "task-queued", projectId: "A", kind: "POST /api/drawings/sheets", source: "studio", status: "queued", committed: false });
+  await page.goto(`${origin}/?chatId=${longSession.id}`);
+  await page.locator(".chat-header h1").filter({ hasText: "Long review" }).waitFor();
+  const tasksEntry = page.locator(".chat-tasks-toggle");
+  await page.waitForFunction(() => document.querySelector(".chat-tasks-toggle .chat-count")?.textContent === "2");
+  assert.equal(await tasksEntry.getAttribute("aria-expanded"), "false", "Tasks starts folded");
+  assert.match(await tasksEntry.innerText(), /^Tasks/);
+  const projectBadge = (name) => page.locator(".chat-project__head").filter({ has: page.getByRole("button", { name, exact: true }) }).locator('.chat-project__badge[data-kind="running"]');
+  await projectBadge("Project B").waitFor();
+  await projectBadge("Project A").waitFor();
+  assert.equal(await projectBadge("harbour-study").count(), 0, "an idle project has no badge");
+  assert.equal(await page.locator('.chat-project__badge[data-kind="new"]').count(), 0, "no new-schemes number is guessed before #294");
+  assert.equal(await page.getByRole("button", { name: "Project B", exact: true }).first().getAttribute("aria-description"), "1 task running or waiting");
+  await tasksEntry.click();
+  const taskList = page.getByRole("list", { name: "Tasks", exact: true });
+  assert.deepEqual(await taskList.locator(".chat-task__title").allInnerTexts(), [bChat.title, "Make a drawing sheet"]);
+  assert.deepEqual(await taskList.locator(".chat-task small").allInnerTexts(), ["Project B · Generate a scheme · Running", "Project A · Waiting to start"]);
+  assert.equal(await taskList.getByText(/task-running|task-queued|prop-9/).count(), 0, "no raw ids in Tasks");
+  // Footer: usage from Monitor's own records, and no update while none is ready.
+  const usageEntry = page.locator(".chat-usage");
+  await page.waitForFunction(() => document.querySelector(".chat-usage")?.getAttribute("aria-label") === "Usage: 8,510 tokens in the last 7 days");
+  assert.equal(await usageEntry.locator(".chat-usage__figure").innerText(), "8.5K tokens · 7 days");
+  assert.equal(await page.locator(".chat-update").count(), 0, "no update is announced while none is ready");
+  await page.screenshot({ path: path.join(temporary, "sidebar-tasks-en-1440.png") });
+  await taskList.locator(".chat-task").first().click();
+  await page.locator(".chat-header h1").filter({ hasText: bChat.title }).waitFor();
+  assert.equal(await page.locator('.chat-project[data-selected="true"] .chat-project__name').innerText(), "Project B", "the task opened its project");
+  await taskList.locator(".chat-task").filter({ hasText: "Make a drawing sheet" }).click();
+  await page.waitForFunction(() => document.querySelector('.chat-project[data-selected="true"] .chat-project__name')?.textContent === "Project A");
+  // Finished work leaves Tasks and its project's badge.
+  tasksB.operations = tasksB.operations.filter((row) => row.operationId !== "task-running");
+  tasksA.operations = tasksA.operations.filter((row) => row.operationId !== "task-queued");
+  emitRuntime();
+  await projectBadge("Project B").waitFor({ state: "detached" });
+  await taskList.getByText("Nothing is running or waiting.", { exact: true }).waitFor();
+  assert.equal(await page.locator(".chat-tasks-toggle .chat-count").count(), 0);
+  await tasksEntry.click();
+  // A ready update is one click from Software Update.
+  updateStatus = { ...updateStatus, state: "ready", prepared: preparedPatch, canApply: true };
+  await page.reload();
+  const updateEntry = page.getByRole("button", { name: "New version ready", exact: true });
+  await updateEntry.waitFor();
+  await page.locator(".chat-sidebar").screenshot({ path: path.join(temporary, "sidebar-footer-en.png") });
+  await updateEntry.click();
+  const updateHeading = page.getByRole("dialog").getByRole("heading", { name: "Software update", exact: true });
+  await updateHeading.waitFor();
+  await page.waitForFunction(() => {
+    const heading = document.getElementById("software-update-heading"), dialog = heading?.closest("dialog");
+    if (!heading || !dialog) return false;
+    const box = heading.getBoundingClientRect(), frame = dialog.getBoundingClientRect();
+    return box.top >= frame.top - 1 && box.bottom <= frame.bottom + 1;
+  });
+  updateStatus = { ...updateStatus, state: "idle", prepared: null, canApply: false };
+  await page.getByRole("dialog").getByRole("button", { name: "Close", exact: true }).click();
+  await updateEntry.waitFor({ state: "detached" });
+  // The footer's usage opens the Usage tool.
+  await usageEntry.click();
+  await waitMonitor();
+  // A Layout link still lands on Layout, with Board pressed in the rail.
+  await page.goto(`${origin}/?${new URLSearchParams({ runtimeId: tasksB.runtimeId, view: "publish" })}`);
+  await visibleWorkspace().getByLabel("Publication title", { exact: true }).waitFor();
+  assert.equal(await visibleWorkspace().getByRole("radio", { name: "Layout", exact: true }).getAttribute("aria-checked"), "true");
+  assert.equal(await page.getByRole("button", { name: "Board", exact: true }).getAttribute("aria-pressed"), "true");
+  // The same sidebar in Chinese, at desktop and phone widths.
+  tasksB.operations.push({ operationId: "task-running-zh", projectId: "B", kind: "POST /api/proposals/prop-9/candidate", source: "hub",
+    status: "executing", committed: false, sessionId: bChat.id });
+  emitRuntime();
+  await page.getByRole("button", { name: "Hub settings", exact: true }).click();
+  await page.locator("#language").selectOption("zh-CN");
+  await page.getByRole("dialog").getByRole("button", { name: "关闭", exact: true }).click();
+  await page.getByRole("button", { name: "收起工具", exact: true }).click();
+  await tasksEntry.click();
+  await page.getByRole("list", { name: "任务", exact: true }).locator(".chat-task small").filter({ hasText: "Project B · 生成方案 · 进行中" }).waitFor();
+  await page.waitForFunction(() => document.querySelector(".chat-usage")?.getAttribute("aria-label") === "用量：近 7 天 8,510 tokens");
+  assert.equal(await usageEntry.locator(".chat-usage__figure").innerText(), "近 7 天 8510 tokens");
+  assert.equal(await projectBadge("Project B").innerText(), "运行中");
+  await page.screenshot({ path: path.join(temporary, "sidebar-zh-1440.png") });
+  await page.setViewportSize({ width: 375, height: 812 });
+  if (!(await page.locator(".chat-sidebar").isVisible())) await page.getByRole("button", { name: "展开项目栏", exact: true }).first().click();
+  await page.screenshot({ path: path.join(temporary, "sidebar-zh-375.png") });
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, "no sideways scroll at 375 px");
+  await page.setViewportSize({ width: 1440, height: 960 });
+  await tasksEntry.click();
+  tasksB.operations = tasksB.operations.filter((row) => row.operationId !== "task-running-zh");
+  emitRuntime();
   await page.getByRole("button", { name: "Hub 设置", exact: true }).click();
   await page.locator("#language").selectOption("en");
   await page.getByRole("dialog").getByRole("button", { name: "Close", exact: true }).click();

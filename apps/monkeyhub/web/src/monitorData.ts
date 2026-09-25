@@ -128,6 +128,38 @@ export function aggregateTokens(events: readonly MonitorEvent[]): MonitorTokenUs
   return result;
 }
 
+export type RecentUsage = { tokens: number; calls: number; unknown: number };
+
+/**
+ * Model-call tokens (input plus output) started in the `days` before `now`:
+ * the sidebar's compact usage figure (#300). Calls whose counts Monitor did
+ * not record are counted as unknown, never as zero tokens.
+ */
+export function recentUsage(events: readonly MonitorEvent[], now: number, days = 7): RecentUsage {
+  const since = now - days * 86_400_000;
+  let tokens = 0, calls = 0, unknown = 0;
+  for (const event of events) {
+    const started = Date.parse(event.started_at);
+    if (!isModelCall(event) || !Number.isFinite(started) || started < since || started > now) continue;
+    calls++;
+    const input = event.tokens?.input_tokens, output = event.tokens?.output_tokens;
+    if (!measured(input) && !measured(output)) { unknown++; continue; }
+    tokens += (measured(input) ? input : 0) + (measured(output) ? output : 0);
+  }
+  return { tokens, calls, unknown };
+}
+
+let monitorReads: Promise<unknown> = Promise.resolve();
+/**
+ * Monitor serves one diagnostics read of its store at a time and answers a
+ * second concurrent one as busy. Reads from this page take turns instead.
+ */
+export function serialMonitorRead<T>(read: () => Promise<T>): Promise<T> {
+  const next = monitorReads.then(read);
+  monitorReads = next.then(() => undefined, () => undefined);
+  return next;
+}
+
 export function formatCount(value: number | null): string {
   return value === null ? "—" : Math.round(value).toLocaleString();
 }

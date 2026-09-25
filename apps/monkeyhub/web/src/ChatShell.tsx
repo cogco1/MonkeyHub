@@ -4,7 +4,7 @@ import { Fragment, lazy, Suspense, useCallback, useEffect, useLayoutEffect, useM
 import { applicationUrl, type AppearancePreferences } from "../../../shared-web/src/appearance.js";
 import type { WorktreeGraphDto } from "../workspaces/src/api/generated";
 import { projectStatus, refLabel, workRows } from "./worktreeGraph";
-import type { AppStatus, ChatArchiveRequest, ChatCreateRequest, ChatDetail, ChatMessage, ChatPostRequest, ChatProject, ChatProvider, ChatSummary, ChatWorkspace, HubError, HubRuntimeDto, ProjectArchiveExportRequest, ProjectArchiveRestoreRequest, ProjectArchiveRestoreResult, ProjectArchiveSummary, ProjectRuntimeDto, RuntimeEvent } from "./api/generated";
+import type { AppStatus, ChatArchiveRequest, ChatCreateRequest, ChatDetail, ChatMessage, ChatPostRequest, ChatProject, ChatProvider, ChatSummary, ChatWorkspace, HubError, HubRuntimeDto, ProjectArchiveExportRequest, ProjectArchiveRestoreRequest, ProjectArchiveRestoreResult, ProjectArchiveSummary, ProjectRuntimeDto, RuntimeEvent, UpdateStatus } from "./api/generated";
 import { ProjectRuntimeProvider } from "../workspaces/src/api/ProjectRuntimeContext";
 import type { WorkspaceDesignContext } from "../workspaces/src/app/ProjectWorkspace";
 import { MonitorPage } from "./MonitorPage";
@@ -12,7 +12,9 @@ import { ChatMarkdown, ChatMessageFiles, type ChatDocument } from "./ChatMessage
 import type { PageSource } from "../workspaces/src/workspaces/monkeyboard/boardScene";
 const ProjectWorkspace = lazy(() => import("../workspaces/src/app/ProjectWorkspace").then((module) => ({ default: module.ProjectWorkspace })));
 import { presentFailure } from "./chatError";
-import { clock, currentStep, describeStep, rawDetail, rawLine, stepText, turnsOf, workedSeconds, type ProcessTurn, type ProcessWords } from "./chatProcess";
+import { clock, currentStep, describeCall, describeStep, rawDetail, rawLine, stepText, turnsOf, workedSeconds, type ProcessTurn, type ProcessWords } from "./chatProcess";
+import { recentUsage, serialMonitorRead, type MonitorEvent, type RecentUsage } from "./monitorData";
+import { activeWork, newSchemes, sidebarTasks, type SidebarTask } from "./sidebarTasks";
 import { SoftwareUpdateSettings, type RestartBlocker } from "./SoftwareUpdateSettings";
 import "./ChatShell.css";
 
@@ -66,6 +68,8 @@ function Icon({ name }: { name: string }) {
     sidebar: <><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M9 4v16" /></>, close: <path d="m6 6 12 12M6 18 18 6" />,
     send: <path d="M12 19V5m-6 6 6-6 6 6" />, stop: <rect x="6" y="6" width="12" height="12" rx="2" />,
     down: <path d="M12 5v14m-6-6 6 6 6-6" />,
+    tasks: <><path d="M10 6h10M10 12h10M10 18h10" /><path d="m3.5 6 1.5 1.5L7.5 5m-4 7 1.5 1.5 2.5-2.5m-4 7 1.5 1.5 2.5-2.5" /></>,
+    update: <><circle cx="12" cy="12" r="9" /><path d="M12 16V8m-4 4 4-4 4 4" /></>,
     attach: <path d="m8 13 7-7a3 3 0 0 1 4 4L9 20a5 5 0 0 1-7-7L13 2m-5 11 7-7" />,
     folder: <path d="M3 6h7l2 2h9v11H3Z" />, chat: <path d="M4 4h16v13H9l-5 4Z" />,
     archive: <><path d="M4 8h16v13H4ZM3 3h18v5H3ZM9 12h6" /></>,
@@ -329,6 +333,13 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
   const seenEntries = useRef<{ chatId: string | null; ids: ReadonlySet<string> }>({ chatId: null, ids: new Set() });
   const foldAnchor = useRef<{ key: string; top: number } | null>(null);
   const [latest, setLatest] = useState({ away: false, unseen: 0 });
+  // #300: work running or waiting across open projects, this week's usage and a ready update.
+  const tasks = useMemo(() => sidebarTasks(runtime, projects), [runtime, projects]);
+  const busyProjects = useMemo(() => activeWork(tasks), [tasks]);
+  const [tasksOpen, setTasksOpen] = useState(false);
+  const [usage, setUsage] = useState<RecentUsage | null>(null);
+  const [usageRead, setUsageRead] = useState(0);
+  const [updateReady, setUpdateReady] = useState(false);
   // Include hidden conversations and mounted project workspaces: a restart
   // would lose their in-memory drafts just as it would the visible composer.
   const restartBlocker: RestartBlocker = Object.values(drafts).some((text) => Boolean(text.trim())) || Object.values(draftAttachments).some((files) => files.length)
@@ -402,7 +413,10 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
       ]);
       receiveRuntime(nextRuntime);
       for (const session of nextSessions) {
-        if (observedSessions.current.get(session.id) === "running" && session.status !== "running") completedChats.current.add(session.id);
+        if (observedSessions.current.get(session.id) === "running" && session.status !== "running") {
+          completedChats.current.add(session.id);
+          setUsageRead((value) => value + 1);
+        }
         observedSessions.current.set(session.id, session.status);
       }
       // A project created after this request began cannot be present in its
@@ -534,6 +548,40 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
     followLatest.current = at;
     setLatest((value) => at ? { away: false, unseen: 0 } : { ...value, away: true });
   }, [expandedTurns]);
+  // The usage figure reads Monitor's records when the Hub reports it running and
+  // again after a turn finishes; Monitor's own page polls, this footer does not.
+  const monitorApp = apps?.find((item) => item.appId === "monkeymonitor");
+  const monitorBase = monitorApp?.state === "running" && monitorApp.apiUrl ? monitorApp.apiUrl.replace(/\/+$/, "") : null;
+  useEffect(() => {
+    if (!monitorBase) return;
+    let live = true;
+    void serialMonitorRead(async () => {
+      const response = await fetch(`${monitorBase}/api/events`, { cache: "no-store" });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      return await response.json() as { events?: MonitorEvent[] };
+    }).then((body) => { if (live) setUsage(recentUsage(body.events ?? [], Date.now())); }, () => { /* Busy or restarting: keep the last figure. */ });
+    return () => { live = false; };
+  }, [monitorBase, usageRead]);
+  const usageFigure = usage && {
+    short: new Intl.NumberFormat(preferences.language, { notation: "compact", maximumFractionDigits: 1 }).format(usage.tokens),
+    full: usage.tokens.toLocaleString(preferences.language),
+  };
+  useEffect(() => {
+    // Software Update reads its own status while Settings is open; the footer reflects it otherwise.
+    if (settingsOpen) return;
+    let live = true;
+    const read = () => fetch("/api/updates/status", { cache: "no-store" })
+      .then((response) => response.ok ? response.json() as Promise<UpdateStatus> : null)
+      .then((status) => { if (live && status) setUpdateReady(status.state === "ready"); }, () => { /* The Hub may be restarting. */ });
+    void read();
+    const timer = window.setInterval(() => { if (!document.hidden) void read(); }, 60_000);
+    return () => { live = false; window.clearInterval(timer); };
+  }, [settingsOpen]);
+  const openSettings = () => { setSettingsOpen(true); settingsDialog.current?.showModal(); };
+  const openSoftwareUpdate = () => {
+    openSettings();
+    requestAnimationFrame(() => document.getElementById("software-update-heading")?.scrollIntoView({ block: "start" }));
+  };
   useEffect(() => { if (input.current) { input.current.style.height = "auto"; input.current.style.height = `${Math.min(input.current.scrollHeight, 180)}px`; } }, [draft]);
   const focusConversation = () => {
     setDrafts((value) => ({ ...value, [draftKey]: value[draftKey]?.trim() ? value[draftKey]! : t.startingDraft }));
@@ -543,6 +591,11 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
   const selectChat = (item: ChatSummary) => {
     if (item.projectDir !== projectDir) { const view = tabs.find((tab) => tab.projectDir === item.projectDir); setActiveTool(view?.id ?? null); setPanel(Boolean(view)); }
     setArchivedView(Boolean(item.archived)); setProjectDir(item.projectDir); setChatId(item.id);
+  };
+  const openTask = (task: SidebarTask) => {
+    if (task.chat) { selectChat(task.chat); return; }
+    const target = projects.find((item) => item.projectDir === task.projectDir && item.projectId === task.projectId);
+    if (target) { setArchivedView(false); selectProject(target); }
   };
   const selectProject = (item: ChatProject) => {
     const recent = visibleSessions.find((session) => session.projectDir === item.projectDir);
@@ -1025,11 +1078,37 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
       <div className="chat-sidebar__body">
         <button className="chat-new" onClick={() => { setArchivedView(false); setChatId(null); setChat(null); setError(null); input.current?.focus(); }}><Icon name="plus" /><span>{t.newChat}</span></button>
         <button className="chat-new chat-new--project" onClick={() => { setDialogError(null); newDialog.current?.showModal(); }}><Icon name="folder" /><span>{t.newProject}</span></button>
+        {/* #300: Agent work running or waiting in any open project, one entry away. */}
+        <button className="chat-new chat-tasks-toggle" aria-expanded={tasksOpen} aria-controls="chat-tasks" onClick={() => setTasksOpen(!tasksOpen)}>
+          <Icon name="tasks" /><span>{t.tasks}</span>
+          {tasks.length > 0 && <><span className="chat-count" aria-hidden="true">{tasks.length}</span><span className="sr-only">{t.tasksActive(tasks.length)}</span></>}
+        </button>
+        {tasksOpen && <ul className="chat-tasks" id="chat-tasks" aria-label={t.tasks}>
+          {tasks.length ? tasks.map((task) => {
+            const action = task.action ? stepText(describeCall(task.action), processWords(t)) : null;
+            return <li key={task.key}><button type="button" className="chat-task" data-state={task.state} onClick={() => openTask(task)}>
+              <span className="chat-thread__dot" data-status={task.state === "running" ? "running" : "idle"} />
+              <span className="chat-task__text"><span className="chat-task__title">{task.chat?.title ?? action ?? t.workTools}</span>
+                <small>{[task.projectName, task.chat ? action : null, task.state === "running" ? t.taskRunning : t.taskQueued].filter(Boolean).join(" · ")}</small></span>
+            </button></li>;
+          }) : <li className="chat-muted chat-tasks__empty">{t.tasksEmpty}</li>}
+        </ul>}
         <div className="chat-project-label"><span>{archivedView ? t.archivedChats : t.projects}</span><button className="chat-icon" aria-label={t.addExisting} title={t.addExisting} onClick={() => { setDialogError(null); addDialog.current?.showModal(); }}><Icon name="plus" /></button></div>
         {!projects.length && <p className="chat-muted chat-project-empty">{loading ? t.loading : t.emptyProjects}</p>}
         {archivedView && !visibleSessions.length && <p className="chat-muted chat-project-empty">{t.archiveEmpty}</p>}
         {projects.filter((item) => !archivedView || visibleSessions.some((session) => session.projectDir === item.projectDir)).map((item) => <section className="chat-project" key={item.projectDir} data-selected={item.projectDir === projectDir}>
-          <button className="chat-project__name" title={item.projectDir} onClick={() => selectProject(item)}><Icon name="folder" /><span>{item.name}</span></button>
+          <div className="chat-project__head">
+            <button className="chat-project__name" title={item.projectDir} onClick={() => selectProject(item)}
+              aria-description={busyProjects.get(item.projectDir) ? t.projectBusy(busyProjects.get(item.projectDir)!) : undefined}><Icon name="folder" /><span>{item.name}</span></button>
+            {/* #300: a small badge while the project has work running or waiting, on the project's own line. */}
+            {busyProjects.has(item.projectDir) && <span className="chat-project__badge" data-kind="running" aria-hidden="true">{t.projectBusyBadge}</span>}
+            {/* #300 hook: the "N new" schemes badge, drawn from #294's admission data (S1–S2);
+                newSchemes() answers null until the runtime reports it, so no number is guessed. */}
+            {(() => {
+              const count = newSchemes(runtime?.projects.find((row) => row.projectDir === item.projectDir && row.projectId === item.projectId));
+              return count ? <span className="chat-project__badge" data-kind="new">{t.projectNewSchemes(count)}</span> : null;
+            })()}
+          </div>
           {visibleSessions.filter((session) => session.projectDir === item.projectDir).map((session) => <div key={session.id} className="chat-thread-row">
             <button className="chat-thread" aria-current={session.id === chatId ? "page" : undefined} onClick={() => selectChat(session)} title={session.title}>
               <span className="chat-thread__dot" data-status={session.status} /><span>{session.title}{session.sourceSessionId && <small className="chat-external-badge">{t.externalChat}</small>}</span>
@@ -1041,8 +1120,15 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
           </div>)}
         </section>)}
       </div>
-      <button className="chat-settings chat-archive-toggle" aria-pressed={archivedView} onClick={() => setArchivedView(!archivedView)}><Icon name="archive" /><span>{archivedView ? t.activeChats : t.archivedChats}</span></button>
-      <button className="chat-settings" onClick={() => { setSettingsOpen(true); settingsDialog.current?.showModal(); }}><Icon name="settings" /><span>{t.settings}</span></button>
+      <div className="chat-sidebar__footer">
+        {/* #300: the last seven days of model usage, as MonkeyMonitor recorded it. */}
+        <button className="chat-settings chat-usage" aria-label={t.usageName(usageFigure?.full ?? null)} title={t.usageTitle} onClick={() => void openTool("monkeymonitor")}>
+          <Icon name="chart" /><span>{t.monitor}</span>{usageFigure && <small className="chat-usage__figure" aria-hidden="true">{t.usageWeek(usageFigure.short)}</small>}
+        </button>
+        {updateReady && <button className="chat-settings chat-update" title={t.updateReadyHint} onClick={openSoftwareUpdate}><Icon name="update" /><span>{t.updateReady}</span></button>}
+        <button className="chat-settings chat-archive-toggle" aria-pressed={archivedView} onClick={() => setArchivedView(!archivedView)}><Icon name="archive" /><span>{archivedView ? t.activeChats : t.archivedChats}</span></button>
+        <button className="chat-settings" onClick={openSettings}><Icon name="settings" /><span>{t.settings}</span></button>
+      </div>
     </aside>
     <main className="chat-main">
       <header className="chat-header"><button className="chat-icon mobile-project-toggle" aria-label={sidebar ? t.collapse : t.expand} onClick={() => setSidebar(!sidebar)}><Icon name="sidebar" /></button><div><span className="chat-header__project">{project?.name ?? "MonkeyHub"}</span><h1>{chat?.id === chatId ? chat.title : t.newChat}{external && <small className="chat-external-badge">{t.externalChat}</small>}</h1></div></header>

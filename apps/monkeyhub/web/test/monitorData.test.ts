@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { aggregateTokens, formatDuration, isModelCall, uncachedInput, projectIds, summarizeUsage, quoteDraftReducer, type QuoteDraft, type MonitorEvent, type MonitorTrace } from "../src/monitorData.ts";
+import { aggregateTokens, formatDuration, isModelCall, uncachedInput, projectIds, summarizeUsage, quoteDraftReducer, recentUsage, serialMonitorRead, type QuoteDraft, type MonitorEvent, type MonitorTrace } from "../src/monitorData.ts";
 
 const tokens = (input: number | null, cached: number | null, output: number | null) => ({
   input_tokens: input, output_tokens: output, cached_input_tokens: cached,
@@ -125,4 +125,29 @@ test("unknown reset counters remain empty rather than becoming zero", () => {
   assert.equal(reset.values.input_tokens, "");
   assert.equal(reset.values.cached_input_tokens, "");
   assert.equal(reset.values.output_tokens, "");
+});
+
+test("the sidebar's week of usage counts model calls from the last seven days only", () => {
+  const now = Date.parse("2026-09-20T00:00:00Z");
+  const week = recentUsage([
+    ...events,
+    { ...events[1], event_id: "old", started_at: "2026-09-12T00:00:00Z" },
+    { ...events[0], event_id: "blank", tokens: tokens(null, null, null) },
+    { ...events[0], event_id: "later", started_at: "2026-09-21T00:00:00Z" },
+  ], now);
+  // a and b are model calls this week (120 + 230 tokens); c is geometry, not a call.
+  assert.deepEqual(week, { tokens: 350, calls: 3, unknown: 1 });
+});
+
+test("Monitor reads from one page take turns, and a failed read does not block the next", async () => {
+  const order: string[] = [];
+  let release!: () => void;
+  const first = serialMonitorRead(async () => { order.push("first:start"); await new Promise<void>((resolve) => { release = resolve; }); order.push("first:end"); throw new Error("busy"); });
+  const second = serialMonitorRead(async () => { order.push("second"); return 2; });
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.deepEqual(order, ["first:start"]);
+  release();
+  await assert.rejects(first, /busy/);
+  assert.equal(await second, 2);
+  assert.deepEqual(order, ["first:start", "first:end", "second"]);
 });

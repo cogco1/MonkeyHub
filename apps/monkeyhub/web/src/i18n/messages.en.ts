@@ -1029,4 +1029,13 @@ export const chatCopy = {
       command: "Run a command", planSteps: "Plan the steps", webFetch: "Open a web page", generic: "Other step",
     },
     jumpLatest: "Jump to the latest message", jumpLatestNew: (count: number) => `Jump to the latest message (${count} new)`,
+    // GH-300: the sidebar's cross-project entries.
+    tasks: "Tasks", tasksActive: (count: number) => `${count} running or waiting`, tasksEmpty: "Nothing is running or waiting.",
+    taskRunning: "Running", taskQueued: "Waiting to start",
+    projectBusy: (count: number) => count === 1 ? "1 task running or waiting" : `${count} tasks running or waiting`, projectBusyBadge: "Running",
+    projectNewSchemes: (count: number) => `${count} new`,
+    usageWeek: (value: string) => `${value} tokens · 7 days`,
+    usageName: (value: string | null) => value === null ? "Usage in the last 7 days" : `Usage: ${value} tokens in the last 7 days`,
+    usageTitle: "Model input and output tokens in the last 7 days, as MonkeyMonitor recorded them. Opens Usage.",
+    updateReady: "New version ready", updateReadyHint: "Opens Software Update to restart into it.",
   } as const;
