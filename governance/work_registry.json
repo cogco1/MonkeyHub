@@ -273,6 +273,7 @@
         "apps/monkeyhub/web/workspaces/src/features/stage/Stage.tsx",
         "apps/monkeyhub/web/workspaces/src/features/stage/stageNotices.css",
         "apps/monkeyhub/web/workspaces/src/i18n/BilingualText.css",
+        "apps/monkeyhub/web/workspaces/test/boardDocumentOpen.browser.mjs",
         "apps/monkeyhub/web/workspaces/test/boardIntentHandoff.browser.mjs",
         "apps/monkeyhub/web/workspaces/test/modelSync.browser.mjs",
         "docs/mapping/planning/GH-302-stage-polish.md"
@@ -297,10 +298,11 @@
             "hub.shell"
           ],
           "write_scope": [
-            "apps/monkeyhub/web/workspaces/src/features/stage/Stage.tsx",
             "apps/monkeyhub/web/workspaces/src/features/stage/ModelToolButton.tsx",
+            "apps/monkeyhub/web/workspaces/src/features/stage/Stage.tsx",
             "apps/monkeyhub/web/workspaces/src/features/stage/stageNotices.css",
             "apps/monkeyhub/web/workspaces/src/i18n/BilingualText.css",
+            "apps/monkeyhub/web/workspaces/test/boardDocumentOpen.browser.mjs",
             "apps/monkeyhub/web/workspaces/test/boardIntentHandoff.browser.mjs",
             "apps/monkeyhub/web/workspaces/test/modelSync.browser.mjs"
           ],
