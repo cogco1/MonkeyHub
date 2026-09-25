@@ -95,6 +95,8 @@ interface LocalModelSession {
   pending: { snapshot: DraftSnapshot; attempt: ModelDraftSyncAttempt; interactionEpoch: number; viewRequest: number } | null;
   busy: boolean;
   error: string | null;
+  /** The automatic-save failure `error` shows, so a later successful save clears only that. */
+  autosaveError?: string;
   recoverySaved?: DraftSnapshot;
 }
 
@@ -240,15 +242,19 @@ export type WorkspaceDesignContext = {
    * working draft and survive a restart; "unsaved" edits are not held yet.
    */
   unavailableReason: "unsaved" | "unsynced" | "loading" | "unavailable" | null;
+  /** While edits keep project state out of chat: record them, so the refused context can start (#302). */
+  record?: () => Promise<void>;
 };
 
-export default function App({ server, expectedProjectId, initialDocumentIntent, initialSketchRequest, initialRunId, initialRunAsset = null, initialRunRequest = 0, initialRunFollowsHead = false, documentSource = null, active = true, refreshKey = 0, onReturnToBoard, onOpenBoard, onChatRequest, onDesignContextChange, onRenderReader, onView }: {
+export default function App({ server, expectedProjectId, initialDocumentIntent, initialSketchRequest, initialRunId, initialRunAsset = null, initialRunRequest = 0, initialRunFollowsHead = false, documentSource = null, active = true, refreshKey = 0, onReturnToBoard, onOpenBoard, onChatRequest, onDesignContextChange, onRenderReader, onView, onRecorder }: {
   onRenderReader?: (reader: (() => RenderView | null) | null) => void;
   /**
    * Open one retained run read-only through the project's View path, the one
    * the Design Tree uses. Viewing never moves the editing base (#302).
    */
   onView?: (view: { runId: string; name: string; assetSha256?: string | null }) => void;
+  /** Hands the host this workspace's Record edits and continue, for refusals shown outside Modeling (#302). */
+  onRecorder?: (record: (() => Promise<void>) | null) => void;
   server: ServerIdentity; initialDocumentIntent?: BoardDesignRequest;
   expectedProjectId?: string;
   /** One calibrated board sketch frame, to be run as a sketch proposal once the session is ready. */
@@ -274,7 +280,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
   const t = useT();
   const viewportOpened = useRef(active);
   viewportOpened.current ||= active;
-  const { developerMode, language } = usePreferences();
+  const { developerMode } = usePreferences();
   const transcript = useTranscript();
   const { append, remove: removeEntry, noteJobStatus: noteTranscriptStatus } = transcript;
   const pushNotice = useCallback(
@@ -288,6 +294,8 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
   const { binding, session, changingBase, baseError, persistenceFailed, reload, refreshWorkingCopies, refreshWorkingDraft, saveSyncedBase, recoverFromStaleBase } = useSession(pushNotice, server.capabilities,
     undefined, true, expectedProjectId);
   const [documentIntentStatus, setDocumentIntentStatus] = useState<"pending" | "asking" | "switching" | "ready" | "done">(initialDocumentIntent ? "pending" : "done");
+  // Why the note could not continue yet, when recording the edits would let it (#302).
+  const [documentIntentNotice, setDocumentIntentNotice] = useState<string | null>(null);
   const documentIntentStarted = useRef(false);
   const documentIntentSubmitted = useRef(false);
   const sketchSubmitted = useRef(false);
@@ -529,6 +537,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
   useEffect(() => {
     documentIntentStarted.current = false;
     documentIntentSubmitted.current = false;
+    setDocumentIntentNotice(null);
     setDocumentIntentStatus(initialDocumentIntent ? "pending" : "done");
     if (initialDocumentIntent) setConversationOpen(true);
   }, [initialDocumentIntent]);
@@ -575,7 +584,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
   }, [project?.projectId, projection?.stateDigest, projection?.sourceStageRef]);
   // A refusal answers one attempt against one picture and one base; showing
   // another model or settling on another base retires it.
-  useEffect(() => { setBaseNotice(null); },
+  useEffect(() => { setBaseNotice(null); setRecordRetry(null); },
     [project?.projectId, projection?.referenceRun.runId, projection?.stateDigest, loadedArtifact?.runId, sourceLabel]);
   const [viewerProjection, setViewerProjection] = useState<StateProjectionDto | null>(null);
   const modelSources = useMemo(() => {
@@ -759,6 +768,13 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
     });
     return () => onRenderReader?.(null);
   }, [onRenderReader, loadedModelSource, modelLoading, localModel, localRevision, blendState, sourceLabel, designHistory, loadedArtifact]);
+  // Record edits and continue, callable from here on; its body is defined with Sync below.
+  const recordEditsRef = useRef<() => Promise<void>>(async () => undefined);
+  const recordStable = useCallback(() => recordEditsRef.current(), []);
+  useEffect(() => {
+    onRecorder?.(recordStable);
+    return () => onRecorder?.(null);
+  }, [onRecorder, recordStable]);
   const chatContext = useMemo<WorkspaceDesignContext | null>(() => {
     const projectId = project?.projectId ?? binding?.projectId;
     if (!projectId) return null;
@@ -778,16 +794,22 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
       designContext.targetComponentId = picked.componentId;
       designContext.elementId = picked.elementId;
     }
-    return { projectId, designContext, unavailableReason };
+    return { projectId, designContext, unavailableReason, ...(chatDraft ? { record: recordStable } : {}) };
   }, [project?.projectId, binding?.projectId, projection, changingBase, session.status, baseError, sourceLabel,
-    chatDraft, picked, viewedProjection]);
+    chatDraft, picked, viewedProjection, recordStable]);
   useEffect(() => {
     onDesignContextChange?.(chatContext);
     return () => onDesignContextChange?.(null);
   }, [onDesignContextChange, chatContext]);
   // The Hub keeps this model workspace mounted while the Board is visible.
   const returnToBoard = onReturnToBoard && (documentView.open || documentSource !== null) ? leaveToBoard : undefined;
-  const refreshLocalModel = useCallback(() => setLocalRevision(value => value + 1), []);
+  // Record edits and continue (#302) waits for a draft's Sync to finish: every
+  // change to a draft's state passes through here and wakes those waiting.
+  const syncWaiters = useRef(new Set<() => void>());
+  const refreshLocalModel = useCallback(() => {
+    setLocalRevision(value => value + 1);
+    for (const wake of [...syncWaiters.current]) wake();
+  }, []);
   const ensureLocalModel = useCallback((install = true): LocalModelSession => {
     if (!draftKey || !draftSource || !draftProjection) throw new Error(t("stage.sketch.noComponent"));
     const retained = localModels.current.get(draftKey);
@@ -833,14 +855,14 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
           candidateId: attempt.accepted.candidateId, jobId: attempt.accepted.jobId, status: attempt.accepted.status });
       }
       local.recoverySaved = currentDraft(local.history);
-      local.error = retained?.pending ? "已恢复尚未完成同步的草稿。检查后点击同步继续。" : null;
+      local.error = retained?.pending ? t("stage.sync.recovered") : null;
       localModels.current.set(draftKey, local);
       refreshLocalModel();
     } catch (cause) {
       recoveryFailure.current = draftKey;
-      setHistoryError(`草稿恢复失败，原始记录已保留：${asStudioApiError(cause).detail}`);
+      setHistoryError(t("stage.sync.recoveryFailed", { reason: asStudioApiError(cause).detail }));
     }
-  }, [workingDraft?.localDraft, draftKey, draftSource?.stateDigest, loadedArtifact?.runId, modelLoading, ensureLocalModel, refreshLocalModel, append]);
+  }, [workingDraft?.localDraft, draftKey, draftSource?.stateDigest, loadedArtifact?.runId, modelLoading, ensureLocalModel, refreshLocalModel, append, t]);
   // Serialize this workspace's recovery writes; every write still uses P036 CAS
   // so a second window cannot silently replace an in-flight save.
   const recoveryWriter = useRef<{ projectId: string; write: ReturnType<typeof createLocalDraftWriter> } | null>(null);
@@ -858,7 +880,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
   const retainLocalModel = useCallback((local: LocalModelSession, clear = false) => {
     if (!autosaveEnabled) return Promise.resolve();
     const key = `${local.source.projectId}:${local.source.sourceRunId}:${local.source.stateDigest}:${local.source.sourceStageRef ?? ""}`;
-    if (recoveryFailure.current === key) return Promise.reject(new Error("原有草稿未能恢复，已阻止覆盖；请先解决恢复错误。"));
+    if (recoveryFailure.current === key) return Promise.reject(new Error(t("stage.sync.recoveryBlocked")));
     const draft = clear ? null : JSON.parse(JSON.stringify({ source: local.source,
       commands: currentDraft(local.history).commands, attempt: { syncedCommands: local.synced.commands,
         pending: local.pending ? { commands: local.pending.snapshot.commands,
@@ -866,25 +888,28 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
     const savedSnapshot = currentDraft(local.history);
     return queueWorkingDraftWrite(async () => {
       const writer = recoveryWriter.current;
-      if (!writer || writer.projectId !== local.source.projectId) throw new Error("工作草稿尚未读取，无法自动保存。");
+      if (!writer || writer.projectId !== local.source.projectId) throw new Error(t("stage.sync.draftUnread"));
       await writer.write(draft, clear ? local.source : undefined);
       local.recoverySaved = savedSnapshot;
       // The working draft holds one local recovery and this write replaced or
       // cleared it: no other source's edits are saved until written again.
       for (const other of localModels.current.values()) if (other !== local) other.recoverySaved = undefined;
-      if (local.error?.startsWith("自动恢复保存失败：")) local.error = null;
+      if (local.error !== null && local.error === local.autosaveError) local.error = null;
       refreshLocalModel();
     });
-  }, [autosaveEnabled, studio, refreshLocalModel, queueWorkingDraftWrite]);
+  }, [autosaveEnabled, studio, refreshLocalModel, queueWorkingDraftWrite, t]);
+  /** Say an automatic save failed on the draft itself; the next successful save takes it back. */
+  const autosaveFailed = useCallback((local: LocalModelSession, cause: unknown) => {
+    local.error = local.autosaveError = t("stage.sync.autosaveFailed", { reason: asStudioApiError(cause).detail });
+    refreshLocalModel();
+  }, [refreshLocalModel, t]);
   useEffect(() => {
     if (!autosaveEnabled || !localModel) return;
     const timer = window.setTimeout(() => {
-      void retainLocalModel(localModel, !unsynced(localModel)).catch((cause) => {
-        localModel.error = `自动恢复保存失败：${asStudioApiError(cause).detail}`; refreshLocalModel();
-      });
+      void retainLocalModel(localModel, !unsynced(localModel)).catch((cause) => autosaveFailed(localModel, cause));
     }, 250);
     return () => window.clearTimeout(timer);
-  }, [autosaveEnabled, localModel, draftSnapshot, retainLocalModel, refreshLocalModel]);
+  }, [autosaveEnabled, localModel, draftSnapshot, retainLocalModel, autosaveFailed]);
   useEffect(() => {
     if (!localModel || !draftSnapshot) { viewportRef.current?.draftPreview(null); return; }
     const initial = localModel.history.snapshots[0]!.objects;
@@ -2020,7 +2045,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
    * each caller shows it once, where the architect asked for the switch.
    */
   const changeEditingBase = useCallback(async (runId: string | null, modelSource?: ModelSourceDto, sourceStageRef?: string, branchId?: string, keepDocument = false,
-    onRefused?: (message: string) => void) => {
+    onRefused?: (message: string, unrecorded?: boolean) => void) => {
     const drafts = [...localModels.current.values()];
     const unsyncedDrafts = autosaveEnabled && drafts.some(unsynced);
     if (changingBase || selectingWorkingCopy || proposalBusy || candidateBusy || refiningEntryId !== null ||
@@ -2029,9 +2054,9 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
       return null;
     }
     // The working draft keeps unsynced edits bound to their own source; they
-    // are synced or undone before the base moves.
+    // are recorded or undone before the base moves.
     if (unsyncedDrafts) {
-      onRefused?.(t("stage.base.refusedUnsynced"));
+      onRefused?.(t("stage.base.refusedUnsynced"), true);
       return null;
     }
     pickRequestRef.current += 1;
@@ -2092,6 +2117,19 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
     }
     return next;
   }, [artifacts, autosaveEnabled, candidateBusy, changingBase, clearComparison, loadedArtifact, loadedModelSource, loadArtifactIntoViewer, loadRunIntoViewer, modelSources, proposalBusy, refiningEntryId, reload, runSourceLabel, selectingWorkingCopy, t, workingCopies]);
+  const changeBaseRef = useRef(changeEditingBase);
+  changeBaseRef.current = changeEditingBase;
+  // #302: a switch asked for in the editing-base row that is refused only because
+  // edits are not recorded offers Record edits and continue there, which records
+  // them and asks for the same switch again.
+  const [recordRetry, setRecordRetry] = useState<(() => Promise<unknown>) | null>(null);
+  const [recordingEdits, setRecordingEdits] = useState(false);
+  const changeBaseFromRow = useCallback((runId: string | null, modelSource?: ModelSourceDto, sourceStageRef?: string, branchId?: string,
+    keepDocument = false) => {
+    const attempt = (): Promise<unknown> => changeBaseRef.current(runId, modelSource, sourceStageRef, branchId, keepDocument,
+      (message, unrecorded) => { setBaseNotice(message); setRecordRetry(unrecorded ? () => attempt : null); });
+    return attempt();
+  }, []);
 
   const refreshed = useRef(refreshKey);
   useEffect(() => {
@@ -2195,9 +2233,15 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
     if (!intent) return;
     setDocumentIntentStatus("switching");
     void (async () => {
-      const refused = { reason: null as string | null };
+      const refused = { reason: null as string | null, unrecorded: false };
       const next = await changeEditingBase(intent.modelSource.runId, intent.modelSource,
-        intent.sourceStageRef ?? undefined, undefined, true, (reason) => { refused.reason = reason; });
+        intent.sourceStageRef ?? undefined, undefined, true, (reason, unrecorded = false) => { refused.reason = reason; refused.unrecorded = unrecorded; });
+      // Only unrecorded edits stand in the way: the note waits, offering to record them (#302).
+      if (!next && refused.unrecorded) {
+        setDocumentIntentNotice(refused.reason);
+        setDocumentIntentStatus("asking");
+        return;
+      }
       if (!next || next.project.projectId !== intent.projectId ||
           next.projection.stateDigest !== intent.modelSource.stateDigest ||
           next.projection.referenceRun.runId !== intent.modelSource.runId ||
@@ -2741,12 +2785,13 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
   const modelNavigationBusy = changingBase || selectingWorkingCopy || modelLoading;
   const [parameterLockBusy, setParameterLockBusy] = useState(false);
   const [parameterLockError, setParameterLockError] = useState<string | null>(null);
-  const lockZh = language === "zh-CN";
+  // Unrecorded edits are the one reason the panel can resolve itself: it offers to record them (#302).
+  const locksUnrecorded = !(!projection?.stateDigest || !project || baseError || sourceLabel === LOCAL_SOURCE_LABEL) && chatDraft !== null;
   const parameterLockReason = !projection?.stateDigest || !project || baseError || sourceLabel === LOCAL_SOURCE_LABEL
-    ? (lockZh ? "请先打开可编辑的项目模型。" : "Open an editable project model first.")
-    : chatDraft !== null ? (lockZh ? "请先同步当前模型修改。" : "Sync the current model edits first.")
+    ? t("stage.locks.openModel")
+    : chatDraft !== null ? t("stage.locks.unrecorded")
     : modelNavigationBusy || candidateBusy || modelRunPending !== null || proposalBusy || modelSyncBusy
-      ? (lockZh ? "请等待当前模型操作完成。" : "Wait for the current model operation to finish.")
+      ? t("stage.locks.wait")
       // The same view-only reason as every direct edit; locks also wait until
       // the picture's own projection has been read.
       : viewOnlyReason ?? (loadedArtifact && (!viewedProjection || loadedArtifacts.some((artifact) => artifact.runId !== projection.referenceRun.runId) ||
@@ -2863,9 +2908,14 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
     } catch (cause) { setDirectError(asStudioApiError(cause).detail); }
   }, [canDeleteModel, deletableElementId, pushPullTarget, commitLocalCommand, picked, refuseViewedEdit]);
 
-  const syncLocalModel = useCallback(async () => {
-    if (!localModel || localModel.busy || modelSyncBusy) return;
-    const session = localModel;
+  // The saved base a finished Sync is still writing, per draft: Record edits and
+  // continue goes on only once it has settled (#302).
+  const syncSettling = useRef(new Map<LocalModelSession, Promise<void>>());
+  /** Sync the draft on screen, or one named draft when Record edits and continue asks for it. */
+  const syncLocalModel = useCallback(async (target?: LocalModelSession) => {
+    const session = target ?? localModel;
+    if (!session || session.busy || (!target && modelSyncBusy)) return;
+    syncSettling.current.delete(session);
     const snapshot = currentDraft(session.history);
     if (session.pending && !session.pending.attempt.finalProposalId &&
         !snapshotsEquivalent(snapshot, session.pending.snapshot)) session.pending = null;
@@ -2908,11 +2958,9 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
       const candidate = status === "succeeded" ? candidates[accepted.candidateId] : null;
       if (status === "succeeded" && !candidate) continue;
       if (candidate) session.synced = pending.snapshot;
-      else session.error = run.job.value.error ?? `Sync ${status}`;
+      else session.error = run.job.value.error ?? t("stage.sync.ended", { status });
       session.pending = null; session.busy = false; changed = true;
-      const recovered = (write: Promise<unknown>) => write.then(() => refreshWorkingDraft()).catch((cause) => {
-        session.error = `自动恢复保存失败：${asStudioApiError(cause).detail}`; refreshLocalModel();
-      });
+      const recovered = (write: Promise<unknown>) => write.then(() => refreshWorkingDraft()).catch((cause) => autosaveFailed(session, cause));
       if (!candidate) { void recovered(retainLocalModel(session)); continue; }
       // The architect's own completed batch becomes the next saved editing base
       // (GH-234 Q2). Edits made since Sync keep their recovery now; a fully synced
@@ -2939,7 +2987,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
         refreshLocalModel();
         return (await reload(model.runId, undefined, undefined, true, nextProjection))?.sourceRunId === model.runId;
       };
-      void (async () => {
+      syncSettling.current.set(session, (async () => {
         await retained;
         let adopted = false;
         if (quiet) {
@@ -2954,19 +3002,65 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
         } catch (cause) {
           // The saved base could not take the batch: its recovery keeps its exact
           // source and synced commands, so reopening still shows the edits.
-          session.error = `同步结果未能保存为修改起点：${asStudioApiError(cause).detail}`;
+          session.error = t("stage.sync.baseNotSaved", { reason: asStudioApiError(cause).detail });
           refreshLocalModel();
           await recovered(retainLocalModel(session));
           return;
         }
         if (!unsynced(session)) await recovered(retainLocalModel(session, true));
-      })();
+      })().finally(() => refreshLocalModel()));
     }
     if (changed) {
       setModelSyncBusy([...localModels.current.values()].some(session => session.busy));
       refreshLocalModel();
     }
-  }, [candidateRuns.runs, candidates, draftKey, localModel, loadArtifactIntoViewer, reload, refreshLocalModel, retainLocalModel, refreshWorkingDraft, saveSyncedBase, queueWorkingDraftWrite]);
+  }, [candidateRuns.runs, candidates, draftKey, localModel, loadArtifactIntoViewer, reload, refreshLocalModel, retainLocalModel, refreshWorkingDraft, saveSyncedBase, queueWorkingDraftWrite, autosaveFailed, t]);
+
+  /**
+   * Record edits and continue (#302): every draft whose edits no candidate holds
+   * yet goes through the same Sync, and this settles once each has finished and
+   * its result is the saved base. It rejects with the reason one could not be
+   * recorded; its edits stay in the working draft either way.
+   */
+  const syncRef = useRef(syncLocalModel);
+  syncRef.current = syncLocalModel;
+  const recordEdits = useCallback(async () => {
+    const settled = (session: LocalModelSession) => new Promise<void>((resolve) => {
+      const check = () => {
+        if (session.busy) return;
+        syncWaiters.current.delete(check);
+        void (syncSettling.current.get(session) ?? Promise.resolve()).then(() => resolve());
+      };
+      syncWaiters.current.add(check);
+      check();
+    });
+    // A Sync already running is waited for first; it may be the one that records these edits.
+    for (const session of [...localModels.current.values()]) if (session.busy) await settled(session);
+    for (const session of [...localModels.current.values()].filter(unsynced)) {
+      await syncRef.current(session);
+      await settled(session);
+      if (session.error) throw new Error(session.error);
+    }
+  }, []);
+  recordEditsRef.current = recordEdits;
+  const hasUnrecordedEdits = [...localModels.current.values()].some(unsynced);
+  /** The editing-base row's Record edits and continue: record, then the refused switch again. */
+  const recordAndRetry = useCallback(async (retry: () => Promise<unknown>) => {
+    setRecordingEdits(true); setBaseNotice(null);
+    try { await recordEdits(); }
+    catch (cause) { setBaseNotice(t("stage.record.failed", { reason: asStudioApiError(cause).detail })); return; }
+    finally { setRecordingEdits(false); }
+    setRecordRetry(null);
+    await retry();
+  }, [recordEdits, t]);
+  /** The Board note's Record edits and continue: record, then continue from the note's model again. */
+  const recordDocumentIntent = useCallback(async () => {
+    setRecordingEdits(true); setDocumentIntentNotice(null);
+    try { await recordEdits(); }
+    catch (cause) { setDocumentIntentNotice(t("stage.record.failed", { reason: asStudioApiError(cause).detail })); return; }
+    finally { setRecordingEdits(false); }
+    continueDocumentIntent();
+  }, [continueDocumentIntent, recordEdits, t]);
 
   // A different model on screen is a different set of objects. What was *picked*
   // belonged to the picture that went away, so it stops being picked, its mark
@@ -3377,7 +3471,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
             {t("stage.base.retry")}
           </button>
           <button type="button" className="btn" disabled={changingBase}
-            onClick={() => void changeEditingBase(null, undefined, undefined, undefined, false, setBaseNotice)}>
+            onClick={() => void changeBaseFromRow(null)}>
             {t("stage.base.default")}
           </button>
           {binding && documentView.mounted && <button type="button" className="btn"
@@ -3501,6 +3595,8 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
         stage={
           <DocumentTracingContext.Provider value={{ levels: tracingLevels,
             blockedReason: viewOnlyReason ?? (localModel && unsynced(localModel) ? t("document.trace.unsynced") : null),
+            // Unrecorded edits block tracing: one click records them, and the panel then generates (#302).
+            recordEdits: viewOnlyReason === null && localModel && unsynced(localModel) ? recordStable : null,
             // The same explicit Continue as the editing-base row, offered where the refusal is
             // read; the open page stays open and a refusal is reported in the panel.
             continueViewed: viewOnlyReason === null || !loadedArtifact || (viewingExternalModel && loadedModelSource === null) ? null
@@ -3520,7 +3616,8 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
             hasModel={sourceLabel !== null || hasLocalGeometry}
             onSketch={runSketch}
             parameterLocks={{ parameters: projection?.parameters ?? [], contextKey, busy: parameterLockBusy || modelRunPending !== null,
-              disabledReason: parameterLockReason, error: parameterLockError, onApply: (keys, action) => void applyParameterLocks(keys, action) }}
+              disabledReason: parameterLockReason, error: parameterLockError, onApply: (keys, action) => void applyParameterLocks(keys, action),
+              record: locksUnrecorded ? recordStable : null }}
             sketchBusy={modelNavigationBusy}
             snapPoints={sketchSnapPoints}
             model={{
@@ -3611,8 +3708,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
               workingDraft,
               onRestoreDraft: (runId) => {
                 setHistoryError(null);
-                void changeEditingBase(runId, modelSources.find((row) => row.modelSource.runId === runId)?.modelSource,
-                  undefined, undefined, false, setHistoryError);
+                void changeBaseFromRow(runId, modelSources.find((row) => row.modelSource.runId === runId)?.modelSource);
               },
               onSaveDraft: (runId, label) => {
                 if (!project) return;
@@ -3631,7 +3727,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
               onBranch: (branchId) => { void selectDesignBranch(branchId); },
               onCandidate: (source) => {
                 setHistoryError(null);
-                void changeEditingBase(source.runId, source, undefined, undefined, false, setHistoryError);
+                void changeBaseFromRow(source.runId, source);
               },
               onAccept: (candidateId) => {
                 const branch = designHistory?.branches.find((item) => item.branchId === designHistory.branchId);
@@ -3668,12 +3764,15 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
               // the drawing follows it there as it did when a Stage row moved the base.
               const stage = source ? designHistory?.stages.find((row) => sameModelSource(row.modelSource, source)) : undefined;
               void (source
-                ? changeEditingBase(source.runId, source, stage?.stageRef, stage?.branchId, !stage, setBaseNotice)
-                : changeEditingBase(runId, undefined, undefined, undefined, false, setBaseNotice));
+                ? changeBaseFromRow(source.runId, source, stage?.stageRef, stage?.branchId, !stage)
+                : changeBaseFromRow(runId));
             }}
-            baseChoice={documentIntentStatus === "asking" && documentIntentModel !== null ? { model: documentIntentModel,
-              busy: changingBase || selectingWorkingCopy, onView: viewDocumentIntent, onContinue: continueDocumentIntent } : null}
-            onDefaultBase={() => void changeEditingBase(null, undefined, undefined, undefined, false, setBaseNotice)}
+            baseRecord={recordRetry && hasUnrecordedEdits ? { busy: recordingEdits, onRecord: () => void recordAndRetry(recordRetry) } : null}
+            baseChoice={documentIntentStatus === "asking" && documentIntentModel !== null ? {
+              model: documentIntentNotice ? null : documentIntentModel, notice: documentIntentNotice,
+              busy: changingBase || selectingWorkingCopy || recordingEdits, recording: recordingEdits, onView: viewDocumentIntent,
+              onContinue: continueDocumentIntent, onRecord: documentIntentNotice ? () => void recordDocumentIntent() : undefined } : null}
+            onDefaultBase={() => void changeBaseFromRow(null)}
             evidenceCounts={evidenceCounts}
             review={review}
             drawer={developerMode && evidencePinned ? null : drawer}

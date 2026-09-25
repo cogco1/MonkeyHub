@@ -94,6 +94,9 @@ export function ProjectWorkspace({ workspace, expectedProjectId, candidateRunId 
   }, [onWorkspaceChange]);
   // The run Modeling edits from, as it reports it: a view that became the base is no longer only viewed.
   const [editingRunId, setEditingRunId] = useState<string | null>(null);
+  // Modeling's Record edits and continue, for the tree's Continue refused by unrecorded edits (#302).
+  const [recordEdits, setRecordEdits] = useState<(() => Promise<void>) | null>(null);
+  const registerRecorder = useCallback((record: (() => Promise<void>) | null) => setRecordEdits(() => record), []);
   const designContextChanged = useCallback((context: WorkspaceDesignContext | null) => {
     if (context?.designContext) setEditingRunId(context.designContext.sourceRunId);
     onDesignContextChange?.(context);
@@ -161,7 +164,7 @@ export function ProjectWorkspace({ workspace, expectedProjectId, candidateRunId 
         initialDocumentIntent={documentIntent} initialSketchRequest={sketchRequest}
         active={active && modelVisible} refreshKey={refreshKey + attempt + headMoves} onReturnToBoard={openBoard} onOpenBoard={openBoard} onChatRequest={onChatRequest}
         onDesignContextChange={designContextChanged} onRenderReader={registerRenderReader}
-        onView={(view) => viewRun({ ...view, back: false }, true)} />
+        onView={(view) => viewRun({ ...view, back: false }, true)} onRecorder={registerRecorder} />
     </div>}
     {/* #300: Board and its Layout mode share one rail entry; this switch moves between the two
         mounted surfaces, and view=publish links still land on Layout. */}
@@ -196,7 +199,7 @@ export function ProjectWorkspace({ workspace, expectedProjectId, candidateRunId 
       style={{ height: "100%", minHeight: 0, display: workspace === "tree" ? "block" : "none" }}>
       <Suspense fallback={<LoadingOverlay mode="boot" status="Design tree" />}>
         <DesignTreeSurface data={designTree} markSeen={seenCandidates.markSeen} active={active && workspace === "tree"} returnTo={treeReturn.current}
-          onLeave={() => onWorkspaceChange(treeReturn.current)} onView={viewRun} />
+          onLeave={() => onWorkspaceChange(treeReturn.current)} onView={viewRun} onRecordEdits={recordEdits} />
       </Suspense>
     </div>}
   </div>;

@@ -324,6 +324,10 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
   // Saved or not, local model edits no candidate holds keep project state out of chat.
   const contextUnavailable = workspaceContext?.unavailableReason === "unsaved" || workspaceContext?.unavailableReason === "unsynced"
     ? t.contextUnsaved : workspaceContext?.unavailableReason === "loading" ? t.contextLoading : t.contextOpenProject;
+  // #302: unrecorded model edits are the refusal the workspace can clear in one click.
+  const recordContext = workspaceContext?.projectId === project?.projectId && (workspaceContext?.unavailableReason === "unsaved" ||
+    workspaceContext?.unavailableReason === "unsynced") ? workspaceContext?.record ?? null : null;
+  const [recordingContext, setRecordingContext] = useState(false);
   const running = chat?.id === chatId && chat.status === "running";
   // #285: a turn's tool calls fold into one process row; the Agent's text,
   // results, permission prompts and errors stay in the conversation.
@@ -771,6 +775,14 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
       requestAnimationFrame(() => toLatest());
     } catch (cause) { setError(asFailure(cause)); void refresh(); }
     finally { actionLock.current = false; setBusy(false); }
+  };
+  /** Record the edits that keep project state out of chat; the new context the architect chose then starts. */
+  const recordForContext = async () => {
+    if (!recordContext || recordingContext) return;
+    setRecordingContext(true); setError(null);
+    try { await recordContext(); }
+    catch (cause) { setError({ code: "MODEL_RECORD_FAILED", detail: t.recordFailed(asFailure(cause).detail) }); }
+    finally { setRecordingContext(false); }
   };
   /** Change which model this conversation's next turns run on. */
   const chooseModel = async (value: string | null) => {
@@ -1226,11 +1238,13 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
             onChange={(event) => setDrafts((value) => ({ ...value, [draftKey]: event.target.value }))} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void send(); } }} />
           <input ref={fileInput} type="file" multiple hidden aria-label={t.attach} disabled={!project || busy} onChange={(event) => { addAttachments(Array.from(event.target.files ?? [])); event.target.value = ""; }} />
           <label className="chat-context-option" title={designContext ? t.contextProjectHint : contextUnavailable}>
-            <input type="checkbox" checked={contextMode === "project"} aria-description={designContext ? t.contextProjectHint : contextUnavailable} disabled={busy || running || (!designContext && contextMode !== "project")}
+            <input type="checkbox" checked={contextMode === "project"} aria-description={designContext ? t.contextProjectHint : contextUnavailable} disabled={busy || running || (!designContext && contextMode !== "project" && !recordContext)}
               onChange={(event) => setContextModes((value) => ({ ...value, [draftKey]: event.target.checked ? "project" : "continue" }))} />
             {t.contextProject}
           </label>
           {contextMode === "project" && <p className="chat-muted" role="status">{designContext ? t.contextProjectHint : contextUnavailable}</p>}
+          {contextMode === "project" && !designContext && recordContext && <button type="button" className="chat-activity__open chat-record"
+            disabled={recordingContext || busy} onClick={() => void recordForContext()}>{recordingContext ? t.recordBusy : t.recordContinue}</button>}
           <div className="chat-composer__bottom"><button type="button" className="chat-icon chat-attach" aria-label={t.attach} title={t.attach} disabled={!project || busy} onClick={() => fileInput.current?.click()}><Icon name="plus" /></button><div className="chat-connection" title={running ? t.modelRunning : t.connectionHint}>
             <span className="chat-connection__name">{providers.find((item) => item.id === connection.provider)?.label ?? connection.provider}</span>
             <label className="sr-only" htmlFor="chat-model">{t.modelLabel}</label>

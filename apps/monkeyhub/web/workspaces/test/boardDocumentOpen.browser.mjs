@@ -348,11 +348,11 @@ print(json.dumps({"pdf": base64.b64encode(two_page_pdf()).decode()}))
   await sketchValue.waitFor();
   await sketchValue.fill("3"); await sketchValue.press("Enter");
   await sketchValue.fill("2"); await sketchValue.press("Enter");
-  // The drawing is autosaved to the project's working draft, not synced: it
-  // waits for the architect's own later Sync.
+  // The drawing is autosaved to the project's working draft, not recorded: it
+  // waits for the architect's own later Record (#302 renames Sync).
   const syncStatus = page.locator(".model-tools__sync-status");
-  const autosaved = syncStatus.filter({ hasText: /^Draft saved automatically$/ });
-  const syncButton = page.getByRole("button", { name: "Sync", exact: true });
+  const autosaved = syncStatus.filter({ hasText: /^Unrecorded edits · saved automatically$/ });
+  const syncButton = page.getByRole("button", { name: "Record", exact: true });
   const localDraft = async () => (await call("GET", "/api/working-draft")).localDraft;
   await autosaved.waitFor();
   const drawn = await localDraft();

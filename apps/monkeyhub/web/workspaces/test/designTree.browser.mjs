@@ -22,6 +22,7 @@ const cacheDir = await mkdtemp(path.join(tmpdir(), "design-tree-"));
 const shots = process.env.DESIGN_TREE_SCREENSHOTS ? path.resolve(process.env.DESIGN_TREE_SCREENSHOTS) : null;
 const serveOnly = process.argv.includes("--serve");
 const errors = [], unexpected = [], external = [], writes = [];
+let recorded = 0;
 const http = createHttpServer();
 let vite, browser, fixture, fixtureModule, runtimeId = null;
 const PROJECT = "riverside-library";
@@ -51,6 +52,8 @@ async function runtime(request, response, url, body) {
       return;
     }
     if (method === "GET" && name === "/api/working-draft") return json(fixture.workingDraft());
+    // What Modeling's Record edits and continue does to the working draft here: its edits become recorded.
+    if (method === "POST" && name === "/api/fixture/record") { recorded += 1; fixture.state.localDraft = null; return json({}); }
     if (method === "PUT" && name === "/api/working-draft") { writes.push({ method, name, body }); return json(fixture.selectWorkingDraft(body)); }
     const accept = name.match(/^\/api\/candidates\/([^/]+)\/accept$/);
     if (method === "POST" && accept) { writes.push({ method, name, body }); return json(fixture.accept(decodeURIComponent(accept[1]), body)); }
@@ -110,8 +113,14 @@ try {
     plugins: [{ name: "design-tree-fixture", enforce: "pre", transform(source, id) {
       const file = slash(id.split("?")[0]), root = slash(workspacesRoot);
       if (file === `${root}/src/app/App.tsx`) return { code: `
+        import { useEffect } from "react";
         export default function App(props) {
           window.__arch = { initialRunId: props.initialRunId ?? null, followsHead: Boolean(props.initialRunFollowsHead), refreshKey: props.refreshKey, active: props.active };
+          // Modeling hands the host its Record edits and continue (#302).
+          useEffect(() => {
+            props.onRecorder?.(() => fetch("/api/fixture/record", { method: "POST" }).then(() => undefined));
+            return () => props.onRecorder?.(null);
+          }, [props.onRecorder]);
           return <div data-testid="arch-stub" style={{ padding: 24 }}>Modeling · {props.initialRunId ?? "Working Head"}</div>;
         }`, map: null };
       if (file === `${root}/src/workspaces/monkeyboard/Board.tsx`) return { code: `export default function Board() { return <div data-testid="board-stub">Board</div>; }`, map: null };
@@ -331,12 +340,21 @@ try {
   await tab.waitForFunction(() => window.__arch.initialRunId === "run-s2-layout");
   assert.equal(await tab.locator(".stage-chip__viewing").count(), 0);
 
-  // Continue moves the Working Head through PUT /api/working-draft, and the trunk re-roots.
+  // Continue moves the Working Head through PUT /api/working-draft, and the trunk re-roots. Unrecorded
+  // Modeling edits refuse it first, beside one click that records them and continues (#302).
   await chip.click();
   card = await clickNode("candidate:run-massing-d");
   const archRefresh = await tab.evaluate(() => window.__arch.refreshKey);
+  fixture.state.localDraft = { source: { projectId: PROJECT, stateDigest: "d".repeat(64), sourceRunId: "run-s2-layout", sourceStageRef: null },
+    commands: [], attempt: null, updatedAt: "2026-09-25T22:00:00Z" };
   await card.getByRole("button", { name: "Continue from here", exact: true }).click();
+  await card.getByText("Model edits in Modeling are not recorded yet; they are kept. Record them and continue, or undo them in Modeling.").waitFor();
+  assert.equal(fixture.state.head, headBefore, "a Continue refused by unrecorded edits moves nothing");
+  assert.equal(writes.length, 0);
+  await shoot(tab, "06b-record-and-continue");
+  await card.locator('[data-action="record"]').click();
   await card.getByText("Current now continues from D · Terraced wedge. Nothing was accepted.").waitFor();
+  assert.equal(recorded, 1, "Record edits and continue records the edits once, then continues");
   assert.deepEqual(writes.at(-1), { method: "PUT", name: "/api/working-draft",
     body: { projectId: PROJECT, runId: "run-massing-d", baseRevisionSha256: "rev-0001", branchId: null } });
   assert.equal(fixture.state.head, "run-massing-d");

@@ -2,6 +2,8 @@
 .chat-shell[data-sidebar=false]{--sidebar-width:60px}
 .chat-context-option{display:flex;flex-direction:row;align-items:flex-start;gap:8px;margin:12px 2px 6px;color:var(--muted);font-size:var(--text-ui);line-height:1.5}
 .chat-context-option input[type=checkbox]{appearance:auto;flex:none;width:14px;height:14px;min-height:14px;margin:1px 0 0;padding:0;accent-color:var(--ink)}
+/* #302: Record edits and continue, under the refusal it clears. */
+.chat-composer .chat-record{min-height:32px;margin:6px 2px 2px;padding:5px 12px}
 /* Keep the saved panel width only while it fits beside the conversation and both rails. */
 .chat-shell[data-panel=true]{grid-template-columns:var(--sidebar-width) minmax(360px,1fr) 5px minmax(0,min(var(--browser-width),calc(100% - var(--sidebar-width) - 360px - 5px - var(--rail-width)))) var(--rail-width)}
 /* A closed panel keeps each canvas at its last layout size and in its own page. */

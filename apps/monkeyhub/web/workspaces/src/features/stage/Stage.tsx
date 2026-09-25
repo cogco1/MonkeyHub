@@ -180,6 +180,7 @@ export function Stage({
   changingBase,
   baseError,
   baseNotice = null,
+  baseRecord = null,
   baseChoice = null,
   baseNotSaved = false,
   baseActionBusy,
@@ -267,11 +268,18 @@ export function Stage({
   /** The shell's answer to the last refused base action, shown in the editing-base row. */
   baseNotice?: string | null;
   /**
+   * Record edits and continue (#302), beside a base switch refused only because
+   * the model's edits are not recorded yet: it records them and asks again.
+   */
+  baseRecord?: { busy: boolean; onRecord(): void } | null;
+  /**
    * A Board note made on another model version, asking before the base moves
    * (#302): only look at that version (the default), or continue from it and
-   * submit the note.
+   * submit the note. While unrecorded edits hold the note back, `notice` says so
+   * and `onRecord` records them, then continues.
    */
-  baseChoice?: { model: string; busy: boolean; onView(): void; onContinue(): void } | null;
+  baseChoice?: { model: string | null; notice?: string | null; busy: boolean; recording?: boolean;
+    onView(): void; onContinue(): void; onRecord?(): void } | null;
   /** The chosen editing base applies to this tab only: the browser could not save it. */
   baseNotSaved?: boolean;
   baseActionBusy: boolean;
@@ -1179,6 +1187,8 @@ export function Stage({
   // where it was asked, beside the Continue that usually resolves it.
   const baseNotices = <>
     {baseNotice && <p className="editing-base__notice" role="alert">{baseNotice}</p>}
+    {baseRecord && <button type="button" className="btn btn--small btn--primary" disabled={baseRecord.busy}
+      onClick={baseRecord.onRecord}>{t(baseRecord.busy ? "stage.record.busy" : "stage.record.continue")}</button>}
     {baseNotSaved && <p className="editing-base__notice" role="status">{t("stage.base.notSaved")}</p>}
   </>;
   const editingStatus = editingBaseRunId !== null ? (
@@ -1206,7 +1216,7 @@ export function Stage({
         {baseNotices}
         {baseError && <ErrorPanel error={baseError} what="GET /api/state" />}
       </div>
-    ) : baseNotice || baseNotSaved ? <div className="editing-base">{baseNotices}</div> : null;
+    ) : baseNotice || baseRecord || baseNotSaved ? <div className="editing-base">{baseNotices}</div> : null;
   const pickedStatus = picked && (
     <div className="picked" title={developerMode ? t("stage.picked.title", {
       status: picked.status, sourceState: picked.sourceState,
@@ -2049,13 +2059,16 @@ export function Stage({
         <div className="stage__versions">
           <div className="stage__context">
             {baseChoice && <div className="base-choice" role="group" aria-label={t("board.feedback.choice")}>
-              <p className="base-choice__text">{t("board.feedback.otherBase", { model: baseChoice.model })}</p>
+              {baseChoice.model !== null && <p className="base-choice__text">{t("board.feedback.otherBase", { model: baseChoice.model })}</p>}
+              {baseChoice.notice && <p className="base-choice__text" role="alert">{baseChoice.notice}</p>}
               <div className="base-choice__actions">
+                {baseChoice.onRecord && <button type="button" className="btn btn--small btn--primary" disabled={baseChoice.busy}
+                  onClick={baseChoice.onRecord}>{t(baseChoice.recording ? "stage.record.busy" : "stage.record.continue")}</button>}
                 {/* Only looking is the default: it is first, primary and focused. */}
-                <button type="button" className="btn btn--small btn--primary" autoFocus disabled={baseChoice.busy}
+                <button type="button" className={`btn btn--small${baseChoice.onRecord ? "" : " btn--primary"}`} autoFocus disabled={baseChoice.busy}
                   onClick={baseChoice.onView}>{t("board.feedback.viewOnly")}</button>
-                <button type="button" className="btn btn--small" disabled={baseChoice.busy}
-                  onClick={baseChoice.onContinue}>{t("stage.base.continue")}</button>
+                {!baseChoice.onRecord && <button type="button" className="btn btn--small" disabled={baseChoice.busy}
+                  onClick={baseChoice.onContinue}>{t("stage.base.continue")}</button>}
               </div>
             </div>}
             <div className="stage__context-summary">

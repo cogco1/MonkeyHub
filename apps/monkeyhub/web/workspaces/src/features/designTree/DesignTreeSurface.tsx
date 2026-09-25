@@ -18,7 +18,7 @@ import type { ZoomLevel } from "./scene";
 import type { DesignTreeData } from "./useDesignTree";
 import { treeWords, type SurfaceName } from "./words";
 
-export default function DesignTreeSurface({ data, markSeen, active, returnTo, onLeave, onView }: {
+export default function DesignTreeSurface({ data, markSeen, active, returnTo, onLeave, onView, onRecordEdits = null }: {
   data: DesignTreeData;
   markSeen(candidateId: string): void;
   active: boolean;
@@ -26,6 +26,8 @@ export default function DesignTreeSurface({ data, markSeen, active, returnTo, on
   returnTo: SurfaceName;
   onLeave(): void;
   onView(view: DesignTreeView): void;
+  /** Modeling's Record edits and continue, when Modeling is open to record them (#302). */
+  onRecordEdits?: (() => Promise<void>) | null;
 }) {
   const t = useT();
   const [mode, setMode] = useState<"canvas" | "list">("canvas");
@@ -82,7 +84,7 @@ export default function DesignTreeSurface({ data, markSeen, active, returnTo, on
         <p className="visually-hidden">{t("designTree.canvasNote")}</p>
       </> : <DesignTreeList tree={tree} words={words} selected={selected} onSelect={select} />}
       {tree && node && <DesignTreeDetails tree={tree} node={node} words={words} data={data} confirmAccept={confirmAccept}
-        onConfirmAccept={setConfirmAccept} onClose={() => select(null)} onView={view} />}
+        onConfirmAccept={setConfirmAccept} onClose={() => select(null)} onView={view} onRecordEdits={onRecordEdits} />}
     </div>
     <footer className="design-tree__foot"><span>{t("designTree.hint")}</span><span>{t("designTree.legend")}</span></footer>
   </section>;

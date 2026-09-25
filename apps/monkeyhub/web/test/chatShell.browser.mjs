@@ -487,7 +487,7 @@ const waitMonitor = async () => {
 // GH-234: model edits the project's working draft already holds come back after
 // an update restart, so they never block "Restart to update"; edits whose
 // autosave is still being written, or was refused, do. Either way chat still
-// asks for a Sync before it starts from project state.
+// asks for them to be recorded (#302: Record, formerly Sync) before it starts from project state.
 const autosavedModelRestart = async () => {
   // Explicit fixture reset: no conversation is running, and the reload below
   // empties every composer, so only the model edits can hold the restart.
@@ -527,17 +527,23 @@ const autosavedModelRestart = async () => {
   await page.getByRole("button", { name: "Modeling", exact: true }).click();
   await waitWorkspace();
   const status = visibleWorkspace().locator(".model-tools__sync-status");
-  await status.filter({ hasText: /^Draft saved automatically$/ }).waitFor();
+  await status.filter({ hasText: /^Unrecorded edits · saved automatically$/ }).waitFor();
   // Reopening restored the retained commands and saved them back unchanged.
   await until(() => draft.writes.length === 1, "the restored draft was never retained again");
   assert.deepEqual(draft.writes[0].draft.commands, commands);
   assert.deepEqual(draft.writes[0].draft.source, draft.localDraft.source);
-  assert.equal(await visibleWorkspace().getByRole("button", { name: "Sync", exact: true }).isEnabled(), true);
-  // Restored edits are still not a candidate: chat asks for a Sync first.
+  assert.equal(await visibleWorkspace().getByRole("button", { name: "Record", exact: true }).isEnabled(), true);
+  // Restored edits are still not a candidate: chat asks for them to be recorded first,
+  // and offers the one click that does it (#302) instead of a dead end.
   const contextOption = page.locator(".chat-context-option input");
-  await page.waitForFunction(() => document.querySelector(".chat-context-option input")?.getAttribute("aria-description")?.startsWith("Model edits have not been synced"));
-  assert.equal(await contextOption.getAttribute("aria-description"), "Model edits have not been synced to a candidate. Sync or undo them in Modeling before starting a new context from project state. You can still continue this conversation.");
-  assert.equal(await contextOption.isDisabled(), true, "restored edits keep project state out of a new chat context");
+  await page.waitForFunction(() => document.querySelector(".chat-context-option input")?.getAttribute("aria-description")?.startsWith("Model edits are not recorded"));
+  assert.equal(await contextOption.getAttribute("aria-description"), "Model edits are not recorded yet. Record them to start a new context from project state, or undo them in Modeling. You can still continue this conversation.");
+  await contextOption.check();
+  const recordOffer = page.locator(".chat-composer .chat-record");
+  assert.equal(await recordOffer.innerText(), "Record edits and continue", "the refused new context offers Record edits and continue");
+  assert.equal(await page.locator(".chat-composer [role=status]").filter({ hasText: "Model edits are not recorded yet." }).count(), 1);
+  await contextOption.uncheck();
+  await recordOffer.waitFor({ state: "detached" });
   await openSettings();
   await restartAllowed("edits the working draft already holds do not block the update restart");
   await closeSettings();
@@ -566,7 +572,7 @@ const autosavedModelRestart = async () => {
   await visibleWorkspace().getByRole("button", { name: "Undo model", exact: true }).click();
   await visibleWorkspace().getByRole("button", { name: "Redo model", exact: true }).click();
   await until(() => draft.localDraft.commands.length === commands.length, "the redone push/pull was not autosaved");
-  await status.filter({ hasText: /^Draft saved automatically$/ }).waitFor();
+  await status.filter({ hasText: /^Unrecorded edits · saved automatically$/ }).waitFor();
   assert.deepEqual(draft.localDraft.commands, commands);
   await openSettings();
   await restartAllowed("the next accepted autosave releases the update restart");

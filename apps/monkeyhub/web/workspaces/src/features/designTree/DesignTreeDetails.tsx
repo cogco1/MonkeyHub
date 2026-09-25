@@ -4,13 +4,14 @@
  * Continue does; Accept as next Stage exists on Current only and asks first.
  */
 import { useState } from "react";
+import { asStudioApiError } from "../../api/client";
 import { usePreferences } from "../settings/preferences";
 import { useT } from "../../i18n/useT";
 import { CURRENT, type GrowthTree, type TreeNode } from "./model";
 import { DESIGN_TREE_UNSYNCED, type DesignTreeData } from "./useDesignTree";
 import { whenText, type TreeWords } from "./words";
 
-export function DesignTreeDetails({ tree, node, words, data, confirmAccept, onConfirmAccept, onClose, onView }: {
+export function DesignTreeDetails({ tree, node, words, data, confirmAccept, onConfirmAccept, onClose, onView, onRecordEdits = null }: {
   tree: GrowthTree;
   node: TreeNode;
   words: TreeWords;
@@ -19,10 +20,14 @@ export function DesignTreeDetails({ tree, node, words, data, confirmAccept, onCo
   onConfirmAccept(open: boolean): void;
   onClose(): void;
   onView(node: TreeNode): void;
+  /** Records Modeling's unrecorded edits, so a Continue they refused can go on (#302). */
+  onRecordEdits?: (() => Promise<void>) | null;
 }) {
   const t = useT();
   const { language, developerMode } = usePreferences();
   const [confirmClosedFor, setConfirmClosedFor] = useState<string | null>(null);
+  const [recording, setRecording] = useState(false);
+  const [recordError, setRecordError] = useState<string | null>(null);
   const title = words.title(node);
   const parent = words.byId(node.parent);
   const study = node.studyId ? tree.studies.get(node.studyId) : undefined;
@@ -60,6 +65,16 @@ export function DesignTreeDetails({ tree, node, words, data, confirmAccept, onCo
   const continuing = data.busy?.kind === "continue" && data.busy.node === node.id;
   const isAnchor = tree.nodes.get(CURRENT)?.parent === node.id && tree.nodes.get(CURRENT)?.current?.editsAfter === 0;
   const outcome = data.outcome && (data.outcome.node === node.id || (node.kind === "current" && data.outcome.kind === "accepted")) ? data.outcome : null;
+  // Refused only because Modeling holds unrecorded edits: one click records them and continues again.
+  const recordable = outcome?.kind === "refused" && outcome.error?.code === DESIGN_TREE_UNSYNCED && onRecordEdits !== null;
+  const recordAndContinue = async () => {
+    if (!onRecordEdits || recording) return;
+    setRecording(true); setRecordError(null);
+    try { await onRecordEdits(); }
+    catch (cause) { setRecordError(t("stage.record.failed", { reason: asStudioApiError(cause).detail })); return; }
+    finally { setRecording(false); }
+    await data.continueFrom(node.id);
+  };
   const refusal = outcome?.kind === "refused" && outcome.error
     ? outcome.error.code === DESIGN_TREE_UNSYNCED ? t("designTree.outcome.unsynced")
       : outcome.error.code === "CANDIDATE_REJECTED" ? t("designTree.outcome.rejected")
@@ -113,6 +128,11 @@ export function DesignTreeDetails({ tree, node, words, data, confirmAccept, onCo
     {outcome?.kind === "continued" && <p className="design-tree-card__outcome" role="status">{t("designTree.outcome.continued", { node: title })}</p>}
     {outcome?.kind === "accepted" && <p className="design-tree-card__outcome" role="status">{t("designTree.outcome.accepted", { stage: outcome.stageLabel ?? "" })}</p>}
     {refusal && <p className="design-tree-card__refusal" role="alert">{refusal}</p>}
+    {recordable && <div className="design-tree-card__actions">
+      <button type="button" className="btn btn--small btn--primary" data-action="record" disabled={recording || busy}
+        onClick={() => void recordAndContinue()}>{t(recording ? "stage.record.busy" : "stage.record.continue")}</button>
+    </div>}
+    {recordError && <p className="design-tree-card__refusal" role="alert">{recordError}</p>}
     {developerMode && <details className="design-tree-card__details">
       <summary>{t("designTree.details")}</summary>
       <dl>{technical(node).map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>

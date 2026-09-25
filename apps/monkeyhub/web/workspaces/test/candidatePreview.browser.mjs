@@ -568,7 +568,7 @@ try {
 
   if (viewBaseOnly) {
     const [c1, c2] = viewBaseCandidates;
-    const REFUSED_UNSYNCED = "The editing base was not changed: local model edits are not synced yet and are kept in the working draft. Sync or undo them on the model you edited, then try again.";
+    const REFUSED_UNSYNCED = "The editing base was not changed: local model edits are not recorded yet and are kept in the working draft. Record them and continue, or undo them on the model you edited.";
     const NOT_SAVED = "This editing choice could not be saved in this browser; it applies to this tab only.";
     const footer = () => page.locator(".stage__foot .editing-base");
     const notices = () => footer().locator(".editing-base__notice").allInnerTexts();
@@ -692,22 +692,24 @@ try {
       await page.setViewportSize({ width: 1440, height: 900 });
     });
 
-    await step("after Sync, Continue from the viewed candidate succeeds and survives reopening", async () => {
-      await view(c2.artifacts[0]);
-      await until(snapshot, (value) => value.localCommands.length === 1, "The edited base did not show its draft again");
+    // #302: the refusal above offers one click that records the edits and asks for the same Continue again.
+    await step("Record edits and continue records the draft from its own base, then retries the refused Continue", async () => {
       const sync = nextDelete = prepare("view-base-sync");
-      await page.getByRole("button", { name: "Sync", exact: true }).click();
-      const submitted = await until(() => requests.findLast((row) => row.name === "/api/proposals/delete"), Boolean, "Sync did not submit");
-      assert.equal(submitted.body.sourceRunId, c2.candidateId, "Sync starts from the base the edit was made on");
-      await until(snapshot, (value) => value.runs[sync.candidateId]?.job.status === "ready", "Sync did not start its candidate");
+      const record = footer().getByRole("button", { name: "Record edits and continue", exact: true });
+      await record.waitFor();
+      if (screenshots) await page.screenshot({ path: path.join(screenshots, "record-and-continue.png") });
+      await record.click();
+      const submitted = await until(() => requests.findLast((row) => row.name === "/api/proposals/delete"), Boolean, "Recording did not submit");
+      assert.equal(submitted.body.sourceRunId, c2.candidateId, "Recording starts from the base the edit was made on");
+      await until(snapshot, (value) => value.runs[sync.candidateId]?.job.status === "ready", "Recording did not start its candidate");
+      assert.equal((await snapshot()).editingRunId, c2.candidateId, "Continue waits until the edits are recorded");
       await complete(sync);
-      await settled(sync.candidateId); await rendered(sync.candidateId);
-      await until(() => workingDraft.localDraft, (draft) => draft === null, "The synced draft was not released");
-      await view(c1.artifacts[0]);
-      await continueButton().click();
       await settled(c1.candidateId);
-      assert.equal(baseWrites().at(-1).body.runId, c1.candidateId);
+      await until(() => workingDraft.localDraft, (draft) => draft === null, "The recorded draft was not released");
+      assert.deepEqual(baseWrites().slice(-2).map((row) => row.body.runId), [sync.candidateId, c1.candidateId],
+        "The recorded batch became the saved base first, then the retried Continue moved it to the viewed candidate");
       assert.deepEqual(await notices(), []);
+      assert.equal(await record.count(), 0, "The offer leaves with the refusal it resolved");
       assert.equal(await footer().getAttribute("data-source-match"), "same");
       await page.reload({ waitUntil: "domcontentloaded" });
       await settled(c1.candidateId); await rendered(c1.candidateId);
@@ -740,7 +742,7 @@ try {
       await page.evaluate(() => window.__candidatePreview.edit({ kind: "delete", elementId: "fixture-floor" }));
       await until(() => workingDraft.localDraft?.commands?.length ?? 0, (count) => count === 1, "The local edit was not kept in the working draft");
       const sync = nextDelete = prepare("view-base-adopted-sync");
-      await page.getByRole("button", { name: "Sync", exact: true }).click();
+      await page.getByRole("button", { name: "Record", exact: true }).click();
       await until(() => requests.findLast((row) => row.name === "/api/proposals/delete"), (row) => row?.body.sourceRunId === c1.candidateId,
         "Sync did not submit from the architect's base");
       await until(snapshot, (value) => value.runs[sync.candidateId]?.job.status === "ready", "Sync did not start its candidate");
@@ -769,7 +771,7 @@ try {
     };
     const syncWhileLooking = async (id, base) => {
       const sync = nextDelete = prepare(id);
-      await page.getByRole("button", { name: "Sync", exact: true }).click();
+      await page.getByRole("button", { name: "Record", exact: true }).click();
       await until(() => requests.findLast((row) => row.name === "/api/proposals/delete"), (row) => row?.body.sourceRunId === base,
         "Sync did not submit from the architect's base");
       await until(snapshot, (value) => value.runs[sync.candidateId]?.job.status === "ready", "Sync did not start its candidate");
@@ -930,7 +932,7 @@ try {
       await page.keyboard.press("Escape");
       await edit();
       const sync = nextDelete = prepare("delivery-continue-sync");
-      await page.getByRole("button", { name: "Sync", exact: true }).click();
+      await page.getByRole("button", { name: "Record", exact: true }).click();
       const submitted = await until(() => requests.findLast(row => row.name === "/api/proposals/delete"), Boolean, "Sync did not submit its edit");
       assert.equal(submitted.body.sourceRunId, value.native.runId, "Sync is based on the continued run");
       assert.equal(submitted.body.stateDigest, stateDigest(value.native.runId));
