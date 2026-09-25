@@ -13,6 +13,8 @@
 | GH-293 | active | The first Sync is never refused with WORKING_DRAFT_STALE because a candidate job started: the position revision excludes the execution ledger, and the local draft writer re-reads and retries once. | [GH-293](GH-293-sync-stale.md) |
 | GH-223 | active | One read-only representation-status projection replaces the four stale readers, an evidence document closes the experiment, and decisions can carry a project recipe binding (correction capture, option A, memory side). | [GH-223](GH-223-representation-state.md) |
 | GH-252 | active | Monitor prices usage: Studio and Hub producers write details.billing_plan and rates.json carries the plan rows, so usage matches a price. | [GH-252](GH-252-billing-plan.md) |
+| GH-244 | active | Drawings carry their semantics: rebuilds replace their previous revision (#291), a deterministic cleanup report, component and material attributes with material-keyed hatch and poché in paper mm, who and why on each revision, and an axonometric model view with a cache for visual review. | [GH-244](GH-244-drawing-semantics.md) |
+| GH-303 | active | Visual observation reaches production: a visual-review route renders the source-bound frames in-process and returns findings through the existing channel, starting with the five orthographic views. | [GH-303](GH-303-visual-route.md) |
 | GH-66 | active | Implement the first project-bound Publish composition slice, with Drawing/Render source freshness and bounded Board handoff. Related consumer fixes follow #223/#216/#244 in the same integration review. | [GH-66](https://github.com/cogco1/MonkeyHub/issues/66) |
 
 [Back to RMPA](../README.md)
