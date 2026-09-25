@@ -23,6 +23,9 @@ class ModelPhase(StrEnum):
     # The Studio's intent compiler: free text in, one sentence of the intent
     # grammar out. Nothing retained carries this phase yet.
     INTENT_COMPILATION = "intent_compilation"
+    # Read-only perception of exact source-bound images (GH-303): findings
+    # for an evaluator, never a design write. Nothing retained carries it yet.
+    VISUAL_OBSERVATION = "visual_observation"
 
 
 class ModelInvocationStatus(StrEnum):

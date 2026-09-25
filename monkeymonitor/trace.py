@@ -21,7 +21,7 @@ _LABELS = {
     "model_install": "模型安装", "model_projection": "视图投影", "model_load": "模型加载",
     "model_download": "模型下载", "geometry_build": "几何构建", "agent": "原生模型用量",
     "agent_turn": "原生 Agent 回合",
-    "permission_wait": "等待权限决定",
+    "permission_wait": "等待权限决定", "visual_observation": "视觉观察",
 }
 
 

@@ -233,6 +233,68 @@
       ]
     },
     {
+      "id": "GH-303",
+      "stream": "planning",
+      "status": "active",
+      "goal": "Research-first V0 of one source-bound, read-only visual observation channel with Modeling as its first consumer: audit the current observation paths, add a minimal VisualReviewRequest/VisualObservation contract, a pluggable provider over the existing Studio model transport and a Harness review budget in the studio.intent model seam, exercise it with a dev benchmark tool, and benchmark deterministic readback against one and two visual reviews on a TESTMODEL copy plus one Board page. Not wired into production chat.",
+      "depends_on": [],
+      "write_scope": [
+        "apps/archflow-studio/api/archflow_studio_api/application/visual_observation.py",
+        "apps/archflow-studio/api/tests/test_visual_observation.py",
+        "archflow/ports/model.py",
+        "docs/2026-09-25-visual-observation.md",
+        "docs/DYNAMIC_MAP.md",
+        "docs/SYSTEM_MAP.md",
+        "docs/mapping/planning/GH-303-visual-observation.md",
+        "docs/mapping/planning/INDEX.md",
+        "governance/module_registry.json",
+        "governance/work_registry.json",
+        "monkeymonitor/trace.py",
+        "tools/benchmark_visual_observation.py"
+      ],
+      "card": "docs/mapping/planning/GH-303-visual-observation.md",
+      "acceptance": [
+        "An image is observed only when every frame is bound to one of the request's exact source refs (model: run, stateDigest, asset; page: run, asset, revisionRef, pageIndex); a stale or foreign frame is refused before the provider is called.",
+        "The Harness budget allows 0 reviews for deterministic edits, 1 after a meaningful spatial or formal batch, at most 1 follow-up after a repair that addressed a finding, and a higher bounded budget only on an explicit polish request; an exhausted budget refuses before the provider is called.",
+        "Provider output is validated against the strict observation schema and the request's own criterion, preserve and view refs; the observation carries no State, Stage or Candidate authority and no chain of thought, and its cost is recorded as a visual_observation span in MonkeyMonitor.",
+        "docs/2026-09-25-visual-observation.md records the audit with file:line, the contract, the placement decision, the policy, the A/B/C benchmark on two tasks with measured provider rounds, images, tokens and wall time, the Board check, the Drawing/Render integration points and the next slices; the repository carries no private project image or chat quote."
+      ],
+      "lanes": [
+        {
+          "id": "visual-observation",
+          "issue": "https://github.com/cogco1/MonkeyHub/issues/303",
+          "branch": "codex/303-visual-observation",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-303-visual-observation",
+          "base_ref": "e183a69a",
+          "contributor": "Claude",
+          "reviewer": "Claude root task",
+          "handoff": "V0 contract, policy and Codex-backed prototype with a dev benchmark tool; no production chat, route or Hub tool. The next slice (a runtime route or Hub tool that the Agent's task loop calls, and an axon view in the model-view projection owner) needs the owner's placement decision recorded in the audit document.",
+          "modules": [
+            "studio.intent",
+            "ports.model",
+            "monkeymonitor"
+          ],
+          "write_scope": [
+            "apps/archflow-studio/api/archflow_studio_api/application/visual_observation.py",
+            "apps/archflow-studio/api/tests/test_visual_observation.py",
+            "archflow/ports/model.py",
+            "docs/2026-09-25-visual-observation.md",
+            "docs/DYNAMIC_MAP.md",
+            "docs/SYSTEM_MAP.md",
+            "docs/mapping/planning/GH-303-visual-observation.md",
+            "docs/mapping/planning/INDEX.md",
+            "governance/module_registry.json",
+            "governance/work_registry.json",
+            "monkeymonitor/trace.py",
+            "tools/benchmark_visual_observation.py"
+          ],
+          "depends_on": [],
+          "status": "active",
+          "blocked_reason": null
+        }
+      ]
+    },
+    {
       "id": "GH-66",
       "stream": "planning",
       "status": "active",
