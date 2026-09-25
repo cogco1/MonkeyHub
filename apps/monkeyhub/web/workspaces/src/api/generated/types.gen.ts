@@ -3924,6 +3924,34 @@ export type EpisodeProposalDto = {
 };
 
 /**
+ * EvidenceRegionDto
+ *
+ * A normalized box, top-left origin, on one frame this review sent.
+ */
+export type EvidenceRegionDto = {
+    /**
+     * Viewref
+     */
+    viewRef: string;
+    /**
+     * X0
+     */
+    x0: number;
+    /**
+     * Y0
+     */
+    y0: number;
+    /**
+     * X1
+     */
+    x1: number;
+    /**
+     * Y1
+     */
+    y1: number;
+};
+
+/**
  * ExportTimingDto
  *
  * One seat's export, as its ``cad`` block times it.
@@ -5197,6 +5225,30 @@ export type ModelSourceIndexDto = {
 };
 
 /**
+ * ModelSourceRefDto
+ *
+ * One exact retained model: its run, the State digest it projects to and the model asset it exported.
+ */
+export type ModelSourceRefDto = {
+    /**
+     * Kind
+     */
+    kind: 'model';
+    /**
+     * Runid
+     */
+    runId: string;
+    /**
+     * Statedigest
+     */
+    stateDigest: string;
+    /**
+     * Assetsha256
+     */
+    assetSha256: string;
+};
+
+/**
  * ModelUpload
  */
 export type ModelUpload = {
@@ -5336,6 +5388,58 @@ export type ObjectBindingDto = {
 };
 
 /**
+ * ObservationUsageDto
+ *
+ * What one review cost, as the provider reported it.
+ */
+export type ObservationUsageDto = {
+    /**
+     * Provider
+     */
+    provider: string;
+    /**
+     * Model
+     */
+    model: string;
+    /**
+     * Providercalls
+     */
+    providerCalls: number;
+    /**
+     * Imageinputs
+     */
+    imageInputs: number;
+    /**
+     * Imagebytes
+     */
+    imageBytes: number;
+    /**
+     * Inputtokens
+     */
+    inputTokens: number | null;
+    /**
+     * Cachedinputtokens
+     */
+    cachedInputTokens: number | null;
+    /**
+     * Outputtokens
+     */
+    outputTokens: number | null;
+    /**
+     * Reasoningoutputtokens
+     */
+    reasoningOutputTokens: number | null;
+    /**
+     * Durationms
+     */
+    durationMs: number | null;
+    /**
+     * Receiptid
+     */
+    receiptId: string | null;
+};
+
+/**
  * OptionsDto
  *
  * The wire form of ``GET /api/options``: the baseline and every option.
@@ -5363,6 +5467,36 @@ export type OptionsDto = {
      * the whole transform vocabulary, so a client offers no button the server would refuse
      */
     transforms: Array<string>;
+};
+
+/**
+ * PageSourceRefDto
+ *
+ * One page of an exact registered document revision (a drawing, a render result, an upload).
+ */
+export type PageSourceRefDto = {
+    /**
+     * Kind
+     */
+    kind: 'page';
+    /**
+     * Runid
+     */
+    runId: string;
+    /**
+     * Assetsha256
+     */
+    assetSha256: string;
+    /**
+     * Revisionref
+     *
+     * The registration's exact revisionRef, as GET /api/documents lists it; null names the registration that carries none and is never a wildcard.
+     */
+    revisionRef: string | null;
+    /**
+     * Pageindex
+     */
+    pageIndex: number;
 };
 
 /**
@@ -6215,6 +6349,26 @@ export type PlanVectorDto = {
     cleanup?: {
         [key: string]: unknown;
     } | null;
+};
+
+/**
+ * PriorFindingDto
+ *
+ * One compact unresolved finding of an earlier review in the same loop.
+ */
+export type PriorFindingDto = {
+    /**
+     * Findingref
+     */
+    findingRef: string;
+    /**
+     * Type
+     */
+    type: 'spatial' | 'proportion' | 'relation' | 'preserve' | 'artifact' | 'legibility' | 'composition';
+    /**
+     * Description
+     */
+    description: string;
 };
 
 /**
@@ -10896,6 +11050,243 @@ export type ViewportCaptureRequestDto = {
 };
 
 /**
+ * VisualBudgetStateDto
+ *
+ * One task loop's Harness allowance, held by the caller between reviews.
+ *
+ * The runtime keeps no loop state: send the ``budgetState`` of the last answer
+ * (or a fresh one for a new loop) with each review of the loop.
+ */
+export type VisualBudgetStateDto = {
+    /**
+     * Taskclass
+     *
+     * deterministic_edit takes no review; spatial_formal allows a first_bundle review and one after_repair follow-up; polish allows the 1-4 polish rounds an explicit request named.
+     */
+    taskClass: 'deterministic_edit' | 'spatial_formal' | 'polish';
+    /**
+     * Allowed
+     *
+     * The policy's allowance for taskClass: 0, 2, or the polish rounds.
+     */
+    allowed: number;
+    /**
+     * Used
+     *
+     * Reviews this loop has spent; at or past allowed is exhausted.
+     */
+    used: number;
+    /**
+     * Lastfindingids
+     *
+     * The finding ids of the loop's last review, which an after_repair review must address.
+     */
+    lastFindingIds?: Array<string>;
+};
+
+/**
+ * VisualCriterionDto
+ */
+export type VisualCriterionDto = {
+    /**
+     * Criterionid
+     */
+    criterionId: string;
+    /**
+     * Text
+     */
+    text: string;
+};
+
+/**
+ * VisualFindingDto
+ *
+ * What is visible about the request's own criteria or preserve conditions: evidence, never a verdict.
+ */
+export type VisualFindingDto = {
+    /**
+     * Findingid
+     */
+    findingId: string;
+    /**
+     * Type
+     */
+    type: 'spatial' | 'proportion' | 'relation' | 'preserve' | 'artifact' | 'legibility' | 'composition';
+    /**
+     * Targetrefs
+     */
+    targetRefs: Array<string>;
+    /**
+     * Description
+     */
+    description: string;
+    /**
+     * Confidence
+     */
+    confidence: number;
+    /**
+     * Severity
+     */
+    severity: 'info' | 'minor' | 'major';
+    evidenceRegion: EvidenceRegionDto | null;
+};
+
+/**
+ * VisualObservationDto
+ *
+ * The observation bound to the frames the runtime rendered and sent; the provider never names its source.
+ */
+export type VisualObservationDto = {
+    /**
+     * Reviewid
+     */
+    reviewId: string;
+    /**
+     * Reviewindex
+     */
+    reviewIndex: number;
+    /**
+     * Domain
+     */
+    domain: 'modeling' | 'board' | 'drawing' | 'render';
+    /**
+     * Sourcerefs
+     */
+    sourceRefs: Array<ModelSourceRefDto | PageSourceRefDto>;
+    /**
+     * Viewrefs
+     */
+    viewRefs: Array<string>;
+    /**
+     * Framesha256
+     *
+     * SHA-256 of each frame sent, in viewRefs order.
+     */
+    frameSha256: Array<string>;
+    /**
+     * Observations
+     */
+    observations: Array<VisualFindingDto>;
+    /**
+     * Unresolvedquestions
+     */
+    unresolvedQuestions: Array<string>;
+    /**
+     * Suggestedchecks
+     */
+    suggestedChecks: Array<string>;
+};
+
+/**
+ * VisualReviewDto
+ *
+ * The wire form of ``POST /api/visual-reviews``.
+ */
+export type VisualReviewDto = {
+    observation: VisualObservationDto;
+    usage: ObservationUsageDto;
+    /**
+     * The loop's allowance after this review; send it back with the next.
+     */
+    budgetState: VisualBudgetStateDto;
+};
+
+/**
+ * VisualReviewRefusalDto
+ *
+ * A refused or failed visual review: the error body, plus what the caller needs to go on.
+ */
+export type VisualReviewRefusalDto = {
+    /**
+     * Code
+     */
+    code: string;
+    /**
+     * Detail
+     */
+    detail: string;
+    /**
+     * Sourceref
+     *
+     * VISUAL_SOURCE_MISMATCH: the named source its owner does not retain exactly.
+     */
+    sourceRef?: ({
+        kind: 'model';
+    } & ModelSourceRefDto) | ({
+        kind: 'page';
+    } & PageSourceRefDto) | null;
+    /**
+     * The allowance as it now stands: unchanged by a refusal, one review spent by a failed provider call.
+     */
+    budgetState?: VisualBudgetStateDto | null;
+    /**
+     * What a failed provider call still cost.
+     */
+    usage?: ObservationUsageDto | null;
+};
+
+/**
+ * VisualReviewRequestDto
+ *
+ * One bounded visual review of exact sources, which the runtime renders itself.
+ */
+export type VisualReviewRequestDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Domain
+     */
+    domain: 'modeling' | 'board' | 'drawing' | 'render';
+    /**
+     * Sourcerefs
+     *
+     * A modeling review names one exact model; board, drawing and render reviews name 1-4 registered pages with distinct page indexes.
+     */
+    sourceRefs: Array<ModelSourceRefDto | PageSourceRefDto>;
+    /**
+     * Viewrecipe
+     *
+     * For a model, the model-view directions to render (front, back, left, right, top); for pages, page-<pageIndex> of each named page.
+     */
+    viewRecipe: Array<string>;
+    /**
+     * Task
+     */
+    task: string;
+    /**
+     * Criteria
+     */
+    criteria: Array<VisualCriterionDto>;
+    /**
+     * Preserve
+     */
+    preserve?: Array<string>;
+    /**
+     * Priorobservations
+     */
+    priorObservations?: Array<PriorFindingDto>;
+    /**
+     * Knownfacts
+     *
+     * Short exact readback values (elevations, clear dimensions) the observer should not ask about again.
+     */
+    knownFacts?: Array<string>;
+    /**
+     * Reason
+     */
+    reason: 'first_bundle' | 'after_repair' | 'polish_round';
+    /**
+     * Addressedfindingids
+     *
+     * For after_repair only: the findings of the last review that the repair addressed.
+     */
+    addressedFindingIds?: Array<string>;
+    budgetState: VisualBudgetStateDto;
+};
+
+/**
  * VolumeDto
  *
  * One ``Volume@1`` a transform can name.
@@ -14502,6 +14893,49 @@ export type CompileIntentApiIntentsPostResponses = {
 };
 
 export type CompileIntentApiIntentsPostResponse = CompileIntentApiIntentsPostResponses[keyof CompileIntentApiIntentsPostResponses];
+
+export type ReviewVisualSourcesApiVisualReviewsPostData = {
+    body: VisualReviewRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/visual-reviews';
+};
+
+export type ReviewVisualSourcesApiVisualReviewsPostErrors = {
+    /**
+     * Refused before the provider was called; the allowance is unchanged
+     */
+    409: VisualReviewRefusalDto;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+    /**
+     * The provider call failed; budgetState counts the spent review and usage its cost
+     */
+    502: VisualReviewRefusalDto;
+};
+
+export type ReviewVisualSourcesApiVisualReviewsPostError = ReviewVisualSourcesApiVisualReviewsPostErrors[keyof ReviewVisualSourcesApiVisualReviewsPostErrors];
+
+export type ReviewVisualSourcesApiVisualReviewsPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: VisualReviewDto;
+};
+
+export type ReviewVisualSourcesApiVisualReviewsPostResponse = ReviewVisualSourcesApiVisualReviewsPostResponses[keyof ReviewVisualSourcesApiVisualReviewsPostResponses];
 
 export type ReadOptionsApiOptionsGetData = {
     body?: never;
