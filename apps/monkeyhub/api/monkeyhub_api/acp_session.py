@@ -429,7 +429,7 @@ class CodexAcpSession:
                     with suppress(OSError, subprocess.TimeoutExpired):
                         await asyncio.to_thread(
                             subprocess.run, ["taskkill", "/T", "/F", "/PID", str(process.pid)],
-                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                             creationflags=subprocess.CREATE_NO_WINDOW, timeout=3, check=False,
                         )
                 else:
