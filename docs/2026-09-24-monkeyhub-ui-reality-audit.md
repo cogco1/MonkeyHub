@@ -143,10 +143,11 @@ MonkeyArch 的布局：
   - Board 草图与 Hub 聊天使用编辑基准（`2478-2488`；`docs/PROTOCOL.md:923`）。
 - **另一面：** 有浏览器测试明确期望“打开的候选可直接编辑”（`candidatePreview.browser.mjs:474`）。
 - **场景：** Hub 在右侧打开 agent 的候选，你推拉一个面并 Sync。新基准就包含了 agent 的改动，而屏幕一直写着下一次编辑从 S1 开始。
-- **处置：** 用户已决定（Q1）：先显式点“从这个版本继续”，再修改。由 lane `view-base` 实施：
-  - 模型不是编辑基准时，直接建模、描图转 3D、撤销/重做模型一律拒绝，并在原位给出“继续”入口。
+- **处置：** 用户已决定（Q1）：先显式点“从这个版本继续”，再修改。已在 lane `view-base` 修复（`c00c78f8`、`112031b9`）：
+  - 模型不是编辑基准时，以下操作一律拒绝，并在原位给出“继续”入口：草图、推拉、移动/旋转/缩放/复制、删除、立面应用、撤销/重做模型、参数锁、描图转 3D。
   - 查看类操作不受影响。
-  - `candidatePreview.browser.mjs:474` 按新规则改写。
+  - 集成复跑时发现，页面编辑器的描图面板只显示拒绝原因，却不给“继续”按钮。已在面板里补上，页面保持打开。
+  - `candidatePreview` 和 `documentTracing` 的浏览器场景已按新规则改写，并通过。
 
 ### F3 撤销/重做把浏览过的版本变成持久化的编辑基准【复核】
 - **实际：**
@@ -155,18 +156,22 @@ MonkeyArch 的布局：
   - `useSession.ts:149-168` 把这个选择持久保存。
   - 撤销提示只在开发者模式可见。
 - **场景：** 看了 C1、C2 之后按 Ctrl+Z，C1 就成了保存下来的基准。
-- **处置：** 本轮 lane `GH-234/view-base` 在修。
+- **处置：** 已修复（lane `view-base`）：
+  - 撤销/重做只沿编辑基准的变化前进或后退。
+  - 在查看别的版本时按撤销，会给出同一条“仅查看”原因，不移动任何东西。
+  - 纯函数单元测试：`modelHistory.test.ts`。
 
 ### F4 “从这个版本继续”被拒时看不见，并抛出未处理的 rejection【复核】
 - **实际：**
   - 底栏按钮调用 `void onContinueModelSource(...)`（`Stage.tsx:1156`），结果为 null 时抛错（`App.tsx:3389-3391`）。
   - 正忙时直接返回 null。
   - 有未同步草稿时，只写入 `historyError`：一句硬编码中文，仅在 Versions 面板内显示（`App.tsx:1883-1887`）。
-- **处置：** `view-base` lane。
+- **处置：** 已修复（lane `view-base`）：
+  - 拒绝原因和下一步显示在点击的位置：底栏编辑基准行、Versions 卡片或图页面板。中英文两套文案，不再抛出错误。
 
 ### F5 编辑基准保存失败从不提示【静态】
 - **实际：** `useSession` 发布了 `persistenceFailed`，但无人读取；现成的 `stage.base.notSaved` 键也没被使用。
-- **处置：** `view-base` lane。
+- **处置：** 已修复（lane `view-base`）：编辑基准行会显示 `stage.base.notSaved`。
 
 ### F6 两个聊天【静态】
 - **Hub 聊天：** CLI agent，可持久、可归档，带附件（`HUB/ChatShell.tsx:919-955`）。
@@ -252,7 +257,7 @@ H5 设置对话框的具体问题：
 
 | 编号 | 问题 | 证据 / 处置 |
 | --- | --- | --- |
-| W1 | 查看其他模型时提案卡被禁用，这是对的；但提示说它“属于另一个编辑基准”，这是错的 | `Conversation.tsx:230`；`useSession.ts:235-242`；`view-base` lane 修正文案 |
+| W1 | 查看其他模型时提案卡被禁用，这是对的；但提示说它“属于另一个编辑基准”，这是错的 | `Conversation.tsx:230`；`useSession.ts:235-242`；已修正文案（lane `view-base`），禁用逻辑不变 |
 | W2 | 对话栏关掉后打不开；比较结果和候选卡落进关着的栏；候选进度不可见 | `App.tsx:3240, 2198-2214, 3357` |
 | W3 | 普通模式下错误只显示通用句；系统行被隐藏；“why”链接失效 | `ErrorPanel.tsx:88-102`；`Conversation.tsx:207`；`ProposalCard.tsx:168-174` |
 | W4 | 换了画面之后，澄清选项失效但没有提示 | `App.tsx:534, 1437, 1858-1860` |
@@ -299,7 +304,7 @@ H5 设置对话框的具体问题：
 - **本轮的 lane：**
   - `GH-60/legacy-closeout`：P108/P115 登记清理。
   - `GH-234/ui-audit`：本文。
-  - `GH-234/view-base`：F2（按 Q1）、F3、F4、F5、W1。
+  - `GH-234/view-base`：F2（按 Q1）、F3、F4、F5、W1，已修复。
   - `GH-234/interaction-proposal`：新的交互方案。
 - **另外：** Drawing、Render、Publish 的完整流程已做只读验收，结果见第 9 节。其中的修复都落在 #270 正在改的文件上（`DrawingCanvas`、`ModelPreview`、生成的 API 客户端），等 #270 合并后按 #244、#253 进行。
 
