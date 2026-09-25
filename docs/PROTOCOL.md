@@ -280,7 +280,7 @@ the other domains name registered pages (`kind: "page"` with `runId`, `assetSha2
 pixels and every object refuses unknown fields: the runtime renders each frame in process, with
 `model_view` for each recipe view or a one-page PNG export at 1600 px, and each owner verifies
 its exact source before it draws. The route keeps no loop state and writes nothing to the
-project; each review is one `visual_observation` Monitor span.
+project; when Monitor is configured, each review is one `visual_observation` span.
 
 The answer is `observation` (`reviewId`, `reviewIndex`, `sourceRefs`, `viewRefs`, `frameSha256`,
 and findings with `findingId`, `type`, `targetRefs`, `description`, `confidence`, `severity` and
