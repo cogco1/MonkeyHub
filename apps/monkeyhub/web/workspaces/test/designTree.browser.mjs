@@ -389,7 +389,7 @@ try {
   card = await clickNode("candidate:run-entrance-a");
   assert.match(await card.innerText(), /Study\s+Study from S2 · Layout/, "a Study without a name is named after where it started");
   await card.getByRole("button", { name: "Continue from here", exact: true }).click();
-  await card.getByText(/Current now continues from A · Courtyard gate/).waitFor();
+  await card.getByText(/Current now continues from Courtyard gate on the south bar/).waitFor();
   await tab.waitForFunction(() => window.__treeApi.getSceneElements().find((element) => element.customData?.tree?.role === "trunk")?.points.length === 7);
   checkTree(await scene(), [S0, "candidate:run-massing-c", S1, "candidate:run-facade-b", S2, "candidate:run-entrance-a", "current"], { "study-massing": 4, "study-facade": 2 });
   card = await clickNode("current");

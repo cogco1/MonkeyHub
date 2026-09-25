@@ -44,7 +44,7 @@ export function DesignTreeDetails({ tree, node, words, data, confirmAccept, onCo
     const base = parent ? words.title(parent) : null;
     add(t("designTree.fact.study"), study?.label && base ? t("designTree.fact.studyFrom", { study: study.label, base }) : studyName);
     if (!study) add(t("designTree.fact.from"), base);
-    add(t("designTree.fact.admittedBy"), words.actor(node.candidate!.admittedBy));
+    add(t("designTree.fact.admittedBy"), words.admitter(node.candidate!));
     add(t("designTree.fact.admittedAt"), whenText(node.candidate!.admittedAt, language));
     add(t("designTree.fact.status"), words.status(node));
   } else if (node.kind === "stage") {

@@ -2,12 +2,15 @@ import assert from "node:assert/strict";
 import test, { type TestContext } from "node:test";
 import { fileURLToPath } from "node:url";
 import { createServer } from "vite";
+import { messagesEn } from "../../src/i18n/messages.en.ts";
+import { messagesZhCN } from "../../src/i18n/messages.zh-CN.ts";
 
 type Model = typeof import("../src/features/designTree/model.ts");
 type Layout = typeof import("../src/features/designTree/layout.ts");
 type Scene = typeof import("../src/features/designTree/scene.ts");
 type Fixture = typeof import("../src/features/designTree/fixture.ts");
 type Hit = typeof import("../src/features/canvas/sceneHit.ts");
+type Words = typeof import("../src/features/designTree/words.ts");
 
 async function harness(t: TestContext) {
   const vite = await createServer({
@@ -21,8 +24,13 @@ async function harness(t: TestContext) {
     ...await vite.ssrLoadModule("/src/features/designTree/scene.ts") as Scene,
     ...await vite.ssrLoadModule("/src/features/designTree/fixture.ts") as Fixture,
     ...await vite.ssrLoadModule("/src/features/canvas/sceneHit.ts") as Hit,
+    ...await vite.ssrLoadModule("/src/features/designTree/words.ts") as Words,
   };
 }
+
+/** The catalogs' own copy, filled the way the app fills it. */
+const translator = (catalog: Readonly<Record<string, string>>) => (key: string, parameters: Readonly<Record<string, string | number>> = {}) =>
+  catalog[key]!.replace(/\{(\w+)\}/g, (placeholder, name: string) => name in parameters ? String(parameters[name]) : placeholder);
 
 type Api = Awaited<ReturnType<typeof harness>>;
 type Tree = ReturnType<Api["buildGrowthTree"]>;
@@ -154,6 +162,49 @@ test("Accept after Continue adds the next Stage on the trunk, from the chosen op
   assert.equal(tree.nodes.get(s3)!.stage!.number, 3);
   assert.equal(tree.accept.block, "already-stage");
   assert.deepEqual(planarProblems(tree, api.layoutGrowthTree(tree)), []);
+});
+
+test("options are named once: a lone option has no letter and a label that carries one gets no second", async (t) => {
+  const api = await harness(t);
+  const fixture = api.createDesignTreeFixture();
+  fixture.state.candidates.find((row) => row.run === "run-facade-a")!.label = "A Brick piers";
+  const tree = api.buildGrowthTree(sourceOf(fixture));
+  const words = api.treeWords(translator(messagesEn) as never, tree);
+  const name = (run: string) => words.optionName(tree.nodes.get(`candidate:${run}`)!);
+  assert.equal(tree.nodes.get("candidate:run-entrance-a")!.letter, null, "the only option of its Study needs no letter");
+  assert.equal(name("run-entrance-a"), "Courtyard gate on the south bar");
+  assert.equal(name("run-facade-a"), "A Brick piers", "no \"A · A …\"");
+  assert.equal(name("run-facade-b"), "B · Deep timber fins", "options of a Study keep their letters");
+  assert.deepEqual([...tree.studies.get("study-massing")!.members].map((id) => tree.nodes.get(id)!.letter), ["A", "B", "C", "D", "E"]);
+});
+
+test("only the option that is a Stage's accepted run reads accepted; the option it grew from says so", async (t) => {
+  const api = await harness(t);
+  const fixture = api.createDesignTreeFixture();
+  let tree = api.buildGrowthTree(sourceOf(fixture));
+  for (const [catalog, grew] of [[messagesEn, "Continued · S1 · Massing grew from this"], [messagesZhCN, "已继续 · S1 · Massing 由此发展"]] as const) {
+    const words = api.treeWords(translator(catalog) as never, tree);
+    assert.equal(words.status(tree.nodes.get("candidate:run-massing-c")!), grew,
+      "S1's accepted run is a later run: the option it grew from is not what was accepted");
+  }
+  fixture.selectWorkingDraft({ projectId: "riverside-library", runId: "run-entrance-a", baseRevisionSha256: fixture.workingDraft().revisionSha256 ?? null });
+  tree = api.buildGrowthTree(sourceOf(fixture));
+  fixture.accept(tree.accept.candidateId!, { projectId: "riverside-library", branchId: tree.accept.branchId!, expectedHeadStageRef: tree.accept.expectedHeadStageRef! });
+  tree = api.buildGrowthTree(sourceOf(fixture));
+  assert.equal(api.treeWords(translator(messagesEn) as never, tree).status(tree.nodes.get("candidate:run-entrance-a")!), "Continued · accepted as S3");
+  assert.equal(api.treeWords(translator(messagesZhCN) as never, tree).status(tree.nodes.get("candidate:run-entrance-a")!), "已继续 · 已接受为 S3");
+});
+
+test("an admission recorded in a later review reads as retroactive; others keep their actor", async (t) => {
+  const api = await harness(t);
+  const source = sourceOf(api.createDesignTreeFixture());
+  const retroactive = source.history.candidates!.find((row) => row.candidateId === "run-facade-c")!;
+  retroactive.admittedBy = { actorId: "studio:explicit-user-action", authenticated: false, origin: "retroactive" };
+  const tree = api.buildGrowthTree(source);
+  const facts = (run: string) => tree.nodes.get(`candidate:${run}`)!.candidate!;
+  const en = api.treeWords(translator(messagesEn) as never, tree), zh = api.treeWords(translator(messagesZhCN) as never, tree);
+  assert.deepEqual([en.admitter(facts("run-facade-c")), zh.admitter(facts("run-facade-c"))], ["You (retroactive review)", "你（补录）"]);
+  assert.equal(en.admitter(facts("run-massing-a")), "Arch Agent");
 });
 
 test("a turned-down result cannot become a Stage: Accept says so first, and the runtime refuses it", async (t) => {

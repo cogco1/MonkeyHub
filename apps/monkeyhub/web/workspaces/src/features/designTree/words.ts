@@ -10,13 +10,15 @@ import type { SceneWords } from "./scene";
 
 /** The actor id an explicit act in the Studio carries when nobody signed in. */
 const LOCAL_ACTOR = "studio:explicit-user-action";
+/** A label that already names its option, such as "A Courtyard gate": it gets no second letter. */
+const OWN_LETTER = /^[A-Za-z]\s/;
 
 export type SurfaceName = "arch" | "board" | "drawing" | "render" | "publish";
 
 export function treeWords(t: TFunction, tree: GrowthTree | null) {
   const stageName = (node: TreeNode) => `S${node.stage!.number}${node.stage!.name ? ` · ${node.stage!.name}` : ""}`;
   const optionName = (node: TreeNode) => node.label
-    ? `${node.letter ? `${node.letter} · ` : ""}${node.label}`
+    ? `${node.letter && !OWN_LETTER.test(node.label) ? `${node.letter} · ` : ""}${node.label}`
     : t("designTree.optionUnnamed", { letter: node.letter ?? "" }).trim();
   const pendingText = (status: PendingStatus) => t(status === "running" ? "designTree.pending.running"
     : status === "queued" ? "designTree.pending.queued" : "designTree.pending.interrupted");
@@ -34,6 +36,9 @@ export function treeWords(t: TFunction, tree: GrowthTree | null) {
     return base ? t("designTree.study.from", { base: title(base) }) : t("designTree.study.unnamed");
   };
   const actor = (value: string | null) => !value ? null : value === LOCAL_ACTOR ? t("designTree.actor.you") : value;
+  // An admission recorded afterwards, when a person reviewed earlier work, says so.
+  const admitter = (candidate: NonNullable<TreeNode["candidate"]>) => candidate.admittedOrigin === "retroactive"
+    ? t("designTree.actor.retroactive") : actor(candidate.admittedBy);
   const currentAt = (): string => {
     const current = byId(CURRENT);
     const anchor = byId(current?.parent ?? null);
@@ -48,11 +53,16 @@ export function treeWords(t: TFunction, tree: GrowthTree | null) {
     if (node.kind === "pending") return pendingText(node.pending!.status);
     if (node.kind !== "candidate") return "";
     const accepted = byId(node.candidate!.acceptedStage);
+    // The runtime also names a Stage on the nearest admitted option its accepted run
+    // grew from; only the option that is that run was accepted as it.
+    const own = accepted?.stage?.candidateId === node.candidate!.candidateId;
+    const stage = accepted ? stageName(accepted) : "";
     if (tree.onTrunk.has(node.id)) {
-      return byId(CURRENT)?.parent === node.id ? t("designTree.status.current") : accepted
-        ? t("designTree.status.accepted", { stage: stageName(accepted) }) : t("designTree.status.line");
+      return byId(CURRENT)?.parent === node.id ? t("designTree.status.current") : !accepted ? t("designTree.status.line")
+        : t(own ? "designTree.status.accepted" : "designTree.status.grew", { stage });
     }
-    if (tree.continued.has(node.id)) return accepted ? t("designTree.status.acceptedEarlier", { stage: stageName(accepted) }) : t("designTree.status.earlier");
+    if (tree.continued.has(node.id)) return !accepted ? t("designTree.status.earlier")
+      : t(own ? "designTree.status.acceptedEarlier" : "designTree.status.grewEarlier", { stage });
     return t("designTree.status.ready");
   };
   // Longest first; the far view shortens a count rather than letting it collide.
@@ -72,7 +82,7 @@ export function treeWords(t: TFunction, tree: GrowthTree | null) {
     accept: accept?.nextLabel ? t("designTree.action.accept", { stage: accept.nextLabel }) : t("designTree.action.acceptNext"),
     acceptBlocked: t("designTree.action.acceptNext"), status, fork,
   };
-  return { stageName, optionName, studyName, title, actor, currentAt, status, fork, pendingText, scene, byId };
+  return { stageName, optionName, studyName, title, actor, admitter, currentAt, status, fork, pendingText, scene, byId };
 }
 
 export type TreeWords = ReturnType<typeof treeWords>;

@@ -28,6 +28,8 @@ export interface StageFacts {
   readonly branchId: string;
   readonly acceptedBy: string;
   readonly acceptedAt: string | null;
+  /** The run accepted as this Stage: the one option that is it, not an ancestor it grew from. */
+  readonly candidateId: string;
 }
 
 export interface CandidateFacts {
@@ -158,7 +160,7 @@ export function buildGrowthTree(source: DesignTreeSource): GrowthTree {
     const name = stage.label && stage.label !== `S${number}` ? stage.label : null;
     nodes.set(id, { id, kind: "stage", parent: null, runId: stage.modelSource.runId, label: name, summary: null, letter: null, studyId: null,
       stage: { ref: stage.stageRef, number, name, branchId: stage.branchId, acceptedBy: stage.acceptedBy,
-        acceptedAt: stage.acceptance?.occurredAt ?? null } });
+        acceptedAt: stage.acceptance?.occurredAt ?? null, candidateId: stage.candidateId } });
     stageByRun.set(stage.candidateId, id);
     stageByRun.set(stage.modelSource.runId, id);
   }
@@ -185,8 +187,9 @@ export function buildGrowthTree(source: DesignTreeSource): GrowthTree {
     if (!list.includes(candidateNodeId(candidate.candidateId))) list.push(candidateNodeId(candidate.candidateId));
     members.set(candidate.studyId, list);
   }
+  // A letter tells options apart: a Study of one option needs none.
   const letters = new Map<string, string>();
-  for (const list of members.values()) list.forEach((id, index) => letters.set(id, letterAt(index)));
+  for (const list of members.values()) if (list.length > 1) list.forEach((id, index) => letters.set(id, letterAt(index)));
 
   // A run that is both an option and a Stage's model is that Stage from then on:
   // the Stage is the later point on its line.
