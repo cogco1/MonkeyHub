@@ -5,10 +5,10 @@
 
 Phase: GitHub Issues are the work items (#60); this registry records live source-edit coordination only. The remaining legacy P cards are blocked and claim no path; P115 is a frozen historical index. Real project acceptance and formal issue are explicit user actions.
 
-- active: GH-302, GH-58, GH-285, GH-66, GH-244
+- active: GH-302, GH-58, GH-285, GH-284, GH-300, GH-66, GH-244
 - ready: none
 - blocked: P115, P105, P108, P110, P111, P113
-- next: continue active work: GH-302, GH-58, GH-285, GH-66, GH-244
+- next: continue active work: GH-302, GH-58, GH-285, GH-284, GH-300, GH-66, GH-244
 
 ## Live work
 
@@ -23,5 +23,7 @@ Phase: GitHub Issues are the work items (#60); this registry records live source
 | GH-302 | active | Modeling says only what matters: Record appears with its label only when there are unrecorded edits, errors state the reason and the next step, tool shortcuts are announced, and the loading overlay names what it waits for. | [GH-302](mapping/planning/GH-302-stage-feedback.md) |
 | GH-58 | active | The update status says what is actually true: a prepared, applicable update is never reported as failed, and Settings words each state plainly. | [GH-58](mapping/planning/GH-58-update-status.md) |
 | GH-285 | active | The chat composer says what a message will change, keeps drafts across restarts, offers New topic from the + menu instead of a standing checkbox, says Sending while it sends, and the unfinished-operation notice names the operation and can be cleared. | [GH-285](mapping/planning/GH-285-composer.md) |
+| GH-284 | active | Design Tree actions confirm themselves: Continue shows a toast with Undo that restores the previous Current, Accept shows a toast without Undo, and while another model is viewed the Stage chip offers Continue from here and Back to Current. | [GH-284](mapping/planning/GH-284-tree-actions.md) |
+| GH-300 | active | A Hub-wide attention layer: a toast when a chat needs permission, finishes or fails while another view is open, an OS notification and a title count while the window is hidden, and a chat summary flag for pending permission. | [GH-300](mapping/planning/GH-300-attention.md) |
 | GH-66 | active | Implement the first project-bound Publish composition slice, with Drawing/Render source freshness and bounded Board handoff. Related consumer fixes follow #223/#216/#244 in the same integration review. | [GH-66](https://github.com/cogco1/MonkeyHub/issues/66) |
 | GH-244 | active | Draw directly from retained 3DM and SKP imports through the existing Drawing projection and representation workflow. | [GH-244](https://github.com/cogco1/MonkeyHub/issues/244) |

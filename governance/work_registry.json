@@ -303,6 +303,102 @@
       ]
     },
     {
+      "id": "GH-284",
+      "stream": "planning",
+      "status": "active",
+      "goal": "Design Tree actions confirm themselves: Continue shows a toast with Undo that restores the previous Current, Accept shows a toast without Undo, and while another model is viewed the Stage chip offers Continue from here and Back to Current.",
+      "depends_on": [],
+      "issue": "https://github.com/cogco1/MonkeyHub/issues/284",
+      "write_scope": [
+        "apps/monkeyhub/web/workspaces/src/features/designTree/",
+        "apps/monkeyhub/web/workspaces/test/designTree.browser.mjs",
+        "apps/monkeyhub/web/workspaces/test/designTree.test.ts",
+        "docs/mapping/planning/GH-284-tree-actions.md"
+      ],
+      "card": "docs/mapping/planning/GH-284-tree-actions.md",
+      "acceptance": [
+        "After Continue a toast names the new Current and Undo restores the previous one through the same Continue path.",
+        "After Accept as next Stage a toast names the new Stage.",
+        "While viewing a model that is not Current the chip offers Continue from here and Back to Current."
+      ],
+      "lanes": [
+        {
+          "id": "tree-actions",
+          "issue": "https://github.com/cogco1/MonkeyHub/issues/284",
+          "branch": "codex/284-tree-actions",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-284-tree-actions",
+          "base_ref": "e7fd526e",
+          "contributor": "Claude",
+          "reviewer": "Claude root task",
+          "handoff": "Design Tree only; copy stays local while GH-244 claims the catalogs.",
+          "modules": [
+            "hub.shell"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/web/workspaces/src/features/designTree/",
+            "apps/monkeyhub/web/workspaces/test/designTree.browser.mjs",
+            "apps/monkeyhub/web/workspaces/test/designTree.test.ts"
+          ],
+          "depends_on": [],
+          "status": "active",
+          "blocked_reason": null
+        }
+      ]
+    },
+    {
+      "id": "GH-300",
+      "stream": "planning",
+      "status": "active",
+      "goal": "A Hub-wide attention layer: a toast when a chat needs permission, finishes or fails while another view is open, an OS notification and a title count while the window is hidden, and a chat summary flag for pending permission.",
+      "depends_on": [],
+      "issue": "https://github.com/cogco1/MonkeyHub/issues/300",
+      "write_scope": [
+        "apps/monkeyhub/api/monkeyhub_api/chat.py",
+        "apps/monkeyhub/api/monkeyhub_api/models.py",
+        "apps/monkeyhub/api/tests/test_chat_attention.py",
+        "apps/monkeyhub/web/src/api/generated/",
+        "apps/monkeyhub/web/src/main.tsx",
+        "apps/monkeyhub/web/src/notifications/",
+        "apps/monkeyhub/web/test/attention.test.ts",
+        "apps/monkeyhub/web/test/notifications.browser.mjs",
+        "docs/mapping/planning/GH-300-attention.md"
+      ],
+      "card": "docs/mapping/planning/GH-300-attention.md",
+      "acceptance": [
+        "A pending permission, a finished turn and a failure in a chat that is not on screen each raise one toast that opens that chat.",
+        "While the window is hidden the same events send one OS notification each and the title shows the count; nothing repeats for the same event.",
+        "GET /api/chat/sessions says which chats wait on a permission."
+      ],
+      "lanes": [
+        {
+          "id": "attention",
+          "issue": "https://github.com/cogco1/MonkeyHub/issues/300",
+          "branch": "codex/300-attention",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-300-attention",
+          "base_ref": "e7fd526e",
+          "contributor": "Claude",
+          "reviewer": "Claude root task",
+          "handoff": "New notification layer mounted in main.tsx; opens a chat through a monkeyhub:open-chat event the root wires into ChatShell at integration.",
+          "modules": [
+            "hub.shell"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/web/src/notifications/",
+            "apps/monkeyhub/web/src/main.tsx",
+            "apps/monkeyhub/web/src/api/generated/",
+            "apps/monkeyhub/api/monkeyhub_api/models.py",
+            "apps/monkeyhub/api/monkeyhub_api/chat.py",
+            "apps/monkeyhub/api/tests/test_chat_attention.py",
+            "apps/monkeyhub/web/test/notifications.browser.mjs",
+            "apps/monkeyhub/web/test/attention.test.ts"
+          ],
+          "depends_on": [],
+          "status": "active",
+          "blocked_reason": null
+        }
+      ]
+    },
+    {
       "id": "GH-66",
       "stream": "planning",
       "status": "active",
