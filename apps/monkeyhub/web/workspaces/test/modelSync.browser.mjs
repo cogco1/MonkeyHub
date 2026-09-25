@@ -927,6 +927,9 @@ assert.deepEqual(state.view.drafts.find(o=>o.id===curve).visible,[true,false,fal
 await pick(block,true);assert.equal((await snap()).pickedStatus,'local');
 console.log('2 · two successive P gestures re-pick the moved face, with latest-pointer and numeric override');
 await button('Push/Pull').click();await wait(s=>s.gesture.pushPull,'P did not start');
+const pushPullForm=page.getByRole('form',{name:'Push/Pull P',exact:true});
+assert.equal(await pushPullForm.getByRole('button',{name:'Apply',exact:true}).getAttribute('aria-keyshortcuts'),'Enter');
+assert.equal(await pushPullForm.getByRole('button',{name:'Close tool',exact:true}).getAttribute('aria-keyshortcuts'),'Escape','Esc is announced by its key name');
 const first=await snap(),g=first.gesture.pushPull,original=first.view.drafts.find(o=>o.id===block);
 const end=await page.evaluate(p=>window.__view.project(p),g.face.origin.map((v,i)=>v+g.face.normal[i]*.625));
 const pStart=performance.now();await page.evaluate(({x,y})=>{

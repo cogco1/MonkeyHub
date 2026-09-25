@@ -142,14 +142,17 @@ export type ModelToolButtonProps = Omit<ComponentProps<"button">, "children" | "
   showLabel?: boolean;
 };
 
+/** The tooltip's short key names, as `aria-keyshortcuts` spells them. */
+const ARIA_KEY_NAMES: Readonly<Record<string, string>> = { Ctrl: "Control", Esc: "Escape", Del: "Delete" };
+
 /**
- * The shortcut the tooltip shows, in `aria-keyshortcuts` words (NA-4): the
- * modifier is `Control`, not `Ctrl`. Letters and `Space` are already spelled
- * the way the attribute expects.
+ * The shortcut the tooltip shows, in `aria-keyshortcuts` words (NA-4):
+ * `Ctrl+Shift+Z` is `Control+Shift+Z` and `Esc` is `Escape`. Letters, `Enter`
+ * and `Space` are already spelled the way the attribute expects.
  */
 function keyShortcuts(shortcut: string | undefined): string | undefined {
   if (!shortcut) return undefined;
-  return shortcut.split("+").map((key) => key === "Ctrl" ? "Control" : key).join("+");
+  return shortcut.split("+").map((key) => ARIA_KEY_NAMES[key] ?? key).join("+");
 }
 
 /** A local toolbar control; the caller continues to own its action and state. */
