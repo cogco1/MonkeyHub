@@ -11,6 +11,7 @@ type Scene = typeof import("../src/features/designTree/scene.ts");
 type Fixture = typeof import("../src/features/designTree/fixture.ts");
 type Hit = typeof import("../src/features/canvas/sceneHit.ts");
 type Words = typeof import("../src/features/designTree/words.ts");
+type Undo = typeof import("../src/features/designTree/continueUndo.ts");
 
 async function harness(t: TestContext) {
   const vite = await createServer({
@@ -25,6 +26,7 @@ async function harness(t: TestContext) {
     ...await vite.ssrLoadModule("/src/features/designTree/fixture.ts") as Fixture,
     ...await vite.ssrLoadModule("/src/features/canvas/sceneHit.ts") as Hit,
     ...await vite.ssrLoadModule("/src/features/designTree/words.ts") as Words,
+    ...await vite.ssrLoadModule("/src/features/designTree/continueUndo.ts") as Undo,
   };
 }
 
@@ -162,6 +164,69 @@ test("Accept after Continue adds the next Stage on the trunk, from the chosen op
   assert.equal(tree.nodes.get(s3)!.stage!.number, 3);
   assert.equal(tree.accept.block, "already-stage");
   assert.deepEqual(planarProblems(tree, api.layoutGrowthTree(tree)), []);
+});
+
+test("Undo is the same Continue write, onto the exact Current the Continue replaced", async (t) => {
+  const api = await harness(t);
+  const project = "riverside-library";
+  const fixture = api.createDesignTreeFixture();
+  const before = api.buildGrowthTree(sourceOf(fixture));
+  // Continue from Massing D as the tree does: read the position, write against its revision.
+  const read = fixture.workingDraft();
+  const request = api.continueRequest(project, { runId: "run-massing-d", branchId: null }, read);
+  assert.deepEqual(request, { projectId: project, runId: "run-massing-d", baseRevisionSha256: "rev-0001", branchId: null });
+  fixture.selectWorkingDraft(request);
+  // The previous Current is recorded from the position that write replaced, before it.
+  const undo = api.continueUndo(read, "run-massing-d");
+  assert.deepEqual(undo, { runId: "run-s2-layout", branchId: "main", continued: "run-massing-d" });
+  assert.deepEqual(api.buildGrowthTree(sourceOf(fixture)).trunk.map((id) => fixture.state.stages.some((stage) => id === `stage:${stage.ref}`) ? "stage" : id),
+    ["stage", "candidate:run-massing-d", "current"]);
+  const back = api.undoRequest(project, undo!, fixture.workingDraft());
+  assert.deepEqual(back, { projectId: project, runId: "run-s2-layout", baseRevisionSha256: "rev-0002", branchId: "main" },
+    "the same request shape, the previous run and its line, against the position as read now");
+  fixture.selectWorkingDraft(back!);
+  assert.equal(fixture.state.head, "run-s2-layout");
+  assert.equal(fixture.workingSource().head!.origin, "working-position");
+  assert.deepEqual(api.buildGrowthTree(sourceOf(fixture)).trunk, before.trunk, "the trunk is back where it was");
+  // The previous Current's own line goes with it.
+  assert.deepEqual(api.continueUndo({ projectId: project, revisionSha256: "rev-x",
+    current: { runId: "run-s1-alt", branchId: "line-2", updatedAt: "2026-09-25T00:00:00Z" } }, "run-massing-d"),
+  { runId: "run-s1-alt", branchId: "line-2", continued: "run-massing-d" });
+});
+
+test("no Undo rather than a guess: a line-head Current, a Continue that moved nothing, a Current that moved on", async (t) => {
+  const api = await harness(t);
+  const project = "riverside-library";
+  // With no saved working position the line's accepted head answers for Current: there is no entry to put back.
+  const fixture = api.createDesignTreeFixture();
+  fixture.selectWorkingDraft({ projectId: project, runId: null, baseRevisionSha256: fixture.workingDraft().revisionSha256 ?? null });
+  assert.equal(fixture.workingDraft().current, null);
+  assert.equal(fixture.workingSource().head!.origin, "branch-head");
+  assert.equal(api.continueUndo(fixture.workingDraft(), "run-massing-d"), null, "a Stage head is not a working draft");
+  // A Continue onto the run Current already stands on changed nothing.
+  const same = api.createDesignTreeFixture();
+  assert.equal(api.continueUndo(same.workingDraft(), "run-s2-layout"), null);
+  // Once Current moves on from the continued run, Undo puts nothing back.
+  const moved = api.createDesignTreeFixture();
+  const read = moved.workingDraft();
+  moved.selectWorkingDraft(api.continueRequest(project, { runId: "run-massing-d", branchId: null }, read));
+  const undo = api.continueUndo(read, "run-massing-d")!;
+  assert.ok(api.undoRequest(project, undo, moved.workingDraft()), "right after the Continue it applies");
+  moved.selectWorkingDraft({ projectId: project, runId: "run-massing-e", baseRevisionSha256: moved.workingDraft().revisionSha256 ?? null });
+  assert.equal(api.undoRequest(project, undo, moved.workingDraft()), null, "another write moved Current since");
+});
+
+test("the toasts and an Undo refusal read in both languages", async (t) => {
+  const api = await harness(t);
+  const [en, zh] = [api.actionWords("en"), api.actionWords("zh-CN")];
+  assert.equal(zh("continued", { name: "D · Terraced wedge" }), "当前已改为「D · Terraced wedge」");
+  assert.equal(en("continued", { name: "D · Terraced wedge" }), "Current is now “D · Terraced wedge”");
+  assert.deepEqual([zh("undo"), en("undo")], ["撤销", "Undo"]);
+  assert.deepEqual([zh("accepted", { stage: "S3" }), en("accepted", { stage: "S3" })], ["已接受为 S3", "Accepted as S3"]);
+  const moved = { code: api.DESIGN_TREE_UNDO_MOVED, detail: "Current moved on after the Continue; nothing was undone." } as never;
+  assert.equal(api.refusalWords(translator(messagesZhCN) as never, "zh-CN", moved), "继续之后当前已有变化，未撤销。");
+  const unsynced = { code: api.DESIGN_TREE_UNSYNCED, detail: "" } as never;
+  assert.equal(api.refusalWords(translator(messagesEn) as never, "en", unsynced), messagesEn["designTree.outcome.unsynced"]);
 });
 
 test("options are named once: a lone option has no letter and a label that carries one gets no second", async (t) => {
