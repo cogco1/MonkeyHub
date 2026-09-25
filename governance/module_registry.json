@@ -245,7 +245,8 @@
         "one process-wide Rhino host lock: a candidate's export and an explicitly requested work export are the same machine resource and take the same lock",
         "Blender solid and straight-extrusion meshes, explicit speculative .blend save in one background process, fresh-process geometry/semantic/binding readback, and the native retained receipt reader; no backend-specific project state",
         "Full Blender visualization rebuild from verified OCCT STEP, stable source IDs, explicit presentation settings, independent saved-scene render and source-bound artifact receipt; no geometry authoring",
-        "Bounded 3DM/GLB mesh format adapters and conversion readback; runtime-qualified provider selection and discovery-only native SKP/DWG executors with no project writes."
+        "Bounded 3DM/GLB mesh format adapters and conversion readback; runtime-qualified provider selection and discovery-only native SKP/DWG executors with no project writes.",
+        "section perspective lines and cut regions from the same B-reps: the kept side of an arbitrary plane in exact perspective with the section plane as picture plane (project_occt_section_perspective)"
       ],
       "does_not_own": [
         "translating the program into a script - adapters.cad_program",
@@ -265,7 +266,8 @@
         "Optional operation_observer and parent event id for actual OCCT reuse checks, geometry, STEP, tessellation and preview stages; no diagnostic write or project authority",
         "named StepEntry shapes, explicit object selection, drawing origin/right/up and linear deflection in the shape's length unit",
         "CadExecutionRequest with explicit artifact stem, material/layer maps, observer, optional verified source and backend option mapping; no repository handle",
-        "Successful OCCT CadExecutionResult with its exact CadExecutionRequest, Blender executable and BlenderPresentation"
+        "Successful OCCT CadExecutionResult with its exact CadExecutionRequest, Blender executable and BlenderPresentation",
+        "for a section perspective, the eye on the removed side and an optional depth behind the plane"
       ],
       "outputs": [
         "RhinoCadExportPlan",
@@ -276,7 +278,8 @@
         "OcctDrawingRegion values with object_id and closed 2D loops for one solid's section, filled together using even-odd; separate solids remain separate values",
         "CadExecutionResult: backend id, exact binding, status, named verified artifacts, stable object/semantic coverage, failures and unchanged backend-specific receipt payload",
         "BlenderExecutionReceipt@1: a native .blend mesh artifact and independent saved object/bounds/volume/unit/semantic/exact-binding readback; the common result has no 3dm inspection",
-        "BlenderProjectionReceipt@1: exact source binding and STEP hash, Blender version, resolved camera/light/material settings, cold readback, blend/PNG hashes and failure logs"
+        "BlenderProjectionReceipt@1: exact source binding and STEP hash, Blender version, resolved camera/light/material settings, cold readback, blend/PNG hashes and failure logs",
+        "OcctSectionPerspective: visible and section polylines and cut regions in the section plane's frame, its principal point and focus, and the drawn, cut and removed object ids; no writes"
       ],
       "public_api": [
         "prepare_rhino_three_dm_export",
@@ -325,7 +328,9 @@
         "BlenderPresentation",
         "execute_blender_projection",
         "verify_projection_artifacts",
-        "archflow.adapters.model_formats.convert"
+        "archflow.adapters.model_formats.convert",
+        "project_occt_section_perspective",
+        "OcctSectionPerspective"
       ],
       "depends_on": [
         "adapters.cad_patch",
@@ -379,7 +384,8 @@
         "Blender supports positive solids and straight extrusions of simple planar profiles in the initial slice; all other operations fail before host execution or workspace writes. Complete rebuilds preserve source artifacts; cached exact requests verify retained proof and bytes without starting a host",
         "retained polyline curves are verified from cold STEP and native 3DM readback against all authored points, endpoints and length; curve delivery claims no face or solid, and existing solid/surface receipt fields retain their meaning",
         "Blender projection consumes OCCT tessellation without architectural reconstruction; full rebuild preserves source IDs and explicit presentation settings. Geometry edits require MonkeyHub reconcile, never blend-file promotion.",
-        "composed-model replacement retains the source GUID for each rebuilt logical object; newly added objects cannot reuse any source GUID, including retired ones; saved readback verifies the expected identity"
+        "composed-model replacement retains the source GUID for each rebuilt logical object; newly added objects cannot reuse any source GUID, including retired ones; saved readback verifies the expected identity",
+        "a section perspective cuts every selected shape exactly with an oriented box on the kept side and solves visibility once with a perspective projector whose picture plane is the section plane, the shapes located in the eye's camera frame (HLRBRep's perspective misjudges back faces and silhouettes under a non-identity projector frame); the plane's sections map through the same camera move and projector"
       ],
       "status": "canonical",
       "tests": [
@@ -531,7 +537,7 @@
     {
       "module_id": "adapters.drawing_svg",
       "owner_path": "monkeydiagram/drawing_svg.py",
-      "purpose": "Serialise orthographic drawing polylines as one deterministic SVG that names each polyline's source object, and render a PNG from those SVG bytes.",
+      "purpose": "Serialise drawing polylines, orthographic or a section perspective, as one deterministic SVG that names each polyline's source object, and render a PNG from those SVG bytes.",
       "owns": [
         "cropping projected polylines to the view window after visibility was solved (crop_polylines)",
         "the SVG document of a drawing: viewBox in frame units, physical mm size at the sheet scale, hidden group under visible group, data-object per polyline, fixed-decimal coordinates, no timestamp (drawing_svg)",
@@ -549,7 +555,8 @@
         "crop window, unit, scale, hidden-line switch, title",
         "SVG bytes",
         "optional section regions, section polylines and paper pen/hatch settings",
-        "resolved dimension values with anchors, label and paper offset"
+        "resolved dimension values with anchors, label and paper offset",
+        "optional section-perspective marker: data-projection and data-scale-at on the root; orthographic bytes unchanged"
       ],
       "outputs": [
         "OcctDrawingPolyline tuple (cropped)",
@@ -2743,7 +2750,7 @@
     {
       "module_id": "runtime.drawing_elevation",
       "owner_path": "monkeydiagram/drawing_elevation.py",
-      "purpose": "Freeze model-axis orthographic projections or one horizontal cut plan from retained exact STEP into SVG, PNG and an existing drawing receipt, without changing design state.",
+      "purpose": "Freeze model-axis orthographic projections, one horizontal cut plan or a section perspective from retained exact STEP into SVG, PNG and an existing drawing receipt, without changing design state.",
       "owns": [
         "ElevationSource: the retained STEP and OcctExecutionReceipt@1 a drawing is derived from, and the verification that they agree (SHA, run, base, unit, Z-up, STEP names = physical object ids)",
         "ElevationView: origin, look/right/up along the model axes, crop window, near/far depths, hidden-line switch, chord deflection and sheet scale, checked for consistency",
@@ -2752,7 +2759,8 @@
         "DrawingProjectionReceipt@1 (retained as drawing-projection-receipt): source binding, frame, backend, counts and the two artifact refs",
         "cold readback of a retained drawing (read_model_axis_elevation, list_model_axis_elevations) with every sha verified",
         "horizontal cut-plan composition: section boundaries, one material hatch and below-cut visible lines, with caller-resolved semantic dimensions and retained representation recipe",
-        "representation-only SVG entourage in the existing cut-plan recipe; exact physical-object-centre anchors, explicit missing/outside-view status and immutable dressing readback across source rebuilds"
+        "representation-only SVG entourage in the existing cut-plan recipe; exact physical-object-centre anchors, explicit missing/outside-view status and immutable dressing readback across source rebuilds",
+        "section perspective: SectionPerspectiveView (a plan line and kept side, or an origin and normal; an explicit or default one-point camera) checked with named refusals before the model is read, the default eye placed from the exact cut, and the request, exact plane, resolved camera and crop recorded in the one drawing receipt (freeze_section_perspective)"
       ],
       "does_not_own": [
         "the hidden-line solve - adapters.cad_execution",
@@ -2767,13 +2775,15 @@
         "drawing run id",
         "ProjectRecordRef",
         "Optional operation_observer and parent event id for source load, global hidden-line solve, SVG, PNG and persistence intervals",
-        "cut-plan recipe and verified dimension read values; optional previous drawing revision ref"
+        "cut-plan recipe and verified dimension read values; optional previous drawing revision ref",
+        "SectionPerspectiveView: section, camera, depth, hidden objects, scale and pens"
       ],
       "outputs": [
         "ElevationProjection",
         "ElevationDrawing",
         "DrawingProjectionReceipt@1 dict",
-        "ProjectRecordRef tuple"
+        "ProjectRecordRef tuple",
+        "SectionPerspectiveProjection"
       ],
       "public_api": [
         "ElevationSource",
@@ -2792,7 +2802,16 @@
         "DOCUMENTATION_WORKSPACE",
         "freeze_cut_plan",
         "plan_dressing_anchors",
-        "resolve_plan_dressing"
+        "resolve_plan_dressing",
+        "SectionPerspectiveView",
+        "SectionPerspectiveError",
+        "SectionPerspectiveProjection",
+        "project_section_perspective",
+        "freeze_section_perspective",
+        "section_perspective_objects",
+        "SECTION_PERSPECTIVE_KIND",
+        "CUT_PLAN_KIND",
+        "DRAWING_VIEW_KINDS"
       ],
       "depends_on": [
         "adapters.cad_execution",
@@ -2801,7 +2820,8 @@
         "project.record_kinds",
         "project.refs",
         "project.repository",
-        "project.version_refs"
+        "project.version_refs",
+        "archflow.adapters.occt_backend"
       ],
       "used_by": [
         "tests/test_drawing_elevation.py",
@@ -2815,11 +2835,13 @@
         "two identities only: the SVG/PNG content (sha256) and the source binding (run, base, STEP, CAD receipt, object ids, frame); the receipt digests nothing of itself",
         "Observations are plain values; callback failure cannot alter or repeat projection or persistence; input and emitted object ids do not claim a changed-object-only visibility solve",
         "Existing elevation/top recipe and digest bytes keep their original meaning; cut-plan is an explicit recipe kind. Missing retained visibility ids and dimension intent remain explicit in the new receipt.",
-        "Dressing has independent object ids, uses fixed view coordinates or exact physical-object anchors, never creates design entities and never silently rebinds missing anchors."
+        "Dressing has independent object ids, uses fixed view coordinates or exact physical-object anchors, never creates design entities and never silently rebinds missing anchors.",
+        "A section perspective's picture plane is its section plane: the cut is true to scale at the recorded 1:N, nothing on the eye's side is drawn, and the receipt records the request, the exact plane and the resolved camera (eye, target, up, field of view) that draw the same bytes again; a plane that misses the drawn objects and an eye on the kept side or on the plane are refused by name before anything is written."
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_drawing_elevation.py"
+        "tests/test_drawing_elevation.py",
+        "tests/test_drawing_section_perspective.py"
       ],
       "notes": "CREATE 2026-09-07: the plan's first real consumer at the application boundary. runtime.project_runner is the seat/stage loop and does not derive drawings; adapters have no repository authority. First frozen drawing: villa-rotonda-reconstruction run drawing-a0-20260907-villa-b-minus-y from source run studio-cand-20260906-010451-dca4de25-4e9d (external workspace, noncanonical)."
     },
@@ -3894,7 +3916,8 @@
         "one horizontal cut-plan revision over the existing SourceDocument and DrawingProjectionReceipt: retained scale, pens, hatch, semantic rectangular empty-door dimensions and explicit rebuild against a named exact source or the original Stage branch head",
         "Model conversion orchestration using the existing job pool, original source objects and noncanonical P036 export runs; retained progress, failure and validated-download reports.",
         "read-only paged native-object lookup by exact ModelSource and GUID; no architectural-role inference or edit admission",
-        "typed representation-only SVG dressing replacement and insert/move/scale/flip/delete operations against an exact previous Drawing revision; retained SVG readback and source anchor choices"
+        "typed representation-only SVG dressing replacement and insert/move/scale/flip/delete operations against an exact previous Drawing revision; retained SVG readback and source anchor choices",
+        "registering section perspective revisions from a complete exact STEP in the existing document list with the same source resolution, cache, monitoring and registration as elevations, keeping the drawing owner's refusal names"
       ],
       "does_not_own": [
         "producing the export or its receipt - adapters.cad_execution through runtime.project_runner",
@@ -3980,7 +4003,9 @@
         "read_model_source_index",
         "GET /api/drawings/plans/vector",
         "plan_vector",
-        "artifact_model_source"
+        "artifact_model_source",
+        "POST /api/drawings/section-perspectives",
+        "generate_section_perspective"
       ],
       "depends_on": [
         "adapters.cad_execution",
@@ -4058,7 +4083,8 @@
         "apps/archflow-studio/api/tests/test_model_exports.py",
         "apps/archflow-studio/api/tests/test_model_source_index.py",
         "apps/archflow-studio/api/tests/test_model_load_monitoring.py",
-        "apps/monkeyhub/web/workspaces/test/externalModelImport.browser.mjs"
+        "apps/monkeyhub/web/workspaces/test/externalModelImport.browser.mjs",
+        "apps/archflow-studio/api/tests/test_section_perspective.py"
       ],
       "notes": "The viewer's only source of model bytes; digests are the identity, filenames are not.",
       "files": [
