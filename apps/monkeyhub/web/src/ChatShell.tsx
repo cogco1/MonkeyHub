@@ -250,11 +250,14 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
   const contextMode = contextModes[draftKey] ?? "continue";
   const workspaceContext = projectRuntime ? designContexts[projectRuntime.runtimeId] : null;
   const designContext = workspaceContext?.projectId === project?.projectId ? workspaceContext?.designContext : null;
-  const contextUnavailable = workspaceContext?.unavailableReason === "unsaved" ? t.contextUnsaved
-    : workspaceContext?.unavailableReason === "loading" ? t.contextLoading : t.contextOpenProject;
+  // Saved or not, local model edits no candidate holds keep project state out of chat.
+  const contextUnavailable = workspaceContext?.unavailableReason === "unsaved" || workspaceContext?.unavailableReason === "unsynced"
+    ? t.contextUnsaved : workspaceContext?.unavailableReason === "loading" ? t.contextLoading : t.contextOpenProject;
   const running = chat?.id === chatId && chat.status === "running";
   // Include hidden conversations and mounted project workspaces: a restart
   // would lose their in-memory drafts just as it would the visible composer.
+  // Model edits the project's working draft already holds ("unsynced") are
+  // restored after the restart; only edits it does not hold yet block it.
   const restartBlocker: RestartBlocker = Object.values(drafts).some((text) => Boolean(text.trim())) || Object.values(draftAttachments).some((files) => files.length)
     ? "drafts" : Object.values(designContexts).some((context) => context?.unavailableReason === "unsaved") ? "model"
       : settingsDirty ? "settings" : busy || toolBusy || modelBusy || archiveBusy || permissionBusy || recovering || loading || running || !eventsConnected ||

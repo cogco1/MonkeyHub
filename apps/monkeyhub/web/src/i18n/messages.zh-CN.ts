@@ -851,7 +851,7 @@ export const hubCopy = {
     updateApplying: "正在重启更新…", updateFailed: "补丁准备或应用失败。", updateLoading: "正在读取更新状态…",
     updateZipRequired: "请选择 ZIP 格式的补丁包。", updateTooLarge: "补丁超过 256 MiB，请选择较小的补丁 ZIP。",
     updateDraftsBlocked: "有对话包含未发送的文字或附件，请先发送或移除，再重启更新。",
-    updateModelBlocked: "有模型修改尚未同步，请先同步或保存，再重启更新。",
+    updateModelBlocked: "模型草稿仍在保存，请稍候再重启更新。",
     updateSettingsBlocked: "请先保存设置修改，再重启更新。",
     updateBusyBlocked: "请等待当前任务和工作区加载结束，再重启更新。",
     updateRecovery: "项目、聊天和设置会保留；旧版本也会保留，更新失败时可恢复。",

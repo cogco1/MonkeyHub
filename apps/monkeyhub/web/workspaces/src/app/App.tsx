@@ -12,7 +12,9 @@ import type { RenderView } from "../workspaces/monkeyarch/viewer/renderView";
  *  - it derives no impact, no relation counts and no review-readiness result;
  *  - it writes nothing to the project directly and issues nothing;
  *  - its disposable modeling history lasts for the mounted task; Sync retains
- *    a candidate through the existing server, while page reload loses unsynced edits.
+ *    a candidate through the existing server. Where the runtime keeps a working
+ *    draft, unsynced edits are saved there and restored on reopening; otherwise
+ *    page reload loses them.
  *
  * Every failed call ends in a card showing the server's code and detail. The
  * one error handled rather than merely displayed is `STALE_BASE`: the project
@@ -99,6 +101,15 @@ interface LocalModelSession {
 /** Local geometry not yet incorporated in a completed candidate. */
 function unsynced(session: LocalModelSession): boolean {
   return session.pending !== null || !snapshotsEquivalent(currentDraft(session.history), session.synced);
+}
+
+/**
+ * Unsynced local geometry the project's working draft does not hold yet: its
+ * automatic save is still being written, failed, or is unavailable. Held edits
+ * survive a restart and are restored when their source is reopened.
+ */
+function unsaved(session: LocalModelSession, autosave: boolean): boolean {
+  return unsynced(session) && !(autosave && session.recoverySaved === currentDraft(session.history));
 }
 
 import type { FinishedSketch } from "../features/stage/sketch";
@@ -223,7 +234,12 @@ export type WorkspaceDesignContext = {
   projectId: string;
   designContext: { sourceRunId: string | null; stateDigest: string; sourceStageRef?: string | null;
     targetComponentId?: string; elementId?: string } | null;
-  unavailableReason: "unsaved" | "loading" | "unavailable" | null;
+  /**
+   * Why chat cannot start from project state. Both local-edit reasons mean no
+   * candidate holds the edits yet: "unsynced" edits are held by the project's
+   * working draft and survive a restart; "unsaved" edits are not held yet.
+   */
+  unavailableReason: "unsaved" | "unsynced" | "loading" | "unavailable" | null;
 };
 
 export default function App({ server, expectedProjectId, initialDocumentIntent, initialSketchRequest, initialRunId, initialRunFollowsHead = false, documentSource = null, active = true, refreshKey = 0, onReturnToBoard, onOpenBoard, onChatRequest, onDesignContextChange, onRenderReader }: {
@@ -714,9 +730,13 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
     localModel.pending !== null || !snapshotsEquivalent(draftSnapshot!, localModel.synced));
   // Chat continues the verified editing base. Browsing another retained model
   // never selects it, and local geometry cannot impersonate a saved revision.
-  const unsavedChatDraft = !!localModel && unsynced(localModel) || [...localModels.current.values()].some((model) =>
+  // Edits the working draft already holds are only unsynced; any edit it does
+  // not hold yet makes the whole local state unsaved.
+  const chatDrafts = [...localModels.current.values()].filter((model) => unsynced(model) && (model === localModel ||
     model.source.projectId === project?.projectId && model.source.stateDigest === projection?.stateDigest &&
-    model.source.sourceRunId === (projection?.referenceRunSource === "none" ? null : projection?.referenceRun.runId) && unsynced(model));
+    model.source.sourceRunId === (projection?.referenceRunSource === "none" ? null : projection?.referenceRun.runId)));
+  const chatDraft = chatDrafts.some((model) => unsaved(model, autosaveEnabled)) ? "unsaved"
+    : chatDrafts.length > 0 ? "unsynced" : null;
   useEffect(() => {
     onRenderReader?.(() => {
       const view = viewportRef.current?.renderView();
@@ -732,8 +752,8 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
   const chatContext = useMemo<WorkspaceDesignContext | null>(() => {
     const projectId = project?.projectId ?? binding?.projectId;
     if (!projectId) return null;
-    const unavailableReason = unsavedChatDraft ? "unsaved" : changingBase || session.status === "loading" ? "loading"
-      : baseError || !projection?.stateDigest || sourceLabel === LOCAL_SOURCE_LABEL ? "unavailable" : null;
+    const unavailableReason = chatDraft ?? (changingBase || session.status === "loading" ? "loading"
+      : baseError || !projection?.stateDigest || sourceLabel === LOCAL_SOURCE_LABEL ? "unavailable" : null);
     const designContext: WorkspaceDesignContext["designContext"] = unavailableReason || !projection?.stateDigest ? null : {
       sourceRunId: projection.referenceRunSource === "none" ? null : projection.referenceRun.runId,
       stateDigest: projection.stateDigest, sourceStageRef: projection.sourceStageRef,
@@ -750,7 +770,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
     }
     return { projectId, designContext, unavailableReason };
   }, [project?.projectId, binding?.projectId, projection, changingBase, session.status, baseError, sourceLabel,
-    unsavedChatDraft, picked, viewedProjection]);
+    chatDraft, picked, viewedProjection]);
   useEffect(() => {
     onDesignContextChange?.(chatContext);
     return () => onDesignContextChange?.(null);
@@ -839,6 +859,9 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
       if (!writer || writer.projectId !== local.source.projectId) throw new Error("工作草稿尚未读取，无法自动保存。");
       await writer.write(draft, clear ? local.source : undefined);
       local.recoverySaved = savedSnapshot;
+      // The working draft holds one local recovery and this write replaced or
+      // cleared it: no other source's edits are saved until written again.
+      for (const other of localModels.current.values()) if (other !== local) other.recoverySaved = undefined;
       if (local.error?.startsWith("自动恢复保存失败：")) local.error = null;
       refreshLocalModel();
     });
@@ -2656,7 +2679,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
   const lockZh = language === "zh-CN";
   const parameterLockReason = !projection?.stateDigest || !project || baseError || sourceLabel === LOCAL_SOURCE_LABEL
     ? (lockZh ? "请先打开可编辑的项目模型。" : "Open an editable project model first.")
-    : unsavedChatDraft ? (lockZh ? "请先同步当前模型修改。" : "Sync the current model edits first.")
+    : chatDraft !== null ? (lockZh ? "请先同步当前模型修改。" : "Sync the current model edits first.")
     : modelNavigationBusy || candidateBusy || modelRunPending !== null || proposalBusy || modelSyncBusy
       ? (lockZh ? "请等待当前模型操作完成。" : "Wait for the current model operation to finish.")
       // The same view-only reason as every direct edit; locks also wait until
@@ -3535,7 +3558,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
                   .finally(() => setHistoryBusy(false));
               },
               busy: historyBusy || changingBase || selectingWorkingCopy || modelLoading || proposalBusy || candidateBusy ||
-                (autosaveEnabled && (modelSyncBusy || unsavedChatDraft)),
+                (autosaveEnabled && (modelSyncBusy || chatDraft !== null)),
               error: historyError,
               onInitialize: () => { if (project && loadedModelSource) void updateDesignHistory(() => studio.initializeStage({ projectId: project.projectId, modelSource: loadedModelSource, branchId: "main", label: "S0" })); },
               onStage: (stage) => { void openDesignStage(stage); },

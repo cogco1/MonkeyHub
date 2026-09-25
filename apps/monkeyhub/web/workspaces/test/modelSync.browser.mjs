@@ -368,8 +368,21 @@ if (autosaveOnly) {
   await page.goto(primaryPage.url());
   await wait(s=>s.status==='ready'&&s.loaded===seedRun&&!s.busy,'second editor current source',120000);
   page=primaryPage;
+  // GH-234: edits whose autosave is still being written are not held yet, so
+  // they are unsaved; once the working draft holds them they are only unsynced
+  // and would survive a restart. Chat needs a Sync either way.
+  const reason=()=>page.evaluate(()=>window.__workspaceDesignContext?.unavailableReason);
+  let releaseFirstSave,firstSaveSent;
+  const firstSaveReleased=new Promise(resolve=>releaseFirstSave=resolve),firstSaveHeld=new Promise(resolve=>firstSaveSent=resolve);
+  await page.route('**/api/working-draft/local',async route=>{firstSaveSent();await firstSaveReleased;await route.continue();},{times:1});
   const object=await rectangle(2,1.25);
+  await within(firstSaveHeld,15000,'the first autosave was never written');
+  assert.equal(await reason(),'unsaved','an autosave still being written leaves its edits unsaved');
+  assert.equal(await page.evaluate(()=>window.__workspaceDesignContext.designContext),null);
+  releaseFirstSave();
   const saved=await savedDraft(d=>d.localDraft?.commands.length===1,'local commands were not retained');
+  await page.waitForFunction(()=>window.__workspaceDesignContext?.unavailableReason==='unsynced');
+  assert.equal(await page.evaluate(()=>window.__workspaceDesignContext.designContext),null,'held local edits still need a Sync before chat');
   assert.equal(saved.localDraft.source.sourceRunId,seedRun);
   assert.equal(saved.localDraft.source.stateDigest,initial.stateDigest);
   assert.equal(candidateCalls().length,0,'ordinary edits never create a candidate');
@@ -379,6 +392,7 @@ if (autosaveOnly) {
     page=otherPage;
     await rectangle(1,.75);
     await wait(s=>s.error?.includes('另一窗口'),'older editor silently replaced the newer recovery');
+    assert.equal(await reason(),'unsaved','a refused autosave leaves its edits unsaved');
     assert.deepEqual((await readDraft()).localDraft.commands,saved.localDraft.commands,'a stale editor cannot overwrite another window');
   } finally {page=primaryPage;await otherPage.close();}
 
@@ -390,6 +404,8 @@ if (autosaveOnly) {
     s.view.drafts.some(row=>row.id===object),'cold restoration lost the base model or local preview',30000);
   assert.deepEqual((await snap()).commands,saved.localDraft.commands);
   assert.equal(candidateCalls().length,0,'restoring local commands never starts Sync');
+  await page.waitForFunction(()=>window.__workspaceDesignContext?.unavailableReason==='unsynced');
+  assert.equal(await page.evaluate(()=>window.__workspaceDesignContext.designContext),null,'a restored draft still asks chat for a Sync');
   await deselect();await page.keyboard.press('Control+z');
   await wait(s=>!s.dirty&&!s.view.drafts.some(row=>row.id===object),'Undo did not return to the original model');
   await savedDraft(d=>d.localDraft===null,'Undo to baseline did not clear recovery');
@@ -457,7 +473,8 @@ if (autosaveOnly) {
   // Authored fixture primitives become visible with the first local snapshot;
   // they are not drawings created by these gestures.
   const authoredPrimitives=(await snap()).view.drafts.filter(object=>object.id!==first).length;
-  await page.waitForFunction(()=>window.__workspaceDesignContext?.unavailableReason==='unsaved');
+  // Autosave holds the drawing in the working draft; it is still not a candidate.
+  await page.waitForFunction(()=>window.__workspaceDesignContext?.unavailableReason==='unsynced');
   assert.equal(await page.evaluate(()=>window.__workspaceDesignContext.designContext),null,'local geometry cannot impersonate a saved chat base');
   let state=await snap();assert.equal(state.loaded,undefined);assert.equal(state.sourceRunId,null);assert.equal(state.view.hasBaseModel,false);
   assert.equal(await page.locator('.stage-empty').count(),0,'a retained local object must replace the empty-canvas message');

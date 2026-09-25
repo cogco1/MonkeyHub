@@ -348,8 +348,16 @@ print(json.dumps({"pdf": base64.b64encode(two_page_pdf()).decode()}))
   await sketchValue.waitFor();
   await sketchValue.fill("3"); await sketchValue.press("Enter");
   await sketchValue.fill("2"); await sketchValue.press("Enter");
-  const unsyncedStatus = page.locator(".model-tools__sync-status", { hasText: "Unsynced" });
-  await unsyncedStatus.waitFor();
+  // The drawing is autosaved to the project's working draft, not synced: it
+  // waits for the architect's own later Sync.
+  const syncStatus = page.locator(".model-tools__sync-status");
+  const autosaved = syncStatus.filter({ hasText: /^Draft saved automatically$/ });
+  const syncButton = page.getByRole("button", { name: "Sync", exact: true });
+  const localDraft = async () => (await call("GET", "/api/working-draft")).localDraft;
+  await autosaved.waitFor();
+  const drawn = await localDraft();
+  assert.equal(drawn?.commands.length, 1, "The local drawing is held by the project's working draft");
+  assert.equal(await syncButton.isEnabled(), true, "The autosaved drawing is still offered for Sync");
 
   await page.evaluate(() => { window.__archCanvas = document.querySelector(".viewport-canvas"); });
   await page.getByTestId("workspace-board").click();
@@ -358,13 +366,19 @@ print(json.dumps({"pdf": base64.b64encode(two_page_pdf()).decode()}))
   assert.equal(await page.evaluate(() => window.__boardCanvas === document.querySelector(".monkeyboard-canvas canvas")), true);
   assert.equal(await page.locator(".viewport-canvas").count(), 1, "Hidden Arch remains mounted with its local draft");
   await page.getByTestId("workspace-arch").click();
-  await unsyncedStatus.waitFor();
+  await autosaved.waitFor();
   assert.equal(await page.evaluate(() => window.__archCanvas === document.querySelector(".viewport-canvas")), true);
+  const keptDraft = await localDraft();
+  assert.deepEqual([keptDraft?.source, keptDraft?.commands], [drawn.source, drawn.commands], "Board visits keep the saved drawing as it was");
+  assert.equal(await syncButton.isEnabled(), true, "The kept drawing still waits for a later Sync");
   assert.equal(await page.getByRole("button", { name: "Undo model", exact: true }).isEnabled(), true);
 
   // Undo still belongs to the same local draft after the workspace round trip.
   await page.getByRole("button", { name: "Undo model", exact: true }).click();
-  await unsyncedStatus.waitFor({ state: "hidden" });
+  await syncStatus.waitFor({ state: "hidden" });
+  assert.equal(await syncButton.isEnabled(), false, "Nothing is left to Sync after undoing the drawing");
+  for (let attempt = 0; attempt < 100 && await localDraft() !== null; attempt++) await delay(100);
+  assert.equal(await localDraft(), null, "Undoing the drawing clears its working-draft recovery");
   await page.getByTestId("workspace-board").click();
   await page.locator(".monkeyboard-canvas canvas").first().waitFor();
   assert.equal(context.pages().length, 1, "A synced page returns in this tab");

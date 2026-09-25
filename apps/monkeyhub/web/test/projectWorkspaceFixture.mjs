@@ -6,7 +6,17 @@ import rhino3dm from "rhino3dm";
 // project identity and model bytes are real shapes; no substitute page is used.
 export async function createProjectWorkspaceFixture(runtimes, sessions) {
   const rhino = await rhino3dm(), projects = new Map(), requests = [];
+  // Projects whose runtime keeps a working draft (autosave), by project id:
+  // { revisionSha256, current, localDraft, writes, hold, failure }. A test may set
+  // `hold` to a promise that delays the next local write and `failure` to refuse it.
+  const workingDrafts = new Map();
   const digest = (value) => createHash("sha256").update(value).digest("hex");
+  const stateDigestOf = (projectId, runId) => digest(`state:${projectId}:${runId}`);
+  const workingDraftDto = (projectId) => {
+    const draft = workingDrafts.get(projectId);
+    return { projectId, revisionSha256: draft.revisionSha256, current: draft.current, recovery: [], saved: [],
+      managedRunIds: [], localDraft: draft.localDraft };
+  };
   function project(runtime) {
     if (projects.has(runtime.projectId)) return projects.get(runtime.projectId);
     const id = runtime.projectId, published = { version: 0, stateSha256: digest(`published:${id}`) };
@@ -16,7 +26,7 @@ export async function createProjectWorkspaceFixture(runtimes, sessions) {
       const model = new rhino.File3dm(), mesh = new rhino.Mesh(), attributes = new rhino.ObjectAttributes();
       mesh.vertices().add(0, 0, 0); mesh.vertices().add(2, 0, 0); mesh.vertices().add(2, 2, 0); mesh.vertices().add(0, 2, 0);
       mesh.faces().addQuadFace(0, 1, 2, 3); attributes.name = `floor-${id}-${runId}`; model.objects().add(mesh, attributes);
-      const bytes = Buffer.from(model.toByteArray()), sha256 = digest(bytes), stateDigest = digest(`state:${id}:${runId}`);
+      const bytes = Buffer.from(model.toByteArray()), sha256 = digest(bytes), stateDigest = stateDigestOf(id, runId);
       model.delete(); mesh.delete(); attributes.delete();
       const dto = { artifactId: `${runId}:model`, runId, stageId: "fixture", seatId: "fixture", fileName: `${runId}.3dm`,
         sha256, sizeBytes: bytes.length, available: true, unavailableReason: null, lengthUnit: "meters",
@@ -41,7 +51,9 @@ export async function createProjectWorkspaceFixture(runtimes, sessions) {
     if (method !== "GET" && method !== "HEAD") assert.match(route.request().headers()["idempotency-key"] ?? "", /^[0-9a-f-]{36}$/i, "workspace writes carry their own idempotency key");
     const json = async (value) => { await route.fulfill({ json: value }); return true; };
     if (method === "GET") {
-      if (name === "/api/protocol") return json({ protocol: "archflow/2", server: "fixture", serverVersion: "test", mode: "local", capabilities: [] });
+      if (name === "/api/protocol") return json({ protocol: "archflow/2", server: "fixture", serverVersion: "test", mode: "local",
+        capabilities: workingDrafts.has(projectId) ? ["working-draft"] : [] });
+      if (name === "/api/working-draft" && workingDrafts.has(projectId)) return json(workingDraftDto(projectId));
       if (name === "/api/project") return json({ projectId, projectDir: runtime.projectDir, published: current.published,
         referenceRun: { runId: current.home, baseVersion: 0, baseSha256: current.published.stateSha256 }, intentProvider: "codex", intentModel: "fixture" });
       if (name === "/api/state") {
@@ -49,7 +61,7 @@ export async function createProjectWorkspaceFixture(runtimes, sessions) {
         return json({ projectId, published: current.published, sourceStageRef: null,
           referenceRun: { runId, baseVersion: 0, baseSha256: current.published.stateSha256 }, referenceRunSource: "fixture",
           referenceReceipt: null, matchesReferenceReceipt: true, recordSource: "fixture", recordDigest: digest(`record:${projectId}:${runId}`),
-          stateDigest: digest(`state:${projectId}:${runId}`), activePhase: "stage-2", counts: { entities: 0, components: 0, parameters: 0, relations: 0, obligations: 0, dependencyEdges: 0 },
+          stateDigest: stateDigestOf(projectId, runId), activePhase: "stage-2", counts: { entities: 0, components: 0, parameters: 0, relations: 0, obligations: 0, dependencyEdges: 0 },
           componentTree: [], componentTreeError: null, elements: [], parameters: [], dependencyEdges: [], honesty: [], catalog: {
             components: [], elements: [], objects: [], coverage: { objects: 0, bound: 0, unbound: 0, ambiguous: 0, unknownComponent: 0 }, inspectionRun: runId, honesty: [] } });
       }
@@ -95,6 +107,26 @@ export async function createProjectWorkspaceFixture(runtimes, sessions) {
         await route.fulfill({ body: asset.bytes, contentType: "application/octet-stream" }); return true;
       }
     }
+    const workingDraft = workingDrafts.get(projectId);
+    if (workingDraft && method === "PUT" && (name === "/api/working-draft" || name === "/api/working-draft/local")) {
+      assert.equal(body.baseRevisionSha256, workingDraft.revisionSha256, "working-draft writes keep their exact retained revision");
+      if (name === "/api/working-draft/local") {
+        workingDraft.writes.push(body);
+        const hold = workingDraft.hold;
+        workingDraft.hold = null;
+        await hold;
+        if (workingDraft.failure) {
+          await route.fulfill({ status: 503, json: { code: "WORKING_DRAFT_UNAVAILABLE", detail: workingDraft.failure } });
+          return true;
+        }
+        workingDraft.localDraft = body.draft && { ...body.draft, updatedAt: "2026-09-25T00:00:00Z" };
+      } else {
+        workingDraft.current = body.runId && { runId: body.runId, sourceStageRef: null, branchId: body.branchId ?? null,
+          updatedAt: "2026-09-25T00:00:00Z", label: null };
+      }
+      workingDraft.revisionSha256 = digest(JSON.stringify([workingDraft.revisionSha256, name, body]));
+      return json(workingDraftDto(projectId));
+    }
     if (method === "PUT" && name === "/api/board") {
       assert.equal(body.baseRevisionSha256, current.board.revisionSha256, "Board writes preserve their exact retained base");
       current.board = { projectId, title: body.title, elements: body.elements, seenDocuments: body.seenDocuments, revisionSha256: digest(JSON.stringify(body)) };
@@ -102,5 +134,5 @@ export async function createProjectWorkspaceFixture(runtimes, sessions) {
     }
     throw new Error(`Unexpected project request: ${method} ${projectId} ${name}`);
   }
-  return { handle, requests, projects };
+  return { handle, requests, projects, workingDrafts, stateDigestOf };
 }

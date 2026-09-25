@@ -895,7 +895,7 @@ export const hubCopy = {
     updateApplying: "Restarting to update…", updateFailed: "The patch could not be prepared or applied.", updateLoading: "Reading update status…",
     updateZipRequired: "Choose a patch ZIP file.", updateTooLarge: "The patch exceeds 256 MiB. Choose a smaller patch ZIP.",
     updateDraftsBlocked: "A conversation has unsent text or attachments. Send or remove them before restarting.",
-    updateModelBlocked: "A model has unsynced edits. Sync or save them before restarting.",
+    updateModelBlocked: "A model draft is still being saved. Wait a moment before restarting.",
     updateSettingsBlocked: "Save your settings changes before restarting.",
     updateBusyBlocked: "Wait for current work and workspace loading to finish before restarting.",
     updateRecovery: "Projects, conversations and settings are kept. The previous app version remains available if the update fails.",
