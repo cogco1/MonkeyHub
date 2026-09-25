@@ -21,9 +21,13 @@
   overflow-wrap: anywhere;
 }
 
+/* The two layers share one cell, so changing language never reflows the line.
+   Only the inactive layer hides on its own; the active one follows its host, so
+   text in a surface hidden by visibility (a Hub panel, a covered Stage) stays
+   hidden and takes no pointer events there (#302, NA-1). */
 .bilingual-text__layer--active {
-  visibility: visible;
-  pointer-events: auto;
+  visibility: inherit;
+  pointer-events: inherit;
 }
 
 .bilingual-text__layer--inactive {
