@@ -416,11 +416,17 @@ class FreezeSectionPerspectiveTests(unittest.TestCase):
 
     def test_hidden_objects_are_left_out_of_cut_and_view(self) -> None:
         drawing = freeze_section_perspective(self.repository, source=self.source, drawing_run_id="drawing-run",
-                                             view=self.view(hidden_object_ids=("column", "wall-west")))
+                                             view=self.view(hidden_object_ids=("column", "wall-west")),
+                                             attribution={"actorId": "local", "authenticated": False, "origin": "hub"},
+                                             reason="Take the column out of the section")
         self.assertTrue({"column", "wall-west"}.isdisjoint(drawing.receipt["projection"]["selected_object_ids"]))
         self.assertTrue({"column", "wall-west"}.isdisjoint(svg_objects(drawing.svg)))
         self.assertEqual(drawing.receipt["projection"]["cut_object_ids"], ["floor", "roof", "wall-east"])
         self.assertEqual(drawing.receipt["view"]["hiddenObjectIds"], ["column", "wall-west"])
+        # Who asked and why are kept with this revision only; they are not part of the view.
+        self.assertEqual((drawing.attribution, drawing.reason),
+                         ({"actorId": "local", "authenticated": False, "origin": "hub"}, "Take the column out of the section"))
+        self.assertNotIn("attribution", drawing.receipt["view"])
 
     def test_refusals_after_reading_the_model_are_named_and_write_nothing(self) -> None:
         for code, view in (

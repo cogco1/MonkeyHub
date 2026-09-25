@@ -303,8 +303,11 @@ class FreezeElevationTests(unittest.TestCase):
         first = freeze_model_axis_elevation(self.repository, source=self.source, view=_view(), drawing_run_id="drawing-run")
         second = freeze_model_axis_elevation(
             self.repository, source=self.source, view=_view(name="model-minus-y-elevation-hidden", hidden_lines=True),
-            drawing_run_id="drawing-run",
+            drawing_run_id="drawing-run", attribution={"actorId": "local", "authenticated": False, "origin": "studio"},
+            reason="Show what the wall hides",
         )
+        self.assertEqual((first.attribution, first.reason), (None, None))
+        self.assertEqual((second.attribution["origin"], second.reason), ("studio", "Show what the wall hides"))
         self.assertEqual(svg_objects(second.svg), ("far", "rear", "skin", "wall"))
         self.assertIs(second.receipt["view"]["hidden_lines"], True)
         # A box's back edges lie under its front edges: drawn once, as visible. Undrawn hidden lines are not cleaned.
@@ -499,6 +502,43 @@ class CutPlanTests(unittest.TestCase):
         cold = read_model_axis_elevation(FilesystemProjectRepository.open(self.root), ref)
         self.assertIsNone(cold.cleanup)
         self.assertEqual((cold.receipt, cold.svg, cold.png), (earlier, drawing.svg, drawing.png))
+
+    def test_a_revision_records_who_asked_and_why_and_older_receipts_read_as_unknown(self):
+        from dataclasses import dataclass
+
+        first = freeze_cut_plan(self.repository, source=self.source, recipe=self.recipe,
+                                drawing_run_id="plan-run", dimensions=(self.dimension,))
+        self.assertFalse({"attribution", "reason"} & set(first.receipt), "nothing is written that was not given")
+        self.assertEqual((first.attribution, first.reason), (None, None))
+        who = {"actorId": "local", "authenticated": False, "origin": "hub"}
+        second = freeze_cut_plan(self.repository, source=self.source, recipe=self.recipe, drawing_run_id="plan-rebuild",
+                                 dimensions=(self.dimension,), previous_revision_ref=first.receipt_ref.uri,
+                                 attribution=who, reason="Lighter hatch, as asked")
+        self.assertEqual((second.receipt["attribution"], second.receipt["reason"]), (who, "Lighter hatch, as asked"))
+        self.assertEqual(second.receipt["previousRevisionRef"], first.receipt_ref.uri)
+        self.assertEqual(second.receipt["view"], self.recipe, "who and why belong to the revision, not the recipe")
+        self.assertEqual((second.svg, second.png), (first.svg, first.png), "they change the receipt, not the drawing")
+        cold = read_model_axis_elevation(FilesystemProjectRepository.open(self.root), second.receipt_ref)
+        self.assertEqual((cold.attribution, cold.reason), (who, "Lighter hatch, as asked"))
+
+        @dataclass(frozen=True)
+        class Actor:
+            actor_id: str
+            authenticated: bool
+            origin: str
+
+        # A dataclass such as the Studio's ActorAttribution is written with camelCase names; a blank reason is none.
+        third = freeze_cut_plan(self.repository, source=self.source, recipe=self.recipe, drawing_run_id="plan-third",
+                                dimensions=(self.dimension,), attribution=Actor("kaiwen", True, "studio"), reason="  ")
+        self.assertEqual((third.attribution, third.reason),
+                         ({"actorId": "kaiwen", "authenticated": True, "origin": "studio"}, None))
+        for attribution, reason in (("local", None), ({}, None), ({"actor": {"id": "local"}}, None),
+                                    ({"weight": float("nan")}, None), ({1: "local"}, None), (None, 7)):
+            with self.subTest(attribution=attribution, reason=reason), self.assertRaises(DrawingElevationError):
+                freeze_cut_plan(self.repository, source=self.source, recipe=self.recipe, drawing_run_id="refused-plan",
+                                dimensions=(self.dimension,), attribution=attribution, reason=reason)
+        self.assertFalse(self.repository.layout.run("refused-plan").manifest.exists())
+        self.assertEqual(self.repository.read_head(), self.head)
 
     def test_the_plan_names_components_and_materials_and_draws_their_hatch_poche_and_fade(self):
         from PIL import Image

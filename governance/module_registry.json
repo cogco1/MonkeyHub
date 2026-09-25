@@ -2776,6 +2776,7 @@
         "DrawingProjectionReceipt@1 (retained as drawing-projection-receipt): source binding, frame, backend, counts and the two artifact refs",
         "the drawing cleanup tolerance, CLEANUP_TOLERANCE_MM on the sheet in the source unit at the view's scale, applied by all three freeze paths to the cropped lines they draw, with the CleanupReport kept in the receipt's cleanup and never in the recipe",
         "the semantics a drawing writes (object_semantics): each physical object's archflow:component and archflow:material user text from the CAD receipt's expected_semantics, passed by all three freeze paths; a native model has none",
+        "who asked for a drawing revision and why: the application's attribution (a flat mapping, or a dataclass written in camelCase) and reason, checked before anything is drawn and kept in the receipt only when given; ElevationDrawing.cleanup, .attribution and .reason read None from receipts without them",
         "cold readback of a retained drawing (read_model_axis_elevation, list_model_axis_elevations) with every sha verified",
         "horizontal cut-plan composition: section boundaries, one material hatch and below-cut visible lines, with caller-resolved semantic dimensions and retained representation recipe",
         "representation-only SVG entourage in the existing cut-plan recipe; exact physical-object-centre anchors, explicit missing/outside-view status and immutable dressing readback across source rebuilds",
@@ -2796,6 +2797,7 @@
         "ProjectRecordRef",
         "Optional operation_observer and parent event id for source load, global hidden-line solve, SVG, PNG and persistence intervals",
         "cut-plan recipe (graphics may add hatch.byMaterial and beyond.fade) and verified dimension read values; optional previous drawing revision ref",
+        "optional attribution and reason for the revision, from the application (freeze_cut_plan, freeze_model_axis_elevation, freeze_section_perspective)",
         "SectionPerspectiveView: section, camera, depth, hidden objects, scale and pens"
       ],
       "outputs": [
