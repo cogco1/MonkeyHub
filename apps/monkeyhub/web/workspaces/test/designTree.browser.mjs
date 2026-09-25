@@ -198,10 +198,19 @@ try {
   await shoot(tab, "01-chip-over-modeling");
 
   // #302: the notice's View opens the tree on the ready option's Study, with its side card.
+  const inChinese = async (name) => {
+    await tab.evaluate(() => window.__workspaceFixture.setLanguage("zh-CN"));
+    await tab.waitForFunction(() => (document.querySelector(".stage-chip")?.textContent ?? "").includes("当前"));
+    await shoot(tab, name);
+    await tab.evaluate(() => window.__workspaceFixture.setLanguage("en"));
+    await tab.waitForFunction(() => (document.querySelector(".stage-chip")?.textContent ?? "").includes("Current"));
+  };
+  if (shots) await inChinese("01a-ready-notice-zh");
   await ready.click();
   await tab.locator('[data-project-surface="tree"] .design-tree-card[data-node="candidate:run-entrance-a"]').waitFor();
   assert.equal(await chip.getAttribute("aria-pressed"), "true");
   await shoot(tab, "01b-ready-notice-opens-study");
+  if (shots) await inChinese("01c-ready-notice-opens-study-zh");
   await tab.locator('[data-project-surface="tree"]').getByRole("button", { name: "Back to Modeling" }).click();
   await tab.getByTestId("arch-stub").waitFor();
   assert.equal(await ready.count(), 0, "an option that was opened is no longer new");

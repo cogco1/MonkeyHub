@@ -247,7 +247,7 @@ try {
       name: "observe-actual-candidate-shell", enforce: "pre",
       transform(source, id) {
         const modulePath = id.split("?")[0].replaceAll("\\", "/");
-        if (viewBaseOnly && modulePath === `${webRoot.replaceAll("\\", "/")}/test/workspace-fixture.tsx`) {
+        if ((viewBaseOnly || process.env.BOARD_NOTE_SCREENSHOTS) && modulePath === `${webRoot.replaceAll("\\", "/")}/test/workspace-fixture.tsx`) {
           // The footer layout is checked against the real Hub theme.
           return { code: `import "/@fs/${path.resolve(webRoot, "../../../shared-web/src/base.css").replaceAll("\\", "/")}";\n${source}`, map: null };
         }
@@ -697,7 +697,17 @@ try {
       const sync = nextDelete = prepare("view-base-sync");
       const record = footer().getByRole("button", { name: "Record edits and continue", exact: true });
       await record.waitFor();
-      if (screenshots) await page.screenshot({ path: path.join(screenshots, "record-and-continue.png") });
+      if (screenshots) {
+        await page.screenshot({ path: path.join(screenshots, "record-and-continue.png") });
+        // The same refusal and offer in Chinese, asked for again so the notice is in Chinese too.
+        await page.evaluate(() => window.__workspaceFixture.setLanguage("zh-CN"));
+        await footer().getByRole("button", { name: "从这里继续", exact: true }).click();
+        await footer().getByRole("button", { name: "记录修改并继续", exact: true }).waitFor();
+        await page.screenshot({ path: path.join(screenshots, "record-and-continue-zh.png") });
+        await page.evaluate(() => window.__workspaceFixture.setLanguage("en"));
+        await continueButton().click();
+        await shown(REFUSED_UNSYNCED, "The English refusal did not come back");
+      }
       await record.click();
       const submitted = await until(() => requests.findLast((row) => row.name === "/api/proposals/delete"), Boolean, "Recording did not submit");
       assert.equal(submitted.body.sourceRunId, c2.candidateId, "Recording starts from the base the edit was made on");
@@ -1303,6 +1313,16 @@ try {
     const choice = await sendBoardNote("Open the west porch");
     assert.match(await choice.innerText(), /made on another model version: S0\./);
     assert.equal(await page.evaluate(() => document.activeElement?.textContent), "View only", "Only looking is the default choice");
+    if (process.env.BOARD_NOTE_SCREENSHOTS) {
+      await mkdir(process.env.BOARD_NOTE_SCREENSHOTS, { recursive: true });
+      const versionsPanel = page.locator("#stage-versions-panel");
+      if (await versionsPanel.count()) await versionsPanel.getByRole("button", { name: "Close", exact: true }).click();
+      await page.evaluate(() => window.__workspaceFixture.setLanguage("zh-CN"));
+      await page.getByRole("group", { name: "画板意见针对的模型版本", exact: true }).getByRole("button", { name: "只查看", exact: true }).waitFor();
+      await page.screenshot({ path: path.join(process.env.BOARD_NOTE_SCREENSHOTS, "board-note-asks-zh.png") });
+      await page.evaluate(() => window.__workspaceFixture.setLanguage("en"));
+      await choice.getByRole("button", { name: "View only", exact: true }).waitFor();
+    }
     await delay(200);
     assert.equal((await snapshot()).editingRunId, before.editingRunId, "Asking moves nothing");
     assert.equal(intentCount(), intents, "Nothing is submitted before the architect chooses");
