@@ -485,8 +485,8 @@ class CutPlanTests(unittest.TestCase):
         self.assertEqual(drawing.receipt["cleanup"]["cut_precedence"], solved - len(visible))
         self.assertEqual({object_id for object_id, _ in visible}, {"floor"})
         for _, points in visible:
-            # SVG u = x + 1 and y = 3 - v in the crop (-1, -1, 5, 4): the door spans x 1..2 at y = 0.
-            self.assertTrue(all(2 - 1e-4 <= u <= 3 + 1e-4 and abs(v - 4) <= 1e-4 for u, v in points), points)
+            # In the crop (-1, -1, 5, 4) SVG x = u + 1 and y = 4 - v: the door spans u 1..2 at v = 0.
+            self.assertTrue(all(2 - 1e-4 <= x <= 3 + 1e-4 and abs(y - 4) <= 1e-4 for x, y in points), points)
         # The cut itself is drawn as solved.
         self.assertEqual(drawing.receipt["projection"]["section_polylines"], len(_group_lines(drawing.svg, "section")))
         # The PNG is rendered from these SVG bytes and nothing else.
