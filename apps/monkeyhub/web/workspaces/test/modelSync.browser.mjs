@@ -409,9 +409,13 @@ if (autosaveOnly) {
   await deselect();await page.keyboard.press('Control+z');
   await wait(s=>!s.dirty&&!s.view.drafts.some(row=>row.id===object),'Undo did not return to the original model');
   await savedDraft(d=>d.localDraft===null,'Undo to baseline did not clear recovery');
+  await button('Record').waitFor({state:'detached'});
   await page.keyboard.press('Control+y');
   await wait(s=>s.dirty&&s.view.drafts.some(row=>row.id===object),'Redo did not recover the local object');
   await savedDraft(d=>d.localDraft?.commands.length===1,'Redo was not retained');
+  // SS-5: with its edits autosaved, Record is back with its status line.
+  await page.locator('.model-tools__sync-status').filter({hasText:'Unrecorded edits · saved automatically'}).waitFor();
+  assert.equal(await button('Record').isEnabled(),true);
 
   let delayedClear=false;
   const delayClear=async route=>{
@@ -474,6 +478,7 @@ if (autosaveOnly) {
   assert.equal(authoredContext.designContext.sourceRunId,null,'authored context must not invent a retained run');
   assert.equal(authoredContext.designContext.stateDigest,initial.stateDigest);
   assert.equal(initial.view.hasBaseModel,false);assert.equal(initial.view.drafts.length,0);
+  assert.equal(await button('Record').count(),0,'an empty project offers no Record');
   console.log('0 · authored-only project: first local drawing, selection, delete/undo, then one explicit Sync');
   const first=await rectangle(2,1.25);
   // Authored fixture primitives become visible with the first local snapshot;
@@ -899,8 +904,12 @@ if (autosaveOnly) {
 } else {
 await openSeed('initial model');
 const originalRuns=await runIds(), beforeWrites=sent.length;
+// SS-5: Record is offered, by name, only while there is something to record.
+assert.equal(await button('Record').count(),0,'no dead Record icon before any edit');
 console.log('1 · completed rectangles/lines stay local and independently pickable');
 const block=await rectangle(2,1), curve=await line();
+await button('Record').waitFor();assert.equal(await button('Record').isEnabled(),true);
+assert.equal(await button('Record').locator('.model-tool-button__label').innerText(),'Record','Record carries its name beside the icon');
 let state=await snap();assert.equal(state.view.drafts.find(o=>o.id===curve).spec.closed,false);
 assert.deepEqual(state.view.drafts.find(o=>o.id===curve).visible,[true,false,false]);
 await pick(block,true);assert.equal((await snap()).pickedStatus,'local');
@@ -977,6 +986,7 @@ const quietSyncStart=performance.now(),quietSyncWall=Date.now();await button('Re
   'second Sync did not show the completed model',120000);
 console.log('TIMING quiet Sync click → visible candidate',Math.round(performance.now()-quietSyncStart),'ms (no artificial hold)');
 await stages(quietSyncWall,'quiet auto display');
+await button('Record').waitFor({state:'detached'});
 state=await snap();assert.equal(candidateCalls().length,2);assert.ok((await exported(state.candidates[1])).has('obj-'+later));
 assert.equal(state.view.drafts.length,0,'the completed batch must not overlap its saved model');
 const continuedDraft=await call('GET','/api/working-draft');

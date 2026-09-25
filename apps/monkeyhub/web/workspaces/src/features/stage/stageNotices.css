@@ -19,3 +19,26 @@
   flex-wrap: wrap;
   gap: 6px;
 }
+
+/* SS-5: Record carries its name beside the icon, so it never reads as reload.
+   styles.css is scoped to .project-workspace and wins a specificity tie, so
+   these selectors are one class stronger than the rules they adjust. */
+.viewtools button.model-tool-button.model-tool-button--labelled {
+  gap: 6px;
+  width: auto;
+  padding: 0 12px 0 9px;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.model-tool-button__label {
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* A Record error with nothing left to record keeps its line, not an empty group. */
+.viewtools.model-tools .model-tools__group.model-tools__sync--status-only {
+  margin-left: 0;
+  padding: 0;
+  border-left: 0;
+}
