@@ -75,8 +75,9 @@ api.stderr.on("data", (chunk) => { const line = String(chunk); if (line.includes
 const apiOrigin = `http://127.0.0.1:${apiPort}`;
 
 async function apiReady() {
-  // Importing the API with OCCT can take most of a minute on a busy machine.
-  for (let attempt = 0; attempt < 900; attempt += 1) {
+  // Importing the API with OCCT can take minutes on a busy machine; an API that exits has failed.
+  const deadline = Date.now() + 300_000;
+  while (Date.now() < deadline && api.exitCode === null) {
     try {
       const answer = await fetch(`${apiOrigin}/api/health`);
       if (answer.ok) return true;
