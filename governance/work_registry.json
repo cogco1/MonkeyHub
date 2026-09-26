@@ -215,6 +215,40 @@
         "2026-09-25: archflow/project/record_kinds.py is handed to GH-294/admission-record, which registers the owner-approved candidate-admission kind (audit Q1); GH-66 reclaims it if Publish needs another kind.",
         "2026-09-25: monkeydiagram/drawing_elevation.py, monkeydiagram/drawing_svg.py and routes/drawings.py are handed to GH-307/section-perspective, which adds the owner-requested section perspective view to the one projection pipeline; GH-66 keeps its Publish paths and reclaims these if Publish needs drawing changes."
       ]
+    },
+    {
+      "id": "GH-291",
+      "stream": "planning",
+      "status": "active",
+      "goal": "Close drawing revision replacement gaps: exact before/after identity on restoration, idempotent retries, conflicting stale rebuild refusal and persisted consumer regressions.",
+      "depends_on": [],
+      "issue": "https://github.com/cogco1/MonkeyHub/issues/291",
+      "branch": "codex/291-drawing-revision-closeout",
+      "worktree": "D:/MONKEYHUB_DEV/workspace/worktrees/codex-291-drawing-revision-closeout",
+      "base_ref": "e33fbf4656402ead75fb4adcad946c71c81a2dff",
+      "contributor": "Codex",
+      "reviewer": null,
+      "handoff": "Parent integration reads progress; Board/Publish production belongs to GH-66, correction/decision reuse to GH-252. PR #326 adds independent artifacts preview behavior; do not absorb its changes.",
+      "modules": [
+        "studio.artifacts"
+      ],
+      "write_scope": [
+        "apps/archflow-studio/api/archflow_studio_api/application/drawing_plans.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/artifacts.py",
+        "apps/archflow-studio/api/tests/test_drawing_plans.py",
+        "apps/monkeyhub/web/workspaces/test/boardReplacement.browser.mjs",
+        "governance/work_registry.json",
+        "governance/module_registry.json",
+        "docs/PROTOCOL.md",
+        "docs/SYSTEM_MAP.md",
+        "docs/DYNAMIC_MAP.md",
+        "docs/mapping/planning/INDEX.md"
+      ],
+      "acceptance": [
+        "Rebuilt revisions retain exact source and before/after attribution; same-page consumers follow the sole replacesPages chain after cold reopen without changing design branches or HEAD.",
+        "Identical retries reuse their result; conflicting stale or concurrent rebuilds cannot silently fork; returning to older graphics remains a new replacement.",
+        "Existing upload, page mapping, pinned sources, broken-anchor and consumer behavior remain verified."
+      ]
     }
   ]
 }
