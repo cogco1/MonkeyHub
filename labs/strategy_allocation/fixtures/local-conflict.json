@@ -1,0 +1,84 @@
+{
+  "allowedActions": [
+    {
+      "asksHuman": false,
+      "description": "Apply a local repair to the known clash.",
+      "id": "Repair"
+    },
+    {
+      "asksHuman": false,
+      "description": "Regenerate the whole candidate from the brief.",
+      "id": "ReModel"
+    },
+    {
+      "asksHuman": false,
+      "description": "Semantic retrieval over the general reference corpus of other projects' documents.",
+      "id": "RAG"
+    },
+    {
+      "asksHuman": false,
+      "description": "Inspect the known clash and report its details.",
+      "id": "Inspect"
+    }
+  ],
+  "caseId": "local-conflict",
+  "caseVersion": "v0",
+  "contextPack": {
+    "confirmedStage": null,
+    "context": {
+      "facts": [
+        {
+          "id": "candidate",
+          "refs": [],
+          "text": "Candidate K is the accepted base. Its elements other than the clash are accepted and stay as they are."
+        },
+        {
+          "id": "clash",
+          "refs": [
+            "synthetic://strategy-allocation/local-conflict/clash-report-C-1@1#sha256=1ebee5e904ef723b91f9e6b07c3ce26be0a3467b896d3e15f5a0bdcd72426c8f"
+          ],
+          "text": "One clash is known: C-1, the stair S1 landing overlaps beam B3 by 150 mm at level 2. It is bounded to level 2 and involves only S1 and B3. B3 is fixed; the S1 landing height is adjustable."
+        }
+      ],
+      "task": "Resolve the known clash in candidate K."
+    },
+    "contextPack": "ContextPack@1",
+    "contextTier": "design",
+    "escalation": [],
+    "honesty": [
+      "Synthetic GH-268 fixture: it describes no real project and no real person.",
+      "Unread sources appear as exact identities, not content; only a reading action reveals their text.",
+      "Experiment arms are read-only: no rollout writes this state or any project state."
+    ],
+    "keep": null,
+    "preflight": null,
+    "request": null,
+    "scopedDecisions": [],
+    "source": {
+      "actionable": true,
+      "exactSource": true,
+      "projectId": "synthetic-strategy-allocation",
+      "readWith": "Environment.reset(case_id), or Environment.state_of(snapshot) for a saved snapshot",
+      "runId": "local-conflict@v0",
+      "sourceStageRef": null,
+      "stateDigest": "4559e0039439d97e85b5802e9959c1ef0605ebea5d0832eb6fcc58ee28259184",
+      "writeWith": "none: experiment arms never write state"
+    },
+    "studyEvidence": [],
+    "target": null
+  },
+  "digest": "a1af043b2c0be480ea75cecfe7561173486b00c01f1b4de67e5fac3728470eff",
+  "environmentVersion": "strategy-allocation-env@0",
+  "snapshotId": "local-conflict@v0/4559e0039439",
+  "sourceRefs": [
+    "synthetic://strategy-allocation/local-conflict/clash-report-C-1@1#sha256=1ebee5e904ef723b91f9e6b07c3ce26be0a3467b896d3e15f5a0bdcd72426c8f"
+  ],
+  "state": {
+    "candidate": "K",
+    "clash": "open",
+    "inspected": false,
+    "rag_done": false
+  },
+  "task": "Resolve the known clash in candidate K.",
+  "title": "A local conflict"
+}

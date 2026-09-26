@@ -21,6 +21,11 @@ option A): a ``require`` decision whose typed binding is ``recipe`` - the
 paper-space values a new drawing starts from. It is not a second memory. A
 person promotes it explicitly, it revokes and supersedes like every other
 decision, and ``project_recipe`` is the one read of it.
+
+A recipe can travel (#252): ``recipe_export`` writes one as a small file that
+carries its values and identity and nothing else of its project, and
+``import_recipe`` retains such a file in another project as that project's
+preference, on a person's confirmation, evidenced by the file's own digest.
 """
 
 from __future__ import annotations
@@ -31,6 +36,9 @@ import re
 from typing import Any, Iterable, Mapping, Sequence
 import uuid
 
+from pydantic import ValidationError
+
+from archflow.contracts.canonical import CanonicalValueError, canonical_digest
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import STUDIO_SCOPED_DECISION
 from archflow.project.refs import record_ref_from_uri
@@ -68,6 +76,15 @@ RECIPE_KEYS = {"cutLineMm": "drawing:lineweight", "visibleLineMm": "drawing:line
 # not enforced (D-05-3). A temporary correction is not memory: it stays on its
 # own drawing as a local override.
 RECIPE_STRENGTHS = ("hard", "strong_preference", "soft_preference")
+# The one file form a recipe travels between projects in (#252), and the source
+# a recipe imported from one cites. Another project's recipe is a preference
+# here, for the whole project, until a person confirms it on this project's own
+# page: that is the one hold and reach an import takes.
+RECIPE_EXPORT_SCHEMA = "DrawingRecipeExport@1"
+RECIPE_EXPORT = "recipe-export"
+IMPORTED_RECIPE_STRENGTH = "soft_preference"
+_EXPORT_FIELDS = frozenset({"schema", "recipe", "source", "sha256"})
+_SHA256 = re.compile(r"[0-9a-f]{64}")
 # A turn that names no domain reads the design decisions and the drawing ones
 # that reach it, so the agent drawing next sees the recipe a new drawing
 # starts from. Copy stays opt-in.
@@ -119,8 +136,24 @@ class RecipeValue:
     extent: str
 
 
+@dataclass(frozen=True, slots=True)
+class RecipeExport:
+    """One recipe export, read and checked: what it carries, where from, and its own digest."""
+
+    target_ref: str
+    strength: str
+    graphics: Mapping[str, float]
+    decision_id: str
+    revision_sha256: str
+    sha256: str
+
+
 def _invalid(message: str) -> StudioError:
     return StudioError(422, "DECISION_INVALID", message)
+
+
+def _export_invalid(message: str) -> StudioError:
+    return StudioError(422, "RECIPE_EXPORT_INVALID", message)
 
 
 # ---- the fixed run ---------------------------------------------------------
@@ -232,15 +265,26 @@ def _design_projection(binding: ProjectBinding, source: Mapping[str, Any]):
     return projection
 
 
-def _validate_source(binding: ProjectBinding, source: Mapping[str, Any]) -> tuple[dict[str, Any], tuple[str, ...], Any]:
+def _validate_source(
+    binding: ProjectBinding, source: Mapping[str, Any], export: RecipeExport | None = None,
+) -> tuple[dict[str, Any], tuple[str, ...], Any]:
     """The exact evidence, normalized, with the runs it must keep readable.
 
     A representation decision is validated against representation evidence: a
     board revision is a board revision and a page is a page. Neither is asked
-    for a design run or a state digest it never had.
+    for a design run or a state digest it never had. A recipe export is
+    another project's recipe, known here only by the file a person imported:
+    no page of this project stands behind it, so it is cited only by
+    ``import_recipe``, which has read that file (``export``) and checked its
+    content against the digest it names.
     """
 
     kind = source["kind"]
+    if kind == RECIPE_EXPORT:
+        if export is None or source["exportSha256"] != export.sha256:
+            raise _invalid("a recipe export is cited only by importing that export, which reads it and checks "
+                           "its content against its sha256 first.")
+        return {"kind": RECIPE_EXPORT, "exportSha256": export.sha256}, (), None
     if kind == "board":
         scene = read_board(binding, source["revisionSha256"])
         # An Excalidraw scene keeps deleted elements in its element list. A
@@ -299,11 +343,14 @@ def _require_design_ref(record: StateRecord, target_ref: str) -> str:
     return target_ref
 
 
-def _validate_target(domain: str, target_ref: str, source_kind: str, record: StateRecord | None) -> None:
+def _validate_target(
+    domain: str, target_ref: str, source_kind: str, record: StateRecord | None, *, recipe: bool = False,
+) -> None:
     if domain in _DOMAIN_TARGETS:
         if target_ref not in _DOMAIN_TARGETS[domain]:
             raise _invalid(f"the {domain} domain targets {' | '.join(_DOMAIN_TARGETS[domain])}.")
-        allowed = _DOMAIN_SOURCES[domain]
+        # An export evidences the recipe it carries and nothing else.
+        allowed = _DOMAIN_SOURCES[domain] | ({RECIPE_EXPORT} if recipe and domain == "drawing" else set())
         if source_kind not in allowed:
             raise _invalid(f"a {target_ref} decision is evidenced by {' or '.join(sorted(allowed))}, "
                            f"not by a {source_kind} source.")
@@ -391,9 +438,11 @@ def _recipe_binding(
     decision in the drawing domain, confirmed by a human, held as a standard
     (hard), a recipe (strong) or a preference (soft), reaching the project or
     one Stage, applying by scope and evidenced by the exact page it was
-    confirmed on. The values are the person's own; the wire has already
-    bounded them as a drawing request would. No object or material is looked
-    up, and each value sits under the one target it belongs to.
+    confirmed on - or, imported from another project, by that project's
+    export, and then held only as a preference for the whole project (#252).
+    The values are the person's own; the wire, or the export's reader, has
+    already bounded them as a drawing request would. No object or material is
+    looked up, and each value sits under the one target it belongs to.
     """
 
     if spec["sourceKind"] != "human":
@@ -406,8 +455,13 @@ def _recipe_binding(
                        "soft_preference; a temporary correction stays on its own drawing.")
     if spec["applicability"] != "scope":
         raise _invalid("a project recipe applies by scope; an exact-source one would never reach a new drawing.")
-    if source["kind"] != "document":
-        raise _invalid("a project recipe is evidenced by the exact document page it was confirmed on.")
+    if source["kind"] == RECIPE_EXPORT:
+        if spec["strength"] != IMPORTED_RECIPE_STRENGTH or scope["extent"] != "project":
+            raise _invalid("an imported recipe is held as soft_preference for the whole project; a person "
+                           "confirms it on this project's own page to hold it more strongly or for one Stage.")
+    elif source["kind"] != "document":
+        raise _invalid("a project recipe is evidenced by the exact document page it was confirmed on, or by the "
+                       "recipe export it was imported from.")
     graphics = {key: value for key, value in request["graphics"].items() if value is not None}
     if not graphics:
         raise _invalid("a recipe binding sets at least one paper-space value.")
@@ -464,18 +518,21 @@ def _message_source(value: Mapping[str, Any] | None) -> dict[str, Any] | None:
 
 def _content(
     binding: ProjectBinding, spec: Mapping[str, Any], chains: Mapping[str, Sequence[DecisionRevision]],
-    *, replacing: str | None = None,
+    *, replacing: str | None = None, export: RecipeExport | None = None,
 ) -> tuple[dict[str, Any], tuple[str, ...]]:
     """One decision's checked content, and the runs its evidence needs kept.
 
     ``chains`` is the decision set this one joins; ``replacing`` names the
-    decision a supersession replaces, whose own recipe values it may restate.
+    decision a supersession replaces, whose own recipe values it may restate;
+    ``export`` is the recipe export an import has read and checked.
     """
 
-    source, retained, projection = _validate_source(binding, spec["source"])
+    source, retained, projection = _validate_source(binding, spec["source"], export)
     record = None if projection is None else projection.record
     scope = _validate_scope(binding, spec["scope"], record)
-    _validate_target(scope["domain"], spec["targetRef"], source["kind"], record)
+    requested = spec.get("typedBinding")
+    _validate_target(scope["domain"], spec["targetRef"], source["kind"], record,
+                     recipe=requested is not None and requested["kind"] == "recipe")
     typed = _typed_binding(spec, record, scope, source)
     if typed is not None and typed["kind"] == "recipe":
         _require_one_recipe_value(chains, typed, spec["strength"], scope, replacing)
@@ -862,3 +919,123 @@ def project_recipe(binding: ProjectBinding, *, stage_ref: str | None = None) -> 
         if rows:
             layer[key] = rows[0][1]
     return layer
+
+
+# ---- a recipe travelling to another project (#252) -------------------------
+
+
+def recipe_export(binding: ProjectBinding, decision_id: str) -> dict[str, Any]:
+    """One active project recipe as the file it travels in, and nothing else of this project.
+
+    A ``DrawingRecipeExport@1`` carries the recipe's values, the one target
+    they sit under and the hold a person gave them, the decision's id and the
+    sha256 of the exact revision exported, and ``sha256``: the canonical
+    digest of all of that, the export's own identity. No page, path, run,
+    project id, actor or wording travels - whoever holds this project can
+    resolve the decision and its revision from what does - and one revision
+    always exports to the same content. Reading it writes nothing.
+    """
+
+    current = decision_history(binding, decision_id)[-1]
+    typed = current.payload.get("typedBinding")
+    if typed is None or typed.get("kind") != "recipe":
+        raise _invalid(f"decision {decision_id} is not a project recipe; only a recipe's values travel.")
+    if current.status != ACTIVE:
+        raise StudioError(409, "DECISION_REVOKED",
+                          f"decision {decision_id} has been revoked; a revoked recipe does not travel.")
+    body = {
+        "schema": RECIPE_EXPORT_SCHEMA,
+        "recipe": {"targetRef": current.payload["targetRef"], "strength": current.payload["strength"],
+                   "graphics": dict(typed["graphics"])},
+        "source": {"decisionId": current.decision_id,
+                   "revisionSha256": record_ref_from_uri(current.ref, binding.project_id).sha256},
+    }
+    return {**body, "sha256": canonical_digest(body)}
+
+
+def read_recipe_export(document: Any) -> RecipeExport:
+    """One ``DrawingRecipeExport@1`` exactly as it was exported, or a refusal.
+
+    Its form is closed: a field an export never has is not this format, and
+    could carry what an export must not. Its content hashes to the sha256 it
+    names, so a file changed after export - a value nobody confirmed - is
+    refused rather than imported. Its values are bounded exactly as a
+    cut-plan request bounds them, each under its own target.
+    """
+
+    if not isinstance(document, Mapping) or set(document) != _EXPORT_FIELDS:
+        raise _export_invalid("an export holds exactly schema, recipe, source and sha256.")
+    if document["schema"] != RECIPE_EXPORT_SCHEMA:
+        raise _export_invalid(f"this reads {RECIPE_EXPORT_SCHEMA}, not {document['schema']!r}.")
+    body = {key: value for key, value in document.items() if key != "sha256"}
+    try:
+        digest = canonical_digest(body)
+    except CanonicalValueError as exc:
+        raise _export_invalid(f"an export is finite JSON: {exc}.") from exc
+    if document["sha256"] != digest:
+        raise _export_invalid("the export's content does not hash to the sha256 it names: it was changed after "
+                              "it was exported, and nobody confirmed what it says now.")
+    recipe, source = document["recipe"], document["source"]
+    if (not isinstance(recipe, Mapping) or set(recipe) != {"targetRef", "strength", "graphics"}
+            or not isinstance(source, Mapping) or set(source) != {"decisionId", "revisionSha256"}):
+        raise _export_invalid("an export's recipe is targetRef, strength and graphics, and its source is "
+                              "decisionId and revisionSha256.")
+    decision_id, revision = source["decisionId"], source["revisionSha256"]
+    if (not isinstance(decision_id, str) or not 0 < len(decision_id) <= 128
+            or not isinstance(revision, str) or _SHA256.fullmatch(revision) is None):
+        raise _export_invalid("an export's source is its decision's id and the sha256 of the revision exported.")
+    target, strength, graphics = recipe["targetRef"], recipe["strength"], recipe["graphics"]
+    if strength not in RECIPE_STRENGTHS:
+        raise _export_invalid(f"an export's recipe is held as {', '.join(RECIPE_STRENGTHS)}.")
+    if (not isinstance(graphics, Mapping) or not graphics
+            or any(RECIPE_KEYS.get(key) != target or value is None for key, value in graphics.items())):
+        raise _export_invalid("an export sets at least one paper-space value, each under its own target: "
+                              + ", ".join(f"{key} under {owner}" for key, owner in RECIPE_KEYS.items()) + ".")
+    # The wire's own bounds, read where they are defined. Imported here
+    # because the transport module imports this one.
+    from ..transport.decisions import RecipeGraphicsDto
+
+    try:
+        RecipeGraphicsDto.model_validate(dict(graphics), strict=True)
+    except ValidationError as exc:
+        error = exc.errors()[0]
+        raise _export_invalid(f"an export's values are bounded as a drawing request bounds them: "
+                              f"{'.'.join(map(str, error['loc']))}: {error['msg']}.") from exc
+    return RecipeExport(target_ref=target, strength=strength,
+                        graphics={key: float(graphics[key]) for key in RECIPE_KEYS if key in graphics},
+                        decision_id=decision_id, revision_sha256=revision, sha256=digest)
+
+
+@retained_sources
+def import_recipe(
+    binding: ProjectBinding, document: Mapping[str, Any], *, raw_language: str, source_kind: str,
+    attribution: ActorAttribution,
+) -> DecisionRevision:
+    """Retain one recipe export as this project's preference: one decision, on a person's confirmation.
+
+    The export is read and checked first (``read_recipe_export``). It then
+    becomes a recipe like any other - a ``require`` in the drawing domain
+    with the export's target and values, retained only for ``sourceKind``
+    human - held as soft_preference for the whole project and evidenced by
+    the export's sha256. ``raw_language`` is what the person was shown and
+    confirmed. The one-value rule is the recipe's own: a key this project
+    already holds as a soft_preference for the project is
+    DECISION_RECIPE_CONFLICT, and changing it is a supersession. Like every
+    decision write, this holds the project's lock from reading the decisions
+    to retaining the new one, so a runtime writing beside it cannot interleave.
+    """
+
+    if not isinstance(raw_language, str) or not raw_language.strip() or len(raw_language) > 2000:
+        raise _invalid("rawLanguage is the 1-2000 characters the person was shown and confirmed.")
+    export = read_recipe_export(document)
+    spec = {
+        "rawLanguage": raw_language, "messageSource": None, "disposition": "require",
+        "strength": IMPORTED_RECIPE_STRENGTH, "targetRef": export.target_ref,
+        "scope": {"domain": "drawing", "extent": "project"},
+        "source": {"kind": RECIPE_EXPORT, "exportSha256": export.sha256},
+        "applicability": "scope", "sourceKind": source_kind,
+        "typedBinding": {"kind": "recipe", "graphics": dict(export.graphics)},
+    }
+    content, retained = _content(binding, spec, _chains(_revisions(binding)), export=export)
+    return _revision(binding, decision_id=str(uuid.uuid4()), previous=None, content=content,
+                     retained=retained, status=ACTIVE, reason=None, attribution=attribution)

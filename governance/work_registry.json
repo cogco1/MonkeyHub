@@ -163,10 +163,10 @@
       "issue": "https://github.com/cogco1/MonkeyHub/issues/314",
       "branch": "codex/314-idle-runtime-cost",
       "worktree": "codex-314-idle-runtime-cost",
-      "base_ref": "f9077fadb66ac686bc62eef9558a10b19b41e5e4",
+      "base_ref": "17d18aadc4c707085c5ff76c018ab5e7c5ed1ec4",
       "contributor": "Codex",
       "reviewer": null,
-      "handoff": "Parent task reviews and integrates this source-only slice; Claude owns PR #320 and the running Hub release. The original five-project idle CPU acceptance remains a separate installed-build measurement.",
+      "handoff": "Source-only slice ready for parent integration; fixed main 17d18aad including PR #320 is merged. Claude owns the running Hub release. Original #314 acceptance remains pending: measure the same five real projects idle for two minutes and verify average Hub CPU below 0.05 cores on the installed build.",
       "modules": [
         "hub.shell"
       ],
