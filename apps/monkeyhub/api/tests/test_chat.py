@@ -28,7 +28,7 @@ from archflow_studio_api.transport.settings import ApplicationSettingsDto
 from monkeyhub_api import chat
 from monkeyhub_api.main import HubSettings, create_app
 from monkeyhub_api.models import (
-    AppStatus, ChatCreateRequest, ChatDesignContext, ChatPostRequest, HubFailure,
+    AppStatus, ChatCreateRequest, ChatDesignContext, ChatMessage, ChatPostRequest, HubFailure,
 )
 
 
@@ -893,7 +893,7 @@ class ChatTests(unittest.TestCase):
         self.assertTrue(override["monkeyhub"]["enabled"])
         # Computer use is named here like the rest; whether it may actually run
         # is the policy file's answer, given by the route the tool calls.
-        exposed = ("studio_schema", "studio_request", "fab_request", "attachment_read", "chat_present",
+        exposed = ("studio_schema", "studio_request", "visual_review", "fab_request", "attachment_read", "chat_present",
                    "computer_inspect", "computer_action", "computer_record")
         self.assertEqual(set(override["monkeyhub"]["enabled_tools"]), set(exposed))
         self.assertEqual(override["monkeyhub"]["tools"], {
@@ -1020,7 +1020,7 @@ class ChatTests(unittest.TestCase):
         approved = claude_command[claude_command.index("--allowedTools") + 1].split(",")
         for name in ("Read", "Glob", "Grep", "Write", "Edit", "Bash"):
             self.assertIn(name, approved, name)
-        for name in ("studio_request", "studio_schema", "fab_request", "attachment_read"):
+        for name in ("studio_request", "studio_schema", "visual_review", "fab_request", "attachment_read"):
             self.assertIn(f"mcp__monkeyhub__{name}", approved, name)
         self.assertEqual(claude_command[claude_command.index("--permission-mode") + 1], "dontAsk")
         self.assertNotIn("Read,Grep,Glob", claude_command)
@@ -1053,6 +1053,10 @@ class ChatTests(unittest.TestCase):
         # the connected action contract, checked by the tests below.
         self.assertIn("existing controls", call["prompt"])
         self.assertIn("dependencies for linked edits", call["prompt"])
+        # Looking is bounded: a spatial result through visual_review, a
+        # deterministic edit by readback alone.
+        self.assertIn("Judge a spatial or formal result with visual_review", call["prompt"])
+        self.assertIn("check a deterministic edit by readback without looking", call["prompt"])
 
     def _studio_tool_path(self, base, path, method, headers, session):
         """Verify the Hub admission boundary before routing its fake Studio call."""
@@ -1282,8 +1286,10 @@ class ChatTests(unittest.TestCase):
                 "method": "GET", "path": "/api/documents",
             })
             self.assertEqual(schema["operation"]["summary"], "list drawings")
+            # The visual review route is reached only through its own tool, which
+            # holds the allowance; a request or schema path would go around it.
             for method, path in (("POST", "/api/documents"), ("GET", "/api/documents/asset-1/bytes"),
-                                 ("POST", "/api/drawings/plans/dimension-proposal")):
+                                 ("POST", "/api/drawings/plans/dimension-proposal"), ("POST", "/api/visual-reviews")):
                 for tool in ("studio_request", "studio_schema"):
                     with self.subTest(tool=tool, path=path), self.assertRaises(HubFailure) as refused:
                         chat.call_tool(self.store.hub_url, session.id, tool, {"method": method, "path": path})
@@ -2303,8 +2309,8 @@ class ChatTests(unittest.TestCase):
         replies = [json.loads(row) for row in process.stdout.splitlines()]
         self.assertEqual(replies[0]["result"]["protocolVersion"], "2024-11-05")
         self.assertEqual({tool["name"] for tool in replies[1]["result"]["tools"]},
-                         {"studio_schema", "studio_request", "fab_request", "attachment_read", "chat_present",
-                          "computer_inspect", "computer_action", "computer_record"})
+                         {"studio_schema", "studio_request", "visual_review", "fab_request", "attachment_read",
+                          "chat_present", "computer_inspect", "computer_action", "computer_record"})
 
     # ---- a turn that names its own source and focus
 
@@ -2614,6 +2620,188 @@ class ChatTests(unittest.TestCase):
                 with self.assertRaises(HubFailure) as failure:
                     chat._request_json("http://127.0.0.1:8791", "/api/board/export", "POST", {}, png=True)
                 self.assertEqual(failure.exception.error.code, code)
+
+    # ---- the Agent's bounded look (#303)
+
+    def looking(self, *answers):
+        """The Studio's own visual review route over this chat's project, with one registered page.
+
+        The route, its allowance policy and the page export owner are the real
+        ones, and Hub reaches them through its real transport. Only the provider
+        seam is a stand-in, answering these observations in turn. Returns the
+        session, the page and what the route and the provider were each sent.
+        """
+        import io
+        from urllib.error import HTTPError
+        from PIL import Image
+        from archflow_studio_api.application.visual_observation import (
+            ObservationUsage, ProviderAnswer, ProviderCapability,
+        )
+        from archflow_studio_api.main import create_app as studio_app
+        from archflow_studio_api.settings import StudioSettings
+
+        project = self.root / "chat-project"
+        FilesystemProjectRepository.initialize(project, project_id="chat-project",
+                                               initial_state={"project_id": "chat-project", "version": 0})
+        session = self.create(project=project)
+        self.store._sessions[session.id].status = "running"
+        client = TestClient(studio_app(StudioSettings(project_dir=project, cad_export="off")))
+        self.addCleanup(client.close)
+        sheet = io.BytesIO()
+        Image.new("RGB", (160, 120), "white").save(sheet, format="PNG")
+        uploaded = client.post("/api/documents", json={
+            "projectId": session.projectId, "fileName": "sheet.png", "mimeType": "image/png",
+            "contentBase64": base64.b64encode(sheet.getvalue()).decode("ascii")})
+        self.assertEqual(uploaded.status_code, 201, uploaded.text)
+        document = uploaded.json()
+        page = {"kind": "page", "runId": document["runId"], "assetSha256": document["assetSha256"],
+                "revisionRef": document["revisionRef"], "pageIndex": 0}
+        sent = {"route": [], "provider": []}
+
+        class Provider:
+            def capability(self):
+                return ProviderCapability("codex", "stand-in", 4, 4 * 1024 * 1024, ("image/png",), True)
+
+            def observe(self, request, frames):
+                sent["provider"].append((request, tuple(frames)))
+                usage = ObservationUsage("codex", "stand-in", 1, len(frames), sum(len(frame.png) for frame in frames),
+                                         1200, None, 80, None, 900, None)
+                return ProviderAnswer(answers[len(sent["provider"]) - 1], usage)
+
+        transport = chat._request_json
+
+        def request(base, path, method="GET", body=None, **kwargs):
+            if path == "/api/visual-reviews":
+                sent["route"].append(body)
+                return transport(base, path, method, body, **kwargs)
+            return self.studio(session, [])(base, path, method, body, **kwargs)
+
+        def open_request(request, **kwargs):
+            reply = client.post(urlsplit(request.full_url).path, json=json.loads(request.data))
+            stream = io.BytesIO(reply.content)
+            stream.headers = reply.headers
+            if reply.status_code >= 400:
+                raise HTTPError(request.full_url, reply.status_code, "refused", reply.headers, stream)
+            return stream
+
+        self.enterContext(patch.object(chat, "_request_json", side_effect=request))
+        self.enterContext(patch.object(chat, "build_opener")).return_value.open.side_effect = open_request
+        self.enterContext(patch("archflow_studio_api.routes.intents.visual_provider", return_value=Provider()))
+        return session, page, sent
+
+    def say(self, session, content):
+        """The next user message the Agent is given, and so the one it answers."""
+        self.store._sessions[session.id].messages.append(
+            ChatMessage(id=str(uuid4()), role="user", content=content, createdAt=chat._now()))
+
+    def look(self, page, **changes):
+        return {"taskClass": "spatial_formal", "reason": "first_bundle", "domain": "board", "sourceRefs": [page],
+                "viewRecipe": ["page-0"], "task": "Check that the sheet reads in the intended order.",
+                "criteria": [{"criterionId": "hierarchy", "text": "One drawing leads the sheet."}],
+                "preserve": ["Keep the drawn content as it is."], **changes}
+
+    def agent(self, session, *calls):
+        """Each visual_review call as the Agent receives its answer, through the stdio adapter."""
+        import io
+
+        class Stream(io.StringIO):
+            def reconfigure(self, **kwargs):
+                pass
+
+        lines = [{"jsonrpc": "2.0", "id": index, "method": "tools/call",
+                  "params": {"name": "visual_review", "arguments": arguments}}
+                 for index, arguments in enumerate(calls, 1)]
+        writer = Stream()
+        with patch.object(chat.sys, "stdin", Stream("".join(json.dumps(line) + "\n" for line in lines))), \
+                patch.object(chat.sys, "stdout", writer):
+            chat._mcp(self.store.hub_url, session.id)
+        results = [json.loads(line)["result"] for line in writer.getvalue().splitlines()]
+        for result in results:
+            self.assertEqual({row["type"] for row in result["content"]}, {"text"}, "findings, never images")
+        return [(result.get("isError", False), json.loads(result["content"][0]["text"])) for result in results]
+
+    NOTHING_SEEN = {"observations": [], "unresolved_questions": [], "suggested_checks": []}
+
+    def test_visual_review_is_its_own_tool_and_hub_fills_the_project_and_the_allowance(self):
+        tool = next(tool for tool in _tools_of(chat) if tool["name"] == "visual_review")
+        schema = tool["inputSchema"]
+        self.assertEqual(set(schema["required"]),
+                         {"taskClass", "reason", "domain", "sourceRefs", "viewRecipe", "task", "criteria"})
+        self.assertFalse({"projectId", "budgetState"} & set(schema["properties"]))
+        self.assertFalse(schema["additionalProperties"])
+        for stated in ("never images", "deterministic edit", "GET /api/drawings/model-view", "escalate",
+                       "after_repair", "继续优化", "VISUAL_BUDGET_EXHAUSTED", "axon", "page-<pageIndex>"):
+            self.assertIn(stated, tool["description"], stated)
+        page = {"kind": "page", "runId": "run-001", "assetSha256": "a" * 64, "revisionRef": None, "pageIndex": 0}
+        with patch.object(chat, "_request_json", side_effect=AssertionError("refused before anything is read")):
+            for supplied in ({"budgetState": {"taskClass": "polish", "allowed": 4, "used": 0}},
+                             {"projectId": "other-project"}, {"frames": ["png"]}):
+                with self.subTest(supplied=supplied), self.assertRaises(HubFailure) as refused:
+                    chat.call_tool(self.store.hub_url, str(uuid4()), "visual_review", {**self.look(page), **supplied})
+                self.assertEqual(refused.exception.error.code, "CHAT_TOOL_INVALID")
+
+    def test_a_spatial_look_gets_two_reviews_and_the_third_reaches_the_agent_as_exhausted(self):
+        drawn, overlap = ({"type": kind, "target_refs": [target], "description": text, "confidence": 0.8,
+                           "severity": severity, "evidence_region": None}
+                          for kind, target, text, severity in (
+                              ("composition", "criterion:hierarchy", "Two drawings carry equal weight.", "minor"),
+                              ("preserve", "preserve:1", "The title block now covers part of the drawing.", "major")))
+        session, page, sent = self.looking({**self.NOTHING_SEEN, "observations": [drawn, overlap]},
+                                           {**self.NOTHING_SEEN, "observations": [drawn]})
+        self.say(session, "Make the sheet read more clearly.")
+        (failed, first), (_, second), (refused, third) = self.agent(
+            session, self.look(page), self.look(page, reason="after_repair", addressedFindingIds=["f1"]),
+            self.look(page, reason="after_repair", addressedFindingIds=["f1"]))
+        self.assertFalse(failed)
+        # A finding on a preserve condition is the architect's question, not another review's.
+        self.assertEqual([(row["findingId"], row["targetRefs"], row["escalate"]) for row in first["observation"]["observations"]],
+                         [("f1", ["criterion:hierarchy"], False), ("f2", ["preserve:1"], True)])
+        self.assertEqual((first["allowance"], first["usage"]["imageInputs"]),
+                         ({"taskClass": "spatial_formal", "allowed": 2, "used": 1}, 1))
+        self.assertEqual(second["allowance"]["used"], 2)
+        self.assertTrue(refused)
+        self.assertEqual((third["code"], third["httpStatus"]), ("VISUAL_BUDGET_EXHAUSTED", 409))
+        self.assertIn("2 of 2 reviews used", third["detail"])
+        self.assertEqual(len(sent["provider"]), 2, "the third look reached no provider")
+        # Hub filled the project and carried the allowance each answer handed back.
+        self.assertEqual({body["projectId"] for body in sent["route"]}, {session.projectId})
+        self.assertEqual([body["budgetState"] for body in sent["route"]], [
+            {"taskClass": "spatial_formal", "allowed": 2, "used": 0, "lastFindingIds": []},
+            {"taskClass": "spatial_formal", "allowed": 2, "used": 1, "lastFindingIds": ["f1", "f2"]},
+            {"taskClass": "spatial_formal", "allowed": 2, "used": 2, "lastFindingIds": ["f1"]},
+        ])
+
+    def test_the_allowance_belongs_to_the_answered_message_and_keeps_its_class_once_spent(self):
+        session, page, sent = self.looking(self.NOTHING_SEEN, self.NOTHING_SEEN)
+        self.say(session, "Set the door to 1.2 m, then check how the sheet reads.")
+        (_, unwarranted), (_, looked), (_, switched) = self.agent(
+            session, self.look(page, taskClass="deterministic_edit"), self.look(page),
+            self.look(page, taskClass="polish", polishRounds=2, reason="polish_round"))
+        self.assertEqual(unwarranted["code"], "VISUAL_REVIEW_NOT_WARRANTED")
+        # Nothing was spent, so the Agent could still declare the look it needed.
+        self.assertEqual(looked["allowance"], {"taskClass": "spatial_formal", "allowed": 2, "used": 1})
+        self.assertEqual(switched["code"], "VISUAL_TASK_CLASS_FIXED")
+        self.assertEqual(len(sent["route"]), 2, "a class the message no longer takes never reaches the Studio")
+        self.say(session, "Now check the revised sheet.")
+        (_, fresh), = self.agent(session, self.look(page))
+        self.assertEqual(fresh["allowance"], {"taskClass": "spatial_formal", "allowed": 2, "used": 1})
+        self.assertEqual(sent["route"][-1]["budgetState"]["used"], 0, "the next message starts its own allowance")
+        self.assertEqual(len(sent["provider"]), 2)
+
+    def test_more_than_two_polish_rounds_need_the_users_own_words(self):
+        session, page, sent = self.looking(self.NOTHING_SEEN, self.NOTHING_SEEN)
+
+        def polish(rounds):
+            return self.look(page, taskClass="polish", polishRounds=rounds, reason="polish_round")
+
+        self.say(session, "Make the entrance wider.")
+        (_, unasked), (_, modest) = self.agent(session, polish(4), polish(2))
+        self.assertEqual(unasked["code"], "VISUAL_POLISH_NOT_ASKED")
+        self.assertEqual(modest["allowance"], {"taskClass": "polish", "allowed": 2, "used": 1})
+        self.say(session, "继续打磨这张图的层次。")
+        (_, asked), = self.agent(session, polish(4))
+        self.assertEqual(asked["allowance"], {"taskClass": "polish", "allowed": 4, "used": 1})
+        self.assertEqual([body["budgetState"]["allowed"] for body in sent["route"]], [2, 4])
 
     def test_the_named_source_is_read_once_and_never_carried_into_the_next_turn(self):
         session = self.create()

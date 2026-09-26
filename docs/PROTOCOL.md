@@ -301,6 +301,22 @@ or `VISUAL_PROVIDER_UNAVAILABLE` when the runtime's provider is deterministic. O
 refusals keep their code and status. A failed provider call answers 502 `VISUAL_PROVIDER_FAILED`
 with the `budgetState` that counts the spent review and the call's `usage`.
 
+MonkeyHub gives the Agent this route as its own `visual_review` tool and never through
+`studio_request` or `studio_schema`, so the allowance cannot be bypassed. The Agent declares
+`taskClass` (with `polishRounds` for `polish`) and the review's own fields; Hub fills `projectId` and
+`budgetState`. Hub holds one allowance for each user message the Agent answers, and the next message
+starts a new one. Until a review of it is spent, a new declaration replaces the class; after that
+another class answers `409 VISUAL_TASK_CLASS_FIXED`. More than two polish rounds need the user's own
+words in that message asking to keep refining (`409 VISUAL_POLISH_NOT_ASKED` otherwise). Hub keeps
+the `budgetState` each answer hands back: a 4xx refusal spends nothing, while a 5xx answer, or a sent
+review that is never answered (`504 VISUAL_REVIEW_UNANSWERED`), counts as spent. The Agent receives the
+`observation`, with `escalate: true` on each finding whose `targetRefs` name a `preserve:*`
+condition (a question for the architect rather than for another review), the provider's `usage`
+and the `allowance` (`taskClass`, `allowed`, `used`), never an image. The Hub trace records the call
+under its turn as a tool call with `request_kind` `visual_observation`, `image_inputs` from that usage
+and the review id, and none of the request's text; a raw `model-view` or page read through
+`studio_request` is recorded as `image_read` with one image input.
+
 **The program sheet.** A sheet is `ProgramSheet@1` and travels whole in both directions, carrying
 the `stateDigest` of the record it was read from. `POST /api/program` refuses `409 STALE_BASE` when
 that is not the state the project answers with now, and `422 PROGRAM_SHEET_INVALID` when the kernel

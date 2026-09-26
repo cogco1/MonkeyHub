@@ -7,6 +7,7 @@ import logging
 import re
 from functools import wraps
 from time import perf_counter
+from urllib.parse import urlsplit
 
 from monkeymonitor.pricing import billing_plan
 from monkeymonitor.store import UsageLog
@@ -15,6 +16,9 @@ from archflow.contracts.canonical import canonical_digest
 
 log = logging.getLogger(__name__)
 
+# The two raw reads that answer the Agent with one image of their own.
+_IMAGE_READS = {("GET", "/api/drawings/model-view"), ("POST", "/api/board/export")}
+
 
 def _now():
     return datetime.now(timezone.utc).isoformat()
@@ -22,6 +26,39 @@ def _now():
 
 def _size(value):
     return len(json.dumps(value, ensure_ascii=False, default=str).encode("utf-8"))
+
+
+def _answer(result):
+    """A tool's JSON answer, from the text the CLI reported it with; None when it is not one."""
+    if isinstance(result, dict) and isinstance(result.get("content"), list):
+        result = "".join(row["text"] for row in result["content"]
+                         if isinstance(row, dict) and isinstance(row.get("text"), str))
+    try:
+        value = json.loads(result) if isinstance(result, str) else None
+    except ValueError:
+        return None
+    return value if isinstance(value, dict) else None
+
+
+def _looked(kind, result):
+    """What a finished look put in front of a model, as counts and the review's own id.
+
+    A raw view or page read hands the Agent one image. A visual review's frames
+    go to its provider, as many as its reported usage says; a count it does not
+    report stays unknown rather than becoming zero.
+    """
+    if kind == "image_read":
+        return {"image_inputs": 1}
+    answer = _answer(result) or {}
+    usage, observation = answer.get("usage"), answer.get("observation")
+    found = {}
+    count = usage.get("imageInputs") if isinstance(usage, dict) else None
+    if type(count) is int and count >= 0:
+        found["image_inputs"] = count
+    review = observation.get("reviewId") if isinstance(observation, dict) else None
+    if isinstance(review, str) and re.fullmatch(r"[A-Za-z0-9_-]{1,160}", review):
+        found["output_refs"] = [review]
+    return found
 
 
 def _optional(observe):
@@ -121,12 +158,19 @@ class HubTurnObserver:
         identifier = f"hub:tool:{self.turn_id}:{identifier}"
         # Only documented names/codes are diagnostic labels. A CLI tool title
         # may contain a command or private text; it is not a safe tool name.
-        safe_name = name if name in {"studio_schema", "studio_request", "fab_request",
+        safe_name = name if name in {"studio_schema", "studio_request", "visual_review", "fab_request",
                                      "computer_inspect", "computer_action", "computer_record"} else "agent_tool"
         arguments = arguments if isinstance(arguments, dict) else {}
         method, path = arguments.get("method", "GET"), arguments.get("path", "")
+        # Looking is named for what it is, whichever tool asked: a bounded
+        # visual review, or a raw image read, which no longer passes as a
+        # mutation or an ordinary call.
+        image_read = (safe_name == "studio_request" and isinstance(path, str)
+                      and (method, urlsplit(path).path) in _IMAGE_READS)
         request_kind = ("computer" if safe_name.startswith("computer_") else
                         "schema_read" if safe_name == "studio_schema" else
+                        "visual_observation" if safe_name == "visual_review" else
+                        "image_read" if image_read else
                         "state_read" if method == "GET" and path in {"/api/state", "/api/state/frame"} else
                         "readback" if method == "GET" and isinstance(path, str) and path.startswith("/api/candidates/") else
                         "mutation" if method in {"POST", "PUT", "DELETE"} else "tool")
@@ -158,6 +202,8 @@ class HubTurnObserver:
                 details["output_bytes"] = _size(result)
             if candidate_id and re.fullmatch(r"[A-Za-z0-9_-]{1,160}", candidate_id):
                 details["output_refs"] = [candidate_id]
+            if not failed and details.get("request_kind") in {"visual_observation", "image_read"}:
+                details.update(_looked(details["request_kind"], result))
             self._emit(identifier, status="failed" if failed else "succeeded")
             self.tools.discard(identifier)
             self.waiting()

@@ -32,7 +32,7 @@ import sys
 import threading
 import time
 from typing import Literal, Mapping
-from urllib.error import HTTPError
+from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, urlencode, urlsplit
 from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
 from uuid import UUID, uuid4
@@ -199,6 +199,7 @@ _CLAUDE_APPROVED = (
     "Read", "Glob", "Grep", "Write", "Edit", "Bash", "TodoWrite",
     "mcp__monkeyhub__studio_schema",
     "mcp__monkeyhub__studio_request",
+    "mcp__monkeyhub__visual_review",
     "mcp__monkeyhub__fab_request",
     "mcp__monkeyhub__attachment_read",
     "mcp__monkeyhub__chat_present",
@@ -1622,8 +1623,8 @@ class ChatStore:
             raise HubFailure(503, "CHAT_CONFIG_INVALID", "The installed Codex MCP configuration could not be read.") from exc
         from . import computer_tools
 
-        tool_names = ("studio_schema", "studio_request", "fab_request", "attachment_read", "chat_present",
-                      *computer_tools.TOOL_NAMES)
+        tool_names = ("studio_schema", "studio_request", "visual_review", "fab_request", "attachment_read",
+                      "chat_present", *computer_tools.TOOL_NAMES)
         mcp_servers["monkeyhub"] = {
             **mcp, "enabled": True, "required": True,
             "env_vars": ["MONKEYHUB_PRESENTATION_TOKEN"],
@@ -1938,7 +1939,10 @@ class ChatStore:
                     "Develop the user's design through reversible candidates. Batch steps whose outcome is already clear; "
                     "generate and inspect a candidate when the next design decision depends on its result, then revise as needed. "
                     "Check the actual result against the user's spatial intent before reporting completion; distinguish "
-                    "geometry readback from visual inspection. Close each completed loop with one admission that lists the "
+                    "geometry readback from visual inspection. Judge a spatial or formal result with visual_review, which "
+                    "answers findings rather than images within a small allowance for each user message; check a "
+                    "deterministic edit by readback without looking, and ask the user about a finding marked escalate "
+                    "rather than spending another review on it. Close each completed loop with one admission that lists the "
                     "attempts each result superseded, such as a redone first try; for a request for several alternatives, "
                     "declare its Study with an id and label from the request and admit each finished alternative. Never "
                     "admit intermediate runs. Reject a result, or continue from one, only when the user's own words say so; "
@@ -2938,6 +2942,112 @@ def _feedback_body(hub: str, base: str, chat_id: str, session: dict, path: str, 
             "revisionMessageSource": provenance}
 
 
+# The Agent's one bounded look (#303). The runtime route keeps no loop state:
+# its caller holds the allowance and sends it back with every review. For the
+# Agent that caller is Hub, with one allowance for each user message the Agent
+# answers, kept in this adapter while that is the message it answers. The
+# stdio loop answers one call at a time, so nothing else touches it meanwhile.
+_VISUAL_REVIEW_FIELDS = {"domain", "sourceRefs", "viewRecipe", "task", "criteria", "preserve",
+                         "priorObservations", "knownFacts", "reason", "addressedFindingIds"}
+# The runtime's allowance for each class the Agent can declare. The route
+# refuses any other number, so these can only ever agree with it.
+_VISUAL_ALLOWED = {"deterministic_edit": 0, "spatial_formal": 2}
+_POLISH_ROUNDS = range(1, 5)
+# Polish beyond the two looks a spatial task gets needs the user's own words
+# asking to keep refining; the Agent's declaration alone never buys more.
+_KEEP_REFINING = re.compile(
+    r"继续优化|再优化|打磨|精修|反复推敲|keep (?:refining|polishing|improving|iterating)"
+    r"|refine (?:it |this |them )?further|further refinement|\bpolish", re.IGNORECASE)
+# Up to four owner-rendered views and one provider look, which is bounded itself.
+_VISUAL_REVIEW_WAIT_S = 300
+_visual_allowances: dict[str, tuple[str, dict]] = {}
+
+
+def _allowance_note(held: dict) -> str:
+    return f"This message's {held['taskClass']} allowance: {held['used']} of {held['allowed']} reviews used."
+
+
+def _visual_allowance(chat_id: str, message: dict, declared, rounds) -> dict:
+    """The allowance of the user message the Agent answers, for the class it declares.
+
+    The Agent declares the class and Hub records it. Until a review is spent a
+    new declaration replaces it; from then on the class stays with the
+    message, so declaring again never buys another look.
+    """
+    if declared == "polish":
+        if type(rounds) is not int or rounds not in _POLISH_ROUNDS:
+            raise HubFailure(422, "CHAT_TOOL_INVALID", "A polish task names polishRounds from 1 to 4.")
+        if rounds > 2 and not _KEEP_REFINING.search(message.get("content") or ""):
+            raise HubFailure(409, "VISUAL_POLISH_NOT_ASKED",
+                             "More than two polish rounds need the user's own words in this message asking to keep "
+                             "refining (继续优化, 打磨, keep refining). Declare polishRounds 1-2, or spatial_formal.")
+        allowed = rounds
+    elif declared in _VISUAL_ALLOWED:
+        if rounds is not None:
+            raise HubFailure(422, "CHAT_TOOL_INVALID", "polishRounds belongs to a polish task.")
+        allowed = _VISUAL_ALLOWED[declared]
+    else:
+        raise HubFailure(422, "CHAT_TOOL_INVALID", "taskClass is spatial_formal, polish or deterministic_edit.")
+    turn, held = _visual_allowances.get(chat_id, (None, None))
+    if turn == message["id"] and held["used"]:
+        if (held["taskClass"], held["allowed"]) != (declared, allowed):
+            raise HubFailure(409, "VISUAL_TASK_CLASS_FIXED",
+                             f"A review of this message was spent as {held['taskClass']}, which it keeps until the "
+                             f"user's next message. {_allowance_note(held)}")
+        return held
+    held = {"taskClass": declared, "allowed": allowed, "used": 0, "lastFindingIds": []}
+    _visual_allowances[chat_id] = (message["id"], held)
+    return held
+
+
+def _visual_review(hub: str, chat_id: str, arguments: dict) -> dict:
+    """One bounded look through the bound Studio, under the answered message's allowance.
+
+    The runtime renders every frame from the exact sources named, answers
+    findings rather than images and writes nothing. Hub supplies the project
+    and the allowance and keeps what the answer says of it: a refusal spends
+    nothing, and a call the provider may have answered is spent. A finding
+    that touches a preserve condition is marked escalate: it is a question for
+    the architect, which another review cannot settle.
+    """
+    if not isinstance(arguments, dict) or set(arguments) - _VISUAL_REVIEW_FIELDS - {"taskClass", "polishRounds"}:
+        raise HubFailure(422, "CHAT_TOOL_INVALID", "visual_review takes taskClass, polishRounds for a polish task "
+                         "and the review's own fields; Hub fills projectId and budgetState.")
+    base, session = _bound_studio(hub, chat_id)
+    message = _user_message(chat_id, session, "A visual review")
+    held = _visual_allowance(chat_id, message, arguments.get("taskClass"), arguments.get("polishRounds"))
+    body = {key: value for key, value in arguments.items() if key in _VISUAL_REVIEW_FIELDS}
+    body.update(projectId=session["projectId"], budgetState=dict(held))
+
+    def spent(detail: str) -> str:
+        held.update(used=held["used"] + 1, lastFindingIds=[])
+        return f"{detail} {_allowance_note(held)}"
+
+    try:
+        answer = _request_json(base, "/api/visual-reviews", "POST", body, timeout=_VISUAL_REVIEW_WAIT_S)
+    except HubFailure as refused:
+        # The route refuses before its provider call with a 4xx; a 5xx means
+        # the call was made, or may have been.
+        detail = refused.error.detail
+        detail = spent(detail) if refused.status >= 500 else f"{detail} {_allowance_note(held)}"
+        raise HubFailure(refused.status, refused.error.code, detail) from refused
+    except URLError:
+        raise  # It never reached the Studio: nothing was spent.
+    except (OSError, ValueError) as lost:
+        raise HubFailure(504, "VISUAL_REVIEW_UNANSWERED", spent(
+            f"The Studio did not answer this review ({_reason(lost)}), so it counts as spent.")) from lost
+    observation = answer.get("observation") if isinstance(answer, dict) else None
+    state = answer.get("budgetState") if isinstance(answer, dict) else None
+    if (not isinstance(observation, dict) or not isinstance(state, dict) or type(state.get("used")) is not int
+            or (state.get("taskClass"), state.get("allowed")) != (held["taskClass"], held["allowed"])):
+        raise HubFailure(502, "CHAT_TOOL_FAILED", spent("The Studio answered this review outside its contract."))
+    held.update(used=state["used"], lastFindingIds=list(state.get("lastFindingIds") or ()))
+    findings = [{**row, "escalate": any(str(ref).startswith("preserve:") for ref in row.get("targetRefs") or ())}
+                for row in observation.get("observations") or () if isinstance(row, dict)]
+    return {"observation": {**observation, "observations": findings}, "usage": answer.get("usage"),
+            "allowance": {key: held[key] for key in ("taskClass", "allowed", "used")}}
+
+
 def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
     from . import computer_tools
 
@@ -2964,6 +3074,10 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
         # refusal code belong to the route, so the CLI reads what an HTTP
         # caller reads. This conversation's project is not involved.
         return computer_tools.call(hub, name, arguments)
+    if name == "visual_review":
+        # A tool of its own rather than a studio_request path: Hub holds the
+        # allowance, so the route is on no request allow-list to go around it.
+        return _visual_review(hub, chat_id, arguments)
     method, path = str(arguments.get("method", "GET")).upper(), arguments.get("path", "")
     parsed = urlsplit(path)
     allowed = {"GET": _READ, "POST": _POST, "PUT": _WRITE}
@@ -3256,6 +3370,57 @@ def _mcp(hub: str, chat_id: str | None, external: ChatPresentationBindRequest | 
             },
         }, "required": ["method", "path"], "additionalProperties": False,
     }
+    # The review's own fields as the runtime route names them. projectId and
+    # budgetState are Hub's to fill, so they are not offered at all.
+    review_schema = {"type": "object", "properties": {
+        "taskClass": {"type": "string", "enum": ["spatial_formal", "polish", "deterministic_edit"]},
+        "polishRounds": {"type": "integer", "minimum": 1, "maximum": 4,
+                         "description": "Only for polish: its rounds; above 2 only when the user asked to keep refining."},
+        "reason": {"type": "string", "enum": ["first_bundle", "after_repair", "polish_round"]},
+        "domain": {"type": "string", "enum": ["modeling", "board", "drawing", "render"]},
+        "sourceRefs": {"type": "array", "minItems": 1, "maxItems": 4, "items": {
+            "type": "object", "properties": {
+                "kind": {"type": "string", "enum": ["model", "page"]}, "runId": {"type": "string"},
+                "stateDigest": {"type": "string", "description": "model only"},
+                "assetSha256": {"type": "string"},
+                "revisionRef": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "page only; null when the registration has none"},
+                "pageIndex": {"type": "integer", "minimum": 0, "description": "page only"},
+            }, "required": ["kind", "runId", "assetSha256"], "additionalProperties": False}},
+        "viewRecipe": {"type": "array", "minItems": 1, "maxItems": 4, "items": {"type": "string"}},
+        "task": {"type": "string", "minLength": 1, "maxLength": 600},
+        "criteria": {"type": "array", "minItems": 1, "maxItems": 8, "items": {
+            "type": "object", "properties": {"criterionId": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,39}$"},
+                                             "text": {"type": "string", "minLength": 1, "maxLength": 300}},
+            "required": ["criterionId", "text"], "additionalProperties": False}},
+        "preserve": {"type": "array", "maxItems": 6, "items": {"type": "string", "minLength": 1, "maxLength": 300}},
+        "knownFacts": {"type": "array", "maxItems": 8, "items": {"type": "string", "minLength": 1, "maxLength": 120}},
+        "priorObservations": {"type": "array", "maxItems": 6, "items": {
+            "type": "object", "properties": {"findingRef": {"type": "string"}, "type": {"type": "string"},
+                                             "description": {"type": "string"}},
+            "required": ["findingRef", "type", "description"], "additionalProperties": False}},
+        "addressedFindingIds": {"type": "array", "maxItems": 8, "items": {"type": "string", "pattern": "^f[1-9][0-9]?$"}},
+    }, "required": ["taskClass", "reason", "domain", "sourceRefs", "viewRecipe", "task", "criteria"],
+        "additionalProperties": False}
+    reviewing = chr(10).join([
+        "Look once at exact project sources and get findings back, never images: the bound Studio renders every frame itself",
+        "and one provider call reports what is visible about your criteria. Use it for a spatial or formal task (massing,",
+        "proportion, relations, composition, a sheet's hierarchy) after a meaningful batch. A deterministic edit (a value, a",
+        "dimension, a count) is checked by readback, not looked at. When the user asks to see a view, read",
+        "GET /api/drawings/model-view through studio_request instead.",
+        "taskClass spatial_formal allows a first_bundle review, then one after_repair review whose addressedFindingIds name",
+        "findings of the last review your repair answered. polish allows polishRounds polish_round reviews (1-4, more than 2",
+        "only when the user's words in this message ask to keep refining, such as 继续优化 or 打磨). deterministic_edit allows none.",
+        "Hub holds the allowance of the user message you are answering, fixes its class once a review is spent, and starts a",
+        "new one with the user's next message.",
+        "A modeling review names one model {kind: 'model', runId, stateDigest, assetSha256}, the result's non-null modelSource",
+        "unchanged, with viewRecipe from front, back, left, right, top, axon. Board, drawing and render reviews name registered",
+        "pages {kind: 'page', runId, assetSha256, revisionRef, pageIndex} exactly as GET /api/documents lists them, with",
+        "viewRecipe page-<pageIndex> of each. criteria [{criterionId, text}] say what to inspect, preserve what must not be",
+        "disturbed, and knownFacts are exact readback values (levels, clear sizes) the observer should not ask about again.",
+        "A finding marked escalate touches a preserve condition: ask the user about it instead of repairing and reviewing again.",
+        "Refusals spend nothing: VISUAL_BUDGET_EXHAUSTED, VISUAL_REVIEW_NOT_WARRANTED, VISUAL_REVIEW_OUT_OF_ORDER,",
+        "VISUAL_SOURCE_MISMATCH (read the current exact source), VISUAL_PROVIDER_UNAVAILABLE. VISUAL_PROVIDER_FAILED spends the review.",
+    ])
     # Keep common actions usable without a schema round trip. Detailed producer
     # contracts remain discoverable on demand; the agent chooses observation points.
     modelling = chr(10).join([
@@ -3298,12 +3463,12 @@ def _mcp(hub: str, chat_id: str | None, external: ChatPresentationBindRequest | 
         "sourceProposalId continues an unexecuted chain, not a newly selected candidate base.",
         "The numeric capability run also accepts awaitSeconds: 60 with sourceRunId in its body. Waiting posts the change once.",
         "With awaitSeconds, candidate/artifacts/objects and compare, when present, are completed readbacks; reuse them for observation.",
-        "Use an available artifact's non-null modelSource unchanged for model-view. A missing source cannot be reconstructed from hashes.",
+        "Use an available artifact's non-null modelSource unchanged for visual_review and model-view. A missing source cannot be reconstructed from hashes.",
         "Follow next for missing reads and retain any source/state/context checks the task still requires.",
         "On timeout, follow the returned job/candidate reads; never send the request again merely to wait.",
         "GET /api/candidates/{id} returns retained objects with bbox.min/max, lengthUnit and upAxis, plus objectReadbackError if inspection is unavailable.",
         "GET /api/candidates/{id}/compare?against=<runId> compares with the required source run. The first candidate has no prior run to compare.",
-        "Object bounds and successful checks are not visual inspection or proof of the user's spatial intent; inspect relevant views when available and report gaps.",
+        "Object bounds and successful checks are not visual inspection or proof of the user's spatial intent; for a spatial or formal task, check the result with visual_review and report gaps.",
         "For invalid input, use the named schema to correct it. For stale state/conflicts, refresh the exact source and reconcile the change while preserving keep conditions.",
         "A refused request made no model. Distinguish unsupported operations from correctable inputs; report unresolved limits without inventing success.",
         "",
@@ -3350,8 +3515,9 @@ def _mcp(hub: str, chat_id: str | None, external: ChatPresentationBindRequest | 
         "GET /api/drawings/plans/vector?runId=&assetSha256=&revisionRef= reads the plan's SVG, symbols and anchor choices; POST /api/drawings/plans/status",
         "{runId, assetSha256, revisionRef} says whether it is current and which objects are missing or outside the view; GET /api/drawings/plans/dimensions lists",
         "the dimensions a plan can place. Drawing revisions never move the design.",
-        "OBSERVE: GET /api/drawings/model-view?runId=<id>&stateDigest=<digest>&assetSha256=<3dm sha256>&view=front returns an MCP image with exact source metadata.",
-        "Read modelSource from the awaited result's artifacts or the candidate's 3dm artifact. Views: front/back/left/right/top. This is a read-only orthographic line projection from complete retained STEP; unsupported sources refuse rather than show a proxy.",
+        "SEE A VIEW: when the user asks to see a view, GET /api/drawings/model-view?runId=<id>&stateDigest=<digest>&assetSha256=<3dm sha256>&view=front returns an MCP image",
+        "with exact source metadata. To judge a spatial or formal result, call visual_review instead: it answers findings, not images.",
+        "Read modelSource from the awaited result's artifacts or the candidate's 3dm artifact. Views: front/back/left/right/top/axon (axon is isometric). This is a read-only line projection from complete retained STEP; unsupported sources refuse rather than show a proxy.",
         "GET /api/drawings/styles and POST /api/drawings/sheets compose a sheet from exact modelSource, styleId and scaleDenominator.",
         "Top is an orthographic projection, not a cut plan. GET /api/documents?runId=<runId> reads that run's drawings.",
         'DRAWING PAGE: POST /api/board/export is a read-only native MCP image: body {projectId, pages:[{runId, assetSha256, revisionRef, pageIndex}], format:"png", zip:false, maxEdge:2048}. Copy exact source fields from GET /api/documents or the generated drawing result; revisionRef must be explicit (null for sources without a revision), pageIndex is zero-based. One clean source page, no annotations, at most 2048 pixels per edge and 4 MiB; use smaller maxEdge if too large. No operationId or awaitSeconds.',
@@ -3370,6 +3536,7 @@ def _mcp(hub: str, chat_id: str | None, external: ChatPresentationBindRequest | 
          "Use it to discover inputs, clarify a field or correct a request. Paths may contain template segments, "
          "such as /api/proposals/{id}/candidate. For semantic authoring, supply producer to select its request inputs.", "inputSchema": schema_input},
         {"name": "studio_request", "description": modelling, "inputSchema": request_schema},
+        {"name": "visual_review", "description": reviewing, "inputSchema": review_schema},
         {"name": "fab_request", "description": "Use MonkeyFab GET /api/fab/profiles or POST /api/fab/send for dry-run validation only. This tool never uploads or starts printing.", "inputSchema": input_schema},
         {"name": "attachment_read", "description": "Read an uploaded attachment from this conversation by its id. "
          "Returns UTF-8 text without NUL characters, or base64 for binary files. offset, limit, total and nextOffset "
