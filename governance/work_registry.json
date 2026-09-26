@@ -155,161 +155,141 @@
       ]
     },
     {
-      "id": "GH-314",
+      "id": "GH-292",
       "stream": "planning",
-      "status": "ready",
-      "goal": "Remove unchanged heartbeat snapshot reconstruction and operation-history copies from the Hub project watcher, preserving work-copy observation, external refresh and recovery responsiveness.",
+      "status": "active",
+      "goal": "Prevent automatic retained model thumbnails from mutating the Board; preserve explicit image placement.",
       "depends_on": [],
-      "issue": "https://github.com/cogco1/MonkeyHub/issues/314",
-      "branch": "codex/314-idle-runtime-cost",
-      "worktree": "codex-314-idle-runtime-cost",
-      "base_ref": "17d18aadc4c707085c5ff76c018ab5e7c5ed1ec4",
-      "contributor": "Codex",
-      "reviewer": null,
-      "handoff": "Source-only slice ready for parent integration; fixed main 17d18aad including PR #320 is merged. Claude owns the running Hub release. Original #314 acceptance remains pending: measure the same five real projects idle for two minutes and verify average Hub CPU below 0.05 cores on the installed build.",
-      "modules": [
-        "hub.shell"
-      ],
-      "write_scope": [
-        "apps/monkeyhub/api/monkeyhub_api/runtime.py",
-        "apps/monkeyhub/api/tests/test_project_runtime.py",
-        "apps/monkeyhub/api/tests/test_runtime_operations.py",
-        "governance/work_registry.json",
-        "docs/DYNAMIC_MAP.md",
-        "docs/mapping/planning/INDEX.md"
-      ],
-      "acceptance": [
-        "Unchanged idle heartbeats do not reconstruct operation records or project snapshots; equivalent isolated workloads record before/after counts and time.",
-        "Operation, chat, worker, work-copy error, client and projection changes remain visible with the existing heartbeat and wake behavior; external changes remain discoverable on the existing due cadence.",
-        "Focused runtime tests, archcheck and changed-scope checks pass; this slice does not claim the real five-project CPU threshold or change the running Hub."
-      ]
-    },
-    {
-      "id": "GH-66",
-      "stream": "planning",
-      "status": "ready",
-      "goal": "Close the first Publish workflow: ordered Board handoff, reliable autosave/reopen, editable output and repeatable layout; independently verify exact-source replacement/freeze.",
-      "depends_on": [],
-      "issue": "https://github.com/cogco1/MonkeyHub/issues/66",
+      "issue": "https://github.com/cogco1/MonkeyHub/issues/292",
       "branch": "codex/merge-cloud-batch",
       "worktree": "C:/Users/asus/.codex/worktrees/merge-cloud-batch/ARCHFLOW_V4",
-      "base_ref": "efb139847f9579fb2b134aa4a2854eef4f519783",
-      "contributor": "Codex",
-      "reviewer": "Independent Codex UI concurrency review and publication compiler review; coordinating task integration",
-      "handoff": "PR #332 Linux CI closeout is ready for review from the efb13984 baseline. The isolated cloud checkout reproduced HTTP 422 PUBLICATION_FONT_GLYPH for 图纸.pdf, then verified the focused test and all 18 publication/dependency tests with the explicit Linux CJK font install; archcheck passes. Merge/installed desktop acceptance remains with the coordinating task.",
-      "modules": [
-        "studio.publication",
-        "studio.board"
-      ],
+      "base_ref": "594a5467",
+      "contributor": "Codex integration",
+      "reviewer": "Independent bounded Codex review",
+      "handoff": "Cloud deliveries are integrated in this isolated checkout; required GitHub checks and focused cloud browser tests precede the normal merge. Completed source scopes are released separately from remaining issue acceptance.",
       "write_scope": [
-        ".github/workflows/verify.yml",
-        "apps/archflow-studio/api/archflow_studio_api/application/publications.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/publication_output.py",
-        "apps/archflow-studio/api/archflow_studio_api/routes/publications.py",
-        "apps/archflow-studio/api/archflow_studio_api/transport/publications.py",
-        "apps/archflow-studio/api/tests/test_publications.py",
-        "apps/archflow-studio/api/tests/test_publication_dependencies.py",
-        "apps/monkeyhub/web/workspaces/src/api/publication.ts",
-        "apps/monkeyhub/web/workspaces/src/workspaces/publish/",
         "apps/monkeyhub/web/workspaces/src/workspaces/monkeyboard/Board.tsx",
-        "apps/monkeyhub/web/workspaces/test/publishWorkspace.browser.mjs",
-        "apps/monkeyhub/web/workspaces/test/publicationSaveQueue.test.ts",
-        "docs/PROTOCOL.md",
-        "governance/work_registry.json"
-      ],
-      "acceptance": [
-        "Ordered Board pages or frame selection become a multi-page editable publication using the existing repeatable rule.",
-        "Manual text, move/resize/crop, alignment and page order survive automatic save and project/publication cold reopen.",
-        "The same retained revision exports editable PPTX content and deterministic PDF with checked text, bounds and image proportions.",
-        "Source update preserves manual text/layout; exact frozen revision remains reproducible after source changes; State and HEAD are unchanged."
-      ],
-      "notes": [
-        "2026-09-24: #273 merged the GH-66 integration. On the repository owner's instruction the Drawing, Render, Hub and shared client paths it also claimed are handed to GH-271 (#271, Working Head); GH-66 keeps its Publish paths and the broader #66 acceptance.",
-        "2026-09-25: the cut-plan request DTO (transport/drawings.py) is handed to GH-271 as well, for the drawing follow choice found in the #277 review; GH-66 keeps its Publish paths.",
-        "2026-09-25: archflow/project/record_kinds.py is handed to GH-294/admission-record, which registers the owner-approved candidate-admission kind (audit Q1); GH-66 reclaims it if Publish needs another kind.",
-        "2026-09-25: monkeydiagram/drawing_elevation.py, monkeydiagram/drawing_svg.py and routes/drawings.py are handed to GH-307/section-perspective, which adds the owner-requested section perspective view to the one projection pipeline; GH-66 keeps its Publish paths and reclaims these if Publish needs drawing changes.",
-        "2026-09-26: resume GH-66 from the shared e33fbf46 baseline in its assigned isolated worktree; release historical Render/Diagram paths. GH-291 owns drawing revision/replacement and GH-252 owns recipe/decision reuse.",
-        "2026-09-26: closeout implements autosave and pending-import recovery, explicit Board order, bounded repeatable layout, embedded-font PDF and supported editable source PDF primitives in PPTX. Unsupported source semantics retain raster appearance; exact source/freeze and model HEAD boundaries are verified.",
-        "2026-09-26: PR #332 Linux follow-up uses isolated checkout /workspace/MonkeyHub at efb13984. The failing request returned HTTP 422 PUBLICATION_FONT_GLYPH; Publish now chooses a TrueType-outline CJK face consistently, CI installs Debian fonts-wqy-microhei, and the regression requires readable Chinese PDF text rather than conditionally omitting it."
+        "apps/monkeyhub/web/workspaces/test/modelPreviews.browser.mjs"
       ]
     },
     {
-      "id": "GH-291",
+      "id": "GH-289",
       "stream": "planning",
-      "status": "ready",
-      "goal": "Close drawing revision replacement gaps: exact before/after identity on restoration, idempotent retries, conflicting stale rebuild refusal and persisted consumer regressions.",
+      "status": "active",
+      "goal": "Integrate candidate disposition and attributed endorsement from GH-289 and GH-290, including concurrent writes and branch history.",
       "depends_on": [],
-      "issue": "https://github.com/cogco1/MonkeyHub/issues/291",
-      "branch": "codex/291-drawing-revision-closeout",
-      "worktree": "D:/MONKEYHUB_DEV/workspace/worktrees/codex-291-drawing-revision-closeout",
-      "base_ref": "e33fbf4656402ead75fb4adcad946c71c81a2dff",
-      "contributor": "Codex",
-      "reviewer": "Independent bounded read-only Codex review; parent integration",
-      "handoff": "Replacement/restoration and cold-reopen assertions pass. The full Board script fails its later remote-frame autofocus during a live stroke assertion, reproduced with the untouched e33fbf4 fixture; parent coordinates Board.tsx focusSources/scheduleUpdateFocus separately. Parent integration reads progress; Board/Publish production belongs to GH-66, correction/decision reuse to GH-252. PR #326 adds independent artifacts preview behavior; do not absorb its changes.",
-      "modules": [
-        "studio.artifacts"
-      ],
+      "issue": "https://github.com/cogco1/MonkeyHub/issues/289",
+      "branch": "codex/merge-cloud-batch",
+      "worktree": "C:/Users/asus/.codex/worktrees/merge-cloud-batch/ARCHFLOW_V4",
+      "base_ref": "594a5467",
+      "contributor": "Codex integration",
+      "reviewer": "Independent bounded Codex review",
+      "handoff": "Cloud deliveries are integrated in this isolated checkout; required GitHub checks and focused cloud browser tests precede the normal merge. Completed source scopes are released separately from remaining issue acceptance.",
       "write_scope": [
-        "apps/archflow-studio/api/archflow_studio_api/application/drawing_plans.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/artifacts.py",
-        "apps/archflow-studio/api/tests/test_drawing_plans.py",
-        "apps/monkeyhub/web/workspaces/test/boardReplacement.browser.mjs",
-        "governance/work_registry.json",
-        "governance/module_registry.json",
-        "docs/PROTOCOL.md",
-        "docs/SYSTEM_MAP.md",
-        "docs/DYNAMIC_MAP.md",
-        "docs/mapping/planning/INDEX.md"
-      ],
-      "acceptance": [
-        "Rebuilt revisions retain exact source and before/after attribution; same-page consumers follow the sole replacesPages chain after cold reopen without changing design branches or HEAD.",
-        "Identical retries reuse their result; conflicting stale or concurrent rebuilds cannot silently fork; returning to older graphics remains a new replacement.",
-        "Existing upload, page mapping, pinned sources, broken-anchor and consumer behavior remain verified."
-      ]
-    },
-    {
-      "id": "GH-252",
-      "stream": "planning",
-      "status": "ready",
-      "goal": "Expose existing drawing recipe export/import in Drawing and verify an explicitly saved correction reused in a second isolated project; broader office demos remain open.",
-      "depends_on": [],
-      "issue": "https://github.com/cogco1/MonkeyHub/issues/252",
-      "branch": "codex/252-office-recipe-reuse",
-      "worktree": "D:/MONKEYHUB_DEV/workspace/worktrees/codex-252-office-recipe-reuse",
-      "base_ref": "e33fbf4656402ead75fb4adcad946c71c81a2dff",
-      "contributor": "Codex",
-      "reviewer": "Independent bounded recipe review completed; parent integration",
-      "handoff": "Independent #252 slice for parent integration. ProjectWorkspace edit only mounts RecipeTransfer in Drawing. Do not edit Publish, Board or drawing revision/replacement implementations.",
-      "modules": [
-        "studio.intent",
-        "studio.shell",
-        "hub.shell"
-      ],
-      "write_scope": [
-        "apps/archflow-studio/api/archflow_studio_api/application/decisions.py",
         "apps/archflow-studio/api/archflow_studio_api/application/authentication.py",
-        "apps/archflow-studio/api/archflow_studio_api/routes/decisions.py",
-        "apps/archflow-studio/api/archflow_studio_api/transport/decisions.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/design_history.py",
+        "apps/archflow-studio/api/archflow_studio_api/protocol.py",
+        "apps/archflow-studio/api/archflow_studio_api/routes/episodes.py",
+        "apps/archflow-studio/api/archflow_studio_api/transport/design_history.py",
+        "apps/archflow-studio/api/tests/test_design_history.py",
+        "apps/monkeyhub/web/src/i18n/messages.en.ts",
+        "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
+        "apps/monkeyhub/web/src/api/generated/",
         "apps/monkeyhub/web/workspaces/src/api/client.ts",
         "apps/monkeyhub/web/workspaces/src/api/generated/",
-        "apps/monkeyhub/api/monkeyhub_api/runtime.py",
-        "apps/monkeyhub/api/tests/test_runtime_operations.py",
-        "apps/monkeyhub/web/workspaces/src/app/ProjectWorkspace.tsx",
-        "apps/monkeyhub/web/workspaces/src/workspaces/monkeydiagram/RecipeTransfer.tsx",
-        "apps/monkeyhub/web/workspaces/src/workspaces/monkeydiagram/RecipeTransfer.css",
-        "apps/monkeyhub/web/workspaces/test/recipeTransfer.browser.mjs",
-        "apps/archflow-studio/api/tests/test_recipe_export.py",
-        "tests/test_export_drawing_recipe.py",
-        "docs/PROTOCOL.md",
-        "docs/SYSTEM_MAP.md",
-        "docs/DYNAMIC_MAP.md",
-        "governance/module_registry.json",
-        "governance/work_registry.json"
-      ],
-      "acceptance": [
-        "A saved project recipe exports at its selected revision; validated import requires an explicit human action and retains a project soft preference.",
-        "A second isolated project consumes imported values through real drawing output; version/source and retained drawing survive restart.",
-        "Invalid/stale/conflicting imports do not silently overwrite recipes or move design HEAD."
+        "apps/monkeyhub/web/workspaces/src/features/designTree/",
+        "apps/monkeyhub/web/workspaces/test/designTree.browser.mjs",
+        "archflow/project/record_kinds.py",
+        "docs/PROTOCOL.md"
+      ]
+    },
+    {
+      "id": "GH-282",
+      "stream": "planning",
+      "status": "active",
+      "goal": "Open the existing Hub display settings from the Fab empty state and verify the actual navigation.",
+      "depends_on": [],
+      "issue": "https://github.com/cogco1/MonkeyHub/issues/282",
+      "branch": "codex/merge-cloud-batch",
+      "worktree": "C:/Users/asus/.codex/worktrees/merge-cloud-batch/ARCHFLOW_V4",
+      "base_ref": "594a5467",
+      "contributor": "Codex integration",
+      "reviewer": "Independent bounded Codex review",
+      "handoff": "Cloud deliveries are integrated in this isolated checkout; required GitHub checks and focused cloud browser tests precede the normal merge. Completed source scopes are released separately from remaining issue acceptance.",
+      "write_scope": [
+        "apps/monkeyhub/web/src/ChatShell.tsx",
+        "apps/monkeyhub/web/src/FabPage.tsx",
+        "apps/monkeyhub/web/test/chatShell.browser.mjs"
+      ]
+    },
+    {
+      "id": "GH-255",
+      "stream": "planning",
+      "status": "active",
+      "goal": "Integrate repeated external-model ingestion measurements; keep real-model and first-frame acceptance open.",
+      "depends_on": [],
+      "issue": "https://github.com/cogco1/MonkeyHub/issues/255",
+      "branch": "codex/merge-cloud-batch",
+      "worktree": "C:/Users/asus/.codex/worktrees/merge-cloud-batch/ARCHFLOW_V4",
+      "base_ref": "594a5467",
+      "contributor": "Codex integration",
+      "reviewer": "Independent bounded Codex review",
+      "handoff": "Cloud deliveries are integrated in this isolated checkout; required GitHub checks and focused cloud browser tests precede the normal merge. Completed source scopes are released separately from remaining issue acceptance.",
+      "write_scope": [
+        "apps/archflow-studio/api/tests/profile_model_ingest.py",
+        "apps/archflow-studio/api/tests/test_profile_model_ingest.py",
+        "docs/EXTERNAL_MODEL_INGEST_BASELINE.md"
+      ]
+    },
+    {
+      "id": "GH-327",
+      "stream": "planning",
+      "status": "active",
+      "goal": "Retain GLB to 3DM duplicate-corner normals and black-material round-trip regression.",
+      "depends_on": [],
+      "issue": "https://github.com/cogco1/MonkeyHub/issues/327",
+      "branch": "codex/merge-cloud-batch",
+      "worktree": "C:/Users/asus/.codex/worktrees/merge-cloud-batch/ARCHFLOW_V4",
+      "base_ref": "594a5467",
+      "contributor": "Codex integration",
+      "reviewer": "Independent bounded Codex review",
+      "handoff": "Cloud deliveries are integrated in this isolated checkout; required GitHub checks and focused cloud browser tests precede the normal merge. Completed source scopes are released separately from remaining issue acceptance.",
+      "write_scope": [
+        "tests/test_model_conversion_regressions.py"
+      ]
+    },
+    {
+      "id": "GH-268",
+      "stream": "planning",
+      "status": "active",
+      "goal": "Integrate the bounded sequential OCBA rollout experiment without claiming live Harness performance gains.",
+      "depends_on": [],
+      "issue": "https://github.com/cogco1/MonkeyHub/issues/268",
+      "branch": "codex/merge-cloud-batch",
+      "worktree": "C:/Users/asus/.codex/worktrees/merge-cloud-batch/ARCHFLOW_V4",
+      "base_ref": "594a5467",
+      "contributor": "Codex integration",
+      "reviewer": "Independent bounded Codex review",
+      "handoff": "Cloud deliveries are integrated in this isolated checkout; required GitHub checks and focused cloud browser tests precede the normal merge. Completed source scopes are released separately from remaining issue acceptance.",
+      "write_scope": [
+        "labs/strategy_allocation/"
+      ]
+    },
+    {
+      "id": "GH-122",
+      "stream": "planning",
+      "status": "active",
+      "goal": "Preserve retrieval evidence identity and missing exception details in the offline benchmark.",
+      "depends_on": [],
+      "issue": "https://github.com/cogco1/MonkeyHub/issues/122",
+      "branch": "codex/merge-cloud-batch",
+      "worktree": "C:/Users/asus/.codex/worktrees/merge-cloud-batch/ARCHFLOW_V4",
+      "base_ref": "594a5467",
+      "contributor": "Codex integration",
+      "reviewer": "Independent bounded Codex review",
+      "handoff": "Cloud deliveries are integrated in this isolated checkout; required GitHub checks and focused cloud browser tests precede the normal merge. Completed source scopes are released separately from remaining issue acceptance.",
+      "write_scope": [
+        "labs/retrieval/"
       ]
     }
   ]
