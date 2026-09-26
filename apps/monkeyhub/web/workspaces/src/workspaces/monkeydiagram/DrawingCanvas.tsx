@@ -10,6 +10,7 @@ import { DocumentSurface } from "./DocumentCanvas";
 import { defaultPlanForm, drawingDocumentKey, keptOnChosenVersion, latestRevisions, liveAction, PAPER_PENS, planFormFromDocument, planRequestFields,
   RECIPE_TARGETS, recipeDecision, recipeWrites, type PaperPen, type PlanForm } from "./drawingPlan";
 import { DressingControls, DressingOverlay } from "./DrawingDressing";
+import { DrawingMenu } from "./DrawingMenu";
 import { useRecipeTransfer } from "./RecipeTransfer";
 import "./DrawingCanvas.css";
 
@@ -275,7 +276,9 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
   const recipes = useRecipeTransfer(projectId, active);
   const [documents, setDocuments] = useState<SourceDocumentDto[]>([]), [stages, setStages] = useState<DesignStageDto[]>([]);
   const [assets, setAssets] = useState<ProjectArtifactDto[]>([]), [importing, setImporting] = useState(false);
-  const importInput = useRef<HTMLInputElement>(null), anotherMenu = useRef<HTMLDetailsElement>(null);
+  const importInput = useRef<HTMLInputElement>(null), [anotherOpen, setAnotherOpen] = useState(false);
+  // The bar's menu does not stay open behind another surface.
+  useEffect(() => { if (!active) setAnotherOpen(false); }, [active]);
   const [selected, setSelected] = useState(""), [target, setTarget] = useState("");
   const [drawingName, setDrawingName] = useState("");
   const [explicitTarget, setExplicitTarget] = useState(false), [defaultTarget, setDefaultTarget] = useState("");
@@ -465,8 +468,8 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
       setAssets(current => [artifact, ...current.filter(item => item.runId !== artifact.runId || item.sha256 !== artifact.sha256)]);
       setTarget(assetKey({ runId: artifact.runId, assetSha256: artifact.sha256 }));
       setExplicitTarget(true);
-      // The file dialog closed the menu it was chosen from; it opens again on the imported model and its notes.
-      if (anotherMenu.current) anotherMenu.current.open = true;
+      // The menu it was chosen from shows the imported model and its notes, even if it was closed meanwhile.
+      setAnotherOpen(true);
     } catch (cause) { if (mounted.current && scope.current === origin) setError(asStudioApiError(cause)); }
     finally { if (mounted.current) setImporting(false); }
   }
@@ -674,34 +677,26 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
         : <span className="drawing-status drawing-quiet" role="status" data-follow={statusFollow} data-status={statusState} title={status?.detail}>{statusLine}</span>)}
       {!source && !explicitTarget && <span className="drawing-quiet">{text.live}</span>}
     </>}>
-      <select className="surface-title" aria-label={text.revision} value={selected} disabled={busy} onChange={event => { void chooseDocument(event.target.value); }}>
+      <select className="surface-title drawing-chooser" aria-label={text.revision} value={selected} disabled={busy} onChange={event => { void chooseDocument(event.target.value); }}>
         <option value="">{text.fresh}</option>{latest.map(item => <option key={drawingDocumentKey(item)} value={drawingDocumentKey(item)}>
           {documentLabel(item)}</option>)}
         {earlier.length > 0 && <optgroup label={text.earlier}>{earlier.map(item => <option key={drawingDocumentKey(item)} value={drawingDocumentKey(item)}>
           {documentLabel(item)}</option>)}</optgroup>}</select>
       <MenuSeparator />
-      {/* Its panel closes when attention leaves it, as when the file dialog opens; the file field stays mounted. */}
-      <details ref={anotherMenu} className="drawing-another" onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) event.currentTarget.open = false; }}
-        onKeyDown={event => {
-          if (event.key !== "Escape" || !event.currentTarget.open) return;
-          event.preventDefault(); event.stopPropagation(); event.currentTarget.open = false; event.currentTarget.querySelector("summary")?.focus();
-        }}>
-        <summary className="menu-command">{text.another}</summary>
-        <div className="drawing-another__panel" tabIndex={-1}>
-          <label className="drawing-field">{text.source}<select value={selectedTargetValue} disabled={busy || loading || statusLoading}
-            onChange={event => { setTarget(event.target.value); setExplicitTarget(event.target.value !== ""); setError(null); }}>
-            <option value="">{text.live}</option>
-            {stages.map(item => <option key={item.stageRef} value={item.stageRef}>{item.label} · {item.branchId}</option>)}
-            {drawableAssets.length > 0 && <optgroup label={text.imported}>{drawableAssets.map(item => item.sha256 && <option key={`${item.runId}:${item.sha256}`}
-              value={assetKey({ runId: item.runId, assetSha256: item.sha256 })}>{item.sourceImport?.sourceFileName ?? item.fileName}</option>)}</optgroup>}</select></label>
-          {chosenAsset?.sourceImport && chosenAsset !== savedArtifact && importNotice(chosenAsset)}
-          <input ref={importInput} className="visually-hidden" type="file" accept=".3dm,.skp" onChange={event => {
-            const file = event.currentTarget.files?.[0]; if (file) void importModel(file); event.currentTarget.value = "";
-          }} />
-          <button type="button" disabled={busy || importing || !active} onClick={() => importInput.current?.click()}>{importing ? text.importing : text.importModel}</button>
-          <p className="drawing-field__hint">{text.anotherHint}</p>
-        </div>
-      </details>
+      <DrawingMenu label={text.another} className="drawing-another" panelClassName="drawing-another__panel" open={anotherOpen} onOpenChange={setAnotherOpen}>
+        <label className="drawing-field">{text.source}<select value={selectedTargetValue} disabled={busy || loading || statusLoading}
+          onChange={event => { setTarget(event.target.value); setExplicitTarget(event.target.value !== ""); setError(null); }}>
+          <option value="">{text.live}</option>
+          {stages.map(item => <option key={item.stageRef} value={item.stageRef}>{item.label} · {item.branchId}</option>)}
+          {drawableAssets.length > 0 && <optgroup label={text.imported}>{drawableAssets.map(item => item.sha256 && <option key={`${item.runId}:${item.sha256}`}
+            value={assetKey({ runId: item.runId, assetSha256: item.sha256 })}>{item.sourceImport?.sourceFileName ?? item.fileName}</option>)}</optgroup>}</select></label>
+        {chosenAsset?.sourceImport && chosenAsset !== savedArtifact && importNotice(chosenAsset)}
+        <input ref={importInput} className="visually-hidden" type="file" accept=".3dm,.skp" onChange={event => {
+          const file = event.currentTarget.files?.[0]; if (file) void importModel(file); event.currentTarget.value = "";
+        }} />
+        <button type="button" disabled={busy || importing || !active} onClick={() => importInput.current?.click()}>{importing ? text.importing : text.importModel}</button>
+        <p className="drawing-field__hint">{text.anotherHint}</p>
+      </DrawingMenu>
       {source && !perspectiveOpen && <MenuCommand title={text.downloadHint} disabled={busy || dirty || !active || !vector} onClick={downloadSvg}>{text.download}</MenuCommand>}
       {recipes.menu}
       <MenuCommand disabled={busy || loading} onClick={() => setRefresh(value => value + 1)}>{text.refresh}</MenuCommand>

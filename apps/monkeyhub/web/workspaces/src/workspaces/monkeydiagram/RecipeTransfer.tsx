@@ -3,6 +3,7 @@ import { useStudio } from "../../api/ProjectRuntimeContext";
 import { asStudioApiError } from "../../api/client";
 import type { DecisionDto, RecipeGraphicsDto, RecipeInspectDto } from "../../api/generated";
 import { usePreferences } from "../../features/settings/preferences";
+import { DrawingMenu } from "./DrawingMenu";
 import "./RecipeTransfer.css";
 
 const words = {
@@ -99,31 +100,22 @@ export function useRecipeTransfer(projectId: string, active = true): { menu: Rea
     finally { if (token === generation.current) setBusy(false); }
   }
 
-  // The panel closes when attention leaves it, as when the file dialog opens; its file field stays mounted, so the
-  // chosen file still arrives.
-  const menu = <details className="recipe-transfer" open={open} onToggle={event => {
-    const expanded = event.currentTarget.open; setOpen(expanded);
+  const menu = <DrawingMenu label={text.title} className="recipe-transfer" panelClassName="recipe-transfer__body" open={open} onOpenChange={expanded => {
+    setOpen(expanded);
     if (expanded && !open && active && !busy) void refresh();
-  }} onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false); }}
-    onKeyDown={event => {
-      if (event.key !== "Escape" || !open) return;
-      event.preventDefault(); event.stopPropagation(); setOpen(false); event.currentTarget.querySelector("summary")?.focus();
-    }}>
-    <summary className="menu-command">{text.title}</summary>
-    <div className="recipe-transfer__body" tabIndex={-1}>
-      <p>{text.hint}</p>
-      <button type="button" disabled={busy || !active} onClick={() => void refresh()}>{text.refresh}</button>
-      {recipes.length === 0 && !busy && <p>{text.empty}</p>}
-      <ul>{recipes.map(row => <li key={row.decisionId}>
-        <span>{row.typedBinding?.kind === "recipe" && values(row.typedBinding.graphics)} · {row.scope.extent === "stage" ? text.stage : text.project}</span>
-        <button type="button" disabled={busy || !active} onClick={() => void download(row)}>{text.export}</button>
-        {row.source.kind === "recipe-export" && <details><summary>{text.version}</summary><p>{text.fileVersion}: {row.source.exportSha256}</p></details>}
-      </li>)}</ul>
-      <label className="recipe-transfer__file">{text.file}<input type="file" accept=".json,application/json" disabled={busy || !active} onChange={event => {
-        const file = event.target.files?.[0]; event.target.value = ""; if (file) void inspect(file);
-      }} /></label>
-    </div>
-  </details>;
+  }}>
+    <p>{text.hint}</p>
+    <button type="button" disabled={busy || !active} onClick={() => void refresh()}>{text.refresh}</button>
+    {recipes.length === 0 && !busy && <p>{text.empty}</p>}
+    <ul>{recipes.map(row => <li key={row.decisionId}>
+      <span>{row.typedBinding?.kind === "recipe" && values(row.typedBinding.graphics)} · {row.scope.extent === "stage" ? text.stage : text.project}</span>
+      <button type="button" disabled={busy || !active} onClick={() => void download(row)}>{text.export}</button>
+      {row.source.kind === "recipe-export" && <details><summary>{text.version}</summary><p>{text.fileVersion}: {row.source.exportSha256}</p></details>}
+    </li>)}</ul>
+    <label className="recipe-transfer__file">{text.file}<input type="file" accept=".json,application/json" disabled={busy || !active} onChange={event => {
+      const file = event.target.files?.[0]; event.target.value = ""; if (file) void inspect(file);
+    }} /></label>
+  </DrawingMenu>;
   const row = (pending || error) && <>
     {pending && <div className="recipe-transfer__preview">
       <div><strong>{values(pending.preview.graphics)}</strong><p>{text.preview}</p>
