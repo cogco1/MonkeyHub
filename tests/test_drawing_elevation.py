@@ -542,6 +542,30 @@ class CutPlanTests(unittest.TestCase):
         self.assertFalse(self.repository.layout.run("refused-plan").manifest.exists())
         self.assertEqual(self.repository.read_head(), self.head)
 
+    def test_a_revision_records_the_kind_of_asker_its_request_named(self):
+        first = freeze_cut_plan(self.repository, source=self.source, recipe=self.recipe,
+                                drawing_run_id="plan-run", dimensions=(self.dimension,))
+        self.assertNotIn("sourceKind", first.receipt, "nothing is written that was not given")
+        self.assertIsNone(first.source_kind)
+        agent = freeze_cut_plan(self.repository, source=self.source, recipe=self.recipe, drawing_run_id="plan-agent",
+                                dimensions=(self.dimension,), previous_revision_ref=first.receipt_ref.uri,
+                                source_kind="agent")
+        self.assertEqual(agent.receipt["sourceKind"], "agent")
+        self.assertEqual(agent.receipt["view"], self.recipe, "the kind of asker belongs to the revision, not the recipe")
+        self.assertEqual((agent.svg, agent.png), (first.svg, first.png), "it changes the receipt, not the drawing")
+        cold = read_model_axis_elevation(FilesystemProjectRepository.open(self.root), agent.receipt_ref)
+        self.assertEqual(cold.source_kind, "agent")
+        # Like a reason, a blank kind says nothing and is not written.
+        blank = freeze_cut_plan(self.repository, source=self.source, recipe=self.recipe, drawing_run_id="plan-blank",
+                                dimensions=(self.dimension,), source_kind=" ")
+        self.assertNotIn("sourceKind", blank.receipt)
+        for kind in (7, True, "agent \ud800"):
+            with self.subTest(kind=kind), self.assertRaises(DrawingElevationError):
+                freeze_cut_plan(self.repository, source=self.source, recipe=self.recipe, drawing_run_id="refused-plan",
+                                dimensions=(self.dimension,), source_kind=kind)
+        self.assertFalse(self.repository.layout.run("refused-plan").manifest.exists())
+        self.assertEqual(self.repository.read_head(), self.head)
+
     def test_the_plan_names_components_and_materials_and_draws_their_hatch_poche_and_fade(self):
         from PIL import Image
 

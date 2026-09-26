@@ -649,13 +649,18 @@ change; a document without `drawingId` is an upload.
 
 A cut-plan request may say why it is asked for: `reason`, 1–200 characters in the
 asker's words (an agent passes the correction it was given; a direct edit omits
-it). The request boundary records who asked, as for decisions: `actorId`,
-`authenticated` and `origin`, where `hub` means a runtime the Hub manages and
-`studio` one it does not. Both are retained in the revision's drawing receipt,
+it). It may also say who it comes from: `sourceKind` is `human` for a person's own
+edit (the Drawing canvas sends it) or `agent` for an agent's reading of what a
+person asked; omitted is unknown. The Hub's `studio_request` marks the Agent's plan
+requests `agent` unless the request names a kind itself. The request boundary
+records who asked, as for decisions: `actorId`, `authenticated` and `origin`, where
+`hub` means a runtime the Hub manages and `studio` one it does not; a Hub-managed
+runtime serves both its window and its Agent, which is why `sourceKind` is asked for.
+Who asked, `reason` and `sourceKind` are retained in the revision's drawing receipt,
 never in `viewRecipe`, so they neither make nor distinguish revisions: an identical
-request returns the retained revision as it was asked for. Every SourceDocument
-with a `revisionRef` reads `previousRevisionRef`, `attribution` and `reason` from
-that receipt, read-only; a revision retained before they were recorded reads null.
+request returns the retained revision as it was asked for. Every SourceDocument with a `revisionRef`
+reads `previousRevisionRef`, `attribution`, `reason` and `sourceKind` from that
+receipt, read-only; a revision retained before they were recorded reads null.
 
 `GET /api/drawings/plans/vector?runId=…&assetSha256=…&revisionRef=…` reads the
 verified retained SVG, built-in vector symbols and exact source anchor choices.
@@ -688,6 +693,42 @@ a requested one: an identical request reuses the revision it made, and a drawing
 before the recipe keeps its revision and bytes. A revoked recipe no longer applies; a
 `hard` one is read first but not enforced, so an explicit value is still drawn.
 
+`GET /api/drawings/corrections?projectId=…[&drawingId=…]` reads what was corrected
+between a cut plan's revisions and writes nothing: every answer is derived again from
+the retained revisions and the active recipe decisions, which stay the one place a
+correction can become memory. `pairs` holds each revision of `drawingId` beside the
+revision its receipt names as previous, in the order drawn, and is empty without
+`drawingId`: `drawingId`, `beforeRevisionRef`, `afterRevisionRef`, `cause` (why the
+page was replaced, as above: `representation` or `source`), the after revision's
+`origin`, `sourceKind` and `reason`, `diff` and `class`. `diff` maps a dotted
+`viewRecipe` path to `[old, new]`, null where absent; `hiddenObjectIds.<id>` is
+`[was hidden, is hidden]`, `dimensions.<id>` and `dressing.<id>` are the whole object
+where it was added or removed and otherwise one entry per changed field, and
+`graphics.hatch.byMaterial.<material>` is that material's whole rule. `class` is the
+first that holds: `compiler_defect`, a source rebuild, which corrects nothing, or a
+revision that only hid objects the cleanup flagged (the cleanup report counts lines
+per rule and names no object, so no hide is one yet); `semantic_rule`, a material's
+hatch or poché rule; `recipe`, a pen, the hatch spacing, the fade beyond the cut or
+the number of entourage objects; and `local_override`, anything else: an object hidden
+or shown, entourage moved, flipped, scaled or swapped one for one, the crop, scale or
+cut, a dimension.
+
+`suggestions` always reads the whole project. A pair counts only when it is a
+representation change of class `recipe` whose `sourceKind` is not `agent`; each of
+`cutLineMm`, `visibleLineMm` and `hatchSpacingMm` it changed joins the group of that
+key and its direction, `increase` or `decrease` (2→3 and 2→4 are one direction),
+unless an active recipe already gives that drawing the key. A group spanning at least
+two distinct drawings is one suggestion: `suggestionId` (derived from `field`,
+`direction`, `value` and `drawingIds`, so the same offer keeps its id), `field`,
+`direction`, `value` (the paper value of the group's most recent after revision),
+`drawingIds`, `evidence` (each counted pair's `drawingId`, `beforeRevisionRef` and
+`afterRevisionRef`) and `page` (`runId`, `assetSha256`, `revisionRef` and `pageIndex`
+0 of that most recent revision: the exact document source a recipe decision cites),
+ordered by field and direction. A suggestion is only an offer. A person saves it with
+`POST /api/decisions`, a `require` drawing decision with a recipe `typedBinding` citing
+`page`, after which the recipe gives the key and it is no longer offered. Another
+project is refused with `PROJECT_MISMATCH`.
+
 A projected vector (`polyline` or poché `polygon`) names its physical object in
 `data-object` and, for a model compiled from design state, its `data-component` and
 `data-material` (the CAD program's `archflow:component` / `archflow:material`); an
@@ -697,8 +738,8 @@ in `g#section-hatch`. Before the SVG, a deterministic cleanup at 0.05 mm on the 
 drops strokes shorter than that, projected edges lying on the cut and hidden lines under
 visible ones or inside the cut, and joins an object's collinear pieces. The drawing
 receipt keeps its per-rule counts under `cleanup` (never in the recipe) and, when the
-application gives them, the revision's `attribution` and `reason`; receipts retained
-earlier have none.
+application gives them, the revision's `attribution`, `reason` and `sourceKind`;
+receipts retained earlier have none.
 
 `POST /api/drawings/plans/status` and `GET /api/drawings/plans/vector` also return
 `cleanup`: the deterministic line cleanup the projection owner retained with that

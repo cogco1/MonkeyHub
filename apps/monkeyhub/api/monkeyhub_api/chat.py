@@ -3220,6 +3220,12 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
             raise HubFailure(409, "CHAT_PROJECT_MISMATCH", "A tool cannot select another project.")
         if parsed.path in {"/api/proposals", "/api/board/export"}:
             body["projectId"] = session["projectId"]
+        if method == "POST" and parsed.path == "/api/drawings/plans" and all(
+                body.get(key) is None for key in ("sourceKind", "source_kind")):
+            # A cut plan the Agent asks for is its reading of what the user
+            # said, so its revision says so (05 §5). A kind it states is kept.
+            body.pop("source_kind", None)
+            body["sourceKind"] = "agent"
     if method == "POST" and parsed.path == "/api/exports" and isinstance(body, dict):
         attachment_id = body.pop("attachmentId", None)
         if attachment_id is not None:
