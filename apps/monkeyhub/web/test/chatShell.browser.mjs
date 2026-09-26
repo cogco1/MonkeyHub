@@ -143,6 +143,8 @@ const archiveSummaryFor = (projectId, projectDir, archivePath) => ({
   archivePath, archiveBytes: 5242880, archiveSha256: "c".repeat(64), verified: true, projectDir,
 });
 const apps = ["monkeyarch", "monkeyboard", "monkeyrender", "monkeyfab", "monkeymonitor"].map((appId) => ({ appId, title: appId, serviceId: appId === "monkeyfab" ? "hub" : appId === "monkeymonitor" ? "monitor" : "studio", state: "running", processId: 1234, available: true, url: `${origin}/tool?app=${appId}` }));
+// Fab uses the built Hub page so its settings button exercises the real iframe bridge.
+Object.assign(apps.find((app) => app.appId === "monkeyfab"), { url: `${origin}/?view=fab`, apiUrl: `${origin}/` });
 // Exercise the actual Hub Monitor page, including its navigation and effects.
 // A static /tool fixture concealed Monitor's former top-window redirect loop.
 Object.assign(apps.find((app) => app.appId === "monkeymonitor"), { url: `${origin}/?view=monitor`, apiUrl: `${origin}/` });
@@ -254,6 +256,10 @@ await page.route((url) => url.pathname.startsWith("/api/"), async (route) => {
     return json(preferences);
   }
   if (url.pathname === "/api/apps") return json(url.searchParams.has("projectDir") ? appsFor(url.searchParams.get("projectDir")) : apps);
+  if (method === "GET" && url.pathname === "/api/fab/profiles") return json({ h2s: {
+    key: "h2s", label: "Fixture H2S", nominal_volume_mm: [300, 300, 300], usable_origin_mm: [0, 0, 0],
+    usable_volume_mm: [290, 290, 290], notes: "Synthetic browser fixture", sources: [],
+  } });
   if (url.pathname === "/api/runtime") { runtimeReads++; if (runtimeReadGate) await runtimeReadGate; return json(runtimeSnapshot()); }
   if (url.pathname === "/api/runtime/projects/open") {
     const body = data(), project = projects.find((item) => item.projectDir === body.projectDir && item.projectId === body.projectId);
@@ -900,14 +906,26 @@ try {
   await studioReady();
   assert.equal(writes.filter(([, pathname, body]) => pathname === "/api/project/modeling" && body.projectId === "harbour-study").length, 0);
   await page.getByRole("button", { name: "Fabrication", exact: true }).click();
-  await page.waitForFunction(() => document.querySelector("iframe:not([hidden])")?.src.includes("app=monkeyfab"));
+  await page.waitForFunction(() => document.querySelector("iframe:not([hidden])")?.src.includes("view=fab"));
+  const fabFrame = page.frameLocator('iframe:not([hidden])');
+  await fabFrame.locator('#fab-printer option[value="h2s"]').waitFor({ state: "attached" });
+  assert.equal(await fabFrame.locator('#fab-printer option[value="h2s"]').innerText(), "Fixture H2S");
+  assert.equal(await fabFrame.locator("#fab-source").isEnabled(), true, "the real Fab page loaded its printer profiles from the API fixture");
+  await fabFrame.getByRole("button", { name: "Display settings", exact: true }).click();
+  const hubSettings = page.getByRole("dialog").filter({ hasText: "Hub settings (global)" });
+  await hubSettings.waitFor();
+  assert.equal(await hubSettings.getByRole("tab", { name: "Display", exact: true }).getAttribute("aria-selected"), "true",
+    "Fab opens the existing Hub Display settings page");
+  assert.equal(await fabFrame.getByRole("heading", { name: "MonkeyFab", exact: true }).count(), 1,
+    "opening settings leaves the hosted Fab page mounted instead of loading a second Hub in its iframe");
+  await hubSettings.getByRole("button", { name: "Close", exact: true }).click();
   assert.ok(!writes.some(([, pathname]) => pathname === "/api/project/modeling"),
     "new-project creation and independent tools leave modeling inputs alone");
   await page.getByRole("button", { name: "Project A", exact: true }).first().click();
   const beforeIndependent = writes.length;
   const beforeIndependentProject = settings.projectDir;
   await page.getByRole("button", { name: "Fabrication", exact: true }).click();
-  await page.waitForFunction(() => document.querySelector("iframe:not([hidden])")?.src.includes("app=monkeyfab"));
+  await page.waitForFunction(() => document.querySelector("iframe:not([hidden])")?.src.includes("view=fab"));
   const beforeMonitorNavigation = documentLoads;
   const composer = page.getByRole("textbox", { name: "What would you like to do in this project?" });
   await composer.fill("Keep this conversation while viewing usage");
@@ -1387,7 +1405,7 @@ try {
   await entry("Drawings").click();
   await waitWorkspace("drawing");
   await entry("Fabrication").click();
-  await page.waitForFunction(() => document.querySelector("iframe:not([hidden])")?.src.includes("app=monkeyfab"));
+  await page.waitForFunction(() => document.querySelector("iframe:not([hidden])")?.src.includes("view=fab"));
   assert.equal(await entry("Fabrication").getAttribute("aria-description"), "Close Fabrication and return to Board");
   await entry("Fabrication").click();
   await waitWorkspace("board");
@@ -2202,19 +2220,10 @@ try {
   await page.getByRole("button", { name: "Modeling", exact: true }).click();
   await waitWorkspace();
   await page.getByRole("button", { name: "Fabrication", exact: true }).click();
-  await page.waitForFunction(() => document.querySelector("iframe:not([hidden])")?.src.includes("app=monkeyfab"));
-  const fabFrame = page.frameLocator('iframe:not([hidden])');
-  await fabFrame.getByRole("button", { name: "Display settings", exact: true }).click();
-  const hubSettings = page.getByRole("dialog").filter({ hasText: "Hub settings (global)" });
-  await hubSettings.waitFor();
-  assert.equal(await hubSettings.getByRole("tab", { name: "Display", exact: true }).getAttribute("aria-selected"), "true",
-    "Fab opens the existing Hub Display settings page");
-  assert.equal(await fabFrame.getByRole("heading", { name: "MonkeyFab", exact: true }).count(), 1,
-    "opening settings leaves the hosted Fab page mounted instead of loading a second Hub in its iframe");
-  await hubSettings.getByRole("button", { name: "Close", exact: true }).click();
+  await page.waitForFunction(() => document.querySelector("iframe:not([hidden])")?.src.includes("view=fab"));
   assert.equal(new URL(page.url()).searchParams.has("runtimeId"), false);
   await page.reload();
-  await page.waitForFunction(() => document.querySelector("iframe:not([hidden])")?.src.includes("app=monkeyfab"));
+  await page.waitForFunction(() => document.querySelector("iframe:not([hidden])")?.src.includes("view=fab"));
   assert.equal(await page.locator('.chat-project[data-selected="true"] .chat-project__name').innerText(), "Project B");
   await page.getByRole("button", { name: "Usage", exact: true }).click();
   await waitMonitor();

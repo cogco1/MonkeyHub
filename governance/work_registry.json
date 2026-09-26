@@ -155,21 +155,20 @@
       ]
     },
     {
-      "id": "GH-289",
+      "id": "GH-282",
       "stream": "planning",
       "status": "active",
-      "goal": "Resolve integration test ownership and retained-preview fixture compatibility.",
+      "goal": "Exercise the existing global Display settings from the real hosted Fab page.",
       "depends_on": [],
-      "issue": "https://github.com/cogco1/MonkeyHub/issues/289",
+      "issue": "https://github.com/cogco1/MonkeyHub/issues/282",
       "branch": "codex/merge-cloud-batch",
       "worktree": "C:/Users/asus/.codex/worktrees/merge-cloud-batch/ARCHFLOW_V4",
-      "base_ref": "30409e8ecd63050047e18dde69a82c974555920f",
+      "base_ref": "675ccbd4",
       "contributor": "Codex integration",
       "reviewer": "Independent bounded Codex review",
-      "handoff": "Targeted cloud acceptance passed with the preview fixture correction; required full CI verifies the explicit no-canonical-version declaration.",
+      "handoff": "Keep existing pixel assertions unchanged; validate the real Fab page and settings bridge in cloud.",
       "write_scope": [
-        "tests/test_version_refs.py",
-        "apps/monkeyhub/web/workspaces/test/designTree.browser.mjs"
+        "apps/monkeyhub/web/test/chatShell.browser.mjs"
       ]
     }
   ]
