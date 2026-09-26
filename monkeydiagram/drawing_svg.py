@@ -17,9 +17,10 @@ and, when the caller knows them, its ``data-component`` and
 
 Cleanup.  ``clean_drawing`` sits beside ``crop_polylines`` between the
 projection and the SVG: it drops what a pen should not draw (strokes shorter
-than the paper tolerance, projected edges lying on the cut, hidden lines
-under visible ones or inside the cut) and joins an object's collinear
-pieces, and it reports what it did by rule.  It never moves a vertex.
+than the paper tolerance, projected edges lying on the cut, a cut line lying
+on another object's, hidden lines under visible ones or inside the cut) and
+joins an object's collinear pieces, and it reports by rule what it did and to
+which objects.  It never moves a vertex.
 
 Byte determinism.  The same polylines, crop and options give the same SVG
 bytes: coordinates are written with fixed decimals, elements are sorted by
@@ -141,6 +142,8 @@ _COLLINEAR_RADIANS = math.radians(0.5)
 #: Numeric slack when a line's parameter range is checked for full cover.
 _COVER_SLACK = 1e-9
 _CLEANED_KINDS = ("visible", "hidden", "section")
+#: The cleanup rules in the order they run.
+_RULES = ("micro", "collinear", "cut_precedence", "shared_cut", "duplicate", "hidden_under_cut")
 
 
 @dataclass(frozen=True, slots=True)
@@ -149,9 +152,11 @@ class CleanupReport:
 
     ``tolerance`` is in drawing units.  ``input_lines`` counts the distinct
     lines given and ``output_lines`` those returned; each other line was
-    dropped by ``micro``, ``cut_precedence``, ``duplicate`` or
-    ``hidden_under_cut`` or joined to a neighbour by ``collinear``, so the
-    five counts add up to ``input_lines - output_lines``.
+    dropped by ``micro``, ``cut_precedence``, ``shared_cut``, ``duplicate``
+    or ``hidden_under_cut`` or joined to a neighbour by ``collinear``, so the
+    six counts add up to ``input_lines - output_lines``.  ``objects`` names,
+    per rule that touched any, the sorted ids of the objects whose lines it
+    dropped or joined, in rule order; a rule that touched none is absent.
     """
 
     tolerance: float
@@ -162,12 +167,16 @@ class CleanupReport:
     cut_precedence: int
     duplicate: int
     hidden_under_cut: int
+    shared_cut: int = 0
+    objects: tuple[tuple[str, tuple[str, ...]], ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
+        touched = dict(self.objects)
         return {
             "tolerance": self.tolerance, "input_lines": self.input_lines, "output_lines": self.output_lines,
             "micro": self.micro, "collinear": self.collinear, "cut_precedence": self.cut_precedence,
-            "duplicate": self.duplicate, "hidden_under_cut": self.hidden_under_cut,
+            "duplicate": self.duplicate, "hidden_under_cut": self.hidden_under_cut, "shared_cut": self.shared_cut,
+            "objects": {rule: list(touched.get(rule, ())) for rule in _RULES},
         }
 
 
@@ -235,7 +244,7 @@ class _EndIndex:
 
 
 def _micro(lines, tolerance: float):
-    """The lines of every stroke at least ``tolerance`` long, and how many lines the shorter strokes held.
+    """The lines of every stroke at least ``tolerance`` long, and the object of each line the shorter strokes held.
 
     A stroke is an object's lines of one kind that meet end to end within the
     tolerance, taken together: a curve the solve returns as many short edges
@@ -244,7 +253,7 @@ def _micro(lines, tolerance: float):
     """
 
     kept: list[OcctDrawingPolyline] = []
-    dropped = 0
+    dropped: list[str] = []
     groups: dict[tuple[str, str], list[OcctDrawingPolyline]] = {}
     for line in lines:
         groups.setdefault((line.object_id, line.kind), []).append(line)
@@ -274,12 +283,12 @@ def _micro(lines, tolerance: float):
             if own[number] > 0.0 and lengths[root(number)] >= tolerance:
                 kept.append(line)
             else:
-                dropped += 1
+                dropped.append(line.object_id)
     return kept, dropped
 
 
 def _join_collinear(lines, tolerance: float):
-    """Join each object's pieces that continue one another; returns the lines and the number of joins.
+    """Join each object's pieces that continue one another; returns the lines and the object of each join.
 
     Two lines of one object and kind are joined where an end of each lies
     within ``tolerance`` of the other and they leave that joint in opposite
@@ -295,7 +304,7 @@ def _join_collinear(lines, tolerance: float):
     for line in lines:
         groups.setdefault((line.object_id, line.kind), []).append(line)
     result: list[OcctDrawingPolyline] = []
-    joins = 0
+    joins: list[str] = []
     for (object_id, kind), members in groups.items():
         chains = [list(line.points) for line in members]
         changed = [False] * len(chains)
@@ -347,7 +356,7 @@ def _join_collinear(lines, tolerance: float):
                         chains[number] = joined
                         alive[other] = False
                         changed[number] = extended = True
-                        joins += 1
+                        joins.append(object_id)
                         index.add(number, joined)
         for number, chain in enumerate(chains):
             if alive[number]:
@@ -357,7 +366,12 @@ def _join_collinear(lines, tolerance: float):
                 result.append(OcctDrawingPolyline(object_id, kind, points))
     distinct = sorted(set(result), key=lambda line: (line.object_id, line.kind, line.points))
     # Two chains that came out identical are one line: the join that made the second absorbed it.
-    return distinct, joins + len(result) - len(distinct)
+    seen: set[OcctDrawingPolyline] = set()
+    for line in result:
+        if line in seen:
+            joins.append(line.object_id)
+        seen.add(line)
+    return distinct, joins
 
 
 def _slab(start: float, step: float, low: float, high: float):
@@ -421,7 +435,12 @@ class _SegmentCover:
 
     def __init__(self, lines, tolerance: float) -> None:
         self.tolerance = tolerance
-        self.segments = [(a, b) for line in lines for a, b in zip(line.points, line.points[1:]) if a != b]
+        self.segments, self.owners = [], []
+        for owner, line in enumerate(lines):
+            for a, b in zip(line.points, line.points[1:]):
+                if a != b:
+                    self.segments.append((a, b))
+                    self.owners.append(owner)
         xs = [p[0] for segment in self.segments for p in segment]
         ys = [p[1] for segment in self.segments for p in segment]
         extent = max(max(xs) - min(xs), max(ys) - min(ys)) if xs else 0.0
@@ -453,7 +472,9 @@ class _SegmentCover:
             found.update(self.cells.get(key, ()))
         return sorted(found)
 
-    def covers(self, points) -> bool:
+    def covers(self, points, by=None) -> bool:
+        """Whether ``points`` lie within the tolerance of the segments all along; ``by`` admits lines by their index."""
+
         if not self.segments:
             return False
         for a, b in zip(points, points[1:]):
@@ -461,6 +482,8 @@ class _SegmentCover:
                 continue
             intervals = []
             for number in self._candidates(a, b):
+                if by is not None and not by(self.owners[number]):
+                    continue
                 interval = _capsule_interval(a, b, *self.segments[number], self.tolerance)
                 if interval is not None:
                     intervals.append(interval)
@@ -541,6 +564,35 @@ class _RegionCover:
         return travelled - reach <= self.tolerance
 
 
+def _shared_cut(sections, tolerance: float):
+    """The section lines left when a cut line lying on another object's is drawn once, and the object of each dropped.
+
+    Where two solids meet, each cuts the face between them: a section line
+    lying within ``tolerance`` of other objects' section lines all along is
+    shared.  A line no other object covers stays.  The shared lines are taken
+    in the order given, (object id, points): each stays unless the other
+    objects' section lines already staying cover it all along, those not
+    shared and the shared ones taken before it that stayed.  So of two lines
+    drawing one edge the line of the first object id stays, a line lying on a
+    longer line of another object goes whatever its id, and every line that
+    goes lies on lines that stay, so each poché boundary stays inked.  A line
+    never goes for its own object's lines, and no vertex moves.
+    """
+
+    cover = _SegmentCover(sections, tolerance)
+    staying = [not cover.covers(line.points, by=lambda other, own=line.object_id: sections[other].object_id != own)
+               for line in sections]
+    shared = [number for number, stays in enumerate(staying) if not stays]
+    dropped: list[str] = []
+    for number in shared:
+        own = sections[number].object_id
+        if cover.covers(sections[number].points, by=lambda other: staying[other] and sections[other].object_id != own):
+            dropped.append(own)
+        else:
+            staying[number] = True
+    return [line for line, stays in zip(sections, staying) if stays], dropped
+
+
 def clean_drawing(
     lines: Sequence[OcctDrawingPolyline], regions: Sequence[OcctDrawingRegion], *, tolerance: float,
 ) -> tuple[tuple[OcctDrawingPolyline, ...], CleanupReport]:
@@ -561,18 +613,22 @@ def clean_drawing(
     3. ``cut_precedence``: a visible or hidden line lying within the
        tolerance of section lines all along is dropped, so the cut edge is
        drawn once, by the section;
-    4. ``duplicate``: a hidden line lying within the tolerance of visible
+    4. ``shared_cut``: a section line lying within the tolerance of other
+       objects' section lines all along is drawn once: it is dropped where
+       other objects' staying section lines cover it, and of lines covering
+       one another the first object id's stays (``_shared_cut``);
+    5. ``duplicate``: a hidden line lying within the tolerance of visible
        lines all along is dropped; the visible line stays;
-    5. ``hidden_under_cut``: a hidden line lying inside the section regions
+    6. ``hidden_under_cut``: a hidden line lying inside the section regions
        (even-odd) all along, but for a tolerance at either end, is dropped.
        Pass hidden lines only when they will be drawn.
 
     A line is kept or dropped whole: a partly covered line stays.  When a
     rule leaves a stroke standing alone, the rules run again, in the same
     order, until a pass changes nothing, so cleaning the result again
-    changes nothing; the counts add up over the passes.  The lines come
-    back sorted as ``crop_polylines`` sorts them, with the report.  What the
-    hidden-line solve itself misjudges is outside these rules.
+    changes nothing; the counts and object ids add up over the passes.  The
+    lines come back sorted as ``crop_polylines`` sorts them, with the report.
+    What the hidden-line solve itself misjudges is outside these rules.
     """
 
     if (isinstance(tolerance, bool) or not isinstance(tolerance, (int, float)) or not math.isfinite(tolerance)
@@ -591,27 +647,42 @@ def clean_drawing(
     for region in regions:
         _closed_loops(region)
     order = lambda line: (line.object_id, line.kind, line.points)  # noqa: E731
-    counts = dict.fromkeys(("micro", "collinear", "cut_precedence", "duplicate", "hidden_under_cut"), 0)
+    touched: dict[str, list[str]] = {rule: [] for rule in _RULES}
+
+    def split(rule, lines, keep):
+        """The lines ``keep`` accepts; the object of each other line is touched by ``rule``."""
+
+        kept = []
+        for line in lines:
+            if keep(line):
+                kept.append(line)
+            else:
+                touched[rule].append(line.object_id)
+        return kept
+
     under = _RegionCover(regions, tolerance)
     kept = sorted(distinct, key=order)
     while True:
         before = kept
         remaining, dropped = _micro(kept, tolerance)
-        counts["micro"] += dropped
+        touched["micro"] += dropped
         remaining, joined = _join_collinear(remaining, tolerance)
-        counts["collinear"] += joined
+        touched["collinear"] += joined
         cut = _SegmentCover([line for line in remaining if line.kind == "section"], tolerance)
-        kept = [line for line in remaining if line.kind == "section" or not cut.covers(line.points)]
-        counts["cut_precedence"] += len(remaining) - len(kept)
+        kept = split("cut_precedence", remaining, lambda line: line.kind == "section" or not cut.covers(line.points))
+        sections, dropped = _shared_cut([line for line in kept if line.kind == "section"], tolerance)
+        touched["shared_cut"] += dropped
+        kept = [line for line in kept if line.kind != "section"] + sections
         seen = _SegmentCover([line for line in kept if line.kind == "visible"], tolerance)
-        remaining = [line for line in kept if line.kind != "hidden" or not seen.covers(line.points)]
-        counts["duplicate"] += len(kept) - len(remaining)
-        kept = [line for line in remaining if line.kind != "hidden" or not under.covers(line.points)]
-        counts["hidden_under_cut"] += len(remaining) - len(kept)
+        remaining = split("duplicate", kept, lambda line: line.kind != "hidden" or not seen.covers(line.points))
+        kept = split("hidden_under_cut", remaining, lambda line: line.kind != "hidden" or not under.covers(line.points))
         kept = sorted(kept, key=order)
         if kept == before:
             break
-    return tuple(kept), CleanupReport(tolerance=tolerance, input_lines=len(distinct), output_lines=len(kept), **counts)
+    counts = {rule: len(objects) for rule, objects in touched.items()}
+    objects = tuple((rule, tuple(sorted(set(touched[rule])))) for rule in _RULES if touched[rule])
+    return tuple(kept), CleanupReport(tolerance=tolerance, input_lines=len(distinct), output_lines=len(kept),
+                                      objects=objects, **counts)
 
 
 def _number(value: float) -> str:
