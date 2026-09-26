@@ -6,7 +6,8 @@
  * never where: far shows the trunk, Stage milestones and counts; middle adds
  * option cards with their letter and short name; close adds a one-line
  * summary and a status. Author, time and runs belong to the side card.
- * Colours are the light scene's; Excalidraw inverts the canvas in dark theme.
+ * Colours come from a palette the canvas reads from the Hub's tokens (#337), so
+ * the tree follows the theme and interface style and is never inverted.
  * Every hit target is produced with the element it stands for, because view
  * mode leaves clicks to the host (`useScenePointer` + `topmostAt`).
  */
@@ -39,7 +40,40 @@ export interface SceneOptions {
   readonly selected: string | null;
   readonly fontFamily: number;
   readonly words: SceneWords;
+  /** The light theme's colours when left out. */
+  readonly palette?: TreePalette;
 }
+
+/** The scene's colours, each opaque: a card has to hide the lines under it. */
+export interface TreePalette {
+  /** The canvas behind everything. */
+  readonly ground: string;
+  readonly ink: string;
+  readonly ink2: string;
+  readonly faint: string;
+  readonly accent: string;
+  /** Words on an accent fill. */
+  readonly onAccent: string;
+  readonly accentSoft: string;
+  /** A card's face, and words on an ink fill. */
+  readonly paper: string;
+  /** The inset behind an option's letter. */
+  readonly tile: string;
+  /** Option lines and option card edges. */
+  readonly twig: string;
+  /** Branches left behind, and what cannot be done now. */
+  readonly muted: string;
+  /** Work still running. */
+  readonly running: string;
+  /** Review checks still open. */
+  readonly warn: string;
+}
+
+/** The light theme's colours, for a test or a canvas that cannot read the Hub's tokens. */
+export const LIGHT_TREE_PALETTE: TreePalette = {
+  ground: "#f4f5f0", ink: "#29352d", ink2: "#41414a", faint: "#6b716a", accent: "#356b9e", onAccent: "#ffffff", accentSoft: "#e8eff6",
+  paper: "#ffffff", tile: "#eceee8", twig: "#7b837a", muted: "#9ea39c", running: "#8d948c", warn: "#a86a12",
+};
 
 export interface SceneHit extends SceneBox {
   readonly node: string;
@@ -60,8 +94,6 @@ export interface TreeElementData {
   readonly level: ZoomLevel;
 }
 
-const INK = "#29352d", INK_2 = "#41414a", ACCENT = "#356b9e", ACCENT_SOFT = "#e8eff6", TWIG = "#7b837a";
-const MUTED = "#9ea39c", PAPER = "#ffffff", TILE = "#eceee8", FAINT = "#6b716a", RUNNING = "#8d948c", WHITE = "#ffffff", WARN = "#a86a12";
 const LINE_HEIGHT = 1.2;
 
 const WIDE = /[ᄀ-ᅟ⺀-꓏가-힣豈-﫿︰-﹏＀-｠￠-￦]/u;
@@ -114,6 +146,8 @@ type Style = Partial<{ strokeColor: string; backgroundColor: string; strokeWidth
 
 export function buildTreeScene(tree: GrowthTree, layout: GrowthLayout, options: SceneOptions): TreeScene {
   const { level, words, fontFamily } = options;
+  const { ink: INK, ink2: INK_2, faint: FAINT, accent: ACCENT, onAccent: ON_ACCENT, accentSoft: ACCENT_SOFT, paper: PAPER, tile: TILE,
+    twig: TWIG, muted: MUTED, running: RUNNING, warn: WARN } = options.palette ?? LIGHT_TREE_PALETTE;
   const k = options.textScale;
   const skeletons: Skeleton[] = [];
   const hits: SceneHit[] = [];
@@ -210,7 +244,7 @@ export function buildTreeScene(tree: GrowthTree, layout: GrowthLayout, options: 
       const width = textWidth(words.current, size) + 24 * k, height = size * LINE_HEIGHT + 12 * k;
       const box = { x: cx - width / 2, y: cy - height / 2, width, height };
       rect(`${node.id}:card`, box, { backgroundColor: ACCENT, strokeColor: ACCENT, strokeWidth: 2 * Math.min(k, 6) }, data("card", { node: node.id }));
-      text(`${node.id}:name`, box.x + 12 * k, box.y + 6 * k, words.current, size, WHITE, data("name", { node: node.id }));
+      text(`${node.id}:name`, box.x + 12 * k, box.y + 6 * k, words.current, size, ON_ACCENT, data("name", { node: node.id }));
       if (options.selected === node.id) ring(node.id, box, 4 * k);
       hits.push({ ...box, node: node.id, action: "select" });
       return;
@@ -238,7 +272,7 @@ export function buildTreeScene(tree: GrowthTree, layout: GrowthLayout, options: 
         data("card", { node: node.id }));
       const size = 14 * s;
       const label = clip(stage ? words.stage(node) : words.origin, size, card.width - 24);
-      text(`${node.id}:name`, card.x + 12, placed.y - (size * LINE_HEIGHT) / 2, label, size, stage ? WHITE : INK, data("name", { node: node.id }), opacity);
+      text(`${node.id}:name`, card.x + 12, placed.y - (size * LINE_HEIGHT) / 2, label, size, stage ? PAPER : INK, data("name", { node: node.id }), opacity);
       if (selected) ring(node.id, card, 6);
       hits.push({ ...card, node: node.id, action: "select" });
       return;
@@ -253,7 +287,7 @@ export function buildTreeScene(tree: GrowthTree, layout: GrowthLayout, options: 
       rect(`${node.id}:accept`, box, allowed ? { backgroundColor: ACCENT, strokeColor: ACCENT, strokeWidth: 1.5 } : { strokeColor: MUTED, strokeStyle: "dashed", strokeWidth: 1.5 },
         data("accept", { node: node.id }));
       const label = clip(allowed ? words.accept : words.acceptBlocked, button, box.width - 20);
-      text(`${node.id}:accept-label`, box.x + 10, box.y + (box.height - button * LINE_HEIGHT) / 2, label, button, allowed ? WHITE : FAINT, data("accept", { node: node.id }));
+      text(`${node.id}:accept-label`, box.x + 10, box.y + (box.height - button * LINE_HEIGHT) / 2, label, button, allowed ? ON_ACCENT : FAINT, data("accept", { node: node.id }));
       if (selected) ring(node.id, card, 6);
       hits.push({ ...card, node: node.id, action: "select" });
       hits.push({ ...box, node: node.id, action: "accept" });

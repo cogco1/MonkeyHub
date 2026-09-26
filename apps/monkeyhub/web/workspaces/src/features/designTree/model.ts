@@ -14,7 +14,7 @@
  * before admission never do. This module is pure and has no copy: the
  * surfaces word it.
  */
-import type { AdmissionActorDto, DesignCandidateDto, DesignStageDto, DesignStudyDto, WorkingHeadDto, WorktreeLineDto } from "../../api/generated";
+import type { AdmissionActorDto, DesignCandidateDto, DesignStageDto, DesignStudyDto, ReviewJudgementDto, WorkingHeadDto, WorktreeLineDto } from "../../api/generated";
 import type { DesignTreeSource } from "./contract";
 
 export type TreeNodeKind = "origin" | "stage" | "candidate" | "pending" | "current";
@@ -30,10 +30,12 @@ export interface StageFacts {
   readonly acceptedAt: string | null;
   /** The run accepted as this Stage: the one option that is it, not an ancestor it grew from. */
   readonly candidateId: string;
+  readonly review: ReviewJudgementDto | null;
 }
 
 export interface CandidateFacts {
   readonly candidateId: string;
+  readonly review: ReviewJudgementDto | null;
   readonly admittedBy: string | null;
   readonly admittedOrigin: string | null;
   readonly admittedAt: string | null;
@@ -60,6 +62,7 @@ export interface CurrentFacts {
   readonly editsAfter: number;
   /** True when the head is exactly an accepted Stage's model. */
   readonly accepted: boolean;
+  readonly sourceDisposition: ReviewJudgementDto["disposition"] | null;
 }
 
 export interface TreeNode {
@@ -121,6 +124,8 @@ export interface GrowthTree {
   readonly counts: { readonly running: number; readonly queued: number; readonly interrupted: number };
   /** Admitted options on Current's Stage that are not on the trunk; the viewer's "new" filter comes later. */
   readonly freshCandidates: readonly string[];
+  /** Rejected or archived admitted Candidates omitted from this projection. */
+  readonly processedCount: number;
 }
 
 export const CURRENT = "current";
@@ -135,7 +140,7 @@ const actorOf = (value: AdmissionActorDto | null | undefined) => ({ actor: value
 const PENDING: ReadonlySet<string> = new Set(["running", "queued", "interrupted"]);
 
 /** The growth tree of one project, from what its runtime retained. */
-export function buildGrowthTree(source: DesignTreeSource): GrowthTree {
+export function buildGrowthTree(source: DesignTreeSource, includeProcessed = false): GrowthTree {
   const { history, workingSource, worktrees } = source;
   const head: WorkingHeadDto | null = workingSource.head ?? null;
   const nodes = new Map<string, TreeNode>();
@@ -160,7 +165,7 @@ export function buildGrowthTree(source: DesignTreeSource): GrowthTree {
     const name = stage.label && stage.label !== `S${number}` ? stage.label : null;
     nodes.set(id, { id, kind: "stage", parent: null, runId: stage.modelSource.runId, label: name, summary: null, letter: null, studyId: null,
       stage: { ref: stage.stageRef, number, name, branchId: stage.branchId, acceptedBy: stage.acceptedBy,
-        acceptedAt: stage.acceptance?.occurredAt ?? null, candidateId: stage.candidateId } });
+        acceptedAt: stage.acceptance?.occurredAt ?? null, candidateId: stage.candidateId, review: stage.review ?? null } });
     stageByRun.set(stage.candidateId, id);
     stageByRun.set(stage.modelSource.runId, id);
   }
@@ -168,20 +173,26 @@ export function buildGrowthTree(source: DesignTreeSource): GrowthTree {
 
   // Admitted Candidates. A Stage's own run admitted only because it was
   // accepted (legacy "stage") is that Stage, not a second node.
-  const candidates = (history.candidates ?? []).filter((candidate, index, all) => candidate.outcome !== "rejected" &&
+  const uniqueCandidates = (history.candidates ?? []).filter((candidate, index, all) => candidate.outcome !== "rejected" &&
     all.findIndex((other) => other.candidateId === candidate.candidateId) === index &&
     !(candidate.legacy === "stage" && stageByRun.has(candidate.candidateId)));
+  const isProcessed = (candidate: DesignCandidateDto) => candidate.review?.disposition === "rejected" || candidate.review?.disposition === "archived";
+  // An accepted Candidate is part of the immutable Stage lineage even if it was
+  // reviewed later. It is never treated as a disposable processed option.
+  const processedCount = uniqueCandidates.filter((candidate) => isProcessed(candidate) && !candidate.acceptedStageRef).length;
+  const candidates = uniqueCandidates.filter((candidate) => includeProcessed || !isProcessed(candidate) || Boolean(candidate.acceptedStageRef));
   const studyDtos = new Map<string, DesignStudyDto>();
   for (const study of history.studies ?? []) if (!studyDtos.has(study.id)) studyDtos.set(study.id, study);
   const candidateByRun = new Map<string, string>();
   for (const candidate of candidates) candidateByRun.set(candidate.candidateId, candidateNodeId(candidate.candidateId));
+  const allCandidateByRun = new Map(uniqueCandidates.map((candidate) => [candidate.candidateId, candidateNodeId(candidate.candidateId)]));
 
   // Studies keep the order their options were asked for; letters follow it.
   const members = new Map<string, string[]>();
   for (const study of studyDtos.values()) {
-    members.set(study.id, (study.candidateIds ?? []).filter((id) => candidateByRun.has(id)).map(candidateNodeId));
+    members.set(study.id, (study.candidateIds ?? []).filter((id) => allCandidateByRun.has(id)).map(candidateNodeId));
   }
-  for (const candidate of candidates) {
+  for (const candidate of uniqueCandidates) {
     if (!candidate.studyId) continue;
     const list = members.get(candidate.studyId) ?? [];
     if (!list.includes(candidateNodeId(candidate.candidateId))) list.push(candidateNodeId(candidate.candidateId));
@@ -203,7 +214,7 @@ export function buildGrowthTree(source: DesignTreeSource): GrowthTree {
       summary: candidate.summary?.trim() || null, letter: letters.get(id) ?? null, studyId: candidate.studyId ?? null,
       candidate: { candidateId: candidate.candidateId, admittedBy: actor, admittedOrigin: origin, admittedAt: candidate.admittedAt ?? null,
         legacy: candidate.legacy ?? null, baseStageRef: candidate.baseStageRef ?? null, acceptedStage: stageLabel(candidate.acceptedStageRef),
-        blockedBy: [...(candidate.blockedBy ?? [])] } });
+        blockedBy: [...(candidate.blockedBy ?? [])], review: candidate.review ?? null } });
     // Where the option grew from: the option it continued, else its Study's
     // start (its base run when that is on the tree, else its Stage), else the
     // Stage its work began on.
@@ -247,8 +258,9 @@ export function buildGrowthTree(source: DesignTreeSource): GrowthTree {
     editsAfter = lineage.length;
   }
   if (head) {
+    const sourceDisposition = uniqueCandidates.find((candidate) => candidate.candidateId === head.runId)?.review?.disposition ?? null;
     nodes.set(CURRENT, { id: CURRENT, kind: "current", parent: null, runId: head.runId, label: head.label ?? null, summary: null,
-      letter: null, studyId: null, current: { headRunId: head.runId, editsAfter, accepted: head.accepted } });
+      letter: null, studyId: null, current: { headRunId: head.runId, editsAfter, accepted: head.accepted, sourceDisposition } });
     parents.set(CURRENT, anchor);
   }
 
@@ -336,7 +348,8 @@ export function buildGrowthTree(source: DesignTreeSource): GrowthTree {
   for (const [id, node] of finalNodes) if (node.kind === "stage") markLine(id);
 
   const studies = new Map<string, TreeStudy>();
-  for (const [id, list] of members) studies.set(id, { id, label: studyDtos.get(id)?.label?.trim() || null, members: list });
+  for (const [id, list] of members) studies.set(id, { id, label: studyDtos.get(id)?.label?.trim() || null,
+    members: list.filter((member) => finalNodes.has(member)) });
 
   const currentStage = head ? stageLabel(head.sourceStageRef) : null;
   const counts = { running: 0, queued: 0, interrupted: 0 };
@@ -345,7 +358,7 @@ export function buildGrowthTree(source: DesignTreeSource): GrowthTree {
     !continued.has(node.id) && currentStage !== null && stageLabel(node.candidate!.baseStageRef) === currentStage).map((node) => node.id);
 
   return { nodes: finalNodes, children, studies, root, trunk, onTrunk, continued, currentStage,
-    accept: acceptState(source, head, finalNodes), counts, freshCandidates };
+    accept: acceptState(source, head, finalNodes), counts, freshCandidates, processedCount };
 }
 
 function acceptState(source: DesignTreeSource, head: WorkingHeadDto | null, nodes: ReadonlyMap<string, TreeNode>): AcceptState {

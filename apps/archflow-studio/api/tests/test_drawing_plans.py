@@ -1,7 +1,9 @@
 """A real room cut plan remains a representation of one exact design source."""
 
 from contextlib import contextmanager
+from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
+from threading import Barrier
 import unittest
 from unittest.mock import patch
 
@@ -179,6 +181,60 @@ class CutPlanTests(CandidateTestCase):
                 "runId": first["runId"], "assetSha256": first["assetSha256"], "revisionRef": first["revisionRef"]})
             self.assertEqual(again.json(), vector.json())
         self.assertEqual(self.status(second)["status"], "current")
+
+    def test_human_readable_name_is_display_metadata_and_survives_revisions_and_reopen(self):
+        first = self.generate(drawingId="stable-ascii-id", fileName="首层平面 A")
+        self.assertEqual(first["fileName"], "首层平面 A.png")
+        self.assertEqual(first["drawingId"], "stable-ascii-id")
+        second = self.generate(drawingId="stable-ascii-id", previousRevisionRef=first["revisionRef"], cutLineMm=.4)
+        self.assertEqual(second["fileName"], "首层平面 A.png")
+        self.assertEqual(second["drawingId"], first["drawingId"])
+        self.assertEqual(second["replacesPages"], [replacing(first)])
+        with TestClient(create_app(self.settings)) as client:
+            reopened = next(row for row in client.get("/api/documents").json()["documents"]
+                            if row["revisionRef"] == second["revisionRef"])
+        self.assertEqual(reopened["fileName"], "首层平面 A.png")
+
+        same_name = self.generate(drawingId="another-stable-id", fileName="首层平面 A.png", dimensions=[])
+        self.assertEqual(same_name["fileName"], first["fileName"])
+        self.assertNotEqual(same_name["drawingId"], first["drawingId"])
+        self.assertNotEqual(same_name["revisionRef"], first["revisionRef"])
+
+    def test_existing_drawing_name_cannot_change_on_reuse_or_a_new_recipe(self):
+        first = self.generate(drawingId="named-plan", fileName="首层平面 A", dimensions=[])
+        reused = self.generate(drawingId="named-plan", fileName=" 首层平面 A.png ", dimensions=[])
+        self.assertEqual(reused["revisionRef"], first["revisionRef"])
+        inherited = self.generate(drawingId="named-plan", dimensions=[])
+        self.assertEqual(inherited["fileName"], first["fileName"])
+        self.assertEqual(inherited["revisionRef"], first["revisionRef"])
+        before = self.client.get("/api/documents").json()
+        for predecessor in (None, first["revisionRef"]):
+            for changes in ({}, {"cutLineMm": .4}):
+                with self.subTest(predecessor=predecessor, changes=changes):
+                    with patch.object(drawing_plans, "freeze_cut_plan") as freeze:
+                        result = self.client.post("/api/drawings/plans", json={
+                            "projectId": PROJECT_ID, "sourceStageRef": self.stage["stageRef"],
+                            "drawingId": first["drawingId"], "previousRevisionRef": predecessor,
+                            "fileName": "Renamed plan", "cutHeight": 1.2, "bottom": 0,
+                            "scaleDenominator": 50, "dimensions": [], **changes,
+                        })
+                        self.assertEqual(result.status_code, 409, result.text)
+                        self.assertEqual(result.json()["code"], "DRAWING_NAME_MISMATCH")
+                        freeze.assert_not_called()
+        self.assertEqual(self.client.get("/api/documents").json(), before)
+        self.assertEqual(self.repository.read_head(), self.head)
+        self.assertEqual(self.repository.read_design_branches(), self.branches)
+
+    def test_drawing_name_is_optional_and_cannot_be_a_path_or_wrong_file_type(self):
+        unnamed = self.generate(drawingId="unnamed", fileName="   ", dimensions=[])
+        self.assertEqual(unnamed["fileName"], "unnamed.png")
+        for name in ("../escape.png", r"folder\\escape.png", "plan.pdf"):
+            result = self.client.post("/api/drawings/plans", json={
+                "projectId": PROJECT_ID, "sourceStageRef": self.stage["stageRef"],
+                "drawingId": "invalid-name", "fileName": name, "cutHeight": 1.2,
+                "bottom": 0, "scaleDenominator": 50, "dimensions": [],
+            })
+            self.assertEqual(result.status_code, 422, result.text)
 
     def test_dressing_anchor_follows_exact_object_and_survives_deleted_anchor_without_rebinding(self):
         fixed = {"id": "fixed", "assetId": "tree-plan", "positionUv": [1, 2], "size": .5}
@@ -501,14 +557,40 @@ class CutPlanTests(CandidateTestCase):
         self.assertEqual([cold[row["revisionRef"]]["replacesPages"] for row in (first, styled, rebuilt)],
                          [[], [replacing(first)], [replacing(styled)]])
 
-    def test_a_rebuild_from_a_replaced_revision_forks_without_a_relation(self):
+    def test_a_competing_rebuild_is_refused_before_writing_but_its_retry_reuses(self):
         first = self.generate()
         second = self.generate(previousRevisionRef=first["revisionRef"], cutLineMm=.5)
-        fork = self.generate(previousRevisionRef=first["revisionRef"], cutLineMm=.6)
-        self.assertEqual(fork["drawingId"], first["drawingId"])
-        self.assertEqual(fork["replacesPages"], [])
+        before = {path.relative_to(self.repository.layout.root) for path in self.repository.layout.root.rglob("*")}
+        with patch("archflow_studio_api.application.drawing_plans.freeze_cut_plan", side_effect=AssertionError("must not project")):
+            self.assertEqual(self.generate(previousRevisionRef=first["revisionRef"], cutLineMm=.5), second)
+            result = self.client.post("/api/drawings/plans", json={"projectId": PROJECT_ID,
+                "sourceStageRef": self.stage["stageRef"], "previousRevisionRef": first["revisionRef"], "cutLineMm": .6})
+        self.assertEqual(result.status_code, 409, result.text)
+        self.assertEqual(result.json()["code"], "DOCUMENT_REPLACEMENT_CONFLICT")
+        self.assertEqual({path.relative_to(self.repository.layout.root) for path in self.repository.layout.root.rglob("*")}, before)
         links, _ = self.links()
         self.assertEqual(links, {page_of(first): page_of(second)})
+        self.assertEqual(self.repository.read_design_branches(), self.branches)
+
+    def test_concurrent_rebuilds_have_one_successor_and_identical_retries(self):
+        for widths in ((.5, .6), (.5, .5)):
+            first = self.generate(drawingId=f"concurrent-{widths[1]}")
+            gate = Barrier(2)
+
+            def rebuild(width):
+                gate.wait(timeout=10)
+                return self.client.post("/api/drawings/plans", json={"projectId": PROJECT_ID,
+                    "sourceStageRef": self.stage["stageRef"], "previousRevisionRef": first["revisionRef"], "cutLineMm": width})
+
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                results = list(pool.map(rebuild, widths))
+            self.assertEqual(sorted(row.status_code for row in results), [201, 409] if widths[0] != widths[1] else [201, 201])
+            successes = [row.json() for row in results if row.status_code == 201]
+            self.assertTrue(all(row == successes[0] for row in successes))
+            links, documents = self.links()
+            self.assertEqual(links[page_of(first)], page_of(successes[0]))
+            self.assertEqual(len([row for row in documents.values() if row.previous_revision_ref == first["revisionRef"]]), 1)
+        self.assertEqual(self.repository.read_head(), self.head)
         self.assertEqual(self.repository.read_design_branches(), self.branches)
 
     def test_a_crop_change_that_alters_the_aspect_registers_no_relation(self):
@@ -524,18 +606,42 @@ class CutPlanTests(CandidateTestCase):
         links, _ = self.links()
         self.assertEqual(links, {page_of(wider): page_of(moved)})
 
-    def test_the_cache_hit_registers_nothing(self):
+    def test_restoring_older_graphics_records_a_new_correction_and_replacement(self):
         first = self.generate()
         second = self.generate(previousRevisionRef=first["revisionRef"], cutLineMm=.5)
+        restored = self.generate(previousRevisionRef=second["revisionRef"],
+                                 cutLineMm=first["viewRecipe"]["graphics"]["cutLineMm"],
+                                 sourceKind="human", reason="Restore the lighter cut line.")
+        self.assertEqual(restored["viewRecipe"], first["viewRecipe"])
+        self.assertEqual(restored["assetSha256"], first["assetSha256"])
+        self.assertNotEqual(restored["revisionRef"], first["revisionRef"])
+        self.assertEqual(restored["previousRevisionRef"], second["revisionRef"])
+        self.assertEqual(restored["replacesPages"], [replacing(second)])
+        self.assertEqual(restored["modelSource"], first["modelSource"])
+        self.assertEqual(restored["sourceKind"], "human")
+        self.assertEqual(restored["attribution"]["origin"], "studio")
+        self.assertEqual(restored["reason"], "Restore the lighter cut line.")
         before = self.client.get("/api/documents").json()
         with patch("archflow_studio_api.application.drawing_plans.freeze_cut_plan", side_effect=AssertionError("cache must not project")):
             again = self.generate(previousRevisionRef=second["revisionRef"],
                                   cutLineMm=first["viewRecipe"]["graphics"]["cutLineMm"])
-        self.assertEqual(again, first)
+            self.assertEqual(self.generate(previousRevisionRef=restored["revisionRef"]), restored)
+        self.assertEqual(again, restored)
         self.assertEqual(self.client.get("/api/documents").json(), before)
         links, _ = self.links()
-        self.assertEqual(links, {page_of(first): page_of(second)})
-        self.assertEqual(_chain_head(links, page_of(first))[0], page_of(second))
+        self.assertEqual(links, {page_of(first): page_of(second), page_of(second): page_of(restored)})
+        self.assertEqual(_chain_head(links, page_of(first))[0], page_of(restored))
+        with TestClient(create_app(self.settings)) as client:
+            self.assertEqual(client.get("/api/documents").json(), before)
+            result = client.get("/api/drawings/corrections", params={"projectId": PROJECT_ID, "drawingId": restored["drawingId"]})
+            self.assertEqual(result.status_code, 200, result.text)
+            corrections = result.json()
+        pair = next(row for row in corrections["pairs"] if row["afterRevisionRef"] == restored["revisionRef"])
+        self.assertEqual(pair["beforeRevisionRef"], second["revisionRef"])
+        self.assertEqual(pair["diff"]["graphics.cutLineMm"], [.5, .35])
+        self.assertEqual(pair["cause"], "representation")
+        self.assertEqual(self.repository.read_head(), self.head)
+        self.assertEqual(self.repository.read_design_branches(), self.branches)
 
     def test_the_cleanup_report_is_read_from_the_receipt_and_never_keys_a_revision(self):
         report = {"micro": 3, "collinear": 2, "cut_precedence": 5, "duplicate": 1, "hidden_under_cut": 0,
@@ -580,10 +686,11 @@ class CutPlanTests(CandidateTestCase):
         self.assertEqual(dense["viewRecipe"]["graphics"]["beyond"], {"fade": .4})
         self.assertEqual(self.repository.read_head(), self.head)
         self.assertEqual(self.repository.read_design_branches(), self.branches)
-        # Removing the rules is the old recipe again: its retained drawing, not a redraw.
-        with not_projected:
-            cleared = self.generate(previousRevisionRef=dense["revisionRef"], hatch={"byMaterial": {}}, beyond={"fade": 0})
-        self.assertEqual(cleared, first)
+        # Removing the rules restores the old pixels but is a new correction.
+        cleared = self.generate(previousRevisionRef=dense["revisionRef"], hatch={"byMaterial": {}}, beyond={"fade": 0})
+        self.assertEqual(cleared["viewRecipe"], first["viewRecipe"])
+        self.assertEqual(cleared["assetSha256"], first["assetSha256"])
+        self.assertEqual(cleared["replacesPages"], [replacing(dense)])
         before = self.client.get("/api/documents").json()
         for changes in ({"hatch": {"byMaterial": {"concrete": {"spacingMm": .1}}}}, {"beyond": {"fade": 1.5}},
                         {"hatch": {"byMaterial": {"": {"poche": True}}}}, {"hatch": {"byMaterial": {"stone": {"angleDeg": 180}}}},

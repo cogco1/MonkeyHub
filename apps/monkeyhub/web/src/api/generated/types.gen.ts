@@ -905,6 +905,68 @@ export type ComputerRecordingRequest = {
 };
 
 /**
+ * CredentialCheck
+ */
+export type CredentialCheck = {
+    /**
+     * Id
+     */
+    id: 'gemini' | 'coding-plan';
+    /**
+     * Result
+     */
+    result: 'accepted' | 'rejected' | 'unreachable' | 'missing';
+    /**
+     * Detail
+     */
+    detail: string;
+};
+
+/**
+ * CredentialStatus
+ *
+ * Whether a provider key is in use and where it comes from (#334); never the key.
+ */
+export type CredentialStatus = {
+    /**
+     * Id
+     */
+    id: 'gemini' | 'coding-plan';
+    /**
+     * Configured
+     */
+    configured: boolean;
+    /**
+     * Source
+     */
+    source?: 'saved' | 'environment' | 'claude-config' | null;
+    /**
+     * Variable
+     */
+    variable?: string | null;
+    /**
+     * Saved
+     */
+    saved?: boolean;
+    /**
+     * Storeavailable
+     */
+    storeAvailable?: boolean;
+};
+
+/**
+ * CredentialWrite
+ */
+export type CredentialWrite = {
+    /**
+     * Key
+     *
+     * Written once; no response ever carries it.
+     */
+    key: string;
+};
+
+/**
  * DesignBranchDto
  */
 export type DesignBranchDto = {
@@ -960,6 +1022,7 @@ export type DesignStageDto = {
      */
     acceptedBy: string;
     acceptance?: AcceptanceEvidenceDto | null;
+    review?: ReviewJudgementDto | null;
 };
 
 /**
@@ -1643,6 +1706,44 @@ export type ProjectVersionDto = {
 };
 
 /**
+ * ReviewJudgementDto
+ */
+export type ReviewJudgementDto = {
+    /**
+     * Reviewref
+     */
+    reviewRef: string;
+    /**
+     * Disposition
+     */
+    disposition: 'unreviewed' | 'rejected' | 'archived';
+    /**
+     * Endorsed
+     */
+    endorsed: boolean;
+    /**
+     * Actorid
+     */
+    actorId: string;
+    /**
+     * Occurredat
+     */
+    occurredAt: string;
+    /**
+     * Reason
+     */
+    reason: string | null;
+    /**
+     * Endorsedby
+     */
+    endorsedBy?: string | null;
+    /**
+     * Endorsedat
+     */
+    endorsedAt?: string | null;
+};
+
+/**
  * RollbackUpdate
  */
 export type RollbackUpdate = {
@@ -1891,6 +1992,10 @@ export type UserSettingsDto = {
      */
     fontScale?: 0.9 | 1 | 1.1 | null;
     /**
+     * Uistyle
+     */
+    uiStyle?: 'classic' | 'quiet' | 'titleblock' | 'night' | null;
+    /**
      * Intentprovider
      */
     intentProvider?: 'deterministic' | 'codex' | 'anthropic' | null;
@@ -1922,6 +2027,10 @@ export type UserSettingsDto = {
      * Chatmodel
      */
     chatModel?: string | null;
+    /**
+     * Codingplanbaseurl
+     */
+    codingPlanBaseUrl?: string | null;
     /**
      * Autoupdate
      */
@@ -2531,6 +2640,188 @@ export type ChatProvidersApiChatProvidersGetResponses = {
 };
 
 export type ChatProvidersApiChatProvidersGetResponse = ChatProvidersApiChatProvidersGetResponses[keyof ChatProvidersApiChatProvidersGetResponses];
+
+export type ChatProviderLoginApiChatProvidersProviderIdLoginPostData = {
+    body?: never;
+    path: {
+        /**
+         * Provider Id
+         */
+        provider_id: 'codex' | 'claude';
+    };
+    query?: never;
+    url: '/api/chat/providers/{provider_id}/login';
+};
+
+export type ChatProviderLoginApiChatProvidersProviderIdLoginPostErrors = {
+    /**
+     * Conflict
+     */
+    409: HubError;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+    /**
+     * Service Unavailable
+     */
+    503: HubError;
+};
+
+export type ChatProviderLoginApiChatProvidersProviderIdLoginPostError = ChatProviderLoginApiChatProvidersProviderIdLoginPostErrors[keyof ChatProviderLoginApiChatProvidersProviderIdLoginPostErrors];
+
+export type ChatProviderLoginApiChatProvidersProviderIdLoginPostResponses = {
+    /**
+     * Successful Response
+     */
+    202: unknown;
+};
+
+export type ListCredentialsApiCredentialsGetData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/credentials';
+};
+
+export type ListCredentialsApiCredentialsGetResponses = {
+    /**
+     * Response List Credentials Api Credentials Get
+     *
+     * Successful Response
+     */
+    200: Array<CredentialStatus>;
+};
+
+export type ListCredentialsApiCredentialsGetResponse = ListCredentialsApiCredentialsGetResponses[keyof ListCredentialsApiCredentialsGetResponses];
+
+export type ClearCredentialApiCredentialsCredentialIdDeleteData = {
+    body?: never;
+    path: {
+        /**
+         * Credential Id
+         */
+        credential_id: 'gemini' | 'coding-plan';
+    };
+    query?: never;
+    url: '/api/credentials/{credential_id}';
+};
+
+export type ClearCredentialApiCredentialsCredentialIdDeleteErrors = {
+    /**
+     * Conflict
+     */
+    409: HubError;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+    /**
+     * Service Unavailable
+     */
+    503: HubError;
+};
+
+export type ClearCredentialApiCredentialsCredentialIdDeleteError = ClearCredentialApiCredentialsCredentialIdDeleteErrors[keyof ClearCredentialApiCredentialsCredentialIdDeleteErrors];
+
+export type ClearCredentialApiCredentialsCredentialIdDeleteResponses = {
+    /**
+     * Successful Response
+     */
+    200: CredentialStatus;
+};
+
+export type ClearCredentialApiCredentialsCredentialIdDeleteResponse = ClearCredentialApiCredentialsCredentialIdDeleteResponses[keyof ClearCredentialApiCredentialsCredentialIdDeleteResponses];
+
+export type SaveCredentialApiCredentialsCredentialIdPutData = {
+    body: CredentialWrite;
+    path: {
+        /**
+         * Credential Id
+         */
+        credential_id: 'gemini' | 'coding-plan';
+    };
+    query?: never;
+    url: '/api/credentials/{credential_id}';
+};
+
+export type SaveCredentialApiCredentialsCredentialIdPutErrors = {
+    /**
+     * Conflict
+     */
+    409: HubError;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+    /**
+     * Service Unavailable
+     */
+    503: HubError;
+};
+
+export type SaveCredentialApiCredentialsCredentialIdPutError = SaveCredentialApiCredentialsCredentialIdPutErrors[keyof SaveCredentialApiCredentialsCredentialIdPutErrors];
+
+export type SaveCredentialApiCredentialsCredentialIdPutResponses = {
+    /**
+     * Successful Response
+     */
+    200: CredentialStatus;
+};
+
+export type SaveCredentialApiCredentialsCredentialIdPutResponse = SaveCredentialApiCredentialsCredentialIdPutResponses[keyof SaveCredentialApiCredentialsCredentialIdPutResponses];
+
+export type CheckGeminiApiCredentialsGeminiCheckPostData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/credentials/gemini/check';
+};
+
+export type CheckGeminiApiCredentialsGeminiCheckPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: CredentialCheck;
+};
+
+export type CheckGeminiApiCredentialsGeminiCheckPostResponse = CheckGeminiApiCredentialsGeminiCheckPostResponses[keyof CheckGeminiApiCredentialsGeminiCheckPostResponses];
+
+export type OpenProviderLinkApiLinksLinkIdOpenPostData = {
+    body?: never;
+    path: {
+        /**
+         * Link Id
+         */
+        link_id: 'gemini-keys' | 'zhipu-keys' | 'moonshot-keys' | 'deepseek-keys' | 'bailian-keys';
+    };
+    query?: never;
+    url: '/api/links/{link_id}/open';
+};
+
+export type OpenProviderLinkApiLinksLinkIdOpenPostErrors = {
+    /**
+     * Conflict
+     */
+    409: HubError;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+    /**
+     * Service Unavailable
+     */
+    503: HubError;
+};
+
+export type OpenProviderLinkApiLinksLinkIdOpenPostError = OpenProviderLinkApiLinksLinkIdOpenPostErrors[keyof OpenProviderLinkApiLinksLinkIdOpenPostErrors];
+
+export type OpenProviderLinkApiLinksLinkIdOpenPostResponses = {
+    /**
+     * Successful Response
+     */
+    202: unknown;
+};
 
 export type ChatProjectsApiChatProjectsGetData = {
     body?: never;

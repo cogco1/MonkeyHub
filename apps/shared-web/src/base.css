@@ -49,6 +49,24 @@
   --radius: 6px;
   --radius-sm: 6px;
   --radius-lg: 8px;
+  /* #328: component boundaries (3:1 or better against every surface), the
+     link colour, the one bar height, status marks and the numeral face. */
+  --link: var(--accent);
+  --rule: #74757e;
+  --rule-soft: rgba(237, 237, 240, 0.24);
+  --radius-xs: 2px;
+  --bar-height: 56px;
+  --stroke-mark: 2px;
+  --font-tech: var(--font-ui);
+}
+
+/* #328: the instrument styles (Quiet instrument, Title block, Night flight)
+   keep captions at 12px or larger and square the controls a little.
+   Classic is everything above, unchanged. */
+:root:where([data-ui-style="quiet"], [data-ui-style="titleblock"], [data-ui-style="night"]) {
+  --text-caption: max(12px, calc(12px * var(--font-scale, 1)));
+  --radius: 4px;
+  --radius-sm: 4px;
 }
 
 @media (prefers-color-scheme: light) {
@@ -79,6 +97,8 @@
     --shadow: 0 10px 26px rgba(35, 35, 40, 0.13),
       0 1px 3px rgba(35, 35, 40, 0.08);
     --shadow-soft: 0 4px 12px rgba(35, 35, 40, 0.09);
+    --rule: #878893;
+    --rule-soft: rgba(35, 35, 40, 0.34);
   }
 }
 
@@ -109,6 +129,118 @@
   --shadow: 0 10px 26px rgba(35, 35, 40, 0.13),
     0 1px 3px rgba(35, 35, 40, 0.08);
   --shadow-soft: 0 4px 12px rgba(35, 35, 40, 0.09);
+  --rule: #878893;
+  --rule-soft: rgba(35, 35, 40, 0.34);
+}
+
+/* #328 Quiet instrument keeps the Workshop palette; in light its faint text
+   is one step darker so it holds 4.5:1 on the panel as well. */
+:root[data-theme="light"][data-ui-style="quiet"] {
+  --faint: #6a6b77;
+}
+
+@media (prefers-color-scheme: light) {
+  :root[data-theme="system"][data-ui-style="quiet"] {
+    --faint: #6a6b77;
+  }
+}
+
+/* #328 Title block: drawing-office greys, squarer corners and DIN-like
+   figures. The dark set; the tracing-paper light set follows and restates
+   every colour this one sets. */
+:root[data-ui-style="titleblock"] {
+  --font-tech: Bahnschrift, var(--font-ui);
+  --radius-lg: 4px;
+  --ground: #1b1e24;
+  --panel: #16181d;
+  --panel-2: #252932;
+  --ink: #eaedf2;
+  --ink-2: #d6dbe3;
+  --muted: #a9b0bc;
+  --faint: #959cab;
+  --line: rgba(234, 237, 242, 0.10);
+  --line-2: rgba(234, 237, 242, 0.06);
+  --overlay: rgba(27, 30, 36, 0.97);
+  --surface-hover: #2d323c;
+  --rule: #737b89;
+  --rule-soft: rgba(234, 237, 242, 0.24);
+}
+
+@media (prefers-color-scheme: light) {
+  :root[data-theme="system"][data-ui-style="titleblock"] {
+    --ground: #f7f5f0;
+    --panel: #f0eee8;
+    --panel-2: #fffefb;
+    --ink: #23262c;
+    --ink-2: #33373f;
+    --muted: #5b5f68;
+    --faint: #62666f;
+    --line: rgba(35, 38, 44, 0.12);
+    --line-2: rgba(35, 38, 44, 0.07);
+    --held: #3a7250;
+    --violated: #a34b44;
+    --unchecked: #84601f;
+    --overlay: rgba(247, 245, 240, 0.97);
+    --surface-hover: #fffefb;
+    --rule: #7d8088;
+    --rule-soft: rgba(35, 35, 40, 0.34);
+  }
+}
+
+:root[data-theme="light"][data-ui-style="titleblock"] {
+  --ground: #f7f5f0;
+  --panel: #f0eee8;
+  --panel-2: #fffefb;
+  --ink: #23262c;
+  --ink-2: #33373f;
+  --muted: #5b5f68;
+  --faint: #62666f;
+  --line: rgba(35, 38, 44, 0.12);
+  --line-2: rgba(35, 38, 44, 0.07);
+  --held: #3a7250;
+  --violated: #a34b44;
+  --unchecked: #84601f;
+  --overlay: rgba(247, 245, 240, 0.97);
+  --surface-hover: #fffefb;
+  --rule: #7d8088;
+  --rule-soft: rgba(35, 35, 40, 0.34);
+}
+
+/* #328 Night flight, for demonstrations: one dark set whatever the theme,
+   cyan instruments on a dotted ground and an amber focus ring. It comes
+   after the light sets so that it wins over them. */
+:root[data-ui-style="night"] {
+  color-scheme: dark;
+  --font-tech: Bahnschrift, var(--font-ui);
+  --radius: 2px;
+  --radius-sm: 2px;
+  --radius-lg: 2px;
+  --ground: #0a0f15;
+  --panel: #0d141c;
+  --panel-2: #111b26;
+  --ink: #d8f3f7;
+  --ink-2: #b9e3ea;
+  --muted: #86b9c3;
+  --faint: #6d9ea8;
+  --line: rgba(95, 211, 230, 0.18);
+  --line-2: rgba(95, 211, 230, 0.10);
+  --accent: #5fd3e6;
+  --accent-ink: #061016;
+  --accent-soft: rgba(95, 211, 230, 0.14);
+  --held: #7fe0a8;
+  --violated: #ff7b6e;
+  --unchecked: #e0c56a;
+  --processing: #8fb7c0;
+  --viewport: #0b1219;
+  --grid-major: #1c3440;
+  --grid-minor: #13222b;
+  --overlay: rgba(10, 15, 21, 0.97);
+  --surface-hover: #16222f;
+  --shadow: 0 8px 24px rgba(0, 0, 0, 0.5),
+    0 0 0 1px rgba(95, 211, 230, 0.12);
+  --shadow-soft: 0 3px 10px rgba(0, 0, 0, 0.4);
+  --rule: #3fa9bb;
+  --rule-soft: rgba(95, 211, 230, 0.30);
 }
 
 
@@ -196,3 +328,6 @@
 
 
 button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* #328: Night flight marks focus in amber, apart from its cyan instruments. */
+:root[data-ui-style="night"] :focus-visible { outline-color: #f2a93b; }

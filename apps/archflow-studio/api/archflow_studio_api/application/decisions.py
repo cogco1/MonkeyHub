@@ -924,7 +924,7 @@ def project_recipe(binding: ProjectBinding, *, stage_ref: str | None = None) -> 
 # ---- a recipe travelling to another project (#252) -------------------------
 
 
-def recipe_export(binding: ProjectBinding, decision_id: str) -> dict[str, Any]:
+def recipe_export(binding: ProjectBinding, decision_id: str, *, expected_revision_ref: str | None = None) -> dict[str, Any]:
     """One active project recipe as the file it travels in, and nothing else of this project.
 
     A ``DrawingRecipeExport@1`` carries the recipe's values, the one target
@@ -937,6 +937,8 @@ def recipe_export(binding: ProjectBinding, decision_id: str) -> dict[str, Any]:
     """
 
     current = decision_history(binding, decision_id)[-1]
+    if expected_revision_ref is not None and current.ref != expected_revision_ref:
+        raise StudioError(409, "DECISION_STALE", "The recipe changed. Read its current revision before exporting.")
     typed = current.payload.get("typedBinding")
     if typed is None or typed.get("kind") != "recipe":
         raise _invalid(f"decision {decision_id} is not a project recipe; only a recipe's values travel.")

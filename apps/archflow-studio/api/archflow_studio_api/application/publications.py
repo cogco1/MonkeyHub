@@ -147,8 +147,17 @@ def append_board_selection(binding, base, board_revision, ids):
     visible = [row for row in board.elements if not row.get("isDeleted")]
     if not selected.issubset({row["id"] for row in visible}):
         raise StudioError(409, "PUBLICATION_BOARD_SELECTION", "The selected Board objects are not in this saved revision.")
-    rows = [row for row in visible if row["id"] in selected or row.get("frameId") in selected]
-    rows = sorted(rows, key=lambda row: (row.get("y", 0), row.get("x", 0), row["id"]))
+    # Explicit selections carry narrative order; a frame expands in reading order.
+    by_id = {row["id"]: row for row in visible}
+    rows, seen = [], set()
+    for identifier in ids:
+        members = [by_id[identifier]] + sorted(
+            (row for row in visible if row.get("frameId") == identifier),
+            key=lambda row: (row.get("y", 0), row.get("x", 0), row["id"]))
+        for row in members:
+            if row["id"] not in seen:
+                rows.append(row)
+                seen.add(row["id"])
     current = read_publication(binding)
     if current["revisionSha256"] != base:
         raise StudioError(409, "PUBLICATION_STALE", "Reload the publication before appending pages.")

@@ -55,6 +55,9 @@ jobs:
         run: git diff --check origin/${{ github.base_ref || 'main' }}...HEAD
 
       # Clean-machine verification: install exactly what the suites below need.
+      - name: Install publication fonts
+        run: sudo apt-get update && sudo apt-get install --yes fonts-wqy-microhei
+
       - name: Install project
         run: >-
           python -m pip install -e ".[cad-occt]"
@@ -130,6 +133,28 @@ jobs:
       - name: Hub web behavior, typecheck and build
         working-directory: apps/monkeyhub/web
         run: npm test && npm run build
+
+      - name: Install browser test dependencies
+        id: browser-deps
+        working-directory: apps/monkeyhub/web
+        run: |
+          npm install --no-save --package-lock=false playwright
+          npx playwright install --with-deps chrome
+
+      - name: Project usage browser regression
+        if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
+        working-directory: apps/monkeyhub/web
+        run: node test/chatShell.browser.mjs
+
+      - name: Candidate review browser regression
+        if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
+        working-directory: apps/monkeyhub/web
+        run: node workspaces/test/designTree.browser.mjs
+
+      - name: Drawing browser regression
+        if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
+        working-directory: apps/monkeyhub/web
+        run: node workspaces/test/drawingCanvas.browser.mjs
 
   studio:
     name: Studio first-run (${{ matrix.os }})

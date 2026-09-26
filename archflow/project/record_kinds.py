@@ -124,6 +124,10 @@ AUDIT_EVENT = "audit-event"
 # existing scope, a scoped decision is compiled into later turns, and a Stage
 # advances a branch.
 CANDIDATE_ADMISSION = "candidate-admission"
+# CandidateAdmission closes a generation loop; it cannot express later review
+# of one exact Candidate or Stage, nor reversible archival.  This separate
+# judgement is revisioned and changes no design position.
+CANDIDATE_REVIEW = "candidate-review"
 
 # ---- read by the spine, written by nobody on it
 
@@ -190,6 +194,13 @@ _TABLE: tuple[RecordKind, ...] = (
         "superseded, its Study, the exact model and receipt it was admitted "
         "with, and the actor, origin and message it is bound to; it accepts "
         "no Stage, moves no Working Head and changes no design state",
+    ),
+    RecordKind(
+        CANDIDATE_REVIEW,
+        "CandidateReview@1",
+        PersistenceArea.RUN_REVIEW.value,
+        "one attributable revision of the review state of an exact Candidate or Stage; "
+        "rejection, reversible archival and endorsement never move a design branch, Working Head or formal HEAD",
     ),
     RecordKind(
         DESIGN_STAGE,

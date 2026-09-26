@@ -76,7 +76,7 @@ class CollaborationAuthTests(unittest.TestCase):
             for method in set(methods) & {"post", "put", "patch", "delete"}:
                 if not path.startswith("/api/"):
                     continue
-                if method == "post" and path == "/api/drawings/plans/status":
+                if method == "post" and path in {"/api/drawings/plans/status", "/api/drawing-recipes/inspect"}:
                     continue  # A body-carrying read, exercised with real actor grants below.
                 checked += 1
                 with self.subTest(method=method, path=path):
@@ -156,6 +156,22 @@ class CollaborationAuthTests(unittest.TestCase):
             self.assertEqual(client.post(path, headers=self.headers(actor), json={**body, "action": "unlock"}).status_code, 403)
         self.assertEqual(client.post(path, headers=self.headers("reviewer"), json={**body, "lockAuthority": "forged"}).status_code, 422)
         self.assertEqual(self.client().post(path, headers=self.headers("reviewer"), json=body).status_code, 403)
+
+    def test_recipe_transfer_preserves_read_and_accept_grants(self) -> None:
+        client = self.client(shared=False)
+        for actor in ("reader", "designer", "reviewer"):
+            inspected = client.post("/api/drawing-recipes/inspect", headers=self.headers(actor),
+                                    json={"projectId": PROJECT_ID, "content": "{}"})
+            self.assertEqual(inspected.status_code, 422)
+            self.assertEqual(inspected.json()["code"], "RECIPE_EXPORT_INVALID")
+            exported = client.get("/api/decisions/absent/recipe-export", params={"expectedRevisionRef": "r"},
+                                  headers=self.headers(actor))
+            self.assertEqual(exported.status_code, 404)
+        for actor in ("reader", "designer", "issuer", "outsider"):
+            self.assertEqual(client.post("/api/drawing-recipes/import", headers=self.headers(actor), json={}).status_code, 403)
+        self.assertEqual(client.post("/api/drawing-recipes/import", headers=self.headers("reviewer"), json={}).status_code, 422)
+        for path in ("inspect", "import"):
+            self.assertEqual(self.client().post(f"/api/drawing-recipes/{path}", headers=self.headers("reviewer"), json={}).status_code, 403)
 
     def test_scoped_decisions_read_widely_and_are_written_only_with_accept(self) -> None:
         for shared in (True, False):

@@ -72,6 +72,13 @@ code {
   text-transform: uppercase;
 }
 
+/* #328: in the instrument styles a Chinese label drops the tracking meant for
+   Latin capitals and reads at the caption size. */
+:where([data-ui-style="quiet"], [data-ui-style="titleblock"], [data-ui-style="night"]) .label:lang(zh) {
+  font-size: var(--text-caption);
+  letter-spacing: 0;
+}
+
 .quiet {
   margin: 0;
   color: var(--muted);

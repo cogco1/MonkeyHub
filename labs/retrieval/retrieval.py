@@ -45,6 +45,7 @@ class RetrievalResult:
     context: bytes
     status: str
     missing: tuple[str, ...]
+    missing_details: tuple[dict, ...]
     reopen: tuple[dict, ...]
 
 
@@ -159,6 +160,13 @@ def render(items):
     ], ensure_ascii=False, separators=(",", ":")).encode("utf-8")
 
 
+def reopen_ref(item):
+    """Keep an item's binding identity available even when no context is emitted."""
+    return {"id": item.id, "source": item.source, "corpus": item.corpus,
+            "project": item.project, "jurisdiction": item.jurisdiction,
+            "version": item.version}
+
+
 def retrieve(request, items, ranker, *, metadata=True, expand=True):
     """Close declared source links without reading query relevance labels.
 
@@ -168,24 +176,29 @@ def retrieve(request, items, ranker, *, metadata=True, expand=True):
     allowed = [x for x in items if eligible(request, x, metadata=metadata)]
     ranked = tuple(ranker.rank(request.query, allowed)[:request.limit])
     if not ranked:
-        return RetrievalResult((), b"", "insufficient:no_candidates", (), ())
+        return RetrievalResult((), b"", "insufficient:no_candidates", (), (), ())
     by_id = {x.id: x for x in allowed}
-    queue = [i for i, _ in ranked]
-    selected, missing = {}, []
+    queue = [(i, None) for i, _ in ranked]
+    selected, missing, missing_details = {}, [], []
     while queue:
-        key = queue.pop(0)
+        key, required_by = queue.pop(0)
         if key in selected or key in missing:
             continue
         if key not in by_id:
             missing.append(key)
+            principal = selected[required_by]
+            missing_details.append({"id": key, "required_by": required_by,
+                                    "link_basis": principal.link_basis,
+                                    "required_by_ref": reopen_ref(principal)})
             continue
         selected[key] = by_id[key]
         if expand:
-            queue.extend(by_id[key].companions)
-    reopen = tuple({"id": x.id, "source": x.source} for x in selected.values())
+            queue.extend((companion, key) for companion in by_id[key].companions)
+    reopen = tuple(reopen_ref(x) for x in selected.values())
     if missing:
-        return RetrievalResult(ranked, b"", "insufficient:missing_companions", tuple(missing), reopen)
+        return RetrievalResult(ranked, b"", "insufficient:missing_companions",
+                               tuple(missing), tuple(missing_details), reopen)
     context = render(selected.values())
     if len(context) > request.max_bytes:
-        return RetrievalResult(ranked, b"", "insufficient:budget", (), reopen)
-    return RetrievalResult(ranked, context, "unverified", (), reopen)
+        return RetrievalResult(ranked, b"", "insufficient:budget", (), (), reopen)
+    return RetrievalResult(ranked, context, "unverified", (), (), reopen)

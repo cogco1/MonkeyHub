@@ -16,12 +16,17 @@ import { clock, currentStep, describeCall, describeStep, dismissible, operationS
 import { recentUsage, serialMonitorRead, type MonitorEvent, type RecentUsage } from "./monitorData";
 import { activeWork, newSchemes, sidebarTasks, type SidebarTask } from "./sidebarTasks";
 import { SoftwareUpdateSettings, type RestartBlocker } from "./SoftwareUpdateSettings";
+import { editFocused, HubMenuBar, type HubMenu, type HubMenuItem } from "./HubMenu";
 import "./ChatShell.css";
 
 type AppId = AppStatus["appId"] | "drawing" | "publish" | "tree";
+/** #328: Hub settings come as pages, each named in the dialog's list; the shell adds
+    Software update as the last page and keeps which page is open. */
+export type SettingsPage = { readonly id: string; readonly label: string; readonly icon: string; readonly body: ReactNode };
+export type HubSettings = { readonly pages: readonly SettingsPage[]; readonly updateLabel: string; readonly status: ReactNode; readonly notice: ReactNode };
 type Props = {
   preferences: AppearancePreferences;
-  settings: ReactNode;
+  settings: HubSettings;
   settingsDirty?: boolean;
   configuredProject: string | null;
   /** The saved global defaults a *new* conversation starts with. */
@@ -29,7 +34,32 @@ type Props = {
   /** Where a new project is created, as the Hub reports it. */
   workspace: ChatWorkspace | null;
   apps: readonly AppStatus[] | null;
+  /** #337: the View menu changes the same display choices as Settings. */
+  onAppearance?: (patch: Partial<AppearancePreferences>) => void;
 };
+/** #337: the Hub's menu row. Local while the catalogs are held by another lane. */
+const menuWords = {
+  "zh-CN": {
+    menus: "菜单", back: "后退到上一个对话", forward: "前进到下一个对话",
+    file: "文件", edit: "编辑", view: "视图", help: "帮助",
+    newChat: "新对话", newProject: "新建项目…", addProject: "添加已有项目…", exportArchive: "导出项目归档…", restoreArchive: "恢复项目归档…", settings: "设置…",
+    undo: "撤销", redo: "重做", cut: "剪切", copy: "复制", paste: "粘贴", selectAll: "全选",
+    sidebar: "侧栏", tools: "工具面板", theme: "主题", system: "跟随系统", dark: "深色", light: "浅色",
+    uiStyle: "界面风格", classic: "经典", quiet: "静默仪表", titleblock: "图签", night: "夜航",
+    size: "字号", compact: "紧凑", normal: "标准", large: "大",
+    update: "检查更新…", usage: "用量与任务记录",
+  },
+  en: {
+    menus: "Menus", back: "Back to the previous conversation", forward: "Forward to the next conversation",
+    file: "File", edit: "Edit", view: "View", help: "Help",
+    newChat: "New chat", newProject: "New project…", addProject: "Add existing project…", exportArchive: "Export project archive…", restoreArchive: "Restore project archive…", settings: "Settings…",
+    undo: "Undo", redo: "Redo", cut: "Cut", copy: "Copy", paste: "Paste", selectAll: "Select all",
+    sidebar: "Sidebar", tools: "Tools panel", theme: "Theme", system: "Match system", dark: "Dark", light: "Light",
+    uiStyle: "Interface style", classic: "Classic", quiet: "Quiet instrument", titleblock: "Title block", night: "Night flight",
+    size: "Text size", compact: "Compact", normal: "Standard", large: "Large",
+    update: "Check for updates…", usage: "Usage and task records",
+  },
+} as const;
 // followHead: the tab was restored on a cold start, not opened to inspect that exact
 // candidate; the workspace shows the architect's editing base instead (#271). An opened
 // result is view-only, and only Continue makes it the base (GH-234 Q1/Q2).
@@ -37,7 +67,7 @@ type Props = {
 // opened (#295, IA-6). Fabrication and Usage keep it on their own tab, with its project.
 // focus: the options a Study card asked the Design Tree to show, once per request (#302).
 type ToolTab = { id: AppId; url: string; revision: number; projectDir?: string; projectId?: string; runtimeId?: string; candidate?: string; followHead?: boolean;
-  returnTo?: AppId; returnProject?: string; focus?: { runIds: string[]; request: number } };
+  returnTo?: AppId; returnProject?: string; monitorProjectId?: string; monitorOpenRequest?: number; focus?: { runIds: string[]; request: number } };
 type SavedTool = { id: AppId; candidate?: string };
 type ProjectPreparation = { promise: Promise<AppStatus[]>; apps: AppStatus[] | null; modeling?: Promise<unknown> };
 /** PP-1: the step a project's start path is on, named on the skeleton of the surface being opened. */
@@ -156,8 +186,10 @@ function Icon({ name }: { name: string }) {
     fab: <><path d="M6 8V3h12v5M6 17H3V8h18v9h-3M6 13h12v8H6Z" /><path d="M17 10h1" /></>,
     chart: <><path d="M4 4v16h17M8 16v-4M13 16V7M18 16v-7" /></>,
     refresh: <path d="M20 10a8 8 0 1 0-2 8M20 4v6h-6" />,
+    back: <path d="M15 5l-7 7 7 7" />, forward: <path d="M9 5l7 7-7 7" />,
     tree: <><circle cx="5" cy="12" r="2" /><circle cx="19" cy="12" r="2" /><circle cx="12" cy="5" r="2" /><path d="M7 12h10M12 7v5M12 12l-4 6M12 12l4 6" /></>,
     settings: <><path d="M4 7h16M4 17h16" /><circle cx="9" cy="7" r="3" /><circle cx="15" cy="17" r="3" /></>,
+    display: <><circle cx="12" cy="12" r="8.5" /><path d="M12 3.5a8.5 8.5 0 0 1 0 17Z" fill="currentColor" /></>,
   };
   return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.65" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name] ?? paths.chat}</svg>;
 }
@@ -270,7 +302,7 @@ type MenuItem = { key: string; label: string; detail?: string; checked?: boolean
  * Opened, focus moves into it; arrows move between entries and Escape returns
  * to the + button. A checked entry is a choice the next send carries.
  */
-function ComposerMenu({ label, disabled, items }: { label: string; disabled: boolean; items: MenuItem[] }) {
+function ComposerMenu({ label, disabled, disabledReason, items }: { label: string; disabled: boolean; disabledReason?: string; items: MenuItem[] }) {
   const [open, setOpen] = useState(false);
   const button = useRef<HTMLButtonElement>(null), menu = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -293,7 +325,7 @@ function ComposerMenu({ label, disabled, items }: { label: string; disabled: boo
     else if (event.key === "Tab") setOpen(false);
   };
   return <div className="chat-composer-menu">
-    <button ref={button} type="button" className="chat-icon chat-attach" aria-label={label} title={label} aria-haspopup="menu" aria-expanded={open}
+    <button ref={button} type="button" className="chat-icon chat-attach" aria-label={label} aria-description={disabledReason} title={disabledReason ?? label} aria-haspopup="menu" aria-expanded={open}
       aria-controls={open ? "chat-composer-menu" : undefined} disabled={disabled} onClick={() => setOpen(!open)}><Icon name="plus" /></button>
     {open && <div ref={menu} id="chat-composer-menu" className="chat-composer-menu__list" role="menu" aria-label={label} onKeyDown={keys}>
       {items.map((item) => <button key={item.key} type="button" tabIndex={-1} className="chat-composer-menu__item"
@@ -395,7 +427,7 @@ function SurfaceSkeleton({ surface, name, step, startedAt = null, words, onCance
   </div>;
 }
 
-export function ChatShell({ preferences, settings, settingsDirty = false, configuredProject, defaults, workspace, apps }: Props) {
+export function ChatShell({ preferences, settings, settingsDirty = false, configuredProject, defaults, workspace, apps, onAppearance }: Props) {
   const t = words[preferences.language], w = composerWords[preferences.language], s = shellWords[preferences.language];
   const [initial] = useState(readView);
   const [projects, setProjects] = useState<ChatProject[]>([]);
@@ -479,6 +511,20 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
   const [folder, setFolder] = useState("");
   const [projectName, setProjectName] = useState("");
   const [projectInfo, setProjectInfo] = useState(false);
+  const projectInfoButton = useRef<HTMLButtonElement>(null), projectInfoClose = useRef<HTMLButtonElement>(null);
+  const closeProjectInfo = useCallback(() => { setProjectInfo(false); projectInfoButton.current?.focus(); }, []);
+  useEffect(() => {
+    if (!projectInfo) return;
+    projectInfoClose.current?.focus();
+    const escape = (event: globalThis.KeyboardEvent) => {
+      // A modal opened from the card owns its Escape until it closes.
+      if (event.key !== "Escape" || event.defaultPrevented || document.querySelector("dialog[open]")) return;
+      event.preventDefault();
+      closeProjectInfo();
+    };
+    document.addEventListener("keydown", escape);
+    return () => document.removeEventListener("keydown", escape);
+  }, [projectInfo, closeProjectInfo]);
   // #271: the read-only Worktree Graph the project card's status is read from.
   const [worktrees, setWorktrees] = useState<{ runtimeId: string; graph: WorktreeGraphDto } | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -502,6 +548,8 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
   const archiveDialog = useRef<HTMLDialogElement>(null);
   const restoreDialog = useRef<HTMLDialogElement>(null);
   const settingsDialog = useRef<HTMLDialogElement>(null);
+  const settingsPane = useRef<HTMLDivElement>(null);
+  const [settingsPage, setSettingsPage] = useState<string | null>(null);
   const input = useRef<HTMLTextAreaElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const messages = useRef<HTMLDivElement>(null);
@@ -589,6 +637,10 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
   // new one takes the saved default.
   const connection = chat?.id === chatId ? { provider: chat.provider, model: chat.model ?? null } : defaults;
   const availableProvider = providers.find((item) => item.id === connection.provider);
+  const composerDisabledReason = !project ? t.projectRequired : busy ? t.actionPending : undefined;
+  const sendDisabledReason = running ? (!draft.trim() ? t.interjectEmpty : undefined)
+    : composerDisabledReason ?? (!draft.trim() && !attachments.length ? t.sendEmpty
+      : !chatId && !availableProvider?.available ? availableProvider?.detail ?? t.noProvider : undefined);
   // The connection as the Hub named it, short enough to read in a sentence.
   const connectionName = (availableProvider?.label ?? connection.provider ?? "").replace(/\s+CLI$/, "") || null;
   const chosenModel = chat?.id === chatId ? chat.model ?? null : draftModel;
@@ -805,10 +857,36 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
     const timer = window.setInterval(() => { if (!document.hidden) void read(); }, 60_000);
     return () => { live = false; window.clearInterval(timer); };
   }, [settingsOpen]);
-  const openSettings = () => { setSettingsOpen(true); settingsDialog.current?.showModal(); };
-  const openSoftwareUpdate = () => {
-    openSettings();
-    requestAnimationFrame(() => document.getElementById("software-update-heading")?.scrollIntoView({ block: "start" }));
+  // Settings opens on its first page; a ready update opens straight on Software update.
+  const settingsTabs = [...settings.pages, { id: "update", label: settings.updateLabel, icon: "update" }];
+  const shownSettingsPage = settingsPage ?? settingsTabs[0].id;
+  const showSettingsPage = (page: string | null) => { setSettingsPage(page); settingsPane.current?.scrollTo({ top: 0 }); };
+  const openSettings = () => { showSettingsPage(null); setSettingsOpen(true); settingsDialog.current?.showModal(); };
+  const openSoftwareUpdate = () => { showSettingsPage("update"); setSettingsOpen(true); settingsDialog.current?.showModal(); };
+  useEffect(() => {
+    const openHostedSettings = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin || event.source === window) return;
+      const hostedFrame = [...document.querySelectorAll<HTMLIFrameElement>(".chat-browser iframe")]
+        .some((frame) => frame.contentWindow === event.source);
+      if (!hostedFrame) return;
+      if (event.data?.type !== "monkeyhub:open-settings" || event.data.page !== "display") return;
+      showSettingsPage("display");
+      setSettingsOpen(true);
+      settingsDialog.current?.showModal();
+    };
+    window.addEventListener("message", openHostedSettings);
+    return () => window.removeEventListener("message", openHostedSettings);
+  }, []);
+  // The page list is a vertical tab list: arrows, Home and End move along it and open the page.
+  const moveSettingsTab = (event: KeyboardEvent<HTMLDivElement>) => {
+    const index = settingsTabs.findIndex((tab) => tab.id === shownSettingsPage);
+    const target = event.key === "ArrowDown" ? index + 1 : event.key === "ArrowUp" ? index - 1
+      : event.key === "Home" ? 0 : event.key === "End" ? settingsTabs.length - 1 : null;
+    if (target === null) return;
+    event.preventDefault();
+    const tab = settingsTabs[(target + settingsTabs.length) % settingsTabs.length];
+    showSettingsPage(tab.id);
+    document.getElementById(`settings-tab-${tab.id}`)?.focus();
   };
   useEffect(() => { if (input.current) { input.current.style.height = "auto"; input.current.style.height = `${Math.min(input.current.scrollHeight, 180)}px`; } }, [draft]);
   const focusConversation = () => {
@@ -1181,11 +1259,13 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
     const shown = panelBefore ? selectedTab : undefined;
     const under = isTool(id) && (shown?.projectDir ?? shown?.returnProject) === projectDir ? surfaceUnder(shown) : undefined;
     const returnProject = !needsProject && under ? projectDir ?? undefined : undefined;
+    const monitorProjectId = id === "monkeymonitor" ? view?.projectId ?? project?.projectId ?? "" : undefined;
     // An explicit system-page choice supersedes even a stale project link.
     if (id === "monkeymonitor") routeRestored.current = true;
     const existing = tabs.find((item) => needsProject ? item.projectDir === projectDir : item.id === id);
     if (existing && id !== "monkeyarch") {
       setTabs((items) => items.map((item) => item === existing ? { ...item, id, returnTo: under, returnProject,
+        monitorProjectId, monitorOpenRequest: id === "monkeymonitor" ? (item.monitorOpenRequest ?? 0) + 1 : item.monitorOpenRequest,
         candidate: view?.candidate ?? item.candidate, followHead: view?.candidate ? view.follow === "head" : item.followHead, focus: focus ?? item.focus,
         url: needsProject ? `${window.location.origin}/?${new URLSearchParams({ runtimeId: item.runtimeId!, view: id === "monkeyboard" ? "board" : id === "publish" ? "publish" : id === "drawing" ? "drawing" : id === "monkeyrender" ? "render" : id === "tree" ? "tree" : "arch" })}` : item.url } : item));
       setPanel(true); setActiveTool(id); setError(null);
@@ -1195,7 +1275,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
     // service cannot replace application navigation or prevent leaving the page.
     if (id === "monkeymonitor") {
       setTabs((items) => [...items.filter((item) => item.id !== id), { id,
-        url: `${window.location.origin}/?view=monitor`, revision: 0, returnTo: under, returnProject }]);
+        url: `${window.location.origin}/?view=monitor`, revision: 0, returnTo: under, returnProject, monitorProjectId }]);
       setPanel(true); setActiveTool(id); setError(null);
       return true;
     }
@@ -1263,7 +1343,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
   useEffect(() => {
     if (initialMonitorRoute && !routeRestored.current) {
       restoredTools.current = true;
-      void openTool("monkeymonitor").then((opened) => { if (opened) routeRestored.current = true; });
+      void openTool("monkeymonitor", { projectId: "" }).then((opened) => { if (opened) routeRestored.current = true; });
       return;
     }
     const query = new URLSearchParams(window.location.search);
@@ -1340,9 +1420,85 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
         void openTool("monkeyboard");
       } : undefined} />
     {message.status === "failed" || message.status === "interrupted" ? <p className="chat-muted">{t[message.status]}</p> : null}</article>;
+  // #337: back and forward walk the conversations opened in this window, newest last.
+  const walking = useRef(false);
+  const [trail, setTrail] = useState<{ ids: readonly string[]; index: number }>({ ids: [], index: -1 });
+  useEffect(() => {
+    if (!chatId) return;
+    if (walking.current) { walking.current = false; return; }
+    setTrail((current) => {
+      if (current.ids[current.index] === chatId) return current;
+      const ids = [...current.ids.slice(0, current.index + 1), chatId].slice(-50);
+      return { ids, index: ids.length - 1 };
+    });
+  }, [chatId]);
+  const walk = (step: -1 | 1) => {
+    const index = trail.index + step, id = trail.ids[index];
+    if (id === undefined) return;
+    const target = sessions.find((item) => item.id === id);
+    if (!target) {
+      // A conversation that is gone leaves the trail instead of stopping it.
+      const ids = trail.ids.filter((item) => item !== id);
+      setTrail({ ids, index: Math.min(trail.index, ids.length - 1) });
+      return;
+    }
+    setTrail({ ...trail, index });
+    if (target.id !== chatId) { walking.current = true; selectChat(target); }
+  };
+  const mw = menuWords[preferences.language];
+  const startChat = () => { setArchivedView(false); setChatId(null); setChat(null); setError(null); input.current?.focus(); };
+  const appearanceChoices = (onAppearance ? [
+    { kind: "separator", id: "look" },
+    { kind: "heading", id: "theme", label: mw.theme },
+    ...(["system", "dark", "light"] as const).map((theme) => ({ kind: "choice", id: `theme-${theme}`, label: mw[theme],
+      checked: preferences.theme === theme, onSelect: () => onAppearance({ theme }) })),
+    { kind: "heading", id: "style", label: mw.uiStyle },
+    ...(["classic", "quiet", "titleblock", "night"] as const).map((uiStyle) => ({ kind: "choice", id: `style-${uiStyle}`, label: mw[uiStyle],
+      checked: (preferences.uiStyle ?? "classic") === uiStyle, onSelect: () => onAppearance({ uiStyle }) })),
+    { kind: "heading", id: "size", label: mw.size },
+    ...([[0.9, "compact"], [1, "normal"], [1.1, "large"]] as const).map(([fontScale, name]) => ({ kind: "choice", id: `size-${name}`, label: mw[name],
+      checked: preferences.fontScale === fontScale, onSelect: () => onAppearance({ fontScale }) })),
+  ] : []) as HubMenuItem[];
+  const hubMenus: HubMenu[] = [
+    { id: "file", label: mw.file, items: [
+      { kind: "command", id: "new-chat", label: mw.newChat, onSelect: startChat },
+      { kind: "command", id: "new-project", label: mw.newProject, onSelect: () => { setDialogError(null); newDialog.current?.showModal(); } },
+      { kind: "command", id: "add-project", label: mw.addProject, onSelect: () => { setDialogError(null); addDialog.current?.showModal(); } },
+      { kind: "separator", id: "archive" },
+      { kind: "command", id: "export", label: mw.exportArchive, disabled: !project,
+        onSelect: () => { setDialogError(null); setArchiveSummary(null); setRestoreResult(null); archiveDialog.current?.showModal(); } },
+      { kind: "command", id: "restore", label: mw.restoreArchive,
+        onSelect: () => { setDialogError(null); setArchiveSummary(null); setRestoreResult(null); setRestoreTarget(workspace?.workspaceDir ?? ""); restoreDialog.current?.showModal(); } },
+      { kind: "separator", id: "hub" },
+      { kind: "command", id: "settings", label: mw.settings, onSelect: openSettings },
+    ] },
+    { id: "edit", label: mw.edit, items: [
+      { kind: "command", id: "undo", label: mw.undo, hint: "Ctrl+Z", onSelect: () => editFocused("undo") },
+      { kind: "command", id: "redo", label: mw.redo, hint: "Ctrl+Y", onSelect: () => editFocused("redo") },
+      { kind: "separator", id: "clipboard" },
+      { kind: "command", id: "cut", label: mw.cut, hint: "Ctrl+X", onSelect: () => editFocused("cut") },
+      { kind: "command", id: "copy", label: mw.copy, hint: "Ctrl+C", onSelect: () => editFocused("copy") },
+      { kind: "command", id: "paste", label: mw.paste, hint: "Ctrl+V", onSelect: () => editFocused("paste") },
+      { kind: "command", id: "select-all", label: mw.selectAll, hint: "Ctrl+A", onSelect: () => editFocused("selectAll") },
+    ] },
+    { id: "view", label: mw.view, items: [
+      { kind: "check", id: "sidebar", label: mw.sidebar, checked: sidebar, onSelect: () => setSidebar(!sidebar) },
+      { kind: "check", id: "tools", label: mw.tools, checked: panel, onSelect: () => setPanel(!panel) },
+      ...appearanceChoices,
+    ] },
+    { id: "help", label: mw.help, items: [
+      { kind: "command", id: "update", label: mw.update, onSelect: openSoftwareUpdate },
+      { kind: "command", id: "usage", label: mw.usage, onSelect: () => void openTool("monkeymonitor", { projectId: "" }) },
+    ] },
+  ];
   return <div className="chat-shell" data-sidebar={sidebar} data-panel={panel} style={{ "--browser-width": `${panelWidth}px` } as CSSProperties}>
+    {/* #337 L0: the Hub's text menu row, as desktop apps have it: back, forward, the sidebar, then words. */}
+    <div className="chat-menubar"><HubMenuBar label={mw.menus} menus={hubMenus} before={<>
+      <button type="button" className="chat-icon" aria-label={mw.back} title={mw.back} disabled={trail.index <= 0} onClick={() => walk(-1)}><Icon name="back" /></button>
+      <button type="button" className="chat-icon" aria-label={mw.forward} title={mw.forward} disabled={trail.index >= trail.ids.length - 1} onClick={() => walk(1)}><Icon name="forward" /></button>
+      <button type="button" className="chat-icon" aria-label={sidebar ? t.collapse : t.expand} title={sidebar ? t.collapse : t.expand} onClick={() => setSidebar(!sidebar)}><Icon name="sidebar" /></button>
+    </>} /></div>
     <aside className="chat-sidebar" aria-label={t.projects}>
-      <div className="chat-sidebar__top"><strong className="wordmark">MonkeyHub</strong><button className="chat-icon" aria-label={sidebar ? t.collapse : t.expand} onClick={() => setSidebar(!sidebar)}><Icon name="sidebar" /></button></div>
       <div className="chat-sidebar__body">
         <button className="chat-new" onClick={() => { setArchivedView(false); setChatId(null); setChat(null); setError(null); input.current?.focus(); }}><Icon name="plus" /><span>{t.newChat}</span></button>
         <button className="chat-new chat-new--project" onClick={() => { setDialogError(null); newDialog.current?.showModal(); }}><Icon name="folder" /><span>{t.newProject}</span></button>
@@ -1397,6 +1553,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
             </button>
             <button className="chat-icon chat-thread-action" aria-label={`${session.archived ? t.restore : t.archive}: ${session.title}`}
               title={session.status === "running" ? t.archiveRunning : session.archived ? t.restore : t.archive}
+              aria-description={session.status === "running" ? t.archiveRunning : busy || modelBusy || archiveBusy !== null ? t.actionPending : undefined}
               disabled={session.status === "running" || busy || modelBusy || archiveBusy !== null}
               onClick={() => void setArchived(session, !session.archived)}><Icon name={session.archived ? "restore" : "archive"} /></button>
           </div>;
@@ -1406,12 +1563,12 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
       </div>
       <div className="chat-sidebar__footer">
         {/* #300: the last seven days of model usage, as MonkeyMonitor recorded it. */}
-        <button className="chat-settings chat-usage" aria-label={t.usageName(usageFigure?.full ?? null)} title={t.usageTitle} onClick={() => void openTool("monkeymonitor")}>
+        <button className="chat-settings chat-usage" aria-label={t.usageName(usageFigure?.full ?? null)} title={t.usageTitle} onClick={() => void openTool("monkeymonitor", { projectId: "" })}>
           <Icon name="chart" /><span>{t.monitor}</span>{usageFigure && <small className="chat-usage__figure" aria-hidden="true">{t.usageWeek(usageFigure.short)}</small>}
         </button>
-        {updateReady && <button className="chat-settings chat-update" title={t.updateReadyHint} onClick={openSoftwareUpdate}><Icon name="update" /><span>{t.updateReady}</span></button>}
-        <button className="chat-settings chat-archive-toggle" aria-pressed={archivedView} onClick={() => setArchivedView(!archivedView)}><Icon name="archive" /><span>{archivedView ? t.activeChats : t.archivedChats}</span></button>
-        <button className="chat-settings" onClick={openSettings}><Icon name="settings" /><span>{t.settings}</span></button>
+        {updateReady && <button className="chat-settings chat-update" aria-label={t.updateReady} title={t.updateReadyHint} onClick={openSoftwareUpdate}><Icon name="update" /><span>{t.updateReady}</span></button>}
+        <button className="chat-settings chat-archive-toggle" aria-label={archivedView ? t.activeChats : t.archivedChats} title={archivedView ? t.activeChats : t.archivedChats} aria-pressed={archivedView} onClick={() => setArchivedView(!archivedView)}><Icon name="archive" /><span>{archivedView ? t.activeChats : t.archivedChats}</span></button>
+        <button className="chat-settings" aria-label={t.settings} title={t.settings} onClick={openSettings}><Icon name="settings" /><span>{t.settings}</span></button>
       </div>
     </aside>
     <main className="chat-main">
@@ -1531,19 +1688,20 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
               input.current?.focus();
             }}><Icon name="close" /></button>
           </li>)}</ul>}
-          <label className="sr-only" htmlFor="chat-input">{t.placeholder}</label><textarea id="chat-input" ref={input} value={draft} aria-describedby={project ? "chat-target" : undefined} placeholder={!project ? t.projectRequired : running ? t.interjectPlaceholder : t.placeholder} disabled={!project || busy}
+          <label className="sr-only" htmlFor="chat-input">{t.placeholder}</label><textarea id="chat-input" ref={input} value={draft} aria-describedby={project ? "chat-target" : undefined} aria-description={composerDisabledReason} aria-keyshortcuts="Enter Shift+Enter" placeholder={!project ? t.projectRequired : running ? t.interjectPlaceholder : t.placeholder} disabled={!project || busy}
             onChange={(event) => setDrafts((value) => ({ ...value, [draftKey]: event.target.value }))} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void send(); } }} />
           <input ref={fileInput} type="file" multiple hidden aria-label={t.attach} disabled={!project || busy} onChange={(event) => { addAttachments(Array.from(event.target.files ?? [])); event.target.value = ""; }} />
-          <div className="chat-composer__bottom"><ComposerMenu label={w.composerMenu} disabled={!project || busy} items={[
+          <div className="chat-composer__bottom"><ComposerMenu label={w.composerMenu} disabled={!project || busy} disabledReason={composerDisabledReason} items={[
             { key: "attach", label: t.attach, onSelect: () => fileInput.current?.click() },
             // Offered as the checkbox was: with a saved editing state to start from, or with the edits that keep it out.
-            { key: "topic", label: w.newTopic, detail: designContext ? w.newTopicDetail : contextUnavailable, checked: contextMode === "project",
+            { key: "topic", label: w.newTopic, detail: busy ? t.actionPending : running ? t.contextRunning : designContext ? w.newTopicDetail : contextUnavailable, checked: contextMode === "project",
               disabled: busy || running || (!designContext && contextMode !== "project" && !recordContext),
               onSelect: () => { setContextModes((value) => ({ ...value, [draftKey]: value[draftKey] === "project" ? "continue" : "project" })); input.current?.focus(); } },
           ]} /><div className="chat-connection" title={running ? t.modelRunning : t.connectionHint}>
             <span className="chat-connection__name">{providers.find((item) => item.id === connection.provider)?.label ?? connection.provider}</span>
             <label className="sr-only" htmlFor="chat-model">{t.modelLabel}</label>
             <select id="chat-model" className="chat-connection__model" value={customModel !== null ? "__custom__" : chosenModel ?? ""} disabled={running || modelBusy || busy}
+              aria-description={running ? t.modelRunning : modelBusy ? t.modelSaving : busy ? t.actionPending : undefined}
               onChange={(event) => { const value = event.target.value; if (value === "__custom__") setCustomModel(chosenModel ?? ""); else void chooseModel(value || null); }}>
               <option value="">{t.modelCliDefault}</option>
               {modelOptions.map((item) => <option key={item} value={item}>{item}</option>)}
@@ -1553,7 +1711,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
             {modelBusy && <span className="chat-connection__note" role="status">{t.modelSaving}</span>}
           </div>
           {running ? <><button className="chat-icon chat-stop" type="button" aria-label={t.stop} title={t.stop} onClick={() => void stop()}><Icon name="stop" /></button>
-            <button className="chat-send" type="submit" aria-label={t.interject} title={t.interject} disabled={!draft.trim()}><Icon name="send" /></button></> : <button className="chat-send" type="submit" aria-label={t.send} disabled={busy || !project || (!draft.trim() && !attachments.length) || (!chatId && !availableProvider?.available)}><Icon name="send" /></button>}</div>
+            <button className="chat-send" type="submit" aria-label={t.interject} aria-description={sendDisabledReason} aria-keyshortcuts="Enter" title={sendDisabledReason ?? t.interject} disabled={!draft.trim()}><Icon name="send" /></button></> : <button className="chat-send" type="submit" aria-label={t.send} aria-description={sendDisabledReason} aria-keyshortcuts="Enter" title={sendDisabledReason ?? t.send} disabled={busy || !project || (!draft.trim() && !attachments.length) || (!chatId && !availableProvider?.available)}><Icon name="send" /></button>}</div>
         </form>}
         {!archived && customModel !== null && <form className="chat-custom-model" onSubmit={(event) => { event.preventDefault(); const value = customModel.trim(); if (value) void chooseModel(value); else setCustomModel(null); }}>
           <label htmlFor="chat-custom-model">{t.modelCustomLabel}</label>
@@ -1565,14 +1723,14 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
         <p className="chat-composer-note" role="status">{sending === "posting" ? w.sending : busy ? t.working : !availableProvider?.available && !chatId ? availableProvider?.detail ?? (loading ? "" : t.noProvider) : ""}</p>
       </div>
     </main>
-    {panel && <div className="chat-resizer" role="separator" aria-label={t.resize} aria-orientation="vertical" aria-valuemin={320} aria-valuemax={Math.max(320, window.innerWidth - 400)} aria-valuenow={panelWidth} tabIndex={0}
+    {panel && <div className="chat-resizer" role="separator" aria-label={t.resize} aria-keyshortcuts="ArrowLeft ArrowRight" aria-orientation="vertical" aria-valuemin={320} aria-valuemax={Math.max(320, window.innerWidth - 400)} aria-valuenow={panelWidth} tabIndex={0}
       onKeyDown={(event) => { if (event.key === "ArrowLeft" || event.key === "ArrowRight") { event.preventDefault(); setPanelWidth((width) => clampWidth(width + (event.key === "ArrowLeft" ? 32 : -32))); } }}
       onPointerDown={(event) => { event.currentTarget.setPointerCapture(event.pointerId); }} onPointerMove={(event) => { if (event.currentTarget.hasPointerCapture(event.pointerId)) setPanelWidth(clampWidth(window.innerWidth - event.clientX)); }} onPointerUp={(event) => event.currentTarget.releasePointerCapture(event.pointerId)} />}
     {(panel || workspaceTabs.length > 0) && <aside className="chat-browser" aria-label={t.browser} hidden={!panel} inert={!panel} aria-hidden={!panel}>
       <div className="chat-browser__pages">{workspaceTabs.map((item) => {
         const visible = panel && item === selectedTab;
         if (item.id === "monkeymonitor") return <div className="chat-monitor-workspace" key={`${item.id}:${item.revision}`} hidden={!visible} inert={!visible}>
-          <ErrorBoundary label={t.monitor}><MonitorPage preferences={preferences} active={visible} /></ErrorBoundary>
+          <ErrorBoundary label={t.monitor}><MonitorPage preferences={preferences} active={visible} initialProjectId={item.monitorProjectId} openRequest={item.monitorOpenRequest} /></ErrorBoundary>
         </div>;
         if (item.runtimeId) return <div className="chat-project-workspace project-workspace" key={item.runtimeId} hidden={!visible} inert={!visible}>
           <ProjectRuntimeProvider baseUrl={`${window.location.origin}/api/runtime/projects/${item.runtimeId}/studio`}>
@@ -1622,15 +1780,17 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
           const pending = opening?.id === item.id;
           const hint = pending ? s.openingCancel(t[item.label]) : !pressed ? undefined
             : isTool(item.id) && back ? t.toolReturn(t[item.label], t[labelOf(back)]) : t.toolClose(t[item.label]);
+          const disabledReason = pending ? undefined : needsProject && !project ? t.projectRequired
+            : !currentTabs.some((tab) => tab.runtimeId || tab.id === item.id) && (busy || toolBusy) ? t.actionPending : undefined;
           return <button key={item.id} className="chat-rail__tool" aria-label={t[item.label]} aria-pressed={pressed} aria-busy={pending || undefined}
-            aria-description={hint} title={status?.error?.detail ?? stateText ?? hint} data-state={state}
+            aria-description={disabledReason ?? hint} title={disabledReason ?? status?.error?.detail ?? stateText ?? hint} data-state={state}
             disabled={!pending && ((needsProject && !project) || (!currentTabs.some((tab) => tab.runtimeId || tab.id === item.id) && (busy || Boolean(toolBusy))))}
             onClick={() => { if (pending) cancelOpening(); else if (pressed) stepBack(); else void openTool(item.id); }}><Icon name={item.icon} /><span>{t[item.label]}</span>{stateText && <small aria-hidden="true">{stateText}</small>}</button>;
         })}
       </div>)}
       <div className="chat-rail__spacer" />
-      {projectInfo && <div className="chat-project-card" role="dialog" aria-label={t.projectInfo} onKeyDown={(event) => { if (event.key === "Escape") setProjectInfo(false); }}>
-        <div className="chat-project-card__head"><h2>{t.projectInfo}</h2><button className="chat-icon" aria-label={t.close} onClick={() => setProjectInfo(false)}><Icon name="close" /></button></div>
+      {projectInfo && <div id="chat-project-info" className="chat-project-card" role="dialog" aria-label={t.projectInfo}>
+        <div className="chat-project-card__head"><h2>{t.projectInfo}</h2><button ref={projectInfoClose} className="chat-icon" aria-label={t.close} aria-keyshortcuts="Escape" onClick={closeProjectInfo}><Icon name="close" /></button></div>
         {project ? <dl>
           <dt>{t.projects}</dt><dd>{project.name}</dd>
           <dt>{t.path}</dt><dd className="chat-project-card__path" title={project.projectDir}>{project.projectDir}</dd>
@@ -1687,7 +1847,8 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
           settings at the bottom left are the Hub's, for every conversation. */}
       <div className="chat-rail__group chat-rail__group--project" role="group" aria-label={t.railProject}>
         <span className="chat-rail__caption">{t.railProject}</span>
-        <button className="chat-rail__action" aria-expanded={projectInfo} aria-haspopup="dialog" onClick={() => setProjectInfo(!projectInfo)}>
+        <button ref={projectInfoButton} className="chat-rail__action" aria-label={project ? `${t.railProject}: ${project.name}` : t.railProject}
+          aria-expanded={projectInfo} aria-haspopup="dialog" aria-controls={projectInfo ? "chat-project-info" : undefined} onClick={() => setProjectInfo(!projectInfo)}>
           <Icon name="settings" /><span>{project?.name ?? t.projectInfo}</span></button>
       </div>
       <button className="chat-rail__action chat-rail__action--view" aria-pressed={panel} aria-label={panel ? t.hideTools : t.showTools} onClick={() => setPanel(!panel)}>
@@ -1731,11 +1892,26 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
       <div className="chat-dialog__actions"><button type="button" className="btn" onClick={() => restoreDialog.current?.close()}>{t.close}</button>
         <button type="submit" className="btn btn--primary" disabled={busy || !restorePath.trim()}>{busy ? t.restoring : t.restoreRun}</button></div>
     </form></dialog>
-    <dialog ref={settingsDialog} className="chat-dialog chat-dialog--settings" closedby={updateRestarting ? "none" : "closerequest"}
+    <dialog ref={settingsDialog} className="chat-dialog chat-dialog--settings" aria-labelledby="settings-heading" closedby={updateRestarting ? "none" : "closerequest"}
       onClose={() => setSettingsOpen(false)} onCancel={(event) => { if (updateRestarting) event.preventDefault(); }}>
-      <div className="chat-dialog__heading"><h2>{t.settingsHeading}</h2><button className="chat-icon" aria-label={t.close} disabled={updateRestarting} onClick={() => settingsDialog.current?.close()}><Icon name="close" /></button></div>
-      <div inert={updateRestarting}>{settings}</div>
-      <SoftwareUpdateSettings language={preferences.language} open={settingsOpen} restartBlocker={restartBlocker} onRestarting={setUpdateRestarting} />
+      <button className="chat-icon settings-close" aria-label={t.close} disabled={updateRestarting} onClick={() => settingsDialog.current?.close()}><Icon name="close" /></button>
+      <nav className="settings-nav" inert={updateRestarting}>
+        <h2 id="settings-heading">{t.settingsHeading}</h2>
+        <div className="settings-tabs" role="tablist" aria-orientation="vertical" aria-labelledby="settings-heading" onKeyDown={moveSettingsTab}>
+          {settingsTabs.map((tab) => <button key={tab.id} type="button" role="tab" id={`settings-tab-${tab.id}`} className="settings-tab" aria-controls={`settings-page-${tab.id}`}
+            aria-selected={tab.id === shownSettingsPage} tabIndex={tab.id === shownSettingsPage ? 0 : -1} onClick={() => showSettingsPage(tab.id)}><Icon name={tab.icon} /><span>{tab.label}</span></button>)}
+        </div>
+        <div className="settings-nav__status">{settings.status}</div>
+      </nav>
+      <div className="settings-pane" ref={settingsPane}>
+        <div inert={updateRestarting}>{settings.notice}
+          {settings.pages.map((page) => <section key={page.id} role="tabpanel" id={`settings-page-${page.id}`} className="settings-page" aria-labelledby={`settings-tab-${page.id}`}
+            hidden={page.id !== shownSettingsPage}>{page.body}</section>)}
+        </div>
+        <section role="tabpanel" id="settings-page-update" className="settings-page" aria-labelledby="settings-tab-update" hidden={shownSettingsPage !== "update"}>
+          <SoftwareUpdateSettings language={preferences.language} open={settingsOpen} restartBlocker={restartBlocker} onRestarting={setUpdateRestarting} />
+        </section>
+      </div>
     </dialog>
   </div>;
 }

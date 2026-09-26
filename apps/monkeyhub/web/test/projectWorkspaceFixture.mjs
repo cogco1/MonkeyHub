@@ -39,7 +39,9 @@ export async function createProjectWorkspaceFixture(runtimes, sessions) {
     };
     artifact(home);
     const value = { runtime, published, home, assets, artifact,
-      board: { projectId: id, title: `Board ${id}`, elements: [], seenDocuments: [], revisionSha256: null } };
+      board: { projectId: id, title: `Board ${id}`, elements: [], seenDocuments: [], revisionSha256: null },
+      // #300: Layout, Board's second mode, edits the project's publication; none is saved yet.
+      publication: { projectId: id, revisionSha256: null, title: `Layout ${id}`, spec: { width: 1280, height: 720, template: "hero" }, pages: [], sources: [] } };
     projects.set(id, value); return value;
   }
   async function handle(route, url) {
@@ -95,10 +97,12 @@ export async function createProjectWorkspaceFixture(runtimes, sessions) {
           parentBranch: null, forkStageRef: stages[0].stageRef, headStageRef: stages.at(-1).stageRef }] });
       }
       if (name === "/api/board") return json(current.board);
-      // #300: Layout, Board's second mode, reads the project's publication; none is saved yet.
-      if (name === "/api/publication") return json({ projectId, revisionSha256: null, title: `Layout ${projectId}`,
-        spec: { width: 1280, height: 720, template: "hero" }, pages: [], sources: [] });
+      if (name === "/api/publication") return json(current.publication);
+      // #326: a retained model's preview; this fixture retains none, and a runtime without one answers null.
+      if (/^\/api\/model-assets\/[0-9a-f]{64}\/preview$/.test(name)) return json(null);
       if (name === "/api/drawings/styles") return json({ styles: [] });
+      // #320: Drawing reads a drawing's recipe corrections; this fixture retains none.
+      if (name === "/api/drawings/corrections") return json({ projectId, drawingId: url.searchParams.get("drawingId"), pairs: [], suggestions: [] });
       // #271: the head a real runtime would resolve for this fixture, and its read-only Worktree Graph.
       const home = current.assets.get(current.home).dto;
       const tree = designTrees.get(projectId);
@@ -147,6 +151,12 @@ export async function createProjectWorkspaceFixture(runtimes, sessions) {
       }
       workingDraft.revisionSha256 = digest(JSON.stringify([workingDraft.revisionSha256, name, body]));
       return json(workingDraftDto(projectId));
+    }
+    // #332: Layout saves its edits as they are made, on the exact revision it read.
+    if (method === "PUT" && name === "/api/publication") {
+      assert.equal(body.baseRevisionSha256, current.publication.revisionSha256, "Layout writes preserve their exact retained base");
+      current.publication = { ...current.publication, title: body.title, spec: body.spec, pages: body.pages, revisionSha256: digest(JSON.stringify(body)) };
+      return json(current.publication);
     }
     if (method === "PUT" && name === "/api/board") {
       assert.equal(body.baseRevisionSha256, current.board.revisionSha256, "Board writes preserve their exact retained base");

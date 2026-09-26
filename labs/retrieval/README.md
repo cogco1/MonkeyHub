@@ -36,8 +36,11 @@ version ablation. An explicit project is mandatory for project-corpus requests.
 Expansion cannot import another project, edition or jurisdiction. Qualification
 fragments link back to the principal they qualify, so an exception-first hit
 cannot skip its missing table. Cycles are visited once. Missing companions or
-budget overflow reject the entire context; exact available source refs remain
-in `reopen`. Ranking scores are not probabilities or truth confidence.
+budget overflow reject the entire context; exact available fragment/source plus
+corpus, project, jurisdiction and version identity remains in `reopen`. A missing
+companion is also tied to the fragment that required it and that fragment's
+declared link basis, rather than being reported as an unexplained absent id.
+Ranking scores are not probabilities or truth confidence.
 
 `unverified` means only that the selected declared bundle fits. It does **not**
 mean the source extraction is complete or that the query can be answered. The

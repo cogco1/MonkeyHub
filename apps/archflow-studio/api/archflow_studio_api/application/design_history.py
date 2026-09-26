@@ -37,6 +37,7 @@ from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import (
     AUDIT_EVENT,
     CANDIDATE_ADMISSION,
+    CANDIDATE_REVIEW,
     DELIBERATION_EPISODE,
     DESIGN_STAGE,
     RUNNER_RUN_RECEIPT,
@@ -83,6 +84,134 @@ ACCEPTANCE_ATTRIBUTION_SCHEMA = "AcceptanceAttribution@1"
 DESIGN_ACCEPTED = "design.accepted"
 EVENT_SUCCEEDED = "succeeded"
 _STAGE_EXTENSION_KEY = "acceptance_attribution"
+REVIEWS_RUN_ID = "studio-candidate-reviews"
+REVIEW_SCHEMA = "CandidateReview@1"
+
+
+@dataclass(frozen=True, slots=True)
+class ReviewJudgement:
+    ref: str
+    subject_kind: str
+    subject_ref: str
+    disposition: str
+    endorsed: bool
+    actor_id: str
+    occurred_at: str
+    reason: str | None
+    endorsed_by: str | None = None
+    endorsed_at: str | None = None
+    disposition_before_archive: str = "unreviewed"
+
+
+def _review_destination() -> PersistenceDestination:
+    return PersistenceDestination(PersistenceArea.RUN_REVIEW, run_id=REVIEWS_RUN_ID)
+
+
+def _review_run(binding: ProjectBinding, *, create: bool):
+    if not binding.repository.layout.run(REVIEWS_RUN_ID).root.is_dir():
+        if not create:
+            return None
+        return binding.repository.create_run(REVIEWS_RUN_ID)
+    return binding.load_run(REVIEWS_RUN_ID)
+
+
+def review_judgements(binding: ProjectBinding) -> dict[tuple[str, str], ReviewJudgement]:
+    """Read each exact subject's latest complete revision; timestamps never resolve conflicts."""
+    run = _review_run(binding, create=False)
+    if run is None:
+        return {}
+    rows = []
+    for ref in binding.repository.list_json(run=run, destination=_review_destination(), record_kind=CANDIDATE_REVIEW):
+        payload = binding.repository.load_json(ref)
+        if payload.get("schema") != REVIEW_SCHEMA or payload.get("projectId") != binding.project_id:
+            raise StudioError(409, "CANDIDATE_REVIEW_INVALID", "A retained candidate review has an inconsistent project binding.")
+        rows.append((ref.uri, payload))
+    by_subject: dict[tuple[str, str], list[tuple[str, Mapping[str, Any]]]] = {}
+    for row in rows:
+        by_subject.setdefault((row[1].get("subjectKind"), row[1].get("subjectRef")), []).append(row)
+    result = {}
+    for subject, revisions in by_subject.items():
+        parents = {payload.get("previousRevisionRef") for _, payload in revisions} - {None}
+        refs = {ref for ref, _ in revisions}
+        tips = refs - parents
+        if not parents.issubset(refs) or len(tips) != 1:
+            raise StudioError(409, "CANDIDATE_REVIEW_CONFLICT", "A candidate review has competing or incomplete revisions.")
+        ref = next(iter(tips))
+        by_ref = dict(revisions)
+        chain = []
+        cursor = ref
+        seen = set()
+        while cursor is not None and cursor not in seen:
+            seen.add(cursor)
+            payload = by_ref[cursor]
+            chain.append(payload)
+            cursor = payload.get("previousRevisionRef")
+        if cursor is not None or len(seen) != len(revisions):
+            raise StudioError(409, "CANDIDATE_REVIEW_CONFLICT", "A candidate review has competing or incomplete revisions.")
+        payload = chain[0]
+        before_archive = next((row["disposition"] for row in chain if row["disposition"] != "archived"), "unreviewed")
+        endorsement = None
+        previously_endorsed = False
+        for row in reversed(chain):
+            # Earlier records did not name the action: their first endorsement
+            # remains attributable even after a later archive or rejection.
+            if row["endorsed"] and (row.get("action") == "endorse" or not previously_endorsed):
+                endorsement = row
+            elif not row["endorsed"]:
+                endorsement = None
+            previously_endorsed = row["endorsed"]
+        result[subject] = ReviewJudgement(ref, subject[0], subject[1], payload["disposition"],
+                                          payload["endorsed"], payload["actor"]["actorId"],
+                                          payload["occurredAt"], payload.get("reason"),
+                                          endorsement["actor"]["actorId"] if endorsement else None,
+                                          endorsement["occurredAt"] if endorsement else None,
+                                          before_archive)
+    return result
+
+
+def save_review_judgement(binding: ProjectBinding, *, subject_kind: str, subject_ref: str,
+                          action: str, reason: str | None, attribution: ActorAttribution) -> ReviewJudgement:
+    """Retain a human judgement without changing any design pointer or model record."""
+    if subject_kind not in {"candidate", "stage"} or action not in {"reject", "archive", "restore", "endorse"}:
+        raise StudioError(422, "CANDIDATE_REVIEW_INVALID", "Choose an exact Candidate or Stage and a supported review action.")
+    # The revision read and immutable append are one transaction across Runtime
+    # requests and processes; locking only put_json permits two competing tips.
+    with binding.repository.working_draft_guard():
+        if subject_kind == "stage":
+            stage_ref_from(binding, subject_ref)
+            if not any(ref.uri == subject_ref for branch in _branches(binding)
+                       for ref, _ in binding.design_history(branch.branch_id)):
+                raise StudioError(404, "DESIGN_STAGE_NOT_FOUND", "The reviewed Stage is not retained in this design history.")
+            if action != "endorse":
+                raise StudioError(422, "CANDIDATE_REVIEW_INVALID", "Only a Candidate can be rejected or archived.")
+        else:
+            if subject_ref not in {row.candidate_id for row in candidate_pool(binding, include_rejected=True).candidates}:
+                raise StudioError(404, "CANDIDATE_NOT_FOUND", "The reviewed Candidate is not retained in this project.")
+        current = review_judgements(binding).get((subject_kind, subject_ref))
+        disposition = current.disposition if current else "unreviewed"
+        before_archive = current.disposition_before_archive if current else "unreviewed"
+        endorsed = current.endorsed if current else False
+        if action == "reject":
+            disposition = "rejected"
+        elif action == "archive":
+            disposition = "archived"
+        elif action == "restore" and disposition == "archived":
+            disposition = before_archive
+        elif action == "endorse":
+            endorsed = True
+        run = _review_run(binding, create=True)
+        occurred_at = datetime.now(timezone.utc).isoformat()
+        payload = {"schema": REVIEW_SCHEMA, "projectId": binding.project_id, "subjectKind": subject_kind,
+                   "subjectRef": subject_ref, "action": action, "disposition": disposition, "endorsed": endorsed,
+                   "actor": {"actorId": attribution.actor_id, "authenticated": attribution.authenticated,
+                             "origin": attribution.origin}, "occurredAt": occurred_at,
+                   "reason": reason, "previousRevisionRef": None if current is None else current.ref}
+        ref = binding.repository.put_json(run=run, destination=_review_destination(), record_kind=CANDIDATE_REVIEW, payload=payload)
+        return ReviewJudgement(ref.uri, subject_kind, subject_ref, disposition, endorsed,
+                               attribution.actor_id, occurred_at, reason,
+                               attribution.actor_id if action == "endorse" else current.endorsed_by if current else None,
+                               occurred_at if action == "endorse" else current.endorsed_at if current else None,
+                               disposition if disposition != "archived" else before_archive)
 
 
 @dataclass(frozen=True, slots=True)
@@ -128,6 +257,7 @@ class StageView:
     record_digest: str
     acceptance: AcceptanceEvidence | None = None
     acceptance_attribution: RetainedAcceptanceAttribution | None = None
+    review: ReviewJudgement | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -336,13 +466,18 @@ def read_design_history(
     if branches:
         history = binding.design_history(branch_id)
         stages = tuple(read_stage(binding, ref) for ref, _ in history)
+    reviews = review_judgements(binding)
+    stages = tuple(replace(stage, review=reviews.get(("stage", stage.ref.uri))) for stage in stages)
+    pool = candidate_pool(binding, branch_id=branch_id, include_rejected=include_rejected)
+    pool = replace(pool, candidates=tuple(replace(candidate, review=reviews.get(("candidate", candidate.candidate_id)))
+                                          for candidate in pool.candidates))
     # An unstaged project still has a pool: its Candidates sit under no Stage.
     return DesignHistory(
         binding.project_id,
         branches,
         branch_id,
         stages,
-        candidate_pool(binding, branch_id=branch_id, include_rejected=include_rejected),
+        pool,
     )
 
 
@@ -1700,6 +1835,7 @@ class PoolCandidate:
     accepted_stage_ref: str | None = None
     continued_from: str | None = None
     in_working_head_lineage: bool = False
+    review: ReviewJudgement | None = None
 
 
 @dataclass(frozen=True, slots=True)

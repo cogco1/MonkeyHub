@@ -29,8 +29,21 @@ def report(binding, export_id):
     return max(rows, key=lambda r: {"queued": 0, "running": 1, "failed": 2, "succeeded": 2}[r["status"]])
 
 
-def _object(binding, value):
-    data = binding.repository.layout.resolve_relative(value["relative_path"]).read_bytes()
+def _object(binding, value, *, role):
+    try:
+        data = binding.repository.layout.resolve_relative(value["relative_path"]).read_bytes()
+    except FileNotFoundError as exc:
+        raise StudioError(
+            409,
+            f"EXPORT_{role.upper()}_MISSING",
+            f"The retained {role} artifact is missing.",
+        ) from exc
+    except OSError as exc:
+        raise StudioError(
+            409,
+            f"EXPORT_{role.upper()}_UNREADABLE",
+            f"The retained {role} artifact cannot be read.",
+        ) from exc
     if hashlib.sha256(data).hexdigest() != value["sha256"]:
         raise StudioError(409, "EXPORT_DIGEST_MISMATCH", "The retained artifact no longer matches its digest.")
     return data
@@ -40,7 +53,7 @@ def download(binding, export_id):
     result = report(binding, export_id)
     if result["status"] != "succeeded":
         raise StudioError(409, "EXPORT_NOT_READY", "The conversion has not succeeded.")
-    return result, _object(binding, result["outputArtifact"])
+    return result, _object(binding, result["outputArtifact"], role="output")
 
 
 def submit(binding, jobs, payload):
@@ -66,7 +79,7 @@ def submit(binding, jobs, payload):
         if original is None:
             raise StudioError(404, "EXPORT_SOURCE_NOT_FOUND", "This project has no retained source artifact with that ID.")
         source_artifact = original["sourceArtifact"]
-        data = _object(binding, source_artifact)
+        data = _object(binding, source_artifact, role="source")
         source_format = original["sourceFormat"]
     else:
         revision = payload.project_revision

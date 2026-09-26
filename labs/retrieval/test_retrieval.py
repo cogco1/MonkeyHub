@@ -60,6 +60,12 @@ def test_wrong_version_and_jurisdiction_are_not_companions():
     assert result.context == b""
     assert result.missing == ("b", "c")
     assert {x["id"] for x in result.reopen} == {"a"}
+    assert result.missing_details == (
+        {"id": "b", "required_by": "a", "link_basis": None,
+         "required_by_ref": result.reopen[0]},
+        {"id": "c", "required_by": "a", "link_basis": None,
+         "required_by_ref": result.reopen[0]},
+    )
 
 
 def test_companion_cycle_is_bounded_and_preserves_full_text_and_sources():
@@ -80,6 +86,12 @@ def test_byte_budget_is_utf8_including_refs_and_metadata_and_never_splits():
     assert result.status == "insufficient:budget"
     assert result.context == b""
     assert [x["id"] for x in result.reopen] == ["a", "b"]
+    assert result.reopen == (
+        {"id": "a", "source": {"ref": "fixture:a"}, "corpus": "project",
+         "project": "alpha", "jurisdiction": None, "version": None},
+        {"id": "b", "source": {"ref": "fixture:b"}, "corpus": "project",
+         "project": "alpha", "jurisdiction": None, "version": None},
+    )
 
 
 def test_missing_evidence_is_not_empty_success():
@@ -109,10 +121,12 @@ def test_metrics_use_rank_and_emitted_context_separately():
     assert row["recall"] == .5
     assert row["companion_recall"] == 1
     assert row["complete_evidence"] == 1
-    refused = measure(q, retrieve(replace(req, max_bytes=1), docs, Lexical()), docs, .01)
+    refused_result = retrieve(replace(req, max_bytes=1), docs, Lexical())
+    refused = measure(q, refused_result, docs, .01)
     assert refused["recall"] == .5 and refused["companion_recall"] == 0
     assert refused["bytes"] == 0
     assert aggregate([row, refused])["companion_recall"] == .5
+    assert refused["reopen"] == list(refused_result.reopen)
 
 
 def test_known_relevance_metrics_hand_calculated():

@@ -17,6 +17,10 @@ import type { SectionPerspectiveRequestDto } from "./generated";
 import { createDecisionApiDecisionsPost, readDecisionsApiDecisionsGet, readDrawingCorrectionsApiDrawingsCorrectionsGet,
   reviseDecisionApiDecisionsDecisionIdRevisionsPost } from "./generated";
 import type { DecisionDto, DecisionListDto, DecisionRequestDto, DecisionRevisionRequestDto, DrawingCorrectionsDto } from "./generated";
+import { exportDrawingRecipeApiDecisionsDecisionIdRecipeExportGet, inspectDrawingRecipeApiDrawingRecipesInspectPost,
+  importDrawingRecipeApiDrawingRecipesImportPost } from "./generated";
+import type { RecipeExportFileDto, RecipeInspectDto, RecipeInspectRequestDto, RecipeImportRequestDto } from "./generated";
+import type { ReviewJudgementDto, ReviewJudgementRequestDto } from "./generated";
 import { retainStudyApiStudiesPost, discoverStudiesApiStudiesGet,
   proposeStudyApiStudiesProposePost } from "./generated";
 import {
@@ -42,6 +46,7 @@ import {
   readBoardApiBoardGet,
   updateBoardApiBoardPut,
   readCommittedDesignHistoryApiDesignHistoryGet,
+  reviewCandidateOrStageApiCandidateReviewsPost,
   createElevationApiDrawingsElevationsPost,
   createElevationProposalApiProposalsElevationPost,
   readDrawingStylesApiDrawingsStylesGet,
@@ -59,6 +64,7 @@ import {
   createProposalApiProposalsPost,
   createTracingPaperReviewApiTracingPaperReviewsPost,
   createViewportCaptureApiCapturesPost,
+  readRetainedModelPreviewApiModelAssetsAssetSha256PreviewGet,
   exportBoardApiBoardExportPost,
   getUserSettingsApiSettingsUserGet,
   putUserSettingsApiSettingsUserPut,
@@ -273,6 +279,16 @@ export const createStudioClient = (connection: ServerConnection) => ({
   decisions(): Promise<DecisionListDto> {
     return call("GET /api/decisions", readDecisionsApiDecisionsGet({ client: connection.client }));
   },
+  exportDrawingRecipe(decisionId: string, expectedRevisionRef: string): Promise<RecipeExportFileDto> {
+    return call("GET /api/decisions/{decision_id}/recipe-export", exportDrawingRecipeApiDecisionsDecisionIdRecipeExportGet({
+      client: connection.client, path: { decision_id: decisionId }, query: { expectedRevisionRef } }));
+  },
+  inspectDrawingRecipe(body: RecipeInspectRequestDto): Promise<RecipeInspectDto> {
+    return call("POST /api/drawing-recipes/inspect", inspectDrawingRecipeApiDrawingRecipesInspectPost({ client: connection.client, body }));
+  },
+  importDrawingRecipe(body: RecipeImportRequestDto): Promise<DecisionDto> {
+    return call("POST /api/drawing-recipes/import", importDrawingRecipeApiDrawingRecipesImportPost({ client: connection.client, body }));
+  },
   /** Retain one decision, checked against the exact source it names. */
   saveDecision(body: DecisionRequestDto): Promise<DecisionDto> {
     return call("POST /api/decisions", createDecisionApiDecisionsPost({ client: connection.client, body }));
@@ -287,6 +303,9 @@ export const createStudioClient = (connection: ServerConnection) => ({
   },
   designHistory(branchId = "main", signal?: AbortSignal): Promise<DesignHistoryDto> {
     return call("GET /api/design-history", readCommittedDesignHistoryApiDesignHistoryGet({ client: connection.client, query: { branchId }, signal }));
+  },
+  reviewCandidate(body: ReviewJudgementRequestDto): Promise<ReviewJudgementDto> {
+    return call("POST /api/candidate-reviews", reviewCandidateOrStageApiCandidateReviewsPost({ client: connection.client, body }));
   },
   initializeStage(body: InitializeDesignStageRequestDto): Promise<DesignStageDto> {
     return call("POST /api/design-stages/initialize", initializeCommittedDesignApiDesignStagesInitializePost({ client: connection.client, body }));
@@ -403,14 +422,21 @@ export const createStudioClient = (connection: ServerConnection) => ({
   },
 
   /** Retain this browser-rendered PNG in the loaded run's P036 workspace. */
-  async capture(runId: string, png: Blob): Promise<ViewportCaptureDto> {
+  async capture(runId: string, png: Blob, modelSource?: ModelSourceDto): Promise<ViewportCaptureDto> {
     const pngBase64 = base64Of(await png.arrayBuffer());
     return call(
       "POST /api/captures",
       createViewportCaptureApiCapturesPost({ client: connection.client,
-        body: { runId, pngBase64 },
+        body: { runId, pngBase64, ...(modelSource ? { modelSource } : {}) },
       }),
     );
+  },
+
+  modelPreview(source: ModelSourceDto): Promise<SourceDocumentDto | null> {
+    return call("GET /api/model-assets/preview", readRetainedModelPreviewApiModelAssetsAssetSha256PreviewGet({
+      client: connection.client, path: { asset_sha256: source.assetSha256 },
+      query: { runId: source.runId, stateDigest: source.stateDigest },
+    }));
   },
 
   async retainRenderView(body: Omit<RenderViewSourceRequestDto, "pngBase64">, png: Blob): Promise<SourceDocumentDto> {

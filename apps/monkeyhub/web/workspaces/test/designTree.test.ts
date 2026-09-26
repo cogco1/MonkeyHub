@@ -288,6 +288,48 @@ test("a turned-down result cannot become a Stage: Accept says so first, and the 
     (error: { code?: string }) => error.code === "CANDIDATE_REJECTED");
 });
 
+test("processed Candidates are hidden by default, retain their Study identity, and leave the head and acceptance unchanged", async (t) => {
+  const api = await harness(t);
+  const fixture = api.createDesignTreeFixture();
+  const source = sourceOf(fixture);
+  const rejected = source.history.candidates!.find((row) => row.candidateId === "run-massing-a")!;
+  const archived = source.history.candidates!.find((row) => row.candidateId === "run-massing-b")!;
+  rejected.review = { reviewRef: "review-a", disposition: "rejected", endorsed: false,
+    actorId: "Review Architect", occurredAt: "2026-09-27T15:00:00Z", reason: "Does not meet brief", endorsedBy: null, endorsedAt: null };
+  archived.review = { ...rejected.review, reviewRef: "review-b", disposition: "archived", actorId: "Archive Architect" };
+  const accepted = source.history.candidates!.find((row) => row.candidateId === "run-entrance-a")!;
+  accepted.acceptedStageRef = fixture.state.branchHead;
+  accepted.review = { ...rejected.review, reviewRef: "review-accepted" };
+
+  const normal = api.buildGrowthTree(source);
+  assert.equal(normal.processedCount, 2);
+  assert.equal(normal.nodes.has("candidate:run-massing-a"), false);
+  assert.equal(normal.nodes.has("candidate:run-massing-b"), false);
+  assert.equal(normal.nodes.has("candidate:run-entrance-a"), true, "an accepted Stage lineage is not filtered by a later review");
+  assert.equal(normal.nodes.get("current")!.current!.headRunId, fixture.state.head, "filtering never moves Working Head");
+
+  const shown = api.buildGrowthTree(source, true);
+  assert.equal(shown.nodes.get("candidate:run-massing-a")!.letter, "A");
+  assert.equal(shown.nodes.get("candidate:run-massing-b")!.letter, "B");
+  assert.equal(shown.nodes.get("candidate:run-massing-a")!.candidate!.review!.actorId, "Review Architect");
+  assert.equal(shown.nodes.get("candidate:run-massing-a")!.candidate!.review!.occurredAt, "2026-09-27T15:00:00Z");
+
+  fixture.selectWorkingDraft({ projectId: "riverside-library", runId: "run-massing-a",
+    baseRevisionSha256: fixture.workingDraft().revisionSha256 ?? null });
+  const processedCurrent = api.buildGrowthTree({ ...source, workingSource: fixture.workingSource() });
+  assert.equal(processedCurrent.nodes.get("current")!.current!.headRunId, "run-massing-a");
+  assert.equal(processedCurrent.nodes.get("current")!.current!.sourceDisposition, "rejected");
+  assert.deepEqual(processedCurrent.accept, api.buildGrowthTree(sourceOf(fixture)).accept,
+    "review disposition does not introduce a new Stage acceptance rule");
+
+  archived.review = { ...archived.review, disposition: "unreviewed" };
+  const restored = api.buildGrowthTree({ ...source, workingSource: fixture.workingSource() });
+  assert.equal(restored.nodes.has("candidate:run-massing-a"), false, "the other Candidate remains rejected");
+  assert.equal(restored.nodes.has("candidate:run-massing-b"), true);
+  assert.equal(restored.nodes.get("candidate:run-massing-b")!.letter, "B", "cancelling archive keeps the Study option identity");
+  assert.equal(restored.nodes.get("current")!.current!.headRunId, fixture.state.head);
+});
+
 test("a runtime without the admission contract shows Stages, Current and running work only", async (t) => {
   const api = await harness(t);
   const fixture = api.createDesignTreeFixture();
@@ -402,6 +444,27 @@ test("the scene draws three levels of detail and hit targets for every node", as
   for (const id of tree.nodes.keys()) assert.ok(mid.hits.some((hit) => hit.node === id), `${id} can be clicked`);
   const massingD = drawing.nodes.get("candidate:run-massing-d")!;
   assert.equal(api.topmostAt(mid.hits, { x: massingD.card.x + 10, y: massingD.y })?.node, "candidate:run-massing-d");
+  // #337: every colour is the palette's the canvas passes; left out, the light theme's.
+  const palette = Object.fromEntries(Object.keys(api.LIGHT_TREE_PALETTE).map((name, index) =>
+    [name, `#0000${index.toString(16).padStart(2, "0")}`])) as unknown as typeof api.LIGHT_TREE_PALETTE;
+  const tinted = (level: "far" | "mid" | "close", textScale: number) => api.buildTreeScene(tree, drawing,
+    { level, textScale, selected: "current", fontFamily: 2, words: words as never, palette });
+  const byId = (result: ReturnType<typeof scene>, id: string) =>
+    result.skeletons.find((element) => (element as { id?: string }).id === id) as unknown as { strokeColor?: string; backgroundColor?: string };
+  assert.equal(byId(mid, "trunk").strokeColor, api.LIGHT_TREE_PALETTE.accent);
+  const near = tinted("mid", 1.5);
+  assert.equal(byId(near, "trunk").strokeColor, palette.accent);
+  assert.equal(byId(near, "current:card").backgroundColor, palette.accentSoft);
+  const stage = [...tree.nodes.values()].find((node) => node.kind === "stage")!;
+  assert.equal(byId(near, `${stage.id}:card`).backgroundColor, palette.ink);
+  assert.equal(byId(near, `${stage.id}:name`).strokeColor, palette.paper, "a Stage's name is paper on ink");
+  const given = new Set(Object.values(palette));
+  for (const element of [near, tinted("far", 4), tinted("close", 1)].flatMap((result) => result.skeletons)) {
+    const { id, strokeColor, backgroundColor } = element as { id?: string; strokeColor?: string; backgroundColor?: string };
+    for (const colour of [strokeColor, backgroundColor]) {
+      if (colour && colour !== "transparent") assert.ok(given.has(colour), `${id} draws ${colour}, which is not the palette's`);
+    }
+  }
 });
 
 test("text fits its box, and a turned rectangle keeps its own hit area", async (t) => {

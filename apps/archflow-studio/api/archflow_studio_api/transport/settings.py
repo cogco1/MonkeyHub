@@ -18,6 +18,9 @@ class UserSettingsDto(BaseModel):
     language: Literal["en", "zh-CN"] | None = None
     theme: Literal["dark", "light", "system"] | None = None
     font_scale: Literal[0.9, 1.0, 1.1] | None = Field(default=None, alias="fontScale")
+    # How the interface is drawn (#328): Classic is the original look and the
+    # default; the others are the visual directions a person can try.
+    ui_style: Literal["classic", "quiet", "titleblock", "night"] | None = Field(default=None, alias="uiStyle")
     intent_provider: Literal["deterministic", "codex", "anthropic"] | None = Field(
         default=None, alias="intentProvider",
     )
@@ -38,6 +41,12 @@ class UserSettingsDto(BaseModel):
     )
     chat_model: str | None = Field(
         default=None, alias="chatModel", min_length=1, pattern=r"^[^\x00-\x1f\x7f]+$",
+    )
+    # The Anthropic-compatible endpoint a Coding Plan conversation talks to (#334).
+    # An address, not a secret: the token that goes with it is kept in the
+    # account's credential store by the Hub and is never a preference.
+    coding_plan_base_url: str | None = Field(
+        default=None, alias="codingPlanBaseUrl", min_length=1, max_length=512, pattern=r"^https?://[^\s?#@]+$",
     )
     # MonkeyHub's automatic desktop updates; absent means on. The Hub reads
     # and writes it; the Project Runtime ignores it.

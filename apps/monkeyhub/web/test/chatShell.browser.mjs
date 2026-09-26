@@ -89,19 +89,23 @@ const monitorTokens = { input_tokens: 200, cached_input_tokens: 50, output_token
 const monitorDay = new Date(Date.now() - 86_400_000).toISOString();
 const monitorEvents = [
   ...Array.from({ length: 4 }, (_, i) => ({ event_id: `turn-${i}`, source: "codex", provider: "openai", model: "test",
-    phase: "agent_turn", timing_scope: "agent_turn", model_call: null, status: "completed", started_at: monitorDay,
+    project_id: "A", phase: "agent_turn", timing_scope: "agent_turn", model_call: null, status: "completed", started_at: monitorDay,
     tokens: Object.fromEntries(Object.keys(monitorTokens).map((key) => [key, null])) })),
   ...Array.from({ length: 37 }, (_, i) => ({ event_id: `call-${i}`, source: "codex", provider: "openai", model: "test",
-    phase: "agent", model_call: true, status: "observed", started_at: monitorDay, tokens: monitorTokens })),
+    project_id: "A", phase: "agent", model_call: true, status: "observed", started_at: monitorDay, tokens: monitorTokens })),
+  { event_id: "call-B", project_id: "B", source: "codex", provider: "openai", model: "test-b", phase: "agent",
+    model_call: true, status: "observed", started_at: monitorDay, tokens: Object.fromEntries(Object.keys(monitorTokens).map((key) => [key, 0])) },
 ];
 const monitorTrace = { trace_id: "finished-with-missing-end", started_at: "2026-09-20T00:00:00Z", ended_at: "2026-09-20T00:00:02Z",
-  status: "succeeded", summary: { elapsed_ms: 2000, first_candidate_ms: null, verified_ms: 1200 }, spans: [
+  project_id: "A", status: "succeeded", summary: { elapsed_ms: 2000, first_candidate_ms: null, verified_ms: 1200 }, spans: [
     { span_id: "missing-end", label: "Model request", lane: "model", status: "incomplete", offset_ms: 100, duration_ms: null },
   ] };
 const monitorCandidateTrace = { trace_id: "candidate-readback", started_at: "2026-09-20T00:01:00Z", status: "succeeded",
-  summary: { elapsed_ms: 80000, first_candidate_ms: 46241, verified_ms: null }, spans: [] };
+  project_id: "A", summary: { elapsed_ms: 80000, first_candidate_ms: 46241, verified_ms: null }, spans: [] };
 const monitorLegacyTrace = { trace_id: "legacy-no-candidate-timing", started_at: "2026-09-20T00:02:00Z", status: "succeeded",
-  summary: { elapsed_ms: 2000, verified_ms: 1500 }, spans: [] };
+  project_id: "A", summary: { elapsed_ms: 2000, verified_ms: 1500 }, spans: [] };
+const monitorBTrace = { trace_id: "project-B-task", project_id: "B", started_at: "2026-09-20T00:03:00Z", status: "succeeded",
+  summary: { elapsed_ms: 3000 }, spans: [] };
 let monitorFailure = false, monitorReadLocked = false, monitorReadConflicts = 0, documentLoads = 0;
 page.on("request", (request) => {
   if (request.isNavigationRequest() && request.frame() === page.mainFrame()) documentLoads++;
@@ -143,6 +147,8 @@ const archiveSummaryFor = (projectId, projectDir, archivePath) => ({
   archivePath, archiveBytes: 5242880, archiveSha256: "c".repeat(64), verified: true, projectDir,
 });
 const apps = ["monkeyarch", "monkeyboard", "monkeyrender", "monkeyfab", "monkeymonitor"].map((appId) => ({ appId, title: appId, serviceId: appId === "monkeyfab" ? "hub" : appId === "monkeymonitor" ? "monitor" : "studio", state: "running", processId: 1234, available: true, url: `${origin}/tool?app=${appId}` }));
+// Fab uses the built Hub page so its settings button exercises the real iframe bridge.
+Object.assign(apps.find((app) => app.appId === "monkeyfab"), { url: `${origin}/?view=fab`, apiUrl: `${origin}/` });
 // Exercise the actual Hub Monitor page, including its navigation and effects.
 // A static /tool fixture concealed Monitor's former top-window redirect loop.
 Object.assign(apps.find((app) => app.appId === "monkeymonitor"), { url: `${origin}/?view=monitor`, apiUrl: `${origin}/` });
@@ -242,18 +248,23 @@ await page.route((url) => url.pathname.startsWith("/api/"), async (route) => {
       monitorReadLocked = true;
       try {
         await new Promise((resolve) => setTimeout(resolve, 40));
-        return await json(url.pathname === "/api/events" ? { events: monitorEvents, warnings: [] } : { traces: [monitorTrace, monitorCandidateTrace, monitorLegacyTrace], warnings: [] });
+        return await json(url.pathname === "/api/events" ? { events: monitorEvents, warnings: [] } : { traces: [monitorTrace, monitorCandidateTrace, monitorLegacyTrace, monitorBTrace], warnings: [] });
       } finally { monitorReadLocked = false; }
     }
     if (url.pathname === "/api/rates") return json({ rates: [] });
     return json({ paths: ["D:\\fixture\\usage.jsonl"] });
   }
   if (url.pathname === "/api/settings/apps") { if (method === "PUT") settings = data(); return json(settings); }
+  if (url.pathname === "/api/credentials") return json(["gemini", "coding-plan"].map((id) => ({ id, configured: false, source: null, variable: null, saved: false, storeAvailable: true })));
   if (url.pathname === "/api/settings/user") {
     if (method === "PUT") { const body = data(); if (settingsWriteGate) await settingsWriteGate; preferences = body; }
     return json(preferences);
   }
   if (url.pathname === "/api/apps") return json(url.searchParams.has("projectDir") ? appsFor(url.searchParams.get("projectDir")) : apps);
+  if (method === "GET" && url.pathname === "/api/fab/profiles") return json({ h2s: {
+    key: "h2s", label: "Fixture H2S", nominal_volume_mm: [300, 300, 300], usable_origin_mm: [0, 0, 0],
+    usable_volume_mm: [290, 290, 290], notes: "Synthetic browser fixture", sources: [],
+  } });
   if (url.pathname === "/api/runtime") { runtimeReads++; if (runtimeReadGate) await runtimeReadGate; return json(runtimeSnapshot()); }
   if (url.pathname === "/api/runtime/projects/open") {
     const body = data(), project = projects.find((item) => item.projectDir === body.projectDir && item.projectId === body.projectId);
@@ -473,6 +484,8 @@ await page.route((url) => url.pathname.startsWith("/api/"), async (route) => {
 const railWidth = () => page.evaluate(() => document.querySelector(".chat-rail").getBoundingClientRect().width);
 // GH-302: Hub settings have no Save button; each change saves itself and the status line says Saved.
 const settingsSaved = () => page.waitForFunction(() => document.querySelector("#settings-save-state")?.dataset.state === "saved");
+// #328: Settings is paged; each page opens from the list beside it.
+const settingsPage = (name) => page.getByRole("dialog").getByRole("tab", { name, exact: true }).click();
 const boxOf = (selector) => page.evaluate((value) => {
   const node = document.querySelector(value);
   return node ? node.getBoundingClientRect().width : 0;
@@ -481,6 +494,43 @@ const boxOf = (selector) => page.evaluate((value) => {
 const activityRows = (expected) => page.waitForFunction((count) => [...document.querySelectorAll(".chat-process__row")]
   .some((row) => row.textContent.includes(`${count} steps`)), expected);
 const visibleWorkspace = () => page.locator('.chat-project-workspace:not([hidden])');
+// Compare decoded pixels exactly; PNG encoding bytes are not the rendered view.
+const assertSameScreenshotPixels = async (actual, expected, message) => {
+  const difference = await page.evaluate(async ({ actual, expected }) => {
+    const decode = async (base64) => {
+      const bytes = Uint8Array.from(atob(base64), (character) => character.charCodeAt(0));
+      const bitmap = await createImageBitmap(new Blob([bytes], { type: "image/png" }));
+      try {
+        const canvas = document.createElement("canvas");
+        canvas.width = bitmap.width; canvas.height = bitmap.height;
+        const context = canvas.getContext("2d", { willReadFrequently: true });
+        if (!context) throw new Error("Screenshot comparison requires a 2D canvas");
+        context.drawImage(bitmap, 0, 0);
+        return { width: canvas.width, height: canvas.height, pixels: context.getImageData(0, 0, canvas.width, canvas.height).data };
+      } finally { bitmap.close(); }
+    };
+    const [a, e] = await Promise.all([decode(actual), decode(expected)]);
+    const dimensions = { actual: [a.width, a.height], expected: [e.width, e.height] };
+    if (a.width !== e.width || a.height !== e.height) {
+      return { dimensions, differentPixels: null, maxChannelDelta: null, samples: [] };
+    }
+    let differentPixels = 0, maxChannelDelta = 0;
+    const samples = [];
+    for (let offset = 0; offset < a.pixels.length; offset += 4) {
+      let delta = 0;
+      for (let channel = 0; channel < 4; channel++) delta = Math.max(delta, Math.abs(a.pixels[offset + channel] - e.pixels[offset + channel]));
+      if (!delta) continue;
+      differentPixels++; maxChannelDelta = Math.max(maxChannelDelta, delta);
+      if (samples.length < 8) samples.push({ x: (offset / 4) % a.width, y: Math.floor(offset / 4 / a.width),
+        actual: Array.from(a.pixels.subarray(offset, offset + 4)), expected: Array.from(e.pixels.subarray(offset, offset + 4)) });
+    }
+    return { dimensions, differentPixels, maxChannelDelta, samples };
+  }, { actual: actual.toString("base64"), expected: expected.toString("base64") });
+  console.log(JSON.stringify({ screenshotComparison: message, ...difference }));
+  const diagnostic = `${message}: ${JSON.stringify(difference)}`;
+  assert.deepEqual(difference.dimensions.actual, difference.dimensions.expected, diagnostic);
+  assert.equal(difference.differentPixels, 0, diagnostic);
+};
 // #285: the composer's + menu holds Add attachments and New topic; the composer
 // names the design context the next message carries.
 const composerMenu = (name = "Attachments and new topic") => page.getByRole("button", { name, exact: true });
@@ -589,7 +639,7 @@ const autosavedModelRestart = async () => {
   };
   const blocker = "A model draft is still being saved. Wait a moment before restarting.";
   const restart = page.getByRole("button", { name: "Restart to update", exact: true });
-  const openSettings = () => page.getByRole("button", { name: "Hub settings", exact: true }).click();
+  const openSettings = async () => { await page.getByRole("button", { name: "Hub settings", exact: true }).click(); await settingsPage("Software update"); };
   const closeSettings = () => page.getByRole("dialog").getByRole("button", { name: "Close", exact: true }).click();
   const restartAllowed = async (message) => {
     await page.waitForFunction(() => [...document.querySelectorAll("button")].find((button) => button.textContent === "Restart to update")?.disabled === false);
@@ -663,7 +713,128 @@ const autosavedModelRestart = async () => {
   await page.evaluate(() => localStorage.removeItem("monkeyhub.chat-view.v1"));
 };
 try {
-  if (process.env.MONKEYHUB_UI_FOCUS === "attachments") {
+  if (process.env.MONKEYHUB_UI_FOCUS === "accessibility") {
+    const cdp = await page.context().newCDPSession(page);
+    const accessible = async (role, name) => {
+      const { nodes } = await cdp.send("Accessibility.getFullAXTree");
+      const node = nodes.find((entry) => !entry.ignored && entry.role?.value === role && entry.name?.value === name);
+      assert.ok(node, `${role} ${name} is present in the browser accessibility tree`);
+      return node;
+    };
+    const focused = async (locator) => assert.equal(await locator.evaluate((node) => node === document.activeElement), true);
+    for (const language of ["en", "zh-CN"]) {
+      preferences = { ...preferences, language };
+      await page.goto(origin);
+      await page.waitForFunction(() => document.querySelector("#chat-input") && !document.querySelector("#chat-input").disabled);
+      const names = language === "en" ? {
+        archive: "Archived chats", settings: "Hub settings", project: "This project: Project A", close: "Close",
+        menu: "Attachments and new topic", topic: "New topic", send: "Send", empty: "Write a message or add an attachment first.",
+        sidebarToggle: /^(Hide|Show) projects$/,
+      } : {
+        archive: "已归档对话", settings: "Hub 设置", project: "此项目: Project A", close: "关闭",
+        menu: "附件与新话题", topic: "新话题", send: "发送", empty: "请先输入消息或添加附件。",
+        sidebarToggle: /^(收起|展开)项目栏$/,
+      };
+      // #337: the sidebar toggle sits in the menu row; its name says what a click does.
+      const sidebarToggle = page.locator(".chat-menubar").getByRole("button", { name: names.sidebarToggle });
+      if (await page.locator(".chat-shell").getAttribute("data-sidebar") === "true") await sidebarToggle.click();
+      for (const name of [names.archive, names.settings]) {
+        const button = page.getByRole("button", { name, exact: true });
+        await button.focus(); await focused(button);
+        await accessible("button", name);
+      }
+      await page.getByRole("button", { name: names.archive, exact: true }).press("Enter");
+      const active = page.locator(".chat-archive-toggle");
+      assert.equal(await active.getAttribute("aria-pressed"), "true");
+      await accessible("button", await active.getAttribute("aria-label"));
+      await active.press("Enter");
+      await page.getByRole("button", { name: names.settings, exact: true }).press("Enter");
+      await page.locator(".chat-dialog--settings").waitFor({ state: "visible" });
+      await page.keyboard.press("Escape");
+      await page.locator(".chat-dialog--settings").waitFor({ state: "hidden" });
+
+      const projectButton = page.getByRole("button", { name: names.project, exact: true });
+      const projectName = await accessible("button", names.project);
+      assert.equal(projectName.name.value.includes(projects[0].projectDir), false);
+      await projectButton.focus(); await projectButton.press("Enter");
+      const close = page.locator(".chat-project-card__head").getByRole("button", { name: names.close, exact: true });
+      await focused(close);
+      assert.equal(await projectButton.getAttribute("aria-controls"), "chat-project-info");
+      await page.keyboard.press("Escape");
+      assert.equal(await page.locator(".chat-project-card").count(), 0);
+      await focused(projectButton);
+      // Escape also closes after Tab leaves the card, or focus returns to its trigger.
+      await projectButton.press("Enter");
+      await page.keyboard.press("Tab");
+      await page.keyboard.press("Escape");
+      await focused(projectButton);
+      await projectButton.press("Enter");
+      await projectButton.focus(); await page.keyboard.press("Escape");
+      await focused(projectButton);
+      await projectButton.press("Enter");
+      await close.press("Enter"); await focused(projectButton);
+      // A modal launched from this nonmodal card owns the first Escape.
+      await projectButton.press("Enter");
+      await page.locator(".chat-project-card__archive button").first().click();
+      await page.locator("dialog.chat-dialog--archive").first().waitFor({ state: "visible" });
+      await page.keyboard.press("Escape");
+      await page.locator("dialog.chat-dialog--archive").first().waitFor({ state: "hidden" });
+      assert.equal(await page.locator(".chat-project-card").count(), 1);
+      await page.keyboard.press("Escape"); await focused(projectButton);
+
+      const send = page.getByRole("button", { name: names.send, exact: true });
+      assert.equal(await send.isDisabled(), true);
+      assert.equal((await accessible("button", names.send)).description.value, names.empty);
+      assert.equal(await send.getAttribute("title"), names.empty);
+      assert.equal(await page.locator("#chat-input").getAttribute("aria-keyshortcuts"), "Enter Shift+Enter");
+      assert.equal((await accessible("button", names.send)).properties.find((property) => property.name === "keyshortcuts").value.value, "Enter");
+      await page.locator("#chat-input").fill("First line");
+      await page.locator("#chat-input").press("Shift+Enter");
+      assert.equal(await page.locator("#chat-input").inputValue(), "First line\n");
+      assert.equal(writes.filter(([, route]) => route.endsWith("/messages")).length, 0);
+      await page.locator("#chat-input").fill("");
+      const menu = composerMenu(names.menu);
+      await menu.focus(); await menu.press("Enter");
+      await page.keyboard.press("ArrowDown");
+      const topic = page.getByRole("menuitemcheckbox", { name: names.topic, exact: true });
+      await focused(topic);
+      const topicAX = await accessible("menuitemcheckbox", names.topic);
+      assert.equal(topicAX.properties.find((property) => property.name === "checked").value.value, "false");
+      assert.ok(topicAX.description.value.length > 0);
+      await page.keyboard.press("Escape"); await focused(menu);
+      await sidebarToggle.click();
+    }
+    preferences = { ...preferences, language: "en" };
+    await page.goto(origin);
+    await page.waitForFunction(() => document.querySelector("#chat-input") && !document.querySelector("#chat-input").disabled);
+    await page.locator("#chat-input").fill("Check keyboard sending");
+    await page.locator("#chat-input").press("Enter");
+    await page.getByRole("button", { name: "Stop", exact: true }).waitFor();
+    assert.equal(writes.filter(([, route]) => route.endsWith("/messages")).length, 1, "Enter sends once");
+    assert.equal((await accessible("combobox", "Model")).description.value, "The model can be changed once this reply finishes.");
+    assert.equal((await accessible("button", "Interject")).description.value, "Write a message to interject first.");
+    const archive = page.locator(".chat-thread-action").first();
+    assert.equal(await archive.isDisabled(), true);
+    assert.ok((await accessible("button", await archive.getAttribute("aria-label"))).description.value.length > 0);
+    await composerMenu().click();
+    const blockedTopic = page.getByRole("menuitemcheckbox", { name: "New topic", exact: true });
+    assert.equal((await accessible("menuitemcheckbox", "New topic")).description.value, "Wait for this reply to finish before starting a new topic.");
+    await blockedTopic.focus(); await page.keyboard.press("Enter");
+    assert.equal(await blockedTopic.getAttribute("aria-checked"), "false", "the disabled choice does not activate by keyboard");
+    await page.keyboard.press("Escape");
+    await page.getByRole("button", { name: "Stop", exact: true }).click();
+
+    projects.splice(0); sessions.splice(0); settings.projectDir = null;
+    await page.evaluate(() => { localStorage.removeItem("monkeyhub.chat-view.v1"); localStorage.removeItem("monkeyhub.chat-drafts.v1"); });
+    await page.goto(origin);
+    await page.getByRole("button", { name: "This project", exact: true }).waitFor();
+    for (const name of ["Send", "Attachments and new topic", "Modeling", "Board", "Drawings", "Render", "Design tree"]) {
+      const button = page.getByRole("button", { name, exact: true });
+      assert.equal(await button.isDisabled(), true);
+      assert.equal((await accessible("button", name)).description.value, "Add or choose a project first.");
+    }
+    await cdp.detach();
+  } else if (process.env.MONKEYHUB_UI_FOCUS === "attachments") {
     const restoredFocus = [];
     for (const theme of ["dark", "light"]) {
       for (const fontScale of [0.9, 1, 1.1]) {
@@ -780,21 +951,43 @@ try {
   await studioReady();
   assert.equal(writes.filter(([, pathname, body]) => pathname === "/api/project/modeling" && body.projectId === "harbour-study").length, 0);
   await page.getByRole("button", { name: "Fabrication", exact: true }).click();
-  await page.waitForFunction(() => document.querySelector("iframe:not([hidden])")?.src.includes("app=monkeyfab"));
+  await page.waitForFunction(() => document.querySelector("iframe:not([hidden])")?.src.includes("view=fab"));
+  const fabFrame = page.frameLocator('iframe:not([hidden])');
+  await fabFrame.locator('#fab-printer option[value="h2s"]').waitFor({ state: "attached" });
+  assert.equal(await fabFrame.locator('#fab-printer option[value="h2s"]').innerText(), "Fixture H2S");
+  assert.equal(await fabFrame.locator("#fab-source").isEnabled(), true, "the real Fab page loaded its printer profiles from the API fixture");
+  await fabFrame.getByRole("button", { name: "Display settings", exact: true }).click();
+  const hubSettings = page.getByRole("dialog").filter({ hasText: "Hub settings (global)" });
+  await hubSettings.waitFor();
+  assert.equal(await hubSettings.getByRole("tab", { name: "Display", exact: true }).getAttribute("aria-selected"), "true",
+    "Fab opens the existing Hub Display settings page");
+  assert.equal(await fabFrame.getByRole("heading", { name: "MonkeyFab", exact: true }).count(), 1,
+    "opening settings leaves the hosted Fab page mounted instead of loading a second Hub in its iframe");
+  await hubSettings.getByRole("button", { name: "Close", exact: true }).click();
   assert.ok(!writes.some(([, pathname]) => pathname === "/api/project/modeling"),
     "new-project creation and independent tools leave modeling inputs alone");
   await page.getByRole("button", { name: "Project A", exact: true }).first().click();
   const beforeIndependent = writes.length;
   const beforeIndependentProject = settings.projectDir;
   await page.getByRole("button", { name: "Fabrication", exact: true }).click();
-  await page.waitForFunction(() => document.querySelector("iframe:not([hidden])")?.src.includes("app=monkeyfab"));
+  await page.waitForFunction(() => document.querySelector("iframe:not([hidden])")?.src.includes("view=fab"));
   const beforeMonitorNavigation = documentLoads;
   const composer = page.getByRole("textbox", { name: "What would you like to do in this project?" });
   await composer.fill("Keep this conversation while viewing usage");
   await page.getByRole("button", { name: "Usage", exact: true }).click();
   await waitMonitor();
+  const projectFilter = page.locator(".monitor-heading").getByRole("combobox");
+  assert.equal(await projectFilter.inputValue(), "A", "Usage opened from Project A starts in that project's scope");
   const callCard = page.locator(".monitor-stat").filter({ has: page.getByText("Model calls", { exact: true }) }).locator("strong");
   assert.equal(await callCard.innerText(), "37", "four Codex task boundaries are not model calls");
+  assert.equal(await page.locator('.monitor-section__head select option[value="project-B-task"]').count(), 0,
+    "Project A's task timeline excludes Project B");
+  await projectFilter.selectOption("");
+  assert.equal(await callCard.innerText(), "38", "All projects includes the separate Project B fixture record");
+  await page.locator(".monitor-page").getByRole("button", { name: "Refresh", exact: true }).click();
+  await waitMonitor();
+  assert.equal(await projectFilter.inputValue(), "", "refreshing and polling do not restore the opening project's filter");
+  await projectFilter.selectOption("A");
   await page.getByText("Showing 20 of 37 records", { exact: true }).waitFor();
   assert.equal(await page.locator(".monitor-table tbody tr").count(), 20);
   const displayedTokens = page.locator(".monitor-table tfoot tr").filter({ hasText: "Displayed model-call subtotal" }).locator("td").first();
@@ -850,6 +1043,47 @@ try {
   monitorFailure = false;
   await page.locator(".monitor-page").getByRole("button", { name: "Reconnect", exact: true }).click();
   await waitMonitor();
+  // Project navigation is separate from the independent-tool lifecycle above.
+  await page.getByRole("button", { name: "Project B", exact: true }).first().click();
+  await page.waitForFunction(() => document.querySelector(".chat-header__project")?.textContent === "Project B");
+  await studioReady();
+  assert.equal(writes.filter(([, pathname, , target]) => pathname === "/api/apps/monkeyrender/start" && target === "D:\\fixture\\B").length, 1,
+    "Project B starts its Runtime once on the first project navigation");
+  await page.getByRole("button", { name: "Usage", exact: true }).click();
+  await waitMonitor();
+  await page.waitForFunction(() => document.querySelector(".monitor-heading select")?.value === "B");
+  assert.equal(await projectFilter.inputValue(), "B", "reopening Usage from Project B establishes Project B's initial scope");
+  assert.equal(await callCard.innerText(), "1");
+  await page.locator('.monitor-section__head select').selectOption("project-B-task");
+  assert.equal(await page.locator(".monitor-table tbody tr").count(), 1, "Project B's records exclude Project A");
+  await page.getByRole("button", { name: "harbour-study", exact: true }).first().click();
+  await page.waitForFunction(() => document.querySelector(".chat-header__project")?.textContent === "harbour-study");
+  await page.getByRole("button", { name: "Usage", exact: true }).click();
+  await waitMonitor();
+  await page.waitForFunction(() => document.querySelector(".monitor-heading select")?.value === "harbour-study");
+  assert.equal(await projectFilter.inputValue(), "harbour-study");
+  assert.equal(await callCard.innerText(), "0", "a project with no Monitor records shows zero rather than cross-project totals");
+  await page.getByText("No task records yet. Tasks started from MonkeyHub will appear here.", { exact: true }).waitFor();
+  await page.getByText("No usage records yet.", { exact: true }).waitFor();
+  await projectFilter.selectOption("");
+  assert.equal(await callCard.innerText(), "38");
+  await projectFilter.selectOption("harbour-study");
+  assert.equal(await callCard.innerText(), "0", "the opening project remains selectable after choosing All even with no records");
+  await page.getByRole("button", { name: "Project A", exact: true }).first().click();
+  await page.waitForFunction(() => document.querySelector(".chat-header__project")?.textContent === "Project A");
+  await page.getByRole("button", { name: "Usage", exact: true }).click();
+  await waitMonitor();
+  await page.locator(".chat-usage").click();
+  await waitMonitor();
+  await page.waitForFunction(() => document.querySelector(".monitor-heading select")?.value === "");
+  assert.equal(await projectFilter.inputValue(), "", "the sidebar totals open all projects even while Project A is selected");
+  await projectFilter.selectOption("A");
+  await page.getByRole("menuitem", { name: "Help", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Usage and task records", exact: true }).click();
+  await waitMonitor();
+  await page.waitForFunction(() => document.querySelector(".monitor-heading select")?.value === "");
+  assert.equal(await projectFilter.inputValue(), "", "the global Help menu opens all projects");
+  await projectFilter.selectOption("A");
   // A hidden mounted Monitor must not poll or take top-level navigation back.
   await page.getByRole("button", { name: "Hide tools" }).click();
   await page.locator(".monitor-page").waitFor({ state: "hidden" });
@@ -1139,7 +1373,7 @@ try {
   assert.equal(await visibleWorkspace().evaluate((element) => element.retainedCanvas === element.querySelector(".stage canvas")), true);
   await page.mouse.move(10, 10);
   await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
-  assert.deepEqual(await visibleWorkspace().locator(".stage canvas").first().screenshot(), preservedView, "the chosen camera view survives Board/model switches");
+  await assertSameScreenshotPixels(await visibleWorkspace().locator(".stage canvas").first().screenshot(), preservedView, "the chosen camera view survives Board/model switches");
   await page.screenshot({ path: path.join(temporary, "hub-arch.png") });
   assert.equal(await visibleWorkspace().evaluate((element) => element.switchMarker), "retained", "both workspaces share one mounted project");
   assert.equal(await page.evaluate(() => localStorage.getItem("archflow-studio.user-preferences")), savedEditingBases, "candidate readback and workspace switches do not change editing consent");
@@ -1267,7 +1501,7 @@ try {
   await entry("Drawings").click();
   await waitWorkspace("drawing");
   await entry("Fabrication").click();
-  await page.waitForFunction(() => document.querySelector("iframe:not([hidden])")?.src.includes("app=monkeyfab"));
+  await page.waitForFunction(() => document.querySelector("iframe:not([hidden])")?.src.includes("view=fab"));
   assert.equal(await entry("Fabrication").getAttribute("aria-description"), "Close Fabrication and return to Board");
   await entry("Fabrication").click();
   await waitWorkspace("board");
@@ -1312,9 +1546,36 @@ try {
   await page.locator(".chat-browser").waitFor();
   assert.ok(Math.abs(await boxOf(".chat-browser") - savedWidth) < 12, "the panel width is restored");
 
+  // #337: the menu row. File opens from the keyboard and names what it does; Escape
+  // returns to the word; View changes the theme through the same saved preferences.
+  const fileWord = page.getByRole("menuitem", { name: "File", exact: true });
+  await fileWord.focus();
+  await page.keyboard.press("ArrowDown");
+  const fileMenu = page.getByRole("menu", { name: "File", exact: true });
+  assert.deepEqual((await fileMenu.getByRole("menuitem").allInnerTexts()).map((text) => text.trim()),
+    ["New chat", "New project…", "Add existing project…", "Export project archive…", "Restore project archive…", "Settings…"]);
+  await page.keyboard.press("Escape");
+  await fileMenu.waitFor({ state: "detached" });
+  await page.waitForFunction(() => document.activeElement?.id === "hub-menu-file"); // Escape returns to the menu's word
+  await page.getByRole("menuitem", { name: "View", exact: true }).click();
+  await page.getByRole("menuitemradio", { name: "Dark", exact: true }).click();
+  await page.waitForFunction(() => document.documentElement.dataset.theme === "dark");
+  await page.screenshot({ path: path.join(temporary, "menu-row-dark.png") });
+  await page.getByRole("menuitem", { name: "View", exact: true }).click();
+  await page.getByRole("menuitemradio", { name: "Light", exact: true }).click();
+  await page.waitForFunction(() => document.documentElement.dataset.theme === "light");
+  // Every interface style draws the same row; the crops are for review by eye.
+  for (const [style, name] of [["quiet", "Quiet instrument"], ["titleblock", "Title block"], ["night", "Night flight"], ["classic", "Classic"]]) {
+    await page.getByRole("menuitem", { name: "View", exact: true }).click();
+    await page.getByRole("menuitemradio", { name, exact: true }).click();
+    await page.waitForFunction((value) => (document.documentElement.getAttribute("data-ui-style") ?? "classic") === value, style);
+    await page.screenshot({ path: path.join(temporary, `menu-row-${style}.png`), clip: { x: 0, y: 0, width: 760, height: 180 } });
+  }
+
   // B — the global defaults live in the bottom-left Hub settings only.
   await page.getByRole("button", { name: "Hub settings", exact: true }).click();
   const dialog = page.getByRole("dialog").filter({ hasText: "Hub settings (global)" });
+  await settingsPage("Conversations");
   await dialog.getByRole("heading", { name: "New conversation defaults" }).waitFor();
   await dialog.getByText("The model list comes from this CLI's own catalogue.").waitFor();
   assert.deepEqual(await page.locator("#default-chat-model option").allInnerTexts(),
@@ -1328,11 +1589,15 @@ try {
   await dialog.getByText("This CLI offers no model list; a model id can be entered by hand.").waitFor();
   await page.locator("#default-chat-model").selectOption("__custom__");
   await page.locator("#default-chat-model-custom").fill("claude-opus-5");
+  await settingsPage("AI Render");
   await page.locator("#render-provider").selectOption("gemini");
   await page.locator("#render-model").fill("gemini-3.1-flash-image");
   await page.locator("#render-timeout").fill("75");
-  assert.equal(await page.locator('input[type="password"]').count(), 0, "render credentials never enter settings UI");
+  // #334: keys go in through password fields that never show a saved key back.
+  const keyFields = page.locator('input[type="password"]');
+  assert.deepEqual(await keyFields.evaluateAll((nodes) => nodes.map((node) => [node.id, node.value])), [["coding-plan-token", ""], ["gemini-key", ""]]);
   const rechecks = providerReads.filter((value) => value === "true").length;
+  await settingsPage("Conversations");
   await page.locator("#recheck-connections").click();
   await page.waitForFunction((count) => true, rechecks);
   assert.equal(await page.locator("#save-appearance, #save-launch").count(), 0, "Hub settings have no Save buttons");
@@ -1393,7 +1658,10 @@ try {
   assert.equal(settings.projectDir, "D:\\fixture\\A", "cross-project chat leaves the default project unchanged");
   assert.equal(runningA.status, "running", "A continues while B starts its own turn");
   assert.ok(!writes.slice(beforeSwitchWrites).some(([method, pathname]) => pathname.endsWith("/stop") || (method === "PUT" && pathname === "/api/settings/apps")), "switching never stops A or rewrites its configuration");
-  assert.equal(writes.slice(beforeSwitchWrites).filter(([, pathname, , target]) => pathname === "/api/apps/monkeyrender/start" && target === "D:\\fixture\\B").length, 1);
+  assert.equal(writes.slice(beforeSwitchWrites).filter(([, pathname, , target]) => pathname === "/api/apps/monkeyrender/start" && target === "D:\\fixture\\B").length, 0,
+    "starting B's conversation reuses the Runtime already opened while viewing its usage");
+  assert.equal(writes.filter(([, pathname, , target]) => pathname === "/api/apps/monkeyrender/start" && target === "D:\\fixture\\B").length, 1,
+    "Project B has still started exactly once");
 
   // C — the gear follows the conversation's project rather than keeping the old one.
   await page.getByRole("button", { name: /Project B/ }).last().click();
@@ -1500,7 +1768,7 @@ try {
   assert.equal(await visibleWorkspace().evaluate((element) => element.completionMarker), "once");
   assert.equal(workspaceFixture.requests.filter((row) => row.name.endsWith("/bytes")).length, beforeRefreshBytes,
     "refreshing an already shown candidate does not reinstall its model");
-  assert.deepEqual(await visibleWorkspace().locator(".stage canvas").first().screenshot(), beforeRefreshCanvas,
+  await assertSameScreenshotPixels(await visibleWorkspace().locator(".stage canvas").first().screenshot(), beforeRefreshCanvas,
     "refreshing keeps the camera chosen after the candidate appeared");
 
   // #302: headless API jobs have no chat message, and their completed results take
@@ -1718,6 +1986,7 @@ try {
 
   await page.screenshot({ path: path.join(temporary, "desktop.png"), fullPage: true });
   await page.getByRole("button", { name: "Hub settings", exact: true }).click();
+  await settingsPage("Workspace");
   await page.getByText("More launch options", { exact: true }).click();
   const diagnostics = page.getByRole("checkbox", { name: "Developer / Research Mode", exact: true });
   const checkBox = await diagnostics.boundingBox();
@@ -1729,6 +1998,7 @@ try {
   assert.equal(await page.getByRole("checkbox", { name: "Event stream", exact: true }).isVisible(), true);
   await diagnostics.uncheck();
   const englishStageLabel = await visibleWorkspace().locator(".stage").getAttribute("aria-label");
+  await settingsPage("Display");
   await page.locator("#theme").selectOption("dark");
   await page.locator("#language").selectOption("zh-CN");
   assert.equal(await page.locator("html").getAttribute("lang"), "zh-CN");
@@ -1922,6 +2192,7 @@ try {
   // hidden composer. Opening/closing settings must preserve the actual files.
   updateStatus = { ...updateStatus, state: "ready", prepared: preparedPatch, canApply: true };
   await page.getByRole("button", { name: "Hub settings", exact: true }).click();
+  await settingsPage("Software update");
   await page.getByText("A conversation has unsent text or attachments. Send or remove them before restarting.").waitFor();
   assert.equal(await page.getByRole("button", { name: "Restart to update", exact: true }).isDisabled(), true);
   assert.equal(appliedPatches, 0);
@@ -1961,6 +2232,7 @@ try {
   updateStatus = { ...updateStatus, state: "ready", prepared: preparedPatch, canApply: true };
   assert.equal(await page.locator("#chat-input").inputValue(), "");
   await page.getByRole("button", { name: "Hub settings", exact: true }).click();
+  await settingsPage("Software update");
   await page.getByText("A conversation has unsent text or attachments. Send or remove them before restarting.").waitFor();
   assert.equal(await page.getByRole("button", { name: "Restart to update", exact: true }).isDisabled(), true,
     "Project A's hidden draft blocks restart even though B's visible composer is empty");
@@ -2075,10 +2347,10 @@ try {
   await page.getByRole("button", { name: "Modeling", exact: true }).click();
   await waitWorkspace();
   await page.getByRole("button", { name: "Fabrication", exact: true }).click();
-  await page.waitForFunction(() => document.querySelector("iframe:not([hidden])")?.src.includes("app=monkeyfab"));
+  await page.waitForFunction(() => document.querySelector("iframe:not([hidden])")?.src.includes("view=fab"));
   assert.equal(new URL(page.url()).searchParams.has("runtimeId"), false);
   await page.reload();
-  await page.waitForFunction(() => document.querySelector("iframe:not([hidden])")?.src.includes("app=monkeyfab"));
+  await page.waitForFunction(() => document.querySelector("iframe:not([hidden])")?.src.includes("view=fab"));
   assert.equal(await page.locator('.chat-project[data-selected="true"] .chat-project__name').innerText(), "Project B");
   await page.getByRole("button", { name: "Usage", exact: true }).click();
   await waitMonitor();
@@ -2307,14 +2579,14 @@ try {
   await documentDialog.getByRole("button", { name: "Close", exact: true }).click();
   await page.screenshot({ path: path.join(temporary, "external-presentation.png"), fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.locator(".chat-sidebar__top .chat-icon").click();
+  await page.locator(".chat-menubar").getByRole("button", { name: /^(Hide|Show) projects$/ }).click();
   await preview.click();
   const previewBounds = await imageDialog.boundingBox();
   assert.ok(previewBounds.x >= 0 && previewBounds.x + previewBounds.width <= 390, "the image dialog fits a narrow viewport");
   await page.screenshot({ path: path.join(temporary, "external-image-mobile.png") });
   await page.keyboard.press("Escape");
   await page.setViewportSize({ width: 1440, height: 960 });
-  await page.locator(".chat-sidebar__top .chat-icon").click();
+  await page.locator(".chat-menubar").getByRole("button", { name: /^(Hide|Show) projects$/ }).click();
   await page.reload();
   await page.getByRole("button", { name: "Enlarge image: facade.png", exact: true }).waitFor();
   await page.getByRole("button", { name: "Project A", exact: true }).first().click();
@@ -2602,6 +2874,7 @@ try {
   await page.waitForFunction(() => document.querySelector("#chat-input")?.value === "Keep this sentence through a reload");
   updateStatus = { ...updateStatus, state: "ready", prepared: preparedPatch, canApply: true };
   await page.getByRole("button", { name: "Hub settings", exact: true }).click();
+  await settingsPage("Software update");
   await page.getByRole("button", { name: "Restart to update", exact: true }).waitFor();
   assert.equal(await page.getByText("A conversation has unsent text or attachments. Send or remove them before restarting.").count(), 0,
     "kept text alone does not hold the update restart");
@@ -2875,6 +3148,7 @@ try {
     assert.equal(await page.locator(".chat-composer .chat-attachments li").count(), 0);
     updateStatus = { ...updateStatus, state: "ready", prepared: preparedPatch, canApply: true };
     await page.getByRole("button", { name: "Hub settings", exact: true }).click();
+    await settingsPage("Software update");
     await page.getByText("A conversation has unsent text or attachments. Send or remove them before restarting.").waitFor();
     assert.equal(await page.getByRole("button", { name: "Restart to update", exact: true }).isDisabled(), true);
     assert.equal(appliedPatches, 0);
@@ -2890,6 +3164,7 @@ try {
   // Patch preparation transfers the ZIP bytes exactly, polls until ready,
   // preserves settings edits, and delegates restart without a document reload.
   await page.getByRole("button", { name: "Hub settings", exact: true }).click();
+  await settingsPage("Software update");
   await page.getByText("fixture-current-desktop", { exact: true }).waitFor();
   // Automatic updates are on by default and named as the unsigned prerelease
   // channel. The switch saves at once; checking never restarts the page.
@@ -2945,11 +3220,14 @@ try {
   assert.ok(patchPolls >= 2); await page.getByText("1.0 MiB", { exact: true }).waitFor();
   let releaseSettings; settingsWriteGate = new Promise((resolve) => { releaseSettings = resolve; });
   // Every earlier choice in this test saved itself, so the theme may already be dark.
+  await settingsPage("Display");
   await page.locator("#theme").selectOption(await page.locator("#theme").inputValue() === "dark" ? "light" : "dark");
+  await settingsPage("Software update");
   await page.getByText("A settings change is still being saved or could not be saved. Wait, or fix the marked setting, before restarting.", { exact: true }).waitFor();
   assert.equal(await page.getByRole("button", { name: "Restart to update", exact: true }).isDisabled(), true);
   settingsWriteGate = null; releaseSettings();
   await settingsSaved();
+  await settingsPage("Display");
   await page.locator("#theme").selectOption("dark"); await settingsSaved();
   await page.waitForFunction(() => ![...document.querySelectorAll("button")].find((button) => button.textContent === "Restart to update")?.disabled);
   // The desktop dialog is usable at a small viewport, in dark mode, with
@@ -2957,19 +3235,24 @@ try {
   await page.locator("#font-scale").selectOption("1.1");
   await settingsSaved();
   await page.emulateMedia({ reducedMotion: "reduce" }); await page.setViewportSize({ width: 390, height: 844 });
+  await settingsPage("Software update");
   await page.locator(".software-update").scrollIntoViewIfNeeded();
   assert.equal(await page.locator(".software-update").evaluate((node) => node.scrollWidth <= node.clientWidth + 1), true);
   assert.equal(await page.getByRole("dialog").evaluate((node) => node.scrollWidth <= node.clientWidth + 1), true);
   for (const button of await page.locator(".software-update__actions button").all()) assert.ok((await button.boundingBox()).height >= 44);
   await page.getByRole("dialog").screenshot({ path: path.join(temporary, "software-update-small-dark.png") });
+  await settingsPage("Display");
   await page.locator("#language").selectOption("zh-CN"); await settingsSaved();
+  await settingsPage("软件更新");
   await page.getByRole("heading", { name: "软件更新", exact: true }).waitFor();
   await page.getByText("自动更新：开 · 未签名预发布通道", { exact: true }).waitFor();
   await page.locator(".software-update").scrollIntoViewIfNeeded();
   await page.getByRole("dialog").screenshot({ path: path.join(temporary, "software-update-small-zh.png") });
   await page.setViewportSize({ width: 1440, height: 960 });
   await page.getByRole("dialog").screenshot({ path: path.join(temporary, "software-update-wide-zh.png") });
+  await settingsPage("显示");
   await page.locator("#language").selectOption("en"); await settingsSaved();
+  await settingsPage("Software update");
   updateApplyFailure = true;
   await page.getByRole("button", { name: "Restart to update", exact: true }).click();
   await page.getByText("A task started before restart. Wait and retry.", { exact: true }).waitFor();

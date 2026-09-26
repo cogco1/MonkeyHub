@@ -22,6 +22,8 @@ const cacheDir = await mkdtemp(path.join(tmpdir(), "design-tree-"));
 const shots = process.env.DESIGN_TREE_SCREENSHOTS ? path.resolve(process.env.DESIGN_TREE_SCREENSHOTS) : null;
 const serveOnly = process.argv.includes("--serve");
 const errors = [], unexpected = [], external = [], writes = [];
+const reviews = new Map();
+const dispositionsBeforeArchive = new Map();
 let recorded = 0;
 const http = createHttpServer();
 let vite, browser, fixture, fixtureModule, runtimeId = null;
@@ -38,13 +40,23 @@ async function runtime(request, response, url, body) {
   const name = url.pathname, method = request.method;
   try {
     if (method === "GET" && name === "/api/protocol") return json({ protocol: "archflow/2", server: "design-tree-fixture", serverVersion: "test", mode: "local",
-      capabilities: ["candidate-admission", "design-history", "working-draft", "working-source"] });
+      capabilities: ["candidate-admission", "candidate-review", "design-history", "working-draft", "working-source"] });
     if (method === "GET" && name === "/api/project") return json({ projectId: PROJECT, projectDir: "D:\\fixture\\riverside-library",
       published: { version: 2, stateSha256: "0".repeat(64) }, referenceRun: { runId: "run-site", baseVersion: 2, baseSha256: "0".repeat(64) },
       intentProvider: "fixture", intentModel: "fixture" });
     if (method === "GET" && name === "/api/working-source") return json(fixture.workingSource(url.searchParams.get("workspace") ?? "modeling"));
-    if (method === "GET" && name === "/api/design-history") return json(fixture.designHistory(url.searchParams.get("branchId") ?? "main"));
+    if (method === "GET" && name === "/api/design-history") {
+      const history = fixture.designHistory(url.searchParams.get("branchId") ?? "main");
+      return json({ ...history,
+        stages: history.stages.map(stage => ({ ...stage, review: reviews.get(`stage:${stage.stageRef}`) ?? null })),
+        candidates: history.candidates.map(candidate => ({ ...candidate, review: reviews.get(`candidate:${candidate.candidateId}`) ?? null })) });
+    }
     if (method === "GET" && name === "/api/worktrees") return json(fixture.worktrees());
+    if (method === "GET" && /^\/api\/model-assets\/[0-9a-f]{64}\/preview$/.test(name)) {
+      response.writeHead(204);
+      response.end();
+      return;
+    }
     // The project's event stream, which other workspace code subscribes to; the fixture has no events to send.
     if (method === "GET" && name === "/api/events") {
       response.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" });
@@ -55,6 +67,22 @@ async function runtime(request, response, url, body) {
     // What Modeling's Record edits and continue does to the working draft here: its edits become recorded.
     if (method === "POST" && name === "/api/fixture/record") { recorded += 1; fixture.state.localDraft = null; return json({}); }
     if (method === "PUT" && name === "/api/working-draft") { writes.push({ method, name, body }); return json(fixture.selectWorkingDraft(body)); }
+    if (method === "POST" && name === "/api/candidate-reviews") {
+      writes.push({ method, name, body });
+      const key = `${body.subjectKind}:${body.subjectRef}`, previous = reviews.get(key);
+      const previousDisposition = previous?.disposition ?? "unreviewed";
+      if (body.action === "archive" && previousDisposition !== "archived") dispositionsBeforeArchive.set(key, previousDisposition);
+      const actorId = body.action === "endorse" ? "Review Architect" : "Archive Architect";
+      const occurredAt = body.action === "endorse" ? "2026-09-26T12:00:00Z" : "2026-09-27T15:00:00Z";
+      const review = { reviewRef: `project://${PROJECT}/runs/studio-candidate-reviews/review/candidate-review/${"a".repeat(64)}`,
+        disposition: body.action === "archive" ? "archived" : body.action === "reject" ? "rejected"
+          : body.action === "restore" && previousDisposition === "archived" ? dispositionsBeforeArchive.get(key) ?? "unreviewed" : previousDisposition,
+        endorsed: body.action === "endorse" || previous?.endorsed || false, actorId, occurredAt, reason: body.reason,
+        endorsedBy: body.action === "endorse" ? actorId : previous?.endorsedBy ?? null,
+        endorsedAt: body.action === "endorse" ? occurredAt : previous?.endorsedAt ?? null };
+      reviews.set(key, review);
+      return json(review, 201);
+    }
     const accept = name.match(/^\/api\/candidates\/([^/]+)\/accept$/);
     if (method === "POST" && accept) { writes.push({ method, name, body }); return json(fixture.accept(decodeURIComponent(accept[1]), body)); }
   } catch (error) {
@@ -86,6 +114,8 @@ async function hubApi(request, response, url, body, origin) {
   if (name === "/api/apps") return json(hubApps(origin));
   if (name === "/api/settings/user") return json({ language: "en", theme: "light", fontScale: 1 });
   if (name === "/api/settings/apps") return json({ projectDir: hub.projects[0].projectDir, referenceRun: null, cadExport: "off", studioPort: 18789, monitorPort: 18790 });
+  if (request.method === "GET" && name === "/api/credentials") return json(["gemini", "coding-plan"].map((id) => ({
+    id, configured: false, source: null, variable: null, saved: false, storeAvailable: true })));
   if (name === "/api/chat/providers") return json([{ id: "codex", label: "Codex CLI", available: true, detail: "Fixture only", installed: true, signedIn: true, models: [], modelCatalog: "ready", modelDetail: "" }]);
   if (name === "/api/chat/workspace") return json({ workspaceDir: "D:\\fixture", configured: true, projects: [PROJECT] });
   if (name === "/api/chat/projects") return json(hub.projects);
@@ -159,7 +189,7 @@ try {
       return runtime(request, response, new URL(`${forwarded[2]}${url.search}`, "http://fixture.test"), body);
     }
     if (url.pathname.startsWith("/api/")) {
-      const hubRoute = /^\/api\/(apps|settings|chat|runtime|updates)(\/|$)/.test(url.pathname);
+      const hubRoute = /^\/api\/(apps|settings|credentials|chat|runtime|updates)(\/|$)/.test(url.pathname);
       return hubRoute ? hubApi(request, response, url, body, `http://127.0.0.1:${http.address().port}`) : runtime(request, response, url, body);
     }
     vite.middlewares(request, response);
@@ -326,6 +356,41 @@ try {
   assert.ok(!view.elements.some((element) => /run-|rev-|project:\/\/|[0-9a-f]{16}/.test(element.text ?? "")), "no ids or hashes on the canvas");
   await shoot(tab, "02-tree-fit");
 
+  // #337: the canvas draws in the Hub's tokens and follows the theme and the interface
+  // style; Excalidraw's dark-theme inversion is not applied to it.
+  const follows = async (label) => {
+    await tab.waitForFunction(() => window.__treeApi.getSceneElements().find((element) => element.customData?.tree?.role === "trunk")?.strokeColor
+      === getComputedStyle(document.documentElement).getPropertyValue("--accent").trim().toLowerCase());
+    const now = await tab.evaluate(() => ({ trunk: window.__treeApi.getSceneElements().find((element) => element.customData?.tree?.role === "trunk").strokeColor,
+      ground: window.__treeApi.getAppState().viewBackgroundColor, token: getComputedStyle(document.documentElement).getPropertyValue("--ground").trim().toLowerCase(),
+      filter: getComputedStyle(document.querySelector(".design-tree__canvas canvas")).filter }));
+    assert.equal(now.ground, now.token, `${label}: the canvas ground is the Hub's`);
+    assert.equal(now.filter, "none", `${label}: the canvas is drawn in its own colours, not inverted`);
+    // The page's own colour transitions finish before a review shot.
+    await tab.evaluate(() => Promise.all(document.getAnimations().filter((animation) => animation instanceof CSSTransition)
+      .map((animation) => animation.finished.catch(() => undefined))));
+    return now;
+  };
+  const lightColours = await follows("light");
+  const styles = async (theme) => {
+    for (const style of ["quiet", "titleblock", "night"]) {
+      await tab.evaluate((value) => { document.documentElement.dataset.uiStyle = value; }, style);
+      await follows(`${theme}, ${style}`);
+      await shoot(tab, `02b-tree-${theme}-${style}`);
+    }
+  };
+  await tab.evaluate(() => window.__workspaceFixture.setTheme("dark"));
+  assert.notEqual((await follows("dark")).trunk, lightColours.trunk, "the trunk changes with the theme");
+  await shoot(tab, "02a-tree-dark");
+  await styles("dark");
+  // Setting the theme applies the fixture's whole appearance again, Classic included.
+  await tab.evaluate(() => window.__workspaceFixture.setTheme("light"));
+  assert.equal((await follows("light again")).trunk, lightColours.trunk);
+  assert.equal(await tab.evaluate(() => document.documentElement.dataset.uiStyle), "classic");
+  await styles("light");
+  await tab.evaluate(() => { document.documentElement.dataset.uiStyle = "classic"; });
+  assert.equal((await follows("light, classic")).trunk, lightColours.trunk);
+
   // Semantic zoom: far shows the trunk and counts; close adds summaries and status.
   const box = await surface.locator(".design-tree__canvas").boundingBox();
   await tab.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
@@ -354,10 +419,41 @@ try {
   assert.equal(await card.getByRole("button", { name: "View", exact: true }).isEnabled(), true);
   assert.equal(await card.getByRole("button", { name: /Compare this Study/ }).isDisabled(), true, "Compare is marked for later");
   assert.equal(await card.locator('[data-action="accept"]').count(), 0, "an option cannot be accepted");
+  await card.getByRole("button", { name: "Endorse direction", exact: true }).click();
+  await tab.waitForTimeout(100);
+  assert.deepEqual(writes.at(-1), { method: "POST", name: "/api/candidate-reviews", body: {
+    projectId: PROJECT, subjectKind: "candidate", subjectRef: "run-massing-d", action: "endorse", reason: null } });
+  await card.getByText("Endorsed direction", { exact: true }).waitFor();
+  assert.match(await card.innerText(), /Endorsed by\s*Review Architect/);
+  const endorsementTime = await card.getByText("Endorsed", { exact: true }).locator("..").locator("dd").innerText();
+  assert.ok(endorsementTime.length > 0, "the endorsement has a visible time");
+  const beforeArchive = fixture.workingDraft();
+  await card.getByRole("button", { name: "Archive", exact: true }).click();
+  await card.waitFor({ state: "detached" });
+  assert.equal((await scene()).elements.some((element) => element.data?.node === "candidate:run-massing-d"), false,
+    "an archived Candidate leaves the default canvas");
+  await surface.getByRole("button", { name: "Show processed (1)", exact: true }).click();
+  card = await clickNode("candidate:run-massing-d");
+  await card.getByRole("button", { name: "Undo archive", exact: true }).waitFor();
+  assert.match(await card.innerText(), /Endorsed by\s*Review Architect/);
+  assert.match(await card.innerText(), /Last reviewed by\s*Archive Architect/);
+  assert.equal(await card.getByText("Endorsed", { exact: true }).locator("..").locator("dd").innerText(), endorsementTime,
+    "archiving keeps the original endorsement's attribution and time");
+  assert.equal(await card.locator('[data-action="continue"]').isEnabled(), true, "archiving does not add a new Continue restriction");
+  await card.getByRole("button", { name: "Undo archive", exact: true }).click();
+  await card.getByRole("button", { name: "Archive", exact: true }).waitFor();
+  assert.equal(await surface.getByRole("button", { name: /Show processed/ }).count(), 0, "restore returns to the default projection");
+  assert.equal(await card.locator("strong").innerText(), "D · Terraced wedge", "cancelling archive retains the selected Study option");
+  assert.deepEqual(fixture.workingDraft(), beforeArchive, "archive, filtering and restore leave Working Head unchanged");
+  writes.length = 0;
   await shoot(tab, "05-side-card");
   card = await clickNode(S1);
   assert.match(await card.innerText(), /Stage · accepted checkpoint/);
   assert.equal(await card.locator('[data-action="accept"]').count(), 0, "a Stage cannot be accepted again");
+  await card.getByRole("button", { name: "Endorse direction", exact: true }).click();
+  await card.getByText("Endorsed direction", { exact: true }).waitFor();
+  assert.match(await card.innerText(), /Endorsed by\s*Review Architect/);
+  writes.length = 0;
   card = await clickNode("candidate:run-facade-c");
   assert.match(await card.locator(".design-tree-card__warning").innerText(), /review checks were still open \(1\)/,
     "an option admitted with review checks open says so in its side card");
@@ -569,6 +665,42 @@ try {
   assert.equal(await card.locator('[data-action="accept"]').isDisabled(), true);
   fixture.state.head = acceptedHead;
   fixture.state.revision += 1;
+
+  // Cancelling an archive restores the previous rejection, never an unreviewed direction.
+  await tab.evaluate(() => { window.__workspaceFixture.setLanguage("en"); window.dispatchEvent(new Event("focus")); });
+  await card.getByText(/Current is exactly S3/).waitFor();
+  const beforeRejectedReview = structuredClone({ draft: fixture.workingDraft(), stages: fixture.designHistory().stages });
+  const reviewWritesStart = writes.length;
+  // Current's restored trunk can centre the canvas on S3, outside this earlier Study.
+  // Review actions use the same node's accessible list row, independent of that view.
+  await tab.keyboard.press("Escape");
+  await card.waitFor({ state: "detached" });
+  await surface.getByRole("button", { name: "List", exact: true }).click();
+  const rejectedOption = surface.locator('[role="treeitem"][data-node="candidate:run-massing-a"]');
+  await rejectedOption.click();
+  card = surface.locator('.design-tree-card[data-node="candidate:run-massing-a"]');
+  await card.waitFor();
+  await card.getByRole("button", { name: "Reject", exact: true }).click();
+  await card.waitFor({ state: "detached" });
+  await surface.getByRole("button", { name: "Show processed (1)", exact: true }).click();
+  await rejectedOption.click();
+  await card.getByText(/Rejected/).waitFor();
+  assert.equal(await card.getByRole("button", { name: "Undo archive", exact: true }).count(), 0,
+    "a rejection is not presented as an archive that can be cancelled");
+  await card.getByRole("button", { name: "Archive", exact: true }).click();
+  await card.getByRole("button", { name: "Undo archive", exact: true }).click();
+  await card.getByRole("button", { name: "Archive", exact: true }).waitFor();
+  await card.getByText(/Rejected/).waitFor();
+  assert.equal(reviews.get("candidate:run-massing-a").disposition, "rejected");
+  assert.equal(await card.locator("strong").innerText(), "A · Slab bar along the river");
+  assert.equal(await surface.getByRole("button", { name: "Hide processed", exact: true }).getAttribute("aria-pressed"), "true",
+    "the restored rejection remains visible in processed items");
+  assert.deepEqual(writes.slice(reviewWritesStart).map(({ name, body }) => [name, body.action]),
+    ["reject", "archive", "restore"].map((action) => ["/api/candidate-reviews", action]));
+  assert.deepEqual({ draft: fixture.workingDraft(), stages: fixture.designHistory().stages }, beforeRejectedReview,
+    "reject, archive and restore leave Working Head and Stage history unchanged");
+  await surface.getByRole("button", { name: "Hide processed", exact: true }).click();
+  await card.waitFor({ state: "detached" });
   await context.close();
 
   // ------------------------------------------------------------------ Part B: the Hub rail's 状态树 entry.
@@ -598,9 +730,24 @@ try {
   assert.match(hubPage.url(), /view=tree/, "the tree has its own deep link");
   await hubPage.waitForFunction(() => window.__treeApi?.getSceneElements().length > 20);
   await hubPage.waitForFunction(() => document.querySelector('.chat-project-workspace:not([hidden]) .design-tree__canvas')?.dataset.level === "mid");
+  assert.equal((await scene(hubPage)).elements.some((element) => element.data?.node === "candidate:run-massing-a"), false,
+    "a fresh workspace read keeps the restored rejection out of the default projection");
   const hubCard = await clickCanvasNode(hubPage, hubSurface, "current");
   assert.match(await hubCard.innerText(), /Current is exactly S3/, "a narrow panel opens on the growing tip, and its nodes answer clicks");
   await shoot(hubPage, "12-hub-rail-tree");
+  // The same floating card covers list rows in this narrow Hub panel until closed.
+  await hubPage.keyboard.press("Escape");
+  await hubCard.waitFor({ state: "detached" });
+  await hubSurface.getByRole("button", { name: "Show processed (1)", exact: true }).click();
+  await hubSurface.getByRole("button", { name: "List", exact: true }).click();
+  await hubSurface.locator('[role="treeitem"][data-node="candidate:run-massing-a"]').click();
+  const reopenedReview = hubSurface.locator('.design-tree-card[data-node="candidate:run-massing-a"]');
+  await reopenedReview.getByText(/Rejected/).waitFor();
+  assert.equal(await reopenedReview.locator("strong").innerText(), "A · Slab bar along the river");
+  await hubSurface.getByRole("button", { name: "Hide processed", exact: true }).click();
+  await reopenedReview.waitFor({ state: "detached" });
+  await hubSurface.getByRole("button", { name: "Canvas", exact: true }).click();
+  await hubSurface.locator(".design-tree__canvas canvas").first().waitFor();
   await hubSurface.getByRole("button", { name: "Back to Modeling" }).click();
   await hubPage.getByTestId("arch-stub").waitFor();
   assert.equal(await railButton("Modeling").getAttribute("aria-pressed"), "true", "leaving returns to the surface it came from");
