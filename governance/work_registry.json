@@ -153,35 +153,6 @@
       "notes": [
         "2026-09-08 rule alignment: Awaiting the first concrete evidence consumer and a check of existing Reading/source references. The earlier proposed ledger and private Atlas field superset are not a mandate to add a core record."
       ]
-    },
-    {
-      "id": "GH-287",
-      "stream": "planning",
-      "status": "active",
-      "goal": "Name drawings without changing revision identity",
-      "depends_on": [],
-      "write_scope": [
-        "apps/archflow-studio/api/archflow_studio_api/application/drawing_plans.py",
-        "apps/archflow-studio/api/archflow_studio_api/transport/drawings.py",
-        "apps/archflow-studio/api/tests/test_drawing_plans.py",
-        "apps/monkeyhub/web/workspaces/src/api/generated/types.gen.ts",
-        "apps/monkeyhub/web/workspaces/src/workspaces/monkeydiagram/DrawingCanvas.tsx",
-        "apps/monkeyhub/web/workspaces/test/drawingCanvas.browser.mjs",
-        "docs/PROTOCOL.md"
-      ],
-      "branch": "codex/merge-cloud-batch",
-      "worktree": "C:/Users/asus/.codex/worktrees/merge-cloud-batch/ARCHFLOW_V4",
-      "base_ref": "b6aa5b1298c203418db45b76133519c9604fe048",
-      "contributor": "Codex cloud with Codex integration",
-      "reviewer": "Codex",
-      "handoff": "Review the scoped cloud patch and run remote CI",
-      "modules": [
-        "studio.artifacts",
-        "hub.shell"
-      ],
-      "acceptance": [
-        "Scoped behavior and browser regressions pass in remote CI."
-      ]
     }
   ]
 }
