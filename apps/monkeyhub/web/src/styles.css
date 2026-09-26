@@ -44,6 +44,14 @@ button:disabled{cursor:not-allowed}
 .settings-row>.btn{justify-self:end}
 .settings-row--wide{grid-template-columns:minmax(0,1fr)}
 .settings-page .advanced{margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}
+/* #334: a key row puts the field and its buttons on one line, then where the key in use comes from. */
+.settings-page .settings-subhead{margin:24px 0 4px;color:var(--ink);font-size:var(--text-ui);font-weight:600}
+.settings-key__controls{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.settings-key__controls input{flex:1 1 220px;min-width:0}
+.settings-key__check[data-result=accepted]{color:var(--held)}
+.settings-key__check[data-result=rejected]{color:var(--violated)}
+.settings-key__check[data-result=unreachable]{color:var(--unchecked)}
+.settings-page .btn:disabled{opacity:.5}
 /* #328: each interface style is a card with a small drawing of the shell in that style. The
    drawing keeps its own colours, whichever style is on, so the cards can be compared. */
 .style-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(128px,1fr));gap:12px;margin-top:4px}

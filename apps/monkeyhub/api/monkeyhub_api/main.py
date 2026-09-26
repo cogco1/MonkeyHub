@@ -13,6 +13,7 @@ import threading
 import time
 import queue
 import socket
+from typing import Literal
 from urllib.parse import urlsplit
 from urllib.parse import quote
 from uuid import UUID
@@ -37,6 +38,7 @@ from archflow_studio_api.transport.settings import ApplicationSettingsDto
 from archflow_studio_api.transport.project import ModelingInitializeDto, ModelingInitializeRequestDto
 
 from . import chat as chat_tools
+from . import credentials
 from . import project_archive
 from .applications import Applications
 from .chat import ChatStore
@@ -58,6 +60,7 @@ from .models import (
     ChatPresentationBindRequest, ChatPresentationBinding, ChatPresentationRequest,
     ProjectArchiveExportRequest, ProjectArchiveRestoreRequest, ProjectArchiveRestoreResult, ProjectArchiveSummary,
     ComputerActionRequest, ComputerInspectRequest, ComputerRecordingRequest,
+    CredentialCheck, CredentialId, CredentialStatus, CredentialWrite, ProviderLinkId,
 )
 
 SOURCE_ROOT = Path(__file__).resolve().parents[4]
@@ -229,6 +232,9 @@ def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> Fas
             )
         if request.url.path.startswith("/api/updates/"):
             return JSONResponse({"code": "UPDATE_REQUEST_INVALID", "detail": "Invalid desktop update request."}, status_code=422)
+        if request.url.path.startswith(("/api/credentials", "/api/links/")):
+            # Never echo a request here: its body may hold a key.
+            return JSONResponse({"code": "CREDENTIAL_REQUEST_INVALID", "detail": "Invalid key request. Send the key as the only field."}, status_code=422)
         return await request_validation_exception_handler(request, exc)
 
     @app.exception_handler(StudioError)
@@ -414,6 +420,64 @@ def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> Fas
     @app.get("/api/chat/providers", response_model=list[ChatProvider])
     def chat_providers(refresh: bool = False):
         return chats.providers(refresh)
+
+    @app.post("/api/chat/providers/{provider_id}/login", status_code=202, responses=error_responses)
+    def chat_provider_login(provider_id: Literal["codex", "claude"]):
+        """#334: the CLI's own sign-in, in a console window of its own; Check again reads the result."""
+        chats.open_login(provider_id)
+        return {"started": True}
+
+    # #334: provider keys, written from Settings into the account's credential
+    # store. A response says whether a key is in use and where it comes from;
+    # none ever carries the key.
+    def credential_status(credential_id: str) -> CredentialStatus:
+        available = credentials.secret_store().available
+        saved = credentials.saved(credential_id) is not None
+        variable = credentials.from_environment(credential_id)
+        if variable is not None:
+            return CredentialStatus(id=credential_id, configured=True, source="environment", variable=variable,
+                                    saved=saved, storeAvailable=available)
+        if saved:
+            return CredentialStatus(id=credential_id, configured=True, source="saved", saved=True, storeAvailable=available)
+        if credential_id == "coding-plan" and chat_tools.claude_plan_configured():
+            return CredentialStatus(id=credential_id, configured=True, source="claude-config", storeAvailable=available)
+        return CredentialStatus(id=credential_id, configured=False, storeAvailable=available)
+
+    @app.get("/api/credentials", response_model=list[CredentialStatus])
+    def list_credentials():
+        return [credential_status(credential_id) for credential_id in credentials.SLOTS]
+
+    @app.put("/api/credentials/{credential_id}", response_model=CredentialStatus, responses=error_responses)
+    def save_credential(credential_id: CredentialId, body: CredentialWrite):
+        if not credentials.secret_store().available:
+            raise HubFailure(409, "CREDENTIAL_STORE_UNAVAILABLE",
+                             "This system has no account credential store; provide the key through the environment instead.")
+        try:
+            credentials.save(credential_id, body.key.get_secret_value())
+        except credentials.CredentialError as exc:
+            raise HubFailure(422, "CREDENTIAL_INVALID", str(exc)) from None
+        except OSError:
+            raise HubFailure(503, "CREDENTIAL_STORE_FAILED", "The account credential store did not take the key. Try again.") from None
+        return credential_status(credential_id)
+
+    @app.delete("/api/credentials/{credential_id}", response_model=CredentialStatus, responses=error_responses)
+    def clear_credential(credential_id: CredentialId):
+        try:
+            credentials.clear(credential_id)
+        except OSError:
+            raise HubFailure(503, "CREDENTIAL_STORE_FAILED", "The account credential store did not remove the key. Try again.") from None
+        return credential_status(credential_id)
+
+    @app.post("/api/credentials/gemini/check", response_model=CredentialCheck)
+    def check_gemini():
+        return CredentialCheck(id="gemini", **credentials.check_gemini(credentials.resolve("gemini")))
+
+    @app.post("/api/links/{link_id}/open", status_code=202, responses=error_responses)
+    def open_provider_link(link_id: ProviderLinkId):
+        """Where to get a key, opened in the system browser: the desktop window keeps to the Hub's own pages."""
+        if not credentials.open_link(link_id):
+            raise HubFailure(503, "LINK_UNAVAILABLE", "No browser could be opened from here.")
+        return {"opened": True}
 
     @app.get("/api/chat/projects", response_model=list[ChatProject])
     def chat_projects():
@@ -721,6 +785,9 @@ def main(argv: list[str] | None = None) -> None:
     )
     if sys.platform == "win32":
         complete_interrupted_connection_teardown()
+    # Only the Hub process itself opens the account's credential store (#334);
+    # an app built by a test keeps the empty default.
+    credentials.use_secret_store(credentials.account_store())
     with _runtime_lease(settings.runtime_root):
         managed = settings.managed_instance_id is not None
         try:

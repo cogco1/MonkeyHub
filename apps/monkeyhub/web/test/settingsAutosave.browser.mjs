@@ -31,6 +31,11 @@ const origin = `http://127.0.0.1:${server.address().port}`;
 let userSettings = { language: "en", theme: "light", fontScale: 1, autoUpdate: true };
 let launch = { projectDir: null, workspaceDir: null, referenceRun: null, cadExport: "occt", studioPort: 18789, monitorPort: 18788 };
 let studioProcess = null, userGate = null;
+// #334: what the Hub keeps about keys: whether one is saved, never shown back.
+const keys = { gemini: null, "coding-plan": null };
+const keyWrites = [], linkOpens = [], signIns = [];
+const keyStatus = (id) => ({ id, configured: keys[id] !== null, source: keys[id] !== null ? "saved" : null, variable: null,
+  saved: keys[id] !== null, storeAvailable: true });
 const userWrites = [], launchWrites = [], userReads = [], errors = [], unexpected = [];
 const runtimeSnapshot = () => ({ serverId: "fixture-hub", sequence: 1, workers: [], projects: [] });
 const apps = () => ["monkeyarch", "monkeyboard"].map((appId) => ({ appId, title: appId, serviceId: "studio", available: true,
@@ -54,6 +59,15 @@ await page.route((url) => url.pathname.startsWith("/api/"), async (route) => {
     if (userGate) await userGate;
     userSettings = body; return json(userSettings);
   }
+  if (url.pathname === "/api/credentials") return json(Object.keys(keys).map(keyStatus));
+  const keyRoute = url.pathname.match(/^\/api\/credentials\/(gemini|coding-plan)$/);
+  if (keyRoute && method === "PUT") { keys[keyRoute[1]] = request.postDataJSON().key.trim(); keyWrites.push([keyRoute[1], keys[keyRoute[1]]]); return json(keyStatus(keyRoute[1])); }
+  if (keyRoute && method === "DELETE") { keys[keyRoute[1]] = null; return json(keyStatus(keyRoute[1])); }
+  if (url.pathname === "/api/credentials/gemini/check") return json({ id: "gemini", result: keys.gemini ? "accepted" : "missing", detail: "Fixture" });
+  const linkRoute = url.pathname.match(/^\/api\/links\/([a-z-]+)\/open$/);
+  if (linkRoute) { linkOpens.push(linkRoute[1]); return json({ opened: true }, 202); }
+  const signInRoute = url.pathname.match(/^\/api\/chat\/providers\/(codex|claude)\/login$/);
+  if (signInRoute) { signIns.push(signInRoute[1]); return json({ started: true }, 202); }
   if (url.pathname === "/api/settings/apps") {
     if (method === "GET") return json(launch);
     const body = request.postDataJSON(); launchWrites.push(body);
@@ -127,6 +141,40 @@ try {
     await dialog.getByRole("radio", { name: /^Classic/ }).check();
     await until(() => userWrites.at(-1)?.uiStyle === "classic", "Classic is saved back");
     await status.filter({ hasText: /^Saved$/ }).waitFor();
+  });
+
+  await step("a key goes in once, is never shown again, and the page says where the key in use comes from", async () => {
+    await openPage("AI Render");
+    const field = page.locator("#gemini-key");
+    assert.equal(await field.getAttribute("type"), "password");
+    await page.locator("#gemini-key-state").filter({ hasText: /^Not set\.$/ }).waitFor();
+    await field.fill("AIzaSyFixture-settings-key-01");
+    await field.press("Enter");
+    await page.locator("#gemini-key-state").filter({ hasText: "Saved in this computer's Windows Credential Manager, for this account only." }).waitFor();
+    assert.equal(await field.inputValue(), "", "the field empties once the key is saved");
+    assert.deepEqual(keyWrites, [["gemini", "AIzaSyFixture-settings-key-01"]]);
+    await dialog.getByRole("button", { name: "Check", exact: true }).click();
+    await dialog.getByText("Google accepted this key.", { exact: true }).waitFor();
+    await dialog.getByRole("button", { name: "Get a key ↗", exact: true }).click();
+    await until(() => linkOpens.includes("gemini-keys"), "the key page opens through the Hub, never in this window");
+    assert.equal(await dialog.getByRole("button", { name: /^Save/ }).count(), 0, "a key saves itself too");
+    await dialog.screenshot({ path: path.join(screenshots, "settings-render-key-en.png") });
+    await openPage("Conversations");
+    await page.locator("#coding-plan-provider").selectOption("zhipu");
+    await until(() => userWrites.at(-1)?.codingPlanBaseUrl === "https://open.bigmodel.cn/api/anthropic", "a preset fills and saves the endpoint");
+    assert.equal(await page.locator("#coding-plan-url").inputValue(), "https://open.bigmodel.cn/api/anthropic");
+    await page.locator("#coding-plan-url").fill("not an address");
+    await dialog.getByRole("alert").filter({ hasText: "The Coding Plan endpoint is a full http(s) address" }).waitFor();
+    await page.locator("#coding-plan-url").fill("https://open.bigmodel.cn/api/anthropic");
+    await status.filter({ hasText: /^Saved$/ }).waitFor();
+    await dialog.getByRole("button", { name: "Sign in again", exact: true }).click();
+    await until(() => signIns.includes("codex"), "Codex sign-in opens from Settings");
+    await dialog.getByText("The sign-in window is open. Come back here when it is done.", { exact: true }).waitFor();
+    assert.equal(await dialog.getByRole("button", { name: "Sign in", exact: true }).isDisabled(), true, "a CLI that is not installed cannot be signed in");
+    await dialog.screenshot({ path: path.join(screenshots, "settings-conversations-keys-en.png") });
+    for (const text of [JSON.stringify(userWrites), JSON.stringify(Object.keys(keys).map(keyStatus))]) {
+      assert.equal(text.includes("AIzaSyFixture-settings-key-01"), false, "no preference or status carries a key");
+    }
   });
 
   await step("typed text is saved once, after its pause", async () => {

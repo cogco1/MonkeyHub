@@ -16,7 +16,7 @@ from archflow_studio_api.settings import read_application_settings, read_user_se
 from archflow_studio_api.transport.settings import ApplicationSettingsDto
 
 from .models import AppId, AppStatus, HubError, HubFailure
-from . import fabrication
+from . import credentials, fabrication
 from .workers import WorkerLaunch, WorkerSnapshot, WorkerSupervisor, project_key
 
 APPS = {
@@ -184,7 +184,9 @@ class Applications:
     def _command(self, service: str, settings: ApplicationSettingsDto) -> tuple[list[str], dict[str, str]]:
         args = [sys.executable, str(self.source_root / "apps/monkeyhub/run.py"), "--service", service]
         environ = os.environ.copy()
-        render_key = environ.pop("MONKEYHUB_RENDER_API_KEY", None)
+        # The launch variable still wins; otherwise the key saved in Hub settings (#334),
+        # read now, so a key saved after the Hub started reaches the next Runtime.
+        render_key = (environ.pop("MONKEYHUB_RENDER_API_KEY", None) or "").strip() or credentials.saved("gemini")
         diagnostics = self.runtime_root / "diagnostics" / "monkeymonitor"
         if service == "monitor":
             return args + ["serve", "--data-dir", str(diagnostics), "--codex-bindings-url",
