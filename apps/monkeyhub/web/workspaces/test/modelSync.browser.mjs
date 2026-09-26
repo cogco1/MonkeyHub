@@ -1056,7 +1056,9 @@ await stages(quietSyncWall,'quiet auto display');
 await button('Record').waitFor({state:'detached'});await steadyTools(steady,'Record leaving');
 state=await snap();assert.equal(candidateCalls().length,2);assert.ok((await exported(state.candidates[1])).has('obj-'+later));
 assert.equal(state.view.drafts.length,0,'the completed batch must not overlap its saved model');
-const continuedDraft=await call('GET','/api/working-draft');
+// #275 (GH-234): the saved base takes the batch first; only then is the fully synced recovery cleared.
+let continuedDraft=await call('GET','/api/working-draft');
+for(const end=Date.now()+15000;continuedDraft.localDraft!==null&&Date.now()<end;continuedDraft=await call('GET','/api/working-draft'))await delay(100);
 assert.equal(continuedDraft.current?.runId,state.candidates[1],'a second Sync after late edits must retain the adopted successor, not the previous completed candidate');
 assert.equal(continuedDraft.localDraft,null,'quiet adoption clears the old source recovery once the saved base holds the batch');
 console.log('6 · a delayed 422 after Undo releases Sync; corrected geometry replaces the failed snapshot');
