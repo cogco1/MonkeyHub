@@ -44,6 +44,7 @@ for path in (REPO, REPO / "apps/archflow-studio/api"):
     if str(path) not in sys.path:
         sys.path.insert(0, str(path))
 
+from archflow.project.repository import ProjectRepositoryError  # noqa: E402
 from archflow_studio_api.application.authentication import ActorAttribution  # noqa: E402
 from archflow_studio_api.application.binding import ProjectBinding  # noqa: E402
 from archflow_studio_api.application.decisions import (  # noqa: E402
@@ -151,8 +152,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             print("Nothing was imported: this project keeps one value per key, hold and reach. Revoke or "
                   "supersede that decision in this project first.", file=sys.stderr)
         return 1
-    except (OSError, ValueError) as exc:
-        # An unreadable, existing or non-JSON file, said without a traceback.
+    except (ProjectRepositoryError, OSError, ValueError) as exc:
+        # An unreadable, existing or non-JSON file, or a project whose lock
+        # another process held past the repository's wait, said without a
+        # traceback. Nothing was written; running it again is safe.
         print(f"{type(exc).__name__}: {exc}", file=sys.stderr)
         return 1
     print(f"export  {checked.sha256}")

@@ -18,13 +18,14 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "apps/archflow-studio/api"))
 
 from fastapi.testclient import TestClient
 
 from archflow.adapters.occt_backend import occt_available
-from archflow.project.repository import FilesystemProjectRepository
+from archflow.project.repository import FilesystemProjectRepository, ProjectHeadLocked
 from archflow_studio_api.application.binding import bound_project
 from archflow_studio_api.application.decisions import recipe_export
 from archflow_studio_api.main import create_app
@@ -145,7 +146,7 @@ class ExportDrawingRecipeToolTests(unittest.TestCase):
         self.assertIn("Nothing was imported", err)
         self.assertEqual(decisions(self, self.second), [imported])
 
-    def test_a_changed_file_and_a_decision_that_is_no_recipe_are_refused(self) -> None:
+    def test_a_changed_file_a_decision_that_is_no_recipe_and_a_held_lock_are_refused(self) -> None:
         self.assertEqual(self.export()[0], 0)
         document = json.loads(self.file.read_text(encoding="utf-8"))
         document["recipe"]["graphics"]["hatchSpacingMm"] = 4.0
@@ -161,6 +162,15 @@ class ExportDrawingRecipeToolTests(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("DECISION_NOT_FOUND", err)
         self.assertFalse(missing.exists())
+
+        # A project whose lock a runtime holds past the repository's wait is
+        # refused as such, with nothing written.
+        with patch("tools.export_drawing_recipe.import_recipe",
+                   side_effect=ProjectHeadLocked("another process holds the project head lock")):
+            code, _, err = self.import_(None, "--confirm")
+        self.assertEqual(code, 1)
+        self.assertIn("ProjectHeadLocked", err)
+        self.assertEqual(decisions(self, self.second), [])
 
 
 def wait_for(test: unittest.TestCase, client: TestClient, job_id: str) -> dict:
