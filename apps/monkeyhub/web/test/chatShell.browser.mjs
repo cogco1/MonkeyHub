@@ -213,17 +213,18 @@ await page.route((url) => url.pathname.startsWith("/api/"), async (route) => {
       }
       return route.fulfill({ json: null, contentType: "application/json" });
     }
-    // Keep the real viewport capture and its existing retained-preview event in
-    // the regression: this candidate has no image until the architect views it.
-    if (runtime?.projectId === "B" && studioPath === "/api/captures" && method === "POST" && req.postDataJSON().runId === "cand-B-final") {
-      const body = req.postDataJSON(), source = workspaceFixture.projects.get("B").assets.get(body.runId).dto.modelSource;
+    // Keep real viewport capture and its existing notification for every project.
+    // In particular, cand-B-final has no image until the architect views it.
+    if (runtime && studioPath === "/api/captures" && method === "POST") {
+      const body = req.postDataJSON(), source = workspaceFixture.projects.get(runtime.projectId).assets.get(body.runId).dto.modelSource;
       assert.deepEqual(body.modelSource, source, "a retained preview uses the exact viewed candidate");
       const png = Buffer.from(body.pngBase64, "base64"), sha256 = createHash("sha256").update(png).digest("hex");
       assert.deepEqual([...png.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10], "the viewport supplies actual PNG bytes");
-      const previewSha = `preview-B-${body.runId}`.padEnd(64, "0").slice(0, 64);
+      const previewSha = `preview-${runtime.projectId}-${body.runId}`.padEnd(64, "0").slice(0, 64);
       studyCapturedPreviews.set(previewSha, { source, png });
-      studyPreviews.get("B").set(body.runId, "ready");
-      return route.fulfill({ json: { projectId: "B", runId: body.runId, relativePath: `${body.runId}.png`,
+      if (!studyPreviews.has(runtime.projectId)) studyPreviews.set(runtime.projectId, new Map());
+      studyPreviews.get(runtime.projectId).set(body.runId, "ready");
+      return route.fulfill({ json: { projectId: runtime.projectId, runId: body.runId, relativePath: `${body.runId}.png`,
         sha256, mediaType: "image/png", sizeBytes: png.length, document: null } });
     }
     const documentBytes = studioPath?.match(/^\/api\/documents\/([^/]+)\/bytes$/);
