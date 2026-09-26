@@ -60,6 +60,13 @@ class ExportJobTests(unittest.TestCase):
         self.assertTrue(download.content.startswith(b"3D Geometry File Format"))
         with TestClient(create_app(self.settings)) as cold:
             self.assertEqual(cold.get(result["downloadPath"]).content,download.content)
+            # The retained record still says what the display state is made of after restart.
+            self.assertEqual(cold.get(f'/api/exports/{result["exportId"]}').json()["display"], result["display"])
+        self.assertEqual(result["display"]["normals"]["computed"], 1)
+        self.assertEqual(result["display"]["material"]["defaulted"], 1)
+        reopened = ThreeDM().read(download.content).meshes[0]
+        self.assertEqual(reopened.normals, [(0, 0, 1)] * 3)
+        self.assertGreater(sum(reopened.material.color[:3]), 3 * 128)
 
     def test_failure_retains_source_and_never_downloads(self):
         result = self.finish(self.submit(data=b"invalid"))

@@ -937,6 +937,54 @@ def _section_plane(section: Mapping[str, Any]) -> tuple[tuple[float, float, floa
     return tuple(section["origin"]), tuple(v + 0.0 for v in _normalized(section["normal"]))
 
 
+def _section_paper_rules(hatch, beyond, spacing_mm: float) -> dict[str, Any]:
+    """A section perspective's material hatch/poché and beyond fade, checked and stored as a cut plan stores them.
+
+    ``hatch`` is ``{"byMaterial": {<material>: {spacingMm?, angleDeg?, poche?}}}``
+    with spacing 0.5-20 paper mm (default ``spacing_mm``, the view's
+    hatchSpacingMm), angle in [0, 180) degrees (default 45) and poché false;
+    each rule is stored complete.  ``beyond`` is ``{"fade": 0-1}``.  No rule, an
+    empty ``byMaterial`` or a zero fade is an absent key, so a request without
+    them draws exactly what it drew before they existed.
+    """
+
+    rules: dict[str, Any] = {}
+    if hatch is not None:
+        by_material = hatch.get("byMaterial") if isinstance(hatch, Mapping) else None
+        if not isinstance(hatch, Mapping) or set(hatch) != {"byMaterial"} or not isinstance(by_material, Mapping):
+            _refuse("SECTION_REQUEST_INVALID", "graphics.hatch takes byMaterial: {material: {spacingMm, angleDeg, poche}}")
+        if len(by_material) > 100:
+            _refuse("SECTION_REQUEST_INVALID", "graphics.hatch.byMaterial takes at most 100 materials")
+        complete = {}
+        for material, rule in sorted(by_material.items(), key=lambda item: str(item[0])):
+            if (not isinstance(material, str) or not 1 <= len(material) <= 100
+                    or any(ord(char) < 32 or ord(char) == 127 for char in material)):
+                _refuse("SECTION_REQUEST_INVALID", "each hatch material is a printable name of 1 to 100 characters")
+            if not isinstance(rule, Mapping) or not set(rule) <= {"spacingMm", "angleDeg", "poche"}:
+                _refuse("SECTION_REQUEST_INVALID", f"the {material} hatch rule takes spacingMm, angleDeg and poche")
+            spacing = spacing_mm if rule.get("spacingMm") is None else _number(rule["spacingMm"], f"the {material} hatch spacingMm")
+            if rule.get("spacingMm") is not None and not 0.5 <= spacing <= 20.0:
+                _refuse("SECTION_REQUEST_INVALID", f"the {material} hatch spacingMm must be 0.5 to 20 paper millimetres")
+            angle = 45.0 if rule.get("angleDeg") is None else _number(rule["angleDeg"], f"the {material} hatch angleDeg")
+            if not 0.0 <= angle < 180.0:
+                _refuse("SECTION_REQUEST_INVALID", f"the {material} hatch angleDeg must be from 0 up to 180 degrees")
+            poche = rule.get("poche", False)
+            if not isinstance(poche, bool):
+                _refuse("SECTION_REQUEST_INVALID", f"the {material} hatch poche must be true or false")
+            complete[material] = {"spacingMm": float(spacing), "angleDeg": float(angle), "poche": poche}
+        if complete:
+            rules["hatch"] = {"byMaterial": complete}
+    if beyond is not None:
+        if not isinstance(beyond, Mapping) or set(beyond) != {"fade"}:
+            _refuse("SECTION_REQUEST_INVALID", "graphics.beyond takes fade, from 0 (black) to 1 (white)")
+        fade = _number(beyond["fade"], "the beyond fade")
+        if not 0.0 <= fade <= 1.0:
+            _refuse("SECTION_REQUEST_INVALID", "the beyond fade must be from 0 (black) to 1 (white)")
+        if fade:
+            rules["beyond"] = {"fade": fade}
+    return rules
+
+
 @dataclass(frozen=True, slots=True)
 class SectionPerspectiveView:
     """One section perspective request, checked before the model is read; the CAD Z-up frame and STEP unit.
@@ -959,7 +1007,9 @@ class SectionPerspectiveView:
     whose width is the field of view at the plane and whose height keeps the
     cut's proportions; the default frame is the cut with a 5% margin, and
     moving only the eye moves the vanishing point, not the frame.  ``depth``
-    bounds what is kept behind the plane.
+    bounds what is kept behind the plane.  ``graphics`` takes the pens and
+    hatch spacing in paper mm and, as a cut plan does, the cut's material
+    ``hatch`` and the ``beyond`` fade (``_section_paper_rules``).
     """
 
     name: str
@@ -1051,13 +1101,15 @@ class SectionPerspectiveView:
                 or self.scale_denominator <= 0):
             _refuse("SECTION_REQUEST_INVALID", "scale_denominator must be a positive integer")
         graphics = dict(DEFAULT_SECTION_GRAPHICS)
-        if self.graphics is not None:
-            if not isinstance(self.graphics, Mapping) or not set(self.graphics) <= set(graphics):
-                _refuse("SECTION_REQUEST_INVALID", "graphics takes cutLineMm, visibleLineMm and hatchSpacingMm")
-            for key, value in self.graphics.items():
-                graphics[key] = _number(value, key)
+        requested = {} if self.graphics is None else self.graphics
+        if not isinstance(requested, Mapping) or not set(requested) <= {*graphics, "hatch", "beyond"}:
+            _refuse("SECTION_REQUEST_INVALID", "graphics takes cutLineMm, visibleLineMm, hatchSpacingMm, hatch and beyond")
+        for key in DEFAULT_SECTION_GRAPHICS:
+            if key in requested:
+                graphics[key] = _number(requested[key], key)
                 if graphics[key] <= 0.0:
                     _refuse("SECTION_REQUEST_INVALID", f"{key} must be a positive paper millimetre value")
+        graphics.update(_section_paper_rules(requested.get("hatch"), requested.get("beyond"), graphics["hatchSpacingMm"]))
         object.__setattr__(self, "graphics", graphics)
 
     def plane(self) -> tuple[tuple[float, float, float], tuple[float, float, float]]:
@@ -1081,7 +1133,7 @@ class SectionPerspectiveView:
         return {
             "name": self.name, "section": deepcopy(self.section), "camera": deepcopy(self.camera),
             "depth": self.depth, "hiddenObjectIds": list(self.hidden_object_ids),
-            "scale": f"1:{self.scale_denominator}", "graphics": dict(self.graphics),
+            "scale": f"1:{self.scale_denominator}", "graphics": deepcopy(self.graphics),
             "linear_deflection": self.linear_deflection,
         }
 
@@ -1223,7 +1275,7 @@ def project_section_perspective(
             "scale_at": "the section plane",
             "hidden_lines": False,
             "linear_deflection": view.linear_deflection,
-            "graphics": dict(view.graphics),
+            "graphics": deepcopy(view.graphics),
             "hiddenObjectIds": list(view.hidden_object_ids),
         }
         with _observed_stage(operation_observer, "drawing.svg", parent_event_id=parent_event_id,

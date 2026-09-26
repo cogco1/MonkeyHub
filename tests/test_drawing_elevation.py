@@ -466,7 +466,8 @@ class CutPlanTests(unittest.TestCase):
         self.assertEqual(cleanup["tolerance"], tolerance)
         self.assertGreater(cleanup["cut_precedence"], 0)
         self.assertEqual(cleanup["input_lines"] - cleanup["output_lines"],
-                         sum(cleanup[rule] for rule in ("micro", "collinear", "cut_precedence", "duplicate", "hidden_under_cut")))
+                         sum(cleanup[rule] for rule in ("micro", "collinear", "cut_precedence", "shared_cut", "duplicate",
+                                                        "hidden_under_cut")))
         self.assertNotIn("cleanup", drawing.receipt["view"], "the cleanup describes the drawing, not its recipe")
         reopened = FilesystemProjectRepository.open(self.root)
         cold = read_model_axis_elevation(reopened, drawing.receipt_ref)
@@ -487,8 +488,13 @@ class CutPlanTests(unittest.TestCase):
         for _, points in visible:
             # In the crop (-1, -1, 5, 4) SVG x = u + 1 and y = 4 - v: the door spans u 1..2 at v = 0.
             self.assertTrue(all(2 - 1e-4 <= x <= 3 + 1e-4 and abs(y - 4) <= 1e-4 for x, y in points), points)
-        # The cut itself is drawn as solved.
-        self.assertEqual(drawing.receipt["projection"]["section_polylines"], len(_group_lines(drawing.svg, "section")))
+        # The cut is drawn as solved, but where two walls meet their shared face is inked once.
+        cleanup = drawing.receipt["cleanup"]
+        self.assertGreater(cleanup["shared_cut"], 0)
+        self.assertEqual(drawing.receipt["projection"]["section_polylines"] - cleanup["shared_cut"],
+                         len(_group_lines(drawing.svg, "section")))
+        self.assertTrue(set(cleanup["objects"]["shared_cut"]) <= {object_id for object_id, _ in
+                                                                   _group_lines(drawing.svg, "section")})
         # The PNG is rendered from these SVG bytes and nothing else.
         self.assertEqual(drawing.png, render_svg_png(drawing.svg))
 

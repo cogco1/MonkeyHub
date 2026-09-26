@@ -87,14 +87,19 @@ class CleanupTests(unittest.TestCase):
             _line("wall", "visible", (1, 1), (2.5, 1), (3, 1)),
             _line("wall", "visible", (2, 0), (3, 0.0156)),
         ))
+        touched = (("micro", ("wall",)), ("collinear", ("slab", "wall")), ("cut_precedence", ("slab",)),
+                   ("duplicate", ("rear",)), ("hidden_under_cut", ("footing",)))
         self.assertEqual(report, CleanupReport(
             tolerance=0.005, input_lines=14, output_lines=7, micro=1, collinear=3, cut_precedence=1,
-            duplicate=1, hidden_under_cut=1))
+            duplicate=1, hidden_under_cut=1, shared_cut=0, objects=touched))
         self.assertEqual(report.input_lines - report.output_lines,
-                         report.micro + report.collinear + report.cut_precedence + report.duplicate + report.hidden_under_cut)
+                         report.micro + report.collinear + report.cut_precedence + report.shared_cut
+                         + report.duplicate + report.hidden_under_cut)
         self.assertEqual(report.to_dict(), {
             "tolerance": 0.005, "input_lines": 14, "output_lines": 7, "micro": 1, "collinear": 3,
-            "cut_precedence": 1, "duplicate": 1, "hidden_under_cut": 1})
+            "cut_precedence": 1, "duplicate": 1, "hidden_under_cut": 1, "shared_cut": 0,
+            "objects": {"micro": ["wall"], "collinear": ["slab", "wall"], "cut_precedence": ["slab"],
+                        "shared_cut": [], "duplicate": ["rear"], "hidden_under_cut": ["footing"]}})
         # The tolerance is paper space: a 30 mm post is drawn at 1:100 and is micro at 1:1000 (50 mm),
         # while a 0.9 degree turn stays a turn at any scale.
         post = _line("post", "visible", (8, 8), (8.03, 8))
@@ -134,14 +139,53 @@ class CleanupTests(unittest.TestCase):
         self.assertEqual(cleaned, tuple(sorted(rail + (wall, far, section),
                                                key=lambda line: (line.object_id, line.kind, line.points))))
         self.assertEqual(report, CleanupReport(0.005, 55, 51, micro=2, collinear=0, cut_precedence=1, duplicate=0,
-                                               hidden_under_cut=1))
+                                               hidden_under_cut=1, objects=(("micro", ("slab", "wall")),
+                                                                            ("cut_precedence", ("slab",)),
+                                                                            ("hidden_under_cut", ("footing",)))))
         self.assertEqual(clean_drawing(cleaned, self.regions, tolerance=self.tolerance),
                          (cleaned, CleanupReport(0.005, 51, 51, 0, 0, 0, 0, 0)))
         # A region with no loops holds no material and hides nothing; a line of no length is a speck wherever it is.
         self.assertEqual(clean_drawing((far,), (OcctDrawingRegion("empty", ()),), tolerance=self.tolerance)[0], (far,))
         dot = _line("wall", "visible", (4, 0), (4, 0))
         self.assertEqual(clean_drawing((wall, dot), (), tolerance=self.tolerance),
-                         ((wall,), CleanupReport(0.005, 2, 1, 1, 0, 0, 0, 0)))
+                         ((wall,), CleanupReport(0.005, 2, 1, 1, 0, 0, 0, 0, objects=(("micro", ("wall",)),))))
+
+    def test_a_cut_line_lying_on_another_objects_cut_line_is_drawn_once(self) -> None:
+        # A T in plan: wall_b butts into wall_a's face, so wall_b's end edge lies on wall_a's long face edge.
+        # Each section edge is its own line, as the projection returns them.
+        wall_a = (_line("wall_a", "section", (0, 0), (6, 0)), _line("wall_a", "section", (6, 0), (6, 0.2)),
+                  _line("wall_a", "section", (6, 0.2), (0, 0.2)), _line("wall_a", "section", (0, 0.2), (0, 0)))
+        end = _line("wall_b", "section", (3.2, 0.2001), (3.0, 0.2001))
+        wall_b = (_line("wall_b", "section", (3.0, 0.2001), (3.0, 4)), _line("wall_b", "section", (3.0, 4), (3.2, 4)),
+                  _line("wall_b", "section", (3.2, 4), (3.2, 0.2001)), end)
+        # Two columns sharing one face edge exactly: the first object id keeps it, whichever order it arrives in.
+        shared_z, shared_y = (_line("column_z", "section", (8, 0), (8, 1)), _line("column_y", "section", (8, 1), (8, 0)))
+        column_y = (shared_y, _line("column_y", "section", (8, 0), (7, 0)), _line("column_y", "section", (7, 0), (7, 1)),
+                    _line("column_y", "section", (7, 1), (8, 1)))
+        column_z = (shared_z, _line("column_z", "section", (8, 1), (9, 1)), _line("column_z", "section", (9, 1), (9, 0)),
+                    _line("column_z", "section", (9, 0), (8, 0)))
+        regions = (OcctDrawingRegion("wall_a", (((0.0, 0.0), (6.0, 0.0), (6.0, 0.2), (0.0, 0.2), (0.0, 0.0)),)),
+                   OcctDrawingRegion("wall_b", (((3.0, 0.2001), (3.0, 4.0), (3.2, 4.0), (3.2, 0.2001),
+                                                 (3.0, 0.2001)),)))
+        lines = wall_a + wall_b + column_y + column_z
+        cleaned, report = clean_drawing(lines, regions, tolerance=self.tolerance)
+        self.assertEqual(set(lines) - set(cleaned), {end, shared_z})
+        # What stays is exactly what was given, and wall_a's face edge still inks both poché boundaries.
+        self.assertTrue(set(cleaned) <= set(lines))
+        self.assertIn(_line("wall_a", "section", (6, 0.2), (0, 0.2)), cleaned)
+        self.assertEqual(report, CleanupReport(0.005, 16, 14, 0, 0, 0, 0, 0, shared_cut=2,
+                                               objects=(("shared_cut", ("column_z", "wall_b")),)))
+        self.assertEqual(report.to_dict()["objects"]["shared_cut"], ["column_z", "wall_b"])
+        for order in (tuple(reversed(lines)), lines[1::2] + lines[::2]):
+            with self.subTest(order=order[:2]):
+                self.assertEqual(clean_drawing(order, regions, tolerance=self.tolerance), (cleaned, report))
+        self.assertEqual(clean_drawing(cleaned, regions, tolerance=self.tolerance),
+                         (cleaned, CleanupReport(0.005, 14, 14, 0, 0, 0, 0, 0)))
+        # One object's own lines never hide each other, and a cut line only partly on another object's stays.
+        own = (_line("wall_a", "section", (0, 0), (6, 0)), _line("wall_a", "section", (0, 0.0001), (6, 0.0001)))
+        self.assertEqual(clean_drawing(own, (), tolerance=self.tolerance)[1].shared_cut, 0)
+        past = (_line("wall_a", "section", (0, 0), (6, 0)), _line("wall_b", "section", (5, 0), (7, 0)))
+        self.assertEqual(clean_drawing(past, (), tolerance=self.tolerance)[0], past)
 
     def test_cleanup_refuses_what_it_cannot_clean(self) -> None:
         for tolerance in (0, -1, float("nan"), True, "5"):

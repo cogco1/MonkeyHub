@@ -419,6 +419,11 @@ class SectionPerspectiveRequestDto(DrawingSourceRequestDto):
     visible_line_mm: float | None = Field(alias="visibleLineMm", default=None, gt=0, le=2)
     hatch_spacing_mm: float | None = Field(alias="hatchSpacingMm", default=None, ge=0.2, le=20,
                                            description="Poché hatch spacing on paper; default 0.5 mm.")
+    hatch: PlanHatchDto | None = Field(default=None, description=(
+        "Material hatch and poché rules for the cut on paper, as a cut plan takes them; each is stored complete and "
+        "an empty byMaterial draws none."))
+    beyond: PlanBeyondDto | None = Field(default=None, description=(
+        "Fading of what lies beyond the cut, as in a cut plan; fade 0 draws it black."))
 
 
 class DrawingStyleDto(BaseModel):
