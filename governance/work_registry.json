@@ -215,6 +215,53 @@
         "2026-09-25: archflow/project/record_kinds.py is handed to GH-294/admission-record, which registers the owner-approved candidate-admission kind (audit Q1); GH-66 reclaims it if Publish needs another kind.",
         "2026-09-25: monkeydiagram/drawing_elevation.py, monkeydiagram/drawing_svg.py and routes/drawings.py are handed to GH-307/section-perspective, which adds the owner-requested section perspective view to the one projection pipeline; GH-66 keeps its Publish paths and reclaims these if Publish needs drawing changes."
       ]
+    },
+    {
+      "id": "GH-292",
+      "stream": "planning",
+      "status": "active",
+      "goal": "Retain exact-source viewport model previews through existing SourceDocument/P036 and show them in the mounted design history and candidate consumers.",
+      "depends_on": [],
+      "issue": "https://github.com/cogco1/MonkeyHub/issues/292",
+      "branch": "codex/292-retained-model-previews",
+      "worktree": "codex-292-retained-model-previews",
+      "base_ref": "f9077fadb66ac686bc62eef9558a10b19b41e5e4",
+      "contributor": "Codex",
+      "reviewer": "Parent integration",
+      "handoff": "Independent source slice; parent integrates after #281 and Claude PR #320. No ChatShell, release, installed Hub or Claude worktree changes. Generated clients reconciled by parent.",
+      "modules": [
+        "studio.artifacts",
+        "studio.shell",
+        "hub.shell"
+      ],
+      "write_scope": [
+        "apps/archflow-studio/api/archflow_studio_api/application/artifacts.py",
+        "apps/archflow-studio/api/archflow_studio_api/routes/artifacts.py",
+        "apps/archflow-studio/api/archflow_studio_api/transport/artifacts.py",
+        "apps/archflow-studio/api/tests/test_captures.py",
+        "apps/monkeyhub/web/workspaces/src/api/client.ts",
+        "apps/monkeyhub/web/workspaces/src/api/generated/",
+        "apps/monkeyhub/web/workspaces/src/app/App.tsx",
+        "apps/monkeyhub/web/workspaces/src/features/artifacts/ModelThumbnail.tsx",
+        "apps/monkeyhub/web/workspaces/src/features/artifacts/modelThumbnail.css",
+        "apps/monkeyhub/web/workspaces/src/features/artifacts/useRetainedModelPreview.ts",
+        "apps/monkeyhub/web/workspaces/src/features/stage/VersionsStrip.tsx",
+        "apps/monkeyhub/web/workspaces/src/features/designTree/DesignTreeList.tsx",
+        "apps/monkeyhub/web/workspaces/src/features/designTree/DesignTreeDetails.tsx",
+        "apps/monkeyhub/web/workspaces/src/features/conversation/cards/CandidateCard.tsx",
+        "apps/monkeyhub/web/workspaces/test/modelPreviews.browser.mjs",
+        "apps/monkeyhub/web/workspaces/test/modelPreviews.test.ts",
+        "apps/monkeyhub/web/src/api/generated/",
+        "governance/module_registry.json",
+        "docs/SYSTEM_MAP.md",
+        "docs/PROTOCOL.md",
+        "governance/work_registry.json"
+      ],
+      "acceptance": [
+        "Exact run/state/hash previews survive project copy and reopen; ordinary images cannot be discovered as model previews.",
+        "Stable viewport capture is asynchronous; dirty or changed-source views are never registered; missing or failed images show the existing fallback.",
+        "Mounted design history and candidate results consume retained images without changing StateRecord or HEAD."
+      ]
     }
   ]
 }
