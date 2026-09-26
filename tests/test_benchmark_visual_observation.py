@@ -12,8 +12,12 @@ import contextlib
 from copy import deepcopy
 import io
 from itertools import count
+import json
 from pathlib import Path
+import tempfile
 import unittest
+from unittest.mock import patch
+from urllib.error import URLError
 from urllib.parse import parse_qs, urlsplit
 
 from tools import benchmark_visual_observation as bench
@@ -421,6 +425,25 @@ class ArgumentTests(unittest.TestCase):
         self.refused("--drawing", "--runtime", "u", "--spec", "s.json", "--reason", "first_bundle")
         self.refused("--drawing", "--runtime", "u", "--spec", "s.json", "--codex", "codex")
         self.refused("--drawing", "--runtime", "u")
+        self.refused("--drawing", "--runtime", "u", "--spec", "s.json", "--tag", "two words")
+
+    def test_a_bad_spec_is_refused_before_any_request_and_a_marked_one_is_read(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            spec = Path(folder) / "drawings.json"
+            spec.write_text(json.dumps({"projectId": "p", "drawings": [{"name": "plan", "plan": {}}]}),
+                            encoding="utf-8-sig")
+            error = io.StringIO()
+            never = patch.object(bench, "run_drawing_benchmark", side_effect=AssertionError("no run"))
+            with never, contextlib.redirect_stderr(error):
+                self.assertEqual(bench.main(["--drawing", "--runtime", "u", "--spec", str(spec)]), 2)
+            self.assertIn("plan: name one source", error.getvalue())
+
+    def test_a_runtime_that_never_answers_is_an_answer_too(self) -> None:
+        with patch.object(bench, "urlopen", side_effect=URLError("connection refused")):
+            code, answer = bench.RuntimeClient("http://127.0.0.1:1").request(
+                "GET", "/api/drawings/plans/vector?runId=r")
+        self.assertEqual((code, answer["code"]), (0, "RUNTIME_UNANSWERED"))
+        self.assertNotIn("runId", answer["detail"])
 
     def test_a_single_review_still_needs_its_class_and_reason(self) -> None:
         args = bench.parse_args(["--runtime", "u", "--spec", "s.json", "--task-class", "spatial_formal",

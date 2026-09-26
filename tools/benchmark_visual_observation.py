@@ -840,7 +840,13 @@ def arm_results(state: Mapping[str, Any]) -> dict[str, dict[str, Any]]:
 
 
 class RuntimeClient:
-    """One project runtime over HTTP, one JSON request at a time; a refusal is answered as data."""
+    """One project runtime over HTTP, one JSON request at a time; a refusal is answered as data.
+
+    A request the runtime never answered (refused connection, timeout) is
+    status 0 with ``RUNTIME_UNANSWERED``, so the run goes on: a drawing
+    request or read stops that drawing, and an unanswered look ends its
+    loop, having perhaps cost what nobody reported.
+    """
 
     def __init__(self, base: str, *, timeout_s: float = 600.0) -> None:
         self.base = base.rstrip("/")
@@ -859,6 +865,8 @@ class RuntimeClient:
                 return error.code, json.loads(raw)
             except ValueError:
                 return error.code, {"code": f"HTTP_{error.code}", "detail": raw.decode("utf-8", "replace")[:500]}
+        except OSError as error:  # URLError and timeouts: no answer at all
+            return 0, {"code": "RUNTIME_UNANSWERED", "detail": f"{method} {path.split('?')[0]}: {error}"[:300]}
 
 
 class _Stop(RuntimeError):
@@ -1104,6 +1112,8 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         given = [f"--{name.replace('_', '-')}" for name in _REVIEW_ONLY if getattr(args, name) is not None]
         if given:
             parser.error(f"--drawing runs its own review loop with the runtime's provider; drop {', '.join(given)}")
+        if args.tag is not None and not _NAME.fullmatch(args.tag):
+            parser.error("--tag is a short name of letters, digits, '.', '_' or '-'")
     else:
         if args.task_class is None or args.reason is None:
             parser.error("a review needs --task-class and --reason (or run the drawing benchmark with --drawing)")
@@ -1114,11 +1124,17 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
-    spec = json.loads(args.spec.read_text(encoding="utf-8"))
+    # A spec saved by a Windows editor may start with a byte order mark.
+    spec = json.loads(args.spec.read_text(encoding="utf-8-sig"))
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
     if args.drawing:
         tag = args.tag or time.strftime("%y%m%d%H%M%S", time.gmtime())
+        try:
+            drawing_spec(spec)
+        except DrawingSpecInvalid as exc:
+            print(f"benchmark_visual_observation.py: error: {exc}", file=sys.stderr)
+            return 2
         result = run_drawing_benchmark(RuntimeClient(args.runtime, timeout_s=args.timeout or 600.0), spec, tag=tag,
                                        log=lambda line: print(line, file=sys.stderr, flush=True))
     else:
