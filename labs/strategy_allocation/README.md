@@ -44,7 +44,7 @@ timeout. The cap is a protocol limit, never a term of the outcome.
 | `strategies.py` | The strategy interface `Strategy` (`request` → prompt + schema, `proposal` → plan), strategies A–D, the runner interface `Runner`, `CodexRunner` and `FakeRunner`. |
 | `evaluator.py` | `evaluate(env, snapshot, executed_actions, recorded_steps)` → `Outcome`; `OUTCOME_METRICS`. |
 | `rollout.py` | `run_rollout(...)` → `RolloutRecord`; JSON-lines and CSV readers and writers. |
-| `allocator.py` | The allocation interface `AllocationRule`: `AllocationState` → `NextAllocation`; the equal and round-robin baselines. |
+| `allocator.py` | The allocation interface `AllocationRule`: `AllocationState` → `NextAllocation`; equal, round-robin and the reused classical OCBA-style rule. |
 | `benchmark.py` | The experiment loop and the `run`, `verify`, `summarize`, `rescore` and `snapshots` commands. |
 | `fixtures/` | The four starting snapshots as JSON. |
 | `rollout_results/` | The committed summaries of the smoke run (numbers only): as run, and re-judged by reference@1. |
@@ -141,13 +141,22 @@ NextAllocation(allocations=(("C", 3), ("A", 1)), stopping_reason=None, diagnosti
 
 `n` counts every attempted rollout of the strategy at this state; the variance
 is the unbiased sample variance (none for one sample). The two V0 baselines,
-`equal` and `round_robin`, delegate each single decision to
+`equal` and `round_robin`, and `ocba` delegate each single decision to
 `SequentialAllocator` from `labs/candidate_evaluation`, unchanged. Their warmup
 is the balanced initialization (two rollouts per strategy by default), so
 allocation is sequential from the first round. Because every attempt is an
 observation here, the two baselines allocate the same counts; they are the
-reference for the first adaptive rule, not a comparison in themselves. This
-slice has **no OCBA-style rule**.
+reference for the adaptive rule, not a comparison in themselves.
+
+`ocba` exposes the existing classical sample-ratio rule without copying its
+math. Unlike the count-only baselines it schedules exactly one rollout per
+decision, even when `--parallel` is greater than one, and observes that result
+before choosing again. Its diagnostics retain the existing rule's target
+shares or its explicitly labelled balanced fallback. Zero empirical variance,
+tied best means and unknown variance violate the classical assumptions and use
+that fallback; the adapter does not hide this with a variance floor. This is an
+OCBA-style experimental baseline, not an OCBA guarantee for bounded Bernoulli
+outcomes.
 
 To add a rule: implement `AllocationRule`, register it in `allocator.RULES`,
 test it next to `test_allocator.py`, then run it offline with
@@ -165,6 +174,7 @@ Run everything from the repository root with the root on `PYTHONPATH`
 python -m pytest -q -p no:cacheprovider labs/strategy_allocation      # 60 offline tests, a few seconds
 python -m labs.strategy_allocation.benchmark snapshots --check         # fixtures are today's snapshots
 python -m labs.strategy_allocation.benchmark run --runner fake --out <new-directory>
+python -m labs.strategy_allocation.benchmark run --runner fake --rule ocba --out <new-directory>
 python -m labs.strategy_allocation.benchmark verify <run-directory>
 python -m labs.strategy_allocation.benchmark summarize <run-directory>
 python -m labs.strategy_allocation.benchmark rescore <run-directory> --out <new-directory>
@@ -266,14 +276,40 @@ come to $1.2–3.0 by the same rates. The run gives per-arm distributions at
 matched budget; comparing an adaptive rule with equal allocation needs that
 rule first.
 
+## Offline matched-budget allocation check (2026-09-26)
+
+The first no-provider comparison used all four synthetic cases, seed 268 and 32
+rollouts per case (128 per rule). Each output cold-verified after restart:
+
+```sh
+for rule in equal round_robin ocba; do
+  python -m labs.strategy_allocation.benchmark run --runner fake --rule "$rule" \
+    --budget 32 --seed 268 --out "/tmp/gh268-$rule"
+  python -m labs.strategy_allocation.benchmark verify "/tmp/gh268-$rule"
+done
+```
+
+| Rule | Rollouts | Successful outcomes | Allocation counts per case | Result |
+| --- | ---: | ---: | --- | --- |
+| equal | 128 | 91 | A/B/C/D = 8/8/8/8 | reference baseline |
+| round_robin | 128 | 91 | A/B/C/D = 8/8/8/8 | identical here because every attempt is observed |
+| ocba | 128 | 91 | A/B/C/D = 8/8/8/8 | balanced fallback throughout |
+
+This negative synthetic result is useful: at least one fake arm in every case
+had zero empirical variance, so the classical rule correctly refused to apply
+its ratio and spent the same fixed rollout budget as the baselines. The run
+proves matched accounting, sequential replay and the degenerate-moment path; it
+does **not** show an adaptive benefit. The fake plans and probabilities were
+invented, and no LLM or paid provider was called.
+
 ## What is not claimed
 
 - Nothing about which strategy or which allocation rule is better. The smoke
   run shows that the harness works on real calls; its samples are far too few
   for a comparison.
-- No OCBA-style rule, and no OCBA guarantee. Independence, normality and a
-  unique best are unchecked for LLM rollouts; Bernoulli outcomes at small n
-  often have zero sample variance.
+- No OCBA guarantee. Independence, normality and a unique best are unchecked
+  for LLM rollouts; Bernoulli outcomes at small n often have zero sample
+  variance and deliberately trigger balanced fallback.
 - The snapshot has ContextPack@1's shape, but in this slice it comes from the
   synthetic environment, not from `POST /api/intents/context`.
 - The token cap is checked after the call, not enforced inside it. Codex's
@@ -296,8 +332,9 @@ rule first.
    are excluded in analysis; both are possible from the retained records.
 3. Whether B should stay a model-executed fixed procedure or become a
    model-free scripted baseline (a deterministic arm, sampled once).
-4. The first adaptive rule, and how it handles zero-variance Bernoulli arms at
-   small n; only then an equal-vs-adaptive comparison at matched budget.
+4. Whether the first real comparison should retain the classical rule's
+   balanced fallback or preregister a separate bounded-outcome rule; do not add
+   an undocumented variance floor after seeing results.
 5. Whether the case set needs stochastic transitions, harder traps or more
    states per case before a full run. In the smoke run every arm found
    `provided-source`'s optimum, so that case may be too easy to separate arms.
