@@ -215,6 +215,49 @@
         "2026-09-25: archflow/project/record_kinds.py is handed to GH-294/admission-record, which registers the owner-approved candidate-admission kind (audit Q1); GH-66 reclaims it if Publish needs another kind.",
         "2026-09-25: monkeydiagram/drawing_elevation.py, monkeydiagram/drawing_svg.py and routes/drawings.py are handed to GH-307/section-perspective, which adds the owner-requested section perspective view to the one projection pipeline; GH-66 keeps its Publish paths and reclaims these if Publish needs drawing changes."
       ]
+    },
+    {
+      "id": "GH-252",
+      "stream": "planning",
+      "status": "active",
+      "goal": "Expose existing drawing recipe export/import in Drawing and verify an explicitly saved correction reused in a second isolated project; broader office demos remain open.",
+      "depends_on": [],
+      "issue": "https://github.com/cogco1/MonkeyHub/issues/252",
+      "branch": "codex/252-office-recipe-reuse",
+      "worktree": "D:/MONKEYHUB_DEV/workspace/worktrees/codex-252-office-recipe-reuse",
+      "base_ref": "e33fbf4656402ead75fb4adcad946c71c81a2dff",
+      "contributor": "Codex",
+      "reviewer": null,
+      "handoff": "Independent #252 slice for parent integration. ProjectWorkspace edit only mounts RecipeTransfer in Drawing. Do not edit Publish, Board or drawing revision/replacement implementations.",
+      "modules": [
+        "studio.intent",
+        "studio.shell",
+        "hub.shell"
+      ],
+      "write_scope": [
+        "apps/archflow-studio/api/archflow_studio_api/application/decisions.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/authentication.py",
+        "apps/archflow-studio/api/archflow_studio_api/routes/decisions.py",
+        "apps/archflow-studio/api/archflow_studio_api/transport/decisions.py",
+        "apps/monkeyhub/web/workspaces/src/api/client.ts",
+        "apps/monkeyhub/web/workspaces/src/api/generated/",
+        "apps/monkeyhub/web/workspaces/src/app/ProjectWorkspace.tsx",
+        "apps/monkeyhub/web/workspaces/src/workspaces/monkeydiagram/RecipeTransfer.tsx",
+        "apps/monkeyhub/web/workspaces/src/workspaces/monkeydiagram/RecipeTransfer.css",
+        "apps/monkeyhub/web/workspaces/test/recipeTransfer.browser.mjs",
+        "apps/archflow-studio/api/tests/test_recipe_export.py",
+        "tests/test_export_drawing_recipe.py",
+        "docs/PROTOCOL.md",
+        "docs/SYSTEM_MAP.md",
+        "docs/DYNAMIC_MAP.md",
+        "governance/module_registry.json",
+        "governance/work_registry.json"
+      ],
+      "acceptance": [
+        "A saved project recipe exports at its selected revision; validated import requires an explicit human action and retains a project soft preference.",
+        "A second isolated project consumes imported values through real drawing output; version/source and retained drawing survive restart.",
+        "Invalid/stale/conflicting imports do not silently overwrite recipes or move design HEAD."
+      ]
     }
   ]
 }
