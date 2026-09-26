@@ -37,6 +37,23 @@ from test_monkeyhub_lifecycle import project_fixture
 
 
 class OperationRecoveryTests(unittest.TestCase):
+    def test_liveness_reads_status_without_copying_admission_history(self):
+        manager = OperationManager("idle-project")
+        oldest, _ = manager.admit(str(uuid4()), "POST", "/api/proposals", b"{}",
+                                  retained=None, source="studio", session_id=None)
+        for _ in range(60):
+            recent, _ = manager.admit(str(uuid4()), "POST", "/api/proposals", b"{}",
+                                      retained=None, source="studio", session_id=None)
+            manager.replied(recent, HttpResult(200, b"{}", {}))
+        with patch.object(manager, "_shown", side_effect=AssertionError("Liveness copied a display record")):
+            self.assertTrue(manager._has_active(), "Old active work must outlive the recent display window")
+            manager.interrupted(oldest, "lost reply")
+            self.assertFalse(manager._has_active(), "Recovery needs attention, not busy polling")
+            manager.reconcile({"candidates": [{"candidateId": "external", "status": "running"}]}, worker_alive=True)
+            self.assertTrue(manager._has_active(), "An external active candidate also keeps polling responsive")
+            manager.reconcile({"candidates": [{"candidateId": "external", "status": "succeeded"}]}, worker_alive=True)
+            self.assertFalse(manager._has_active())
+
     def setUp(self):
         temporary = tempfile.TemporaryDirectory(prefix="hub-operation-recovery-")
         self.addCleanup(temporary.cleanup)
