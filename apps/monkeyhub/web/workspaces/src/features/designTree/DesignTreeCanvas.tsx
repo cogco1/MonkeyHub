@@ -33,7 +33,7 @@ const PALETTE_TOKENS: Readonly<Record<keyof TreePalette, string>> = {
  * The palette from the Hub's tokens as they are now. A translucent token is laid
  * on the ground, so a card still hides the lines under it.
  */
-export function readTreePalette(): TreePalette {
+function readTreePalette(): TreePalette {
   const probe = document.createElement("canvas").getContext("2d");
   if (!probe) return LIGHT_TREE_PALETTE;
   const rgba = (value: string): readonly [number, number, number, number] | null => {
