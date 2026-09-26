@@ -89,19 +89,23 @@ const monitorTokens = { input_tokens: 200, cached_input_tokens: 50, output_token
 const monitorDay = new Date(Date.now() - 86_400_000).toISOString();
 const monitorEvents = [
   ...Array.from({ length: 4 }, (_, i) => ({ event_id: `turn-${i}`, source: "codex", provider: "openai", model: "test",
-    phase: "agent_turn", timing_scope: "agent_turn", model_call: null, status: "completed", started_at: monitorDay,
+    project_id: "A", phase: "agent_turn", timing_scope: "agent_turn", model_call: null, status: "completed", started_at: monitorDay,
     tokens: Object.fromEntries(Object.keys(monitorTokens).map((key) => [key, null])) })),
   ...Array.from({ length: 37 }, (_, i) => ({ event_id: `call-${i}`, source: "codex", provider: "openai", model: "test",
-    phase: "agent", model_call: true, status: "observed", started_at: monitorDay, tokens: monitorTokens })),
+    project_id: "A", phase: "agent", model_call: true, status: "observed", started_at: monitorDay, tokens: monitorTokens })),
+  { event_id: "call-B", project_id: "B", source: "codex", provider: "openai", model: "test-b", phase: "agent",
+    model_call: true, status: "observed", started_at: monitorDay, tokens: Object.fromEntries(Object.keys(monitorTokens).map((key) => [key, 0])) },
 ];
 const monitorTrace = { trace_id: "finished-with-missing-end", started_at: "2026-09-20T00:00:00Z", ended_at: "2026-09-20T00:00:02Z",
-  status: "succeeded", summary: { elapsed_ms: 2000, first_candidate_ms: null, verified_ms: 1200 }, spans: [
+  project_id: "A", status: "succeeded", summary: { elapsed_ms: 2000, first_candidate_ms: null, verified_ms: 1200 }, spans: [
     { span_id: "missing-end", label: "Model request", lane: "model", status: "incomplete", offset_ms: 100, duration_ms: null },
   ] };
 const monitorCandidateTrace = { trace_id: "candidate-readback", started_at: "2026-09-20T00:01:00Z", status: "succeeded",
-  summary: { elapsed_ms: 80000, first_candidate_ms: 46241, verified_ms: null }, spans: [] };
+  project_id: "A", summary: { elapsed_ms: 80000, first_candidate_ms: 46241, verified_ms: null }, spans: [] };
 const monitorLegacyTrace = { trace_id: "legacy-no-candidate-timing", started_at: "2026-09-20T00:02:00Z", status: "succeeded",
-  summary: { elapsed_ms: 2000, verified_ms: 1500 }, spans: [] };
+  project_id: "A", summary: { elapsed_ms: 2000, verified_ms: 1500 }, spans: [] };
+const monitorBTrace = { trace_id: "project-B-task", project_id: "B", started_at: "2026-09-20T00:03:00Z", status: "succeeded",
+  summary: { elapsed_ms: 3000 }, spans: [] };
 let monitorFailure = false, monitorReadLocked = false, monitorReadConflicts = 0, documentLoads = 0;
 page.on("request", (request) => {
   if (request.isNavigationRequest() && request.frame() === page.mainFrame()) documentLoads++;
@@ -244,7 +248,7 @@ await page.route((url) => url.pathname.startsWith("/api/"), async (route) => {
       monitorReadLocked = true;
       try {
         await new Promise((resolve) => setTimeout(resolve, 40));
-        return await json(url.pathname === "/api/events" ? { events: monitorEvents, warnings: [] } : { traces: [monitorTrace, monitorCandidateTrace, monitorLegacyTrace], warnings: [] });
+        return await json(url.pathname === "/api/events" ? { events: monitorEvents, warnings: [] } : { traces: [monitorTrace, monitorCandidateTrace, monitorLegacyTrace, monitorBTrace], warnings: [] });
       } finally { monitorReadLocked = false; }
     }
     if (url.pathname === "/api/rates") return json({ rates: [] });
@@ -935,8 +939,18 @@ try {
   await composer.fill("Keep this conversation while viewing usage");
   await page.getByRole("button", { name: "Usage", exact: true }).click();
   await waitMonitor();
+  const projectFilter = page.locator(".monitor-heading").getByLabel("Project", { exact: true });
+  assert.equal(await projectFilter.inputValue(), "A", "Usage opened from Project A starts in that project's scope");
   const callCard = page.locator(".monitor-stat").filter({ has: page.getByText("Model calls", { exact: true }) }).locator("strong");
   assert.equal(await callCard.innerText(), "37", "four Codex task boundaries are not model calls");
+  assert.equal(await page.locator('.monitor-section__head select option[value="project-B-task"]').count(), 0,
+    "Project A's task timeline excludes Project B");
+  await projectFilter.selectOption("");
+  assert.equal(await callCard.innerText(), "38", "All projects includes the separate Project B fixture record");
+  await page.locator(".monitor-page").getByRole("button", { name: "Refresh", exact: true }).click();
+  await waitMonitor();
+  assert.equal(await projectFilter.inputValue(), "", "refreshing and polling do not restore the opening project's filter");
+  await projectFilter.selectOption("A");
   await page.getByText("Showing 20 of 37 records", { exact: true }).waitFor();
   assert.equal(await page.locator(".monitor-table tbody tr").count(), 20);
   const displayedTokens = page.locator(".monitor-table tfoot tr").filter({ hasText: "Displayed model-call subtotal" }).locator("td").first();
@@ -964,6 +978,36 @@ try {
   assert.equal(await missingEndSpan.locator("summary > span").last().innerText(), "—", "an unclosed span has unknown duration, not zero or a live timer");
   await missingEndSpan.locator("summary").click();
   assert.equal(await missingEndSpan.locator("dd").first().innerText(), "End not observed");
+  await page.getByRole("button", { name: "Project B", exact: true }).first().click();
+  await page.getByRole("button", { name: "Usage", exact: true }).click();
+  await waitMonitor();
+  assert.equal(await projectFilter.inputValue(), "B", "reopening Usage from Project B establishes Project B's initial scope");
+  assert.equal(await callCard.innerText(), "1");
+  await page.locator('.monitor-section__head select').selectOption("project-B-task");
+  assert.equal(await page.locator(".monitor-table tbody tr").count(), 1, "Project B's records exclude Project A");
+  await page.getByRole("button", { name: "harbour-study", exact: true }).first().click();
+  await page.getByRole("button", { name: "Usage", exact: true }).click();
+  await waitMonitor();
+  assert.equal(await projectFilter.inputValue(), "harbour-study");
+  assert.equal(await callCard.innerText(), "0", "a project with no Monitor records shows zero rather than cross-project totals");
+  await page.getByText("No task records yet. Tasks started from MonkeyHub will appear here.", { exact: true }).waitFor();
+  await page.getByText("No usage records yet.", { exact: true }).waitFor();
+  await projectFilter.selectOption("");
+  assert.equal(await callCard.innerText(), "38");
+  await projectFilter.selectOption("harbour-study");
+  assert.equal(await callCard.innerText(), "0", "the opening project remains selectable after choosing All even with no records");
+  await page.getByRole("button", { name: "Project A", exact: true }).first().click();
+  await page.getByRole("button", { name: "Usage", exact: true }).click();
+  await waitMonitor();
+  await page.locator(".chat-usage").click();
+  await waitMonitor();
+  assert.equal(await projectFilter.inputValue(), "", "the sidebar totals open all projects even while Project A is selected");
+  await projectFilter.selectOption("A");
+  await page.getByRole("menuitem", { name: "Help", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Usage and task records", exact: true }).click();
+  await waitMonitor();
+  assert.equal(await projectFilter.inputValue(), "", "the global Help menu opens all projects");
+  await projectFilter.selectOption("A");
   await page.screenshot({ path: path.join(temporary, "monitor-panel.png") });
   assert.equal(await composer.inputValue(), "Keep this conversation while viewing usage");
   assert.equal(documentLoads, beforeMonitorNavigation, "opening Monitor keeps the current Hub document and conversation");

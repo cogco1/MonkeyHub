@@ -7,7 +7,7 @@ import {
 } from "./monitorData";
 import "./MonitorPage.css";
 
-type Props = { preferences: AppearancePreferences; active: boolean };
+type Props = { preferences: AppearancePreferences; active: boolean; initialProjectId?: string; openRequest?: number };
 type EventResponse = { events: MonitorEvent[]; warnings: string[] };
 type TraceResponse = { traces: MonitorTrace[]; warnings: string[]; lanes?: Array<{ id: string; label: string }> };
 type Rate = {
@@ -79,7 +79,7 @@ function dateText(value: string | null | undefined): string {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
 }
 
-export function MonitorPage({ preferences, active }: Props) {
+export function MonitorPage({ preferences, active, initialProjectId = "", openRequest = 0 }: Props) {
   const t = words[preferences.language];
   const [base, setBase] = useState<string | null>(null);
   const [events, setEvents] = useState<MonitorEvent[]>([]);
@@ -92,7 +92,7 @@ export function MonitorPage({ preferences, active }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
-  const [project, setProject] = useState("");
+  const [project, setProject] = useState(initialProjectId);
   const [traceId, setTraceId] = useState("");
   const [visible, setVisible] = useState(20);
   const [includeOperations, setIncludeOperations] = useState(false);
@@ -110,6 +110,12 @@ export function MonitorPage({ preferences, active }: Props) {
   useEffect(() => { invalidateQuote(); }, [project, usageDraft, rateIndex, rateKey, invalidateQuote]);
   useEffect(() => () => { quoteRequest.current += 1; }, []);
   const loadingRef = useRef(false);
+
+  // A new project-scoped opening establishes a new starting scope. Subsequent
+  // polling does not touch this state, so choosing All projects remains a user
+  // choice until Usage is explicitly opened again. Other unsaved Monitor fields
+  // remain mounted when a navigation entry resets only the project filter.
+  useEffect(() => { setProject(initialProjectId); }, [initialProjectId, openRequest]);
 
   const baseRef = useRef(base);
   const sourceDirtyRef = useRef(sourceDirty);
@@ -174,7 +180,9 @@ export function MonitorPage({ preferences, active }: Props) {
     return () => { window.clearInterval(timer); document.removeEventListener("visibilitychange", onVisible); };
   }, [active, readAll]);
 
-  const projects = useMemo(() => projectIds(events, traces), [events, traces]);
+  // Keep a project with no Monitor records selectable and visibly selected;
+  // filtering it must produce the empty state rather than fall back to totals.
+  const projects = useMemo(() => [...new Set([initialProjectId, project, ...projectIds(events, traces)].filter(Boolean))], [events, traces, project, initialProjectId]);
   const filteredEvents = useMemo(() => project ? events.filter((event) => event.project_id === project) : events, [events, project]);
   const filteredTraces = useMemo(() => project ? traces.filter((trace) => trace.project_id === project) : traces, [traces, project]);
   const summary = useMemo(() => summarizeUsage(filteredEvents), [filteredEvents]);

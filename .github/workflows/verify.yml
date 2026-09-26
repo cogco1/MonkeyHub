@@ -134,6 +134,19 @@ jobs:
         working-directory: apps/monkeyhub/web
         run: npm test && npm run build
 
+      - name: Install browser test dependencies
+        working-directory: apps/monkeyhub/web
+        run: |
+          npm install --no-save --package-lock=false playwright
+          npx playwright install --with-deps chrome
+
+      - name: Project usage, candidate review and drawing browser regressions
+        working-directory: apps/monkeyhub/web
+        run: |
+          node test/chatShell.browser.mjs
+          node workspaces/test/designTree.browser.mjs
+          node workspaces/test/drawingCanvas.browser.mjs
+
   studio:
     name: Studio first-run (${{ matrix.os }})
     strategy:
