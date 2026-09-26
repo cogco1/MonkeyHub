@@ -182,7 +182,9 @@
         "apps/monkeyhub/web/workspaces/test/intentViewSource.browser.mjs",
         "apps/monkeyhub/web/workspaces/test/modelSync.browser.mjs",
         "apps/monkeyhub/web/workspaces/test/elevation.browser.mjs",
-        "apps/monkeyhub/web/workspaces/test/boardDocumentOpen.browser.mjs"
+        "apps/monkeyhub/web/workspaces/test/boardDocumentOpen.browser.mjs",
+        "apps/monkeyhub/web/workspaces/test/sketch.browser.mjs",
+        "apps/monkeyhub/web/workspaces/test/versionNotifications.browser.mjs"
       ],
       "card": "docs/mapping/planning/GH-352-modeling-bar.md",
       "acceptance": [
@@ -224,7 +226,9 @@
             "apps/monkeyhub/web/workspaces/test/intentViewSource.browser.mjs",
             "apps/monkeyhub/web/workspaces/test/modelSync.browser.mjs",
             "apps/monkeyhub/web/workspaces/test/elevation.browser.mjs",
-            "apps/monkeyhub/web/workspaces/test/boardDocumentOpen.browser.mjs"
+            "apps/monkeyhub/web/workspaces/test/boardDocumentOpen.browser.mjs",
+            "apps/monkeyhub/web/workspaces/test/sketch.browser.mjs",
+            "apps/monkeyhub/web/workspaces/test/versionNotifications.browser.mjs"
           ],
           "depends_on": [],
           "status": "active",
