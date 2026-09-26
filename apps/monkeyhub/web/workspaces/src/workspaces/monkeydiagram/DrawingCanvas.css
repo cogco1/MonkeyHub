@@ -38,7 +38,8 @@
 .drawing-attention > .drawing-status:is([data-status="outdated"], [data-status="partially-broken"]) { border-left: 3px solid var(--accent); }
 .drawing-attention > .drawing-status[data-follow="frozen"] { border-style: dashed; }
 .drawing-attention > .drawing-status strong { font-size: var(--text-ui); }
-.drawing-attention > .drawing-status p { flex-basis: 100%; margin: 0; color: var(--muted); font-size: var(--text-caption); line-height: 1.5; overflow-wrap: anywhere; }
+/* Its detail line keeps its room while the state is checked, so the drawing below does not jump when it arrives. */
+.drawing-attention > .drawing-status p { flex-basis: 100%; min-height: 1.5em; margin: 0; color: var(--muted); font-size: var(--text-caption); line-height: 1.5; overflow-wrap: anywhere; }
 .drawing-dimension { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
 .drawing-dimension > strong, .drawing-dimension > span { display: block; overflow-wrap: anywhere; margin-bottom: 7px; }
 .drawing-anchor-warning { border-left: 2px solid var(--accent); padding-left: 8px; }
