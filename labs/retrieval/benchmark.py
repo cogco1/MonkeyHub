@@ -68,9 +68,11 @@ def measure(query, result, items, elapsed):
            "known_missing": query["known_missing"],
            "missing_abstention": int(result.status.startswith("insufficient:")) if query["known_missing"] else None,
            "status": result.status, "missing": list(result.missing),
+           "missing_details": list(result.missing_details),
            "ranking": [{"id": i, "score": s} for i, s in result.ranked],
            "context_ids": [x["id"] for x in context],
-           "reopen_ids": [x["id"] for x in result.reopen]}
+           "reopen_ids": [x["id"] for x in result.reopen],
+           "reopen": list(result.reopen)}
     return row
 
 
