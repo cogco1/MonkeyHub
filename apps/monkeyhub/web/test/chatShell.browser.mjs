@@ -5,7 +5,7 @@ import { readFile, mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 // Real built Hub UI; all provider and project calls are local, synthetic fixtures.
 const root = path.resolve(process.env.MONKEYHUB_WEB_DIST ?? fileURLToPath(new URL("../dist/", import.meta.url)));
@@ -155,6 +155,11 @@ Object.assign(apps.find((app) => app.appId === "monkeymonitor"), { url: `${origi
 const projectApps = new Map();
 const runtimes = new Map();
 const workspaceFixture = await createProjectWorkspaceFixture(runtimes, sessions);
+// GH-285: optional retained previews keyed by the exact project and run. The
+// same run-shaped names in another project deliberately do not share entries.
+const studyPreviews = new Map([["A", new Map([["cand-A-1", "ready"]])]]);
+const studyPreviewReads = [];
+const studyCapturedPreviews = new Map();
 const appsFor = (target) => {
   if (!projectApps.has(target)) projectApps.set(target, apps.map((app) => app.serviceId === "studio" ? { ...app, state: "stopped", processId: null, url: null, apiUrl: null } : app));
   return projectApps.get(target);
@@ -189,6 +194,43 @@ await page.route((url) => url.pathname.startsWith("/api/"), async (route) => {
   const req = route.request(), url = new URL(req.url()), method = req.method();
   if (url.pathname === "/api/runtime/events") return route.continue();
   if (/^\/api\/runtime\/projects\/[^/]+\/studio\//.test(url.pathname)) {
+    const [, runtimeId, studioPath] = url.pathname.match(/^\/api\/runtime\/projects\/([^/]+)\/studio(\/.*)$/) ?? [];
+    const runtime = [...runtimes.values()].find((item) => item.runtimeId === runtimeId);
+    const preview = studioPath?.match(/^\/api\/model-assets\/([0-9a-f]{64})\/preview$/);
+    if (runtime && preview) {
+      const asset = [...(workspaceFixture.projects.get(runtime.projectId)?.assets.values() ?? [])]
+        .find((item) => item.dto.sha256 === preview[1]);
+      const outcome = asset && studyPreviews.get(runtime.projectId)?.get(asset.dto.runId);
+      studyPreviewReads.push({ projectId: runtime.projectId, runId: url.searchParams.get("runId"),
+        stateDigest: url.searchParams.get("stateDigest"), assetSha256: preview[1], outcome: outcome ?? "missing" });
+      if (outcome === "failed") return route.fulfill({ status: 503, json: { code: "PREVIEW_OFFLINE", detail: "Preview fixture offline." } });
+      if (outcome === "ready") {
+        const previewSha = `preview-${runtime.projectId}-${asset.dto.runId}`.padEnd(64, "0").slice(0, 64);
+        return route.fulfill({ json: { projectId: runtime.projectId, runId: asset.dto.runId,
+          assetSha256: previewSha, fileName: `${asset.dto.runId}.png`,
+          mimeType: "image/png", sizeBytes: (studyCapturedPreviews.get(previewSha)?.png ?? Buffer.from(externalImage, "base64")).length,
+          pageCount: 1, pages: [], modelSource: asset.dto.modelSource, modelSourceBindingRef: "fixture", revisionRef: null } });
+      }
+      return route.fulfill({ json: null, contentType: "application/json" });
+    }
+    // Keep real viewport capture and its existing notification for every project.
+    // In particular, cand-B-final has no image until the architect views it.
+    if (runtime && studioPath === "/api/captures" && method === "POST") {
+      const body = req.postDataJSON(), source = workspaceFixture.projects.get(runtime.projectId).assets.get(body.runId).dto.modelSource;
+      assert.deepEqual(body.modelSource, source, "a retained preview uses the exact viewed candidate");
+      const png = Buffer.from(body.pngBase64, "base64"), sha256 = createHash("sha256").update(png).digest("hex");
+      assert.deepEqual([...png.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10], "the viewport supplies actual PNG bytes");
+      const previewSha = `preview-${runtime.projectId}-${body.runId}`.padEnd(64, "0").slice(0, 64);
+      studyCapturedPreviews.set(previewSha, { source, png });
+      if (!studyPreviews.has(runtime.projectId)) studyPreviews.set(runtime.projectId, new Map());
+      studyPreviews.get(runtime.projectId).set(body.runId, "ready");
+      return route.fulfill({ json: { projectId: runtime.projectId, runId: body.runId, relativePath: `${body.runId}.png`,
+        sha256, mediaType: "image/png", sizeBytes: png.length, document: null } });
+    }
+    const documentBytes = studioPath?.match(/^\/api\/documents\/([^/]+)\/bytes$/);
+    if (runtime && documentBytes && documentBytes[1].startsWith(`preview-${runtime.projectId}-`)) {
+      return route.fulfill({ body: studyCapturedPreviews.get(documentBytes[1])?.png ?? Buffer.from(externalImage, "base64"), contentType: "image/png" });
+    }
     try { if (await workspaceFixture.handle(route, url)) return; }
     catch (error) { errors.push(error.message); return route.fulfill({ status: 500, json: { code: "FIXTURE_UNEXPECTED", detail: error.message } }); }
   }
@@ -562,13 +604,16 @@ const showEntry = async (name) => {
   if (await page.locator(".chat-shell").getAttribute("data-panel") === "false") await entry.click();
 };
 /** The architect opens a result read-only from Modeling's Versions: results never open themselves (#302). */
-const viewCandidate = async (runId) => {
+const viewCandidate = async (runId, afterOpen) => {
   await showEntry("Modeling");
   await waitWorkspace();
   await page.waitForFunction(() => !document.querySelector('.chat-project-workspace:not([hidden]) .boot'));
   const toggle = visibleWorkspace().locator(".stage__versions-toggle");
   if (await toggle.getAttribute("aria-expanded") !== "true") await toggle.click();
   await visibleWorkspace().locator(".vcard__export").filter({ hasText: `${runId}.3dm` }).first().click();
+  // A retained preview waits for an undisturbed view. Let that actual capture
+  // finish before this helper clicks Versions again to inspect selection.
+  if (afterOpen) await afterOpen();
   await toggle.click();
   await waitCandidate(runId);
 };
@@ -1174,6 +1219,13 @@ try {
   await page.waitForTimeout(600);
   assert.equal(await study.count(), 1, "one Study card for the request");
   assert.equal(await study.getAttribute("data-candidates"), "cand-A-1");
+  const studyA = study.locator('[data-candidate="cand-A-1"]');
+  await studyA.locator("img").waitFor();
+  const sourceA = workspaceFixture.projects.get("A").assets.get("cand-A-1").dto.modelSource;
+  assert.equal(await studyA.locator(".model-thumbnail").getAttribute("data-preview-source"),
+    JSON.stringify([sourceA.runId, sourceA.stateDigest, sourceA.assetSha256]), "the card binds the preview to the result's exact source");
+  assert.deepEqual(studyPreviewReads.find((row) => row.projectId === "A" && row.runId === "cand-A-1"),
+    { projectId: "A", runId: sourceA.runId, stateDigest: sourceA.stateDigest, assetSha256: sourceA.assetSha256, outcome: "ready" });
   assert.equal(await study.locator(".chat-study__text").innerText(), "This request · 1 option ready");
   assert.equal(await page.locator(".chat-activity__result").count(), 0, "no per-result button remains");
   assert.deepEqual(await surfaceNow(), surfaceBeforeResult, "a result arriving never switches the surface or the panel");
@@ -1731,10 +1783,33 @@ try {
   const beforeReadbackStarts = writes.filter(([, pathname]) => pathname.endsWith("/start")).length;
   const bytesBeforeResult = workspaceFixture.requests.filter((row) => row.name.endsWith("/bytes")).length;
   await visibleWorkspace().evaluate((element) => { element.completionMarker = "once"; });
+  studyPreviews.set("B", new Map([["cand-B-final", "missing"], ["cand-B-alternate", "failed"]]));
+  const missingStudyPreview = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return url.pathname.endsWith("/preview") && url.searchParams.get("runId") === "cand-B-final";
+  });
   completing.messages.push({ id: "final-checkpoint", role: "tool", status: "complete", candidateId: "cand-B-final", content: "Final checkpoint completed" });
+  completing.messages.push({ id: "alternate-checkpoint", role: "tool", status: "complete", candidateId: "cand-B-alternate", content: "Alternate checkpoint completed" });
   emitRuntime();
   assert.equal(completing.status, "running");
-  await page.locator('.chat-study[data-candidates~="cand-B-final"]').waitFor();
+  const studyB = page.locator('.chat-study[data-candidates~="cand-B-final"]');
+  await studyB.waitFor();
+  assert.equal(await (await missingStudyPreview).json(), null);
+  await page.waitForTimeout(200);
+  assert.equal(await studyB.locator('[data-candidate="cand-B-final"] img').count(), 0, "a missing preview keeps the existing model icon");
+  assert.equal(await studyB.locator('[data-candidate="cand-B-final"] svg').count(), 1);
+  assert.equal(await studyB.locator('[data-candidate="cand-B-alternate"] img').count(), 0, "a failed preview keeps the existing model icon");
+  assert.equal(await studyB.locator('[data-candidate="cand-B-alternate"] svg').count(), 1);
+  assert.deepEqual(studyPreviewReads.filter((row) => row.projectId === "B" && ["cand-B-final", "cand-B-alternate"].includes(row.runId))
+    .map(({ projectId, runId, outcome }) => ({ projectId, runId, outcome })), [
+      { projectId: "B", runId: "cand-B-final", outcome: "missing" },
+      { projectId: "B", runId: "cand-B-alternate", outcome: "failed" },
+    ], "each option requests only its own retained source");
+  assert.ok(!studyPreviewReads.some((row) => row.projectId === "B" && row.assetSha256 === sourceA.assetSha256),
+    "another project never borrows the first project's preview even when cards coexist");
+  const studyPreviewBounds = await studyB.locator(".chat-study__previews").boundingBox(), studyCardBounds = await studyB.boundingBox();
+  assert.ok(studyPreviewBounds.x >= studyCardBounds.x && studyPreviewBounds.x + studyPreviewBounds.width <= studyCardBounds.x + studyCardBounds.width,
+    "multiple option thumbnails stay inside the result card");
   const resultLeftViewAlone = async (message) => {
     await page.waitForTimeout(800);
     assert.equal(workspaceFixture.requests.filter((row) => row.name.endsWith("/bytes")).length, bytesBeforeResult, message);
@@ -1746,7 +1821,14 @@ try {
   emitRuntime();
   await page.getByRole("button", { name: "Send", exact: true }).waitFor();
   await resultLeftViewAlone("finishing the turn does not open its result either");
-  await viewCandidate("cand-B-final");
+  await studyB.evaluate((element) => { element.captureMarker = "waiting"; });
+  await viewCandidate("cand-B-final", () => studyB.locator('[data-candidate="cand-B-final"] img').waitFor());
+  const capturedStudyPreview = studyCapturedPreviews.get("preview-B-cand-B-final".padEnd(64, "0"));
+  assert.ok(capturedStudyPreview, "viewing the candidate retains its previously missing preview");
+  assert.deepEqual(capturedStudyPreview.source, workspaceFixture.projects.get("B").assets.get("cand-B-final").dto.modelSource);
+  assert.equal(await studyB.evaluate((element) => element.captureMarker), "waiting", "the existing Study card refreshes after the workspace retains its preview");
+  assert.ok(studyPreviewReads.some((row) => row.projectId === "B" && row.runId === "cand-B-final" && row.outcome === "ready"),
+    "the retained-preview notification triggers a new read from the card's own project");
   assert.equal(await visibleWorkspace().evaluate((element) => element.completionMarker), "once", "opening the result keeps the mounted workspace");
   assert.equal(writes.filter(([, pathname]) => pathname.endsWith("/start")).length, beforeReadbackStarts, "showing a candidate in its existing project never starts the app again");
 
@@ -3326,6 +3408,9 @@ try {
   }
   assert.deepEqual(errors, []);
   console.log(JSON.stringify({ passed: true, sessions: sessions.length, writes: writes.length, screenshots: temporary }));
-} catch (error) { console.error(JSON.stringify({ screenshots: temporary, errors, workspaceRequests: workspaceFixture.requests.slice(-15) }));
+} catch (error) { console.error(JSON.stringify({ screenshots: temporary, errors, workspaceRequests: workspaceFixture.requests.slice(-15),
+  studyPreviewReads: studyPreviewReads.slice(-15),
+  studyCapturedSources: [...studyCapturedPreviews.values()].map(({ source }) => source),
+}));
   await page.screenshot({ path: path.join(temporary, "failure.png") }); throw error;
 } finally { await browser.close(); await new Promise((resolve) => server.close(resolve)); }

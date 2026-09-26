@@ -336,7 +336,9 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
   const planCrop = isCutPlan(source) ? (source?.viewRecipe?.frame as { crop_uv?: number[] } | undefined)?.crop_uv : undefined;
   const sectionPosition = section.position ?? (planCrop ? (section.axis === "x" ? planCrop[0] + planCrop[2] : planCrop[1] + planCrop[3]) / 2 : 0);
   const sectionEyeHeight = section.eyeHeight ?? (lengthUnit ? 1.6 / (UNIT_METRES[lengthUnit] ?? 1) : NaN);
-  const scopeKey = JSON.stringify([projectId, selected, selectedTargetValue, explicitTarget, active]);
+  // Visibility is not part of the drawing identity. A save that finishes while another
+  // workspace is visible still belongs here; project, revision, or source changes do not.
+  const scopeKey = JSON.stringify([projectId, selected, selectedTargetValue, explicitTarget]);
   const scope = useRef({ key: scopeKey });
   if (scope.current.key !== scopeKey) scope.current = { key: scopeKey };
   const mounted = useRef(true);

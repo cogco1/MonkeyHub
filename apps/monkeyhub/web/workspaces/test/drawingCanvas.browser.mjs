@@ -80,7 +80,7 @@ function App(){
    return new File([await new Promise(resolve=>canvas.toBlob(resolve,'image/png'))],name,{type:'image/png'});
   };return true;
  });
- Object.assign(metrics,{projectId,setActive:value=>flushSync(()=>setActive(value)),setProject:value=>flushSync(()=>setProjectId(value)),setLanguage:preferences.setLanguage,setTheme:preferences.setTheme});
+ Object.assign(metrics,{projectId,setActive:value=>flushSync(()=>setActive(value)),setProject:value=>flushSync(()=>{metrics.projectId=value;setProjectId(value)}),setLanguage:preferences.setLanguage,setTheme:preferences.setTheme});
  return <DrawingCanvas key={projectId} projectId={projectId} active={active} onDesignRequest={request=>metrics.handoffs.push(request)}/>;
 }
 createRoot(document.getElementById('root')).render(<UserPreferencesProvider><App/></UserPreferencesProvider>);
@@ -381,16 +381,56 @@ try {
     assert.equal(await page.getByLabel("Label offset (paper mm)", { exact: true }).isEnabled(), true);
     broken = false;
   });
-  await step("a late generation response never changes another workspace selection", async () => {
-    const before = await revision().inputValue(); hold = true;
+  await step("a save completed in another workspace opens its new revision once on return", async () => {
+    const before = await revision().inputValue(), generationCount = requests.length; hold = true;
     const scale = page.getByLabel("Scale denominator (1 : n)", { exact: true });
     await scale.fill(await scale.inputValue() === "75" ? "80" : "75");
     await until(() => Promise.resolve(Boolean(release)), Boolean, "held generation");
     await page.evaluate(() => window.drawingFixture.setActive(false)); release();
     await until(() => revision().isEnabled(), Boolean, "the held answer is settled");
-    assert.equal(await revision().inputValue(), before);
+    await until(() => revision().inputValue(), value => value !== before, "the completed revision is accepted while hidden");
     await page.evaluate(() => window.drawingFixture.setActive(true));
-    await until(() => revision().inputValue(), value => value !== before, "the edit kept while hidden saves itself on return");
+    await until(() => page.getByText("Saving appearance…", { exact: true }).count(), value => value === 0, "the saved revision is clean on return");
+    await new Promise(resolve => setTimeout(resolve, 1200));
+    assert.equal(requests.length, generationCount + 1, "returning does not submit the completed save again");
+    assert.equal(await saveButton().count(), 0, "the completed save is not reported as unsaved");
+  });
+  await step("a save refused in another workspace keeps the edit and does not retry itself", async () => {
+    const before = await revision().inputValue(), generationCount = requests.length; hold = true; refuseNext = true;
+    const scale = page.getByLabel("Scale denominator (1 : n)", { exact: true });
+    await scale.fill(await scale.inputValue() === "85" ? "90" : "85");
+    await until(() => Promise.resolve(Boolean(release)), Boolean, "held refused generation");
+    const refused = page.waitForResponse(response => new URL(response.url()).pathname.endsWith("/api/drawings/plans")
+      && response.request().method() === "POST" && response.status() === 503);
+    await page.evaluate(() => window.drawingFixture.setActive(false)); release();
+    await (await refused).finished();
+    await saveButton().waitFor();
+    await page.evaluate(() => window.drawingFixture.setActive(true));
+    await saveButton().waitFor();
+    assert.equal(await revision().inputValue(), before, "a refusal keeps the selected retained revision");
+    await new Promise(resolve => setTimeout(resolve, 1200));
+    assert.equal(requests.length, generationCount + 1, "a refused save is not retried on return");
+    await saveButton().click();
+    await until(() => revision().inputValue(), value => value !== before, "an explicit retry saves the retained edit");
+  });
+  await step("a late save cannot write into another project context", async () => {
+    const generationCount = requests.length; hold = true;
+    const scale = page.getByLabel("Scale denominator (1 : n)", { exact: true });
+    await scale.fill(await scale.inputValue() === "95" ? "100" : "95");
+    await until(() => Promise.resolve(Boolean(release)), Boolean, "held cross-project generation");
+    const saved = page.waitForResponse(response => new URL(response.url()).pathname.endsWith("/api/drawings/plans")
+      && response.request().method() === "POST" && response.request().postDataJSON().projectId === "drawing-project");
+    await page.evaluate(() => window.drawingFixture.setProject("other-project"));
+    await page.getByRole("button", { name: "Generate cut plan", exact: true }).waitFor();
+    release();
+    await (await saved).finished();
+    await new Promise(resolve => setTimeout(resolve, 1200));
+    assert.equal(requests.length, generationCount + 1, "the late response starts no save in the other project");
+    assert.equal(await revision().inputValue(), "");
+    assert.equal(await revision().locator("option").count(), 1);
+    assert.equal(await page.locator(".drawing-preview").count(), 0, "the other project never displays the saved drawing");
+    await page.evaluate(() => window.drawingFixture.setProject("drawing-project"));
+    await until(() => revision().inputValue(), value => value.length > 0, "the original project reopened");
   });
   await step("an empty representation field cannot silently reuse old values during rebuild", async () => {
     await until(() => page.getByLabel("Cut height (meter)", { exact: true }).isEnabled(), Boolean, "active form");
