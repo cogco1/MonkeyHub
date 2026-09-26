@@ -687,11 +687,14 @@ try {
       const names = language === "en" ? {
         archive: "Archived chats", settings: "Hub settings", project: "This project: Project A", close: "Close",
         menu: "Attachments and new topic", topic: "New topic", send: "Send", empty: "Write a message or add an attachment first.",
+        sidebarToggle: /^(Hide|Show) projects$/,
       } : {
         archive: "已归档对话", settings: "Hub 设置", project: "此项目: Project A", close: "关闭",
         menu: "附件与新话题", topic: "新话题", send: "发送", empty: "请先输入消息或添加附件。",
+        sidebarToggle: /^(收起|展开)项目栏$/,
       };
-      const sidebarToggle = page.locator(".chat-sidebar__top button");
+      // #337: the sidebar toggle sits in the menu row; its name says what a click does.
+      const sidebarToggle = page.locator(".chat-menubar").getByRole("button", { name: names.sidebarToggle });
       if (await page.locator(".chat-shell").getAttribute("data-sidebar") === "true") await sidebarToggle.click();
       for (const name of [names.archive, names.settings]) {
         const button = page.getByRole("button", { name, exact: true });
