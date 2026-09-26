@@ -549,7 +549,7 @@
       "purpose": "Serialise drawing polylines, orthographic or a section perspective, as one deterministic SVG that names each polyline's source object, and render a PNG from those SVG bytes.",
       "owns": [
         "cropping projected polylines to the view window after visibility was solved (crop_polylines)",
-        "the deterministic cleanup between projection and SVG, rules micro, collinear, cut_precedence, duplicate and hidden_under_cut at a tolerance in drawing units, and its per-rule CleanupReport (clean_drawing)",
+        "the deterministic cleanup between projection and SVG, rules micro, collinear, cut_precedence, shared_cut, duplicate and hidden_under_cut at a tolerance in drawing units, and its CleanupReport of counts and object ids per rule (clean_drawing)",
         "the SVG document of a drawing: viewBox in frame units, physical mm size at the sheet scale, hidden group under visible group, data-object per polyline, fixed-decimal coordinates, no timestamp (drawing_svg)",
         "rasterising that SVG's own polylines to a PNG at its physical size (render_svg_png), and reading the object ids an SVG names (svg_objects)",
         "even-odd section hatching and measured dimension strokes/native text with one embedded font; shared paper-placement bounds reject clipped dimensions",
@@ -603,7 +603,7 @@
         "the PNG is rendered only from what the SVG holds, in document order: polylines, stroke-free even-odd polygons and grey paint; an SVG element or paint the renderer does not draw is an error, never skipped",
         "a recipe without hatch rules or fade, drawn without semantics, gives the bytes it gave before they existed; a material without a rule is hatched at hatchSpacingMm and 45 degrees as before",
         "hidden lines are omitted entirely unless asked for; geometry and hatch strokes name their source object, while dimension marks and native text name their dimension id",
-        "clean_drawing keeps or drops a line whole and moves no vertex (a joint gap within the tolerance is bridged); its output is sorted, its counts add up to the lines removed, and cleaning again changes nothing",
+        "clean_drawing keeps or drops a line whole and moves no vertex (a joint gap within the tolerance is bridged); its output is sorted, its counts add up to the lines removed, and cleaning again changes nothing; a section line lying on other objects' section lines is drawn once, the first object id staying, and goes only where staying section lines cover it",
         "no project, run or filesystem path is known here"
       ],
       "status": "canonical",

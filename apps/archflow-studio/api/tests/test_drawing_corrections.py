@@ -382,10 +382,14 @@ class CorrectionReadTests(ImportedPlans):
         self.assertEqual((pair["cause"], pair["class"], pair["diff"]),
                          ("representation", "local_override", {f"hiddenObjectIds.{hidden}": [False, True]}))
         self.assertEqual(read["suggestions"], [])
-        # V0 cannot say the hidden object was one the cleanup flagged: the
-        # report this revision's receipt keeps counts lines and names none.
+        # The report this revision's receipt keeps counts lines and names the
+        # objects per rule; V0 classification does not read those ids yet.
         cleanup = self.repository.load_json(record_ref_from_uri(pair["afterRevisionRef"], PROJECT_ID))["cleanup"]
+        objects = cleanup.pop("objects")
         self.assertTrue(all(isinstance(value, (int, float)) for value in cleanup.values()), cleanup)
+        self.assertEqual({rule: len(ids) <= cleanup[rule] for rule, ids in objects.items()},
+                         dict.fromkeys(objects, True))
+        self.assertNotIn(hidden, {name for ids in objects.values() for name in ids})
         self.assertEqual(classify(pair["diff"], cleanup, pair["cause"]), "local_override")
 
     def test_only_a_representation_change_no_agent_asked_for_counts_toward_an_offer(self):
