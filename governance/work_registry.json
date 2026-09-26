@@ -153,6 +153,31 @@
       "notes": [
         "2026-09-08 rule alignment: Awaiting the first concrete evidence consumer and a check of existing Reading/source references. The earlier proposed ledger and private Atlas field superset are not a mandate to add a core record."
       ]
+    },
+    {
+      "id": "GH-288",
+      "stream": "planning",
+      "status": "active",
+      "goal": "Complete reviewed Board source refresh and Stage attribution",
+      "depends_on": [],
+      "write_scope": [
+        "apps/monkeyhub/web/workspaces/src/workspaces/monkeyboard/Board.tsx",
+        "apps/monkeyhub/web/workspaces/src/workspaces/monkeyboard/board.css",
+        "apps/monkeyhub/web/workspaces/test/boardWhiteboard.browser.mjs",
+        "apps/monkeyhub/web/workspaces/test/boardIntentHandoff.browser.mjs"
+      ],
+      "branch": "codex/288-board-source-feedback",
+      "worktree": "C:/Users/asus/.codex/worktrees/merge-cloud-batch/ARCHFLOW_V4",
+      "base_ref": "4b631b3bfc0e6ab647432b4df51bb0a618b35f3f",
+      "contributor": "Codex cloud with Codex integration",
+      "reviewer": "Codex",
+      "handoff": "Check cross-project Stage labels and awaited response ordering in cloud Chrome",
+      "modules": [
+        "hub.shell"
+      ],
+      "acceptance": [
+        "Page Stage labels stay within their project; late refreshes never overwrite newer results; explicit handoff is verified."
+      ]
     }
   ]
 }
