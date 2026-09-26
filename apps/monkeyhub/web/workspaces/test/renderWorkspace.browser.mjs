@@ -4,7 +4,7 @@
  * Never a live provider or architectural-project acceptance test.
  */
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import { createServer as createHttpServer } from "node:http";
 import { mkdtemp } from "node:fs/promises";
@@ -93,6 +93,14 @@ if capture_fixture:
     def source_model_bytes(): return Response(model_bytes,media_type='application/octet-stream')
 @app.get('/fixture/image')
 def source_image(color: str='white'): return Response(image(color), media_type='image/png')
+@app.get('/fixture/plan-model')
+def plan_model(revised: bool=False):
+    # An imported model to draw, and the same file with one object removed: another source.
+    data = (Path.cwd()/'tests/fixtures/model-source-a.3dm').read_bytes()
+    if revised:
+        from archflow.adapters.model_formats import ThreeDM
+        adapter = ThreeDM(); model = adapter.read(data); model.meshes = model.meshes[1:]; data = adapter.write(model)
+    return Response(data, media_type='application/octet-stream')
 @app.get('/fixture/metrics')
 def metrics(): return {'calls':adapter.calls,'head':repr(repo.read_head())}
 @app.post('/fixture/release')
@@ -373,6 +381,44 @@ try {
     await workspace().getByRole("button", { name: "Use updated source", exact: true }).click();
     assert.match(await workspace().getByRole("combobox", { name: "Source image", exact: true }).locator('option:checked').innerText(), /revised-source/);
     assert.equal((await api("project-a", "/fixture/metrics")).calls.length, 4, "loading a replacement is not generation");
+    // A drawing is followed through the replacement its rebuild registered
+    // (#291), and only that: a newer revision that registered none is another page.
+    const onlyPage = (document) => ({ runId: document.runId, assetSha256: document.assetSha256, revisionRef: document.revisionRef ?? null, pageIndex: 0 });
+    const key = (document) => JSON.stringify([document.runId, document.revisionRef ?? document.assetSha256]);
+    const upload = async (fileName, color, replaced) => api("project-a", "/api/documents", "POST", { projectId: "project-a", fileName, mimeType: "image/png",
+      contentBase64: Buffer.from(await (await fetch(origins["project-a"] + `/fixture/image?color=${color}`)).arrayBuffer()).toString("base64"),
+      ...(replaced ? { replacesPages: [{ ...onlyPage(replaced), newPageIndex: 0 }] } : {}) });
+    const model = async (fileName, revised) => api("project-a", "/api/model-assets", "POST", { projectId: "project-a", fileName,
+      contentBase64: Buffer.from(await (await fetch(origins["project-a"] + `/fixture/plan-model?revised=${revised}`)).arrayBuffer()).toString("base64") });
+    const plan = (asset, extra = {}) => api("project-a", "/api/drawings/plans", "POST", { projectId: "project-a",
+      sourceAsset: { runId: asset.runId, assetSha256: asset.sha256 }, cutHeight: 1.2, bottom: 0, scaleDenominator: 50, ...extra });
+    const wall = await model("wall.3dm", false), drawing = await plan(wall), planReference = await upload("plan-reference.png", "orange");
+    const planJob = await api("project-a", "/api/render/jobs", "POST", { projectId: "project-a", requestId: randomUUID(), providerId: "test-image",
+      source: onlyPage(drawing), references: [onlyPage(planReference)], direction: "Plan in evening light", output: { size: "2K", aspectRatio: "source" } });
+    const planRender = async () => (await jobs()).jobs.find((job) => job.jobId === planJob.jobId);
+    await until(planRender, (job) => job?.status === "succeeded", "drawing render");
+    const [x0, y0, x1, y1] = drawing.viewRecipe.frame.crop_uv;
+    const reshaped = await plan(wall, { previousRevisionRef: drawing.revisionRef, cropUv: [x0 - 2, y0, x1 + 2, y1] });
+    assert.equal(reshaped.drawingId, drawing.drawingId);
+    assert.notEqual(reshaped.pages[0].width / reshaped.pages[0].height, drawing.pages[0].width / drawing.pages[0].height, "the wider crop changes the page shape");
+    assert.deepEqual(reshaped.replacesPages, [], "a revision with another page shape registers no replacement");
+    assert.equal((await planRender()).sourceState, "current", "a newer revision that registered no replacement leaves the render current");
+    await upload("revised-plan-reference.png", "teal", planReference);
+    const sourceImage = () => workspace().getByRole("combobox", { name: "Source image", exact: true });
+    await refresh().click(); await history().filter({ hasText: "Plan in evening light" }).click();
+    await until(() => workspace().locator('.render-source-state').innerText(), (text) => text.includes("Source outdated"), "drawing render outdated by its reference");
+    await workspace().getByRole("button", { name: "Use updated source", exact: true }).click();
+    assert.equal(await sourceImage().inputValue(), key(drawing), "the drawing's newest revision is never guessed as its replacement");
+    assert.match(await workspace().locator('.render-references li').first().innerText(), /revised-plan-reference/);
+    const rebuilt = await plan(await model("revised-wall.3dm", true), { previousRevisionRef: drawing.revisionRef });
+    assert.deepEqual(rebuilt.replacesPages, [{ ...onlyPage(drawing), newPageIndex: 0 }], "a rebuild on another source replaces the page it continues");
+    await refresh().click();
+    await until(() => sourceImage().locator("option").evaluateAll((options) => options.map((option) => option.value)),
+      (values) => values.includes(key(rebuilt)), "rebuilt drawing listed");
+    await workspace().getByRole("button", { name: "Use updated source", exact: true }).click();
+    assert.equal(await sourceImage().inputValue(), key(rebuilt), "the rebuilt drawing is reached through its registered replacement");
+    assert.match(await workspace().locator('.render-references li').first().innerText(), /revised-plan-reference/);
+    assert.equal((await api("project-a", "/fixture/metrics")).calls.length, 5, "following a rebuilt drawing is not generation");
   });
   await step("Board receives the same exact page, selects it and can restore only the explicitly deleted old result", async () => {
     await history().filter({ hasText: "Soft morning light" }).click();
@@ -423,11 +469,11 @@ try {
       else await route.continue();
     });
     await generate().click();
-    await until(jobs, (r) => r.jobs.length === 5 && r.jobs[0].status === 'succeeded', 'source only generation');
+    await until(jobs, (r) => r.jobs.length === 6 && r.jobs[0].status === 'succeeded', 'source only generation');
     await refresh().click();
-    await until(() => history().count(), (n) => n === 5, 'lost response recovered by history');
+    await until(() => history().count(), (n) => n === 6, 'lost response recovered by history');
     const latest = (await jobs()).jobs[0]; assert.equal(latest.request.references.length, 0);
-    assert.equal((await api('project-a', '/fixture/metrics')).calls.length, 5);
+    assert.equal((await api('project-a', '/fixture/metrics')).calls.length, 6);
     assert.equal((await api('project-a', '/fixture/metrics')).head, headBefore);
     await page.unroute('**/project-a/api/render/jobs');
   });
@@ -450,7 +496,7 @@ try {
     assert.equal((await api('project-b', '/fixture/metrics')).calls.length, 0);
     assert.equal((await api('project-b', '/api/render/jobs')).jobs[0].jobId, native.jobId);
     await page.getByRole('button', { name: 'Project A', exact: true }).click();
-    await until(() => history().count(), (n) => n === 5, 'project A keeps only its five attempts');
+    await until(() => history().count(), (n) => n === 6, 'project A keeps only its six attempts');
     assert.equal(await history().filter({ hasText: native.fileName }).count(), 0);
   });
   await step("perspective and orthographic model views become exact frozen inputs without generating until requested", async () => {

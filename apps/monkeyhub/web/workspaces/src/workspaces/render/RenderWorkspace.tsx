@@ -7,7 +7,6 @@ import type { RenderCapabilityDto, RenderJobDto, SourceDocumentDto } from "../..
 import { usePreferences } from "../../features/settings/preferences";
 import { documentKey, documentMime, findSource, pageKey, pageReplacements, pageSource, type PageSource } from "../monkeyboard/boardScene";
 import RenderResults, { ImageThumbnail, renderStatus } from "./RenderResults";
-import { latestRevisions } from "../monkeydiagram/drawingPlan";
 import "./render.css";
 
 /** One mounted draft. Entering another workspace only suspends reads. */
@@ -155,21 +154,20 @@ export default function RenderWorkspace({ projectId, active, refreshKey, onBoard
     if (!job.request) return;
     reuse(job);
     try {
+      // Only a registered replacement is an updated source: a rebuilt drawing
+      // registers itself as its previous revision's replacement (#291), and a
+      // newer revision that registered none is another page, not a guess.
       const replacements = pageReplacements(documents);
       const original = { ...job.request.source, revisionRef: job.request.source.revisionRef ?? null };
       const next = replacements.get(pageKey(original));
       const originalReferences = (job.request.references ?? []).map((ref) => ({ ...ref, revisionRef: ref.revisionRef ?? null }));
       const nextReferences = originalReferences.map((source) => replacements.get(pageKey(source)) ?? source);
-      // A cut plan follows the Working Head as a LIVE drawing: its newest
-      // revision is the updated source even without a registered replacement.
-      const drawing = documents.find((item) => pageKey(pageSource(item, original.pageIndex)) === pageKey(original));
-      const liveDrawing = !next && drawing?.drawingId && drawing.viewRecipe?.kind === "cut-plan"
-        ? latestRevisions(documents.filter((item) => item.drawingId === drawing.drawingId && item.viewRecipe?.kind === "cut-plan"))[0] : undefined;
-      const livePage = liveDrawing && pageKey(pageSource(liveDrawing, 0)) !== pageKey(original) ? pageSource(liveDrawing, 0) : undefined;
-      const hasReplacement = !!next || !!livePage || nextReferences.some((source, index) => pageKey(source) !== pageKey(originalReferences[index]));
-      setSource(hasReplacement ? next ?? livePage ?? original : null);
+      const hasReplacement = !!next || nextReferences.some((source, index) => pageKey(source) !== pageKey(originalReferences[index]));
+      setSource(hasReplacement ? next ?? original : null);
       setReferences(nextReferences);
-      if (!hasReplacement) setSubmitError(zh ? "项目模型已更新。请在建模中截取当前视图，或选择更新的图片后再渲染。" : "The project model has changed. Capture the current view in Modeling, or choose an updated image, then render again.");
+      if (!hasReplacement) setSubmitError(findSource(documents, original)?.viewRecipe?.kind === "cut-plan"
+        ? (zh ? "此图纸没有登记的新修订。请在图纸中重建，或选择更新的图片后再渲染。" : "This drawing has no registered newer revision. Rebuild it in Drawing, or choose an updated image, then render again.")
+        : (zh ? "项目模型已更新。请在建模中截取当前视图，或选择更新的图片后再渲染。" : "The project model has changed. Capture the current view in Modeling, or choose an updated image, then render again."));
     } catch (cause) { setSubmitError(asStudioApiError(cause).detail); }
   };
   const addReference = (key: string) => {
