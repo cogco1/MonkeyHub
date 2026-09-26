@@ -5,15 +5,19 @@
  * scene, and nothing here is saved. The scene is rebuilt only when the tree,
  * the selection, the level of detail or the Hub's colours change. Fitting is
  * the host's own: Excalidraw's fit rounds zoom down to tenths and stops at 10 %.
+ * The Stage columns' headers and rules are the page's own words over the
+ * canvas (#353): they stay at its top while the tree pans under them, and
+ * follow the view through two custom properties rather than a render.
  */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { CaptureUpdateAction, convertToExcalidrawElements, FONT_FAMILY } from "@excalidraw/excalidraw";
 import type { AppState, ExcalidrawImperativeAPI, ExcalidrawInitialDataState, UIOptions } from "@excalidraw/excalidraw/types";
 import { CANVAS_APP_STATE, PROJECT_CANVAS_CLASS, ProjectCanvas, useScenePointer, useWheelZoom, type ZoomRange } from "../canvas/ProjectCanvas";
 import { topmostAt } from "../canvas/sceneHit";
 import { layoutGrowthTree, type Box } from "./layout";
 import { CURRENT, trunkKey, type GrowthTree } from "./model";
-import { buildTreeScene, LIGHT_TREE_PALETTE, type SceneHit, type SceneWords, type TreePalette, type ZoomLevel } from "./scene";
+import { buildTreeScene, LIGHT_TREE_PALETTE, type SceneHit, type TreePalette, type ZoomLevel } from "./scene";
+import type { TreeWords } from "./words";
 
 const TREE_ZOOM: ZoomRange = { min: 0.05, max: 4 };
 const TREE_UI: UIOptions = {
@@ -21,12 +25,15 @@ const TREE_UI: UIOptions = {
     changeViewBackgroundColor: false, toggleTheme: false },
   tools: { image: false },
 };
+/** Screen pixels around a fitted tree, and the strip at the top that the column headers take. */
+const PAD = 48;
+const HEADER = 36;
 
 /** The Hub token each scene colour takes (#337). */
 const PALETTE_TOKENS: Readonly<Record<keyof TreePalette, string>> = {
   ground: "--ground", ink: "--ink", ink2: "--ink-2", faint: "--faint", accent: "--accent", onAccent: "--accent-ink",
-  accentSoft: "--accent-soft", paper: "--panel-2", tile: "--panel", twig: "--rule", muted: "--rule-soft",
-  running: "--processing", warn: "--unchecked",
+  accentSoft: "--accent-soft", paper: "--panel-2", twig: "--rule", muted: "--rule-soft",
+  running: "--processing", held: "--held", violated: "--violated", unchecked: "--unchecked",
 };
 
 /**
@@ -94,11 +101,11 @@ export function textScaleFor(zoom: number, level: ZoomLevel): number {
 
 export default function DesignTreeCanvas({ tree, words, selected, fitRequest, centerOn = null, title, onSelect, onAccept, onLevel }: {
   tree: GrowthTree;
-  words: SceneWords;
+  words: TreeWords;
   selected: string | null;
   /** Changes when the viewer asks to see the whole tree again. */
   fitRequest: number;
-  /** A node to bring into view, once per request, clear of the side card. */
+  /** A node to bring into view, once per request. */
   centerOn?: { node: string; request: number } | null;
   title: string;
   onSelect(node: string | null): void;
@@ -107,12 +114,14 @@ export default function DesignTreeCanvas({ tree, words, selected, fitRequest, ce
 }) {
   const canvas = useRef<ExcalidrawImperativeAPI | null>(null);
   const root = useRef<HTMLDivElement | null>(null);
+  const columns = useRef<HTMLDivElement | null>(null);
   const [ready, setReady] = useState(false);
+  const [width, setWidth] = useState(0);
   const layout = useMemo(() => layoutGrowthTree(tree), [tree]);
   const [detail, setDetail] = useState<{ level: ZoomLevel; textScale: number }>({ level: "mid", textScale: 1 });
   const palette = useTreePalette();
   const scene = useMemo(() => {
-    const built = buildTreeScene(tree, layout, { ...detail, selected, fontFamily: FONT_FAMILY.Helvetica, words, palette });
+    const built = buildTreeScene(tree, layout, { ...detail, selected, fontFamily: FONT_FAMILY.Helvetica, words: words.scene, palette });
     return { elements: convertToExcalidrawElements(built.skeletons, { regenerateIds: false }), hits: built.hits, ground: palette.ground };
   }, [tree, layout, detail, selected, words, palette]);
   const hits = useRef<SceneHit[]>(scene.hits);
@@ -123,23 +132,32 @@ export default function DesignTreeCanvas({ tree, words, selected, fitRequest, ce
     canvas.current?.updateScene({ elements: scene.elements, appState: { viewBackgroundColor: scene.ground }, captureUpdate: CaptureUpdateAction.NEVER });
   }, [scene, ready]);
 
+  // The headers follow the view: scene units to screen pixels, (x + scrollX) × zoom.
+  const view = useRef({ scrollX: 0, zoom: 1 });
+  const follow = () => {
+    columns.current?.style.setProperty("--tree-scroll-x", String(view.current.scrollX));
+    columns.current?.style.setProperty("--tree-zoom", String(view.current.zoom));
+  };
+  useEffect(follow, [layout]);
+
   const drawn = useRef(layout);
   drawn.current = layout;
-  const PAD = 48;
   const zoomFor = (box: Box, width: number, height: number, maxZoom: number) => Math.max(TREE_ZOOM.min,
-    Math.min(maxZoom, (width - PAD * 2) / Math.max(1, box.width), (height - PAD * 2) / Math.max(1, box.height)));
-  const fitTo = (box: Box, maxZoom: number): boolean => {
+    Math.min(maxZoom, (width - PAD * 2) / Math.max(1, box.width), (height - PAD * 2 - HEADER) / Math.max(1, box.height)));
+  /** The box in view, centred; or, for the whole tree, hung from the headers as it grows downwards. */
+  const fitTo = (box: Box, maxZoom: number, top = false): boolean => {
     const api = canvas.current;
     const state = api?.getAppState();
     if (!api || !state || state.width < 40 || state.height < 40) return false;
     const zoom = zoomFor(box, state.width, state.height, maxZoom) as AppState["zoom"]["value"];
     api.updateScene({ appState: { zoom: { value: zoom }, scrollX: state.width / (2 * zoom) - (box.x + box.width / 2),
-      scrollY: state.height / (2 * zoom) - (box.y + box.height / 2) }, captureUpdate: CaptureUpdateAction.NEVER });
+      scrollY: top ? (HEADER + PAD) / zoom - box.y : (state.height + HEADER) / (2 * zoom) - (box.y + box.height / 2) },
+    captureUpdate: CaptureUpdateAction.NEVER });
     return true;
   };
   /**
    * The whole tree while it still reads at the middle level. When it does not,
-   * the view opens where the tree is growing: the trunk at mid-height and
+   * the view opens where the tree is growing: the trunk under the headers and
    * Current at the right edge, with the older history to the left.
    */
   const fitView = (whole: boolean): boolean => {
@@ -147,11 +165,11 @@ export default function DesignTreeCanvas({ tree, words, selected, fitRequest, ce
     const state = api?.getAppState();
     if (!api || !state || state.width < 40 || state.height < 40) return false;
     const { bounds, nodes } = drawn.current;
-    if (whole || zoomFor(bounds, state.width, state.height, 1.1) >= 0.52) return fitTo(bounds, 1.1);
+    if (whole || zoomFor(bounds, state.width, state.height, 1.1) >= 0.52) return fitTo(bounds, 1.1, true);
     const tip = nodes.get(CURRENT) ?? [...nodes.values()].at(-1)!;
-    const zoom = Math.min(0.85, Math.max(0.6, (state.height - PAD * 2) / Math.max(1, bounds.height))) as AppState["zoom"]["value"];
+    const zoom = Math.min(0.85, Math.max(0.6, (state.height - PAD * 2 - HEADER) / Math.max(1, bounds.height))) as AppState["zoom"]["value"];
     api.updateScene({ appState: { zoom: { value: zoom }, scrollX: (state.width - PAD / 2) / zoom - (tip.footprint.x + tip.footprint.width),
-      scrollY: state.height / (2 * zoom) - tip.y }, captureUpdate: CaptureUpdateAction.NEVER });
+      scrollY: (HEADER + PAD) / zoom - bounds.y }, captureUpdate: CaptureUpdateAction.NEVER });
     return true;
   };
   // Fit when the tree first shows, when its trunk changes (Continue, Accept) and on request.
@@ -175,13 +193,15 @@ export default function DesignTreeCanvas({ tree, words, selected, fitRequest, ce
     const element = root.current;
     if (!element) return;
     // A hidden surface has no size; the first time it shows, the pending fit runs.
-    const observer = new ResizeObserver(() => { if (fitWanted.current !== null) requestFit(fitWanted.current); });
+    const observer = new ResizeObserver(() => {
+      setWidth(element.clientWidth);
+      if (fitWanted.current !== null) requestFit(fitWanted.current);
+    });
     observer.observe(element);
     return () => { observer.disconnect(); cancelAnimationFrame(fitFrame.current); };
   }, []);
   useEffect(() => { onLevel(detail.level); }, [detail.level, onLevel]);
-  // A focused node replaces the pending fit: at a readable zoom, centred in the part of the
-  // canvas the side card leaves free.
+  // A focused node replaces the pending fit: at a readable zoom, centred on the canvas.
   useEffect(() => {
     if (!ready || !centerOn) return;
     fitWanted.current = null;
@@ -189,11 +209,12 @@ export default function DesignTreeCanvas({ tree, words, selected, fitRequest, ce
     let tries = 0, frame = 0;
     const attempt = () => {
       const api = canvas.current, state = api?.getAppState(), placed = drawn.current.nodes.get(centerOn.node);
-      if (api && state && placed && state.width >= 40 && state.height >= 40) {
+      const free = root.current?.clientWidth ?? 0;
+      if (api && state && placed && free >= 40 && state.height >= 40) {
         const zoom = Math.max(state.zoom.value, 0.8) as AppState["zoom"]["value"];
-        const free = state.width > 700 ? state.width - 344 : state.width, box = placed.footprint;
+        const box = placed.footprint;
         api.updateScene({ appState: { zoom: { value: zoom }, scrollX: free / (2 * zoom) - (box.x + box.width / 2),
-          scrollY: state.height / (2 * zoom) - (box.y + box.height / 2) }, captureUpdate: CaptureUpdateAction.NEVER });
+          scrollY: (state.height + HEADER) / (2 * zoom) - (box.y + box.height / 2) }, captureUpdate: CaptureUpdateAction.NEVER });
         return;
       }
       if (++tries < 120) frame = requestAnimationFrame(attempt);
@@ -201,6 +222,17 @@ export default function DesignTreeCanvas({ tree, words, selected, fitRequest, ce
     frame = requestAnimationFrame(attempt);
     return () => cancelAnimationFrame(frame);
   }, [ready, centerOn?.node, centerOn?.request]);
+  // The inspector docks beside the canvas and takes its right side: a selected node it
+  // would hide moves just far enough to stay in sight.
+  useEffect(() => {
+    const api = canvas.current, state = api?.getAppState(), placed = selected ? drawn.current.nodes.get(selected) : undefined;
+    if (!ready || !api || !state || !placed || width < 40) return;
+    const zoom = state.zoom.value, box = placed.footprint, margin = 24;
+    const left = (box.x + state.scrollX) * zoom, right = (box.x + box.width + state.scrollX) * zoom;
+    let shift = Math.max(0, right - (width - margin));
+    if (left - shift < margin) shift = left - margin;
+    if (Math.abs(shift) > 0.5) api.updateScene({ appState: { scrollX: state.scrollX - shift / zoom }, captureUpdate: CaptureUpdateAction.NEVER });
+  }, [ready, selected, width]);
 
   useWheelZoom(root, canvas, TREE_ZOOM);
   useScenePointer(root, canvas, {
@@ -216,10 +248,29 @@ export default function DesignTreeCanvas({ tree, words, selected, fitRequest, ce
   return <div className={`design-tree__canvas ${PROJECT_CANVAS_CLASS}`} ref={root} data-level={detail.level} data-text-scale={detail.textScale}>
     <ProjectCanvas initialData={initialData} excalidrawAPI={(api) => { canvas.current = api; setReady(true); }} name={title}
       viewModeEnabled UIOptions={TREE_UI}
-      onScrollChange={(_x, _y, zoom) => setDetail((previous) => {
-        const level = levelFor(zoom.value, previous.level);
-        const textScale = textScaleFor(zoom.value, level);
-        return level === previous.level && textScale === previous.textScale ? previous : { level, textScale };
-      })} />
+      onScrollChange={(scrollX, _y, zoom) => {
+        view.current = { scrollX, zoom: zoom.value };
+        follow();
+        setDetail((previous) => {
+          const level = levelFor(zoom.value, previous.level);
+          const textScale = textScaleFor(zoom.value, level);
+          return level === previous.level && textScale === previous.textScale ? previous : { level, textScale };
+        });
+      }} />
+    {/* #353: one column per Stage on the trunk, its header at the top of the canvas; the list names the same nodes to assistive technology. */}
+    <div className="design-tree__columns" ref={columns} aria-hidden="true">
+      {layout.columns.map((column) => {
+        const head = words.column(tree.nodes.get(column.node)!);
+        return <div key={column.node} className="design-tree-column" data-node={column.node}
+          style={{ "--column-x": column.x, "--column-width": column.width, "--column-inset": column.start - column.x } as CSSProperties}>
+          <div className="design-tree-column__head">
+            {head.id && <span className="design-tree-column__id">{head.id}</span>}
+            {head.name && <span className="design-tree-column__name">{head.name}</span>}
+            <span className="design-tree-column__line" />
+            {column.options > 0 && <span className="design-tree-column__count">{column.options}</span>}
+          </div>
+        </div>;
+      })}
+    </div>
   </div>;
 }

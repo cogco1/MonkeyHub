@@ -1,6 +1,6 @@
 /**
  * How the tree's facts read in the viewer's language. One place, so the
- * chip, the canvas, the list and the side card name a node the same way,
+ * chip, the canvas, the list and the inspector name a node the same way,
  * and no raw id or hash reaches the main copy.
  */
 import { translateMessage, type MessageParameters } from "../../../../../../shared-web/src/i18n.js";
@@ -9,7 +9,7 @@ import type { TFunction } from "../../i18n/useT";
 import type { Language } from "../settings/preferences";
 import { DESIGN_TREE_UNDO_MOVED, DESIGN_TREE_UNSYNCED } from "./continueUndo";
 import type { Fork } from "./layout";
-import { CURRENT, type GrowthTree, type PendingStatus, type TreeNode } from "./model";
+import { checkOf, CURRENT, type GrowthTree, type PendingStatus, type TreeNode } from "./model";
 import type { SceneWords } from "./scene";
 
 /**
@@ -63,6 +63,10 @@ export function treeWords(t: TFunction, tree: GrowthTree | null) {
   const optionName = (node: TreeNode) => node.label
     ? `${node.letter && !OWN_LETTER.test(node.label) ? `${node.letter} · ` : ""}${node.label}`
     : t("designTree.optionUnnamed", { letter: node.letter ?? "" }).trim();
+  // #353: a card's name beside its letter, which the card already shows; a label's own letter is not said twice.
+  const cardName = (node: TreeNode): string => node.kind === "pending" ? node.label ?? t("designTree.pending.unnamed")
+    : !node.label ? t("designTree.optionUnnamed", { letter: "" }).trim()
+      : node.letter && OWN_LETTER.test(node.label) && node.label[0].toUpperCase() === node.letter ? node.label.slice(2).trim() : node.label;
   const pendingText = (status: PendingStatus) => t(status === "running" ? "designTree.pending.running"
     : status === "queued" ? "designTree.pending.queued" : "designTree.pending.interrupted");
   const title = (node: TreeNode): string => node.kind === "stage" ? stageName(node)
@@ -117,15 +121,23 @@ export function treeWords(t: TFunction, tree: GrowthTree | null) {
       .map((parts) => parts.filter(Boolean).join(" · ")).concat(String(value.options + value.pending));
     return [...new Set(variants.filter(Boolean))];
   };
+  // #353: what an option's status bar says, in words: the inspector's Checks and the legend.
+  const check = (node: TreeNode): string | null => {
+    const value = checkOf(node);
+    return value === "held" ? t("designTree.check.held")
+      : value === "violated" ? t("designTree.check.violatedCount", { count: node.candidate!.blockedBy.length })
+        : value === "unchecked" ? t("designTree.check.unchecked") : value === "running" ? t("designTree.check.running") : null;
+  };
+  /** A Stage column's header: its S-number and its accepted name; the project start has a name only. */
+  const column = (node: TreeNode): { readonly id: string; readonly name: string } => node.kind === "stage"
+    ? { id: `S${node.stage!.number}`, name: node.stage!.name ?? "" } : { id: "", name: t("designTree.origin") };
   const accept = tree?.accept;
   const scene: SceneWords = {
-    current: t("designTree.current"), origin: t("designTree.origin"), stage: stageName, option: (node) => node.kind === "pending"
-      ? node.label ?? t("designTree.pending.unnamed") : optionName(node),
-    pending: pendingText, currentAt: currentAt(),
+    current: t("designTree.current"), origin: t("designTree.origin"), name: cardName, pending: pendingText, currentAt: currentAt(),
     accept: accept?.nextLabel ? t("designTree.action.accept", { stage: accept.nextLabel }) : t("designTree.action.acceptNext"),
     acceptBlocked: t("designTree.action.acceptNext"), status, fork,
   };
-  return { stageName, optionName, studyName, title, actor, admitter, currentAt, status, fork, pendingText, scene, byId };
+  return { stageName, optionName, studyName, title, actor, admitter, currentAt, status, fork, pendingText, check, column, scene, byId };
 }
 
 export type TreeWords = ReturnType<typeof treeWords>;

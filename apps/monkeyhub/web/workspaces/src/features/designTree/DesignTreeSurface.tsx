@@ -2,7 +2,8 @@
  * The Design Tree surface (状态树): the project's growth tree beside
  * Modeling and Board. The canvas is the default view; the list shows the
  * same nodes to the keyboard and screen readers. Selecting a node opens its
- * side card; leaving returns to the surface the tree was opened from.
+ * inspector, docked at the right like Modeling's versions (#353); leaving
+ * returns to the surface the tree was opened from.
  * Loaded on demand with the canvas it draws on.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -36,7 +37,7 @@ export default function DesignTreeSurface({ data, markSeen, active, returnTo, on
   onView(view: DesignTreeView): void;
   /** Modeling's Record edits and continue, when Modeling is open to record them (#302). */
   onRecordEdits?: (() => Promise<void>) | null;
-  /** A node to open with its side card and bring into view, such as the ready options' Study (#302). */
+  /** A node to open with its inspector and bring into view, such as the ready options' Study (#302). */
   focus?: { node: string; request: number } | null;
 }) {
   const t = useT();
@@ -57,7 +58,7 @@ export default function DesignTreeSurface({ data, markSeen, active, returnTo, on
     if (chosen?.kind === "candidate" && chosen.runId) markSeen(chosen.runId);
   }, [tree, markSeen]);
   const acceptFromCanvas = useCallback(() => { setSelected(CURRENT); setConfirmAccept(Boolean(tree?.accept.allowed)); }, [tree]);
-  // Focus once per request, when the tree has the node: its side card opens and the canvas centres it.
+  // Focus once per request, when the tree has the node: its inspector opens and the canvas centres it.
   const [center, setCenter] = useState<{ node: string; request: number } | null>(null);
   const focused = useRef(0);
   useEffect(() => {
@@ -106,13 +107,17 @@ export default function DesignTreeSurface({ data, markSeen, active, returnTo, on
         {!data.available ? t("designTree.unavailable") : data.status === "failed" && data.error ? <><ErrorPanel error={data.error} what="GET /api/design-history" />
           <button type="button" className="btn btn--small" onClick={data.reload}>{t("designTree.retry")}</button></> : t("designTree.loading")}
       </div> : mode === "canvas" ? <>
-        <DesignTreeCanvas tree={tree} words={words.scene} selected={selected} fitRequest={fitRequest} centerOn={center} title={t("designTree.title")}
+        <DesignTreeCanvas tree={tree} words={words} selected={selected} fitRequest={fitRequest} centerOn={center} title={t("designTree.title")}
           onSelect={select} onAccept={acceptFromCanvas} onLevel={setLevel} />
         <p className="visually-hidden">{t("designTree.canvasNote")}</p>
       </> : <DesignTreeList tree={tree} words={words} selected={selected} onSelect={select} />}
       {tree && node && <DesignTreeDetails tree={tree} node={node} words={words} data={data} confirmAccept={confirmAccept}
         onConfirmAccept={setConfirmAccept} onClose={() => select(null)} onView={view} onRecordEdits={onRecordEdits} />}
     </div>
-    <StatusLine end={t("designTree.legend")}>{t("designTree.hint")}</StatusLine>
+    {/* #337 L5: what is selected, else how to work the canvas; the status bars' colours at the right end. */}
+    <StatusLine className="design-tree__status" end={tree && mode === "canvas" && <span className="design-tree-legend">
+      {(["held", "violated", "unchecked", "running"] as const).map((check) =>
+        <span key={check} data-check={check}>{t(`designTree.check.${check}` as MessageKey)}</span>)}
+    </span>}>{node ? t("designTree.selected", { name: words.title(node) }) : t("designTree.hint")}</StatusLine>
   </section>;
 }

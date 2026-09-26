@@ -94,6 +94,22 @@ function planarProblems(tree: Tree, drawing: Drawing): string[] {
     const [x, y] = edge.points.at(-1)!;
     if (Math.abs(x - target.card.x) > 1e-6 || Math.abs(y - target.y) > 1e-6) problems.push(`edge to ${edge.to} misses its card`);
   }
+  // #353: the root and each Stage on the trunk open a column; the columns meet edge to edge, left to right,
+  // and every node lies inside the one it is drawn in, so a header names everything under it.
+  const opened = tree.trunk.filter((id, index) => index === 0 || tree.nodes.get(id)!.kind === "stage");
+  if (drawing.columns.map((column) => column.node).join("|") !== opened.join("|")) problems.push("the columns are not the trunk's Stages");
+  drawing.columns.forEach((column, index) => {
+    const next = drawing.columns[index + 1];
+    if (!(column.width > 0) || (next && Math.abs(column.x + column.width - next.x) > 1e-6)) problems.push(`column ${index} does not meet the next`);
+  });
+  for (const node of drawing.nodes.values()) {
+    const column = drawing.columns[node.column];
+    const box = node.footprint;
+    if (!column || box.x < column.x || box.x + box.width > column.x + column.width) problems.push(`${node.id} leaves its column`);
+  }
+  const count = (kind: string) => [...tree.nodes.values()].filter((node) => node.kind === kind).length;
+  if (drawing.columns.reduce((sum, column) => sum + column.options, 0) !== count("candidate") ||
+    drawing.columns.reduce((sum, column) => sum + column.pending, 0) !== count("pending")) problems.push("the columns miscount their options");
   return problems;
 }
 
@@ -417,8 +433,7 @@ test("the scene draws three levels of detail and hit targets for every node", as
   const tree = api.buildGrowthTree(sourceOf(fixture));
   const drawing = api.layoutGrowthTree(tree);
   const words = {
-    current: "Current", origin: "Project start", stage: (node: { stage?: { number: number; name: string | null } }) => `S${node.stage!.number}${node.stage!.name ? ` · ${node.stage!.name}` : ""}`,
-    option: (node: { letter: string | null; label: string | null }) => `${node.letter ?? ""} ${node.label ?? ""}`.trim(), pending: (status: string) => status,
+    current: "Current", origin: "Project start", name: (node: { label: string | null }) => node.label ?? "", pending: (status: string) => status,
     currentAt: "at Entrance A", accept: "Accept as S3", acceptBlocked: "Accept as next Stage", status: () => "Ready",
     fork: (fork: { options: number }) => [`${fork.options} options`, `${fork.options}`],
   };
@@ -432,7 +447,9 @@ test("the scene draws three levels of detail and hit targets for every node", as
   assert.ok(roles(far, "dot").length > 10, "far shows options as dots");
   assert.ok(roles(far, "fork").length >= 3, "far shows counts");
   assert.equal(roles(far, "letter").length, 0);
-  assert.ok(roles(mid, "letter").length > 10, "middle shows letters");
+  // #353: each option card carries its letter (a lone option has none), each running line its state.
+  assert.equal(roles(mid, "letter").length, [...tree.nodes.values()].filter((node) => node.letter || node.kind === "pending").length, "middle shows letters");
+  assert.ok(roles(mid, "letter").length > 8);
   assert.equal(roles(mid, "summary").filter((element) => (element as { id?: string }).id !== "current:summary").length, 0, "middle has no summaries");
   assert.ok(roles(close, "summary").length > 5, "close adds summaries");
   assert.ok(roles(close, "status").length > 5, "close adds status");
@@ -464,6 +481,57 @@ test("the scene draws three levels of detail and hit targets for every node", as
     for (const colour of [strokeColor, backgroundColor]) {
       if (colour && colour !== "transparent") assert.ok(given.has(colour), `${id} draws ${colour}, which is not the palette's`);
     }
+  }
+});
+
+test("each Stage opens a column, the options not taken hang under the chosen one, and a card's bar says its checks (#353)", async (t) => {
+  const api = await harness(t);
+  const fixture = api.createDesignTreeFixture();
+  const source = sourceOf(fixture);
+  source.history.candidates!.find((row) => row.candidateId === "run-massing-e")!.legacy = "working-copy";
+  const tree = api.buildGrowthTree(source);
+  const drawing = api.layoutGrowthTree(tree);
+  const stage = (run: string) => `stage:${fixture.state.stages.find((row) => row.run === run)!.ref}`;
+  assert.deepEqual(planarProblems(tree, drawing), []);
+  assert.deepEqual(drawing.columns.map((column) => column.node), [stage("run-site"), stage("run-s1-massing"), stage("run-s2-layout")]);
+  assert.deepEqual(drawing.columns.map((column) => [column.options, column.pending]), [[5, 0], [4, 0], [1, 2]]);
+  // Massing C stays on the trunk; A, B, D and E hang under it, level with it, in letter order.
+  const chosen = drawing.nodes.get("candidate:run-massing-c")!;
+  const hung = ["a", "b", "d", "e"].map((letter) => drawing.nodes.get(`candidate:run-massing-${letter}`)!);
+  assert.ok(hung.every((node) => node.x === chosen.x && node.y > chosen.y && node.column === 0));
+  assert.deepEqual(hung.map((node) => node.y), hung.map((node) => node.y).sort((a, b) => a - b));
+  // Current stands level with the running work that waits beside it.
+  assert.equal(drawing.nodes.get("pending:running:job-entrance-b")!.x, drawing.nodes.get("current")!.x);
+  // A twig that was continued hands its row on: Facade A + 2 edits stands level with Facade A.
+  assert.equal(drawing.nodes.get("candidate:run-facade-a2")!.y, drawing.nodes.get("candidate:run-facade-a")!.y);
+
+  const node = (id: string) => tree.nodes.get(id)!;
+  assert.deepEqual(["candidate:run-facade-b", "candidate:run-facade-c", "candidate:run-massing-e", "pending:running:job-entrance-b", "current"]
+    .map((id) => api.checkOf(node(id))), ["held", "violated", "unchecked", "running", null]);
+  const en = api.treeWords(translator(messagesEn) as never, tree), zh = api.treeWords(translator(messagesZhCN) as never, tree);
+  assert.deepEqual([en.check(node("candidate:run-facade-c")), zh.check(node("candidate:run-facade-c"))], ["1 violated", "1 项违反"]);
+  assert.deepEqual([en.check(node("candidate:run-facade-b")), zh.check(node("candidate:run-massing-e"))], ["Passed", "未查"]);
+  assert.deepEqual(en.column(node(stage("run-s1-massing"))), { id: "S1", name: "Massing" });
+  assert.equal(zh.scene.name(node("candidate:run-massing-c")), "Stepped courtyard block", "the card's letter stands beside its name, not in it");
+
+  const palette = Object.fromEntries(Object.keys(api.LIGHT_TREE_PALETTE).map((name, index) =>
+    [name, `#0001${index.toString(16).padStart(2, "0")}`])) as unknown as typeof api.LIGHT_TREE_PALETTE;
+  const scene = api.buildTreeScene(tree, drawing, { level: "mid", textScale: 1.25, selected: null, fontFamily: 2, words: en.scene, palette });
+  const bar = (id: string) => (scene.skeletons.find((element) => (element as { id?: string }).id === `${id}:bar`) as { backgroundColor?: string } | undefined)?.backgroundColor;
+  assert.deepEqual(["candidate:run-facade-b", "candidate:run-facade-c", "candidate:run-massing-e", "pending:running:job-entrance-b"].map(bar),
+    [palette.held, palette.violated, palette.unchecked, palette.running]);
+  assert.equal(bar("current"), undefined, "Stages and Current carry no status bar");
+  // Every word on a card stays inside it, at every text scale the middle and close levels use.
+  const levels = (["mid", "close"] as const).flatMap((level) => (level === "mid" ? [1, 1.25, 1.5, 1.75, 2] : [1])
+    .map((textScale) => api.buildTreeScene(tree, drawing, { level, textScale, selected: null, fontFamily: 2, words: zh.scene, palette })));
+  for (const element of [scene, ...levels].flatMap((result) => result.skeletons) as unknown as
+    { type: string; x: number; y: number; text?: string; fontSize?: number; customData: { tree: { node?: string; role: string } } }[]) {
+    const placed = element.customData.tree.node ? drawing.nodes.get(element.customData.tree.node) : undefined;
+    if (element.type !== "text" || !placed || element.customData.tree.role === "fork") continue;
+    const lines = element.text!.split("\n");
+    const widest = Math.max(...lines.map((line) => api.textWidth(line, element.fontSize!)));
+    assert.ok(element.x >= placed.card.x && element.x + widest <= placed.card.x + placed.card.width + 1e-6 && element.y >= placed.card.y
+      && element.y + lines.length * element.fontSize! * 1.2 <= placed.card.y + placed.card.height + 1e-6, `${element.customData.tree.node}: "${element.text}" leaves its card`);
   }
 });
 

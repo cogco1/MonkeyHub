@@ -155,7 +155,7 @@ try {
         }`, map: null };
       if (file === `${root}/src/workspaces/monkeyboard/Board.tsx`) return { code: `export default function Board() { return <div data-testid="board-stub">Board</div>; }`, map: null };
       // The hand-off GH-284 leaves ProjectWorkspace (its planning card): the chip gets Modeling's recorder, as the
-      // tree's side card does. The test wires it until ProjectWorkspace passes it itself; then this is a no-op.
+      // tree's inspector does. The test wires it until ProjectWorkspace passes it itself; then this is a no-op.
       if (file === `${root}/src/app/ProjectWorkspace.tsx`) {
         const bar = source.match(/<DesignTreeBar\b[\s\S]*?\/>/)?.[0];
         assert.ok(bar, "ProjectWorkspace mounts the Stage chip");
@@ -244,7 +244,7 @@ try {
   assert.equal(await tab.locator(".chat-rail").count(), 0, "the entry is project chrome, not a rail of its own here");
   await shoot(tab, "01-chip-over-modeling");
 
-  // #302: the notice's View opens the tree on the ready option's Study, with its side card.
+  // #302: the notice's View opens the tree on the ready option's Study, with its inspector.
   const inChinese = async (name) => {
     await tab.evaluate(() => window.__workspaceFixture.setLanguage("zh-CN"));
     await tab.waitForFunction(() => (document.querySelector(".stage-chip")?.textContent ?? "").includes("当前"));
@@ -254,7 +254,7 @@ try {
   };
   if (shots) await inChinese("01a-ready-notice-zh");
   await ready.click();
-  await tab.locator('[data-project-surface="tree"] .design-tree-card[data-node="candidate:run-entrance-a"]').waitFor();
+  await tab.locator('[data-project-surface="tree"] .design-tree-inspector[data-node="candidate:run-entrance-a"]').waitFor();
   assert.equal(await chip.getAttribute("aria-pressed"), "true");
   await shoot(tab, "01b-ready-notice-opens-study");
   if (shots) await inChinese("01c-ready-notice-opens-study-zh");
@@ -289,24 +289,36 @@ try {
   });
   /** A real click on a node's card, where the canvas draws it now. */
   const clickCanvasNode = async (target, host, id) => {
-    // The side card sits over the canvas; close it so it cannot cover the node.
-    if (await host.locator(".design-tree-card").count()) {
+    // #353: the inspector docks at the right and the canvas gives it room; close it so the canvas has its whole width.
+    if (await host.locator(".design-tree-inspector").count()) {
       await target.keyboard.press("Escape");
-      await host.locator(".design-tree-card").waitFor({ state: "detached" });
+      await host.locator(".design-tree-inspector").waitFor({ state: "detached" });
     }
-    // A surface shown again is measured by Excalidraw a frame later; click where the canvas is now.
-    await target.waitForFunction(() => {
+    // A surface shown again, or widened, is measured by Excalidraw a frame later; click where the canvas is now.
+    const measured = () => target.waitForFunction(() => {
       const state = window.__treeApi?.getAppState();
       const box = [...document.querySelectorAll(".design-tree__canvas .excalidraw")].find((element) => element.getClientRects().length)
         ?.getBoundingClientRect();
-      return Boolean(state && box && state.width > 40 && Math.abs(state.offsetLeft - box.left) < 1 && Math.abs(state.offsetTop - box.top) < 1);
-    });
-    const current = await scene(target);
+      return Boolean(state && box && state.width > 40 && Math.abs(state.offsetLeft - box.left) < 1 && Math.abs(state.offsetTop - box.top) < 1
+        && Math.abs(state.width - box.width) < 1) && { width: box.width, height: box.height };
+    }).then((handle) => handle.jsonValue());
+    const box = await measured();
+    let current = await scene(target);
     const card = current.elements.find((element) => element.id === `${id}:card`);
     assert.ok(card, `${id} is on the canvas`);
-    await target.mouse.click((card.x + card.width / 2 + current.scrollX) * current.zoom + current.offsetLeft,
-      (card.y + card.height / 2 + current.scrollY) * current.zoom + current.offsetTop);
-    const opened = host.locator(`.design-tree-card[data-node="${id}"]`);
+    const at = (view) => [(card.x + card.width / 2 + view.scrollX) * view.zoom, (card.y + card.height / 2 + view.scrollY) * view.zoom];
+    let [x, y] = at(current);
+    // A node the view leaves out, or under the column headers, is brought into sight first, the way a viewer pans to it.
+    if (x < 24 || x > box.width - 24 || y < 60 || y > box.height - 24) {
+      await target.evaluate(({ x: sceneX, y: sceneY }) => {
+        const api = window.__treeApi, state = api.getAppState();
+        api.updateScene({ appState: { scrollX: state.width / (2 * state.zoom.value) - sceneX, scrollY: state.height / (2 * state.zoom.value) - sceneY } });
+      }, { x: card.x + card.width / 2, y: card.y + card.height / 2 });
+      current = await scene(target);
+      [x, y] = at(current);
+    }
+    await target.mouse.click(x + current.offsetLeft, y + current.offsetTop);
+    const opened = host.locator(`.design-tree-inspector[data-node="${id}"]`);
     await opened.waitFor();
     return opened;
   };
@@ -416,7 +428,7 @@ try {
   await bar.getByRole("button", { name: "Fit", exact: true }).click();
   await tab.waitForFunction(() => document.querySelector(".design-tree__canvas")?.dataset.level === "mid");
 
-  // Clicking a node shows its side card; Accept exists on Current only.
+  // Clicking a node shows its inspector; Accept exists on Current only.
   const clickNode = (id) => clickCanvasNode(tab, surface, id);
   let card = await clickNode("candidate:run-massing-d");
   assert.equal(await card.locator("strong").innerText(), "D · Terraced wedge");
@@ -461,8 +473,8 @@ try {
   assert.match(await card.innerText(), /Endorsed by\s*Review Architect/);
   writes.length = 0;
   card = await clickNode("candidate:run-facade-c");
-  assert.match(await card.locator(".design-tree-card__warning").innerText(), /review checks were still open \(1\)/,
-    "an option admitted with review checks open says so in its side card");
+  assert.match(await card.locator(".design-tree-inspector__warning").innerText(), /review checks were still open \(1\)/,
+    "an option admitted with review checks open says so in its inspector");
   assert.equal(await surface.locator(".design-tree__notice").count(), 0, "this runtime reports admitted options");
   card = await clickNode("current");
   assert.equal(await card.locator('[data-action="accept"]').count(), 1, "Current offers Accept");
@@ -505,7 +517,7 @@ try {
   await toast.filter({ hasText: "Current is now “D · Terraced wedge”" }).waitFor();
   await toast.hover();
   assert.equal((await toast.innerText()).replace(/\s+/g, " ").trim(), "Current is now “D · Terraced wedge” · Undo");
-  assert.equal(await card.locator(".design-tree-card__outcome").count(), 0, "the toast is the one confirmation");
+  assert.equal(await card.locator(".design-tree-inspector__outcome").count(), 0, "the toast is the one confirmation");
   assert.equal(recorded, 1, "Record edits and continue records the edits once, then continues");
   assert.deepEqual(writes.at(-1), { method: "PUT", name: "/api/working-draft",
     body: { projectId: PROJECT, runId: "run-massing-d", baseRevisionSha256: "rev-0001", branchId: null } });
@@ -596,7 +608,7 @@ try {
   assert.equal(writes.length, beforeRefusal);
   assert.equal(fixture.state.head, "run-entrance-a");
   await shoot(tab, "09b-chip-refusal");
-  // Record edits and continue behaves here as in the side card: Modeling records the edits once, then the same Continue.
+  // Record edits and continue behaves here as in the inspector: Modeling records the edits once, then the same Continue.
   revision = fixture.state.revision;
   const recordedBefore = recorded;
   await tab.locator('.design-tree-bar__refusal [data-action="record"]').click();
@@ -630,7 +642,7 @@ try {
   await tab.keyboard.press("End");
   assert.equal(await tab.evaluate(() => document.activeElement?.dataset.node), await items.last().getAttribute("data-node"));
   await tab.keyboard.press("Enter");
-  await surface.locator(".design-tree-card").waitFor();
+  await surface.locator(".design-tree-inspector").waitFor();
   await shoot(tab, "10-list");
   await bar.getByRole("button", { name: "Canvas", exact: true }).click();
   await tab.waitForFunction(() => window.__treeApi?.getSceneElements().length > 20);
@@ -689,7 +701,7 @@ try {
   await bar.getByRole("button", { name: "List", exact: true }).click();
   const rejectedOption = surface.locator('[role="treeitem"][data-node="candidate:run-massing-a"]');
   await rejectedOption.click();
-  card = surface.locator('.design-tree-card[data-node="candidate:run-massing-a"]');
+  card = surface.locator('.design-tree-inspector[data-node="candidate:run-massing-a"]');
   await card.waitFor();
   await card.getByRole("button", { name: "Reject", exact: true }).click();
   await card.waitFor({ state: "detached" });
@@ -747,13 +759,13 @@ try {
   const hubCard = await clickCanvasNode(hubPage, hubSurface, "current");
   assert.match(await hubCard.innerText(), /Current is exactly S3/, "a narrow panel opens on the growing tip, and its nodes answer clicks");
   await shoot(hubPage, "12-hub-rail-tree");
-  // The same floating card covers list rows in this narrow Hub panel until closed.
+  // Closed, the inspector gives this narrow Hub panel its whole width back.
   await hubPage.keyboard.press("Escape");
   await hubCard.waitFor({ state: "detached" });
   await hubBar.getByRole("button", { name: "Show processed (1)", exact: true }).click();
   await hubBar.getByRole("button", { name: "List", exact: true }).click();
   await hubSurface.locator('[role="treeitem"][data-node="candidate:run-massing-a"]').click();
-  const reopenedReview = hubSurface.locator('.design-tree-card[data-node="candidate:run-massing-a"]');
+  const reopenedReview = hubSurface.locator('.design-tree-inspector[data-node="candidate:run-massing-a"]');
   await reopenedReview.getByText(/Rejected/).waitFor();
   assert.equal(await reopenedReview.locator("strong").innerText(), "A · Slab bar along the river");
   await hubBar.getByRole("button", { name: "Hide processed", exact: true }).click();
@@ -773,7 +785,7 @@ try {
   assert.deepEqual(unexpected, [], "the tree reads only what it declares");
   assert.deepEqual(external, [], "no external request");
   assert.deepEqual(errors.filter((message) => !/Failed to load resource: the server responded with a status of 404/.test(message)), []);
-  console.log(JSON.stringify({ passed: "chip → tree, trunk, twigs, planar, three zoom levels, side card, review-open warning, View read-only, Continue re-roots via PUT /api/working-draft, its toast's Undo puts the previous Current back through the same PUT, Accept on Current only via POST accept with a toast and no Undo, a toast stays while hovered and then fades, no toast on refusal, the chip's viewing state continues from here, a rejected Current cannot be accepted, keyboard list, return to previous surface, zh copy, Hub rail entry and deep link",
+  console.log(JSON.stringify({ passed: "chip → tree, trunk, twigs, planar, three zoom levels, inspector, review-open warning, View read-only, Continue re-roots via PUT /api/working-draft, its toast's Undo puts the previous Current back through the same PUT, Accept on Current only via POST accept with a toast and no Undo, a toast stays while hovered and then fades, no toast on refusal, the chip's viewing state continues from here, a rejected Current cannot be accepted, keyboard list, return to previous surface, zh copy, Hub rail entry and deep link",
     writes: writes.map((row) => `${row.method} ${row.name}`) }));
 } catch (error) {
   console.error("FAILED:", error);
