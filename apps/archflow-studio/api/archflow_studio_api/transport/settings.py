@@ -18,6 +18,9 @@ class UserSettingsDto(BaseModel):
     language: Literal["en", "zh-CN"] | None = None
     theme: Literal["dark", "light", "system"] | None = None
     font_scale: Literal[0.9, 1.0, 1.1] | None = Field(default=None, alias="fontScale")
+    # How the interface is drawn (#328): Classic is the original look and the
+    # default; the others are the visual directions a person can try.
+    ui_style: Literal["classic", "quiet", "titleblock", "night"] | None = Field(default=None, alias="uiStyle")
     intent_provider: Literal["deterministic", "codex", "anthropic"] | None = Field(
         default=None, alias="intentProvider",
     )

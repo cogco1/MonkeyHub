@@ -9,7 +9,7 @@ import { createClient } from "./api/generated/client";
 import { applicationSettingsApiSettingsAppsGet, chatProvidersApiChatProvidersGet, chatWorkspaceApiChatWorkspaceGet, getUserSettingsApiSettingsUserGet, listAppsApiAppsGet, putUserSettingsApiSettingsUserPut, startAppApiAppsAppIdStartPost, stopAppApiAppsAppIdStopPost, updateApplicationSettingsApiSettingsAppsPut, type AppStatus, type ApplicationSettingsDto, type ChatProvider, type ChatWorkspace, type UserSettingsDto } from "./api/generated";
 import "./styles.css";
 import { FabPage } from "./FabPage";
-import { ChatShell } from "./ChatShell";
+import { ChatShell, type HubSettings } from "./ChatShell";
 import { AttentionHost } from "./notifications/AttentionHost";
 
 type AppId = AppStatus["appId"];
@@ -24,6 +24,25 @@ const renderDefaults = (settings?: UserSettingsDto): RenderDefaults => ({ render
   renderModel: settings?.renderModel ?? null, renderTimeoutS: settings?.renderTimeoutS ?? null });
 import { hubCopyCatalog as copy } from "./i18n/catalogs";
 type CopyKey = keyof typeof copy.en;
+// #328: the settings pages and the interface styles a person can try. Their words stay
+// here while the i18n catalogs are held by another lane.
+const UI_STYLES = ["classic", "quiet", "titleblock", "night"] as const;
+const SETTINGS_WORDS = {
+  "zh-CN": {
+    display: "显示", chat: "对话", render: "AI 渲染", workspace: "工作区",
+    connections: "连接", connectionsHint: "重新读取已安装的命令行工具和它们的模型列表。",
+    uiStyle: "界面风格", uiStyleHint: "随时切换对比。只改变界面的画法，不改变项目内容。",
+    styles: { classic: "经典", quiet: "静默仪表", titleblock: "图签", night: "夜航" },
+    notes: { classic: "原来的样子", quiet: "统一栏高、细线分区、等宽数字", titleblock: "图纸图签的暖灰与方角", night: "深色高对比，只适合演示" },
+  },
+  en: {
+    display: "Display", chat: "Conversations", render: "AI Render", workspace: "Workspace",
+    connections: "Connections", connectionsHint: "Read the installed CLIs and their model lists again.",
+    uiStyle: "Interface style", uiStyleHint: "Switch any time to compare. It changes how the interface is drawn, never the project.",
+    styles: { classic: "Classic", quiet: "Quiet instrument", titleblock: "Title block", night: "Night flight" },
+    notes: { classic: "The original look", quiet: "One bar height, ruled sections, even figures", titleblock: "Title-block greys and square corners", night: "Dark and high-contrast, for demos only" },
+  },
+} as const;
 const knownErrors: Record<string, string> = {
   PROJECT_REQUIRED: "请先选择包含 project.json 的完整项目目录。", APPS_RUNNING: "请先停止正在运行的工作区，再保存启动设置。",
   PORT_CONFLICT: "Hub、Studio 和 Monitor 需要使用不同端口。", PORT_IN_USE: "所选端口已被占用，请选择其他端口。",
@@ -298,91 +317,91 @@ function App() {
   // A value that cannot be saved is named once its pause is over, not while it is typed.
   const launchInvalid = !launchSave.pending && launchDirty ? launchProblem(launchDraft) : null;
   const renderInvalid = !appearanceSave.pending && appearanceDirty ? renderProblem(renderDraft) : null;
-  const settings = <>
-    <ErrorMessage issue={statusIssue} language={preferences.language} />
-    <section id="settings" className="settings" ref={settingsRef}>
-      <div className="settings-section">
-        <h2>{t("appearance")}</h2>
-        <div className="settings-fields">
-          <label>{t("language")}<select id="language" value={preferences.language} onChange={(event) => changeAppearance({ language: event.target.value as Language })}><option value="zh-CN">简体中文</option><option value="en">English</option></select></label>
-          <label>{t("theme")}<select id="theme" value={preferences.theme} onChange={(event) => changeAppearance({ theme: event.target.value as AppearancePreferences["theme"] })}><option value="system">{t("system")}</option><option value="dark">{t("dark")}</option><option value="light">{t("light")}</option></select></label>
-          <label>{t("size")}<select id="font-scale" value={preferences.fontScale} onChange={(event) => changeAppearance({ fontScale: Number(event.target.value) as AppearancePreferences["fontScale"] })}><option value="0.9">{t("compact")}</option><option value="1">{t("normal")}</option><option value="1.1">{t("large")}</option></select></label>
-        </div>
+  // #328: Settings in pages, each a list of rows: what a setting is on the left, its control on the right.
+  const words = SETTINGS_WORDS[preferences.language];
+  const uiStyle = preferences.uiStyle ?? "classic";
+  const settings: HubSettings = {
+    updateLabel: t("softwareUpdate"),
+    notice: <><ErrorMessage issue={statusIssue} language={preferences.language} /><ErrorMessage issue={appearanceIssue} language={preferences.language} /></>,
+    status: <span id="settings-save-state" role="status" data-state={settingsSaving ? "saving" : appearanceDirty || launchDirty ? "unsaved" : "saved"}>
+      {settingsSaving ? t("saving") : appearanceDirty || launchDirty ? t("unsaved") : savedAppearance !== null ? t("saved") : ""}</span>,
+    pages: [{ id: "display", label: words.display, icon: "display", body: <section id="settings" ref={settingsRef}>
+      <h2>{t("appearance")}</h2>
+      <div className="settings-row"><label htmlFor="language">{t("language")}</label>
+        <select id="language" value={preferences.language} onChange={(event) => changeAppearance({ language: event.target.value as Language })}><option value="zh-CN">简体中文</option><option value="en">English</option></select></div>
+      <div className="settings-row"><label htmlFor="theme">{t("theme")}</label>
+        <select id="theme" value={preferences.theme} onChange={(event) => changeAppearance({ theme: event.target.value as AppearancePreferences["theme"] })}><option value="system">{t("system")}</option><option value="dark">{t("dark")}</option><option value="light">{t("light")}</option></select></div>
+      <div className="settings-row"><label htmlFor="font-scale">{t("size")}</label>
+        <select id="font-scale" value={preferences.fontScale} onChange={(event) => changeAppearance({ fontScale: Number(event.target.value) as AppearancePreferences["fontScale"] })}><option value="0.9">{t("compact")}</option><option value="1">{t("normal")}</option><option value="1.1">{t("large")}</option></select></div>
+      <div className="settings-row settings-row--wide" role="radiogroup" aria-labelledby="ui-style-label" aria-describedby="ui-style-hint">
+        <div className="settings-row__text"><span className="settings-row__title" id="ui-style-label">{words.uiStyle}</span><p className="settings-row__hint" id="ui-style-hint">{words.uiStyleHint}</p></div>
+        <div className="style-cards">{UI_STYLES.map((style) => <label key={style} className="style-card" data-style={style}>
+          <input type="radio" name="ui-style" value={style} checked={uiStyle === style} onChange={() => changeAppearance({ uiStyle: style })} />
+          {/* A small drawing of the shell in that style: sidebar, header, rows and a result sheet. */}
+          <span className="style-card__preview" aria-hidden="true"><i className="style-card__side" /><i className="style-card__head" /><i className="style-card__row" /><i className="style-card__row style-card__row--current" /><i className="style-card__sheet" /></span>
+          <span className="style-card__name">{words.styles[style]}</span><small className="style-card__note">{words.notes[style]}</small>
+        </label>)}</div>
       </div>
-
-      <div className="settings-section">
-        <h2>{t("chatDefaults")}</h2>
-        <div className="settings-fields">
-          <label>{t("chatProvider")}<select id="default-chat-provider" value={chatDraft.chatProvider ?? ""} onChange={(event) => { editDefaults(0); setDefaultModelCustom(null); setChatDraft((current) => ({ ...current, chatProvider: (event.target.value || null) as ChatDefaults["chatProvider"], chatModel: null })); }}>
-            <option value="">{t("cliUnset")}</option>
-            {(chatProviders.length ? chatProviders : [{ id: "codex", label: "Codex CLI", available: true, detail: "" }] as readonly ChatProvider[]).map((item) => <option key={item.id} value={item.id} disabled={!item.available}>{item.label}{connectionState(item)}</option>)}
-          </select></label>
-          <label>{t("chatModel")}<select id="default-chat-model" value={defaultModelCustom !== null ? "__custom__" : chatDraft.chatModel ?? ""} onChange={(event) => {
-            if (event.target.value === "__custom__") { setDefaultModelCustom(chatDraft.chatModel ?? ""); return; }
-            editDefaults(0); setDefaultModelCustom(null); setChatDraft((current) => ({ ...current, chatModel: event.target.value || null }));
-          }}>
-            <option value="">{t("cliDefault")}</option>
-            {defaultModelOptions.map((item) => <option key={item} value={item}>{item}</option>)}
-            <option value="__custom__">{t("customModel")}</option>
-          </select></label>
-          {defaultModelCustom !== null && <label htmlFor="default-chat-model-custom">{t("customModel")}
-            <input id="default-chat-model-custom" autoFocus value={defaultModelCustom}
-              onChange={(event) => { editDefaults(TYPING_PAUSE_MS); setDefaultModelCustom(event.target.value); setChatDraft((current) => ({ ...current, chatModel: event.target.value.trim() || null })); }} /></label>}
-        </div>
-        <p className="help" id="connection-state">{selectedConnection
+    </section> }, { id: "chat", label: words.chat, icon: "chat", body: <>
+      <h2>{t("chatDefaults")}</h2>
+      <p className="settings-intro">{t("chatDefaultsHelp")}</p>
+      <div className="settings-row"><div className="settings-row__text"><label htmlFor="default-chat-provider">{t("chatProvider")}</label>
+        <p className="settings-row__hint" id="connection-state">{selectedConnection
           ? <>{selectedConnection.label} · {connectionWords(selectedConnection)}{catalogWords(selectedConnection) ? ` · ${catalogWords(selectedConnection)}` : ""}</>
-          : t("checking")}</p>
-        <p className="help">{t("chatDefaultsHelp")}</p>
-      </div>
-
-      <div className="settings-section">
-        <h2>{t("renderSettings")}</h2>
-        <div className="settings-fields">
-          <label>{t("renderProvider")}<select id="render-provider" value={renderDraft.renderProvider ?? "off"} onChange={(event) => {
-            editDefaults(0); setRenderDraft((value) => ({ ...value, renderProvider: event.target.value as RenderDefaults["renderProvider"] }));
-          }}><option value="off">{t("renderOff")}</option><option value="gemini">Gemini</option></select></label>
-          <label>{t("renderModel")}<input id="render-model" value={renderDraft.renderModel ?? ""} placeholder="gemini-3.1-flash-image" onChange={(event) => {
-            editDefaults(TYPING_PAUSE_MS); setRenderDraft((value) => ({ ...value, renderModel: event.target.value.trim() || null }));
-          }} /></label>
-          <label>{t("renderTimeout")}<input id="render-timeout" type="number" min="1" max="300" value={renderDraft.renderTimeoutS ?? ""} placeholder={t("runtimeDefault")}
-            aria-invalid={renderInvalid ? true : undefined} onChange={(event) => {
-            editDefaults(TYPING_PAUSE_MS); setRenderDraft((value) => ({ ...value, renderTimeoutS: event.target.value === "" ? null : Number(event.target.value) }));
-          }} /></label>
-        </div>
-        <ErrorMessage issue={renderInvalid} language={preferences.language} />
-        <p className="help">{t("renderSettingsHelp")}</p>
-      </div>
-
-      <div className="settings-section">
-        <h2>{t("workspace")}</h2>
-        <label htmlFor="workspace-dir">{t("workspaceDir")}
-          <input id="workspace-dir" value={launchDraft.workspaceDir ?? ""} placeholder={workspace?.workspaceDir ?? ""}
-            aria-invalid={launchInvalid?.field === "workspace-dir" ? true : undefined}
-            onChange={(event) => changeLaunch({ workspaceDir: event.target.value || null })} /></label>
-        <p className="help">{t("workspaceHelp")}</p>
-        <details className="advanced"><summary>{t("advanced")}</summary>
-          <WorkspaceDiagnosticsSettings />
-          <div className="chat-service-settings">{(apps ?? []).filter((app) => app.appId === "monkeyarch").map((app) => <div key={app.appId}><span>Project Runtime · {t(app.state)}</span><button className="btn" disabled={!connected || busyServices.has(app.serviceId) || app.state === "starting" || app.state === "stopping"} onClick={() => void act(app)}>{t(app.state === "running" ? "stop" : "start")}</button><ErrorMessage issue={actionIssues[app.appId] ?? app.error ?? null} language={preferences.language} /></div>)}</div>
-          <div className="settings-fields">
-            <label>{t("reference")}<input id="reference-run" value={launchDraft.referenceRun ?? ""} onChange={(event) => changeLaunch({ referenceRun: event.target.value || null })} /></label>
-            <label>{t("cad")}<select id="cad-export" value={launchDraft.cadExport} onChange={(event) => changeLaunch({ cadExport: event.target.value as ApplicationSettingsDto["cadExport"] }, 0)}><option value="occt">{t("occt")}</option><option value="rhino">{t("rhino")}</option><option value="off">{t("off")}</option></select></label>
-            <label>{t("studioPort")}<input id="studio-port" type="number" min="1024" max="65535" value={launchDraft.studioPort}
-              aria-invalid={launchInvalid?.field === "studio-port" ? true : undefined} onChange={(event) => changeLaunch({ studioPort: Number(event.target.value) })} /></label>
-          </div>
-          <p className="help">{t("launchHelp")}</p>
-        </details>
-        <ErrorMessage issue={launchIssue ?? launchInvalid} language={preferences.language} />
-      </div>
-
-      <div className="settings-footer">
-        <ErrorMessage issue={appearanceIssue} language={preferences.language} />
-        <div className="settings-status">
-          <span id="settings-save-state" role="status" data-state={settingsSaving ? "saving" : appearanceDirty || launchDirty ? "unsaved" : "saved"}>
-            {settingsSaving ? t("saving") : appearanceDirty || launchDirty ? t("unsaved") : savedAppearance !== null ? t("saved") : ""}</span>
-          <button id="recheck-connections" className="btn" type="button" disabled={!connected} onClick={() => void readSettings(true)}>{t("recheck")}</button>
-        </div>
-      </div>
-    </section></>;
+          : t("checking")}</p></div>
+        <select id="default-chat-provider" aria-describedby="connection-state" value={chatDraft.chatProvider ?? ""} onChange={(event) => { editDefaults(0); setDefaultModelCustom(null); setChatDraft((current) => ({ ...current, chatProvider: (event.target.value || null) as ChatDefaults["chatProvider"], chatModel: null })); }}>
+          <option value="">{t("cliUnset")}</option>
+          {(chatProviders.length ? chatProviders : [{ id: "codex", label: "Codex CLI", available: true, detail: "" }] as readonly ChatProvider[]).map((item) => <option key={item.id} value={item.id} disabled={!item.available}>{item.label}{connectionState(item)}</option>)}
+        </select></div>
+      <div className="settings-row"><label htmlFor="default-chat-model">{t("chatModel")}</label>
+        <select id="default-chat-model" value={defaultModelCustom !== null ? "__custom__" : chatDraft.chatModel ?? ""} onChange={(event) => {
+          if (event.target.value === "__custom__") { setDefaultModelCustom(chatDraft.chatModel ?? ""); return; }
+          editDefaults(0); setDefaultModelCustom(null); setChatDraft((current) => ({ ...current, chatModel: event.target.value || null }));
+        }}>
+          <option value="">{t("cliDefault")}</option>
+          {defaultModelOptions.map((item) => <option key={item} value={item}>{item}</option>)}
+          <option value="__custom__">{t("customModel")}</option>
+        </select></div>
+      {defaultModelCustom !== null && <div className="settings-row"><label htmlFor="default-chat-model-custom">{t("customModel")}</label>
+        <input id="default-chat-model-custom" autoFocus value={defaultModelCustom}
+          onChange={(event) => { editDefaults(TYPING_PAUSE_MS); setDefaultModelCustom(event.target.value); setChatDraft((current) => ({ ...current, chatModel: event.target.value.trim() || null })); }} /></div>}
+      <div className="settings-row"><div className="settings-row__text"><span className="settings-row__title">{words.connections}</span><p className="settings-row__hint">{words.connectionsHint}</p></div>
+        <button id="recheck-connections" className="btn" type="button" disabled={!connected} onClick={() => void readSettings(true)}>{t("recheck")}</button></div>
+    </> }, { id: "render", label: words.render, icon: "render", body: <>
+      <h2>{t("renderSettings")}</h2>
+      <p className="settings-intro">{t("renderSettingsHelp")}</p>
+      <div className="settings-row"><label htmlFor="render-provider">{t("renderProvider")}</label>
+        <select id="render-provider" value={renderDraft.renderProvider ?? "off"} onChange={(event) => {
+          editDefaults(0); setRenderDraft((value) => ({ ...value, renderProvider: event.target.value as RenderDefaults["renderProvider"] }));
+        }}><option value="off">{t("renderOff")}</option><option value="gemini">Gemini</option></select></div>
+      <div className="settings-row"><label htmlFor="render-model">{t("renderModel")}</label>
+        <input id="render-model" value={renderDraft.renderModel ?? ""} placeholder="gemini-3.1-flash-image" onChange={(event) => {
+          editDefaults(TYPING_PAUSE_MS); setRenderDraft((value) => ({ ...value, renderModel: event.target.value.trim() || null }));
+        }} /></div>
+      <div className="settings-row"><label htmlFor="render-timeout">{t("renderTimeout")}</label>
+        <input id="render-timeout" type="number" min="1" max="300" value={renderDraft.renderTimeoutS ?? ""} placeholder={t("runtimeDefault")}
+          aria-invalid={renderInvalid ? true : undefined} onChange={(event) => {
+          editDefaults(TYPING_PAUSE_MS); setRenderDraft((value) => ({ ...value, renderTimeoutS: event.target.value === "" ? null : Number(event.target.value) }));
+        }} /></div>
+      <ErrorMessage issue={renderInvalid} language={preferences.language} />
+    </> }, { id: "workspace", label: words.workspace, icon: "folder", body: <>
+      <h2>{t("workspace")}</h2>
+      <div className="settings-row settings-row--wide"><div className="settings-row__text"><label htmlFor="workspace-dir">{t("workspaceDir")}</label><p className="settings-row__hint">{t("workspaceHelp")}</p></div>
+        <input id="workspace-dir" value={launchDraft.workspaceDir ?? ""} placeholder={workspace?.workspaceDir ?? ""}
+          aria-invalid={launchInvalid?.field === "workspace-dir" ? true : undefined}
+          onChange={(event) => changeLaunch({ workspaceDir: event.target.value || null })} /></div>
+      <details className="advanced"><summary>{t("advanced")}</summary>
+        <WorkspaceDiagnosticsSettings />
+        <div className="chat-service-settings">{(apps ?? []).filter((app) => app.appId === "monkeyarch").map((app) => <div key={app.appId}><span>Project Runtime · {t(app.state)}</span><button className="btn" disabled={!connected || busyServices.has(app.serviceId) || app.state === "starting" || app.state === "stopping"} onClick={() => void act(app)}>{t(app.state === "running" ? "stop" : "start")}</button><ErrorMessage issue={actionIssues[app.appId] ?? app.error ?? null} language={preferences.language} /></div>)}</div>
+        <div className="settings-row"><label htmlFor="reference-run">{t("reference")}</label><input id="reference-run" value={launchDraft.referenceRun ?? ""} onChange={(event) => changeLaunch({ referenceRun: event.target.value || null })} /></div>
+        <div className="settings-row"><label htmlFor="cad-export">{t("cad")}</label><select id="cad-export" value={launchDraft.cadExport} onChange={(event) => changeLaunch({ cadExport: event.target.value as ApplicationSettingsDto["cadExport"] }, 0)}><option value="occt">{t("occt")}</option><option value="rhino">{t("rhino")}</option><option value="off">{t("off")}</option></select></div>
+        <div className="settings-row"><label htmlFor="studio-port">{t("studioPort")}</label><input id="studio-port" type="number" min="1024" max="65535" value={launchDraft.studioPort}
+          aria-invalid={launchInvalid?.field === "studio-port" ? true : undefined} onChange={(event) => changeLaunch({ studioPort: Number(event.target.value) })} /></div>
+        <p className="help">{t("launchHelp")}</p>
+      </details>
+      <ErrorMessage issue={launchIssue ?? launchInvalid} language={preferences.language} />
+    </> }],
+  };
   return <UserPreferencesProvider appearance={preferences}><ChatShell preferences={preferences} configuredProject={savedLaunch?.projectDir ?? null} settings={settings}
     settingsDirty={appearanceDirty || launchDirty || settingsSaving || busyServices.size > 0}
     defaults={{ provider: savedChatDefaults.chatProvider ?? "codex", model: savedChatDefaults.chatModel }}
