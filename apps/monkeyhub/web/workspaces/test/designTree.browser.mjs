@@ -669,11 +669,19 @@ try {
   await card.getByText(/Current is exactly S3/).waitFor();
   const beforeRejectedReview = structuredClone({ draft: fixture.workingDraft(), stages: fixture.designHistory().stages });
   const reviewWritesStart = writes.length;
-  card = await clickNode("candidate:run-massing-a");
+  // Current's restored trunk can centre the canvas on S3, outside this earlier Study.
+  // Review actions use the same node's accessible list row, independent of that view.
+  await tab.keyboard.press("Escape");
+  await card.waitFor({ state: "detached" });
+  await surface.getByRole("button", { name: "List", exact: true }).click();
+  const rejectedOption = surface.locator('[role="treeitem"][data-node="candidate:run-massing-a"]');
+  await rejectedOption.click();
+  card = surface.locator('.design-tree-card[data-node="candidate:run-massing-a"]');
+  await card.waitFor();
   await card.getByRole("button", { name: "Reject", exact: true }).click();
   await card.waitFor({ state: "detached" });
   await surface.getByRole("button", { name: "Show processed (1)", exact: true }).click();
-  card = await clickNode("candidate:run-massing-a");
+  await rejectedOption.click();
   await card.getByText(/Rejected/).waitFor();
   assert.equal(await card.getByRole("button", { name: "Undo archive", exact: true }).count(), 0,
     "a rejection is not presented as an archive that can be cancelled");
