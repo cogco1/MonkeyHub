@@ -80,7 +80,10 @@ class InProcessMeshProvider:
                               "structure": "unchanged", "geometry": "unchanged"} if source == target else {
             "units": "Normalized to meters; scale and placement checked by readback.",
             "layers": "Flattened; layer counts are recorded in source/output metrics.",
-            "materials": "Materials, textures and custom normals are not transferred.",
+            "materials": ("Base colour materials, vertex colours and valid normals are kept; missing normals are computed "
+                          "and meshes without a material receive a neutral display material. Textures, UVs and PBR maps "
+                          "are not transferred." if target == "3dm" else
+                          "Materials, textures and custom normals are not transferred."),
             "structure": "Hierarchy, instances and CAD metadata are not transferred.",
             "geometry": "Triangle meshes only; saved BREP render meshes approximate exact surfaces; no solids reconstructed.",
         })
@@ -88,7 +91,8 @@ class InProcessMeshProvider:
 
     def validate(self, data, source, target, output):
         measurements = validate_mesh(data, source, target, output.data)
-        return Validation(True, ("signature", "source-and-output-reopen", "object-and-triangle-counts", "meter-scale-and-bounds"),
+        display = ("vertex-normals-and-display-material",) if target == "3dm" and source != target else ()
+        return Validation(True, ("signature", "source-and-output-reopen", "object-and-triangle-counts", "meter-scale-and-bounds") + display,
                           source_dimension=3, output_dimension=3, measurements=measurements)
 
 
