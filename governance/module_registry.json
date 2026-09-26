@@ -934,7 +934,7 @@
         "tests/test_occt_execution.py",
         "tests/test_grid_free_wall.py"
       ],
-      "notes": "The single geometry-emission owner on the spine; P105 is where monument vocabulary would be added here rather than beside it."
+      "notes": "The single geometry-emission owner on the spine; monument vocabulary (solids of revolution, boolean chains, classical-order members) would be added here rather than beside it."
     },
     {
       "module_id": "capabilities.geometry_proposal",
@@ -3470,7 +3470,7 @@
       "tests": [
         "tests/test_project_authority_seam.py"
       ],
-      "notes": "Canonical; its Obligation is the legacy obligation shape CanonicalState@1 carries. P110 projects DesignObligation into it; until then the two shapes coexist by decision, not by accident."
+      "notes": "Canonical; its Obligation is the legacy obligation shape CanonicalState@1 carries. Projecting DesignObligation into it is an open gap with no Issue yet; until then the two shapes coexist by decision, not by accident."
     },
     {
       "module_id": "state.operational_state",
@@ -5337,7 +5337,7 @@
       "owns": [
         "building the CandidateSubmission and asking archflow.validation.engine.validate_submission about it",
         "the five-clause review-readiness verdict (receipt, seat execution, relations held, relations fully checked, exports available) and its blocked_by list",
-        "source coverage from published references and the candidate's exact StateRecord; normative requirement-to-result projection remains incomplete (P110)",
+        "source coverage from published references and the candidate's exact StateRecord; normative requirement-to-result projection remains incomplete",
         "memoizing one validation per candidate and issue, computed once in this process",
         "the impact arrangement around StateRecord.closure: direct, propagated, protected, conflicts, locks and unknown coverage",
         "the before/after/why comparison of two runs' exported objects, joined by name from retained seat-3dm-inspection records",
@@ -5424,7 +5424,7 @@
         "apps/archflow-studio/api/tests/test_impact.py",
         "apps/archflow-studio/api/tests/test_compare.py"
       ],
-      "notes": "On a ref-only CanonicalProjectState@1 the receipt effectively proves artifact presence and base match only (P110), and says so.",
+      "notes": "On a ref-only CanonicalProjectState@1 the receipt effectively proves artifact presence and base match only, and says so.",
       "files": [
         "apps/archflow-studio/api/archflow_studio_api/application/validation.py",
         "apps/archflow-studio/api/archflow_studio_api/application/impact.py",
@@ -5482,7 +5482,7 @@
       "tests": [
         "tests/test_project_authority_seam.py"
       ],
-      "notes": "Canonical: CandidateSubmission/CandidateDelta are what validate_submission reads; the Studio builds them. P110 replaces the empty CanonicalState they are checked against."
+      "notes": "Canonical: CandidateSubmission/CandidateDelta are what validate_submission reads; the Studio builds them. They are checked against an empty CanonicalState until retained requirements are projected into it, an open gap with no Issue yet."
     },
     {
       "module_id": "tools.archcheck",
@@ -5493,11 +5493,11 @@
         "the checked-file set for the configured roots and the single AST index per file",
         "the checks: forbidden imports including archive reverse imports, instance-answer literals, filesystem writes outside allowed functions, forbidden framework identifiers, commit soft-gate leaks, probe-boundary executables, registry owner/test/public-symbol truth and duplicate owned function bodies",
         "the Finding shape and the JSON/text report and exit code",
-        "Validating nested lane metadata and live dependencies, checking competing live card/lane path and checkout claims, and checking each commit against its historical card and lane scopes; explicit P000-governance permits only defined governance paths and README.md maintenance"
+        "Validating the live work registry (ArchFlowDevelopmentRegistry@3): GitHub Issue claims only, claimed directly or through lanes, with checkout, base, contributor, paths and dependencies; reporting competing live path and checkout claims; checking each commit against the claim it names in its own registry, and reading commits made before #358 by their card-era rules"
       ],
       "does_not_own": [
         "the policy content - governance/architecture_policy.json",
-        "the work registry and its ledgers - tools.devctl",
+        "the work registry content - governance/work_registry.json; its read-only lookup - tools.devctl",
         "semantic equivalence between differently written implementations - duplicate-body checks only identical normalized top-level function bodies",
         "running tests or type checks"
       ],
@@ -5520,7 +5520,8 @@
         "ArchitecturePolicyError",
         "main",
         "check_scopes",
-        "check_changed_scopes"
+        "check_changed_scopes",
+        "REGISTRY_SCHEMA"
       ],
       "depends_on": [],
       "used_by": [],
@@ -5529,27 +5530,29 @@
         "a policy that cannot be interpreted deterministically fails ArchitecturePolicyError rather than passing vacuously",
         "the file set is stable and de-duplicated, so findings are reproducible",
         "write-scope rules do not apply retroactively before their introduction; later missing or invalid policy cannot disable the check",
-        "a changed commit uses its own active or ready card declaration; only the commit closing that card may use its first parent's active scope, whether the row is removed or retained as nonlive; later scope edits do not change earlier results",
-        "P000-governance does not authorize business source, arbitrary scripts or all Markdown files",
-        "Active/review lanes replace the broad parent claim for overlap detection; changed commits name P###/lane and satisfy both lane and parent scopes plus shared surfaces. Only a lane-closing commit may reuse first-parent active/review scope"
+        "a changed commit uses the live claim it names in its own registry; only the commit closing that claim may use its first parent's live scope; later scope edits do not change earlier results",
+        "a commit that names no claim may write only the policy's shared_write_scope and unclaimed_write_scope",
+        "only active and review claims hold paths and checkouts; a lane is a claim of its own, and an Issue claimed through lanes carries nothing but its lanes",
+        "a commit on the pre-#358 registry keeps its card-era reading; once a parent is on the current registry a commit cannot return to the old one, so that reading cannot authorize card work again",
+        "a current commit whose subject opens with a P###, M###, R### or P000-governance id is reported as a retired claim"
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_archcheck_scopes.py"
+        "tests/test_archcheck_scopes.py",
+        "tests/test_archcheck_github_claims.py"
       ],
       "notes": "Architecture checks parse source without importing application code; scope behavior is verified with disposable Git repositories."
     },
     {
       "module_id": "tools.devctl",
       "owner_path": "tools/devctl.py",
-      "purpose": "Read governance registries through bounded module lookup and render the generated development, capability and semantic maps.",
+      "purpose": "Read governance registries through bounded module, capability and live-work lookups, and render the generated system and semantic maps.",
       "owns": [
-        "loading ArchFlowDevelopmentRegistry@2 and its statuses (active, ready, blocked)",
-        "the readiness rule: an item is ready when no live item blocks it, and an id absent from the registry counts as finished",
-        "rendering docs/DYNAMIC_MAP.md, docs/mapping/planning/INDEX.md, docs/SYSTEM_MAP.md and docs/SEMANTIC_REGISTRY.md, including the stage-ladder table generated from PHASE_LADDER",
+        "loading the live work registry (ArchFlowDevelopmentRegistry@3, GitHub Issue claims only) for the work lookup",
+        "rendering docs/SYSTEM_MAP.md and docs/SEMANTIC_REGISTRY.md, including the stage-ladder table generated from PHASE_LADDER",
         "Exact-id or ranked keyword module lookup with paged contract sections, dependencies, registered source paths and tests; ambiguous queries return bounded candidates",
         "Capability lookup over the same registry: exact id or goal words in either language, paged entry sections, and the sentence a no-hit answers with",
-        "Read-only work lookup by card or nested lane, showing branch/worktree/base/contributor/modules/paths/dependencies/handoff and findings from tools.archcheck"
+        "Read-only work lookup by exact claim, GH-<issue> or GH-<issue>/<lane>, showing the Issue link, branch/worktree/base/contributor/modules/paths/dependencies/handoff/blocked reason and findings from tools.archcheck"
       ],
       "does_not_own": [
         "architecture boundary enforcement - tools.archcheck",
@@ -5562,11 +5565,9 @@
         "governance/module_registry.json",
         "module query, optional section and bounded page limit/offset",
         "capability query by id or goal words, optional section and bounded page limit/offset",
-        "optional work card or qualified lane id and governance/architecture_policy.json"
+        "optional exact claim id (GH-<issue> or GH-<issue>/<lane>) and governance/architecture_policy.json"
       ],
       "outputs": [
-        "docs/DYNAMIC_MAP.md",
-        "docs/mapping/planning/INDEX.md",
         "docs/SYSTEM_MAP.md",
         "docs/SEMANTIC_REGISTRY.md",
         "exit code",
@@ -5578,8 +5579,6 @@
         "load_registry",
         "load_module_registry",
         "capabilities",
-        "is_ready",
-        "render",
         "main"
       ],
       "depends_on": [
@@ -5591,8 +5590,8 @@
       ],
       "used_by": [],
       "invariants": [
-        "the registry holds only unfinished work; a finished card is deleted along with its entry",
-        "both ledgers are generated, never hand-edited",
+        "the work registry holds only live claims; a finished claim is removed, and its record is the closed Issue, its PR and Git history",
+        "the system and semantic maps are generated, never hand-edited; render-map does not read the work registry",
         "the ladder table is generated from PHASE_LADDER, never hand-written, so the map cannot drift from the enum",
         "Module lookup reads the registry only, imports no target source, and changes neither registry nor generated maps",
         "Work lookup reads the existing registry and policy without Git/network calls, source execution, registry writes or generated-map writes"
@@ -5926,7 +5925,7 @@
       "tests": [
         "tests/test_project_authority_seam.py"
       ],
-      "notes": "No archflow/ module imports it; its only production caller is the Studio API, and it reads CanonicalState@1, the HEAD shape P110 retires."
+      "notes": "No archflow/ module imports it; its only production caller is the Studio API, and it reads CanonicalState@1, the HEAD shape a requirement projection would retire."
     },
     {
       "module_id": "validation.model",

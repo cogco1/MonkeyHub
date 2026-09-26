@@ -1,7 +1,9 @@
-"""Governance lookup: module contracts, live work and generated ledgers.
+"""Governance lookup: module contracts, capabilities, live work claims and the generated maps.
 
-The registry holds only work that is not finished. Finished work lives in Git
-history; a card that is done is deleted together with its registry entry.
+The work registry holds live GitHub Issue claims only (#358): an Issue claimed
+directly, or through named lanes. The Issue holds the goal and acceptance;
+finished work is the closed Issue, its PR and Git history, and its claim is
+removed from the registry.
 """
 
 from __future__ import annotations
@@ -17,14 +19,13 @@ ROOT = Path(__file__).resolve().parents[1]
 # and not whichever archflow happens to be importable from the interpreter.
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+from tools.archcheck import REGISTRY_SCHEMA  # noqa: E402 - needs this tree on sys.path first
+
 REGISTRY_PATH = ROOT / "governance" / "work_registry.json"
-MAP_PATH = ROOT / "docs" / "DYNAMIC_MAP.md"
-PLANNING_INDEX = ROOT / "docs" / "mapping" / "planning" / "INDEX.md"
 MODULE_REGISTRY = ROOT / "governance" / "module_registry.json"
 SYSTEM_MAP = ROOT / "docs" / "SYSTEM_MAP.md"
 SEMANTIC_REGISTRY = ROOT / "docs" / "SEMANTIC_REGISTRY.md"
-SCHEMA = "ArchFlowDevelopmentRegistry@2"
-STATUSES = ("active", "ready", "blocked")
+ISSUES = "https://github.com/cogco1/MonkeyHub/issues/"
 MODULE_SECTIONS = (
     "owns", "does_not_own", "public_api", "depends_on", "source_paths", "tests",
     "inputs", "outputs", "invariants",
@@ -244,30 +245,17 @@ def _print_module_lookup(result: dict) -> None:
 
 
 def load_registry() -> dict:
+    """The live work registry; tools.archcheck validates what is in it."""
+
     data = json.loads(REGISTRY_PATH.read_text(encoding="utf-8"))
-    if data.get("schema") != SCHEMA:
-        raise SystemExit(f"unsupported registry schema: {data.get('schema')!r}")
-    seen: set[str] = set()
-    for item in data["items"]:
-        if item["id"] in seen:
-            raise SystemExit(f"duplicate item id {item['id']}")
-        seen.add(item["id"])
-        if item["status"] not in STATUSES:
-            raise SystemExit(f"{item['id']}: status must be one of {STATUSES}")
-        if "card" not in item and re.fullmatch(r"GH-[1-9][0-9]*", item["id"]):
-            continue
-        card = item.get("card")
-        if not isinstance(card, str) or not (ROOT / card).is_file():
-            raise SystemExit(f"{item['id']}: missing card {card}")
+    if data.get("schema") != REGISTRY_SCHEMA:
+        raise SystemExit(
+            f"unsupported registry schema {data.get('schema')!r}; since #358 it is {REGISTRY_SCHEMA}, "
+            "live GitHub Issue claims only"
+        )
+    if not isinstance(data.get("items"), list):
+        raise SystemExit("the work registry's items must be a list")
     return data
-
-
-def is_ready(item: dict, live_ids: set[str]) -> bool:
-    """Ready when no live item blocks it; ids not in the registry are finished."""
-
-    return item["status"] == "ready" and not any(
-        dep in live_ids for dep in item.get("depends_on", ())
-    )
 
 
 def _work_lookup(data: dict, query: str | None) -> dict:
@@ -277,15 +265,17 @@ def _work_lookup(data: dict, query: str | None) -> dict:
 
     rows = []
     for item in data["items"]:
+        if not isinstance(item, dict):
+            continue
         if "lanes" not in item:
             candidates = [item]
         else:
             lanes = item["lanes"]
             candidates = [
-                {**lane, "id": f"{item['id']}/{lane.get('id')}", "card": item.get("card")}
+                {**lane, "id": f"{item.get('id')}/{lane.get('id')}"}
                 for lane in lanes if isinstance(lane, dict)
             ] if isinstance(lanes, list) else []
-        rows.extend(row for row in candidates if query is None or query in (item["id"], row["id"]))
+        rows.extend(row for row in candidates if query is None or query in (item.get("id"), row.get("id")))
     policy = load_policy(ROOT / "governance" / "architecture_policy.json")
     return {
         "query": query,
@@ -294,75 +284,30 @@ def _work_lookup(data: dict, query: str | None) -> dict:
     }
 
 
+def _issue_link(work_id: object) -> str:
+    number = re.fullmatch(r"GH-([1-9][0-9]*)(?:/.*)?", str(work_id))
+    return f"{ISSUES}{number.group(1)}" if number else ""
+
+
 def _print_work_lookup(result: dict) -> None:
     if not result["items"]:
         print(f"No work matches {result['query']!r}.")
     for row in result["items"]:
-        title = row.get("issue", row.get("goal", ""))
-        print(f"{row['id']} [{row.get('status')}] {title if result['query'] else str(title)[:100]}")
-        if "/" not in row["id"] and result["query"] is None:
-            continue
+        print(f"{row.get('id')} [{row.get('status')}] {_issue_link(row.get('id'))}".rstrip())
         print(f"  {row.get('branch') or 'unassigned'} | base {row.get('base_ref') or 'unassigned'} | {row.get('contributor') or 'unassigned'}")
         if result["query"] is None:
             modules = row.get("modules")
             scope = row.get("write_scope")
             dependencies = row.get("depends_on")
-            print(f"  modules: {modules or 'see card'}; paths: {len(scope) if isinstance(scope, list) else 0}; depends on: {dependencies or 'none'}")
+            print(f"  modules: {modules or 'none'}; paths: {len(scope) if isinstance(scope, list) else 0}; depends on: {dependencies or 'none'}")
             continue
-        for field in ("worktree", "reviewer", "handoff", "modules", "write_scope", "depends_on", "blocked_reason", "card"):
+        for field in ("worktree", "reviewer", "handoff", "modules", "write_scope", "depends_on", "blocked_reason"):
             value = row.get(field)
-            if field == "blocked_reason" and value is None and row.get("status") == "blocked" and "/" not in row["id"] and row.get("card"):
-                value = "see card"  # a card row keeps its reason in the card, not in a lane field
             if isinstance(value, list):
                 value = ", ".join(str(entry) for entry in value) or "none"
             print(f"  {field}: {value if value is not None else 'unassigned'}")
     for finding in result["findings"]:
         print(f"{finding['code']}: {finding['message']}")
-
-
-def render(data: dict) -> tuple[str, str]:
-    items = data["items"]
-    live_ids = {item["id"] for item in items}
-    active = [i["id"] for i in items if i["status"] == "active"]
-    ready = [i["id"] for i in items if is_ready(i, live_ids)]
-    blocked = [i["id"] for i in items if i["status"] == "blocked" or (i["status"] == "ready" and i["id"] not in ready)]
-    if active:
-        nxt = f"continue active work: {', '.join(active)}"
-        if ready:
-            nxt += f"; independent ready work may start: {', '.join(ready)}"
-    elif ready:
-        nxt = f"claim one of: {', '.join(ready)}"
-    else:
-        nxt = "nothing is ready; decide what unblocks"
-    def table(card_prefix: str) -> str:
-        rows = []
-        for item in items:
-            target = (
-                card_prefix + Path(item["card"]).name
-                if item.get("card")
-                else f"https://github.com/cogco1/MonkeyHub/issues/{item['id'][3:]}"
-            )
-            rows.append(f"| {item['id']} | {item['status']} | {item['goal']} | [{item['id']}]({target}) |")
-        return "| ID | Status | Goal | Card |\n| --- | --- | --- | --- |\n" + "\n".join(rows)
-    dyn = (
-        "# ArchFlow V4 Dynamic Map\n\n"
-        "> Generated by `python tools/devctl.py render-map` from `governance/work_registry.json`.\n"
-        "> Architecture rationale is in [ARCHITECTURE.md](ARCHITECTURE.md); finished work is in Git history.\n\n"
-        f"Phase: {data.get('phase', '')}\n\n"
-        f"- active: {', '.join(active) or 'none'}\n"
-        f"- ready: {', '.join(ready) or 'none'}\n"
-        f"- blocked: {', '.join(blocked) or 'none'}\n"
-        f"- next: {nxt}\n\n"
-        "## Live work\n\n"
-        + table("mapping/planning/")
-        + "\n"
-    )
-    plan = (
-        "# Planning ledger\n\n> Generated from `governance/work_registry.json`.\n\n"
-        + table("")
-        + "\n\n[Back to RMPA](../README.md)\n"
-    )
-    return dyn, plan
 
 
 def render_system_map() -> str | None:
@@ -458,12 +403,11 @@ def render_semantic_registry() -> str:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
-    sub.add_parser("status")
-    sub.add_parser("next")
-    sub.add_parser("render-map")
-    work_parser = sub.add_parser("work", help="read current lanes, bases, handoffs and scope conflicts")
-    work_parser.add_argument("query", nargs="?", help="exact card or lane id, e.g. P115/team-lanes")
-    work_parser.add_argument("--json", action="store_true", help="emit registered work and scope findings")
+    sub.add_parser("render-map", help="render SYSTEM_MAP and SEMANTIC_REGISTRY from their registries")
+    work_parser = sub.add_parser(
+        "work", help="read the live GitHub Issue claims: lanes, bases, handoffs and scope conflicts")
+    work_parser.add_argument("query", nargs="?", help="exact claim id, e.g. GH-355 or GH-355/browser-suites")
+    work_parser.add_argument("--json", action="store_true", help="emit registered claims and scope findings")
     module_parser = sub.add_parser("module", help="find one module contract without reading the whole registry")
     module_parser.add_argument("query", help="exact module id or keywords, e.g. wall")
     module_parser.add_argument("--json", action="store_true", help="emit structured lookup output")
@@ -496,31 +440,18 @@ def main(argv: list[str] | None = None) -> int:
         else:
             _print_module_lookup(result)
         return 0 if result["match_count"] else 1
-    data = load_registry()
     if args.command == "work":
-        result = _work_lookup(data, args.query)
+        result = _work_lookup(load_registry(), args.query)
         if args.json:
             print(json.dumps(result, ensure_ascii=False, indent=2))
         else:
             _print_work_lookup(result)
         return 1 if result["findings"] or (args.query is not None and not result["items"]) else 0
-    if args.command == "status":
-        for item in data["items"]:
-            print(f"{item['id']:6s} {item['status']:8s} {item['goal'][:100]}")
-    elif args.command == "next":
-        live_ids = {i["id"] for i in data["items"]}
-        for item in data["items"]:
-            if item["status"] == "active" or is_ready(item, live_ids):
-                print(f"{item['id']:6s} {item['status']}")
-    else:
-        dyn, plan = render(data)
-        MAP_PATH.write_text(dyn, encoding="utf-8", newline="\n")
-        PLANNING_INDEX.write_text(plan, encoding="utf-8", newline="\n")
-        system_map = render_system_map()
-        SEMANTIC_REGISTRY.write_text(render_semantic_registry(), encoding="utf-8", newline="\n")
-        if system_map is not None:
-            SYSTEM_MAP.write_text(system_map, encoding="utf-8", newline="\n")
-        print(f"rendered {MAP_PATH.relative_to(ROOT)}, {PLANNING_INDEX.relative_to(ROOT)}" + (f" and {SYSTEM_MAP.relative_to(ROOT)}" if system_map else ""))
+    system_map = render_system_map()
+    SEMANTIC_REGISTRY.write_text(render_semantic_registry(), encoding="utf-8", newline="\n")
+    if system_map is not None:
+        SYSTEM_MAP.write_text(system_map, encoding="utf-8", newline="\n")
+    print(f"rendered {SEMANTIC_REGISTRY.relative_to(ROOT)}" + (f" and {SYSTEM_MAP.relative_to(ROOT)}" if system_map else ""))
     return 0
 
 

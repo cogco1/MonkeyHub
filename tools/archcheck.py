@@ -2,17 +2,17 @@
 
 Two modes. Without arguments it checks the tree: layer imports, filesystem
 write ownership, state authorities, the probe boundary, the module registry,
-and -- since people now develop in parallel -- that no two live work cards claim
-the same path.
+and the live work registry -- GitHub Issue claims only, no two of them holding
+the same path or checkout.
 
 With ``--changed <base>`` it checks one branch instead, using each commit's
-policy and work registry from Git. Once the scope rule exists in a parent,
-a commit declares its work item in the subject or body. Legacy ``P###`` /
-``P###/lane`` claims remain valid, while new work may use ``GH-<issue>`` or
-``GH-<issue>/lane``. It may write only that claim's scope plus shared ledgers.
-``P000-governance`` permits only governance files and README.md maintenance.
-This is the mode CI runs on a pull request; it does not impose a new rule on
-the commits that preceded or introduced that rule.
+policy and work registry from Git. Once the scope rule exists in a parent, a
+commit names its claim, ``GH-<issue>`` or ``GH-<issue>/<lane>``, in the
+subject or body and may write only that claim's scope plus the shared ledgers;
+a commit that names none may write the shared and unclaimed paths the policy
+lists. Commits made before #358 retired the P/M/R work cards keep the reading
+they were checked with. This is the mode CI runs on a pull request; it does not
+impose a new rule on the commits that preceded or introduced that rule.
 """
 
 from __future__ import annotations
@@ -117,6 +117,7 @@ def validate_policy(policy: dict[str, Any], root: Path | None = None) -> None:
         "forbidden_commit_symbols",
         "import_only_source_roots",
         "shared_write_scope",
+        "unclaimed_write_scope",
     ):
         _require_string_list(policy, field)
     checked_roots = policy["checked_source_roots"]
@@ -638,20 +639,38 @@ def check_registry(root: Path, policy: dict[str, Any]) -> Iterator[PolicyFinding
 
 WORK_REGISTRY = "governance/work_registry.json"
 ARCHITECTURE_POLICY = "governance/architecture_policy.json"
-LIVE_SCOPE_STATUSES = frozenset({"active", "ready"})
-CARD_ID = re.compile(
+# Since #358 the registry holds live GitHub Issue claims only. A commit whose
+# own registry has an older schema was made before that; see LEGACY_* below.
+REGISTRY_SCHEMA = "ArchFlowDevelopmentRegistry@3"
+WORK_ID = re.compile(r"GH-[1-9]\d*")
+LANE_NAME = re.compile(r"[a-z0-9][a-z0-9_-]*")
+CLAIM_ID = re.compile(r"GH-[1-9]\d*(?:/[a-z0-9][a-z0-9_-]*)?")
+WORK_CLAIM = re.compile(r"\b" + CLAIM_ID.pattern + r"(?![\w/-])")
+CLAIM_STATUSES = frozenset({"active", "review", "blocked"})
+LIVE_CLAIM_STATUSES = frozenset({"active", "review"})
+# A claim is one Issue claimed directly, or one lane of an Issue claimed
+# through lanes; such an Issue then carries nothing but its lanes.
+CLAIM_FIELDS = frozenset({
+    "id", "status", "branch", "worktree", "base_ref", "contributor", "reviewer",
+    "handoff", "modules", "write_scope", "depends_on", "blocked_reason",
+})
+LANED_ISSUE_FIELDS = frozenset({"id", "lanes"})
+# A current commit whose subject opens with a card-era id still declares one.
+RETIRED_CLAIM = re.compile(r"\s*(P000-governance|[PMR]\d{3})(?!\d)")
+
+# Commits made before #358 keep the reading they were checked with: P### cards
+# and their lanes, the P000-governance marker, GitHub claims, active or ready
+# cards, and these two path lists. Nothing current depends on them.
+LEGACY_LIVE_STATUSES = frozenset({"active", "ready"})
+LEGACY_CARD_ID = re.compile(
     r"\b(?:"
     r"P000-governance(?![\w-])"
     r"|P\d{3}(?!\d)(?:/[a-z0-9][a-z0-9_-]*)?"
     r"|GH-[1-9]\d*(?:/[a-z0-9][a-z0-9_-]*)?(?![\w/-])"
     r")"
 )
-LANE_STATUSES = frozenset({"planned", "active", "review", "blocked", "done"})
-LIVE_LANE_STATUSES = frozenset({"active", "review"})
-# Governance paths a commit may touch without naming a card. Everything else
-# belongs to exactly one card, whose write_scope says so.
-UNCARDED_WRITE_SCOPE = ("docs/adr/", "docs/REPO_LAYOUT.md", "CONTRIBUTING.md")
-GOVERNANCE_WRITE_SCOPE = UNCARDED_WRITE_SCOPE + (
+LEGACY_UNCARDED_WRITE_SCOPE = ("docs/adr/", "docs/REPO_LAYOUT.md", "CONTRIBUTING.md")
+LEGACY_GOVERNANCE_WRITE_SCOPE = LEGACY_UNCARDED_WRITE_SCOPE + (
     "tools/archcheck.py",
     "governance/architecture_policy.json",
     ".github/workflows/verify.yml",
@@ -701,89 +720,143 @@ def _covered_by_any(path: str, scopes: Iterable[str]) -> bool:
     return any(_scope_covers(scope, path) for scope in scopes)
 
 
+def _claim_problems(row: dict[str, Any]) -> list[str]:
+    """Why one claim's coordination fields cannot be used, in reading order."""
+
+    problems = []
+    status = row.get("status") if isinstance(row.get("status"), str) else None
+    if status not in CLAIM_STATUSES:
+        problems.append(
+            f"status must be one of {sorted(CLAIM_STATUSES)}; finished work is released, not kept as done"
+        )
+    for field in ("branch", "worktree", "base_ref", "contributor", "reviewer", "handoff"):
+        value = row.get(field)
+        if value is not None and (not isinstance(value, str) or not value.strip()):
+            problems.append(f"{field} must be non-empty text or null")
+        if status in LIVE_CLAIM_STATUSES and field in ("branch", "worktree", "base_ref", "contributor") and not value:
+            problems.append(f"{field} is required for active/review work")
+    for field in ("modules", "write_scope", "depends_on"):
+        values = row.get(field)
+        if not isinstance(values, list) or any(not isinstance(v, str) or not v.strip() for v in values):
+            problems.append(f"{field} must be a list of non-empty strings")
+    if isinstance(row.get("modules"), list) and not row["modules"]:
+        problems.append("modules must identify an intended owner")
+    scope = row.get("write_scope")
+    if isinstance(scope, list):
+        if status in LIVE_CLAIM_STATUSES and not scope:
+            problems.append("active/review work requires narrow write_scope")
+        for path in scope:
+            if isinstance(path, str) and (path.startswith("/") or any(c in path for c in "\\:*?[]{}") or
+                                          any(p in ("", ".", "..") for p in path.rstrip("/").split("/"))):
+                problems.append(f"write_scope {path!r} must be a literal repository-relative file or directory")
+    dependencies = row.get("depends_on")
+    if isinstance(dependencies, list):
+        for dependency in dependencies:
+            if isinstance(dependency, str) and dependency.strip() and not CLAIM_ID.fullmatch(dependency):
+                problems.append(f"depends_on {dependency!r} must name GH-<issue> or GH-<issue>/<lane>")
+    if status == "blocked" and (not isinstance(row.get("blocked_reason"), str) or not row["blocked_reason"].strip()):
+        problems.append("blocked_reason is required for blocked work")
+    return problems
+
+
+def _unexpected_fields(name: str, row: dict[str, Any], allowed: frozenset[str]) -> Iterator[PolicyFinding]:
+    extra = sorted(str(field) for field in set(row) - allowed)
+    if not extra:
+        return
+    listed = ", ".join(extra)
+    if allowed == LANED_ISSUE_FIELDS and set(extra) <= CLAIM_FIELDS:
+        reason = f"{listed} belong on its lanes; an Issue claimed through lanes carries only id and lanes"
+    else:
+        reason = (
+            f"{listed} {'is' if len(extra) == 1 else 'are'} not live coordination; the GitHub Issue holds "
+            "goal and acceptance, and Git history the finished work (#358)"
+        )
+    yield PolicyFinding(WORK_REGISTRY, 1, "WORK_ITEM", f"{name}: {reason}")
+
+
 def check_scopes(
     root: Path,
     policy: dict[str, Any],
     registry: dict[str, Any] | None,
 ) -> Iterator[PolicyFinding]:
-    """Validate lane metadata and report competing live path claims.
+    """Validate the live claims and report competing path and checkout claims.
 
-    Cards without lanes retain their active/ready claims. With lanes, only
-    active/review lanes claim paths; the card remains the commit scope ceiling.
-    Shared tests and ledgers are exempt according to the existing policy.
+    Since #358 every entry is a GitHub Issue, claimed directly or through named
+    lanes that are each a claim of their own. Only active and review claims
+    hold paths and checkouts; shared tests and ledgers are exempt according to
+    the policy.
     """
 
     if registry is None:
         return
     shared = policy["shared_write_scope"]
+    if registry.get("schema") != REGISTRY_SCHEMA:
+        yield PolicyFinding(
+            WORK_REGISTRY, 1, "WORK_ITEM",
+            f"schema must be {REGISTRY_SCHEMA}: since #358 the registry holds live "
+            "GitHub Issue claims only (GH-<issue>, GH-<issue>/<lane>)",
+        )
+        return
+    yield from _unexpected_fields("the registry", registry, frozenset({"schema", "items"}))
     live = []
-    dependencies = {str(item.get("id")) for item in registry["items"] if isinstance(item, dict)}
+    registered: set[str] = set()
     for item in registry["items"]:
         if not isinstance(item, dict):
+            yield PolicyFinding(WORK_REGISTRY, 1, "WORK_ITEM", f"every work item must be an object, not {item!r}")
             continue
+        work_id = item.get("id")
+        if not isinstance(work_id, str) or not WORK_ID.fullmatch(work_id):
+            yield PolicyFinding(
+                WORK_REGISTRY, 1, "WORK_ITEM",
+                f"{work_id!r}: a work item is a GitHub Issue, GH-<issue>; the P/M/R cards retired with #358",
+            )
+            continue
+        if work_id in registered:
+            yield PolicyFinding(WORK_REGISTRY, 1, "WORK_ITEM", f"{work_id} is listed twice; claim more of it with lanes")
+            continue
+        registered.add(work_id)
         if "lanes" not in item:
-            if item.get("status") in LIVE_SCOPE_STATUSES:
-                live.append(item)
-            continue
-        lanes = item["lanes"]
-        if not isinstance(lanes, list):
-            yield PolicyFinding(WORK_REGISTRY, 1, "LANE_METADATA", f"{item.get('id')}: lanes must be a list")
-            continue
-        seen = set()
-        for lane in lanes:
-            if not isinstance(lane, dict):
-                yield PolicyFinding(WORK_REGISTRY, 1, "LANE_METADATA", f"{item.get('id')}: lane must be an object")
+            yield from _unexpected_fields(work_id, item, CLAIM_FIELDS)
+            claims = [(work_id, item)]
+        else:
+            yield from _unexpected_fields(work_id, item, LANED_ISSUE_FIELDS)
+            lanes = item["lanes"]
+            if not isinstance(lanes, list) or not lanes:
+                yield PolicyFinding(
+                    WORK_REGISTRY, 1, "LANE_METADATA",
+                    f"{work_id}: lanes must list its live lanes; remove the entry once every lane is released",
+                )
                 continue
-            lane_id = lane.get("id")
-            name = f"{item.get('id')}/{lane_id}"
-            problems = []
-            if not isinstance(lane_id, str) or not re.fullmatch(r"[a-z0-9][a-z0-9_-]*", lane_id):
-                problems.append("id must be a short lowercase lane name")
-            elif lane_id in seen:
-                problems.append("duplicate lane id")
-            else:
+            claims = []
+            seen = set()
+            for lane in lanes:
+                if not isinstance(lane, dict):
+                    yield PolicyFinding(WORK_REGISTRY, 1, "LANE_METADATA", f"{work_id}: lane must be an object")
+                    continue
+                lane_id = lane.get("id")
+                name = f"{work_id}/{lane_id}"
+                yield from _unexpected_fields(name, lane, CLAIM_FIELDS)
+                if not isinstance(lane_id, str) or not LANE_NAME.fullmatch(lane_id):
+                    yield PolicyFinding(WORK_REGISTRY, 1, "LANE_METADATA", f"{name}: id must be a short lowercase lane name")
+                    continue
+                if lane_id in seen:
+                    yield PolicyFinding(WORK_REGISTRY, 1, "LANE_METADATA", f"{name}: duplicate lane id")
+                    continue
                 seen.add(lane_id)
-            status = lane.get("status") if isinstance(lane.get("status"), str) else None
-            if status not in LANE_STATUSES:
-                problems.append(f"status must be one of {sorted(LANE_STATUSES)}")
-            if not isinstance(lane.get("issue"), str) or not lane["issue"].strip():
-                problems.append("issue must name an Issue or agreed work item")
-            for field in ("branch", "worktree", "base_ref", "contributor", "reviewer", "handoff"):
-                value = lane.get(field)
-                if value is not None and (not isinstance(value, str) or not value.strip()):
-                    problems.append(f"{field} must be non-empty text or null")
-                if status in LIVE_LANE_STATUSES and field in ("branch", "worktree", "base_ref", "contributor") and not value:
-                    problems.append(f"{field} is required for active/review work")
-            for field in ("modules", "write_scope", "depends_on"):
-                values = lane.get(field)
-                if not isinstance(values, list) or any(not isinstance(v, str) or not v.strip() for v in values):
-                    problems.append(f"{field} must be a list of non-empty strings")
-            if isinstance(lane.get("modules"), list) and not lane["modules"]:
-                problems.append("modules must identify an intended owner")
-            scope = lane.get("write_scope")
-            if isinstance(scope, list):
-                if status in LIVE_LANE_STATUSES and not scope:
-                    problems.append("active/review work requires narrow write_scope")
-                for path in scope:
-                    if isinstance(path, str) and (path.startswith("/") or any(c in path for c in "\\:*?[]{}") or
-                                                  any(p in ("", ".", "..") for p in path.rstrip("/").split("/"))):
-                        problems.append(f"write_scope {path!r} must be a literal repository-relative file or directory")
-            if status == "blocked" and (not isinstance(lane.get("blocked_reason"), str) or not lane["blocked_reason"].strip()):
-                problems.append("blocked_reason is required for blocked work")
+                claims.append((name, lane))
+        for name, row in claims:
+            problems = _claim_problems(row)
+            for problem in problems:
+                yield PolicyFinding(WORK_REGISTRY, 1, "LANE_METADATA", f"{name}: {problem}")
             if problems:
-                for problem in problems:
-                    yield PolicyFinding(WORK_REGISTRY, 1, "LANE_METADATA", f"{name}: {problem}")
                 continue
-            if status != "done":
-                dependencies.add(name)
-            if status in LIVE_LANE_STATUSES:
-                live.append({**lane, "id": name})
-    for lane in live:
-        if "/" not in str(lane.get("id", "")):
-            continue
-        waiting = sorted(set(lane["depends_on"]) & dependencies)
+            registered.add(name)
+            if row["status"] in LIVE_CLAIM_STATUSES:
+                live.append({**row, "id": name})
+    for claim in live:
+        waiting = sorted(set(claim["depends_on"]) & registered - {claim["id"]})
         if waiting:
-            yield PolicyFinding(WORK_REGISTRY, 1, "LANE_DEPENDENCY", f"{lane['id']} cannot be {lane['status']} while waiting for {', '.join(waiting)}; mark it blocked and record the handoff/order")
+            yield PolicyFinding(WORK_REGISTRY, 1, "LANE_DEPENDENCY", f"{claim['id']} cannot be {claim['status']} while waiting for {', '.join(waiting)}; mark it blocked and record the handoff/order")
     live.sort(key=lambda item: str(item.get("id", "")))
     for index, first in enumerate(live):
         for second in live[index + 1 :]:
@@ -841,19 +914,28 @@ def _git(root: Path, *args: str) -> str:
     return completed.stdout
 
 
-def _commit_card(message: str) -> str | None:
-    """A work claim or explicit governance marker in the subject, else body.
+def _commit_claim(message: str, grammar: re.Pattern[str] = WORK_CLAIM) -> str | None:
+    """The work claim in the subject, else in the body.
 
     The subject wins because a body says things about other work -- what this
     change unblocks, which item a finding belongs to -- and a commit would
     otherwise be filed under whichever claim it mentioned last. Within one part
     of the message the last id still wins, so a subject or a body naming its
-    claim twice is unambiguous.
+    claim twice is unambiguous. A card-era commit is read with
+    ``LEGACY_CARD_ID``, which also knows P### and P000-governance.
     """
 
     subject = message.splitlines()[0] if message.strip() else ""
-    found = CARD_ID.findall(subject) or CARD_ID.findall(message)
+    found = grammar.findall(subject) or grammar.findall(message)
     return found[-1] if found else None
+
+
+def _paths(value: object) -> list[str]:
+    return [entry for entry in value if isinstance(entry, str)] if isinstance(value, list) else []
+
+
+def _live(row: object) -> bool:
+    return isinstance(row, dict) and isinstance(row.get("status"), str) and row["status"] in LIVE_CLAIM_STATUSES
 
 
 def _git_json(root: Path, revision: str, path: str) -> dict[str, Any] | None:
@@ -884,19 +966,36 @@ def check_changed_scopes(
 ) -> Iterator[PolicyFinding]:
     """Check the scope that applied when each commit was made.
 
-    Policy and cards come from the commit, not today's live registry. A card
-    closed by a commit may use its first parent's active scope. The rule
+    Policy and claims come from the commit, not today's live registry. A
+    claim closed by a commit may use its first parent's live scope. The rule
     starts after a parent first has ``shared_write_scope``; removing that
     configuration later is an error, not a way to turn the check off.
+
+    A commit whose own registry is ``REGISTRY_SCHEMA`` claims a GitHub Issue
+    or one of its lanes; without a claim it may write the policy's shared and
+    unclaimed paths. A commit on an older registry was made before #358 and
+    keeps the card-era reading it was checked with. Once a parent is on the
+    current registry, returning to the old one is an error, so that reading
+    cannot authorize card work again.
     """
 
     policies: dict[str, dict[str, Any] | None] = {}
+    registries: dict[str, dict[str, Any] | None] = {}
     enabled: dict[str, bool] = {}
 
     def policy_at(revision: str) -> dict[str, Any] | None:
         if revision not in policies:
             policies[revision] = _git_json(root, revision, policy_path)
         return policies[revision]
+
+    def registry_at(revision: str) -> dict[str, Any] | None:
+        if revision not in registries:
+            registries[revision] = _git_json(root, revision, WORK_REGISTRY)
+        return registries[revision]
+
+    def retired_at(revision: str) -> bool:
+        registry = registry_at(revision)
+        return registry is not None and registry.get("schema") == REGISTRY_SCHEMA
 
     def rule_enabled_at(revision: str) -> bool:
         if revision not in enabled:
@@ -915,17 +1014,49 @@ def check_changed_scopes(
                         break
         return enabled[revision]
 
-    def cards_at(revision: str) -> dict[str, dict[str, Any]]:
-        registry = _git_json(root, revision, WORK_REGISTRY)
+    def items_at(revision: str) -> list[Any]:
+        registry = registry_at(revision)
         if registry is None or not isinstance(registry.get("items"), list):
             raise ArchitecturePolicyError(
                 f"invalid work registry at {revision[:8]}: {WORK_REGISTRY}"
             )
+        return registry["items"]
+
+    def cards_at(revision: str) -> dict[str, dict[str, Any]]:
         return {
             str(item.get("id")): item
-            for item in registry["items"]
-            if isinstance(item, dict) and item.get("status") in LIVE_SCOPE_STATUSES
+            for item in items_at(revision)
+            if isinstance(item, dict) and item.get("status") in LEGACY_LIVE_STATUSES
         }
+
+    def claims_at(revision: str) -> dict[str, tuple[list[str], ...]]:
+        """Each live claim with the scopes that must all cover a path it writes."""
+
+        claims: dict[str, tuple[list[str], ...]] = {}
+        if not retired_at(revision):
+            # A card-era first parent: a lane also stays inside its card.
+            for card_id, card in cards_at(revision).items():
+                ceiling = _paths(card.get("write_scope"))
+                if "lanes" not in card:
+                    claims[card_id] = (ceiling,)
+                    continue
+                for lane in card["lanes"] if isinstance(card["lanes"], list) else ():
+                    if _live(lane):
+                        claims[f"{card_id}/{lane.get('id')}"] = (_paths(lane.get("write_scope")), ceiling)
+            return claims
+        for item in items_at(revision):
+            if not isinstance(item, dict) or not isinstance(item.get("id"), str):
+                continue
+            if "lanes" not in item:
+                rows = [(item["id"], item)]
+            elif isinstance(item["lanes"], list):
+                rows = [(f"{item['id']}/{lane.get('id')}", lane) for lane in item["lanes"] if isinstance(lane, dict)]
+            else:
+                rows = []
+            for name, row in rows:
+                if _live(row):
+                    claims[name] = (_paths(row.get("write_scope")),)
+        return claims
 
     head = _git(root, "rev-parse", "HEAD").strip()
     if policy_at(head) is None:
@@ -952,7 +1083,12 @@ def check_changed_scopes(
                 "after the scope rule took effect"
             )
         shared = list(policy["shared_write_scope"])
-        cards = cards_at(revision)
+        retired = retired_at(revision)
+        if not retired and any(retired_at(parent) for parent in parents):
+            raise ArchitecturePolicyError(
+                f"{WORK_REGISTRY} at {revision[:8]} is not {REGISTRY_SCHEMA}: after #358 "
+                "a commit cannot return to the card-era registry"
+            )
         message = _git(root, "show", "-s", "--format=%B", revision)
         files = sorted(
             {
@@ -963,7 +1099,40 @@ def check_changed_scopes(
                 if line.strip()
             }
         )
-        claim_id = _commit_card(message)
+        if retired:
+            subject = message.splitlines()[0] if message.strip() else ""
+            declared = RETIRED_CLAIM.match(subject)
+            if declared:
+                yield PolicyFinding(
+                    revision[:8], 1, "RETIRED_WORK_CLAIM",
+                    f"commit {revision[:8]} opens with {declared.group(1)}, a card-era work id; "
+                    "since #358 a commit claims GH-<issue> or GH-<issue>/<lane>",
+                )
+            claim_id = _commit_claim(message)
+            claims = claims_at(revision)
+            scopes = claims.get(claim_id) if claim_id else None
+            if scopes is None and claim_id and parents:
+                scopes = claims_at(parents[0]).get(claim_id)
+            if scopes is not None:
+                required = tuple(scope + shared for scope in scopes)
+                code = "SCOPE_VIOLATION"
+                named = f"commit {revision[:8]} is {claim_id}"
+            else:
+                unclaimed = _require_string_list(policy, "unclaimed_write_scope") if "unclaimed_write_scope" in policy else []
+                required = (shared + unclaimed,)
+                code = "SCOPE_UNDECLARED"
+                if claim_id is None:
+                    named = f"commit {revision[:8]} names no work item"
+                elif any(name.startswith(claim_id + "/") for name in claims):
+                    named = f"commit {revision[:8]} names {claim_id}, which is claimed through its lanes; name {claim_id}/<lane>"
+                else:
+                    named = f"commit {revision[:8]} names {claim_id}, which has no live claim at that commit"
+            for path in files:
+                if not all(_covered_by_any(path, scope) for scope in required):
+                    yield PolicyFinding(path, 1, code, f"{named}; {path} is outside its write scope")
+            continue
+        cards = cards_at(revision)
+        claim_id = _commit_claim(message, LEGACY_CARD_ID)
         card_id, _, lane_id = (claim_id or "").partition("/")
         card_id = card_id or None
         card = cards.get(card_id) if card_id else None
@@ -971,11 +1140,11 @@ def check_changed_scopes(
             card = cards_at(parents[0]).get(card_id)
         parent_allowed = None
         if card_id == "P000-governance":
-            allowed = shared + list(GOVERNANCE_WRITE_SCOPE)
+            allowed = shared + list(LEGACY_GOVERNANCE_WRITE_SCOPE)
             code = "SCOPE_VIOLATION"
             named = f"commit {revision[:8]} is {card_id}"
         elif card is None:
-            allowed = shared + list(UNCARDED_WRITE_SCOPE)
+            allowed = shared + list(LEGACY_UNCARDED_WRITE_SCOPE)
             code = "SCOPE_UNDECLARED"
             named = (
                 f"commit {revision[:8]} names no work item"
@@ -1059,9 +1228,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--changed",
         metavar="BASE",
         help=(
-            "Check commits in BASE..HEAD against their historical work scopes, "
-            "after the rule first exists in a parent. A commit names GH-<issue>, "
-            "legacy P###, or P000-governance in its subject, else in its body."
+            "Check commits in BASE..HEAD against the work scopes in each "
+            "commit's own registry, after the rule first exists in a parent. A "
+            "commit names GH-<issue> or GH-<issue>/<lane> in its subject, else "
+            "in its body."
         ),
     )
     return parser
