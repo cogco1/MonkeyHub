@@ -247,11 +247,19 @@ def generate_plan(binding, *, attribution, reason=None, source_kind=None, source
         if unknown_hidden - retained_hidden:
             raise StudioError(422, "DRAWING_OBJECT_UNKNOWN", "A newly hidden object must exist in the selected exact model.")
         with _document_source_lock:
-            for document in list_documents(binding, model_source.run_id):
+            documents = list_documents(binding, None if previous is not None else model_source.run_id)
+            for document in documents:
                 if (document.drawing_id == drawing_id and _document_source(document) == model_source
-                        and document.source_stage_ref == selected_stage and document.view_recipe == recipe):
+                        and document.source_stage_ref == selected_stage and document.view_recipe == recipe
+                        and (previous is None or document.revision_ref == previous_revision_ref
+                             or document.previous_revision_ref == previous_revision_ref)):
                     document_bytes(binding, document.run_id, document.asset_sha256, document.revision_ref)
                     return document
+            if previous is not None:
+                # Check the exact predecessor under the same lock as registration,
+                # before projection writes anything. A retry found its own child
+                # above; another edit of an already replaced page is a conflict.
+                drawing_revision_replacement(binding, previous, previous.pages, documents)
             verified = read_elevation_source(binding.repository, source)
             resolved = () if isinstance(model_source, DrawingAssetSource) else resolve_plan_dimensions(
                 binding, model_source, stage_ref, verified, frame, recipe["dimensions"], hidden_object_ids=recipe["hiddenObjectIds"])
@@ -262,9 +270,9 @@ def generate_plan(binding, *, attribution, reason=None, source_kind=None, source
                                                    "origin": attribution.origin})
             pages = _document_pages(drawing.png, "image/png")
             # A rebuild answers for its previous revision's page wherever that
-            # page is placed (#291); a fork or a changed page shape does not.
+            # page is placed (#291); a changed page shape cannot keep that frame.
             replaces = () if previous is None else drawing_revision_replacement(
-                binding, previous, pages, list_documents(binding))
+                binding, previous, pages, documents)
             run = binding.load_run(model_source.run_id)
             binding.repository.put_json(
                 run=run, destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=run.run_id),

@@ -24,7 +24,7 @@ export { DESIGN_TREE_UNDO_MOVED, DESIGN_TREE_UNSYNCED } from "./continueUndo";
 /** How often an open project re-reads its tree while it is on screen. */
 export const DESIGN_TREE_POLL_MS = 10_000;
 
-export type DesignTreeAction = { readonly kind: "continue"; readonly node: string } | { readonly kind: "accept" } | { readonly kind: "undo" };
+export type DesignTreeAction = { readonly kind: "continue" | "review"; readonly node: string } | { readonly kind: "accept" } | { readonly kind: "undo" };
 
 export interface DesignTreeOutcome {
   readonly kind: "continued" | "accepted" | "refused";
@@ -58,6 +58,7 @@ export interface DesignTreeData {
   readonly error: StudioApiError | null;
   /** The runtime can move the Working Head. */
   readonly canContinue: boolean;
+  readonly canReview: boolean;
   readonly busy: DesignTreeAction | null;
   readonly outcome: DesignTreeOutcome | null;
   /** The last act's confirmation, until it has had its time (FN-5). */
@@ -65,6 +66,7 @@ export interface DesignTreeData {
   reload(): void;
   continueFrom(nodeId: string): Promise<boolean>;
   acceptCurrent(): Promise<boolean>;
+  review(nodeId: string, action: "reject" | "archive" | "restore" | "endorse", reason?: string): Promise<boolean>;
   /** Puts back the Current the last Continue replaced, through the same Continue write. */
   undo(): Promise<boolean>;
   clearOutcome(): void;
@@ -146,6 +148,7 @@ export function useDesignTree({ studio, capabilities, projectId, active, refresh
     capabilities.includes("design-history") && capabilities.includes("working-source");
   const canContinue = available && capabilities!.includes("working-draft");
   const admissions = available && capabilities!.includes("candidate-admission");
+  const canReview = available && capabilities!.includes("candidate-review");
   const [source, setSource] = useState<DesignTreeSource | null>(null);
   const [status, setStatus] = useState<DesignTreeData["status"]>("loading");
   const [error, setError] = useState<StudioApiError | null>(null);
@@ -252,6 +255,20 @@ export function useDesignTree({ studio, capabilities, projectId, active, refresh
     });
   }, [projectId, run, studio, tree]);
 
+  const review = useCallback(async (nodeId: string, action: "reject" | "archive" | "restore" | "endorse", reason?: string) => {
+    const node = tree?.nodes.get(nodeId);
+    if (!canReview || !projectId || !node || (node.kind !== "candidate" && node.kind !== "stage") || busyRef.current) return false;
+    busyRef.current = true; setBusy({ kind: "review", node: nodeId }); setOutcome(null);
+    try {
+      await studio.reviewCandidate({ projectId, subjectKind: node.kind,
+        subjectRef: node.kind === "candidate" ? node.candidate!.candidateId : node.stage!.ref,
+        action, reason: reason?.trim() || null });
+      await load(); return true;
+    } catch (cause) {
+      setOutcome({ kind: "refused", node: nodeId, error: asStudioApiError(cause) }); return false;
+    } finally { busyRef.current = false; setBusy(null); }
+  }, [canReview, load, projectId, studio, tree]);
+
   const undo = useCallback(() => {
     const last = undoable.current;
     if (!last || !canContinue || !projectId) return Promise.resolve(false);
@@ -274,9 +291,9 @@ export function useDesignTree({ studio, capabilities, projectId, active, refresh
   }, []);
 
   return {
-    available, admissions, status: available ? status : "loading", source, tree, error, canContinue, busy, outcome, toast,
+    available, admissions, status: available ? status : "loading", source, tree, error, canContinue, canReview, busy, outcome, toast,
     reload: () => setNudge((value) => value + 1),
-    continueFrom, acceptCurrent, undo,
+    continueFrom, acceptCurrent, review, undo,
     clearOutcome: () => setOutcome(null),
     dismissToast,
   };

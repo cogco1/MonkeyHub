@@ -2626,6 +2626,7 @@ export type DesignCandidateDto = {
      * Attempts this result replaced within its loop; hidden by default.
      */
     supersedes: Array<string>;
+    review?: ReviewJudgementDto | null;
 };
 
 /**
@@ -2759,6 +2760,7 @@ export type DesignStageDto = {
      */
     acceptedBy: string;
     acceptance?: AcceptanceEvidenceDto | null;
+    review?: ReviewJudgementDto | null;
 };
 
 /**
@@ -7607,6 +7609,22 @@ export type RecipeExportDecisionSourceDto = {
 };
 
 /**
+ * RecipeExportFileDto
+ *
+ * Portable file text, kept verbatim across browser JSON transports.
+ */
+export type RecipeExportFileDto = {
+    /**
+     * Filename
+     */
+    fileName: string;
+    /**
+     * Content
+     */
+    content: string;
+};
+
+/**
  * RecipeGraphicsDto
  *
  * The paper-space values one project recipe sets; a key it leaves out is null.
@@ -7634,6 +7652,85 @@ export type RecipeGraphicsDto = {
      * section hatch spacing on paper; set under drawing:hatch
      */
     hatchSpacingMm?: number | null;
+};
+
+/**
+ * RecipeImportRequestDto
+ *
+ * An explicit confirmation of the inspected file as a project soft preference.
+ */
+export type RecipeImportRequestDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Content
+     *
+     * Exact JSON file text; do not parse/reserialize in JavaScript, which changes numeric digests.
+     */
+    content: string;
+    /**
+     * Confirmed
+     */
+    confirmed: boolean;
+    /**
+     * Sourcekind
+     */
+    sourceKind: 'human';
+    /**
+     * Rawlanguage
+     */
+    rawLanguage: string;
+};
+
+/**
+ * RecipeInspectDto
+ */
+export type RecipeInspectDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Targetref
+     */
+    targetRef: string;
+    graphics: RecipeGraphicsDto;
+    /**
+     * Sourcedecisionid
+     */
+    sourceDecisionId: string;
+    /**
+     * Sourcerevisionsha256
+     */
+    sourceRevisionSha256: string;
+    /**
+     * Exportsha256
+     */
+    exportSha256: string;
+    /**
+     * Importstrength
+     */
+    importStrength?: 'soft_preference';
+};
+
+/**
+ * RecipeInspectRequestDto
+ *
+ * Read a portable recipe without retaining it or promoting a preference.
+ */
+export type RecipeInspectRequestDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Content
+     *
+     * Exact JSON file text; do not parse/reserialize in JavaScript, which changes numeric digests.
+     */
+    content: string;
 };
 
 /**
@@ -8077,6 +8174,70 @@ export type RepresentationStateDto = {
      * Detail
      */
     detail: string | null;
+};
+
+/**
+ * ReviewJudgementDto
+ */
+export type ReviewJudgementDto = {
+    /**
+     * Reviewref
+     */
+    reviewRef: string;
+    /**
+     * Disposition
+     */
+    disposition: 'unreviewed' | 'rejected' | 'archived';
+    /**
+     * Endorsed
+     */
+    endorsed: boolean;
+    /**
+     * Actorid
+     */
+    actorId: string;
+    /**
+     * Occurredat
+     */
+    occurredAt: string;
+    /**
+     * Reason
+     */
+    reason: string | null;
+    /**
+     * Endorsedby
+     */
+    endorsedBy?: string | null;
+    /**
+     * Endorsedat
+     */
+    endorsedAt?: string | null;
+};
+
+/**
+ * ReviewJudgementRequestDto
+ */
+export type ReviewJudgementRequestDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Subjectkind
+     */
+    subjectKind: 'candidate' | 'stage';
+    /**
+     * Subjectref
+     */
+    subjectRef: string;
+    /**
+     * Action
+     */
+    action: 'reject' | 'archive' | 'restore' | 'endorse';
+    /**
+     * Reason
+     */
+    reason?: string | null;
 };
 
 /**
@@ -11257,6 +11418,7 @@ export type ViewportCaptureDto = {
      * Sizebytes
      */
     sizeBytes: number;
+    document?: SourceDocumentDto | null;
 };
 
 /**
@@ -11273,6 +11435,10 @@ export type ViewportCaptureRequestDto = {
      * Pngbase64
      */
     pngBase64: string;
+    /**
+     * The exact retained model shown by the browser; validates identity, not correspondence inferred from pixels.
+     */
+    modelSource?: ModelSourceDto | null;
 };
 
 /**
@@ -12665,6 +12831,57 @@ export type ReadSemanticsApiSemanticsGetResponses = {
 
 export type ReadSemanticsApiSemanticsGetResponse = ReadSemanticsApiSemanticsGetResponses[keyof ReadSemanticsApiSemanticsGetResponses];
 
+export type ReadRetainedModelPreviewApiModelAssetsAssetSha256PreviewGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path: {
+        /**
+         * Asset Sha256
+         */
+        asset_sha256: string;
+    };
+    query: {
+        /**
+         * Runid
+         */
+        runId: string;
+        /**
+         * Statedigest
+         */
+        stateDigest: string;
+    };
+    url: '/api/model-assets/{asset_sha256}/preview';
+};
+
+export type ReadRetainedModelPreviewApiModelAssetsAssetSha256PreviewGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadRetainedModelPreviewApiModelAssetsAssetSha256PreviewGetError = ReadRetainedModelPreviewApiModelAssetsAssetSha256PreviewGetErrors[keyof ReadRetainedModelPreviewApiModelAssetsAssetSha256PreviewGetErrors];
+
+export type ReadRetainedModelPreviewApiModelAssetsAssetSha256PreviewGetResponses = {
+    /**
+     * Response Read Retained Model Preview Api Model Assets  Asset Sha256  Preview Get
+     *
+     * Successful Response
+     */
+    200: SourceDocumentDto | null;
+};
+
+export type ReadRetainedModelPreviewApiModelAssetsAssetSha256PreviewGetResponse = ReadRetainedModelPreviewApiModelAssetsAssetSha256PreviewGetResponses[keyof ReadRetainedModelPreviewApiModelAssetsAssetSha256PreviewGetResponses];
+
 export type ReadNativeModelIndexApiModelAssetsAssetSha256IndexGetData = {
     body?: never;
     headers?: {
@@ -13823,6 +14040,121 @@ export type ReadDecisionApiDecisionsDecisionIdGetResponses = {
 };
 
 export type ReadDecisionApiDecisionsDecisionIdGetResponse = ReadDecisionApiDecisionsDecisionIdGetResponses[keyof ReadDecisionApiDecisionsDecisionIdGetResponses];
+
+export type ExportDrawingRecipeApiDecisionsDecisionIdRecipeExportGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path: {
+        /**
+         * Decision Id
+         */
+        decision_id: string;
+    };
+    query: {
+        /**
+         * Expectedrevisionref
+         */
+        expectedRevisionRef: string;
+    };
+    url: '/api/decisions/{decision_id}/recipe-export';
+};
+
+export type ExportDrawingRecipeApiDecisionsDecisionIdRecipeExportGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ExportDrawingRecipeApiDecisionsDecisionIdRecipeExportGetError = ExportDrawingRecipeApiDecisionsDecisionIdRecipeExportGetErrors[keyof ExportDrawingRecipeApiDecisionsDecisionIdRecipeExportGetErrors];
+
+export type ExportDrawingRecipeApiDecisionsDecisionIdRecipeExportGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: RecipeExportFileDto;
+};
+
+export type ExportDrawingRecipeApiDecisionsDecisionIdRecipeExportGetResponse = ExportDrawingRecipeApiDecisionsDecisionIdRecipeExportGetResponses[keyof ExportDrawingRecipeApiDecisionsDecisionIdRecipeExportGetResponses];
+
+export type InspectDrawingRecipeApiDrawingRecipesInspectPostData = {
+    body: RecipeInspectRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/drawing-recipes/inspect';
+};
+
+export type InspectDrawingRecipeApiDrawingRecipesInspectPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type InspectDrawingRecipeApiDrawingRecipesInspectPostError = InspectDrawingRecipeApiDrawingRecipesInspectPostErrors[keyof InspectDrawingRecipeApiDrawingRecipesInspectPostErrors];
+
+export type InspectDrawingRecipeApiDrawingRecipesInspectPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: RecipeInspectDto;
+};
+
+export type InspectDrawingRecipeApiDrawingRecipesInspectPostResponse = InspectDrawingRecipeApiDrawingRecipesInspectPostResponses[keyof InspectDrawingRecipeApiDrawingRecipesInspectPostResponses];
+
+export type ImportDrawingRecipeApiDrawingRecipesImportPostData = {
+    body: RecipeImportRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/drawing-recipes/import';
+};
+
+export type ImportDrawingRecipeApiDrawingRecipesImportPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ImportDrawingRecipeApiDrawingRecipesImportPostError = ImportDrawingRecipeApiDrawingRecipesImportPostErrors[keyof ImportDrawingRecipeApiDrawingRecipesImportPostErrors];
+
+export type ImportDrawingRecipeApiDrawingRecipesImportPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: DecisionDto;
+};
+
+export type ImportDrawingRecipeApiDrawingRecipesImportPostResponse = ImportDrawingRecipeApiDrawingRecipesImportPostResponses[keyof ImportDrawingRecipeApiDrawingRecipesImportPostResponses];
 
 export type ReviseDecisionApiDecisionsDecisionIdRevisionsPostData = {
     body: DecisionRevisionRequestDto;
@@ -15712,6 +16044,41 @@ export type ReadCommittedDesignHistoryApiDesignHistoryGetResponses = {
 };
 
 export type ReadCommittedDesignHistoryApiDesignHistoryGetResponse = ReadCommittedDesignHistoryApiDesignHistoryGetResponses[keyof ReadCommittedDesignHistoryApiDesignHistoryGetResponses];
+
+export type ReviewCandidateOrStageApiCandidateReviewsPostData = {
+    body: ReviewJudgementRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/candidate-reviews';
+};
+
+export type ReviewCandidateOrStageApiCandidateReviewsPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReviewCandidateOrStageApiCandidateReviewsPostError = ReviewCandidateOrStageApiCandidateReviewsPostErrors[keyof ReviewCandidateOrStageApiCandidateReviewsPostErrors];
+
+export type ReviewCandidateOrStageApiCandidateReviewsPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: ReviewJudgementDto;
+};
+
+export type ReviewCandidateOrStageApiCandidateReviewsPostResponse = ReviewCandidateOrStageApiCandidateReviewsPostResponses[keyof ReviewCandidateOrStageApiCandidateReviewsPostResponses];
 
 export type InitializeCommittedDesignApiDesignStagesInitializePostData = {
     body: InitializeDesignStageRequestDto;
