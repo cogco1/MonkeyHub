@@ -1,0 +1,99 @@
+{
+  "allowedActions": [
+    {
+      "asksHuman": false,
+      "description": "Compare the open directions in a local study, without committing to one of them.",
+      "id": "LocalStudy"
+    },
+    {
+      "asksHuman": false,
+      "description": "Build a coarse model of one roof direction: the architect's choice if there is one, otherwise the template default. Design work then continues from the modeled direction.",
+      "id": "CoarseModel"
+    },
+    {
+      "asksHuman": true,
+      "description": "Ask the architect a question and wait for the answer.",
+      "id": "AskHuman"
+    },
+    {
+      "asksHuman": false,
+      "description": "Inspect the current design state and report open technical issues.",
+      "id": "Inspect"
+    }
+  ],
+  "caseId": "open-direction",
+  "caseVersion": "v0",
+  "contextPack": {
+    "confirmedStage": null,
+    "context": {
+      "facts": [
+        {
+          "id": "preconditions",
+          "refs": [],
+          "text": "Technical preconditions for the roof are complete: site, programme and structural grid are confirmed."
+        },
+        {
+          "id": "directions",
+          "refs": [
+            "synthetic://strategy-allocation/open-direction/brief-roof@1#sha256=c077ca12079174b9a3c601e3488868db8cd1ec1e06d2f797f0eec57babd8ac27"
+          ],
+          "text": "Roof directions still open: R1 north-light sawtooth, R2 planted terrace, R3 flat roof with lanterns. None has been ruled out."
+        },
+        {
+          "id": "default",
+          "refs": [],
+          "text": "The template's default roof direction is R1."
+        },
+        {
+          "id": "decision",
+          "refs": [],
+          "text": "The architect has not chosen a roof direction."
+        },
+        {
+          "id": "model",
+          "refs": [],
+          "text": "No roof direction has been modeled."
+        }
+      ],
+      "task": "Take the roof design one step forward. The brief leaves the roof direction open."
+    },
+    "contextPack": "ContextPack@1",
+    "contextTier": "design",
+    "escalation": [],
+    "honesty": [
+      "Synthetic GH-268 fixture: it describes no real project and no real person.",
+      "Unread sources appear as exact identities, not content; only a reading action reveals their text.",
+      "Experiment arms are read-only: no rollout writes this state or any project state."
+    ],
+    "keep": null,
+    "preflight": null,
+    "request": null,
+    "scopedDecisions": [],
+    "source": {
+      "actionable": true,
+      "exactSource": true,
+      "projectId": "synthetic-strategy-allocation",
+      "readWith": "Environment.reset(case_id), or Environment.state_of(snapshot) for a saved snapshot",
+      "runId": "open-direction@v0",
+      "sourceStageRef": null,
+      "stateDigest": "b3acae63bb9298d597fe8fe556593bc4e06eb873a9518d2e0ddc51e83e9fd223",
+      "writeWith": "none: experiment arms never write state"
+    },
+    "studyEvidence": [],
+    "target": null
+  },
+  "digest": "59cbbcf8785c21932c88a8f208de39e8b4925f77e910102ad184f36cbb6ba6b8",
+  "environmentVersion": "strategy-allocation-env@0",
+  "snapshotId": "open-direction@v0/b3acae63bb92",
+  "sourceRefs": [
+    "synthetic://strategy-allocation/open-direction/brief-roof@1#sha256=c077ca12079174b9a3c601e3488868db8cd1ec1e06d2f797f0eec57babd8ac27"
+  ],
+  "state": {
+    "decision": "none",
+    "modeled": "none",
+    "open": "R1,R2,R3",
+    "studied": false
+  },
+  "task": "Take the roof design one step forward. The brief leaves the roof direction open.",
+  "title": "An undecided design direction"
+}

@@ -1,0 +1,110 @@
+{
+  "allowedActions": [
+    {
+      "asksHuman": false,
+      "description": "Read a passage of the source provided with the task, by its exact reference.",
+      "id": "ReadProvidedSource"
+    },
+    {
+      "asksHuman": false,
+      "description": "Keyword search over the project's document index; returns the best-matching passage.",
+      "id": "BM25"
+    },
+    {
+      "asksHuman": false,
+      "description": "Semantic retrieval over the general reference corpus of other projects' documents.",
+      "id": "RAG"
+    },
+    {
+      "asksHuman": false,
+      "description": "Model the corridor from the evidence read so far.",
+      "id": "Model"
+    },
+    {
+      "asksHuman": true,
+      "description": "Ask the architect a question and wait for the answer.",
+      "id": "AskHuman"
+    }
+  ],
+  "caseId": "provided-source",
+  "caseVersion": "v0",
+  "contextPack": {
+    "confirmedStage": null,
+    "context": {
+      "facts": [
+        {
+          "id": "source.provided",
+          "refs": [
+            "synthetic://strategy-allocation/provided-source/requirements-RQ@r3#sha256=befcd5a55ec1a85890340358d9d1fb74a3bf6bc4670b38a0a32f01688422b7bf"
+          ],
+          "text": "Requirement document RQ revision r3 was provided with this task as the governing source. Its §4.2 governs corridor clear width and has not been read."
+        },
+        {
+          "id": "source.index",
+          "refs": [
+            "synthetic://strategy-allocation/provided-source/requirements-RQ@r1#sha256=4a8735008809f621756b6fda9a738acc1fdaa85159b26d599c803eedf7a813ff",
+            "synthetic://strategy-allocation/provided-source/requirements-RQ@r2#sha256=d5347bf2e46fb702784d3db96e93a0426cff091f9f8720eaee83442b71b69728"
+          ],
+          "text": "The project's document index holds RQ revisions r1 and r2, both superseded by r3. The provided r3 is not in the index."
+        },
+        {
+          "id": "source.corpus",
+          "refs": [],
+          "text": "A general reference corpus of other projects' documents is available for semantic retrieval."
+        },
+        {
+          "id": "evidence",
+          "refs": [],
+          "text": "No evidence has been read yet."
+        },
+        {
+          "id": "candidate",
+          "refs": [],
+          "text": "Corridor C1 has not been modeled yet."
+        }
+      ],
+      "task": "Model corridor C1 of the candidate plan at the clear width that the governing requirement sets."
+    },
+    "contextPack": "ContextPack@1",
+    "contextTier": "design",
+    "escalation": [],
+    "honesty": [
+      "Synthetic GH-268 fixture: it describes no real project and no real person.",
+      "Unread sources appear as exact identities, not content; only a reading action reveals their text.",
+      "Experiment arms are read-only: no rollout writes this state or any project state."
+    ],
+    "keep": null,
+    "preflight": null,
+    "request": null,
+    "scopedDecisions": [],
+    "source": {
+      "actionable": true,
+      "exactSource": true,
+      "projectId": "synthetic-strategy-allocation",
+      "readWith": "Environment.reset(case_id), or Environment.state_of(snapshot) for a saved snapshot",
+      "runId": "provided-source@v0",
+      "sourceStageRef": null,
+      "stateDigest": "01620226d856fd2e9a0d67a380ece25d88ad0ce80138ec04339de7d6eb833312",
+      "writeWith": "none: experiment arms never write state"
+    },
+    "studyEvidence": [],
+    "target": null
+  },
+  "digest": "e0d9f807dc2d5d4ed209951b0edc2091f433fcd6df967c9588544100e283a781",
+  "environmentVersion": "strategy-allocation-env@0",
+  "snapshotId": "provided-source@v0/01620226d856",
+  "sourceRefs": [
+    "synthetic://strategy-allocation/provided-source/requirements-RQ@r3#sha256=befcd5a55ec1a85890340358d9d1fb74a3bf6bc4670b38a0a32f01688422b7bf",
+    "synthetic://strategy-allocation/provided-source/requirements-RQ@r1#sha256=4a8735008809f621756b6fda9a738acc1fdaa85159b26d599c803eedf7a813ff",
+    "synthetic://strategy-allocation/provided-source/requirements-RQ@r2#sha256=d5347bf2e46fb702784d3db96e93a0426cff091f9f8720eaee83442b71b69728"
+  ],
+  "state": {
+    "asked": false,
+    "model": "none",
+    "rag_done": false,
+    "read_r1": false,
+    "read_r3": false
+  },
+  "task": "Model corridor C1 of the candidate plan at the clear width that the governing requirement sets.",
+  "title": "An authoritative source is provided"
+}

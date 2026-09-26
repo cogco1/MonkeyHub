@@ -2205,7 +2205,9 @@ export type DecisionDto = {
         kind: 'document';
     } & DocumentDecisionSourceDto) | ({
         kind: 'design';
-    } & DesignDecisionSourceDto);
+    } & DesignDecisionSourceDto) | ({
+        kind: 'recipe-export';
+    } & RecipeExportDecisionSourceDto);
     /**
      * Applicability
      */
@@ -7581,6 +7583,27 @@ export type RecipeBindingRequestDto = {
      */
     kind: 'recipe';
     graphics: RecipeGraphicsDto;
+};
+
+/**
+ * RecipeExportDecisionSourceDto
+ *
+ * The recipe export an imported project recipe came from, named by its own sha256.
+ *
+ * Retained, never requested: a decision request names a board, a page or a
+ * design run. tools/export_drawing_recipe.py writes this source when a person
+ * confirms an import, after reading that export and checking its content
+ * against the digest. The export file itself stays outside the project.
+ */
+export type RecipeExportDecisionSourceDto = {
+    /**
+     * Kind
+     */
+    kind: 'recipe-export';
+    /**
+     * Exportsha256
+     */
+    exportSha256: string;
 };
 
 /**
