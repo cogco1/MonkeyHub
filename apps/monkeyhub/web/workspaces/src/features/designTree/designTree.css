@@ -1,22 +1,20 @@
-/* The Design Tree: its position chip over every surface, and its own surface. */
+/* The Design Tree: its position chip at the right end of the project bar, and its own surface. */
 
-/* The project workspace gives the bar its first row and the surfaces the rest. */
-.project-workspace:has(> .design-tree-bar) { display: flex; flex-direction: column; }
-.project-workspace > .design-tree-bar { flex: none; }
-
-.design-tree-bar { display: flex; align-items: center; gap: 10px; min-width: 0; min-height: 38px; box-sizing: border-box; padding: 4px 12px;
-  border-bottom: 1px solid var(--line); background: var(--panel); font-family: var(--font-ui); font-size: var(--text-caption, 12px); color: var(--ink); }
+/* #337: the position is quiet words at the bar's right end; what asks for a decision (options ready,
+   a model viewed read-only) keeps an instrument's frame. */
+.design-tree-bar { display: flex; align-self: stretch; align-items: center; gap: 12px; min-width: 0; font-family: var(--font-ui);
+  font-size: var(--text-caption, 12px); color: var(--muted); }
 .design-tree-icon { width: 16px; height: 16px; flex: none; }
-.stage-chip { display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: 100%; min-height: 28px; box-sizing: border-box; padding: 3px 10px;
-  border: 1px solid var(--line); border-radius: 999px; background: var(--panel-2); color: var(--ink); font: inherit; cursor: pointer; white-space: nowrap; }
-.stage-chip:hover:not(:disabled) { border-color: var(--accent); background: var(--accent-soft); }
-.stage-chip[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
-.stage-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.stage-chip__position { overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
-.stage-chip__attention { color: var(--muted); }
+.stage-chip { display: inline-flex; align-self: stretch; align-items: center; gap: 6px; min-width: 0; max-width: 100%; box-sizing: border-box; padding: 0 2px;
+  border: 0; border-radius: 0; background: none; color: var(--muted); font: inherit; cursor: pointer; white-space: nowrap; }
+.stage-chip:hover:not(:disabled) { color: var(--ink); }
+.stage-chip[aria-pressed="true"] { color: var(--ink); box-shadow: inset 0 -2px var(--accent); }
+.stage-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.stage-chip__position { overflow: hidden; text-overflow: ellipsis; font-weight: 500; }
+.stage-chip__attention { color: var(--faint); }
 /* The ready notice (#302): options no one has opened yet, one click from their Study. */
 .stage-chip__ready { display: inline-flex; align-items: center; gap: 5px; min-height: 28px; box-sizing: border-box; padding: 3px 10px;
-  border: 1px solid var(--accent); border-radius: 999px; background: var(--accent-soft); color: var(--accent); font: inherit; cursor: pointer; white-space: nowrap; }
+  border: 1px solid var(--accent); border-radius: var(--radius, 6px); background: var(--accent-soft); color: var(--accent); font: inherit; cursor: pointer; white-space: nowrap; }
 .stage-chip__ready strong { font-weight: 650; }
 .stage-chip__ready:hover { background: color-mix(in srgb, var(--accent) 16%, var(--panel)); }
 .stage-chip__ready:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
@@ -44,10 +42,11 @@
 .design-tree-toast__undo:disabled { cursor: default; text-decoration: none; opacity: .75; }
 @keyframes design-tree-toast-in { from { opacity: 0; transform: translateY(-3px); } }
 @media (prefers-reduced-motion: reduce) { .design-tree-toast { animation: none; transition: none; } }
-/* A refused Continue from the chip says why on a row of its own, where it was asked. */
-.design-tree-bar:has(> .design-tree-bar__refusal) { flex-wrap: wrap; }
-.design-tree-bar__refusal { display: flex; flex: 1 0 100%; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: 0 0 4px; color: var(--violated);
-  font-size: var(--text-caption, 12px); line-height: 1.5; }
+/* A refused Continue from the chip says why just below it, over the surface, until the next act. */
+.design-tree-bar__refusal { position: absolute; top: calc(100% + 4px); right: 12px; z-index: 30; display: flex; flex-wrap: wrap; align-items: center;
+  gap: 6px 10px; max-width: min(560px, calc(100% - 24px)); box-sizing: border-box; margin: 0; padding: 8px 12px; border: 1px solid var(--line);
+  border-radius: var(--radius, 6px); background: var(--panel); box-shadow: var(--shadow-soft); color: var(--violated); font-size: var(--text-caption, 12px);
+  line-height: 1.5; white-space: normal; }
 
 .design-tree { position: relative; display: flex; flex-direction: column; height: 100%; min-height: 0; background: var(--ground); color: var(--ink);
   font-family: var(--font-ui); font-size: var(--text-ui, 13px); }

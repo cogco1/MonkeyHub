@@ -898,6 +898,7 @@ export const messagesEn = {
   "settings.user.invalidModel": "Model name cannot contain only spaces; leave empty to clear.",
   "settings.badges.user": "User",
   "workspace.boardMode": "Board mode",
+  "workspace.surfaceBar": "Surface menus and project position",
   "workspace.boardMode.board": "Board",
   "workspace.boardMode.layout": "Layout",
 

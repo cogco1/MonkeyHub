@@ -16,6 +16,13 @@
   border-top: 1px solid var(--line); color: var(--faint); font-size: var(--text-caption); }
 .status-line__start, .status-line__end { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .status-line__end { margin-left: auto; }
+/* The project bar: the surfaces' shared L2 row, the first row of the project workspace. The slots are
+   layout-free, so what a surface puts in them lines up with the bar's own items. */
+.project-workspace:has(> .project-bar) { display: flex; flex-direction: column; }
+.project-bar { position: relative; }
+.project-bar__lead, .project-bar__menus, .project-bar__words { display: contents; }
+.project-bar .surface-bar__end { flex: 0 1 auto; align-self: stretch; min-width: 0; }
+.project-bar:not(:has(.project-bar__lead:not(:empty), .project-bar__menus:not(:empty), .project-bar__words:not(:empty), .design-tree-bar)) { display: none; }
 :where([data-ui-style="quiet"], [data-ui-style="titleblock"], [data-ui-style="night"]) .surface-bar { border-bottom-color: var(--rule-soft); }
 :where([data-ui-style="quiet"], [data-ui-style="titleblock"], [data-ui-style="night"]) .status-line { font-family: var(--font-tech);
   font-variant-numeric: tabular-nums; }

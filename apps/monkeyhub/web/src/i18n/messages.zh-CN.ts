@@ -861,6 +861,7 @@ export const messagesZhCN = {
   "settings.user.invalidModel": "模型名称不能只含空格；留空可清除。",
   "settings.badges.user": "用户",
   "workspace.boardMode": "画板模式",
+  "workspace.surfaceBar": "工作面菜单与项目位置",
   "workspace.boardMode.board": "画板",
   "workspace.boardMode.layout": "排版",
 
