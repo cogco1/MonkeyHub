@@ -7323,9 +7323,9 @@
       "purpose": "Retain editable communication pages and compile them to PPTX/PDF. CREATE: Board owns review and artifacts owns source bytes; neither owns ordered page composition or publication export.",
       "status": "canonical",
       "owns": [
-        "One P036-retained PublicationDocument per project with immutable revisions and optimistic saves",
+        "One P036-retained PublicationDocument per project with immutable revisions, serialized autosave and optimistic saves",
         "Exact registered page placement, explicit replacement/freeze controls, Board selection into repeated page layouts",
-        "Shared coordinates and measured text lines compiled into native editable PPTX text/images and deterministic PDF"
+        "Shared coordinates and measured text lines compiled into native editable PPTX text and supported PDF primitives, images and deterministic vector-preserving PDF"
       ],
       "does_not_own": [
         "Design state, Stage acceptance or HEAD changes",
@@ -7352,7 +7352,9 @@
         "apps/archflow-studio/api/archflow_studio_api/application/publications.py",
         "apps/archflow-studio/api/archflow_studio_api/application/publication_output.py",
         "apps/archflow-studio/api/archflow_studio_api/routes/publications.py",
-        "apps/archflow-studio/api/archflow_studio_api/transport/publications.py"
+        "apps/archflow-studio/api/archflow_studio_api/transport/publications.py",
+        "apps/monkeyhub/web/workspaces/src/workspaces/publish/PublishWorkspace.tsx",
+        "apps/monkeyhub/web/workspaces/src/workspaces/publish/publicationSaveQueue.ts"
       ],
       "inputs": [
         "Project binding, exact registered page references, editable page elements and format-independent layout spec",
@@ -7366,13 +7368,14 @@
         "Source replacement changes only the requested placed image; manual text and coordinates remain authored",
         "Saving/exporting never accepts a design Stage or advances HEAD",
         "Exports use an exact retained publication revision; missing sources refuse instead of silently substituting",
-        "PPTX text remains native; PDF source pages currently embed raster previews, explicitly not editable drawing vectors",
+        "Authored PPTX text remains native and uses the same measured font as embedded PDF text; ordinary PDF source pages retain vectors; annotations, isolation groups and optional layers retain rendered appearance. PPTX converts supported simple PDF primitives to editable objects and explicitly labels raster fallback for unsupported content.",
         "A placed source's status is studio.binding's representation-status projection in Publish's words: frozen for a source Publish keeps, missing when the page's own bytes cannot be read, stale for an outdated page or unverifiable inputs (a replacement names the newest page), and current otherwise, including a drawing kept on its chosen version"
       ],
       "tests": [
         "apps/archflow-studio/api/tests/test_publications.py",
         "apps/archflow-studio/api/tests/test_publication_dependencies.py",
-        "apps/monkeyhub/web/workspaces/test/publishWorkspace.browser.mjs"
+        "apps/monkeyhub/web/workspaces/test/publishWorkspace.browser.mjs",
+        "apps/monkeyhub/web/workspaces/test/publicationSaveQueue.test.ts"
       ]
     }
   ]

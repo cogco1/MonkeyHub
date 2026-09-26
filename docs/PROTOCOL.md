@@ -1619,15 +1619,28 @@ cannot be verified, `missing` when the page's own bytes cannot be read, and
 pages answer through their owners. A missing file cannot be made available by freezing it.
 
 `POST /api/publication/from-board` takes an exact Board revision and selected
-element/frame ids. Registered image pages are appended top-to-bottom then
-left-to-right using the same hero rule. Repeating the same retained selection
-does not duplicate pages. This bounded handoff consumes clean source pages,
+element/frame ids in narrative order. Frames expand top-to-bottom then
+left-to-right; duplicate children are placed once. The Board UI supplies its
+selection in visual reading order, and each page uses the same hero rule.
+Repeating the same retained selection does not duplicate pages. This bounded handoff consumes clean source pages,
 not Board review marks or freehand drawings.
 
 `POST /api/publication/export` requires an exact saved publication revision
 and `format: pptx | pdf`. It returns transient download bytes, not a design
 issue. Both compilers use the same page coordinates and measured text lines.
-PPTX has native editable text boxes and separate images; PDF is deterministic
-for the same retained inputs. The first slice embeds Drawing/PDF pages as
-raster images (up to 2048 pixels), not editable CAD/vector objects. Text that
-does not fit its box and unavailable exact sources cause explicit refusal.
+PPTX has native editable text boxes and separate images. Supported simple PDF
+lines, rectangles, polygons and horizontal text become editable objects;
+unsupported PDF content remains a raster preview (up to 2048 pixels), named
+with the fallback reason in the PPTX. PDF export keeps ordinary source PDF
+vectors and uses their exact crop, scale and order; pages with annotations,
+transparency-group isolation or optional layers retain their rendered appearance.
+Authored text uses one measured font in both formats, embedded in PDF; missing glyphs or overflowing text refuse export.
+PDF is deterministic for the same retained inputs and installed font.
+
+Publish serializes autosaves after a typing pause and flushes pending edits
+before export, Board handoff and leaving the workspace/project. A save response
+acknowledges only the sent content; later typing remains pending. Failed saves
+keep the draft and expose retry/reload, including after closing and reopening
+that project within the same UI session. Reloading or closing a page with
+unsaved content requires an explicit discard; an unavailable exact source still
+refuses export.

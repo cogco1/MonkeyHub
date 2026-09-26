@@ -157,7 +157,7 @@
     {
       "id": "GH-66",
       "stream": "planning",
-      "status": "active",
+      "status": "ready",
       "goal": "Close the first Publish workflow: ordered Board handoff, reliable autosave/reopen, editable output and repeatable layout; independently verify exact-source replacement/freeze.",
       "depends_on": [],
       "issue": "https://github.com/cogco1/MonkeyHub/issues/66",
@@ -165,8 +165,8 @@
       "worktree": "codex-66-publish-closeout",
       "base_ref": "e33fbf4656402ead75fb4adcad946c71c81a2dff",
       "contributor": "Codex",
-      "reviewer": null,
-      "handoff": "Independent PR for the coordinating task. No Drawing replacement or recipe implementation ownership. Installed desktop and main remain unchanged.",
+      "reviewer": "Independent Codex UI concurrency review and publication compiler review; coordinating task integration",
+      "handoff": "Ready for independent PR review on the e33fbf46 baseline. Verified 20 publication/dependency tests, 7 queue tests and 16 isolated browser scenarios including actual Runtime restart. Source output parsing and PDF visual checks passed. Merge/installed desktop acceptance remains with the coordinating task; no full templates/charts/report suite is claimed.",
       "modules": [
         "studio.publication",
         "studio.board"
@@ -197,7 +197,8 @@
         "2026-09-25: the cut-plan request DTO (transport/drawings.py) is handed to GH-271 as well, for the drawing follow choice found in the #277 review; GH-66 keeps its Publish paths.",
         "2026-09-25: archflow/project/record_kinds.py is handed to GH-294/admission-record, which registers the owner-approved candidate-admission kind (audit Q1); GH-66 reclaims it if Publish needs another kind.",
         "2026-09-25: monkeydiagram/drawing_elevation.py, monkeydiagram/drawing_svg.py and routes/drawings.py are handed to GH-307/section-perspective, which adds the owner-requested section perspective view to the one projection pipeline; GH-66 keeps its Publish paths and reclaims these if Publish needs drawing changes.",
-        "2026-09-26: resume GH-66 from the shared e33fbf46 baseline in its assigned isolated worktree; release historical Render/Diagram paths. GH-291 owns drawing revision/replacement and GH-252 owns recipe/decision reuse."
+        "2026-09-26: resume GH-66 from the shared e33fbf46 baseline in its assigned isolated worktree; release historical Render/Diagram paths. GH-291 owns drawing revision/replacement and GH-252 owns recipe/decision reuse.",
+        "2026-09-26: closeout implements autosave and pending-import recovery, explicit Board order, bounded repeatable layout, embedded-font PDF and supported editable source PDF primitives in PPTX. Unsupported source semantics retain raster appearance; exact source/freeze and model HEAD boundaries are verified."
       ]
     }
   ]
