@@ -168,7 +168,8 @@
         "apps/monkeyhub/web/src/i18n/messages.en.ts",
         "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
         "apps/monkeyhub/web/workspaces/test/designTree.browser.mjs",
-        "apps/monkeyhub/web/workspaces/test/designTree.test.ts"
+        "apps/monkeyhub/web/workspaces/test/designTree.test.ts",
+        "apps/monkeyhub/web/workspaces/src/features/artifacts/modelThumbnail.css"
       ],
       "card": "docs/mapping/planning/GH-353-tree-canvas.md",
       "acceptance": [
@@ -195,7 +196,8 @@
             "apps/monkeyhub/web/src/i18n/messages.en.ts",
             "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
             "apps/monkeyhub/web/workspaces/test/designTree.browser.mjs",
-            "apps/monkeyhub/web/workspaces/test/designTree.test.ts"
+            "apps/monkeyhub/web/workspaces/test/designTree.test.ts",
+            "apps/monkeyhub/web/workspaces/src/features/artifacts/modelThumbnail.css"
           ],
           "depends_on": [],
           "status": "active",
