@@ -172,7 +172,9 @@
         "apps/monkeyhub/web/src/i18n/messages.en.ts",
         "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
         "apps/monkeyhub/web/test/chatShell.browser.mjs",
-        "apps/monkeyhub/web/test/monitorData.test.ts"
+        "apps/monkeyhub/web/test/monitorData.test.ts",
+        "apps/monkeyhub/web/src/ChatShell.tsx",
+        "apps/monkeyhub/web/src/surfaceBarRows.ts"
       ],
       "card": "docs/mapping/planning/GH-351-tool-pages.md",
       "acceptance": [
@@ -204,7 +206,9 @@
             "apps/monkeyhub/web/src/i18n/messages.en.ts",
             "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
             "apps/monkeyhub/web/test/chatShell.browser.mjs",
-            "apps/monkeyhub/web/test/monitorData.test.ts"
+            "apps/monkeyhub/web/test/monitorData.test.ts",
+            "apps/monkeyhub/web/src/ChatShell.tsx",
+            "apps/monkeyhub/web/src/surfaceBarRows.ts"
           ],
           "depends_on": [],
           "status": "active",
