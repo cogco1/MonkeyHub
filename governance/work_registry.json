@@ -205,6 +205,9 @@
         "apps/archflow-studio/api/archflow_studio_api/application/decisions.py",
         "apps/archflow-studio/api/archflow_studio_api/application/drawing_corrections.py",
         "apps/archflow-studio/api/archflow_studio_api/transport/decisions.py",
+        "apps/monkeyhub/web/workspaces/src/api/generated/index.ts",
+        "apps/monkeyhub/web/workspaces/src/api/generated/sdk.gen.ts",
+        "apps/monkeyhub/web/workspaces/src/api/generated/types.gen.ts",
         "docs/mapping/planning/GH-252-recipe-export.md",
         "tools/export_drawing_recipe.py"
       ],
@@ -230,7 +233,10 @@
             "tools/export_drawing_recipe.py",
             "apps/archflow-studio/api/archflow_studio_api/application/decisions.py",
             "apps/archflow-studio/api/archflow_studio_api/transport/decisions.py",
-            "apps/archflow-studio/api/archflow_studio_api/application/drawing_corrections.py"
+            "apps/archflow-studio/api/archflow_studio_api/application/drawing_corrections.py",
+            "apps/monkeyhub/web/workspaces/src/api/generated/index.ts",
+            "apps/monkeyhub/web/workspaces/src/api/generated/sdk.gen.ts",
+            "apps/monkeyhub/web/workspaces/src/api/generated/types.gen.ts"
           ],
           "depends_on": [],
           "status": "active",
