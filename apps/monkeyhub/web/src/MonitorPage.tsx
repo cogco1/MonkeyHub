@@ -1,15 +1,20 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type CSSProperties, type FormEvent } from "react";
 import type { AppearancePreferences } from "../../../shared-web/src/appearance.js";
 import { MenuCommand, MenuSeparator, MenuTabs, StatusLine, SurfaceBar } from "../workspaces/src/features/chrome/SurfaceChrome";
-import type { AppStatus, ApplicationSettingsDto } from "./api/generated";
+import type { AppStatus, ApplicationSettingsDto, ChatProject } from "./api/generated";
 import {
   aggregateTokens, formatCount, formatDuration, isModelCall, uncachedInput, projectIds, summarizeUsage, quoteDraftReducer, serialMonitorRead,
   type MonitorEvent, type MonitorTrace,
 } from "./monitorData";
 import "./MonitorPage.css";
+import { useRowEndSeparators } from "./surfaceBarRows";
 
-type Props = { preferences: AppearancePreferences; active: boolean; initialProjectId?: string; openRequest?: number };
-type View = "calls" | "tasks";
+type Props = {
+  preferences: AppearancePreferences; active: boolean; initialProjectId?: string; openRequest?: number;
+  /** The Hub's projects, so a scope reads by the name the sidebar shows; records still match by id. */
+  projects?: readonly ChatProject[];
+};
+type View = "calls" | "timeline";
 type EventResponse = { events: MonitorEvent[]; warnings: string[] };
 type TraceResponse = { traces: MonitorTrace[]; warnings: string[]; lanes?: Array<{ id: string; label: string }> };
 type Rate = {
@@ -24,7 +29,7 @@ type Quote = { currency: string; amount_usd: string | null; known_subtotal_usd: 
 
 const words = {
   "zh-CN": {
-    title: "用量与任务记录", views: "视图", viewCalls: "调用", viewTasks: "任务", scope: "范围", all: "全部", project: "项目", chooseProject: "选择项目",
+    title: "用量与任务记录", views: "视图", viewCalls: "调用", viewTimeline: "时间线", scope: "范围", all: "全部", project: "项目", chooseProject: "选择项目",
     refresh: "刷新", connecting: "正在连接监控服务…", retry: "重新连接", ready: "监控服务在线", failed: "监控服务暂不可用",
     calls: "模型调用", cached: "缓存输入", uncached: "未缓存输入", output: "输出", wait: "请求往返 P50",
     coverage: (known: number, missing: number) => `${known} 次已记录${missing ? ` · ${missing} 次未知` : ""}`,
@@ -39,7 +44,7 @@ const words = {
     serviceDetail: "技术详情", updated: "更新于", download: "下载 Trace JSON", raw: "原始记录", endNotObserved: "结束时间未观测",
   },
   en: {
-    title: "Usage and task records", views: "View", viewCalls: "Calls", viewTasks: "Tasks", scope: "Scope", all: "All", project: "Project", chooseProject: "Choose a project",
+    title: "Usage and task records", views: "View", viewCalls: "Calls", viewTimeline: "Timeline", scope: "Scope", all: "All", project: "Project", chooseProject: "Choose a project",
     refresh: "Refresh", connecting: "Connecting to monitoring service…", retry: "Reconnect", ready: "Monitoring service online", failed: "Monitoring service unavailable",
     calls: "Model calls", cached: "Cached input", uncached: "Uncached input", output: "Output", wait: "Request round-trip P50",
     coverage: (known: number, missing: number) => `${known} recorded${missing ? ` · ${missing} unknown` : ""}`,
@@ -81,7 +86,7 @@ function dateText(value: string | null | undefined): string {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
 }
 
-export function MonitorPage({ preferences, active, initialProjectId = "", openRequest = 0 }: Props) {
+export function MonitorPage({ preferences, active, initialProjectId = "", openRequest = 0, projects: hubProjects = [] }: Props) {
   const t = words[preferences.language];
   const [base, setBase] = useState<string | null>(null);
   const [events, setEvents] = useState<MonitorEvent[]>([]);
@@ -187,8 +192,10 @@ export function MonitorPage({ preferences, active, initialProjectId = "", openRe
 
   // Keep a project with no Monitor records selectable and visibly selected;
   // filtering it must produce the empty state rather than fall back to totals.
-  const projects = useMemo(() => [...new Set([initialProjectId, scopeProject, project, ...projectIds(events, traces)].filter(Boolean))], [events, traces, project, scopeProject, initialProjectId]);
-  const otherProjects = projects.filter((id) => id !== scopeProject);
+  const nameOf = useCallback((id: string) => hubProjects.find((row) => row.projectId === id)?.name || id, [hubProjects]);
+  // In one order whatever is chosen, so the list never shifts under the pointer or the arrow keys.
+  const projects = useMemo(() => [...new Set([initialProjectId, scopeProject, project, ...projectIds(events, traces)].filter(Boolean))]
+    .sort((a, b) => nameOf(a).localeCompare(nameOf(b)) || a.localeCompare(b)), [events, traces, project, scopeProject, initialProjectId, nameOf]);
   const chooseScope = (id: string) => { invalidateQuote(); setProject(id); if (id) setScopeProject(id); };
   const filteredEvents = useMemo(() => project ? events.filter((event) => event.project_id === project) : events, [events, project]);
   const filteredTraces = useMemo(() => project ? traces.filter((trace) => trace.project_id === project) : traces, [traces, project]);
@@ -256,16 +263,22 @@ export function MonitorPage({ preferences, active, initialProjectId = "", openRe
   const selectedDiagnostics = selectedTrace?.diagnostics ?? [];
   const selectedWarnings = selectedTrace?.warnings ?? [];
 
-  return <div className="monitor-page">
+  const root = useRef<HTMLDivElement>(null);
+  useRowEndSeparators(root);
+  return <div className="monitor-page" ref={root}>
     {/* #337 L2: the page's one bar. Its two views, the scope and Refresh are words; the service's state is at the right end. */}
     <SurfaceBar label={t.title} end={<span className={`monitor-health${error ? " monitor-health--error" : ""}`}>{loading ? t.connecting : error ? t.failed : t.ready}</span>}>
-      <MenuTabs label={t.views} value={view} onChange={(next) => setView(next)} options={[{ value: "calls" as const, label: t.viewCalls }, { value: "tasks" as const, label: t.viewTasks }]} />
+      <MenuTabs label={t.views} value={view} onChange={(next) => setView(next)} options={[{ value: "calls" as const, label: t.viewCalls }, { value: "timeline" as const, label: t.viewTimeline }]} />
       <MenuSeparator />
       <div className="monitor-scope">
-        <MenuTabs label={t.scope} value={project} onChange={chooseScope} options={[...(scopeProject ? [{ value: scopeProject, label: scopeProject }] : []), { value: "", label: t.all }]} />
-        {otherProjects.length > 0 && <select className="monitor-scope__other" aria-label={t.chooseProject} value="" onChange={(event) => chooseScope(event.target.value)}>
-          <option value="" disabled hidden>{t.project}</option>{otherProjects.map((id) => <option key={id} value={id}>{id}</option>)}
-        </select>}
+        <MenuTabs label={t.scope} value={project} onChange={chooseScope} options={[...(scopeProject ? [{ value: scopeProject, label: nameOf(scopeProject) }] : []), { value: "", label: t.all }]} />
+        {/* Another project: the word Project, over a list of every project that holds the one in scope. */}
+        {projects.some((id) => id !== scopeProject) && <span className="monitor-pick">
+          <span className="menu-command" aria-hidden="true">{t.project}<i className="monitor-pick__chevron" /></span>
+          <select aria-label={t.chooseProject} value={project} onChange={(event) => chooseScope(event.target.value)}>
+            <option value="" disabled hidden>{t.project}</option>{projects.map((id) => <option key={id} value={id} title={id}>{nameOf(id)}</option>)}
+          </select>
+        </span>}
       </div>
       <MenuSeparator />
       <MenuCommand onClick={() => void readAll(true)} disabled={loading}>{t.refresh}</MenuCommand>
@@ -284,7 +297,7 @@ export function MonitorPage({ preferences, active, initialProjectId = "", openRe
         ].map(([label, value, note]) => <div className="monitor-stat" key={label}><span>{label}</span><strong>{value}</strong>{note && <small>{note}</small>}</div>)}
       </section>
 
-      <section className="monitor-section" hidden={view !== "tasks"}>
+      <section className="monitor-section" hidden={view !== "timeline"}>
         <div className="monitor-section__head"><div><p className="monitor-eyebrow">TurnTrace@1</p><h2>{t.tasks}</h2></div>{filteredTraces.length > 0 && <label>{t.task}<select value={selectedTrace?.trace_id ?? ""} onChange={(event) => setTraceId(event.target.value)}>{filteredTraces.map((trace) => <option key={trace.trace_id} value={trace.trace_id}>{dateText(trace.started_at)} · {trace.status ?? "unknown"}</option>)}</select></label>}</div>
         {!selectedTrace ? <p className="monitor-empty">{t.noTasks}</p> : <>
           <div className="monitor-trace-summary">
