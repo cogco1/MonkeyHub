@@ -205,6 +205,7 @@
       "issue": "https://github.com/cogco1/MonkeyHub/issues/244",
       "write_scope": [
         "apps/archflow-studio/api/archflow_studio_api/application/drawings.py",
+        "apps/archflow-studio/api/archflow_studio_api/routes/drawings.py",
         "apps/archflow-studio/api/archflow_studio_api/transport/drawings.py",
         "docs/mapping/planning/GH-244-cleanup-and-section-graphics.md",
         "monkeydiagram/drawing_elevation.py",
@@ -251,7 +252,8 @@
           "write_scope": [
             "monkeydiagram/drawing_elevation.py",
             "apps/archflow-studio/api/archflow_studio_api/application/drawings.py",
-            "apps/archflow-studio/api/archflow_studio_api/transport/drawings.py"
+            "apps/archflow-studio/api/archflow_studio_api/transport/drawings.py",
+            "apps/archflow-studio/api/archflow_studio_api/routes/drawings.py"
           ],
           "depends_on": [],
           "status": "active",
