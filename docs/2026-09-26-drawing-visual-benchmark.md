@@ -317,12 +317,12 @@ The full run is one tool invocation over a spec of real cut plans. It makes at m
 
 ## Checks run
 
-- `tests/test_benchmark_visual_observation.py` (20 tests, no runtime and no provider):
+- `tests/test_benchmark_visual_observation.py` (22 tests, no runtime and no provider):
   - the arm order and spec refusals;
   - each exact check against a synthetic page, including lines on either side of vertical;
   - recipe deviations; the repair's levers, escalation and bounds; known facts within the route's bounds;
   - the metrics with and without the second look;
   - the four arms against a fake runtime: request order and bodies, the allowance carried between looks, no repair or second look without an actionable finding, no look at an unbound page, and a refused look that ends the loop;
-  - argument handling for both modes.
+  - argument handling for both modes, a bad spec refused before any request, and a runtime that never answers.
 - `python tools/archcheck.py` and `python tools/archcheck.py --changed origin/main`.
 - The in-process dry run and the smoke run above.
