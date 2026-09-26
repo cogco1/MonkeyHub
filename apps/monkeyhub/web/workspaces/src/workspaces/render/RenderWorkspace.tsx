@@ -166,7 +166,7 @@ export default function RenderWorkspace({ projectId, active, refreshKey, onBoard
       setSource(hasReplacement ? next ?? original : null);
       setReferences(nextReferences);
       if (!hasReplacement) setSubmitError(findSource(documents, original)?.viewRecipe?.kind === "cut-plan"
-        ? (zh ? "此图纸没有登记的新修订。请在图纸中重建，或选择更新的图片后再渲染。" : "This drawing has no registered newer revision. Rebuild it in Drawing, or choose an updated image, then render again.")
+        ? (zh ? "此图纸没有登记的新修订。请在图纸中重建，或选择更新的图片后再渲染。" : "This drawing has no registered newer revision. Rebuild it in Drawings, or choose an updated image, then render again.")
         : (zh ? "项目模型已更新。请在建模中截取当前视图，或选择更新的图片后再渲染。" : "The project model has changed. Capture the current view in Modeling, or choose an updated image, then render again."));
     } catch (cause) { setSubmitError(asStudioApiError(cause).detail); }
   };
