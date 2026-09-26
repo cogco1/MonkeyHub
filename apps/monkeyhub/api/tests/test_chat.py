@@ -1309,7 +1309,7 @@ class ChatTests(unittest.TestCase):
                 chat.call_tool(self.store.hub_url, session.id, "studio_schema",
                                {"method": "POST", "path": "/api/issue"})
 
-    def test_the_agents_cut_plans_say_the_agent_asked_unless_the_request_names_who(self):
+    def test_the_agents_cut_plans_always_say_the_agent_asked(self):
         """A plan the Agent asks for is its reading of the user, never the architect's own edit (05 §5)."""
 
         session = self.create()
@@ -1328,14 +1328,18 @@ class ChatTests(unittest.TestCase):
                 (plan, {**plan, "sourceKind": "agent"}),
                 ({**plan, "sourceKind": None}, {**plan, "sourceKind": "agent"}),
                 ({**plan, "source_kind": None}, {**plan, "sourceKind": "agent"}),
-                # A kind the request names is kept, for the Studio to judge.
-                ({**plan, "sourceKind": "human"}, {**plan, "sourceKind": "human"}),
-                ({**plan, "source_kind": "human"}, {**plan, "source_kind": "human"}),
+                ({**plan, "sourceKind": "agent"}, {**plan, "sourceKind": "agent"}),
             ):
                 with self.subTest(asked=asked):
                     answer = chat.call_tool(self.store.hub_url, session.id, "studio_request",
                                             {"method": "POST", "path": "/api/drawings/plans", "body": asked})
                     self.assertEqual((answer["path"], answer["body"]), ("/api/drawings/plans", sent))
+            # The Agent cannot claim a person asked: suggestions count only a person's own corrections.
+            for claimed in ({**plan, "sourceKind": "human"}, {**plan, "source_kind": "human"}):
+                with self.subTest(claimed=claimed), self.assertRaises(HubFailure) as refused:
+                    chat.call_tool(self.store.hub_url, session.id, "studio_request",
+                                   {"method": "POST", "path": "/api/drawings/plans", "body": claimed})
+                self.assertEqual((refused.exception.status, refused.exception.error.code), (422, "CHAT_TOOL_INVALID"))
             self.assertNotIn("sourceKind", plan, "the Agent's own arguments are not rewritten")
             # Only a cut plan's request says who asked: its status read and the other drawings forward as asked.
             model = {"runId": "studio-candidate", "stateDigest": "d" * 64, "assetSha256": "e" * 64}

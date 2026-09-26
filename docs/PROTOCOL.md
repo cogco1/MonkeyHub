@@ -651,8 +651,9 @@ A cut-plan request may say why it is asked for: `reason`, 1–200 characters in 
 asker's words (an agent passes the correction it was given; a direct edit omits
 it). It may also say who it comes from: `sourceKind` is `human` for a person's own
 edit (the Drawing canvas sends it) or `agent` for an agent's reading of what a
-person asked; omitted is unknown. The Hub's `studio_request` marks the Agent's plan
-requests `agent` unless the request names a kind itself. The request boundary
+person asked; omitted is unknown. The Hub's `studio_request` marks every plan request
+of its Agent `agent` and refuses one that claims `human`, so only a person's own edit
+counts toward a correction suggestion. The request boundary
 records who asked, as for decisions: `actorId`, `authenticated` and `origin`, where
 `hub` means a runtime the Hub manages and `studio` one it does not; a Hub-managed
 runtime serves both its window and its Agent, which is why `sourceKind` is asked for.
