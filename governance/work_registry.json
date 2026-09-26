@@ -164,6 +164,7 @@
       "write_scope": [
         "archflow/adapters/model_formats.py",
         "archflow/adapters/model_providers.py",
+        "docs/MODEL_CONVERSION.md",
         "docs/mapping/planning/GH-319-model-normals.md"
       ],
       "card": "docs/mapping/planning/GH-319-model-normals.md",
@@ -186,7 +187,8 @@
           ],
           "write_scope": [
             "archflow/adapters/model_formats.py",
-            "archflow/adapters/model_providers.py"
+            "archflow/adapters/model_providers.py",
+            "docs/MODEL_CONVERSION.md"
           ],
           "depends_on": [],
           "status": "active",
