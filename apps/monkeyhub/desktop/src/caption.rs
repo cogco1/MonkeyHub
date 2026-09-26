@@ -289,19 +289,56 @@ pub fn install(
     }
 }
 
+/// The page script for [`keep_native_layout`]: it runs right after the bridge, before any
+/// page script, so the page's first frame is already today's layout.
+pub const NATIVE_LAYOUT_SCRIPT: &str =
+    "window.__monkeyhubDesktopPush&&window.__monkeyhubDesktopPush({titleBar:false})";
+
+/// Used when [`install`] failed after the window was built with the bridge. The bridge
+/// script cannot be withdrawn, so from now on every document is told at creation that the
+/// system title bar is back. Without this, each new page would first draw the merged row,
+/// with buttons nothing answers, until the host's `PageLoaded` push arrived.
+#[cfg(windows)]
+pub fn keep_native_layout(
+    window: &tauri::WebviewWindow,
+    report: impl Fn(String) + Send + 'static,
+) -> Result<(), String> {
+    window
+        .with_webview(move |webview| {
+            if let Err(error) =
+                native::add_document_script(&webview.controller(), NATIVE_LAYOUT_SCRIPT)
+            {
+                report(format!(
+                    "Cannot keep new pages on the system title bar layout: {error}"
+                ));
+            }
+        })
+        .map_err(|error| error.to_string())
+}
+
+#[cfg(not(windows))]
+pub fn keep_native_layout(
+    _window: &tauri::WebviewWindow,
+    _report: impl Fn(String) + Send + 'static,
+) -> Result<(), String> {
+    Ok(())
+}
+
 #[cfg(windows)]
 mod native {
     use super::{button_at, caption_rect, signed_point, CaptionButton, ShellEvent};
     use std::ptr::{null, null_mut};
     use std::sync::{mpsc::Sender, Mutex};
     use webview2_com::{
-        AcceleratorKeyPressedEventHandler,
+        AcceleratorKeyPressedEventHandler, AddScriptToExecuteOnDocumentCreatedCompletedHandler,
+        DOMContentLoadedEventHandler,
         Microsoft::Web::WebView2::Win32::{
-            ICoreWebView2Controller, ICoreWebView2Settings5, COREWEBVIEW2_KEY_EVENT_KIND,
-            COREWEBVIEW2_KEY_EVENT_KIND_SYSTEM_KEY_DOWN, COREWEBVIEW2_PHYSICAL_KEY_STATUS,
+            ICoreWebView2Controller, ICoreWebView2Settings5, ICoreWebView2_2,
+            COREWEBVIEW2_KEY_EVENT_KIND, COREWEBVIEW2_KEY_EVENT_KIND_SYSTEM_KEY_DOWN,
+            COREWEBVIEW2_PHYSICAL_KEY_STATUS,
         },
     };
-    use windows_core::Interface;
+    use windows_core::{Interface, PCWSTR};
     use windows_sys::Wdk::System::SystemServices::RtlGetVersion;
     use windows_sys::Win32::Foundation::{
         GetLastError, ERROR_CLASS_ALREADY_EXISTS, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM,
@@ -325,7 +362,9 @@ mod native {
         WS_CHILD, WS_CLIPSIBLINGS, WS_VISIBLE,
     };
 
-    /// Also the child's window name, so tests can find it with `FindWindowExW`.
+    /// Tests find the child by this class. It has no window name, so UI Automation does not
+    /// announce an extra pane; the page's buttons are hidden from it too, and the system
+    /// menu carries the same commands for keyboard and screen reader users.
     const CLASS_NAME: *const u16 = windows_sys::w!("MonkeyHubCaption");
     const SUBCLASS_ID: usize = 0x354;
 
@@ -393,7 +432,7 @@ mod native {
             let child = CreateWindowExW(
                 0,
                 CLASS_NAME,
-                CLASS_NAME,
+                null(),
                 WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS,
                 0,
                 0,
@@ -556,6 +595,8 @@ mod native {
                 release(CaptionButton::from_hit_code(wparam));
                 return 0;
             }
+            // System caption buttons ignore the right button too; the system menu opens from
+            // the drag area (right-click) and from Alt+Space.
             WM_NCRBUTTONDOWN | WM_NCRBUTTONUP | WM_NCRBUTTONDBLCLK => return 0,
             WM_ERASEBKGND => return 1,
             _ => {}
@@ -602,6 +643,9 @@ mod native {
                 caption.pressed = button;
                 let _ = caption.events.send(ShellEvent::Pressed(button));
             }
+            // Like any press on a system title bar, it closes an open page menu. The page
+            // never sees this click, so it only learns about it this way.
+            let _ = caption.events.send(ShellEvent::CaptionPressed);
         });
     }
 
@@ -666,18 +710,45 @@ mod native {
             }
             Ok(())
         }));
+        // The load event can come long after the first paint; DOMContentLoaded is earlier, so
+        // a new page gets the current restore glyph and active state sooner. In the native
+        // layout there is no caption state, and `send` does nothing.
+        let content_loaded = DOMContentLoadedEventHandler::create(Box::new(|_, _| {
+            send(ShellEvent::PageLoaded);
+            Ok(())
+        }));
         // SAFETY: COM calls on the live controller, on the thread `with_webview` runs on.
         unsafe {
             controller.SetZoomFactor(1.0)?;
-            let settings = controller.CoreWebView2()?.Settings()?;
+            let webview = controller.CoreWebView2()?;
+            let settings = webview.Settings()?;
             settings.SetIsZoomControlEnabled(false)?;
             if let Ok(settings) = settings.cast::<ICoreWebView2Settings5>() {
                 settings.SetIsPinchZoomEnabled(false)?;
             }
             let mut token = 0i64;
             controller.add_AcceleratorKeyPressed(&handler, &mut token)?;
+            if let Ok(webview) = webview.cast::<ICoreWebView2_2>() {
+                webview.add_DOMContentLoaded(&content_loaded, &mut token)?;
+            }
         }
         Ok(())
+    }
+
+    /// Runs `script` at the creation of every later document, before the page's own scripts.
+    pub fn add_document_script(
+        controller: &ICoreWebView2Controller,
+        script: &str,
+    ) -> windows_core::Result<()> {
+        let script: Vec<u16> = script.encode_utf16().chain(Some(0)).collect();
+        let done =
+            AddScriptToExecuteOnDocumentCreatedCompletedHandler::create(Box::new(|_, _| Ok(())));
+        // SAFETY: the UTF-16 buffer is null-terminated and outlives the call, which copies it.
+        unsafe {
+            controller
+                .CoreWebView2()?
+                .AddScriptToExecuteOnDocumentCreated(PCWSTR(script.as_ptr()), &done)
+        }
     }
 }
 
@@ -873,6 +944,19 @@ mod tests {
              {\"titleBar\":true,\"maximized\":false,\"active\":true,\"hover\":\"maximize\",\
              \"pressed\":null,\"hostStatus\":\"recovering\",\"captionPress\":1})"
         );
+    }
+
+    #[test]
+    fn fallback_script_only_turns_the_merged_row_off() {
+        assert_eq!(
+            NATIVE_LAYOUT_SCRIPT,
+            "window.__monkeyhubDesktopPush&&window.__monkeyhubDesktopPush({titleBar:false})"
+        );
+        // It goes through the same guarded push as ShellState::script, so documents without
+        // the bridge (frames, other origins) ignore it.
+        assert!(ShellState::default()
+            .script()
+            .starts_with("window.__monkeyhubDesktopPush&&window.__monkeyhubDesktopPush("));
     }
 
     #[test]

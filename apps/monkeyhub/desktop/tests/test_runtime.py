@@ -93,6 +93,15 @@ class WindowsProcesses:
             (self.user.PostMessageW, [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM], wintypes.BOOL),
             (self.user.FindWindowExW, [wintypes.HWND, wintypes.HWND, wintypes.LPCWSTR, wintypes.LPCWSTR], wintypes.HWND),
             (self.user.GetWindowRect, [wintypes.HWND, ctypes.POINTER(wintypes.RECT)], wintypes.BOOL),
+            (self.user.GetClientRect, [wintypes.HWND, ctypes.POINTER(wintypes.RECT)], wintypes.BOOL),
+            (self.user.ClientToScreen, [wintypes.HWND, ctypes.POINTER(wintypes.POINT)], wintypes.BOOL),
+            (self.user.ScreenToClient, [wintypes.HWND, ctypes.POINTER(wintypes.POINT)], wintypes.BOOL),
+            (self.user.GetParent, [wintypes.HWND], wintypes.HWND),
+            (self.user.WindowFromPoint, [wintypes.POINT], wintypes.HWND),
+            (self.user.SetWindowPos, [wintypes.HWND, wintypes.HWND, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, wintypes.UINT], wintypes.BOOL),
+            (self.user.IsZoomed, [wintypes.HWND], wintypes.BOOL),
+            (self.user.GetDpiForWindow, [wintypes.HWND], wintypes.UINT),
+            (self.user.GetSystemMetricsForDpi, [ctypes.c_int, wintypes.UINT], ctypes.c_int),
             (self.user.SendMessageW, [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM], wintypes.LPARAM),
             (self.user.SetThreadDpiAwarenessContext, [ctypes.c_void_p], ctypes.c_void_p),
         )
@@ -256,20 +265,39 @@ class WindowsProcesses:
                 return child
         return None
 
-    def caption_hit_codes(self, caption):
-        """WM_NCHITTEST at the middle of each third of the caption child, left to right, in the
-        physical screen coordinates Windows itself sends (this thread is made DPI aware)."""
+    def caption_probe(self, caption):
+        """Where the caption child sits in its main window, which window Windows finds at the
+        middle of each third of it, and the hit code it answers there. Everything is in the
+        physical pixels Windows itself uses: this thread is made per-monitor DPI aware."""
         previous = self.user.SetThreadDpiAwarenessContext(ctypes.c_void_p(-4))  # PER_MONITOR_AWARE_V2
         try:
-            rect = wintypes.RECT()
-            if not self.user.GetWindowRect(caption, ctypes.byref(rect)):
+            main = self.user.GetParent(caption)
+            rect, client = wintypes.RECT(), wintypes.RECT()
+            if not (self.user.GetWindowRect(caption, ctypes.byref(rect)) and self.user.GetClientRect(main, ctypes.byref(client))):
+                raise ctypes.WinError(ctypes.get_last_error())
+            corner = wintypes.POINT(rect.left, rect.top)
+            client_right = wintypes.POINT(client.right, 0)
+            if not (self.user.ScreenToClient(main, ctypes.byref(corner)) and self.user.ClientToScreen(main, ctypes.byref(client_right))):
                 raise ctypes.WinError(ctypes.get_last_error())
             y = (rect.top + rect.bottom) // 2
-            codes = []
-            for third in range(3):
-                x = rect.left + (rect.right - rect.left) * (2 * third + 1) // 6
-                codes.append(self.user.SendMessageW(caption, 0x0084, 0, ((y & 0xFFFF) << 16) | (x & 0xFFFF)))
-            return codes
+            centres = [rect.left + (rect.right - rect.left) * (2 * third + 1) // 6 for third in range(3)]
+            # Raise the window over everything for a moment, so WindowFromPoint answers for its
+            # own children (the caption child or the WebView under it), not for another window.
+            flags = 0x0001 | 0x0002 | 0x0010  # SWP_NOSIZE | SWP_NOMOVE | SWP_NOACTIVATE
+            self.user.SetWindowPos(main, wintypes.HWND(-1), 0, 0, 0, 0, flags)  # HWND_TOPMOST
+            try:
+                owners = [self.user.WindowFromPoint(wintypes.POINT(x, y)) for x in centres]
+            finally:
+                self.user.SetWindowPos(main, wintypes.HWND(-2), 0, 0, 0, 0, flags)  # HWND_NOTOPMOST
+            return {
+                # Screen coordinates can be negative (a monitor left of or above the primary);
+                # the child sign-extends them like GET_X_LPARAM.
+                "hits": [self.user.SendMessageW(caption, 0x0084, 0, ((y & 0xFFFF) << 16) | (x & 0xFFFF)) for x in centres],
+                "owners": owners,
+                "right": rect.right, "clientRight": client_right.x, "top": corner.y,
+                "frame": self.user.GetSystemMetricsForDpi(33, self.user.GetDpiForWindow(main)),  # SM_CYFRAME
+                "maximized": bool(self.user.IsZoomed(main)),
+            }
         finally:
             self.user.SetThreadDpiAwarenessContext(previous)
 
@@ -781,22 +809,42 @@ $found | ConvertTo-Json -Compress
         self.assertEqual(self.shell.wait(timeout=40), 0)
         self.drained()
 
+    def caption_settled(self, caption, *, maximized):
+        """The caption child's probe once the window is in the requested state. The child
+        must be the window Windows finds over each button and answer that button's hit code
+        (HTMINBUTTON, HTMAXBUTTON, HTCLOSE). It must end at the client area's right edge and
+        start at its top when maximized, or below Tauri's SM_CYFRAME resize strip when not."""
+        def check():
+            probe = self.native.caption_probe(caption)
+            expected_top = 0 if maximized else probe["frame"]
+            if probe["maximized"] == maximized and probe["right"] == probe["clientRight"] and probe["top"] == expected_top:
+                return probe
+            check.last = probe
+            return None
+        check.last = None
+        probe = wait_for(check, lambda: f"Caption window never settled (maximized={maximized}): {check.last}")
+        self.assertEqual(probe["hits"], [8, 9, 20], probe)
+        self.assertEqual(probe["owners"], [caption] * 3, f"Something other than the caption window is on top: {probe}")
+        return probe
+
     def test_merged_title_row_answers_the_native_hit_test_and_closes_through_the_drain(self):
         """#354: on Windows 11 the page draws the window buttons and a native caption child
-        answers for them. The flyout itself needs a person; the hit codes that summon it and the
-        close path do not."""
+        answers for them. The flyout itself needs a person; the hit codes that summon it, the
+        child's place over the page and the button actions do not."""
+        if sys.getwindowsversion().build < 22000:
+            self.skipTest("Windows before build 22000 keeps the system title bar")
         self.launch()
         self.ready()
-        caption = self.native.caption(self.shell.pid)
-        if caption is None:
-            self.assertIn("event=title-bar mode=native", self.log_text())
-            self.native.close_window(self.shell.pid)
-            self.assertEqual(self.shell.wait(timeout=40), 0)
-            self.drained()
-            self.skipTest("This Windows keeps the system title bar (build before 22000)")
+        # A failed install also logs "mode=native"; on Windows 11 only the merged row counts.
         self.assertIn("event=title-bar mode=merged", self.log_text())
+        caption = self.native.caption(self.shell.pid)
+        self.assertIsNotNone(caption, "Windows 11 has no caption window")
         self.assertTrue(self.shows_title_row(), "The host's bridge did not reach the Hub page")
-        self.assertEqual(self.native.caption_hit_codes(caption), [8, 9, 20])  # HTMINBUTTON, HTMAXBUTTON, HTCLOSE
+        self.caption_settled(caption, maximized=False)
+        self.native.click_caption(caption, 9)  # maximize through the caption button
+        self.caption_settled(caption, maximized=True)
+        self.native.click_caption(caption, 9)  # and restore
+        self.caption_settled(caption, maximized=False)
         self.native.click_caption(caption, 20)
         self.wait_state("stopping")
         self.assertEqual(self.shell.wait(timeout=40), 0)

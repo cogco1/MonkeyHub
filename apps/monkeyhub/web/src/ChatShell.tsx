@@ -1548,7 +1548,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
   return <div className="chat-shell" data-sidebar={sidebar} data-panel={panel} style={{ "--browser-width": `${panelWidth}px` } as CSSProperties}>
     {/* #337 L0: the Hub's text menu row, as desktop apps have it: back, forward, the sidebar, then words.
         #354: in the Windows 11 desktop shell the same row is also the window's title bar. */}
-    {titleBar ? <DesktopTitleBar state={titleBar} menus={menuRow}
+    {titleBar ? <DesktopTitleBar menus={menuRow}
       title={titleBar.hostStatus === "recovering" ? mw.waitingRuntime : `${project?.name ?? "MonkeyHub"} · ${chat?.id === chatId ? chat.title : t.newChat}`} />
       : <div className="chat-menubar">{menuRow}</div>}
     <aside className="chat-sidebar" aria-label={t.projects}>

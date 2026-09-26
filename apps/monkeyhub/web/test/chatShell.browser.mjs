@@ -3523,6 +3523,18 @@ try {
       assert.equal(await page.evaluate(() => document.documentElement.hasAttribute("data-desktop-titlebar")), false);
       assert.deepEqual(await page.locator(".chat-menubar").evaluate((element) => [...element.children].map((child) => child.className)), ["hub-menubar"]);
     }
+    // After that failure the host also runs caption::NATIVE_LAYOUT_SCRIPT at the creation of
+    // every document, so a new page never draws the merged row, not even for one frame.
+    const nativeLayoutScript = captionSource.match(/pub const NATIVE_LAYOUT_SCRIPT: &str =\s*"([^"]+)";/)[1];
+    await page.addInitScript({ content: `${nativeLayoutScript};window.__titleRowSeen=false;`
+      + `new MutationObserver(()=>{if(document.querySelector(".chat-titlebar"))window.__titleRowSeen=true})`
+      + `.observe(document,{childList:true,subtree:true});` });
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await page.goto(origin);
+    await page.locator(".chat-menubar .hub-menubar").waitFor();
+    assert.equal(await page.evaluate(() => window.__titleRowSeen), false, "the fallback page never drew the merged row");
+    assert.equal(await page.locator(".chat-titlebar").count(), 0);
+    assert.equal(await page.evaluate(() => document.documentElement.hasAttribute("data-desktop-titlebar")), false);
   }
   assert.deepEqual(errors, []);
   console.log(JSON.stringify({ passed: true, sessions: sessions.length, writes: writes.length, screenshots: temporary }));

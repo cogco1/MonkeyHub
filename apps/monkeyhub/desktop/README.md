@@ -111,9 +111,14 @@ and later let child elements inherit `app-region`.
 over the three button pictures. That window answers `WM_NCHITTEST` with
 `HTMINBUTTON`, `HTMAXBUTTON` or `HTCLOSE`, which is how Windows 11 decides to offer
 Snap Layouts on the maximize button. A click on a button becomes `WM_SYSCOMMAND`,
-so Close takes the same CloseRequested drain as before. The window reports hover,
-press, maximized and active state, and the host hands that state to the page with
-the same `eval` it uses for the status page. The page never calls the host.
+so Close takes the same CloseRequested drain as before. Pressing a button also
+closes an open Hub menu, as a press on a system title bar does. Right-clicking a
+button does nothing, as with the system's own caption buttons; the system menu
+opens from a right-click on the drag area and from Alt+Space. The window reports
+hover, press, maximized and active state, and the host hands that state to the
+page with the same `eval` it uses for the status page. A newly loaded page gets
+the whole state at `DOMContentLoaded` and again on load. The page never calls the
+host.
 
 The host's initialization script defines `window.__monkeyhubDesktop`. It runs only
 in the main window, only on the verified Hub origin and the status page, and only
@@ -125,6 +130,8 @@ other interactive content out of the row.
 WebView2 keeps Alt+Space from reaching the window while the page has focus
 (WebView2Feedback #3840). The host catches it and opens the window's system menu,
 which offers restore, move, size, minimize, maximize and close from the keyboard.
+Screen readers do not see the button pictures, and the caption window has no name.
+The system menu is how keyboard and screen reader users reach these commands.
 The minimum window width is 500 epx, so the window fits every Snap Layouts zone.
 
 The system title bar and today's layout remain in four cases:
@@ -135,7 +142,10 @@ The system title bar and today's layout remain in four cases:
 - `--native-title-bar`.
 
 If the caption window cannot be created, the host restores the system title bar
-and the page returns to today's layout.
+and the page returns to today's layout. The bridge script cannot be withdrawn, so
+the host also adds a document-creation script that switches the row off before any
+page script runs. A new page therefore never draws the merged row, not even for one
+frame.
 
 ## Patch update handoff
 

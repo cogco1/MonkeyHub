@@ -512,9 +512,16 @@ fn run() -> Result<(), String> {
                 (TitleBar::Merged, Ok(())) => setup_log.write("event=title-bar mode=merged"),
                 (TitleBar::Merged, Err(error)) => {
                     // Without the caption child the page's buttons would not work: return
-                    // to the system title bar and today's layout.
+                    // to the system title bar and today's layout, from every new document's
+                    // first frame on, and tell the page that is already loading.
                     setup_log.write(&format!("event=title-bar mode=native detail=Merged row unavailable: {error}"));
                     let _ = window.set_decorations(true);
+                    let fallback_log = setup_log.clone();
+                    if let Err(error) = caption::keep_native_layout(&window, move |detail| {
+                        fallback_log.write(&format!("event=title-bar-warning detail={detail}"));
+                    }) {
+                        setup_log.write(&format!("event=title-bar-warning detail={error}"));
+                    }
                     let _ = title_bar_events.send(ShellEvent::TitleBar(false));
                 }
                 (TitleBar::Native, result) => {

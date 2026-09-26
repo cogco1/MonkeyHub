@@ -41,11 +41,21 @@ const shell: DesktopShell | null = candidate && candidate.version === 1 && typeo
   && Number.isFinite(candidate.captionButtons) ? candidate : null;
 const subscribe = (listener: () => void) => shell ? shell.subscribe(listener) : () => undefined;
 const snapshot = () => shell?.state ?? null;
+const titleBarOn = () => Boolean(shell?.state.titleBar);
+const hostStatusOf = () => shell?.state.hostStatus ?? null;
+const captionPressOf = () => shell?.state.captionPress ?? 0;
 
-/** The host's title row state, or null in a browser, a popup or while the system title bar is back. */
-export function useDesktopTitleBar(): DesktopShellState | null {
-  const state = useSyncExternalStore(subscribe, snapshot, () => null);
-  return state?.titleBar ? state : null;
+/**
+ * What the page around the row needs: whether the row is in use, the host's own status and
+ * the caption-press counter that closes an open menu. Each part is a primitive, so hover,
+ * press and focus changes re-render only the row, never its caller. Null in a browser, a
+ * popup, or once the system title bar is back.
+ */
+export function useDesktopTitleBar(): { readonly hostStatus: DesktopShellState["hostStatus"]; readonly captionPress: number } | null {
+  const on = useSyncExternalStore(subscribe, titleBarOn, () => false);
+  const hostStatus = useSyncExternalStore(subscribe, hostStatusOf, () => null);
+  const captionPress = useSyncExternalStore(subscribe, captionPressOf, () => 0);
+  return on ? { hostStatus, captionPress } : null;
 }
 
 /** The app mark from the approved #337 proposal. */
@@ -69,7 +79,10 @@ const GLYPHS: Record<DesktopCaptionButton | "restore", ReactNode> = {
  * and the pictures of the three window buttons. Only the mark, the title and the empty
  * fills carry `app-region: drag`, and none of them contains anything interactive.
  */
-export function DesktopTitleBar({ state, menus, title }: { state: DesktopShellState; menus: ReactNode; title: string }) {
+export function DesktopTitleBar({ menus, title }: { menus: ReactNode; title: string }) {
+  // The row alone follows hover, press, maximized and active; `menus` is the caller's
+  // element, so these re-renders do not reach the menu bar.
+  const state = useSyncExternalStore(subscribe, snapshot, () => null);
   useLayoutEffect(() => {
     if (!shell) return;
     const root = document.documentElement;
@@ -82,6 +95,7 @@ export function DesktopTitleBar({ state, menus, title }: { state: DesktopShellSt
       for (const name of ["--desktop-titlebar-height", "--desktop-caption-button-width", "--desktop-caption-width"]) root.style.removeProperty(name);
     };
   }, []);
+  if (!state) return null;
   return <div className="chat-menubar chat-titlebar" data-active={state.active} data-maximized={state.maximized}>
     <span className="chat-titlebar__mark" aria-hidden="true"><Mark /></span>
     {menus}
