@@ -153,31 +153,6 @@
       "notes": [
         "2026-09-08 rule alignment: Awaiting the first concrete evidence consumer and a check of existing Reading/source references. The earlier proposed ledger and private Atlas field superset are not a mandate to add a core record."
       ]
-    },
-    {
-      "id": "GH-282",
-      "stream": "planning",
-      "status": "active",
-      "goal": "Reload the current document after a workspace rendering crash",
-      "depends_on": [],
-      "write_scope": [
-        "apps/monkeyhub/web/workspaces/src/app/ErrorBoundary.tsx",
-        "apps/monkeyhub/web/workspaces/test/errorBoundary.browser.mjs",
-        ".github/workflows/verify.yml",
-        "governance/module_registry.json"
-      ],
-      "branch": "codex/282-error-reload",
-      "worktree": "C:/Users/asus/.codex/worktrees/merge-cloud-batch/ARCHFLOW_V4",
-      "base_ref": "07e1a40be5cdf195d6b49d525ab3f2496dae2f0a",
-      "contributor": "Codex cloud with Codex integration",
-      "reviewer": "Codex",
-      "handoff": "Review the scoped cloud patch and run remote CI",
-      "modules": [
-        "hub.shell"
-      ],
-      "acceptance": [
-        "The reload button navigates the current document without changing its URL or persisted selection; CI runs the regression."
-      ]
     }
   ]
 }
