@@ -114,6 +114,8 @@ async function hubApi(request, response, url, body, origin) {
   if (name === "/api/apps") return json(hubApps(origin));
   if (name === "/api/settings/user") return json({ language: "en", theme: "light", fontScale: 1 });
   if (name === "/api/settings/apps") return json({ projectDir: hub.projects[0].projectDir, referenceRun: null, cadExport: "off", studioPort: 18789, monitorPort: 18790 });
+  if (request.method === "GET" && name === "/api/credentials") return json(["gemini", "coding-plan"].map((id) => ({
+    id, configured: false, source: null, variable: null, saved: false, storeAvailable: true })));
   if (name === "/api/chat/providers") return json([{ id: "codex", label: "Codex CLI", available: true, detail: "Fixture only", installed: true, signedIn: true, models: [], modelCatalog: "ready", modelDetail: "" }]);
   if (name === "/api/chat/workspace") return json({ workspaceDir: "D:\\fixture", configured: true, projects: [PROJECT] });
   if (name === "/api/chat/projects") return json(hub.projects);
@@ -187,7 +189,7 @@ try {
       return runtime(request, response, new URL(`${forwarded[2]}${url.search}`, "http://fixture.test"), body);
     }
     if (url.pathname.startsWith("/api/")) {
-      const hubRoute = /^\/api\/(apps|settings|chat|runtime|updates)(\/|$)/.test(url.pathname);
+      const hubRoute = /^\/api\/(apps|settings|credentials|chat|runtime|updates)(\/|$)/.test(url.pathname);
       return hubRoute ? hubApi(request, response, url, body, `http://127.0.0.1:${http.address().port}`) : runtime(request, response, url, body);
     }
     vite.middlewares(request, response);
@@ -733,6 +735,9 @@ try {
   const hubCard = await clickCanvasNode(hubPage, hubSurface, "current");
   assert.match(await hubCard.innerText(), /Current is exactly S3/, "a narrow panel opens on the growing tip, and its nodes answer clicks");
   await shoot(hubPage, "12-hub-rail-tree");
+  // The same floating card covers list rows in this narrow Hub panel until closed.
+  await hubPage.keyboard.press("Escape");
+  await hubCard.waitFor({ state: "detached" });
   await hubSurface.getByRole("button", { name: "Show processed (1)", exact: true }).click();
   await hubSurface.getByRole("button", { name: "List", exact: true }).click();
   await hubSurface.locator('[role="treeitem"][data-node="candidate:run-massing-a"]').click();
@@ -742,6 +747,7 @@ try {
   await hubSurface.getByRole("button", { name: "Hide processed", exact: true }).click();
   await reopenedReview.waitFor({ state: "detached" });
   await hubSurface.getByRole("button", { name: "Canvas", exact: true }).click();
+  await hubSurface.locator(".design-tree__canvas canvas").first().waitFor();
   await hubSurface.getByRole("button", { name: "Back to Modeling" }).click();
   await hubPage.getByTestId("arch-stub").waitFor();
   assert.equal(await railButton("Modeling").getAttribute("aria-pressed"), "true", "leaving returns to the surface it came from");
