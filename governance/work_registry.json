@@ -153,6 +153,64 @@
       "notes": [
         "2026-09-08 rule alignment: Awaiting the first concrete evidence consumer and a check of existing Reading/source references. The earlier proposed ledger and private Atlas field superset are not a mandate to add a core record."
       ]
+    },
+    {
+      "id": "GH-355",
+      "stream": "planning",
+      "status": "active",
+      "goal": "Repair the local MonkeyHub browser suites that already fail on main (#355): modelSync, boardIntentHandoff, intentViewSource, workModelExport and elevation, and make the suites that need a real isolated Studio API (documentLink, workingCopy, versionNotifications) runnable from written steps or a fixture. Each failure is judged either as a product change the test follows, naming the PR, or as a product regression fixed in the product.",
+      "depends_on": [],
+      "issue": "https://github.com/cogco1/MonkeyHub/issues/355",
+      "write_scope": [
+        "apps/monkeyhub/web/workspaces/test/modelSync.browser.mjs",
+        "apps/monkeyhub/web/workspaces/test/boardIntentHandoff.browser.mjs",
+        "apps/monkeyhub/web/workspaces/test/intentViewSource.browser.mjs",
+        "apps/monkeyhub/web/workspaces/test/workModelExport.browser.mjs",
+        "apps/monkeyhub/web/workspaces/test/elevation.browser.mjs",
+        "apps/monkeyhub/web/workspaces/test/documentLink.browser.mjs",
+        "apps/monkeyhub/web/workspaces/test/workingCopy.browser.mjs",
+        "apps/monkeyhub/web/workspaces/test/versionNotifications.browser.mjs",
+        "apps/monkeyhub/web/workspaces/test/workspaceFixture.mjs",
+        "apps/monkeyhub/web/test/projectWorkspaceFixture.mjs",
+        ".github/workflows/verify.yml"
+      ],
+      "card": "docs/mapping/planning/GH-355-browser-suites.md",
+      "acceptance": [
+        "Every suite named in #355 passes locally, or the PR states exactly which external environment it still needs and how to start it.",
+        "Each repaired assertion names the PR whose product change it follows; a product regression is fixed in the product, not by loosening the test.",
+        "elevation launches channel chrome like the other suites; suites that are stable may join CI's Studio web job."
+      ],
+      "lanes": [
+        {
+          "id": "browser-suites",
+          "issue": "https://github.com/cogco1/MonkeyHub/issues/355",
+          "branch": "codex/355-browser-suites",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-355-browser-suites",
+          "base_ref": "d266d589",
+          "contributor": "Claude",
+          "reviewer": "Claude root task",
+          "handoff": "Runs first of the #337 follow-ups. GH-352 moves Modeling's Export and More commands, so it merges main after this lane and updates the same Modeling suites' selectors. Other #337 lanes run beside this one (GH-349, GH-351, GH-352, GH-353, GH-354) with GH-355 repairing main's stale local suites; a lane that merges later merges main first.",
+          "modules": [
+            "hub.shell"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/web/workspaces/test/modelSync.browser.mjs",
+            "apps/monkeyhub/web/workspaces/test/boardIntentHandoff.browser.mjs",
+            "apps/monkeyhub/web/workspaces/test/intentViewSource.browser.mjs",
+            "apps/monkeyhub/web/workspaces/test/workModelExport.browser.mjs",
+            "apps/monkeyhub/web/workspaces/test/elevation.browser.mjs",
+            "apps/monkeyhub/web/workspaces/test/documentLink.browser.mjs",
+            "apps/monkeyhub/web/workspaces/test/workingCopy.browser.mjs",
+            "apps/monkeyhub/web/workspaces/test/versionNotifications.browser.mjs",
+            "apps/monkeyhub/web/workspaces/test/workspaceFixture.mjs",
+            "apps/monkeyhub/web/test/projectWorkspaceFixture.mjs",
+            ".github/workflows/verify.yml"
+          ],
+          "depends_on": [],
+          "status": "active",
+          "blocked_reason": null
+        }
+      ]
     }
   ]
 }
