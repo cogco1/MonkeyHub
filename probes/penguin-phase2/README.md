@@ -80,8 +80,10 @@ not a complete measurement of every requested interaction.
 
 ## Regression execution and failures
 
-All logs below are actual runs; only local filesystem prefixes were replaced with
-`<repo>`, `<temp>` or `<project>` for publication. Assertions were not removed.
+All logs below are actual runs; local filesystem prefixes were replaced with
+`<repo>`, `<temp>`, `<user>` or `<project>` and trailing line whitespace was
+normalized for publication. Assertions were not removed. Original transcripts
+remain in the preserved local evidence directory.
 
 | Run | Result / evidence |
 | --- | --- |

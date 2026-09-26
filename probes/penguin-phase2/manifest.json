@@ -193,8 +193,8 @@
     },
     {
       "path": "evidence/camera-checks.json",
-      "bytes": 2764,
-      "sha256": "ede535442c35ba535625368dd3f7e365aeeaf11d19021501408f15b2c2c9d734"
+      "bytes": 2765,
+      "sha256": "1ffbc5ac2266af895c4a8c8fc270e366d7d0e60804f9561c73fae7d93807cdde"
     },
     {
       "path": "evidence/camera-unit-review.log",
@@ -208,18 +208,18 @@
     },
     {
       "path": "evidence/cycles-readback.json",
-      "bytes": 2871,
-      "sha256": "90a4533676f82f56c33759dbcf0718decca755ebc87e129a63198de4ba1bdb3f"
+      "bytes": 2872,
+      "sha256": "7c69fa186ca383c7085d46a21c8511efd12cff35507ee23c12abea70949e545f"
     },
     {
       "path": "evidence/drawing-quantitative.json",
-      "bytes": 7167,
-      "sha256": "ec43883ef693d04fb3588698efce4b7a0785d4680bcb2ea45192e4131ed8c77f"
+      "bytes": 7168,
+      "sha256": "877dd7ca0551366e58e6d9e6209633d4214917e602c444413ce0f2fdf437f502"
     },
     {
       "path": "evidence/frontend-build-review.log",
-      "bytes": 20435,
-      "sha256": "4b5e7fa0c046aa4a3f233380d4be62c681deea2b6ffbb86db28c705764ef4101"
+      "bytes": 20434,
+      "sha256": "a68719a5a2f858e959d83690548ea5acb979562ac1c759b28df4c61b740a64fd"
     },
     {
       "path": "evidence/merge-conversion-initial.log",
@@ -233,18 +233,18 @@
     },
     {
       "path": "evidence/persistence-comparison.json",
-      "bytes": 890,
-      "sha256": "101944a171b387addfd7bb92407611c2f5f3398e41004b4d1df8c345adeea997"
+      "bytes": 891,
+      "sha256": "7f74803445ccb8285d1582c2434b77d5b46adb697255175f8c7b1eb71b4d2f37"
     },
     {
       "path": "evidence/production-quantitative.json",
-      "bytes": 820,
-      "sha256": "a4f9715b749d7b7704503bf4f3b1e5328ccb6201a5f533c4bc15398a81318c78"
+      "bytes": 821,
+      "sha256": "4951c4fa3f493f99b195106a56364d2384ae1183887848d98eb9f252be397d3b"
     },
     {
       "path": "evidence/review-persistence.json",
-      "bytes": 1005,
-      "sha256": "b5e31f02b5cff122b3da9169aa697386d0ec0583620e1f637401e203d563b495"
+      "bytes": 1006,
+      "sha256": "29cee972dfe181cb759c8078b3dc7f49fadde8a53c009aad25f92cbd9c3aac40"
     },
     {
       "path": "evidence/root-tests-review.log",
@@ -258,8 +258,8 @@
     },
     {
       "path": "evidence/three-cycles-material-consistency.json",
-      "bytes": 532,
-      "sha256": "95490fd4ede007557e1c4185c2a9957ca330a74b981f57cb676f477b5978f867"
+      "bytes": 533,
+      "sha256": "652eea3afd059ad7b209e35240ed4c9b3b6864781f394f899991362b208db131"
     },
     {
       "path": "issues-reviewed.json",
@@ -268,8 +268,8 @@
     },
     {
       "path": "README.md",
-      "bytes": 18122,
-      "sha256": "9e80ccc64c3f70f128aad809ba57e45d065c71d1287d34d775c9056222e95cf5"
+      "bytes": 18242,
+      "sha256": "2e28b85edc86224a1da5a81eeb1f4005c69e3ad4dc4ef8f8cadfb161ab893a2f"
     }
   ]
 }

@@ -207,7 +207,7 @@ dist/assets/sceneHit-DNqlOjNr.js                      1,132.84 kB │ gzip: 360.
 dist/assets/chunk-EIO257PC-Bur7ZQlC.js                1,821.08 kB │ gzip: 744.27 kB │ map: 1,880.47 kB
 
 ✓ built in 6.35s
-[plugin builtin:vite-reporter] 
+[plugin builtin:vite-reporter]
 (!) Some chunks are larger than 500 kB after minification. Consider:
 - Using dynamic import() to code-split the application
 - Use build.rolldownOptions.output.codeSplitting to improve chunking: https://rolldown.rs/reference/OutputOptions.codeSplitting
