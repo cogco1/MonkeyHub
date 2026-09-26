@@ -5,7 +5,10 @@ import { applicationUrl, type AppearancePreferences } from "../../../shared-web/
 import type { WorktreeGraphDto } from "../workspaces/src/api/generated";
 import { projectStatus } from "./worktreeGraph";
 import type { AppStatus, ChatArchiveRequest, ChatCreateRequest, ChatDetail, ChatMessage, ChatPostRequest, ChatProject, ChatProvider, ChatSummary, ChatWorkspace, HubError, HubRuntimeDto, OperationRecord, ProjectArchiveExportRequest, ProjectArchiveRestoreRequest, ProjectArchiveRestoreResult, ProjectArchiveSummary, ProjectRuntimeDto, RuntimeEvent, UpdateStatus } from "./api/generated";
-import { ProjectRuntimeProvider } from "../workspaces/src/api/ProjectRuntimeContext";
+import { ProjectRuntimeProvider, useStudio } from "../workspaces/src/api/ProjectRuntimeContext";
+import type { ModelSourceDto } from "../workspaces/src/api/generated";
+import { ModelThumbnail } from "../workspaces/src/features/artifacts/ModelThumbnail";
+import { MODEL_PREVIEW_RETAINED, previewSourceKey } from "../workspaces/src/features/artifacts/useRetainedModelPreview";
 import type { WorkspaceDesignContext, WorkspacePosition } from "../workspaces/src/app/ProjectWorkspace";
 import { MonitorPage } from "./MonitorPage";
 import { ChatMarkdown, ChatMessageFiles, type ChatDocument } from "./ChatMessageContent";
@@ -165,6 +168,47 @@ const labelOf = (id: AppId) => tools.find((tool) => tool.id === id)!.label;
 const isTool = (id: AppId | undefined) => id === "drawing" || id === "monkeyrender" || id === "monkeyfab" || id === "monkeymonitor";
 /** The surface under what a tab shows: its own, or the one the Tool on it steps back to. */
 const surfaceUnder = (tab: ToolTab | undefined) => !tab ? undefined : isTool(tab.id) ? tab.returnTo : tab.id;
+
+/**
+ * Resolve each result only against this project's artifact list. ModelThumbnail then
+ * asks for a retained preview with all three source identities; a missing/offline
+ * preview remains its existing model icon rather than borrowing another run's image.
+ */
+function StudyThumbnails({ candidates }: { candidates: readonly string[] }) {
+  const studio = useStudio();
+  const [sources, setSources] = useState<ReadonlyMap<string, ModelSourceDto>>(new Map());
+  const [previewRevisions, setPreviewRevisions] = useState<ReadonlyMap<string, number>>(new Map());
+  const candidateKey = candidates.join("\u0000");
+  useEffect(() => {
+    const abort = new AbortController();
+    setSources(new Map());
+    void studio.artifacts(abort.signal).then((result) => {
+      const wanted = new Set(candidates), exact = new Map<string, ModelSourceDto>();
+      for (const artifact of result.artifacts) {
+        const source = artifact.modelSource;
+        if (source && wanted.has(source.runId) && source.runId === artifact.runId && !exact.has(source.runId)) exact.set(source.runId, source);
+      }
+      if (!abort.signal.aborted) setSources(exact);
+    }).catch(() => { if (!abort.signal.aborted) setSources(new Map()); });
+    return () => abort.abort();
+  }, [studio, candidateKey]);
+  useEffect(() => {
+    const retained = (event: Event) => {
+      const key = (event as CustomEvent).detail?.key;
+      if (!key || ![...sources.values()].some((source) => previewSourceKey(source) === key)) return;
+      // The workspace has another client. This notice only invalidates our own
+      // project-bound read; no source or image is taken from the event.
+      setPreviewRevisions((current) => new Map(current).set(key, (current.get(key) ?? 0) + 1));
+    };
+    window.addEventListener(MODEL_PREVIEW_RETAINED, retained);
+    return () => window.removeEventListener(MODEL_PREVIEW_RETAINED, retained);
+  }, [sources]);
+  return <span className="chat-study__previews" aria-hidden="true">
+    {candidates.map((candidate) => <span className="chat-study__preview" data-candidate={candidate} key={candidate}>
+      <ModelThumbnail source={sources.get(candidate)} key={previewRevisions.get(previewSourceKey(sources.get(candidate))) ?? 0} />
+    </span>)}
+  </span>;
+}
 
 function Icon({ name }: { name: string }) {
   const paths: Record<string, ReactNode> = {
@@ -1633,7 +1677,10 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
             {turn.results.length > 0 && (() => {
               const options = resultCandidates(turn);
               return <div className="chat-study" data-candidates={options.join(" ")}>
-                <Icon name="tree" /><span className="chat-study__text">{t.studyReady(options.length)}</span>
+                {projectRuntime ? <ProjectRuntimeProvider key={projectRuntime.runtimeId} baseUrl={`${window.location.origin}/api/runtime/projects/${projectRuntime.runtimeId}/studio`}>
+                  <StudyThumbnails candidates={options} />
+                </ProjectRuntimeProvider> : <Icon name="tree" />}
+                <span className="chat-study__text">{t.studyReady(options.length)}</span>
                 <button type="button" className="chat-activity__open" disabled={!project || Boolean(toolBusy)}
                   onClick={() => void openTool("tree", { focus: options.join(",") })}>{t.studyView}</button>
               </div>;
