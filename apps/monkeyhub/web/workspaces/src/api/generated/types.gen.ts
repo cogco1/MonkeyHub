@@ -11257,6 +11257,7 @@ export type ViewportCaptureDto = {
      * Sizebytes
      */
     sizeBytes: number;
+    document?: SourceDocumentDto | null;
 };
 
 /**
@@ -11273,6 +11274,10 @@ export type ViewportCaptureRequestDto = {
      * Pngbase64
      */
     pngBase64: string;
+    /**
+     * The exact retained model shown by the browser; validates identity, not correspondence inferred from pixels.
+     */
+    modelSource?: ModelSourceDto | null;
 };
 
 /**
@@ -12664,6 +12669,57 @@ export type ReadSemanticsApiSemanticsGetResponses = {
 };
 
 export type ReadSemanticsApiSemanticsGetResponse = ReadSemanticsApiSemanticsGetResponses[keyof ReadSemanticsApiSemanticsGetResponses];
+
+export type ReadRetainedModelPreviewApiModelAssetsAssetSha256PreviewGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path: {
+        /**
+         * Asset Sha256
+         */
+        asset_sha256: string;
+    };
+    query: {
+        /**
+         * Runid
+         */
+        runId: string;
+        /**
+         * Statedigest
+         */
+        stateDigest: string;
+    };
+    url: '/api/model-assets/{asset_sha256}/preview';
+};
+
+export type ReadRetainedModelPreviewApiModelAssetsAssetSha256PreviewGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadRetainedModelPreviewApiModelAssetsAssetSha256PreviewGetError = ReadRetainedModelPreviewApiModelAssetsAssetSha256PreviewGetErrors[keyof ReadRetainedModelPreviewApiModelAssetsAssetSha256PreviewGetErrors];
+
+export type ReadRetainedModelPreviewApiModelAssetsAssetSha256PreviewGetResponses = {
+    /**
+     * Response Read Retained Model Preview Api Model Assets  Asset Sha256  Preview Get
+     *
+     * Successful Response
+     */
+    200: SourceDocumentDto | null;
+};
+
+export type ReadRetainedModelPreviewApiModelAssetsAssetSha256PreviewGetResponse = ReadRetainedModelPreviewApiModelAssetsAssetSha256PreviewGetResponses[keyof ReadRetainedModelPreviewApiModelAssetsAssetSha256PreviewGetResponses];
 
 export type ReadNativeModelIndexApiModelAssetsAssetSha256IndexGetData = {
     body?: never;

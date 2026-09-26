@@ -104,7 +104,8 @@ tolerate it.
 | POST | `/api/model-assets` → 201 | original 3DM bytes (`projectId`, `fileName`, `contentBase64`, maximum 128 MiB). Both `runId` and `stateDigest` bind a composed model; omitting both retains an external source by exact byte digest. External rows have `representation=external` and null `modelSource`, design state and Stage; they are viewable original files, not semantic edit bases. Retries reuse exact registered bytes and preserve earlier revisions. No HEAD change | **writes shared source** | provisional |
 | GET | `/api/model-assets/{asset_sha256}/index` | exact `runId` + `stateDigest`; GUID-sorted native object metadata, units and source binding. `offset` / `limit` (default 50, maximum 200), optional repeated `objectId` GUIDs (maximum 200). Returns `objectCount`, `matchedCount`, `nextOffset`; unknown GUIDs fail with 404, mismatched source with 409. Names, layers and raw user strings are not inferred architectural roles. No geometry validation, scope admission or edit | reads shared | provisional |
 | POST | `/api/artifacts/{sha256}/rhino-export` → 201 | that run's exact STEP imported into this machine's Rhino and kept as an editable `*.work.3dm`; body carries `runId`, because the same bytes can be exported by more than one run. Ordinary and blocking, one export at a time; the answer is the work model's own artifact row, carrying `sourceStepSha256`. Asking again for the same source answers with the model already made. Without a local Rhino or shell: 409 `RHINO_HOST_UNAVAILABLE` | **writes shared workspace** | stable |
-| POST | `/api/captures` → 201 | a viewport PNG retained under the named existing run's `workspaces/studio-captures/`; body carries `runId` and `pngBase64`, response carries its project-relative path and digest | **writes shared workspace** | stable |
+| POST | `/api/captures` → 201 | a viewport PNG (maximum 32 MiB) retained under the named existing run's `workspaces/studio-captures/`; body carries `runId` and `pngBase64`, response carries its project-relative path and digest. Optional exact `modelSource` also registers a preview in the existing source-document store and adds `document` to the response; source run must equal `runId` | **writes shared workspace + optional source document** | stable |
+| GET | `/api/model-assets/{asset_sha256}/preview` | required `runId` + `stateDigest`; verifies the exact retained model and returns its registered viewport `SourceDocument`, or `null` when none exists. Image bytes use the existing documents route and SHA-256 verification. Ordinary uploaded images are never selected | reads shared | provisional |
 | POST | `/api/pick/resolve` | what the object a user clicked actually is (§6) | reads work in progress + shared | stable |
 | POST | `/api/proposals` → 201 | a typed, exact-base `DecisionOperator` with its closure and impact. Never applied | reads work in progress + shared | stable |
 | GET | `/api/proposals/{proposalId}` | that proposal, as it was returned | server memory | stable |
@@ -335,6 +336,17 @@ process restart. This does not recover an interrupted in-memory job or a missing
 `saveInput: true` on a remote server answers `409 WIP_WRITE_REMOTE` and **still makes the
 candidate**, naming its run and job in the refusal: running a sheet is a read of the record, and
 only keeping one needs an owner this protocol does not yet have.
+
+**Model preview images.** The browser captures only a stable retained model after loading,
+outside candidate execution; it skips local edits, blended or proposal previews and rechecks
+the exact source before and after asynchronous capture. Existing previews are read lazily;
+an absent, stale or unreadable image falls back to the model icon. A source-bound capture adds
+an ancillary PNG identity chunk without changing pixels, so identical pictures of distinct
+models cannot rebind the same document. The server verifies the run/state/model binding and
+PNG bytes; the pixel-to-model correspondence is the caller's declaration, not geometric
+validation. Previews use `viewRecipe.kind=viewport-preview`, have no drawing revision, and
+never enter StateRecord, candidate execution, or canonical HEAD. Unbound captures keep their
+original workspace-only response and do not become previews.
 
 **Server memory.** Proposals, jobs and events live in the process and are lost on restart. A
 client treats `PROPOSAL_NOT_FOUND` and `JOB_NOT_FOUND` as ordinary and never uses the event
