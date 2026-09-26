@@ -1167,109 +1167,56 @@ button.chip:hover {
   font-size: calc(12px * var(--font-scale, 1));
 }
 
-.stage__foot {
-  position: absolute;
-  right: 14px;
-  bottom: 14px;
-  left: 14px;
-  z-index: 5;
-  display: flex;
-  align-items: flex-end;
-  gap: 8px;
-  pointer-events: none;
+/* #337: the model the next edit starts from, in the project bar. */
+.stage-bar__model {
+  max-width: min(260px, 40vw);
+  overflow: hidden;
+  color: var(--ink);
+  font-size: var(--text-ui);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.stage__foot > * {
-  pointer-events: auto;
-}
-
-.stage__spacer {
-  flex: 1;
-  pointer-events: none;
-}
-
-.stage__versions {
-  position: static;
-  min-width: 0;
-  max-width: 100%;
-}
-
-.stage__context {
-  display: grid;
-  max-width: min(760px, 100%);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-lg);
-  background: var(--overlay);
-}
-
-.stage__context-summary {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 2px 8px;
-  min-width: 0;
-}
-
-.stage__context .picked {
-  flex: 1 1 180px;
-  min-width: 0;
-  max-width: 100%;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-}
-
-.stage__context .picked .label,
-.stage__context .picked__meta {
+/* One row above the canvas for what asks before the next edit: a model viewed
+   read-only, a Board note on another version, a refused act or an unsaved choice. */
+.stage-decision {
   flex: none;
+  display: grid;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
 }
 
-.stage__context .picked__name {
-  min-width: 0;
-  overflow-wrap: anywhere;
+.stage-decision > .base-choice:last-child {
+  border-bottom: 0;
 }
 
-.stage__context .editing-base {
-  padding: 6px 10px;
-  border-top: 1px solid var(--line);
+.stage-decision > .editing-base {
+  padding: 6px 16px;
 }
 
-.stage__context .editing-base > [role="status"] {
+.stage-decision .editing-base > [role="status"] {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
   gap: 2px 5px;
-  flex: 1 1 180px;
   min-width: 0;
 }
 
-.stage__context .editing-base__name {
+.stage-decision .editing-base__name {
   max-width: min(320px, 100%);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* A refused base action or an unsaved choice takes a full line of the row and
-   wraps. The footer's measured height lifts the toolbar above it. */
-.stage__context .editing-base > .editing-base__notice {
+/* A refused base action or an unsaved choice takes a full line of the row and wraps. */
+.stage-decision .editing-base > .editing-base__notice {
   display: block;
   flex: 1 1 100%;
   min-width: 0;
   margin: 0;
   overflow-wrap: anywhere;
-}
-
-.stage__versions-toggle {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  min-height: 36px;
-  border-radius: var(--radius-lg);
-  max-width: 100%;
-  border: 0;
-  background: transparent;
 }
 
 .stage__versions-current {
@@ -1285,27 +1232,72 @@ button.chip:hover {
   font-weight: 500;
 }
 
-.stage__versions-panel {
+/* Versions: an inspector docked at the canvas's right edge. The canvas gives it
+   the room; where Modeling itself is narrower than 560 px it covers the canvas instead. */
+.stage {
+  --stage-inspector-width: min(360px, 42%);
+}
+
+.stage-workspace {
+  container: stage-workspace / inline-size;
+}
+
+.stage-workspace:has(> .stage-inspector) > .stage-model,
+.stage-workspace:has(> .stage-inspector) .document-workspace {
+  right: var(--stage-inspector-width);
+}
+
+.stage-inspector {
   position: absolute;
-  /* Leave the measured toolbar below the history; neither overlay may
-     intercept the other's buttons when tools or the footer wrap. */
-  bottom: calc(100% + var(--stage-toolbar-height, 54px) + 24px);
-  left: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 7;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
-  width: min(720px, 100%);
-  max-height: min(55vh, 480px, max(0px, calc(var(--stage-workspace-height, 100vh)
-    - var(--stage-footer-height, 36px) - var(--stage-toolbar-height, 54px) - 52px)));
-  border: 1px solid var(--line);
-  border-radius: var(--radius-lg);
+  grid-template-rows: auto auto minmax(0, 1fr);
+  width: var(--stage-inspector-width);
+  border-left: 1px solid var(--line);
   background: var(--panel);
-  box-shadow: var(--shadow);
   overflow: hidden;
+}
+
+/* The status line under the canvas: what is picked, and the editing base. */
+.stage > .status-line {
+  background: var(--ground);
+}
+
+.status-line .picked {
+  display: inline;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  font-size: inherit;
+}
+
+.status-line .picked .label {
+  margin-right: 6px;
+}
+
+.status-line .editing-base {
+  display: inline;
+  font-size: inherit;
+}
+
+@container stage-workspace (max-width: 560px) {
+  .stage-inspector {
+    width: 100%;
+  }
+
+  .stage-workspace:has(> .stage-inspector) > .stage-model,
+  .stage-workspace:has(> .stage-inspector) .document-workspace {
+    right: 0;
+  }
 }
 
 @media (max-width: 800px) {
   .viewtools-wrap {
-    bottom: 58px;
     max-width: calc(100% - 28px);
   }
 }
@@ -2760,9 +2752,6 @@ button.chip:hover {
 }
 
 .viewtools-wrap > .viewtools.model-tools { max-width: 100%; justify-content: center; }
-.stage[data-footer="true"] .viewtools-wrap {
-  bottom: calc(26px + var(--stage-footer-height, 36px));
-}
 .model-tools .model-tools__plane { width: 64px; min-height: 40px; padding-inline: 4px; border: 0; border-radius: var(--radius); color: var(--ink-2); }
 .stage-pushpull { cursor: ns-resize; }
 @media (max-width: 800px) {

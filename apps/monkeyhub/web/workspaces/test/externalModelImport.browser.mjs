@@ -69,7 +69,7 @@ async function drop(bytes, name) {
   try { await viewport().dispatchEvent('drop', { dataTransfer: transfer }); } finally { await transfer.dispose(); }
 }
 async function versions() {
-  const toggle = surface().locator('.stage__versions-toggle');
+  const toggle = page.locator('.project-bar .stage__versions-toggle');
   if (await toggle.getAttribute('aria-expanded') !== 'true') await toggle.click();
   const panel = surface().getByRole('region', { name: 'Model versions', exact: true });
   const summary = panel.locator('summary').filter({ hasText: '已有模型与历史运行' });

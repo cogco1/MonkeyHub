@@ -80,7 +80,7 @@ async function step(name, action) { current = name; await action(); passed.push(
 const surface = () => page.locator('[data-project-surface="arch"]:visible');
 const preview = source => api(`/api/model-assets/${source.assetSha256}/preview?runId=${source.runId}&stateDigest=${source.stateDigest}`);
 async function versions() {
-  const toggle = surface().locator('.stage__versions-toggle');
+  const toggle = page.locator('.project-bar .stage__versions-toggle');
   if (await toggle.getAttribute('aria-expanded') !== 'true') await toggle.click();
   const panel = surface().getByRole('region', { name: 'Model versions', exact: true });
   await panel.locator('.vcard__export[aria-pressed="true"]').first().waitFor({state:'attached'});
