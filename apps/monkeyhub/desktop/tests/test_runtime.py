@@ -20,6 +20,7 @@ import os
 from pathlib import Path
 import re
 import select
+import shutil
 import site
 import socket
 import subprocess
@@ -27,6 +28,7 @@ import sys
 import tempfile
 import threading
 import time
+import traceback
 import unittest
 from urllib.parse import urlencode, urlsplit
 from urllib.request import ProxyHandler, Request, build_opener
@@ -72,6 +74,32 @@ def free_ports(count):
         for listener in sockets:
             listener.bind(("127.0.0.1", 0))
         return [listener.getsockname()[1] for listener in sockets]
+
+
+def windows_read_probe(path):
+    """Report the native error for the same read, never change access or locks."""
+    if os.name != "nt":
+        return None
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel.CreateFileW.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD,
+                                  wintypes.LPVOID, wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE]
+    kernel.CreateFileW.restype = wintypes.HANDLE
+    kernel.ReadFile.argtypes = [wintypes.HANDLE, wintypes.LPVOID, wintypes.DWORD,
+                               ctypes.POINTER(wintypes.DWORD), wintypes.LPVOID]
+    kernel.ReadFile.restype = wintypes.BOOL
+    kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+    kernel.CloseHandle.restype = wintypes.BOOL
+    handle = kernel.CreateFileW(str(path), 0x80000000, 7, None, 3, 0x80, None)
+    if handle == wintypes.HANDLE(-1).value:
+        return {"operation": "CreateFileW(GENERIC_READ, shared read/write/delete)",
+                "winerror": ctypes.get_last_error()}
+    try:
+        byte, count = ctypes.create_string_buffer(1), wintypes.DWORD()
+        ok = kernel.ReadFile(handle, byte, 1, ctypes.byref(count), None)
+        return {"operation": "ReadFile(first byte)", "ok": bool(ok),
+                "winerror": 0 if ok else ctypes.get_last_error(), "bytesRead": count.value}
+    finally:
+        kernel.CloseHandle(handle)
 
 
 class WindowsProcesses:
@@ -287,6 +315,7 @@ class DesktopRuntimeTests(unittest.TestCase):
         temporary = tempfile.TemporaryDirectory(prefix="MonkeyHub desktop 测试 ", delete=False)
         self.addCleanup(self.cleanup_temporary, temporary)
         self.root = Path(temporary.name)
+        self.events = []
         self.runtime = self.root / "local/MonkeyHub" if INSTALLED else self.root / "runtime"
         self.native = WindowsProcesses()
         self.addCleanup(self.cleanup_processes)
@@ -339,8 +368,36 @@ class DesktopRuntimeTests(unittest.TestCase):
             self.user_file.write_bytes(b"User data must survive reinstall and reopen.\n")
 
     def project_bytes(self):
-        return {str(path.relative_to(self.project)): path.read_bytes()
-                for path in self.project.rglob("*") if path.is_file()}
+        self.record("project-snapshot-start")
+        contents = {}
+        for path in self.project.rglob("*"):
+            if not path.is_file():
+                continue
+            try:
+                contents[str(path.relative_to(self.project))] = path.read_bytes()
+            except OSError as error:
+                self.record("project-read-failed", path=str(path.relative_to(self.project)),
+                            operation="Path.read_bytes", errno=error.errno,
+                            winerror=getattr(error, "winerror", None),
+                            exception=repr(error), stack=traceback.format_exc(),
+                            nativeRead=windows_read_probe(path),
+                            trackedProcesses={str(pid): {"exited": self.native.exited(pid)}
+                                              for pid in self.native.handles})
+                raise
+        self.record("project-snapshot-complete", files=len(contents))
+        return contents
+
+    def record(self, event, **details):
+        row = {"event": event, "time": time.time(), "monotonic": time.monotonic(),
+               "testProcessId": os.getpid(), **details}
+        self.events.append(row)
+        if event == "project-read-failed":
+            print(json.dumps(row, ensure_ascii=False), file=sys.stderr)
+        if output := os.environ.get("MONKEYHUB_TEST_ARTIFACTS"):
+            directory = Path(output) / self.id()
+            directory.mkdir(parents=True, exist_ok=True)
+            (directory / "events.json").write_text(
+                json.dumps(self.events, ensure_ascii=False, indent=2), encoding="utf-8")
 
     def cleanup_temporary(self, temporary):
         self.assertTrue(all(shell.poll() is not None for shell in self.shells), "Own EXE still running")
@@ -368,8 +425,13 @@ class DesktopRuntimeTests(unittest.TestCase):
     def dump_logs(self):
         for path in sorted(self.runtime.glob("logs/*.log")):
             print(f"\n{self.id()} — {path.name}\n{path.read_text(encoding='utf-8', errors='replace')[-12000:]}", file=sys.stderr)
+            if output := os.environ.get("MONKEYHUB_TEST_ARTIFACTS"):
+                directory = Path(output) / self.id()
+                directory.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(path, directory / path.name)
 
     def tearDown(self):
+        self.record("test-finished", shells=[{"pid": shell.pid, "exitCode": shell.poll()} for shell in self.shells])
         result = self._outcome.result
         failures = getattr(result, "failures", ()) + getattr(result, "errors", ())
         if any(test is self for test, _ in failures):
@@ -387,6 +449,7 @@ class DesktopRuntimeTests(unittest.TestCase):
                     shell.wait(timeout=10)
 
     def launch(self, port=None, *, trial=False):
+        self.record("launch-start", trial=trial)
         previous = set((self.runtime / "logs").glob("desktop-*.log"))
         command = [str(Path(EXE)), "--source-root", str(ROOT), "--python", sys.executable,
                    "--runtime-root", str(self.runtime), "--startup-timeout-seconds", "40"]
@@ -403,6 +466,7 @@ class DesktopRuntimeTests(unittest.TestCase):
             creationflags=subprocess.CREATE_NO_WINDOW,
         )
         self.shells.append(self.shell)
+        self.record("shell-created", pid=self.shell.pid)
         self.log = wait_for(lambda: next(iter(set((self.runtime / "logs").glob("desktop-*.log")) - previous), None),
                             lambda: f"No desktop log; EXE exit={self.shell.poll()}")
         return self.shell
@@ -475,6 +539,7 @@ class DesktopRuntimeTests(unittest.TestCase):
         self.assertEqual(health["processId"], self.root_pid)
         self.assertEqual(health["parentProcessId"], self.shell.pid)
         self.hub_pid = health["processId"]
+        self.record("hub-ready", shellPid=self.shell.pid, hubPid=self.hub_pid, instance=self.instance)
         self.pids = {self.root_pid, self.hub_pid}
         for pid in self.pids:
             self.native.track(pid)
@@ -504,6 +569,7 @@ class DesktopRuntimeTests(unittest.TestCase):
         return app
 
     def open_project(self):
+        self.record("project-open-start")
         binding = {"projectId": self.fixture.PROJECT_ID, "projectDir": str(self.project)}
         opened = request(self.url + "api/runtime/projects/open", method="POST", payload=binding)
         request(self.url + "api/apps/monkeyarch/start?" + urlencode({"projectDir": str(self.project)}), method="POST")
@@ -536,6 +602,7 @@ class DesktopRuntimeTests(unittest.TestCase):
     def drained(self):
         wait_for(lambda: all(self.native.exited(pid) for pid in self.pids),
                  lambda: f"Owned processes survived: {[pid for pid in self.pids if not self.native.exited(pid)]}")
+        self.record("owned-processes-drained", pids=sorted(self.pids))
         for port in self.ports:
             self.assertFalse(port_open(port), f"Owned listener {port} survived shutdown")
         self.assertEqual(self.project_bytes(), self.opened_bytes or self.before)

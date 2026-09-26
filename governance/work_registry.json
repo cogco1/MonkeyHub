@@ -240,7 +240,11 @@
         "tools/archcheck.py",
         "CONTRIBUTING.md",
         "apps/monkeyhub/web/test/chatShell.browser.mjs",
-        "apps/monkeyhub/web/test/projectWorkspaceFixture.mjs"
+          "apps/monkeyhub/web/test/projectWorkspaceFixture.mjs",
+          "apps/monkeyhub/web/workspaces/src/workspaces/monkeyarch/viewer/ThreeDmViewport.tsx",
+          "apps/monkeyhub/desktop/tests/test_runtime.py",
+          ".github/workflows/verify.yml",
+          ".github/workflows/desktop.yml"
       ],
       "card": "docs/mapping/planning/GH-319-penguin-scene.md",
       "acceptance": [
