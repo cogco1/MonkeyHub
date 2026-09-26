@@ -153,6 +153,59 @@
       "notes": [
         "2026-09-08 rule alignment: Awaiting the first concrete evidence consumer and a check of existing Reading/source references. The earlier proposed ledger and private Atlas field superset are not a mandate to add a core record."
       ]
+    },
+    {
+      "id": "GH-354",
+      "stream": "planning",
+      "status": "active",
+      "goal": "Evaluate, then if feasible build, one desktop title row (#354, part of #337): an undecorated Tauri window whose own title bar carries back/forward/sidebar and the Hub menus, a drag region, and the window buttons, provided Windows 11 snap layouts, double-click maximize, multi-monitor/high-DPI behaviour and keyboard access survive. Browser mode (launch-hub.ps1) keeps today's layout.",
+      "depends_on": [],
+      "issue": "https://github.com/cogco1/MonkeyHub/issues/354",
+      "write_scope": [
+        "apps/monkeyhub/desktop/",
+        "apps/monkeyhub/web/src/HubMenu.tsx",
+        "apps/monkeyhub/web/src/ChatShell.tsx",
+        "apps/monkeyhub/web/src/ChatShell.css",
+        "apps/monkeyhub/web/src/main.tsx",
+        "apps/monkeyhub/web/src/styles.css",
+        "apps/monkeyhub/web/src/i18n/messages.en.ts",
+        "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
+        "apps/monkeyhub/web/test/chatShell.browser.mjs"
+      ],
+      "card": "docs/mapping/planning/GH-354-title-bar.md",
+      "acceptance": [
+        "A written verdict: feasible or not, and why, covering snap layouts, double-click maximize, multi-monitor and high DPI, and keyboard access.",
+        "If feasible: the menu row merges into the title bar in the desktop shell only; hand-tested on Windows 11 (snap, maximize/restore, multi-monitor, high DPI) with screenshots; chatShell passes."
+      ],
+      "lanes": [
+        {
+          "id": "title-bar",
+          "issue": "https://github.com/cogco1/MonkeyHub/issues/354",
+          "branch": "codex/354-title-bar",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-354-title-bar",
+          "base_ref": "d266d589",
+          "contributor": "Claude",
+          "reviewer": "Claude root task",
+          "handoff": "Independent of #348. The evaluation verdict comes first; implementation proceeds only if it is feasible. Other #337 lanes run beside this one (GH-349, GH-351, GH-352, GH-353, GH-354) with GH-355 repairing main's stale local suites; a lane that merges later merges main first.",
+          "modules": [
+            "hub.shell"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/desktop/",
+            "apps/monkeyhub/web/src/HubMenu.tsx",
+            "apps/monkeyhub/web/src/ChatShell.tsx",
+            "apps/monkeyhub/web/src/ChatShell.css",
+            "apps/monkeyhub/web/src/main.tsx",
+            "apps/monkeyhub/web/src/styles.css",
+            "apps/monkeyhub/web/src/i18n/messages.en.ts",
+            "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
+            "apps/monkeyhub/web/test/chatShell.browser.mjs"
+          ],
+          "depends_on": [],
+          "status": "active",
+          "blocked_reason": null
+        }
+      ]
     }
   ]
 }
