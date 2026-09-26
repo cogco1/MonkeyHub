@@ -1095,6 +1095,8 @@ class ProjectRuntimeManager:
         if isinstance(payload, dict) and payload.get("projectId", runtime.project_id) != runtime.project_id:
             raise HubFailure(409, "PROJECT_MISMATCH", "This request names another project.")
         mutation = method not in {"GET", "HEAD", "OPTIONS"} and not parsed.path.startswith("/api/events/") and parsed.path not in {"/api/state/closure", "/api/pick/resolve"}
+        if method == "POST" and parsed.path == "/api/drawing-recipes/inspect":
+            mutation = False  # File validation is a read, including a refused file.
         admission = None
         if mutation:
             operation_id = headers.get("idempotency-key") or str(uuid4())

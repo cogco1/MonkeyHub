@@ -6,9 +6,9 @@
 Phase: GitHub Issues are the work items (#60); this registry records live source-edit coordination only. The remaining legacy P cards are blocked and claim no path; P115 is a frozen historical index. Real project acceptance and formal issue are explicit user actions.
 
 - active: none
-- ready: GH-314, GH-66, GH-291
+- ready: GH-314, GH-66, GH-291, GH-252
 - blocked: P115, P105, P108, P110, P111, P113
-- next: claim one of: GH-314, GH-66, GH-291
+- next: claim one of: GH-314, GH-66, GH-291, GH-252
 
 ## Live work
 
@@ -23,3 +23,4 @@ Phase: GitHub Issues are the work items (#60); this registry records live source
 | GH-314 | ready | Remove unchanged heartbeat snapshot reconstruction and operation-history copies from the Hub project watcher, preserving work-copy observation, external refresh and recovery responsiveness. | [GH-314](https://github.com/cogco1/MonkeyHub/issues/314) |
 | GH-66 | ready | Close the first Publish workflow: ordered Board handoff, reliable autosave/reopen, editable output and repeatable layout; independently verify exact-source replacement/freeze. | [GH-66](https://github.com/cogco1/MonkeyHub/issues/66) |
 | GH-291 | ready | Close drawing revision replacement gaps: exact before/after identity on restoration, idempotent retries, conflicting stale rebuild refusal and persisted consumer regressions. | [GH-291](https://github.com/cogco1/MonkeyHub/issues/291) |
+| GH-252 | ready | Expose existing drawing recipe export/import in Drawing and verify an explicitly saved correction reused in a second isolated project; broader office demos remain open. | [GH-252](https://github.com/cogco1/MonkeyHub/issues/252) |

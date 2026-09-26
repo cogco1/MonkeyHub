@@ -775,6 +775,37 @@ project's HEAD lock, the lock a runtime takes for every decision write, so it ma
 while a runtime has the project open; the runtime reads the decision on its next
 request.
 
+The local Runtime also exposes this transfer from the Drawing workspace:
+
+- `GET /api/decisions/{decision_id}/recipe-export?expectedRevisionRef=...` returns
+  `{fileName, content}` with the portable file text unchanged. A stale selection
+  is `409 DECISION_STALE`; refresh the recipe list before exporting a newer revision.
+- `POST /api/drawing-recipes/inspect` takes `{projectId, content}` (the exact JSON
+  file text) and returns
+  `projectId`, `targetRef`, `graphics`, `sourceDecisionId`, `sourceRevisionSha256`,
+  `exportSha256` and `importStrength: soft_preference`. This validates the file's
+  closed content and digest without writing any decision.
+- `POST /api/drawing-recipes/import` takes the same exact document plus
+  `confirmed: true`, `sourceKind: human` and `rawLanguage` (the displayed choice).
+  The file text is parsed only in Python: JavaScript must not normalize `3.0` to `3`
+  and change its canonical digest. It validates again and returns the retained
+  `DecisionDto` with HTTP 201.
+  Conflicts use the existing `DECISION_RECIPE_CONFLICT`; there is no implicit
+  supersession. Attribution comes from the Runtime boundary, never the file.
+
+Export and inspection require the existing `read` grant; import requires `accept`.
+These routes are local Runtime operations, excluded from the shared-project service.
+Hub forwards inspection as a read: no operation journal, notification or watcher wake,
+including when the file is refused. Confirmed import keeps normal write admission.
+The bound chat's decision tools remain feedback-only: they do not automatically
+promote or import recipes. Drawing offers a file preview and explicit import action;
+choosing or cancelling a file writes nothing. The retained import cites the portable
+file's digest, while the file carries the original decision revision digest. New
+cut plans consume the imported values through `project_recipe`; previous revisions
+keep their values and explicit drawing values still take precedence. `hard` sorts
+first in the existing recipe reader but is not an enforced office standard. This
+transfer creates neither team preferences nor firm rules.
+
 A projected vector (`polyline` or poché `polygon`) names its physical object in
 `data-object` and, for a model compiled from design state, its `data-component` and
 `data-material` (the CAD program's `archflow:component` / `archflow:material`); an

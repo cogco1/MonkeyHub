@@ -13,5 +13,6 @@
 | GH-314 | ready | Remove unchanged heartbeat snapshot reconstruction and operation-history copies from the Hub project watcher, preserving work-copy observation, external refresh and recovery responsiveness. | [GH-314](https://github.com/cogco1/MonkeyHub/issues/314) |
 | GH-66 | ready | Close the first Publish workflow: ordered Board handoff, reliable autosave/reopen, editable output and repeatable layout; independently verify exact-source replacement/freeze. | [GH-66](https://github.com/cogco1/MonkeyHub/issues/66) |
 | GH-291 | ready | Close drawing revision replacement gaps: exact before/after identity on restoration, idempotent retries, conflicting stale rebuild refusal and persisted consumer regressions. | [GH-291](https://github.com/cogco1/MonkeyHub/issues/291) |
+| GH-252 | ready | Expose existing drawing recipe export/import in Drawing and verify an explicitly saved correction reused in a second isolated project; broader office demos remain open. | [GH-252](https://github.com/cogco1/MonkeyHub/issues/252) |
 
 [Back to RMPA](../README.md)
