@@ -20,7 +20,7 @@ from archflow.contracts.canonical import canonical_digest
 
 from .artifacts import SourceDocument, list_documents, replacement_cause
 from .binding import ProjectBinding
-from .decisions import RECIPE_KEYS, project_recipe
+from .decisions import RECIPE_KEYS, RecipeValue, project_recipe
 
 # What a correction can be, in the order ``classify`` asks. Only a recipe
 # correction is ever offered as memory: a compiler defect and a semantic rule
@@ -186,9 +186,8 @@ def recipe_suggestions(pairs: Iterable[Correction], covered: Callable[[Correctio
     corrects nothing, and an agent's revision is its reading, not the
     architect's. Each recipe key it changed (``RECIPE_KEYS``) joins the group
     of that key and direction - 2 to 3 and 2 to 4 are both an increase -
-    unless ``covered(pair, key)``: an active recipe already gives that
-    drawing the key, which a person chose and only that decision's
-    supersession changes. A group spanning ``SUGGESTION_DRAWINGS`` distinct
+    unless ``covered(pair, key)``: the recipe that drawing reads already
+    decides it (``recipe_holds``). A group spanning ``SUGGESTION_DRAWINGS`` distinct
     drawings is offered at the value of its most recent revision, with that
     revision's page: the exact page a recipe decision cites. Its id is derived
     from what is offered, so the same offer keeps it.
@@ -224,6 +223,19 @@ def recipe_suggestions(pairs: Iterable[Correction], covered: Callable[[Correctio
     return sorted(offers, key=lambda offer: (order.index(offer["field"]), offer["direction"]))
 
 
+def recipe_holds(held: RecipeValue | None, value: float) -> bool:
+    """Whether a correction to ``value`` is already the recipe's to decide.
+
+    A person's strong or hard recipe changes only by superseding that
+    decision, and an offer to save the key again could not be retained beside
+    it. A soft preference - an imported firm default among them (#252) - is a
+    starting point: corrections away from its value are still offered, and
+    saving one holds the key more strongly.
+    """
+
+    return held is not None and (held.strength != "soft_preference" or float(held.value) == float(value))
+
+
 def drawing_corrections(binding: ProjectBinding, *, drawing_id: str | None = None) -> dict[str, Any]:
     """One drawing's classified revision pairs and the project's recipe suggestions; nothing is written.
 
@@ -240,7 +252,7 @@ def drawing_corrections(binding: ProjectBinding, *, drawing_id: str | None = Non
         stage = pair.after.source_stage_ref
         if stage not in layers:
             layers[stage] = project_recipe(binding, stage_ref=stage)
-        return key in layers[stage]
+        return recipe_holds(layers[stage].get(key), pair.diff[f"graphics.{key}"][1])
 
     return {
         "projectId": binding.project_id, "drawingId": drawing_id,

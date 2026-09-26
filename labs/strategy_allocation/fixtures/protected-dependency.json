@@ -1,0 +1,94 @@
+{
+  "allowedActions": [
+    {
+      "asksHuman": false,
+      "description": "Read the dependency facts of a relation the target takes part in.",
+      "id": "InspectDependency"
+    },
+    {
+      "asksHuman": false,
+      "description": "Apply the requested change to the design.",
+      "id": "Model"
+    },
+    {
+      "asksHuman": false,
+      "description": "Repair a reported violation by restoring the affected element to its last valid state.",
+      "id": "Repair"
+    },
+    {
+      "asksHuman": false,
+      "description": "Semantic retrieval over the general reference corpus of other projects' documents.",
+      "id": "RAG"
+    }
+  ],
+  "caseId": "protected-dependency",
+  "caseVersion": "v0",
+  "contextPack": {
+    "confirmedStage": null,
+    "context": {
+      "facts": [
+        {
+          "id": "target",
+          "refs": [],
+          "text": "W1 is an editable opening in wall A. The requested change widens it by 300 mm."
+        },
+        {
+          "id": "relation",
+          "refs": [
+            "synthetic://strategy-allocation/protected-dependency/relation-R-7@1#sha256=1ff5f8e73cc266a14c33e79b1ac8815a1510121dae1ae27ae3aabdb1115e3343"
+          ],
+          "text": "W1 takes part in relation R-7, which is marked protected. The dependency facts of R-7 are available and have not been read."
+        },
+        {
+          "id": "opening",
+          "refs": [],
+          "text": "W1 is 1.2 m wide, unchanged."
+        },
+        {
+          "id": "relation.check",
+          "refs": [],
+          "text": "R-7 holds in the current design."
+        }
+      ],
+      "task": "Widen opening W1 in wall A by 300 mm."
+    },
+    "contextPack": "ContextPack@1",
+    "contextTier": "design",
+    "escalation": [],
+    "honesty": [
+      "Synthetic GH-268 fixture: it describes no real project and no real person.",
+      "Unread sources appear as exact identities, not content; only a reading action reveals their text.",
+      "Experiment arms are read-only: no rollout writes this state or any project state."
+    ],
+    "keep": null,
+    "preflight": null,
+    "request": null,
+    "scopedDecisions": [],
+    "source": {
+      "actionable": true,
+      "exactSource": true,
+      "projectId": "synthetic-strategy-allocation",
+      "readWith": "Environment.reset(case_id), or Environment.state_of(snapshot) for a saved snapshot",
+      "runId": "protected-dependency@v0",
+      "sourceStageRef": null,
+      "stateDigest": "1573779c8226ded2360ef6361e57527eb660a2f1e54f9946cc78e6b18cb1d737",
+      "writeWith": "none: experiment arms never write state"
+    },
+    "studyEvidence": [],
+    "target": null
+  },
+  "digest": "5ca76833eed96c38691d9c01154201ee9452b62fad1e56c532fca625bc1b502c",
+  "environmentVersion": "strategy-allocation-env@0",
+  "snapshotId": "protected-dependency@v0/1573779c8226",
+  "sourceRefs": [
+    "synthetic://strategy-allocation/protected-dependency/relation-R-7@1#sha256=1ff5f8e73cc266a14c33e79b1ac8815a1510121dae1ae27ae3aabdb1115e3343"
+  ],
+  "state": {
+    "dep_read": false,
+    "opening": "original",
+    "r7": "kept",
+    "rag_done": false
+  },
+  "task": "Widen opening W1 in wall A by 300 mm.",
+  "title": "A protected dependency"
+}

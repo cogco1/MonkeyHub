@@ -61,8 +61,29 @@ class DesignDecisionSourceDto(_Frozen):
     source_stage_ref: str | None = Field(alias="sourceStageRef", default=None, min_length=1)
 
 
+class RecipeExportDecisionSourceDto(_Frozen):
+    """The recipe export an imported project recipe came from, named by its own sha256.
+
+    Retained, never requested: a decision request names a board, a page or a
+    design run. tools/export_drawing_recipe.py writes this source when a person
+    confirms an import, after reading that export and checking its content
+    against the digest. The export file itself stays outside the project.
+    """
+
+    kind: Literal["recipe-export"]
+    export_sha256: str = Field(alias="exportSha256", pattern=SHA256)
+
+
 DecisionSourceDto = Annotated[
     Union[BoardDecisionSourceDto, DocumentDecisionSourceDto, DesignDecisionSourceDto],
+    Field(discriminator="kind"),
+]
+
+# What a retained decision can cite: what a request names, and the export an
+# imported recipe came from.
+RetainedDecisionSourceDto = Annotated[
+    Union[BoardDecisionSourceDto, DocumentDecisionSourceDto, DesignDecisionSourceDto,
+          RecipeExportDecisionSourceDto],
     Field(discriminator="kind"),
 ]
 
@@ -231,7 +252,7 @@ class DecisionDto(_Frozen):
     strength: Strength
     target_ref: str = Field(alias="targetRef")
     scope: DecisionScopeDto
-    source: DecisionSourceDto
+    source: RetainedDecisionSourceDto
     applicability: Applicability
     source_kind: SourceKind = Field(alias="sourceKind")
     typed_binding: DecisionTypedBindingDto | None = Field(alias="typedBinding")
