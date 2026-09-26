@@ -10,6 +10,8 @@
 | P110 | blocked | Connect actual retained obligations and authorized claims to the existing validation input so a violated project requirement cannot disappear behind empty facts. Follow the exact record references through one existing owner; do not treat a reference envelope as design content or invent facts to fill an old schema. Existing relation checks remain in use; candidate continuation need not wait for this entire card. | [P110](P110-canonical-state-projection.md) |
 | P111 | blocked | Follow up the existing-project trial of delivered candidate continuation: the selected run remains the next edit's exact base and preserves the prior revision. Implementation and isolated verification are complete; The remaining user trial runs in the MonkeyHub Modeling workspace (the Studio page it named is retired) and waits for a new specific edit. This does not establish whole-assembly usability or correct architectural dependencies. | [P111](P111-continuing-design-cycle.md) |
 | P113 | blocked | Make retained research evidence usable by one identified design or export consumer. First check existing Reading and source references; extend their existing owner if sufficient. The earlier ledger/import/export design is a proposal to revisit only if that consumer demonstrates a missing contract. | [P113](P113-evidence-ledger.md) |
-| GH-327 | active | Diagnose missing and unreadable retained conversion artifacts | [GH-327](https://github.com/cogco1/MonkeyHub/issues/327) |
+| GH-282 | active | Open Usage in the current project's scope | [GH-282](https://github.com/cogco1/MonkeyHub/issues/282) |
+| GH-289 | active | Hide and restore processed design candidates | [GH-289](https://github.com/cogco1/MonkeyHub/issues/289) |
+| GH-287 | active | Name drawings without changing revision identity | [GH-287](https://github.com/cogco1/MonkeyHub/issues/287) |
 
 [Back to RMPA](../README.md)
