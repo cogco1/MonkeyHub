@@ -146,6 +146,11 @@ jobs:
         working-directory: apps/monkeyhub/web
         run: node test/chatShell.browser.mjs
 
+      - name: Workspace crash reload browser regression
+        if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
+        working-directory: apps/monkeyhub/web
+        run: node workspaces/test/errorBoundary.browser.mjs
+
       - name: Candidate review browser regression
         if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
         working-directory: apps/monkeyhub/web
