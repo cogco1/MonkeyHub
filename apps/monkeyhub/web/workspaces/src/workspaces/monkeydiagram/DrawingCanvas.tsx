@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useStudio } from "../../api/ProjectRuntimeContext";
 import { asStudioApiError, type StudioApiError } from "../../api/client";
-import type { DesignStageDto, ModelSourceDto, PlanDimensionChoicesDto, PlanStatusDto, PlanVectorDto, PlanDressingDto, ProjectArtifactDto, SectionLineDto, SourceDocumentDto, WorkingSourceDto } from "../../api/generated";
+import type { DesignStageDto, ModelSourceDto, PlanDimensionChoicesDto, PlanStatusDto, PlanVectorDto, PlanDressingDto, ProjectArtifactDto, RecipeSuggestionDto, SectionLineDto, SourceDocumentDto, WorkingSourceDto } from "../../api/generated";
 import { ErrorPanel } from "../../app/ErrorPanel";
 import { usePreferences } from "../../features/settings/preferences";
 import { DocumentSurface } from "./DocumentCanvas";
-import { defaultPlanForm, drawingDocumentKey, keptOnChosenVersion, latestRevisions, liveAction, planFormFromDocument, type PlanForm } from "./drawingPlan";
+import { defaultPlanForm, drawingDocumentKey, keptOnChosenVersion, latestRevisions, liveAction, PAPER_PENS, planFormFromDocument, planRequestFields,
+  RECIPE_TARGETS, recipeDecision, recipeWrites, type PaperPen, type PlanForm } from "./drawingPlan";
 import { DressingControls, DressingOverlay } from "./DrawingDressing";
 import "./DrawingCanvas.css";
 
@@ -31,7 +32,18 @@ const copy = {
     sectionPlane: "Cut plane", sectionAcrossX: "Across X (x = position)", sectionAcrossY: "Across Y (y = position)", sectionPosition: "Position",
     sectionToward: "Look toward", eyeHeight: "Eye height above the lowest cut point", fov: "Field of view (degrees)",
     sectionGenerate: "Generate section perspective", sectionView: "Section perspective · true to scale at the cut plane",
-    statusError: "Source status could not be read. Refresh to try again.", loading: "Loading drawing…" },
+    statusError: "Source status could not be read. Refresh to try again.", loading: "Loading drawing…",
+    recipePen: "Project recipe", penHint: "A pen left empty follows the project recipe, or 0.35 / 0.18 / 2 mm without one; the drawing then shows the values it was made with.",
+    objects: "Objects in this drawing", object: "Projected object", noObject: "Choose an object",
+    pickHint: "Point at a line to see which object it draws; click it to select that object.",
+    tooMany: "This drawing has {count} lines, so it is shown as an image; choose its objects from the list.",
+    hideObject: "Hide this object", hiddenObjects: "Hidden objects", showObject: "Show again", notInModel: "not in this model", noMaterial: "no material",
+    roles: { cut: "cut", beyond: "beyond", hidden: "hidden line", other: "line" },
+    pens: { cutLineMm: "cut line", visibleLineMm: "visible line", hatchSpacingMm: "hatch spacing" },
+    offer: "{count} drawings set {field} to {value} mm — save as project recipe?", offerWords: "Save as project recipe: {count} drawings set {field} to {value} mm.",
+    save: "Save", ignore: "Ignore", offerSaved: "Saved: new drawings start from {field} {value} mm.",
+    saveRecipe: "Save as project recipe", saveRecipeHint: "New drawings in this project start from this drawing's saved linework and hatch.",
+    recipeWords: "Save as project recipe: {values}.", recipeSaved: "Saved as the project recipe: {values}.", recipeSame: "These values already are the project recipe." },
 
   "zh-CN": { title: "Drawing · 图纸", intro: "跟随项目当前模型的剖切平面。", source: "出图版本", revision: "图纸", fresh: "新建剖切平面",
     noModel: "项目当前模型还没有可出图的精确几何。", refresh: "刷新来源", generating: "正在生成…", generate: "生成剖切平面",
@@ -54,8 +66,25 @@ const copy = {
     sectionPlane: "剖切面", sectionAcrossX: "垂直于 X（x = 位置）", sectionAcrossY: "垂直于 Y（y = 位置）", sectionPosition: "位置",
     sectionToward: "看向", eyeHeight: "视高（自剖切最低点起）", fov: "视角（度）",
     sectionGenerate: "生成剖透视", sectionView: "剖透视 · 剖切面处按比例",
-    statusError: "无法读取来源状态，请刷新重试。", loading: "正在读取图纸…" },
+    statusError: "无法读取来源状态，请刷新重试。", loading: "正在读取图纸…",
+    recipePen: "项目设定", penHint: "留空的线宽和填充间距按项目表达设定取值，没有设定时为 0.35 / 0.18 / 2 mm；生成后显示图纸实际采用的数值。",
+    objects: "图中对象", object: "投影对象", noObject: "选择对象",
+    pickHint: "指向线条可查看它来自哪个对象，点击即可选中该对象。",
+    tooMany: "此图共有 {count} 条线，以图片显示；请从列表中选择对象。",
+    hideObject: "隐藏此对象", hiddenObjects: "已隐藏对象", showObject: "重新显示", notInModel: "不在当前模型中", noMaterial: "无材质",
+    roles: { cut: "剖切", beyond: "看线", hidden: "隐藏线", other: "线" },
+    pens: { cutLineMm: "剖切线宽", visibleLineMm: "可见线宽", hatchSpacingMm: "填充间距" },
+    offer: "{count} 张图纸都把{field}设为 {value} mm——存为项目表达设定？", offerWords: "存为项目表达设定：{count} 张图纸都把{field}设为 {value} mm。",
+    save: "保存", ignore: "忽略", offerSaved: "已保存：新图纸的{field}从 {value} mm 开始。",
+    saveRecipe: "存为项目表达设定", saveRecipeHint: "此项目的新图纸将从这张图已保存的线型与填充开始。",
+    recipeWords: "存为项目表达设定：{values}。", recipeSaved: "已存为项目表达设定：{values}。", recipeSame: "这些数值已是项目表达设定。" },
 } as const;
+type Copy = (typeof copy)[keyof typeof copy];
+const fill = (template: string, values: Record<string, string | number>) => template.replace(/\{(\w+)\}/g, (_, key: string) => String(values[key] ?? ""));
+/** A paper value as the page states it: at most three decimals, no trailing zeros. */
+const mm = (value: number) => String(Number(value.toFixed(3)));
+// Offers a person ignored, by project: remembered for this session only, and never written anywhere (05-S4).
+const ignoredOffers = new Map<string, Set<string>>();
 
 type SourceAsset = { runId: string; assetSha256: string };
 // The drawings this workspace opens. A section perspective is generated and read here; its plan-only
@@ -85,23 +114,111 @@ const targetSource = (target: PlanTarget) => "modelSource" in target
 // An edited appearance is saved as a new revision once the edits pause, as Board saves itself.
 const APPEARANCE_PAUSE_MS = 800;
 
-function PlanPreview({ source, file, vector, objects, selected, onSelect, onChange, disabled }: {
-  source: SourceDocumentDto; file: File; vector: PlanVectorDto | null; objects: PlanDressingDto[];
+const SVG_NS = "http://www.w3.org/2000/svg";
+/** Past this many lines a plan is shown as an image; its objects can still be chosen from the list (D-244-3). */
+const INLINE_LINE_LIMIT = 20_000;
+/** What a projected line is in a cut plan, by the group it is drawn in: the cut (outline, hatch or poché), beyond the cut, or hidden. */
+type LineRole = "cut" | "beyond" | "hidden" | "other";
+const GROUP_ROLES: Record<string, LineRole> = { section: "cut", "section-hatch": "cut", visible: "beyond", hidden: "hidden" };
+const ROLE_ORDER: readonly LineRole[] = ["cut", "beyond", "hidden", "other"];
+/** One projected polyline or poché of a source object, as the retained SVG draws it. */
+type PlanMark = { index: number; object: string; role: LineRole; polygon: boolean; points: string };
+/** A source object as the plan names it: its id, and its component and material when the model has them. */
+type PlanObject = { id: string; component: string | null; material: string | null; roles: LineRole[] };
+type PlanShape = { tag: "polyline" | "polygon" | "text"; attributes: Record<string, string>; text: string };
+type PlanPicture = {
+  viewBox: string; font: string | null; groups: { name: string; attributes: Record<string, string>; shapes: PlanShape[] }[];
+  marks: PlanMark[]; byObject: Map<string, PlanMark[]>; objects: Map<string, PlanObject>; lines: number;
+  /** The SVG without entourage, for the image a plan past the line limit is shown as. */
+  image: string | null;
+};
+// The attributes the retained plan draws and names its sources with, as React spells them; nothing else reaches the page.
+const DRAWN: Record<string, string> = { points: "points", fill: "fill", "fill-rule": "fillRule", stroke: "stroke", "stroke-width": "strokeWidth",
+  "stroke-dasharray": "strokeDasharray", "stroke-linecap": "strokeLinecap", "stroke-linejoin": "strokeLinejoin",
+  x: "x", y: "y", "font-family": "fontFamily", "font-size": "fontSize", "text-anchor": "textAnchor",
+  "data-object": "data-object", "data-component": "data-component", "data-material": "data-material", "data-dimension": "data-dimension" };
+// The one style the projection writes: the dimension text's embedded font.
+const DIMENSION_FONT = /^@font-face\{font-family:DrawingDimension;src:url\(data:font\/ttf;base64,[A-Za-z0-9+/=]*\) format\('truetype'\);\}$/;
+
+/** The retained plan SVG as the page draws it, and each source object its lines name. Entourage is left to its own overlay. */
+function planPicture(svg: string): PlanPicture | null {
+  const parsed = new DOMParser().parseFromString(svg, "image/svg+xml"), root = parsed.documentElement;
+  if (root.namespaceURI !== SVG_NS || root.localName !== "svg" || parsed.getElementsByTagName("parsererror").length > 0) return null;
+  root.querySelector('[id="dressing"]')?.remove();
+  const drawn = (element: Element) => Object.fromEntries([...element.attributes].flatMap(({ name, value }) => DRAWN[name] ? [[DRAWN[name], value]] : []));
+  const marks: PlanMark[] = [], byObject = new Map<string, PlanMark[]>(), objects = new Map<string, PlanObject>(), groups: PlanPicture["groups"] = [];
+  let font: string | null = null, lines = 0;
+  const shape = (element: Element, role: LineRole): PlanShape | null => {
+    const tag = element.localName;
+    if (element.namespaceURI !== SVG_NS || (tag !== "polyline" && tag !== "polygon" && tag !== "text")) return null;
+    const id = tag === "text" ? null : element.getAttribute("data-object");
+    if (tag !== "text") lines += 1;
+    if (id) {
+      const mark = { index: marks.length, object: id, role, polygon: tag === "polygon", points: element.getAttribute("points") ?? "" };
+      marks.push(mark);
+      if (byObject.has(id)) byObject.get(id)!.push(mark); else byObject.set(id, [mark]);
+      const object = objects.get(id) ?? { id, component: element.getAttribute("data-component"), material: element.getAttribute("data-material"), roles: [] };
+      object.roles = ROLE_ORDER.filter(item => item === role || object.roles.includes(item));
+      objects.set(id, object);
+    }
+    return { tag, attributes: drawn(element), text: tag === "text" ? element.textContent ?? "" : "" };
+  };
+  for (const child of [...root.children]) {
+    if (child.namespaceURI !== SVG_NS) continue;
+    if (child.localName === "style") { if (DIMENSION_FONT.test(child.textContent ?? "")) font = child.textContent; continue; }
+    const group = child.localName === "g", name = group ? child.getAttribute("id") ?? "" : "";
+    const shapes = (group ? [...child.children] : [child]).flatMap(element => shape(element, GROUP_ROLES[name] ?? "other") ?? []);
+    if (shapes.length > 0) groups.push({ name, attributes: group ? drawn(child) : {}, shapes });
+  }
+  return { viewBox: root.getAttribute("viewBox") ?? "", font, groups, marks, byObject, objects, lines,
+    image: lines > INLINE_LINE_LIMIT ? new XMLSerializer().serializeToString(root) : null };
+}
+
+/** `component · material · role`; an object without a component is named by its id. */
+const objectLabel = (text: Copy, object: PlanObject, roles: readonly LineRole[] = object.roles) =>
+  [object.component ?? object.id, object.material ?? text.noMaterial, roles.map(role => text.roles[role]).join(", ")].join(" · ");
+
+function PlanPreview({ source, file, vector, picture, hidden, picked, onPick, objects, selected, onSelect, onChange, disabled }: {
+  source: SourceDocumentDto; file: File; vector: PlanVectorDto | null; picture: PlanPicture | null;
+  hidden: readonly string[]; picked: string | null; onPick(object: string | null): void; objects: PlanDressingDto[];
   selected: string; onSelect(id: string): void; onChange(objects: PlanDressingDto[]): void; disabled: boolean;
 }) {
   const { language } = usePreferences(), text = copy[language];
-  const viewport = useRef<HTMLDivElement>(null);
+  const viewport = useRef<HTMLDivElement>(null), paper = useRef<HTMLDivElement>(null);
   const [bounds, setBounds] = useState({ width: 600, height: 500 });
   const [zoom, setZoom] = useState(1), [ready, setReady] = useState(false);
   const onReady = useCallback((value: boolean) => setReady(value), []);
-  const [baseImage, setBaseImage] = useState<string | null>(null);
+  const [hover, setHover] = useState<{ mark: PlanMark; x: number; y: number } | null>(null);
+  // The plan is drawn inline so each projected line can say what it is (#244); a very large one is an image.
+  const inline = picture !== null && picture.image === null;
+  const [image, setImage] = useState<string | null>(null);
   useEffect(() => {
-    if (!vector) { setBaseImage(null); return; }
-    const svg = new DOMParser().parseFromString(vector.svg, "image/svg+xml");
-    svg.querySelector('[id="dressing"]')?.remove();
-    const url = URL.createObjectURL(new Blob([new XMLSerializer().serializeToString(svg)], { type: "image/svg+xml" }));
-    setReady(false); setBaseImage(url); return () => URL.revokeObjectURL(url);
-  }, [vector]);
+    if (!picture?.image) { setImage(null); return; }
+    const url = URL.createObjectURL(new Blob([picture.image], { type: "image/svg+xml" }));
+    setReady(false); setImage(url); return () => URL.revokeObjectURL(url);
+  }, [picture]);
+  // A hidden object leaves the page at once; the saved revision then draws without it.
+  const hiddenKey = JSON.stringify(hidden), gone = useMemo(() => new Set(hidden), [hiddenKey]);
+  useEffect(() => setHover(null), [picture, gone]);
+  const lines = useMemo(() => picture && inline && <g className="drawing-plan__lines">
+    {picture.groups.map((group, index) => <g key={index} data-group={group.name || undefined} {...group.attributes}>
+      {group.shapes.map((shape, key) => shape.tag === "text" ? <text key={key} {...shape.attributes}>{shape.text}</text>
+        : gone.has(shape.attributes["data-object"]) ? null
+        : shape.tag === "polygon" ? <polygon key={key} {...shape.attributes} /> : <polyline key={key} {...shape.attributes} />)}
+    </g>)}
+  </g>, [picture, inline, gone]);
+  // Wide invisible strokes over each object's lines, so a thin pen is still easy to point at.
+  const targets = useMemo(() => picture && inline && <g className="drawing-plan__targets">
+    {picture.marks.filter(mark => !gone.has(mark.object)).map(mark => mark.polygon
+      ? <polygon key={mark.index} data-mark={mark.index} points={mark.points} />
+      : <polyline key={mark.index} data-mark={mark.index} points={mark.points} />)}
+  </g>, [picture, inline, gone]);
+  const markAt = (target: EventTarget | null) => {
+    const index = target instanceof Element ? target.closest("[data-mark]")?.getAttribute("data-mark") : null;
+    return index == null ? null : picture?.marks[Number(index)] ?? null;
+  };
+  const lit = (object: string | null, className: string) => object ? (picture?.byObject.get(object) ?? []).map(mark => mark.polygon
+    ? <polygon key={mark.index} className={className} points={mark.points} /> : <polyline key={mark.index} className={className} points={mark.points} />) : null;
   const recipeFrame = source.viewRecipe?.frame as { crop_uv?: number[] } | undefined;
   const crop = recipeFrame?.crop_uv;
   useEffect(() => {
@@ -113,6 +230,7 @@ function PlanPreview({ source, file, vector, objects, selected, onSelect, onChan
   const page = source.pages[0];
   if (!page) return null;
   const scale = Math.max(0.02, Math.min((bounds.width - 32) / page.width, (bounds.height - 32) / page.height)) * zoom;
+  const hovered = hover && picture?.objects.get(hover.mark.object);
   return <section className="drawing-preview" aria-label={source.fileName}>
     <div className="drawing-preview__tools">
       <button type="button" aria-label={text.zoomOut} disabled={zoom <= 0.25} onClick={() => setZoom(value => Math.max(0.25, value / 1.25))}>−</button>
@@ -120,12 +238,27 @@ function PlanPreview({ source, file, vector, objects, selected, onSelect, onChan
       <button type="button" aria-label={text.zoomIn} disabled={zoom >= 8} onClick={() => setZoom(value => Math.min(8, value * 1.25))}>+</button>
       <span>{source.fileName}</span>
     </div>
-    <div className="drawing-preview__viewport" ref={viewport} tabIndex={0} data-ready={ready}>
-      <div className="drawing-preview__paper" style={{ width: page.width * scale, height: page.height * scale }}>
-        {baseImage ? <img className="drawing-vector-base" src={baseImage} alt={source.fileName} onLoad={() => setReady(true)} />
+    <div className="drawing-preview__viewport" ref={viewport} tabIndex={0} data-ready={inline || ready}
+      onKeyDown={event => { if (event.key === "Escape" && picked) { event.preventDefault(); onPick(null); } }}>
+      <div className="drawing-preview__paper" ref={paper} style={{ width: page.width * scale, height: page.height * scale }}>
+        {picture && inline ? <svg className="drawing-vector-base" viewBox={picture.viewBox} aria-label={source.fileName}
+          onPointerMove={event => {
+            const mark = markAt(event.target), box = paper.current?.getBoundingClientRect();
+            setHover(mark && box ? { mark, x: event.clientX - box.left, y: event.clientY - box.top } : null);
+          }}
+          onPointerLeave={() => setHover(null)} onClick={event => onPick(markAt(event.target)?.object ?? null)}>
+          {picture.font && <style>{picture.font}</style>}
+          {lines}
+          <g className="drawing-plan__highlight">{lit(hover && hover.mark.object !== picked ? hover.mark.object : null, "is-hovered")}{lit(picked, "is-picked")}</g>
+          {targets}
+        </svg>
+          : image ? <img className="drawing-vector-base" src={image} alt={source.fileName} onLoad={() => setReady(true)} />
           : <DocumentSurface file={file} page={page} scale={scale} onReady={onReady} />}
-        {baseImage && vector && crop && <DressingOverlay objects={objects} vector={vector} crop={crop} selected={selected}
+        {(inline || image) && vector && crop && <DressingOverlay objects={objects} vector={vector} crop={crop} selected={selected}
           onSelect={onSelect} onChange={onChange} language={language} disabled={disabled} />}
+        {hover && hovered && <div className="drawing-object-tip" role="tooltip" style={{ left: hover.x, top: hover.y,
+          transform: `translate(${hover.x > page.width * scale / 2 ? "calc(-100% - 12px)" : "12px"}, ${hover.y > page.height * scale / 2 ? "calc(-100% - 12px)" : "16px"})` }}>
+          {objectLabel(text, hovered, [hover.mark.role])}</div>}
       </div>
     </div>
   </section>;
@@ -148,6 +281,16 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
   const [status, setStatus] = useState<PlanStatusDto | null>(null), [statusLoading, setStatusLoading] = useState(false);
   const [file, setFile] = useState<File | null>(null), [loading, setLoading] = useState(true);
   const [vector, setVector] = useState<PlanVectorDto | null>(null), [selectedDressing, setSelectedDressing] = useState("");
+  // The retained plan as the page draws it, and the projected object a person picked on it, by source object id.
+  const picture = useMemo(() => vector ? planPicture(vector.svg) : null, [vector]);
+  const [picked, setPicked] = useState<string | null>(null);
+  // What each object was, so a hidden one keeps its name after it leaves the drawing.
+  const seen = useRef(new Map<string, PlanObject>());
+  useEffect(() => { picture?.objects.forEach((object, id) => seen.current.set(id, object)); }, [picture]);
+  // 05-S4: corrections repeated across drawings, which the runtime offers as a project recipe; read again after each write.
+  const [offered, setOffered] = useState<{ projectId: string; suggestions: RecipeSuggestionDto[] } | null>(null);
+  const [corrections, setCorrections] = useState(0), [, setIgnoring] = useState(0), [recipeSaving, setRecipeSaving] = useState(false);
+  const [offerNote, setOfferNote] = useState<string | null>(null), [recipeNote, setRecipeNote] = useState<string | null>(null);
   const [error, setError] = useState<StudioApiError | null>(null), [busy, setBusy] = useState(false);
   // Why edited appearance is not being saved: the pause ended on an invalid field, or the
   // save was refused. The next edit clears it; a refusal can also be retried, never in a loop.
@@ -226,6 +369,14 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
     return () => { cancelled = true; };
   }, [studio, projectId, active, refreshKey, refresh]);
   useEffect(() => {
+    if (!active) return;
+    let cancelled = false;
+    void studio.drawingCorrections(projectId).then(value => {
+      if (!cancelled && value.projectId === projectId) setOffered({ projectId, suggestions: value.suggestions });
+    }).catch(() => { /* An offer is optional: the drawing works without it, and the next write or refresh reads it again. */ });
+    return () => { cancelled = true; };
+  }, [studio, projectId, active, refreshKey, refresh, corrections]);
+  useEffect(() => {
     // A visible drawing notices when the Working Head moves; the position's
     // revision is cheap to read and changes with every retained working result.
     if (!active) return;
@@ -282,7 +433,7 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
 
   function openDocument(document: SourceDocumentDto | null) {
     setSelected(document ? drawingDocumentKey(document) : ""); setVector(null); setDirty(false); setAppearanceHeld(null); setError(null);
-    setExplicitTarget(false); setAutomaticTarget(null); setStatus(null);
+    setExplicitTarget(false); setAutomaticTarget(null); setStatus(null); setPicked(null); setOfferNote(null); setRecipeNote(null);
     if (!document) setTarget(defaultTarget);
     setForm(document && isCutPlan(document) ? planFormFromDocument(document, lengthUnit) : defaultPlanForm(lengthUnit));
   }
@@ -309,11 +460,25 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
     } catch (cause) { if (mounted.current && scope.current === origin) setError(asStudioApiError(cause)); }
     finally { if (mounted.current) setImporting(false); }
   }
-  function update(patch: Partial<PlanForm>) { setForm(current => ({ ...current, ...patch })); setDirty(true); setAppearanceHeld(null); }
+  function update(patch: Partial<PlanForm>) { setForm(current => ({ ...current, ...patch })); setDirty(true); setAppearanceHeld(null); setRecipeNote(null); }
   const dimensions = form.dimensions ?? [];
-  /** The revision request itself: on a target, or on the drawing's own source. */
+  // Hiding is this drawing's appearance: it saves as a revision and never touches the design.
+  const hiddenIds = form.hiddenObjectIds ?? [], hiddenSet = new Set(hiddenIds);
+  const hideObject = (id: string) => { setPicked(null); update({ hiddenObjectIds: [...new Set([...hiddenIds, id])].sort() }); };
+  const showObject = (id: string) => update({ hiddenObjectIds: hiddenIds.filter(item => item !== id) });
+  const pickedObject = picked && !hiddenSet.has(picked) ? picture?.objects.get(picked) ?? null : null;
+  const listedObjects = picture ? [...picture.objects.values()].filter(object => !hiddenSet.has(object.id))
+    .map(object => ({ object, label: objectLabel(text, object) })).sort((a, b) => a.label.localeCompare(b.label)) : [];
+  const hiddenName = (id: string) => {
+    const object = picture?.objects.get(id) ?? seen.current.get(id);
+    return object ? `${object.component ?? object.id} · ${object.material ?? text.noMaterial}` : id;
+  };
+  /**
+   * The revision request itself: on a target, or on the drawing's own source. A new drawing names only the
+   * pens a person set. It is a person's own edit (human), which a project recipe offer may count.
+   */
   const requestRevision = (drawn: PlanTarget, follow?: "live" | "frozen") =>
-    studio.drawingPlan({ projectId, ...targetSource(drawn), ...form,
+    studio.drawingPlan({ projectId, ...targetSource(drawn), ...planRequestFields(form), sourceKind: "human",
       ...(source?.drawingId ? { drawingId: source.drawingId } : {}), ...(source?.revisionRef ? { previousRevisionRef: source.revisionRef } : {}),
       ...(follow ? { follow } : {}) });
   /** Write a revision on a target, or on the drawing's own source; `follow` records a person's choice. True once it is open. */
@@ -331,12 +496,62 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
       setDocuments(current => [...current.filter(item => drawingDocumentKey(item) !== drawingDocumentKey(result)), result]);
       if (drawingDocumentKey(result) !== selected) setVector(null);
       setSelected(drawingDocumentKey(result)); setForm(planFormFromDocument(result, lengthUnit)); setDirty(false); setAppearanceHeld(null);
+      setCorrections(value => value + 1);
       return true;
     } catch (cause) {
       if (mounted.current && scope.current === origin) { setError(asStudioApiError(cause)); if (!target) setAppearanceHeld("refused"); }
       return false;
     }
     finally { if (mounted.current) { setBusy(false); setLiveBusy(false); } }
+  };
+  const offers = offered?.projectId === projectId ? offered.suggestions.filter(offer => !ignoredOffers.get(projectId)?.has(offer.suggestionId)) : [];
+  const offerText = (offer: RecipeSuggestionDto, template: string) =>
+    fill(template, { count: offer.drawingIds.length, field: text.pens[offer.field], value: mm(offer.value) });
+  /** Ignoring an offer hides it for this session and writes nothing. */
+  const ignoreOffer = (offer: RecipeSuggestionDto) => {
+    ignoredOffers.set(projectId, new Set([...ignoredOffers.get(projectId) ?? [], offer.suggestionId]));
+    setIgnoring(value => value + 1);
+  };
+  /** Saving an offer is one decision: the person's project recipe for that value, evidenced by the page the offer names. */
+  const saveOffer = async (offer: RecipeSuggestionDto) => {
+    if (recipeSaving || !active) return;
+    setRecipeSaving(true); setError(null); setOfferNote(null);
+    try {
+      await studio.saveDecision(recipeDecision({ projectId, words: offerText(offer, text.offerWords), target: RECIPE_TARGETS[offer.field],
+        graphics: { [offer.field]: offer.value }, page: offer.page }));
+      if (!mounted.current) return;
+      setOffered(current => current && { ...current, suggestions: current.suggestions.filter(item => item.suggestionId !== offer.suggestionId) });
+      setOfferNote(fill(text.offerSaved, { field: text.pens[offer.field], value: mm(offer.value) }));
+      setCorrections(value => value + 1);
+    } catch (cause) { if (mounted.current) setError(asStudioApiError(cause)); }
+    finally { if (mounted.current) setRecipeSaving(false); }
+  };
+  /**
+   * Save the open revision's linework and hatch as the project recipe, evidenced by its page. A value the
+   * recipe already holds for the whole project is superseded rather than duplicated; values it holds as they
+   * are write nothing.
+   */
+  const saveRecipe = async () => {
+    const values = Object.fromEntries(PAPER_PENS.map(key => [key, form[key]])) as Record<PaperPen, number>;
+    if (!source?.revisionRef || recipeSaving || busy || dirty || !active || PAPER_PENS.some(key => !Number.isFinite(values[key]))) return;
+    const page = { runId: source.runId, assetSha256: source.assetSha256, revisionRef: source.revisionRef, pageIndex: 0 };
+    const listed = PAPER_PENS.map(key => `${text.pens[key]} ${mm(values[key])} mm`).join(language === "zh-CN" ? "，" : ", ");
+    setRecipeSaving(true); setError(null); setRecipeNote(null);
+    try {
+      const retained = await studio.decisions();
+      if (retained.projectId !== projectId) throw new Error("The decisions belong to another project.");
+      const writes = recipeWrites(retained.decisions, values);
+      for (const write of writes) {
+        const decision = recipeDecision({ projectId, words: fill(text.recipeWords, { values: listed }), target: write.target, graphics: write.graphics, page });
+        if (write.replaces) await studio.reviseDecision(write.replaces.decisionId,
+          { projectId, expectedRevisionRef: write.replaces.revisionRef, action: "supersede", replacement: decision });
+        else await studio.saveDecision(decision);
+      }
+      if (!mounted.current) return;
+      setRecipeNote(writes.length > 0 ? fill(text.recipeSaved, { values: listed }) : text.recipeSame);
+      setCorrections(value => value + 1);
+    } catch (cause) { if (mounted.current) setError(asStudioApiError(cause)); }
+    finally { if (mounted.current) setRecipeSaving(false); }
   };
   /** Generate a section perspective of the drawing's target and open it; nothing else changes. */
   const generateSection = async () => {
@@ -410,8 +625,12 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
     link.href = url; link.download = source.fileName.replace(/\.[^.]+$/, "") + ".svg"; link.click();
     window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
-  const numeric = (key: "cutHeight" | "bottom" | "scaleDenominator" | "cutLineMm" | "visibleLineMm" | "hatchSpacingMm", label: string, min?: number, step = "any") =>
-    <label className="drawing-field">{label}<input type="number" min={min} step={step} required value={Number.isFinite(form[key]) ? form[key] : ""} onChange={event => update({ [key]: event.currentTarget.valueAsNumber })} /></label>;
+  const numeric = (key: "cutHeight" | "bottom" | "scaleDenominator" | "cutLineMm" | "visibleLineMm" | "hatchSpacingMm", label: string, min?: number, step = "any") => {
+    // A new drawing's empty pen is left to the project recipe; a drawn revision always names its own.
+    const open = !source && (PAPER_PENS as readonly string[]).includes(key);
+    return <label className="drawing-field">{label}<input type="number" min={min} step={step} required={!open} placeholder={open ? text.recipePen : undefined}
+      value={Number.isFinite(form[key]) ? form[key] : ""} onChange={event => update({ [key]: event.currentTarget.valueAsNumber })} /></label>;
+  };
 
   return <div className="drawing-workspace" aria-label={text.title}>
     <header className="drawing-header"><div><h1>{text.title}</h1><p>{text.intro}</p></div>
@@ -419,6 +638,15 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
     <div className="drawing-body">
       <div className="drawing-main">
         <div className="drawing-context">
+        {offers.length > 0 && <div className="drawing-offers">{offers.map(offer => {
+          const label = offerText(offer, text.offer);
+          return <section key={offer.suggestionId} className="drawing-offer" aria-label={label}><p>{label}</p>
+            <div className="drawing-offer__actions">
+              <button type="button" className="btn btn--accent" disabled={recipeSaving || !active} onClick={() => void saveOffer(offer)}>{text.save}</button>
+              <button type="button" disabled={recipeSaving} onClick={() => ignoreOffer(offer)}>{text.ignore}</button>
+            </div></section>;
+        })}</div>}
+        {offerNote && <p className="drawing-offer-note" role="status">{offerNote}</p>}
         <div className="drawing-context__fields">
         <label className="drawing-field">{text.revision}<select value={selected} disabled={busy} onChange={event => { void chooseDocument(event.target.value); }}>
           <option value="">{text.fresh}</option>{latest.map(item => <option key={drawingDocumentKey(item)} value={drawingDocumentKey(item)}>
@@ -465,7 +693,8 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
             <button type="button" disabled={busy || !liveTarget} onClick={() => void generate(liveTarget, { follow: "live" })}>{text.followAgain}</button>}
         </section>}
         </div>
-        <div className="drawing-canvas">{source && file ? <PlanPreview key={source.drawingId ?? selected} source={source} file={file} vector={vector} objects={form.dressing} selected={selectedDressing}
+        <div className="drawing-canvas">{source && file ? <PlanPreview key={source.drawingId ?? selected} source={source} file={file} vector={vector}
+          picture={picture} hidden={hiddenIds} picked={pickedObject?.id ?? null} onPick={setPicked} objects={form.dressing} selected={selectedDressing}
           onSelect={setSelectedDressing} onChange={dressing => update({ dressing })} disabled={busy || !active} />
           : <div className="drawing-empty" role="status">{loading || source ? text.loading : stage ? text.empty : live?.reason ?? text.noModel}</div>}</div>
       </div>
@@ -476,7 +705,26 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
           {numeric("cutHeight", `${text.cutHeight} (${lengthUnit || "…"})`)}
           {numeric("bottom", `${text.bottom} (${lengthUnit || "…"})`)}
           {numeric("scaleDenominator", text.scale, 1, "1")}
-          <details><summary>{text.graphics}</summary>{numeric("cutLineMm", text.cutLine, 0.01)}{numeric("visibleLineMm", text.visibleLine, 0.01)}{numeric("hatchSpacingMm", text.hatch, 0.1)}</details>
+          <details><summary>{text.graphics}</summary>{numeric("cutLineMm", text.cutLine, 0.01)}{numeric("visibleLineMm", text.visibleLine, 0.01)}{numeric("hatchSpacingMm", text.hatch, 0.1)}
+            {!source && <p className="drawing-field__hint">{text.penHint}</p>}
+            {source && <div className="drawing-recipe">
+              <button type="button" disabled={recipeSaving || dirty || !source.revisionRef} onClick={() => void saveRecipe()}>{text.saveRecipe}</button>
+              <p className="drawing-field__hint" role={recipeNote ? "status" : undefined}>{recipeNote ?? text.saveRecipeHint}</p>
+            </div>}</details>
+        </fieldset>}
+        {source && !perspectiveOpen && picture && <fieldset disabled={busy || !active}><legend>{text.objects}</legend>
+          <label className="drawing-field">{text.object}<select value={pickedObject?.id ?? ""} onChange={event => setPicked(event.target.value || null)}>
+            <option value="">{text.noObject}</option>
+            {listedObjects.map(({ object, label }) => <option key={object.id} value={object.id}>{label}</option>)}</select></label>
+          {pickedObject ? <div className="drawing-object-picked">
+            <strong>{objectLabel(text, pickedObject)}</strong><small>{pickedObject.id}</small>
+            <button type="button" onClick={() => hideObject(pickedObject.id)}>{text.hideObject}</button>
+          </div> : <p>{picture.image ? text.tooMany.replace("{count}", String(picture.lines)) : text.pickHint}</p>}
+          {hiddenIds.length > 0 && <div className="drawing-object-hidden"><strong>{text.hiddenObjects}</strong><ul>{hiddenIds.map(id => {
+            const name = hiddenName(id);
+            return <li key={id}><span>{name}{status?.unresolvedObjectIds?.includes(id) ? ` · ${text.notInModel}` : ""}</span>
+              <button type="button" aria-label={`${text.showObject}: ${name}`} onClick={() => showObject(id)}>{text.showObject}</button></li>;
+          })}</ul></div>}
         </fieldset>}
         {source && vector && form.cropUv && <DressingControls objects={form.dressing} vector={vector} crop={form.cropUv}
           selected={selectedDressing} onSelect={setSelectedDressing} onChange={dressing => update({ dressing })}

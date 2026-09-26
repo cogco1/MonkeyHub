@@ -14,6 +14,9 @@ import { createPlanApiDrawingsPlansPost, readPlanStatusApiDrawingsPlansStatusPos
   readPlanDimensionChoicesApiDrawingsPlansDimensionsGet, createPlanDimensionProposalApiDrawingsPlansDimensionProposalPost } from "./generated";
 import { createSectionPerspectiveApiDrawingsSectionPerspectivesPost } from "./generated";
 import type { SectionPerspectiveRequestDto } from "./generated";
+import { createDecisionApiDecisionsPost, readDecisionsApiDecisionsGet, readDrawingCorrectionsApiDrawingsCorrectionsGet,
+  reviseDecisionApiDecisionsDecisionIdRevisionsPost } from "./generated";
+import type { DecisionDto, DecisionListDto, DecisionRequestDto, DecisionRevisionRequestDto, DrawingCorrectionsDto } from "./generated";
 import { retainStudyApiStudiesPost, discoverStudiesApiStudiesGet,
   proposeStudyApiStudiesProposePost } from "./generated";
 import {
@@ -261,6 +264,23 @@ export const createStudioClient = (connection: ServerConnection) => ({
   },
   drawingDimensionProposal(body: PlanDimensionProposalRequestDto): Promise<ProposalDto> {
     return call("POST /api/drawings/plans/dimension-proposal", createPlanDimensionProposalApiDrawingsPlansDimensionProposalPost({ client: connection.client, body }));
+  },
+  /** Read only: one cut plan's revisions beside the ones they continued, and the project's repeated recipe corrections. */
+  drawingCorrections(projectId: string, drawingId?: string | null): Promise<DrawingCorrectionsDto> {
+    return call("GET /api/drawings/corrections", readDrawingCorrectionsApiDrawingsCorrectionsGet({ client: connection.client, query: { projectId, drawingId } }));
+  },
+  /** Every decision the project retains, at its current revision. */
+  decisions(): Promise<DecisionListDto> {
+    return call("GET /api/decisions", readDecisionsApiDecisionsGet({ client: connection.client }));
+  },
+  /** Retain one decision, checked against the exact source it names. */
+  saveDecision(body: DecisionRequestDto): Promise<DecisionDto> {
+    return call("POST /api/decisions", createDecisionApiDecisionsPost({ client: connection.client, body }));
+  },
+  /** Revoke or supersede one decision against the revision the caller read. */
+  reviseDecision(decisionId: string, body: DecisionRevisionRequestDto): Promise<DecisionDto> {
+    return call(`POST /api/decisions/${decisionId}/revisions`, reviseDecisionApiDecisionsDecisionIdRevisionsPost({ client: connection.client,
+      path: { decision_id: decisionId }, body }));
   },
   combineCandidates(body: CombineCandidatesRequestDto): Promise<CandidateAcceptedDto> {
     return call("POST /api/candidates/combine", combineCandidatesApiCandidatesCombinePost({ client: connection.client, body }));
