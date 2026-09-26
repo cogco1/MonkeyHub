@@ -153,28 +153,6 @@
       "notes": [
         "2026-09-08 rule alignment: Awaiting the first concrete evidence consumer and a check of existing Reading/source references. The earlier proposed ledger and private Atlas field superset are not a mandate to add a core record."
       ]
-    },
-    {
-      "id": "GH-285",
-      "stream": "planning",
-      "status": "active",
-      "goal": "Model real retained captures for each fixture project",
-      "depends_on": [],
-      "write_scope": [
-        "apps/monkeyhub/web/test/chatShell.browser.mjs"
-      ],
-      "branch": "codex/285-study-previews-current",
-      "worktree": "C:/Users/asus/.codex/worktrees/merge-cloud-batch/ARCHFLOW_V4",
-      "base_ref": "7349398e",
-      "contributor": "Codex cloud with Codex integration",
-      "reviewer": "Codex",
-      "handoff": "Review the scoped cloud patch and run remote CI",
-      "modules": [
-        "hub.shell"
-      ],
-      "acceptance": [
-        "Result thumbnails bind to project/run/state/asset and keep icon fallback; no automatic view or HEAD movement."
-      ]
     }
   ]
 }
