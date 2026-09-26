@@ -153,6 +153,28 @@
       "notes": [
         "2026-09-08 rule alignment: Awaiting the first concrete evidence consumer and a check of existing Reading/source references. The earlier proposed ledger and private Atlas field superset are not a mandate to add a core record."
       ]
+    },
+    {
+      "id": "GH-282",
+      "stream": "planning",
+      "status": "active",
+      "goal": "Check project Runtime reuse after Monitor navigation",
+      "depends_on": [],
+      "write_scope": [
+        "apps/monkeyhub/web/test/chatShell.browser.mjs"
+      ],
+      "branch": "codex/merge-cloud-batch",
+      "worktree": "C:/Users/asus/.codex/worktrees/merge-cloud-batch/ARCHFLOW_V4",
+      "base_ref": "b6aa5b1298c203418db45b76133519c9604fe048",
+      "contributor": "Codex",
+      "reviewer": "Codex",
+      "handoff": "Keep cold-start and warm-reuse lifecycle assertions in remote browser acceptance",
+      "modules": [
+        "hub.shell"
+      ],
+      "acceptance": [
+        "Project B starts once during first navigation and is reused when a conversation starts."
+      ]
     }
   ]
 }
