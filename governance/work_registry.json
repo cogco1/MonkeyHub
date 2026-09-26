@@ -172,7 +172,9 @@
         "apps/monkeyhub/web/workspaces/test/versionNotifications.browser.mjs",
         "apps/monkeyhub/web/workspaces/test/workspaceFixture.mjs",
         "apps/monkeyhub/web/test/projectWorkspaceFixture.mjs",
-        ".github/workflows/verify.yml"
+        ".github/workflows/verify.yml",
+        "apps/monkeyhub/web/workspaces/src/app/App.tsx",
+        "apps/monkeyhub/web/workspaces/src/app/useSession.ts"
       ],
       "card": "docs/mapping/planning/GH-355-browser-suites.md",
       "acceptance": [
@@ -204,7 +206,9 @@
             "apps/monkeyhub/web/workspaces/test/versionNotifications.browser.mjs",
             "apps/monkeyhub/web/workspaces/test/workspaceFixture.mjs",
             "apps/monkeyhub/web/test/projectWorkspaceFixture.mjs",
-            ".github/workflows/verify.yml"
+            ".github/workflows/verify.yml",
+            "apps/monkeyhub/web/workspaces/src/app/App.tsx",
+            "apps/monkeyhub/web/workspaces/src/app/useSession.ts"
           ],
           "depends_on": [],
           "status": "active",
