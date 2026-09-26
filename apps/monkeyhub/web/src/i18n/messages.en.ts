@@ -903,7 +903,6 @@ export const messagesEn = {
 
   // Design tree (#284): the project's Stages, Studies and admitted options.
   "designTree.title": "Design tree",
-  "designTree.subtitle": "Stages, Studies and admitted options",
   "designTree.bar": "Project position",
   "designTree.chip.position": "{stage} — {position}",
   "designTree.chip.noStage": "No Stage yet",

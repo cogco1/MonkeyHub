@@ -866,7 +866,6 @@ export const messagesZhCN = {
 
   // 状态树（#284）：项目的阶段、方案组与已准入方案。
   "designTree.title": "状态树",
-  "designTree.subtitle": "阶段、方案组与已准入方案",
   "designTree.bar": "项目位置",
   "designTree.chip.position": "{stage} · {position}",
   "designTree.chip.noStage": "尚无阶段",
