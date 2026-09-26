@@ -182,6 +182,7 @@ export const messagesZhCN = {
   "stage.base.continue": "从这里继续",
   "stage.base.continueTitle": "下一次修改使用画面中这个运行的记录，不代表认可或发布。",
   "stage.base.default": "返回默认修改起点",
+  "stage.base.label": "修改起点",
   "stage.base.restoreFailed": "无法重新打开所选的修改版本",
   "stage.base.restoreHelp": "原选择仍然保留。可以重试，或明确返回默认修改起点。",
   "stage.base.modelUnavailable": "已读取所选版本的修改记录，但模型不可用。可以重试加载，或返回默认修改起点。",

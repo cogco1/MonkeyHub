@@ -11,6 +11,9 @@
 .menu-tab:hover, .menu-command:hover:not(:disabled) { color: var(--ink); }
 .menu-tab[aria-pressed="true"] { color: var(--ink); font-weight: 600; box-shadow: inset 0 -2px var(--accent); }
 .menu-command:disabled { color: var(--faint); cursor: default; }
+/* A command whose panel is open, or whose choice is on, reads as chosen without moving its neighbours. */
+.menu-command[aria-expanded="true"], .menu-command[aria-pressed="true"] { color: var(--ink); text-decoration: underline 2px var(--accent);
+  text-underline-offset: 6px; }
 .menu-separator { flex: none; width: 1px; height: 16px; background: var(--line); }
 .status-line { display: flex; flex: none; align-items: center; gap: 16px; min-height: 28px; box-sizing: border-box; padding: 4px 16px;
   border-top: 1px solid var(--line); color: var(--faint); font-size: var(--text-caption); }
