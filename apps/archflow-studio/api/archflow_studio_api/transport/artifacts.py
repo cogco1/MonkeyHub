@@ -400,6 +400,9 @@ class SourceDocumentDto(BaseModel):
         "Read only: who asked for this drawing revision, from its receipt; null when it was not recorded."))
     reason: str | None = Field(default=None, description=(
         "Read only: why this drawing revision was asked for, from its receipt; null when none was given or recorded."))
+    source_kind: Literal["human", "agent"] | None = Field(alias="sourceKind", default=None, description=(
+        "Read only: whether a person's own edit (human) or an agent (agent) asked for this drawing revision, as its "
+        "request said, from its receipt; null when the request did not say or the revision was retained before it could."))
 
 
 class SourceDocumentListDto(BaseModel):
@@ -431,6 +434,7 @@ def document_dto(document: SourceDocument) -> SourceDocumentDto:
             actor_id=document.attribution.actor_id, authenticated=document.attribution.authenticated,
             origin=document.attribution.origin),
         reason=document.reason,
+        source_kind=document.source_kind,
     )
 
 
