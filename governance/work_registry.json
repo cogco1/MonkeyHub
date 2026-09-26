@@ -153,6 +153,55 @@
       "notes": [
         "2026-09-08 rule alignment: Awaiting the first concrete evidence consumer and a check of existing Reading/source references. The earlier proposed ledger and private Atlas field superset are not a mandate to add a core record."
       ]
+    },
+    {
+      "id": "GH-353",
+      "stream": "planning",
+      "status": "active",
+      "goal": "The Design Tree canvas joins the Hub's one information hierarchy (#353, part of #337): one column per stage headed by its name, options drawn as small cards (letter, name, running/ready/rejected status bar), and the selected node's details in a right-docked inspector like Modeling's versions inspector (overlay when the surface is under 560 px), keeping the far/middle/near semantic zoom.",
+      "depends_on": [],
+      "issue": "https://github.com/cogco1/MonkeyHub/issues/353",
+      "write_scope": [
+        "apps/monkeyhub/web/workspaces/src/features/designTree/",
+        "apps/monkeyhub/web/workspaces/src/features/chrome/SurfaceChrome.tsx",
+        "apps/monkeyhub/web/workspaces/src/features/chrome/chrome.css",
+        "apps/monkeyhub/web/src/i18n/messages.en.ts",
+        "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
+        "apps/monkeyhub/web/workspaces/test/designTree.browser.mjs",
+        "apps/monkeyhub/web/workspaces/test/designTree.test.ts"
+      ],
+      "card": "docs/mapping/planning/GH-353-tree-canvas.md",
+      "acceptance": [
+        "designTree.browser.mjs (CI) and designTree.test.ts pass; the planar no-crossing and trunk-order layout assertions are kept.",
+        "Checked at 1440 px in Chinese and English, light and dark, and all four interface styles."
+      ],
+      "lanes": [
+        {
+          "id": "tree-canvas",
+          "issue": "https://github.com/cogco1/MonkeyHub/issues/353",
+          "branch": "codex/353-tree-canvas",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-353-tree-canvas",
+          "base_ref": "d266d589",
+          "contributor": "Claude",
+          "reviewer": "Claude root task",
+          "handoff": "Independent of #348; touches only the Design Tree feature, its suites and the catalogs. Other #337 lanes run beside this one (GH-349, GH-351, GH-352, GH-353, GH-354) with GH-355 repairing main's stale local suites; a lane that merges later merges main first.",
+          "modules": [
+            "hub.shell"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/web/workspaces/src/features/designTree/",
+            "apps/monkeyhub/web/workspaces/src/features/chrome/SurfaceChrome.tsx",
+            "apps/monkeyhub/web/workspaces/src/features/chrome/chrome.css",
+            "apps/monkeyhub/web/src/i18n/messages.en.ts",
+            "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
+            "apps/monkeyhub/web/workspaces/test/designTree.browser.mjs",
+            "apps/monkeyhub/web/workspaces/test/designTree.test.ts"
+          ],
+          "depends_on": [],
+          "status": "active",
+          "blocked_reason": null
+        }
+      ]
     }
   ]
 }
