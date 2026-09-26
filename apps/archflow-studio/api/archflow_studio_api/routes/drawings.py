@@ -177,7 +177,9 @@ def create_section_perspective(request: Request, payload: SectionPerspectiveRequ
         section=payload.section.model_dump(by_alias=True),
         camera=None if payload.camera is None else payload.camera.model_dump(by_alias=True, exclude_none=True),
         depth=payload.depth, hidden_object_ids=tuple(payload.hidden_object_ids), drawing_id=payload.drawing_id,
-        scale_denominator=payload.scale_denominator, graphics=graphics or None, monitor=request.app.state.monitor,
+        scale_denominator=payload.scale_denominator, graphics=graphics or None,
+        hatch=None if payload.hatch is None else payload.hatch.model_dump(by_alias=True, exclude_none=True),
+        beyond=None if payload.beyond is None else payload.beyond.model_dump(), monitor=request.app.state.monitor,
     ))
 
 

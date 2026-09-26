@@ -139,6 +139,18 @@ class SectionPerspectiveApiTests(CandidateTestCase):
         self.assertEqual(self.post().json(), plain.json())
         self.assertEqual(self.repository.read_head(), self.head)
 
+    def test_the_route_passes_material_hatch_and_beyond_fade_through(self):
+        svg_ns = "{http://www.w3.org/2000/svg}"
+        with patch("monkeydiagram.drawing_elevation.object_semantics", return_value={"obj-room-floor": {"material": "concrete"}}):
+            ruled = self.post(hatch={"byMaterial": {"concrete": {"poche": True}}}, beyond={"fade": 0.5})
+        self.assertEqual(ruled.status_code, 201, ruled.text)
+        drawing = read_model_axis_elevation(self.repository, record_ref_from_uri(ruled.json()["revisionRef"], PROJECT_ID))
+        root = ElementTree.fromstring(drawing.svg)
+        filled = root.find(f"{svg_ns}g[@id='section-hatch']").findall(f"{svg_ns}polygon")
+        self.assertEqual([(polygon.get("data-object"), polygon.get("data-material")) for polygon in filled],
+                         [("obj-room-floor", "concrete")])
+        self.assertEqual(root.find(f"{svg_ns}g[@id='visible']").get("stroke"), "#808080")
+
     def test_refusals_are_named_and_register_nothing(self):
         for code, changes in (
             ("SECTION_PLANE_MISSES_MODEL", {"section": {"line": [[0, 50], [4, 50]], "keep": "right"}}),
