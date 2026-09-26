@@ -33,10 +33,11 @@ the import. Nested durations must not be added to their enclosing duration.
 
 ## External-source path and browser verification
 
-The first UI trial exposed a gap: Open Model only parsed a local file, and the
-existing composed-model registration required an already retained semantic run.
-The import now calls the existing model-assets API without a fabricated run or
-state. It saves original bytes in P036 and an immutable external registration in
+Open Model is an explicit user request to view the selected file. The handler
+awaits registration and then awaits the retained artifact's existing viewer-load
+path; this is independent of Agent-result auto-selection. The import calls the
+existing model-assets API without a fabricated run or state. It saves original
+bytes in P036 and an immutable external registration in
 a source run keyed by asset digest. Separate revisions cannot accidentally load
 together as different seats of one generated model. Its artifact explicitly says
 `external`; designStateDigest/modelSource/sourceStageRef remain null. Registration
@@ -188,12 +189,14 @@ artifact, not another authoritative project database. Remote Blender deployment
 is not part of this profiling slice; these are design constraints, not claims
 that a remote worker or a universal scene contract is implemented.
 
-## Integration verification, 2026-09-24
+## Integration verification, 2026-09-26
 
-The closeout rebases this slice onto main `72904b1`. New external registrations
-use the existing `StudioModelAsset@1` record with `representation: external` and
-no modelSource. Readers also accept the earlier experimental external schema;
-both original-source registrations remain protected from automatic draft cleanup.
+The cloud smoke was rerun from main `07e1a40b` (including PR #339), with Node
+24.15.0, Google Chrome 154.0.8037.57, the repository's `npm run sync` output and
+the real disposable Project Runtime. New external registrations use the existing
+`StudioModelAsset@1` record with `representation: external` and no modelSource.
+Readers also accept the earlier experimental external schema; both original-source
+registrations remain protected from automatic draft cleanup.
 
 The checked-in `externalModelImport.browser.mjs` exercises the real Runtime and
 P036 in a disposable project: drag/drop, two distinct retained revisions, unchanged
@@ -201,7 +204,16 @@ retry, corrupt-file refusal without losing the current view, browser reopen and
 version selection. External imports do not expose semantic continuation, model
 undo/redo or Stage acceptance. The project HEAD remains unchanged.
 
-All five browser cases passed. A 9,787-byte public fixture took 6,711 ms from drop
-to the selected displayed model in the final run (5,156 ms in another run). This
-is a functional smoke measurement, not a large-model latency claim. The older
-real-model timings above are retained as the original branch's baseline.
+All five functional cases passed with their observable application assertions:
+the target card was selected, loading ended, the viewport had no error, corrupt
+input preserved selected source B and the two-source count, reopen selected A and
+B in turn, HEAD did not move, and every retained byte response matched its input.
+The smoke also verifies that the synced Rhino JavaScript, worker and WASM assets
+are present and that Chrome receives the WASM successfully.
+
+No latency value is reported for this run. The drag/drop test does not receive an
+operation id spanning a diagnostic start/end event window, so request arrival plus
+an equal SHA would not reliably exclude a late event from another load. Its timing
+is therefore `null`; source visibility remains unknown and first visible frame is
+not measured. The earlier authorized-model observations above remain historical
+baseline data, not measurements from this fixture run.

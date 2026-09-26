@@ -1,7 +1,4 @@
 .publish-workspace { height: 100%; min-height: 0; display: flex; flex-direction: column; color: var(--ink); background: var(--ground); font-size: var(--hub-font-size-body, 13px); }
-.publish-toolbar { display: flex; gap: 10px; padding: 12px 16px; align-items: center; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
-.publish-toolbar > input { flex: 1; min-width: 100px; }
-.publish-toolbar > span { color: var(--muted); }
 .publish-workspace button, .publish-workspace input, .publish-workspace select, .publish-workspace textarea { font: inherit; }
 .publish-workspace button { min-height: 34px; cursor: pointer; padding: 6px 10px; }
 .publish-body { min-height: 0; flex: 1; display: grid; grid-template-columns: 150px minmax(200px, 1fr) 230px; }

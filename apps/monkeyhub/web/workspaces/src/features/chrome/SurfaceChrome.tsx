@@ -34,7 +34,8 @@ export function ProjectBar({ label, lead, position, children }: {
   const slots = useMemo(() => ({ menus, words }), [menus, words]);
   return <>
     <div className="surface-bar project-bar" role="group" aria-label={label}>
-      <div className="surface-bar__items"><span className="project-bar__lead">{lead}</span><span className="project-bar__menus" ref={setMenus} /></div>
+      <div className="surface-bar__items"><span className="project-bar__lead">{lead}</span><span className="menu-separator project-bar__gap" aria-hidden="true" />
+        <span className="project-bar__menus" ref={setMenus} /></div>
       <div className="surface-bar__end"><span className="project-bar__words" ref={setWords} />{position}</div>
     </div>
     <ProjectBarSlots.Provider value={slots}>{children}</ProjectBarSlots.Provider>
@@ -74,8 +75,8 @@ export function MenuSeparator() {
   return <span className="menu-separator" aria-hidden="true" />;
 }
 
-export function StatusLine({ children, end }: { children?: ReactNode; end?: ReactNode }) {
-  return <div className="status-line">
+export function StatusLine({ children, end, className }: { children?: ReactNode; end?: ReactNode; className?: string }) {
+  return <div className={className ? `status-line ${className}` : "status-line"}>
     <span className="status-line__start">{children}</span>
     {end != null && end !== false && <span className="status-line__end">{end}</span>}
   </div>;

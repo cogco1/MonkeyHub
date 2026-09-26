@@ -8,6 +8,7 @@ import { pageSource, documentKey } from "../monkeyboard/boardScene";
 import { usePreferences } from "../../features/settings/preferences";
 import { createPublicationSaveQueue } from "./publicationSaveQueue";
 import "./publish.css";
+import { MenuCommand, SurfaceMenus } from "../../features/chrome/SurfaceChrome";
 
 // Only failed/in-flight project drafts outlive their surface, in this UI session.
 // The saved document remains exclusively in P036; browser close warns on these drafts.
@@ -213,12 +214,13 @@ export default function PublishWorkspace({ projectId, active, refreshKey = 0, bo
   };
   if (!draft) return <section className="publish-workspace"><p>{error || (zh ? "正在读取排版…" : "Loading publication…")}</p>{error && <button onClick={() => setAttempt((value) => value + 1)}>{zh ? "重试" : "Retry"}</button>}</section>;
   return <section className="publish-workspace" aria-label="Publish">
-    <header className="publish-toolbar">
-      <strong>Publish</strong><input aria-label={zh ? "文件标题" : "Publication title"} value={draft.title} disabled={busy} onChange={(event) => change({ ...draft, title: event.target.value })} />
-      <span role="status">{saveError ? (zh ? "保存失败" : "Not saved") : saving ? (zh ? "正在保存…" : "Saving…") : dirty ? (zh ? "等待保存…" : "Waiting to save…") : (zh ? "已保存" : "Saved")}</span>
-      <button disabled={busy || !draft.pages.length} onClick={() => void run(() => exportFile("pptx"))}>PPTX</button>
-      <button disabled={busy || !draft.pages.length} onClick={() => void run(() => exportFile("pdf"))}>PDF</button>
-    </header>
+    {/* #337: Layout's title and exports sit in the project bar after Board | Layout, its save state at the bar's right end. */}
+    <SurfaceMenus label="Publish" active={active}
+      end={<span className="publish-save-state" role="status">{saveError ? (zh ? "保存失败" : "Not saved") : saving ? (zh ? "正在保存…" : "Saving…") : dirty ? (zh ? "等待保存…" : "Waiting to save…") : (zh ? "已保存" : "Saved")}</span>}>
+      <input className="surface-title publish-title" aria-label={zh ? "文件标题" : "Publication title"} value={draft.title} disabled={busy} onChange={(event) => change({ ...draft, title: event.target.value })} />
+      <MenuCommand disabled={busy || !draft.pages.length} onClick={() => void run(() => exportFile("pptx"))}>PPTX</MenuCommand>
+      <MenuCommand disabled={busy || !draft.pages.length} onClick={() => void run(() => exportFile("pdf"))}>PDF</MenuCommand>
+    </SurfaceMenus>
     {saveError && <div role="alert" className="publish-error">{saveError}<button disabled={busy || saving} onClick={() => void queue.current?.retry().then(() => { setError(""); setAttempt((value) => value + 1); }).catch(() => {})}>{zh ? "重试保存" : "Retry save"}</button><button disabled={busy || saving} onClick={reload}>{zh ? "重新读取" : "Reload"}</button></div>}
     {error && <div role="alert" className="publish-error">{error}<button disabled={busy || saving} onClick={reload}>{zh ? "重新读取" : "Reload"}</button></div>}
     <div className="publish-body">
