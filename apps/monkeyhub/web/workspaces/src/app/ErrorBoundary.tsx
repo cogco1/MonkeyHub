@@ -81,7 +81,7 @@ class ErrorBoundaryImpl extends Component<
         <button
           type="button"
           className="button button--small"
-          onClick={() => this.setState({ error: null, caught: false })}
+          onClick={() => window.location.reload()}
         >
           {this.props.reloadLabel}
         </button>
