@@ -13,6 +13,7 @@ import { BoardModeSwitch } from "./BoardModeSwitch";
 import { ErrorPanel } from "./ErrorPanel";
 import { LoadingOverlay } from "./LoadingOverlay";
 import { failed, loading, ready, type Loadable } from "./loadable";
+import { ProjectBar } from "../features/chrome/SurfaceChrome";
 import { currentView, DesignTreeBar, type DesignTreeView } from "../features/designTree/DesignTreeBar";
 import { useDesignTree, useSeenCandidates } from "../features/designTree/useDesignTree";
 import { treeWords } from "../features/designTree/words";
@@ -198,59 +199,61 @@ export function ProjectWorkspace({ workspace, expectedProjectId, candidateRunId 
   </div></div>;
   if (server.status !== "ready") return <div className="project-workspace"><LoadingOverlay mode="boot" status="Project Runtime" /></div>;
   return <div className="project-workspace" style={{ height: "100%", minHeight: 0 }}>
-    {/* The project's position over every surface: the Stage chip opens the Design Tree. */}
-    {designTree.available && <DesignTreeBar data={designTree} seen={seenCandidates.seen} open={workspace === "tree"} viewing={viewing}
-      onToggle={() => onWorkspaceChange(workspace === "tree" ? treeReturn.current : "tree")}
-      onBackToCurrent={() => viewRun(currentView(designTree))} onShowReady={showReady}
-      onRecordEdits={recordEdits} />}
-    {refreshError && <ErrorPanel error={refreshError} what="GET /api/protocol" />}
-    {(archVisited || modelVisible) && <div data-project-surface="arch" hidden={!modelVisible} inert={!active || !modelVisible}
-      style={{ height: "100%", minHeight: 0, display: modelVisible ? "block" : "none" }}>
-      <App server={server.value} expectedProjectId={boundProjectId.current} initialRunId={treeView?.runId ?? candidateRunId}
-        initialRunAsset={treeView?.assetSha256 ?? null} initialRunRequest={viewRequest}
-        initialRunFollowsHead={treeView ? false : candidateFollowsHead} documentSource={pageOpen ? visit.source : null}
-        initialDocumentIntent={documentIntent} initialSketchRequest={sketchRequest}
-        active={active && modelVisible} refreshKey={refreshKey + attempt + headMoves} onReturnToBoard={openBoard} onOpenBoard={openBoard} onChatRequest={onChatRequest}
-        onDesignContextChange={designContextChanged} onRenderReader={registerRenderReader}
-        onView={(view) => viewRun({ ...view, back: false }, true)} onRecorder={registerRecorder}
-        onOpenTree={designTree.available ? () => onWorkspaceChange("tree") : undefined} />
-    </div>}
-    {/* #300: Board and its Layout mode share one rail entry; this switch moves between the two
-        mounted surfaces, and view=publish links still land on Layout. */}
-    {((workspace === "board" && !pageOpen) || workspace === "publish") && <BoardModeSwitch mode={workspace === "publish" ? "layout" : "board"}
-      onChange={(mode) => onWorkspaceChange(mode === "layout" ? "publish" : "board")} />}
-    {(publishVisited || workspace === "publish") && <div data-project-surface="publish" hidden={workspace !== "publish"} inert={!active || workspace !== "publish"}
-      style={{ height: "100%", minHeight: 0, display: workspace === "publish" ? "block" : "none" }}>
-      <Suspense fallback={<LoadingOverlay mode="boot" status="Publish" />}>
-        <Publish projectId={boundProjectId.current!} active={active && workspace === "publish"} refreshKey={refreshKey + attempt} boardRequest={publishRequest} />
-      </Suspense>
-    </div>}
-    {(renderVisited || workspace === "render") && <div data-project-surface="render" hidden={workspace !== "render"} inert={!active || workspace !== "render"}
-      style={{ height: "100%", minHeight: 0, display: workspace === "render" ? "block" : "none" }}>
-      <Suspense fallback={<LoadingOverlay mode="boot" status="Render" />}>
-        <Render readModelView={readRenderView} onModeling={() => onWorkspaceChange("arch")} projectId={boundProjectId.current!} active={active && workspace === "render"} refreshKey={refreshKey + attempt}
-          onBoard={(source) => { setVisit(null); setBoardPage({ source, requestId: crypto.randomUUID() }); setBoardRefresh((value) => value + 1); onWorkspaceChange("board"); }} />
-      </Suspense>
-    </div>}
-    {(drawingVisited || workspace === "drawing") && <div data-project-surface="drawing" hidden={workspace !== "drawing"} inert={!active || workspace !== "drawing"}
-      style={{ height: "100%", minHeight: 0, display: workspace === "drawing" ? "flex" : "none", flexDirection: "column" }}>
-      <Suspense fallback={<LoadingOverlay mode="boot" status="Drawing" />}>
-        <RecipeTransfer key={boundProjectId.current!} projectId={boundProjectId.current!} active={active && workspace === "drawing"} />
-        <div style={{ flex: 1, minHeight: 0 }}><Drawing projectId={boundProjectId.current!} active={active && workspace === "drawing"} refreshKey={refreshKey + attempt} /></div>
-      </Suspense>
-    </div>}
-    {(boardVisited || workspace === "board") && <div data-project-surface="board" hidden={workspace !== "board" || pageOpen} inert={!active || workspace !== "board" || pageOpen}
-      style={{ height: "100%", minHeight: 0, display: workspace === "board" && !pageOpen ? "block" : "none" }}>
-      <Suspense fallback={<LoadingOverlay mode="boot" status="MonkeyBoard" />}>
-        <Board onPublish={(revision, ids) => { setPublishRequest({ revision, ids, requestId: crypto.randomUUID() }); onWorkspaceChange("publish"); }} expectedProjectId={boundProjectId.current} refreshKey={refreshKey + attempt + boardRefresh} active={active && workspace === "board" && !pageOpen} onSubmit={submitFeedback} onSketch={submitSketch} onOpenDocument={setVisit} pageRequest={boardPage} />
-      </Suspense>
-    </div>}
-    {(treeVisited || workspace === "tree") && <div data-project-surface="tree" hidden={workspace !== "tree"} inert={!active || workspace !== "tree"}
-      style={{ height: "100%", minHeight: 0, display: workspace === "tree" ? "block" : "none" }}>
-      <Suspense fallback={<LoadingOverlay mode="boot" status="Design tree" />}>
-        <DesignTreeSurface data={designTree} markSeen={seenCandidates.markSeen} active={active && workspace === "tree"} returnTo={treeReturn.current}
-          onLeave={() => onWorkspaceChange(treeReturn.current)} onView={viewRun} onRecordEdits={recordEdits} focus={treeNodeFocus} />
-      </Suspense>
-    </div>}
+    {/* #337: one bar over every surface. The surface on screen puts its menus on the left; the project's
+        position stays at the right end, where the Stage chip opens the Design Tree. #300: Board and its
+        Layout mode share one rail entry, and this switch moves between the two mounted surfaces. */}
+    <ProjectBar label={t("workspace.surfaceBar")}
+      lead={((workspace === "board" && !pageOpen) || workspace === "publish") && <BoardModeSwitch mode={workspace === "publish" ? "layout" : "board"}
+        onChange={(mode) => onWorkspaceChange(mode === "layout" ? "publish" : "board")} />}
+      position={designTree.available && <DesignTreeBar data={designTree} seen={seenCandidates.seen} open={workspace === "tree"} viewing={viewing}
+        onToggle={() => onWorkspaceChange(workspace === "tree" ? treeReturn.current : "tree")}
+        onBackToCurrent={() => viewRun(currentView(designTree))} onShowReady={showReady}
+        onRecordEdits={recordEdits} />}>
+      {refreshError && <ErrorPanel error={refreshError} what="GET /api/protocol" />}
+      {(archVisited || modelVisible) && <div data-project-surface="arch" hidden={!modelVisible} inert={!active || !modelVisible}
+        style={{ height: "100%", minHeight: 0, display: modelVisible ? "block" : "none" }}>
+        <App server={server.value} expectedProjectId={boundProjectId.current} initialRunId={treeView?.runId ?? candidateRunId}
+          initialRunAsset={treeView?.assetSha256 ?? null} initialRunRequest={viewRequest}
+          initialRunFollowsHead={treeView ? false : candidateFollowsHead} documentSource={pageOpen ? visit.source : null}
+          initialDocumentIntent={documentIntent} initialSketchRequest={sketchRequest}
+          active={active && modelVisible} refreshKey={refreshKey + attempt + headMoves} onReturnToBoard={openBoard} onOpenBoard={openBoard} onChatRequest={onChatRequest}
+          onDesignContextChange={designContextChanged} onRenderReader={registerRenderReader}
+          onView={(view) => viewRun({ ...view, back: false }, true)} onRecorder={registerRecorder}
+          onOpenTree={designTree.available ? () => onWorkspaceChange("tree") : undefined} />
+      </div>}
+      {(publishVisited || workspace === "publish") && <div data-project-surface="publish" hidden={workspace !== "publish"} inert={!active || workspace !== "publish"}
+        style={{ height: "100%", minHeight: 0, display: workspace === "publish" ? "block" : "none" }}>
+        <Suspense fallback={<LoadingOverlay mode="boot" status="Publish" />}>
+          <Publish projectId={boundProjectId.current!} active={active && workspace === "publish"} refreshKey={refreshKey + attempt} boardRequest={publishRequest} />
+        </Suspense>
+      </div>}
+      {(renderVisited || workspace === "render") && <div data-project-surface="render" hidden={workspace !== "render"} inert={!active || workspace !== "render"}
+        style={{ height: "100%", minHeight: 0, display: workspace === "render" ? "block" : "none" }}>
+        <Suspense fallback={<LoadingOverlay mode="boot" status="Render" />}>
+          <Render readModelView={readRenderView} onModeling={() => onWorkspaceChange("arch")} projectId={boundProjectId.current!} active={active && workspace === "render"} refreshKey={refreshKey + attempt}
+            onBoard={(source) => { setVisit(null); setBoardPage({ source, requestId: crypto.randomUUID() }); setBoardRefresh((value) => value + 1); onWorkspaceChange("board"); }} />
+        </Suspense>
+      </div>}
+      {(drawingVisited || workspace === "drawing") && <div data-project-surface="drawing" hidden={workspace !== "drawing"} inert={!active || workspace !== "drawing"}
+        style={{ height: "100%", minHeight: 0, display: workspace === "drawing" ? "flex" : "none", flexDirection: "column" }}>
+        <Suspense fallback={<LoadingOverlay mode="boot" status="Drawing" />}>
+          <RecipeTransfer key={boundProjectId.current!} projectId={boundProjectId.current!} active={active && workspace === "drawing"} />
+          <div style={{ flex: 1, minHeight: 0 }}><Drawing projectId={boundProjectId.current!} active={active && workspace === "drawing"} refreshKey={refreshKey + attempt} /></div>
+        </Suspense>
+      </div>}
+      {(boardVisited || workspace === "board") && <div data-project-surface="board" hidden={workspace !== "board" || pageOpen} inert={!active || workspace !== "board" || pageOpen}
+        style={{ height: "100%", minHeight: 0, display: workspace === "board" && !pageOpen ? "block" : "none" }}>
+        <Suspense fallback={<LoadingOverlay mode="boot" status="MonkeyBoard" />}>
+          <Board onPublish={(revision, ids) => { setPublishRequest({ revision, ids, requestId: crypto.randomUUID() }); onWorkspaceChange("publish"); }} expectedProjectId={boundProjectId.current} refreshKey={refreshKey + attempt + boardRefresh} active={active && workspace === "board" && !pageOpen} onSubmit={submitFeedback} onSketch={submitSketch} onOpenDocument={setVisit} pageRequest={boardPage} />
+        </Suspense>
+      </div>}
+      {(treeVisited || workspace === "tree") && <div data-project-surface="tree" hidden={workspace !== "tree"} inert={!active || workspace !== "tree"}
+        style={{ height: "100%", minHeight: 0, display: workspace === "tree" ? "block" : "none" }}>
+        <Suspense fallback={<LoadingOverlay mode="boot" status="Design tree" />}>
+          <DesignTreeSurface data={designTree} markSeen={seenCandidates.markSeen} active={active && workspace === "tree"} returnTo={treeReturn.current}
+            onLeave={() => onWorkspaceChange(treeReturn.current)} onView={viewRun} onRecordEdits={recordEdits} focus={treeNodeFocus} />
+        </Suspense>
+      </div>}
+    </ProjectBar>
   </div>;
 }
