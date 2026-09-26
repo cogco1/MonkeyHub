@@ -16,6 +16,7 @@ import { clock, currentStep, describeCall, describeStep, dismissible, operationS
 import { recentUsage, serialMonitorRead, type MonitorEvent, type RecentUsage } from "./monitorData";
 import { activeWork, newSchemes, sidebarTasks, type SidebarTask } from "./sidebarTasks";
 import { SoftwareUpdateSettings, type RestartBlocker } from "./SoftwareUpdateSettings";
+import { editFocused, HubMenuBar, type HubMenu, type HubMenuItem } from "./HubMenu";
 import "./ChatShell.css";
 
 type AppId = AppStatus["appId"] | "drawing" | "publish" | "tree";
@@ -33,7 +34,32 @@ type Props = {
   /** Where a new project is created, as the Hub reports it. */
   workspace: ChatWorkspace | null;
   apps: readonly AppStatus[] | null;
+  /** #337: the View menu changes the same display choices as Settings. */
+  onAppearance?: (patch: Partial<AppearancePreferences>) => void;
 };
+/** #337: the Hub's menu row. Local while the catalogs are held by another lane. */
+const menuWords = {
+  "zh-CN": {
+    menus: "菜单", back: "后退到上一个对话", forward: "前进到下一个对话",
+    file: "文件", edit: "编辑", view: "视图", help: "帮助",
+    newChat: "新对话", newProject: "新建项目…", addProject: "添加已有项目…", exportArchive: "导出项目归档…", restoreArchive: "恢复项目归档…", settings: "设置…",
+    undo: "撤销", redo: "重做", cut: "剪切", copy: "复制", paste: "粘贴", selectAll: "全选",
+    sidebar: "侧栏", tools: "工具面板", theme: "主题", system: "跟随系统", dark: "深色", light: "浅色",
+    uiStyle: "界面风格", classic: "经典", quiet: "静默仪表", titleblock: "图签", night: "夜航",
+    size: "字号", compact: "紧凑", normal: "标准", large: "大",
+    update: "检查更新…", usage: "用量与任务记录",
+  },
+  en: {
+    menus: "Menus", back: "Back to the previous conversation", forward: "Forward to the next conversation",
+    file: "File", edit: "Edit", view: "View", help: "Help",
+    newChat: "New chat", newProject: "New project…", addProject: "Add existing project…", exportArchive: "Export project archive…", restoreArchive: "Restore project archive…", settings: "Settings…",
+    undo: "Undo", redo: "Redo", cut: "Cut", copy: "Copy", paste: "Paste", selectAll: "Select all",
+    sidebar: "Sidebar", tools: "Tools panel", theme: "Theme", system: "Match system", dark: "Dark", light: "Light",
+    uiStyle: "Interface style", classic: "Classic", quiet: "Quiet instrument", titleblock: "Title block", night: "Night flight",
+    size: "Text size", compact: "Compact", normal: "Standard", large: "Large",
+    update: "Check for updates…", usage: "Usage and task records",
+  },
+} as const;
 // followHead: the tab was restored on a cold start, not opened to inspect that exact
 // candidate; the workspace shows the architect's editing base instead (#271). An opened
 // result is view-only, and only Continue makes it the base (GH-234 Q1/Q2).
@@ -160,6 +186,7 @@ function Icon({ name }: { name: string }) {
     fab: <><path d="M6 8V3h12v5M6 17H3V8h18v9h-3M6 13h12v8H6Z" /><path d="M17 10h1" /></>,
     chart: <><path d="M4 4v16h17M8 16v-4M13 16V7M18 16v-7" /></>,
     refresh: <path d="M20 10a8 8 0 1 0-2 8M20 4v6h-6" />,
+    back: <path d="M15 5l-7 7 7 7" />, forward: <path d="M9 5l7 7-7 7" />,
     tree: <><circle cx="5" cy="12" r="2" /><circle cx="19" cy="12" r="2" /><circle cx="12" cy="5" r="2" /><path d="M7 12h10M12 7v5M12 12l-4 6M12 12l4 6" /></>,
     settings: <><path d="M4 7h16M4 17h16" /><circle cx="9" cy="7" r="3" /><circle cx="15" cy="17" r="3" /></>,
     display: <><circle cx="12" cy="12" r="8.5" /><path d="M12 3.5a8.5 8.5 0 0 1 0 17Z" fill="currentColor" /></>,
@@ -400,7 +427,7 @@ function SurfaceSkeleton({ surface, name, step, startedAt = null, words, onCance
   </div>;
 }
 
-export function ChatShell({ preferences, settings, settingsDirty = false, configuredProject, defaults, workspace, apps }: Props) {
+export function ChatShell({ preferences, settings, settingsDirty = false, configuredProject, defaults, workspace, apps, onAppearance }: Props) {
   const t = words[preferences.language], w = composerWords[preferences.language], s = shellWords[preferences.language];
   const [initial] = useState(readView);
   const [projects, setProjects] = useState<ChatProject[]>([]);
@@ -1359,9 +1386,85 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
         void openTool("monkeyboard");
       } : undefined} />
     {message.status === "failed" || message.status === "interrupted" ? <p className="chat-muted">{t[message.status]}</p> : null}</article>;
+  // #337: back and forward walk the conversations opened in this window, newest last.
+  const walking = useRef(false);
+  const [trail, setTrail] = useState<{ ids: readonly string[]; index: number }>({ ids: [], index: -1 });
+  useEffect(() => {
+    if (!chatId) return;
+    if (walking.current) { walking.current = false; return; }
+    setTrail((current) => {
+      if (current.ids[current.index] === chatId) return current;
+      const ids = [...current.ids.slice(0, current.index + 1), chatId].slice(-50);
+      return { ids, index: ids.length - 1 };
+    });
+  }, [chatId]);
+  const walk = (step: -1 | 1) => {
+    const index = trail.index + step, id = trail.ids[index];
+    if (id === undefined) return;
+    const target = sessions.find((item) => item.id === id);
+    if (!target) {
+      // A conversation that is gone leaves the trail instead of stopping it.
+      const ids = trail.ids.filter((item) => item !== id);
+      setTrail({ ids, index: Math.min(trail.index, ids.length - 1) });
+      return;
+    }
+    setTrail({ ...trail, index });
+    if (target.id !== chatId) { walking.current = true; selectChat(target); }
+  };
+  const mw = menuWords[preferences.language];
+  const startChat = () => { setArchivedView(false); setChatId(null); setChat(null); setError(null); input.current?.focus(); };
+  const appearanceChoices = (onAppearance ? [
+    { kind: "separator", id: "look" },
+    { kind: "heading", id: "theme", label: mw.theme },
+    ...(["system", "dark", "light"] as const).map((theme) => ({ kind: "choice", id: `theme-${theme}`, label: mw[theme],
+      checked: preferences.theme === theme, onSelect: () => onAppearance({ theme }) })),
+    { kind: "heading", id: "style", label: mw.uiStyle },
+    ...(["classic", "quiet", "titleblock", "night"] as const).map((uiStyle) => ({ kind: "choice", id: `style-${uiStyle}`, label: mw[uiStyle],
+      checked: (preferences.uiStyle ?? "classic") === uiStyle, onSelect: () => onAppearance({ uiStyle }) })),
+    { kind: "heading", id: "size", label: mw.size },
+    ...([[0.9, "compact"], [1, "normal"], [1.1, "large"]] as const).map(([fontScale, name]) => ({ kind: "choice", id: `size-${name}`, label: mw[name],
+      checked: preferences.fontScale === fontScale, onSelect: () => onAppearance({ fontScale }) })),
+  ] : []) as HubMenuItem[];
+  const hubMenus: HubMenu[] = [
+    { id: "file", label: mw.file, items: [
+      { kind: "command", id: "new-chat", label: mw.newChat, onSelect: startChat },
+      { kind: "command", id: "new-project", label: mw.newProject, onSelect: () => { setDialogError(null); newDialog.current?.showModal(); } },
+      { kind: "command", id: "add-project", label: mw.addProject, onSelect: () => { setDialogError(null); addDialog.current?.showModal(); } },
+      { kind: "separator", id: "archive" },
+      { kind: "command", id: "export", label: mw.exportArchive, disabled: !project,
+        onSelect: () => { setDialogError(null); setArchiveSummary(null); setRestoreResult(null); archiveDialog.current?.showModal(); } },
+      { kind: "command", id: "restore", label: mw.restoreArchive,
+        onSelect: () => { setDialogError(null); setArchiveSummary(null); setRestoreResult(null); setRestoreTarget(workspace?.workspaceDir ?? ""); restoreDialog.current?.showModal(); } },
+      { kind: "separator", id: "hub" },
+      { kind: "command", id: "settings", label: mw.settings, onSelect: openSettings },
+    ] },
+    { id: "edit", label: mw.edit, items: [
+      { kind: "command", id: "undo", label: mw.undo, hint: "Ctrl+Z", onSelect: () => editFocused("undo") },
+      { kind: "command", id: "redo", label: mw.redo, hint: "Ctrl+Y", onSelect: () => editFocused("redo") },
+      { kind: "separator", id: "clipboard" },
+      { kind: "command", id: "cut", label: mw.cut, hint: "Ctrl+X", onSelect: () => editFocused("cut") },
+      { kind: "command", id: "copy", label: mw.copy, hint: "Ctrl+C", onSelect: () => editFocused("copy") },
+      { kind: "command", id: "paste", label: mw.paste, hint: "Ctrl+V", onSelect: () => editFocused("paste") },
+      { kind: "command", id: "select-all", label: mw.selectAll, hint: "Ctrl+A", onSelect: () => editFocused("selectAll") },
+    ] },
+    { id: "view", label: mw.view, items: [
+      { kind: "check", id: "sidebar", label: mw.sidebar, checked: sidebar, onSelect: () => setSidebar(!sidebar) },
+      { kind: "check", id: "tools", label: mw.tools, checked: panel, onSelect: () => setPanel(!panel) },
+      ...appearanceChoices,
+    ] },
+    { id: "help", label: mw.help, items: [
+      { kind: "command", id: "update", label: mw.update, onSelect: openSoftwareUpdate },
+      { kind: "command", id: "usage", label: mw.usage, onSelect: () => void openTool("monkeymonitor") },
+    ] },
+  ];
   return <div className="chat-shell" data-sidebar={sidebar} data-panel={panel} style={{ "--browser-width": `${panelWidth}px` } as CSSProperties}>
+    {/* #337 L0: the Hub's text menu row, as desktop apps have it: back, forward, the sidebar, then words. */}
+    <div className="chat-menubar"><HubMenuBar label={mw.menus} menus={hubMenus} before={<>
+      <button type="button" className="chat-icon" aria-label={mw.back} title={mw.back} disabled={trail.index <= 0} onClick={() => walk(-1)}><Icon name="back" /></button>
+      <button type="button" className="chat-icon" aria-label={mw.forward} title={mw.forward} disabled={trail.index >= trail.ids.length - 1} onClick={() => walk(1)}><Icon name="forward" /></button>
+      <button type="button" className="chat-icon" aria-label={sidebar ? t.collapse : t.expand} title={sidebar ? t.collapse : t.expand} onClick={() => setSidebar(!sidebar)}><Icon name="sidebar" /></button>
+    </>} /></div>
     <aside className="chat-sidebar" aria-label={t.projects}>
-      <div className="chat-sidebar__top"><strong className="wordmark">MonkeyHub</strong><button className="chat-icon" aria-label={sidebar ? t.collapse : t.expand} onClick={() => setSidebar(!sidebar)}><Icon name="sidebar" /></button></div>
       <div className="chat-sidebar__body">
         <button className="chat-new" onClick={() => { setArchivedView(false); setChatId(null); setChat(null); setError(null); input.current?.focus(); }}><Icon name="plus" /><span>{t.newChat}</span></button>
         <button className="chat-new chat-new--project" onClick={() => { setDialogError(null); newDialog.current?.showModal(); }}><Icon name="folder" /><span>{t.newProject}</span></button>

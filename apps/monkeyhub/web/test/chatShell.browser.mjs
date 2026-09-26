@@ -1314,6 +1314,25 @@ try {
   await page.locator(".chat-browser").waitFor();
   assert.ok(Math.abs(await boxOf(".chat-browser") - savedWidth) < 12, "the panel width is restored");
 
+  // #337: the menu row. File opens from the keyboard and names what it does; Escape
+  // returns to the word; View changes the theme through the same saved preferences.
+  const fileWord = page.getByRole("menuitem", { name: "File", exact: true });
+  await fileWord.focus();
+  await page.keyboard.press("ArrowDown");
+  const fileMenu = page.getByRole("menu", { name: "File", exact: true });
+  assert.deepEqual((await fileMenu.getByRole("menuitem").allInnerTexts()).map((text) => text.trim()),
+    ["New chat", "New project…", "Add existing project…", "Export project archive…", "Restore project archive…", "Settings…"]);
+  await page.keyboard.press("Escape");
+  await fileMenu.waitFor({ state: "detached" });
+  await page.waitForFunction(() => document.activeElement?.id === "hub-menu-file"); // Escape returns to the menu's word
+  await page.getByRole("menuitem", { name: "View", exact: true }).click();
+  await page.getByRole("menuitemradio", { name: "Dark", exact: true }).click();
+  await page.waitForFunction(() => document.documentElement.dataset.theme === "dark");
+  await page.screenshot({ path: path.join(temporary, "menu-row-dark.png") });
+  await page.getByRole("menuitem", { name: "View", exact: true }).click();
+  await page.getByRole("menuitemradio", { name: "Light", exact: true }).click();
+  await page.waitForFunction(() => document.documentElement.dataset.theme === "light");
+
   // B — the global defaults live in the bottom-left Hub settings only.
   await page.getByRole("button", { name: "Hub settings", exact: true }).click();
   const dialog = page.getByRole("dialog").filter({ hasText: "Hub settings (global)" });
@@ -2316,14 +2335,14 @@ try {
   await documentDialog.getByRole("button", { name: "Close", exact: true }).click();
   await page.screenshot({ path: path.join(temporary, "external-presentation.png"), fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.locator(".chat-sidebar__top .chat-icon").click();
+  await page.locator(".chat-menubar").getByRole("button", { name: /^(Hide|Show) projects$/ }).click();
   await preview.click();
   const previewBounds = await imageDialog.boundingBox();
   assert.ok(previewBounds.x >= 0 && previewBounds.x + previewBounds.width <= 390, "the image dialog fits a narrow viewport");
   await page.screenshot({ path: path.join(temporary, "external-image-mobile.png") });
   await page.keyboard.press("Escape");
   await page.setViewportSize({ width: 1440, height: 960 });
-  await page.locator(".chat-sidebar__top .chat-icon").click();
+  await page.locator(".chat-menubar").getByRole("button", { name: /^(Hide|Show) projects$/ }).click();
   await page.reload();
   await page.getByRole("button", { name: "Enlarge image: facade.png", exact: true }).waitFor();
   await page.getByRole("button", { name: "Project A", exact: true }).first().click();

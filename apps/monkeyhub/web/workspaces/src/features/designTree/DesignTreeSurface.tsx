@@ -8,15 +8,23 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MessageKey } from "../../../../src/i18n/messages.en";
 import { ErrorPanel } from "../../app/ErrorPanel";
+import { MenuCommand, MenuSeparator, MenuTabs, StatusLine, SurfaceBar } from "../chrome/SurfaceChrome";
+import { usePreferences } from "../settings/preferences";
 import { useT } from "../../i18n/useT";
 import DesignTreeCanvas from "./DesignTreeCanvas";
 import { DesignTreeDetails } from "./DesignTreeDetails";
 import { DesignTreeList } from "./DesignTreeList";
-import { TreeIcon, type DesignTreeView } from "./DesignTreeBar";
+import type { DesignTreeView } from "./DesignTreeBar";
 import { CURRENT, type TreeNode } from "./model";
 import type { ZoomLevel } from "./scene";
 import type { DesignTreeData } from "./useDesignTree";
 import { treeWords, type SurfaceName } from "./words";
+
+// #337: the bar's quiet count. Local while the catalogs are held by another lane.
+const countWords = {
+  "zh-CN": (options: number, running: number) => `${options} 个方案${running ? ` · ${running} 个运行中` : ""}`,
+  en: (options: number, running: number) => `${options} ${options === 1 ? "option" : "options"}${running ? ` · ${running} running` : ""}`,
+} as const;
 
 export default function DesignTreeSurface({ data, markSeen, active, returnTo, onLeave, onView, onRecordEdits = null, focus = null }: {
   data: DesignTreeData;
@@ -32,6 +40,7 @@ export default function DesignTreeSurface({ data, markSeen, active, returnTo, on
   focus?: { node: string; request: number } | null;
 }) {
   const t = useT();
+  const { language } = usePreferences();
   const [mode, setMode] = useState<"canvas" | "list">("canvas");
   const [selected, setSelected] = useState<string | null>(null);
   const [confirmAccept, setConfirmAccept] = useState(false);
@@ -70,17 +79,21 @@ export default function DesignTreeSurface({ data, markSeen, active, returnTo, on
     onView({ runId: target.runId, name: words.title(target), back: false, node: target.id });
   };
   const back = t("designTree.back", { surface: t(`designTree.surface.${returnTo}` as MessageKey) });
+  const counts = useMemo(() => {
+    const kinds = tree ? [...tree.nodes.values()].map((item) => item.kind) : [];
+    return countWords[language](kinds.filter((kind) => kind === "candidate").length, kinds.filter((kind) => kind === "pending").length);
+  }, [tree, language]);
 
   return <section className="design-tree" aria-label={t("designTree.title")} data-level={level} data-mode={mode} data-status={data.status}>
-    <header className="design-tree__head">
-      <button type="button" className="btn btn--small design-tree__back" onClick={onLeave}><span aria-hidden="true">←</span> {back}</button>
-      <div className="design-tree__title"><TreeIcon /><h2>{t("designTree.title")}</h2><span>{t("designTree.subtitle")}</span></div>
-      <div className="design-tree__modes" role="group" aria-label={t("designTree.mode.label")}>
-        <button type="button" aria-pressed={mode === "canvas"} onClick={() => setMode("canvas")}>{t("designTree.mode.canvas")}</button>
-        <button type="button" aria-pressed={mode === "list"} onClick={() => setMode("list")}>{t("designTree.mode.list")}</button>
-      </div>
-      {mode === "canvas" && tree && <button type="button" className="btn btn--small" onClick={() => setFitRequest((value) => value + 1)}>{t("designTree.fit")}</button>}
-    </header>
+    {/* #337 L2: one bar of words. The rail and the pressed chip already name the surface, so the title is for screen readers. */}
+    <h2 className="visually-hidden">{t("designTree.title")}</h2>
+    <SurfaceBar label={t("designTree.title")} end={tree ? counts : null}>
+      <MenuCommand onClick={onLeave}><span aria-hidden="true">←</span> {back}</MenuCommand>
+      <MenuSeparator />
+      <MenuTabs label={t("designTree.mode.label")} value={mode} onChange={(next) => setMode(next)}
+        options={[{ value: "canvas" as const, label: t("designTree.mode.canvas") }, { value: "list" as const, label: t("designTree.mode.list") }]} />
+      {mode === "canvas" && tree && <><MenuSeparator /><MenuCommand onClick={() => setFitRequest((value) => value + 1)}>{t("designTree.fit")}</MenuCommand></>}
+    </SurfaceBar>
     {data.source && !data.admissions && <p className="design-tree__notice">{t("designTree.noAdmissions")}</p>}
     {data.source && data.admissions && (data.source.history.warnings?.length ?? 0) > 0 &&
       <p className="design-tree__notice">{t("designTree.admissionWarnings")}</p>}
@@ -98,6 +111,6 @@ export default function DesignTreeSurface({ data, markSeen, active, returnTo, on
       {tree && node && <DesignTreeDetails tree={tree} node={node} words={words} data={data} confirmAccept={confirmAccept}
         onConfirmAccept={setConfirmAccept} onClose={() => select(null)} onView={view} onRecordEdits={onRecordEdits} />}
     </div>
-    <footer className="design-tree__foot"><span>{t("designTree.hint")}</span><span>{t("designTree.legend")}</span></footer>
+    <StatusLine end={t("designTree.legend")}>{t("designTree.hint")}</StatusLine>
   </section>;
 }

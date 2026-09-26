@@ -51,14 +51,6 @@
 
 .design-tree { position: relative; display: flex; flex-direction: column; height: 100%; min-height: 0; background: var(--ground); color: var(--ink);
   font-family: var(--font-ui); font-size: var(--text-ui, 13px); }
-.design-tree__head { display: flex; flex: none; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding: 8px 14px; border-bottom: 1px solid var(--line); background: var(--panel); }
-.design-tree__title { display: flex; align-items: baseline; gap: 10px; min-width: 0; flex: 1 1 240px; }
-.design-tree__title .design-tree-icon { align-self: center; color: var(--accent); }
-.design-tree__title h2 { margin: 0; font-size: var(--text-heading, 17px); font-weight: 650; letter-spacing: -.2px; white-space: nowrap; }
-.design-tree__title span { overflow: hidden; color: var(--muted); font-size: var(--text-caption, 12px); text-overflow: ellipsis; white-space: nowrap; }
-.design-tree__modes { display: inline-flex; padding: 2px; border: 1px solid var(--line); border-radius: 7px; background: var(--panel-2); }
-.design-tree__modes button { min-height: 26px; padding: 2px 12px; border: 0; border-radius: 5px; background: transparent; color: var(--muted); font: inherit; font-size: var(--text-caption, 12px); cursor: pointer; }
-.design-tree__modes button[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
 .design-tree__notice { display: flex; align-items: center; gap: 10px; margin: 0; padding: 7px 14px; border-bottom: 1px solid var(--line); background: var(--accent-soft);
   color: var(--ink-2); font-size: var(--text-caption, 12px); }
 .design-tree__body { position: relative; display: flex; flex: 1; min-height: 0; overflow: hidden; }
@@ -70,9 +62,6 @@
 .design-tree__canvas .excalidraw .help-icon,
 .design-tree__canvas .excalidraw .dropdown-menu-button,
 .design-tree__canvas .excalidraw--mobile .App-bottom-bar { display: none !important; }
-.design-tree__foot { display: flex; flex: none; justify-content: space-between; gap: 18px; min-height: 28px; box-sizing: border-box; padding: 6px 14px;
-  border-top: 1px solid var(--line); background: var(--panel); color: var(--muted); font-size: 11px; }
-.design-tree__foot > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .design-tree-card { position: absolute; z-index: 6; top: 14px; right: 14px; display: flex; flex-direction: column; gap: 10px;
   width: min(330px, calc(100% - 28px)); max-height: calc(100% - 28px); overflow-y: auto; box-sizing: border-box; padding: 12px 14px;
@@ -120,4 +109,4 @@
 .design-tree-list li[data-group="trunk"] .design-tree-list__mark[data-kind="candidate"] { border-color: var(--accent); color: var(--accent); }
 .design-tree-list__title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .design-tree-list__status { margin-left: auto; padding-left: 12px; color: var(--muted); font-size: var(--text-caption, 12px); white-space: nowrap; }
-@media (max-width: 640px) { .design-tree-list__status { display: none; } .design-tree__foot > span:last-child { display: none; } }
+@media (max-width: 640px) { .design-tree-list__status { display: none; } }
