@@ -306,7 +306,8 @@ page.on('response',response=>{
   })().catch(()=>{}));
 });
 async function stages(t0,label) {
-  await Promise.allSettled(timingReads);
+  // Timings are only reported: a body that never finishes (a cancelled download) must not hold the run.
+  await Promise.race([Promise.allSettled(timingReads),delay(10000)]);
   const rows=networkTimings.filter(row=>row.start>=t0);
   const stages=rows.filter(row=>!row.path.startsWith('/api/jobs/')||row.jobStatus==='succeeded');
   const parses=await page.evaluate(()=>window.__parseTimes??[]);
