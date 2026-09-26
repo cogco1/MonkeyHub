@@ -31,7 +31,12 @@ const copy = {
     sectionPlane: "Cut plane", sectionAcrossX: "Across X (x = position)", sectionAcrossY: "Across Y (y = position)", sectionPosition: "Position",
     sectionToward: "Look toward", eyeHeight: "Eye height above the lowest cut point", fov: "Field of view (degrees)",
     sectionGenerate: "Generate section perspective", sectionView: "Section perspective · true to scale at the cut plane",
-    statusError: "Source status could not be read. Refresh to try again.", loading: "Loading drawing…" },
+    statusError: "Source status could not be read. Refresh to try again.", loading: "Loading drawing…",
+    objects: "Objects in this drawing", object: "Projected object", noObject: "Choose an object",
+    pickHint: "Point at a line to see which object it draws; click it to select that object.",
+    tooMany: "This drawing has {count} lines, so it is shown as an image; choose its objects from the list.",
+    hideObject: "Hide this object", hiddenObjects: "Hidden objects", showObject: "Show again", notInModel: "not in this model", noMaterial: "no material",
+    roles: { cut: "cut", beyond: "beyond", hidden: "hidden line", other: "line" } },
 
   "zh-CN": { title: "Drawing · 图纸", intro: "跟随项目当前模型的剖切平面。", source: "出图版本", revision: "图纸", fresh: "新建剖切平面",
     noModel: "项目当前模型还没有可出图的精确几何。", refresh: "刷新来源", generating: "正在生成…", generate: "生成剖切平面",
@@ -54,8 +59,14 @@ const copy = {
     sectionPlane: "剖切面", sectionAcrossX: "垂直于 X（x = 位置）", sectionAcrossY: "垂直于 Y（y = 位置）", sectionPosition: "位置",
     sectionToward: "看向", eyeHeight: "视高（自剖切最低点起）", fov: "视角（度）",
     sectionGenerate: "生成剖透视", sectionView: "剖透视 · 剖切面处按比例",
-    statusError: "无法读取来源状态，请刷新重试。", loading: "正在读取图纸…" },
+    statusError: "无法读取来源状态，请刷新重试。", loading: "正在读取图纸…",
+    objects: "图中对象", object: "投影对象", noObject: "选择对象",
+    pickHint: "指向线条可查看它来自哪个对象，点击即可选中该对象。",
+    tooMany: "此图共有 {count} 条线，以图片显示；请从列表中选择对象。",
+    hideObject: "隐藏此对象", hiddenObjects: "已隐藏对象", showObject: "重新显示", notInModel: "不在当前模型中", noMaterial: "无材质",
+    roles: { cut: "剖切", beyond: "看线", hidden: "隐藏线", other: "线" } },
 } as const;
+type Copy = (typeof copy)[keyof typeof copy];
 
 type SourceAsset = { runId: string; assetSha256: string };
 // The drawings this workspace opens. A section perspective is generated and read here; its plan-only
@@ -85,23 +96,111 @@ const targetSource = (target: PlanTarget) => "modelSource" in target
 // An edited appearance is saved as a new revision once the edits pause, as Board saves itself.
 const APPEARANCE_PAUSE_MS = 800;
 
-function PlanPreview({ source, file, vector, objects, selected, onSelect, onChange, disabled }: {
-  source: SourceDocumentDto; file: File; vector: PlanVectorDto | null; objects: PlanDressingDto[];
+const SVG_NS = "http://www.w3.org/2000/svg";
+/** Past this many lines a plan is shown as an image; its objects can still be chosen from the list (D-244-3). */
+const INLINE_LINE_LIMIT = 20_000;
+/** What a projected line is in a cut plan, by the group it is drawn in: the cut (outline, hatch or poché), beyond the cut, or hidden. */
+type LineRole = "cut" | "beyond" | "hidden" | "other";
+const GROUP_ROLES: Record<string, LineRole> = { section: "cut", "section-hatch": "cut", visible: "beyond", hidden: "hidden" };
+const ROLE_ORDER: readonly LineRole[] = ["cut", "beyond", "hidden", "other"];
+/** One projected polyline or poché of a source object, as the retained SVG draws it. */
+type PlanMark = { index: number; object: string; role: LineRole; polygon: boolean; points: string };
+/** A source object as the plan names it: its id, and its component and material when the model has them. */
+type PlanObject = { id: string; component: string | null; material: string | null; roles: LineRole[] };
+type PlanShape = { tag: "polyline" | "polygon" | "text"; attributes: Record<string, string>; text: string };
+type PlanPicture = {
+  viewBox: string; font: string | null; groups: { name: string; attributes: Record<string, string>; shapes: PlanShape[] }[];
+  marks: PlanMark[]; byObject: Map<string, PlanMark[]>; objects: Map<string, PlanObject>; lines: number;
+  /** The SVG without entourage, for the image a plan past the line limit is shown as. */
+  image: string | null;
+};
+// The attributes the retained plan draws and names its sources with, as React spells them; nothing else reaches the page.
+const DRAWN: Record<string, string> = { points: "points", fill: "fill", "fill-rule": "fillRule", stroke: "stroke", "stroke-width": "strokeWidth",
+  "stroke-dasharray": "strokeDasharray", "stroke-linecap": "strokeLinecap", "stroke-linejoin": "strokeLinejoin",
+  x: "x", y: "y", "font-family": "fontFamily", "font-size": "fontSize", "text-anchor": "textAnchor",
+  "data-object": "data-object", "data-component": "data-component", "data-material": "data-material", "data-dimension": "data-dimension" };
+// The one style the projection writes: the dimension text's embedded font.
+const DIMENSION_FONT = /^@font-face\{font-family:DrawingDimension;src:url\(data:font\/ttf;base64,[A-Za-z0-9+/=]*\) format\('truetype'\);\}$/;
+
+/** The retained plan SVG as the page draws it, and each source object its lines name. Entourage is left to its own overlay. */
+function planPicture(svg: string): PlanPicture | null {
+  const parsed = new DOMParser().parseFromString(svg, "image/svg+xml"), root = parsed.documentElement;
+  if (root.namespaceURI !== SVG_NS || root.localName !== "svg" || parsed.getElementsByTagName("parsererror").length > 0) return null;
+  root.querySelector('[id="dressing"]')?.remove();
+  const drawn = (element: Element) => Object.fromEntries([...element.attributes].flatMap(({ name, value }) => DRAWN[name] ? [[DRAWN[name], value]] : []));
+  const marks: PlanMark[] = [], byObject = new Map<string, PlanMark[]>(), objects = new Map<string, PlanObject>(), groups: PlanPicture["groups"] = [];
+  let font: string | null = null, lines = 0;
+  const shape = (element: Element, role: LineRole): PlanShape | null => {
+    const tag = element.localName;
+    if (element.namespaceURI !== SVG_NS || (tag !== "polyline" && tag !== "polygon" && tag !== "text")) return null;
+    const id = tag === "text" ? null : element.getAttribute("data-object");
+    if (tag !== "text") lines += 1;
+    if (id) {
+      const mark = { index: marks.length, object: id, role, polygon: tag === "polygon", points: element.getAttribute("points") ?? "" };
+      marks.push(mark);
+      if (byObject.has(id)) byObject.get(id)!.push(mark); else byObject.set(id, [mark]);
+      const object = objects.get(id) ?? { id, component: element.getAttribute("data-component"), material: element.getAttribute("data-material"), roles: [] };
+      object.roles = ROLE_ORDER.filter(item => item === role || object.roles.includes(item));
+      objects.set(id, object);
+    }
+    return { tag, attributes: drawn(element), text: tag === "text" ? element.textContent ?? "" : "" };
+  };
+  for (const child of [...root.children]) {
+    if (child.namespaceURI !== SVG_NS) continue;
+    if (child.localName === "style") { if (DIMENSION_FONT.test(child.textContent ?? "")) font = child.textContent; continue; }
+    const group = child.localName === "g", name = group ? child.getAttribute("id") ?? "" : "";
+    const shapes = (group ? [...child.children] : [child]).flatMap(element => shape(element, GROUP_ROLES[name] ?? "other") ?? []);
+    if (shapes.length > 0) groups.push({ name, attributes: group ? drawn(child) : {}, shapes });
+  }
+  return { viewBox: root.getAttribute("viewBox") ?? "", font, groups, marks, byObject, objects, lines,
+    image: lines > INLINE_LINE_LIMIT ? new XMLSerializer().serializeToString(root) : null };
+}
+
+/** `component · material · role`; an object without a component is named by its id. */
+const objectLabel = (text: Copy, object: PlanObject, roles: readonly LineRole[] = object.roles) =>
+  [object.component ?? object.id, object.material ?? text.noMaterial, roles.map(role => text.roles[role]).join(", ")].join(" · ");
+
+function PlanPreview({ source, file, vector, picture, hidden, picked, onPick, objects, selected, onSelect, onChange, disabled }: {
+  source: SourceDocumentDto; file: File; vector: PlanVectorDto | null; picture: PlanPicture | null;
+  hidden: readonly string[]; picked: string | null; onPick(object: string | null): void; objects: PlanDressingDto[];
   selected: string; onSelect(id: string): void; onChange(objects: PlanDressingDto[]): void; disabled: boolean;
 }) {
   const { language } = usePreferences(), text = copy[language];
-  const viewport = useRef<HTMLDivElement>(null);
+  const viewport = useRef<HTMLDivElement>(null), paper = useRef<HTMLDivElement>(null);
   const [bounds, setBounds] = useState({ width: 600, height: 500 });
   const [zoom, setZoom] = useState(1), [ready, setReady] = useState(false);
   const onReady = useCallback((value: boolean) => setReady(value), []);
-  const [baseImage, setBaseImage] = useState<string | null>(null);
+  const [hover, setHover] = useState<{ mark: PlanMark; x: number; y: number } | null>(null);
+  // The plan is drawn inline so each projected line can say what it is (#244); a very large one is an image.
+  const inline = picture !== null && picture.image === null;
+  const [image, setImage] = useState<string | null>(null);
   useEffect(() => {
-    if (!vector) { setBaseImage(null); return; }
-    const svg = new DOMParser().parseFromString(vector.svg, "image/svg+xml");
-    svg.querySelector('[id="dressing"]')?.remove();
-    const url = URL.createObjectURL(new Blob([new XMLSerializer().serializeToString(svg)], { type: "image/svg+xml" }));
-    setReady(false); setBaseImage(url); return () => URL.revokeObjectURL(url);
-  }, [vector]);
+    if (!picture?.image) { setImage(null); return; }
+    const url = URL.createObjectURL(new Blob([picture.image], { type: "image/svg+xml" }));
+    setReady(false); setImage(url); return () => URL.revokeObjectURL(url);
+  }, [picture]);
+  // A hidden object leaves the page at once; the saved revision then draws without it.
+  const hiddenKey = JSON.stringify(hidden), gone = useMemo(() => new Set(hidden), [hiddenKey]);
+  useEffect(() => setHover(null), [picture, gone]);
+  const lines = useMemo(() => picture && inline && <g className="drawing-plan__lines">
+    {picture.groups.map((group, index) => <g key={index} data-group={group.name || undefined} {...group.attributes}>
+      {group.shapes.map((shape, key) => shape.tag === "text" ? <text key={key} {...shape.attributes}>{shape.text}</text>
+        : gone.has(shape.attributes["data-object"]) ? null
+        : shape.tag === "polygon" ? <polygon key={key} {...shape.attributes} /> : <polyline key={key} {...shape.attributes} />)}
+    </g>)}
+  </g>, [picture, inline, gone]);
+  // Wide invisible strokes over each object's lines, so a thin pen is still easy to point at.
+  const targets = useMemo(() => picture && inline && <g className="drawing-plan__targets">
+    {picture.marks.filter(mark => !gone.has(mark.object)).map(mark => mark.polygon
+      ? <polygon key={mark.index} data-mark={mark.index} points={mark.points} />
+      : <polyline key={mark.index} data-mark={mark.index} points={mark.points} />)}
+  </g>, [picture, inline, gone]);
+  const markAt = (target: EventTarget | null) => {
+    const index = target instanceof Element ? target.closest("[data-mark]")?.getAttribute("data-mark") : null;
+    return index == null ? null : picture?.marks[Number(index)] ?? null;
+  };
+  const lit = (object: string | null, className: string) => object ? (picture?.byObject.get(object) ?? []).map(mark => mark.polygon
+    ? <polygon key={mark.index} className={className} points={mark.points} /> : <polyline key={mark.index} className={className} points={mark.points} />) : null;
   const recipeFrame = source.viewRecipe?.frame as { crop_uv?: number[] } | undefined;
   const crop = recipeFrame?.crop_uv;
   useEffect(() => {
@@ -113,6 +212,7 @@ function PlanPreview({ source, file, vector, objects, selected, onSelect, onChan
   const page = source.pages[0];
   if (!page) return null;
   const scale = Math.max(0.02, Math.min((bounds.width - 32) / page.width, (bounds.height - 32) / page.height)) * zoom;
+  const hovered = hover && picture?.objects.get(hover.mark.object);
   return <section className="drawing-preview" aria-label={source.fileName}>
     <div className="drawing-preview__tools">
       <button type="button" aria-label={text.zoomOut} disabled={zoom <= 0.25} onClick={() => setZoom(value => Math.max(0.25, value / 1.25))}>−</button>
@@ -120,12 +220,27 @@ function PlanPreview({ source, file, vector, objects, selected, onSelect, onChan
       <button type="button" aria-label={text.zoomIn} disabled={zoom >= 8} onClick={() => setZoom(value => Math.min(8, value * 1.25))}>+</button>
       <span>{source.fileName}</span>
     </div>
-    <div className="drawing-preview__viewport" ref={viewport} tabIndex={0} data-ready={ready}>
-      <div className="drawing-preview__paper" style={{ width: page.width * scale, height: page.height * scale }}>
-        {baseImage ? <img className="drawing-vector-base" src={baseImage} alt={source.fileName} onLoad={() => setReady(true)} />
+    <div className="drawing-preview__viewport" ref={viewport} tabIndex={0} data-ready={inline || ready}
+      onKeyDown={event => { if (event.key === "Escape" && picked) { event.preventDefault(); onPick(null); } }}>
+      <div className="drawing-preview__paper" ref={paper} style={{ width: page.width * scale, height: page.height * scale }}>
+        {picture && inline ? <svg className="drawing-vector-base" viewBox={picture.viewBox} aria-label={source.fileName}
+          onPointerMove={event => {
+            const mark = markAt(event.target), box = paper.current?.getBoundingClientRect();
+            setHover(mark && box ? { mark, x: event.clientX - box.left, y: event.clientY - box.top } : null);
+          }}
+          onPointerLeave={() => setHover(null)} onClick={event => onPick(markAt(event.target)?.object ?? null)}>
+          {picture.font && <style>{picture.font}</style>}
+          {lines}
+          <g className="drawing-plan__highlight">{lit(hover && hover.mark.object !== picked ? hover.mark.object : null, "is-hovered")}{lit(picked, "is-picked")}</g>
+          {targets}
+        </svg>
+          : image ? <img className="drawing-vector-base" src={image} alt={source.fileName} onLoad={() => setReady(true)} />
           : <DocumentSurface file={file} page={page} scale={scale} onReady={onReady} />}
-        {baseImage && vector && crop && <DressingOverlay objects={objects} vector={vector} crop={crop} selected={selected}
+        {(inline || image) && vector && crop && <DressingOverlay objects={objects} vector={vector} crop={crop} selected={selected}
           onSelect={onSelect} onChange={onChange} language={language} disabled={disabled} />}
+        {hover && hovered && <div className="drawing-object-tip" role="tooltip" style={{ left: hover.x, top: hover.y,
+          transform: `translate(${hover.x > page.width * scale / 2 ? "calc(-100% - 12px)" : "12px"}, ${hover.y > page.height * scale / 2 ? "calc(-100% - 12px)" : "16px"})` }}>
+          {objectLabel(text, hovered, [hover.mark.role])}</div>}
       </div>
     </div>
   </section>;
@@ -148,6 +263,12 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
   const [status, setStatus] = useState<PlanStatusDto | null>(null), [statusLoading, setStatusLoading] = useState(false);
   const [file, setFile] = useState<File | null>(null), [loading, setLoading] = useState(true);
   const [vector, setVector] = useState<PlanVectorDto | null>(null), [selectedDressing, setSelectedDressing] = useState("");
+  // The retained plan as the page draws it, and the projected object a person picked on it, by source object id.
+  const picture = useMemo(() => vector ? planPicture(vector.svg) : null, [vector]);
+  const [picked, setPicked] = useState<string | null>(null);
+  // What each object was, so a hidden one keeps its name after it leaves the drawing.
+  const seen = useRef(new Map<string, PlanObject>());
+  useEffect(() => { picture?.objects.forEach((object, id) => seen.current.set(id, object)); }, [picture]);
   const [error, setError] = useState<StudioApiError | null>(null), [busy, setBusy] = useState(false);
   // Why edited appearance is not being saved: the pause ended on an invalid field, or the
   // save was refused. The next edit clears it; a refusal can also be retried, never in a loop.
@@ -282,7 +403,7 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
 
   function openDocument(document: SourceDocumentDto | null) {
     setSelected(document ? drawingDocumentKey(document) : ""); setVector(null); setDirty(false); setAppearanceHeld(null); setError(null);
-    setExplicitTarget(false); setAutomaticTarget(null); setStatus(null);
+    setExplicitTarget(false); setAutomaticTarget(null); setStatus(null); setPicked(null);
     if (!document) setTarget(defaultTarget);
     setForm(document && isCutPlan(document) ? planFormFromDocument(document, lengthUnit) : defaultPlanForm(lengthUnit));
   }
@@ -311,6 +432,17 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
   }
   function update(patch: Partial<PlanForm>) { setForm(current => ({ ...current, ...patch })); setDirty(true); setAppearanceHeld(null); }
   const dimensions = form.dimensions ?? [];
+  // Hiding is this drawing's appearance: it saves as a revision and never touches the design.
+  const hiddenIds = form.hiddenObjectIds ?? [], hiddenSet = new Set(hiddenIds);
+  const hideObject = (id: string) => { setPicked(null); update({ hiddenObjectIds: [...new Set([...hiddenIds, id])].sort() }); };
+  const showObject = (id: string) => update({ hiddenObjectIds: hiddenIds.filter(item => item !== id) });
+  const pickedObject = picked && !hiddenSet.has(picked) ? picture?.objects.get(picked) ?? null : null;
+  const listedObjects = picture ? [...picture.objects.values()].filter(object => !hiddenSet.has(object.id))
+    .map(object => ({ object, label: objectLabel(text, object) })).sort((a, b) => a.label.localeCompare(b.label)) : [];
+  const hiddenName = (id: string) => {
+    const object = picture?.objects.get(id) ?? seen.current.get(id);
+    return object ? `${object.component ?? object.id} · ${object.material ?? text.noMaterial}` : id;
+  };
   /** The revision request itself: on a target, or on the drawing's own source. */
   const requestRevision = (drawn: PlanTarget, follow?: "live" | "frozen") =>
     studio.drawingPlan({ projectId, ...targetSource(drawn), ...form,
@@ -465,7 +597,8 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
             <button type="button" disabled={busy || !liveTarget} onClick={() => void generate(liveTarget, { follow: "live" })}>{text.followAgain}</button>}
         </section>}
         </div>
-        <div className="drawing-canvas">{source && file ? <PlanPreview key={source.drawingId ?? selected} source={source} file={file} vector={vector} objects={form.dressing} selected={selectedDressing}
+        <div className="drawing-canvas">{source && file ? <PlanPreview key={source.drawingId ?? selected} source={source} file={file} vector={vector}
+          picture={picture} hidden={hiddenIds} picked={pickedObject?.id ?? null} onPick={setPicked} objects={form.dressing} selected={selectedDressing}
           onSelect={setSelectedDressing} onChange={dressing => update({ dressing })} disabled={busy || !active} />
           : <div className="drawing-empty" role="status">{loading || source ? text.loading : stage ? text.empty : live?.reason ?? text.noModel}</div>}</div>
       </div>
@@ -477,6 +610,20 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
           {numeric("bottom", `${text.bottom} (${lengthUnit || "…"})`)}
           {numeric("scaleDenominator", text.scale, 1, "1")}
           <details><summary>{text.graphics}</summary>{numeric("cutLineMm", text.cutLine, 0.01)}{numeric("visibleLineMm", text.visibleLine, 0.01)}{numeric("hatchSpacingMm", text.hatch, 0.1)}</details>
+        </fieldset>}
+        {source && !perspectiveOpen && picture && <fieldset disabled={busy || !active}><legend>{text.objects}</legend>
+          <label className="drawing-field">{text.object}<select value={pickedObject?.id ?? ""} onChange={event => setPicked(event.target.value || null)}>
+            <option value="">{text.noObject}</option>
+            {listedObjects.map(({ object, label }) => <option key={object.id} value={object.id}>{label}</option>)}</select></label>
+          {pickedObject ? <div className="drawing-object-picked">
+            <strong>{objectLabel(text, pickedObject)}</strong><small>{pickedObject.id}</small>
+            <button type="button" onClick={() => hideObject(pickedObject.id)}>{text.hideObject}</button>
+          </div> : <p>{picture.image ? text.tooMany.replace("{count}", String(picture.lines)) : text.pickHint}</p>}
+          {hiddenIds.length > 0 && <div className="drawing-object-hidden"><strong>{text.hiddenObjects}</strong><ul>{hiddenIds.map(id => {
+            const name = hiddenName(id);
+            return <li key={id}><span>{name}{status?.unresolvedObjectIds?.includes(id) ? ` · ${text.notInModel}` : ""}</span>
+              <button type="button" aria-label={`${text.showObject}: ${name}`} onClick={() => showObject(id)}>{text.showObject}</button></li>;
+          })}</ul></div>}
         </fieldset>}
         {source && vector && form.cropUv && <DressingControls objects={form.dressing} vector={vector} crop={form.cropUv}
           selected={selectedDressing} onSelect={setSelectedDressing} onChange={dressing => update({ dressing })}

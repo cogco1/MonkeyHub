@@ -70,6 +70,23 @@
 }
 
 .drawing-vector-base { display: block; width: 100%; height: 100%; }
+/* The plan's own lines draw; wide transparent strokes over them take the pointer, and the picked object is lit. */
+.drawing-plan__lines, .drawing-plan__highlight { pointer-events: none; }
+.drawing-plan__targets > * { stroke: transparent; stroke-width: 10px; vector-effect: non-scaling-stroke; cursor: pointer; }
+.drawing-plan__targets > polyline { fill: none; pointer-events: stroke; }
+/* A poché is one even-odd polygon whose joining edges are not drawn: only its fill is the object, never its holes. */
+.drawing-plan__targets > polygon { fill: transparent; fill-rule: evenodd; stroke: none; pointer-events: fill; }
+.drawing-plan__highlight > * { fill: none; stroke: var(--accent); stroke-width: 3px; vector-effect: non-scaling-stroke; stroke-linecap: round; stroke-linejoin: round; opacity: .45; }
+.drawing-plan__highlight > polygon { fill: var(--accent); fill-rule: evenodd; fill-opacity: .3; stroke: none; }
+.drawing-plan__highlight > .is-picked { opacity: .9; }
+.drawing-object-tip { position: absolute; z-index: 1; max-width: 320px; padding: 4px 8px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--panel); color: var(--ink); font-size: var(--text-caption); line-height: 1.4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; box-shadow: 0 2px 6px #0002; }
+.drawing-object-picked { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; margin-bottom: 12px; min-width: 0; }
+.drawing-object-picked > strong { overflow-wrap: anywhere; }
+.drawing-object-picked > small { color: var(--muted); font-size: var(--text-caption); overflow-wrap: anywhere; }
+.drawing-object-hidden ul { list-style: none; margin: 6px 0 0; padding: 0; }
+.drawing-object-hidden li { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 6px; }
+.drawing-object-hidden li > span { min-width: 0; overflow-wrap: anywhere; color: var(--muted); }
+.drawing-object-hidden li > button { flex: none; }
 .drawing-dressing-overlay { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: hidden; }
 .drawing-dressing-object { pointer-events: all; cursor: move; touch-action: none; }
 .drawing-dressing-object:focus-visible { outline: none; }

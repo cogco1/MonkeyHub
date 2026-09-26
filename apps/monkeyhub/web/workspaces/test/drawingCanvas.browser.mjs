@@ -10,7 +10,20 @@ import { createServer } from "vite";
 const root = fileURLToPath(new URL("..", import.meta.url)).replaceAll("\\", "/").replace(/\/$/, "");
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE ? pathToFileURL(process.env.PLAYWRIGHT_MODULE).href : "playwright");
 const screenshots = await mkdtemp(join(tmpdir(), "archflow-drawing-canvas-"));
-const assets = JSON.parse(execFileSync(process.env.PYTHON ?? "python", ["-c", "import json; from monkeydiagram.drawing_svg import dressing_assets; print(json.dumps(dressing_assets()))"], { cwd: resolve(root, "../../../.."), encoding: "utf8" }));
+// The runtime's dressing symbols, and the projection's own SVG for the retained revision: its groups, each
+// line's component and material, and a poché cut. The fixture's later revisions are written in the same shape.
+const [assets, retainedSvg] = JSON.parse(execFileSync(process.env.PYTHON ?? "python", ["-c", [
+  "import json",
+  "from archflow.adapters.occt_backend import OcctDrawingPolyline as Line, OcctDrawingRegion as Region",
+  "from monkeydiagram.drawing_svg import dressing_assets, drawing_svg",
+  "wall = ((1, 1), (9, 1), (9, 5), (1, 5), (1, 1))",
+  "svg = drawing_svg([Line('obj-wall', 'section', wall), Line('obj-table', 'visible', ((7, 4), (8.5, 4), (8.5, 3), (7, 3), (7, 4)))],"
+    + " crop_uv=(0, 0, 10, 6), unit='meter', scale_denominator=100, hidden_lines=False, title='retained-floor-plan',"
+    + " regions=[Region('obj-wall', (wall, ((1.2, 1.2), (8.8, 1.2), (8.8, 4.8), (1.2, 4.8), (1.2, 1.2))))],"
+    + " graphics={'cutLineMm': .35, 'visibleLineMm': .18, 'hatchSpacingMm': 2, 'hatch': {'byMaterial': {'Concrete': {'poche': True}}}},"
+    + " semantics={'obj-wall': {'component': 'Wall', 'material': 'Concrete'}, 'obj-table': {'component': 'Table', 'material': 'Oak'}})",
+  "print(json.dumps([dressing_assets(), svg.decode('utf-8')]))",
+].join("; ")], { cwd: resolve(root, "../../../.."), encoding: "utf8" }));
 const modelA = { runId: "model-A", stateDigest: "a".repeat(64), assetSha256: "b".repeat(64) };
 const modelB = { runId: "model-B", stateDigest: "c".repeat(64), assetSha256: "d".repeat(64) };
 const externalAsset = { runId: "imported-model", assetSha256: "e".repeat(64) };
@@ -23,6 +36,8 @@ const externalArtifact = { ...externalAsset, sha256: externalAsset.assetSha256, 
 const unsupportedExact = { ...externalArtifact, runId: "seat-rhino-run", sha256: "9".repeat(64),
   artifactId: "9".repeat(64), fileName: "seat-rhino.3dm", representation: "exact" };
 const savedDimension = { id: "saved-door-width", entityRef: "entity:wall", openingId: "door", placement: { offsetMm: 8 } };
+// The projected objects' component and material, as a design-state model names them.
+const projected = { "obj-wall": ["Wall", "Concrete"], "obj-table": ["Table", "Oak"] };
 const legacyDocument = { projectId: "drawing-project", runId: modelA.runId, assetSha256: "0".repeat(64),
   fileName: "retained-floor-plan.png", mimeType: "image/png", sizeBytes: 200, pageCount: 1,
   pages: [{ pageIndex: 0, width: 600, height: 400, rotation: 0 }], modelSource: modelA, sourceStageRef: "stage-A",
@@ -91,6 +106,13 @@ const revision = () => page.getByRole("combobox", { name: "Drawing", exact: true
 const source = () => page.getByRole("combobox", { name: "Version to draw", exact: true });
 // GH-302: appearance saves itself; the only save button left is Retry after a refusal.
 const saveButton = () => page.getByRole("button", { name: "Retry saving", exact: true });
+const objectChoice = () => page.getByRole("combobox", { name: "Projected object", exact: true });
+// The page's own drawing of a projected object, and where a plan point is on screen.
+const drawn = object => page.locator(`svg.drawing-vector-base .drawing-plan__lines [data-object="${object}"]`);
+const planPoint = (x, y) => page.evaluate(([x, y]) => {
+  const matrix = document.querySelector("svg.drawing-vector-base").getScreenCTM();
+  return { x: matrix.a * x + matrix.c * y + matrix.e, y: matrix.b * x + matrix.d * y + matrix.f };
+}, [x, y]);
 const legacyKey = JSON.stringify([legacyDocument.runId, legacyDocument.assetSha256, legacyDocument.revisionRef]);
 async function until(read, accepts, label) {
   const deadline = Date.now() + 12000; let value;
@@ -124,7 +146,7 @@ try {
       viewRecipe: { kind: "cut-plan", frame: { origin: [0, 0, body.cutHeight], far_depth: body.cutHeight - body.bottom,
         scale: `1:${body.scaleDenominator}`, crop_uv: body.cropUv ?? [0, 0, 10, 6] },
         graphics: { cutLineMm: body.cutLineMm, visibleLineMm: body.visibleLineMm, hatchSpacingMm: body.hatchSpacingMm },
-        hiddenObjectIds: body.hiddenObjectIds ?? [], dimensions: body.dimensions, dressing: body.dressing ?? [],
+        hiddenObjectIds: body.hiddenObjectIds ?? previous?.viewRecipe?.hiddenObjectIds ?? [], dimensions: body.dimensions, dressing: body.dressing ?? [],
         ...(body.sourceAsset ? { sourceAsset: body.sourceAsset } : {}),
         ...(follow === "frozen" ? { follow: "frozen" } : {}) } };
     await page.evaluate(result => window.drawingFixture.documents.push(result), result);
@@ -147,8 +169,22 @@ try {
     const doc = await page.evaluate(ref => window.drawingFixture.documents.find(d => d.revisionRef === ref), revisionRef);
     if (doc.viewRecipe.kind !== "cut-plan") { planOnlyCalls.push(["vector", revisionRef]); return route.fulfill({ status: 422, json: { code: "DRAWING_PLAN_REQUIRED", detail: "Not a cut plan." } }); }
     const scale = Number(doc.viewRecipe.frame.scale.split(":")[1]);
-    const dressing = (doc.viewRecipe.dressing ?? []).map(item => `<polyline data-dressing-id="${item.id}" points="1,1 2,2"/>`).join("");
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${10000 / scale}mm" height="${6000 / scale}mm" viewBox="0 0 10 6" data-unit="meter" data-scale="1:${scale}"><title>${doc.fileName}</title><polyline data-object="obj-wall" points="1,1 9,1 9,5 1,5 1,1" fill="none" stroke="black" stroke-width="0.04"/><g id="dressing">${dressing}</g></svg>`;
+    const dressing = (doc.viewRecipe.dressing ?? []).map(item => `<g data-dressing="${item.id}" data-asset="${item.assetId}"><polyline points="1,1 2,2"/></g>`).join("");
+    // Like the projection: a line names its object, component and material, its group is its role, and a hidden object is not drawn.
+    const hidden = new Set(doc.viewRecipe.hiddenObjectIds ?? []);
+    const line = (id, tag, points, paint = "") => hidden.has(id) ? ""
+      : `<${tag} data-object="${id}" data-component="${projected[id][0]}" data-material="${projected[id][1]}"${paint} points="${points}"/>`;
+    // A plan past the inline line limit: many short lines of one object.
+    const dense = () => `<svg xmlns="http://www.w3.org/2000/svg" width="100mm" height="60mm" viewBox="0 0 10 6" data-unit="meter" data-scale="1:100"><g id="visible" fill="none" stroke="#000" stroke-width="0.018">`
+      + Array.from({ length: 20001 }, (_, index) => { const x = index % 100 / 10, y = Math.floor(index / 100) / 40;
+        return `<polyline data-object="obj-screen" data-component="Screen" data-material="Steel" points="${x},${y} ${x + .05},${y}"/>`; }).join("")
+      + `</g><g id="dressing"></g></svg>`;
+    const svg = revisionRef === "revision-dense" ? dense() : revisionRef === legacyDocument.revisionRef ? retainedSvg
+      : `<svg xmlns="http://www.w3.org/2000/svg" width="${10000 / scale}mm" height="${6000 / scale}mm" viewBox="0 0 10 6" data-unit="meter" data-scale="1:${scale}"><title>${doc.fileName}</title>`
+      + `<g id="visible" fill="none" stroke="#000" stroke-width="0.018">${line("obj-table", "polyline", "7,2 8.5,2 8.5,3 7,3 7,2")}</g>`
+      + `<g id="section-hatch" fill="none" stroke="#000" stroke-width="0.01">${line("obj-wall", "polygon", "1,1 9,1 9,1.2 1,1.2", ' fill="#000" fill-rule="evenodd" stroke="none"')}</g>`
+      + `<g id="section" fill="none" stroke="#000" stroke-width="0.035">${line("obj-wall", "polyline", "1,1 9,1 9,5 1,5 1,1")}</g>`
+      + `<g id="dressing">${dressing}</g></svg>`;
     vectorBytes.set(revisionRef, svg);
     return route.fulfill({ json: { svg, assets,
       anchors: [{ objectId: "obj-wall", positionUv: [5, 1] }] } });
@@ -347,7 +383,7 @@ try {
     assert.equal(await page.locator('[data-dressing-id]').count(), 1);
     await until(() => revision().inputValue(), value => value !== newRevision, "deletion retained");
     assert.equal(requests.at(-1).dressing.length, 1);
-    await page.waitForFunction(() => { const image = document.querySelector(".drawing-vector-base"); return image?.complete && image.naturalWidth > 0; });
+    await drawn("obj-wall").first().waitFor({ state: "attached" });
     assert.equal(drives.length, 0, "appearance never invokes a design proposal");
   });
   await step("SVG download preserves exact saved vector bytes, scale, source objects and entourage", async () => {
@@ -360,7 +396,7 @@ try {
     assert.match(download.suggestedFilename(), /\.svg$/);
     const savedScale = await page.evaluate(ref => window.drawingFixture.documents.find(d => d.revisionRef === ref).viewRecipe.frame.scale, revisionRef);
     assert.match(svg, /width="[\d.]+mm"/); assert.ok(svg.includes(`data-scale="${savedScale}"`), "the download keeps the saved revision's scale");
-    assert.match(svg, /data-object="obj-wall"/); assert.match(svg, /data-dressing-id=/);
+    assert.match(svg, /data-object="obj-wall"/); assert.match(svg, /data-dressing=/);
     const beforeAdd = await revision().inputValue();
     await page.getByRole("button", { name: "Add person", exact: true }).click();
     assert.equal(await downloadButton.isDisabled(), true, "unsaved appearance cannot be downloaded as a retained version");
@@ -371,7 +407,7 @@ try {
     const [oldDownload] = await Promise.all([page.waitForEvent("download"), downloadButton.click()]);
     const oldSvg = await readFile(await oldDownload.path(), "utf8");
     assert.equal(oldSvg, vectorBytes.get(legacyDocument.revisionRef));
-    assert.doesNotMatch(oldSvg, /data-dressing-id=/, "historical download never inherits new or unsaved entourage");
+    assert.doesNotMatch(oldSvg, /data-dressing=/, "historical download never inherits new or unsaved entourage");
   });
   await step("retained dimensions can be removed without rewriting their original revision", async () => {
     await page.getByRole("button", { name: "Remove dimension", exact: true }).click();
@@ -529,6 +565,82 @@ try {
     await page.getByRole("region", { name: "Source status" }).getByText("Layer Roof was skipped.", { exact: true }).waitFor();
     assert.equal(sectionRequests.length, before + 1, "reopening never redraws the imported source");
     assert.deepEqual(planOnlyCalls, []);
+  });
+  await step("a projected line says which object it draws: its component, material and role", async () => {
+    // The retained revision's vector is the projection's own SVG.
+    await revision().selectOption(legacyKey);
+    await drawn("obj-table").waitFor();
+    assert.equal(await page.locator("img.drawing-vector-base").count(), 0, "the plan is drawn inline, not as an image");
+    assert.deepEqual(await objectChoice().locator("option").allTextContents(), ["Choose an object", "Table · Oak · beyond", "Wall · Concrete · cut"]);
+    const table = await planPoint(7.75, 2), wall = await planPoint(5, 1);
+    await page.mouse.move(table.x, table.y);
+    await until(() => page.getByRole("tooltip").textContent(), value => value === "Table · Oak · beyond", "a line beyond the cut names its object");
+    await page.mouse.move(wall.x, wall.y);
+    await until(() => page.getByRole("tooltip").textContent(), value => value === "Wall · Concrete · cut", "the cut names its wall");
+    await page.mouse.click(wall.x, wall.y);
+    assert.equal(await objectChoice().inputValue(), "obj-wall");
+    assert.equal(await page.locator(".drawing-object-picked > strong").textContent(), "Wall · Concrete · cut");
+    assert.equal(await page.locator('.drawing-plan__highlight > .is-picked').count(), 2, "the wall's cut and poché are lit");
+    await page.screenshot({ path: join(screenshots, "drawing-object-picked.png"), fullPage: true });
+    await page.evaluate(() => window.drawingFixture.setLanguage("zh-CN"));
+    await until(() => page.locator(".drawing-object-picked > strong").textContent(), value => value === "Wall · Concrete · 剖切", "the role in Chinese");
+    await page.evaluate(() => window.drawingFixture.setLanguage("en"));
+    await page.keyboard.press("Escape");
+    assert.equal(await objectChoice().inputValue(), "", "Escape lets the object go");
+    await page.mouse.move(0, 0);
+    await page.getByRole("tooltip").waitFor({ state: "detached" });
+  });
+  await step("a hidden object stays hidden through its rebuild, and no design request is made", async () => {
+    const table = await planPoint(7.75, 2);
+    await page.mouse.click(table.x, table.y);
+    assert.equal(await objectChoice().inputValue(), "obj-table");
+    const before = await revision().inputValue(), sent = requests.length;
+    await page.getByRole("button", { name: "Hide this object", exact: true }).click();
+    assert.equal(await drawn("obj-table").count(), 0, "the hidden object leaves the page at once");
+    assert.equal(requests.length, sent, "before its revision is saved");
+    await until(() => revision().inputValue(), value => value !== before, "hiding saved itself as a revision");
+    assert.equal(requests.length, sent + 1); assert.deepEqual(requests.at(-1).hiddenObjectIds, ["obj-table"]);
+    assert.equal(requests.at(-1).previousRevisionRef, legacyDocument.revisionRef);
+    await page.getByRole("button", { name: "Show again: Table · Oak", exact: true }).waitFor();
+    const another = page.locator("details.drawing-another");
+    if (!await another.evaluate(node => node.open)) await another.locator("summary").click();
+    await source().selectOption("stage-B");
+    const hiddenRevision = await revision().inputValue();
+    await page.getByRole("button", { name: "Rebuild on this version", exact: true }).click();
+    await until(() => revision().inputValue(), value => value !== hiddenRevision, "the rebuild opened");
+    assert.equal(requests.length, sent + 2); assert.deepEqual(requests.at(-1).modelSource, modelB);
+    assert.deepEqual(requests.at(-1).hiddenObjectIds, ["obj-table"], "the rebuild asks for the object to stay hidden");
+    const [, , rebuiltRef] = JSON.parse(await revision().inputValue());
+    await until(() => Promise.resolve(vectorBytes.get(rebuiltRef)), Boolean, "the rebuilt vector read");
+    assert.doesNotMatch(vectorBytes.get(rebuiltRef), /obj-table/);
+    await drawn("obj-wall").first().waitFor();
+    assert.equal(await drawn("obj-table").count(), 0, "the rebuilt drawing still leaves it out");
+    assert.equal(await objectChoice().locator("option", { hasText: "Table" }).count(), 0);
+    assert.equal(drives.length, 0, "hiding never proposes a design change");
+    assert.deepEqual(await page.evaluate(() => window.drawingFixture.handoffs), []);
+    await page.getByRole("button", { name: "Show again: Table · Oak", exact: true }).click();
+    await until(() => Promise.resolve(requests.length), value => value === sent + 3, "showing it again saved itself");
+    assert.deepEqual(requests.at(-1).hiddenObjectIds, []);
+    await drawn("obj-table").waitFor();
+    await until(() => page.getByText("Saving appearance…", { exact: true }).count(), value => value === 0, "the shown object saved");
+  });
+  await step("a plan past the inline line limit is an image whose objects can still be hidden from the list", async () => {
+    // Kept on its chosen version, so the moved Working Head does not rebuild it.
+    const dense = { ...legacyDocument, assetSha256: "7".repeat(64), fileName: "dense-plan.png", drawingId: "dense-plan", revisionRef: "revision-dense",
+      generatedAt: "2026-09-21T00:00:00Z", viewRecipe: { ...legacyDocument.viewRecipe, dimensions: [], follow: "frozen" } };
+    await page.evaluate(document => window.drawingFixture.documents.push(document), dense);
+    await page.getByRole("button", { name: "Refresh sources", exact: true }).click();
+    await revision().selectOption(JSON.stringify([dense.runId, dense.assetSha256, dense.revisionRef]));
+    await page.locator("img.drawing-vector-base").waitFor();
+    await page.getByText("This drawing has 20001 lines, so it is shown as an image; choose its objects from the list.", { exact: true }).waitFor();
+    assert.equal(await page.locator("svg.drawing-vector-base").count(), 0);
+    const sent = requests.length;
+    await objectChoice().selectOption("obj-screen");
+    assert.equal(await page.locator(".drawing-object-picked > strong").textContent(), "Screen · Steel · beyond");
+    await page.getByRole("button", { name: "Hide this object", exact: true }).click();
+    await until(() => Promise.resolve(requests.length), value => value === sent + 1, "hiding from the list saved a revision");
+    assert.deepEqual(requests.at(-1).hiddenObjectIds, ["obj-screen"]); assert.equal(requests.at(-1).previousRevisionRef, dense.revisionRef);
+    await until(() => page.getByText("Saving appearance…", { exact: true }).count(), value => value === 0, "the hidden object saved");
   });
   assert.deepEqual(errors, []);
   console.log(JSON.stringify({ passed, screenshots, generationRequests: requests.length, dimensionProposals: drives.length }));
