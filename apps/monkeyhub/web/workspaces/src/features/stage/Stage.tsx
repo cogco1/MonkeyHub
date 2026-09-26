@@ -39,6 +39,7 @@ import { ModelEditPanel, type DirectModelAction, type DirectModelTool } from "./
 import { ParameterLocksPanel, type ParameterLockControls } from "./ParameterLocksPanel";
 import { ElevationPanel, type ElevationControls } from "./ElevationPanel";
 import { ModelToolButton } from "./ModelToolButton";
+import { MenuCommand, MenuSeparator, StatusLine, SurfaceMenus } from "../chrome/SurfaceChrome";
 import { preparePushPull } from "./pushPull";
 import "./stageNotices.css";
 import type { NormalDragController } from "../../workspaces/monkeyarch/viewer/normalDrag";
@@ -415,35 +416,7 @@ export function Stage({
   const [parameterLocksOpen, setParameterLocksOpen] = useState(false);
   const [lineToolsOpen, setLineToolsOpen] = useState(false);
   const [versionsOpen, setVersionsOpen] = useState(false);
-  const stageElement = useRef<HTMLElement>(null);
-  const workspaceElement = useRef<HTMLDivElement>(null);
   const toolsElement = useRef<HTMLDivElement>(null);
-  const footerElement = useRef<HTMLDivElement>(null);
-  useLayoutEffect(() => {
-    const stage = stageElement.current, workspace = workspaceElement.current;
-    const tools = toolsElement.current, footer = footerElement.current;
-    if (!stage || !workspace || !tools || !footer) return;
-    // Keep the floating history above the tools, including wrapped rows and
-    // larger fonts, without resizing the model canvas or changing its camera.
-    const properties = [
-      ["--stage-toolbar-height", tools],
-      ["--stage-footer-height", footer],
-      ["--stage-workspace-height", workspace],
-    ] as const;
-    const measure = () => {
-      for (const [name, element] of properties) {
-        const value = `${Math.ceil(element.getBoundingClientRect().height)}px`;
-        if (stage.style.getPropertyValue(name) !== value) stage.style.setProperty(name, value);
-      }
-    };
-    measure();
-    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measure);
-    for (const [, element] of properties) observer?.observe(element);
-    return () => {
-      observer?.disconnect();
-      for (const [name] of properties) stage.style.removeProperty(name);
-    };
-  }, []);
   // #302: Record never moves a tool. It sits beside the tools while their row has
   // room for it, else on a line of its own above them (stageNotices.css).
   const recordShown = Boolean(model?.sync && (model.sync.dirty || model.sync.busy || model.sync.error));
@@ -1235,34 +1208,35 @@ export function Stage({
       onClick={baseRecord.onRecord}>{t(baseRecord.busy ? "stage.record.busy" : "stage.record.continue")}</button>}
     {baseNotSaved && <p className="editing-base__notice" role="status">{t("stage.base.notSaved")}</p>}
   </>;
-  const editingStatus = editingBaseRunId !== null ? (
-      <div className="editing-base" data-source-match={sameSource ? "same" : "different"}>
-        <span role="status" aria-live="polite">
-          {changingBase ? t("stage.base.loading") : sameSource ? t("stage.base.sameSource") : t("stage.base.current")}
-          {!sameSource && <strong className="editing-base__name" title={editingLabel ?? undefined}> {editingLabel}</strong>}
-        </span>
-        {loadedRunId !== null && !sameSource && onContinue !== null && (
-          <button
-            type="button"
-            className="btn btn--small"
-            disabled={changingBase || baseActionBusy || loadingSha !== null || status === "loading" || blend !== null}
-            title={t("stage.base.continueTitle")}
-            onClick={() => onContinue(loadedRunId, viewedModelSource)}
-          >
-            {t("stage.base.continue")}
-          </button>
-        )}
-        {explicitBase && (
-          <button type="button" className="btn btn--small" disabled={changingBase || baseActionBusy || loadingSha !== null || status === "loading"} onClick={onDefaultBase}>
-            {t("stage.base.default")}
-          </button>
-        )}
-        {baseNotices}
-        {baseError && <ErrorPanel error={baseError} what="GET /api/state" />}
-      </div>
-    ) : baseNotice || baseRecord || baseNotSaved ? <div className="editing-base">{baseNotices}</div> : null;
+  // #337: which model the next edit starts from. While that is the model on screen it is quiet words on the
+  // status line; a different model, a refused act or an unsaved choice asks in one row above the canvas.
+  const baseQuestion = Boolean(baseNotice || baseRecord || baseNotSaved) || (editingBaseRunId !== null && (!sameSource || Boolean(baseError)));
+  const baseWords = editingBaseRunId !== null && <span role="status" aria-live="polite">
+    {changingBase ? t("stage.base.loading") : sameSource ? t("stage.base.sameSource") : t("stage.base.current")}
+    {!sameSource && <strong className="editing-base__name" title={editingLabel ?? undefined}> {editingLabel}</strong>}
+  </span>;
+  const editingStatus = baseQuestion ? (
+    <div className="editing-base" data-source-match={editingBaseRunId === null ? undefined : sameSource ? "same" : "different"}>
+      {baseWords}
+      {editingBaseRunId !== null && loadedRunId !== null && !sameSource && onContinue !== null && (
+        <button
+          type="button"
+          className="btn btn--small"
+          disabled={changingBase || baseActionBusy || loadingSha !== null || status === "loading" || blend !== null}
+          title={t("stage.base.continueTitle")}
+          onClick={() => onContinue(loadedRunId, viewedModelSource)}
+        >
+          {t("stage.base.continue")}
+        </button>
+      )}
+      {baseNotices}
+      {editingBaseRunId !== null && baseError && <ErrorPanel error={baseError} what="GET /api/state" />}
+    </div>
+  ) : null;
+  const quietBase = !baseQuestion && editingBaseRunId !== null &&
+    <span className="editing-base" data-source-match={sameSource ? "same" : "different"}>{baseWords}</span>;
   const pickedStatus = picked && (
-    <div className="picked" title={developerMode ? t("stage.picked.title", {
+    <span className="picked" title={developerMode ? t("stage.picked.title", {
       status: picked.status, sourceState: picked.sourceState,
     }) : designObjectLabel(picked.elementId ?? picked.componentId) ?? undefined}>
       <span className="label">{t("stage.picked.label")}</span>
@@ -1270,7 +1244,7 @@ export function Stage({
         ? picked.elementId ?? picked.componentId ?? t("stage.picked.none")
         : designObjectLabel(picked.elementId ?? picked.componentId) ?? t("stage.picked.unresolved")}</span>
       {developerMode && picked.status !== "resolved" && <span className="picked__meta">{picked.status}</span>}
-    </div>
+    </span>
   );
   const sessionStatus = <>
     {modelAnnotations && <div className="stage-annotations-status" data-model-annotations-status={modelAnnotations.error ? "error" :
@@ -1286,14 +1260,51 @@ export function Stage({
       </>}
     </div>}
   </>;
+  const toggleVersions = () => {
+    if (!versionsOpen) onVersionsOpen?.();
+    setVersionsOpen((open) => !open); setAnnotationToolsOpen(false); setViewToolsOpen(false); setParameterLocksOpen(false);
+  };
   return (
-    <section ref={stageElement} className="stage" data-footer="true" aria-label={t("stage.ariaLabel")}
+    <section className="stage" aria-label={t("stage.ariaLabel")}
       onPointerDownCapture={() => modelKeysRef.current?.onInteraction?.()}
       onKeyDownCapture={() => modelKeysRef.current?.onInteraction?.()}>
+      {/* #337: Modeling's menus, in the project bar while Modeling is on screen: the model the next edit
+          starts from, Versions, the Design Tree, and the commands on the editing base. */}
+      <SurfaceMenus label={t("stage.ariaLabel")} active={active}>
+        {editingBaseRunId !== null && <><span className="stage-bar__model" title={editingLabel ?? undefined}>{editingLabel}</span><MenuSeparator /></>}
+        <MenuCommand className="stage__versions-toggle" aria-expanded={versionsOpen} aria-controls="stage-versions-panel" onClick={toggleVersions}>
+          {t("stage.versions.open")}
+          {!onOpenTree && <>
+            <span className="quiet">{versionCount}</span>
+            {!documentOpen && hasModel && contextLabel && <span className="stage__versions-current"><span className="quiet">{t("stage.context.viewing")} </span>{contextLabel}</span>}
+            {hasNewVersions && <span className="stage__versions-new" role="status">{t("stage.versions.new")}</span>}
+          </>}
+        </MenuCommand>
+        {onOpenTree && <MenuCommand className="stage__tree-link" onClick={onOpenTree}>{t("stage.tree.open")}</MenuCommand>}
+        {explicitBase && <MenuCommand disabled={changingBase || baseActionBusy || loadingSha !== null || status === "loading"}
+          onClick={onDefaultBase}>{t("stage.base.default")}</MenuCommand>}
+        {!onReturnToBoard && picked && onOpenBoard && <MenuCommand onClick={onOpenBoard}>{t("workspace.monkeyboard")}</MenuCommand>}
+      </SurfaceMenus>
       {onReturnToBoard && <div className="stage-mode-switch" role="group" aria-label={t("workspace.switcher")}>
         <button type="button" onClick={onReturnToBoard}>{t("workspace.monkeyboard")}</button>
       </div>}
-      <div ref={workspaceElement} className="stage-workspace">
+      {(baseChoice || editingStatus) && <div className="stage-decision" role="group" aria-label={t("stage.base.label")}>
+        {baseChoice && <div className="base-choice" role="group" aria-label={t("board.feedback.choice")}>
+          {baseChoice.model !== null && <p className="base-choice__text">{t("board.feedback.otherBase", { model: baseChoice.model })}</p>}
+          {baseChoice.notice && <p className="base-choice__text" role="alert">{baseChoice.notice}</p>}
+          <div className="base-choice__actions">
+            {baseChoice.onRecord && <button type="button" className="btn btn--small btn--primary" disabled={baseChoice.busy}
+              onClick={baseChoice.onRecord}>{t(baseChoice.recording ? "stage.record.busy" : "stage.record.continue")}</button>}
+            {/* Only looking is the default: it is first, primary and focused. */}
+            <button type="button" className={`btn btn--small${baseChoice.onRecord ? "" : " btn--primary"}`} autoFocus disabled={baseChoice.busy}
+              onClick={baseChoice.onView}>{t("board.feedback.viewOnly")}</button>
+            {!baseChoice.onRecord && <button type="button" className="btn btn--small" disabled={baseChoice.busy}
+              onClick={baseChoice.onContinue}>{t("stage.base.continue")}</button>}
+          </div>
+        </div>}
+        {editingStatus}
+      </div>}
+      <div className="stage-workspace">
       <div className={`stage-model${documentOpen ? " stage-model--hidden" : ""}`} inert={documentOpen} aria-hidden={documentOpen}
         /* Undo and redo are decided in one place - the keyboard effect above -
            so that one Ctrl+Z reaches exactly one owner. The ink's undo is still
@@ -2103,83 +2114,19 @@ export function Stage({
 
       {drawer}
       </div>
-      <div ref={footerElement} className="stage__foot">
-        <div className="stage__versions">
-          <div className="stage__context">
-            {baseChoice && <div className="base-choice" role="group" aria-label={t("board.feedback.choice")}>
-              {baseChoice.model !== null && <p className="base-choice__text">{t("board.feedback.otherBase", { model: baseChoice.model })}</p>}
-              {baseChoice.notice && <p className="base-choice__text" role="alert">{baseChoice.notice}</p>}
-              <div className="base-choice__actions">
-                {baseChoice.onRecord && <button type="button" className="btn btn--small btn--primary" disabled={baseChoice.busy}
-                  onClick={baseChoice.onRecord}>{t(baseChoice.recording ? "stage.record.busy" : "stage.record.continue")}</button>}
-                {/* Only looking is the default: it is first, primary and focused. */}
-                <button type="button" className={`btn btn--small${baseChoice.onRecord ? "" : " btn--primary"}`} autoFocus disabled={baseChoice.busy}
-                  onClick={baseChoice.onView}>{t("board.feedback.viewOnly")}</button>
-                {!baseChoice.onRecord && <button type="button" className="btn btn--small" disabled={baseChoice.busy}
-                  onClick={baseChoice.onContinue}>{t("stage.base.continue")}</button>}
-              </div>
-            </div>}
-            <div className="stage__context-summary">
-              <button type="button" className="btn stage__versions-toggle" aria-expanded={versionsOpen} aria-controls="stage-versions-panel"
-                onClick={() => { if (!versionsOpen) onVersionsOpen?.(); setVersionsOpen((open) => !open); setAnnotationToolsOpen(false); setViewToolsOpen(false); setParameterLocksOpen(false); }}>
-                {t("stage.versions.open")}
-                {!onOpenTree && <>
-                  <span className="quiet">{versionCount}</span>
-                  {!documentOpen && hasModel && contextLabel && <span className="stage__versions-current"><span className="quiet">{t("stage.context.viewing")} </span>{contextLabel}</span>}
-                  {hasNewVersions && <span className="stage__versions-new" role="status">{t("stage.versions.new")}</span>}
-                </>}
-              </button>
-              {onOpenTree && <button type="button" className="btn btn--small stage__tree-link" onClick={onOpenTree}>{t("stage.tree.open")}</button>}
-              {!documentOpen && pickedStatus}
-              {!onReturnToBoard && picked && onOpenBoard && <button type="button" className="btn btn--small"
-                onClick={onOpenBoard}>{t("workspace.monkeyboard")}</button>}
-            </div>
-            {editingStatus}
-          </div>
-          {versionsOpen && <div id="stage-versions-panel" className="stage__versions-panel" role="region" aria-label={t("stage.versions.ariaLabel")}>
-            <div className="stage__versions-head"><strong>{t("stage.versions.ariaLabel")}</strong>
-              <button type="button" className="btn btn--small" onClick={() => setVersionsOpen(false)}>{t("stage.versions.close")}</button>
-            </div>
-            <div className="stage__versions-session">{sessionStatus}</div>
-            <VersionsStrip
-              design={designHistory} onOpenTree={onOpenTree}
-              workingCopies={workingCopies} onOpenWorkingOption={onOpenWorkingOption}
-              groups={versions} loadingSha={loadingSha} loadedShas={loadedShas} loadedRunId={loadedRunId}
-              onOpen={onOpenVersion} onOpenRun={onOpenRun} onCompare={onCompareVersion}
-            />
-          </div>}
+      {/* #337: Versions is an inspector docked at the canvas's right edge (over the canvas when narrow). */}
+      {versionsOpen && <aside id="stage-versions-panel" className="stage-inspector stage__versions-panel" role="region" aria-label={t("stage.versions.ariaLabel")}>
+        <div className="stage__versions-head"><strong>{t("stage.versions.ariaLabel")}</strong>
+          <button type="button" className="btn btn--small" onClick={() => setVersionsOpen(false)}>{t("stage.versions.close")}</button>
         </div>
-        {developerMode && <><span className="stage__spacer" />
-        <button
-          type="button"
-          className="drawer-tab"
-          onClick={() => onEvidence("honesty")}
-        >
-          {t("nav.evidence")}
-          <span className="drawer-tab__count">
-            {t(
-              review.changes === 1
-                ? "stage.review.changeOne"
-                : "stage.review.changeMany",
-              { count: review.changes },
-            )}{" "}
-            · {t("stage.review.checked", { count: review.checked })} ·{" "}
-            {t(
-              review.needsReview === 1
-                ? "stage.review.needsOne"
-                : "stage.review.needsMany",
-              { count: review.needsReview },
-            )}
-          </span>
-          <span
-            className="drawer-tab__count mono"
-            title={t("stage.review.drawerTitle")}
-          >
-            {t("evidence.tabs.honesty")} {evidenceCounts.honesty} ·{" "}
-            {t("evidence.tabs.events")} {evidenceCounts.events}
-          </span>
-        </button></>}
-      </div>
+        <div className="stage__versions-session">{sessionStatus}</div>
+        <VersionsStrip
+          design={designHistory} onOpenTree={onOpenTree}
+          workingCopies={workingCopies} onOpenWorkingOption={onOpenWorkingOption}
+          groups={versions} loadingSha={loadingSha} loadedShas={loadedShas} loadedRunId={loadedRunId}
+          onOpen={onOpenVersion} onOpenRun={onOpenRun} onCompare={onCompareVersion}
+        />
+      </aside>}
 
       {documentMounted && <div style={{ visibility: documentOpen ? "visible" : "hidden" }} inert={!documentOpen} aria-hidden={!documentOpen}>
         {documentProjectId ? <DocumentCanvas key={`${documentProjectId}:${documentRunId}:${documentView.sourceSha}:${documentView.revisionRef}`}
@@ -2197,6 +2144,18 @@ export function Stage({
           : <div className="document-workspace document-empty">{t("document.noRun")}</div>}
       </div>}
       </div>
+      {/* #337 L5: what is picked, and which model the next edit starts from, as quiet words. */}
+      <StatusLine end={<>{quietBase}{developerMode && <button type="button" className="drawer-tab" onClick={() => onEvidence("honesty")}>
+        {t("nav.evidence")}
+        <span className="drawer-tab__count">
+          {t(review.changes === 1 ? "stage.review.changeOne" : "stage.review.changeMany", { count: review.changes })}{" "}
+          · {t("stage.review.checked", { count: review.checked })} ·{" "}
+          {t(review.needsReview === 1 ? "stage.review.needsOne" : "stage.review.needsMany", { count: review.needsReview })}
+        </span>
+        <span className="drawer-tab__count mono" title={t("stage.review.drawerTitle")}>
+          {t("evidence.tabs.honesty")} {evidenceCounts.honesty} · {t("evidence.tabs.events")} {evidenceCounts.events}
+        </span>
+      </button>}</>}>{!documentOpen && pickedStatus}</StatusLine>
     </section>
   );
 }

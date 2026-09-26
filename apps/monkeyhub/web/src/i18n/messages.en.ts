@@ -180,6 +180,7 @@ export const messagesEn = {
   "stage.base.continue": "Continue from here",
   "stage.base.continueTitle": "Use the displayed run for the next edit. This does not approve or publish it.",
   "stage.base.default": "Return to default editing base",
+  "stage.base.label": "Editing base",
   "stage.base.restoreFailed": "Could not reopen the selected editing version",
   "stage.base.restoreHelp": "The selection has not been replaced. Retry, or explicitly return to the default editing base.",
   "stage.base.modelUnavailable": "The selected editing record was read, but its model is unavailable. Retry loading it, or return to the default editing base.",
