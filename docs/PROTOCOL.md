@@ -1249,7 +1249,9 @@ intermediate runs, and a rejection or Continue only on the user's own words.
 The prepared default reads design and drawing decisions together, so the Agent is
 handed the same project recipe a new drawing starts from: a drawing decision
 whose `typedBinding` is `{"kind": "recipe", "graphics": {…}}` over the closed
-paper-space keys `cutLineMm`, `visibleLineMm` and `hatchSpacingMm`. Copy work,
+paper-space keys `cutLineMm`, `visibleLineMm` and `hatchSpacingMm`. Hub's context note
+names the order a new drawing reads it in: an explicit value in the drawing request, then
+the drawing's own previous revision, then the project recipe, then the default. Copy work,
 or a turn that wants one domain alone, selects `decisionContext.domain` on the
 existing context read. Full applicable decision slices pass through, while
 revoked, deferred or inapplicable records do not. Chat feedback cannot retain a

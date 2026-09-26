@@ -2634,6 +2634,9 @@ class ChatTests(unittest.TestCase):
             prompt = self.calls()[-1]["prompt"]
             # The request is still the request: the pack follows it as data.
             self.assertIn("\n\n" + words + "\n\n" + chat._CONTEXT_NOTE + "\n", prompt)
+            # How an accepted drawing recipe reaches a new drawing, in its order.
+            self.assertIn("an explicit value in the drawing request wins, then the drawing's own previous revision, "
+                          "then the project recipe, then the default", prompt)
             self.assertIn('"contextPack": "ContextPack@1"', prompt)
             self.assertIn('"stateDigest": "' + "a" * 64, prompt)
             # A later message that names nothing is the turn it always was.
