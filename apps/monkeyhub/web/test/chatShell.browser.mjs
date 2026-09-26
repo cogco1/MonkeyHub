@@ -1305,7 +1305,8 @@ try {
   const beforePeerWorkspaces = writes.length;
   await page.getByRole("button", { name: "Board", exact: true }).click();
   await waitWorkspace("board");
-  assert.equal(await visibleWorkspace().locator('.monkeyboard-heading input').count(), 1);
+  // #337: the Board's title is a word in the project bar.
+  assert.equal(await visibleWorkspace().locator('.project-bar input.monkeyboard-title').count(), 1);
   assert.equal(await visibleWorkspace().locator('.monkeyboard-brand').count(), 0);
   const upload = visibleWorkspace().locator('.monkeyboard-welcome-upload');
   await upload.waitFor();

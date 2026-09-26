@@ -1,22 +1,23 @@
 .monkeyboard { display: flex; flex-direction: column; height: 100%; min-height: 0; color: var(--ink); background: var(--ground); font-family: var(--font-ui, "Segoe UI", sans-serif); }
 .monkeyboard button, .monkeyboard input, .monkeyboard select, .monkeyboard textarea { font: inherit; }
-.monkeyboard :is(.monkeyboard-topbar,.monkeyboard-sources,.monkeyboard-alert,.monkeyboard-context) :is(button,select,summary), .monkeyboard-loading button { min-height: 36px; box-sizing: border-box; border: 1px solid var(--line); border-radius: 6px; background: var(--panel-2); color: var(--ink); padding: 7px 10px; cursor: pointer; }
-.monkeyboard :is(.monkeyboard-topbar,.monkeyboard-sources,.monkeyboard-alert,.monkeyboard-context) button:hover:not(:disabled), .monkeyboard-loading button:hover, .monkeyboard-actions summary:hover { background: var(--accent-soft); border-color: var(--accent); }
-.monkeyboard :is(.monkeyboard-topbar,.monkeyboard-sources,.monkeyboard-alert,.monkeyboard-context) button:disabled { opacity: .5; cursor: default; }
+.monkeyboard :is(.monkeyboard-sources,.monkeyboard-alert,.monkeyboard-context) :is(button,select), .monkeyboard-loading button, .monkeyboard-actions-panel :is(button,select) { min-height: 36px; box-sizing: border-box; border: 1px solid var(--line); border-radius: 6px; background: var(--panel-2); color: var(--ink); padding: 7px 10px; cursor: pointer; }
+.monkeyboard :is(.monkeyboard-sources,.monkeyboard-alert,.monkeyboard-context) button:hover:not(:disabled), .monkeyboard-loading button:hover, .monkeyboard-actions-panel button:hover:not(:disabled) { background: var(--accent-soft); border-color: var(--accent); }
+.monkeyboard :is(.monkeyboard-sources,.monkeyboard-alert,.monkeyboard-context) button:disabled, .monkeyboard-actions-panel button:disabled { opacity: .5; cursor: default; }
+.monkeyboard-actions-panel :is(button,select,input) { font: inherit; }
+.monkeyboard-actions-panel :is(button,input,select):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .monkeyboard :is(button,input,select,textarea,a,summary):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .monkeyboard a { color: var(--accent); text-decoration: none; }
 .monkeyboard a:hover { text-decoration: underline; }
-.monkeyboard-topbar { display: flex; flex: 0 0 auto; align-items: center; gap: 10px; padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--panel); }
-.monkeyboard-heading { display: flex; align-items: center; gap: 16px; min-width: 0; flex: 1; }
-.monkeyboard-heading input { min-width: 80px; width: min(260px, 100%); border: 1px solid transparent; border-radius: 5px; padding: 7px; color: var(--ink); background: transparent; font-size: 15px; font-weight: 650; letter-spacing: -.3px; }
-.monkeyboard-heading input:hover, .monkeyboard-heading input:focus { border-color: var(--line); }
 .monkeyboard-save-state { color: var(--muted); font-size: 12px; white-space: nowrap; }
 .monkeyboard-save-state.is-error { color: var(--violated); }
 .monkeyboard button.monkeyboard-primary { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
 .monkeyboard-actions { position: relative; font-size: 12px; }
 .monkeyboard-actions summary { display: flex; align-items: center; list-style: none; }
 .monkeyboard-actions summary::-webkit-details-marker { display: none; }
-.monkeyboard-actions[open] summary, .monkeyboard-topbar button[aria-expanded=true] { border-color: var(--accent); background: var(--accent-soft); }
+/* #337: Board's title, commands and More sit in the project bar as words; More reads as chosen while open. */
+.monkeyboard-actions[open] > summary { color: var(--ink); text-decoration: underline 2px var(--accent); text-underline-offset: 6px; }
+/* The status line under the canvas: how to work the Board, and the drawing selected. */
+.monkeyboard > .status-line { background: var(--ground); }
 .monkeyboard-actions-panel { position: absolute; z-index: 40; top: calc(100% + 8px); right: 0; display: grid; gap: 6px; width: min(310px, calc(100vw - 32px)); max-height: calc(100dvh - 160px); overflow-y: auto; padding: 12px; box-sizing: border-box; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); box-shadow: var(--shadow); }
 .monkeyboard-actions-panel > button { text-align: left; }
 .monkeyboard-export { display: grid; gap: 8px; min-width: 0; padding-top: 12px; margin-top: 6px; border-top: 1px solid var(--line); font-size: 12px; color: var(--muted); }
@@ -84,11 +85,9 @@
 .monkeyboard-crit-actions { position: absolute; z-index: 20; left: 50%; bottom: 18px; display: flex; gap: 8px; transform: translateX(-50%); padding: 4px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); box-shadow: var(--shadow); }
 .monkeyboard-crit-actions button { min-height: 40px; padding: 8px 16px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel-2); color: var(--ink); cursor: pointer; }
 .monkeyboard-crit-actions button:disabled { opacity: .5; cursor: default; }
-.monkeyboard--crit .monkeyboard-topbar, .monkeyboard--crit .monkeyboard-alert, .monkeyboard--crit .monkeyboard-sources, .monkeyboard--crit .monkeyboard-footer, .monkeyboard--crit .monkeyboard-busy { display: none; }
+.monkeyboard--crit .monkeyboard-alert, .monkeyboard--crit .monkeyboard-sources, .monkeyboard--crit .monkeyboard-footer, .monkeyboard--crit .monkeyboard-busy { display: none; }
 .monkeyboard--crit .monkeyboard-canvas { position: fixed; inset: 0; z-index: 30; }
 .monkeyboard--crit .excalidraw .layer-ui__wrapper, .monkeyboard--crit .excalidraw .App-bottom-bar, .monkeyboard--crit .excalidraw .FixedSideContainer { display: none !important; }
-.monkeyboard-footer { flex: 0 0 auto; display: flex; justify-content: space-between; gap: 20px; align-items: center; padding: 7px 16px; border-top: 1px solid var(--line); font-size: 10px; color: var(--muted); background: var(--panel); min-height: 29px; }
-.monkeyboard-footer > * { min-width: 0; text-overflow: ellipsis; overflow: hidden; white-space: nowrap; }
 .monkeyboard-loading { align-items: center; justify-content: center; padding: 36px; text-align: center; gap: 10px; }
 .monkeyboard-loading p { font-size: 13px; color: var(--muted); max-width: 600px; margin: 0; }
 .monkeyboard-error-detail { overflow-wrap: anywhere; }
@@ -105,5 +104,5 @@
 .monkeyboard-feedback-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 10px; }
 .monkeyboard-feedback button { min-height: 44px; padding: 8px 16px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel-2); color: var(--ink); cursor: pointer; }
 .monkeyboard-feedback button:disabled { opacity: .5; cursor: default; }
-@media (max-width: 1000px) { .monkeyboard-sources { flex-basis: 215px; padding: 14px 8px; } .monkeyboard-topbar { padding: 8px 10px; gap: 7px; flex-wrap: wrap; } .monkeyboard-heading { gap: 8px; } .monkeyboard-heading input { width: 150px; } .monkeyboard-footer { padding-inline: 10px; } }
-@media (max-width: 700px) { .monkeyboard-body { position: relative; } .monkeyboard-sources { position: absolute; inset: 0 auto 0 0; width: min(280px, 85%); box-sizing: border-box; z-index: 15; box-shadow: var(--shadow); } .monkeyboard-heading { flex-basis: 70%; } .monkeyboard-topbar button { font-size: 12px; } .monkeyboard-actions { margin-left: auto; } .monkeyboard-source { padding: 9px; } .monkeyboard-footer > span:first-child { display: none; } .monkeyboard-canvas .excalidraw .welcome-screen-center__heading { font-size: 20px; } }
+@media (max-width: 1000px) { .monkeyboard-sources { flex-basis: 215px; padding: 14px 8px; } }
+@media (max-width: 700px) { .monkeyboard-body { position: relative; } .monkeyboard-sources { position: absolute; inset: 0 auto 0 0; width: min(280px, 85%); box-sizing: border-box; z-index: 15; box-shadow: var(--shadow); } .monkeyboard-source { padding: 9px; } .monkeyboard-canvas .excalidraw .welcome-screen-center__heading { font-size: 20px; } }
