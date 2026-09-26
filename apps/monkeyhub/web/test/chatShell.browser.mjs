@@ -2907,7 +2907,8 @@ try {
   await page.getByRole("button", { name: "Design tree", exact: true }).click();
   const treeSurface = visibleWorkspace().locator(".design-tree");
   await treeSurface.waitFor();
-  await treeSurface.getByRole("button", { name: "List", exact: true }).click();
+  // #337: the tree's menus sit in the project bar.
+  await visibleWorkspace().locator(".project-bar").getByRole("button", { name: "List", exact: true }).click();
   await treeSurface.locator('[role="treeitem"][data-node="stage:project://T/runs/tree-s0/review/design-stage.json"]').click();
   await treeSurface.getByRole("button", { name: "View", exact: true }).click();
   await target.locator(".chat-target__viewing").filter({ hasText: "Viewing S0; this message still changes Current" }).waitFor();
@@ -3032,7 +3033,7 @@ try {
   await page.locator(".chat-composer .chat-topic").filter({ hasText: "新话题" }).waitFor();
   await page.getByRole("button", { name: "状态树", exact: true }).click();
   const treeSurfaceZh = visibleWorkspace().locator(".design-tree");
-  await treeSurfaceZh.getByRole("button", { name: "列表", exact: true }).click();
+  await visibleWorkspace().locator(".project-bar").getByRole("button", { name: "列表", exact: true }).click();
   await treeSurfaceZh.locator('[role="treeitem"][data-node="stage:project://T/runs/tree-s0/review/design-stage.json"]').click();
   await treeSurfaceZh.getByRole("button", { name: "查看", exact: true }).click();
   await page.locator(".chat-composer .chat-target__viewing").filter({ hasText: "正在查看 S0，这条消息仍会修改当前" }).waitFor();

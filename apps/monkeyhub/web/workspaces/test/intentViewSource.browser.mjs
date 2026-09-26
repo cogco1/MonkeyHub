@@ -115,7 +115,7 @@ async function openVersions() {
 const snapshot = () => page.evaluate(() => window.__intentViewSource.snapshot);
 const entryCount = (kind) => snapshot().then((value) => value.entries.filter((entry) => entry.kind === kind).length);
 const untilIdle = () => until(snapshot, (value) => !value.busy, "The intent response did not finish");
-const editingBase = () => page.locator(".stage__foot .editing-base");
+const editingBase = () => page.locator(".editing-base");
 const annotationStatus = () => page.locator("#stage-versions-panel [data-model-annotations-status]");
 async function ready(option) {
   await openVersions();
@@ -350,6 +350,8 @@ try {
             } }, 409)
           : await json(compiledResponse(body.utterance, null, body.modelSource), 201);
       }
+      // #326: a retained model's preview; these fixtures retain none, and a runtime without one answers null.
+      if (method === "GET" && /^\/api\/model-assets\/[0-9a-f]{64}\/preview$/.test(url.pathname)) return await json(null);
       assert.fail(`Unexpected API request: ${method} ${url.pathname}${url.search}`);
     } catch (error) { errors.push(error.stack ?? String(error)); await route.abort("blockedbyclient"); }
   });
@@ -382,7 +384,7 @@ try {
     for (const width of [1440, 800, 390]) {
       await page.setViewportSize({ width, height: 900 });
       await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
-      const layout = await page.locator(".stage__context").evaluate(node => {
+      const layout = await page.locator(".stage-decision").evaluate(node => {
         if (!getComputedStyle(node).getPropertyValue("--ink").trim()) throw new Error("Load the real Hub theme before checking layout");
         const rect = node.getBoundingClientRect();
         const tool = document.querySelector(".stage-model .viewtools")?.getBoundingClientRect();
@@ -617,7 +619,8 @@ try {
     await untilIdle();
   });
   await step("switching local files starts fresh Undo/Redo without restoring another file's camera or hits", async () => {
-    const localInput = page.locator('input[type="file"][accept=".3dm"]');
+    // The picker also takes .skp now; the .3dm path is what this step exercises.
+    const localInput = page.locator('input[type="file"][accept*=".3dm"]');
     const undo = page.locator(".viewtools").getByRole("button", { name: "Undo mark", exact: true });
     const redo = page.locator(".viewtools").getByRole("button", { name: "Redo", exact: true });
     const modelRequests = () => requests.filter((row) => row.path === "/api/model-annotations").length;
