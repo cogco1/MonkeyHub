@@ -37,6 +37,23 @@ from test_monkeyhub_lifecycle import project_fixture
 
 
 class OperationRecoveryTests(unittest.TestCase):
+    def test_liveness_reads_status_without_copying_admission_history(self):
+        manager = OperationManager("idle-project")
+        oldest, _ = manager.admit(str(uuid4()), "POST", "/api/proposals", b"{}",
+                                  retained=None, source="studio", session_id=None)
+        for _ in range(60):
+            recent, _ = manager.admit(str(uuid4()), "POST", "/api/proposals", b"{}",
+                                      retained=None, source="studio", session_id=None)
+            manager.replied(recent, HttpResult(200, b"{}", {}))
+        with patch.object(manager, "_shown", side_effect=AssertionError("Liveness copied a display record")):
+            self.assertTrue(manager._has_active(), "Old active work must outlive the recent display window")
+            manager.interrupted(oldest, "lost reply")
+            self.assertFalse(manager._has_active(), "Recovery needs attention, not busy polling")
+            manager.reconcile({"candidates": [{"candidateId": "external", "status": "running"}]}, worker_alive=True)
+            self.assertTrue(manager._has_active(), "An external active candidate also keeps polling responsive")
+            manager.reconcile({"candidates": [{"candidateId": "external", "status": "succeeded"}]}, worker_alive=True)
+            self.assertFalse(manager._has_active())
+
     def setUp(self):
         temporary = tempfile.TemporaryDirectory(prefix="hub-operation-recovery-")
         self.addCleanup(temporary.cleanup)
@@ -55,6 +72,43 @@ class OperationRecoveryTests(unittest.TestCase):
         binding = bound_project(self.app.state) if live else ProjectBinding.open(self.settings)
         return runtime_dto(inspect_runtime(binding,
             jobs=self.app.state.jobs if live else None, candidate_ids=self.manager.candidate_ids())).model_dump(by_alias=True)
+
+    def test_recipe_inspection_does_not_journal_notify_or_wake_but_import_does(self):
+        from archflow.contracts.canonical import canonical_digest
+
+        body = {"schema": "DrawingRecipeExport@1", "recipe": {"targetRef": "drawing:hatch",
+                "strength": "strong_preference", "graphics": {"hatchSpacingMm": 3.0}},
+                "source": {"decisionId": "synthetic-recipe", "revisionSha256": "a" * 64}}
+        content = json.dumps({**body, "sha256": canonical_digest(body)})
+        journal = self.root / "recipe-operations.json"
+        operations = OperationManager(self.fixture.PROJECT_ID, journal_path=journal, project_dir=str(self.settings.project_dir))
+        runtime = ProjectRuntime("recipe-runtime", self.fixture.PROJECT_ID, str(self.settings.project_dir),
+                                 operations, ProjectBinding.open(self.settings))
+        manager = ProjectRuntimeManager(None, None)
+
+        def studio(base, target, method, body, headers, *, timeout):
+            response = self.client.request(method, target, content=body, headers=headers)
+            return HttpResult(response.status_code, response.content, {"content-type": "application/json"})
+
+        with patch.object(manager, "service", return_value=SimpleNamespace(url="http://isolated-worker")), \
+             patch("monkeyhub_api.runtime.request_http", side_effect=studio), patch.object(manager, "emit") as notify:
+            for source, status in (("{}", 422), (content, 200)):
+                payload = {"projectId": self.fixture.PROJECT_ID, "content": source}
+                response = manager.forward(runtime, "/api/drawing-recipes/inspect", "POST", json.dumps(payload).encode(),
+                                           {"content-type": "application/json", "idempotency-key": str(uuid4())})
+                self.assertEqual(response.status, status, response.body)
+                self.assertEqual(operations.records(), [])
+                self.assertFalse(journal.exists())
+                self.assertFalse(runtime.wake.is_set())
+                notify.assert_not_called()
+            payload.update(confirmed=True, sourceKind="human", rawLanguage="Import the inspected recipe.")
+            response = manager.forward(runtime, "/api/drawing-recipes/import", "POST", json.dumps(payload).encode(),
+                                       {"content-type": "application/json", "idempotency-key": str(uuid4())})
+            self.assertEqual(response.status, 201, response.body)
+            self.assertEqual(len(operations.records()), 1)
+            self.assertTrue(journal.exists())
+            self.assertTrue(runtime.wake.is_set())
+            notify.assert_called()
 
     def admission(self, path, payload=None, *, operation_id=None):
         body = b"" if payload is None else json.dumps(payload, sort_keys=True).encode()

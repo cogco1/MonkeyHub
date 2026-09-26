@@ -5,9 +5,10 @@ remaining budget, and answers how many *additional independent rollouts* each
 strategy gets next. It never changes a rollout's token cap, horizon or model,
 and it never sees a transcript, a proposal or a token count.
 
-The V0 baselines, equal and round robin, delegate every single decision to
-``SequentialAllocator`` from ``labs/candidate_evaluation`` (unchanged). This
-slice adds no OCBA-style rule and claims nothing about one.
+Equal, round robin and OCBA-style allocation delegate every single decision to
+``SequentialAllocator`` from ``labs/candidate_evaluation`` (unchanged). The
+adaptive rule deliberately returns one rollout at a time so each next decision
+can use the outcome that preceded it.
 """
 
 from __future__ import annotations
@@ -143,7 +144,45 @@ class SequentialBaseline:
                               (f"{SEQUENTIAL_ALLOCATOR_VERSION}/{self.name}", *notes))
 
 
+class SequentialOcba:
+    """Classical OCBA-style next-sample choice over retained rollout outcomes.
+
+    The reused allocator explicitly falls back to balanced sampling when the
+    small-sample moments violate its assumptions (zero variance or tied means).
+    This adapter adds no variance floors and makes no guarantee for Bernoulli
+    LLM/harness outcomes.
+    """
+
+    name = "ocba"
+
+    def __init__(self) -> None:
+        self._allocator = SequentialAllocator()
+
+    def next_allocation(self, state: AllocationState) -> NextAllocation:
+        request = EvaluationBudgetRequest(
+            estimates=tuple(_estimate(item, 0, state.fixed_sample_cost) for item in state.strategies),
+            remaining_budget=state.remaining_budget,
+            budget_unit="samples",
+            policy=self.name,
+            warmup=state.warmup,
+            step=state.attempts_so_far,
+            seed=state.seed,
+        )
+        decision = self._allocator.allocate(request)
+        if decision.candidate_id is None:
+            return NextAllocation((), decision.stop_reason,
+                                  (f"{SEQUENTIAL_ALLOCATOR_VERSION}/{self.name}", decision.reason))
+        details = ", ".join(f"{key}={value:.12g}" for key, value in sorted(decision.details.items()))
+        note = f"{decision.candidate_id}: {decision.reason}"
+        if details:
+            note += f" ({details})"
+        return NextAllocation(((decision.candidate_id, 1),), None,
+                              (f"{SEQUENTIAL_ALLOCATOR_VERSION}/{self.name}", note,
+                               "adaptive rule schedules one rollout before observing again"))
+
+
 RULES = {policy: (lambda policy=policy: SequentialBaseline(policy)) for policy in BASELINE_POLICIES}
+RULES["ocba"] = SequentialOcba
 
 
 def make_rule(name: str) -> AllocationRule:

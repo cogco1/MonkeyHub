@@ -252,6 +252,8 @@ class ViewportCaptureRequestDto(BaseModel):
 
     run_id: str = Field(alias="runId")
     png_base64: str = Field(alias="pngBase64")
+    model_source: ModelSourceDto | None = Field(alias="modelSource", default=None,
+        description="The exact retained model shown by the browser; validates identity, not correspondence inferred from pixels.")
 
 
 class ViewportCaptureDto(BaseModel):
@@ -265,6 +267,7 @@ class ViewportCaptureDto(BaseModel):
     sha256: str
     media_type: str = Field(alias="mediaType")
     size_bytes: int = Field(alias="sizeBytes")
+    document: SourceDocumentDto | None = None
 
 
 class TracingPaperCameraDto(BaseModel):
@@ -497,4 +500,5 @@ def capture_dto(capture: ViewportCapture) -> ViewportCaptureDto:
         sha256=capture.sha256,
         media_type=capture.media_type,
         size_bytes=capture.size_bytes,
+        document=document_dto(capture.document) if capture.document is not None else None,
     )

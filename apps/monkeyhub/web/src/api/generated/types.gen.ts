@@ -960,6 +960,7 @@ export type DesignStageDto = {
      */
     acceptedBy: string;
     acceptance?: AcceptanceEvidenceDto | null;
+    review?: ReviewJudgementDto | null;
 };
 
 /**
@@ -1640,6 +1641,44 @@ export type ProjectVersionDto = {
      * Statesha256
      */
     stateSha256: string | null;
+};
+
+/**
+ * ReviewJudgementDto
+ */
+export type ReviewJudgementDto = {
+    /**
+     * Reviewref
+     */
+    reviewRef: string;
+    /**
+     * Disposition
+     */
+    disposition: 'unreviewed' | 'rejected' | 'archived';
+    /**
+     * Endorsed
+     */
+    endorsed: boolean;
+    /**
+     * Actorid
+     */
+    actorId: string;
+    /**
+     * Occurredat
+     */
+    occurredAt: string;
+    /**
+     * Reason
+     */
+    reason: string | null;
+    /**
+     * Endorsedby
+     */
+    endorsedBy?: string | null;
+    /**
+     * Endorsedat
+     */
+    endorsedAt?: string | null;
 };
 
 /**

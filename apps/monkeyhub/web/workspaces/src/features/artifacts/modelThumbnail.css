@@ -1,0 +1,4 @@
+.model-thumbnail { display: inline-flex; flex: 0 0 52px; width: 52px; height: 40px; overflow: hidden; align-items: center; justify-content: center; border-radius: 5px; background: color-mix(in srgb, currentColor 5%, transparent); vertical-align: middle; }
+.model-thumbnail img { width: 100%; height: 100%; object-fit: contain; }
+.model-thumbnail svg { width: 23px; height: 23px; opacity: .55; }
+.design-tree-card > .model-thumbnail { display: flex; width: 100%; height: 130px; margin-block: 10px; }

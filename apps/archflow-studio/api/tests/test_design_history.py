@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 from copy import deepcopy
+from concurrent.futures import ThreadPoolExecutor
+from threading import Event
 import unittest
 from unittest.mock import patch
 
@@ -11,12 +13,14 @@ from fastapi.testclient import TestClient
 
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.adapters import occt_backend
-from archflow.project.record_kinds import DESIGN_STAGE, STUDIO_CANDIDATE_DELTA
+from archflow.project.record_kinds import CANDIDATE_REVIEW, DESIGN_STAGE, STUDIO_CANDIDATE_DELTA
 from archflow.project.refs import record_ref_from_uri
 from archflow.state.state_record import StateRecordEditKind, StateRecordOperator
 from archflow_studio_api.application.artifacts import list_artifacts
+from archflow_studio_api.application.authentication import ActorAttribution
 from archflow_studio_api.application.binding import bound_project
 from archflow_studio_api.application.candidate import replay_candidate, run_operator
+from archflow_studio_api.application.design_history import review_judgements, save_review_judgement
 from archflow_studio_api.application.projection import project_state
 from archflow_studio_api.main import create_app
 from archflow_studio_api.settings import StudioSettings
@@ -80,6 +84,147 @@ class DesignHistoryFixture(CandidateTestCase):
         return response.json()
 
 class DesignHistoryTests(DesignHistoryFixture):
+    def test_candidate_review_round_trip_is_exact_attributable_and_position_neutral(self) -> None:
+        stage = self.initialize()
+        candidate_id = stage["candidateId"]
+        branch_before = deepcopy(self.repository.read_design_branches())
+        head_before = self.repository.read_head()
+
+        def review(kind: str, ref: str, action: str, reason: str | None = None, client=None):
+            response = (client or self.client).post("/api/candidate-reviews", json={
+                "projectId": PROJECT_ID, "subjectKind": kind, "subjectRef": ref,
+                "action": action, "reason": reason,
+            })
+            self.assertEqual(response.status_code, 201, response.text)
+            return response.json()
+
+        rejected = review("candidate", candidate_id, "reject", "Does not preserve the entrance sequence")
+        self.assertEqual((rejected["disposition"], rejected["endorsed"]), ("rejected", False))
+        archived = review("candidate", candidate_id, "archive")
+        self.assertEqual(archived["disposition"], "archived")
+        review("candidate", candidate_id, "archive")
+        restored = review("candidate", candidate_id, "restore")
+        self.assertEqual(restored["disposition"], "rejected")
+        self.assertEqual(review("candidate", candidate_id, "restore")["disposition"], "rejected")
+        endorsed = review("candidate", candidate_id, "endorse", "Develop this direction")
+        self.assertTrue(endorsed["endorsed"])
+        self.assertEqual(endorsed["endorsedBy"], endorsed["actorId"])
+        self.assertEqual(endorsed["endorsedAt"], endorsed["occurredAt"])
+        stage_endorsed = review("stage", stage["stageRef"], "endorse")
+        self.assertTrue(stage_endorsed["endorsed"])
+        self.assertEqual(self.repository.read_head(), head_before)
+        self.assertEqual(self.repository.read_design_branches(), branch_before)
+
+        with TestClient(create_app(self.settings)) as restarted:
+            history = self.history(client=restarted)
+            candidate = next(row for row in history["candidates"] if row["candidateId"] == candidate_id)
+            self.assertEqual(candidate["review"], endorsed)
+            self.assertEqual(history["stages"][0]["review"], stage_endorsed)
+
+    def test_review_keeps_endorsement_attribution_after_archival_and_restart(self) -> None:
+        stage = self.initialize()
+        binding = bound_project(self.app.state)
+        first = save_review_judgement(binding, subject_kind="candidate", subject_ref=stage["candidateId"],
+                                      action="endorse", reason="Develop this direction",
+                                      attribution=ActorAttribution("architect-a", True, "hub"))
+        # Retained pre-action records still identify the original endorsement.
+        original_put = binding.repository.put_json
+        legacy_payload = dict(binding.repository.load_json(record_ref_from_uri(first.ref, PROJECT_ID)))
+        legacy_payload.pop("action")
+        run = binding.load_run("studio-candidate-reviews")
+        original_put(run=run, destination=PersistenceDestination(PersistenceArea.RUN_REVIEW, run_id=run.run_id),
+                     record_kind=CANDIDATE_REVIEW, payload=legacy_payload)
+        binding.repository.layout.resolve_record(record_ref_from_uri(first.ref, PROJECT_ID)).unlink()
+        archived = save_review_judgement(binding, subject_kind="candidate", subject_ref=stage["candidateId"],
+                                         action="archive", reason="Revisit later",
+                                         attribution=ActorAttribution("architect-b", True, "hub"))
+        self.assertEqual(archived.actor_id, "architect-b")
+        self.assertEqual((archived.endorsed_by, archived.endorsed_at), ("architect-a", first.occurred_at))
+        with TestClient(create_app(self.settings)) as restarted:
+            candidate = next(row for row in self.history(client=restarted)["candidates"]
+                             if row["candidateId"] == stage["candidateId"])
+            review = candidate["review"]
+            self.assertEqual((review["disposition"], review["actorId"]), ("archived", "architect-b"))
+            self.assertEqual((review["endorsedBy"], review["endorsedAt"]), ("architect-a", first.occurred_at))
+            response = restarted.post("/api/candidate-reviews", json={
+                "projectId": PROJECT_ID, "subjectKind": "candidate", "subjectRef": stage["candidateId"], "action": "restore"})
+            self.assertEqual(response.status_code, 201, response.text)
+            self.assertEqual(response.json()["disposition"], "unreviewed")
+            self.assertEqual(response.json()["endorsedBy"], "architect-a")
+            with patch("archflow_studio_api.routes.episodes._attribution",
+                       return_value=ActorAttribution("architect-c", True, "hub")):
+                renewed = restarted.post("/api/candidate-reviews", json={
+                    "projectId": PROJECT_ID, "subjectKind": "candidate", "subjectRef": stage["candidateId"], "action": "endorse"})
+            self.assertEqual(renewed.status_code, 201, renewed.text)
+            self.assertEqual(renewed.json()["endorsedBy"], "architect-c")
+            candidate = next(row for row in self.history(client=restarted)["candidates"]
+                             if row["candidateId"] == stage["candidateId"])
+            self.assertEqual(candidate["review"], renewed.json())
+
+    def test_concurrent_candidate_reviews_keep_one_readable_revision_chain(self) -> None:
+        stage = self.initialize()
+        binding = bound_project(self.app.state)
+        repository = binding.repository
+        first_at_write, release_first, second_started, second_read = (Event() for _ in range(4))
+        original_put = repository.put_json
+
+        def hold_first_write(**kwargs):
+            if kwargs["record_kind"] == CANDIDATE_REVIEW and kwargs["payload"]["action"] == "archive":
+                first_at_write.set()
+                if not release_first.wait(5):
+                    raise AssertionError("The first review was not released")
+            return original_put(**kwargs)
+
+        def read_reviews(project):
+            result = review_judgements(project)
+            if second_started.is_set():
+                second_read.set()
+            return result
+
+        def save(action):
+            if action == "endorse":
+                second_started.set()
+            return save_review_judgement(binding, subject_kind="candidate", subject_ref=stage["candidateId"],
+                                          action=action, reason=None,
+                                          attribution=ActorAttribution(action, True, "hub"))
+
+        with (patch.object(repository, "put_json", side_effect=hold_first_write),
+              patch("archflow_studio_api.application.design_history.review_judgements", side_effect=read_reviews),
+              ThreadPoolExecutor(max_workers=2) as workers):
+            first = workers.submit(save, "archive")
+            try:
+                self.assertTrue(first_at_write.wait(5))
+                second = workers.submit(save, "endorse")
+                self.assertTrue(second_started.wait(5))
+                # Without the transaction guard the second request reads the
+                # same parent before the held first write is committed.
+                second_read.wait(0.5)
+            finally:
+                release_first.set()
+            first.result(timeout=5)
+            second.result(timeout=5)
+        with TestClient(create_app(self.settings)) as restarted:
+            candidate = next(row for row in self.history(client=restarted)["candidates"]
+                             if row["candidateId"] == stage["candidateId"])
+            self.assertEqual(candidate["review"]["disposition"], "archived")
+            self.assertTrue(candidate["review"]["endorsed"])
+
+    def test_stage_on_another_branch_can_be_endorsed(self) -> None:
+        initial = self.initialize()
+        self.fork(initial)
+        candidate = self.candidate_from(initial)
+        accepted = self.accept(candidate, initial, "alternative")
+        self.assertEqual(accepted.status_code, 200, accepted.text)
+        stage = accepted.json()
+        self.assertNotIn(stage["stageRef"], [row["stageRef"] for row in self.history()["stages"]])
+        response = self.client.post("/api/candidate-reviews", json={
+            "projectId": PROJECT_ID, "subjectKind": "stage", "subjectRef": stage["stageRef"], "action": "endorse"})
+        self.assertEqual(response.status_code, 201, response.text)
+        with TestClient(create_app(self.settings)) as restarted:
+            reviewed = next(row for row in self.history("alternative", client=restarted)["stages"]
+                            if row["stageRef"] == stage["stageRef"])
+            self.assertEqual(reviewed["review"], response.json())
+
     def test_legacy_model_does_not_become_history_without_explicit_acceptance(self) -> None:
         self.assertEqual(self.history()["stages"], [])
         self.assertEqual(self.history()["branches"], [])

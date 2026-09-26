@@ -1,7 +1,12 @@
 """Save, read and revise the bound project's scoped decisions."""
 
-from fastapi import APIRouter
+import json
+from typing import Any
+
+from fastapi import APIRouter, Query
 from starlette.requests import Request
+
+from archflow.contracts.canonical import canonical_json
 
 from ..application import decisions
 from ..application.authentication import request_attribution
@@ -12,6 +17,10 @@ from ..transport.decisions import (
     DecisionListDto,
     DecisionRequestDto,
     DecisionRevisionRequestDto,
+    RecipeImportRequestDto,
+    RecipeInspectRequestDto,
+    RecipeInspectDto,
+    RecipeExportFileDto,
     decision_dto,
 )
 from ..transport.errors import StudioError
@@ -51,6 +60,46 @@ def read_decision(request: Request, decision_id: str) -> DecisionHistoryDto:
         revisions=[decision_dto(row, status=None if row is chain[-1] else "superseded")
                    for row in chain],
     )
+
+
+@router.get("/decisions/{decision_id}/recipe-export", response_model=RecipeExportFileDto, response_model_by_alias=True)
+def export_drawing_recipe(request: Request, decision_id: str,
+                          expected_revision_ref: str = Query(alias="expectedRevisionRef", min_length=1)) -> RecipeExportFileDto:
+    """Export only the selected active recipe revision, with no project content."""
+
+    document = decisions.recipe_export(bound_project(request.app.state), decision_id,
+                                       expected_revision_ref=expected_revision_ref)
+    return RecipeExportFileDto(fileName=f"drawing-recipe-{document['sha256'][:12]}.json",
+                               content=canonical_json(document) + "\n")
+
+
+def _recipe_document(content: str) -> Any:
+    # Keep integer/float spelling in Python: a browser JSON round trip changes
+    # 3.0 into 3 and invalidates the existing portable format's digest.
+    try:
+        return json.loads(content.lstrip("\ufeff"))
+    except ValueError as exc:
+        raise StudioError(422, "RECIPE_EXPORT_INVALID", "The recipe file is not valid JSON.") from exc
+
+
+@router.post("/drawing-recipes/inspect", response_model=RecipeInspectDto, response_model_by_alias=True)
+def inspect_drawing_recipe(request: Request, payload: RecipeInspectRequestDto) -> RecipeInspectDto:
+    """Validate the exact file and show its source and values; retain nothing."""
+
+    binding = _binding(request, payload.project_id)
+    export = decisions.read_recipe_export(_recipe_document(payload.content))
+    return RecipeInspectDto(projectId=binding.project_id, targetRef=export.target_ref, graphics=export.graphics,
+                            sourceDecisionId=export.decision_id, sourceRevisionSha256=export.revision_sha256,
+                            exportSha256=export.sha256)
+
+
+@router.post("/drawing-recipes/import", response_model=DecisionDto, response_model_by_alias=True, status_code=201)
+def import_drawing_recipe(request: Request, payload: RecipeImportRequestDto) -> DecisionDto:
+    """Retain an explicitly confirmed file through the existing project decision owner."""
+
+    binding = _binding(request, payload.project_id)
+    return decision_dto(decisions.import_recipe(binding, _recipe_document(payload.content), raw_language=payload.raw_language,
+                                               source_kind=payload.source_kind, attribution=request_attribution(request)))
 
 
 @router.post("/decisions", response_model=DecisionDto, response_model_by_alias=True, status_code=201)

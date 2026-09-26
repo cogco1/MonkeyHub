@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { applicationUrl, type AppearancePreferences } from "../../../shared-web/src/appearance.js";
+import type { AppearancePreferences } from "../../../shared-web/src/appearance.js";
 import type { createClient } from "./api/generated/client";
 import {
   getFabProfilesApiFabProfilesGet, prepareFabApiFabPreparePost, sendFabApiFabSendPost,
@@ -118,9 +118,13 @@ export function FabPage({ preferences, client, readResult }: Props) {
     } catch (cause) { setSendError(detailOf(cause)); }
     finally { busyRef.current = false; setBusy(null); }
   };
-  const home = applicationUrl(window.location.origin + "/", preferences);
+  const openDisplaySettings = () => {
+    // Fab is hosted in the Hub's tool iframe.  Ask that existing shell to open
+    // its settings instead of navigating this frame into a second Hub shell.
+    window.parent.postMessage({ type: "monkeyhub:open-settings", page: "display" }, window.location.origin);
+  };
   return <>
-    <header className="toolbar"><strong className="wordmark">MonkeyFab</strong><a className="btn fab-settings-link" href={home + "#settings"}>{t.settings}</a></header>
+    <header className="toolbar"><strong className="wordmark">MonkeyFab</strong><button className="btn fab-settings-link" type="button" onClick={openDisplaySettings}>{t.settings}</button></header>
     <main className="hub fab-page"><div className="section-heading"><div><h1>MonkeyFab</h1><p className="help">{t.intro}</p></div></div>
       {profileError ? <div className="error-message" role="alert"><p>{profileError}</p><button className="btn" type="button" onClick={() => setProfileAttempt((value) => value + 1)}>{t.retry}</button></div> : !profiles ? <p role="status">{t.loading}</p> : null}
       <div className="fab-forms">

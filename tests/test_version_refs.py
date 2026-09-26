@@ -74,6 +74,8 @@ NO_VERSION_IDENTITY = {
     "AuditEvent@1": "an actor/action record; names no canonical version",
     "CandidateAdmission@1": "a closed loop's verdict: run ids, receipt and Stage record refs and content digests; "
     "no canonical version",
+    "CandidateReview@1": "a human judgement on a run id or immutable Stage record URI; "
+    "its previous revision is a review record URI, not a canonical version",
     "CatalogConfrontationReceipt@1": "compares a catalog to a program; no base",
     "ComponentCatalog@1": "a library listing; no project version",
     "ComponentTemplate@1": "a library template; no project version",

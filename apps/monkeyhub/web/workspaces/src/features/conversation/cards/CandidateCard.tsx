@@ -15,6 +15,7 @@ import { IN_FLIGHT } from "../../../app/jobs";
 import type { CandidateReadback } from "../../../app/useCandidateRuns";
 import { candidateSourceLabel } from "../../artifacts/artifactLabels";
 import { artifactKindKey, isViewable } from "../../artifacts/artifactSelection";
+import { ModelThumbnail } from "../../artifacts/ModelThumbnail";
 import { BilingualText } from "../../../i18n/BilingualText";
 import { useT } from "../../../i18n/useT";
 import { usePreferences } from "../../settings/preferences";
@@ -255,6 +256,7 @@ function CandidateReadout({
                     )
                   }
                 >
+                  <ModelThumbnail source={artifact.modelSource} />
                   {loadingSha !== null && loadingSha === artifact.sha256
                     ? t("candidate.loadingBytes")
                     : (

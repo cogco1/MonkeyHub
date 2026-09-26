@@ -22,6 +22,7 @@ const cacheDir = await mkdtemp(path.join(tmpdir(), "design-tree-"));
 const shots = process.env.DESIGN_TREE_SCREENSHOTS ? path.resolve(process.env.DESIGN_TREE_SCREENSHOTS) : null;
 const serveOnly = process.argv.includes("--serve");
 const errors = [], unexpected = [], external = [], writes = [];
+const reviews = new Map();
 let recorded = 0;
 const http = createHttpServer();
 let vite, browser, fixture, fixtureModule, runtimeId = null;
@@ -38,13 +39,23 @@ async function runtime(request, response, url, body) {
   const name = url.pathname, method = request.method;
   try {
     if (method === "GET" && name === "/api/protocol") return json({ protocol: "archflow/2", server: "design-tree-fixture", serverVersion: "test", mode: "local",
-      capabilities: ["candidate-admission", "design-history", "working-draft", "working-source"] });
+      capabilities: ["candidate-admission", "candidate-review", "design-history", "working-draft", "working-source"] });
     if (method === "GET" && name === "/api/project") return json({ projectId: PROJECT, projectDir: "D:\\fixture\\riverside-library",
       published: { version: 2, stateSha256: "0".repeat(64) }, referenceRun: { runId: "run-site", baseVersion: 2, baseSha256: "0".repeat(64) },
       intentProvider: "fixture", intentModel: "fixture" });
     if (method === "GET" && name === "/api/working-source") return json(fixture.workingSource(url.searchParams.get("workspace") ?? "modeling"));
-    if (method === "GET" && name === "/api/design-history") return json(fixture.designHistory(url.searchParams.get("branchId") ?? "main"));
+    if (method === "GET" && name === "/api/design-history") {
+      const history = fixture.designHistory(url.searchParams.get("branchId") ?? "main");
+      return json({ ...history,
+        stages: history.stages.map(stage => ({ ...stage, review: reviews.get(`stage:${stage.stageRef}`) ?? null })),
+        candidates: history.candidates.map(candidate => ({ ...candidate, review: reviews.get(`candidate:${candidate.candidateId}`) ?? null })) });
+    }
     if (method === "GET" && name === "/api/worktrees") return json(fixture.worktrees());
+    if (method === "GET" && /^\/api\/model-assets\/[0-9a-f]{64}\/preview$/.test(name)) {
+      response.writeHead(204);
+      response.end();
+      return;
+    }
     // The project's event stream, which other workspace code subscribes to; the fixture has no events to send.
     if (method === "GET" && name === "/api/events") {
       response.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" });
@@ -55,6 +66,20 @@ async function runtime(request, response, url, body) {
     // What Modeling's Record edits and continue does to the working draft here: its edits become recorded.
     if (method === "POST" && name === "/api/fixture/record") { recorded += 1; fixture.state.localDraft = null; return json({}); }
     if (method === "PUT" && name === "/api/working-draft") { writes.push({ method, name, body }); return json(fixture.selectWorkingDraft(body)); }
+    if (method === "POST" && name === "/api/candidate-reviews") {
+      writes.push({ method, name, body });
+      const key = `${body.subjectKind}:${body.subjectRef}`, previous = reviews.get(key);
+      const actorId = body.action === "endorse" ? "Review Architect" : "Archive Architect";
+      const occurredAt = body.action === "endorse" ? "2026-09-26T12:00:00Z" : "2026-09-27T15:00:00Z";
+      const review = { reviewRef: `project://${PROJECT}/runs/studio-candidate-reviews/review/candidate-review/${"a".repeat(64)}`,
+        disposition: body.action === "archive" ? "archived" : body.action === "reject" ? "rejected"
+          : body.action === "restore" ? "unreviewed" : previous?.disposition ?? "unreviewed",
+        endorsed: body.action === "endorse" || previous?.endorsed || false, actorId, occurredAt, reason: body.reason,
+        endorsedBy: body.action === "endorse" ? actorId : previous?.endorsedBy ?? null,
+        endorsedAt: body.action === "endorse" ? occurredAt : previous?.endorsedAt ?? null };
+      reviews.set(key, review);
+      return json(review, 201);
+    }
     const accept = name.match(/^\/api\/candidates\/([^/]+)\/accept$/);
     if (method === "POST" && accept) { writes.push({ method, name, body }); return json(fixture.accept(decodeURIComponent(accept[1]), body)); }
   } catch (error) {
@@ -354,10 +379,31 @@ try {
   assert.equal(await card.getByRole("button", { name: "View", exact: true }).isEnabled(), true);
   assert.equal(await card.getByRole("button", { name: /Compare this Study/ }).isDisabled(), true, "Compare is marked for later");
   assert.equal(await card.locator('[data-action="accept"]').count(), 0, "an option cannot be accepted");
+  await card.getByRole("button", { name: "Endorse direction", exact: true }).click();
+  await tab.waitForTimeout(100);
+  assert.deepEqual(writes.at(-1), { method: "POST", name: "/api/candidate-reviews", body: {
+    projectId: PROJECT, subjectKind: "candidate", subjectRef: "run-massing-d", action: "endorse", reason: null } });
+  await card.getByText("Endorsed direction", { exact: true }).waitFor();
+  assert.match(await card.innerText(), /Endorsed by\s*Review Architect/);
+  const endorsementTime = await card.getByText("Endorsed", { exact: true }).locator("..").locator("dd").innerText();
+  assert.ok(endorsementTime.length > 0, "the endorsement has a visible time");
+  await card.getByRole("button", { name: "Archive", exact: true }).click();
+  await card.getByRole("button", { name: "Restore", exact: true }).waitFor();
+  assert.match(await card.innerText(), /Endorsed by\s*Review Architect/);
+  assert.match(await card.innerText(), /Last reviewed by\s*Archive Architect/);
+  assert.equal(await card.getByText("Endorsed", { exact: true }).locator("..").locator("dd").innerText(), endorsementTime,
+    "archiving keeps the original endorsement's attribution and time");
+  await card.getByRole("button", { name: "Restore", exact: true }).click();
+  await card.getByRole("button", { name: "Archive", exact: true }).waitFor();
+  writes.length = 0;
   await shoot(tab, "05-side-card");
   card = await clickNode(S1);
   assert.match(await card.innerText(), /Stage · accepted checkpoint/);
   assert.equal(await card.locator('[data-action="accept"]').count(), 0, "a Stage cannot be accepted again");
+  await card.getByRole("button", { name: "Endorse direction", exact: true }).click();
+  await card.getByText("Endorsed direction", { exact: true }).waitFor();
+  assert.match(await card.innerText(), /Endorsed by\s*Review Architect/);
+  writes.length = 0;
   card = await clickNode("candidate:run-facade-c");
   assert.match(await card.locator(".design-tree-card__warning").innerText(), /review checks were still open \(1\)/,
     "an option admitted with review checks open says so in its side card");

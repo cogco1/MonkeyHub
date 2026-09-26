@@ -119,6 +119,62 @@ justify eager startup loading or dropping source inspection.
 - #254 Board/AI Render/Publish and downstream staleness are separate remaining
   product acceptance; successful registration alone does not satisfy them.
 
+## Repeatable synthetic-fixture profile, 2026-09-26
+
+The manual harness now accepts `--repeats` and an optional, distinct
+`--update-model`. Each repetition creates a new empty P036 project, registers
+the first digest (cold), retries that exact digest in the same project (warm),
+and then registers the update digest. It reports min/median/max rather than a
+single observation. It also samples process RSS every 5 ms around each measured
+operation on Linux and Windows. RSS includes the Python/API host and allocations
+retained by earlier stages; it is a process peak for that interval, not isolated
+model memory.
+
+The source-side profile separately reports original file read, SHA-256, the
+`rhino3dm` `FromByteArray` call, and native object indexing excluding that decode.
+The API profile retains the existing base64 decode, digest, lookup, complete
+contents inspection, P036 persistence and verification stages. Finally, a GET of
+the exact retained bytes is labelled `retained_bytes_view_consumption`. That GET
+is **not** a browser view: client transfer, browser decode, GPU upload, first
+visible frame, Board and Render readiness remain explicitly unmeasured.
+
+One run in the isolated Linux cloud container used Python 3.12.13 and
+`rhino3dm` 8.35.0. Inputs were the committed synthetic fixtures
+`native-source-index.3dm` (8,248 bytes, five objects, one layer) and
+`model-source-b.3dm` (11,308 bytes, two objects, one layer). Five repetitions
+gave:
+
+| Stage | count | min | median | max |
+| --- | ---: | ---: | ---: | ---: |
+| Cold registration request | 5 | 67.981 ms | 75.278 ms | 82.153 ms |
+| Cold complete contents inspection | 5 | 5 ms | 7 ms | 10 ms |
+| Cold P036 persistence | 5 | 3 ms | 3 ms | 3 ms |
+| Warm unchanged registration request | 5 | 5.347 ms | 5.648 ms | 6.565 ms |
+| Warm unchanged lookup | 5 | 1 ms | 1 ms | 2 ms |
+| Changed-source registration request | 5 | 14.458 ms | 15.750 ms | 18.427 ms |
+| Changed-source complete contents inspection | 5 | 5 ms | 5 ms | 6 ms |
+| Changed-source P036 persistence | 5 | 3 ms | 3 ms | 6 ms |
+| Cold retained-byte GET | 5 | 2.938 ms | 3.054 ms | 3.770 ms |
+| Warm retained-byte GET | 5 | 2.685 ms | 2.850 ms | 3.179 ms |
+| Changed-source retained-byte GET | 5 | 3.728 ms | 3.833 ms | 8.241 ms |
+
+The highest sampled request RSS was 190,119,936 bytes. The first standalone
+source profile measured read 0.050 ms, digest 0.029 ms, `rhino3dm` decode 3.760
+ms and total native indexing 51.887 ms (48.127 ms excluding decode); that first
+index interval includes lazy Python module loading. The already-loaded update
+measured read 0.057 ms, digest 0.022 ms, decode 3.492 ms and total indexing 5.470
+ms (1.978 ms excluding decode). These tiny generated fixtures validate stage
+separation and exact-digest behavior only. They are not representative of a
+user's large building and do not establish a product latency budget.
+
+The unchanged runs returned the first digest, while changed-source runs returned
+the distinct update digest; every retained-byte response exactly matched its
+input. Inspection and persistence were absent from all warm runs, demonstrating
+the existing exact-source reuse path rather than a new cache. No optimization is
+introduced from this fixture evidence. A real, authorized architectural 3DM is
+still required to locate a bottleneck. SKP remains unmeasured because this cloud
+task did not use the SketchUp SDK or a private model.
+
 ## Agreed Render boundary for subsequent work
 
 MonkeyHub/P036 remains the authoritative home for model and editable scene

@@ -11,6 +11,7 @@ import { sha8 } from "../../app/format";
 import { useT } from "../../i18n/useT";
 import { usePreferences } from "../settings/preferences";
 import { artifactKindKey, isServable, isViewable, isWorkModel } from "../artifacts/artifactSelection";
+import { ModelThumbnail } from "../artifacts/ModelThumbnail";
 
 export interface VersionExport {
   readonly artifact: ProjectArtifactDto;
@@ -199,6 +200,7 @@ export function VersionsStrip({
               return <button type="button" key={option.id} className="btn btn--small vcard__export"
                 aria-pressed={loaded} disabled={loadingSha !== null} onClick={() => onOpenWorkingOption?.(option)}
                 title={groups.find((group) => group.runId === source.runId)?.exports.find(({ artifact }) => artifact.sha256 === source.assetSha256)?.artifact.fileName}>
+                <ModelThumbnail source={source} />
                 {t("stage.workingCopy.view", { label: option.label })}
                 {copy.selectedOptionId === option.id && <span aria-label={t("stage.workingCopy.selected")}> · ✓</span>}
               </button>;
@@ -299,6 +301,7 @@ export function VersionsStrip({
                       : (artifact.unavailableReason ?? t("stage.versions.unavailableNoReason"))}
                     onClick={() => onOpen(artifact, sourceLabel)}
                   >
+                    <ModelThumbnail source={artifact.modelSource} />
                     <span className="vcard__asset-kind">{loadingThis ? t("stage.versions.loading") : t(artifact.representation === "external" ? "artifact.kind.external3dm" : artifact.representation === "composed" ? "stage.versions.completeModel" : "stage.versions.nativeExport")}</span>
                     <span className="vcard__filename">{artifact.fileName}</span>
                     {(developerMode || artifact.representation === "preview") && <span className="quiet">{developerMode ? `${seat} · ` : ""}{t(artifactKindKey(artifact))}</span>}

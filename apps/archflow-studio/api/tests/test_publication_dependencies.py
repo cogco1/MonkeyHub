@@ -91,6 +91,15 @@ def test_drawing_changes_stale_live_page_and_leave_frozen_output_and_layout_inta
     finally:
         reopened.state.render_jobs.shutdown()
         reopened.state.jobs.shutdown()
+    # Updating only the live placement must leave the architect's composition
+    # and historical frozen page intact, and must not advance the design.
+    updated_pages = deepcopy(original_pages)
+    updated_pages[0]["elements"][1]["source"] = publication.source(rebuilt)
+    updated = save(client, updated_pages, saved["revisionSha256"])
+    assert updated["pages"] == updated_pages
+    assert statuses(client) == {"live-image": "current", "frozen-image": "frozen"}
+    assert client.post("/api/publication/export", json=export_request).content == old_pdf.content
+    assert client.get("/api/publication").json()["pages"] == updated_pages
     assert room.repository.read_head() == room.head
 
 

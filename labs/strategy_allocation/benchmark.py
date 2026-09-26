@@ -403,7 +403,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     run.add_argument("--runner", choices=("fake", "codex"), default="fake")
     run.add_argument("--cases", nargs="+", default=list(Environment().case_ids))
     run.add_argument("--strategies", nargs="+", default=list(STRATEGIES))
-    run.add_argument("--rule", default="equal", choices=("equal", "round_robin"))
+    run.add_argument("--rule", default="equal", choices=("equal", "round_robin", "ocba"))
     run.add_argument("--budget", type=int, default=8, help="rollouts per case, failures included")
     run.add_argument("--warmup", type=int, default=2, help="balanced initial rollouts per strategy")
     run.add_argument("--parallel", type=int, default=4, help="rollouts the rule schedules per round")
