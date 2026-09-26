@@ -155,6 +155,109 @@
       ]
     },
     {
+      "id": "GH-319",
+      "stream": "planning",
+      "status": "active",
+      "goal": "A model converted from GLB to 3DM displays correctly: the production conversion keeps or computes normals for the actual topology, keeps faces consistently wound, gives a neutral fallback colour to a mesh without material, keeps the source attributes it can, and says what it did.",
+      "depends_on": [],
+      "issue": "https://github.com/cogco1/MonkeyHub/issues/319",
+      "write_scope": [
+        "archflow/adapters/model_formats.py",
+        "archflow/adapters/model_providers.py",
+        "docs/mapping/planning/GH-319-model-normals.md"
+      ],
+      "card": "docs/mapping/planning/GH-319-model-normals.md",
+      "acceptance": [
+        "#319 P0: the converted 3DM has vertex normals, consistent winding and a non-black fallback display colour when the source has no material; the conversion warnings and receipt say what was computed or kept.",
+        "A round-trip test reads the converted 3DM back and checks normals, winding and colour; reopening the project still displays it."
+      ],
+      "lanes": [
+        {
+          "id": "model-normals",
+          "issue": "https://github.com/cogco1/MonkeyHub/issues/319",
+          "branch": "codex/319-model-normals",
+          "worktree": "cloud routine (claude.ai): codex/319-model-normals",
+          "base_ref": "eed873ba",
+          "contributor": "Claude (cloud)",
+          "reviewer": "Claude root task",
+          "handoff": "#319 P0 only (the black converted model); P1 Render Scene and drawing associativity stay open.",
+          "modules": [
+            "adapters.cad_execution"
+          ],
+          "write_scope": [
+            "archflow/adapters/model_formats.py",
+            "archflow/adapters/model_providers.py"
+          ],
+          "depends_on": [],
+          "status": "active",
+          "blocked_reason": null
+        }
+      ]
+    },
+    {
+      "id": "GH-244",
+      "stream": "planning",
+      "status": "active",
+      "goal": "Drawing cleanup and section perspectives catch up with cut plans: a cut line lying on another object's cut line is drawn once, the cleanup report names the objects each rule touched, and a section perspective takes material hatch, poché and beyond fade like a cut plan.",
+      "depends_on": [],
+      "issue": "https://github.com/cogco1/MonkeyHub/issues/244",
+      "write_scope": [
+        "apps/archflow-studio/api/archflow_studio_api/application/drawings.py",
+        "apps/archflow-studio/api/archflow_studio_api/transport/drawings.py",
+        "docs/mapping/planning/GH-244-cleanup-and-section-graphics.md",
+        "monkeydiagram/drawing_elevation.py",
+        "monkeydiagram/drawing_svg.py"
+      ],
+      "card": "docs/mapping/planning/GH-244-cleanup-and-section-graphics.md",
+      "acceptance": [
+        "cleanup-completeness: a deterministic rule drops one object's cut line that lies on another object's; CleanupReport keeps its counts and adds the object ids per rule; drawings without such lines keep their bytes.",
+        "section-perspective-graphics: SectionPerspectiveView and its request take graphics.hatch.byMaterial and graphics.beyond.fade with the cut plan's bounds; absent keys keep today's bytes."
+      ],
+      "lanes": [
+        {
+          "id": "cleanup-completeness",
+          "issue": "https://github.com/cogco1/MonkeyHub/issues/244",
+          "branch": "codex/244-cleanup-completeness",
+          "worktree": "cloud routine (claude.ai): codex/244-cleanup-completeness",
+          "base_ref": "eed873ba",
+          "contributor": "Claude (cloud)",
+          "reviewer": "Claude root task",
+          "handoff": "Cleanup gap found by the 303-S3 benchmark (a wall's cut line on its neighbour's face) plus per-rule object ids for 05-S2.",
+          "modules": [
+            "adapters.drawing_svg"
+          ],
+          "write_scope": [
+            "monkeydiagram/drawing_svg.py"
+          ],
+          "depends_on": [],
+          "status": "active",
+          "blocked_reason": null
+        },
+        {
+          "id": "section-perspective-graphics",
+          "issue": "https://github.com/cogco1/MonkeyHub/issues/244",
+          "branch": "codex/244-section-perspective-graphics",
+          "worktree": "cloud routine (claude.ai): codex/244-section-perspective-graphics",
+          "base_ref": "eed873ba",
+          "contributor": "Claude (cloud)",
+          "reviewer": "Claude root task",
+          "handoff": "Section perspectives take the cut plan's material hatch/poché and beyond fade.",
+          "modules": [
+            "runtime.drawing_elevation",
+            "studio.artifacts"
+          ],
+          "write_scope": [
+            "monkeydiagram/drawing_elevation.py",
+            "apps/archflow-studio/api/archflow_studio_api/application/drawings.py",
+            "apps/archflow-studio/api/archflow_studio_api/transport/drawings.py"
+          ],
+          "depends_on": [],
+          "status": "active",
+          "blocked_reason": null
+        }
+      ]
+    },
+    {
       "id": "GH-66",
       "stream": "planning",
       "status": "active",

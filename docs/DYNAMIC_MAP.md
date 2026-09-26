@@ -5,10 +5,10 @@
 
 Phase: GitHub Issues are the work items (#60); this registry records live source-edit coordination only. The remaining legacy P cards are blocked and claim no path; P115 is a frozen historical index. Real project acceptance and formal issue are explicit user actions.
 
-- active: GH-66
+- active: GH-319, GH-244, GH-66
 - ready: none
 - blocked: P115, P105, P108, P110, P111, P113
-- next: continue active work: GH-66
+- next: continue active work: GH-319, GH-244, GH-66
 
 ## Live work
 
@@ -20,4 +20,6 @@ Phase: GitHub Issues are the work items (#60); this registry records live source
 | P110 | blocked | Connect actual retained obligations and authorized claims to the existing validation input so a violated project requirement cannot disappear behind empty facts. Follow the exact record references through one existing owner; do not treat a reference envelope as design content or invent facts to fill an old schema. Existing relation checks remain in use; candidate continuation need not wait for this entire card. | [P110](mapping/planning/P110-canonical-state-projection.md) |
 | P111 | blocked | Follow up the existing-project trial of delivered candidate continuation: the selected run remains the next edit's exact base and preserves the prior revision. Implementation and isolated verification are complete; The remaining user trial runs in the MonkeyHub Modeling workspace (the Studio page it named is retired) and waits for a new specific edit. This does not establish whole-assembly usability or correct architectural dependencies. | [P111](mapping/planning/P111-continuing-design-cycle.md) |
 | P113 | blocked | Make retained research evidence usable by one identified design or export consumer. First check existing Reading and source references; extend their existing owner if sufficient. The earlier ledger/import/export design is a proposal to revisit only if that consumer demonstrates a missing contract. | [P113](mapping/planning/P113-evidence-ledger.md) |
+| GH-319 | active | A model converted from GLB to 3DM displays correctly: the production conversion keeps or computes normals for the actual topology, keeps faces consistently wound, gives a neutral fallback colour to a mesh without material, keeps the source attributes it can, and says what it did. | [GH-319](mapping/planning/GH-319-model-normals.md) |
+| GH-244 | active | Drawing cleanup and section perspectives catch up with cut plans: a cut line lying on another object's cut line is drawn once, the cleanup report names the objects each rule touched, and a section perspective takes material hatch, poché and beyond fade like a cut plan. | [GH-244](mapping/planning/GH-244-cleanup-and-section-graphics.md) |
 | GH-66 | active | Implement the first project-bound Publish composition slice, with Drawing/Render source freshness and bounded Board handoff. Related consumer fixes follow #223/#216/#244 in the same integration review. | [GH-66](https://github.com/cogco1/MonkeyHub/issues/66) |
