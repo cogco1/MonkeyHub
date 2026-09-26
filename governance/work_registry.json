@@ -167,6 +167,7 @@
         "apps/archflow-studio/api/archflow_studio_api/routes/drawings.py",
         "apps/archflow-studio/api/archflow_studio_api/transport/drawings.py",
         "apps/monkeyhub/api/monkeyhub_api/chat.py",
+        "apps/monkeyhub/api/tests/test_chat.py",
         "docs/mapping/planning/GH-223-drawing-corrections.md"
       ],
       "card": "docs/mapping/planning/GH-223-drawing-corrections.md",
@@ -193,7 +194,8 @@
             "apps/archflow-studio/api/archflow_studio_api/routes/drawings.py",
             "apps/archflow-studio/api/archflow_studio_api/transport/drawings.py",
             "apps/archflow-studio/api/archflow_studio_api/application/drawing_plans.py",
-            "apps/monkeyhub/api/monkeyhub_api/chat.py"
+            "apps/monkeyhub/api/monkeyhub_api/chat.py",
+            "apps/monkeyhub/api/tests/test_chat.py"
           ],
           "depends_on": [],
           "status": "active",
