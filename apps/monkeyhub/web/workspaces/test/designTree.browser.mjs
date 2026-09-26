@@ -51,6 +51,11 @@ async function runtime(request, response, url, body) {
         candidates: history.candidates.map(candidate => ({ ...candidate, review: reviews.get(`candidate:${candidate.candidateId}`) ?? null })) });
     }
     if (method === "GET" && name === "/api/worktrees") return json(fixture.worktrees());
+    if (method === "GET" && /^\/api\/model-assets\/[0-9a-f]{64}\/preview$/.test(name)) {
+      response.writeHead(204);
+      response.end();
+      return;
+    }
     // The project's event stream, which other workspace code subscribes to; the fixture has no events to send.
     if (method === "GET" && name === "/api/events") {
       response.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" });

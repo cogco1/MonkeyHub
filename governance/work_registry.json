@@ -153,6 +153,24 @@
       "notes": [
         "2026-09-08 rule alignment: Awaiting the first concrete evidence consumer and a check of existing Reading/source references. The earlier proposed ledger and private Atlas field superset are not a mandate to add a core record."
       ]
+    },
+    {
+      "id": "GH-289",
+      "stream": "planning",
+      "status": "active",
+      "goal": "Resolve integration test ownership and retained-preview fixture compatibility.",
+      "depends_on": [],
+      "issue": "https://github.com/cogco1/MonkeyHub/issues/289",
+      "branch": "codex/merge-cloud-batch",
+      "worktree": "C:/Users/asus/.codex/worktrees/merge-cloud-batch/ARCHFLOW_V4",
+      "base_ref": "30409e8ecd63050047e18dde69a82c974555920f",
+      "contributor": "Codex integration",
+      "reviewer": "Independent bounded Codex review",
+      "handoff": "Targeted cloud acceptance passed with the preview fixture correction; required full CI verifies the explicit no-canonical-version declaration.",
+      "write_scope": [
+        "tests/test_version_refs.py",
+        "apps/monkeyhub/web/workspaces/test/designTree.browser.mjs"
+      ]
     }
   ]
 }
