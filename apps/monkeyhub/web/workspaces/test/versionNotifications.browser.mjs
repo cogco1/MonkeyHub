@@ -133,8 +133,9 @@ async function assertAnnotationNotePlacement() {
 const versionsToggle = () => page.locator(".stage__versions-toggle");
 const versionSession = () => page.locator("#stage-versions-panel .stage__versions-session");
 const newVersionBadge = () => page.locator(".stage__versions-new");
-const toolsToggle = () => page.locator("button[aria-controls='annotation-tools']");
-const viewToolsToggle = () => page.locator("button[aria-controls='view-tools']");
+// #352: tracing paper is in the tools' own More, and the view tools are the bar's More.
+const toolsToggle = () => page.locator("button[aria-controls='model-tools-more']");
+const viewToolsToggle = () => page.locator("button[aria-controls='stage-more-menu']");
 const workspaceState = () => page.evaluate(() => window.__versionWorkspace);
 async function sessionState() {
   assert.equal(await versionsToggle().getAttribute("aria-expanded"), "true");

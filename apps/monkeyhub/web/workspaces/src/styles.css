@@ -1178,6 +1178,94 @@ button.chip:hover {
   white-space: nowrap;
 }
 
+/* #352: Export and More drop their panel from the bar: its commands as words, one to a line,
+   the standard views on one line of their own. Stage keeps the panel inside Modeling. */
+.stage-menu {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.stage-menu__panel {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 40;
+  display: grid;
+  gap: 1px;
+  width: max-content;
+  min-width: min(180px, var(--stage-menu-room, 100vw));
+  max-width: min(320px, var(--stage-menu-room, calc(100vw - 32px)));
+  max-height: calc(100dvh - 160px);
+  overflow-y: auto;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  color: var(--ink);
+  font-size: var(--text-ui);
+}
+
+.stage-menu__panel button,
+.stage-menu__panel a {
+  display: flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 4px 10px;
+  border: 0;
+  border-radius: var(--radius);
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.stage-menu__panel button:hover:not(:disabled),
+.stage-menu__panel a:hover {
+  background: var(--surface-hover);
+}
+
+.stage-menu__panel button:disabled {
+  color: var(--faint);
+  cursor: default;
+  opacity: 1;
+}
+
+.stage-menu__panel :is(button, a):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.stage-menu__panel button[aria-expanded="true"] {
+  color: var(--accent);
+}
+
+.stage-menu__views {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1px;
+}
+
+.stage-menu__sep {
+  height: 1px;
+  margin: 4px 2px;
+  background: var(--line);
+}
+
+/* Why Export cannot make the copy now, or what the last attempt answered. */
+.stage-menu__note {
+  margin: 0;
+  padding: 0 10px 6px;
+  color: var(--muted);
+  font-size: var(--text-caption);
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
 /* One row above the canvas for what asks before the next edit: a model viewed
    read-only, a Board note on another version, a refused act or an unsaved choice. */
 .stage-decision {
@@ -2765,7 +2853,6 @@ button.chip:hover {
   border-left: 1px solid var(--line);
 }
 
-.model-tools__line { position: relative; display: inline-flex; gap: 2px; }
 .model-tools__sync { position: relative; }
 .model-tools__sync-status {
   position: absolute;
@@ -2794,6 +2881,81 @@ button.chip:hover {
   background: var(--panel);
   box-shadow: 0 4px 16px rgb(0 0 0 / 16%);
   z-index: 4;
+}
+
+/* #352: the palette's own More, last on its row: its tools named, one to a line, above it. */
+.model-tools__more {
+  position: relative;
+  display: inline-flex;
+}
+
+.model-tools__more > .model-tool-button > .model-tool-button__tooltip {
+  right: 0;
+  left: auto;
+  transform: none;
+}
+
+.model-tools__more > .model-tool-button[aria-expanded="true"] > .model-tool-button__tooltip {
+  display: none;
+}
+
+.model-tools__flyout.model-tools__flyout--more {
+  right: 0;
+  left: auto;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  min-width: min(190px, var(--stage-menu-room, 100vw));
+  max-width: var(--stage-menu-room, none);
+}
+
+.viewtools .model-tools__flyout--more button.model-tool-button.model-tool-button--labelled {
+  justify-content: flex-start;
+  gap: 10px;
+  width: 100%;
+  padding: 0 10px 0 8px;
+  color: var(--ink-2);
+  font-size: calc(13px * var(--font-scale, 1));
+  font-weight: 400;
+}
+
+.viewtools .model-tools__flyout--more button.model-tool-button.model-tool-button--labelled:is([aria-pressed="true"], [aria-expanded="true"]) {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+/* In the list a tool's key sits at the end of its line rather than in a tooltip. */
+.model-tools__flyout--more .model-tool-button .model-tool-button__tooltip {
+  position: static;
+  width: auto;
+  max-width: none;
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+  visibility: visible;
+  opacity: 1;
+  transform: none;
+}
+
+.model-tools__more-sep {
+  height: 1px;
+  margin: 2px 4px;
+  background: var(--line);
+}
+
+.model-tools__more-plane {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding-left: 10px;
+  color: var(--ink-2);
+  font-size: calc(13px * var(--font-scale, 1));
+  white-space: nowrap;
 }
 
 button.model-tool-button,

@@ -8,7 +8,6 @@ const paths = {
   line: "M5 19 19 5M3 17h4v4H3ZM17 3h4v4h-4Z",
   freehand: "M3 17c3-14 6-14 6-5s5 8 7-1 5-6 5-3",
   arc: "M4 18a8 12 0 0 1 16 0M3 18h2m14 0h2",
-  chevron: "m8 14 4-4 4 4",
   pushPull: "M12 3v9m-3-6 3-3 3 3M4 14l8-4 8 4-8 4-8-4Zm0 0v4l8 4 8-4v-4M12 18v4",
   move: "M12 3v18M3 12h18M9 6l3-3 3 3M9 18l3 3 3-3M6 9l-3 3 3 3M18 9l3 3-3 3",
   rotate: "M20 9a8 8 0 1 0 0 6M20 3v6h-6",
@@ -38,11 +37,11 @@ export type ModelToolIcon = keyof typeof paths;
  * command shelf.
  *
  * Stage 1 is for spatial correction and steering: draw a simple profile, move
- * it, push/pull it, then mark what the agent should understand.
+ * it, push/pull it, then mark what the agent should understand. The less
+ * frequent drawing tools (arc, freehand, closed outline) sit in the palette's
+ * own More (#352), never on the strip itself.
  */
 const HIDDEN_FROM_STAGE1_TOOLBAR = new Set<ModelToolIcon>([
-  "freehand",
-  "arc",
   "rotate",
   "scale",
   "copy",

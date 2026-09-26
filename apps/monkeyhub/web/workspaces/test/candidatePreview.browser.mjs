@@ -173,9 +173,9 @@ async function reportedLoad(artifact, status) {
   assert.ok(Date.parse(body.endedAt) >= Date.parse(body.startedAt));
   return body;
 }
-/** Open the view tools if a step has since opened the panel that closes them. */
+/** Open the view tools if a step has since opened the panel that closes them. #352: they are the bar's More. */
 async function openViewTools() {
-  const toggle = page.locator('button[aria-controls="view-tools"]');
+  const toggle = page.locator('button[aria-controls="stage-more-menu"]');
   if (await toggle.getAttribute("aria-expanded") !== "true") await toggle.click();
 }
 
@@ -1462,13 +1462,15 @@ try {
       await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
       const before = await state();
       const requestStart = requests.length;
-      for (const [selector, panel, label] of [
-        ['button[aria-controls="view-tools"]', '#view-tools', 'View tools'],
-        ['button[aria-controls="annotation-tools"]', '#annotation-tools', 'Tracing Paper'],
+      // #352: the view tools are the bar's More; tracing paper is in the tools' own More.
+      for (const [selector, panel, label, opener] of [
+        ['button[aria-controls="stage-more-menu"]', '#stage-more-menu', 'View tools'],
+        ['button[aria-controls="annotation-tools"]', '#annotation-tools', 'Tracing Paper', 'button[aria-controls="model-tools-more"]'],
         ['button[data-tool-icon="select"]', null, 'Select'],
       ]) {
         await openVersions();
         await page.locator('#stage-versions-panel').waitFor();
+        if (opener) await page.locator(opener).click();
         const button = page.locator(selector);
         await assertReachable(button, label);
         const separation = await page.evaluate(() => {
@@ -1500,7 +1502,7 @@ try {
     await openVersions();
     await page.getByRole("combobox", { name: "Branch", exact: true }).selectOption("main"); await rendered(historyA.candidateId);
     await openViewTools();
-    const viewTools = page.locator("#view-tools");
+    const viewTools = page.locator("#stage-more-menu");
     assert.equal(await page.getByRole("button", { name: "Generate elevation", exact: true }).count(), 0);
     assert.equal(await page.getByRole("combobox", { name: "Elevation direction", exact: true }).count(), 0);
     assert.equal(await page.locator(".stage-drawing-error").count(), 0);
