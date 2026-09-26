@@ -10,6 +10,7 @@ from the first round. Every output goes to an explicit new directory.
     python -m labs.strategy_allocation.benchmark run --runner codex --out <new-dir> \\
         --cases provided-source protected-dependency --budget 8 --max-provider-calls 16
     python -m labs.strategy_allocation.benchmark verify <run-dir>
+    python -m labs.strategy_allocation.benchmark rescore <run-dir> --out <new-dir>
     python -m labs.strategy_allocation.benchmark snapshots --check
 """
 
@@ -20,9 +21,10 @@ import hashlib
 import json
 import os
 import random
+import shutil
 import sys
 from collections import Counter
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from statistics import fmean
@@ -33,7 +35,16 @@ from labs.candidate_evaluation.allocation import VERSION as SEQUENTIAL_ALLOCATOR
 from .allocator import AllocationState, NextAllocation, StrategyStatistics, make_rule
 from .environment import ENVIRONMENT_VERSION, Environment, Step
 from .evaluator import EVALUATOR_VERSION, OUTCOME_METRICS, REFERENCE_VERSION, evaluate
-from .rollout import RECORD_FORMAT, RolloutRecord, append_jsonl, read_jsonl, run_rollout, write_csv
+from .rollout import (
+    RECORD_FORMAT,
+    RolloutRecord,
+    append_jsonl,
+    read_jsonl,
+    run_rollout,
+    verdict,
+    write_csv,
+    write_jsonl,
+)
 from .state_snapshot import StateSnapshot
 from .strategies import PROMPT_CONTRACT, STRATEGIES, CodexRunner, Runner, demo_fake_runner
 
@@ -273,10 +284,17 @@ def verify(out_dir: Path, env: Environment | None = None) -> list[str]:
         if saved != snapshot or meta["snapshots"][case_id]["digest"] != snapshot.digest:
             problems.append(f"{case_id}: the retained snapshot differs from the environment's")
         snapshots[case_id] = snapshot
+    judges = Counter(_judge(record) for record in records)
+    for judge, count in sorted(judges.items()):
+        if judge != _CURRENT_JUDGE:
+            problems.append(f"{count} rollouts were judged by {judge}, not {_CURRENT_JUDGE}; "
+                            "rescore re-judges their retained trajectories")
     for record in records:
         snapshot = snapshots[record.case_id]
         if record.snapshot_digest != snapshot.digest:
             problems.append(f"{record.rollout_id}: bound to another snapshot")
+            continue
+        if _judge(record) != _CURRENT_JUDGE:
             continue
         recorded = [Step.from_dict(record.case_id, step) for step in record.trajectory]
         try:
@@ -286,7 +304,7 @@ def verify(out_dir: Path, env: Environment | None = None) -> list[str]:
             continue
         if outcome.to_dict() != record.evaluation:
             problems.append(f"{record.rollout_id}: the outcome does not re-evaluate to the retained one")
-        if record.success != (record.status == "ok" and outcome.success):
+        if (record.success, record.failure_reason) != verdict(record.status, outcome):
             problems.append(f"{record.rollout_id}: success disagrees with its status and outcome")
     rule = make_rule(config.rule)
     for step in steps:
@@ -303,6 +321,55 @@ def verify(out_dir: Path, env: Environment | None = None) -> list[str]:
     if summary_path.exists() and json.loads(summary_path.read_text(encoding="utf-8")) != summarize(config, records, steps):
         problems.append("summary.json does not recompute from the retained records")
     return problems
+
+
+_CURRENT_JUDGE = f"{EVALUATOR_VERSION} / {REFERENCE_VERSION}"
+
+
+def _judge(record: RolloutRecord) -> str:
+    return f"{record.evaluation['evaluator_version']} / {record.evaluation['reference_version']}"
+
+
+def rescore(run_dir: Path, out_dir: Path, env: Environment | None = None) -> list[RolloutRecord]:
+    """Re-judge a run's retained trajectories with this code's evaluator, into a new directory.
+
+    No model is called: the proposals and trajectories were retained, and they
+    answered snapshots this environment still produces (a changed snapshot is
+    refused). ``allocation.jsonl`` is copied as it happened. A count-based
+    rule's history replays under the new outcomes; an adaptive rule's may not,
+    and ``verify`` says so. The source directory is not modified.
+    """
+    env = env or Environment()
+    meta = json.loads((run_dir / "config.json").read_text(encoding="utf-8"))
+    config = ExperimentConfig.from_dict(meta["config"])
+    records = read_jsonl(run_dir / "rollouts.jsonl")
+    snapshots = {case_id: env.reset(case_id) for case_id in config.cases}
+    stale = [record.rollout_id for record in records if record.snapshot_digest != snapshots[record.case_id].digest]
+    if stale:
+        raise ValueError(f"{len(stale)} rollouts answered a snapshot this environment no longer produces")
+    out_dir.mkdir(parents=True, exist_ok=True)
+    if any(out_dir.iterdir()):
+        raise FileExistsError(f"{out_dir} is not empty; results are never overwritten")
+    rescored = []
+    for record in records:
+        steps = [Step.from_dict(record.case_id, step) for step in record.trajectory]
+        outcome = evaluate(env, snapshots[record.case_id], record.chosen_actions, steps)
+        success, failure_reason = verdict(record.status, outcome)
+        rescored.append(replace(record, evaluation=outcome.to_dict(), success=success, failure_reason=failure_reason))
+    (out_dir / "snapshots").mkdir()
+    for case_id, snapshot in snapshots.items():
+        (out_dir / "snapshots" / f"{case_id}.json").write_text(snapshot.to_json(), encoding="utf-8", newline="\n")
+    _write_json(out_dir / "config.json", {
+        **meta,
+        "versions": {**meta["versions"], "evaluator": EVALUATOR_VERSION, "reference": REFERENCE_VERSION},
+        "rescore": {"fromExperiment": config.experiment_id, "judgedBefore": sorted({_judge(record) for record in records}),
+                    "judgedNow": _CURRENT_JUDGE, "rescoredAt": datetime.now(timezone.utc).isoformat(timespec="seconds")},
+    })
+    shutil.copyfile(run_dir / "allocation.jsonl", out_dir / "allocation.jsonl")
+    write_jsonl(out_dir / "rollouts.jsonl", rescored)
+    write_csv(out_dir / "rollouts.csv", rescored)
+    _write_json(out_dir / "summary.json", summarize(config, rescored, _read_steps(out_dir)))
+    return rescored
 
 
 def check_fixtures(env: Environment | None = None, directory: Path = FIXTURES) -> list[str]:
@@ -356,6 +423,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     verify_command.add_argument("run_dir", type=Path)
     summary_command = commands.add_parser("summarize", help="print a run's summary table")
     summary_command.add_argument("run_dir", type=Path)
+    rescore_command = commands.add_parser("rescore", help="re-judge a run's retained trajectories, no model call")
+    rescore_command.add_argument("run_dir", type=Path)
+    rescore_command.add_argument("--out", type=Path, required=True, help="a new or empty directory")
     fixtures = commands.add_parser("snapshots", help="check or write the snapshot fixtures")
     fixtures.add_argument("--write", type=Path, default=None, help="write the snapshots into this directory")
     fixtures.add_argument("--check", action="store_true", help="compare the committed fixtures")
@@ -377,7 +447,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         for problem in problems:
             print(f"PROBLEM {problem}")
         return 1 if problems else 0
-    if args.command == "verify":
+    if args.command == "rescore":
+        records = rescore(args.run_dir, args.out)
+        print(f"re-judged {len(records)} rollouts by {_CURRENT_JUDGE} into {args.out}")
+        args.run_dir = args.out
+    if args.command in ("verify", "rescore"):
         problems = verify(args.run_dir)
         for problem in problems:
             print(f"PROBLEM {problem}")

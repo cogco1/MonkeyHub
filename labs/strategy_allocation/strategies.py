@@ -277,7 +277,8 @@ CODEX_FIXED_ARGUMENTS = (
 )
 CODEX_PROVIDER = "codex-exec"
 TOOL_ITEM_TYPES = frozenset({"command_execution", "file_change", "mcp_tool_call", "web_search"})
-_USAGE_FIELDS = ("input_tokens", "cached_input_tokens", "output_tokens", "reasoning_output_tokens")
+_USAGE_FIELDS = ("input_tokens", "cached_input_tokens", "cache_write_input_tokens", "output_tokens",
+                 "reasoning_output_tokens")
 
 
 def _count(value: object) -> int | None:

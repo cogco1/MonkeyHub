@@ -20,7 +20,10 @@ from typing import Callable, Mapping
 from .environment import Case, Environment, EnvState
 
 
-REFERENCE_VERSION = "strategy-allocation-reference@0"
+# @1: open-direction is complete once the open directions are compared and none
+# was set aside, as its task ("one step forward") and #268 define it. @0 also
+# required the architect's choice, which the visible task never asked for.
+REFERENCE_VERSION = "strategy-allocation-reference@1"
 MAX_STATES = 10_000
 
 PRECONDITION_UNMET = "precondition_unmet"
@@ -76,8 +79,9 @@ REFERENCES: Mapping[str, CaseReference] = {
         CaseReference("protected-dependency", "W1 is widened toward the east and R-7 holds.",
                       lambda state: state["opening"] == "widened-east" and state["r7"] == "kept",
                       _protected_judge),
-        CaseReference("open-direction", "The architect chose a direction after comparing all three open ones.",
-                      lambda state: state["decision"] == "R2", _direction_judge),
+        CaseReference("open-direction", "The open directions were compared and none was set aside before the "
+                      "architect chose.", lambda state: state["studied"] and state["open"] == "R1,R2,R3",
+                      _direction_judge),
         CaseReference("local-conflict", "C-1 is resolved locally and every other accepted element of K is "
                       "unchanged.", lambda state: state["clash"] == "resolved" and state["candidate"] == "K",
                       _conflict_judge),

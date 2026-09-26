@@ -93,13 +93,24 @@ class RolloutRecord:
 
 def _tokens(usage: Mapping[str, int | None]) -> tuple[dict[str, int | None], bool]:
     """Monitor's convention: input includes cached input, output includes reasoning output."""
+    written = usage.get("cache_write_input_tokens")
     try:
         tokens = TokenUsage(input_tokens=usage.get("input_tokens"), output_tokens=usage.get("output_tokens"),
                             cached_input_tokens=usage.get("cached_input_tokens"),
+                            cache_write_input_tokens=written,
+                            # zero writes make the one-hour subset zero; otherwise its split is unknown
+                            cache_write_1h_input_tokens=0 if written == 0 else None,
                             reasoning_output_tokens=usage.get("reasoning_output_tokens"))
         return tokens.to_dict(), True
     except (TypeError, ValueError):
         return {name: usage.get(name) for name in TokenUsage().to_dict()}, False
+
+
+def verdict(status: str, outcome: Outcome) -> tuple[bool, str | None]:
+    """A rollout succeeds only when its call yielded a proposal and the outcome is a success."""
+    if status == "ok" and outcome.success:
+        return True, None
+    return False, status if status != "ok" else outcome.failure_reasons[0]
 
 
 def run_rollout(*, env: Environment, snapshot: StateSnapshot, strategy: Strategy, runner: Runner, horizon: int,
@@ -129,8 +140,7 @@ def run_rollout(*, env: Environment, snapshot: StateSnapshot, strategy: Strategy
         raise ValueError(f"runner returned an unknown status {status!r}")
     trajectory = env.rollout(initial, proposal.plan if proposal else (), horizon=horizon)
     outcome = evaluate(env, snapshot, trajectory.executed, trajectory.steps)
-    success = status == "ok" and outcome.success
-    failure_reason = None if success else status if status != "ok" else outcome.failure_reasons[0]
+    success, failure_reason = verdict(status, outcome)
     asks_human = {action.action_id for action in env.case(snapshot.case_id).actions if action.asks_human}
     return RolloutRecord(
         record_format=RECORD_FORMAT,

@@ -145,12 +145,13 @@ class CodexRunnerTests(unittest.TestCase):
             {"type": "thread.started", "thread_id": "t-1"},
             {"type": "item.completed", "item": {"type": "agent_message", "text": '{"output_tokens": 99999}'}},
             {"type": "item.completed", "item": {"type": "command_execution", "command": "dir"}},
-            {"type": "turn.completed", "usage": {"input_tokens": 100, "cached_input_tokens": 40, "output_tokens": 30,
+            {"type": "turn.completed", "usage": {"input_tokens": 100, "cached_input_tokens": 40,
+                                                 "cache_write_input_tokens": 0, "output_tokens": 30,
                                                  "reasoning_output_tokens": 10}},
         )) + "\nnot json\n"
         usage, model, session, tools = parse_codex_events(stdout)
-        self.assertEqual(usage, {"input_tokens": 100, "cached_input_tokens": 40, "output_tokens": 30,
-                                 "reasoning_output_tokens": 10})
+        self.assertEqual(usage, {"input_tokens": 100, "cached_input_tokens": 40, "cache_write_input_tokens": 0,
+                                 "output_tokens": 30, "reasoning_output_tokens": 10})
         self.assertEqual((model, session, tools), (None, "t-1", 1))
 
     def test_a_call_feeds_the_exact_prompt_bytes_and_keeps_raw_files(self):

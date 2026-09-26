@@ -26,7 +26,7 @@ Nothing here writes project state, trains a model or judges aesthetics.
 | Token cap | 4000 output tokens per rollout, reasoning included | `rollout.run_rollout` |
 | Horizon | 3 attempted actions per rollout | `Environment.rollout` |
 | Timeout | 180 s per rollout call | `benchmark --timeout` |
-| Environment, prompt, evaluator | `strategy-allocation-env@0`, `strategy-allocation-prompt@1`, `strategy-allocation-evaluator@0` over `strategy-allocation-reference@0` | module constants |
+| Environment, prompt, evaluator | `strategy-allocation-env@0`, `strategy-allocation-prompt@1`, `strategy-allocation-evaluator@0` over `strategy-allocation-reference@1` | module constants |
 
 The allocator assigns **additional independent rollouts**. It never changes a
 rollout's token cap, horizon or model. `codex exec` cannot cap output tokens,
@@ -45,9 +45,9 @@ timeout. The cap is a protocol limit, never a term of the outcome.
 | `evaluator.py` | `evaluate(env, snapshot, executed_actions, recorded_steps)` → `Outcome`; `OUTCOME_METRICS`. |
 | `rollout.py` | `run_rollout(...)` → `RolloutRecord`; JSON-lines and CSV readers and writers. |
 | `allocator.py` | The allocation interface `AllocationRule`: `AllocationState` → `NextAllocation`; the equal and round-robin baselines. |
-| `benchmark.py` | The experiment loop and the `run`, `verify`, `summarize` and `snapshots` commands. |
+| `benchmark.py` | The experiment loop and the `run`, `verify`, `summarize`, `rescore` and `snapshots` commands. |
 | `fixtures/` | The four starting snapshots as JSON. |
-| `rollout_results/` | The committed summary of the smoke run (numbers only). |
+| `rollout_results/` | The committed summaries of the smoke run (numbers only): as run, and re-judged by reference@1. |
 
 The issue's harness sketch, as implemented (`rollout.run_rollout` does all of it):
 
@@ -71,7 +71,7 @@ are public; whether the step was good is not.
 | --- | --- | --- | --- | --- |
 | `provided-source` | Requirement RQ r3 came with the task; its governing §4.2 is unread. The document index holds only the superseded r1 and r2. | ReadProvidedSource, BM25, RAG, Model, AskHuman | Modeling before reading the governing passage fails a precondition, even if corrected later. BM25 finds a superseded revision (wrong target). Repeated RAG adds nothing; asking the architect is a detour. | ReadProvidedSource → Model (2) |
 | `protected-dependency` | Opening W1 is to be widened; it takes part in protected relation R-7, whose facts are unread. | InspectDependency, Model, Repair, RAG | Changing W1 before inspecting R-7 breaks it (precondition, forbidden dependency, hard constraint), even if repaired afterwards. Repair is illegal until a violation is reported. | InspectDependency → Model (2) |
-| `open-direction` | Technical preconditions are complete; three valid roof directions remain; the template default is R1. | LocalStudy, CoarseModel, AskHuman, Inspect | Coarse-modeling before the architect chooses sets two valid directions aside for good (erroneous pruning). Asking before a comparison is a detour. | LocalStudy → AskHuman (2) |
+| `open-direction` | Technical preconditions are complete; three valid roof directions remain; the template default is R1. The task asks for one step forward. | LocalStudy, CoarseModel, AskHuman, Inspect | Comparing the open directions is the step. Coarse-modeling before the architect chooses sets two valid directions aside for good (erroneous pruning). Asking before a comparison is a detour; asking after it is allowed. | LocalStudy (1) |
 | `local-conflict` | Accepted candidate K has one known, bounded clash. | Repair, ReModel, RAG, Inspect | The local repair is enough; inspection and unrelated retrieval are detours; regenerating the candidate changes accepted elements (wrong scope, hard constraint). | Repair (1) |
 
 Each case has exactly one optimal first action, at least one harmful one and
@@ -162,11 +162,12 @@ Run everything from the repository root with the root on `PYTHONPATH`
 (Python 3.12; `jsonschema` is needed only by the schema test).
 
 ```sh
-python -m pytest -q -p no:cacheprovider labs/strategy_allocation      # 59 offline tests, a few seconds
+python -m pytest -q -p no:cacheprovider labs/strategy_allocation      # 60 offline tests, a few seconds
 python -m labs.strategy_allocation.benchmark snapshots --check         # fixtures are today's snapshots
 python -m labs.strategy_allocation.benchmark run --runner fake --out <new-directory>
 python -m labs.strategy_allocation.benchmark verify <run-directory>
 python -m labs.strategy_allocation.benchmark summarize <run-directory>
+python -m labs.strategy_allocation.benchmark rescore <run-directory> --out <new-directory>
 ```
 
 The fake runner's behaviours (`strategies.DEMO_PLANS`) are invented so the arms
@@ -175,7 +176,9 @@ tests. `--out` must be a new or empty directory outside the repository; results
 are never overwritten or silently resumed. `verify` cold-reads a run: it
 re-derives each snapshot, replays and re-judges every rollout, replays every
 allocation decision from the outcomes retained before it and recomputes the
-summary.
+summary. A run judged by another evaluator or reference version is named as
+such; `rescore` re-judges its retained trajectories into a new directory with
+no model call, provided the snapshots are unchanged.
 
 A run directory holds `config.json` (the fixed conditions, runner description,
 versions and snapshot digests), `snapshots/`, `rollouts.jsonl` (one record per
@@ -223,15 +226,45 @@ prompts, CLI events and answers stayed on the owner's machine.
   (mean 91, reasoning 0–104) and 5.4–9.5 s (mean 6.9 s).
 - `provided-source`: all eight rollouts chose ReadProvidedSource → Model, the
   reference optimum. C ranked AskHuman second and BM25 below it.
-- `open-direction`: A, C and D proposed LocalStudy alone, twice each — the
-  optimal first action, no pruning, no wasted step. B's fixed procedure mapped
-  PRODUCE to CoarseModel both times and pruned two valid directions. Under
-  reference@0 none of the 8 completed, because its goal also required the
-  architect's choice while the task text says "one step forward".
+- `open-direction`: A, C and D proposed LocalStudy alone, twice each, saying
+  further action should depend on the study. B's fixed procedure mapped
+  PRODUCE to CoarseModel both times and pruned two valid directions.
+- The run was judged by reference@0, whose `open-direction` goal also
+  required the architect's choice. Nothing the arms saw asked for that: the
+  task says "Take the roof design one step forward", and #268 defines the case
+  only by legal exploration and no hard pruning. Under @0 none of the eight
+  completed, so the case could not tell a pruning arm from a careful one.
+  Reference@1 corrects the goal; the snapshots and prompts are unchanged, so
+  `rescore` re-judged the retained trajectories without a model call:
+  A, C and D 2/2, B 0/2 (erroneous pruning). Both summaries are committed
+  (`rescored-reference-1/` is the second), and the code as run is commit
+  `b63a78b5` on this lane's branch.
 - The CLI's JSON events name no model, so records say `cli-default`; pin
   `--model` for a full run.
 
 These are 2 samples per arm: they show the harness working, not a ranking.
+
+## The full V0 run (for the owner)
+
+Four cases × 32 rollouts (8 per strategy: the 2-rollout warmup, then equal
+allocation) is **128 Codex calls**:
+
+```sh
+python -m labs.strategy_allocation.benchmark run --runner codex --model <pinned-model> \
+    --budget 32 --seed 268 --max-provider-calls 128 --raw --low-priority \
+    --out "<V4_RUNTIME>/output/<yymmdd>_strategy-allocation-v0"
+```
+
+From the smoke run's per-call means (18,794 input and 91 output tokens,
+6.9 s), expect about 2.4 M input and 12 k output tokens and 15 minutes of
+sequential calls. `codex exec` reports no price, and on a ChatGPT plan the
+calls draw on plan usage rather than a bill. As an API equivalent at
+MonkeyMonitor's `rates.json` standard rates of 2026-09-09 (the default model
+is not named, so this is a range, not a quote): about $10 at gpt-5.6-sol and
+$25 at gpt-6-astra, less when the prompt cache hits. The smoke run's 16 calls
+come to $1.2–3.0 by the same rates. The run gives per-arm distributions at
+matched budget; comparing an adaptive rule with equal allocation needs that
+rule first.
 
 ## What is not claimed
 
@@ -266,4 +299,5 @@ These are 2 samples per arm: they show the harness working, not a ranking.
 4. The first adaptive rule, and how it handles zero-variance Bernoulli arms at
    small n; only then an equal-vs-adaptive comparison at matched budget.
 5. Whether the case set needs stochastic transitions, harder traps or more
-   states per case before a full run.
+   states per case before a full run. In the smoke run every arm found
+   `provided-source`'s optimum, so that case may be too easy to separate arms.

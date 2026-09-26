@@ -20,7 +20,7 @@ class EvaluatorTests(unittest.TestCase):
     def test_reference_optimal_plans_succeed_with_no_excess(self):
         for case_id, plan in (("provided-source", ["ReadProvidedSource", "Model"]),
                               ("protected-dependency", ["InspectDependency", "Model"]),
-                              ("open-direction", ["LocalStudy", "AskHuman"]),
+                              ("open-direction", ["LocalStudy"]),
                               ("local-conflict", ["Repair"])):
             with self.subTest(case_id=case_id):
                 outcome = self.outcome(case_id, plan)
@@ -50,16 +50,18 @@ class EvaluatorTests(unittest.TestCase):
         self.assertEqual((refused_first.illegal_actions, refused_first.first_action_class), (1, "illegal"))
         self.assertEqual(refused_first.excess_steps, 1)
 
-    def test_open_direction_pruning_before_the_architect_is_unrecoverable(self):
-        pruned = self.outcome("open-direction", ["CoarseModel", "LocalStudy", "AskHuman"])
-        self.assertFalse(pruned.no_erroneous_pruning)
-        self.assertEqual((pruned.completed, pruned.excess_steps), (False, None))
-        modeled_after = self.outcome("open-direction", ["LocalStudy", "AskHuman", "CoarseModel"])
-        self.assertTrue(modeled_after.success)
-        self.assertEqual(modeled_after.excess_steps, 1)
+    def test_open_direction_comparing_is_the_step_and_pruning_is_unrecoverable(self):
+        for plan in (["CoarseModel", "LocalStudy", "AskHuman"], ["LocalStudy", "CoarseModel", "Inspect"]):
+            with self.subTest(plan=plan):
+                pruned = self.outcome("open-direction", plan)
+                self.assertFalse(pruned.no_erroneous_pruning)
+                self.assertEqual((pruned.completed, pruned.excess_steps), (False, None))
+        decided_then_modeled = self.outcome("open-direction", ["LocalStudy", "AskHuman", "CoarseModel"])
+        self.assertTrue(decided_then_modeled.success)  # modeling the architect's choice prunes nothing
+        self.assertEqual(decided_then_modeled.excess_steps, 2)
         premature = self.outcome("open-direction", ["AskHuman", "LocalStudy"])
-        self.assertEqual((premature.completed, premature.first_action_class, premature.excess_steps),
-                         (False, "detour", 1))
+        self.assertEqual((premature.success, premature.first_action_class, premature.excess_steps),
+                         (True, "detour", 1))
 
     def test_local_conflict_repair_dominates_retrieval_and_regeneration(self):
         regenerated = self.outcome("local-conflict", ["ReModel"])

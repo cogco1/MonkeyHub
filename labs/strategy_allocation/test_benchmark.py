@@ -6,7 +6,7 @@ import unittest
 from collections import Counter
 from pathlib import Path
 
-from .benchmark import ExperimentConfig, main, run_experiment, verify
+from .benchmark import ExperimentConfig, main, rescore, run_experiment, verify
 from .environment import Environment
 from .rollout import csv_row, read_csv, read_jsonl
 from .strategies import FakeReply, FakeRunner, demo_fake_runner, plan_answer, weighted
@@ -109,6 +109,27 @@ class ExperimentTests(unittest.TestCase):
         (out / "rollouts.jsonl").write_text("\n".join([json.dumps(record), *lines[1:]]) + "\n", encoding="utf-8")
         problems = verify(out)
         self.assertTrue(any("re-evaluate" in problem for problem in problems))
+
+    def test_rescore_rejudges_retained_trajectories_without_a_model(self):
+        records, out = self.run_fake(cases=("open-direction",))
+        path = out / "rollouts.jsonl"
+        lines = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+        for line in lines:  # as if an earlier reference had judged this run
+            line["evaluation"]["reference_version"] = "strategy-allocation-reference@0"
+        path.write_text("".join(json.dumps(line) + "\n" for line in lines), encoding="utf-8")
+        problems = verify(out)
+        self.assertEqual(len(problems), 1)
+        self.assertIn("judged by strategy-allocation-evaluator@0 / strategy-allocation-reference@0", problems[0])
+        rescored = rescore(out, self.root / "rescored")
+        self.assertEqual(verify(self.root / "rescored"), [])
+        self.assertEqual([record.evaluation for record in rescored], [record.evaluation for record in records])
+        self.assertEqual(path.read_text(encoding="utf-8").count("reference@0"), len(records))  # source untouched
+        with self.assertRaises(FileExistsError):
+            rescore(out, self.root / "rescored")
+        lines[0]["snapshot_digest"] = "0" * 64
+        path.write_text("".join(json.dumps(line) + "\n" for line in lines), encoding="utf-8")
+        with self.assertRaises(ValueError):
+            rescore(out, self.root / "stale")
 
     def test_results_are_never_overwritten(self):
         self.run_fake()
