@@ -169,6 +169,11 @@ class PlanRequestDto(DrawingSourceRequestDto):
     reason: str | None = Field(default=None, min_length=1, max_length=200, description=(
         "Why this revision is asked for, in the asker's own words, such as the correction an agent was given; "
         "omit it for a direct edit. Retained with the revision beside who asked, never in its recipe."))
+    source_kind: Literal["human", "agent"] | None = Field(alias="sourceKind", default=None, description=(
+        "Who this request comes from: human for a person's own edit in the drawing, agent for an agent's reading "
+        "of what a person asked. Omitted is unknown; the Hub marks its Agent's requests agent. Retained with the "
+        "revision beside who asked, never in its recipe, and an agent's revision is never counted toward a "
+        "project recipe suggestion."))
 
     @model_validator(mode="after")
     def one_dressing_edit(self):
@@ -241,6 +246,78 @@ class PlanDimensionProposalRequestDto(PlanStatusRequestDto):
     project_id: str = Field(alias="projectId", min_length=1)
     dimension_id: str = Field(alias="dimensionId", min_length=1)
     value: float = Field(gt=0, allow_inf_nan=False, description="Requested aperture width in the source STEP length unit.")
+
+
+CorrectionClass = Literal["compiler_defect", "semantic_rule", "recipe", "local_override"]
+
+
+class DrawingCorrectionPairDto(BaseModel):
+    """Two adjacent revisions of one cut plan: why the page was replaced, who asked, and what changed."""
+    model_config = ConfigDict(populate_by_name=True, frozen=True)
+    drawing_id: str = Field(alias="drawingId")
+    before_revision_ref: str = Field(alias="beforeRevisionRef")
+    after_revision_ref: str = Field(alias="afterRevisionRef",
+                                    description="The revision whose receipt names beforeRevisionRef as the one it continued.")
+    cause: Literal["source", "representation"] | None = Field(description=(
+        "representation: the same exact source (model, Stage, imported asset) drawn another way; source: the "
+        "drawing followed another source, which corrects nothing."))
+    origin: str | None = Field(description="The after revision's attribution.origin; null when it was not recorded.")
+    source_kind: Literal["human", "agent"] | None = Field(alias="sourceKind", description=(
+        "The after revision's sourceKind: whether a person or an agent asked for it; null when its request did not say."))
+    reason: str | None = Field(description="The after revision's reason; null when none was given.")
+    correction_class: CorrectionClass = Field(alias="class", description=(
+        "The first that holds: compiler_defect - the page followed its source, or it only hid objects the cleanup "
+        "flagged (V0 cleanup reports name no object, so no hide is one); semantic_rule - a material's hatch or poché "
+        "rule changed; recipe - a pen, the hatch spacing, the fade beyond the cut or the number of entourage objects "
+        "changed; local_override - anything else: an object hidden or shown, entourage moved, flipped, scaled or "
+        "swapped, the crop, scale or cut, a dimension. Derived on every read, never stored."))
+    diff: dict[str, tuple[Any, Any]] = Field(description=(
+        "What changed, {dotted viewRecipe path: [old, new]}, null where absent. hiddenObjectIds.<id> is [was hidden, "
+        "is hidden]; dimensions.<id> and dressing.<id> are the whole object where it was added or removed, else one "
+        "entry per changed field; graphics.hatch.byMaterial.<material> is that material's whole rule."))
+
+
+class DrawingCorrectionEvidenceDto(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, frozen=True)
+    drawing_id: str = Field(alias="drawingId")
+    before_revision_ref: str = Field(alias="beforeRevisionRef")
+    after_revision_ref: str = Field(alias="afterRevisionRef")
+
+
+class DrawingCorrectionPageDto(BaseModel):
+    """One exact registered drawing page, as a document decision source names it."""
+    model_config = ConfigDict(populate_by_name=True, frozen=True)
+    run_id: str = Field(alias="runId")
+    asset_sha256: str = Field(alias="assetSha256")
+    revision_ref: str = Field(alias="revisionRef")
+    page_index: int = Field(alias="pageIndex", ge=0)
+
+
+class RecipeSuggestionDto(BaseModel):
+    """A recipe correction repeated the same way on several drawings, offered and never retained."""
+    model_config = ConfigDict(populate_by_name=True, frozen=True)
+    suggestion_id: str = Field(alias="suggestionId", description=(
+        "Derived from field, direction, value and drawingIds, so the same offer keeps its id across reads."))
+    field: Literal["cutLineMm", "visibleLineMm", "hatchSpacingMm"] = Field(
+        description="A paper value a project recipe can hold.")
+    direction: Literal["increase", "decrease"]
+    value: float = Field(description="The value, in paper mm, of the group's most recent after revision.")
+    drawing_ids: list[str] = Field(alias="drawingIds", description="The distinct drawings that repeat it, at least two.")
+    evidence: list[DrawingCorrectionEvidenceDto] = Field(description="Every revision pair that counts, by drawing.")
+    page: DrawingCorrectionPageDto = Field(description=(
+        "The most recent after revision's page: the exact document source a recipe decision saving this cites."))
+
+
+class DrawingCorrectionsDto(BaseModel):
+    """A read of the retained revisions: one drawing's pairs and the project's suggestions. Nothing is written."""
+    model_config = ConfigDict(populate_by_name=True, frozen=True)
+    project_id: str = Field(alias="projectId")
+    drawing_id: str | None = Field(alias="drawingId", default=None)
+    pairs: list[DrawingCorrectionPairDto] = Field(description=(
+        "Each revision of drawingId paired with the revision it continued, in the order drawn; empty without drawingId."))
+    suggestions: list[RecipeSuggestionDto] = Field(description=(
+        "Project-wide: a pen or the hatch spacing changed the same way, in representation-only revisions no agent "
+        "asked for, on at least two drawings to which no active recipe already gives that key."))
 
 DrawingStyleId = Literal["arch400-white", "arch364-technical"]
 

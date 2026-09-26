@@ -1232,8 +1232,9 @@ class ChatTests(unittest.TestCase):
                     "body": {**section_body, "projectId": "other"}})
             self.assertEqual(other_project_section.exception.error.code, "CHAT_PROJECT_MISMATCH")
             # Three entourage objects in one typed batch, admitted like any
-            # drawing write and forwarded as asked; the reads go straight to
-            # the Studio, and a refused batch comes back once, in its own words.
+            # drawing write and forwarded as asked, marked as the Agent's; the
+            # reads go straight to the Studio, and a refused batch comes back
+            # once, in its own words.
             placing = {"projectId": session.projectId, "sourceStageRef": "stage-base", "drawingId": "room-plan",
                        "previousRevisionRef": "retained-plan-1", "dressingOperations": [
                            {"op": "insert", "id": name, "object": {"id": name, "assetId": asset, "positionUv": [u, 1],
@@ -1242,7 +1243,7 @@ class ChatTests(unittest.TestCase):
                                                   ("tree-a", "tree-plan", 3))]}
             placed = chat.call_tool(self.store.hub_url, session.id, "studio_request", {
                 "method": "POST", "path": "/api/drawings/plans", "body": placing})
-            self.assertEqual((placed["path"], placed["body"]), ("/api/drawings/plans", placing))
+            self.assertEqual((placed["path"], placed["body"]), ("/api/drawings/plans", {**placing, "sourceKind": "agent"}))
             retained = "runId=studio-drawing-1&assetSha256=" + "b" * 64 + "&revisionRef=retained-plan-2"
             vector = chat.call_tool(self.store.hub_url, session.id, "studio_request", {
                 "method": "GET", "path": "/api/drawings/plans/vector?" + retained})
@@ -1266,7 +1267,8 @@ class ChatTests(unittest.TestCase):
                 chat.call_tool(self.store.hub_url, session.id, "studio_request", {
                     "method": "POST", "path": "/api/drawings/plans", "body": refused_batch})
             self.assertEqual((missing.exception.status, missing.exception.error.code), (422, "DRAWING_DRESSING_MISSING"))
-            self.assertEqual(plans, [placing, refused_batch], "each batch is sent once, and a refusal is not retried")
+            self.assertEqual(plans, [{**placing, "sourceKind": "agent"}, {**refused_batch, "sourceKind": "agent"}],
+                             "each batch is sent once, and a refusal is not retried")
             annotation_body = {"projectId": session.projectId, "runId": "studio-drawing-1",
                                "assetSha256": "b" * 64, "pageIndex": 0,
                                "drawingRevisionRef": "retained-drawing", "baseRevisionSha256": "c" * 64,
@@ -1306,6 +1308,52 @@ class ChatTests(unittest.TestCase):
             with self.assertRaises(HubFailure):
                 chat.call_tool(self.store.hub_url, session.id, "studio_schema",
                                {"method": "POST", "path": "/api/issue"})
+
+    def test_the_agents_cut_plans_always_say_the_agent_asked(self):
+        """A plan the Agent asks for is its reading of the user, never the architect's own edit (05 §5)."""
+
+        session = self.create()
+        session.status = "running"
+
+        def request(base, path, method="GET", body=None, timeout=None, *, headers=None):
+            if path != "/api/drawings/plans/status":
+                path = self._studio_tool_path(base, path, method, headers, session)
+            return {"path": path, "body": body}
+
+        plan = {"projectId": session.projectId, "sourceStageRef": "stage-base", "drawingId": "room-plan",
+                "previousRevisionRef": "retained-plan-1", "hatchSpacingMm": 3}
+        with patch.object(chat, "_bound_studio", return_value=("http://127.0.0.1:8791", session.model_dump())), \
+                patch.object(chat, "_request_json", side_effect=request):
+            for asked, sent in (
+                (plan, {**plan, "sourceKind": "agent"}),
+                ({**plan, "sourceKind": None}, {**plan, "sourceKind": "agent"}),
+                ({**plan, "source_kind": None}, {**plan, "sourceKind": "agent"}),
+                ({**plan, "sourceKind": "agent"}, {**plan, "sourceKind": "agent"}),
+            ):
+                with self.subTest(asked=asked):
+                    answer = chat.call_tool(self.store.hub_url, session.id, "studio_request",
+                                            {"method": "POST", "path": "/api/drawings/plans", "body": asked})
+                    self.assertEqual((answer["path"], answer["body"]), ("/api/drawings/plans", sent))
+            # The Agent cannot claim a person asked: suggestions count only a person's own corrections.
+            for claimed in ({**plan, "sourceKind": "human"}, {**plan, "source_kind": "human"}):
+                with self.subTest(claimed=claimed), self.assertRaises(HubFailure) as refused:
+                    chat.call_tool(self.store.hub_url, session.id, "studio_request",
+                                   {"method": "POST", "path": "/api/drawings/plans", "body": claimed})
+                self.assertEqual((refused.exception.status, refused.exception.error.code), (422, "CHAT_TOOL_INVALID"))
+            self.assertNotIn("sourceKind", plan, "the Agent's own arguments are not rewritten")
+            # Only a cut plan's request says who asked: its status read and the other drawings forward as asked.
+            model = {"runId": "studio-candidate", "stateDigest": "d" * 64, "assetSha256": "e" * 64}
+            for path, body in (
+                ("/api/drawings/plans/status", {"runId": "studio-drawing-1", "assetSha256": "b" * 64,
+                                                "revisionRef": "retained-plan-2"}),
+                ("/api/drawings/section-perspectives", {"projectId": session.projectId, "modelSource": model,
+                                                        "section": {"line": [[0, 2], [6, 2]], "keep": "left"}}),
+                ("/api/drawings/elevations", {"projectId": session.projectId, "modelSource": model, "view": "front"}),
+            ):
+                with self.subTest(path=path):
+                    answer = chat.call_tool(self.store.hub_url, session.id, "studio_request",
+                                            {"method": "POST", "path": path, "body": body})
+                    self.assertEqual((answer["path"], answer["body"]), (path, body))
 
     def test_structured_edit_preserves_binding_and_checked_impact_without_duplicate_payloads(self):
         session = self.create()

@@ -2387,7 +2387,7 @@ def _stop_process(process: subprocess.Popen) -> None:
             process.kill()
 
 
-_READ = re.compile(r"^/api/(exports(?:/[A-Za-z0-9_-]+)?|project|state(?:/frame|/volumes)?|semantics|program|options|board|artifacts|model-assets/[0-9a-f]{64}/index|documents|document-annotations|studies/[A-Za-z0-9][A-Za-z0-9._-]{0,79}|decisions(?:/[A-Za-z0-9_-]+)?|drawings/(?:styles|model-view|plans/vector|plans/dimensions)|capabilities(?:/[A-Za-z0-9_.-]+)?|proposals/[A-Za-z0-9_-]+|jobs/[A-Za-z0-9_-]+|candidates/[A-Za-z0-9_-]+(?:/compare)?|admissions|working-source|working-draft/revision)$")
+_READ = re.compile(r"^/api/(exports(?:/[A-Za-z0-9_-]+)?|project|state(?:/frame|/volumes)?|semantics|program|options|board|artifacts|model-assets/[0-9a-f]{64}/index|documents|document-annotations|studies/[A-Za-z0-9][A-Za-z0-9._-]{0,79}|decisions(?:/[A-Za-z0-9_-]+)?|drawings/(?:styles|model-view|plans/vector|plans/dimensions|corrections)|capabilities(?:/[A-Za-z0-9_.-]+)?|proposals/[A-Za-z0-9_-]+|jobs/[A-Za-z0-9_-]+|candidates/[A-Za-z0-9_-]+(?:/compare)?|admissions|working-source|working-draft/revision)$")
 _POST = re.compile(r"^/api/(exports|project/modeling|intents/context|board/export|decisions(?:/[A-Za-z0-9_-]+/revisions)?|state/closure|capabilities/[A-Za-z0-9_.-]+/run|proposals|proposals/(sketch|transform|push-pull|delete|elevation)|proposals/[A-Za-z0-9_-]+/candidate|program|options|options/[A-Za-z0-9_-]+/select|candidates/combine|drawings/(elevations|sheets|section-perspectives|plans|plans/status)|admissions)$")
 _WRITE = re.compile(r"^/api/(board|document-annotations|working-draft)$")
 # POSTs that only read. They go to the bound Studio as a GET would, with no
@@ -3220,6 +3220,16 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
             raise HubFailure(409, "CHAT_PROJECT_MISMATCH", "A tool cannot select another project.")
         if parsed.path in {"/api/proposals", "/api/board/export"}:
             body["projectId"] = session["projectId"]
+        if method == "POST" and parsed.path == "/api/drawings/plans":
+            # A cut plan the Agent asks for is its reading of what the user
+            # said, so its revision says so (05 §5). Only a person's own
+            # request is human, and a correction suggestion counts only those,
+            # so the Agent cannot claim it: the chat fills the kind, as it
+            # does for feedback decisions.
+            if {body.pop(key, None) for key in ("sourceKind", "source_kind")} - {None, "agent"}:
+                raise HubFailure(422, "CHAT_TOOL_INVALID", "The chat marks your cut-plan requests sourceKind=agent; "
+                                 "only a person's own request in Drawings is human. Send it without sourceKind.")
+            body["sourceKind"] = "agent"
     if method == "POST" and parsed.path == "/api/exports" and isinstance(body, dict):
         attachment_id = body.pop("attachmentId", None)
         if attachment_id is not None:
@@ -3514,7 +3524,8 @@ def _mcp(hub: str, chat_id: str | None, external: ChatPresentationBindRequest | 
         "Each object keeps its id and stays editable on its own; a refused batch writes nothing. Add reason with the user's correction when one asked for it.",
         "GET /api/drawings/plans/vector?runId=&assetSha256=&revisionRef= reads the plan's SVG, symbols and anchor choices; POST /api/drawings/plans/status",
         "{runId, assetSha256, revisionRef} says whether it is current and which objects are missing or outside the view; GET /api/drawings/plans/dimensions lists",
-        "the dimensions a plan can place. Drawing revisions never move the design.",
+        "the dimensions a plan can place. Drawing revisions never move the design. GET /api/drawings/corrections?projectId=[&drawingId=] reads how",
+        "revisions changed and which repeated corrections the architect may save as a project recipe; only the architect can save one.",
         "SEE A VIEW: when the user asks to see a view, GET /api/drawings/model-view?runId=<id>&stateDigest=<digest>&assetSha256=<3dm sha256>&view=front returns an MCP image",
         "with exact source metadata. To judge a spatial or formal result, call visual_review instead: it answers findings, not images.",
         "Read modelSource from the awaited result's artifacts or the candidate's 3dm artifact. Views: front/back/left/right/top/axon (axon is isometric). This is a read-only line projection from complete retained STEP; unsupported sources refuse rather than show a proxy.",

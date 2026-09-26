@@ -8,10 +8,11 @@ from starlette.requests import Request
 from ..application.authentication import request_attribution
 from ..application.binding import bound_project
 from ..application.drawings import generate_elevation, generate_section_perspective, generate_sheet, model_view
+from ..application.drawing_corrections import drawing_corrections
 from ..application.drawing_plans import generate_plan, plan_status, plan_dimension_choices, dimension_proposal, plan_vector
 from ..transport.artifacts import ModelSourceDto, SourceDocumentDto, document_dto, model_source_from
 from ..transport.drawings import (
-    DrawingStylesDto, ElevationRequestDto, ModelViewDto, ModelViewName, SheetRequestDto,
+    DrawingCorrectionsDto, DrawingStylesDto, ElevationRequestDto, ModelViewDto, ModelViewName, SheetRequestDto,
     PlanRequestDto, PlanStatusRequestDto, PlanStatusDto,
     PlanDimensionChoicesDto, PlanDimensionProposalRequestDto, PlanVectorDto, SectionPerspectiveRequestDto,
 )
@@ -44,6 +45,25 @@ def read_plan_vector(request: Request, run_id: str = Query(alias="runId", min_le
                      revision_ref: str = Query(alias="revisionRef", min_length=1)) -> PlanVectorDto:
     return PlanVectorDto(**plan_vector(bound_project(request.app.state), run_id=run_id,
                                       asset_sha256=asset_sha256, revision_ref=revision_ref))
+
+
+@router.get("/drawings/corrections", response_model=DrawingCorrectionsDto, response_model_by_alias=True)
+def read_drawing_corrections(request: Request, project_id: str = Query(alias="projectId", min_length=1),
+                             drawing_id: str | None = Query(alias="drawingId", default=None,
+                                                            pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$"),
+                             ) -> DrawingCorrectionsDto:
+    """Each revision of one cut plan beside the revision it continued, classified, and the project's repeated corrections.
+
+    A read of the retained revisions and the active recipe decisions: the
+    pairs, their classes and the suggestions are derived again on every call,
+    and nothing is written. A suggestion is only an offer; saving it is a
+    person's POST /api/decisions with a recipe binding, citing its page.
+    """
+
+    binding = bound_project(request.app.state)
+    if project_id != binding.project_id:
+        raise StudioError(403, "PROJECT_MISMATCH", "The drawing names another project.")
+    return DrawingCorrectionsDto.model_validate(drawing_corrections(binding, drawing_id=drawing_id))
 
 
 @router.post("/drawings/plans/status", response_model=PlanStatusDto, response_model_by_alias=True)
