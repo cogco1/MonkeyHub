@@ -153,6 +153,31 @@
       "notes": [
         "2026-09-08 rule alignment: Awaiting the first concrete evidence consumer and a check of existing Reading/source references. The earlier proposed ledger and private Atlas field superset are not a mandate to add a core record."
       ]
+    },
+    {
+      "id": "GH-288",
+      "stream": "planning",
+      "status": "active",
+      "goal": "Review and complete Board page source feedback",
+      "depends_on": [],
+      "write_scope": [
+        "apps/monkeyhub/web/workspaces/src/workspaces/monkeyboard/Board.tsx",
+        "apps/monkeyhub/web/workspaces/src/workspaces/monkeyboard/board.css",
+        "apps/monkeyhub/web/workspaces/test/boardWhiteboard.browser.mjs",
+        "apps/monkeyhub/web/workspaces/test/boardIntentHandoff.browser.mjs"
+      ],
+      "branch": "codex/288-board-source-feedback",
+      "worktree": "C:/Users/asus/.codex/worktrees/merge-cloud-batch/ARCHFLOW_V4",
+      "base_ref": "3a821b8b8915bc2ed53eb762d61f06bb23a48ba8",
+      "contributor": "Codex cloud with Codex integration",
+      "reviewer": "Codex",
+      "handoff": "Cloud review fixes and browser acceptance before normal merge",
+      "modules": [
+        "hub.shell"
+      ],
+      "acceptance": [
+        "Selected Board page shows its exact source relationship and its own Stage; existing explicit handoff remains required."
+      ]
     }
   ]
 }
