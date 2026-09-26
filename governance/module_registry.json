@@ -248,7 +248,8 @@
         "section perspective lines and cut regions from the same B-reps: the kept side of an arbitrary plane in exact perspective with the section plane as picture plane (project_occt_section_perspective)",
         "Bounded 3DM/GLB mesh format adapters and conversion readback; runtime-qualified conversion-provider selection; provider execution remains separate from the standalone SKP reader, with no project writes.",
         "native 3DM drawing-shape decoding (planar BRep, linear extrusion, supported curves and meshes), with block transforms, visibility, units and explicit faceted/mesh approximation quality; unsupported geometry is refused",
-        "independent local SketchUp C API reading of visible face geometry into meters/Z-up meshes; nested instances, transformations, holes and visibility, without launching a desktop host"
+        "independent local SketchUp C API reading of visible face geometry into meters/Z-up meshes; nested instances, transformations, holes and visibility, without launching a desktop host",
+        "Logical render scene projection to Blender/Cycles using unchanged source mesh and explicit material regions, with independent cold readback"
       ],
       "does_not_own": [
         "translating the program into a script - adapters.cad_program",
@@ -334,7 +335,10 @@
         "project_occt_section_perspective",
         "OcctSectionPerspective",
         "read_three_dm",
-        "read_skp"
+        "read_skp",
+        "render_scene_projection",
+        "scene_plan",
+        "material_indices"
       ],
       "depends_on": [
         "adapters.cad_patch",
@@ -391,7 +395,8 @@
         "composed-model replacement retains the source GUID for each rebuilt logical object; newly added objects cannot reuse any source GUID, including retired ones; saved readback verifies the expected identity",
         "a section perspective cuts every selected shape exactly with an oriented box on the kept side and solves visibility once with a perspective projector whose picture plane is the section plane, the shapes located in the eye's camera frame (HLRBRep's perspective misjudges back faces and silhouettes under a non-identity projector frame); the plane's sections map through the same camera move and projector",
         "Imported meshes and saved render meshes retain their faceted/approximation quality; no native reader creates a STEP or an OCCT execution receipt. SKP originals remain with the application owner; the reader does not write project data.",
-        "SKP-derived mesh object IDs follow persistent instance paths and tag IDs within the same model; names and geometry changes do not mint new object identities. Unsupported or missing persistent IDs are refused."
+        "SKP-derived mesh object IDs follow persistent instance paths and tag IDs within the same model; names and geometry changes do not mint new object identities. Unsupported or missing persistent IDs are refused.",
+        "Materialless GLB receives neutral 3DM material; preserve supported normals, UV, PBR factors and source triangle winding"
       ],
       "status": "canonical",
       "tests": [
@@ -402,6 +407,7 @@
         "tests/test_blender_cad.py",
         "tests/test_blender_projection.py",
         "tests/test_model_formats.py",
+        "tests/inspect_model_conversion.py",
         "tests/model_export_glb_reader.mjs",
         "tests/test_model_providers.py",
         "tests/test_occt_native_models.py",
@@ -418,7 +424,9 @@
         "archflow/adapters/model_formats.py",
         "archflow/adapters/model_providers.py",
         "archflow/adapters/local_cad_discovery.py",
-        "archflow/adapters/sketchup_reader.py"
+        "archflow/adapters/sketchup_reader.py",
+        "archflow/adapters/render_projection.py",
+        "archflow/adapters/blender_scene_worker.py"
       ]
     },
     {
@@ -2781,7 +2789,8 @@
         "horizontal cut-plan composition: section boundaries, one material hatch and below-cut visible lines, with caller-resolved semantic dimensions and retained representation recipe",
         "representation-only SVG entourage in the existing cut-plan recipe; exact physical-object-centre anchors, explicit missing/outside-view status and immutable dressing readback across source rebuilds",
         "section perspective: SectionPerspectiveView (a plan line and kept side, or an origin and normal; an explicit or default one-point camera) checked with named refusals before the model is read, the default eye placed from the exact cut, and the request, exact plane, resolved camera and crop recorded in the one drawing receipt (freeze_section_perspective)",
-        "NativeModelSource: verify original 3DM bytes against their explicit registration and derive drawing shapes without fabricating semantic state or CAD execution provenance"
+        "NativeModelSource: verify original 3DM bytes against their explicit registration and derive drawing shapes without fabricating semantic state or CAD execution provenance",
+        "Pure imported-mesh triangle-union silhouettes and projected extents, reusing drawing_svg; no semantic feature IDs or geometry writes"
       ],
       "does_not_own": [
         "the hidden-line solve - adapters.cad_execution",
@@ -2836,7 +2845,8 @@
         "DRAWING_VIEW_KINDS",
         "NativeModelSource",
         "CLEANUP_TOLERANCE_MM",
-        "object_semantics"
+        "object_semantics",
+        "mesh_view"
       ],
       "depends_on": [
         "adapters.cad_execution",
@@ -2868,9 +2878,14 @@
       "status": "canonical",
       "tests": [
         "tests/test_drawing_elevation.py",
-        "tests/test_drawing_section_perspective.py"
+        "tests/test_drawing_section_perspective.py",
+        "apps/archflow-studio/api/tests/test_render_scene.py"
       ],
-      "notes": "CREATE 2026-09-07: the plan's first real consumer at the application boundary. runtime.project_runner is the seat/stage loop and does not derive drawings; adapters have no repository authority. First frozen drawing: villa-rotonda-reconstruction run drawing-a0-20260907-villa-b-minus-y from source run studio-cand-20260906-010451-dca4de25-4e9d (external workspace, noncanonical)."
+      "notes": "CREATE 2026-09-07: the plan's first real consumer at the application boundary. runtime.project_runner is the seat/stage loop and does not derive drawings; adapters have no repository authority. First frozen drawing: villa-rotonda-reconstruction run drawing-a0-20260907-villa-b-minus-y from source run studio-cand-20260906-010451-dca4de25-4e9d (external workspace, noncanonical).",
+      "files": [
+        "monkeydiagram/drawing_elevation.py",
+        "monkeydiagram/mesh_views.py"
+      ]
     },
     {
       "module_id": "semantics.conditions",
@@ -3947,7 +3962,9 @@
         "registering section perspective revisions from a complete verified source model in the existing document list with the same source resolution, cache, monitoring and registration as elevations, keeping the drawing owner's refusal names",
         "direct native model drawing selection: registered external sourceAsset stays frozen and has no modelSource; state-bound composed 3DM uses its own geometry, never a partial paired STEP",
         "SKP upload through the local standalone SDK, retaining original SKP and derived 3DM face geometry in the same P036 registration; retries reuse the verified original content",
-        "the drawing correction projection (05-S2, application/drawing_corrections.py): each cut-plan revision paired with the registered revision its receipt names as previous, the pair's replacement_cause, a recipe_diff of the two view recipes by dotted path and a classify into compiler_defect, semantic_rule, recipe or local_override; and the project's recipe suggestions - a pen or hatch spacing changed the same way in representation-only revisions no agent asked for on at least two drawings no active recipe covers - each citing its exact revision pairs and the page a recipe decision would cite"
+        "the drawing correction projection (05-S2, application/drawing_corrections.py): each cut-plan revision paired with the registered revision its receipt names as previous, the pair's replacement_cause, a recipe_diff of the two view recipes by dotted path and a classify into compiler_defect, semantic_rule, recipe or local_override; and the project's recipe suggestions - a pen or hatch spacing changed the same way in representation-only revisions no agent asked for on at least two drawings no active recipe covers - each citing its exact revision pairs and the page a recipe decision would cite",
+        "P036 imported geometry selection referencing original retained bytes; converted 3DM is an optional Modeling derivative",
+        "Imported mesh drawing source/view revisions, stale status and explicit regeneration with recomputed extents and preserved unresolved feature references"
       ],
       "does_not_own": [
         "producing the export or its receipt - adapters.cad_execution through runtime.project_runner",
@@ -4049,7 +4066,9 @@
         "recipe_diff",
         "classify",
         "recipe_suggestions",
-        "Correction"
+        "Correction",
+        "GET/PUT /api/render/geometry",
+        "GET/POST /api/render/drawings"
       ],
       "depends_on": [
         "adapters.cad_execution",
@@ -4080,7 +4099,8 @@
         "state.record",
         "archflow.adapters.model_formats",
         "archflow.adapters.model_providers",
-        "archflow.adapters.sketchup_reader"
+        "archflow.adapters.sketchup_reader",
+        "monkeydiagram.mesh_views"
       ],
       "used_by": [
         "apps/archflow-studio/api/archflow_studio_api/application/candidate.py",
@@ -4123,7 +4143,9 @@
         "a drawing's default status target is the Working Head's exact drawable source; an undrawable head is reported, never rebound",
         "External imported drawings never invent design state or driving dimensions; exact source run/hash and representation edits survive restart. Missing SKP runtime and unsupported 3DM geometry are explicit errors.",
         "SKP sourceImport metadata exposes the original file name and source artifact plus conversion warnings through model upload/listing and drawing receipts; import loss is never hidden by a successful projection.",
-        "A drawing correction is derived, never recorded (05 option A): GET /api/drawings/corrections reads the retained revisions and the active recipe decisions again on every call and writes nothing. A pair is only a revision and the one its receipt names, within one drawing; its class is a pure function of the recipe diff and the replacement cause, and a source rebuild is no correction. A suggestion is only offered: it counts representation-only recipe pairs no agent asked for, grouped by key and direction, needs two distinct drawings (D-05-1), skips a key an active recipe already gives that drawing, and becomes memory only by a person's recipe decision citing its page. V0 cleanup reports name no object, so no hide is classed a compiler defect."
+        "A drawing correction is derived, never recorded (05 option A): GET /api/drawings/corrections reads the retained revisions and the active recipe decisions again on every call and writes nothing. A pair is only a revision and the one its receipt names, within one drawing; its class is a pure function of the recipe diff and the replacement cause, and a source rebuild is no correction. A suggestion is only offered: it counts representation-only recipe pairs no agent asked for, grouped by key and direction, needs two distinct drawings (D-05-1), skips a key an active recipe already gives that drawing, and becomes memory only by a person's recipe decision citing its page. V0 cleanup reports name no object, so no hide is classed a compiler defect.",
+        "Imported selection never changes Design HEAD; all projections read hash-verified original bytes",
+        "Mesh drawing freshness is derived from the current source revision; updates preserve immutable prior views and unresolved references across restart"
       ],
       "status": "canonical",
       "tests": [
@@ -4142,7 +4164,8 @@
         "apps/monkeyhub/web/workspaces/test/externalModelImport.browser.mjs",
         "apps/archflow-studio/api/tests/test_section_perspective.py",
         "apps/archflow-studio/api/tests/test_native_drawings.py",
-        "apps/archflow-studio/api/tests/test_drawing_corrections.py"
+        "apps/archflow-studio/api/tests/test_drawing_corrections.py",
+        "apps/archflow-studio/api/tests/test_render_scene.py"
       ],
       "notes": "The viewer's only source of model bytes; digests are the identity, filenames are not.",
       "files": [
@@ -4156,7 +4179,9 @@
         "apps/archflow-studio/api/archflow_studio_api/application/drawing_dimensions.py",
         "apps/archflow-studio/api/archflow_studio_api/application/drawing_corrections.py",
         "apps/archflow-studio/api/archflow_studio_api/application/model_exports.py",
-        "apps/archflow-studio/api/archflow_studio_api/routes/model_exports.py"
+        "apps/archflow-studio/api/archflow_studio_api/routes/model_exports.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/geometry_sources.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/mesh_drawings.py"
       ]
     },
     {
@@ -5099,7 +5124,8 @@
         "Derived transitive Render source/reference freshness, reusing Drawing read-set status and declared Stage branches; no inferred model source",
         "One configured Gemini image HTTP attempt with bounded inputs, final-image validation and measured usage; no retry, redirect or model fallback",
         "Read-only PR #235 native history; no fabricated AI recipe or resumed native executor",
-        "Freeze the current Modeling camera image as a model-bound SourceDocument with projection/world matrices and pixel dimensions; no provider call or design change occurs during capture"
+        "Freeze the current Modeling camera image as a model-bound SourceDocument with projection/world matrices and pixel dimensions; no provider call or design change occurs during capture",
+        "Renderer-independent scene revisions and explicit material regions in P036; Cycles orchestration through Runtime jobs, with both input revisions pinned"
       ],
       "does_not_own": [
         "SourceDocument persistence and bytes: studio.artifacts",
@@ -5120,7 +5146,10 @@
         "RenderCapability",
         "GeminiImageRenderAdapter",
         "adapter_from_settings",
-        "POST /api/render/views"
+        "POST /api/render/views",
+        "GET/PUT /api/render/scene",
+        "GET /api/render/scene/default",
+        "POST /api/render/cycles"
       ],
       "depends_on": [
         "studio.artifacts",
@@ -5131,7 +5160,10 @@
         "project.refs",
         "project.repository",
         "contracts.canonical",
-        "monkeymonitor"
+        "monkeymonitor",
+        "adapters.cad_execution",
+        "archflow.adapters.blender_projection",
+        "archflow.adapters.render_projection"
       ],
       "files": [
         "apps/archflow-studio/api/archflow_studio_api/application/rendering.py",
@@ -5139,13 +5171,17 @@
         "apps/archflow-studio/api/archflow_studio_api/routes/rendering.py",
         "apps/archflow-studio/api/archflow_studio_api/transport/rendering.py",
         "apps/archflow-studio/api/archflow_studio_api/render_adapters/__init__.py",
-        "apps/archflow-studio/api/archflow_studio_api/render_adapters/gemini.py"
+        "apps/archflow-studio/api/archflow_studio_api/render_adapters/gemini.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/render_scene.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/physical_render.py",
+        "apps/archflow-studio/api/archflow_studio_api/transport/render_scene.py"
       ],
       "tests": [
         "apps/archflow-studio/api/tests/test_rendering.py",
         "apps/archflow-studio/api/tests/test_representation_dependencies.py",
         "apps/archflow-studio/api/tests/test_render_gemini_adapter.py",
-        "apps/monkeyhub/web/workspaces/test/renderWorkspace.browser.mjs"
+        "apps/monkeyhub/web/workspaces/test/renderWorkspace.browser.mjs",
+        "apps/archflow-studio/api/tests/test_render_scene.py"
       ],
       "inputs": [
         "Exact SourceDocument runId/assetSha256/revisionRef/pageIndex, ordered references, direction and output options",
@@ -5163,7 +5199,9 @@
         "No adapter receives a project path or writer; all result persistence uses save_document",
         "Uploaded images without models are valid and never acquire fabricated modelSource",
         "Source freshness follows retained input requests, explicit page replacements and Drawing read-set status; a prior revision alone is not a replacement decision",
-        "No render action changes Design HEAD or accepts a Stage; hidden UI does not cancel a running attempt"
+        "No render action changes Design HEAD or accepts a Stage; hidden UI does not cancel a running attempt",
+        "Scene saves use revision CAS; old regions require explicit rebind to changed geometry",
+        "Historical Cycles results never replace current scene state. Cold Blender readback checks source mesh, composition, native material/light/environment values and packed images."
       ]
     },
     {
@@ -5535,7 +5573,8 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_archcheck_scopes.py"
+        "tests/test_archcheck_scopes.py",
+        "tests/test_archcheck_github_claims.py"
       ],
       "notes": "Architecture checks parse source without importing application code; scope behavior is verified with disposable Git repositories."
     },

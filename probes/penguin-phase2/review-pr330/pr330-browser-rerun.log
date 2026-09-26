@@ -1,0 +1,95 @@
+Failed to load resource: the server responded with a status of 404 (Not Found)
+PASS Render starts without model initialization; capability defaults and ordered original uploads
+PASS source comparison, zoom and authenticated-byte download keep exact generation identity
+PASS zoomed result can be dragged and Fit resets the image viewport
+Failed to load resource: the server responded with a status of 404 (Not Found)
+PASS project and workspace switches preserve inputs, stop hidden polling and do not cancel or resend
+Failed to load resource: the server responded with a status of 503 (Service Unavailable)
+PASS selected-image loading, HTTP failure and corrupt bytes recover by read without generating
+PASS failure preserves old image; unknown and refresh never replay the provider
+PASS a changed source marks its result outdated without silently rebinding the original
+Failed to load resource: the server responded with a status of 404 (Not Found)
+PASS Board receives the same exact page, selects it and can restore only the explicitly deleted old result
+PASS wide, medium, narrow and dark layouts remain usable; all rendering leaves Design HEAD unchanged
+Failed to load resource: net::ERR_FAILED
+PASS a source and direction alone can generate; a lost response recovers by read without replay
+PASS retained native result reopens in its own project without invented source or paid replay
+PASS perspective and orthographic model views become exact frozen inputs without generating until requested
+Import / replace geometry (GLB or 3DM)
+Reload saved scene
+Save scene
+
+Import geometry to begin · geometry_revision: — · scene_revision: —
+
+The API failed while handling this request; see the service log.
+warning: The `fitz` API is deprecated and will be removed in future. Use `import pymupdf` instead.
+
+ive, send)
+  File "<repo>\.venv\Lib\site-packages\fastapi\routing.py", line 2789, in handle
+    await included_router._handle_selected(scope, receive, send)
+  File "<repo>\.venv\Lib\site-packages\fastapi\routing.py", line 1800, in _handle_selected
+    await original_route.handle(scope, receive, send)
+  File "<repo>\.venv\Lib\site-packages\fastapi\routing.py", line 1279, in handle
+    await app(scope, receive, send)
+  File "<repo>\.venv\Lib\site-packages\fastapi\routing.py", line 158, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "<repo>\.venv\Lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "<repo>\.venv\Lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "<repo>\.venv\Lib\site-packages\fastapi\routing.py", line 144, in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+  File "<repo>\.venv\Lib\site-packages\fastapi\routing.py", line 706, in app
+    raw_response = await run_endpoint_function(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<repo>\.venv\Lib\site-packages\fastapi\routing.py", line 354, in run_endpoint_function
+    return await run_in_threadpool(dependant.call, **values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<repo>\.venv\Lib\site-packages\starlette\concurrency.py", line 34, in run_in_threadpool
+    return await anyio.to_thread.run_sync(func)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<repo>\.venv\Lib\site-packages\anyio\to_thread.py", line 65, in run_sync
+    return await get_async_backend().run_sync_in_worker_thread(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<repo>\.venv\Lib\site-packages\anyio\_backends\_asyncio.py", line 2706, in run_sync_in_worker_thread
+    return await future
+           ^^^^^^^^^^^^
+  File "<repo>\.venv\Lib\site-packages\anyio\_backends\_asyncio.py", line 1100, in run
+    result = context.run(func, *args)
+             ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<repo>\apps\archflow-studio\api\archflow_studio_api\routes\rendering.py", line 29, in choose_geometry
+    return geometry_sources.select_geometry(bound_project(request.app.state),expected_revision=payload.expectedRevision,
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<repo>\apps\archflow-studio\api\archflow_studio_api\application\geometry_sources.py", line 55, in select_geometry
+    read_geometry(binding,source)
+  File "<repo>\apps\archflow-studio\api\archflow_studio_api\application\geometry_sources.py", line 37, in read_geometry
+    return reader.read(geometry_bytes(binding,source))
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<repo>\apps\archflow-studio\api\archflow_studio_api\application\geometry_sources.py", line 25, in geometry_bytes
+    data=model_exports._object(binding,asdict(ref))
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: _object() missing 1 required keyword-only argument: 'role'
+
+warning: The `fitz` API is deprecated and will be removed in future. Use `import pymupdf` instead.
+
+FAIL Physical real geometry, camera gestures, reload and late scene reads preserve edits without AI replay; <user>\AppData\Local\Temp\monkeyhub-render-browser-lbl6wf
+[]
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+
+locator.waitFor: Timeout 30000ms exceeded.
+Call log:
+  - waiting for getByRole('region', { name: 'Physical Render Scene', exact: true }).locator('canvas') to be visible
+
+    at <repo>\apps\monkeyhub\web\workspaces\test\renderWorkspace.browser.mjs:636:41
+    at async step (<repo>\apps\monkeyhub\web\workspaces\test\renderWorkspace.browser.mjs:161:19)
+    at async file:///<user>/OneDrive/%E6%96%87%E6%A1%A3/ChatGPT/Blender%20skill/projection-development/workspace/worktrees/codex-monkeyhub-current/apps/monkeyhub/web/workspaces/test/renderWorkspace.browser.mjs:626:3 {
+  log: [
+    "  - waiting for getByRole('region', { name: 'Physical Render Scene', exact: true }).locator('canvas') to be visible"
+  ],
+  name: 'TimeoutError'
+}
+
+Node.js v24.21.0

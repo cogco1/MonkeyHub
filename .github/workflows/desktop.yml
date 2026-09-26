@@ -288,6 +288,8 @@ jobs:
           "MONKEYHUB_DESKTOP_EXE=$installed/MonkeyHub.exe" >> $env:GITHUB_ENV
       - name: Installed native lifecycle, reinstall and isolated project restart
         shell: pwsh
+        env:
+          MONKEYHUB_TEST_ARTIFACTS: ${{ runner.temp }}/monkeyhub-desktop-evidence
         run: |
           $env:PYTHONUTF8 = '1'
           # The suite skips itself when MONKEYHUB_DESKTOP_EXE is missing, which
@@ -297,6 +299,14 @@ jobs:
           }
           & "$env:MONKEYHUB_INSTALLED_ROOT/_runtime/python/python.exe" -B apps/monkeyhub/desktop/tests/test_runtime.py -v
           exit $LASTEXITCODE
+      - name: Keep native lifecycle evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-lifecycle-${{ github.sha }}
+          path: ${{ runner.temp }}/monkeyhub-desktop-evidence/
+          retention-days: 14
+          if-no-files-found: warn
       - name: Verify installed release identity
         if: env.MONKEYHUB_RELEASE_PUSH == 'true'
         shell: python {0}

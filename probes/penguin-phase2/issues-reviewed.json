@@ -1,0 +1,52 @@
+[
+  {
+    "number": 319,
+    "title": "Penguin Test Phase 2 — Drawing Associativity + Interactive Render Scene",
+    "url": "https://github.com/cogco1/MonkeyHub/issues/319",
+    "updatedAt": "2026-09-26T04:52:31Z",
+    "state": "open",
+    "comments": [
+      {
+        "url": "https://github.com/cogco1/MonkeyHub/issues/319#issuecomment-5843050462"
+      },
+      {
+        "url": "https://github.com/cogco1/MonkeyHub/issues/319#issuecomment-5843313615"
+      }
+    ]
+  },
+  {
+    "number": 321,
+    "title": "General Model Material Editing — Chat Tools, Region Recoloring & Reversible Candidates",
+    "url": "https://github.com/cogco1/MonkeyHub/issues/321",
+    "updatedAt": "2026-09-26T04:52:50Z",
+    "state": "open",
+    "comments": [
+      {
+        "url": "https://github.com/cogco1/MonkeyHub/issues/321#issuecomment-5843276011"
+      },
+      {
+        "url": "https://github.com/cogco1/MonkeyHub/issues/321#issuecomment-5843315514"
+      }
+    ]
+  },
+  {
+    "number": 324,
+    "title": "Render Background Module — Color, Images, HDRI & Shared Scene Persistence",
+    "url": "https://github.com/cogco1/MonkeyHub/issues/324",
+    "updatedAt": "2026-09-26T04:46:53Z",
+    "state": "open",
+    "comments": [
+      {
+        "url": "https://github.com/cogco1/MonkeyHub/issues/324#issuecomment-5843279725"
+      }
+    ]
+  },
+  {
+    "number": 327,
+    "title": "Model Conversion Reliability — 转换异常诊断、可撤回补救与防复发校验",
+    "url": "https://github.com/cogco1/MonkeyHub/issues/327",
+    "updatedAt": "2026-09-26T05:01:30Z",
+    "state": "open",
+    "comments": []
+  }
+]

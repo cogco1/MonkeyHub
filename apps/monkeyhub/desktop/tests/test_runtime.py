@@ -20,6 +20,7 @@ import os
 from pathlib import Path
 import re
 import select
+import shutil
 import site
 import socket
 import subprocess
@@ -27,6 +28,7 @@ import sys
 import tempfile
 import threading
 import time
+import traceback
 import unittest
 from urllib.parse import urlencode, urlsplit
 from urllib.request import ProxyHandler, Request, build_opener
@@ -72,6 +74,32 @@ def free_ports(count):
         for listener in sockets:
             listener.bind(("127.0.0.1", 0))
         return [listener.getsockname()[1] for listener in sockets]
+
+
+def windows_read_probe(path):
+    """Report the native error for the same read, never change access or locks."""
+    if os.name != "nt":
+        return None
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel.CreateFileW.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD,
+                                  wintypes.LPVOID, wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE]
+    kernel.CreateFileW.restype = wintypes.HANDLE
+    kernel.ReadFile.argtypes = [wintypes.HANDLE, wintypes.LPVOID, wintypes.DWORD,
+                               ctypes.POINTER(wintypes.DWORD), wintypes.LPVOID]
+    kernel.ReadFile.restype = wintypes.BOOL
+    kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+    kernel.CloseHandle.restype = wintypes.BOOL
+    handle = kernel.CreateFileW(str(path), 0x80000000, 7, None, 3, 0x80, None)
+    if handle == wintypes.HANDLE(-1).value:
+        return {"operation": "CreateFileW(GENERIC_READ, shared read/write/delete)",
+                "winerror": ctypes.get_last_error()}
+    try:
+        byte, count = ctypes.create_string_buffer(1), wintypes.DWORD()
+        ok = kernel.ReadFile(handle, byte, 1, ctypes.byref(count), None)
+        return {"operation": "ReadFile(first byte)", "ok": bool(ok),
+                "winerror": 0 if ok else ctypes.get_last_error(), "bytesRead": count.value}
+    finally:
+        kernel.CloseHandle(handle)
 
 
 class WindowsProcesses:
@@ -287,6 +315,7 @@ class DesktopRuntimeTests(unittest.TestCase):
         temporary = tempfile.TemporaryDirectory(prefix="MonkeyHub desktop 测试 ", delete=False)
         self.addCleanup(self.cleanup_temporary, temporary)
         self.root = Path(temporary.name)
+        self.events = []
         self.runtime = self.root / "local/MonkeyHub" if INSTALLED else self.root / "runtime"
         self.native = WindowsProcesses()
         self.addCleanup(self.cleanup_processes)
@@ -326,6 +355,8 @@ class DesktopRuntimeTests(unittest.TestCase):
         spec.loader.exec_module(self.fixture)
         self.fixture.make_project(self.root / "projects")
         self.project = self.root / "projects" / self.fixture.PROJECT_ID
+        from archflow.project.repository import FilesystemProjectRepository
+        self.project_locks = frozenset(FilesystemProjectRepository.open(self.project).lock_paths())
         self.before = self.project_bytes()
         self.opened_bytes = None
         save_application_settings(self.runtime, ApplicationSettingsDto(
@@ -339,8 +370,43 @@ class DesktopRuntimeTests(unittest.TestCase):
             self.user_file.write_bytes(b"User data must survive reinstall and reopen.\n")
 
     def project_bytes(self):
-        return {str(path.relative_to(self.project)): path.read_bytes()
-                for path in self.project.rglob("*") if path.is_file()}
+        # P036's two declared advisory locks carry no project content. Windows
+        # forbids reading their locked byte during an ordinary guarded read.
+        # Do not exclude arbitrary *.lock/temp files or swallow content errors.
+        # Repository lock paths are canonical. RUNNER~1 and runneradmin may
+        # identify the same Windows directory; compare in that same namespace.
+        project = self.project.resolve()
+        self.record("project-snapshot-start", requestedProject=str(self.project), canonicalProject=str(project),
+                    excludedRepositoryLocks=sorted(str(path.relative_to(project)) for path in self.project_locks))
+        contents = {}
+        for path in project.rglob("*"):
+            if not path.is_file() or path in self.project_locks:
+                continue
+            try:
+                contents[str(path.relative_to(project))] = path.read_bytes()
+            except OSError as error:
+                self.record("project-read-failed", path=str(path.relative_to(project)),
+                            operation="Path.read_bytes", errno=error.errno,
+                            winerror=getattr(error, "winerror", None),
+                            exception=repr(error), stack=traceback.format_exc(),
+                            nativeRead=windows_read_probe(path),
+                            trackedProcesses={str(pid): {"exited": self.native.exited(pid)}
+                                              for pid in self.native.handles})
+                raise
+        self.record("project-snapshot-complete", files=len(contents))
+        return contents
+
+    def record(self, event, **details):
+        row = {"event": event, "time": time.time(), "monotonic": time.monotonic(),
+               "testProcessId": os.getpid(), **details}
+        self.events.append(row)
+        if event == "project-read-failed":
+            print(json.dumps(row, ensure_ascii=False), file=sys.stderr)
+        if output := os.environ.get("MONKEYHUB_TEST_ARTIFACTS"):
+            directory = Path(output) / self.id()
+            directory.mkdir(parents=True, exist_ok=True)
+            (directory / "events.json").write_text(
+                json.dumps(self.events, ensure_ascii=False, indent=2), encoding="utf-8")
 
     def cleanup_temporary(self, temporary):
         self.assertTrue(all(shell.poll() is not None for shell in self.shells), "Own EXE still running")
@@ -368,8 +434,13 @@ class DesktopRuntimeTests(unittest.TestCase):
     def dump_logs(self):
         for path in sorted(self.runtime.glob("logs/*.log")):
             print(f"\n{self.id()} — {path.name}\n{path.read_text(encoding='utf-8', errors='replace')[-12000:]}", file=sys.stderr)
+            if output := os.environ.get("MONKEYHUB_TEST_ARTIFACTS"):
+                directory = Path(output) / self.id()
+                directory.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(path, directory / path.name)
 
     def tearDown(self):
+        self.record("test-finished", shells=[{"pid": shell.pid, "exitCode": shell.poll()} for shell in self.shells])
         result = self._outcome.result
         failures = getattr(result, "failures", ()) + getattr(result, "errors", ())
         if any(test is self for test, _ in failures):
@@ -387,6 +458,7 @@ class DesktopRuntimeTests(unittest.TestCase):
                     shell.wait(timeout=10)
 
     def launch(self, port=None, *, trial=False):
+        self.record("launch-start", trial=trial)
         previous = set((self.runtime / "logs").glob("desktop-*.log"))
         command = [str(Path(EXE)), "--source-root", str(ROOT), "--python", sys.executable,
                    "--runtime-root", str(self.runtime), "--startup-timeout-seconds", "40"]
@@ -403,6 +475,7 @@ class DesktopRuntimeTests(unittest.TestCase):
             creationflags=subprocess.CREATE_NO_WINDOW,
         )
         self.shells.append(self.shell)
+        self.record("shell-created", pid=self.shell.pid)
         self.log = wait_for(lambda: next(iter(set((self.runtime / "logs").glob("desktop-*.log")) - previous), None),
                             lambda: f"No desktop log; EXE exit={self.shell.poll()}")
         return self.shell
@@ -475,6 +548,7 @@ class DesktopRuntimeTests(unittest.TestCase):
         self.assertEqual(health["processId"], self.root_pid)
         self.assertEqual(health["parentProcessId"], self.shell.pid)
         self.hub_pid = health["processId"]
+        self.record("hub-ready", shellPid=self.shell.pid, hubPid=self.hub_pid, instance=self.instance)
         self.pids = {self.root_pid, self.hub_pid}
         for pid in self.pids:
             self.native.track(pid)
@@ -504,6 +578,7 @@ class DesktopRuntimeTests(unittest.TestCase):
         return app
 
     def open_project(self):
+        self.record("project-open-start")
         binding = {"projectId": self.fixture.PROJECT_ID, "projectDir": str(self.project)}
         opened = request(self.url + "api/runtime/projects/open", method="POST", payload=binding)
         request(self.url + "api/apps/monkeyarch/start?" + urlencode({"projectDir": str(self.project)}), method="POST")
@@ -536,6 +611,7 @@ class DesktopRuntimeTests(unittest.TestCase):
     def drained(self):
         wait_for(lambda: all(self.native.exited(pid) for pid in self.pids),
                  lambda: f"Owned processes survived: {[pid for pid in self.pids if not self.native.exited(pid)]}")
+        self.record("owned-processes-drained", pids=sorted(self.pids))
         for port in self.ports:
             self.assertFalse(port_open(port), f"Owned listener {port} survived shutdown")
         self.assertEqual(self.project_bytes(), self.opened_bytes or self.before)
@@ -767,6 +843,113 @@ $pattern.Current.Value | ConvertTo-Json -Compress
         self.shell.kill()
         self.shell.wait(timeout=10)
         self.drained()
+
+
+@unittest.skipUnless(os.name == "nt", "Exercises real Windows byte-range locks")
+class ProjectSnapshotTests(unittest.TestCase):
+    """Guard the retained-data assertion independently of a native UI race."""
+
+    def setUp(self):
+        from archflow.project.repository import FilesystemProjectRepository
+        spec = importlib.util.spec_from_file_location("snapshot_fixture", ROOT / "apps/archflow-studio/api/tests/support.py")
+        fixture = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(fixture)
+        self.temporary = tempfile.TemporaryDirectory(prefix="monkeyhub-snapshot-")
+        self.addCleanup(self.temporary.cleanup)
+        fixture.make_project(Path(self.temporary.name))
+        self.reader = DesktopRuntimeTests()
+        self.reader._testMethodName = self._testMethodName
+        self.reader.project = Path(self.temporary.name) / fixture.PROJECT_ID
+        self.reader.project_locks = frozenset(FilesystemProjectRepository.open(self.reader.project).lock_paths())
+        self.reader.events = []
+        self.reader.native = WindowsProcesses()
+
+    @contextmanager
+    def held(self, paths):
+        # The same P036 lock implementation runs in another real process; no
+        # mocked PermissionError or permission override stands in for Windows.
+        script = """import os, sys
+from pathlib import Path
+from contextlib import ExitStack
+from archflow.project.repository import _HeadFileLock
+with ExitStack() as stack:
+    for path in sys.argv[1:]:
+        stack.enter_context(_HeadFileLock(Path(path)))
+    print(os.getpid(), flush=True)
+    sys.stdin.readline()
+"""
+        child = subprocess.Popen([sys.executable, "-c", script, *map(str, paths)],
+                                 stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                 text=True, creationflags=subprocess.CREATE_NO_WINDOW)
+        try:
+            pid = int(child.stdout.readline())
+            self.reader.native.track(pid)
+            self.reader.record("test-locks-acquired", holderPid=pid, launcherPid=child.pid,
+                               paths=[str(path.relative_to(self.reader.project.resolve())) for path in paths])
+            yield
+        finally:
+            if child.poll() is None:
+                child.stdin.write("release\n")
+                child.stdin.flush()
+            child.stdin.close()
+            child.wait(timeout=10)
+            stderr = child.stderr.read()
+            child.stdout.close()
+            child.stderr.close()
+            self.reader.record("test-locks-released", exitCode=child.returncode)
+            for handle in self.reader.native.handles.values():
+                self.reader.native.kernel.CloseHandle(handle)
+            self.reader.native.handles.clear()
+            self.assertEqual(child.returncode, 0, stderr)
+
+    def test_declared_locks_do_not_block_complete_content_comparison(self):
+        before = self.reader.project_bytes()
+        locks = sorted(self.reader.project_locks)
+        with self.held(locks):
+            for path in locks:
+                with self.assertRaises(PermissionError) as raised:
+                    path.read_bytes()  # The old scanner deterministically fails.
+                native = windows_read_probe(path)
+                self.assertEqual(raised.exception.errno, 13)
+                self.assertEqual(native["winerror"], 33)  # ERROR_LOCK_VIOLATION
+                self.reader.record("old-scan-reproduced", path=str(path.relative_to(self.reader.project)),
+                                   errno=raised.exception.errno, nativeRead=native)
+            self.assertEqual(self.reader.project_bytes(), before)
+        self.assertEqual(self.reader.project_bytes(), before)
+        self.assertIn("HEAD", before)
+        self.assertIn("project.json", before)
+
+    def test_other_lock_named_content_is_checked_and_read_errors_propagate(self):
+        # A fixture file with a lock suffix is still data; this is not a glob.
+        asset = self.reader.project / "user-asset.lock"
+        asset.write_bytes(b"original retained bytes")
+        before = self.reader.project_bytes()
+        self.assertEqual(before["user-asset.lock"], b"original retained bytes")
+        with self.held([asset]):
+            with self.assertRaises(PermissionError):
+                self.reader.project_bytes()
+        self.assertEqual(self.reader.project_bytes(), before)
+        asset.write_bytes(b"changed retained bytes")
+        self.assertNotEqual(self.reader.project_bytes(), before)
+
+    def test_project_path_alias_uses_same_exact_lock_contract(self):
+        before = self.reader.project_bytes()
+        original = self.reader.project.resolve()
+        kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel.GetShortPathNameW.argtypes = [wintypes.LPCWSTR, wintypes.LPWSTR, wintypes.DWORD]
+        kernel.GetShortPathNameW.restype = wintypes.DWORD
+        buffer = ctypes.create_unicode_buffer(32768)
+        count = kernel.GetShortPathNameW(str(original), buffer, len(buffer))
+        self.assertTrue(0 < count < len(buffer), ctypes.get_last_error())
+        alias = Path(buffer.value)
+        # Also works when the test volume disables generation of 8.3 aliases:
+        # an existing parent/name alias still exercises canonical path identity.
+        self.reader.project = alias / ".." / alias.name
+        self.assertNotEqual(str(self.reader.project), str(original))
+        self.assertEqual(self.reader.project.resolve(), original)
+        with self.held(sorted(self.reader.project_locks)):
+            self.assertEqual(self.reader.project_bytes(), before)
+        self.assertEqual(self.reader.project_bytes(), before)
 
 
 if __name__ == "__main__":

@@ -102,6 +102,8 @@ INTENT_COMPILATION = "intent-compilation"
 DELIBERATION_EPISODE = "deliberation-episode"
 STUDIO_SOURCE_DOCUMENT = "studio-source-document"
 STUDIO_RENDER_JOB = "studio-render-job"
+STUDIO_RENDER_SCENE = "studio-render-scene"
+STUDIO_GEOMETRY_SELECTION = "studio-geometry-selection"
 STUDIO_DOCUMENT_ANNOTATIONS = "studio-document-annotations"
 STUDIO_DOCUMENT_COMMENT = "studio-document-comment"
 STUDIO_MODEL_ASSET = "studio-model-asset"
@@ -154,14 +156,18 @@ _RUN_BRANCH = PersistenceArea.RUN_BRANCH.value
 
 
 _TABLE: tuple[RecordKind, ...] = (
+    RecordKind(STUDIO_RENDER_SCENE, "StudioRenderScene@1", _RUN_RECORD,
+               "Renderer-independent visualization revisions referencing retained geometry; no design geometry."),
+    RecordKind(STUDIO_GEOMETRY_SELECTION, "StudioGeometrySelection@1", _RUN_RECORD,
+               "Explicit current retained model/source selection and revision history; no copied geometry."),
     RecordKind(STUDIO_PUBLICATION, "PublicationDocument@1", _RUN_RECORD,
                "ordered communication pages and exact project source refs; never design state"),
     RecordKind("studio-model-export", "StudioModelExport@1", _RUN_RECORD, "Conversion job lifecycle, original source provenance and validated output; never canonical state."),
     RecordKind(
         STUDIO_RENDER_JOB,
-        "StudioRenderJob@2",
+        "StudioRenderJob@3",
         _RUN_RECORD,
-        "Immutable image-attempt transitions, exact source pages and provider outcomes; independent of Design HEAD and candidate acceptance.",
+        "Immutable image/Cycles attempts with exact input revisions and retained results; readers preserve @1/@2 compatibility. Independent of Design HEAD.",
     ),
     RecordKind(
         STUDIO_BOARD_SCENE,

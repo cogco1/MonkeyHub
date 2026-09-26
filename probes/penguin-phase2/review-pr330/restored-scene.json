@@ -1,0 +1,315 @@
+{
+  "geometry": {
+    "artifact": {
+      "artifact_id": "source-model",
+      "media_type": "application/octet-stream",
+      "project_id": "penguin-test",
+      "relative_path": "objects/sha256/b8/b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+      "sha256": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54"
+    },
+    "format": "glb",
+    "geometryRevision": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+    "kind": "retained-import",
+    "label": "20260914 雪企鹅.glb",
+    "preview": {
+      "assetSha256": "e82472a70e4ef3f9f8be37dd25197fae30a252078d71ee8f0f228047b7e75b99",
+      "runId": "studio-model-e82472a70e4ef3f9f8be37dd25197fae30a252078d71ee8f0f228047b7e75b99"
+    },
+    "previewExportId": "export-7d7b8e919a3845cc8f47d110c7deecc5",
+    "projectId": "penguin-test",
+    "runId": "export-7d7b8e919a3845cc8f47d110c7deecc5",
+    "schema": "StudioGeometrySelection@1",
+    "sequence": 3
+  },
+  "projectId": "penguin-test",
+  "scene": {
+    "assignments": {
+      "0": "body"
+    },
+    "camera": {
+      "fov": 28.0,
+      "orthoScale": 1.3,
+      "position": [
+        1.3,
+        -2.3,
+        0.75
+      ],
+      "projection": "perspective",
+      "target": [
+        0.0,
+        0.0,
+        0.5
+      ],
+      "up": [
+        0.0,
+        0.0,
+        1.0
+      ]
+    },
+    "environment": {
+      "background": {
+        "assetSha256": "3d767430cda161153e7902638d1e23cb9819c2d926b995d41dfdadec82d8caa3",
+        "revisionRef": null,
+        "runId": "studio-documents"
+      },
+      "color": "#c6d8e8",
+      "environmentMap": null,
+      "strength": 0.4
+    },
+    "exposure": 0.3,
+    "geometryRevision": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+    "lights": [
+      {
+        "color": "#fff0dd",
+        "id": "key",
+        "intensity": 170.0,
+        "position": [
+          1.5,
+          -2.0,
+          2.5
+        ],
+        "size": 1.5,
+        "target": [
+          0.0,
+          0.0,
+          0.5
+        ],
+        "type": "area"
+      },
+      {
+        "color": "#d5e8ff",
+        "id": "fill",
+        "intensity": 65.0,
+        "position": [
+          -2.0,
+          -1.0,
+          1.5
+        ],
+        "size": 2.0,
+        "target": [
+          0.0,
+          0.0,
+          0.5
+        ],
+        "type": "area"
+      }
+    ],
+    "materials": [
+      {
+        "baseColor": "#202831",
+        "id": "body",
+        "metallic": 0.0,
+        "name": "Dark back / head",
+        "normalMap": null,
+        "roughness": 0.72,
+        "texture": null
+      },
+      {
+        "baseColor": "#ece4ce",
+        "id": "belly",
+        "metallic": 0.0,
+        "name": "White belly",
+        "normalMap": null,
+        "roughness": 0.78,
+        "texture": null
+      },
+      {
+        "baseColor": "#de922c",
+        "id": "beak",
+        "metallic": 0.0,
+        "name": "Beak",
+        "normalMap": null,
+        "roughness": 0.38,
+        "texture": null
+      },
+      {
+        "baseColor": "#fcf8ee",
+        "id": "eye",
+        "metallic": 0.0,
+        "name": "Eye white",
+        "normalMap": null,
+        "roughness": 0.22,
+        "texture": null
+      },
+      {
+        "baseColor": "#11151a",
+        "id": "pupil",
+        "metallic": 0.0,
+        "name": "Pupil",
+        "normalMap": null,
+        "roughness": 0.18,
+        "texture": null
+      },
+      {
+        "baseColor": "#403b35",
+        "id": "feet",
+        "metallic": 0.0,
+        "name": "Feet",
+        "normalMap": null,
+        "roughness": 0.55,
+        "texture": null
+      }
+    ],
+    "regions": [
+      {
+        "center": [
+          0.0,
+          -0.19,
+          0.39
+        ],
+        "geometryRevision": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+        "id": "belly",
+        "materialId": "belly",
+        "mesh": 0,
+        "name": "belly",
+        "radius": [
+          0.215,
+          0.21,
+          0.36
+        ],
+        "shape": "ellipsoid"
+      },
+      {
+        "center": [
+          0.0,
+          -0.29,
+          0.873
+        ],
+        "geometryRevision": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+        "id": "beak",
+        "materialId": "beak",
+        "mesh": 0,
+        "name": "beak",
+        "radius": [
+          0.15,
+          0.14,
+          0.04
+        ],
+        "shape": "box"
+      },
+      {
+        "center": [
+          0.0,
+          0.0,
+          0.025
+        ],
+        "geometryRevision": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+        "id": "feet",
+        "materialId": "feet",
+        "mesh": 0,
+        "name": "feet",
+        "radius": [
+          0.4,
+          0.4,
+          0.04
+        ],
+        "shape": "box"
+      },
+      {
+        "center": [
+          0.116,
+          0.001,
+          0.875
+        ],
+        "geometryRevision": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+        "id": "eye-right",
+        "materialId": "eye",
+        "mesh": 0,
+        "name": "eye-right",
+        "radius": [
+          0.032,
+          0.044,
+          0.038
+        ],
+        "shape": "ellipsoid"
+      },
+      {
+        "center": [
+          -0.116,
+          -0.001,
+          0.879
+        ],
+        "geometryRevision": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+        "id": "eye-left",
+        "materialId": "eye",
+        "mesh": 0,
+        "name": "eye-left",
+        "radius": [
+          0.032,
+          0.044,
+          0.038
+        ],
+        "shape": "ellipsoid"
+      },
+      {
+        "center": [
+          0.136,
+          -0.014,
+          0.886
+        ],
+        "geometryRevision": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+        "id": "pupil-right",
+        "materialId": "pupil",
+        "mesh": 0,
+        "name": "pupil-right",
+        "radius": [
+          0.024,
+          0.017,
+          0.019
+        ],
+        "shape": "ellipsoid"
+      },
+      {
+        "center": [
+          -0.136,
+          -0.016,
+          0.89
+        ],
+        "geometryRevision": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+        "id": "pupil-left",
+        "materialId": "pupil",
+        "mesh": 0,
+        "name": "pupil-left",
+        "radius": [
+          0.024,
+          0.017,
+          0.019
+        ],
+        "shape": "ellipsoid"
+      }
+    ],
+    "settings": {
+      "denoise": true,
+      "height": 1200,
+      "samples": 128,
+      "width": 1000
+    }
+  },
+  "sceneRevision": "06a5995bc2ad3200a3e9e1721da3f66ad70637a7808afc2d25dbc1b803ee44f6",
+  "schema": "StudioRenderScene@1",
+  "sequence": 7,
+  "status": "current",
+  "currentGeometry": {
+    "artifact": {
+      "artifact_id": "source-model",
+      "media_type": "application/octet-stream",
+      "project_id": "penguin-test",
+      "relative_path": "objects/sha256/b8/b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+      "sha256": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54"
+    },
+    "format": "glb",
+    "geometryRevision": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+    "kind": "retained-import",
+    "label": "20260914 雪企鹅.glb",
+    "preview": {
+      "assetSha256": "e82472a70e4ef3f9f8be37dd25197fae30a252078d71ee8f0f228047b7e75b99",
+      "runId": "studio-model-e82472a70e4ef3f9f8be37dd25197fae30a252078d71ee8f0f228047b7e75b99"
+    },
+    "previewExportId": "export-7d7b8e919a3845cc8f47d110c7deecc5",
+    "projectId": "penguin-test",
+    "runId": "export-7d7b8e919a3845cc8f47d110c7deecc5",
+    "schema": "StudioGeometrySelection@1",
+    "sequence": 3
+  },
+  "cyclesAvailable": true
+}

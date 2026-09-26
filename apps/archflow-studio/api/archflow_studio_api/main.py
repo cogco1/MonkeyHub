@@ -246,6 +246,7 @@ def create_app(settings: StudioSettings, *, render_adapter=None) -> FastAPI:
     # and therefore loses on restart, is stated at the top of the application.
     app.state.events = StudioEvents()
     app.state.jobs = JobRegistry(app.state.events, max_workers=settings.workers, monitor=app.state.monitor)
+    app.state.render_jobs.runtime_jobs = app.state.jobs
     if shared_project:
         app.state.jobs.stop_accepting()
     # One validation per candidate, remembered so that reading a verdict twice

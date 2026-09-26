@@ -1,0 +1,6 @@
+{"toolbar":940,"layout":{"width":582,"height":50,"overflow":false,"groups":[{"height":48,"overflow":false},{"height":48,"overflow":false},{"height":48,"overflow":false}]}}
+{"toolbar":620,"layout":{"width":500,"height":44,"overflow":false,"groups":[{"height":42,"overflow":false},{"height":42,"overflow":false},{"height":42,"overflow":false}]}}
+{"toolbar":332,"layout":{"width":304,"height":86,"overflow":false,"groups":[{"height":42,"overflow":false},{"height":42,"overflow":false},{"height":42,"overflow":false}]}}
+{"screenshotComparison":"the chosen camera view survives Board/model switches","dimensions":{"actual":[620,920],"expected":[620,920]},"differentPixels":0,"maxChannelDelta":0,"samples":[]}
+{"screenshotComparison":"refreshing keeps the camera chosen after the candidate appeared","dimensions":{"actual":[755,920],"expected":[755,920]},"differentPixels":0,"maxChannelDelta":0,"samples":[]}
+{"passed":true,"sessions":0,"writes":139,"screenshots":"<user>\\AppData\\Local\\Temp\\monkeyhub-chat-ui-XxxBA8"}

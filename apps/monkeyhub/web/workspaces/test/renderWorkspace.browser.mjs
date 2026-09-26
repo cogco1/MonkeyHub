@@ -243,6 +243,8 @@ try {
   page.on("request", (request) => { if (request.url().includes("/api/")) requests.push({ url: request.url(), method: request.method() }); });
   await page.goto(origin);
   const workspace = () => page.locator('[data-project-surface="render"]:visible');
+  const selectAI = () => workspace().getByRole("button", { name: "AI", exact: true }).click();
+  await selectAI();
   const direction = () => workspace().getByRole("textbox", { name: "Visual direction" });
   const generate = () => workspace().getByRole("button", { name: "Generate", exact: true });
   const history = () => workspace().locator(".render-list button");
@@ -302,7 +304,7 @@ try {
   await step("project and workspace switches preserve inputs, stop hidden polling and do not cancel or resend", async () => {
     await direction().fill("SLOW afternoon"); await generate().click();
     await until(jobs, (r) => r.jobs.some((j) => j.status === "running"), "running offline job");
-    await page.getByRole("button", { name: "Project B", exact: true }).click();
+    await page.getByRole("button", { name: "Project B", exact: true }).click(); await selectAI();
     await direction().waitFor(); assert.equal(await direction().inputValue(), "");
     await delay(500); const count = requests.filter((r) => r.url.includes("project-a/api/render/")).length;
     await delay(2800); assert.equal(requests.filter((r) => r.url.includes("project-a/api/render/")).length, count);
@@ -359,7 +361,7 @@ try {
     await until(() => history().first().innerText(), (text) => text.includes("Unknown outcome"), "unknown status readback");
     await history().first().click();
     assert.match(await workspace().innerText(), /unconfirmed.*charge/s);
-    await refresh().click(); await page.reload(); await direction().waitFor();
+    await refresh().click(); await page.reload(); await selectAI(); await direction().waitFor();
     assert.equal((await api("project-a", "/fixture/metrics")).calls.length, 4);
     await until(() => history().count(), (n) => n === 4, "cold history reloaded");
   });
@@ -368,6 +370,8 @@ try {
     await api("project-a", "/api/documents", "POST", { projectId: "project-a", fileName: "revised-reference.png", mimeType: "image/png",
       contentBase64: replacement.toString("base64"), replacesPages: [{ ...refs[0], newPageIndex: 0 }] });
     await refresh().click(); await history().filter({ hasText: "Soft morning light" }).click();
+    await until(() => workspace().getByRole("combobox", { name: "Source image", exact: true }).innerText(),
+      text => text.includes("revised-reference.png"), "refreshed document list contains the reference replacement");
     await until(() => workspace().locator('.render-source-state').innerText(), (text) => text.includes("Source outdated"), "reference update is explicit");
     await workspace().getByRole("button", { name: "Use updated source", exact: true }).click();
     assert.match(await workspace().getByRole("combobox", { name: "Source image", exact: true }).locator('option:checked').innerText(), /source.png/);
@@ -376,6 +380,10 @@ try {
     await api("project-a", "/api/documents", "POST", { projectId: "project-a", fileName: "revised-source.png", mimeType: "image/png",
       contentBase64: replacement.toString("base64"), replacesPages: [{ ...source, newPageIndex: 0 }] });
     await refresh().click(); await history().filter({ hasText: "Soft morning light" }).click();
+    // This job is already outdated from the reference update above. That label
+    // alone cannot establish that the second asynchronous refresh has completed.
+    await until(() => workspace().getByRole("combobox", { name: "Source image", exact: true }).innerText(),
+      text => text.includes("revised-source.png"), "refreshed document list contains the source replacement");
     await until(() => workspace().locator('.render-source-state').innerText(), (text) => text.includes("Source outdated"), "outdated result is explicit");
     assert.deepEqual((await jobs()).jobs.find((j) => j.jobId === first.jobId).request.source, source);
     await workspace().getByRole("button", { name: "Use updated source", exact: true }).click();
@@ -479,7 +487,7 @@ try {
   });
   await step("retained native result reopens in its own project without invented source or paid replay", async () => {
     const native = await api('project-b', '/fixture/legacy', 'POST');
-    await page.getByRole('button', { name: 'Project B', exact: true }).click();
+    await page.getByRole('button', { name: 'Project B', exact: true }).click(); await selectAI();
     await until(() => history().count(), (n) => n === 1, 'native history visible');
     await until(() => workspace().locator('.render-image img').count(), (n) => n === 1, 'native image read');
     assert.match(await workspace().locator('.render-metadata').innerText(), /retained-native.png/);
@@ -491,11 +499,11 @@ try {
     assert.equal((await download).suggestedFilename(), native.fileName);
     await page.screenshot({ path: path.join(temporary, 'render-native-history.png'), fullPage: true });
     await page.reload();
-    await page.getByRole('button', { name: 'Project B', exact: true }).click();
+    await page.getByRole('button', { name: 'Project B', exact: true }).click(); await selectAI();
     await until(() => workspace().locator('.render-image img').count(), (n) => n === 1, 'native result survives reload');
     assert.equal((await api('project-b', '/fixture/metrics')).calls.length, 0);
     assert.equal((await api('project-b', '/api/render/jobs')).jobs[0].jobId, native.jobId);
-    await page.getByRole('button', { name: 'Project A', exact: true }).click();
+    await page.getByRole('button', { name: 'Project A', exact: true }).click(); await selectAI();
     await until(() => history().count(), (n) => n === 6, 'project A keeps only its six attempts');
     assert.equal(await history().filter({ hasText: native.fileName }).count(), 0);
   });
@@ -509,6 +517,7 @@ try {
       if (request.method() === "POST" && request.url().endsWith("/api/render/views")) captureRequests.push(request.postDataJSON());
     });
     await capturePage.goto(new URL("camera", origin).href);
+    await capturePage.getByRole("button", { name: "AI", exact: true }).click();
     const capture = () => capturePage.getByRole("button", { name: "Use current view as source", exact: true });
     const selectedSource = () => capturePage.getByRole("combobox", { name: "Source image", exact: true }).inputValue();
     try { await capture().waitFor(); }
@@ -620,6 +629,69 @@ try {
     assert.deepEqual(errors, []);
     await capturePage.close();
   });
+  await step("Physical real geometry, camera gestures, reload and late scene reads preserve edits without AI replay", async () => {
+    const physicalPage = await browser.newPage({ viewport: { width: 1440, height: 1050 } });
+    physicalPage.on('pageerror', error => errors.push(String(error)));
+    await physicalPage.goto(origin);
+    await physicalPage.getByRole('button', { name: 'Project B', exact: true }).click();
+    const panel = physicalPage.getByRole('region', { name: 'Physical Render Scene', exact: true });
+    const bytes = Buffer.from(await (await fetch(origins['project-b'] + '/fixture/plan-model')).arrayBuffer());
+    const importInput = panel.getByLabel('Import geometry', { exact: true });
+    await until(() => importInput.isEnabled(), Boolean, 'project initial read finished before importing');
+    await importInput.setInputFiles({ name: 'architectural-fixture.3dm', mimeType: 'application/octet-stream', buffer: bytes });
+    try { await panel.locator('canvas').waitFor(); }
+    catch (error) {
+      await physicalPage.screenshot({ path: path.join(temporary, 'physical-import-failure.png'), fullPage: true });
+      console.error(await panel.innerText());
+      console.error(processes.map(p => p.log).join('\n'));
+      throw error;
+    }
+    await panel.locator('summary').filter({ hasText: 'Camera and quality' }).click();
+    const camera = async () => panel.locator('input').evaluateAll(es => es.map(e => ({ label: e.parentElement.textContent, value: e.value })).filter(e => /^(Camera |FOV|Orthographic)/.test(e.label)));
+    const before = await camera();
+    const canvas = panel.locator('canvas');
+    await canvas.scrollIntoViewIfNeeded();
+    const rect = await canvas.boundingBox();
+    async function drag(button, dx, dy) {
+      await physicalPage.mouse.move(rect.x + rect.width/2, rect.y + rect.height/2);
+      await physicalPage.mouse.down({button});
+      await physicalPage.mouse.move(rect.x + rect.width/2 + dx, rect.y + rect.height/2 + dy, {steps: 8});
+      await physicalPage.mouse.up({button});
+    }
+    await drag('left', 70, 25); const orbit = await camera(); assert.notDeepEqual(orbit, before, 'orbit updates camera');
+    await drag('right', 35, 20); const pan = await camera(); assert.notDeepEqual(pan, orbit, 'pan updates target/position');
+    await physicalPage.mouse.wheel(0, 160);
+    await until(camera, value => JSON.stringify(value) !== JSON.stringify(pan), 'dolly updates camera');
+    await panel.getByRole('combobox', {name: 'Projection', exact: true}).selectOption('orthographic');
+    await panel.getByRole('spinbutton', {name: 'Orthographic height', exact: true}).fill('8');
+    await panel.getByRole('spinbutton', {name: 'Camera target X', exact: true}).fill('0.25');
+    const savedCamera = await camera();
+    await panel.getByRole('button', {name: 'Save scene', exact: true}).click();
+    await until(() => api('project-b', '/api/render/scene'), s => s.scene?.camera.target[0] === .25 && s.status === 'current', 'physical saved');
+    await physicalPage.getByRole('button', {name: 'drawing', exact: true}).click();
+    await physicalPage.getByRole('button', {name: 'render', exact: true}).click();
+    assert.deepEqual(await camera(), savedCamera, 'workspace return restores camera');
+    await physicalPage.reload();
+    await physicalPage.getByRole('button', {name: 'Project B', exact: true}).click();
+    await panel.locator('canvas').waitFor();
+    await panel.locator('summary').filter({hasText: 'Camera and quality'}).click();
+    assert.deepEqual(await camera(), savedCamera, 'whole-page reload restores saved camera');
+    assert.equal(await panel.getByRole('combobox', {name: 'Projection', exact: true}).inputValue(), 'orthographic');
+    let release, read = false;
+    const gate = new Promise(resolve => {release = resolve;});
+    await physicalPage.route('**/project-b/api/render/scene', async route => { const response = await route.fetch(); read = true; await gate; await route.fulfill({response}); });
+    await panel.getByRole('button', {name: 'Reload saved scene', exact: true}).click();
+    await until(() => read, Boolean, 'old scene response held');
+    await panel.getByRole('spinbutton', {name: 'Camera target X', exact: true}).fill('0.75');
+    release();
+    await until(() => panel.getByRole('button', {name: 'Reload saved scene', exact: true}).isEnabled(), Boolean, 'held refresh finished');
+    assert.equal(await panel.getByRole('spinbutton', {name: 'Camera target X', exact: true}).inputValue(), '0.75', 'late saved scene must not replace a newer camera edit');
+    await physicalPage.unroute('**/project-b/api/render/scene');
+    assert.equal((await api('project-b', '/fixture/metrics')).calls.length, 0, 'Physical never invokes the AI adapter');
+    assert.deepEqual(errors, []);
+    await physicalPage.screenshot({ path: path.join(temporary, 'physical-regression.png'), fullPage: true });
+    await physicalPage.close();
+  });
   await step("cold real Hub Render leaves every project content file unchanged; entering Arch seeds only then", async () => {
     const ports = [await freePort(), await freePort(), await freePort()];
     hubOrigin = `http://127.0.0.1:${ports[0]}`;
@@ -637,7 +709,7 @@ try {
     await hubPage.goto(hubOrigin);
     await hubPage.getByRole('button', { name: 'cold-render', exact: true }).first().click();
     await hubPage.getByRole('button', { name: 'Render', exact: true }).click();
-    await hubPage.locator('[data-project-surface="render"]:visible').getByRole('textbox', { name: 'Visual direction' }).waitFor({ timeout: 30000 });
+    await hubPage.getByRole("button", { name: "Physical", exact: true }).waitFor({ timeout: 30000 });
     const read = () => fetch(hubOrigin + '/fixture/metrics').then((r) => r.json());
     let metrics = await read();
     assert.deepEqual(metrics.current, metrics.baseline, 'Runtime and Render must not add authored inputs or any project content');

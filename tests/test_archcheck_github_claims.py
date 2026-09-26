@@ -119,6 +119,45 @@ class GithubWorkClaimTests(unittest.TestCase):
         )
         self.assertEqual((), self.findings())
 
+    def test_trailing_issue_reference_still_checks_historical_scope(self) -> None:
+        self.commit("Change owned feature (#60)", {"apps/feature/value.py": "VALUE = 1\n"})
+        self.assertEqual((), self.findings())
+        self.commit("Change outside feature (#60)", {"apps/outside.py": "VALUE = 2\n"})
+        self.assertEqual([("apps/outside.py", "SCOPE_VIOLATION")],
+                         [(row.path, row.code) for row in self.findings()])
+
+    def test_trailing_reference_cannot_borrow_a_later_declaration(self) -> None:
+        self.commit("Unknown work (#999)", {"apps/feature/value.py": "VALUE = 1\n"})
+        self.commit("P000-governance: register later", {
+            REGISTRY_PATH: _registry(_work("GH-999", "apps/feature/")),
+        })
+        self.assertEqual([("apps/feature/value.py", "SCOPE_UNDECLARED")],
+                         [(row.path, row.code) for row in self.findings()])
+
+    def test_explicit_work_id_takes_precedence_over_issue_reference(self) -> None:
+        self.commit("GH-60: feature related to another issue (#61)",
+                    {"apps/feature/value.py": "VALUE = 1\n"})
+        self.commit("Feature related to another issue (#61)\n\nWork item GH-60.",
+                    {"apps/feature/another.py": "VALUE = 1\n"})
+        self.assertEqual((), self.findings())
+
+    def test_incidental_ambiguous_or_malformed_references_do_not_claim_scope(self) -> None:
+        subjects = ("Mention #60", "Merge pull request #60 from branch", "Fix (#0)",
+                    "Fix (#060)", "Fix (#60/extra)", "Fix (#60) and (#61)",
+                    "Related #61, fix (#60)", "Fix (#60) extra", "GH-60oops: fix (#60)")
+        for index, subject in enumerate(subjects):
+            self.commit(subject, {f"apps/feature/bad_{index}.py": "VALUE = 1\n"})
+        self.assertEqual(["SCOPE_UNDECLARED"] * len(subjects),
+                         [row.code for row in self.findings()])
+
+    def test_trailing_reference_cannot_bypass_lane_requirement(self) -> None:
+        self.commit("P000-governance: require a lane", {
+            REGISTRY_PATH: _registry(_work("GH-60", "apps/feature/", lanes=[])),
+        })
+        self.commit("Change feature (#60)", {"apps/feature/value.py": "VALUE = 1\n"})
+        self.assertEqual(["SCOPE_VIOLATION"], [row.code for row in self.findings()])
+        self.assertIn("must name an active/review GH-60/<lane>", self.findings()[0].message)
+
     def test_github_lane_claim_uses_both_lane_and_parent_scope(self) -> None:
         lane = {
             "id": "ui",

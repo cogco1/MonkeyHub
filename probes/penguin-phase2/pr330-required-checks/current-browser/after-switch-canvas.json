@@ -1,0 +1,16 @@
+{
+  "message": "the chosen camera view survives Board/model switches",
+  "dimensions": {
+    "actual": [
+      620,
+      801
+    ],
+    "expected": [
+      620,
+      801
+    ]
+  },
+  "differentPixels": 0,
+  "maxChannelDelta": 0,
+  "samples": []
+}

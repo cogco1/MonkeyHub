@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createProjectWorkspaceFixture } from "./projectWorkspaceFixture.mjs";
 import { createServer } from "node:http";
-import { readFile, mkdtemp } from "node:fs/promises";
+import { readFile, mkdtemp, mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -9,7 +9,9 @@ import { randomUUID } from "node:crypto";
 
 // Real built Hub UI; all provider and project calls are local, synthetic fixtures.
 const root = path.resolve(process.env.MONKEYHUB_WEB_DIST ?? fileURLToPath(new URL("../dist/", import.meta.url)));
-const temporary = await mkdtemp(path.join(tmpdir(), "monkeyhub-chat-ui-"));
+const evidenceRoot = process.env.MONKEYHUB_TEST_ARTIFACTS ?? tmpdir();
+await mkdir(evidenceRoot, { recursive: true });
+const temporary = await mkdtemp(path.join(evidenceRoot, "monkeyhub-chat-ui-"));
 const toolLoads = [];
 const streams = new Set();
 let runtimeSequence = 0, runtimeReads = 0, allowRuntimeEvents = true;
@@ -76,8 +78,34 @@ const server = createServer(async (req, res) => {
 await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
 const origin = `http://127.0.0.1:${server.address().port}`;
 const { chromium } = await import((process.env.PLAYWRIGHT_MODULE ? pathToFileURL(process.env.PLAYWRIGHT_MODULE).href : "playwright"));
-const browser = await chromium.launch({ headless: true, channel: "chrome" });
+const browser = await chromium.launch({ headless: true, channel: "chrome",
+  args: process.env.MONKEYHUB_TEST_RENDERER === "swiftshader" ? ["--use-angle=swiftshader"] : [] });
 const page = await browser.newPage({ viewport: { width: 1440, height: 960 } });
+// Observe actual production renders and request completion, without changing
+// camera state, render scheduling, pixel tolerance, or the comparison baseline.
+const timeline = [];
+for (const event of ["request", "response", "requestfinished", "requestfailed"]) {
+  page.on(event, item => timeline.push({ event, time: Date.now(), url: item.url(),
+    status: event === "response" ? item.status() : undefined }));
+}
+await page.addInitScript(() => {
+  window.__monkeyarchObservation = { renders: [], events: [] };
+  let nextCanvas = 0;
+  const ids = new WeakMap();
+  const observe = () => document.querySelectorAll("canvas.viewport-canvas:not([data-observe-render])")
+    .forEach(canvas => { ids.set(canvas, ++nextCanvas); canvas.dataset.observationId = String(nextCanvas); canvas.setAttribute("data-observe-render", ""); });
+  new MutationObserver(observe).observe(document, { childList: true, subtree: true });
+  document.addEventListener("monkeyarch:rendered", event => {
+    const rows = window.__monkeyarchObservation.renders;
+    rows.push({ ...event.detail, canvas: ids.get(event.target), wallTime: Date.now() });
+    if (rows.length > 2000) rows.shift();
+  });
+  for (const kind of ["click", "pointerup", "wheel"]) document.addEventListener(kind, event => {
+    const target = event.target.closest?.("button, canvas");
+    if (target) window.__monkeyarchObservation.events.push({ kind, time: performance.now(),
+      wallTime: Date.now(), target: target.getAttribute("aria-label") || target.textContent?.slice(0, 80) || target.className });
+  }, true);
+});
 page.setDefaultTimeout(12000);
 // Keep chooser interception installed across keyboard passes. Repeatedly
 // enabling it at keydown can race Chromium's native dialog cancellation.
@@ -494,8 +522,46 @@ const boxOf = (selector) => page.evaluate((value) => {
 const activityRows = (expected) => page.waitForFunction((count) => [...document.querySelectorAll(".chat-process__row")]
   .some((row) => row.textContent.includes(`${count} steps`)), expected);
 const visibleWorkspace = () => page.locator('.chat-project-workspace:not([hidden])');
+const cameraScreenshot = async (name) => {
+  timeline.push({ event: name, time: Date.now() });
+  const canvas = visibleWorkspace().locator(".stage canvas").first();
+  // Preserve the original screenshot call before any synchronous GPU readback:
+  // toDataURL/getParameter can themselves flush pending rendering work.
+  const png = await canvas.screenshot({ path: path.join(temporary, name + ".png") });
+  timeline.push({ event: name + "-captured", time: Date.now() });
+  const read = () => canvas.evaluate(element => {
+    const gl = element.getContext("webgl2") || element.getContext("webgl");
+    const info = gl?.getExtension("WEBGL_debug_renderer_info");
+    return { ...window.__monkeyarchObservation, canvasId: Number(element.dataset.observationId),
+      time: performance.now(), wallTime: Date.now(),
+      rect: element.getBoundingClientRect().toJSON(), size: [element.width, element.height],
+      viewport: [innerWidth, innerHeight], devicePixelRatio, userAgent: navigator.userAgent,
+      renderer: info ? gl.getParameter(info.UNMASKED_RENDERER_WEBGL) : null,
+      vendor: info ? gl.getParameter(info.UNMASKED_VENDOR_WEBGL) : null,
+      version: gl?.getParameter(gl.VERSION), context: gl?.getContextAttributes(),
+      rawPng: element.toDataURL("image/png").split(",")[1] };
+  });
+  const after = await read();
+  const raw = Buffer.from(after.rawPng, "base64");
+  await writeFile(path.join(temporary, name + ".raw.png"), raw);
+  delete after.rawPng;
+  await writeFile(path.join(temporary, name + ".json"), JSON.stringify({ browser: browser.version(), after }, null, 2));
+  const rendered = after.renders.filter(row => row.canvas === after.canvasId).at(-1);
+  assert.ok(rendered?.model, "camera evidence must observe a rendered model, not an empty canvas");
+  const { time, wallTime, ...camera } = rendered;
+  return { name, png, raw, camera };
+};
+const assertSameCameraCapture = async (actual, expected, message) => {
+  // A locator screenshot includes DOM painted over the canvas. Toolbar/text
+  // compositing can change pixels even when the preserved WebGL buffer and
+  // actual camera are identical. Keep that image/diff as diagnostic evidence;
+  // assert the product invariant on the real camera AND exact rendered pixels.
+  await assertSameScreenshotPixels(actual.png, expected.png, message, actual.name + "-overlay", false);
+  assert.deepEqual(actual.camera, expected.camera, message + ": actual rendered camera and viewport");
+  await assertSameScreenshotPixels(actual.raw, expected.raw, message, actual.name + "-canvas");
+};
 // Compare decoded pixels exactly; PNG encoding bytes are not the rendered view.
-const assertSameScreenshotPixels = async (actual, expected, message) => {
+const assertSameScreenshotPixels = async (actual, expected, message, name, required = true) => {
   const difference = await page.evaluate(async ({ actual, expected }) => {
     const decode = async (base64) => {
       const bytes = Uint8Array.from(atob(base64), (character) => character.charCodeAt(0));
@@ -515,21 +581,33 @@ const assertSameScreenshotPixels = async (actual, expected, message) => {
       return { dimensions, differentPixels: null, maxChannelDelta: null, samples: [] };
     }
     let differentPixels = 0, maxChannelDelta = 0;
+    const diffCanvas = document.createElement("canvas");
+    diffCanvas.width = a.width; diffCanvas.height = a.height;
+    const diffContext = diffCanvas.getContext("2d");
+    const diff = diffContext.createImageData(a.width, a.height);
     const samples = [];
     for (let offset = 0; offset < a.pixels.length; offset += 4) {
       let delta = 0;
       for (let channel = 0; channel < 4; channel++) delta = Math.max(delta, Math.abs(a.pixels[offset + channel] - e.pixels[offset + channel]));
+      diff.data[offset] = delta ? 255 : 0;
+      diff.data[offset + 3] = 255;
       if (!delta) continue;
       differentPixels++; maxChannelDelta = Math.max(maxChannelDelta, delta);
       if (samples.length < 8) samples.push({ x: (offset / 4) % a.width, y: Math.floor(offset / 4 / a.width),
         actual: Array.from(a.pixels.subarray(offset, offset + 4)), expected: Array.from(e.pixels.subarray(offset, offset + 4)) });
     }
-    return { dimensions, differentPixels, maxChannelDelta, samples };
+    diffContext.putImageData(diff, 0, 0);
+    return { dimensions, differentPixels, maxChannelDelta, samples, diffPng: diffCanvas.toDataURL("image/png").split(",")[1] };
   }, { actual: actual.toString("base64"), expected: expected.toString("base64") });
-  console.log(JSON.stringify({ screenshotComparison: message, ...difference }));
+  await writeFile(path.join(temporary, name + ".actual.png"), actual);
+  await writeFile(path.join(temporary, name + ".expected.png"), expected);
+  if (difference.diffPng) await writeFile(path.join(temporary, name + ".diff.png"), Buffer.from(difference.diffPng, "base64"));
+  delete difference.diffPng;
+  await writeFile(path.join(temporary, name + ".json"), JSON.stringify({ message, ...difference }, null, 2));
+  console.log(JSON.stringify({ screenshotComparison: message, name, required, ...difference }));
   const diagnostic = `${message}: ${JSON.stringify(difference)}`;
   assert.deepEqual(difference.dimensions.actual, difference.dimensions.expected, diagnostic);
-  assert.equal(difference.differentPixels, 0, diagnostic);
+  if (required) assert.equal(difference.differentPixels, 0, diagnostic);
 };
 // #285: the composer's + menu holds Add attachments and New topic; the composer
 // names the design context the next message carries.
@@ -1301,7 +1379,7 @@ try {
   await visibleWorkspace().locator('button[aria-controls="view-tools"]').click();
   await page.mouse.move(10, 10);
   await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
-  const preservedView = await visibleWorkspace().locator(".stage canvas").first().screenshot();
+  const preservedView = await cameraScreenshot("before-switch");
   const beforePeerWorkspaces = writes.length;
   await page.getByRole("button", { name: "Board", exact: true }).click();
   await waitWorkspace("board");
@@ -1374,7 +1452,7 @@ try {
   assert.equal(await visibleWorkspace().evaluate((element) => element.retainedCanvas === element.querySelector(".stage canvas")), true);
   await page.mouse.move(10, 10);
   await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
-  await assertSameScreenshotPixels(await visibleWorkspace().locator(".stage canvas").first().screenshot(), preservedView, "the chosen camera view survives Board/model switches");
+  await assertSameCameraCapture(await cameraScreenshot("after-switch"), preservedView, "the chosen camera view survives Board/model switches");
   await page.screenshot({ path: path.join(temporary, "hub-arch.png") });
   assert.equal(await visibleWorkspace().evaluate((element) => element.switchMarker), "retained", "both workspaces share one mounted project");
   assert.equal(await page.evaluate(() => localStorage.getItem("archflow-studio.user-preferences")), savedEditingBases, "candidate readback and workspace switches do not change editing consent");
@@ -1690,6 +1768,8 @@ try {
   assert.equal(runningA.status, "running", "Board navigation does not interrupt another project's task");
   const modelReadsBeforeRender = workspaceFixture.requests.filter((row) => /\/api\/artifacts/.test(row.name)).length;
   await page.getByRole("button", { name: "Render", exact: true }).click(); await waitWorkspace("render");
+  assert.equal(await visibleWorkspace().getByRole("button", { name: "Physical", exact: true }).getAttribute("aria-pressed"), "true");
+  await visibleWorkspace().getByRole("button", { name: "AI", exact: true }).click();
   await visibleWorkspace().getByRole("textbox", { name: "Visual direction", exact: true }).fill("Keep this Render draft");
   await page.getByRole("button", { name: "Board", exact: true }).click(); await waitWorkspace("board");
   assert.equal(await visibleWorkspace().getByLabel("Board title", { exact: true }).inputValue(), "Board B retained");
@@ -1755,22 +1835,29 @@ try {
   await visibleWorkspace().locator("#view-tools").getByRole("button", { name: "Top", exact: true }).click();
   await visibleWorkspace().locator('button[aria-controls="view-tools"]').click();
   await page.mouse.move(10, 10);
-  const beforeRefreshCanvas = await visibleWorkspace().locator(".stage canvas").first().screenshot();
-  const beforeRefreshBytes = workspaceFixture.requests.filter((row) => row.name.endsWith("/bytes")).length;
-  await page.getByRole("button", { name: /Project B/ }).last().click();
-  const refreshConnection = page.getByRole("dialog", { name: "Project", exact: true });
-  await refreshConnection.getByText("Connection details").click();
-  const refreshedListing = page.waitForResponse((response) => new URL(response.url()).pathname.endsWith("/studio/api/artifacts"));
-  await refreshConnection.getByRole("button", { name: "Reload page", exact: true }).click();
-  await refreshedListing;
-  await refreshConnection.getByRole("button", { name: "Close", exact: true }).click();
-  await page.mouse.move(10, 10);
-  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
-  assert.equal(await visibleWorkspace().evaluate((element) => element.completionMarker), "once");
-  assert.equal(workspaceFixture.requests.filter((row) => row.name.endsWith("/bytes")).length, beforeRefreshBytes,
-    "refreshing an already shown candidate does not reinstall its model");
-  await assertSameScreenshotPixels(await visibleWorkspace().locator(".stage canvas").first().screenshot(), beforeRefreshCanvas,
-    "refreshing keeps the camera chosen after the candidate appeared");
+  // Upstream Stage chrome changed the default canvas from 920 to 801 px high.
+  // Exercise the current layout AND the historical failing 755 x 920 size.
+  for (const height of [960, 1079]) {
+    await page.setViewportSize({ width: 1440, height });
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    const beforeRefreshCanvas = await cameraScreenshot(`before-refresh-${height}`);
+    const beforeRefreshBytes = workspaceFixture.requests.filter((row) => row.name.endsWith("/bytes")).length;
+    await page.getByRole("button", { name: /Project B/ }).last().click();
+    const refreshConnection = page.getByRole("dialog", { name: "Project", exact: true });
+    await refreshConnection.getByText("Connection details").click();
+    const refreshedListing = page.waitForResponse((response) => new URL(response.url()).pathname.endsWith("/studio/api/artifacts"));
+    await refreshConnection.getByRole("button", { name: "Reload page", exact: true }).click();
+    await refreshedListing;
+    await refreshConnection.getByRole("button", { name: "Close", exact: true }).click();
+    await page.mouse.move(10, 10);
+    await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    assert.equal(await visibleWorkspace().evaluate((element) => element.completionMarker), "once");
+    assert.equal(workspaceFixture.requests.filter((row) => row.name.endsWith("/bytes")).length, beforeRefreshBytes,
+      "refreshing an already shown candidate does not reinstall its model");
+    await assertSameCameraCapture(await cameraScreenshot(`after-refresh-${height}`), beforeRefreshCanvas,
+      "refreshing keeps the camera chosen after the candidate appeared");
+  }
+  await page.setViewportSize({ width: 1440, height: 960 });
 
   // #302: headless API jobs have no chat message, and their completed results take
   // nothing on screen either: no surface, panel, pinned candidate or model load.
@@ -3328,4 +3415,7 @@ try {
   console.log(JSON.stringify({ passed: true, sessions: sessions.length, writes: writes.length, screenshots: temporary }));
 } catch (error) { console.error(JSON.stringify({ screenshots: temporary, errors, workspaceRequests: workspaceFixture.requests.slice(-15) }));
   await page.screenshot({ path: path.join(temporary, "failure.png") }); throw error;
-} finally { await browser.close(); await new Promise((resolve) => server.close(resolve)); }
+} finally {
+  await writeFile(path.join(temporary, "timeline.json"), JSON.stringify(timeline, null, 2));
+  await browser.close(); await new Promise((resolve) => server.close(resolve));
+}

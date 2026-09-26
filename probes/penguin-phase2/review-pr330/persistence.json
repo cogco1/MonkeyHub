@@ -1,0 +1,161 @@
+{
+  "status": "PASS",
+  "scope": "Retained imported geometry and Physical scene / mesh drawing persistence only",
+  "codeCommit": "1c4e821b7491d1fb559dac634065f7a6619cfcf9",
+  "geometryRevision": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+  "initialAndRestoredSceneRevision": "06a5995bc2ad3200a3e9e1721da3f66ad70637a7808afc2d25dbc1b803ee44f6",
+  "savedAndReopenedSceneRevision": "1c499c0de19cbdd0237c8e6ae8e22d8c6a68b0e0d782dfcc68e89ac733d3d86e",
+  "savedCamera": {
+    "fov": 32.0,
+    "orthoScale": 1.5,
+    "position": [
+      1.4,
+      -2.1,
+      0.85
+    ],
+    "projection": "orthographic",
+    "target": [
+      0.05,
+      0.0,
+      0.55
+    ],
+    "up": [
+      0.0,
+      0.0,
+      1.0
+    ]
+  },
+  "savedMaterialRoughness": 0.67,
+  "savedKeyIntensity": 180.0,
+  "savedExposure": 0.4,
+  "savedRenderSettings": {
+    "denoise": true,
+    "height": 1200,
+    "samples": 96,
+    "width": 1000
+  },
+  "sceneExactAfterRefresh": true,
+  "sceneExactAfterReopen": true,
+  "allDrawingRecordsExact": true,
+  "newFourViewsIndependentlyReadAfterReopen": [
+    {
+      "view": "isometric",
+      "drawingRevision": "3858635f738d0333a23cd7fae3f2f3de72aa9a6d188701591059750d4f7fd787",
+      "geometryRevision": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+      "projectedExtentMeters": [
+        0.5670857729570943,
+        0.9526486164646444
+      ],
+      "recordedDimensionsMeters": [
+        0.5670857729570943,
+        0.9526486164646444
+      ],
+      "maxErrorMeters": 0.0,
+      "svgSha256": "3e08851d85a500b837ea95ce5847daba62a9adf692da6946b05e0987f1755f90",
+      "pageSha256": "8b01ab77300267068d8bf08345ca74f2cb3f7a9a902b032b0ebd798e0197f749",
+      "scale": 5,
+      "featureReferences": [
+        {
+          "id": "eye-center",
+          "reason": "Imported meshes have no stable semantic feature IDs. Select a new reference explicitly.",
+          "status": "unresolved"
+        }
+      ]
+    },
+    {
+      "view": "top",
+      "drawingRevision": "318bc0fd3578dbd669fe1c56b17299a9679c5daf39cb1fd1fa2e218568cd51ad",
+      "geometryRevision": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+      "projectedExtentMeters": [
+        0.6242896914482117,
+        0.6717120409011841
+      ],
+      "recordedDimensionsMeters": [
+        0.6242896914482117,
+        0.6717120409011841
+      ],
+      "maxErrorMeters": 0.0,
+      "svgSha256": "c94fe4ff25bb901b1770a0f35d79a55687011a2407cb30c3001dd6bb2d08a76e",
+      "pageSha256": "1075846ae20113d31eed48bca3d83f67ba2d6d07e0301b37c5837aa1cc792b25",
+      "scale": 5,
+      "featureReferences": [
+        {
+          "id": "eye-center",
+          "reason": "Imported meshes have no stable semantic feature IDs. Select a new reference explicitly.",
+          "status": "unresolved"
+        }
+      ]
+    },
+    {
+      "view": "side",
+      "drawingRevision": "ba80601902706dea743290bb2dfda3fb9655b17a214bef3c9d9350bf0f931419",
+      "geometryRevision": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+      "projectedExtentMeters": [
+        0.6717120409011841,
+        1.0
+      ],
+      "recordedDimensionsMeters": [
+        0.6717120409011841,
+        1.0
+      ],
+      "maxErrorMeters": 0.0,
+      "svgSha256": "9b68064e38a462ca3f1d47cc6e197c3d53c6c80319aa47e9efd29979cc15ef15",
+      "pageSha256": "8605b0b4719c2b73bdb132869fb2427c67d210def22e29de7f92df35c7fef008",
+      "scale": 5,
+      "featureReferences": [
+        {
+          "id": "eye-center",
+          "reason": "Imported meshes have no stable semantic feature IDs. Select a new reference explicitly.",
+          "status": "unresolved"
+        }
+      ]
+    },
+    {
+      "view": "front",
+      "drawingRevision": "27d79d8d74de0ac126b75598a95c14d00dc12e61f55d4cdf23738ba60aef643a",
+      "geometryRevision": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+      "projectedExtentMeters": [
+        0.6242896914482117,
+        1.0
+      ],
+      "recordedDimensionsMeters": [
+        0.6242896914482117,
+        1.0
+      ],
+      "maxErrorMeters": 0.0,
+      "svgSha256": "ecbd92959771906ced4cd3e04ceae1f8ccee683b722e82e94a802d5dbe1589bc",
+      "pageSha256": "e5acc15563ae122a53b79ef2164141ea5b2dc5decfd43aac4c5e536c84fb87f6",
+      "scale": 5,
+      "featureReferences": [
+        {
+          "id": "eye-center",
+          "reason": "Imported meshes have no stable semantic feature IDs. Select a new reference explicitly.",
+          "status": "unresolved"
+        }
+      ]
+    }
+  ],
+  "drawingCount": 12,
+  "currentCount": 8,
+  "staleCount": 4,
+  "oldWorkerPid": 35936,
+  "oldWorkerStoppedAndAbsent": true,
+  "newWorkerPid": 40936,
+  "newWorkerReady": true,
+  "unchangedDesignHead": {
+    "version": 0,
+    "stateSha256": "cad0ab2377fa9727bec3a928146eb40f8e9aa69fd0a559d6f65f46545d288de7"
+  },
+  "initialSceneContentAndRevisionRestored": true,
+  "restorationMetadata": "New append-only scene sequence; geometry binding uses current selection sequence 3 instead of historical 1; source bytes unchanged",
+  "originalEightDrawingRecordsPreserved": true,
+  "cameraUIExactAfterRefreshAndReopen": true,
+  "lifecycleMethod": "Real Hub close/open APIs; old PID exit verified; reload actual IAB frontend to start new worker",
+  "notProven": [
+    "OCCT Working Head edits",
+    "live Modeling/Physical camera parity",
+    "Board engineering Side current/stale/regenerate/reopen",
+    "HDRI/DOF/D5 quality",
+    "cross-project resource isolation"
+  ]
+}

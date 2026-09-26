@@ -85,6 +85,8 @@ export async function createProjectWorkspaceFixture(runtimes, sessions) {
       if (name === "/api/state/frame") return json({ levels: [], axes: [], honesty: [] });
       if (name === "/api/documents") return json({ projectId, runId: null, documents: [] });
       if (name === "/api/render/capabilities") return json({ providers: [] });
+      if (name === "/api/render/scene") return json({ scene: null, sceneRevision: null, geometry: null, status: "unavailable", cyclesAvailable: false });
+      if (name === "/api/render/drawings") return json([]);
       if (name === "/api/render/jobs") return json({ projectId, jobs: [] });
       if (name === "/api/design-history") {
         const tree = designTrees.get(projectId);

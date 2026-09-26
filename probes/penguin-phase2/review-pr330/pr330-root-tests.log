@@ -1,0 +1,53 @@
+test_3dm_millimeters_to_glb_signature_and_scale (tests.test_model_formats.FormatTests.test_3dm_millimeters_to_glb_signature_and_scale) ... ok
+test_all_ten_unavailable_routes_are_explicit (tests.test_model_formats.FormatTests.test_all_ten_unavailable_routes_are_explicit) ... ok
+test_curved_3dm_without_render_mesh_is_refused (tests.test_model_formats.FormatTests.test_curved_3dm_without_render_mesh_is_refused) ... ok
+test_custom_normals_uv_and_pbr_survive_production_conversion (tests.test_model_formats.FormatTests.test_custom_normals_uv_and_pbr_survive_production_conversion) ... ok
+test_glb_invalid_references_are_refused_before_same_format_delivery (tests.test_model_formats.FormatTests.test_glb_invalid_references_are_refused_before_same_format_delivery) ... ok
+test_glb_negative_offsets_cannot_cancel_each_other (tests.test_model_formats.FormatTests.test_glb_negative_offsets_cannot_cancel_each_other) ... ok
+test_glb_numeric_fields_are_typed_and_bounded (tests.test_model_formats.FormatTests.test_glb_numeric_fields_are_typed_and_bounded) ... ok
+test_glb_to_3dm_native_reopen_bounds_and_units (tests.test_model_formats.FormatTests.test_glb_to_3dm_native_reopen_bounds_and_units) ... ok
+test_glb_valid_bin_padding_remains_readable (tests.test_model_formats.FormatTests.test_glb_valid_bin_padding_remains_readable) ... ok
+test_glb_without_normals_or_material_reopens_shaded_and_not_black (tests.test_model_formats.FormatTests.test_glb_without_normals_or_material_reopens_shaded_and_not_black) ... ok
+test_invalid_glb_vertex_attributes_are_refused (tests.test_model_formats.FormatTests.test_invalid_glb_vertex_attributes_are_refused) ... ok
+test_invalid_output_is_rejected (tests.test_model_formats.FormatTests.test_invalid_output_is_rejected) ... ok
+test_inward_closed_shell_is_turned_outward (tests.test_model_formats.FormatTests.test_inward_closed_shell_is_turned_outward) ... ok
+test_materialless_indexed_and_nonindexed_meshes_have_visible_fallback (tests.test_model_formats.FormatTests.test_materialless_indexed_and_nonindexed_meshes_have_visible_fallback) ... ok
+test_open_surface_keeps_source_winding_and_split_seams_stay_connected (tests.test_model_formats.FormatTests.test_open_surface_keeps_source_winding_and_split_seams_stay_connected) ... ok
+test_output_scale_change_is_rejected (tests.test_model_formats.FormatTests.test_output_scale_change_is_rejected) ... ok
+test_same_format_returns_original_bytes (tests.test_model_formats.FormatTests.test_same_format_returns_original_bytes) ... ok
+test_source_normals_against_the_winding_are_recomputed (tests.test_model_formats.FormatTests.test_source_normals_against_the_winding_are_recomputed) ... ok
+test_source_normals_vertex_colours_and_material_are_kept (tests.test_model_formats.FormatTests.test_source_normals_vertex_colours_and_material_are_kept) ... ok
+test_three_dm_preserves_only_explicit_source_object_ids (tests.test_model_formats.FormatTests.test_three_dm_preserves_only_explicit_source_object_ids) ... ok
+test_three_dm_refuses_invalid_or_duplicate_source_ids (tests.test_model_formats.FormatTests.test_three_dm_refuses_invalid_or_duplicate_source_ids) ... ok
+test_binding_and_source_bytes_refused_before_process (tests.test_blender_projection.ProjectionTests.test_binding_and_source_bytes_refused_before_process) ... ok
+test_blender_geometry_edit_is_rejected_without_changing_source (tests.test_blender_projection.ProjectionTests.test_blender_geometry_edit_is_rejected_without_changing_source) ... ok
+test_failure_has_no_success_artifacts (tests.test_blender_projection.ProjectionTests.test_failure_has_no_success_artifacts) ... ok
+test_full_rebuild_cold_read_and_artifact_provenance (tests.test_blender_projection.ProjectionTests.test_full_rebuild_cold_read_and_artifact_provenance) ... ok
+test_a_registered_kind_is_written_under_its_own_name (tests.test_record_kinds.PutJsonRegistrationTests.test_a_registered_kind_is_written_under_its_own_name) ... ok
+test_a_retained_record_of_an_unregistered_kind_stays_readable (tests.test_record_kinds.PutJsonRegistrationTests.test_a_retained_record_of_an_unregistered_kind_stays_readable) ... ok
+test_an_unregistered_kind_is_refused_and_nothing_is_written (tests.test_record_kinds.PutJsonRegistrationTests.test_an_unregistered_kind_is_refused_and_nothing_is_written) ... ok
+test_the_studio_may_retain_a_candidate_admission_for_review (tests.test_record_kinds.PutJsonRegistrationTests.test_the_studio_may_retain_a_candidate_admission_for_review)
+One closed loop's admission verdict (#294), in a review area. ... ok
+test_the_studio_may_retain_a_deliberation_episode (tests.test_record_kinds.PutJsonRegistrationTests.test_the_studio_may_retain_a_deliberation_episode)
+The judgement the studio writes at accept/reject/modify. ... ok
+test_a_name_round_trips_through_the_one_rule (tests.test_record_kinds.RecordFileNameTests.test_a_name_round_trips_through_the_one_rule) ... ok
+test_a_name_that_is_not_a_record_is_refused (tests.test_record_kinds.RecordFileNameTests.test_a_name_that_is_not_a_record_is_refused) ... ok
+test_a_ref_reports_its_own_kind (tests.test_record_kinds.RecordFileNameTests.test_a_ref_reports_its_own_kind) ... ok
+test_a_ref_that_is_not_a_record_refuses_to_name_a_kind (tests.test_record_kinds.RecordFileNameTests.test_a_ref_that_is_not_a_record_refuses_to_name_a_kind) ... ok
+test_the_longest_kind_before_the_digest_wins (tests.test_record_kinds.RecordFileNameTests.test_the_longest_kind_before_the_digest_wins) ... ok
+test_a_pattern_kind_is_registered_by_what_a_writer_writes (tests.test_record_kinds.RecordKindTableTests.test_a_pattern_kind_is_registered_by_what_a_writer_writes) ... ok
+test_a_pattern_matches_its_own_shape_and_nothing_else (tests.test_record_kinds.RecordKindTableTests.test_a_pattern_matches_its_own_shape_and_nothing_else) ... ok
+test_an_exact_kind_wins_over_a_pattern_that_would_also_match (tests.test_record_kinds.RecordKindTableTests.test_an_exact_kind_wins_over_a_pattern_that_would_also_match) ... ok
+test_an_unregistered_kind_is_refused_and_the_table_is_named (tests.test_record_kinds.RecordKindTableTests.test_an_unregistered_kind_is_refused_and_the_table_is_named) ... ok
+test_every_entry_declares_where_it_lands (tests.test_record_kinds.RecordKindTableTests.test_every_entry_declares_where_it_lands) ... ok
+test_every_exact_kind_in_the_table_is_registered (tests.test_record_kinds.RecordKindTableTests.test_every_exact_kind_in_the_table_is_registered) ... ok
+test_the_reserved_kinds_are_accepted_and_say_they_are_reserved (tests.test_record_kinds.RecordKindTableTests.test_the_reserved_kinds_are_accepted_and_say_they_are_reserved) ... ok
+test_the_stage_closure_kind_no_longer_says_it_is_reserved (tests.test_record_kinds.RecordKindTableTests.test_the_stage_closure_kind_no_longer_says_it_is_reserved)
+The runner writes it now (ADR-007 rule 3), so the note says so. ... ok
+test_a_record_uri_reads_back_as_its_ref (tests.test_record_kinds.RecordUriTests.test_a_record_uri_reads_back_as_its_ref) ... ok
+test_a_uri_from_another_project_or_scheme_is_refused (tests.test_record_kinds.RecordUriTests.test_a_uri_from_another_project_or_scheme_is_refused) ... ok
+
+----------------------------------------------------------------------
+Ran 45 tests in 20.188s
+
+OK

@@ -52,7 +52,7 @@ def build(plan_path: Path, model_path: Path) -> None:
         mesh = bpy.data.meshes.new(row["object_id"])
         mesh.from_pydata(row["vertices"], [], row["faces"])
         mesh.update()
-        if "projection" not in plan:
+        if "projection" not in plan and "render_scene" not in plan:
             bm = bmesh.new()
             try:
                 bm.from_mesh(mesh)
@@ -91,6 +91,10 @@ def build(plan_path: Path, model_path: Path) -> None:
     if "projection" in plan:
         scene["archflow_projection"] = json.dumps(plan["projection"], sort_keys=True, separators=(",", ":"))
         _presentation(scene, plan["projection"]["presentation"])
+    if "render_scene" in plan:
+        sys.path.insert(0,str(Path(__file__).parent))
+        from blender_scene_worker import apply
+        apply(scene, plan, workspace)
     bpy.context.preferences.filepaths.save_version = 0
     result = bpy.ops.wm.save_as_mainfile(
         filepath=str(model_path), check_existing=False, relative_remap=False,
@@ -287,11 +291,19 @@ def main(argv=None) -> None:
     render_parser = commands.add_parser("render")
     render_parser.add_argument("model", type=Path)
     render_parser.add_argument("image", type=Path)
+    scene_parser=commands.add_parser("scene-render")
+    scene_parser.add_argument("model",type=Path)
+    scene_parser.add_argument("plan",type=Path)
+    scene_parser.add_argument("image",type=Path)
     if argv is None:
         argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else sys.argv[1:]
     args = parser.parse_args(argv)
     if args.command == "build":
         build(args.plan, args.model)
+    elif args.command == "scene-render":
+        sys.path.insert(0,str(Path(__file__).parent))
+        from blender_scene_worker import cold_render
+        cold_render(args.model,args.plan,args.image)
     elif args.command == "render":
         inspect(args.model, args.image)
     else:

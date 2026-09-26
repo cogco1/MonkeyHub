@@ -525,6 +525,29 @@
       "kind": "distribution_build",
       "owner": "tools.package_monkeyapps",
       "reason": "Writes a developer delta ZIP only to the explicit output outside both input bundles; inputs are read-only and only the bounded temporary ZIP is cleaned on failure."
+    },
+    {
+      "path": "archflow/adapters/blender_projection.py",
+      "function": "render_scene_projection",
+      "reason": "Render artifacts only inside the explicit speculative workspace; P036 retains project results.",
+      "kind": "adapter_workspace",
+      "owner": "adapters.cad_execution",
+      "operations": [
+        "write_text",
+        "write_bytes",
+        "open_write"
+      ]
+    },
+    {
+      "path": "archflow/adapters/blender_scene_worker.py",
+      "function": "cold_render",
+      "reason": "Render artifacts only inside the explicit speculative workspace; P036 retains project results.",
+      "kind": "adapter_workspace",
+      "owner": "adapters.cad_execution",
+      "operations": [
+        "write_text",
+        "write_bytes"
+      ]
     }
   ],
   "forbidden_layer_imports": [
