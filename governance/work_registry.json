@@ -155,20 +155,19 @@
       ]
     },
     {
-      "id": "GH-289",
+      "id": "GH-287",
       "stream": "planning",
       "status": "active",
-      "goal": "Hide and restore processed design candidates",
+      "goal": "Name drawings without changing revision identity",
       "depends_on": [],
       "write_scope": [
-        "apps/monkeyhub/web/src/i18n/messages.en.ts",
-        "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
-        "apps/monkeyhub/web/workspaces/src/features/designTree/DesignTreeDetails.tsx",
-        "apps/monkeyhub/web/workspaces/src/features/designTree/DesignTreeSurface.tsx",
-        "apps/monkeyhub/web/workspaces/src/features/designTree/model.ts",
-        "apps/monkeyhub/web/workspaces/src/features/designTree/useDesignTree.ts",
-        "apps/monkeyhub/web/workspaces/test/designTree.browser.mjs",
-        "apps/monkeyhub/web/workspaces/test/designTree.test.ts"
+        "apps/archflow-studio/api/archflow_studio_api/application/drawing_plans.py",
+        "apps/archflow-studio/api/archflow_studio_api/transport/drawings.py",
+        "apps/archflow-studio/api/tests/test_drawing_plans.py",
+        "apps/monkeyhub/web/workspaces/src/api/generated/types.gen.ts",
+        "apps/monkeyhub/web/workspaces/src/workspaces/monkeydiagram/DrawingCanvas.tsx",
+        "apps/monkeyhub/web/workspaces/test/drawingCanvas.browser.mjs",
+        "docs/PROTOCOL.md"
       ],
       "branch": "codex/merge-cloud-batch",
       "worktree": "C:/Users/asus/.codex/worktrees/merge-cloud-batch/ARCHFLOW_V4",
@@ -177,6 +176,7 @@
       "reviewer": "Codex",
       "handoff": "Review the scoped cloud patch and run remote CI",
       "modules": [
+        "studio.artifacts",
         "hub.shell"
       ],
       "acceptance": [
