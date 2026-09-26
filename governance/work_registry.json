@@ -157,63 +157,48 @@
     {
       "id": "GH-66",
       "stream": "planning",
-      "status": "active",
-      "goal": "Implement the first project-bound Publish composition slice, with Drawing/Render source freshness and bounded Board handoff. Related consumer fixes follow #223/#216/#244 in the same integration review.",
+      "status": "ready",
+      "goal": "Close the first Publish workflow: ordered Board handoff, reliable autosave/reopen, editable output and repeatable layout; independently verify exact-source replacement/freeze.",
       "depends_on": [],
       "issue": "https://github.com/cogco1/MonkeyHub/issues/66",
-      "branch": "codex/output-workflow-fixes",
-      "worktree": "codex-output-workflow-fixes",
-      "base_ref": "04e719617d6aa20507b5c1846de3059b5c57a451",
+      "branch": "codex/66-publish-closeout",
+      "worktree": "codex-66-publish-closeout",
+      "base_ref": "e33fbf4656402ead75fb4adcad946c71c81a2dff",
       "contributor": "Codex",
-      "reviewer": "Independent bounded sub-agent reviews and parent integration",
-      "handoff": "Drawing hides the door-width experiment while preserving stored dimensions and exports the exact saved SVG. Render freezes the current retained-model view as a source image with camera matrices and sends that image through the existing adapter. UI availability noise and context-sync wording are corrected. #244, #66, #223, #216 and #218 retain broader architect-workflow acceptance; source-only tests are not desktop or live-provider acceptance.",
+      "reviewer": "Independent Codex UI concurrency review and publication compiler review; coordinating task integration",
+      "handoff": "Ready for independent PR review on the e33fbf46 baseline. Verified 20 publication/dependency tests, 7 queue tests and 16 isolated browser scenarios including actual Runtime restart. Source output parsing and PDF visual checks passed. Merge/installed desktop acceptance remains with the coordinating task; no full templates/charts/report suite is claimed.",
       "modules": [
         "studio.publication",
-        "studio.artifacts",
-        "studio.render",
-        "studio.board",
-        "runtime.drawing_elevation",
-        "adapters.drawing_svg",
-        "hub.shell"
+        "studio.board"
       ],
       "write_scope": [
+        "apps/archflow-studio/api/archflow_studio_api/application/publications.py",
         "apps/archflow-studio/api/archflow_studio_api/application/publication_output.py",
-        "apps/archflow-studio/api/archflow_studio_api/routes/__init__.py",
         "apps/archflow-studio/api/archflow_studio_api/routes/publications.py",
-        "apps/archflow-studio/api/archflow_studio_api/routes/rendering.py",
         "apps/archflow-studio/api/archflow_studio_api/transport/publications.py",
-        "apps/archflow-studio/api/archflow_studio_api/transport/rendering.py",
-        "apps/archflow-studio/api/requirements.txt",
-        "apps/archflow-studio/api/tests/test_drawing_plans.py",
-        "apps/archflow-studio/api/tests/test_publication_dependencies.py",
         "apps/archflow-studio/api/tests/test_publications.py",
-        "apps/archflow-studio/api/tests/test_rendering.py",
-        "apps/archflow-studio/api/tests/test_representation_dependencies.py",
+        "apps/archflow-studio/api/tests/test_publication_dependencies.py",
         "apps/monkeyhub/web/workspaces/src/api/publication.ts",
-        "apps/monkeyhub/web/workspaces/src/workspaces/monkeyarch/viewer/renderView.ts",
+        "apps/monkeyhub/web/workspaces/src/workspaces/publish/",
         "apps/monkeyhub/web/workspaces/src/workspaces/monkeyboard/Board.tsx",
-        "apps/monkeyhub/web/workspaces/src/workspaces/monkeydiagram/DrawingDressing.tsx",
-        "apps/monkeyhub/web/workspaces/src/workspaces/publish/PublishWorkspace.tsx",
-        "apps/monkeyhub/web/workspaces/src/workspaces/publish/publish.css",
-        "apps/monkeyhub/web/workspaces/src/workspaces/render/ModelPreview.tsx",
         "apps/monkeyhub/web/workspaces/test/publishWorkspace.browser.mjs",
-        "docs/DRAWING_V0_AUDIT.md",
-        "docs/DYNAMIC_MAP.md",
+        "apps/monkeyhub/web/workspaces/test/publicationSaveQueue.test.ts",
         "docs/PROTOCOL.md",
-        "docs/SYSTEM_MAP.md",
-        "docs/mapping/planning/INDEX.md",
-        "governance/module_registry.json",
-        "governance/work_registry.json",
-        "tests/test_version_refs.py"
+        "governance/work_registry.json"
       ],
       "acceptance": [
-        "Project-bound pages save/reopen; exact source replacement/freeze; editable PPTX and deterministic PDF; Board selection preserves narrative page order without changing design HEAD."
+        "Ordered Board pages or frame selection become a multi-page editable publication using the existing repeatable rule.",
+        "Manual text, move/resize/crop, alignment and page order survive automatic save and project/publication cold reopen.",
+        "The same retained revision exports editable PPTX content and deterministic PDF with checked text, bounds and image proportions.",
+        "Source update preserves manual text/layout; exact frozen revision remains reproducible after source changes; State and HEAD are unchanged."
       ],
       "notes": [
         "2026-09-24: #273 merged the GH-66 integration. On the repository owner's instruction the Drawing, Render, Hub and shared client paths it also claimed are handed to GH-271 (#271, Working Head); GH-66 keeps its Publish paths and the broader #66 acceptance.",
         "2026-09-25: the cut-plan request DTO (transport/drawings.py) is handed to GH-271 as well, for the drawing follow choice found in the #277 review; GH-66 keeps its Publish paths.",
         "2026-09-25: archflow/project/record_kinds.py is handed to GH-294/admission-record, which registers the owner-approved candidate-admission kind (audit Q1); GH-66 reclaims it if Publish needs another kind.",
-        "2026-09-25: monkeydiagram/drawing_elevation.py, monkeydiagram/drawing_svg.py and routes/drawings.py are handed to GH-307/section-perspective, which adds the owner-requested section perspective view to the one projection pipeline; GH-66 keeps its Publish paths and reclaims these if Publish needs drawing changes."
+        "2026-09-25: monkeydiagram/drawing_elevation.py, monkeydiagram/drawing_svg.py and routes/drawings.py are handed to GH-307/section-perspective, which adds the owner-requested section perspective view to the one projection pipeline; GH-66 keeps its Publish paths and reclaims these if Publish needs drawing changes.",
+        "2026-09-26: resume GH-66 from the shared e33fbf46 baseline in its assigned isolated worktree; release historical Render/Diagram paths. GH-291 owns drawing revision/replacement and GH-252 owns recipe/decision reuse.",
+        "2026-09-26: closeout implements autosave and pending-import recovery, explicit Board order, bounded repeatable layout, embedded-font PDF and supported editable source PDF primitives in PPTX. Unsupported source semantics retain raster appearance; exact source/freeze and model HEAD boundaries are verified."
       ]
     }
   ]
