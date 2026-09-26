@@ -153,6 +153,41 @@
       "notes": [
         "2026-09-08 rule alignment: Awaiting the first concrete evidence consumer and a check of existing Reading/source references. The earlier proposed ledger and private Atlas field superset are not a mandate to add a core record."
       ]
+    },
+    {
+      "id": "GH-358",
+      "status": "active",
+      "goal": "Retire the legacy R/M/P work-card system (#358): GitHub Issues become the only current task identity; the registry keeps live GH claims only.",
+      "depends_on": [],
+      "write_scope": [
+        ".gitignore",
+        ".github/pull_request_template.md",
+        "AGENTS.md",
+        "CONTRIBUTING.md",
+        "README.md",
+        "apps/archflow-studio/README.md",
+        "docs/ARCHITECTURE.md",
+        "docs/CANONICAL_SPINE.md",
+        "docs/DRAWING_V0_AUDIT.md",
+        "docs/DYNAMIC_MAP.md",
+        "docs/STAGE_BRANCH_CANDIDATE_PLAN.md",
+        "docs/TEAM_ONBOARDING.md",
+        "docs/VISION.md",
+        "docs/WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.md",
+        "docs/mapping/",
+        "tools/archcheck.py",
+        "tools/devctl.py"
+      ],
+      "branch": "codex/358-retire-work-cards",
+      "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-358-retire-work-cards",
+      "base_ref": "d6330d1b",
+      "contributor": "Claude",
+      "reviewer": null,
+      "handoff": "Lanes that branched before this merges keep the pre-#358 reading for their earlier commits; after merging main they claim and release as GH-<n>[/<lane>] without cards (see the PR).",
+      "modules": [
+        "tools.archcheck",
+        "tools.devctl"
+      ]
     }
   ]
 }
