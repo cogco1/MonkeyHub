@@ -176,7 +176,10 @@
         "apps/monkeyhub/api/monkeyhub_api/runtime.py",
         "apps/monkeyhub/api/monkeyhub_api/main.py",
         "apps/monkeyhub/api/monkeyhub_api/chat.py",
-        "apps/monkeyhub/api/tests/test_project_runtime.py"
+        "apps/monkeyhub/api/tests/test_project_runtime.py",
+        "governance/module_registry.json",
+        "docs/SYSTEM_MAP.md",
+        "apps/archflow-studio/api/tests/test_artifacts.py"
       ],
       "card": "docs/mapping/planning/GH-363-projection-0a.md",
       "acceptance": [
@@ -220,7 +223,10 @@
             "apps/monkeyhub/api/monkeyhub_api/runtime.py",
             "apps/monkeyhub/api/monkeyhub_api/main.py",
             "apps/monkeyhub/api/monkeyhub_api/chat.py",
-            "apps/monkeyhub/api/tests/test_project_runtime.py"
+            "apps/monkeyhub/api/tests/test_project_runtime.py",
+            "governance/module_registry.json",
+            "docs/SYSTEM_MAP.md",
+            "apps/archflow-studio/api/tests/test_artifacts.py"
           ],
           "depends_on": [],
           "status": "active",
