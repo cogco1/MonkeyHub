@@ -215,6 +215,53 @@
         "2026-09-25: archflow/project/record_kinds.py is handed to GH-294/admission-record, which registers the owner-approved candidate-admission kind (audit Q1); GH-66 reclaims it if Publish needs another kind.",
         "2026-09-25: monkeydiagram/drawing_elevation.py, monkeydiagram/drawing_svg.py and routes/drawings.py are handed to GH-307/section-perspective, which adds the owner-requested section perspective view to the one projection pipeline; GH-66 keeps its Publish paths and reclaims these if Publish needs drawing changes."
       ]
+    },
+    {
+      "id": "GH-337",
+      "stream": "planning",
+      "status": "active",
+      "goal": "One information hierarchy across the Hub (#337). Increment 2: the Design Tree canvas draws in the Hub's own colour tokens, so it follows the theme and all four interface styles instead of Excalidraw's dark-mode inversion.",
+      "depends_on": [],
+      "issue": "https://github.com/cogco1/MonkeyHub/issues/337",
+      "write_scope": [
+        "apps/monkeyhub/web/workspaces/src/features/designTree/scene.ts",
+        "apps/monkeyhub/web/workspaces/src/features/designTree/DesignTreeCanvas.tsx",
+        "apps/monkeyhub/web/workspaces/src/features/designTree/designTree.css",
+        "apps/monkeyhub/web/workspaces/test/designTree.test.ts",
+        "apps/monkeyhub/web/workspaces/test/designTree.browser.mjs",
+        "docs/mapping/planning/GH-337-hierarchy.md"
+      ],
+      "card": "docs/mapping/planning/GH-337-hierarchy.md",
+      "acceptance": [
+        "The tree canvas's ground, cards, lines and words come from the Hub tokens, and change with the theme and interface style without a reload.",
+        "In dark theme the canvas is no longer inverted; option letters, the Current card and the accept button keep readable contrast.",
+        "designTree unit and browser suites pass; screenshots checked in light and dark and all four interface styles."
+      ],
+      "lanes": [
+        {
+          "id": "tree-palette",
+          "issue": "https://github.com/cogco1/MonkeyHub/issues/337",
+          "branch": "codex/337-tree-palette",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-337-tree-palette",
+          "base_ref": "9ca2d900",
+          "contributor": "Claude",
+          "reviewer": "Claude root task",
+          "handoff": "Stacked on hierarchy-foundation (#338); opens after #338 merges. Board keeps Excalidraw's inversion for its own drawings.",
+          "modules": [
+            "hub.shell"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/web/workspaces/src/features/designTree/scene.ts",
+            "apps/monkeyhub/web/workspaces/src/features/designTree/DesignTreeCanvas.tsx",
+            "apps/monkeyhub/web/workspaces/src/features/designTree/designTree.css",
+            "apps/monkeyhub/web/workspaces/test/designTree.test.ts",
+            "apps/monkeyhub/web/workspaces/test/designTree.browser.mjs"
+          ],
+          "depends_on": [],
+          "status": "active",
+          "blocked_reason": null
+        }
+      ]
     }
   ]
 }
