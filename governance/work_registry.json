@@ -153,31 +153,6 @@
       "notes": [
         "2026-09-08 rule alignment: Awaiting the first concrete evidence consumer and a check of existing Reading/source references. The earlier proposed ledger and private Atlas field superset are not a mandate to add a core record."
       ]
-    },
-    {
-      "id": "GH-280",
-      "stream": "planning",
-      "status": "active",
-      "goal": "Clarify tracing-paper review copy and check translated catalogs",
-      "depends_on": [],
-      "write_scope": [
-        "apps/monkeyhub/web/src/i18n/messages.en.ts",
-        "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
-        "apps/monkeyhub/web/test/catalogs.test.ts",
-        "governance/module_registry.json"
-      ],
-      "branch": "codex/cloud-ui-followups",
-      "worktree": "C:/Users/asus/.codex/worktrees/merge-cloud-batch/ARCHFLOW_V4",
-      "base_ref": "07e1a40be5cdf195d6b49d525ab3f2496dae2f0a",
-      "contributor": "Codex cloud with Codex integration",
-      "reviewer": "Codex",
-      "handoff": "Review the scoped cloud patch and run remote CI",
-      "modules": [
-        "hub.shell"
-      ],
-      "acceptance": [
-        "English and Chinese catalog keys and placeholders match; untranslated identical values are explicitly named."
-      ]
     }
   ]
 }
