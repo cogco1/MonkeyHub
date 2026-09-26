@@ -494,6 +494,43 @@ const boxOf = (selector) => page.evaluate((value) => {
 const activityRows = (expected) => page.waitForFunction((count) => [...document.querySelectorAll(".chat-process__row")]
   .some((row) => row.textContent.includes(`${count} steps`)), expected);
 const visibleWorkspace = () => page.locator('.chat-project-workspace:not([hidden])');
+// Compare decoded pixels exactly; PNG encoding bytes are not the rendered view.
+const assertSameScreenshotPixels = async (actual, expected, message) => {
+  const difference = await page.evaluate(async ({ actual, expected }) => {
+    const decode = async (base64) => {
+      const bytes = Uint8Array.from(atob(base64), (character) => character.charCodeAt(0));
+      const bitmap = await createImageBitmap(new Blob([bytes], { type: "image/png" }));
+      try {
+        const canvas = document.createElement("canvas");
+        canvas.width = bitmap.width; canvas.height = bitmap.height;
+        const context = canvas.getContext("2d", { willReadFrequently: true });
+        if (!context) throw new Error("Screenshot comparison requires a 2D canvas");
+        context.drawImage(bitmap, 0, 0);
+        return { width: canvas.width, height: canvas.height, pixels: context.getImageData(0, 0, canvas.width, canvas.height).data };
+      } finally { bitmap.close(); }
+    };
+    const [a, e] = await Promise.all([decode(actual), decode(expected)]);
+    const dimensions = { actual: [a.width, a.height], expected: [e.width, e.height] };
+    if (a.width !== e.width || a.height !== e.height) {
+      return { dimensions, differentPixels: null, maxChannelDelta: null, samples: [] };
+    }
+    let differentPixels = 0, maxChannelDelta = 0;
+    const samples = [];
+    for (let offset = 0; offset < a.pixels.length; offset += 4) {
+      let delta = 0;
+      for (let channel = 0; channel < 4; channel++) delta = Math.max(delta, Math.abs(a.pixels[offset + channel] - e.pixels[offset + channel]));
+      if (!delta) continue;
+      differentPixels++; maxChannelDelta = Math.max(maxChannelDelta, delta);
+      if (samples.length < 8) samples.push({ x: (offset / 4) % a.width, y: Math.floor(offset / 4 / a.width),
+        actual: Array.from(a.pixels.subarray(offset, offset + 4)), expected: Array.from(e.pixels.subarray(offset, offset + 4)) });
+    }
+    return { dimensions, differentPixels, maxChannelDelta, samples };
+  }, { actual: actual.toString("base64"), expected: expected.toString("base64") });
+  console.log(JSON.stringify({ screenshotComparison: message, ...difference }));
+  const diagnostic = `${message}: ${JSON.stringify(difference)}`;
+  assert.deepEqual(difference.dimensions.actual, difference.dimensions.expected, diagnostic);
+  assert.equal(difference.differentPixels, 0, diagnostic);
+};
 // #285: the composer's + menu holds Add attachments and New topic; the composer
 // names the design context the next message carries.
 const composerMenu = (name = "Attachments and new topic") => page.getByRole("button", { name, exact: true });
@@ -1336,7 +1373,7 @@ try {
   assert.equal(await visibleWorkspace().evaluate((element) => element.retainedCanvas === element.querySelector(".stage canvas")), true);
   await page.mouse.move(10, 10);
   await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
-  assert.deepEqual(await visibleWorkspace().locator(".stage canvas").first().screenshot(), preservedView, "the chosen camera view survives Board/model switches");
+  await assertSameScreenshotPixels(await visibleWorkspace().locator(".stage canvas").first().screenshot(), preservedView, "the chosen camera view survives Board/model switches");
   await page.screenshot({ path: path.join(temporary, "hub-arch.png") });
   assert.equal(await visibleWorkspace().evaluate((element) => element.switchMarker), "retained", "both workspaces share one mounted project");
   assert.equal(await page.evaluate(() => localStorage.getItem("archflow-studio.user-preferences")), savedEditingBases, "candidate readback and workspace switches do not change editing consent");
@@ -1731,7 +1768,7 @@ try {
   assert.equal(await visibleWorkspace().evaluate((element) => element.completionMarker), "once");
   assert.equal(workspaceFixture.requests.filter((row) => row.name.endsWith("/bytes")).length, beforeRefreshBytes,
     "refreshing an already shown candidate does not reinstall its model");
-  assert.deepEqual(await visibleWorkspace().locator(".stage canvas").first().screenshot(), beforeRefreshCanvas,
+  await assertSameScreenshotPixels(await visibleWorkspace().locator(".stage canvas").first().screenshot(), beforeRefreshCanvas,
     "refreshing keeps the camera chosen after the candidate appeared");
 
   // #302: headless API jobs have no chat message, and their completed results take
