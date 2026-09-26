@@ -6965,7 +6965,8 @@
         "apps/monkeyhub/web/workspaces/test/designTree.test.ts",
         "apps/monkeyhub/web/workspaces/test/designTree.browser.mjs",
         "apps/monkeyhub/api/tests/test_chat_admission.py",
-        "apps/archflow-studio/api/tests/test_agent_drawing_dressing.py"
+        "apps/archflow-studio/api/tests/test_agent_drawing_dressing.py",
+        "apps/monkeyhub/web/test/catalogs.test.ts"
       ],
       "depends_on": [
         "project.repository",
