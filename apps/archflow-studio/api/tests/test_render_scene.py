@@ -33,6 +33,23 @@ class RenderSceneTests(unittest.TestCase):
         self.assertNotIn(result['exportId'],[r['candidateId'] for r in snapshot['candidates']])
         return chosen.json()
 
+    def test_retained_geometry_reports_missing_source_without_changing_selection(self):
+        selected=self.select()
+        self.assertEqual(self.client.get('/api/render/geometry').status_code,200)
+        path=self.repository.layout.resolve_relative(selected['artifact']['relative_path'])
+        backup=path.with_suffix('.temporarily-missing')
+        path.rename(backup)
+        try:
+            response=self.client.get('/api/render/geometry')
+            self.assertEqual(response.status_code,409,response.text)
+            self.assertEqual(response.json()['code'],'EXPORT_SOURCE_MISSING')
+        finally:
+            backup.rename(path)
+        recovered=self.client.get('/api/render/geometry')
+        self.assertEqual(recovered.status_code,200,recovered.text)
+        self.assertEqual(recovered.json()['source'],selected)
+        self.assertEqual(self.repository.read_head(),self.head)
+
     def test_one_scene_revision_conflict_and_cold_persistence(self):
         selected=self.select();default=self.client.get('/api/render/scene').json()
         self.assertEqual(default['scene']['geometryRevision'],selected['geometryRevision'])

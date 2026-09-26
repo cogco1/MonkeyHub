@@ -22,7 +22,7 @@ def geometry_bytes(binding, source):
         ref=ProjectArtifactRef(**source['artifact'])
         if ref.project_id != binding.project_id:
             raise StudioError(409,'GEOMETRY_PROJECT_MISMATCH','The geometry belongs to another project.')
-        data=model_exports._object(binding,asdict(ref))
+        data=model_exports._object(binding,asdict(ref),role='source')
     else:
         _,data=artifact_bytes(binding,source['assetSha256'],run_id=source['runId'])
     if hashlib.sha256(data).hexdigest()!=source['geometryRevision']:

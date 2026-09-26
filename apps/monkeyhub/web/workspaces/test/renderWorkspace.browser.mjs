@@ -630,8 +630,16 @@ try {
     await physicalPage.getByRole('button', { name: 'Project B', exact: true }).click();
     const panel = physicalPage.getByRole('region', { name: 'Physical Render Scene', exact: true });
     const bytes = Buffer.from(await (await fetch(origins['project-b'] + '/fixture/plan-model')).arrayBuffer());
-    await panel.getByLabel('Import geometry', { exact: true }).setInputFiles({ name: 'architectural-fixture.3dm', mimeType: 'application/octet-stream', buffer: bytes });
-    await panel.locator('canvas').waitFor();
+    const importInput = panel.getByLabel('Import geometry', { exact: true });
+    await until(() => importInput.isEnabled(), Boolean, 'project initial read finished before importing');
+    await importInput.setInputFiles({ name: 'architectural-fixture.3dm', mimeType: 'application/octet-stream', buffer: bytes });
+    try { await panel.locator('canvas').waitFor(); }
+    catch (error) {
+      await physicalPage.screenshot({ path: path.join(temporary, 'physical-import-failure.png'), fullPage: true });
+      console.error(await panel.innerText());
+      console.error(processes.map(p => p.log).join('\n'));
+      throw error;
+    }
     await panel.locator('summary').filter({ hasText: 'Camera and quality' }).click();
     const camera = async () => panel.locator('input').evaluateAll(es => es.map(e => ({ label: e.parentElement.textContent, value: e.value })).filter(e => /^(Camera |FOV|Orthographic)/.test(e.label)));
     const before = await camera();
