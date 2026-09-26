@@ -5573,7 +5573,8 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_archcheck_scopes.py"
+        "tests/test_archcheck_scopes.py",
+        "tests/test_archcheck_github_claims.py"
       ],
       "notes": "Architecture checks parse source without importing application code; scope behavior is verified with disposable Git repositories."
     },

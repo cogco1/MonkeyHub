@@ -67,6 +67,8 @@ python tools/devctl.py work --json
 
 `archcheck --changed <base>` 按每次提交当时的 policy 与 work scope 检查，因此历史 P 卡不会被重编号或追溯改写。新 Issue 使用 `GH-<n>` / `GH-<n>/<lane>` claim；未知或格式不完整的 GH id 不会部分匹配其他 Issue。仅规则与说明维护可明确写 `P000-governance`，准确路径由 [`tools/archcheck.py`](tools/archcheck.py) 定义。
 
+兼容已有提交的单一标题尾缀 `(#<n>)`：仅当没有显式 work id、没有不完整 `GH-` 标记，且标题只引用这一个 Issue 时，将其解析为 `GH-<n>`。普通 `#n` 提及、多个 Issue、PR 合并标题均不作 claim。解析后仍使用该提交当时的登记、父级/lane 范围逐文件检查；不存在登记、越界或缺少必需 lane 仍失败，后来的登记不能追溯授权。新提交继续使用上面的显式格式。
+
 ## 接着读什么
 
 - [`CLA.md`](CLA.md) — 贡献版权/专利授权与双重许可边界。
