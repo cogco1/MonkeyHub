@@ -7,6 +7,7 @@ from copy import deepcopy
 from itertools import chain, count
 from datetime import datetime, timezone
 from uuid import uuid4
+from pathlib import PurePath
 
 from archflow.adapters.cad_patch import select_patch_operations
 from archflow.contracts.canonical import canonical_digest
@@ -164,7 +165,7 @@ def _paper_rules(retained, hatch, beyond, spacing_mm):
 
 @retained_sources
 def generate_plan(binding, *, attribution, reason=None, source_kind=None, source_stage_ref=None, model_source=None,
-                  drawing_id=None, previous_revision_ref=None, cut_height=None, bottom=None, scale_denominator=None,
+                  drawing_id=None, file_name=None, previous_revision_ref=None, cut_height=None, bottom=None, scale_denominator=None,
                   crop_uv=None, cut_line_mm=None, visible_line_mm=None, hatch_spacing_mm=None, hatch=None, beyond=None,
                   hidden_object_ids=None, dimensions=None, dressing=None, dressing_operations=None, follow=None, source_asset=None):
     """One cut-plan revision, or the retained one an identical request already made.
@@ -179,6 +180,7 @@ def generate_plan(binding, *, attribution, reason=None, source_kind=None, source
     distinguish revisions: a reused revision keeps its own.
     """
     previous = None if previous_revision_ref is None else _previous_plan(binding, previous_revision_ref)
+    explicit_drawing_id = drawing_id is not None
     old = {} if previous is None else previous.view_recipe
     if previous is not None and drawing_id not in (None, previous.drawing_id):
         raise StudioError(409, "DRAWING_REVISION_MISMATCH", "Continue the selected drawing identity.")
@@ -247,7 +249,9 @@ def generate_plan(binding, *, attribution, reason=None, source_kind=None, source
         if unknown_hidden - retained_hidden:
             raise StudioError(422, "DRAWING_OBJECT_UNKNOWN", "A newly hidden object must exist in the selected exact model.")
         with _document_source_lock:
-            documents = list_documents(binding, None if previous is not None else model_source.run_id)
+            documents = list_documents(binding, None if previous is not None or explicit_drawing_id else model_source.run_id)
+            named = previous or next((document for document in documents if document.drawing_id == drawing_id), None)
+            file_name = _plan_file_name(file_name, named, drawing_id)
             for document in documents:
                 if (document.drawing_id == drawing_id and _document_source(document) == model_source
                         and document.source_stage_ref == selected_stage and document.view_recipe == recipe
@@ -279,7 +283,7 @@ def generate_plan(binding, *, attribution, reason=None, source_kind=None, source
                 record_kind=STUDIO_SOURCE_DOCUMENT,
                 payload={"schema": "StudioSourceDocument@1", "project_id": binding.project_id,
                          "run_id": run.run_id, "asset_sha256": drawing.png_ref.sha256,
-                         "file_name": f"{drawing_id}.png", "mime_type": "image/png", "size_bytes": len(drawing.png),
+                         "file_name": file_name, "mime_type": "image/png", "size_bytes": len(drawing.png),
                          "pages": [asdict(page) for page in pages],
                          "replaces_pages": [asdict(row) for row in replaces],
                          "modelSource": None if isinstance(model_source, DrawingAssetSource) else model_source.to_dict(), "sourceStageRef": selected_stage,
@@ -297,6 +301,25 @@ def _new_plan_id(binding):
              if (document.view_recipe or {}).get("kind") == "cut-plan"}
     names = chain(("floor-plan",), (f"floor-plan-{n}" for n in count(2)))
     return next(name for name in names if name not in taken)
+
+
+def _plan_file_name(requested, existing, drawing_id):
+    """Name a new drawing; every revision and retry keeps its registered name."""
+    if requested is None or not requested.strip():
+        return existing.file_name if existing is not None else f"{drawing_id}.png"
+    name = requested.strip()
+    if any(char in name for char in "/\\\r\n\x00") or PurePath(name).name != name:
+        raise StudioError(422, "DRAWING_NAME_INVALID", "A drawing name must be one file name, not a path.")
+    suffix = PurePath(name).suffix
+    if suffix and suffix.lower() != ".png":
+        raise StudioError(422, "DRAWING_NAME_INVALID", "A drawing name may only use the .png extension.")
+    if not suffix:
+        name += ".png"
+    if len(name) > 240:
+        raise StudioError(422, "DRAWING_NAME_INVALID", "A drawing name is too long.")
+    if existing is not None and name != existing.file_name:
+        raise StudioError(409, "DRAWING_NAME_MISMATCH", "An existing drawing keeps its registered name. Omit fileName or use that same name.")
+    return name
 
 
 def _on_head(head, model):

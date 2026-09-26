@@ -149,7 +149,7 @@ try {
     const graphics = Object.fromEntries(Object.entries(pens).map(([key, fallback]) =>
       [key, body[key] ?? previous?.viewRecipe?.graphics?.[key] ?? recipe[key] ?? fallback]));
     const result = { projectId: body.projectId, runId: body.modelSource?.runId ?? body.sourceAsset.runId, assetSha256: String(serial).padStart(64, "0"),
-      fileName: `floor-plan-${serial}.png`, mimeType: "image/png", sizeBytes: 200, pageCount: 1,
+      fileName: previous?.fileName ?? (body.fileName ? `${body.fileName.replace(/\.png$/i, "")}.png` : `floor-plan-${serial}.png`), mimeType: "image/png", sizeBytes: 200, pageCount: 1,
       pages: [{ pageIndex: 0, width: 600, height: 400, rotation: 0 }], modelSource: body.modelSource ?? null, sourceStageRef: body.sourceStageRef ?? null,
       drawingId: "floor-plan", revisionRef: `revision-${serial}`, generatedAt: `2026-09-23T00:00:0${serial}Z`,
       viewRecipe: { kind: "cut-plan", frame: { origin: [0, 0, body.cutHeight], far_depth: body.cutHeight - body.bottom,
@@ -254,6 +254,9 @@ try {
   await page.goto(`http://127.0.0.1:${server.httpServer.address().port}/?lang=en`);
   await step("the newest drawing opens LIVE on the Working Head and a new cut plan draws the head", async () => {
     await until(() => revision().inputValue(), value => value === legacyKey, "newest drawing opened without choosing a revision");
+    const label = await revision().locator("option:checked").textContent();
+    const time = await page.evaluate(value => new Date(value).toLocaleString("en"), legacyDocument.generatedAt);
+    assert.equal(label.trim(), `${legacyDocument.fileName} · Accepted A · ${time}`, "the selector names the drawing, source and time, without internal identifiers");
     await page.locator('.drawing-status[data-follow="live"][data-status="current"]').waitFor();
     await page.getByText("Current with the project model", { exact: true }).waitFor();
     assert.equal(requests.length, 0, "a drawing already reading the head is not rebuilt");
@@ -262,6 +265,8 @@ try {
     assert.equal(await page.getByRole("button", { name: "Add dimension", exact: true }).count(), 0);
     await revision().selectOption("");
     await page.getByRole("button", { name: "Generate cut plan", exact: true }).waitFor();
+    const nameField = page.getByRole("group", { name: "Drawing appearance", exact: true }).locator("label").filter({ hasText: "New cut-plan name" }).locator("input");
+    await nameField.fill("Ground Floor A");
     assert.equal(await page.getByRole("group", { name: "Saved dimensions", exact: true }).count(), 0);
     // A new drawing's pens are left to the project recipe until a person sets one.
     await page.getByText("Linework and hatch", { exact: true }).click();
@@ -270,6 +275,8 @@ try {
     await page.getByRole("button", { name: "Generate cut plan", exact: true }).click();
     await page.locator('.drawing-preview__viewport[data-ready="true"]').waitFor();
     assert.deepEqual(requests[0].modelSource, modelA); assert.equal(requests[0].sourceStageRef, "stage-A");
+    assert.equal(requests[0].fileName, "Ground Floor A");
+    assert.match(await revision().locator("option:checked").textContent(), /Ground Floor A\.png · Accepted A · /);
     assert.equal(requests[0].cutHeight, 1.2); assert.deepEqual(requests[0].dimensions, []);
     for (const key of Object.keys(pens)) assert.equal(key in requests[0], false, `an untouched ${key} is not sent`);
     // The drawing then shows the values it was made with: the recipe's hatch spacing and the defaults.
@@ -554,6 +561,10 @@ try {
   });
   await step("a section perspective is generated on the drawing's target from its own form and opens as a drawing", async () => {
     const generations = requests.length;
+    const nameField = page.getByRole("group", { name: "Drawing appearance", exact: true }).locator("label").filter({ hasText: "New cut-plan name" }).locator("input");
+    assert.equal(await nameField.inputValue(), "", "a new cut plan does not reuse another drawing's name");
+    await nameField.fill("Only the cut plan");
+    await page.getByText("Optional; applies to the new cut plan, not a section perspective. Later revisions keep this name.", { exact: true }).waitFor();
     await page.locator("details.drawing-section > summary").click();
     const eyeHeight = page.getByLabel("Eye height above the lowest cut point (meter)", { exact: true });
     await until(() => eyeHeight.isEnabled(), Boolean, "the section form knows the model unit");
@@ -575,6 +586,7 @@ try {
     assert.equal(sectionRequests[0].sourceStageRef, head);
     assert.deepEqual(sectionRequests[0].section, { line: [[2.5, 0], [2.5, 1]], keep: "left" }, "looking toward -X keeps x < 2.5");
     assert.deepEqual(sectionRequests[0].camera, { eyeHeight: 1.5, fovDeg: 60 });
+    assert.equal("fileName" in sectionRequests[0], false, "the cut-plan name is not offered as section-perspective metadata");
     await until(() => revision().inputValue(), value => value.includes("section-revision-1"), "the new drawing opened");
     await page.getByText("Section perspective · true to scale at the cut plane", { exact: true }).waitFor();
     await page.locator('.drawing-preview__viewport[data-ready="true"]').waitFor();

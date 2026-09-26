@@ -145,6 +145,10 @@ class PlanRequestDto(DrawingSourceRequestDto):
     source_stage_ref: str | None = Field(alias="sourceStageRef", default=None)
     model_source: ModelSourceDto | None = Field(alias="modelSource", default=None)
     drawing_id: str | None = Field(alias="drawingId", default=None, pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$")
+    file_name: str | None = Field(alias="fileName", default=None, max_length=240, description=(
+        "Optional human-readable name for a new cut plan. A missing extension is completed as .png; only .png is accepted. "
+        "Existing drawings keep their name: omitted or blank inherits it, and a different name is refused. "
+        "The name is display metadata and never supplies drawingId or a storage path."))
     previous_revision_ref: str | None = Field(alias="previousRevisionRef", default=None)
     cut_height: float | None = Field(alias="cutHeight", default=None, allow_inf_nan=False,
                                     description="Horizontal cut elevation in the source model length unit.")

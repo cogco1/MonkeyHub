@@ -638,6 +638,18 @@ new candidate goes through the same generation, preview, validation and acceptan
 Candidate workspaces may compute overlapping scopes independently; queue limits are
 worker capacity and the single Rhino export resource.
 
+`POST /api/drawings/plans` accepts an optional `fileName` for a new cut plan.
+It is human-readable display metadata stored in the existing SourceDocument,
+never a storage path or `drawingId`. Leading/trailing whitespace is trimmed;
+a missing extension becomes `.png`, and any other extension, path separator,
+embedded line break, NUL or final name longer than 240 characters is refused with
+`422 DRAWING_NAME_INVALID` (the request also limits the input to 240 characters).
+Omitted or blank names use the existing drawing's name, or `drawingId.png` for
+a new drawing. Revisions and retries keep that name: supplying a different name
+for an existing drawing returns `409 DRAWING_NAME_MISMATCH` before reuse or
+projection, whether or not the recipe changed. Distinct drawing ids may share
+the same display name. This field does not apply to section perspectives.
+
 `POST /api/drawings/plans` also accepts representation-only `dressing` objects
 (`id`, `assetId: person-plan | tree-plan`, `positionUv`, `size`, `flipped`, optional
 `anchorObjectId`). Coordinates and size use the exact source STEP length unit. An

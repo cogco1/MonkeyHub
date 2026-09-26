@@ -182,6 +182,60 @@ class CutPlanTests(CandidateTestCase):
             self.assertEqual(again.json(), vector.json())
         self.assertEqual(self.status(second)["status"], "current")
 
+    def test_human_readable_name_is_display_metadata_and_survives_revisions_and_reopen(self):
+        first = self.generate(drawingId="stable-ascii-id", fileName="首层平面 A")
+        self.assertEqual(first["fileName"], "首层平面 A.png")
+        self.assertEqual(first["drawingId"], "stable-ascii-id")
+        second = self.generate(drawingId="stable-ascii-id", previousRevisionRef=first["revisionRef"], cutLineMm=.4)
+        self.assertEqual(second["fileName"], "首层平面 A.png")
+        self.assertEqual(second["drawingId"], first["drawingId"])
+        self.assertEqual(second["replacesPages"], [replacing(first)])
+        with TestClient(create_app(self.settings)) as client:
+            reopened = next(row for row in client.get("/api/documents").json()["documents"]
+                            if row["revisionRef"] == second["revisionRef"])
+        self.assertEqual(reopened["fileName"], "首层平面 A.png")
+
+        same_name = self.generate(drawingId="another-stable-id", fileName="首层平面 A.png", dimensions=[])
+        self.assertEqual(same_name["fileName"], first["fileName"])
+        self.assertNotEqual(same_name["drawingId"], first["drawingId"])
+        self.assertNotEqual(same_name["revisionRef"], first["revisionRef"])
+
+    def test_existing_drawing_name_cannot_change_on_reuse_or_a_new_recipe(self):
+        first = self.generate(drawingId="named-plan", fileName="首层平面 A", dimensions=[])
+        reused = self.generate(drawingId="named-plan", fileName=" 首层平面 A.png ", dimensions=[])
+        self.assertEqual(reused["revisionRef"], first["revisionRef"])
+        inherited = self.generate(drawingId="named-plan", dimensions=[])
+        self.assertEqual(inherited["fileName"], first["fileName"])
+        self.assertEqual(inherited["revisionRef"], first["revisionRef"])
+        before = self.client.get("/api/documents").json()
+        for predecessor in (None, first["revisionRef"]):
+            for changes in ({}, {"cutLineMm": .4}):
+                with self.subTest(predecessor=predecessor, changes=changes):
+                    with patch.object(drawing_plans, "freeze_cut_plan") as freeze:
+                        result = self.client.post("/api/drawings/plans", json={
+                            "projectId": PROJECT_ID, "sourceStageRef": self.stage["stageRef"],
+                            "drawingId": first["drawingId"], "previousRevisionRef": predecessor,
+                            "fileName": "Renamed plan", "cutHeight": 1.2, "bottom": 0,
+                            "scaleDenominator": 50, "dimensions": [], **changes,
+                        })
+                        self.assertEqual(result.status_code, 409, result.text)
+                        self.assertEqual(result.json()["code"], "DRAWING_NAME_MISMATCH")
+                        freeze.assert_not_called()
+        self.assertEqual(self.client.get("/api/documents").json(), before)
+        self.assertEqual(self.repository.read_head(), self.head)
+        self.assertEqual(self.repository.read_design_branches(), self.branches)
+
+    def test_drawing_name_is_optional_and_cannot_be_a_path_or_wrong_file_type(self):
+        unnamed = self.generate(drawingId="unnamed", fileName="   ", dimensions=[])
+        self.assertEqual(unnamed["fileName"], "unnamed.png")
+        for name in ("../escape.png", r"folder\\escape.png", "plan.pdf"):
+            result = self.client.post("/api/drawings/plans", json={
+                "projectId": PROJECT_ID, "sourceStageRef": self.stage["stageRef"],
+                "drawingId": "invalid-name", "fileName": name, "cutHeight": 1.2,
+                "bottom": 0, "scaleDenominator": 50, "dimensions": [],
+            })
+            self.assertEqual(result.status_code, 422, result.text)
+
     def test_dressing_anchor_follows_exact_object_and_survives_deleted_anchor_without_rebinding(self):
         fixed = {"id": "fixed", "assetId": "tree-plan", "positionUv": [1, 2], "size": .5}
         anchored = {"id": "anchored", "assetId": "person-plan", "positionUv": [0, 1], "size": .5,
