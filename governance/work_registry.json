@@ -153,68 +153,6 @@
       "notes": [
         "2026-09-08 rule alignment: Awaiting the first concrete evidence consumer and a check of existing Reading/source references. The earlier proposed ledger and private Atlas field superset are not a mandate to add a core record."
       ]
-    },
-    {
-      "id": "GH-351",
-      "stream": "planning",
-      "status": "active",
-      "goal": "Usage and Fabrication join the Hub's one information hierarchy (#351, part of #337): each tool page gets one SurfaceBar (parallel views as MenuTabs, scope as words, commands as MenuCommand, data time and state at the right end) and a StatusLine for source, refresh time and hints; the product name appears once.",
-      "depends_on": [],
-      "issue": "https://github.com/cogco1/MonkeyHub/issues/351",
-      "write_scope": [
-        "apps/monkeyhub/web/src/MonitorPage.tsx",
-        "apps/monkeyhub/web/src/MonitorPage.css",
-        "apps/monkeyhub/web/src/FabPage.tsx",
-        "apps/monkeyhub/web/src/monitorData.ts",
-        "apps/monkeyhub/web/src/styles.css",
-        "apps/monkeyhub/web/workspaces/src/features/chrome/SurfaceChrome.tsx",
-        "apps/monkeyhub/web/workspaces/src/features/chrome/chrome.css",
-        "apps/monkeyhub/web/src/i18n/messages.en.ts",
-        "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
-        "apps/monkeyhub/web/test/chatShell.browser.mjs",
-        "apps/monkeyhub/web/test/monitorData.test.ts",
-        "apps/monkeyhub/web/src/ChatShell.tsx",
-        "apps/monkeyhub/web/src/surfaceBarRows.ts"
-      ],
-      "card": "docs/mapping/planning/GH-351-tool-pages.md",
-      "acceptance": [
-        "Each page has exactly one bar before its content and every existing action remains.",
-        "Usage keeps its scope behaviour: opened from a project it shows that project; the sidebar total, help and direct Monitor entry stay global (#339).",
-        "chatShell (CI, including the project-usage regression) and monitorData.test.ts pass; screenshots checked."
-      ],
-      "lanes": [
-        {
-          "id": "tool-pages",
-          "issue": "https://github.com/cogco1/MonkeyHub/issues/351",
-          "branch": "codex/351-tool-pages",
-          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-351-tool-pages",
-          "base_ref": "d266d589",
-          "contributor": "Claude",
-          "reviewer": "Claude root task",
-          "handoff": "Based on main after #348 (d266d589), whose StatusLine className, .surface-title and wrapping bar items it uses. Other #337 lanes run beside this one (GH-349, GH-351, GH-352, GH-353, GH-354) with GH-355 repairing main's stale local suites; a lane that merges later merges main first.",
-          "modules": [
-            "hub.shell"
-          ],
-          "write_scope": [
-            "apps/monkeyhub/web/src/MonitorPage.tsx",
-            "apps/monkeyhub/web/src/MonitorPage.css",
-            "apps/monkeyhub/web/src/FabPage.tsx",
-            "apps/monkeyhub/web/src/monitorData.ts",
-            "apps/monkeyhub/web/src/styles.css",
-            "apps/monkeyhub/web/workspaces/src/features/chrome/SurfaceChrome.tsx",
-            "apps/monkeyhub/web/workspaces/src/features/chrome/chrome.css",
-            "apps/monkeyhub/web/src/i18n/messages.en.ts",
-            "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
-            "apps/monkeyhub/web/test/chatShell.browser.mjs",
-            "apps/monkeyhub/web/test/monitorData.test.ts",
-            "apps/monkeyhub/web/src/ChatShell.tsx",
-            "apps/monkeyhub/web/src/surfaceBarRows.ts"
-          ],
-          "depends_on": [],
-          "status": "active",
-          "blocked_reason": null
-        }
-      ]
     }
   ]
 }
