@@ -8,3 +8,5 @@
   overflow-y: auto; padding: 12px; box-sizing: border-box; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); box-shadow: var(--shadow);
   color: var(--ink); font-size: var(--text-ui); white-space: normal; }
 @media (max-width: 640px) { .drawing-menu { position: static; } .drawing-menu__panel { left: 16px; right: 16px; width: auto; } }
+/* Touch-sized controls where the Drawing is narrow or touched, as in its own settings. */
+@media (max-width: 900px), (pointer: coarse) { .drawing-menu > .drawing-menu__panel :is(button, input, select) { min-height: 44px; } }

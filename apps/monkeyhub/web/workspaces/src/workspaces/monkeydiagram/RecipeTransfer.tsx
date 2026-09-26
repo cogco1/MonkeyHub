@@ -27,10 +27,11 @@ const words = {
 
 /**
  * Transfer an explicitly saved recipe, never a drawing, model or automatic preference. #337: the Drawing places
- * the parts: the saved recipes and the file choice are a menu in its bar, a file waiting for confirmation asks
- * in its row above the drawing, and what happened is a quiet note on its status line.
+ * the parts: the saved recipes and the file choice are a menu in its bar, a file waiting for confirmation or a
+ * failure asks in its row above the drawing (the menu then closes, so the row is in sight), and what happened is a
+ * quiet note on its status line until the Drawing clears it.
  */
-export function useRecipeTransfer(projectId: string, active = true): { menu: ReactNode; row: ReactNode; note: string | null } {
+export function useRecipeTransfer(projectId: string, active = true): { menu: ReactNode; row: ReactNode; note: string | null; clearNote(): void } {
   const studio = useStudio(), { language } = usePreferences(), text = words[language];
   const [open, setOpen] = useState(false), [recipes, setRecipes] = useState<DecisionDto[]>([]);
   const [busy, setBusy] = useState(false), [error, setError] = useState<string | null>(null), [note, setNote] = useState<string | null>(null);
@@ -43,6 +44,7 @@ export function useRecipeTransfer(projectId: string, active = true): { menu: Rea
   }, [studio, projectId]);
   // The menu does not stay open behind another surface.
   useEffect(() => { if (!active) setOpen(false); }, [active]);
+  const fail = (cause: unknown) => { setError(asStudioApiError(cause).detail); setOpen(false); };
 
   const values = (graphics: RecipeGraphicsDto) => (Object.keys(text.pens) as (keyof typeof text.pens)[])
     .filter(key => graphics[key] != null).map(key => `${text.pens[key]} ${graphics[key]} mm`).join(" · ");
@@ -55,7 +57,7 @@ export function useRecipeTransfer(projectId: string, active = true): { menu: Rea
     const token = generation.current;
     setBusy(true); setError(null);
     try { const rows = await readRecipes(); if (token === generation.current) setRecipes(rows); }
-    catch (cause) { if (token === generation.current) setError(asStudioApiError(cause).detail); }
+    catch (cause) { if (token === generation.current) fail(cause); }
     finally { if (token === generation.current) setBusy(false); }
   }
   async function download(row: DecisionDto) {
@@ -69,7 +71,7 @@ export function useRecipeTransfer(projectId: string, active = true): { menu: Rea
       anchor.href = url; anchor.download = file.fileName;
       anchor.click(); window.setTimeout(() => URL.revokeObjectURL(url), 1000);
       setNote(text.exported);
-    } catch (cause) { if (token === generation.current) setError(asStudioApiError(cause).detail); }
+    } catch (cause) { if (token === generation.current) fail(cause); }
     finally { if (token === generation.current) setBusy(false); }
   }
   async function inspect(file: File) {
@@ -80,8 +82,8 @@ export function useRecipeTransfer(projectId: string, active = true): { menu: Rea
       const content = await file.text();
       const preview = await studio.inspectDrawingRecipe({ projectId, content });
       if (preview.projectId !== projectId) throw new Error("The recipe preview belongs to another project.");
-      if (token === generation.current) setPending({ content, preview });
-    } catch (cause) { if (token === generation.current) setError(asStudioApiError(cause).detail); }
+      if (token === generation.current) { setPending({ content, preview }); setOpen(false); }
+    } catch (cause) { if (token === generation.current) fail(cause); }
     finally { if (token === generation.current) setBusy(false); }
   }
   async function confirm() {
@@ -96,7 +98,7 @@ export function useRecipeTransfer(projectId: string, active = true): { menu: Rea
       setPending(null); setNote(text.imported);
       const rows = await readRecipes();
       if (token === generation.current) setRecipes(rows);
-    } catch (cause) { if (token === generation.current) setError(asStudioApiError(cause).detail); }
+    } catch (cause) { if (token === generation.current) fail(cause); }
     finally { if (token === generation.current) setBusy(false); }
   }
 
@@ -128,5 +130,5 @@ export function useRecipeTransfer(projectId: string, active = true): { menu: Rea
     </div>}
     {error && <p className="recipe-transfer__error" role="alert">{error}</p>}
   </>;
-  return { menu, row, note: busy ? text.working : note };
+  return { menu, row, note: busy ? text.working : note, clearNote: () => setNote(null) };
 }

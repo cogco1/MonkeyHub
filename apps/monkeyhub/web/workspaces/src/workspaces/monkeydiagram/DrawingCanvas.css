@@ -4,10 +4,22 @@
 .drawing-workspace > .surface-bar { position: relative; }
 /* The drawing on screen, chosen in place: a name longer than the title's room ends in an ellipsis. */
 .drawing-chooser { text-overflow: ellipsis; }
-.drawing-quiet { flex: 0 1000 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* A quiet word's room fits every word it may say in turn (data-room, one per line), so saving, checking or updating
+   never changes how the bar's menus wrap; the word it says sits at the room's right, against the project's position. */
+.drawing-quiet { display: inline-grid; grid-template-columns: minmax(0, max-content); flex: 0 1000 auto; min-width: 0; overflow: hidden; }
+.drawing-quiet > span, .drawing-quiet[data-room]::after { grid-area: 1 / 1; min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.drawing-quiet > span { justify-self: end; }
+.drawing-quiet[data-room]::after { content: attr(data-room); height: 0; visibility: hidden; white-space: pre; }
+/* On a phone, as the status line's end, the quiet words give their room to the menus; what asks is in the row. */
+@media (max-width: 640px) { .drawing-quiet { display: none; } }
 /* Draw another version: the version to draw, a model to import, and what a chosen version means. */
 .drawing-another__panel { display: grid; gap: 10px; }
 .drawing-another__panel .drawing-field, .drawing-another__panel .drawing-field__hint { margin: 0; }
+/* More: the drawing's less frequent commands, under the word's right edge. */
+.drawing-more__panel { display: grid; gap: 8px; }
+.drawing-more__panel > button { text-align: left; }
+.drawing-more__panel > .drawing-field__hint { margin: -2px 0 4px; }
+@media (min-width: 641px) { .drawing-more > .drawing-more__panel { left: auto; right: 0; width: min(300px, calc(100vw - 32px)); } }
 /* One row above the drawing, only while something asks for a person; each item keeps its frame. */
 .drawing-attention { flex: none; display: grid; gap: 8px; max-height: 45%; overflow-y: auto; padding: 8px 16px; border-bottom: 1px solid var(--line); background: var(--panel); font-size: var(--text-ui); }
 .drawing-held { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; padding: 8px 12px; border: 1px solid var(--line); border-left: 3px solid var(--violated); border-radius: var(--radius-sm); }
@@ -19,12 +31,12 @@
 .drawing-controls fieldset { min-width: 0; padding: 12px 0; margin: 12px 0; border: 0; border-top: 1px solid var(--line); }
 .drawing-controls legend { padding: 0 6px 0 0; font-weight: 600; }
 .drawing-field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; min-width: 0; }
-/* The drawing's own controls: in the canvas and its settings, the row above them and the menu panel in the bar. */
-:is(.drawing-body, .drawing-attention, .drawing-another__panel) :is(input, select) { min-width: 0; width: 100%; box-sizing: border-box; padding: 8px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--panel); color: var(--ink); font: inherit; min-height: 36px; }
-:is(.drawing-body, .drawing-attention, .drawing-another__panel) button { min-height: 36px; padding: 7px 10px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--panel-2); color: var(--ink); font: inherit; cursor: pointer; }
-:is(.drawing-body, .drawing-attention, .drawing-another__panel) button:hover:not(:disabled) { background: var(--surface-hover); }
-:is(.drawing-body, .drawing-attention, .drawing-another__panel) :is(button, input):disabled { opacity: .5; cursor: default; }
-:is(.drawing-body, .drawing-attention, .drawing-another__panel) :is(input, select, button, summary):focus-visible, .drawing-preview__viewport:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* The drawing's own controls: in the canvas and its settings, the row above them and the menu panels in the bar. */
+:is(.drawing-body, .drawing-attention, .drawing-another__panel, .drawing-more__panel) :is(input, select) { min-width: 0; width: 100%; box-sizing: border-box; padding: 8px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--panel); color: var(--ink); font: inherit; min-height: 36px; }
+:is(.drawing-body, .drawing-attention, .drawing-another__panel, .drawing-more__panel) button { min-height: 36px; padding: 7px 10px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--panel-2); color: var(--ink); font: inherit; cursor: pointer; }
+:is(.drawing-body, .drawing-attention, .drawing-another__panel, .drawing-more__panel) button:hover:not(:disabled) { background: var(--surface-hover); }
+:is(.drawing-body, .drawing-attention, .drawing-another__panel, .drawing-more__panel) :is(button, input):disabled { opacity: .5; cursor: default; }
+:is(.drawing-body, .drawing-attention, .drawing-another__panel, .drawing-more__panel) :is(input, select, button, summary):focus-visible, .drawing-preview__viewport:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 :is(.drawing-body, .drawing-attention) summary { cursor: pointer; padding: 8px 0; }
 .drawing-field__hint { margin: 6px 0 0; color: var(--muted); font-size: var(--text-caption); line-height: 1.4; }
 /* The source's state in the row: kept or earlier drawings dashed, stale or broken ones marked at the left. */
@@ -38,6 +50,11 @@
 .drawing-attention > .drawing-status:is([data-status="outdated"], [data-status="partially-broken"]) { border-left: 3px solid var(--accent); }
 .drawing-attention > .drawing-status[data-follow="frozen"] { border-style: dashed; }
 .drawing-attention > .drawing-status strong { font-size: var(--text-ui); }
+/* Its state word keeps the room of both what it says once read and "Checking source…", so a check moves nothing. */
+.drawing-status__state { display: inline-grid; }
+.drawing-status__state > span, .drawing-status__state::before, .drawing-status__state::after { grid-area: 1 / 1; }
+.drawing-status__state::before { content: attr(data-resting); visibility: hidden; }
+.drawing-status__state::after { content: attr(data-checking); visibility: hidden; }
 /* Its detail line keeps its room while the state is checked, so the drawing below does not jump when it arrives. */
 .drawing-attention > .drawing-status p { flex-basis: 100%; min-height: 1.5em; margin: 0; color: var(--muted); font-size: var(--text-caption); line-height: 1.5; overflow-wrap: anywhere; }
 .drawing-dimension { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }

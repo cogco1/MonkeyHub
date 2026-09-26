@@ -88,8 +88,18 @@ try {
   await page.getByRole("button", { name: "Export recipe", exact: true }).click();
   const file = await download;
   assert.equal(await readFile(await file.path(), "utf8"), content);
+  // #349: the menu closes on Escape and on a click outside it, and once a chosen file waits in the row.
+  const menu = page.locator("details.recipe-transfer"), isOpen = () => menu.evaluate(node => node.open);
+  await page.keyboard.press("Escape");
+  assert.equal(await isOpen(), false, "Escape closes the menu");
+  assert.equal(await menu.locator("summary").evaluate(node => node === document.activeElement), true, "focus returns to its word");
+  await menu.locator("summary").click();
+  await page.getByText("Drawing", { exact: true }).click();
+  assert.equal(await isOpen(), false, "a click outside closes the menu");
+  await menu.locator("summary").click();
   await upload();
   await page.getByRole("button", { name: "Import as project preference", exact: true }).waitFor();
+  assert.equal(await isOpen(), false, "the file waiting for confirmation closes the menu, so its row is in sight");
   assert.equal(writes.length, 0, "choosing a file must not promote it");
   await page.getByRole("button", { name: "Cancel", exact: true }).click();
   assert.equal(writes.length, 0);

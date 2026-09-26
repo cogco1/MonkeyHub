@@ -3,7 +3,7 @@ import { useStudio } from "../../api/ProjectRuntimeContext";
 import { asStudioApiError, type StudioApiError } from "../../api/client";
 import type { DesignStageDto, ModelSourceDto, PlanDimensionChoicesDto, PlanStatusDto, PlanVectorDto, PlanDressingDto, ProjectArtifactDto, RecipeSuggestionDto, SectionLineDto, SourceDocumentDto, WorkingSourceDto } from "../../api/generated";
 import { ErrorPanel } from "../../app/ErrorPanel";
-import { MenuCommand, MenuSeparator, StatusLine, SurfaceMenus } from "../../features/chrome/SurfaceChrome";
+import { MenuSeparator, StatusLine, SurfaceMenus } from "../../features/chrome/SurfaceChrome";
 import { usePreferences } from "../../features/settings/preferences";
 import { useT } from "../../i18n/useT";
 import { DocumentSurface } from "./DocumentCanvas";
@@ -276,9 +276,12 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
   const recipes = useRecipeTransfer(projectId, active);
   const [documents, setDocuments] = useState<SourceDocumentDto[]>([]), [stages, setStages] = useState<DesignStageDto[]>([]);
   const [assets, setAssets] = useState<ProjectArtifactDto[]>([]), [importing, setImporting] = useState(false);
-  const importInput = useRef<HTMLInputElement>(null), [anotherOpen, setAnotherOpen] = useState(false);
-  // The bar's menu does not stay open behind another surface.
-  useEffect(() => { if (!active) setAnotherOpen(false); }, [active]);
+  const importInput = useRef<HTMLInputElement>(null), [anotherOpen, setAnotherOpen] = useState(false), [moreOpen, setMoreOpen] = useState(false);
+  // The bar's menus do not stay open behind another surface.
+  useEffect(() => { if (!active) { setAnotherOpen(false); setMoreOpen(false); } }, [active]);
+  // A version chosen from the list closes its menu, so the row or word it moves to is in sight; arrowing through
+  // the list with the keyboard does not.
+  const arrowing = useRef(false);
   const [selected, setSelected] = useState(""), [target, setTarget] = useState("");
   const [drawingName, setDrawingName] = useState("");
   const [explicitTarget, setExplicitTarget] = useState(false), [defaultTarget, setDefaultTarget] = useState("");
@@ -287,6 +290,11 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
   const [form, setForm] = useState<PlanForm>(() => defaultPlanForm("meter")), [dirty, setDirty] = useState(false);
   const [choices, setChoices] = useState<PlanDimensionChoicesDto | null>(null);
   const [status, setStatus] = useState<PlanStatusDto | null>(null), [statusLoading, setStatusLoading] = useState(false);
+  // #337: the status read for the open cut plan and question (its revision, and the version it is asked against), and
+  // the last status read with the question it answers. While the same drawing is read again (a refresh, a return to
+  // this surface, a revision written here) its last status stays on screen, saying it is being checked.
+  const [statusRead, setStatusRead] = useState<{ question: string; state: "reading" | "read" | "failed" } | null>(null);
+  const [lastStatus, setLastStatus] = useState<{ question: string; status: PlanStatusDto } | null>(null);
   const [file, setFile] = useState<File | null>(null), [loading, setLoading] = useState(true);
   const [vector, setVector] = useState<PlanVectorDto | null>(null), [selectedDressing, setSelectedDressing] = useState("");
   // The retained plan as the page draws it, and the projected object a person picked on it, by source object id.
@@ -336,10 +344,13 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
       : { sourceAsset: { runId: chosenAsset.runId, assetSha256: chosenAsset.sha256 } } : null)
     : source ? (documentAsset(source) ? { sourceAsset: documentAsset(source)! } : automaticTarget) : liveTarget;
   const selectedTargetValue = explicitTarget ? target : "";
+  // What a status answers: the open cut plan's revision, asked against the chosen version or its own target.
+  const statusQuestion = source?.revisionRef && isCutPlan(source) ? JSON.stringify([drawingDocumentKey(source), selectedTargetValue]) : null;
   // A section perspective has no plan status; keep a chosen imported source when present.
   const unitTarget = stage ?? (perspectiveOpen ? liveTarget : null);
   const sectionTarget = stage ?? liveTarget;
-  const lengthUnit = choices?.lengthUnit ?? status?.lengthUnit ?? "";
+  // While the same drawing is read again, its fields keep the unit its last status gave them.
+  const lengthUnit = choices?.lengthUnit ?? status?.lengthUnit ?? (lastStatus?.question === statusQuestion ? lastStatus?.status.lengthUnit : null) ?? "";
   const planCrop = isCutPlan(source) ? (source?.viewRecipe?.frame as { crop_uv?: number[] } | undefined)?.crop_uv : undefined;
   const sectionPosition = section.position ?? (planCrop ? (section.axis === "x" ? planCrop[0] + planCrop[2] : planCrop[1] + planCrop[3]) / 2 : 0);
   const sectionEyeHeight = section.eyeHeight ?? (lengthUnit ? 1.6 / (UNIT_METRES[lengthUnit] ?? 1) : NaN);
@@ -426,25 +437,29 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
   }, [studio, projectId, selected]);
   useEffect(() => {
     setStatus(null);
-    if (!source || !source.revisionRef || !active || !isCutPlan(source)) { setStatusLoading(false); return; }
+    if (!source || !source.revisionRef || !active || !isCutPlan(source) || statusQuestion === null) { setStatusLoading(false); return; }
+    const question = statusQuestion;
     let cancelled = false;
-    setStatusLoading(true);
+    setStatusLoading(true); setStatusRead({ question, state: "reading" });
     void studio.drawingPlanStatus({ runId: source.runId, assetSha256: source.assetSha256, revisionRef: source.revisionRef,
       ...(explicitTarget && stage && "modelSource" in stage ? { targetModelSource: stage.modelSource, targetStageRef: stage.stageRef } : {}) }).then(value => {
       if (!cancelled) {
         statusFor.current = drawingDocumentKey(source);
-        setStatus(value);
+        setStatus(value); setLastStatus({ question, status: value }); setStatusRead({ question, state: "read" });
         if (!explicitTarget) setAutomaticTarget(value.targetModelSource
           ? { modelSource: value.targetModelSource, stageRef: value.targetStageRef ?? null } : null);
       }
-    }).catch(cause => { if (!cancelled) setError(asStudioApiError(cause)); }).finally(() => { if (!cancelled) setStatusLoading(false); });
+    }).catch(cause => {
+      // A read that failed is stated until the next one; the last status no longer stands for the drawing.
+      if (!cancelled) { setError(asStudioApiError(cause)); setLastStatus(null); setStatusRead({ question, state: "failed" }); }
+    }).finally(() => { if (!cancelled) setStatusLoading(false); });
     return () => { cancelled = true; };
   }, [studio, projectId, selected, explicitTarget, target, active, refreshKey, refresh]);
 
   function openDocument(document: SourceDocumentDto | null) {
     setSelected(document ? drawingDocumentKey(document) : ""); setVector(null); setDirty(false); setAppearanceHeld(null); setError(null);
     setDrawingName("");
-    setExplicitTarget(false); setAutomaticTarget(null); setStatus(null); setPicked(null); setOfferNote(null); setRecipeNote(null);
+    setExplicitTarget(false); setAutomaticTarget(null); setStatus(null); setPicked(null); setOfferNote(null); setRecipeNote(null); recipes.clearNote();
     if (!document) setTarget(defaultTarget);
     setForm(document && isCutPlan(document) ? planFormFromDocument(document, lengthUnit) : defaultPlanForm(lengthUnit));
   }
@@ -468,8 +483,8 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
       setAssets(current => [artifact, ...current.filter(item => item.runId !== artifact.runId || item.sha256 !== artifact.sha256)]);
       setTarget(assetKey({ runId: artifact.runId, assetSha256: artifact.sha256 }));
       setExplicitTarget(true);
-      // The menu it was chosen from shows the imported model and its notes, even if it was closed meanwhile.
-      setAnotherOpen(true);
+      // The imported model is now what the drawing draws, said at the bar's end or in the row with its notes.
+      setAnotherOpen(false);
     } catch (cause) { if (mounted.current && scope.current === origin) setError(asStudioApiError(cause)); }
     finally { if (mounted.current) setImporting(false); }
   }
@@ -477,7 +492,9 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
   const dimensions = form.dimensions ?? [];
   // Hiding is this drawing's appearance: it saves as a revision and never touches the design.
   const hiddenIds = form.hiddenObjectIds ?? [], hiddenSet = new Set(hiddenIds);
-  const hideObject = (id: string) => { setPicked(null); update({ hiddenObjectIds: [...new Set([...hiddenIds, id])].sort() }); };
+  // A note on the status line lasts until the pick or the drawing changes.
+  const pick = (object: string | null) => { setPicked(object); setOfferNote(null); recipes.clearNote(); };
+  const hideObject = (id: string) => { pick(null); update({ hiddenObjectIds: [...new Set([...hiddenIds, id])].sort() }); };
   const showObject = (id: string) => update({ hiddenObjectIds: hiddenIds.filter(item => item !== id) });
   const pickedObject = picked && !hiddenSet.has(picked) ? picture?.objects.get(picked) ?? null : null;
   const listedObjects = picture ? [...picture.objects.values()].filter(object => !hiddenSet.has(object.id))
@@ -509,6 +526,9 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
       madeHere.current.add(drawingDocumentKey(result));
       setDocuments(current => [...current.filter(item => drawingDocumentKey(item) !== drawingDocumentKey(result)), result]);
       if (drawingDocumentKey(result) !== selected) setVector(null);
+      // The revision replaces the open one: the last status stays on screen while the new one is read.
+      const replaced = statusQuestion, next = JSON.stringify([drawingDocumentKey(result), selectedTargetValue]);
+      setLastStatus(current => current && current.question === replaced ? { ...current, question: next } : current);
       setSelected(drawingDocumentKey(result)); setForm(planFormFromDocument(result, lengthUnit)); setDirty(false); setAppearanceHeld(null);
       setCorrections(value => value + 1);
       return true;
@@ -621,24 +641,36 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
     return stages.find(item => item.stageRef === document.sourceStageRef)?.label ??
       (live?.head && document.modelSource?.runId === live.head.runId && live.head.label ? live.head.label : text.workingVersion);
   };
-  const action = source ? liveAction({ live: liveMode, dirty, attempted: false, status }) : "none";
+  // The status the source's words show: the last one read for this drawing and question, kept while it is read again.
+  const shown = lastStatus !== null && lastStatus.question === statusQuestion ? lastStatus.status : null;
+  // What the shown status means for a LIVE drawing, while it is edited too; only a read status rebuilds (above).
+  const action = source ? liveAction({ live: liveMode, dirty: false, attempted: false, status: shown }) : "none";
   const documentLabel = (document: SourceDocumentDto) => {
     const generated = document.generatedAt ? new Date(document.generatedAt) : null;
     const time = generated && !Number.isNaN(generated.getTime()) ? generated.toLocaleString(language) : null;
     return [document.fileName, sourceName(document), time].filter(Boolean).join(" · ");
   };
-  // A status still to be read for the open cut plan is being checked, not unknown.
-  const checking = statusLoading || (status === null && Boolean(source?.revisionRef) && isCutPlan(source) && active && error === null);
-  const statusLine = checking ? text.checking : liveBusy ? text.updating
-    : historical ? text.earlierView : explicitTarget || kept ? text.chosenView
+  // A status is being read for the open cut plan (its read runs, or starts with this render), or its read failed.
+  const checking = statusQuestion !== null && active && (statusRead?.question !== statusQuestion || statusRead.state === "reading");
+  const statusFailed = statusQuestion !== null && statusRead?.question === statusQuestion && statusRead.state === "failed";
+  const imported = sourceAsset !== null;
+  const chosenName = chosenStage?.label ?? (chosenAsset ? chosenAsset.sourceImport?.sourceFileName ?? chosenAsset.fileName : null);
+  const draws = chosenName ? t("drawing.draws", { source: chosenName }) : text.chosenView;
+  // What the source's state says once it is read; while it is read, it says so in the same room.
+  const restingLine = liveBusy ? text.updating
+    : historical ? text.earlierView : explicitTarget ? draws : imported && source ? t("drawing.drawnFrom", { source: sourceName(source) }) : kept ? text.chosenView
     : action === "blocked" ? text.stale
-    : status?.status === "current" && !status.bindingChanged ? text.liveCurrent : text[status?.status ?? "unknown"];
+    : shown?.status === "current" && !shown.bindingChanged ? text.liveCurrent : text[shown?.status ?? "unknown"];
+  const statusLine = checking ? text.checking : restingLine;
+  const converted = (artifact: ProjectArtifactDto) => artifact.sourceImport ? text.converted.replace("{source}", artifact.sourceImport.conversion.sourceFormat.toUpperCase())
+    .replace("{target}", artifact.sourceImport.conversion.targetFormat.toUpperCase()) : "";
   const importNotice = (artifact: ProjectArtifactDto) => artifact.sourceImport && <div className="drawing-import-note" role="note">
-    <span>{text.converted.replace("{source}", artifact.sourceImport.conversion.sourceFormat.toUpperCase())
-      .replace("{target}", artifact.sourceImport.conversion.targetFormat.toUpperCase())}</span>
+    <span>{converted(artifact)}</span>
     {artifact.sourceImport.conversion.warnings.length > 0 && <ul>{artifact.sourceImport.conversion.warnings.map((warning, index) =>
       <li key={`${index}:${warning}`}>{warning}</li>)}</ul>}
   </div>;
+  // An imported model's notes need a person when its conversion left something out.
+  const importWarned = (artifact: ProjectArtifactDto | null) => Boolean(artifact?.sourceImport?.conversion.warnings.length);
   const downloadSvg = () => {
     if (!source || !vector || busy || dirty || !active) return;
     const url = URL.createObjectURL(new Blob([vector.svg], { type: "image/svg+xml;charset=utf-8" }));
@@ -652,30 +684,47 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
     return <label className="drawing-field">{label}<input type="number" min={min} step={step} required={!open} placeholder={open ? text.recipePen : undefined}
       value={Number.isFinite(form[key]) ? form[key] : ""} onChange={event => update({ [key]: event.currentTarget.valueAsNumber })} /></label>;
   };
-  // #337: the source's state asks in the row above the drawing while it needs a person: a kept or earlier drawing, a
-  // current model it cannot be redrawn on, broken anchors, a state that could not be read, or an imported model's
-  // conversion notes. Following, checking and updating are a quiet word at the bar's right end.
-  const statusAsks = source !== null && (perspectiveOpen ? Boolean(savedArtifact?.sourceImport)
-    : historical || explicitTarget || kept || action === "blocked" || (!checking && !liveBusy && action !== "rebuild" && status?.status !== "current"));
+  // #337: the source's state asks in the row above the drawing while it needs a person: an earlier drawing, one kept on
+  // or asked against a chosen version, a current model it cannot be redrawn on, broken anchors, a state that could not
+  // be read, or an imported model whose conversion left something out. Otherwise (following, checking, updating, or
+  // kept on its imported model) it is a quiet word at the bar's right end.
+  const statusAsks = source !== null && (perspectiveOpen ? importWarned(savedArtifact)
+    : historical || explicitTarget || (kept && !imported) || statusFailed || importWarned(savedArtifact) || action === "blocked"
+      || (shown !== null && shown.status !== "current" && !liveBusy && action !== "rebuild"));
   const statusFollow = historical || explicitTarget || kept ? "frozen" : "live";
-  const statusState = liveBusy ? "updating" : action === "blocked" ? "outdated" : status?.status ?? "unknown";
+  const statusState = liveBusy ? "updating" : action === "blocked" ? "outdated" : shown?.status ?? "unknown";
+  const statusDetail = shown?.detail ?? (statusFailed ? text.statusError : "");
+  // Saving is a quiet word; a field left invalid is marked where it is and said at the bar's end; a refused save asks.
   const saving = source !== null && (perspectiveOpen ? busy : (busy && !liveBusy) || (dirty && appearanceHeld === null));
-  const held = source !== null && !perspectiveOpen && dirty && !busy && appearanceHeld !== null;
-  const attention = statusAsks || held || error !== null || offers.length > 0 || Boolean(recipes.row);
-  // The status line: what is picked, else what just happened, else how to pick on this drawing.
+  const unsaved = source !== null && !perspectiveOpen && dirty && !busy && appearanceHeld === "invalid";
+  const refused = source !== null && !perspectiveOpen && dirty && !busy && appearanceHeld === "refused";
+  // A chosen imported model's notes, before anything is drawn from it; an open cut plan shows them in its source's row.
+  const chosenNotes = explicitTarget && chosenAsset !== null && chosenAsset !== savedArtifact && importWarned(chosenAsset);
+  const chosenRow = chosenNotes && (source === null || perspectiveOpen);
+  const attention = statusAsks || chosenRow || refused || error !== null || offers.length > 0 || Boolean(recipes.row);
+  // The words at the bar's end, each in a room that fits every word it may say in turn, so the menus never move for them.
+  const word = source === null ? null : perspectiveOpen
+    ? { says: busy ? text.generating : statusAsks ? "" : text.sectionView, room: [text.generating, ...statusAsks ? [] : [text.sectionView]] }
+    : { says: saving ? text.saving : unsaved ? t("drawing.unsaved") : statusAsks ? "" : statusLine,
+      room: [text.saving, t("drawing.unsaved"), ...statusAsks ? [] : [text.checking, restingLine, ...liveMode ? [text.updating] : []]] };
+  // What a new cut plan or section perspective will be drawn from, while nothing open says it.
+  const drawsWord = source === null ? explicitTarget ? draws : text.live : perspectiveOpen && explicitTarget ? draws : null;
+  // The status line: what is under way or just happened, else what is picked, else how to pick on this drawing.
   const note = recipes.note ?? offerNote;
-  const statusWords = pickedObject ? t("drawing.picked", { object: objectLabel(text, pickedObject) }) : note ? <span role="status">{note}</span>
+  const statusWords = note ? <span role="status">{note}</span> : pickedObject ? t("drawing.picked", { object: objectLabel(text, pickedObject) })
     : source && !perspectiveOpen && picture ? picture.image ? text.tooMany.replace("{count}", String(picture.lines)) : text.pickHint : null;
 
   return <div className="drawing-workspace" aria-label={text.title}>
     {/* #337: the drawing on screen, where it is drawn from and its commands are words in the project bar; its save
         and source states are quiet words at the bar's right end. */}
     <SurfaceMenus label={text.title} active={active} end={<>
-      {saving && <span className="drawing-save-state drawing-quiet" role="status">{perspectiveOpen ? text.generating : text.saving}</span>}
-      {source && !statusAsks && (perspectiveOpen
-        ? <span className="drawing-status drawing-quiet" role="status" data-kind="section-perspective">{text.sectionView}</span>
-        : <span className="drawing-status drawing-quiet" role="status" data-follow={statusFollow} data-status={statusState} title={status?.detail}>{statusLine}</span>)}
-      {!source && !explicitTarget && <span className="drawing-quiet">{text.live}</span>}
+      {word && (perspectiveOpen
+        ? <span className="drawing-state drawing-quiet" role="status" data-kind="section-perspective" data-room={word.room.join("\n")}
+          title={source ? `${text.sourceOfPage}: ${sourceName(source)}` : undefined}><span>{word.says}</span></span>
+        : <span className="drawing-state drawing-quiet" role="status" data-follow={statusFollow} data-status={statusState} aria-busy={checking}
+          data-room={word.room.join("\n")} title={[statusDetail, savedArtifact ? converted(savedArtifact) : ""].filter(Boolean).join("\n") || undefined}>
+          <span>{word.says}</span></span>)}
+      {drawsWord && <span className="drawing-next drawing-quiet" data-follow={explicitTarget ? "frozen" : "live"}><span>{drawsWord}</span></span>}
     </>}>
       <select className="surface-title drawing-chooser" aria-label={text.revision} value={selected} disabled={busy} onChange={event => { void chooseDocument(event.target.value); }}>
         <option value="">{text.fresh}</option>{latest.map(item => <option key={drawingDocumentKey(item)} value={drawingDocumentKey(item)}>
@@ -685,21 +734,31 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
       <MenuSeparator />
       <DrawingMenu label={text.another} className="drawing-another" panelClassName="drawing-another__panel" open={anotherOpen} onOpenChange={setAnotherOpen}>
         <label className="drawing-field">{text.source}<select value={selectedTargetValue} disabled={busy || loading || statusLoading}
-          onChange={event => { setTarget(event.target.value); setExplicitTarget(event.target.value !== ""); setError(null); }}>
+          onKeyDown={event => { arrowing.current = /^(Arrow|Page|Home|End)/.test(event.key) || event.key.length === 1; }}
+          onPointerDown={() => { arrowing.current = false; }}
+          onChange={event => {
+            setTarget(event.target.value); setExplicitTarget(event.target.value !== ""); setError(null);
+            if (!arrowing.current) setAnotherOpen(false);
+            arrowing.current = false;
+          }}>
           <option value="">{text.live}</option>
           {stages.map(item => <option key={item.stageRef} value={item.stageRef}>{item.label} · {item.branchId}</option>)}
           {drawableAssets.length > 0 && <optgroup label={text.imported}>{drawableAssets.map(item => item.sha256 && <option key={`${item.runId}:${item.sha256}`}
             value={assetKey({ runId: item.runId, assetSha256: item.sha256 })}>{item.sourceImport?.sourceFileName ?? item.fileName}</option>)}</optgroup>}</select></label>
-        {chosenAsset?.sourceImport && chosenAsset !== savedArtifact && importNotice(chosenAsset)}
         <input ref={importInput} className="visually-hidden" type="file" accept=".3dm,.skp" onChange={event => {
           const file = event.currentTarget.files?.[0]; if (file) void importModel(file); event.currentTarget.value = "";
         }} />
         <button type="button" disabled={busy || importing || !active} onClick={() => importInput.current?.click()}>{importing ? text.importing : text.importModel}</button>
         <p className="drawing-field__hint">{text.anotherHint}</p>
       </DrawingMenu>
-      {source && !perspectiveOpen && <MenuCommand title={text.downloadHint} disabled={busy || dirty || !active || !vector} onClick={downloadSvg}>{text.download}</MenuCommand>}
       {recipes.menu}
-      <MenuCommand disabled={busy || loading} onClick={() => setRefresh(value => value + 1)}>{text.refresh}</MenuCommand>
+      <DrawingMenu label={t("drawing.more")} className="drawing-more" panelClassName="drawing-more__panel" open={moreOpen} onOpenChange={setMoreOpen}>
+        {source && !perspectiveOpen && <>
+          <button type="button" disabled={busy || dirty || !active || !vector} onClick={() => { setMoreOpen(false); downloadSvg(); }}>{text.download}</button>
+          <p className="drawing-field__hint">{text.downloadHint}</p>
+        </>}
+        <button type="button" disabled={busy || loading} onClick={() => { setMoreOpen(false); setRefresh(value => value + 1); }}>{text.refresh}</button>
+      </DrawingMenu>
     </SurfaceMenus>
     {/* One row above the drawing, only while something asks for a person. */}
     {attention && <div className="drawing-attention">
@@ -710,21 +769,29 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
           {savedArtifact?.sourceImport && importNotice(savedArtifact)}
         </div>
       </section>
-        : <section className="drawing-status" aria-label={text.status} data-follow={statusFollow} data-status={statusState}>
+        : <section className="drawing-status" aria-label={text.status} data-follow={statusFollow} data-status={statusState} aria-busy={checking}>
           <div className="drawing-status__summary">
             <span className="drawing-source">{text.sourceOfPage}: <b>{sourceName(source)}</b></span>
-            <strong role="status">{statusLine}</strong>
-            <p>{status?.detail ?? (!checking ? text.statusError : "")}</p>
+            {/* Its word keeps the room of both what it says once read and "Checking source…", so a check moves nothing. */}
+            <strong className="drawing-status__state" role="status" data-resting={restingLine} data-checking={text.checking}><span>{statusLine}</span></strong>
+            <p>{statusDetail}</p>
             {savedArtifact?.sourceImport && importNotice(savedArtifact)}
+            {chosenNotes && chosenAsset && importNotice(chosenAsset)}
           </div>
           {historical && latest.some(item => item.drawingId === source.drawingId) &&
             <button type="button" disabled={busy} onClick={() => { void chooseDocument(drawingDocumentKey(latest.find(item => item.drawingId === source.drawingId)!)); }}>{text.openLatest}</button>}
-          {kept && !historical && !explicitTarget &&
+          {kept && !imported && !historical && !explicitTarget &&
             <button type="button" disabled={busy || !liveTarget} onClick={() => void generate(liveTarget, { follow: "live" })}>{text.followAgain}</button>}
           {explicitTarget && <button type="button" disabled={!stage || busy || statusLoading} onClick={() => void generate(stage, { follow: "frozen" })}>{text.rebuild}</button>}
         </section>)}
-      {held && <div className="drawing-held" role="status"><p>{text.held}</p>
-        {appearanceHeld === "refused" && <button className="btn btn--accent" type="submit" form={controlsId} disabled={busy || !(source?.modelSource || documentAsset(source))}>{text.retry}</button>}</div>}
+      {chosenRow && chosenAsset && <section className="drawing-status" aria-label={text.status} data-kind="chosen">
+        <div className="drawing-status__summary">
+          <span className="drawing-source">{text.source}: <b>{chosenName}</b></span>
+          {importNotice(chosenAsset)}
+        </div>
+      </section>}
+      {refused && <div className="drawing-held" role="status"><p>{text.held}</p>
+        <button className="btn btn--accent" type="submit" form={controlsId} disabled={busy || !(source?.modelSource || documentAsset(source))}>{text.retry}</button></div>}
       {error && <ErrorPanel error={error} what={text.title} />}
       {offers.map(offer => {
         const label = offerText(offer, text.offer);
@@ -739,7 +806,7 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
     <div className="drawing-body">
       <div className="drawing-main">
         <div className="drawing-canvas">{source && file ? <PlanPreview key={source.drawingId ?? selected} source={source} file={file} vector={vector}
-          picture={picture} hidden={hiddenIds} picked={pickedObject?.id ?? null} onPick={setPicked} objects={form.dressing} selected={selectedDressing}
+          picture={picture} hidden={hiddenIds} picked={pickedObject?.id ?? null} onPick={pick} objects={form.dressing} selected={selectedDressing}
           onSelect={setSelectedDressing} onChange={dressing => update({ dressing })} disabled={busy || !active} />
           : <div className="drawing-empty" role="status">{loading || source ? text.loading : stage ? text.empty : live?.reason ?? text.noModel}</div>}</div>
       </div>
@@ -761,7 +828,7 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
             </div>}</details>
         </fieldset>}
         {source && !perspectiveOpen && picture && <fieldset disabled={busy || !active}><legend>{text.objects}</legend>
-          <label className="drawing-field">{text.object}<select value={pickedObject?.id ?? ""} onChange={event => setPicked(event.target.value || null)}>
+          <label className="drawing-field">{text.object}<select value={pickedObject?.id ?? ""} onChange={event => pick(event.target.value || null)}>
             <option value="">{text.noObject}</option>
             {listedObjects.map(({ object, label }) => <option key={object.id} value={object.id}>{label}</option>)}</select></label>
           {pickedObject && <div className="drawing-object-picked">
