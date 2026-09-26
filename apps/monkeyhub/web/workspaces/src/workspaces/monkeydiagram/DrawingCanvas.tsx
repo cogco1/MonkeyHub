@@ -445,9 +445,12 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
     const object = picture?.objects.get(id) ?? seen.current.get(id);
     return object ? `${object.component ?? object.id} · ${object.material ?? text.noMaterial}` : id;
   };
-  /** The revision request itself: on a target, or on the drawing's own source. A new drawing names only the pens a person set. */
+  /**
+   * The revision request itself: on a target, or on the drawing's own source. A new drawing names only the
+   * pens a person set. It is a person's own edit (human), which a project recipe offer may count.
+   */
   const requestRevision = (drawn: PlanTarget, follow?: "live" | "frozen") =>
-    studio.drawingPlan({ projectId, ...targetSource(drawn), ...planRequestFields(form),
+    studio.drawingPlan({ projectId, ...targetSource(drawn), ...planRequestFields(form), sourceKind: "human",
       ...(source?.drawingId ? { drawingId: source.drawingId } : {}), ...(source?.revisionRef ? { previousRevisionRef: source.revisionRef } : {}),
       ...(follow ? { follow } : {}) });
   /** Write a revision on a target, or on the drawing's own source; `follow` records a person's choice. True once it is open. */

@@ -672,6 +672,11 @@ try {
     assert.equal(await pen("Visible line (paper mm)").inputValue(), "0.18");
     assert.equal(await pen("Hatch spacing (paper mm)").inputValue(), "3", "the project recipe's spacing is what it was drawn with");
   });
+  await step("every revision the Drawing asks for is a person's own edit", async () => {
+    // New drawings, appearance autosaves, explicit rebuilds, LIVE rebinds and retries alike.
+    assert.ok(requests.length > 20);
+    assert.deepEqual(requests.filter(body => body.sourceKind !== "human"), []);
+  });
   assert.deepEqual(errors, []);
   console.log(JSON.stringify({ passed, screenshots, generationRequests: requests.length, dimensionProposals: drives.length }));
 } catch (error) {
