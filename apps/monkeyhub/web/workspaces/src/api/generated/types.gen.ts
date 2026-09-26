@@ -591,6 +591,48 @@ export type BoxDto = {
 };
 
 /**
+ * Camera
+ */
+export type Camera = {
+    /**
+     * Position
+     */
+    position: [
+        number,
+        number,
+        number
+    ];
+    /**
+     * Target
+     */
+    target: [
+        number,
+        number,
+        number
+    ];
+    /**
+     * Up
+     */
+    up?: [
+        number,
+        number,
+        number
+    ];
+    /**
+     * Projection
+     */
+    projection?: 'perspective' | 'orthographic';
+    /**
+     * Fov
+     */
+    fov?: number;
+    /**
+     * Orthoscale
+     */
+    orthoScale?: number;
+};
+
+/**
  * CameraDto
  *
  * Where the architect stood when they drew: the viewpoint is part of the intent.
@@ -2094,6 +2136,24 @@ export type CoverageDto = {
      * Unknowncomponent
      */
     unknownComponent: number;
+};
+
+/**
+ * CyclesRequest
+ */
+export type CyclesRequest = {
+    /**
+     * Requestid
+     */
+    requestId: string;
+    /**
+     * Scenerevision
+     */
+    sceneRevision: string;
+    /**
+     * Geometryrevision
+     */
+    geometryRevision: string;
 };
 
 /**
@@ -3896,6 +3956,22 @@ export type EnvelopeFindingDto = {
 };
 
 /**
+ * Environment
+ */
+export type Environment = {
+    /**
+     * Color
+     */
+    color?: string;
+    /**
+     * Strength
+     */
+    strength?: number;
+    background?: ImageRef | null;
+    environmentMap?: ImageRef | null;
+};
+
+/**
  * EpisodeChangeDto
  *
  * The number the record had, and the number the option proposed.
@@ -4376,6 +4452,24 @@ export type HttpValidationError = {
 };
 
 /**
+ * ImageRef
+ */
+export type ImageRef = {
+    /**
+     * Runid
+     */
+    runId: string;
+    /**
+     * Assetsha256
+     */
+    assetSha256: string;
+    /**
+     * Revisionref
+     */
+    revisionRef?: string | null;
+};
+
+/**
  * ImpactDto
  *
  * What the change reaches, in the kernel's own prefixed refs.
@@ -4748,6 +4842,48 @@ export type LevelFootprintDto = {
 };
 
 /**
+ * Light
+ */
+export type Light = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Type
+     */
+    type?: 'area' | 'point' | 'sun';
+    /**
+     * Position
+     */
+    position: [
+        number,
+        number,
+        number
+    ];
+    /**
+     * Target
+     */
+    target?: [
+        number,
+        number,
+        number
+    ];
+    /**
+     * Intensity
+     */
+    intensity?: number;
+    /**
+     * Color
+     */
+    color?: string;
+    /**
+     * Size
+     */
+    size?: number;
+};
+
+/**
  * LocalDraftDto
  */
 export type LocalDraftDto = {
@@ -5025,6 +5161,56 @@ export type MassingOptionRequestDto = {
     programTargets?: {
         [key: string]: number;
     } | null;
+};
+
+/**
+ * Material
+ */
+export type Material = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Basecolor
+     */
+    baseColor: string;
+    /**
+     * Roughness
+     */
+    roughness?: number;
+    /**
+     * Metallic
+     */
+    metallic?: number;
+    texture?: ImageRef | null;
+    normalMap?: ImageRef | null;
+};
+
+/**
+ * MeshDrawingRequest
+ */
+export type MeshDrawingRequest = {
+    /**
+     * Geometryrevision
+     */
+    geometryRevision: string;
+    /**
+     * Views
+     */
+    views?: Array<'front' | 'side' | 'top' | 'isometric'>;
+    /**
+     * Scale
+     */
+    scale?: number;
+    /**
+     * Featurereferences
+     */
+    featureReferences?: Array<string>;
 };
 
 /**
@@ -7564,6 +7750,28 @@ export type PushPullRequestDto = {
 };
 
 /**
+ * Quality
+ */
+export type Quality = {
+    /**
+     * Width
+     */
+    width?: number;
+    /**
+     * Height
+     */
+    height?: number;
+    /**
+     * Samples
+     */
+    samples?: number;
+    /**
+     * Denoise
+     */
+    denoise?: boolean;
+};
+
+/**
  * RecipeBindingRequestDto
  *
  * The project recipe: paper-space values a new drawing starts from.
@@ -7697,6 +7905,52 @@ export type ReferenceRunDto = {
      * Basesha256
      */
     baseSha256: string | null;
+};
+
+/**
+ * Region
+ */
+export type Region = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Materialid
+     */
+    materialId: string;
+    /**
+     * Mesh
+     */
+    mesh: number;
+    /**
+     * Shape
+     */
+    shape?: 'box' | 'ellipsoid';
+    /**
+     * Center
+     */
+    center: [
+        number,
+        number,
+        number
+    ];
+    /**
+     * Radius
+     */
+    radius: [
+        number,
+        number,
+        number
+    ];
+    /**
+     * Geometryrevision
+     */
+    geometryRevision: string;
 };
 
 /**
@@ -7917,6 +8171,14 @@ export type RenderJobDto = {
      * Costusd
      */
     costUsd?: number | null;
+    /**
+     * Geometryrevision
+     */
+    geometryRevision?: string | null;
+    /**
+     * Scenerevision
+     */
+    sceneRevision?: string | null;
 };
 
 /**
@@ -8191,6 +8453,17 @@ export type RuntimeDto = {
 };
 
 /**
+ * SaveScene
+ */
+export type SaveScene = {
+    /**
+     * Expectedrevision
+     */
+    expectedRevision?: string | null;
+    scene: Scene;
+};
+
+/**
  * SaveStudyRequestDto
  */
 export type SaveStudyRequestDto = {
@@ -8212,6 +8485,41 @@ export type SaveStudyRequestDto = {
      */
     expectedPreviousRef?: string | null;
     research?: StudyResearchRequestDto | null;
+};
+
+/**
+ * Scene
+ */
+export type Scene = {
+    /**
+     * Geometryrevision
+     */
+    geometryRevision: string;
+    /**
+     * Materials
+     */
+    materials: Array<Material>;
+    /**
+     * Assignments
+     */
+    assignments: {
+        [key: string]: string;
+    };
+    /**
+     * Regions
+     */
+    regions?: Array<Region>;
+    /**
+     * Lights
+     */
+    lights?: Array<Light>;
+    environment?: Environment;
+    camera: Camera;
+    /**
+     * Exposure
+     */
+    exposure?: number;
+    settings?: Quality;
 };
 
 /**
@@ -8424,6 +8732,28 @@ export type SectionPlaneDto = {
         number,
         number
     ];
+};
+
+/**
+ * SelectGeometry
+ */
+export type SelectGeometry = {
+    /**
+     * Expectedrevision
+     */
+    expectedRevision?: string | null;
+    /**
+     * Exportid
+     */
+    exportId?: string | null;
+    /**
+     * Runid
+     */
+    runId?: string | null;
+    /**
+     * Assetsha256
+     */
+    assetSha256?: string | null;
 };
 
 /**
@@ -13247,6 +13577,272 @@ export type DownloadExportApiExportsExportIdBytesGetErrors = {
 export type DownloadExportApiExportsExportIdBytesGetError = DownloadExportApiExportsExportIdBytesGetErrors[keyof DownloadExportApiExportsExportIdBytesGetErrors];
 
 export type DownloadExportApiExportsExportIdBytesGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
+export type ReadSceneApiRenderSceneGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/render/scene';
+};
+
+export type ReadSceneApiRenderSceneGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadSceneApiRenderSceneGetError = ReadSceneApiRenderSceneGetErrors[keyof ReadSceneApiRenderSceneGetErrors];
+
+export type ReadSceneApiRenderSceneGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
+export type UpdateSceneApiRenderScenePutData = {
+    body: SaveScene;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/render/scene';
+};
+
+export type UpdateSceneApiRenderScenePutErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type UpdateSceneApiRenderScenePutError = UpdateSceneApiRenderScenePutErrors[keyof UpdateSceneApiRenderScenePutErrors];
+
+export type UpdateSceneApiRenderScenePutResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
+export type SceneGeometryApiRenderGeometryGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/render/geometry';
+};
+
+export type SceneGeometryApiRenderGeometryGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type SceneGeometryApiRenderGeometryGetError = SceneGeometryApiRenderGeometryGetErrors[keyof SceneGeometryApiRenderGeometryGetErrors];
+
+export type SceneGeometryApiRenderGeometryGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
+export type ChooseGeometryApiRenderGeometryPutData = {
+    body: SelectGeometry;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/render/geometry';
+};
+
+export type ChooseGeometryApiRenderGeometryPutErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ChooseGeometryApiRenderGeometryPutError = ChooseGeometryApiRenderGeometryPutErrors[keyof ChooseGeometryApiRenderGeometryPutErrors];
+
+export type ChooseGeometryApiRenderGeometryPutResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
+export type DefaultSceneApiRenderSceneDefaultGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/render/scene/default';
+};
+
+export type DefaultSceneApiRenderSceneDefaultGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type DefaultSceneApiRenderSceneDefaultGetError = DefaultSceneApiRenderSceneDefaultGetErrors[keyof DefaultSceneApiRenderSceneDefaultGetErrors];
+
+export type DefaultSceneApiRenderSceneDefaultGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
+export type SubmitCyclesApiRenderCyclesPostData = {
+    body: CyclesRequest;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/render/cycles';
+};
+
+export type SubmitCyclesApiRenderCyclesPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type SubmitCyclesApiRenderCyclesPostError = SubmitCyclesApiRenderCyclesPostErrors[keyof SubmitCyclesApiRenderCyclesPostErrors];
+
+export type SubmitCyclesApiRenderCyclesPostResponses = {
+    /**
+     * Successful Response
+     */
+    202: RenderJobDto;
+};
+
+export type SubmitCyclesApiRenderCyclesPostResponse = SubmitCyclesApiRenderCyclesPostResponses[keyof SubmitCyclesApiRenderCyclesPostResponses];
+
+export type SceneDrawingsApiRenderDrawingsGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/render/drawings';
+};
+
+export type SceneDrawingsApiRenderDrawingsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type SceneDrawingsApiRenderDrawingsGetError = SceneDrawingsApiRenderDrawingsGetErrors[keyof SceneDrawingsApiRenderDrawingsGetErrors];
+
+export type SceneDrawingsApiRenderDrawingsGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
+export type UpdateSceneDrawingsApiRenderDrawingsPostData = {
+    body: MeshDrawingRequest;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/render/drawings';
+};
+
+export type UpdateSceneDrawingsApiRenderDrawingsPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type UpdateSceneDrawingsApiRenderDrawingsPostError = UpdateSceneDrawingsApiRenderDrawingsPostErrors[keyof UpdateSceneDrawingsApiRenderDrawingsPostErrors];
+
+export type UpdateSceneDrawingsApiRenderDrawingsPostResponses = {
     /**
      * Successful Response
      */

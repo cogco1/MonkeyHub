@@ -199,7 +199,7 @@ class RenderJobRecords:
             raise StudioError(409, "RENDER_REQUEST_UNCERTAIN", "This request has an incomplete retained attempt; it cannot be replayed.")
         row = max(rows, key=lambda value: value["sequence"])
         if ((row.get("projectId"), row.get("jobId")) != (binding.project_id, job_id)
-                or row.get("schema") not in ("StudioRenderJob@1", "StudioRenderJob@2")):
+                or row.get("schema") not in ("StudioRenderJob@1", "StudioRenderJob@2", "StudioRenderJob@3")):
             raise StudioError(409, "RENDER_RECORD_INVALID", "The retained render task has a different binding or unsupported schema.")
         return row
 
@@ -208,6 +208,9 @@ class RenderJobRecords:
             row = self._load(binding, job_id)
         if row["schema"] == "StudioRenderJob@1":
             return self._legacy(binding, row)
+        if row["schema"] == "StudioRenderJob@3":
+            from .physical_render import job_dto
+            return job_dto(binding,row,getattr(self,'runtime_jobs',None))
         status, error = row["status"], row.get("error")
         if status in ("queued", "running") and row["instance"] != self.instance:
             status, error = "unknown", "The runtime stopped before confirming this attempt. Refresh never resends it."
@@ -219,7 +222,9 @@ class RenderJobRecords:
             recipe = item.view_recipe or {}
             if recipe.get("jobId") == job_id and recipe.get("request") == row["request"]:
                 document = item
-                if status in ("queued", "running", "unknown"):
+                # Recover a completed image after a lost executor, but do not
+                # announce success before the live executor records usage.
+                if status == "unknown" or (status in ("queued", "running") and row["instance"] != self.instance):
                     status, error = "succeeded", None
                 try:
                     document_bytes(binding, job_id, item.asset_sha256, item.revision_ref)

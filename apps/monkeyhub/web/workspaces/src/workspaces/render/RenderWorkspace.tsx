@@ -1,4 +1,5 @@
 import ModelPreview from "./ModelPreview";
+import PhysicalWorkspace from "./PhysicalWorkspace";
 import { renderViewImage, type RenderView } from "../monkeyarch/viewer/renderView";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { useStudio } from "../../api/ProjectRuntimeContext";
@@ -15,7 +16,7 @@ export default function RenderWorkspace({ projectId, active, refreshKey, onBoard
   projectId: string; active: boolean; refreshKey: number; onBoard(source: PageSource): void;
 }) {
   const studio = useStudio(), { language } = usePreferences(), zh = language === "zh-CN";
-  const [mode, setMode] = useState<"ai" | "physical">("ai");
+  const [mode, setMode] = useState<"ai" | "physical">("physical");
   const [documents, setDocuments] = useState<SourceDocumentDto[]>([]);
   const [providers, setProviders] = useState<RenderCapabilityDto[]>([]);
   const [jobs, setJobs] = useState<RenderJobDto[]>([]);
@@ -187,14 +188,10 @@ export default function RenderWorkspace({ projectId, active, refreshKey, onBoard
       </div>
       <button type="button" onClick={() => void refresh()} disabled={loading}>{loading ? (zh ? "读取中…" : "Reading…") : (zh ? "刷新状态" : "Refresh status")}</button>
     </header>
-    <ModelPreview active={active} readView={readModelView} onModeling={onModeling} onCapture={() => void captureModelView()} capturing={uploading || sending} zh={zh} />
+    {mode === "ai" && <ModelPreview active={active} readView={readModelView} onModeling={onModeling} onCapture={() => void captureModelView()} capturing={uploading || sending} zh={zh} />}
     {error && <div className="render-error" role="alert">{error}</div>}
-    {mode === "physical" && <div className="render-physical" role="status">
-      <h2>Physical Render</h2>
-      <p>{zh ? "Native WebGL2、D5 与 Blender 尚未接通此工作区的执行器。" : "Native WebGL2, D5 and Blender executors are not connected to this workspace yet."}</p>
-      <p>{zh ? "此模式将使用模型、相机、材质与灯光。已有 AI 结果仍可在下方浏览与交接。" : "This mode will use the model, camera, materials and lighting. Existing AI results remain available below."}</p>
-    </div>}
-    <div className="render-ai-body">
+    <div hidden={mode !== "physical"}><PhysicalWorkspace projectId={projectId} active={active && mode === "physical"} zh={zh} /></div>
+    <div className="render-ai-body" hidden={mode !== "ai"}>
       <form className="render-inputs" onSubmit={(event) => void generate(event)} hidden={mode !== "ai"}>
         <fieldset disabled={sending || uploading}>
           <legend>{zh ? "输入与视觉方向" : "Inputs & visual direction"}</legend>
@@ -254,7 +251,7 @@ export default function RenderWorkspace({ projectId, active, refreshKey, onBoard
         {uploading && <p role="status">{zh ? "正在保存项目图片…" : "Saving project images…"}</p>}
         {latest && <p className="render-note" role="status">{zh ? "最近任务：" : "Latest: "}{renderStatus(latest.status, zh)}</p>}
       </form>
-      <RenderResults active={active} jobs={sortedJobs} documents={documents} selectedId={selectedId} onSelect={setSelectedId} onBoard={onBoard} onReuse={reuse} onUpdateSource={updateSource} />
+      {mode === "ai" && <RenderResults active={active} jobs={sortedJobs} documents={documents} selectedId={selectedId} onSelect={setSelectedId} onBoard={onBoard} onReuse={reuse} onUpdateSource={updateSource} />}
     </div>
   </section>;
 }

@@ -30,6 +30,38 @@ def changed_glb(changes, binary=None):
 
 
 class FormatTests(unittest.TestCase):
+    def test_materialless_indexed_and_nonindexed_meshes_have_visible_fallback(self):
+        import rhino3dm as r
+        for indexed in (True,False):
+            source = GLB().write(fixture())
+            if not indexed:
+                size=struct.unpack_from('<I',source,12)[0]
+                doc=json.loads(source[20:20+size]);del doc['meshes'][0]['primitives'][0]['indices']
+                encoded=json.dumps(doc).encode();encoded+=b' '*(-len(encoded)%4)
+                binary=source[28+size:]
+                source=struct.pack('<4sII',b'glTF',2,28+len(encoded)+len(binary))+struct.pack('<I4s',len(encoded),b'JSON')+encoded+struct.pack('<I4s',len(binary),b'BIN\0')+binary
+            output,_=convert(source,'glb','3dm')
+            saved=r.File3dm.FromByteArray(output);obj=saved.Objects[0];mesh=obj.Geometry
+            self.assertEqual(tuple(mesh.Faces[0]),(0,1,2,2))
+            self.assertEqual(len(mesh.Normals),3)
+            self.assertTrue(all(n.Z>.99 for n in mesh.Normals))
+            self.assertGreater(min(obj.Attributes.ObjectColor[:3]),150)
+            self.assertGreater(min(saved.Materials.FindIndex(obj.Attributes.MaterialIndex).DiffuseColor[:3]),150)
+
+    def test_custom_normals_uv_and_pbr_survive_production_conversion(self):
+        scene=fixture();mesh=scene.meshes[0]
+        mesh.normals=[(0,.6,.8)]*3;mesh.texcoords=[(0,0),(1,0),(0,1)]
+        mesh.base_color=(.2,.4,.6,1);mesh.roughness=.3;mesh.metallic=.7
+        source=GLB().write(scene);output,_=convert(source,'glb','3dm')
+        result=ThreeDM().read(output).meshes[0]
+        self.assertEqual(result.triangles,mesh.triangles)
+        for actual in result.normals:
+            for a,b in zip(actual,mesh.normals[0]):self.assertAlmostEqual(a,b,places=6)
+        self.assertEqual(result.texcoords,mesh.texcoords)
+        self.assertAlmostEqual(result.roughness,.3,places=5)
+        self.assertAlmostEqual(result.metallic,.7,places=5)
+        for a,b in zip(result.base_color,mesh.base_color):self.assertAlmostEqual(a,b,delta=.005)
+
     def test_three_dm_preserves_only_explicit_source_object_ids(self):
         adapter = ThreeDM()
         scene = fixture()

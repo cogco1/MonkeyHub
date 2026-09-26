@@ -95,3 +95,27 @@
 .render-model-canvas { height: 280px; display: flex; align-items: center; justify-content: center; overflow: hidden; background: #171717; margin: 8px 0; }
 .render-model-canvas canvas { display: block; max-width: 100%; }
 .render-source-reason { margin: 4px 0 0; color: var(--muted); font-size: var(--text-caption); }
+
+.render-workspace > div:has(> .physical-workspace) { flex: 1; min-height: 0; overflow: auto; }
+.physical-workspace { padding: 16px; max-width: 1400px; margin: auto; font-size: 13px; }
+.physical-workspace :is(label, fieldset) { min-width: 0; }
+.physical-workspace label { display: flex; flex-direction: column; gap: 5px; margin: 8px 0; }
+.physical-workspace :is(select, input) { min-width: 0; max-width: 100%; padding: 7px; border: 1px solid var(--line); border-radius: 6px; background: var(--ground); color: inherit; }
+.physical-workspace input[type=color] { padding: 2px; width: 100%; height: 36px; }
+.physical-workspace input[type=checkbox] { align-self: start; }
+.physical-workspace button { margin: 4px 6px 4px 0; padding: 8px 12px; }
+.physical-workspace :is(p, small) { overflow-wrap: anywhere; line-height: 1.5; }
+.physical-workspace small { display: block; color: var(--muted); }
+.physical-workspace [role=alert] { color: var(--violated); padding: 8px; border-left: 2px solid currentColor; }
+.physical-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.physical-actions label { flex: 1 1 220px; }
+.physical-preview { width: min(100%, 680px); margin: 14px auto; background: var(--ground); border-radius: 10px; overflow: hidden; }
+.physical-preview canvas { display: block; touch-action: none; }
+.physical-controls { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 270px), 1fr)); gap: 12px; align-items: start; }
+.physical-controls > details { border: 1px solid var(--line); padding: 12px; border-radius: 8px; }
+.physical-controls summary { cursor: pointer; font-weight: 600; padding: 4px 0; }
+.physical-controls details details { border-top: 1px solid var(--line); padding-top: 8px; margin-top: 8px; }
+.physical-vector { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 6px; border: 0; padding: 4px 0; }
+.physical-vector label { font-size: 11px; }
+.physical-workspace article { border-top: 1px solid var(--line); padding: 12px 0; }
+.physical-workspace article img { display: block; max-width: 100%; max-height: 740px; margin: 12px auto; }

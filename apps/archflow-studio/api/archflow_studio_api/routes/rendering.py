@@ -9,6 +9,43 @@ from ..application.rendering import save_render_view
 
 router = APIRouter(prefix="/render", tags=["render"])
 
+from ..application import geometry_sources, render_scene, mesh_drawings, physical_render
+from ..transport.render_scene import SaveScene, SelectGeometry, CyclesRequest, MeshDrawingRequest
+
+@router.get('/scene')
+def read_scene(request:Request):
+    return render_scene.get_scene(bound_project(request.app.state)) | {'cyclesAvailable':bool(physical_render.executable())}
+
+@router.put('/scene')
+def update_scene(request:Request,payload:SaveScene):
+    return render_scene.save_scene(bound_project(request.app.state),payload)
+
+@router.get('/geometry')
+def scene_geometry(request:Request):
+    return geometry_sources.geometry_payload(bound_project(request.app.state))
+
+@router.put('/geometry')
+def choose_geometry(request:Request,payload:SelectGeometry):
+    return geometry_sources.select_geometry(bound_project(request.app.state),expected_revision=payload.expectedRevision,
+        export_id=payload.exportId,run_id=payload.runId,asset_sha256=payload.assetSha256,event_sink=request.app.state.events)
+
+@router.get('/scene/default')
+def default_scene(request:Request):
+    return render_scene.default_scene(bound_project(request.app.state))
+
+@router.post('/cycles',response_model=RenderJobDto,response_model_by_alias=True,status_code=202)
+def submit_cycles(request:Request,payload:CyclesRequest):
+    request.app.state.render_jobs.runtime_jobs=request.app.state.jobs
+    return physical_render.submit(bound_project(request.app.state),request.app.state.jobs,payload)
+
+@router.get('/drawings')
+def scene_drawings(request:Request):
+    return mesh_drawings.drawing_list(bound_project(request.app.state))
+
+@router.post('/drawings')
+def update_scene_drawings(request:Request,payload:MeshDrawingRequest):
+    return mesh_drawings.generate(bound_project(request.app.state),payload)
+
 
 @router.post("/views", response_model=SourceDocumentDto, response_model_by_alias=True, status_code=201)
 def retain_render_view(request: Request, payload: RenderViewSourceRequestDto):
