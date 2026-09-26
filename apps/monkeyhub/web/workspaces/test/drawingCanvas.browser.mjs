@@ -38,6 +38,7 @@ const unsupportedExact = { ...externalArtifact, runId: "seat-rhino-run", sha256:
 const savedDimension = { id: "saved-door-width", entityRef: "entity:wall", openingId: "door", placement: { offsetMm: 8 } };
 // The projected objects' component and material, as a design-state model names them.
 const projected = { "obj-wall": ["Wall", "Concrete"], "obj-table": ["Table", "Oak"] };
+const pens = { cutLineMm: .35, visibleLineMm: .18, hatchSpacingMm: 2 };
 const legacyDocument = { projectId: "drawing-project", runId: modelA.runId, assetSha256: "0".repeat(64),
   fileName: "retained-floor-plan.png", mimeType: "image/png", sizeBytes: 200, pageCount: 1,
   pages: [{ pageIndex: 0, width: 600, height: 400, rotation: 0 }], modelSource: modelA, sourceStageRef: "stage-A",
@@ -53,7 +54,7 @@ import {UserPreferencesProvider,useStudio,usePreferences} from '/test/TestProvid
 import '/src/styles.css';
 import '/@fs/${root}/../../../shared-web/src/base.css';
 const modelA=${JSON.stringify(modelA)},modelB=${JSON.stringify(modelB)};
-const metrics=window.drawingFixture={requests:[],documents:[${JSON.stringify(legacyDocument)}],artifacts:[${JSON.stringify(externalArtifact)},${JSON.stringify(unsupportedExact)}],uploads:[],handoffs:[],head:'stage-A',revision:0,headDrawable:true};
+const metrics=window.drawingFixture={requests:[],documents:[${JSON.stringify(legacyDocument)}],artifacts:[${JSON.stringify(externalArtifact)},${JSON.stringify(unsupportedExact)}],uploads:[],handoffs:[],head:'stage-A',revision:0,headDrawable:true,recipe:{hatchSpacingMm:3}};
 const stages=[{stageRef:'stage-A',label:'Accepted A',branchId:'main',modelSource:modelA}, {stageRef:'stage-B',label:'Accepted B',branchId:'main',modelSource:modelB}];
 function App(){
  const studio=useStudio(),[active,setActive]=useState(true),[projectId,setProjectId]=useState('drawing-project');
@@ -106,6 +107,7 @@ const revision = () => page.getByRole("combobox", { name: "Drawing", exact: true
 const source = () => page.getByRole("combobox", { name: "Version to draw", exact: true });
 // GH-302: appearance saves itself; the only save button left is Retry after a refusal.
 const saveButton = () => page.getByRole("button", { name: "Retry saving", exact: true });
+const pen = label => page.getByLabel(label, { exact: true });
 const objectChoice = () => page.getByRole("combobox", { name: "Projected object", exact: true });
 // The page's own drawing of a projected object, and where a plan point is on screen.
 const drawn = object => page.locator(`svg.drawing-vector-base .drawing-plan__lines [data-object="${object}"]`);
@@ -139,14 +141,17 @@ try {
     // Like the runtime: a chosen version is kept on later revisions until one follows again.
     const previous = body.previousRevisionRef ? await page.evaluate(ref => window.drawingFixture.documents.find(d => d.revisionRef === ref) ?? null, body.previousRevisionRef) : null;
     const follow = body.follow ?? previous?.viewRecipe?.follow;
+    // Each pen is the request's, else the previous revision's, else the project recipe's, else the code default.
+    const recipe = await page.evaluate(() => window.drawingFixture.recipe);
+    const graphics = Object.fromEntries(Object.entries(pens).map(([key, fallback]) =>
+      [key, body[key] ?? previous?.viewRecipe?.graphics?.[key] ?? recipe[key] ?? fallback]));
     const result = { projectId: body.projectId, runId: body.modelSource?.runId ?? body.sourceAsset.runId, assetSha256: String(serial).padStart(64, "0"),
       fileName: `floor-plan-${serial}.png`, mimeType: "image/png", sizeBytes: 200, pageCount: 1,
       pages: [{ pageIndex: 0, width: 600, height: 400, rotation: 0 }], modelSource: body.modelSource ?? null, sourceStageRef: body.sourceStageRef ?? null,
       drawingId: "floor-plan", revisionRef: `revision-${serial}`, generatedAt: `2026-09-23T00:00:0${serial}Z`,
       viewRecipe: { kind: "cut-plan", frame: { origin: [0, 0, body.cutHeight], far_depth: body.cutHeight - body.bottom,
         scale: `1:${body.scaleDenominator}`, crop_uv: body.cropUv ?? [0, 0, 10, 6] },
-        graphics: { cutLineMm: body.cutLineMm, visibleLineMm: body.visibleLineMm, hatchSpacingMm: body.hatchSpacingMm },
-        hiddenObjectIds: body.hiddenObjectIds ?? previous?.viewRecipe?.hiddenObjectIds ?? [], dimensions: body.dimensions, dressing: body.dressing ?? [],
+        graphics, hiddenObjectIds: body.hiddenObjectIds ?? previous?.viewRecipe?.hiddenObjectIds ?? [], dimensions: body.dimensions, dressing: body.dressing ?? [],
         ...(body.sourceAsset ? { sourceAsset: body.sourceAsset } : {}),
         ...(follow === "frozen" ? { follow: "frozen" } : {}) } };
     await page.evaluate(result => window.drawingFixture.documents.push(result), result);
@@ -227,10 +232,19 @@ try {
     await revision().selectOption("");
     await page.getByRole("button", { name: "Generate cut plan", exact: true }).waitFor();
     assert.equal(await page.getByRole("group", { name: "Saved dimensions", exact: true }).count(), 0);
+    // A new drawing's pens are left to the project recipe until a person sets one.
+    await page.getByText("Linework and hatch", { exact: true }).click();
+    assert.equal(await pen("Hatch spacing (paper mm)").inputValue(), "");
+    assert.equal(await pen("Hatch spacing (paper mm)").getAttribute("placeholder"), "Project recipe");
     await page.getByRole("button", { name: "Generate cut plan", exact: true }).click();
     await page.locator('.drawing-preview__viewport[data-ready="true"]').waitFor();
     assert.deepEqual(requests[0].modelSource, modelA); assert.equal(requests[0].sourceStageRef, "stage-A");
     assert.equal(requests[0].cutHeight, 1.2); assert.deepEqual(requests[0].dimensions, []);
+    for (const key of Object.keys(pens)) assert.equal(key in requests[0], false, `an untouched ${key} is not sent`);
+    // The drawing then shows the values it was made with: the recipe's hatch spacing and the defaults.
+    await until(() => pen("Hatch spacing (paper mm)").inputValue(), value => value === "3", "the recipe's hatch spacing shown");
+    assert.equal(await pen("Cut line (paper mm)").inputValue(), "0.35"); assert.equal(await pen("Visible line (paper mm)").inputValue(), "0.18");
+    await page.getByText("Linework and hatch", { exact: true }).click();
   });
   let oldRevision;
   await step("appearance updates retain semantic dimension and previous revision without design calls", async () => {
@@ -641,6 +655,22 @@ try {
     await until(() => Promise.resolve(requests.length), value => value === sent + 1, "hiding from the list saved a revision");
     assert.deepEqual(requests.at(-1).hiddenObjectIds, ["obj-screen"]); assert.equal(requests.at(-1).previousRevisionRef, dense.revisionRef);
     await until(() => page.getByText("Saving appearance…", { exact: true }).count(), value => value === 0, "the hidden object saved");
+  });
+  await step("a new drawing sends only the pens a person set and shows the ones it was drawn with", async () => {
+    await revision().selectOption("");
+    const graphics = page.locator("details", { has: page.getByText("Linework and hatch", { exact: true }) });
+    if (!await graphics.evaluate(node => node.open)) await page.getByText("Linework and hatch", { exact: true }).click();
+    assert.equal(await pen("Cut line (paper mm)").inputValue(), "");
+    await pen("Cut line (paper mm)").fill("0.5");
+    const sent = requests.length;
+    await page.getByRole("button", { name: "Generate cut plan", exact: true }).click();
+    await until(() => revision().inputValue(), value => value !== "", "the new drawing opened");
+    assert.equal(requests.length, sent + 1);
+    assert.equal(requests.at(-1).cutLineMm, 0.5, "the pen a person set is asked for");
+    assert.equal("visibleLineMm" in requests.at(-1), false); assert.equal("hatchSpacingMm" in requests.at(-1), false);
+    assert.equal(await pen("Cut line (paper mm)").inputValue(), "0.5");
+    assert.equal(await pen("Visible line (paper mm)").inputValue(), "0.18");
+    assert.equal(await pen("Hatch spacing (paper mm)").inputValue(), "3", "the project recipe's spacing is what it was drawn with");
   });
   assert.deepEqual(errors, []);
   console.log(JSON.stringify({ passed, screenshots, generationRequests: requests.length, dimensionProposals: drives.length }));

@@ -5,7 +5,7 @@ import type { DesignStageDto, ModelSourceDto, PlanDimensionChoicesDto, PlanStatu
 import { ErrorPanel } from "../../app/ErrorPanel";
 import { usePreferences } from "../../features/settings/preferences";
 import { DocumentSurface } from "./DocumentCanvas";
-import { defaultPlanForm, drawingDocumentKey, keptOnChosenVersion, latestRevisions, liveAction, planFormFromDocument, type PlanForm } from "./drawingPlan";
+import { defaultPlanForm, drawingDocumentKey, keptOnChosenVersion, latestRevisions, liveAction, PAPER_PENS, planFormFromDocument, planRequestFields, type PlanForm } from "./drawingPlan";
 import { DressingControls, DressingOverlay } from "./DrawingDressing";
 import "./DrawingCanvas.css";
 
@@ -32,6 +32,7 @@ const copy = {
     sectionToward: "Look toward", eyeHeight: "Eye height above the lowest cut point", fov: "Field of view (degrees)",
     sectionGenerate: "Generate section perspective", sectionView: "Section perspective · true to scale at the cut plane",
     statusError: "Source status could not be read. Refresh to try again.", loading: "Loading drawing…",
+    recipePen: "Project recipe", penHint: "A pen left empty follows the project recipe, or 0.35 / 0.18 / 2 mm without one; the drawing then shows the values it was made with.",
     objects: "Objects in this drawing", object: "Projected object", noObject: "Choose an object",
     pickHint: "Point at a line to see which object it draws; click it to select that object.",
     tooMany: "This drawing has {count} lines, so it is shown as an image; choose its objects from the list.",
@@ -60,6 +61,7 @@ const copy = {
     sectionToward: "看向", eyeHeight: "视高（自剖切最低点起）", fov: "视角（度）",
     sectionGenerate: "生成剖透视", sectionView: "剖透视 · 剖切面处按比例",
     statusError: "无法读取来源状态，请刷新重试。", loading: "正在读取图纸…",
+    recipePen: "项目设定", penHint: "留空的线宽和填充间距按项目表达设定取值，没有设定时为 0.35 / 0.18 / 2 mm；生成后显示图纸实际采用的数值。",
     objects: "图中对象", object: "投影对象", noObject: "选择对象",
     pickHint: "指向线条可查看它来自哪个对象，点击即可选中该对象。",
     tooMany: "此图共有 {count} 条线，以图片显示；请从列表中选择对象。",
@@ -443,9 +445,9 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
     const object = picture?.objects.get(id) ?? seen.current.get(id);
     return object ? `${object.component ?? object.id} · ${object.material ?? text.noMaterial}` : id;
   };
-  /** The revision request itself: on a target, or on the drawing's own source. */
+  /** The revision request itself: on a target, or on the drawing's own source. A new drawing names only the pens a person set. */
   const requestRevision = (drawn: PlanTarget, follow?: "live" | "frozen") =>
-    studio.drawingPlan({ projectId, ...targetSource(drawn), ...form,
+    studio.drawingPlan({ projectId, ...targetSource(drawn), ...planRequestFields(form),
       ...(source?.drawingId ? { drawingId: source.drawingId } : {}), ...(source?.revisionRef ? { previousRevisionRef: source.revisionRef } : {}),
       ...(follow ? { follow } : {}) });
   /** Write a revision on a target, or on the drawing's own source; `follow` records a person's choice. True once it is open. */
@@ -542,8 +544,12 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
     link.href = url; link.download = source.fileName.replace(/\.[^.]+$/, "") + ".svg"; link.click();
     window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
-  const numeric = (key: "cutHeight" | "bottom" | "scaleDenominator" | "cutLineMm" | "visibleLineMm" | "hatchSpacingMm", label: string, min?: number, step = "any") =>
-    <label className="drawing-field">{label}<input type="number" min={min} step={step} required value={Number.isFinite(form[key]) ? form[key] : ""} onChange={event => update({ [key]: event.currentTarget.valueAsNumber })} /></label>;
+  const numeric = (key: "cutHeight" | "bottom" | "scaleDenominator" | "cutLineMm" | "visibleLineMm" | "hatchSpacingMm", label: string, min?: number, step = "any") => {
+    // A new drawing's empty pen is left to the project recipe; a drawn revision always names its own.
+    const open = !source && (PAPER_PENS as readonly string[]).includes(key);
+    return <label className="drawing-field">{label}<input type="number" min={min} step={step} required={!open} placeholder={open ? text.recipePen : undefined}
+      value={Number.isFinite(form[key]) ? form[key] : ""} onChange={event => update({ [key]: event.currentTarget.valueAsNumber })} /></label>;
+  };
 
   return <div className="drawing-workspace" aria-label={text.title}>
     <header className="drawing-header"><div><h1>{text.title}</h1><p>{text.intro}</p></div>
@@ -609,7 +615,8 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
           {numeric("cutHeight", `${text.cutHeight} (${lengthUnit || "…"})`)}
           {numeric("bottom", `${text.bottom} (${lengthUnit || "…"})`)}
           {numeric("scaleDenominator", text.scale, 1, "1")}
-          <details><summary>{text.graphics}</summary>{numeric("cutLineMm", text.cutLine, 0.01)}{numeric("visibleLineMm", text.visibleLine, 0.01)}{numeric("hatchSpacingMm", text.hatch, 0.1)}</details>
+          <details><summary>{text.graphics}</summary>{numeric("cutLineMm", text.cutLine, 0.01)}{numeric("visibleLineMm", text.visibleLine, 0.01)}{numeric("hatchSpacingMm", text.hatch, 0.1)}
+            {!source && <p className="drawing-field__hint">{text.penHint}</p>}</details>
         </fieldset>}
         {source && !perspectiveOpen && picture && <fieldset disabled={busy || !active}><legend>{text.objects}</legend>
           <label className="drawing-field">{text.object}<select value={pickedObject?.id ?? ""} onChange={event => setPicked(event.target.value || null)}>
