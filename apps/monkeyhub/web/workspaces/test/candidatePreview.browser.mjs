@@ -1481,8 +1481,11 @@ try {
         });
         assert.ok(separation.apart, `${label} and version history physically overlap at ${size.width}px: ${JSON.stringify(separation)}`);
         assert.ok(separation.historyTop >= 0, 'Version history must stay inside the visible page');
+        // #352: the bar's More leaves Versions open where it is docked beside the canvas and
+        // closes it only where it covers the canvas (Modeling narrower than 560 px).
+        const docked = await page.locator('.stage-workspace').evaluate((node) => node.clientWidth > 560);
         await button.click();
-        assert.equal(await page.locator('#stage-versions-panel').count(), 0);
+        assert.equal(await page.locator('#stage-versions-panel').count(), label === 'View tools' && docked ? 1 : 0);
         if (panel) await page.locator(panel).waitFor();
         assert.deepEqual(await state(), before, `${label} changed camera or source at ${size.width}px`);
       }

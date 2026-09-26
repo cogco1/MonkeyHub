@@ -111,7 +111,9 @@ function installStageToolbarPolicy(): void {
     const navigatingOverInk = inside(event.target, ANNOTATION_CANVAS) && event.button !== 0;
     if (!navigatingViewport && !navigatingOverInk) return;
     event.preventDefault();
-    event.stopImmediatePropagation();
+    // Nothing below the window hears it, the viewport least of all; a menu listening beside
+    // this on the window still does, so a click on the held view closes it (#352).
+    event.stopPropagation();
     markAnnotationLock(true);
   }, true);
   window.addEventListener("wheel", (event) => {

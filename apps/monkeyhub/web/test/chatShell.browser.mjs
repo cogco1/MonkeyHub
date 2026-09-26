@@ -1350,6 +1350,12 @@ try {
   await visibleWorkspace().evaluate((element) => { element.switchMarker = "retained"; element.retainedCanvas = element.querySelector(".stage canvas"); });
   // #352: at 1440 the tools are one row, and the standard views are in the bar's More.
   assert.ok((await visibleWorkspace().locator(".model-tools").boundingBox()).height <= 52, "the tools are one row at 1440");
+  // Esc closes a bar menu's panel even after the focus dropped to the page, and returns to its menu.
+  await visibleWorkspace().locator('.project-bar button[aria-controls="stage-more-menu"]').click();
+  await page.evaluate(() => document.activeElement?.blur());
+  await page.keyboard.press("Escape");
+  await visibleWorkspace().locator("#stage-more-menu").waitFor({ state: "detached" });
+  assert.equal(await page.evaluate(() => document.activeElement?.getAttribute("aria-controls")), "stage-more-menu");
   await visibleWorkspace().locator('.project-bar button[aria-controls="stage-more-menu"]').click();
   await visibleWorkspace().locator("#stage-more-menu").getByRole("button", { name: "Top", exact: true }).click();
   await visibleWorkspace().locator('.project-bar button[aria-controls="stage-more-menu"]').click();

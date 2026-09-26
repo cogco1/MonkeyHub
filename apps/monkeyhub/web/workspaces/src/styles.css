@@ -1368,6 +1368,17 @@ button.chip:hover {
   margin-right: 6px;
 }
 
+/* #352: the drawing plane, after what is picked, while it is not XY. */
+.status-line .stage-plane .label {
+  margin-right: 6px;
+}
+
+.status-line .picked + .stage-plane {
+  margin-left: 6px;
+  padding-left: 8px;
+  border-left: 1px solid var(--line);
+}
+
 .status-line .editing-base {
   display: inline;
   font-size: inherit;
@@ -2999,6 +3010,15 @@ button.model-tool-button:hover:not(:disabled):not([aria-pressed="true"]) {
 }
 
 button.model-tool-button[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+/* #352: the palette's More holds what is in use - one of its tools, tracing paper or a drawing
+   plane - so it looks on without saying it is pressed; it says only whether it is open. */
+button.model-tool-button.model-tool-button--holds,
+button.model-tool-button.model-tool-button--holds:hover:not(:disabled) {
   border-color: var(--accent);
   background: var(--accent-soft);
   color: var(--accent);

@@ -7,7 +7,7 @@ import { useConnection } from "../../api/ProjectRuntimeContext";
  * stage decides nothing.
  */
 
-import { createRef, useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode, type RefObject, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
+import { createRef, useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode, type RefObject, type PointerEvent as ReactPointerEvent } from "react";
 
 import type { StudioApiError } from "../../api/client";
 import type { DocumentAnnotationRefDto, DocumentVisualInputDto, GestureDto, ModelSourceDto, ProjectArtifactDto, WorkingCopyDto, WorkingCopyOptionDto } from "../../api/generated";
@@ -126,10 +126,13 @@ const RECORD_FRAME = 16;
 
 /**
  * #352: a menu's panel, in the bar or over the tools, closes when the pointer goes down or
- * the focus moves somewhere outside it. A control inside it that turns itself off while it
- * works (Export while it runs) leaves the panel open: focus dropping to the page is not a move.
+ * the focus moves somewhere outside it, and Esc closes it wherever the focus is, back on its
+ * menu. A control inside it that turns itself off while it works (Export while it runs) drops
+ * the focus to the page: the panel stays, and that Esc is the panel's, not the model's, so it
+ * clears nothing picked. The pointer is heard on the window's way down, where tracing paper's
+ * hold on the view (ModelToolButton) stops a click on the canvas from going any further.
  */
-function useDismiss(open: boolean, element: RefObject<HTMLElement | null>, close: () => void) {
+function useDismiss(open: boolean, element: RefObject<HTMLElement | null>, toggle: string, close: () => void) {
   const closeRef = useRef(close);
   closeRef.current = close;
   useEffect(() => {
@@ -137,13 +140,22 @@ function useDismiss(open: boolean, element: RefObject<HTMLElement | null>, close
     const outside = (event: Event) => {
       if (event.target instanceof Node && !element.current?.contains(event.target)) closeRef.current();
     };
-    document.addEventListener("pointerdown", outside, true);
-    document.addEventListener("focusin", outside);
-    return () => {
-      document.removeEventListener("pointerdown", outside, true);
-      document.removeEventListener("focusin", outside);
+    const escape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      closeRef.current();
+      element.current?.querySelector<HTMLElement>(toggle)?.focus();
     };
-  }, [open, element]);
+    window.addEventListener("pointerdown", outside, true);
+    document.addEventListener("focusin", outside);
+    document.addEventListener("keydown", escape, true);
+    return () => {
+      window.removeEventListener("pointerdown", outside, true);
+      document.removeEventListener("focusin", outside);
+      document.removeEventListener("keydown", escape, true);
+    };
+  }, [open, element, toggle]);
 }
 
 /**
@@ -470,6 +482,7 @@ export function Stage({
   const [moreToolsOpen, setMoreToolsOpen] = useState(false);
   const [versionsOpen, setVersionsOpen] = useState(false);
   const toolsElement = useRef<HTMLDivElement>(null);
+  const workspaceElement = useRef<HTMLDivElement>(null);
   const exportMenuElement = useRef<HTMLSpanElement>(null);
   const exportPanelElement = useRef<HTMLDivElement>(null);
   const moreMenuElement = useRef<HTMLSpanElement>(null);
@@ -478,9 +491,9 @@ export function Stage({
   const moreToolsPanelElement = useRef<HTMLDivElement>(null);
   const closeBarMenu = useCallback(() => setBarMenu(null), []);
   const closeMoreTools = useCallback(() => setMoreToolsOpen(false), []);
-  useDismiss(barMenu === "export", exportMenuElement, closeBarMenu);
-  useDismiss(barMenu === "more", moreMenuElement, closeBarMenu);
-  useDismiss(moreToolsOpen, moreToolsElement, closeMoreTools);
+  useDismiss(barMenu === "export", exportMenuElement, '[aria-controls="stage-export-menu"]', closeBarMenu);
+  useDismiss(barMenu === "more", moreMenuElement, '[aria-controls="stage-more-menu"]', closeBarMenu);
+  useDismiss(moreToolsOpen, moreToolsElement, '[aria-controls="model-tools-more"]', closeMoreTools);
   useInView(barMenu === "export", exportPanelElement, ".project-workspace, .stage", true,
     `${workModel?.busy}:${workModel?.exported?.sha256}:${workModel?.error}:${workModel?.refusal}`);
   useInView(barMenu === "more", morePanelElement, ".project-workspace, .stage", true);
@@ -1316,6 +1329,12 @@ export function Stage({
       {developerMode && picked.status !== "resolved" && <span className="picked__meta">{picked.status}</span>}
     </span>
   );
+  // #352: the drawing plane sits in the tools' More; while it is not the ground (XY), the status
+  // line says which plane the next shape is drawn on.
+  const planeStatus = onSketch && workPlaneName !== "xy" && <span className="stage-plane" data-plane={workPlaneName}>
+    <span className="label">{t("stage.sketch.workPlane")}</span>
+    {t(({ xz: "stage.sketch.planeXZ", yz: "stage.sketch.planeYZ", face: "stage.sketch.planeFace" } as const)[workPlaneName])}
+  </span>;
   const sessionStatus = <>
     {modelAnnotations && <div className="stage-annotations-status" data-model-annotations-status={modelAnnotations.error ? "error" :
       !modelAnnotations.ready ? "loading" : modelAnnotations.saving || modelAnnotations.dirty ? "saving" : "saved"}>
@@ -1335,16 +1354,14 @@ export function Stage({
     setVersionsOpen((open) => !open); setAnnotationToolsOpen(false); setBarMenu(null); setParameterLocksOpen(false);
   };
   // #352: Export and More take the place of the palette's view tools, one open at a time and,
-  // like those, beside neither Versions, tracing paper nor the parameter locks.
+  // like those, beside neither tracing paper nor the parameter locks. Versions docked at the
+  // canvas's edge stays open beside them; only where it covers the canvas (Modeling narrower
+  // than 560 px, styles.css) does it give way, as it did when it was an overlay.
   const toggleBarMenu = (menu: "export" | "more") => {
-    setBarMenu((open) => open === menu ? null : menu);
-    setAnnotationToolsOpen(false); setVersionsOpen(false); setParameterLocksOpen(false); setMoreToolsOpen(false);
-  };
-  const closeOnEscape = (event: ReactKeyboardEvent<HTMLElement>, close: () => void, toggle: string) => {
-    if (event.key !== "Escape") return;
-    event.preventDefault(); event.stopPropagation();
-    close();
-    event.currentTarget.querySelector<HTMLElement>(toggle)?.focus();
+    if (barMenu === menu) { setBarMenu(null); return; }
+    setBarMenu(menu);
+    setAnnotationToolsOpen(false); setParameterLocksOpen(false); setMoreToolsOpen(false);
+    if ((workspaceElement.current?.clientWidth ?? 0) <= 560) setVersionsOpen(false);
   };
   const workModelTitle = workModel && (workModel.refusal === "busy-elsewhere"
     ? t("stage.tools.workModelBusyElsewhere")
@@ -1356,8 +1373,7 @@ export function Stage({
           ? t("stage.tools.workModelNothingLoaded")
           : t("stage.tools.workModelTitle", { fileName: workModel.source?.fileName ?? "" }));
   // #352: Export, in the bar: the editable copy of the model on screen and, once made, its file.
-  const exportMenu = workModel && <span ref={exportMenuElement} className="stage-menu"
-    onKeyDown={(event) => { if (barMenu === "export") closeOnEscape(event, closeBarMenu, '[aria-controls="stage-export-menu"]'); }}>
+  const exportMenu = workModel && <span ref={exportMenuElement} className="stage-menu">
     <MenuCommand aria-expanded={barMenu === "export"} aria-controls="stage-export-menu" onClick={() => toggleBarMenu("export")}>
       {t("stage.menu.export")}</MenuCommand>
     {barMenu === "export" && <div ref={exportPanelElement} id="stage-export-menu" className="stage-menu__panel" role="group" aria-label={t("stage.menu.export")}>
@@ -1381,8 +1397,7 @@ export function Stage({
     setBarMenu(null);
     moreMenuElement.current?.querySelector<HTMLElement>('[aria-controls="stage-more-menu"]')?.focus();
   };
-  const moreMenu = <span ref={moreMenuElement} className="stage-menu"
-    onKeyDown={(event) => { if (barMenu === "more") closeOnEscape(event, closeBarMenu, '[aria-controls="stage-more-menu"]'); }}>
+  const moreMenu = <span ref={moreMenuElement} className="stage-menu">
     <MenuCommand aria-expanded={barMenu === "more"} aria-controls="stage-more-menu" onClick={() => toggleBarMenu("more")}>
       {t("stage.menu.more")}</MenuCommand>
     {barMenu === "more" && <div ref={morePanelElement} id="stage-more-menu" className="stage-menu__panel" role="group" aria-label={t("stage.menu.more")}>
@@ -1451,7 +1466,7 @@ export function Stage({
         </div>}
         {editingStatus}
       </div>}
-      <div className="stage-workspace">
+      <div ref={workspaceElement} className="stage-workspace">
       <div className={`stage-model${documentOpen ? " stage-model--hidden" : ""}`} inert={documentOpen} aria-hidden={documentOpen}
         /* Undo and redo are decided in one place - the keyboard effect above -
            so that one Ctrl+Z reaches exactly one owner. The ink's undo is still
@@ -1925,11 +1940,12 @@ export function Stage({
             <ModelToolButton icon="fit" label={t("stage.tools.fit")} onClick={() => viewportRef.current?.fitView()} />
             <ModelToolButton icon="front" label={t("stage.tools.front")} onClick={() => viewportRef.current?.frontView()} />
             {/* #352: the palette's own More, last on its row: the less frequent drawing tools, tracing
-                paper and the drawing plane. It reads as on while one of them is. */}
-            <span ref={moreToolsElement} className="model-tools__more"
-              onKeyDown={(event) => { if (moreToolsOpen) closeOnEscape(event, closeMoreTools, '[aria-controls="model-tools-more"]'); }}>
+                paper and the drawing plane. It says whether it is open; its look also shows while it
+                holds what is in use - one of its tools, tracing paper or a drawing plane other than XY. */}
+            <span ref={moreToolsElement} className="model-tools__more">
               <ModelToolButton icon="more" label={t("stage.tools.more")} aria-expanded={moreToolsOpen} aria-controls="model-tools-more"
-                aria-pressed={sketch.tool === "polygon" || sketch.tool === "arc" || sketch.tool === "freehand" || annotationToolsOpen || workPlaneName !== "xy"}
+                className={sketch.tool === "polygon" || sketch.tool === "arc" || sketch.tool === "freehand" || annotationToolsOpen || workPlaneName !== "xy"
+                  ? "model-tool-button--holds" : undefined}
                 onClick={() => setMoreToolsOpen((open) => !open)} />
               {moreToolsOpen && <div ref={moreToolsPanelElement} id="model-tools-more" className="model-tools__flyout model-tools__flyout--more"
                 role="group" aria-label={t("stage.tools.more")}>
@@ -2200,7 +2216,8 @@ export function Stage({
           : <div className="document-workspace document-empty">{t("document.noRun")}</div>}
       </div>}
       </div>
-      {/* #337 L5: what is picked, and which model the next edit starts from, as quiet words. */}
+      {/* #337 L5: what is picked, the drawing plane when it is not XY (#352), and which model the
+          next edit starts from, as quiet words. */}
       <StatusLine end={<>{quietBase}{developerMode && <button type="button" className="drawer-tab" onClick={() => onEvidence("honesty")}>
         {t("nav.evidence")}
         <span className="drawer-tab__count">
@@ -2211,7 +2228,7 @@ export function Stage({
         <span className="drawer-tab__count mono" title={t("stage.review.drawerTitle")}>
           {t("evidence.tabs.honesty")} {evidenceCounts.honesty} · {t("evidence.tabs.events")} {evidenceCounts.events}
         </span>
-      </button>}</>}>{!documentOpen && pickedStatus}</StatusLine>
+      </button>}</>}>{!documentOpen && pickedStatus}{!documentOpen && planeStatus}</StatusLine>
     </section>
   );
 }
