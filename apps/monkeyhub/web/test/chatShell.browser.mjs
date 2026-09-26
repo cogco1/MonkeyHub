@@ -1332,6 +1332,13 @@ try {
   await page.getByRole("menuitem", { name: "View", exact: true }).click();
   await page.getByRole("menuitemradio", { name: "Light", exact: true }).click();
   await page.waitForFunction(() => document.documentElement.dataset.theme === "light");
+  // Every interface style draws the same row; the crops are for review by eye.
+  for (const [style, name] of [["quiet", "Quiet instrument"], ["titleblock", "Title block"], ["night", "Night flight"], ["classic", "Classic"]]) {
+    await page.getByRole("menuitem", { name: "View", exact: true }).click();
+    await page.getByRole("menuitemradio", { name, exact: true }).click();
+    await page.waitForFunction((value) => (document.documentElement.getAttribute("data-ui-style") ?? "classic") === value, style);
+    await page.screenshot({ path: path.join(temporary, `menu-row-${style}.png`), clip: { x: 0, y: 0, width: 760, height: 180 } });
+  }
 
   // B — the global defaults live in the bottom-left Hub settings only.
   await page.getByRole("button", { name: "Hub settings", exact: true }).click();
