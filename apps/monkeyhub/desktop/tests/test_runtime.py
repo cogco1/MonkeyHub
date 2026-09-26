@@ -91,6 +91,10 @@ class WindowsProcesses:
             (self.user.GetWindowTextW, [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int], ctypes.c_int),
             (self.user.IsWindowVisible, [wintypes.HWND], wintypes.BOOL),
             (self.user.PostMessageW, [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM], wintypes.BOOL),
+            (self.user.FindWindowExW, [wintypes.HWND, wintypes.HWND, wintypes.LPCWSTR, wintypes.LPCWSTR], wintypes.HWND),
+            (self.user.GetWindowRect, [wintypes.HWND, ctypes.POINTER(wintypes.RECT)], wintypes.BOOL),
+            (self.user.SendMessageW, [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM], wintypes.LPARAM),
+            (self.user.SetThreadDpiAwarenessContext, [ctypes.c_void_p], ctypes.c_void_p),
         )
         for function, arguments, result in signatures:
             function.argtypes, function.restype = arguments, result
@@ -244,6 +248,44 @@ class WindowsProcesses:
             if not self.user.PostMessageW(hwnd, 0x0010, 0, 0):  # WM_CLOSE
                 raise ctypes.WinError(ctypes.get_last_error())
 
+    def caption(self, pid):
+        """#354: the caption child of this shell's main window, or None with the system title bar."""
+        for hwnd, _ in self.windows(pid):
+            child = self.user.FindWindowExW(hwnd, None, "MonkeyHubCaption", None)
+            if child:
+                return child
+        return None
+
+    def caption_hit_codes(self, caption):
+        """WM_NCHITTEST at the middle of each third of the caption child, left to right, in the
+        physical screen coordinates Windows itself sends (this thread is made DPI aware)."""
+        previous = self.user.SetThreadDpiAwarenessContext(ctypes.c_void_p(-4))  # PER_MONITOR_AWARE_V2
+        try:
+            rect = wintypes.RECT()
+            if not self.user.GetWindowRect(caption, ctypes.byref(rect)):
+                raise ctypes.WinError(ctypes.get_last_error())
+            y = (rect.top + rect.bottom) // 2
+            codes = []
+            for third in range(3):
+                x = rect.left + (rect.right - rect.left) * (2 * third + 1) // 6
+                codes.append(self.user.SendMessageW(caption, 0x0084, 0, ((y & 0xFFFF) << 16) | (x & 0xFFFF)))
+            return codes
+        finally:
+            self.user.SetThreadDpiAwarenessContext(previous)
+
+    def click_caption(self, caption, code):
+        """Press and release a caption button the way Windows delivers it: non-client messages
+        carrying the button's hit code."""
+        self.track_webviews(self.owner(caption))
+        for message in (0x00A1, 0x00A2):  # WM_NCLBUTTONDOWN, WM_NCLBUTTONUP
+            if not self.user.PostMessageW(caption, message, code, 0):
+                raise ctypes.WinError(ctypes.get_last_error())
+
+    def owner(self, hwnd):
+        pid = wintypes.DWORD()
+        self.user.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+        return pid.value
+
     def cleanup(self):
         # WebView2 owns asynchronous profile flushing after the shell exits.
         # These handles were captured from this shell's actual descendant tree.
@@ -386,7 +428,7 @@ class DesktopRuntimeTests(unittest.TestCase):
                     shell.kill()  # Only the Popen object created by this test.
                     shell.wait(timeout=10)
 
-    def launch(self, port=None, *, trial=False):
+    def launch(self, port=None, *, trial=False, native_title_bar=False):
         previous = set((self.runtime / "logs").glob("desktop-*.log"))
         command = [str(Path(EXE)), "--source-root", str(ROOT), "--python", sys.executable,
                    "--runtime-root", str(self.runtime), "--startup-timeout-seconds", "40"]
@@ -396,6 +438,8 @@ class DesktopRuntimeTests(unittest.TestCase):
             command.extend(("--port", str(port)))
         if trial:
             command.append("--update-trial")
+        if native_title_bar:
+            command.append("--native-title-bar")
         self.shell = subprocess.Popen(
             command, cwd=self.root, env=self.environment,
             stdin=subprocess.PIPE if trial else subprocess.DEVNULL,
@@ -593,6 +637,38 @@ $pattern.Current.Value | ConvertTo-Json -Compress
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         return json.loads(result.stdout.strip())
 
+    def shows_title_row(self):
+        """#354: whether the page drew the merged row. Only its centred title joins the
+        project and the conversation into one text, "<project> · 新对话" in a new runtime."""
+        windows = self.native.windows(self.shell.pid)
+        self.assertEqual(len(windows), 1, windows)
+        script = f"""
+$ErrorActionPreference = 'Stop'
+$ProgressPreference = 'SilentlyContinue'
+Add-Type -AssemblyName UIAutomationClient
+$window = [System.Windows.Automation.AutomationElement]::FromHandle([IntPtr]{windows[0][0]})
+$condition = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ControlTypeProperty, [System.Windows.Automation.ControlType]::Text)
+$found = $false
+for ($attempt = 0; $attempt -lt 50 -and -not $found; $attempt++) {{
+    foreach ($text in $window.FindAll([System.Windows.Automation.TreeScope]::Descendants, $condition)) {{
+        if ($text.Current.Name -like ('* ' + [char]0x00B7 + ' ' + [char]0x65B0 + [char]0x5BF9 + [char]0x8BDD)) {{ $found = $true }}
+    }}
+    if (-not $found) {{ Start-Sleep -Milliseconds 100 }}
+}}
+$found | ConvertTo-Json -Compress
+"""
+        try:
+            result = subprocess.run(
+                ["powershell.exe", "-Mta", "-NoProfile", "-NonInteractive", "-EncodedCommand",
+                 base64.b64encode(script.encode("utf-16-le")).decode("ascii")],
+                capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30,
+                creationflags=subprocess.CREATE_NO_WINDOW,
+            )
+        except subprocess.TimeoutExpired as error:
+            self.fail(f"Title row UI Automation timed out: {error.stderr!r}")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        return json.loads(result.stdout.strip())
+
     def test_retained_chat_and_settings_are_visible_before_first_write(self):
         from monkeyhub_api.chat import ChatStore, _SavedChat
         from monkeyhub_api.models import ChatMessage
@@ -701,6 +777,38 @@ $pattern.Current.Value | ConvertTo-Json -Compress
         self.assertNotEqual(self.instance, first_instance)
         self.open_project()
         self.app_ready("monkeymonitor")
+        self.native.close_window(self.shell.pid)
+        self.assertEqual(self.shell.wait(timeout=40), 0)
+        self.drained()
+
+    def test_merged_title_row_answers_the_native_hit_test_and_closes_through_the_drain(self):
+        """#354: on Windows 11 the page draws the window buttons and a native caption child
+        answers for them. The flyout itself needs a person; the hit codes that summon it and the
+        close path do not."""
+        self.launch()
+        self.ready()
+        caption = self.native.caption(self.shell.pid)
+        if caption is None:
+            self.assertIn("event=title-bar mode=native", self.log_text())
+            self.native.close_window(self.shell.pid)
+            self.assertEqual(self.shell.wait(timeout=40), 0)
+            self.drained()
+            self.skipTest("This Windows keeps the system title bar (build before 22000)")
+        self.assertIn("event=title-bar mode=merged", self.log_text())
+        self.assertTrue(self.shows_title_row(), "The host's bridge did not reach the Hub page")
+        self.assertEqual(self.native.caption_hit_codes(caption), [8, 9, 20])  # HTMINBUTTON, HTMAXBUTTON, HTCLOSE
+        self.native.click_caption(caption, 20)
+        self.wait_state("stopping")
+        self.assertEqual(self.shell.wait(timeout=40), 0)
+        self.wait_state("stopped")
+        self.drained()
+
+    def test_native_title_bar_switch_keeps_the_system_title_bar(self):
+        self.launch(native_title_bar=True)
+        self.ready()
+        self.assertIsNone(self.native.caption(self.shell.pid))
+        self.assertIn("event=title-bar mode=native", self.log_text())
+        self.assertFalse(self.shows_title_row(), "The system title bar keeps today's layout")
         self.native.close_window(self.shell.pid)
         self.assertEqual(self.shell.wait(timeout=40), 0)
         self.drained()

@@ -281,3 +281,31 @@
 .hub-menu__heading{padding:8px 10px 2px 30px;color:var(--faint);font-size:var(--text-caption)}
 .hub-menu__separator{height:1px;margin:4px 6px;background:var(--line)}
 :where([data-ui-style=quiet],[data-ui-style=titleblock],[data-ui-style=night]) .chat-menubar{border-bottom-color:var(--rule-soft)}
+/* #354: the Windows 11 desktop title row (DesktopTitleBar.tsx); browser mode never matches these rules.
+   The host's native caption child owns the top-right --desktop-caption-width x --desktop-titlebar-height
+   rectangle, and the drag areas are the window's own caption. So the row keeps fixed px (no font scale),
+   stays above every page layer, drags only from leaf elements, and dialogs open below it. */
+html[data-desktop-titlebar] .chat-shell{--menu-height:var(--desktop-titlebar-height)}
+html[data-desktop-titlebar]{overflow:hidden}
+.chat-menubar.chat-titlebar{height:var(--desktop-titlebar-height);padding:0 var(--desktop-caption-width) 0 10px;z-index:2147483000;white-space:nowrap;font-size:14px;-webkit-user-select:none;user-select:none}
+.chat-titlebar .hub-menubar,.chat-titlebar .hub-menu__list{-webkit-app-region:no-drag;app-region:no-drag}
+.chat-titlebar .hub-menubar{flex:none}
+.chat-titlebar .hub-menu__list{top:calc(100% + 5px)}
+.chat-titlebar .hub-menu__button{font-size:14px}
+.chat-titlebar__mark,.chat-titlebar__fill,.chat-titlebar__title{align-self:stretch;-webkit-app-region:drag;app-region:drag}
+.chat-titlebar__mark{display:inline-flex;flex:none;align-items:center;padding:0 8px 0 2px}
+.chat-titlebar__mark svg{width:18px;height:18px}
+.chat-titlebar__fill{flex:1 1 0;min-width:8px}
+.chat-titlebar__title{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;line-height:var(--desktop-titlebar-height);font-size:12px;color:var(--faint)}
+.chat-titlebar__caption{position:absolute;top:0;right:0;display:flex;width:var(--desktop-caption-width);height:var(--desktop-titlebar-height);pointer-events:none;-webkit-app-region:no-drag;app-region:no-drag}
+.chat-titlebar__button{display:grid;place-items:center;flex:none;width:var(--desktop-caption-button-width);height:100%;color:var(--muted)}
+.chat-titlebar__button svg{width:14px;height:14px}
+.chat-titlebar__button[data-hover=true]{background:var(--panel-2);color:var(--ink)}
+.chat-titlebar__button[data-pressed=true]{background:color-mix(in srgb,var(--panel-2),var(--ink) 12%);color:var(--ink)}
+.chat-titlebar__button[data-button=close][data-hover=true]{background:#c42b1c;color:#fff}
+.chat-titlebar__button[data-button=close][data-pressed=true]{background:color-mix(in srgb,#c42b1c 86%,#fff);color:#fff}
+.chat-titlebar[data-active=false] .chat-titlebar__title,.chat-titlebar[data-active=false] .chat-titlebar__button:not([data-hover=true]){color:var(--faint)}
+.chat-titlebar[data-active=false] .chat-titlebar__mark{opacity:.6}
+:where(html[data-desktop-titlebar] dialog:modal){inset-block-start:var(--desktop-titlebar-height);max-height:calc(100dvh - var(--desktop-titlebar-height) - 2em - 6px);-webkit-app-region:no-drag;app-region:no-drag}
+html[data-desktop-titlebar] .chat-dialog--settings{height:min(680px,calc(100dvh - var(--desktop-titlebar-height) - 40px))}
+@media(max-width:720px){html[data-desktop-titlebar] .chat-dialog--settings{height:calc(100dvh - var(--desktop-titlebar-height) - 16px)}}

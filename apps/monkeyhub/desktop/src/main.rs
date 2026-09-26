@@ -1,5 +1,6 @@
 #![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
 
+use monkeyhub_desktop::caption::{self, HostStatus, ShellEvent, ShellState, TitleBar};
 use monkeyhub_desktop::updates::{
     await_trial_decision, complete_handoff, launch_helper, reject_restart, requested_target,
     target_directory, TrialReady,
@@ -13,7 +14,7 @@ use std::{
     io::Write,
     sync::{
         atomic::{AtomicBool, Ordering},
-        Arc, Mutex,
+        mpsc, Arc, Mutex,
     },
     thread,
     time::{Duration, Instant},
@@ -37,6 +38,26 @@ struct Shared {
     status: Mutex<Status>,
     trial: bool,
     trial_committed: AtomicBool,
+    /// #354: the merged title row's state channel; None while the system title bar is used.
+    title_bar: Option<mpsc::Sender<ShellEvent>>,
+}
+
+fn push_title_bar(shared: &Shared, event: ShellEvent) {
+    if let Some(events) = &shared.title_bar {
+        let _ = events.send(event);
+    }
+}
+
+/// #354: hands the merged title row its state, whichever page the main window shows. The
+/// events come from the caption child's window procedures and from here; only this thread
+/// talks to the page.
+fn deliver_title_bar(window: WebviewWindow, events: mpsc::Receiver<ShellEvent>) {
+    let mut state = ShellState::default();
+    for event in events {
+        if state.apply(event) {
+            let _ = window.eval(state.script());
+        }
+    }
 }
 
 fn paint_status(window: &WebviewWindow, shared: &Shared) {
@@ -302,6 +323,7 @@ fn supervise(
                         } else {
                             log.state("ready", "Owned Hub identity and health verified");
                             let _ = window.set_title("MonkeyHub");
+                            push_title_bar(&shared, ShellEvent::HostStatus(None));
                             ready = true;
                         }
                     } else if recovering {
@@ -311,6 +333,7 @@ fn supervise(
                             "Owned Hub health recovered without reloading the page",
                         );
                         let _ = window.set_title("MonkeyHub");
+                        push_title_bar(&shared, ShellEvent::HostStatus(None));
                         recovering = false;
                     }
                     outage = None;
@@ -366,6 +389,8 @@ fn supervise(
                             recovering = true;
                             log.state("recovering", "Owned Hub is alive but health is unavailable; preserving the current page");
                             let _ = window.set_title("MonkeyHub · 正在等待运行时响应");
+                            // The merged row hides the native title; the page shows this instead.
+                            push_title_bar(&shared, ShellEvent::HostStatus(Some(HostStatus::Recovering)));
                         }
                     }
                 }
@@ -412,12 +437,22 @@ fn run() -> Result<(), String> {
     }
     let trial = args.iter().any(|arg| arg == "--update-trial");
     args.retain(|arg| arg != "--update-trial");
+    // #354: keep the system title bar and today's layout, e.g. to rule the merged row out.
+    let native_title_bar = args.iter().any(|arg| arg == "--native-title-bar");
+    args.retain(|arg| arg != "--native-title-bar");
+    let title_bar = if !native_title_bar && caption::merged_title_bar_supported() {
+        TitleBar::Merged
+    } else {
+        TitleBar::Native
+    };
     let config = LaunchConfig::from_args(args)?;
+    let port = config.port;
     let instance = Uuid::new_v4();
     let log = DiagnosticLog::open(&config.runtime_root, &instance.to_string())?;
     let data_directory = config.runtime_root.join("cache/desktop-webview");
     std::fs::create_dir_all(&data_directory)
         .map_err(|e| format!("Cannot prepare WebView cache: {e}"))?;
+    let (title_bar_events, title_bar_receiver) = mpsc::channel();
     let shared = Arc::new(Shared {
         shutdown: AtomicBool::new(false),
         finished: AtomicBool::new(false),
@@ -429,6 +464,7 @@ fn run() -> Result<(), String> {
         }),
         trial,
         trial_committed: AtomicBool::new(false),
+        title_bar: (title_bar == TitleBar::Merged).then(|| title_bar_events.clone()),
     });
     let setup_shared = shared.clone();
     let setup_log = log.clone();
@@ -441,9 +477,11 @@ fn run() -> Result<(), String> {
             let popup_app = app.handle().clone();
             let popup_shared = setup_shared.clone();
             let popup_log = setup_log.clone();
-            let window = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
-                .title("MonkeyHub").inner_size(1360.0, 900.0).min_inner_size(900.0, 600.0)
+            let mut builder = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
+                .title("MonkeyHub").inner_size(1360.0, 900.0).min_inner_size(caption::MIN_WINDOW_WIDTH, 600.0)
                 .data_directory(data_directory).devtools(false).disable_drag_drop_handler()
+                // #354: the page's title row is drawn at 1:1 CSS pixels over a native hit rectangle.
+                .zoom_hotkeys_enabled(false)
                 .on_navigation(move |url| {
                     if is_status_url(url) { return true; }
                     let identity = navigation_shared.identity.lock().unwrap().clone();
@@ -457,9 +495,39 @@ fn run() -> Result<(), String> {
                     if payload.event() == PageLoadEvent::Finished {
                         page_log.write(&format!("event=page-loaded url={}", payload.url()));
                         paint_status(&window, &page_shared);
+                        push_title_bar(&page_shared, ShellEvent::PageLoaded);
                     }
-                })
-                .build()?;
+                });
+            if title_bar == TitleBar::Merged {
+                // The page draws the whole row; popup windows keep their system title bars.
+                builder = builder.decorations(false).shadow(true)
+                    .initialization_script(caption::bridge_script(port));
+            }
+            let window = builder.build()?;
+            let report_log = setup_log.clone();
+            let installed = caption::install(&window, title_bar, title_bar_events.clone(), move |detail| {
+                report_log.write(&format!("event=title-bar-warning detail={detail}"));
+            });
+            match (title_bar, installed) {
+                (TitleBar::Merged, Ok(())) => setup_log.write("event=title-bar mode=merged"),
+                (TitleBar::Merged, Err(error)) => {
+                    // Without the caption child the page's buttons would not work: return
+                    // to the system title bar and today's layout.
+                    setup_log.write(&format!("event=title-bar mode=native detail=Merged row unavailable: {error}"));
+                    let _ = window.set_decorations(true);
+                    let _ = title_bar_events.send(ShellEvent::TitleBar(false));
+                }
+                (TitleBar::Native, result) => {
+                    setup_log.write("event=title-bar mode=native");
+                    if let Err(error) = result {
+                        setup_log.write(&format!("event=title-bar-warning detail={error}"));
+                    }
+                }
+            }
+            if title_bar == TitleBar::Merged {
+                let title_window = window.clone();
+                thread::spawn(move || deliver_title_bar(title_window, title_bar_receiver));
+            }
             let close_shared = setup_shared.clone();
             let close_app = app.handle().clone();
             window.on_window_event(move |event| {

@@ -8,6 +8,19 @@
     <script src="status.js" defer></script>
   </head>
   <body>
+    <!-- #354: the Windows 11 title row. Hidden unless the desktop host's bridge is present;
+         the host's caption window owns the three buttons, this only draws them. -->
+    <header class="titlebar" hidden>
+      <span class="titlebar__mark" aria-hidden="true"><svg viewBox="0 0 20 20"><rect x="0.5" y="0.5" width="19" height="19" rx="4.5" fill="#12263f" stroke="#2e4a6e"/><path d="M5.5 17V9.5a4.5 4.5 0 0 1 9 0V17" fill="none" stroke="#f4efe6" stroke-width="2.4"/><path d="M8.3 2.6h3.4l-0.6 4H8.9z" fill="#e8a33d"/></svg></span>
+      <span class="titlebar__fill" aria-hidden="true"></span>
+      <span class="titlebar__title">MonkeyHub</span>
+      <span class="titlebar__fill" aria-hidden="true"></span>
+      <span class="titlebar__caption" aria-hidden="true">
+        <span class="titlebar__button" data-button="minimize"><svg viewBox="0 0 24 24"><path d="M5 12h14"/></svg></span>
+        <span class="titlebar__button" data-button="maximize"><svg class="titlebar__maximize" viewBox="0 0 24 24"><path d="M6 6h12v12H6z"/></svg><svg class="titlebar__restore" viewBox="0 0 24 24"><path d="M8 8h10v10H8z"/><path d="M6 15V6h9"/></svg></span>
+        <span class="titlebar__button" data-button="close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></span>
+      </span>
+    </header>
     <main aria-live="polite">
       <p class="brand">MONKEYARCH</p>
       <h1 id="title">正在启动</h1>

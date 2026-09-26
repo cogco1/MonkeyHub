@@ -21,6 +21,23 @@ tauri = { version = "2.11.5", features = [] }
 url = "2"
 uuid = { version = "1", features = ["v4"] }
 
+# #354: the Windows 11 title row's caption child, Alt+Space and zoom lock (src/caption.rs).
+# Same versions the lockfile already carries for tao and wry.
+[target.'cfg(windows)'.dependencies]
+webview2-com = "0.38"
+windows-core = "0.61"
+windows-sys = { version = "0.61", features = [
+    "Wdk_System_SystemServices",
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_System_LibraryLoader",
+    "Win32_System_SystemInformation",
+    "Win32_UI_HiDpi",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
 [features]
 default = ["custom-protocol"]
 custom-protocol = ["tauri/custom-protocol"]

@@ -3406,6 +3406,124 @@ try {
   await page.keyboard.press("Escape");
   await page.getByRole("dialog").waitFor({ state: "hidden" });
   }
+  // #354: the Windows 11 desktop shell merges this menu row into the window's title bar.
+  // Every flow above ran as a browser: no bridge, and the menu row is exactly today's.
+  assert.equal(await page.locator(".chat-titlebar").count(), 0, "browser mode has no desktop title row");
+  assert.equal(await page.evaluate(() => document.documentElement.hasAttribute("data-desktop-titlebar")), false);
+  assert.deepEqual(await page.locator(".chat-menubar").evaluate((row) => [...row.children].map((child) => child.className)), ["hub-menubar"]);
+  {
+    // One source for the geometry: the host's constants, which its native caption child covers.
+    const captionSource = await readFile(fileURLToPath(new URL("../../desktop/src/caption.rs", import.meta.url)), "utf8");
+    const constant = (name) => Number(captionSource.match(new RegExp(`pub const ${name}: u32 = (\\d+);`))[1]);
+    const geometry = { titleBarHeight: constant("TITLE_BAR_HEIGHT"), captionButtonWidth: constant("CAPTION_BUTTON_WIDTH"), captionButtons: constant("CAPTION_BUTTONS") };
+    const captionWidth = geometry.captionButtonWidth * geometry.captionButtons;
+    // The bridge caption::bridge_script defines before any page script, in the host's main window only.
+    await page.addInitScript((geometry) => {
+      const listeners = new Set();
+      let state = Object.freeze({ titleBar: true, maximized: false, active: true, hover: null, pressed: null, hostStatus: null, captionPress: 0 });
+      Object.defineProperty(window, "__monkeyhubDesktop", { value: Object.freeze({ version: 1, ...geometry,
+        get state() { return state; }, subscribe(listener) { listeners.add(listener); return () => { listeners.delete(listener); }; } }) });
+      Object.defineProperty(window, "__monkeyhubDesktopPush", { value(next) {
+        state = Object.freeze({ ...state, ...next });
+        for (const listener of [...listeners]) listener(state);
+      } });
+    }, geometry);
+    const push = (next) => page.evaluate((next) => window.__monkeyhubDesktopPush(next), next);
+    const row = page.locator(".chat-menubar.chat-titlebar");
+    const settingsTop = async () => {
+      await page.locator("#hub-menu-file").click();
+      await page.getByRole("menuitem", { name: /^(Settings…|设置…)$/ }).click();
+      const dialog = page.locator(".chat-dialog--settings[open]");
+      await dialog.waitFor();
+      const top = (await dialog.boundingBox()).y;
+      await page.keyboard.press("Escape");
+      await dialog.waitFor({ state: "hidden" });
+      return top;
+    };
+    for (const width of [1280, 500]) {
+      await page.setViewportSize({ width, height: 720 });
+      await page.goto(origin);
+      await row.waitFor();
+      const layout = await page.evaluate((captionWidth) => {
+        const region = (element) => getComputedStyle(element).getPropertyValue("app-region") || getComputedStyle(element).getPropertyValue("-webkit-app-region");
+        const rect = (element) => { const box = element.getBoundingClientRect(); return [box.left, box.top, box.width, box.height]; };
+        const controls = "button, a, input, select, textarea, [tabindex], [role=menuitem]";
+        const bar = document.querySelector(".chat-titlebar");
+        const interactive = [...bar.querySelectorAll(controls)];
+        const dragRoots = [...bar.querySelectorAll("*")].filter((element) => region(element) === "drag" && region(element.parentElement) !== "drag");
+        // The caption child owns this rectangle: nothing the page can click may sit under it.
+        const probes = new Set();
+        for (let x = innerWidth - captionWidth + 2; x < innerWidth; x += 7) for (const y of [2, 20, 38]) {
+          const hit = document.elementFromPoint(x, y);
+          probes.add(hit === bar ? "row" : `${hit?.tagName}.${hit?.className}`);
+        }
+        return {
+          root: document.documentElement.hasAttribute("data-desktop-titlebar"),
+          row: rect(bar), rowHeight: bar.scrollHeight, rowRegion: region(bar),
+          caption: rect(bar.querySelector(".chat-titlebar__caption")),
+          buttons: [...bar.querySelectorAll(".chat-titlebar__button")].map((button) => [button.dataset.button, ...rect(button)]),
+          dragRoots: dragRoots.map((element) => element.className),
+          dragWithControls: dragRoots.filter((element) => element.querySelector(controls)).length,
+          interactiveRegions: [...new Set(interactive.map(region))],
+          rightmostControl: Math.max(...interactive.map((element) => element.getBoundingClientRect().right)),
+          probes: [...probes],
+          mainTop: document.querySelector(".chat-main").getBoundingClientRect().top,
+        };
+      }, captionWidth);
+      const right = width - captionWidth, button = geometry.captionButtonWidth, height = geometry.titleBarHeight;
+      assert.equal(layout.root, true);
+      assert.deepEqual(layout.row, [0, 0, width, height], `title row geometry at ${width}px`);
+      assert.equal(layout.rowHeight, height, `the title row never wraps at ${width}px`);
+      assert.deepEqual(layout.caption, [right, 0, captionWidth, height]);
+      assert.deepEqual(layout.buttons, [["minimize", right, 0, button, height], ["maximize", right + button, 0, button, height],
+        ["close", right + 2 * button, 0, button, height]]);
+      assert.notEqual(layout.rowRegion, "drag", "the row itself is not a drag region, so nothing inherits one");
+      assert.deepEqual(layout.dragRoots, ["chat-titlebar__mark", "chat-titlebar__fill", "chat-titlebar__title", "chat-titlebar__fill"]);
+      assert.equal(layout.dragWithControls, 0, "drag regions are leaves");
+      assert.deepEqual(layout.interactiveRegions, ["no-drag"]);
+      assert.ok(layout.rightmostControl <= right, `menus stay left of the caption buttons at ${width}px (${layout.rightmostControl} > ${right})`);
+      assert.deepEqual(layout.probes, ["row"], `only the row itself lies under the caption buttons at ${width}px`);
+      assert.equal(layout.mainTop, height, "the page below follows the host's row height");
+      assert.ok(await settingsTop() >= height, `dialogs open below the title row at ${width}px`);
+      if (width !== 1280) continue;
+      // Menus keep their keyboard model; an open menu stays below the row and closes when the
+      // native caption is pressed (the page never sees that click).
+      await page.locator("#hub-menu-file").focus();
+      await page.keyboard.press("ArrowRight");
+      assert.equal(await page.evaluate(() => document.activeElement?.id), "hub-menu-edit");
+      await page.keyboard.press("Enter");
+      const list = page.locator("#hub-menu-list-edit");
+      await list.waitFor();
+      // An open menu never overlaps a drag area (a later drag rectangle would win over it) or the caption.
+      const menuBox = await list.boundingBox();
+      const dragBottom = Math.max(...await row.locator(".chat-titlebar__fill, .chat-titlebar__title, .chat-titlebar__mark")
+        .evaluateAll((elements) => elements.map((element) => element.getBoundingClientRect().bottom)));
+      assert.ok(menuBox.y >= dragBottom, `menu top ${menuBox.y} is below the drag areas (${dragBottom})`);
+      assert.ok(menuBox.x + menuBox.width <= right || menuBox.y >= height, "menu stays clear of the caption buttons");
+      assert.equal(await list.evaluate((element) => getComputedStyle(element).getPropertyValue("app-region") || getComputedStyle(element).getPropertyValue("-webkit-app-region")), "no-drag");
+      await push({ captionPress: 1 });
+      await list.waitFor({ state: "detached" });
+      // The host's state draws the buttons, the active state and its own status.
+      const titleText = await row.locator(".chat-titlebar__title").textContent();
+      assert.match(titleText, / · /);
+      await push({ maximized: true, active: false, hover: "close", pressed: "close" });
+      assert.equal(await row.getAttribute("data-maximized"), "true");
+      assert.equal(await row.getAttribute("data-active"), "false");
+      assert.equal(await row.locator('[data-button="close"]').getAttribute("data-hover"), "true");
+      assert.equal(await row.locator('[data-button="close"]').getAttribute("data-pressed"), "true");
+      assert.equal(await row.locator('[data-button="maximize"] path').count(), 2, "maximized windows show the restore glyph");
+      await push({ maximized: false, active: true, hover: null, pressed: null, hostStatus: "recovering" });
+      assert.equal(await row.locator('[data-button="maximize"] path').count(), 1);
+      assert.ok(["正在等待运行时响应", "Waiting for the runtime to respond"].includes(await row.locator(".chat-titlebar__title").textContent()));
+      await push({ hostStatus: null });
+      assert.equal(await row.locator(".chat-titlebar__title").textContent(), titleText);
+      // Without the caption child the host restores the system title bar: today's layout again.
+      await push({ titleBar: false });
+      await row.waitFor({ state: "detached" });
+      assert.equal(await page.evaluate(() => document.documentElement.hasAttribute("data-desktop-titlebar")), false);
+      assert.deepEqual(await page.locator(".chat-menubar").evaluate((element) => [...element.children].map((child) => child.className)), ["hub-menubar"]);
+    }
+  }
   assert.deepEqual(errors, []);
   console.log(JSON.stringify({ passed: true, sessions: sessions.length, writes: writes.length, screenshots: temporary }));
 } catch (error) { console.error(JSON.stringify({ screenshots: temporary, errors, workspaceRequests: workspaceFixture.requests.slice(-15),

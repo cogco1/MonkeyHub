@@ -13,6 +13,7 @@ use std::{
 use url::Url;
 use uuid::Uuid;
 
+pub mod caption;
 pub mod updates;
 
 pub const SOURCE_REVISION: &str = env!("ARCHFLOW_SOURCE_REVISION");

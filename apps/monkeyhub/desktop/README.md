@@ -92,6 +92,51 @@ updates the native title: the current WebView document, open tool frames and
 unsubmitted inputs stay in place. Recovery restores the title without reloading.
 An exited root requires closing and reopening the desktop application.
 
+## Title row (#354)
+
+On Windows 11 (build 22000 or later) the main window has no system title bar. The
+Hub's own 40 px menu row is the title bar: it holds the back, forward and sidebar
+buttons, the menus, a centred "project · conversation" title between two drag
+areas, and the pictures of the minimize, maximize and close buttons. The embedded
+status page draws the same row while the Hub starts, stops or has failed.
+
+The drag areas use CSS `app-region: drag`. wry already enables WebView2 non-client
+region support, so WebView2 treats these areas as the window caption. Moving,
+double-click maximize and restore, the right-click system menu, snapping by
+dragging to an edge, dragging a maximized window off the top and title bar shake
+all come from Windows' own move loop. Only leaf elements drag, because WebView2 152
+and later let child elements inherit `app-region`.
+
+`src/caption.rs` holds all the Win32 code. It places one transparent child window
+over the three button pictures. That window answers `WM_NCHITTEST` with
+`HTMINBUTTON`, `HTMAXBUTTON` or `HTCLOSE`, which is how Windows 11 decides to offer
+Snap Layouts on the maximize button. A click on a button becomes `WM_SYSCOMMAND`,
+so Close takes the same CloseRequested drain as before. The window reports hover,
+press, maximized and active state, and the host hands that state to the page with
+the same `eval` it uses for the status page. The page never calls the host.
+
+The host's initialization script defines `window.__monkeyhubDesktop`. It runs only
+in the main window, only on the verified Hub origin and the status page, and only
+when the merged row is in use. It carries the row's geometry, which is defined
+once in `caption.rs`. Page zoom, zoom hotkeys and pinch zoom are locked, so the
+page's drawing stays aligned with the native rectangle. Pages keep dialogs and
+other interactive content out of the row.
+
+WebView2 keeps Alt+Space from reaching the window while the page has focus
+(WebView2Feedback #3840). The host catches it and opens the window's system menu,
+which offers restore, move, size, minimize, maximize and close from the keyboard.
+The minimum window width is 500 epx, so the window fits every Snap Layouts zone.
+
+The system title bar and today's layout remain in four cases:
+
+- Windows 10;
+- pop-up project windows;
+- the browser entry;
+- `--native-title-bar`.
+
+If the caption window cannot be created, the host restores the system title bar
+and the page returns to today's layout.
+
 ## Patch update handoff
 
 The Hub stages and validates updates beside the current version and exposes
@@ -135,8 +180,10 @@ reported by that verified Hub's `/api/runtime`. Each child rechecks that members
 on navigation and closes with the main runtime. Other new windows are denied.
 The existing Hub embeds its worker pages using their current runtime URLs.
 No Tauri capabilities, command handlers or
-plugins are granted to either local status content or the loopback UI. There is
-no arbitrary shell, filesystem or process bridge exposed to JavaScript. The
+plugins are granted to either local status content or the loopback UI. The title
+row adds none either: its state reaches the page through the host's `eval`, and
+its clicks go to the native caption window. There is no arbitrary shell,
+filesystem or process bridge exposed to JavaScript. The
 browser development entry and Three.js viewport remain unchanged.
 
 ## Verification scope
@@ -146,6 +193,17 @@ occupied-port refusal, spawn failure, child crash, stdin/EOF shutdown, operation
 drain, independent-root isolation, reopen and bounded child-window origins.
 Tests use disposable source and runtime directories plus a small Python child;
 set `MONKEYHUB_TEST_PYTHON` when `python` is not on the test runner's PATH.
+The title row's unit tests cover:
+
+- the caption rectangle at 100 % to 200 % scaling, maximized and restored;
+- the split between the three buttons;
+- screen points left of and above the primary monitor;
+- the state the page receives.
+
+On Windows 11 the installed suite checks two more things. The caption window must
+answer the three hit codes, and closing through it must drain like `WM_CLOSE`.
+Snap Layouts, moving between monitors and scaling changes still need a person on
+real Windows 11 hardware.
 Update tests additionally exercise exact sibling selection, independent trial
 identity, helper EOF/commit behavior, and native trial shutdown/reopen without
 loading project UI before commit. Native trial tests never activate the user's

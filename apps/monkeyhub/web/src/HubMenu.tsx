@@ -16,12 +16,18 @@ const actionable = (item: HubMenuItem) => (item.kind === "command" && !item.disa
  * menus. A menubar by keyboard: Left and Right walk the words, Down or Enter opens one,
  * arrows walk its entries, Enter picks, Escape closes back to the word.
  */
-export function HubMenuBar({ label, menus, before }: { label: string; menus: readonly HubMenu[]; before?: ReactNode }) {
+export function HubMenuBar({ label, menus, before, dismiss }: {
+  label: string; menus: readonly HubMenu[]; before?: ReactNode;
+  /** #354: changes when the window's own title bar is pressed, which the page never sees as a click. */
+  dismiss?: number;
+}) {
   const [open, setOpen] = useState<string | null>(null);
   const [focusIndex, setFocusIndex] = useState(0);
   const bar = useRef<HTMLDivElement>(null);
   // The element that had focus before a menu opened: Edit's entries act on it.
   const returnFocus = useRef<Element | null>(null);
+
+  useEffect(() => { if (dismiss !== undefined) setOpen(null); }, [dismiss]);
 
   useEffect(() => {
     if (open === null) return;

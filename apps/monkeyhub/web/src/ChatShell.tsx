@@ -20,6 +20,7 @@ import { recentUsage, serialMonitorRead, type MonitorEvent, type RecentUsage } f
 import { activeWork, newSchemes, sidebarTasks, type SidebarTask } from "./sidebarTasks";
 import { SoftwareUpdateSettings, type RestartBlocker } from "./SoftwareUpdateSettings";
 import { editFocused, HubMenuBar, type HubMenu, type HubMenuItem } from "./HubMenu";
+import { DesktopTitleBar, useDesktopTitleBar } from "./DesktopTitleBar";
 import "./ChatShell.css";
 
 type AppId = AppStatus["appId"] | "drawing" | "publish" | "tree";
@@ -51,6 +52,7 @@ const menuWords = {
     uiStyle: "界面风格", classic: "经典", quiet: "静默仪表", titleblock: "图签", night: "夜航",
     size: "字号", compact: "紧凑", normal: "标准", large: "大",
     update: "检查更新…", usage: "用量与任务记录",
+    waitingRuntime: "正在等待运行时响应",
   },
   en: {
     menus: "Menus", back: "Back to the previous conversation", forward: "Forward to the next conversation",
@@ -61,6 +63,7 @@ const menuWords = {
     uiStyle: "Interface style", classic: "Classic", quiet: "Quiet instrument", titleblock: "Title block", night: "Night flight",
     size: "Text size", compact: "Compact", normal: "Standard", large: "Large",
     update: "Check for updates…", usage: "Usage and task records",
+    waitingRuntime: "Waiting for the runtime to respond",
   },
 } as const;
 // followHead: the tab was restored on a cold start, not opened to inspect that exact
@@ -1490,6 +1493,8 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
     if (target.id !== chatId) { walking.current = true; selectChat(target); }
   };
   const mw = menuWords[preferences.language];
+  // #354: null in a browser; in the Windows 11 desktop shell the menu row is the title bar.
+  const titleBar = useDesktopTitleBar();
   const startChat = () => { setArchivedView(false); setChatId(null); setChat(null); setError(null); input.current?.focus(); };
   const appearanceChoices = (onAppearance ? [
     { kind: "separator", id: "look" },
@@ -1535,13 +1540,17 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
       { kind: "command", id: "usage", label: mw.usage, onSelect: () => void openTool("monkeymonitor", { projectId: "" }) },
     ] },
   ];
+  const menuRow = <HubMenuBar label={mw.menus} menus={hubMenus} dismiss={titleBar?.captionPress} before={<>
+    <button type="button" className="chat-icon" aria-label={mw.back} title={mw.back} disabled={trail.index <= 0} onClick={() => walk(-1)}><Icon name="back" /></button>
+    <button type="button" className="chat-icon" aria-label={mw.forward} title={mw.forward} disabled={trail.index >= trail.ids.length - 1} onClick={() => walk(1)}><Icon name="forward" /></button>
+    <button type="button" className="chat-icon" aria-label={sidebar ? t.collapse : t.expand} title={sidebar ? t.collapse : t.expand} onClick={() => setSidebar(!sidebar)}><Icon name="sidebar" /></button>
+  </>} />;
   return <div className="chat-shell" data-sidebar={sidebar} data-panel={panel} style={{ "--browser-width": `${panelWidth}px` } as CSSProperties}>
-    {/* #337 L0: the Hub's text menu row, as desktop apps have it: back, forward, the sidebar, then words. */}
-    <div className="chat-menubar"><HubMenuBar label={mw.menus} menus={hubMenus} before={<>
-      <button type="button" className="chat-icon" aria-label={mw.back} title={mw.back} disabled={trail.index <= 0} onClick={() => walk(-1)}><Icon name="back" /></button>
-      <button type="button" className="chat-icon" aria-label={mw.forward} title={mw.forward} disabled={trail.index >= trail.ids.length - 1} onClick={() => walk(1)}><Icon name="forward" /></button>
-      <button type="button" className="chat-icon" aria-label={sidebar ? t.collapse : t.expand} title={sidebar ? t.collapse : t.expand} onClick={() => setSidebar(!sidebar)}><Icon name="sidebar" /></button>
-    </>} /></div>
+    {/* #337 L0: the Hub's text menu row, as desktop apps have it: back, forward, the sidebar, then words.
+        #354: in the Windows 11 desktop shell the same row is also the window's title bar. */}
+    {titleBar ? <DesktopTitleBar state={titleBar} menus={menuRow}
+      title={titleBar.hostStatus === "recovering" ? mw.waitingRuntime : `${project?.name ?? "MonkeyHub"} · ${chat?.id === chatId ? chat.title : t.newChat}`} />
+      : <div className="chat-menubar">{menuRow}</div>}
     <aside className="chat-sidebar" aria-label={t.projects}>
       <div className="chat-sidebar__body">
         <button className="chat-new" onClick={() => { setArchivedView(false); setChatId(null); setChat(null); setError(null); input.current?.focus(); }}><Icon name="plus" /><span>{t.newChat}</span></button>

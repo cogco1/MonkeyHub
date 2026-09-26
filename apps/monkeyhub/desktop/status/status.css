@@ -5,3 +5,26 @@ main { width: min(640px, calc(100vw - 80px)); }
 h1 { font-weight: 500; font-size: 25px; margin: 24px 0 16px; }
 #detail { line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; }
 #log { font-size: 12px; color: #a5aaa8; line-height: 1.6; overflow-wrap: anywhere; user-select: text; }
+/* #354: the Windows 11 title row, drawn only when the desktop host's bridge is present. The host's
+   caption window sits over the three buttons, so the row keeps the host's fixed px geometry. */
+/* The document itself never scrolls: a viewport scrollbar would move the row's buttons off the
+   native rectangle. A long failure log scrolls inside main instead. */
+html[data-desktop-titlebar] body { box-sizing: border-box; height: 100vh; overflow: hidden; padding-top: var(--desktop-titlebar-height, 40px); }
+html[data-desktop-titlebar] main { max-height: calc(100vh - var(--desktop-titlebar-height, 40px) - 48px); overflow: auto; }
+.titlebar { position: fixed; top: 0; left: 0; right: 0; z-index: 1; display: flex; height: var(--desktop-titlebar-height, 40px); padding: 0 var(--desktop-caption-width, 138px) 0 10px; box-sizing: border-box; background: #161618; border-bottom: 1px solid rgba(237, 237, 240, 0.10); white-space: nowrap; font-size: 12px; -webkit-user-select: none; user-select: none; }
+.titlebar[hidden] { display: none; }
+.titlebar__mark, .titlebar__fill, .titlebar__title { -webkit-app-region: drag; app-region: drag; }
+.titlebar__mark { display: inline-flex; align-items: center; flex: none; padding: 0 8px 0 2px; }
+.titlebar__mark svg { width: 18px; height: 18px; }
+.titlebar__fill { flex: 1 1 0; min-width: 8px; }
+.titlebar__title { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; line-height: var(--desktop-titlebar-height, 40px); color: #92939e; }
+.titlebar__caption { position: absolute; top: 0; right: 0; display: flex; width: var(--desktop-caption-width, 138px); height: var(--desktop-titlebar-height, 40px); pointer-events: none; -webkit-app-region: no-drag; app-region: no-drag; }
+.titlebar__button { display: grid; place-items: center; flex: none; width: var(--desktop-caption-button-width, 46px); color: #aeafb8; }
+.titlebar__button svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.titlebar__button[data-hover="true"] { background: #2a2a2d; color: #ededf0; }
+.titlebar__button[data-pressed="true"] { background: #353538; color: #ededf0; }
+.titlebar__button[data-button="close"][data-hover="true"] { background: #c42b1c; color: #fff; }
+.titlebar__button[data-button="close"][data-pressed="true"] { background: #c94f42; color: #fff; }
+.titlebar__restore, .titlebar[data-maximized="true"] .titlebar__maximize { display: none; }
+.titlebar[data-maximized="true"] .titlebar__restore { display: block; }
+.titlebar[data-active="false"] .titlebar__title, .titlebar[data-active="false"] .titlebar__button:not([data-hover="true"]) { color: #6f707a; }
