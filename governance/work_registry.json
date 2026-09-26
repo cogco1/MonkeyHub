@@ -215,35 +215,6 @@
         "2026-09-25: archflow/project/record_kinds.py is handed to GH-294/admission-record, which registers the owner-approved candidate-admission kind (audit Q1); GH-66 reclaims it if Publish needs another kind.",
         "2026-09-25: monkeydiagram/drawing_elevation.py, monkeydiagram/drawing_svg.py and routes/drawings.py are handed to GH-307/section-perspective, which adds the owner-requested section perspective view to the one projection pipeline; GH-66 keeps its Publish paths and reclaims these if Publish needs drawing changes."
       ]
-    },
-    {
-      "id": "GH-281",
-      "stream": "planning",
-      "status": "ready",
-      "goal": "Name collapsed Hub controls, expose actual keyboard shortcuts, close project information with Escape and describe disabled chat actions.",
-      "depends_on": [],
-      "issue": "https://github.com/cogco1/MonkeyHub/issues/281",
-      "branch": "codex/281-keyboard-accessibility",
-      "worktree": "D:/MONKEYHUB_DEV/workspace/worktrees/codex-281-keyboard-accessibility",
-      "base_ref": "f9077fadb66ac686bc62eef9558a10b19b41e5e4",
-      "contributor": "Codex",
-      "reviewer": null,
-      "handoff": "Parent integration reviews this isolated slice; Claude retains PR #320 CI, merge and release. No changes to the installed Hub.",
-      "modules": [
-        "hub.shell"
-      ],
-      "write_scope": [
-        "apps/monkeyhub/web/src/ChatShell.tsx",
-        "apps/monkeyhub/web/src/i18n/messages.en.ts",
-        "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
-        "apps/monkeyhub/web/test/chatShell.browser.mjs",
-        "governance/work_registry.json",
-        "docs/DYNAMIC_MAP.md",
-        "docs/mapping/planning/INDEX.md"
-      ],
-      "acceptance": [
-        "The six issue checks pass against the real built DOM and browser accessibility tree using synthetic local API fixtures."
-      ]
     }
   ]
 }
