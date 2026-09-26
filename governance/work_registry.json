@@ -172,6 +172,7 @@
         "apps/monkeyhub/web/src/notifications/attention.css",
         "apps/monkeyhub/web/src/styles.css",
         "apps/monkeyhub/web/test/chatShell.browser.mjs",
+        "apps/monkeyhub/web/test/projectWorkspaceFixture.mjs",
         "apps/monkeyhub/web/test/settingsAutosave.browser.mjs",
         "apps/monkeyhub/web/workspaces/src/api/generated/index.ts",
         "apps/monkeyhub/web/workspaces/src/api/generated/sdk.gen.ts",
@@ -221,7 +222,8 @@
             "apps/monkeyhub/web/workspaces/src/api/generated/types.gen.ts",
             "apps/monkeyhub/web/src/ChatShell.tsx",
             "apps/monkeyhub/web/test/chatShell.browser.mjs",
-            "apps/monkeyhub/web/test/settingsAutosave.browser.mjs"
+            "apps/monkeyhub/web/test/settingsAutosave.browser.mjs",
+            "apps/monkeyhub/web/test/projectWorkspaceFixture.mjs"
           ],
           "depends_on": [],
           "status": "active",
