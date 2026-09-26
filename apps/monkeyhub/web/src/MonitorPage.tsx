@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type CSSProperties, type FormEvent } from "react";
 import type { AppearancePreferences } from "../../../shared-web/src/appearance.js";
+import { MenuCommand, MenuSeparator, MenuTabs, StatusLine, SurfaceBar } from "../workspaces/src/features/chrome/SurfaceChrome";
 import type { AppStatus, ApplicationSettingsDto } from "./api/generated";
 import {
   aggregateTokens, formatCount, formatDuration, isModelCall, uncachedInput, projectIds, summarizeUsage, quoteDraftReducer, serialMonitorRead,
@@ -8,6 +9,7 @@ import {
 import "./MonitorPage.css";
 
 type Props = { preferences: AppearancePreferences; active: boolean; initialProjectId?: string; openRequest?: number };
+type View = "calls" | "tasks";
 type EventResponse = { events: MonitorEvent[]; warnings: string[] };
 type TraceResponse = { traces: MonitorTrace[]; warnings: string[]; lanes?: Array<{ id: string; label: string }> };
 type Rate = {
@@ -22,9 +24,9 @@ type Quote = { currency: string; amount_usd: string | null; known_subtotal_usd: 
 
 const words = {
   "zh-CN": {
-    title: "用量与任务记录", subtitle: "查看任务进度、耗时与模型用量。",
+    title: "用量与任务记录", views: "视图", viewCalls: "调用", viewTasks: "任务", scope: "范围", all: "全部", project: "项目", chooseProject: "选择项目",
     refresh: "刷新", connecting: "正在连接监控服务…", retry: "重新连接", ready: "监控服务在线", failed: "监控服务暂不可用",
-    allProjects: "全部项目", project: "项目", calls: "模型调用", cached: "缓存输入", uncached: "未缓存输入", output: "输出", wait: "请求往返 P50",
+    calls: "模型调用", cached: "缓存输入", uncached: "未缓存输入", output: "输出", wait: "请求往返 P50",
     coverage: (known: number, missing: number) => `${known} 次已记录${missing ? ` · ${missing} 次未知` : ""}`,
     tasks: "任务时间线", noTasks: "暂无任务记录。MonkeyHub 发起任务后会在这里出现。", task: "任务", status: "状态", elapsed: "总历时", firstVisible: "首次可见", firstCandidate: "首个候选", modelRounds: "模型轮次", toolRounds: "工具轮次",
     activity: "阶段", lane: "泳道", duration: "耗时", blocking: "阻塞", yes: "是", no: "否", details: "详情", diagnostics: "耗时诊断", warnings: "记录提示",
@@ -37,9 +39,9 @@ const words = {
     serviceDetail: "技术详情", updated: "更新于", download: "下载 Trace JSON", raw: "原始记录", endNotObserved: "结束时间未观测",
   },
   en: {
-    title: "Usage and task records", subtitle: "Follow task progress, timing and model usage.",
+    title: "Usage and task records", views: "View", viewCalls: "Calls", viewTasks: "Tasks", scope: "Scope", all: "All", project: "Project", chooseProject: "Choose a project",
     refresh: "Refresh", connecting: "Connecting to monitoring service…", retry: "Reconnect", ready: "Monitoring service online", failed: "Monitoring service unavailable",
-    allProjects: "All projects", project: "Project", calls: "Model calls", cached: "Cached input", uncached: "Uncached input", output: "Output", wait: "Request round-trip P50",
+    calls: "Model calls", cached: "Cached input", uncached: "Uncached input", output: "Output", wait: "Request round-trip P50",
     coverage: (known: number, missing: number) => `${known} recorded${missing ? ` · ${missing} unknown` : ""}`,
     tasks: "Task timeline", noTasks: "No task records yet. Tasks started from MonkeyHub will appear here.", task: "Task", status: "Status", elapsed: "Elapsed", firstVisible: "First visible", firstCandidate: "First candidate", modelRounds: "Model rounds", toolRounds: "Tool rounds",
     activity: "Stage", lane: "Lane", duration: "Duration", blocking: "Blocking", yes: "Yes", no: "No", details: "Details", diagnostics: "Timing diagnostics", warnings: "Record notices",
@@ -93,6 +95,9 @@ export function MonitorPage({ preferences, active, initialProjectId = "", openRe
   const [loading, setLoading] = useState(true);
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
   const [project, setProject] = useState(initialProjectId);
+  // The project the scope's first word names: the one Usage was opened from, or the one chosen since.
+  const [scopeProject, setScopeProject] = useState(initialProjectId);
+  const [view, setView] = useState<View>("calls");
   const [traceId, setTraceId] = useState("");
   const [visible, setVisible] = useState(20);
   const [includeOperations, setIncludeOperations] = useState(false);
@@ -115,7 +120,7 @@ export function MonitorPage({ preferences, active, initialProjectId = "", openRe
   // polling does not touch this state, so choosing All projects remains a user
   // choice until Usage is explicitly opened again. Other unsaved Monitor fields
   // remain mounted when a navigation entry resets only the project filter.
-  useEffect(() => { setProject(initialProjectId); }, [initialProjectId, openRequest]);
+  useEffect(() => { setProject(initialProjectId); setScopeProject(initialProjectId); }, [initialProjectId, openRequest]);
 
   const baseRef = useRef(base);
   const sourceDirtyRef = useRef(sourceDirty);
@@ -182,7 +187,9 @@ export function MonitorPage({ preferences, active, initialProjectId = "", openRe
 
   // Keep a project with no Monitor records selectable and visibly selected;
   // filtering it must produce the empty state rather than fall back to totals.
-  const projects = useMemo(() => [...new Set([initialProjectId, project, ...projectIds(events, traces)].filter(Boolean))], [events, traces, project, initialProjectId]);
+  const projects = useMemo(() => [...new Set([initialProjectId, scopeProject, project, ...projectIds(events, traces)].filter(Boolean))], [events, traces, project, scopeProject, initialProjectId]);
+  const otherProjects = projects.filter((id) => id !== scopeProject);
+  const chooseScope = (id: string) => { invalidateQuote(); setProject(id); if (id) setScopeProject(id); };
   const filteredEvents = useMemo(() => project ? events.filter((event) => event.project_id === project) : events, [events, project]);
   const filteredTraces = useMemo(() => project ? traces.filter((trace) => trace.project_id === project) : traces, [traces, project]);
   const summary = useMemo(() => summarizeUsage(filteredEvents), [filteredEvents]);
@@ -250,12 +257,24 @@ export function MonitorPage({ preferences, active, initialProjectId = "", openRe
   const selectedWarnings = selectedTrace?.warnings ?? [];
 
   return <div className="monitor-page">
-    <header className="toolbar monitor-toolbar"><strong className="wordmark">MonkeyMonitor</strong><span className={`monitor-health ${error ? "monitor-health--error" : ""}`}>{loading ? t.connecting : error ? t.failed : t.ready}</span><button className="btn" type="button" onClick={() => void readAll(true)} disabled={loading}>{t.refresh}</button></header>
+    {/* #337 L2: the page's one bar. Its two views, the scope and Refresh are words; the service's state is at the right end. */}
+    <SurfaceBar label={t.title} end={<span className={`monitor-health${error ? " monitor-health--error" : ""}`}>{loading ? t.connecting : error ? t.failed : t.ready}</span>}>
+      <MenuTabs label={t.views} value={view} onChange={(next) => setView(next)} options={[{ value: "calls" as const, label: t.viewCalls }, { value: "tasks" as const, label: t.viewTasks }]} />
+      <MenuSeparator />
+      <div className="monitor-scope">
+        <MenuTabs label={t.scope} value={project} onChange={chooseScope} options={[...(scopeProject ? [{ value: scopeProject, label: scopeProject }] : []), { value: "", label: t.all }]} />
+        {otherProjects.length > 0 && <select className="monitor-scope__other" aria-label={t.chooseProject} value="" onChange={(event) => chooseScope(event.target.value)}>
+          <option value="" disabled hidden>{t.project}</option>{otherProjects.map((id) => <option key={id} value={id}>{id}</option>)}
+        </select>}
+      </div>
+      <MenuSeparator />
+      <MenuCommand onClick={() => void readAll(true)} disabled={loading}>{t.refresh}</MenuCommand>
+    </SurfaceBar>
     <main className="monitor-shell">
-      <div className="monitor-heading"><div><p className="monitor-eyebrow">MonkeyMonitor</p><h1>{t.title}</h1><p>{t.subtitle}</p></div><label>{t.project}<select value={project} onChange={(event) => { invalidateQuote(); setProject(event.target.value); }}><option value="">{t.allProjects}</option>{projects.map((id) => <option key={id}>{id}</option>)}</select></label></div>
+      {/* The rail and the Help menu name the page; the heading is for screen readers. */}
+      <h1 className="sr-only">{t.title}</h1>
       {error && <div className="error-message" role="alert"><strong>{t.failed}</strong><p>{error}</p><button className="btn" type="button" onClick={() => void readAll(true)}>{t.retry}</button></div>}
-      <p className="monitor-help">{t.usageScope}</p>
-      <section className="monitor-stats" aria-label={t.usage}>
+      <section className="monitor-stats" aria-label={t.usage} hidden={view !== "calls"}>
         {[
           [t.calls, summary.calls.toLocaleString(), ""],
           [t.cached, formatCount(summary.cachedInput.value), t.coverage(summary.cachedInput.recorded, summary.cachedInput.missing)],
@@ -265,7 +284,7 @@ export function MonitorPage({ preferences, active, initialProjectId = "", openRe
         ].map(([label, value, note]) => <div className="monitor-stat" key={label}><span>{label}</span><strong>{value}</strong>{note && <small>{note}</small>}</div>)}
       </section>
 
-      <section className="monitor-section">
+      <section className="monitor-section" hidden={view !== "tasks"}>
         <div className="monitor-section__head"><div><p className="monitor-eyebrow">TurnTrace@1</p><h2>{t.tasks}</h2></div>{filteredTraces.length > 0 && <label>{t.task}<select value={selectedTrace?.trace_id ?? ""} onChange={(event) => setTraceId(event.target.value)}>{filteredTraces.map((trace) => <option key={trace.trace_id} value={trace.trace_id}>{dateText(trace.started_at)} · {trace.status ?? "unknown"}</option>)}</select></label>}</div>
         {!selectedTrace ? <p className="monitor-empty">{t.noTasks}</p> : <>
           <div className="monitor-trace-summary">
@@ -295,7 +314,7 @@ export function MonitorPage({ preferences, active, initialProjectId = "", openRe
         </>}
       </section>
 
-      <section className="monitor-section">
+      <section className="monitor-section" hidden={view !== "calls"}>
         <div className="monitor-section__head"><div><p className="monitor-eyebrow">UsageLog</p><h2>{t.usage}</h2></div><label className="monitor-operation-toggle"><input type="checkbox" checked={includeOperations} onChange={(event) => setIncludeOperations(event.target.checked)} />{t.includeOperations}</label></div>
         <p className="monitor-help" aria-live="polite">{t.recordRange(visibleEvents.length, detailEvents.length)}</p>
         {!detailEvents.length ? <p className="monitor-empty">{t.noUsage}</p> : <><div className="monitor-table-wrap"><table className="monitor-table"><thead><tr><th>{t.time}</th><th>{t.source}</th><th>{t.provider}</th><th>{t.phase}</th><th>{t.cached}</th><th>{t.uncached}</th><th>{t.output}</th><th>{t.duration}</th></tr></thead><tbody>{visibleEvents.map((event) => {
@@ -306,7 +325,7 @@ export function MonitorPage({ preferences, active, initialProjectId = "", openRe
         })}</tfoot></table></div>{visible < detailEvents.length && <button className="btn monitor-more" type="button" onClick={() => setVisible((value) => value + 20)}>{t.showMore}</button>}</>}
       </section>
 
-      <div className="monitor-lower-grid">
+      <div className="monitor-lower-grid" hidden={view !== "calls"}>
         <section className="monitor-section"><div className="monitor-section__head"><h2>{t.sources}</h2></div><p className="monitor-help">{t.sourcesHelp}</p><form onSubmit={(event) => void applySources(event)}><textarea className="monitor-sources" rows={6} spellCheck={false} value={sourcePaths} onChange={(event) => { setSourcePaths(event.target.value); setSourceDirty(true); setSourceStatus(""); }} /><div className="monitor-actions"><button className="btn btn--primary" type="submit" disabled={!base}>{t.apply}</button><span role="status">{sourceStatus}</span></div></form></section>
         <section className="monitor-section"><div className="monitor-section__head"><h2>{t.calculator}</h2></div><p className="monitor-help">{t.calculatorHelp}</p><form onSubmit={(event) => void calculate(event)} className="monitor-calculator"><label>{t.rate}<select value={rateIndex} onChange={(event) => { invalidateQuote(); setRateIndex(event.target.value); }} required><option value="">{t.chooseRate}</option>{rates.map((rate, index) => <option value={index} key={`${rate.provider}:${rate.model}:${index}`}>{rate.label ?? `${rate.provider} · ${rate.model}`}</option>)}</select></label><div className="monitor-token-grid">{[
           ["input_tokens", t.input], ["cached_input_tokens", t.cacheRead], ["cache_write_input_tokens", t.cacheWrite],
@@ -318,7 +337,12 @@ export function MonitorPage({ preferences, active, initialProjectId = "", openRe
       </div>
 
       {warnings.length > 0 && <details className="monitor-global-warnings"><summary>{t.warnings} · {warnings.length}</summary>{warnings.map((warning) => <p key={warning}>{warning}</p>)}</details>}
-      <footer>{updatedAt ? `${t.updated}: ${updatedAt.toLocaleTimeString()}` : t.connecting}</footer>
     </main>
+    {/* L5: where the records come from, when they were read, and how the scope counts them. */}
+    <StatusLine className="monitor-status" end={<span title={t.usageScope}>{t.usageScope}</span>}>
+      MonkeyMonitor{updatedAt && ` · ${t.updated} ${updatedAt.toLocaleTimeString()}`}
+      {/* Where a narrow bar leaves no room for the service's state, it is said here until the records are read. */}
+      {(error || (loading && !updatedAt)) && <span className="monitor-status__state"> · {error ? t.failed : t.connecting}</span>}
+    </StatusLine>
   </div>;
 }

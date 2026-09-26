@@ -1,8 +1,16 @@
-.chat-monitor-workspace{position:absolute;inset:0;min-width:0;min-height:0;overflow:auto;container-type:inline-size;container-name:monitor}
-.monitor-page{min-height:100%;background:var(--ground);color:var(--ink)}
-.monitor-toolbar{position:sticky;top:0;z-index:20;flex-wrap:wrap;gap:8px}.monitor-toolbar .wordmark{margin-right:auto}.monitor-health{font-size:12px;color:var(--held)}.monitor-health--error{color:var(--violated)}
-.monitor-shell{width:min(1240px,100%);margin:0 auto;padding:28px}
-.monitor-heading{display:flex;align-items:end;justify-content:space-between;gap:24px;margin-bottom:20px}.monitor-heading h1{font:600 calc(25px * var(--font-scale,1)) var(--font-display);letter-spacing:-.02em}.monitor-heading>div>p:last-child{max-width:720px;color:var(--muted);margin-top:5px}.monitor-heading label{min-width:220px}
+.chat-monitor-workspace{position:absolute;inset:0;min-width:0;min-height:0;overflow:hidden;container-type:inline-size;container-name:monitor}
+/* #337: one bar on top, the page between, one status line at the bottom; only the page scrolls. */
+.monitor-page{display:flex;flex-direction:column;height:100%;background:var(--ground);color:var(--ink)}
+.monitor-health--error{color:var(--violated)}
+.monitor-scope{display:flex;align-self:stretch;align-items:center;gap:16px}
+/* Other projects, as a word that opens a list; the bar-scoped selector outranks the Hub's form-field rule. */
+.surface-bar .surface-bar__items select.monitor-scope__other{width:auto;min-width:0;min-height:36px;padding:0 2px;border:0;border-radius:0;background:transparent;color:var(--muted);font:inherit;font-size:var(--text-ui);cursor:pointer}
+.surface-bar .surface-bar__items select.monitor-scope__other:hover{color:var(--ink)}
+.monitor-shell{flex:1;min-height:0;overflow:auto;padding:24px max(28px,calc((100% - 1184px) / 2))}
+/* A view shows its own sections; the others stay mounted with what was typed in them. */
+.monitor-shell>[hidden]{display:none}.monitor-stats[hidden]+.monitor-section{margin-top:0}
+/* The time the records were read stays whole; the hint beside it gives way. */
+.monitor-status .status-line__start{flex:none;max-width:100%}
 .monitor-eyebrow{text-transform:uppercase;letter-spacing:.12em;font-size:10px;color:var(--faint);font-weight:650;margin:0 0 5px}
 .monitor-section__head .monitor-operation-toggle{display:flex;flex-direction:row;align-items:center;justify-content:flex-start;gap:8px;min-width:0;font-size:12px}.monitor-operation-toggle input{width:auto}.monitor-table tfoot th{position:static}.monitor-table tfoot td{background:var(--panel-2);border-top:1px solid var(--line);font-weight:600}
 .monitor-stats{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;margin-bottom:16px}.monitor-stat{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius-lg);padding:14px 15px;min-width:0}.monitor-stat>span{display:block;color:var(--muted);font-size:11px}.monitor-stat strong{display:block;font:600 calc(21px * var(--font-scale,1)) var(--font-display);margin-top:3px}.monitor-stat small{display:block;color:var(--faint);font-size:10px;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -14,4 +22,7 @@
 .monitor-lower-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.monitor-sources{width:100%;resize:vertical;min-height:120px;padding:9px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--panel-2);color:var(--ink);font:11px/1.6 var(--font-mono)}.monitor-actions{display:flex;align-items:center;gap:10px;margin-top:10px}.monitor-actions span{font-size:11px;color:var(--held)}
 .monitor-calculator{display:grid;gap:11px}.monitor-token-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.monitor-quote{margin-top:12px;padding:12px;border-top:1px solid var(--line)}.monitor-quote>span,.monitor-quote>small{display:block;color:var(--muted);font-size:11px}.monitor-quote strong{display:block;font-size:18px;margin:3px 0}.monitor-global-warnings{padding:0 4px}
 @container monitor (max-width:900px){.monitor-stats{grid-template-columns:repeat(2,1fr)}.monitor-lower-grid{grid-template-columns:1fr}.monitor-trace-summary{grid-template-columns:repeat(3,1fr)}.monitor-span>summary{grid-template-columns:minmax(130px,1.5fr) 55px minmax(100px,2fr) 60px}}
-@container monitor (max-width:620px){.monitor-shell{padding:18px 14px}.monitor-heading{align-items:stretch;flex-direction:column}.monitor-heading label,.monitor-section__head label{min-width:0}.monitor-section__head{align-items:stretch;flex-direction:column}.monitor-stats{grid-template-columns:1fr 1fr}.monitor-trace-summary{grid-template-columns:1fr 1fr}.monitor-span>summary{grid-template-columns:minmax(120px,1fr) 55px 64px}.monitor-span__track{display:none}.monitor-token-grid{grid-template-columns:1fr}.monitor-toolbar{padding-inline:10px}}
+/* In a narrow panel the menus take the bar, and the status line keeps the time. */
+.monitor-status__state{display:none}
+@container monitor (max-width:520px){.monitor-page .monitor-health{display:none}.monitor-status__state{display:inline}}
+@container monitor (max-width:620px){.monitor-shell{padding:18px 14px}.monitor-section__head label{min-width:0}.monitor-section__head{align-items:stretch;flex-direction:column}.monitor-stats{grid-template-columns:1fr 1fr}.monitor-trace-summary{grid-template-columns:1fr 1fr}.monitor-span>summary{grid-template-columns:minmax(120px,1fr) 55px 64px}.monitor-span__track{display:none}.monitor-token-grid{grid-template-columns:1fr}}
