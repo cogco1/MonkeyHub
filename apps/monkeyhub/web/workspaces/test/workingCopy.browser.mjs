@@ -169,7 +169,7 @@ async function openVersions() {
   if (await button.getAttribute("aria-expanded") !== "true") await button.click();
 }
 const workspaceState = () => page.evaluate(() => window.__workingCopyWorkspace);
-const editingBase = () => page.locator(".stage__foot .editing-base");
+const editingBase = () => page.locator(".editing-base");
 const annotationStatus = () => page.locator("#stage-versions-panel [data-model-annotations-status]");
 async function editingRun() {
   await openVersions();
