@@ -160,7 +160,7 @@
       "status": "active",
       "branch": "codex/319-penguin-scene",
       "worktree": "codex-monkeyhub-current",
-      "base_ref": "07e1a40be5cdf195d6b49d525ab3f2496dae2f0a",
+      "base_ref": "6b2b0eccd358a7f2bd62c9862306c8f5d198dbaf",
       "contributor": "Codex (local baseline and regression follow-up)",
       "reviewer": "not assigned",
       "handoff": "PR #330 draft: historical claim repair and real Penguin persistence review; issues 319/321/324/327 remain open.",

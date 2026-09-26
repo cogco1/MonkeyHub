@@ -355,6 +355,8 @@ class DesktopRuntimeTests(unittest.TestCase):
         spec.loader.exec_module(self.fixture)
         self.fixture.make_project(self.root / "projects")
         self.project = self.root / "projects" / self.fixture.PROJECT_ID
+        from archflow.project.repository import FilesystemProjectRepository
+        self.project_locks = frozenset(FilesystemProjectRepository.open(self.project).lock_paths())
         self.before = self.project_bytes()
         self.opened_bytes = None
         save_application_settings(self.runtime, ApplicationSettingsDto(
@@ -368,10 +370,14 @@ class DesktopRuntimeTests(unittest.TestCase):
             self.user_file.write_bytes(b"User data must survive reinstall and reopen.\n")
 
     def project_bytes(self):
-        self.record("project-snapshot-start")
+        # P036's two declared advisory locks carry no project content. Windows
+        # forbids reading their locked byte during an ordinary guarded read.
+        # Do not exclude arbitrary *.lock/temp files or swallow content errors.
+        self.record("project-snapshot-start",
+                    excludedRepositoryLocks=sorted(str(path.relative_to(self.project)) for path in self.project_locks))
         contents = {}
         for path in self.project.rglob("*"):
-            if not path.is_file():
+            if not path.is_file() or path in self.project_locks:
                 continue
             try:
                 contents[str(path.relative_to(self.project))] = path.read_bytes()
@@ -834,6 +840,94 @@ $pattern.Current.Value | ConvertTo-Json -Compress
         self.shell.kill()
         self.shell.wait(timeout=10)
         self.drained()
+
+
+@unittest.skipUnless(os.name == "nt", "Exercises real Windows byte-range locks")
+class ProjectSnapshotTests(unittest.TestCase):
+    """Guard the retained-data assertion independently of a native UI race."""
+
+    def setUp(self):
+        from archflow.project.repository import FilesystemProjectRepository
+        spec = importlib.util.spec_from_file_location("snapshot_fixture", ROOT / "apps/archflow-studio/api/tests/support.py")
+        fixture = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(fixture)
+        self.temporary = tempfile.TemporaryDirectory(prefix="monkeyhub-snapshot-")
+        self.addCleanup(self.temporary.cleanup)
+        fixture.make_project(Path(self.temporary.name))
+        self.reader = DesktopRuntimeTests()
+        self.reader._testMethodName = self._testMethodName
+        self.reader.project = Path(self.temporary.name) / fixture.PROJECT_ID
+        self.reader.project_locks = frozenset(FilesystemProjectRepository.open(self.reader.project).lock_paths())
+        self.reader.events = []
+        self.reader.native = WindowsProcesses()
+
+    @contextmanager
+    def held(self, paths):
+        # The same P036 lock implementation runs in another real process; no
+        # mocked PermissionError or permission override stands in for Windows.
+        script = """import os, sys
+from pathlib import Path
+from contextlib import ExitStack
+from archflow.project.repository import _HeadFileLock
+with ExitStack() as stack:
+    for path in sys.argv[1:]:
+        stack.enter_context(_HeadFileLock(Path(path)))
+    print(os.getpid(), flush=True)
+    sys.stdin.readline()
+"""
+        child = subprocess.Popen([sys.executable, "-c", script, *map(str, paths)],
+                                 stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                 text=True, creationflags=subprocess.CREATE_NO_WINDOW)
+        try:
+            pid = int(child.stdout.readline())
+            self.reader.native.track(pid)
+            self.reader.record("test-locks-acquired", holderPid=pid, launcherPid=child.pid,
+                               paths=[str(path.relative_to(self.reader.project)) for path in paths])
+            yield
+        finally:
+            if child.poll() is None:
+                child.stdin.write("release\n")
+                child.stdin.flush()
+            child.stdin.close()
+            child.wait(timeout=10)
+            stderr = child.stderr.read()
+            child.stdout.close()
+            child.stderr.close()
+            self.reader.record("test-locks-released", exitCode=child.returncode)
+            for handle in self.reader.native.handles.values():
+                self.reader.native.kernel.CloseHandle(handle)
+            self.reader.native.handles.clear()
+            self.assertEqual(child.returncode, 0, stderr)
+
+    def test_declared_locks_do_not_block_complete_content_comparison(self):
+        before = self.reader.project_bytes()
+        locks = sorted(self.reader.project_locks)
+        with self.held(locks):
+            for path in locks:
+                with self.assertRaises(PermissionError) as raised:
+                    path.read_bytes()  # The old scanner deterministically fails.
+                native = windows_read_probe(path)
+                self.assertEqual(raised.exception.errno, 13)
+                self.assertEqual(native["winerror"], 33)  # ERROR_LOCK_VIOLATION
+                self.reader.record("old-scan-reproduced", path=str(path.relative_to(self.reader.project)),
+                                   errno=raised.exception.errno, nativeRead=native)
+            self.assertEqual(self.reader.project_bytes(), before)
+        self.assertEqual(self.reader.project_bytes(), before)
+        self.assertIn("HEAD", before)
+        self.assertIn("project.json", before)
+
+    def test_other_lock_named_content_is_checked_and_read_errors_propagate(self):
+        # A fixture file with a lock suffix is still data; this is not a glob.
+        asset = self.reader.project / "user-asset.lock"
+        asset.write_bytes(b"original retained bytes")
+        before = self.reader.project_bytes()
+        self.assertEqual(before["user-asset.lock"], b"original retained bytes")
+        with self.held([asset]):
+            with self.assertRaises(PermissionError):
+                self.reader.project_bytes()
+        self.assertEqual(self.reader.project_bytes(), before)
+        asset.write_bytes(b"changed retained bytes")
+        self.assertNotEqual(self.reader.project_bytes(), before)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,100 @@
+[
+  {
+    "event": "project-snapshot-start",
+    "time": 1790450390.9020672,
+    "monotonic": 66607.25,
+    "testProcessId": 24740,
+    "excludedRepositoryLocks": [
+      "HEAD.lock",
+      "design\\branches.lock"
+    ]
+  },
+  {
+    "event": "project-snapshot-complete",
+    "time": 1790450390.917073,
+    "monotonic": 66607.265,
+    "testProcessId": 24740,
+    "files": 9
+  },
+  {
+    "event": "test-locks-acquired",
+    "time": 1790450391.2212384,
+    "monotonic": 66607.562,
+    "testProcessId": 24740,
+    "holderPid": 14804,
+    "launcherPid": 42712,
+    "paths": [
+      "design\\branches.lock",
+      "HEAD.lock"
+    ]
+  },
+  {
+    "event": "old-scan-reproduced",
+    "time": 1790450391.2242396,
+    "monotonic": 66607.562,
+    "testProcessId": 24740,
+    "path": "design\\branches.lock",
+    "errno": 13,
+    "nativeRead": {
+      "operation": "ReadFile(first byte)",
+      "ok": false,
+      "winerror": 33,
+      "bytesRead": 0
+    }
+  },
+  {
+    "event": "old-scan-reproduced",
+    "time": 1790450391.2262385,
+    "monotonic": 66607.562,
+    "testProcessId": 24740,
+    "path": "HEAD.lock",
+    "errno": 13,
+    "nativeRead": {
+      "operation": "ReadFile(first byte)",
+      "ok": false,
+      "winerror": 33,
+      "bytesRead": 0
+    }
+  },
+  {
+    "event": "project-snapshot-start",
+    "time": 1790450391.2282386,
+    "monotonic": 66607.578,
+    "testProcessId": 24740,
+    "excludedRepositoryLocks": [
+      "HEAD.lock",
+      "design\\branches.lock"
+    ]
+  },
+  {
+    "event": "project-snapshot-complete",
+    "time": 1790450391.2407668,
+    "monotonic": 66607.578,
+    "testProcessId": 24740,
+    "files": 9
+  },
+  {
+    "event": "test-locks-released",
+    "time": 1790450391.2627358,
+    "monotonic": 66607.609,
+    "testProcessId": 24740,
+    "exitCode": 0
+  },
+  {
+    "event": "project-snapshot-start",
+    "time": 1790450391.2657342,
+    "monotonic": 66607.609,
+    "testProcessId": 24740,
+    "excludedRepositoryLocks": [
+      "HEAD.lock",
+      "design\\branches.lock"
+    ]
+  },
+  {
+    "event": "project-snapshot-complete",
+    "time": 1790450391.2797415,
+    "monotonic": 66607.625,
+    "testProcessId": 24740,
+    "files": 9
+  }
+]

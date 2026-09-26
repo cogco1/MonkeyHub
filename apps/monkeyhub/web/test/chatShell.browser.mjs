@@ -78,7 +78,8 @@ const server = createServer(async (req, res) => {
 await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
 const origin = `http://127.0.0.1:${server.address().port}`;
 const { chromium } = await import((process.env.PLAYWRIGHT_MODULE ? pathToFileURL(process.env.PLAYWRIGHT_MODULE).href : "playwright"));
-const browser = await chromium.launch({ headless: true, channel: "chrome" });
+const browser = await chromium.launch({ headless: true, channel: "chrome",
+  args: process.env.MONKEYHUB_TEST_RENDERER === "swiftshader" ? ["--use-angle=swiftshader"] : [] });
 const page = await browser.newPage({ viewport: { width: 1440, height: 960 } });
 // Observe actual production renders and request completion, without changing
 // camera state, render scheduling, pixel tolerance, or the comparison baseline.
@@ -92,7 +93,7 @@ await page.addInitScript(() => {
   let nextCanvas = 0;
   const ids = new WeakMap();
   const observe = () => document.querySelectorAll("canvas.viewport-canvas:not([data-observe-render])")
-    .forEach(canvas => { ids.set(canvas, ++nextCanvas); canvas.setAttribute("data-observe-render", ""); });
+    .forEach(canvas => { ids.set(canvas, ++nextCanvas); canvas.dataset.observationId = String(nextCanvas); canvas.setAttribute("data-observe-render", ""); });
   new MutationObserver(observe).observe(document, { childList: true, subtree: true });
   document.addEventListener("monkeyarch:rendered", event => {
     const rows = window.__monkeyarchObservation.renders;
@@ -524,10 +525,15 @@ const visibleWorkspace = () => page.locator('.chat-project-workspace:not([hidden
 const cameraScreenshot = async (name) => {
   timeline.push({ event: name, time: Date.now() });
   const canvas = visibleWorkspace().locator(".stage canvas").first();
+  // Preserve the original screenshot call before any synchronous GPU readback:
+  // toDataURL/getParameter can themselves flush pending rendering work.
+  const png = await canvas.screenshot({ path: path.join(temporary, name + ".png") });
+  timeline.push({ event: name + "-captured", time: Date.now() });
   const read = () => canvas.evaluate(element => {
     const gl = element.getContext("webgl2") || element.getContext("webgl");
     const info = gl?.getExtension("WEBGL_debug_renderer_info");
-    return { ...window.__monkeyarchObservation, time: performance.now(), wallTime: Date.now(),
+    return { ...window.__monkeyarchObservation, canvasId: Number(element.dataset.observationId),
+      time: performance.now(), wallTime: Date.now(),
       rect: element.getBoundingClientRect().toJSON(), size: [element.width, element.height],
       viewport: [innerWidth, innerHeight], devicePixelRatio, userAgent: navigator.userAgent,
       renderer: info ? gl.getParameter(info.UNMASKED_RENDERER_WEBGL) : null,
@@ -535,16 +541,27 @@ const cameraScreenshot = async (name) => {
       version: gl?.getParameter(gl.VERSION), context: gl?.getContextAttributes(),
       rawPng: element.toDataURL("image/png").split(",")[1] };
   });
-  const before = await read();
-  const png = await canvas.screenshot({ path: path.join(temporary, name + ".png") });
   const after = await read();
-  await writeFile(path.join(temporary, name + ".raw.png"), Buffer.from(after.rawPng, "base64"));
-  delete before.rawPng; delete after.rawPng;
-  await writeFile(path.join(temporary, name + ".json"), JSON.stringify({ browser: browser.version(), before, after }, null, 2));
-  return png;
+  const raw = Buffer.from(after.rawPng, "base64");
+  await writeFile(path.join(temporary, name + ".raw.png"), raw);
+  delete after.rawPng;
+  await writeFile(path.join(temporary, name + ".json"), JSON.stringify({ browser: browser.version(), after }, null, 2));
+  const rendered = after.renders.filter(row => row.canvas === after.canvasId).at(-1);
+  assert.ok(rendered?.model, "camera evidence must observe a rendered model, not an empty canvas");
+  const { time, wallTime, ...camera } = rendered;
+  return { name, png, raw, camera };
+};
+const assertSameCameraCapture = async (actual, expected, message) => {
+  // A locator screenshot includes DOM painted over the canvas. Toolbar/text
+  // compositing can change pixels even when the preserved WebGL buffer and
+  // actual camera are identical. Keep that image/diff as diagnostic evidence;
+  // assert the product invariant on the real camera AND exact rendered pixels.
+  await assertSameScreenshotPixels(actual.png, expected.png, message, actual.name + "-overlay", false);
+  assert.deepEqual(actual.camera, expected.camera, message + ": actual rendered camera and viewport");
+  await assertSameScreenshotPixels(actual.raw, expected.raw, message, actual.name + "-canvas");
 };
 // Compare decoded pixels exactly; PNG encoding bytes are not the rendered view.
-const assertSameScreenshotPixels = async (actual, expected, message) => {
+const assertSameScreenshotPixels = async (actual, expected, message, name, required = true) => {
   const difference = await page.evaluate(async ({ actual, expected }) => {
     const decode = async (base64) => {
       const bytes = Uint8Array.from(atob(base64), (character) => character.charCodeAt(0));
@@ -582,16 +599,15 @@ const assertSameScreenshotPixels = async (actual, expected, message) => {
     diffContext.putImageData(diff, 0, 0);
     return { dimensions, differentPixels, maxChannelDelta, samples, diffPng: diffCanvas.toDataURL("image/png").split(",")[1] };
   }, { actual: actual.toString("base64"), expected: expected.toString("base64") });
-  const name = message.startsWith("refreshing") ? "refresh-comparison" : "switch-comparison";
   await writeFile(path.join(temporary, name + ".actual.png"), actual);
   await writeFile(path.join(temporary, name + ".expected.png"), expected);
   if (difference.diffPng) await writeFile(path.join(temporary, name + ".diff.png"), Buffer.from(difference.diffPng, "base64"));
   delete difference.diffPng;
   await writeFile(path.join(temporary, name + ".json"), JSON.stringify({ message, ...difference }, null, 2));
-  console.log(JSON.stringify({ screenshotComparison: message, ...difference }));
+  console.log(JSON.stringify({ screenshotComparison: message, name, required, ...difference }));
   const diagnostic = `${message}: ${JSON.stringify(difference)}`;
   assert.deepEqual(difference.dimensions.actual, difference.dimensions.expected, diagnostic);
-  assert.equal(difference.differentPixels, 0, diagnostic);
+  if (required) assert.equal(difference.differentPixels, 0, diagnostic);
 };
 // #285: the composer's + menu holds Add attachments and New topic; the composer
 // names the design context the next message carries.
@@ -1363,7 +1379,7 @@ try {
   await visibleWorkspace().locator('button[aria-controls="view-tools"]').click();
   await page.mouse.move(10, 10);
   await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
-  const preservedView = await visibleWorkspace().locator(".stage canvas").first().screenshot();
+  const preservedView = await cameraScreenshot("before-switch");
   const beforePeerWorkspaces = writes.length;
   await page.getByRole("button", { name: "Board", exact: true }).click();
   await waitWorkspace("board");
@@ -1435,7 +1451,7 @@ try {
   assert.equal(await visibleWorkspace().evaluate((element) => element.retainedCanvas === element.querySelector(".stage canvas")), true);
   await page.mouse.move(10, 10);
   await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
-  await assertSameScreenshotPixels(await visibleWorkspace().locator(".stage canvas").first().screenshot(), preservedView, "the chosen camera view survives Board/model switches");
+  await assertSameCameraCapture(await cameraScreenshot("after-switch"), preservedView, "the chosen camera view survives Board/model switches");
   await page.screenshot({ path: path.join(temporary, "hub-arch.png") });
   assert.equal(await visibleWorkspace().evaluate((element) => element.switchMarker), "retained", "both workspaces share one mounted project");
   assert.equal(await page.evaluate(() => localStorage.getItem("archflow-studio.user-preferences")), savedEditingBases, "candidate readback and workspace switches do not change editing consent");
@@ -1818,22 +1834,29 @@ try {
   await visibleWorkspace().locator("#view-tools").getByRole("button", { name: "Top", exact: true }).click();
   await visibleWorkspace().locator('button[aria-controls="view-tools"]').click();
   await page.mouse.move(10, 10);
-  const beforeRefreshCanvas = await cameraScreenshot("before-refresh");
-  const beforeRefreshBytes = workspaceFixture.requests.filter((row) => row.name.endsWith("/bytes")).length;
-  await page.getByRole("button", { name: /Project B/ }).last().click();
-  const refreshConnection = page.getByRole("dialog", { name: "Project", exact: true });
-  await refreshConnection.getByText("Connection details").click();
-  const refreshedListing = page.waitForResponse((response) => new URL(response.url()).pathname.endsWith("/studio/api/artifacts"));
-  await refreshConnection.getByRole("button", { name: "Reload page", exact: true }).click();
-  await refreshedListing;
-  await refreshConnection.getByRole("button", { name: "Close", exact: true }).click();
-  await page.mouse.move(10, 10);
-  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
-  assert.equal(await visibleWorkspace().evaluate((element) => element.completionMarker), "once");
-  assert.equal(workspaceFixture.requests.filter((row) => row.name.endsWith("/bytes")).length, beforeRefreshBytes,
-    "refreshing an already shown candidate does not reinstall its model");
-  await assertSameScreenshotPixels(await cameraScreenshot("after-refresh"), beforeRefreshCanvas,
-    "refreshing keeps the camera chosen after the candidate appeared");
+  // Upstream Stage chrome changed the default canvas from 920 to 801 px high.
+  // Exercise the current layout AND the historical failing 755 x 920 size.
+  for (const height of [960, 1079]) {
+    await page.setViewportSize({ width: 1440, height });
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    const beforeRefreshCanvas = await cameraScreenshot(`before-refresh-${height}`);
+    const beforeRefreshBytes = workspaceFixture.requests.filter((row) => row.name.endsWith("/bytes")).length;
+    await page.getByRole("button", { name: /Project B/ }).last().click();
+    const refreshConnection = page.getByRole("dialog", { name: "Project", exact: true });
+    await refreshConnection.getByText("Connection details").click();
+    const refreshedListing = page.waitForResponse((response) => new URL(response.url()).pathname.endsWith("/studio/api/artifacts"));
+    await refreshConnection.getByRole("button", { name: "Reload page", exact: true }).click();
+    await refreshedListing;
+    await refreshConnection.getByRole("button", { name: "Close", exact: true }).click();
+    await page.mouse.move(10, 10);
+    await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    assert.equal(await visibleWorkspace().evaluate((element) => element.completionMarker), "once");
+    assert.equal(workspaceFixture.requests.filter((row) => row.name.endsWith("/bytes")).length, beforeRefreshBytes,
+      "refreshing an already shown candidate does not reinstall its model");
+    await assertSameCameraCapture(await cameraScreenshot(`after-refresh-${height}`), beforeRefreshCanvas,
+      "refreshing keeps the camera chosen after the candidate appeared");
+  }
+  await page.setViewportSize({ width: 1440, height: 960 });
 
   // #302: headless API jobs have no chat message, and their completed results take
   // nothing on screen either: no surface, panel, pinned candidate or model load.

@@ -1,0 +1,75 @@
+2026-09-26T17:09:07.9170777Z INFO:     127.0.0.1:65281 - "GET /api/worktrees HTTP/1.1" 200 OK
+2026-09-26T17:09:07.9171142Z INFO:     127.0.0.1:65282 - "GET /api/working-draft HTTP/1.1" 200 OK
+2026-09-26T17:09:07.9171314Z
+2026-09-26T17:09:11.5689453Z test_occupied_unrelated_port_is_never_attached_or_stopped (__main__.DesktopRuntimeTests.test_occupied_unrelated_port_is_never_attached_or_stopped) ... ok
+2026-09-26T17:09:18.7450668Z test_owned_hub_crash_shows_failure_without_restarting_or_replaying (__main__.DesktopRuntimeTests.test_owned_hub_crash_shows_failure_without_restarting_or_replaying) ... ok
+2026-09-26T17:09:28.4206969Z test_retained_chat_and_settings_are_visible_before_first_write (__main__.DesktopRuntimeTests.test_retained_chat_and_settings_are_visible_before_first_write) ... ok
+2026-09-26T17:09:54.7775973Z test_temporary_health_loss_preserves_unsubmitted_draft_without_navigation (__main__.DesktopRuntimeTests.test_temporary_health_loss_preserves_unsubmitted_draft_without_navigation) ... ok
+2026-09-26T17:09:59.2531938Z test_update_trial_waits_for_commit_before_loading_project_ui (__main__.DesktopRuntimeTests.test_update_trial_waits_for_commit_before_loading_project_ui) ... ok
+2026-09-26T17:09:59.2532661Z
+2026-09-26T17:09:59.2533254Z ======================================================================
+2026-09-26T17:09:59.2533833Z ERROR: test_native_close_drains_accepted_work_and_reopen_preserves_project (__main__.DesktopRuntimeTests.test_native_close_drains_accepted_work_and_reopen_preserves_project)
+2026-09-26T17:09:59.2534300Z ----------------------------------------------------------------------
+2026-09-26T17:09:59.2534526Z Traceback (most recent call last):
+2026-09-26T17:09:59.2535116Z   File "D:\a\MonkeyHub\MonkeyHub\apps\monkeyhub\desktop\tests\test_runtime.py", line 702, in test_native_close_drains_accepted_work_and_reopen_preserves_project
+2026-09-26T17:09:59.2535512Z     self.open_project()
+2026-09-26T17:09:59.2535652Z     ~~~~~~~~~~~~~~~~~^^
+2026-09-26T17:09:59.2535932Z   File "D:\a\MonkeyHub\MonkeyHub\apps\monkeyhub\desktop\tests\test_runtime.py", line 528, in open_project
+2026-09-26T17:09:59.2536220Z     current = self.project_bytes()
+2026-09-26T17:09:59.2536524Z   File "D:\a\MonkeyHub\MonkeyHub\apps\monkeyhub\desktop\tests\test_runtime.py", line 342, in project_bytes
+2026-09-26T17:09:59.2536861Z     return {str(path.relative_to(self.project)): path.read_bytes()
+2026-09-26T17:09:59.2537167Z                                                  ~~~~~~~~~~~~~~~^^
+2026-09-26T17:09:59.2537432Z   File "pathlib\_abc.py", line 626, in read_bytes
+2026-09-26T17:09:59.2537656Z PermissionError: [Errno 13] Permission denied
+2026-09-26T17:09:59.2537774Z
+2026-09-26T17:09:59.2537897Z ----------------------------------------------------------------------
+2026-09-26T17:09:59.2538090Z Ran 8 tests in 114.928s
+2026-09-26T17:09:59.2538172Z
+2026-09-26T17:09:59.2538234Z FAILED (errors=1)
+2026-09-26T17:09:59.3496673Z ##[error]Process completed with exit code 1.
+2026-09-26T17:09:59.3634422Z ##[group]Run actions/upload-artifact@v4
+2026-09-26T17:09:59.3634635Z with:
+2026-09-26T17:09:59.3634841Z   name: MonkeyHub-package-f1f7458133d47ed51c7170b6937432ba0237adab
+2026-09-26T17:09:59.3635068Z   path: D:\a\_temp/mhp/output/*
+2026-09-26T17:09:59.3635212Z   compression-level: 0
+2026-09-26T17:09:59.3635334Z   retention-days: 7
+2026-09-26T17:09:59.3635454Z   if-no-files-found: error
+2026-09-26T17:09:59.3635589Z   overwrite: false
+2026-09-26T17:09:59.3635709Z   include-hidden-files: false
+2026-09-26T17:09:59.3635842Z env:
+2026-09-26T17:09:59.3635955Z   MONKEYHUB_RELEASE_SERIES: 0.1
+2026-09-26T17:09:59.3636110Z   MONKEYHUB_RELEASE_PUSH: false
+2026-09-26T17:09:59.3636287Z   MONKEYHUB_SOURCE_SHA: f1f7458133d47ed51c7170b6937432ba0237adab
+2026-09-26T17:09:59.3636528Z   pythonLocation: C:\hostedtoolcache\windows\Python\3.12.10\x64
+2026-09-26T17:09:59.3636790Z   PKG_CONFIG_PATH: C:\hostedtoolcache\windows\Python\3.12.10\x64/lib/pkgconfig
+2026-09-26T17:09:59.3637367Z   Python_ROOT_DIR: C:\hostedtoolcache\windows\Python\3.12.10\x64
+2026-09-26T17:09:59.3637593Z   Python2_ROOT_DIR: C:\hostedtoolcache\windows\Python\3.12.10\x64
+2026-09-26T17:09:59.3637818Z   Python3_ROOT_DIR: C:\hostedtoolcache\windows\Python\3.12.10\x64
+2026-09-26T17:09:59.3638065Z   PACKAGE_BUILD: D:\a\_temp\mhp\staging\candidate-f1f7458133d4-gh083cnt
+2026-09-26T17:09:59.3638359Z   MONKEYHUB_PACKAGE_ROOT: D:\a\_temp\mhp\extracted\MonkeyHub-f1f7458133d4-desktop-windows-x64
+2026-09-26T17:09:59.3638642Z   MONKEYHUB_INSTALLED_ROOT: D:\a\_temp\mhp\installed\MonkeyHub
+2026-09-26T17:09:59.3638886Z   MONKEYHUB_DESKTOP_EXE: D:\a\_temp\mhp\installed\MonkeyHub/MonkeyHub.exe
+2026-09-26T17:09:59.3639100Z ##[endgroup]
+2026-09-26T17:09:59.5002781Z (node:3648) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+2026-09-26T17:09:59.5003278Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-09-26T17:09:59.5050780Z With the provided path, there will be 4 files uploaded
+2026-09-26T17:09:59.5053902Z Artifact name is valid!
+2026-09-26T17:09:59.5054669Z Root directory input is valid!
+2026-09-26T17:09:59.7765299Z Beginning upload of artifact content to blob storage
+2026-09-26T17:09:59.8160774Z (node:3648) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+2026-09-26T17:10:00.3465906Z Uploaded bytes 8388608
+2026-09-26T17:10:00.4677735Z Uploaded bytes 16777216
+2026-09-26T17:10:00.4896293Z Uploaded bytes 25165824
+2026-09-26T17:10:00.5260068Z Uploaded bytes 33554432
+2026-09-26T17:10:00.5628358Z Uploaded bytes 41943040
+2026-09-26T17:10:00.7562961Z Uploaded bytes 50331648
+2026-09-26T17:10:00.7861553Z Uploaded bytes 58720256
+2026-09-26T17:10:00.7921487Z Uploaded bytes 67108864
+2026-09-26T17:10:00.8461982Z Uploaded bytes 75497472
+2026-09-26T17:10:00.9215313Z Uploaded bytes 83886080
+2026-09-26T17:10:01.0019568Z Uploaded bytes 92274688
+2026-09-26T17:10:01.0294393Z Uploaded bytes 100663296
+2026-09-26T17:10:01.1061550Z Uploaded bytes 109051904
+2026-09-26T17:10:01.1357617Z Uploaded bytes 117440512
+2026-09-26T17:10:01.1968968Z Uploaded bytes 125829120
+2026-09-26T17:10:01.2386199Z Uploaded bytes 134217728

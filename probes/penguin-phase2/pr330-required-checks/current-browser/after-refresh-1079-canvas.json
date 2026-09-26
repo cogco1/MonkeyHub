@@ -1,0 +1,16 @@
+{
+  "message": "refreshing keeps the camera chosen after the candidate appeared",
+  "dimensions": {
+    "actual": [
+      755,
+      920
+    ],
+    "expected": [
+      755,
+      920
+    ]
+  },
+  "differentPixels": 0,
+  "maxChannelDelta": 0,
+  "samples": []
+}

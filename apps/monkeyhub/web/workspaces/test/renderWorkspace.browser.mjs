@@ -370,6 +370,8 @@ try {
     await api("project-a", "/api/documents", "POST", { projectId: "project-a", fileName: "revised-reference.png", mimeType: "image/png",
       contentBase64: replacement.toString("base64"), replacesPages: [{ ...refs[0], newPageIndex: 0 }] });
     await refresh().click(); await history().filter({ hasText: "Soft morning light" }).click();
+    await until(() => workspace().getByRole("combobox", { name: "Source image", exact: true }).innerText(),
+      text => text.includes("revised-reference.png"), "refreshed document list contains the reference replacement");
     await until(() => workspace().locator('.render-source-state').innerText(), (text) => text.includes("Source outdated"), "reference update is explicit");
     await workspace().getByRole("button", { name: "Use updated source", exact: true }).click();
     assert.match(await workspace().getByRole("combobox", { name: "Source image", exact: true }).locator('option:checked').innerText(), /source.png/);
@@ -378,6 +380,10 @@ try {
     await api("project-a", "/api/documents", "POST", { projectId: "project-a", fileName: "revised-source.png", mimeType: "image/png",
       contentBase64: replacement.toString("base64"), replacesPages: [{ ...source, newPageIndex: 0 }] });
     await refresh().click(); await history().filter({ hasText: "Soft morning light" }).click();
+    // This job is already outdated from the reference update above. That label
+    // alone cannot establish that the second asynchronous refresh has completed.
+    await until(() => workspace().getByRole("combobox", { name: "Source image", exact: true }).innerText(),
+      text => text.includes("revised-source.png"), "refreshed document list contains the source replacement");
     await until(() => workspace().locator('.render-source-state').innerText(), (text) => text.includes("Source outdated"), "outdated result is explicit");
     assert.deepEqual((await jobs()).jobs.find((j) => j.jobId === first.jobId).request.source, source);
     await workspace().getByRole("button", { name: "Use updated source", exact: true }).click();
