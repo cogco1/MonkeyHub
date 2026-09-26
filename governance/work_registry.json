@@ -174,7 +174,9 @@
         "apps/monkeyhub/web/workspaces/test/drawingCanvas.browser.mjs",
         "apps/monkeyhub/web/workspaces/test/drawingStyles.browser.mjs",
         "apps/monkeyhub/web/workspaces/test/recipeTransfer.browser.mjs",
-        "apps/monkeyhub/web/test/chatShell.browser.mjs"
+        "apps/monkeyhub/web/test/chatShell.browser.mjs",
+        "apps/monkeyhub/web/workspaces/src/workspaces/monkeydiagram/DrawingMenu.tsx",
+        "apps/monkeyhub/web/workspaces/src/workspaces/monkeydiagram/DrawingMenu.css"
       ],
       "card": "docs/mapping/planning/GH-349-drawing-bar.md",
       "acceptance": [
@@ -208,7 +210,9 @@
             "apps/monkeyhub/web/workspaces/test/drawingCanvas.browser.mjs",
             "apps/monkeyhub/web/workspaces/test/drawingStyles.browser.mjs",
             "apps/monkeyhub/web/workspaces/test/recipeTransfer.browser.mjs",
-            "apps/monkeyhub/web/test/chatShell.browser.mjs"
+            "apps/monkeyhub/web/test/chatShell.browser.mjs",
+            "apps/monkeyhub/web/workspaces/src/workspaces/monkeydiagram/DrawingMenu.tsx",
+            "apps/monkeyhub/web/workspaces/src/workspaces/monkeydiagram/DrawingMenu.css"
           ],
           "depends_on": [],
           "status": "active",
