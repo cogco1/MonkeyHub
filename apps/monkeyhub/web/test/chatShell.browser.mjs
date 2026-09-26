@@ -1689,6 +1689,8 @@ try {
   assert.equal(runningA.status, "running", "Board navigation does not interrupt another project's task");
   const modelReadsBeforeRender = workspaceFixture.requests.filter((row) => /\/api\/artifacts/.test(row.name)).length;
   await page.getByRole("button", { name: "Render", exact: true }).click(); await waitWorkspace("render");
+  assert.equal(await visibleWorkspace().getByRole("button", { name: "Physical", exact: true }).getAttribute("aria-pressed"), "true");
+  await visibleWorkspace().getByRole("button", { name: "AI", exact: true }).click();
   await visibleWorkspace().getByRole("textbox", { name: "Visual direction", exact: true }).fill("Keep this Render draft");
   await page.getByRole("button", { name: "Board", exact: true }).click(); await waitWorkspace("board");
   assert.equal(await visibleWorkspace().getByLabel("Board title", { exact: true }).inputValue(), "Board B retained");

@@ -1,5 +1,10 @@
 # Penguin Phase 2 — reviewable partial baseline
 
+**Latest PR #330 review:** [historical-check repair and actual save/reopen evidence](review-pr330/README.md).
+The original historical FAIL below is retained as a past result; its current
+status and the follow-up regression failures/reruns are reported there.
+All whole-Issue, camera-parity and D5 limitations remain.
+
 Executed 2026-09-26 on Windows, Blender 4.3 / Cycles / OptiX, Three.js WebGL and
 the real MonkeyHub Runtime/P036 project. Related to #319, #321, #324 and #327.
 All four Issues remain open. **This is not whole-Issue acceptance or D5 quality.**

@@ -169,7 +169,9 @@
         "studio.artifacts",
         "studio.render",
         "runtime.drawing_elevation",
-        "tools.archcheck"
+        "tools.archcheck",
+        "hub.shell",
+        "project.version_refs"
       ],
       "goal": "Penguin Phase 2: production conversion, associated drawings and one persisted Render Scene for Three.js/Cycles.",
       "depends_on": [],
@@ -236,7 +238,9 @@
         "apps/archflow-studio/api/archflow_studio_api/application/runtime.py",
         "apps/monkeyhub/web/workspaces/test/renderWorkspace.browser.mjs",
         "tools/archcheck.py",
-        "CONTRIBUTING.md"
+        "CONTRIBUTING.md",
+        "apps/monkeyhub/web/test/chatShell.browser.mjs",
+        "apps/monkeyhub/web/test/projectWorkspaceFixture.mjs"
       ],
       "card": "docs/mapping/planning/GH-319-penguin-scene.md",
       "acceptance": [

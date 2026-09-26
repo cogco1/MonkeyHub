@@ -1,0 +1,665 @@
+{
+  "reviewedAt": "2026-09-26",
+  "priorHead": "a30e4bc4139cec4385b2263e4eb19f69f32c329a",
+  "requiredContexts": [
+    "verify",
+    "Studio web",
+    "Studio first-run (ubuntu-latest)",
+    "Studio first-run (windows-latest)",
+    "Windows desktop package"
+  ],
+  "source": "https://api.github.com/repos/cogco1/MonkeyHub/branches/main",
+  "priorJobs": [
+    {
+      "id": 108349355827,
+      "name": "Studio web",
+      "conclusion": "success",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1
+        },
+        {
+          "name": "Check out repository",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2
+        },
+        {
+          "name": "Set up Python",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3
+        },
+        {
+          "name": "Set up Node",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4
+        },
+        {
+          "name": "Install API dependencies",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5
+        },
+        {
+          "name": "Install web dependencies",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6
+        },
+        {
+          "name": "Install schema generator",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7
+        },
+        {
+          "name": "Generated client matches API",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 8
+        },
+        {
+          "name": "Typecheck",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 9
+        },
+        {
+          "name": "Hub web behavior, typecheck and build",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 10
+        },
+        {
+          "name": "Post Set up Node",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 18
+        },
+        {
+          "name": "Post Set up Python",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 19
+        },
+        {
+          "name": "Post Check out repository",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 20
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 21
+        }
+      ]
+    },
+    {
+      "id": 108349355897,
+      "name": "Studio first-run (ubuntu-latest)",
+      "conclusion": "success",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1
+        },
+        {
+          "name": "Check out repository",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2
+        },
+        {
+          "name": "Set up Python",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3
+        },
+        {
+          "name": "Set up Node",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4
+        },
+        {
+          "name": "Install API and test dependencies",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5
+        },
+        {
+          "name": "Desktop update activation checks",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 6
+        },
+        {
+          "name": "API binding, protocol and candidate checks",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7
+        },
+        {
+          "name": "Install web dependencies",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 8
+        },
+        {
+          "name": "Install schema generator",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 9
+        },
+        {
+          "name": "Web behavior checks",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 10
+        },
+        {
+          "name": "Generated client matches API",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 11
+        },
+        {
+          "name": "Typecheck and build",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 12
+        },
+        {
+          "name": "Post Set up Node",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 22
+        },
+        {
+          "name": "Post Set up Python",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 23
+        },
+        {
+          "name": "Post Check out repository",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 24
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 25
+        }
+      ]
+    },
+    {
+      "id": 108349355975,
+      "name": "Studio first-run (windows-latest)",
+      "conclusion": "success",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1
+        },
+        {
+          "name": "Check out repository",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2
+        },
+        {
+          "name": "Set up Python",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3
+        },
+        {
+          "name": "Set up Node",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4
+        },
+        {
+          "name": "Install API and test dependencies",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5
+        },
+        {
+          "name": "Desktop update activation checks",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6
+        },
+        {
+          "name": "API binding, protocol and candidate checks",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7
+        },
+        {
+          "name": "Install web dependencies",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 8
+        },
+        {
+          "name": "Install schema generator",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 9
+        },
+        {
+          "name": "Web behavior checks",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 10
+        },
+        {
+          "name": "Generated client matches API",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 11
+        },
+        {
+          "name": "Typecheck and build",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 12
+        },
+        {
+          "name": "Post Set up Node",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 22
+        },
+        {
+          "name": "Post Set up Python",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 23
+        },
+        {
+          "name": "Post Check out repository",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 24
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 25
+        }
+      ]
+    },
+    {
+      "id": 108349356003,
+      "name": "verify",
+      "conclusion": "failure",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1
+        },
+        {
+          "name": "Check out repository",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2
+        },
+        {
+          "name": "Set up Python",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3
+        },
+        {
+          "name": "Architecture firewall",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4
+        },
+        {
+          "name": "Write scopes",
+          "status": "completed",
+          "conclusion": "failure",
+          "number": 5
+        },
+        {
+          "name": "Diff whitespace smoke",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 6
+        },
+        {
+          "name": "Install project",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 7
+        },
+        {
+          "name": "Unit and integration tests",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 8
+        },
+        {
+          "name": "Fab geometry, CLI and upload boundaries",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 9
+        },
+        {
+          "name": "Studio API suite",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 10
+        },
+        {
+          "name": "Hub conversation and lifecycle tests",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 11
+        },
+        {
+          "name": "Post Set up Python",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 21
+        },
+        {
+          "name": "Post Check out repository",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 22
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 23
+        }
+      ]
+    },
+    {
+      "id": 108349334269,
+      "name": "Windows desktop package",
+      "conclusion": "success",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1
+        },
+        {
+          "name": "Run actions/checkout@v4",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2
+        },
+        {
+          "name": "Prepare exact build identity",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3
+        },
+        {
+          "name": "Keep the release commit for the publish job",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 4
+        },
+        {
+          "name": "Rust toolchain",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5
+        },
+        {
+          "name": "Run actions/cache/restore@v4",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6
+        },
+        {
+          "name": "Run actions/setup-python@v5",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7
+        },
+        {
+          "name": "Run actions/setup-node@v4",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 8
+        },
+        {
+          "name": "Build complete desktop distribution from this commit",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 9
+        },
+        {
+          "name": "Normalize release version across package evidence",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 10
+        },
+        {
+          "name": "Verify release desktop version",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 11
+        },
+        {
+          "name": "Test host boundaries from the packaged snapshot",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 12
+        },
+        {
+          "name": "Extract and install the complete ZIP in an isolated user environment",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 13
+        },
+        {
+          "name": "Installed native lifecycle, reinstall and isolated project restart",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 14
+        },
+        {
+          "name": "Verify installed release identity",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 15
+        },
+        {
+          "name": "Delta patches from the latest published releases",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 16
+        },
+        {
+          "name": "Keep update patches for the publish job",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 17
+        },
+        {
+          "name": "Keep complete review package",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 18
+        },
+        {
+          "name": "Keep review executable",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 19
+        },
+        {
+          "name": "Package and native shortcut selection",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 20
+        },
+        {
+          "name": "Signed release installation",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 21
+        },
+        {
+          "name": "Run actions/cache/save@v4",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 22
+        },
+        {
+          "name": "Post Run actions/setup-node@v4",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 42
+        },
+        {
+          "name": "Post Run actions/setup-python@v5",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 43
+        },
+        {
+          "name": "Post Run actions/checkout@v4",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 44
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 45
+        }
+      ]
+    },
+    {
+      "id": 108351131337,
+      "name": "Windows release publish",
+      "conclusion": "skipped",
+      "steps": null
+    }
+  ],
+  "issues": [
+    {
+      "issue": 319,
+      "url": "https://github.com/cogco1/MonkeyHub/issues/319",
+      "title": "Penguin Test Phase 2 — Drawing Associativity + Interactive Render Scene",
+      "issue_number": 319,
+      "body": "## Context\n\nPenguin Test Phase 1 is **PARTIAL**. The test has verified real mesh import/conversion/readback, drawing projection, and real Cycles rendering, but these capabilities are not yet connected into a continuously editable product workflow.\n\nTwo product-level gaps remain:\n\n1. **Drawings are not associated with the model revision.** Current validation proves one-time contour/dimension accuracy, but not that drawings remain correct after geometry changes, refresh, and project reopen.\n2. **Render does not yet own a unified editable scene.** The Render workspace still behaves primarily like a white-model preview, while the higher-quality Cycles result is produced separately. Materials, lights, environment, camera, and render settings are not yet driven by the same persisted scene state.\n\nThere is also a separate import/display defect that should be fixed first: the converted 3DM can appear black because normals are missing and the default color is black. This is distinct from the Render workspace white-model limitation.\n\n## Goal\n\nBuild **Drawing Associativity + Interactive Render Scene** around two explicit revision chains:\n\n```text\nGeometry Source of Truth\nOCCT / retained imported mesh\n        |\n geometry_revision\n   +----+----+\n   |         |\nDrawing   Render Scene\n   |         |\ndrawing   scene_revision\nrevision     |\n         +---+---+\n         |       |\n     Three.js  Blender/Cycles\n      Preview   Final Render\n```\n\n**Do not create a second geometry/design source of truth.**\n\n- Geometry remains owned by MonkeyHub/OCCT or the retained imported mesh.\n- Drawing state references `geometry_revision`.\n- Render state references `geometry_revision + scene_revision`.\n- Three.js preview and Blender/Cycles consume the same Render Scene contract.\n\n## Scope / implementation order\n\n### P0 — Fix the black-model conversion/display path\n\nFix the production GLB → 3DM path rather than relying on the neutral-preview test derivative.\n\n- Preserve/produce correct normals for the actual topology.\n- Validate face winding.\n- Apply a neutral fallback material/color when the source has no material.\n- Preserve original mesh attributes where available.\n- Keep conversion metadata/receipt traceable.\n- Verify close/reopen still displays correctly.\n\nThis solves the **black converted model** defect only; it must not be treated as completion of the Render Scene work.\n\n### P1 — Minimal Render Scene contract\n\nPersist a renderer-independent scene description containing at least:\n\n- geometry reference + `geometry_revision`\n- material assignments\n- lights\n- environment/background\n- camera\n- exposure\n- render settings\n- `scene_revision`\n\nThree.js and Blender/Cycles must read/project from this same state.\n\nThe goal is semantic consistency — **camera/composition, material assignment, and major lighting should agree**. Pixel-identical Three.js/Cycles output is explicitly **not** required.\n\n### P1 — Drawing revision associativity\n\nEach generated drawing/view must retain:\n\n- source `geometry_revision`\n- projection/view parameters\n- dimension/measurement references\n- drawing revision/status\n\nWhen geometry changes:\n\n1. Existing Front / Side / Top / Isometric drawings become **stale/outdated**.\n2. The UI must not silently present them as current.\n3. Updating regenerates projection and dimensions against the new geometry revision.\n4. Dimensions/references that cannot be safely rebound must be explicitly flagged for user review.\n5. Save/reopen must preserve revision relationships and stale/current status.\n\nFor imported meshes, do not assume triangle IDs are stable CAD feature IDs.\n\n### P2 — Progressive interactive look development\n\nIn the Render workspace, users should be able to edit the properties that determine the final result instead of only seeing a white model.\n\nAt minimum expose interactive editing/preview for:\n\n- material: base color, roughness, metallic, normal/texture when available\n- lighting: type, transform/direction, intensity, color/temperature\n- environment: HDRI/environment map, background, exposure\n- camera: transform, focal length/composition, DOF where supported\n- render settings: quality/samples/denoise as applicable\n\nParameter edits should update the Three.js PBR preview immediately.\n\nA low-sample Cycles preview may be triggered after interaction settles; if implemented, stale jobs/results must not overwrite newer `scene_revision` state.\n\nFinal Cycles jobs must record the exact `geometry_revision` and `scene_revision` they rendered.\n\n### P3 — Material region workflow for material-less meshes\n\nThe Penguin GLB has no UV/material/PBR textures, but the reference requires distinct regions such as back, belly, beak, eyes, etc.\n\nProvide a workflow that lets users assign persistent material regions/masks to the retained mesh without mutating it into a second design model.\n\nAutomatic region detection may be offered as a suggestion, but must not silently become source-of-truth geometry/material data without user confirmation.\n\n## Not blocking Phase 2\n\n- WebGPU migration is **not** a prerequisite. Keep the validated WebGL path unless a separate requirement justifies migration.\n- Semantic drawing anchors beyond basic revision invalidation/rebinding are follow-up work.\n- Do not attempt pixel-perfect equivalence between Three.js and Cycles.\n- Do not introduce a parallel Blender/Rhino geometry authoring state.\n\n## Acceptance criteria\n\n### Black-model fix\n- [ ] Original Penguin GLB passes through the **production** conversion path.\n- [ ] Converted model displays with correct normals/face orientation and a sensible fallback material instead of black.\n- [ ] Close/reopen preserves the correct display.\n- [ ] No test-only neutral 3DM derivative is required for normal product use.\n\n### Drawing associativity\n- [ ] Front / Side / Top / Isometric drawings record their source `geometry_revision`.\n- [ ] Geometry edits mark affected drawings stale.\n- [ ] Updating regenerates projection and dimensions from the current geometry.\n- [ ] Failed/ambiguous dimension rebinding is explicitly surfaced instead of silently changing.\n- [ ] Project reopen restores revision relationships and current/stale state.\n\n### Interactive Render Scene\n- [ ] Render workspace is no longer limited to a white-model-only workflow.\n- [ ] Editing material, lighting, environment, or camera produces immediate viewport feedback.\n- [ ] Scene edits increment/persist `scene_revision`.\n- [ ] The same scene state is consumed by Three.js preview and Cycles projection.\n- [ ] Final Cycles jobs record both `geometry_revision` and `scene_revision`.\n- [ ] Project reopen restores the editable render scene.\n- [ ] The user can reproduce the intended Penguin look (black/white body regions, beak/eyes, Antarctic environment, lighting/camera) through product controls rather than a standalone validation script.\n\n### Quality boundary\nEvaluate three outputs separately:\n\n1. real-time Three.js preview\n2. low-sample Cycles preview, if enabled\n3. final Cycles render\n\nAcceptance is based on consistent composition, material assignment, scene state, and major lighting behavior — not pixel-perfect equality across renderers.\n\n## Architecture constraint\n\nThe intended pipeline is:\n\n```text\nGeometry Source of Truth\n        ↓\ngeometry_revision\n        ↓\nRender Scene (scene_revision)\n   ↙                 ↘\nThree.js Preview   Blender/Cycles\n                       ↓\n                  Final Render\n```\n\nand, independently:\n\n```text\nGeometry Source of Truth\n        ↓\ngeometry_revision\n        ↓\nDrawing state\n        ↓\nstale → regenerate → current\n```\n\nThe Phase 2 implementation should make these persisted revision relationships product capabilities, not test-script-only manifests.",
+      "state": "open",
+      "state_reason": null,
+      "comments": [
+        {
+          "url": "https://github.com/cogco1/MonkeyHub/issues/319#issuecomment-5843050462",
+          "body": "## Additional acceptance failure — MonkeyBoard model association\n\nManual product verification found a concrete end-to-end failure in `penguin-test`.\n\nWhen opening **`Cycles - side.png`** in MonkeyBoard, the UI reports:\n\n- `当前没有可关联的模型。`\n- `这份图纸尚未关联模型，仍可批注和保存。`\n\nThis demonstrates that the artifact currently reaches MonkeyBoard as an independent image and cannot resolve back to the Penguin model / geometry revision.\n\n### Expected behavior\n\nFor an actual model-derived engineering drawing, MonkeyBoard should retain/resolve at least:\n\n- project/model identity\n- source `geometry_revision`\n- view/projection (e.g. Side)\n- scale\n- drawing revision/status\n- CURRENT / STALE relationship to the model\n\nAfter a geometry change, the drawing should become **STALE** and explicitly require regeneration against the new `geometry_revision`. It must not silently remain current.\n\n### Important artifact-type distinction\n\nAlso verify that these are **different artifact classes**:\n\n1. **Cycles render output** — e.g. `Cycles - side.png`\n2. **Engineering drawing** — e.g. generated `drawings/side.svg` / its raster derivative\n\nA Cycles side render must not be treated as the model-derived Side engineering drawing merely because both can be PNG/image artifacts.\n\nLikewise, an engineering drawing must preserve its model/revision association when opened in MonkeyBoard.\n\n### Add to #319 acceptance test\n\n- [ ] Generated engineering Side drawing opens in MonkeyBoard with its Penguin model association.\n- [ ] UI can identify the source `geometry_revision`.\n- [ ] Geometry change marks the drawing STALE.\n- [ ] Regeneration moves it back to CURRENT against the new revision.\n- [ ] Close/reopen preserves the association and stale/current state.\n- [ ] Cycles render images and engineering drawings are typed/distinguished correctly.\n- [ ] `Cycles - side.png` is not mistaken for the engineering Side drawing.\n\nCurrent result: **FAIL / not implemented end-to-end**."
+        },
+        {
+          "url": "https://github.com/cogco1/MonkeyHub/issues/319#issuecomment-5843313615",
+          "body": "## 新增产品要求：建模工作区 ↔ Physical 双向相机联动（通用能力）\n\n用户明确要求：**在建模工作区调整视角，Physical 实时预览随之调整；在 Physical 调整视角，建模工作区也必须同步。** 不能只提供「从建模复制相机」「使用当前视角作为底图」或进入 Render 时的一次性同步。\n\n这是 #319 共享 Render Scene 的相机专项验收，适用于所有支持的项目／模型，并与 #324 背景的画幅规则衔接。请先检查现有相机、视口与场景持久化接口，复用已有 owner，不建立第二套独立相机权威状态。\n\n### 1. 一个逻辑活动相机，两处双向编辑\n\n```text\n建模工作区相机控件  ←→  项目／场景共享的活动相机状态  ←→  Physical 相机控件\n                                   │\n                            保存／恢复与场景修订\n                                   │\n                         Cycles 任务相机快照\n```\n\n两边可以持有各自的渲染器 Camera 实例，但实例必须是同一逻辑相机的投影，不能各自永久保存互不关联的视角。\n\n- 默认开启双向联动，并明确显示联动状态。\n- 从任一侧旋转、平移、拉近／拉远、调整支持的投影参数或选择预设视图，都更新共享状态。\n- 两个视口同时可见时，另一侧应在交互过程中跟随；非活动视口未挂载时，下一次打开必须读取最新状态，不能恢复旧默认。\n- 支持 Physical 视口直接操作相机，不要求先返回建模。\n- 多视口／多场景时明确当前联动的是哪个活动视口和 scene/camera；不能把所有保存机位、所有模型或所有项目的相机一并覆盖。\n- 如将来增加独立取景／解除联动，它必须是用户显式选择的模式，不能替代本需求的默认双向联动。首版不要求增加该模式。\n\n### 2. 同步完整取景语义，不只复制位置\n\n按当前合约保存／投影必要参数：位置、朝向、up、观察／旋转中心 target、透视／正交模式、FOV 或定义清楚的焦距／sensor 参数、正交取景范围／缩放，以及必要的裁剪面等。\n\n旋转、平移、dolly 与 zoom 的语义须正确映射；不能一侧看起来相似、另一侧下一次操作就跳回旧 target。坐标轴、单位和模型变换必须显式适配，不能将不同坐标空间中的数值直接混用。\n\n建模视口与 Render 面板宽高比通常不同。**共享相机不等于要求两个不同尺寸的整块画布逐像素相同。** 应明确最终输出画幅／取景框（render gate），在相同输出画幅下保持构图一致；布局缩放不能悄悄修改焦距、相机姿态或已保存构图。图片背景的 fit/fill、位置和裁切继续使用 #324 的同一规则。\n\n不要求建模视口显示 Physical 的全部材质／背景／景深效果；本项是相机联动，不是强制两种工作区使用相同显示模式。\n\n### 3. 避免反馈循环、视角跳变和错误覆盖\n\n- 标识更新来源并去重；程序应用对端相机更新不能再次无限触发回写。\n- 交互中使用及时的本地共享状态；持久化可合并／节流，但结束时必须提交最终值。不要每个鼠标事件都产生一个历史版本或 Cycles 最终任务。\n- 组件重挂载、切换页签、窗口 resize、资源异步加载完成，不得自动 frame-all 或用默认相机覆盖用户视角。\n- 提供显式「定位模型／适配视图」恢复操作，不能靠自动重置掩盖同步错误。\n- 请求绑定 project / scene / camera 与预期版本；项目切换后忽略旧响应，按已有机制处理未保存修改和并发冲突。\n\n### 4. 保存、revision 与 Cycles\n\n相机属于场景／视图状态：持久化相机修改更新 scene_revision，不修改 geometry_revision 或源模型。纯视角变化不应让固定的 Front/Side/Top 工程图无故过期；只有显式依赖该机位的输出才按实际依赖处理。\n\n提交 Cycles 前，应将当前尚未持久化的相机状态明确保存／冻结为该次任务的场景快照，避免渲染上一个机位。记录 geometry_revision + scene_revision + 相机快照／引用及输出画幅。已提交任务不被之后的拖动改写；旧机位结果不能冒充当前场景结果。\n\n实时双向同步的对象是建模视口与 Physical 交互预览。已经生成的 Cycles PNG 是历史结果，不需要也不能伪装成会随拖动自动改变；新机位应产生新的预览／渲染任务。\n\n保存、关闭／重开后恢复最新已保存相机，两个工作区一致；项目 A/B/C 的相机和背景各自隔离。\n\n### 5. 当前截图中的「只有背景」现象\n\n最新截图中 Physical 只显示南极背景、没有可见企鹅，并显示「场景有未保存修改」。**仅凭截图无法确认是相机、加载、可见性、裁剪、遮挡或其他原因，也不能认定模型已丢失。** 请在本轮 UI 验收中复现并记录对象加载状态、世界包围盒、活动相机／target、投影与裁剪状态、可见性和控制台错误，解释原因。不要直接删除项目、重新导入模型或无条件重置相机来代替定位。\n\n### 新增验收清单\n\n- [ ] 建模中旋转／平移／缩放，Physical 使用同一活动相机及时跟随。\n- [ ] Physical 中执行同样操作，建模视口反向跟随；不是单向复制或按钮同步。\n- [ ] 透视／正交、预设视图、FOV／正交取景范围、target 在双方一致，无跳回旧中心。\n- [ ] 连续切换 建模 → Physical → 建模，重挂载／resize／加载完成后仍保持取景，无反馈抖动。\n- [ ] 不同宽高比下，通过同一输出画幅／取景框核验构图；背景裁切与 #324 一致。\n- [ ] 保存／关闭／重开恢复相机；未保存状态明确；不误改 geometry revision 或固定工程图。\n- [ ] 从任一工作区改机位后立刻提交 Cycles，任务实际使用最新冻结机位，且可读回核验。\n- [ ] 任务运行期间再改相机，旧任务与结果保留其原始来源，并与当前预览明确区分。\n- [ ] 排查并解释截图中「只剩背景、模型不可见」的复现结果，不将未验证推测当根因。\n- [ ] 在企鹅、建筑、家具／产品项目中验证双向操作、项目切换隔离和重开恢复；不硬编码企鹅坐标或初始机位。\n\n提交操作录屏／截图、相机状态读回与投影构图对照、Cycles 相机快照和测试结果，逐项标明 PASS / PARTIAL / FAIL / NOT TESTED。**成功标准：用户在哪个工作区取景，另一个工作区就使用同一取景；最终渲染采用提交时冻结的同一机位。**"
+        }
+      ],
+      "created_at": "2026-09-26T04:06:04Z",
+      "updated_at": "2026-09-26T04:52:31Z",
+      "closed_at": null,
+      "display_url": "https://github.com/cogco1/MonkeyHub/issues/319",
+      "display_title": "Penguin Test Phase 2 — Drawing Associativity + Interactive Render Scene"
+    },
+    {
+      "issue": 321,
+      "url": "https://github.com/cogco1/MonkeyHub/issues/321",
+      "title": "General Model Material Editing — Chat Tools, Region Recoloring & Reversible Candidates",
+      "issue_number": 321,
+      "body": "## Scope clarification — product capability, not a Penguin-specific feature\n\n**Build a reusable material-editing workflow for models supported by MonkeyHub. Penguin Test is one regression fixture, not the implementation boundary.**\n\nThe same product/tool path should support requests such as:\n\n- “把企鹅的灰毛调黑一些，保留白肚皮和其他颜色。”\n- “把椅子的坐垫改成蓝色，椅腿不变。”\n- “把建筑外墙改成浅灰色，保留玻璃和门窗。”\n- “降低这个产品外壳的粗糙度，其他零件不变。”\n\nThese are examples of the common workflow, not separate model-specific tools. Do not hard-code Penguin filenames, project paths, object names, coordinates, body regions, material IDs, or P036 asset identifiers into production behavior. Fixture-specific expectations belong only in tests.\n\n“General” means reusable across supported model sources and appearance representations, with explicit capability reporting. It does not mean claiming every file format or every material representation is already supported.\n\n## Context\n\nDuring Penguin Test / #319 follow-up, manual testing exposed a material-editing integration gap: an attempted chat invocation reported that the interface was not available to chat.\n\nInitial inspection reported existing support for material color, roughness, textures, local/region material assignment, and scene/version persistence through P036. Verify the current implementation before choosing integration points. The earlier statement that MonkeyHub had no recoloring capability was too broad; the task is to connect existing capabilities to a reliable, general product workflow rather than rebuild the material system from scratch.\n\nCoordinate with #319: that issue establishes the shared Render Scene and renderer projections. This issue exposes reusable material inspection, targeting, editing, candidate review, and restoration through the existing owners and chat/tool path.\n\n## Goal\n\nProvide a common end-to-end workflow:\n\n```text\nInspect active model + appearance capabilities\n    → resolve intended objects/materials/regions\n    → propose a revision-bound material patch\n    → preview candidate and affected selection\n    → accept or reject\n    → persist / restore\n    → same Render Scene drives Three.js and Cycles\n```\n\nThe workflow must work beyond the Penguin project without changing production code or requiring a separate Blender script for each model.\n\n## P0 — Expose the shared material capability safely to chat\n\nAllow approved chat/tooling to:\n\n- inspect the active model's material/appearance state and supported operations;\n- identify the project, model/object targets, geometry revision, and scene revision;\n- submit a targeted, reversible material patch;\n- preview the candidate without silently replacing the accepted state;\n- accept/reject a candidate and restore a previous scene version through the existing persistence path.\n\nChat and interactive material controls must use the same underlying material service/state contract rather than separate editing implementations.\n\nBind operations to the intended project/model and expected revisions. Reject or explicitly revalidate stale actions after model switching or intervening edits. Never silently edit the newly active model using a request prepared for a different one.\n\n## P1 — Generic appearance inspection and capability reporting\n\nBefore choosing an edit strategy, inspect the actual model/Render Scene representation:\n\n1. object/component/material-slot assignments;\n2. face/region assignments, where supported;\n3. vertex colors;\n4. textures and UV availability;\n5. shared materials/textures used by multiple objects or regions;\n6. existing scene overrides/procedural appearance, where present;\n7. missing appearance data and neutral fallback materials.\n\nReport which operations are supported, require a selection/mask, or are unavailable. Source formats may differ, but format-specific adapters should feed the common workflow.\n\nDo not assume a visible color in a reference image already exists as an editable material in the source model. Inspect the active scene as well as the original asset. Do not use global exposure/lighting changes as a substitute for a requested local material edit.\n\nIf the user starts from a rendered image in MonkeyBoard, resolve its model/scene provenance first. An unassociated PNG is not an editable material model; request the missing association or model selection rather than inventing one.\n\n## P1 — Reusable targeting and local-region editing\n\nResolve the target using actual available data, such as selected objects/components, existing material assignments, user-confirmed face/region selections, or persistent masks.\n\n- A distinct material can be edited directly only when its assignment scope matches the user's request.\n- If a material or texture is shared with unaffected regions/objects, use a scoped scene override or derived material/mask; do not unintentionally recolor every consumer of the shared resource.\n- If different colors share one texture, use a suitable local mask/region workflow rather than globally darkening or replacing the entire texture.\n- Existing boxes/ellipsoids may assist coarse selection, but are not sufficient when they cannot isolate the requested region.\n- Missing UVs must not be silently treated as valid UVs. Use supported non-UV region assignments or report the missing prerequisite; do not make UV generation or remeshing an implicit appearance edit.\n\nNatural-language names such as “灰毛”, “坐垫”, “外墙”, or “外壳” are requests to resolve a selection, not guaranteed source-model labels. Where resolution is ambiguous, highlight proposed targets and ask the user to confirm/correct them. Automatic segmentation is a proposal, not ground truth. A manual selection fallback must remain available for the supported workflow.\n\nStore selection/mask bindings with their geometry revision. Do not assume imported triangle IDs are stable across geometry changes; invalid bindings must be explicitly invalidated or revalidated rather than silently reused.\n\n## P1 — Common material patch and candidate lifecycle\n\nImplement the minimum coherent general path for color changes and existing supported material properties such as roughness. Integrate metallic/texture/normal operations through the same contract where already supported; explicitly report unsupported operations rather than expanding into an unrelated material-system rewrite.\n\nEach candidate must retain enough provenance to inspect:\n\n- project/model/object or region targets;\n- source geometry revision;\n- base scene revision and resulting candidate/scene revision;\n- affected material properties and assignments;\n- mask/derived-resource references, where used;\n- before/after values and acceptance/rejection/restoration state.\n\nAppearance-only edits must leave design geometry/topology, source geometry assets, and geometry revision unchanged. Accepted material changes advance the scene revision. Restoration should remain auditable and must not overwrite unrelated later edits silently.\n\nPreserve all unrequested material properties, texture/normal detail, and other regions. Do not claim to preserve feather/fabric detail that was never present in the asset or scene.\n\nAccepted state must survive project close/reopen. Three.js and Cycles must consume the same logical accepted assignments/properties through #319's Render Scene, with renderer capability differences reported explicitly. Editing only a PNG or generating an unrelated AI image is not completion of this workflow.\n\n## Deliverable boundary — scene appearance versus exported appearance\n\n### A. Shared Render Scene appearance — primary deliverable\n\nThe selected model/region changes in the interactive scene and downstream rendering, with preview, acceptance, restoration, and persistence verified through the product path.\n\n### B. Exported model appearance — separately verified\n\nWriting appearance into exported GLB/3DM or another supported format is a different deliverable. Scene/P036 persistence alone does not prove export fidelity.\n\nImplement and verify A first. Where B is already supported cleanly, test the exact format and a compatible consumer separately. Otherwise record it as follow-up/PARTIAL; do not claim universal material export or overwrite the original source asset.\n\n## Cross-model acceptance matrix\n\nPenguin remains a regression test, but it is insufficient on its own. Use at least three distinct models: Penguin plus two non-Penguin fixtures from different categories, such as a multi-part product/furniture model and an architectural/CAD model. Verify available import/native authoring paths instead of assuming support for an untested format.\n\nAcross the fixtures, cover the following cases; add small reproducible fixtures as needed:\n\n| Case | Required behavior |\n| --- | --- |\n| Penguin regression | Darken only the intended gray body/feather region; preserve white belly, beak, eyes, feet, and geometry. |\n| Multi-object / multi-material model | Recolor or change roughness only on selected components; unselected components remain unchanged. |\n| Shared material across objects | Editing one object/region must not unintentionally alter another consumer of that material. |\n| Single mesh with shared color texture | Confirm a local mask/selection and change only the intended region; no global texture darkening. |\n| Vertex-color appearance | Correctly identify the source; apply a scoped supported edit/override or explicitly report the unsupported operation. |\n| No materials / no UVs | Provide the supported fallback/region-assignment path; do not invent UVs, textures, or semantic regions. |\n| Geometry changed after selection | Detect stale region bindings and require revalidation rather than applying to different faces. |\n| Multiple models/projects and stale requests | Prevent cross-model/project edits; reject or explicitly revalidate outdated requests. |\n\nAt least Penguin and two non-Penguin fixtures must complete the positive inspect → target → candidate → accept → restore/reopen workflow through the same production tools. An explicit unsupported result is valid capability reporting, but does not count as a successful editing test for that representation. Report coverage honestly.\n\n## Acceptance checklist\n\n- [ ] Production behavior is model/project agnostic; no Penguin-specific paths, coordinates, identifiers, or semantic rules.\n- [ ] Chat can inspect and edit supported material state through an approved product/tool path shared with interactive controls.\n- [ ] Operations are bound to the correct project/model and expected geometry/scene revisions.\n- [ ] Appearance sources and supported/unsupported operations are inspectable.\n- [ ] Target objects/materials/regions can be inspected and confirmed; ambiguous targeting does not silently commit.\n- [ ] Local edits preserve unselected regions and other consumers of shared materials/textures.\n- [ ] Appearance-only edits leave source geometry/topology and geometry revision unchanged.\n- [ ] Candidates can be previewed, accepted/rejected, and restored with provenance.\n- [ ] Accepted scene state and material/region bindings survive close/reopen.\n- [ ] Three.js and Cycles use the same accepted logical material state, with projection limitations reported.\n- [ ] Geometry changes invalidate or safely revalidate stale region bindings.\n- [ ] Model switching, multiple projects, and stale chat actions do not modify the wrong target.\n- [ ] Penguin and at least two non-Penguin models pass the same production end-to-end workflow.\n- [ ] Representation-specific tests report PASS / PARTIAL / FAIL / NOT TESTED; unsupported reporting is not mislabeled as successful editing.\n- [ ] Render Scene persistence is not presented as proof of exported GLB/3DM material fidelity.\n\n## Architecture constraints and implementation order\n\nKeep #319's principle: **one geometry source of truth + one persisted Render Scene per scene/project context.**\n\nGeometry remains owned by MonkeyHub/OCCT or retained imported geometry. Material assignments, masks, derived appearance resources, and candidate patches belong to the existing visualization/scene owner. Blender remains a rendering projection, not a second geometry or material authority.\n\nExtend existing owners and APIs. Start with generic inspection, scoped material patches, candidate persistence, and chat access; then integrate reliable region/mask targeting. Run Penguin as the first regression case, followed by the non-Penguin fixtures before claiming completion.\n\n**Success condition: changing the model requires new input/selection, not new production code or a model-specific script.**",
+      "state": "open",
+      "state_reason": null,
+      "comments": [
+        {
+          "url": "https://github.com/cogco1/MonkeyHub/issues/321#issuecomment-5843276011",
+          "body": "## 补充要求：材质区域面板由当前项目／模型驱动，不能固定为企鹅部位\n\n用户明确：企鹅项目可编辑腹部、喙、脚、眼睛；建筑项目应能编辑该模型实际存在的门、窗、墙；家具／产品模型也要使用同一套机制。背景、贴图和图纸等用户素材也应通过通用接口接入并按项目隔离，相关上传／背景要求同步补充至 #324。\n\n### 当前界面观察与边界\n\n用户提供的 Physical 页面截图显示 `belly`、`beak`、`feet`、`eye-right`、`eye-left`、`pupil-right`、`pupil-left`，以及「建议企鹅材质区域」按钮。这些名称在已确认的企鹅场景中可以成立；截图本身不能证明实现是否硬编码或已经跨项目泄漏，请检查实际代码。\n\n**不能把测试模型的分区列表、坐标、识别规则或按钮作为所有项目的全局默认。**\n\n### 一个通用编辑器，读取不同模型的真实分区\n\n- 列表从当前 project / model / scene 的对象结构、已有材质分配、可用元数据和用户确认的选择／遮罩加载；不能仅根据项目名称或类型，切换几套写死的列表。\n- 示例而非固定枚举：企鹅为背部／腹部／喙／脚；建筑为外墙／内墙／门／窗框／玻璃／屋顶；家具为坐垫／靠背／椅腿。列表可扩展，并允许用户定义任意名称。\n- 同一项目可能同时包含建筑和家具，分区必须绑定实际模型／对象／场景，不能仅依赖 project 类型。\n- 默认入口采用「材质区域」「建议材质分区」「添加区域」等通用名称。类别模板只能是可选、可扩展的数据预设；套用前需绑定并确认本模型的真实目标，不能仅改标签或套用企鹅坐标。\n\n### 用户可编辑，自动建议可确认\n\n支持新增、重命名、删除区域定义、重新选择作用范围及分配材质，复用候选／撤回机制。点击区域应在模型中高亮真实作用范围，让用户确认哪扇门、哪组窗或哪个身体区域会变化。\n\n“门”“窗”“腹部”并不是所有源模型天然具有的标签。优先读取可用对象层级、材质组或元数据；信息不足时显示未分区／通用对象信息，提供手动选择和命名，不生成看似已确认的虚假区域。自动建议需显示来源和待确认状态，允许修正、拒绝；通用性不等于承诺任意模型全自动语义识别。\n\n### 区域身份、版本和资源接口\n\n- 复用既有区域合约，表达区域 ID、可改显示名、所属模型／场景、对象／面／遮罩引用、材质引用、来源／确认状态和绑定的 geometry revision，不另建 owner。\n- 区域名称不等于身份，也不等于材质。改名不能断开绑定；两扇同名门仍可分别选择；局部修改不得误改共享材质的其他使用者。\n- 用户上传材质贴图／遮罩、选择项目已有素材、替换或解除绑定，都走现有项目资产接口及共享场景服务；前端与获准聊天工具复用同一路径。仅向用户公开实际支持的格式／操作，不伪造 UV 或声称任意上传图片都能直接作为有效遮罩。\n- 切换项目／模型加载各自区域，清除旧选择并忽略旧的异步响应；按既有机制处理未保存修改。返回原项目或重开后恢复其区域与素材绑定。\n- 几何更新后，无法确认的面／遮罩绑定需标为 unresolved 并重新选择，不能静默复用旧三角编号。\n- 区域增删、重命名、材质／贴图绑定属于场景可视化修改，推进 scene revision，不改变 geometry revision。删除区域定义不得删除几何对象。Three.js、Cycles 和聊天工具消费同一份已接受状态。\n\n### 新增验收\n\n- [ ] 同一个区域组件在企鹅、建筑、家具／产品模型中呈现各自实际绑定且确认的区域，无全局固定企鹅菜单。\n- [ ] 建筑模型可从已有结构或用户确认建立门／窗／墙分区，只修改目标区域；缺失语义时手动流程有效。\n- [ ] 区域新增、重命名、重新绑定、删除定义及模型高亮可用，均不破坏几何。\n- [ ] 同名区域、同项目多模型及不同项目之间不会改错目标。\n- [ ] 企鹅 → 建筑 → 家具／产品 → 返回企鹅，区域、选择、材质和资源各自隔离并恢复。\n- [ ] 用户通过真实界面／接口上传或选择支持的贴图／遮罩并绑定目标，保存／重开后正确恢复；不依赖专用路径或脚本。\n- [ ] 几何变化后失效绑定被显式处理；未经确认的自动建议不成为正式场景修改。\n- [ ] UI、聊天和 Cycles 使用同一组区域与材质引用；换模型只需要换输入和选择，不需要修改生产代码。\n\n此补充细化 #321 的通用性验收，并与 #319 的共享场景及 #324 的项目素材／背景接口衔接；不是另建企鹅专用工具。"
+        },
+        {
+          "url": "https://github.com/cogco1/MonkeyHub/issues/321#issuecomment-5843315514",
+          "body": "## 新增人工视觉反馈：局部材质边界呈锯齿／缺口，需区分外观分区与几何缺陷\n\n用户在 Physical 预览截图中标出企鹅的眼周、白色腹部上缘及腹部下缘，反馈「这些地方为什么坑坑洼洼」。截图可见黑白区域交界不规则、局部有尖角／缺口；目前仅是人工视觉反馈，尚未通过原始模型和当前运行场景确认根因，不能直接宣称几何损坏或法线错误。\n\n### 定位要求\n\n在同一几何、同一机位下做受控对照：\n\n1. 统一中性材质／关闭区域覆盖，与当前分区材质比较，区分色块边界与真正表面／外轮廓缺陷。\n2. 显示区域 mask／材质 ID 和线框，检查是否因整三角面赋材质、方盒／椭球粗选或区域重叠／优先级造成错误分配；这些是待验证假设，不是已确认根因。\n3. 如统一材质下仍有异常，检查源网格、转换后的法线／面绕序、实际拓扑、重叠表面以及当前场景是否启用 normal/displacement。分别记录源文件已有问题与本次转换／渲染引入的问题。\n4. 使用相同几何和场景状态比较 Three.js 与 Cycles，确认问题发生在哪个阶段；报告运行版本和相关 geometry / scene revision。\n\n### 修复边界\n\n- 若为区域／mask 边界问题，修复通用选择、遮罩、混合和区域优先级路径，允许用户查看与修正边界；不要用企鹅专用坐标补丁修一个画面。\n- 硬质分区（如门窗、外壳）应保持用户要求的清晰边界；需要柔和过渡的表面可提供受支持的可控过渡。不能统一模糊所有边界，或把白腹部、眼睛等无关区域染色。\n- 若当前只能支持较粗的按面分区，明确预览精度限制并报告 PARTIAL；不能将粗糙多边形边缘冒充已完成的精细外观。\n- 如确认是源几何缺陷，应单独报告并走明确的几何修改流程；不得在材质编辑中偷偷平滑、重拓扑、细分或改变源几何以掩盖问题。\n- 若是法线／转换问题，与 #319 的生产显示修复关联处理。\n- 提高采样、抗锯齿或降噪不能作为无需定位即可认定的修复；必须证明实际缺陷得到解决。仅修改最终 PNG 或 AI 重绘不算修复共享场景。\n\n### 新增验收\n\n- [ ] 给出统一材质／分区材质／mask 或材质 ID／线框对照，明确根因及证据。\n- [ ] 眼周、腹部上下缘的错误分配／缺口得到修复，或明确标示源几何／能力限制。\n- [ ] 保留有意设计的边界和原有细节，不把真实几何特征一律抹平。\n- [ ] 外观修复不改变源几何／geometry revision，不误改其他区域。\n- [ ] Three.js 和 Cycles 使用同一份已确认区域／材质状态，保存／重开恢复。\n- [ ] 至少增加非企鹅模型的区域边界回归（如门窗／墙或坐垫／椅腿），证明修复通用。\n\n另外，用户要求的「建模 ↔ Physical 双向相机联动」已作为独立验收补充到 #319；不要把相机状态问题与此处的材质边界质量问题混为一项。"
+        }
+      ],
+      "created_at": "2026-09-26T04:25:59Z",
+      "updated_at": "2026-09-26T04:52:50Z",
+      "closed_at": null,
+      "display_url": "https://github.com/cogco1/MonkeyHub/issues/321",
+      "display_title": "General Model Material Editing — Chat Tools, Region Recoloring & Reversible Candidates"
+    },
+    {
+      "issue": 324,
+      "url": "https://github.com/cogco1/MonkeyHub/issues/324",
+      "title": "Render Background Module — Color, Images, HDRI & Shared Scene Persistence",
+      "issue_number": 324,
+      "body": "## 需求：在 Render 工作区增加通用的「背景」模块\n\n用户在当前 Physical 渲染页面中看到模型置于浅蓝色背景上，希望能直接在渲染工具栏里选择、替换和调整背景，而不是依赖默认背景、独立 Blender 脚本或渲染完成后再手动合成。\n\n**这是适用于 MonkeyHub 所支持模型的通用产品能力，不是 Penguin Test 专用功能。** 企鹅与南极图片仅作为回归案例；家具、产品、建筑等模型应使用同一套背景控制。\n\n关联：\n- #319：共享 Render Scene、Three.js / Cycles 投影与场景持久化。\n- #321：通用材质编辑；背景编辑与材质编辑共用场景所有者，但不互相覆盖。\n\n请先检查当前实现。#319 已包含 environment/background 的架构要求，本 Issue 将其细化为可操作的背景模块与专项验收；应复用、扩展已有字段和接口，不能再建独立背景状态存储或第二套渲染场景。\n\n## 产品目标\n\n```text\nRender → Physical → 背景\n    → 选择纯色 / 图片 / 环境背景 / 透明\n    → 调整参数并实时预览\n    → 保存至共享 Render Scene\n    → 使用同一 scene_revision 提交 Cycles\n    → 项目重开后恢复\n```\n\n用户应能在 Render 工作区完成背景设置，不需要跳到画板编辑图片或修改模型文件。Physical 背景功能不依赖 AI provider、API key 或 AI 图片生成。\n\n## P0 — 独立且易发现的背景设置区\n\n在渲染工具栏/设置面板提供明确的「背景 / Background」入口，与材质、灯光、相机分区，适配当前窄侧栏布局。提供模式选择、当前资源缩略图/名称、适用参数、替换/清除/恢复默认及保存状态。\n\n### 1. 纯色背景\n\n- 颜色选择器及颜色值输入。\n- 修改后立即更新预览，并随场景保存。\n- 只改变可见背景，不隐式改动模型材质、灯光、环境照明或全局曝光。\n\n### 2. 图片背景 / 2D backplate\n\n- 支持从当前项目图片中选择，也支持上传图片到现有项目资产系统；最小覆盖 PNG/JPEG。\n- 可替换、清除、预览当前图片。\n- 提供保持宽高比的「适应 / 填充」及位置、缩放控制，避免默认拉伸变形。\n- 以最终输出画幅为基准显示裁切/取景范围；预览与最终输出尺寸不同时，仍使用相同的画幅和裁切语义。\n- 将普通照片明确标识为相机后方的二维背景。相机旋转时不伪装成三维环境，不自动推断深度、地形、灯光或反射。\n- 不改变模型位置、比例、拓扑或原始资产；不能把一张 CSS 背景图仅贴在预览后面就视为完成。\n\n### 3. 透明背景\n\n- 预览使用棋盘格等透明指示，并支持实际带 alpha 的 PNG 渲染输出。\n- 棋盘格只是界面提示，不能被烘焙进最终图片。\n- 对不支持 alpha 的输出格式明确提示，不静默丢失透明度。\n- 隐藏相机背景不应默认关闭已有环境照明/反射。\n\n## P1 — 环境背景与照明的明确联动\n\n复用 #319 的环境设置，允许将支持的 HDRI/环境贴图作为可见背景，并控制旋转和背景亮度；公开实际支持的资源格式及能力限制。\n\n必须区分两个概念：\n\n- **可见背景**：相机最终看到什么。\n- **环境照明/反射**：场景如何受到环境影响。\n\n允许用户显式选择「将此环境同时用于照明/反射」，但不能默认把普通 JPG/PNG 背景当成 HDRI 照明资源。已有环境被用于照明时，用户仍应能选择纯色、图片或透明的相机背景。\n\n背景亮度、环境照明强度和全局曝光应有清晰的作用范围；不得通过调整全局曝光冒充仅修改背景亮度。不具备独立控制能力时应明确限制，不展示无效控件。\n\n## 共享状态与渲染投影\n\n扩展已有 Render Scene 合约；以下是语义要求，不要求另建一套同名字段：\n\n- 背景模式、颜色、项目资源引用及资源版本/哈希。\n- 图片的适应/填充、缩放、位置及输出画幅关系。\n- 环境背景的资源、旋转、亮度及与环境照明的关联。\n- 透明输出设置。\n- 所属 project/scene 和 scene_revision；渲染任务继续记录 geometry_revision + scene_revision。\n\n背景修改只推进 scene_revision，不修改 geometry_revision，也不应让仅依赖几何的工程图无故过期。保留现有材质、相机和灯光；如用户显式修改环境照明，再更新对应字段。\n\nThree.js 预览与 Cycles 必须消费同一份场景描述及资源。最终渲染可以通过适当的背景/合成投影实现，但必须属于真实产品渲染任务，而非孤立测试脚本或事后手动合成。\n\n要求模式、资源、构图/裁切与透明语义一致；不要求两种渲染器逐像素相同。记录必要的颜色空间/色调映射处理，出现能力差异时明确报告。\n\n## 保存、恢复与错误处理\n\n- 使用项目持久资产引用，不仅保存临时浏览器 Object URL、上传控件状态或某台机器的绝对文件路径。\n- 保存/重开能够恢复背景资源及全部参数；复用现有撤回或场景版本恢复机制。\n- 不同项目/场景相互隔离；切换背景不得重置无关的材质或相机编辑。\n- 连续选择多张图片时，旧的异步加载结果不能覆盖新选择。\n- 检查不支持的格式、加载/解码失败、缺失资源和资源大小限制；显示明确错误，保留可恢复的有效场景，不让整个渲染页面崩溃。\n- Cycles 任务使用提交时冻结的场景和背景资源版本；任务执行期间改背景不应改变已提交任务的含义，旧结果也不能被标为当前场景结果。\n\n## 非目标 / 后续增强\n\n- 本 Issue 不要求从照片自动重建三维环境、地形或资产库。\n- 地面、阴影捕捉、自动透视匹配可作为后续独立能力；普通背景图片本身不证明模型具备真实落地阴影。\n- 不要求 WebGPU 迁移，不引入新的几何或 Blender 场景所有者。\n- 不把背景写入源 GLB/3DM 作为本 Issue 的完成条件。\n- AI 渲染将来可复用背景选择，但不能成为 Physical 路径的前置条件，也不能用 AI 重绘替代真实场景背景编辑。\n\n## 验收标准\n\n- [ ] Render / Physical 有可发现、可操作的背景模块，窄侧栏中也能正常使用。\n- [ ] 纯色修改在预览立即生效，保存/重开及 Cycles 输出保留该设置。\n- [ ] 可上传图片或直接选择已有项目图片，无需每个模型重新写脚本。\n- [ ] 图片替换、清除、适应/填充、缩放和位置控制生效，无意外拉伸。\n- [ ] 改变预览窗口大小或输出宽高比后，画幅与裁切规则仍可预期，并与最终渲染一致。\n- [ ] 透明预览与带 alpha 的 PNG 输出正确；棋盘格未进入输出；环境照明可保留。\n- [ ] 环境背景旋转/亮度及照明关联通过实际支持的资源验证；普通照片不被误当作 HDRI。\n- [ ] 背景编辑不修改几何或 geometry_revision，不覆盖未请求的材质、灯光和相机状态。\n- [ ] 保存、恢复默认/撤回和项目关闭重开通过真实界面验证。\n- [ ] Three.js 和 Cycles 读取同一背景状态；任务/结果可追溯到场景、几何和背景资源版本。\n- [ ] 资源缺失、无效文件、快速切换和跨项目操作有明确且安全的处理。\n- [ ] 至少在 Penguin 和两个非 Penguin 模型上，通过同一产品流程完成选择背景 → 调整 → 保存 → Cycles 输出 → 重开恢复。\n- [ ] 没有硬编码 Penguin、南极图片、项目路径、坐标或资产 ID；回归 fixture 特例仅存在于测试。\n\n## 建议实施顺序与证据\n\n先审查/复用 #319 的背景及环境字段 → 接通纯色/图片背景 UI、资产引用、Three.js 与 Cycles → 验证透明输出 → 接通环境背景及照明关联 → 跨模型持久化和回归测试。\n\n提交实际界面截图、输出图片/alpha 检查、scene revision 和资源引用读回证据，以及测试结果。每项标记 PASS / PARTIAL / FAIL / NOT TESTED；只有前端控件或配置 JSON、没有真实渲染和重开验证，不能算端到端 PASS。\n\n**成功标准：在渲染工作区换背景，就能预览、保存并用同一场景渲染；换一个模型不需要改代码。**",
+      "state": "open",
+      "state_reason": null,
+      "comments": [
+        {
+          "url": "https://github.com/cogco1/MonkeyHub/issues/324#issuecomment-5843279725",
+          "body": "## 补充要求：用户可上传／传入素材的通用接口；每个项目独立使用背景和图纸\n\n用户进一步明确：**背景等资源必须提供用户可操作的上传、选择、替换入口及可复用接口。每个 project 可以使用不同的背景图片、参考图和图纸；不能固定企鹅／南极素材，也不能沿用上一项目的资源。**\n\n与 #321 最新的动态材质分区要求一致：同一个产品界面和服务读取不同项目的数据，不为每个项目修改代码或写专用脚本。\n\n### 1. 用户界面与接口都要接通\n\n复用既有项目资产／文档服务，提供以下完整操作语义；实际接口命名和路由按当前架构，不要求新建重复的上传系统：\n\n1. 用户在 Render 背景模块上传本地图片，或选择当前项目已有资源；在对应的画板／图纸入口上传或选择图纸。可复用统一资源选择器，不要求把所有图纸功能塞进 Render。\n2. 上传后查看缩略图／页数（适用时）、名称、类型、上传状态及所属项目。\n3. 明确「上传到项目」与「应用为当前背景／绑定为当前图纸」是两个动作；只有用户选择应用才改变对应场景／文档状态，不能上传即覆盖现有背景。\n4. 支持替换资源、选择已有资源、解除用途绑定，并通过现有版本／撤回机制恢复。\n5. 前端和获准聊天工具复用同一项目资产与绑定服务。请求和结果携带明确 project / scene / model（按用途适用）、asset identity、资源版本及必要的预期状态版本，服务端校验实际归属和访问权限，不能只靠前端过滤。\n\n背景图片至少覆盖 PNG/JPEG；图纸复用产品实际支持的 PDF／图片／SVG 等路径，公开支持范围和限制。HDRI、材质贴图和遮罩通过对应能力接入；不要求盲目接受所有格式，不把未支持格式伪装成已可用。\n\n### 2. 资源用途必须区分，不能按文件后缀混用\n\n区分相机背景图片、环境照明资源、视觉参考图、外部图纸文档、模型生成工程图及渲染结果。用途可以是同一资源上的显式绑定，不必复制出多个文件，但不能仅因为都是 PNG 就混为同一种 artifact。\n\n- 普通背景照片不是 HDRI，也不会自动产生真实模型、工程图、尺寸或模型关联。\n- 上传的平面图／立面图可以作为外部图纸查看和批注；没有模型关联时如实显示未关联，不伪造 geometry revision 或从单张图片臆测比例。\n- 模型生成工程图继续保留 #319 的 model / geometry revision、视图及 stale/current 关系。\n- Cycles 输出仍是带模型／场景来源的 render artifact，不会因为进入画板就变成工程图。\n- 将参考图用作背景，或将某页外部图纸用作参考，都应由用户显式选择用途；默认不自动转换角色。\n\n本项是对既有资产／图纸集成的要求，不新建独立图纸引擎；工程图修订逻辑继续归 #319。\n\n### 3. 每个项目独立绑定、保存和恢复\n\n预期示例（仅为测试数据，不得写入生产默认）：\n\n| 项目 | 背景资源 | 图纸／参考资源 |\n| --- | --- | --- |\n| 企鹅 | 用户选择的南极照片 | 企鹅视图／外观参考 |\n| 建筑 | 用户上传的现场／城市背景 | 该建筑的平面、立面、剖面或外部图纸 |\n| 家具／产品 | 用户选择的棚拍／室内背景 | 该产品的尺寸图和参考图 |\n\n- 背景按项目及对应场景保存；同项目多场景也不得互相误覆盖。切换项目自动加载各自已保存设置，未设置时显示默认／空态，而非上个项目的背景。\n- 资源依赖稳定 asset ID 和不可变版本／哈希，不依赖显示名、临时 Object URL、文件选择器状态或某台机器的绝对路径。不同项目上传同名 `background.jpg` 必须可独立存在。\n- 跨项目复用必须由用户显式导入／授权引用；不得隐式共享可变绑定。底层存储可以去重，但修改一个项目不能改变另一个项目的历史资源含义。\n- 上传完成前切换项目，完成结果仍归原请求项目，不能自动应用到新项目；连续上传／选择时，旧响应不得覆盖新选择。\n- 解除背景绑定与删除资产不同。删除被场景、图纸或渲染历史引用的资源时遵循既有依赖／版本保留规则，不静默破坏历史。\n- 原始文件与历史资源版本保持可追溯，替换不覆盖已提交渲染任务使用的资源内容。\n\n### 4. 共用场景和版本规则\n\n单纯上传资源先进入项目资产状态；实际应用／调整背景或材质才推进对应 scene revision。只换背景不修改 geometry revision，也不让仅依赖几何的工程图无故过期。外部图纸上传／替换走文档版本机制，不冒充模型几何修改。\n\nThree.js 与 Cycles 通过共享 Render Scene 读取同一资源版本和背景参数。渲染任务冻结提交时的 geometry revision + scene revision + 资源引用，不能由后续上传修改已提交任务的含义。前端有上传按钮、后端只记录临时路径或最终渲染没有使用该图，均不能验收为完成。\n\n### 新增验收\n\n- [ ] 用户能从真实界面上传、预览、选择、替换及解除支持的背景资源，无需改代码／脚本。\n- [ ] 通过既有文档入口上传／选择本项目图纸，并与背景、参考图、模型生成图纸及 render artifact 正确区分。\n- [ ] 企鹅、建筑、家具／产品三个项目分别使用不同背景和图纸；A → B → C → A 及关闭／重开后各自恢复。\n- [ ] 不同项目同名文件不覆盖；项目切换期间上传、快速换图、资源缺失／解码失败有明确且安全的处理。\n- [ ] API 校验项目归属及绑定版本，旧请求不误改新项目／新场景。\n- [ ] 背景实际进入 Three.js 预览及 Cycles 输出，任务可追溯到对应资源版本；不只是前端 CSS 背景。\n- [ ] 项目内多模型／多场景、材质区域与背景／图纸绑定互不误覆盖，复用 #321 的通用区域和素材机制。\n- [ ] 背景修改不改几何；真实工程图保持 #319 的模型关联，未关联的上传文档不伪装成模型派生图纸。\n\n**成功标准：同一套上传与编辑接口，用户自己为不同项目提供不同素材；切换项目即可恢复各自的模型区域、背景和图纸，而不需要开发者为每个项目单独配置。**"
+        }
+      ],
+      "created_at": "2026-09-26T04:42:59Z",
+      "updated_at": "2026-09-26T04:46:53Z",
+      "closed_at": null,
+      "display_url": "https://github.com/cogco1/MonkeyHub/issues/324",
+      "display_title": "Render Background Module — Color, Images, HDRI & Shared Scene Persistence"
+    },
+    {
+      "issue": 327,
+      "url": "https://github.com/cogco1/MonkeyHub/issues/327",
+      "title": "Model Conversion Reliability — 转换异常诊断、可撤回补救与防复发校验",
+      "issue_number": 327,
+      "body": "## 目标：修复当前转换异常，并让后续异常能够被发现、拦截、恢复\n\n根据「改进意见」，将模型转换可靠性单独作为通用产品任务：不仅修复某只企鹅的黑模或不平整观感，还要建立 **转换前检查 → 无损优先转换 → 独立回读校验 → 按用途准入 → 可撤回补救 → 回归防复发** 的闭环。\n\n适用于 MonkeyHub 已支持的模型与项目，包括导入网格、GLB / 3DM 适配、Three.js 显示派生与 Blender/Cycles 投影。企鹅只是回归样本；建筑、家具、产品等必须复用同一机制。\n\n关联与分工：\n- #319：已有正式转换黑模修复、共享 Render Scene、图纸关联、相机与渲染验收。本 Issue 收敛其转换诊断、恢复及质量门禁要求，不重复建设 scene owner。\n- #321：通用材质编辑及[材质边界异常反馈](https://github.com/cogco1/MonkeyHub/issues/321#issuecomment-5843315514)。分区/遮罩问题继续由该 Issue 处理；本 Issue 负责证明是否存在转换引入的几何或属性损失。\n- #324：背景与项目资源。背景正常显示不能作为模型已成功加载/转换的证据。\n\n**先审查当前分支、相关 PR 和已有修复，复现仍存在的问题。不得把历史报告中的缺陷直接当成当前 HEAD 尚未修复的事实。**\n\n## 1. 历史证据与待验证现象\n\n用户提供的 Penguin Phase 1 验收报告（MonkeyHub revision `c261c8db`）记录：\n\n| 历史记录 / 现象 | 本 Issue 的处理边界 |\n| --- | --- |\n| GLB → 3DM 转换器未写法线、默认颜色为黑；当时使用了额外的中性预览副本 | 在正式转换路径修复并保留回归测试，不能长期依赖企鹅专用预览文件 |\n| Blender worker 对分离三角片的处理曾在重算法线过程中引入面绕序问题，测试投影恢复原始拓扑后修正 | 核查生产 worker 是否仍有问题；优先保留已验证的源拓扑与法线，不能盲目重排或统一重算 |\n| 同一份静态网格的回读顶点误差为 0、三角序列一致，但显示/外观仍存在问题 | 几何数值正确不等于法线、材质、UV 和实际消费者显示正确，必须分别验收 |\n| 后续截图中眼周、白腹部上下缘有尖角/缺口 | 根因未确定；可能是源几何、转换属性或材质分区，不得仅凭截图认定网格损坏 |\n| 另一截图中 Physical 仅显示背景 | 根因未确定；应先区分加载失败、相机/裁剪/可见性与转换失败，不能直接认定模型丢失 |\n\n历史报告列出的证据位置包括 `validation/conversion.json`、`validation/preview-derivative.json`、`validation/blender-cold-read.json`、`validation/retained-cold-read.json`、`validation/tools`。这些是用户本地验收产物的相对路径，不代表已在仓库或当前运行环境中取得；缺失时如实记录，不伪造测试结果。\n\n## 2. P0 — 先定位，再按原因补救\n\n### 2.1 同源、同机位的受控对照\n\n对同一个源模型、geometry revision 和明确的相机/灯光设置，比较：\n\n1. 源读取结果与正式转换文件的独立回读结果；记录模型/对象身份、转换阶段、版本和源/输出哈希。\n2. 原法线与派生法线的可视化、线框、面朝向；使用统一中性材质，临时关闭材质区域、贴图/normal/displacement 等影响因素。\n3. 恢复材质后显示材质 ID/区域遮罩，检查局部缺口是否仅来自整面赋材质、粗选或区域重叠。\n4. Three.js 与 Blender 的实际加载结果；必要时在固定机位做 Cycles 对照，而不是比较不同构图的图片猜原因。\n\n输出应明确区分：**源文件已有问题、转换新引入问题、缺失但允许默认的属性、不支持的属性、外观分区问题、运行/相机问题、尚未定位**。\n\n### 2.2 按原因修复，而不是统一“磨平”\n\n- 源法线有效时保留并正确变换；缺失/无效时依据实际拓扑和已声明的策略生成派生法线，记录原因与影响范围。不能默认丢弃自定义法线、硬边或顶点拆分。\n- 检查面绕序和坐标变换。只修复有证据的转换错误；不能把所有模型全局翻面，或把设置双面显示当成已经修好朝向。\n- 没有材质时使用可追溯的中性缺省材质；**已有黑色材质是合法输入，不能见黑就覆盖**。不虚构源文件不存在的 UV、贴图或材质。\n- 保留当前适配器支持的 UV、顶点颜色、材质分配及 PBR 属性；目标格式/消费者不支持时明确列出损失与降级，不静默丢弃后仍称外观完全保真。\n- 重复坐标不自动等于多余顶点。禁止只按位置焊接而破坏 UV 接缝、硬边、材质边界或顶点颜色；任何合法的重索引/属性拆分须可追溯到原始对象/面/角点。\n- 若实际是材质分区锯齿，转 #321 修复选择/遮罩/边界策略，不能改变源几何来掩盖。\n- 若源几何确有缺陷，需要修补、焊接、平滑、细分或重拓扑，应产生明确的几何修改候选并由用户确认；不混入“无损转换”或材质编辑流程。\n\n已存在的修复应复用并验证；不以增加 Cycles samples、降噪、全局模糊、编辑 PNG 或 AI 重绘替代根因修复。\n\n## 3. P1 — 本地自动检查与转换质量报告\n\n复用现有 reader/writer、geometry resolver、项目资产与 job/receipt 机制，不另建一套模型状态。提供以下阶段的自动检查：\n\n### 转换前\n\n- 固定输入资源及版本/哈希，记录项目/模型和预期 geometry/scene revision；原件保持不变。\n- 读取文件单位、轴向、层级变换、对象/实例结构、网格与属性能力。未知单位必须提示并确认，不能靠视觉大小猜单位或对全部文件套用企鹅的 1 m 高度。\n- 检查非法索引、非有限坐标、属性长度、空/退化数据和缺失资源，给出可定位到对象/属性的诊断。\n- 开放曲面、薄片、重复坐标、无 UV/材质等按用途分类，不一律作为损坏拒绝。源缺陷与转换产生的新缺陷分别记录。\n\n### 转换后：数值与属性检查\n\n| 检查维度 | 必须验证的内容 |\n| --- | --- |\n| 单位/坐标 | 显式记录源→目标变换；检查缩放、轴交换、镜像/负缩放、非均匀缩放与层级变换的处理，防止重复应用变换 |\n| 几何 | 在统一坐标与单位下比较可对应的顶点/表面、包围盒、关键尺寸与适用的截面/轮廓；不能只靠包围盒相同宣布几何一致 |\n| 拓扑/身份 | 对象/组件是否丢失，面索引、面向、实例及映射是否符合转换契约；不允许静默丢面或错绑对象 |\n| 法线/着色属性 | 法线有效性及与转换后面向的关系；UV/颜色/切线等在支持范围内保持对应，材质分配和资源引用完整 |\n| 适用误差 | 明确模型空间单位、绝对/相对误差、角度误差及容差依据；按数据精度和项目用途配置，不对所有格式承诺绝对零误差 |\n| 下游资源 | 实际输出可由目标 loader/Blender 读取，且引用的是该输入/转换版本，不是旧缓存或测试替代文件 |\n\n对已支持的静态网格保真路径，保持已有精确回读回归；若格式允许重索引/三角化，必须给出可验证的等价映射，不能仅因数组顺序改变就误判，也不能用“重排”掩盖损失。对已支持的 OCCT→网格派生，记录 tessellation 参数并按其几何近似容差验收，不套用 BRep 与网格顶点数组必须相同的条件。\n\n基础检查默认在本地确定性执行。更重的自交/复杂拓扑检查按用途启用并报告覆盖范围、超时或 NOT TESTED；不能把未运行写成通过。必要时聊天/AI 只辅助解释最小诊断证据和提出候选，在项目授权范围内工作；不作为每次转换的必需依赖，不自行修改阈值或绕过门禁。\n\n## 4. P1 — 按用途准入，阻止异常向图纸和渲染传播\n\n报告至少分开表达：**几何校验、显示属性校验、材质/资源兼容性、下游消费者验证**，并给出可读的通过/警告/阻止/未验证状态及原因。复用已有状态枚举，不要求按本文新建同名系统。\n\n- 几何超差、非法拓扑数据、单位未确认或对象丢失：不得把失败候选自动升为有效模型；阻止依赖该失败派生结果的精确尺寸/工程图及正式发布操作。\n- 不影响几何的材质缺失/不支持项：可允许明确标注的中性预览或用户确认的外观降级；不能误称“材质保真 PASS”，也不应让完全不依赖材质的图纸无故被阻止。\n- 法线/显示问题而几何有效：保留安全诊断能力和最后有效显示，明确限制相应的最终渲染验收，不把黑屏当成唯一反馈。\n- 图纸若直接读取已验证的 canonical geometry，而不依赖失败的转换派生，应按真实依赖继续工作；不得全项目一刀切封禁。\n- 阻止/警告必须在 UI 和后端提交路径都生效。诊断性导出可作为显式操作并携带失败状态，不能冒充已验证的生产输出。\n\n**报告与下游任务绑定同一 geometry revision、派生版本/哈希和必要的 scene revision。** 验证通过后输入又改变，不能复用旧报告为新结果背书。\n\n## 5. P1 — 可撤回补救、失败隔离与历史资产恢复\n\n### 安全提交\n\n```text\n不可变源资产 + 当前有效状态\n        ↓\n暂存转换/修复候选\n        ↓\n校验 + 目标消费者回读\n        ├─ 失败/取消/超时 → 保留诊断，当前有效状态不变\n        └─ 满足用途要求 → 原子提交派生资源与绑定\n                              ↓\n                       显示/图纸/渲染使用\n```\n\n- 使用现有事务/候选机制，在临时输出完成并验证前不要覆盖当前模型引用、材质/区域绑定、相机、背景或已有效的图纸。\n- 提供「查看诊断」「重试转换」「预览修复候选」「恢复上一有效版本」等适合当前产品的操作；使用明确的状态和错误，不仅提示“转换失败”。\n- 补救前后记录变更范围并可对照；源数据/设计几何修改需用户确认，安全派生默认策略也须可追溯、可恢复。\n- 失败、取消、worker 超时、应用重启都不得留下“成功但文件不完整”的记录。重试应幂等；缓存键包含输入哈希、转换器版本及选项，不能继续复用已知损坏的旧派生。\n- 对历史上可能由缺陷转换器产生的派生文件，依据转换版本/receipt 识别候选；信息不足标记待复核。从保留原件重新生成并比对，提供确认/恢复流程，不批量覆盖历史文件或用户后续编辑。\n- 旧任务结果、旧图纸和旧渲染仍保留来源；修复后按实际依赖更新派生/输出状态，而不是把旧结果重新标成新版本成功。\n- 项目切换、并发修改和迟到的任务结果校验 project/model/revision；不能把 A 项目的修复应用到 B，也不能让旧任务覆盖新场景。\n\n### Revision 规则\n\n仅修转换器错误、重建显示派生或生成派生法线，不把它伪装成用户改变了 canonical geometry；记录派生身份、转换版本和校验结果。材质/外观修改走 scene revision。实际改变被接受的源几何才走 geometry revision，并触发 #319 的关联更新。即使源 geometry revision 未变，派生文件/转换实现变化也必须让相关缓存与校验失效，不能只按 geometry revision 命中旧结果。\n\n## 6. P2 — 防复发测试与真实产品验收\n\n复用已存在的 `archflow/adapters/model_formats.py`、`blender_worker.py`、项目 repository、Three.js viewport/loader 等入口；路径来自历史报告，执行者须核对当前实现。先补能够复现历史缺陷的回归，再修复；不要只测试新写的 helper 而不覆盖实际 API 和消费者。\n\n测试矩阵至少覆盖：\n\n| 用例 | 主要验证 |\n| --- | --- |\n| 企鹅原始静态网格 | 无材质缺省、源法线/拓扑、正式转换/回读/预览、非测试专用文件 |\n| 建筑/CAD 样本 | 门窗/墙组件与硬边、单位/轴向、关键尺寸、对象身份与工程图准入 |\n| 家具/产品样本 | 多部件、UV 接缝、纹理/多材质/共享材质与原有外观保留 |\n| 小型可复現 fixtures | 索引/非索引网格、法线缺失/自定义、顶点颜色、重复坐标但属性不同、开放薄片、镜像/非均匀缩放及源/目标不同单位 |\n| 故障注入 | 索引越界、非法坐标、资源缺失、不支持属性、超差、部分写入、worker 失败/超时、旧缓存、取消后重试及跨项目迟到结果 |\n\n独立验证需要真正回读产物：Three.js 使用正式 loader，Blender 在新进程中读回 mesh、normal/material 及适用设置。保存配置 JSON 或沿用同一内存对象自我比较不足以证明输出有效。受控视觉对照核验几何/面向/区域与主要外观，不要求 Three.js 与 Cycles 像素完全相同。\n\n### 完成清单\n\n- [ ] 每个历史异常给出当前复现结果、准确阶段与根因证据；未复现/未定位如实说明。\n- [ ] 正式转换路径正确保留源几何及支持的法线/属性，无企鹅专用中性副本或修面脚本依赖。\n- [ ] 眼周/腹部缺口通过中性材质、区域 ID/遮罩和线框对照分类；材质问题不被误当几何修复。\n- [ ] 单位、轴向、几何/关键尺寸、拓扑、法线、材质兼容性检查生成可追溯报告。\n- [ ] 超差与结构错误被对应的 UI/API 门禁阻止；纯外观警告不会无理由阻止独立且已验证的几何图纸。\n- [ ] 源文件/历史版本不被覆盖；失败、取消、超时、重试与恢复上一有效状态经过故障注入验证。\n- [ ] 历史可疑派生可识别或标为待复核，能从原件重建候选并审阅恢复，不静默重写历史。\n- [ ] 校验/缓存绑定输入、转换器与选项；旧结果、跨项目请求和并发修改不会误应用。\n- [ ] 企鹅 + 两个非企鹅模型通过同一生产流程：导入→转换→报告→预览/适用图纸→Cycles→关闭重开。\n- [ ] 通过目标 loader 与 Blender 冷读验证，而不只依据退出码、文件存在或 JSON 已保存。\n- [ ] 自动化回归进入现有 CI；可选 Blender/GPU 环境缺失时明确 SKIP/NOT TESTED，并保留真实环境补验要求。\n- [ ] 每项报告 PASS / PARTIAL / FAIL / NOT TESTED，标明输入 fixture、代码/转换器版本、revision、证据与未覆盖项。\n\n## 非目标与架构限制\n\n不要求迁移 WebGPU、强制移除现有 3DM bridge 或引入新的建模器；也不能把 3DM 强制变成所有预览/渲染的必经中间态。MonkeyHub/OCCT 或 retained imported geometry 仍是唯一几何事实源，Blender 是投影消费者。\n\n不做任意模型全自动拓扑修复，不用 AI 美化作为几何保真证明，不把 Scene 保存成功当成 3DM/GLB 外观导出保真。几何无损、着色正确、材质兼容、工程图可用、game-ready 是不同验收维度。\n\n**成功标准：正常模型在统一产品路径中可靠转换；异常能够说明“哪里错、影响什么、能否继续、如何恢复”；失败不污染已有项目，并由跨模型的本地自动检查和回归测试防止同类问题再次静默进入下游。**",
+      "state": "open",
+      "state_reason": null,
+      "comments": [
+        {
+          "url": "https://github.com/cogco1/MonkeyHub/issues/327#issuecomment-5845718794",
+          "body": "## 2026-09-26 · #336 合并后收尾\n\n#336 合入正式 GLB→3DM 路径的独立读写回归：分角点法线/拆分顶点及合法黑材质不能被默认中性材质覆盖。与研究/性能测试组合的云端回归共 42 项通过、零 skip。\n\n保持开放：这不证明 Three.js/Cycles 的全部外观，也未完成整个 preflight、用途准入和可撤回补救。#330 的未合场景/UV/PBR 工作仍不算本项完成。下一片优先处理已有保留导出文件缺失/不可读时的明确诊断和从保留源重试，不改源几何或另建转换 owner。\n\n### 下一轮已派发\n\n本轮只处理保留的转换原件/产物缺失或不可读的诊断，以及通过现有 sourceArtifactId 入口重新转换。不得覆盖旧记录或原件。\n\n[云端任务](https://chatgpt.com/codex/tasks/task_e_6ab7a806de6c832c89bde33881fb2121)；基线包含 `b6aa5b12`，实现和检查在云端进行。当前仅确认已提交，尚无本轮验收交付。"
+        },
+        {
+          "url": "https://github.com/cogco1/MonkeyHub/issues/327#issuecomment-5846330720",
+          "body": "PR #339 已合入 main（07e1a40b），五项 required checks 通过。\n\n缺失/不可读的保留输入、转换输出返回可定位错误；重试前先检查源文件，不用无效输入创建转换运行。回归实际解析重试得到的 3DM，核对保留源字节、旧报告和 HEAD 不变；不是只凭文件存在或退出码判断成功。\n\n这是转换恢复诊断的一片，不能据此关闭整个可靠性议题。源法线/UV/材质保真、实际下游消费者、故障与跨项目矩阵仍按本 Issue 保留；#330 未纳入本次合并。\r\n"
+        }
+      ],
+      "created_at": "2026-09-26T05:01:30Z",
+      "updated_at": "2026-09-26T12:37:53Z",
+      "closed_at": null,
+      "display_url": "https://github.com/cogco1/MonkeyHub/issues/327",
+      "display_title": "Model Conversion Reliability — 转换异常诊断、可撤回补救与防复发校验"
+    }
+  ]
+}

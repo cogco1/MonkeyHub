@@ -1,0 +1,9 @@
+Selected failure excerpt; full unmodified log remains on Actions run 36256718286.
+2026-09-26T16:50:25.3513323Z FAIL: test_every_registered_kind_is_declared_or_listed_with_a_reason (tests.test_version_refs.OwnerLoadingTests.test_every_registered_kind_is_declared_or_listed_with_a_reason)
+2026-09-26T16:50:25.3523003Z   File "/home/runner/work/MonkeyHub/MonkeyHub/tests/test_version_refs.py", line 173, in test_every_registered_kind_is_declared_or_listed_with_a_reason
+2026-09-26T16:50:25.3524993Z AssertionError: Lists differ: [('studio-render-scene', 'StudioRenderScen[105 chars]@3')] != []
+2026-09-26T16:50:25.3526610Z ('studio-render-scene', 'StudioRenderScene@1')
+2026-09-26T16:50:25.3527317Z - [('studio-render-scene', 'StudioRenderScene@1'),
+2026-09-26T16:50:25.3528378Z -  ('studio-render-job', 'StudioRenderJob@3')] : these kinds are neither declared nor excused
+2026-09-26T16:50:25.3529642Z Ran 1678 tests in 119.106s
+2026-09-26T16:50:25.3529993Z FAILED (failures=1, skipped=64)

@@ -1,0 +1,51 @@
+test_body_claim_is_used_when_the_subject_has_no_work_id (tests.test_archcheck_github_claims.GithubWorkClaimTests.test_body_claim_is_used_when_the_subject_has_no_work_id) ... ok
+test_closing_github_work_may_use_parent_scope_once_then_loses_it (tests.test_archcheck_github_claims.GithubWorkClaimTests.test_closing_github_work_may_use_parent_scope_once_then_loses_it) ... ok
+test_explicit_work_id_takes_precedence_over_issue_reference (tests.test_archcheck_github_claims.GithubWorkClaimTests.test_explicit_work_id_takes_precedence_over_issue_reference) ... ok
+test_github_lane_claim_uses_both_lane_and_parent_scope (tests.test_archcheck_github_claims.GithubWorkClaimTests.test_github_lane_claim_uses_both_lane_and_parent_scope) ... ok
+test_incidental_ambiguous_or_malformed_references_do_not_claim_scope (tests.test_archcheck_github_claims.GithubWorkClaimTests.test_incidental_ambiguous_or_malformed_references_do_not_claim_scope) ... ok
+test_malformed_github_markers_do_not_partially_claim_a_valid_issue (tests.test_archcheck_github_claims.GithubWorkClaimTests.test_malformed_github_markers_do_not_partially_claim_a_valid_issue) ... ok
+test_plain_github_issue_claim_uses_the_same_scope_rules_as_legacy_work (tests.test_archcheck_github_claims.GithubWorkClaimTests.test_plain_github_issue_claim_uses_the_same_scope_rules_as_legacy_work) ... ok
+test_subject_claim_wins_over_other_issue_ids_named_in_the_body (tests.test_archcheck_github_claims.GithubWorkClaimTests.test_subject_claim_wins_over_other_issue_ids_named_in_the_body) ... ok
+test_trailing_issue_reference_still_checks_historical_scope (tests.test_archcheck_github_claims.GithubWorkClaimTests.test_trailing_issue_reference_still_checks_historical_scope) ... FAIL
+test_trailing_reference_cannot_borrow_a_later_declaration (tests.test_archcheck_github_claims.GithubWorkClaimTests.test_trailing_reference_cannot_borrow_a_later_declaration) ... ok
+test_trailing_reference_cannot_bypass_lane_requirement (tests.test_archcheck_github_claims.GithubWorkClaimTests.test_trailing_reference_cannot_bypass_lane_requirement) ... FAIL
+test_unknown_github_issue_does_not_gain_an_existing_scope (tests.test_archcheck_github_claims.GithubWorkClaimTests.test_unknown_github_issue_does_not_gain_an_existing_scope) ... ok
+
+======================================================================
+FAIL: test_trailing_issue_reference_still_checks_historical_scope (tests.test_archcheck_github_claims.GithubWorkClaimTests.test_trailing_issue_reference_still_checks_historical_scope)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<repo>\tests\test_archcheck_github_claims.py", line 124, in test_trailing_issue_reference_still_checks_historical_scope
+    self.assertEqual((), self.findings())
+AssertionError: Tuples differ: () != (PolicyFinding(path='apps/feature/value.py[128 chars]e'),)
+
+Second tuple contains 1 additional elements.
+First extra element 0:
+PolicyFinding(path='apps/feature/value.py', line=1, code='SCOPE_UNDECLARED', message='commit dcba928a names no work item; apps/feature/value.py is outside its write scope')
+
+- ()
++ (PolicyFinding(path='apps/feature/value.py',
++                line=1,
++                code='SCOPE_UNDECLARED',
++                message='commit dcba928a names no work item; '
++                        'apps/feature/value.py is outside its write scope'),)
+
+======================================================================
+FAIL: test_trailing_reference_cannot_bypass_lane_requirement (tests.test_archcheck_github_claims.GithubWorkClaimTests.test_trailing_reference_cannot_bypass_lane_requirement)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<repo>\tests\test_archcheck_github_claims.py", line 158, in test_trailing_reference_cannot_bypass_lane_requirement
+    self.assertEqual(["SCOPE_VIOLATION"], [row.code for row in self.findings()])
+AssertionError: Lists differ: ['SCOPE_VIOLATION'] != ['SCOPE_UNDECLARED']
+
+First differing element 0:
+'SCOPE_VIOLATION'
+'SCOPE_UNDECLARED'
+
+- ['SCOPE_VIOLATION']
++ ['SCOPE_UNDECLARED']
+
+----------------------------------------------------------------------
+Ran 12 tests in 35.718s
+
+FAILED (failures=2)

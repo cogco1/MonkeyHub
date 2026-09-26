@@ -1,0 +1,37 @@
+test_a_declared_pointer_the_owner_does_not_write_finds_nothing (tests.test_version_refs.DeclarationMatchesTheSerialisationTests.test_a_declared_pointer_the_owner_does_not_write_finds_nothing)
+The failure mode N4 named: a declaration that reads as decoration. ... ok
+test_the_envelope_declares_the_pointer_its_own_to_dict_writes (tests.test_version_refs.DeclarationMatchesTheSerialisationTests.test_the_envelope_declares_the_pointer_its_own_to_dict_writes) ... ok
+test_a_pointer_that_cannot_be_applied_is_refused_at_registration (tests.test_version_refs.DeclarationTableTests.test_a_pointer_that_cannot_be_applied_is_refused_at_registration) ... ok
+test_a_schema_no_owner_declares_returns_none_not_an_empty_tuple (tests.test_version_refs.DeclarationTableTests.test_a_schema_no_owner_declares_returns_none_not_an_empty_tuple)
+Silence is not absence: a caller has to be able to tell them apart. ... ok
+test_registering_a_structural_shape_twice_differently_is_refused (tests.test_version_refs.DeclarationTableTests.test_registering_a_structural_shape_twice_differently_is_refused) ... ok
+test_registering_one_schema_twice_differently_is_refused (tests.test_version_refs.DeclarationTableTests.test_registering_one_schema_twice_differently_is_refused) ... ok
+test_a_payload_its_own_owner_cannot_read_is_not_a_missing_digest (tests.test_version_refs.DerivedDigestTests.test_a_payload_its_own_owner_cannot_read_is_not_a_missing_digest)
+Item 5: swallowing this left every citation stale and unreported. ... ok
+test_an_owner_states_its_own_content_digest (tests.test_version_refs.DerivedDigestTests.test_an_owner_states_its_own_content_digest) ... ok
+test_naming_a_self_derived_field_without_a_rebuild_is_refused (tests.test_version_refs.DerivedDigestTests.test_naming_a_self_derived_field_without_a_rebuild_is_refused) ... ok
+test_only_a_kind_with_self_derived_fields_is_recomputable (tests.test_version_refs.DerivedDigestTests.test_only_a_kind_with_self_derived_fields_is_recomputable) ... ok
+test_restating_the_base_moves_the_owners_derived_digest (tests.test_version_refs.DerivedDigestTests.test_restating_the_base_moves_the_owners_derived_digest) ... ok
+test_every_declared_schema_is_found_where_its_owner_writes_it (tests.test_version_refs.EveryDeclaredKindIsBuiltByItsOwnerTests.test_every_declared_schema_is_found_where_its_owner_writes_it) ... ok
+test_the_closure_receipt_restates_its_own_identity (tests.test_version_refs.EveryDeclaredKindIsBuiltByItsOwnerTests.test_the_closure_receipt_restates_its_own_identity)
+Blocking item 1: a one-way migration used to leave this stale. ... ok
+test_a_cad_receipt_is_covered_where_its_binding_really_sits (tests.test_version_refs.NestedAndCanonicalPointerTests.test_a_cad_receipt_is_covered_where_its_binding_really_sits)
+A declaration read off the wrong field covers nothing at all. ... ok
+test_a_nested_record_is_covered_by_its_own_owners_declaration (tests.test_version_refs.NestedAndCanonicalPointerTests.test_a_nested_record_is_covered_by_its_own_owners_declaration)
+DevelopedDesignState@1 holds no base; the input it selected does. ... ok
+test_a_run_ref_and_a_branch_ref_carry_their_base_anywhere (tests.test_version_refs.NestedAndCanonicalPointerTests.test_a_run_ref_and_a_branch_ref_carry_their_base_anywhere) ... ok
+test_a_workflow_owner_declares_itself_when_it_is_loaded (tests.test_version_refs.OwnerLoadingTests.test_a_workflow_owner_declares_itself_when_it_is_loaded)
+The boundary is where the declaration is loaded, not whether it exists. ... ok
+test_every_kind_that_carries_an_identity_states_what_it_derives (tests.test_version_refs.OwnerLoadingTests.test_every_kind_that_carries_an_identity_states_what_it_derives)
+Item 4's blocker: silence about a self-derived field is not a pass. ... ok
+test_every_registered_kind_is_declared_or_listed_with_a_reason (tests.test_version_refs.OwnerLoadingTests.test_every_registered_kind_is_declared_or_listed_with_a_reason) ... ok
+test_one_module_loads_every_core_owner (tests.test_version_refs.OwnerLoadingTests.test_one_module_loads_every_core_owner)
+Importing the loader is enough; no incidental import is relied on. ... ok
+test_restate_leaves_a_digest_the_mapping_does_not_know (tests.test_version_refs.RestateTests.test_restate_leaves_a_digest_the_mapping_does_not_know) ... ok
+test_restate_returns_a_copy_that_shares_nothing_with_its_input (tests.test_version_refs.RestateTests.test_restate_returns_a_copy_that_shares_nothing_with_its_input) ... ok
+test_restate_rewrites_a_declared_location_and_nothing_else (tests.test_version_refs.RestateTests.test_restate_rewrites_a_declared_location_and_nothing_else) ... ok
+
+----------------------------------------------------------------------
+Ran 23 tests in 0.136s
+
+OK
