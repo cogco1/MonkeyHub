@@ -693,6 +693,42 @@ a requested one: an identical request reuses the revision it made, and a drawing
 before the recipe keeps its revision and bytes. A revoked recipe no longer applies; a
 `hard` one is read first but not enforced, so an explicit value is still drawn.
 
+`GET /api/drawings/corrections?projectId=…[&drawingId=…]` reads what was corrected
+between a cut plan's revisions and writes nothing: every answer is derived again from
+the retained revisions and the active recipe decisions, which stay the one place a
+correction can become memory. `pairs` holds each revision of `drawingId` beside the
+revision its receipt names as previous, in the order drawn, and is empty without
+`drawingId`: `drawingId`, `beforeRevisionRef`, `afterRevisionRef`, `cause` (why the
+page was replaced, as above: `representation` or `source`), the after revision's
+`origin`, `sourceKind` and `reason`, `diff` and `class`. `diff` maps a dotted
+`viewRecipe` path to `[old, new]`, null where absent; `hiddenObjectIds.<id>` is
+`[was hidden, is hidden]`, `dimensions.<id>` and `dressing.<id>` are the whole object
+where it was added or removed and otherwise one entry per changed field, and
+`graphics.hatch.byMaterial.<material>` is that material's whole rule. `class` is the
+first that holds: `compiler_defect`, a source rebuild, which corrects nothing, or a
+revision that only hid objects the cleanup flagged (the cleanup report counts lines
+per rule and names no object, so no hide is one yet); `semantic_rule`, a material's
+hatch or poché rule; `recipe`, a pen, the hatch spacing, the fade beyond the cut or
+the number of entourage objects; and `local_override`, anything else: an object hidden
+or shown, entourage moved, flipped, scaled or swapped one for one, the crop, scale or
+cut, a dimension.
+
+`suggestions` always reads the whole project. A pair counts only when it is a
+representation change of class `recipe` whose `sourceKind` is not `agent`; each of
+`cutLineMm`, `visibleLineMm` and `hatchSpacingMm` it changed joins the group of that
+key and its direction, `increase` or `decrease` (2→3 and 2→4 are one direction),
+unless an active recipe already gives that drawing the key. A group spanning at least
+two distinct drawings is one suggestion: `suggestionId` (derived from `field`,
+`direction`, `value` and `drawingIds`, so the same offer keeps its id), `field`,
+`direction`, `value` (the paper value of the group's most recent after revision),
+`drawingIds`, `evidence` (each counted pair's `drawingId`, `beforeRevisionRef` and
+`afterRevisionRef`) and `page` (`runId`, `assetSha256`, `revisionRef` and `pageIndex`
+0 of that most recent revision: the exact document source a recipe decision cites),
+ordered by field and direction. A suggestion is only an offer. A person saves it with
+`POST /api/decisions`, a `require` drawing decision with a recipe `typedBinding` citing
+`page`, after which the recipe gives the key and it is no longer offered. Another
+project is refused with `PROJECT_MISMATCH`.
+
 A projected vector (`polyline` or poché `polygon`) names its physical object in
 `data-object` and, for a model compiled from design state, its `data-component` and
 `data-material` (the CAD program's `archflow:component` / `archflow:material`); an

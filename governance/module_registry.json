@@ -3946,7 +3946,8 @@
         "typed representation-only SVG dressing replacement and insert/move/scale/flip/delete operations against an exact previous Drawing revision; retained SVG readback and source anchor choices",
         "registering section perspective revisions from a complete verified source model in the existing document list with the same source resolution, cache, monitoring and registration as elevations, keeping the drawing owner's refusal names",
         "direct native model drawing selection: registered external sourceAsset stays frozen and has no modelSource; state-bound composed 3DM uses its own geometry, never a partial paired STEP",
-        "SKP upload through the local standalone SDK, retaining original SKP and derived 3DM face geometry in the same P036 registration; retries reuse the verified original content"
+        "SKP upload through the local standalone SDK, retaining original SKP and derived 3DM face geometry in the same P036 registration; retries reuse the verified original content",
+        "the drawing correction projection (05-S2, application/drawing_corrections.py): each cut-plan revision paired with the registered revision its receipt names as previous, the pair's replacement_cause, a recipe_diff of the two view recipes by dotted path and a classify into compiler_defect, semantic_rule, recipe or local_override; and the project's recipe suggestions - a pen or hatch spacing changed the same way in representation-only revisions no agent asked for on at least two drawings no active recipe covers - each citing its exact revision pairs and the page a recipe decision would cite"
       ],
       "does_not_own": [
         "producing the export or its receipt - adapters.cad_execution through runtime.project_runner",
@@ -3965,7 +3966,7 @@
         "optional source run for project-wide discovery or project source-material upload",
         "optional exact DocumentPageReplacement values mapping registered old pages to uploaded page indices",
         "the request boundary's ActorAttribution, an optional reason and the optional sourceKind (human or agent) its request states for each cut-plan revision",
-        "the project recipe layer (studio.intent project_recipe) for the Stage a new cut plan's source is under",
+        "the project recipe layer (studio.intent project_recipe) for the Stage a new cut plan's source is under, which is also what a correction suggestion is checked against",
         "Optional StudioMonitor for drawing generation/cache comparison and model registration stages (binding, decode, digest, lock wait, lookup, inspection, persistence and verification) through the existing application functions"
       ],
       "outputs": [
@@ -3977,7 +3978,8 @@
         "SourceDocument",
         "DocumentPage",
         "original PDF/PNG/JPEG bytes",
-        "model_asset.registered event identifying the newly registered run when an event sink is supplied"
+        "model_asset.registered event identifying the newly registered run when an event sink is supplied",
+        "the correction read: one drawing's classified revision pairs and the project's recipe suggestions, derived per call"
       ],
       "public_api": [
         "GET /api/artifacts",
@@ -4038,7 +4040,14 @@
         "POST /api/drawings/section-perspectives",
         "generate_section_perspective",
         "drawing_revision_replacement",
-        "replacement_cause"
+        "replacement_cause",
+        "GET /api/drawings/corrections",
+        "drawing_corrections",
+        "corrections",
+        "recipe_diff",
+        "classify",
+        "recipe_suggestions",
+        "Correction"
       ],
       "depends_on": [
         "adapters.cad_execution",
@@ -4109,7 +4118,8 @@
         "Design width proposals require two uniquely verified cut STEP jambs, an unlocked direct parameter with matching units and the drawing's exact source on the Working Head, or another line's latest accepted Stage. Placement edits change only paper representation and dimensions outside the view cannot drive.",
         "a drawing's default status target is the Working Head's exact drawable source; an undrawable head is reported, never rebound",
         "External imported drawings never invent design state or driving dimensions; exact source run/hash and representation edits survive restart. Missing SKP runtime and unsupported 3DM geometry are explicit errors.",
-        "SKP sourceImport metadata exposes the original file name and source artifact plus conversion warnings through model upload/listing and drawing receipts; import loss is never hidden by a successful projection."
+        "SKP sourceImport metadata exposes the original file name and source artifact plus conversion warnings through model upload/listing and drawing receipts; import loss is never hidden by a successful projection.",
+        "A drawing correction is derived, never recorded (05 option A): GET /api/drawings/corrections reads the retained revisions and the active recipe decisions again on every call and writes nothing. A pair is only a revision and the one its receipt names, within one drawing; its class is a pure function of the recipe diff and the replacement cause, and a source rebuild is no correction. A suggestion is only offered: it counts representation-only recipe pairs no agent asked for, grouped by key and direction, needs two distinct drawings (D-05-1), skips a key an active recipe already gives that drawing, and becomes memory only by a person's recipe decision citing its page. V0 cleanup reports name no object, so no hide is classed a compiler defect."
       ],
       "status": "canonical",
       "tests": [
@@ -4126,7 +4136,8 @@
         "apps/archflow-studio/api/tests/test_model_load_monitoring.py",
         "apps/monkeyhub/web/workspaces/test/externalModelImport.browser.mjs",
         "apps/archflow-studio/api/tests/test_section_perspective.py",
-        "apps/archflow-studio/api/tests/test_native_drawings.py"
+        "apps/archflow-studio/api/tests/test_native_drawings.py",
+        "apps/archflow-studio/api/tests/test_drawing_corrections.py"
       ],
       "notes": "The viewer's only source of model bytes; digests are the identity, filenames are not.",
       "files": [
@@ -4138,6 +4149,7 @@
         "apps/archflow-studio/api/archflow_studio_api/transport/drawings.py",
         "apps/archflow-studio/api/archflow_studio_api/application/drawing_plans.py",
         "apps/archflow-studio/api/archflow_studio_api/application/drawing_dimensions.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/drawing_corrections.py",
         "apps/archflow-studio/api/archflow_studio_api/application/model_exports.py",
         "apps/archflow-studio/api/archflow_studio_api/routes/model_exports.py"
       ]
