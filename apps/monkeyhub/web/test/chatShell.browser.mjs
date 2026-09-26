@@ -665,7 +665,125 @@ const autosavedModelRestart = async () => {
   await page.evaluate(() => localStorage.removeItem("monkeyhub.chat-view.v1"));
 };
 try {
-  if (process.env.MONKEYHUB_UI_FOCUS === "attachments") {
+  if (process.env.MONKEYHUB_UI_FOCUS === "accessibility") {
+    const cdp = await page.context().newCDPSession(page);
+    const accessible = async (role, name) => {
+      const { nodes } = await cdp.send("Accessibility.getFullAXTree");
+      const node = nodes.find((entry) => !entry.ignored && entry.role?.value === role && entry.name?.value === name);
+      assert.ok(node, `${role} ${name} is present in the browser accessibility tree`);
+      return node;
+    };
+    const focused = async (locator) => assert.equal(await locator.evaluate((node) => node === document.activeElement), true);
+    for (const language of ["en", "zh-CN"]) {
+      preferences = { ...preferences, language };
+      await page.goto(origin);
+      await page.waitForFunction(() => document.querySelector("#chat-input") && !document.querySelector("#chat-input").disabled);
+      const names = language === "en" ? {
+        archive: "Archived chats", settings: "Hub settings", project: "This project: Project A", close: "Close",
+        menu: "Attachments and new topic", topic: "New topic", send: "Send", empty: "Write a message or add an attachment first.",
+      } : {
+        archive: "已归档对话", settings: "Hub 设置", project: "此项目: Project A", close: "关闭",
+        menu: "附件与新话题", topic: "新话题", send: "发送", empty: "请先输入消息或添加附件。",
+      };
+      const sidebarToggle = page.locator(".chat-sidebar__top button");
+      if (await page.locator(".chat-shell").getAttribute("data-sidebar") === "true") await sidebarToggle.click();
+      for (const name of [names.archive, names.settings]) {
+        const button = page.getByRole("button", { name, exact: true });
+        await button.focus(); await focused(button);
+        await accessible("button", name);
+      }
+      await page.getByRole("button", { name: names.archive, exact: true }).press("Enter");
+      const active = page.locator(".chat-archive-toggle");
+      assert.equal(await active.getAttribute("aria-pressed"), "true");
+      await accessible("button", await active.getAttribute("aria-label"));
+      await active.press("Enter");
+      await page.getByRole("button", { name: names.settings, exact: true }).press("Enter");
+      await page.locator(".chat-dialog--settings").waitFor({ state: "visible" });
+      await page.keyboard.press("Escape");
+      await page.locator(".chat-dialog--settings").waitFor({ state: "hidden" });
+
+      const projectButton = page.getByRole("button", { name: names.project, exact: true });
+      const projectName = await accessible("button", names.project);
+      assert.equal(projectName.name.value.includes(projects[0].projectDir), false);
+      await projectButton.focus(); await projectButton.press("Enter");
+      const close = page.locator(".chat-project-card__head").getByRole("button", { name: names.close, exact: true });
+      await focused(close);
+      assert.equal(await projectButton.getAttribute("aria-controls"), "chat-project-info");
+      await page.keyboard.press("Escape");
+      assert.equal(await page.locator(".chat-project-card").count(), 0);
+      await focused(projectButton);
+      // Escape also closes after Tab leaves the card, or focus returns to its trigger.
+      await projectButton.press("Enter");
+      await page.keyboard.press("Tab");
+      await page.keyboard.press("Escape");
+      await focused(projectButton);
+      await projectButton.press("Enter");
+      await projectButton.focus(); await page.keyboard.press("Escape");
+      await focused(projectButton);
+      await projectButton.press("Enter");
+      await close.press("Enter"); await focused(projectButton);
+      // A modal launched from this nonmodal card owns the first Escape.
+      await projectButton.press("Enter");
+      await page.locator(".chat-project-card__archive button").first().click();
+      await page.locator("dialog.chat-dialog--archive").first().waitFor({ state: "visible" });
+      await page.keyboard.press("Escape");
+      await page.locator("dialog.chat-dialog--archive").first().waitFor({ state: "hidden" });
+      assert.equal(await page.locator(".chat-project-card").count(), 1);
+      await page.keyboard.press("Escape"); await focused(projectButton);
+
+      const send = page.getByRole("button", { name: names.send, exact: true });
+      assert.equal(await send.isDisabled(), true);
+      assert.equal((await accessible("button", names.send)).description.value, names.empty);
+      assert.equal(await send.getAttribute("title"), names.empty);
+      assert.equal(await page.locator("#chat-input").getAttribute("aria-keyshortcuts"), "Enter Shift+Enter");
+      assert.equal((await accessible("button", names.send)).properties.find((property) => property.name === "keyshortcuts").value.value, "Enter");
+      await page.locator("#chat-input").fill("First line");
+      await page.locator("#chat-input").press("Shift+Enter");
+      assert.equal(await page.locator("#chat-input").inputValue(), "First line\n");
+      assert.equal(writes.filter(([, route]) => route.endsWith("/messages")).length, 0);
+      await page.locator("#chat-input").fill("");
+      const menu = composerMenu(names.menu);
+      await menu.focus(); await menu.press("Enter");
+      await page.keyboard.press("ArrowDown");
+      const topic = page.getByRole("menuitemcheckbox", { name: names.topic, exact: true });
+      await focused(topic);
+      const topicAX = await accessible("menuitemcheckbox", names.topic);
+      assert.equal(topicAX.properties.find((property) => property.name === "checked").value.value, "false");
+      assert.ok(topicAX.description.value.length > 0);
+      await page.keyboard.press("Escape"); await focused(menu);
+      await sidebarToggle.click();
+    }
+    preferences = { ...preferences, language: "en" };
+    await page.goto(origin);
+    await page.waitForFunction(() => document.querySelector("#chat-input") && !document.querySelector("#chat-input").disabled);
+    await page.locator("#chat-input").fill("Check keyboard sending");
+    await page.locator("#chat-input").press("Enter");
+    await page.getByRole("button", { name: "Stop", exact: true }).waitFor();
+    assert.equal(writes.filter(([, route]) => route.endsWith("/messages")).length, 1, "Enter sends once");
+    assert.equal((await accessible("combobox", "Model")).description.value, "The model can be changed once this reply finishes.");
+    assert.equal((await accessible("button", "Interject")).description.value, "Write a message to interject first.");
+    const archive = page.locator(".chat-thread-action").first();
+    assert.equal(await archive.isDisabled(), true);
+    assert.ok((await accessible("button", await archive.getAttribute("aria-label"))).description.value.length > 0);
+    await composerMenu().click();
+    const blockedTopic = page.getByRole("menuitemcheckbox", { name: "New topic", exact: true });
+    assert.equal((await accessible("menuitemcheckbox", "New topic")).description.value, "Wait for this reply to finish before starting a new topic.");
+    await blockedTopic.focus(); await page.keyboard.press("Enter");
+    assert.equal(await blockedTopic.getAttribute("aria-checked"), "false", "the disabled choice does not activate by keyboard");
+    await page.keyboard.press("Escape");
+    await page.getByRole("button", { name: "Stop", exact: true }).click();
+
+    projects.splice(0); sessions.splice(0); settings.projectDir = null;
+    await page.evaluate(() => { localStorage.removeItem("monkeyhub.chat-view.v1"); localStorage.removeItem("monkeyhub.chat-drafts.v1"); });
+    await page.goto(origin);
+    await page.getByRole("button", { name: "This project", exact: true }).waitFor();
+    for (const name of ["Send", "Attachments and new topic", "Modeling", "Board", "Drawings", "Render", "Design tree"]) {
+      const button = page.getByRole("button", { name, exact: true });
+      assert.equal(await button.isDisabled(), true);
+      assert.equal((await accessible("button", name)).description.value, "Add or choose a project first.");
+    }
+    await cdp.detach();
+  } else if (process.env.MONKEYHUB_UI_FOCUS === "attachments") {
     const restoredFocus = [];
     for (const theme of ["dark", "light"]) {
       for (const fontScale of [0.9, 1, 1.1]) {
