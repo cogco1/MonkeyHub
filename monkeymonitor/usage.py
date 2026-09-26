@@ -24,7 +24,7 @@ _DETAIL_KEYS = {
     "duplicate_reason", "opportunity_refs", "stable_input_parts",
     "context_budget", "task_type", "success", "validator_pass", "validator_scope", "escalation",
     "tool_name", "blocking", "first_token_ms", "provider_timing_basis", "billing_plan", "native_turn_id",
-    "missing_observations",
+    "missing_observations", "image_inputs",
 }
 _IDENTITY_KEYS = {
     "context_digest", "prompt_sha256", "provider_fingerprint", "program_digest", "source_program_digest",
@@ -42,8 +42,10 @@ _LIST_DETAILS = {
     "input_object_ids", "recomputed_object_ids", "reused_object_ids", "emitted_object_ids", "comparison_refs",
     "output_refs", "executed_stages", "opportunity_refs", "stable_input_parts",
 }
+# image_inputs counts the images one observed step put in front of a model: a
+# visual review's frames, or the one image a raw view or page read returns.
 _COUNT_DETAILS = {"model_inference_ms", "active_wait_ms", "between_actions_ms", "unattributed_ms", "input_bytes",
-                  "output_bytes", "retry_attempt", "http_status", "first_token_ms"}
+                  "output_bytes", "retry_attempt", "http_status", "first_token_ms", "image_inputs"}
 _CONTEXT_SECTIONS = {"intent", "system", "schema", "state", "preferences", "dependencies", "overhead"}
 _CONTEXT_CONTRIBUTORS = _CONTEXT_SECTIONS | {
     "all_components", "type_registry", "relations", "parameters", "component_definitions",

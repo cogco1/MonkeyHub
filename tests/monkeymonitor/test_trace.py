@@ -303,6 +303,18 @@ class TraceTests(unittest.TestCase):
         self.assertEqual(diagnostics["retries"]["count"], 1)
         self.assertIn("不能据此断言", diagnostics["repeated_tools"]["note"])
 
+    def test_an_image_count_is_a_count_and_reaches_the_exported_span(self):
+        self.assertEqual(diagnostic_details({"image_inputs": 3}), {"image_inputs": 3})
+        for invalid in (-1, True, "3", 1.5):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                diagnostic_details({"image_inputs": invalid})
+        rows = [event("root", "hub_turn", 0, 2000),
+                event("look", "tool_call", 0, 1000, parent_event_id="root", details={
+                    "blocking": True, "tool_name": "visual_review", "request_kind": "visual_observation", "image_inputs": 2})]
+        span = next(row for row in trace(rows)["traces"][0]["spans"] if row["event_id"] == "look")
+        self.assertEqual((span["parent_event_id"], span["details"]["request_kind"], span["details"]["image_inputs"]),
+                         ("root", "visual_observation", 2))
+
     def test_same_category_with_different_arguments_is_not_duplicate_schema(self):
         rows = [event("root", "hub_turn", 0, 2000),
                 event("a", "tool_call", 0, 1000, details={"request_kind": "schema_read", "input_identity": {"context_digest": "a" * 64}}),

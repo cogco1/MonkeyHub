@@ -14,6 +14,7 @@ from monkeydiagram.drawing_elevation import read_model_axis_elevation
 from archflow_studio_api.application import drawing_plans
 from archflow_studio_api.application.artifacts import _chain_head, _page_replacements, list_documents, replacement_cause
 from archflow_studio_api.application.binding import bound_project
+from archflow_studio_api.application.decisions import RECIPE_KEYS
 from archflow_studio_api.main import create_app
 from archflow_studio_api.settings import StudioSettings
 
@@ -619,3 +620,70 @@ class CutPlanTests(CandidateTestCase):
             response = self.client.post("/api/drawings/plans", json={"projectId": PROJECT_ID,
                 "sourceStageRef": self.stage["stageRef"], "previousRevisionRef": asked["revisionRef"], "reason": reason})
             self.assertEqual(response.status_code, 422, response.text)
+
+    def confirm_recipe(self, page, target, graphics, **overrides):
+        """A person's confirmed project recipe, evidenced by the drawing page it was confirmed on."""
+        response = self.client.post("/api/decisions", json={
+            "projectId": PROJECT_ID, "rawLanguage": "Draw this project's plans this way.", "disposition": "require",
+            "strength": "strong_preference", "targetRef": target, "scope": {"domain": "drawing", "extent": "project"},
+            "source": {"kind": "document", "runId": page["runId"], "assetSha256": page["assetSha256"],
+                       "revisionRef": page["revisionRef"], "pageIndex": 0},
+            "applicability": "scope", "sourceKind": "human",
+            "typedBinding": {"kind": "recipe", "graphics": graphics}, **overrides})
+        self.assertEqual(response.status_code, 201, response.text)
+        return response.json()
+
+    def test_a_new_drawing_takes_the_project_recipe_an_explicit_value_wins_and_a_rebuild_keeps_its_own(self):
+        not_projected = patch("archflow_studio_api.application.drawing_plans.freeze_cut_plan",
+                              side_effect=AssertionError("cache must not project"))
+        before = self.generate()
+        defaults = {"cutLineMm": .35, "visibleLineMm": .18, "hatchSpacingMm": 2}
+        self.assertEqual(before["viewRecipe"]["graphics"], defaults)
+        # Every value a recipe can set is one a cut plan draws with.
+        self.assertEqual(set(RECIPE_KEYS), set(defaults))
+        # Confirmed on that page: the project's hatch, and the cut pen of the Stage it draws.
+        self.confirm_recipe(before, "drawing:hatch", {"hatchSpacingMm": 3})
+        self.confirm_recipe(before, "drawing:lineweight", {"cutLineMm": .5},
+                            scope={"domain": "drawing", "extent": "stage", "stageRef": self.stage["stageRef"]})
+        new = self.generate(drawingId="plan-b")
+        self.assertEqual(new["viewRecipe"]["graphics"], {**defaults, "cutLineMm": .5, "hatchSpacingMm": 3.0})
+        # Written as an explicit value would be: asking for the same values is the same drawing.
+        with not_projected:
+            self.assertEqual(self.generate(drawingId="plan-b", cutLineMm=.5, hatchSpacingMm=3), new)
+        # An explicit value wins; what the request leaves open still comes from the recipe.
+        explicit = self.generate(drawingId="plan-c", hatchSpacingMm=4)
+        self.assertEqual(explicit["viewRecipe"]["graphics"], {**defaults, "cutLineMm": .5, "hatchSpacingMm": 4.0})
+        # A rebuild keeps its own values and never reads the recipe: the drawing
+        # made before it is its retained revision, bytes and all.
+        with not_projected, patch.object(drawing_plans, "project_recipe", side_effect=AssertionError("a rebuild reads no recipe")):
+            self.assertEqual(self.generate(previousRevisionRef=before["revisionRef"]), before)
+        self.assertEqual(self.repository.read_head(), self.head)
+        self.assertEqual(self.repository.read_design_branches(), self.branches)
+
+    def test_revoking_the_recipe_returns_a_new_drawing_to_the_code_default(self):
+        first = self.generate()
+        decision = self.confirm_recipe(first, "drawing:hatch", {"hatchSpacingMm": 3})
+        taken = self.generate(drawingId="plan-b")
+        self.assertEqual(taken["viewRecipe"]["graphics"]["hatchSpacingMm"], 3.0)
+        revoked = self.client.post(f"/api/decisions/{decision['decisionId']}/revisions", json={
+            "projectId": PROJECT_ID, "expectedRevisionRef": decision["revisionRef"], "action": "revoke",
+            "reason": "Back to the default hatch."})
+        self.assertEqual(revoked.status_code, 201, revoked.text)
+        fresh = self.generate(drawingId="plan-c")
+        self.assertEqual(fresh["viewRecipe"]["graphics"], first["viewRecipe"]["graphics"])
+        # The drawing made under the recipe keeps its values: its rebuild is its own revision.
+        with patch("archflow_studio_api.application.drawing_plans.freeze_cut_plan", side_effect=AssertionError("cache must not project")):
+            self.assertEqual(self.generate(drawingId="plan-b", previousRevisionRef=taken["revisionRef"]), taken)
+
+    def test_a_hard_recipe_beats_a_strong_preference_and_an_explicit_value_still_wins(self):
+        first = self.generate()
+        self.confirm_recipe(first, "drawing:hatch", {"hatchSpacingMm": 3})
+        self.confirm_recipe(first, "drawing:hatch", {"hatchSpacingMm": 4}, strength="hard")
+        standard = self.generate(drawingId="plan-b", hatch={"byMaterial": {"timber": {"angleDeg": 135}}})
+        # A material rule's omitted spacing is the drawing's own, whichever layer gave it.
+        self.assertEqual({key: standard["viewRecipe"]["graphics"][key] for key in ("hatchSpacingMm", "hatch")},
+                         {"hatchSpacingMm": 4.0, "hatch": {"byMaterial": {"timber": {
+                             "spacingMm": 4.0, "angleDeg": 135.0, "poche": False}}}})
+        # A standard is the first default, never a refusal (D-05-3).
+        explicit = self.generate(drawingId="plan-c", hatchSpacingMm=2.5)
+        self.assertEqual(explicit["viewRecipe"]["graphics"]["hatchSpacingMm"], 2.5)

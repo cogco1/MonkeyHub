@@ -301,6 +301,22 @@ or `VISUAL_PROVIDER_UNAVAILABLE` when the runtime's provider is deterministic. O
 refusals keep their code and status. A failed provider call answers 502 `VISUAL_PROVIDER_FAILED`
 with the `budgetState` that counts the spent review and the call's `usage`.
 
+MonkeyHub gives the Agent this route as its own `visual_review` tool and never through
+`studio_request` or `studio_schema`, so the allowance cannot be bypassed. The Agent declares
+`taskClass` (with `polishRounds` for `polish`) and the review's own fields; Hub fills `projectId` and
+`budgetState`. Hub holds one allowance for each user message the Agent answers, and the next message
+starts a new one. Until a review of it is spent, a new declaration replaces the class; after that
+another class answers `409 VISUAL_TASK_CLASS_FIXED`. More than two polish rounds need the user's own
+words in that message asking to keep refining (`409 VISUAL_POLISH_NOT_ASKED` otherwise). Hub keeps
+the `budgetState` each answer hands back: a 4xx refusal spends nothing, while a 5xx answer, or a sent
+review that is never answered (`504 VISUAL_REVIEW_UNANSWERED`), counts as spent. The Agent receives the
+`observation`, with `escalate: true` on each finding whose `targetRefs` name a `preserve:*`
+condition (a question for the architect rather than for another review), the provider's `usage`
+and the `allowance` (`taskClass`, `allowed`, `used`), never an image. The Hub trace records the call
+under its turn as a tool call with `request_kind` `visual_observation`, `image_inputs` from that usage
+and the review id, and none of the request's text; a raw `model-view` or page read through
+`studio_request` is recorded as `image_read` with one image input.
+
 **The program sheet.** A sheet is `ProgramSheet@1` and travels whole in both directions, carrying
 the `stateDigest` of the record it was read from. `POST /api/program` refuses `409 STALE_BASE` when
 that is not the state the project answers with now, and `422 PROGRAM_SHEET_INVALID` when the kernel
@@ -614,6 +630,10 @@ are rejected before persistence. A maximum of 100 objects is supported. Rebuilds
 retain unresolved objects in the recipe and report `missing` / `outside-view` in
 `POST /api/drawings/plans/status`; unresolved objects are omitted from the output
 rather than silently repositioned. Drawing revisions never advance Design HEAD.
+The Hub Agent reaches these through `studio_request`: the plan write is admitted like
+any other drawing write, and `GET /api/drawings/plans/vector`, `GET
+/api/drawings/plans/dimensions` and `POST /api/drawings/plans/status` are reads sent
+straight to the bound Studio, with no `operationId`.
 
 A rebuild that names `previousRevisionRef` registers the new revision as that
 revision's whole-document replacement: its `replacesPages` names the previous
@@ -655,6 +675,18 @@ the previous revision's; an empty `byMaterial` or a zero `fade` removes them, an
 recipe without them is exactly the recipe it was before they existed, so it keeps
 its retained drawing and bytes. Paper values do not change with the scale. Imported
 models carry no material semantics, so their cuts keep the general hatch.
+
+A new cut plan starts from the project recipe: the active drawing decisions whose
+`typedBinding` is `{"kind": "recipe", "graphics": {…}}` (a person's confirmed
+`require`), for the project or the Stage the drawing's source is under. Each of
+`cutLineMm`, `visibleLineMm` and `hatchSpacingMm` is the request's value, else the
+previous revision's, else the recipe's (per key `hard`, then `strong_preference`, then
+`soft_preference`; a Stage's own before the project's), else the code default (0.35,
+0.18 and 2 mm). Every revision holds all three, so a rebuild keeps its own values and
+never reads the recipe. A recipe value is written into `viewRecipe.graphics` exactly as
+a requested one: an identical request reuses the revision it made, and a drawing made
+before the recipe keeps its revision and bytes. A revoked recipe no longer applies; a
+`hard` one is read first but not enforced, so an explicit value is still drawn.
 
 A projected vector (`polyline` or poché `polygon`) names its physical object in
 `data-object` and, for a model compiled from design state, its `data-component` and
@@ -1245,7 +1277,9 @@ intermediate runs, and a rejection or Continue only on the user's own words.
 The prepared default reads design and drawing decisions together, so the Agent is
 handed the same project recipe a new drawing starts from: a drawing decision
 whose `typedBinding` is `{"kind": "recipe", "graphics": {…}}` over the closed
-paper-space keys `cutLineMm`, `visibleLineMm` and `hatchSpacingMm`. Copy work,
+paper-space keys `cutLineMm`, `visibleLineMm` and `hatchSpacingMm`. Hub's context note
+names the order a new drawing reads it in: an explicit value in the drawing request, then
+the drawing's own previous revision, then the project recipe, then the default. Copy work,
 or a turn that wants one domain alone, selects `decisionContext.domain` on the
 existing context read. Full applicable decision slices pass through, while
 revoked, deferred or inapplicable records do not. Chat feedback cannot retain a
@@ -1453,12 +1487,15 @@ attempt needs a new UUID. `errorCode` and `error` contain only bounded safe reas
 raw provider errors, credentials and image bytes never enter diagnostics.
 `sourceState` is derived as `current`, `outdated` or `unavailable` by following the
 retained request through every source and reference, transitively: an explicit
-replacement of one of those pages makes it outdated; so does a model-bound page whose
-exact state is no longer the Working Head's design (§4.1), and a cut-plan page whose
-drawing reads changed geometry, anchors or dimensions. A later accepted Stage alone
+replacement of one of those pages makes it outdated, unless it only redraws the same
+drawing from the same exact source; so does a model-bound page whose exact state is no
+longer the Working Head's design (§4.1), and a cut-plan page whose drawing reads
+changed geometry, anchors or dimensions. A later accepted Stage alone
 changes nothing unless it becomes the Working Head. For a page bound to no model state,
 current means the exact registered page remains available and unreplaced, not that it
-matches an untracked external model or active view.
+matches an untracked external model or active view. An outdated result's updated source
+is where its pages' registered replacements lead; a newer drawing revision that
+registered none is another page, not an update.
 Old output registrations remain readable independently of source availability.
 `document` is the retained SourceDocument, and `resultAvailable` independently
 reports whether its immutable bytes can still be read. Usage and cost stay null
