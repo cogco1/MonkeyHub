@@ -56,6 +56,8 @@
 .design-tree__body { position: relative; display: flex; flex: 1; min-height: 0; overflow: hidden; }
 .design-tree__state { display: grid; flex: 1; place-content: center; gap: 10px; padding: 24px; color: var(--muted); text-align: center; }
 .design-tree__canvas { position: relative; flex: 1; min-width: 0; overflow: hidden; }
+/* #337: the scene is drawn in the Hub's tokens, dark ones in dark theme; Excalidraw's inversion would undo them. */
+.design-tree__canvas .excalidraw.theme--dark canvas { filter: none; }
 /* View mode needs neither the scene menu nor the drawing shortcuts; in a narrow
    panel Excalidraw's mobile toolbar is empty and would sit over the tree. */
 .design-tree__canvas .excalidraw .main-menu-trigger,

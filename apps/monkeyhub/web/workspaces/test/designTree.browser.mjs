@@ -326,6 +326,41 @@ try {
   assert.ok(!view.elements.some((element) => /run-|rev-|project:\/\/|[0-9a-f]{16}/.test(element.text ?? "")), "no ids or hashes on the canvas");
   await shoot(tab, "02-tree-fit");
 
+  // #337: the canvas draws in the Hub's tokens and follows the theme and the interface
+  // style; Excalidraw's dark-theme inversion is not applied to it.
+  const follows = async (label) => {
+    await tab.waitForFunction(() => window.__treeApi.getSceneElements().find((element) => element.customData?.tree?.role === "trunk")?.strokeColor
+      === getComputedStyle(document.documentElement).getPropertyValue("--accent").trim().toLowerCase());
+    const now = await tab.evaluate(() => ({ trunk: window.__treeApi.getSceneElements().find((element) => element.customData?.tree?.role === "trunk").strokeColor,
+      ground: window.__treeApi.getAppState().viewBackgroundColor, token: getComputedStyle(document.documentElement).getPropertyValue("--ground").trim().toLowerCase(),
+      filter: getComputedStyle(document.querySelector(".design-tree__canvas canvas")).filter }));
+    assert.equal(now.ground, now.token, `${label}: the canvas ground is the Hub's`);
+    assert.equal(now.filter, "none", `${label}: the canvas is drawn in its own colours, not inverted`);
+    // The page's own colour transitions finish before a review shot.
+    await tab.evaluate(() => Promise.all(document.getAnimations().filter((animation) => animation instanceof CSSTransition)
+      .map((animation) => animation.finished.catch(() => undefined))));
+    return now;
+  };
+  const lightColours = await follows("light");
+  const styles = async (theme) => {
+    for (const style of ["quiet", "titleblock", "night"]) {
+      await tab.evaluate((value) => { document.documentElement.dataset.uiStyle = value; }, style);
+      await follows(`${theme}, ${style}`);
+      await shoot(tab, `02b-tree-${theme}-${style}`);
+    }
+  };
+  await tab.evaluate(() => window.__workspaceFixture.setTheme("dark"));
+  assert.notEqual((await follows("dark")).trunk, lightColours.trunk, "the trunk changes with the theme");
+  await shoot(tab, "02a-tree-dark");
+  await styles("dark");
+  // Setting the theme applies the fixture's whole appearance again, Classic included.
+  await tab.evaluate(() => window.__workspaceFixture.setTheme("light"));
+  assert.equal((await follows("light again")).trunk, lightColours.trunk);
+  assert.equal(await tab.evaluate(() => document.documentElement.dataset.uiStyle), "classic");
+  await styles("light");
+  await tab.evaluate(() => { document.documentElement.dataset.uiStyle = "classic"; });
+  assert.equal((await follows("light, classic")).trunk, lightColours.trunk);
+
   // Semantic zoom: far shows the trunk and counts; close adds summaries and status.
   const box = await surface.locator(".design-tree__canvas").boundingBox();
   await tab.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
