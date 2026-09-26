@@ -219,7 +219,7 @@
     {
       "id": "GH-252",
       "stream": "planning",
-      "status": "active",
+      "status": "ready",
       "goal": "Expose existing drawing recipe export/import in Drawing and verify an explicitly saved correction reused in a second isolated project; broader office demos remain open.",
       "depends_on": [],
       "issue": "https://github.com/cogco1/MonkeyHub/issues/252",
@@ -227,7 +227,7 @@
       "worktree": "D:/MONKEYHUB_DEV/workspace/worktrees/codex-252-office-recipe-reuse",
       "base_ref": "e33fbf4656402ead75fb4adcad946c71c81a2dff",
       "contributor": "Codex",
-      "reviewer": null,
+      "reviewer": "Independent bounded recipe review completed; parent integration",
       "handoff": "Independent #252 slice for parent integration. ProjectWorkspace edit only mounts RecipeTransfer in Drawing. Do not edit Publish, Board or drawing revision/replacement implementations.",
       "modules": [
         "studio.intent",

@@ -158,6 +158,45 @@ class RecipeBindingRequestDto(_Frozen):
     graphics: RecipeGraphicsDto
 
 
+class RecipeInspectRequestDto(_Frozen):
+    """Read a portable recipe without retaining it or promoting a preference."""
+
+    project_id: str = Field(alias="projectId", min_length=1)
+    content: str = Field(min_length=1, max_length=65536,
+                         description="Exact JSON file text; do not parse/reserialize in JavaScript, which changes numeric digests.")
+
+
+class RecipeExportFileDto(_Frozen):
+    """Portable file text, kept verbatim across browser JSON transports."""
+
+    file_name: str = Field(alias="fileName")
+    content: str
+
+
+class RecipeImportRequestDto(RecipeInspectRequestDto):
+    """An explicit confirmation of the inspected file as a project soft preference."""
+
+    confirmed: bool = Field(strict=True)
+    source_kind: Literal["human"] = Field(alias="sourceKind")
+    raw_language: str = Field(alias="rawLanguage", min_length=1, max_length=2000)
+
+    @model_validator(mode="after")
+    def require_confirmation(self):
+        if not self.confirmed:
+            raise ValueError("A person must explicitly confirm the recipe import.")
+        return self
+
+
+class RecipeInspectDto(_Frozen):
+    project_id: str = Field(alias="projectId")
+    target_ref: str = Field(alias="targetRef")
+    graphics: RecipeGraphicsDto
+    source_decision_id: str = Field(alias="sourceDecisionId")
+    source_revision_sha256: str = Field(alias="sourceRevisionSha256")
+    export_sha256: str = Field(alias="exportSha256")
+    import_strength: Literal["soft_preference"] = Field(alias="importStrength", default="soft_preference")
+
+
 TypedBindingRequestDto = Annotated[
     Union[ParameterBindingRequestDto, RecipeBindingRequestDto],
     Field(discriminator="kind"),

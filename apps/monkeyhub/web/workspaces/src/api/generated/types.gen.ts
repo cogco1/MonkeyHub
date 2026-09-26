@@ -7607,6 +7607,22 @@ export type RecipeExportDecisionSourceDto = {
 };
 
 /**
+ * RecipeExportFileDto
+ *
+ * Portable file text, kept verbatim across browser JSON transports.
+ */
+export type RecipeExportFileDto = {
+    /**
+     * Filename
+     */
+    fileName: string;
+    /**
+     * Content
+     */
+    content: string;
+};
+
+/**
  * RecipeGraphicsDto
  *
  * The paper-space values one project recipe sets; a key it leaves out is null.
@@ -7634,6 +7650,85 @@ export type RecipeGraphicsDto = {
      * section hatch spacing on paper; set under drawing:hatch
      */
     hatchSpacingMm?: number | null;
+};
+
+/**
+ * RecipeImportRequestDto
+ *
+ * An explicit confirmation of the inspected file as a project soft preference.
+ */
+export type RecipeImportRequestDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Content
+     *
+     * Exact JSON file text; do not parse/reserialize in JavaScript, which changes numeric digests.
+     */
+    content: string;
+    /**
+     * Confirmed
+     */
+    confirmed: boolean;
+    /**
+     * Sourcekind
+     */
+    sourceKind: 'human';
+    /**
+     * Rawlanguage
+     */
+    rawLanguage: string;
+};
+
+/**
+ * RecipeInspectDto
+ */
+export type RecipeInspectDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Targetref
+     */
+    targetRef: string;
+    graphics: RecipeGraphicsDto;
+    /**
+     * Sourcedecisionid
+     */
+    sourceDecisionId: string;
+    /**
+     * Sourcerevisionsha256
+     */
+    sourceRevisionSha256: string;
+    /**
+     * Exportsha256
+     */
+    exportSha256: string;
+    /**
+     * Importstrength
+     */
+    importStrength?: 'soft_preference';
+};
+
+/**
+ * RecipeInspectRequestDto
+ *
+ * Read a portable recipe without retaining it or promoting a preference.
+ */
+export type RecipeInspectRequestDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Content
+     *
+     * Exact JSON file text; do not parse/reserialize in JavaScript, which changes numeric digests.
+     */
+    content: string;
 };
 
 /**
@@ -13819,6 +13914,121 @@ export type ReadDecisionApiDecisionsDecisionIdGetResponses = {
 };
 
 export type ReadDecisionApiDecisionsDecisionIdGetResponse = ReadDecisionApiDecisionsDecisionIdGetResponses[keyof ReadDecisionApiDecisionsDecisionIdGetResponses];
+
+export type ExportDrawingRecipeApiDecisionsDecisionIdRecipeExportGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path: {
+        /**
+         * Decision Id
+         */
+        decision_id: string;
+    };
+    query: {
+        /**
+         * Expectedrevisionref
+         */
+        expectedRevisionRef: string;
+    };
+    url: '/api/decisions/{decision_id}/recipe-export';
+};
+
+export type ExportDrawingRecipeApiDecisionsDecisionIdRecipeExportGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ExportDrawingRecipeApiDecisionsDecisionIdRecipeExportGetError = ExportDrawingRecipeApiDecisionsDecisionIdRecipeExportGetErrors[keyof ExportDrawingRecipeApiDecisionsDecisionIdRecipeExportGetErrors];
+
+export type ExportDrawingRecipeApiDecisionsDecisionIdRecipeExportGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: RecipeExportFileDto;
+};
+
+export type ExportDrawingRecipeApiDecisionsDecisionIdRecipeExportGetResponse = ExportDrawingRecipeApiDecisionsDecisionIdRecipeExportGetResponses[keyof ExportDrawingRecipeApiDecisionsDecisionIdRecipeExportGetResponses];
+
+export type InspectDrawingRecipeApiDrawingRecipesInspectPostData = {
+    body: RecipeInspectRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/drawing-recipes/inspect';
+};
+
+export type InspectDrawingRecipeApiDrawingRecipesInspectPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type InspectDrawingRecipeApiDrawingRecipesInspectPostError = InspectDrawingRecipeApiDrawingRecipesInspectPostErrors[keyof InspectDrawingRecipeApiDrawingRecipesInspectPostErrors];
+
+export type InspectDrawingRecipeApiDrawingRecipesInspectPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: RecipeInspectDto;
+};
+
+export type InspectDrawingRecipeApiDrawingRecipesInspectPostResponse = InspectDrawingRecipeApiDrawingRecipesInspectPostResponses[keyof InspectDrawingRecipeApiDrawingRecipesInspectPostResponses];
+
+export type ImportDrawingRecipeApiDrawingRecipesImportPostData = {
+    body: RecipeImportRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/drawing-recipes/import';
+};
+
+export type ImportDrawingRecipeApiDrawingRecipesImportPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ImportDrawingRecipeApiDrawingRecipesImportPostError = ImportDrawingRecipeApiDrawingRecipesImportPostErrors[keyof ImportDrawingRecipeApiDrawingRecipesImportPostErrors];
+
+export type ImportDrawingRecipeApiDrawingRecipesImportPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: DecisionDto;
+};
+
+export type ImportDrawingRecipeApiDrawingRecipesImportPostResponse = ImportDrawingRecipeApiDrawingRecipesImportPostResponses[keyof ImportDrawingRecipeApiDrawingRecipesImportPostResponses];
 
 export type ReviseDecisionApiDecisionsDecisionIdRevisionsPostData = {
     body: DecisionRevisionRequestDto;

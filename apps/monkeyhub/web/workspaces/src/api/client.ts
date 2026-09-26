@@ -17,6 +17,9 @@ import type { SectionPerspectiveRequestDto } from "./generated";
 import { createDecisionApiDecisionsPost, readDecisionsApiDecisionsGet, readDrawingCorrectionsApiDrawingsCorrectionsGet,
   reviseDecisionApiDecisionsDecisionIdRevisionsPost } from "./generated";
 import type { DecisionDto, DecisionListDto, DecisionRequestDto, DecisionRevisionRequestDto, DrawingCorrectionsDto } from "./generated";
+import { exportDrawingRecipeApiDecisionsDecisionIdRecipeExportGet, inspectDrawingRecipeApiDrawingRecipesInspectPost,
+  importDrawingRecipeApiDrawingRecipesImportPost } from "./generated";
+import type { RecipeExportFileDto, RecipeInspectDto, RecipeInspectRequestDto, RecipeImportRequestDto } from "./generated";
 import { retainStudyApiStudiesPost, discoverStudiesApiStudiesGet,
   proposeStudyApiStudiesProposePost } from "./generated";
 import {
@@ -272,6 +275,16 @@ export const createStudioClient = (connection: ServerConnection) => ({
   /** Every decision the project retains, at its current revision. */
   decisions(): Promise<DecisionListDto> {
     return call("GET /api/decisions", readDecisionsApiDecisionsGet({ client: connection.client }));
+  },
+  exportDrawingRecipe(decisionId: string, expectedRevisionRef: string): Promise<RecipeExportFileDto> {
+    return call("GET /api/decisions/{decision_id}/recipe-export", exportDrawingRecipeApiDecisionsDecisionIdRecipeExportGet({
+      client: connection.client, path: { decision_id: decisionId }, query: { expectedRevisionRef } }));
+  },
+  inspectDrawingRecipe(body: RecipeInspectRequestDto): Promise<RecipeInspectDto> {
+    return call("POST /api/drawing-recipes/inspect", inspectDrawingRecipeApiDrawingRecipesInspectPost({ client: connection.client, body }));
+  },
+  importDrawingRecipe(body: RecipeImportRequestDto): Promise<DecisionDto> {
+    return call("POST /api/drawing-recipes/import", importDrawingRecipeApiDrawingRecipesImportPost({ client: connection.client, body }));
   },
   /** Retain one decision, checked against the exact source it names. */
   saveDecision(body: DecisionRequestDto): Promise<DecisionDto> {

@@ -15,6 +15,7 @@ import json
 from pathlib import Path
 import shutil
 import sys
+import subprocess
 import tempfile
 import time
 import unittest
@@ -216,6 +217,12 @@ def plan(test: unittest.TestCase, client: TestClient, project_id: str, stage: di
 @unittest.skipUnless(occt_available(), "cadquery-ocp is not installed")
 class RecipeTravelsBetweenProjectsTests(unittest.TestCase):
     def test_a_correction_confirmed_in_one_project_starts_the_next_projects_new_drawings(self) -> None:
+        self.travel(via_http=False)
+
+    def test_drawing_recipe_transfers_through_runtime_and_survives_cold_readback(self) -> None:
+        self.travel(via_http=True)
+
+    def travel(self, *, via_http: bool) -> None:
         root = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, root, True)
         first, first_stage = drawing_project(self, root, "first-project")
@@ -230,17 +237,43 @@ class RecipeTravelsBetweenProjectsTests(unittest.TestCase):
                 "revisionRef": corrected["revisionRef"], "pageIndex": 0}
         recipe = confirm_recipe(self, first, "first-project", page, {"hatchSpacingMm": 3})
         exported = root / "hatch-recipe.json"
-        code, _, err = run_tool("export", "--project", root / "first-project", "--decision", recipe["decisionId"],
-                                "--out", exported)
-        self.assertEqual(code, 0, err)
+        if via_http:
+            response = first.get(f"/api/decisions/{recipe['decisionId']}/recipe-export",
+                                 params={"expectedRevisionRef": recipe["revisionRef"]})
+            self.assertEqual(response.status_code, 200, response.text)
+            # The browser parses the HTTP envelope, downloads its file text, then
+            # uploads that same text inside another JSON envelope. Exercise Node's
+            # real serializer: 3.0 must remain 3.0 inside content for the digest.
+            transfer = response.json()
+            if shutil.which("node"):
+                transfer = json.loads(subprocess.check_output(
+                    ["node", "-e", "let s='';process.stdin.on('data',c=>s+=c);process.stdin.on('end',()=>process.stdout.write(JSON.stringify(JSON.parse(s))));"],
+                    input=json.dumps(transfer).encode("utf-8")))
+            self.assertIn('"hatchSpacingMm":3.0', transfer["content"])
+            exported.write_text(transfer["content"], encoding="utf-8")
+        else:
+            code, _, err = run_tool("export", "--project", root / "first-project", "--decision", recipe["decisionId"],
+                                    "--out", exported)
+            self.assertEqual(code, 0, err)
 
         # The second project drew before the import, with the code default.
         second, second_stage = drawing_project(self, root, "second-project")
         before = plan(self, second, "second-project", second_stage)
         self.assertEqual(before["viewRecipe"]["graphics"], DEFAULTS)
         # A person imports the export while this runtime has the project open.
-        code, _, err = run_tool("import", "--project", root / "second-project", "--file", exported, "--confirm")
-        self.assertEqual(code, 0, err)
+        head_before = bound_project(second.app.state).repository.read_head()
+        if via_http:
+            body = {"projectId": "second-project", "content": exported.read_text(encoding="utf-8")}
+            checked = second.post("/api/drawing-recipes/inspect", json=body)
+            self.assertEqual(checked.status_code, 200, checked.text)
+            self.assertEqual(decisions(self, second), [])
+            imported_response = second.post("/api/drawing-recipes/import", json={**body, "confirmed": True,
+                "sourceKind": "human", "rawLanguage": "Import this hatch recipe as a project preference."})
+            self.assertEqual(imported_response.status_code, 201, imported_response.text)
+        else:
+            code, _, err = run_tool("import", "--project", root / "second-project", "--file", exported, "--confirm")
+            self.assertEqual(code, 0, err)
+        self.assertEqual(bound_project(second.app.state).repository.read_head(), head_before)
         [imported] = decisions(self, second)
         self.assertEqual((imported["strength"], imported["source"]["exportSha256"]),
                          ("soft_preference", json.loads(exported.read_text(encoding="utf-8"))["sha256"]))
@@ -253,6 +286,23 @@ class RecipeTravelsBetweenProjectsTests(unittest.TestCase):
                          before)
         explicit = plan(self, second, "second-project", second_stage, drawingId="section-plan", hatchSpacingMm=2.5)
         self.assertEqual(explicit["viewRecipe"]["graphics"]["hatchSpacingMm"], 2.5)
+        if via_http:
+            second.close()
+            reopened = TestClient(create_app(StudioSettings(project_dir=root / "second-project", cad_export="occt")))
+            self.addCleanup(reopened.close)
+            self.assertEqual(decisions(self, reopened), [imported])
+            documents = reopened.get("/api/documents").json()["documents"]
+            saved = next(row for row in documents if row["revisionRef"] == new["revisionRef"])
+            self.assertEqual(saved["viewRecipe"]["graphics"]["hatchSpacingMm"], 3.0)
+            # Read actual SVG output through the drawing consumer's retained vector path.
+            vector = reopened.get("/api/drawings/plans/vector", params={
+                "runId": saved["runId"], "assetSha256": saved["assetSha256"], "revisionRef": saved["revisionRef"]})
+            self.assertEqual(vector.status_code, 200, vector.text)
+            self.assertIn("<svg", vector.json()["svg"])
+            self.assertEqual(plan(self, reopened, "second-project", second_stage, drawingId="reopened-plan")
+                             ["viewRecipe"]["graphics"]["hatchSpacingMm"], 3.0)
+            self.assertEqual(bound_project(reopened.app.state).repository.read_head(), head_before)
+
 
 
 if __name__ == "__main__":
