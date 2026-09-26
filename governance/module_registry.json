@@ -4678,6 +4678,7 @@
         "scoped project decisions: one architect judgement with its raw wording, disposition, strength, target, explicit scope, applicability and the exact source evidence it was said against, as an immutable revision chain in the fixed explicit studio-decisions P036 run",
         "compiling the decisions that still apply to one next turn - the domain it names, or design and drawing together when it names none, exact Stage, intersection with relevant task targets, applicability and current parameter binding - into the existing ContextPack",
         "the project recipe as a scoped decision (correction capture, option A): a person's confirmed require decision in the drawing domain whose typedBinding kind recipe holds closed paper-space graphics values, and project_recipe, the one per-key read of it a new drawing takes between its own previous revision and the code default",
+        "a recipe travelling between projects (#252): recipe_export, the one DrawingRecipeExport@1 form of an active recipe decision (values, target, hold, decision id, revision sha256 and its own canonical sha256; nothing else of the project), read_recipe_export, its closed and digest-checked reading, and import_recipe, which retains one as a person's soft_preference for the whole project citing the export's sha256; tools/export_drawing_recipe.py is its command line",
         "Composing explicitly selected exact Study evidence revisions into ContextPack separately from design facts and applicable decisions; no implicit Study scan, acceptance or project write.",
         "the source-bound, read-only visual observation channel (GH-303): VisualReviewRequest over exact model or registered-page sources, EvidenceFrame values taken from the model-view and page-export owners' own answers, the strict VisualObservation answer and its validation, the VisualObservationProvider seam with the configured Studio model transport as its implementation, the Harness review allowance VisualReviewBudget, and POST /api/visual-reviews, which has those owners render the frames in-process from the exact sources a caller names",
         "candidate admission: one CandidateAdmission@1 per closed loop (a task, one worktree of it, or one person's act) in the fixed explicit studio-admissions P036 run, written only through the completion gate Stage acceptance shares, with the boundary's actor, the stated task, Study and bound message, each result's outcome, pinned model, receipt and superseded attempts",
@@ -4710,6 +4711,7 @@
         "ModelInvocationRequest and structured schema/images from Study for the existing configured transport",
         "One scoped decision as the caller states it: rawLanguage, optional messageSource claim, disposition, strength, targetRef, scope, exact source evidence union (board revision + live element ids / document run+asset+revision+page / design run+stateDigest+optional Stage), applicability, sourceKind and an optional typedBinding: a design parameter whose value the server reads, or a project recipe's paper-space graphics (cutLineMm, visibleLineMm, hatchSpacingMm) bounded as a cut-plan request bounds them",
         "Optional decisionContext on POST /api/intents/context: the domain this turn is about, and for a drawing or copy turn its own representation evidence",
+        "A DrawingRecipeExport@1 document, the importing person's confirmed words and sourceKind, and the boundary's attribution (tools/export_drawing_recipe.py import --confirm)",
         "VisualReviewRequest with exact SourceRef values, criteria, preserve conditions and the Harness allowance, and owner-produced EvidenceFrame PNGs (model-view answers, registered page exports)",
         "POST /api/visual-reviews: projectId, domain, 1-4 exact sourceRefs, viewRecipe, task, criteria, preserve, priorObservations, up to 8 knownFacts, the review reason with any addressedFindingIds, and the caller-held budgetState (taskClass, allowed, used, lastFindingIds); no field carries pixels",
         "an admission request: task kind and opaque ids, an optional Study (id, label, exact base run), an optional bound chat message and the user's words, and each result's outcome, superseded attempts, label, summary and reason"
@@ -4728,6 +4730,7 @@
         "retained StudioScopedDecision@1 revisions and their DTOs",
         "scopedDecisions on ContextPack@1: the applicable decisions in the architect's own words with their exact provenance, never a transcript",
         "the project recipe layer for one drawing's Stage: one RecipeValue per paper-space key with the decision and revision it came from",
+        "a DrawingRecipeExport@1 file of one active recipe decision (tools/export_drawing_recipe.py export), and in the importing project one retained soft_preference recipe decision whose source is {kind: recipe-export, exportSha256}",
         "VisualObservation bound to the frames actually sent, with ObservationUsage and a visual_observation MonkeyMonitor span over the provider's model_request row",
         "the visual-review answer: observation, usage and the loop's next budgetState; 409 VISUAL_SOURCE_MISMATCH (with sourceRef), VISUAL_BUDGET_EXHAUSTED, VISUAL_REVIEW_NOT_WARRANTED, VISUAL_REVIEW_OUT_OF_ORDER or VISUAL_PROVIDER_UNAVAILABLE before any provider call, and 502 VISUAL_PROVIDER_FAILED with the spent budgetState and usage",
         "retained CandidateAdmission@1 records and their DTOs",
@@ -4851,6 +4854,11 @@
         "DecisionContext",
         "project_recipe",
         "RecipeValue",
+        "recipe_export",
+        "read_recipe_export",
+        "import_recipe",
+        "RecipeExport",
+        "tools/export_drawing_recipe.py export --project --decision --out | import --project --file [--confirm]",
         "SourceRef",
         "EvidenceFrame",
         "VisualReviewRequest",
@@ -4972,6 +4980,7 @@
         "every applicable decision is returned without a decision-count cutoff; a target scope applies when any of its members intersects the task's relevant targets, so changing one end of a kept relation does not discard that decision",
         "a representation decision names a closed target: copy:style, or drawing:hatch | drawing:lineweight | drawing:beyond | drawing:entourage | drawing:poche. A turn that names no domain reads design and drawing decisions together; naming one reads that one alone, and copy is read only when named",
         "a recipe binding is retained only for sourceKind human on a require decision in the drawing domain, held hard, strong_preference or soft_preference, applying by scope to the project or one Stage, with a document page as evidence; its keys are the closed paper-space set, each under its own drawing target and bounded exactly as a cut-plan request bounds it, and no object or material is looked up. No agent, evaluator, rule or chat feedback retains one, and no correction becomes one without that confirmation",
+        "a recipe imported from another project is held only as soft_preference for the whole project and cites {kind: recipe-export, exportSha256}; only import_recipe writes that source, after reading the export, refusing any field outside its closed form, any value a cut-plan request would refuse and any content that does not hash to its sha256. The export carries no page, path, run, project id, actor or wording, and POST /api/decisions never takes an export source",
         "one active recipe value per key, strength and reach: a second is DECISION_RECIPE_CONFLICT when written and when read, and changing a recipe is a supersession. project_recipe reads only the decisions run, orders by strength and then a Stage over the project, enforces nothing (hard is only read first) and never orders by age; revoking the last value returns a new drawing to the code default",
         "decision focus includes declared upstream reads across retained Stages, with effective instance bindings instead of overridden Type defaults; it does not follow shared inputs into other consumers, include unrelated locks, widen writes or alter decision scope, strength and applicability",
         "a visual review refuses, before any provider call, a frame whose source is not exactly one of the request's source refs; the provider never states which source it saw, the channel binds its answer to the frames it sent",
@@ -5020,7 +5029,9 @@
         "tests/test_nonadjacent_stage_context.py",
         "apps/archflow-studio/api/tests/test_visual_observation.py",
         "apps/archflow-studio/api/tests/test_visual_reviews.py",
-        "apps/archflow-studio/api/tests/test_candidate_admission.py"
+        "apps/archflow-studio/api/tests/test_candidate_admission.py",
+        "apps/archflow-studio/api/tests/test_recipe_export.py",
+        "tests/test_export_drawing_recipe.py"
       ],
       "notes": "CANONICAL_SPINE 2.1 makes this the door live-model authoring re-enters by: typed intent, then record, then runner. clarification.py retired require_grammatical: the same two refusals, in the same words, with the target the agent had just worked out kept instead of thrown away.",
       "files": [
@@ -5058,7 +5069,8 @@
         "apps/archflow-studio/api/archflow_studio_api/transport/decisions.py",
         "apps/archflow-studio/api/archflow_studio_api/application/visual_observation.py",
         "apps/archflow-studio/api/archflow_studio_api/application/visual_reviews.py",
-        "tools/benchmark_visual_observation.py"
+        "tools/benchmark_visual_observation.py",
+        "tools/export_drawing_recipe.py"
       ]
     },
     {
