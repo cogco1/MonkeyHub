@@ -128,9 +128,17 @@ export function treeWords(t: TFunction, tree: GrowthTree | null) {
       : value === "violated" ? t("designTree.check.violatedCount", { count: node.candidate!.blockedBy.length })
         : value === "unchecked" ? t("designTree.check.unchecked") : value === "running" ? t("designTree.check.running") : null;
   };
-  /** A Stage column's header: its S-number and its accepted name; the project start has a name only. */
-  const column = (node: TreeNode): { readonly id: string; readonly name: string } => node.kind === "stage"
-    ? { id: `S${node.stage!.number}`, name: node.stage!.name ?? "" } : { id: "", name: t("designTree.origin") };
+  /**
+   * A column's header. A Stage's column: its S-number and accepted name. The trailing column holds the work
+   * growing towards the next Stage; it gets that Stage's number only when it follows the line's newest Stage,
+   * the one a Stage can be accepted after.
+   */
+  const column = (stage: string | null, after: string | null): { readonly id: string; readonly name: string; readonly next: boolean } => {
+    const node = byId(stage);
+    if (node?.stage) return { id: `S${node.stage.number}`, name: node.stage.name ?? "", next: false };
+    const accept = tree?.accept;
+    return { id: after !== null && after === accept?.lineHeadStage && accept.nextLabel ? accept.nextLabel : "", name: t("designTree.column.next"), next: true };
+  };
   const accept = tree?.accept;
   const scene: SceneWords = {
     current: t("designTree.current"), origin: t("designTree.origin"), name: cardName, pending: pendingText, currentAt: currentAt(),

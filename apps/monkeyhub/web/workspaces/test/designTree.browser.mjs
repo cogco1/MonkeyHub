@@ -287,8 +287,8 @@ try {
       data: element.customData?.tree ?? null })), zoom: state.zoom.value, scrollX: state.scrollX, scrollY: state.scrollY,
       offsetLeft: state.offsetLeft, offsetTop: state.offsetTop };
   });
-  /** A real click on a node's card, where the canvas draws it now. */
-  const clickCanvasNode = async (target, host, id) => {
+  /** A real click on a node's card, where the canvas draws it now; with `reveal: false` the node must already be in view. */
+  const clickCanvasNode = async (target, host, id, { reveal = true } = {}) => {
     // #353: the inspector docks at the right and the canvas gives it room; close it so the canvas has its whole width.
     if (await host.locator(".design-tree-inspector").count()) {
       await target.keyboard.press("Escape");
@@ -310,6 +310,7 @@ try {
     let [x, y] = at(current);
     // A node the view leaves out, or under the column headers, is brought into sight first, the way a viewer pans to it.
     if (x < 24 || x > box.width - 24 || y < 60 || y > box.height - 24) {
+      assert.ok(reveal, `${id} is in view`);
       await target.evaluate(({ x: sceneX, y: sceneY }) => {
         const api = window.__treeApi, state = api.getAppState();
         api.updateScene({ appState: { scrollX: state.width / (2 * state.zoom.value) - sceneX, scrollY: state.height / (2 * state.zoom.value) - sceneY } });
@@ -372,7 +373,32 @@ try {
   assert.equal(view.elements.filter((element) => element.data?.edge === "pending").length, 2, "running and queued work are placeholders");
   assert.equal(view.elements.filter((element) => element.data?.role === "summary" && element.data.node !== "current").length, 0, "no summaries at this distance");
   assert.ok(!view.elements.some((element) => /run-|rev-|project:\/\/|[0-9a-f]{16}/.test(element.text ?? "")), "no ids or hashes on the canvas");
+  // #353: each Stage heads a column of the options that led to it; Current's work trails them, towards S3.
+  const headers = () => surface.locator(".design-tree-column").evaluateAll((columns) => columns.map((column) =>
+    [...column.querySelectorAll(".design-tree-column__id, .design-tree-column__name, .design-tree-column__count")].map((part) => part.textContent).join(" ")));
+  assert.deepEqual(await headers(), ["S0 Site", "S1 Massing 5", "S2 Layout 4", "S3 Next Stage 1"]);
   await shoot(tab, "02-tree-fit");
+  // Panned until a column's left edge has passed the canvas's, its header's words stay pinned at the left.
+  const canvasBox = await surface.locator(".design-tree__canvas").boundingBox();
+  const massingColumn = surface.locator(`.design-tree-column[data-node="${S1}"]`);
+  const panBy = (await massingColumn.boundingBox()).x - canvasBox.x + 120;
+  await tab.evaluate((pixels) => {
+    const api = window.__treeApi, state = api.getAppState();
+    api.updateScene({ appState: { scrollX: state.scrollX - pixels / state.zoom.value } });
+  }, panBy);
+  await tab.waitForFunction((left) => {
+    const column = [...document.querySelectorAll(".design-tree-column")].find((element) => element.querySelector(".design-tree-column__name")?.textContent === "Massing");
+    return column && column.getBoundingClientRect().x < left - 100;
+  }, canvasBox.x);
+  const pinned = await massingColumn.locator(".design-tree-column__title").boundingBox();
+  assert.ok(Math.abs(pinned.x - (canvasBox.x + 10)) < 1.5 && pinned.width > 40, `the Massing header stays in view: ${JSON.stringify(pinned)}`);
+  assert.equal(await massingColumn.locator(".design-tree-column__name").isVisible(), true);
+  await shoot(tab, "02c-header-pinned");
+  await bar.getByRole("button", { name: "Fit", exact: true }).click();
+  await tab.waitForFunction((left) => {
+    const box = [...document.querySelectorAll(".design-tree-column")][1]?.getBoundingClientRect();
+    return box && box.x > left;
+  }, canvasBox.x);
 
   // #337: the canvas draws in the Hub's tokens and follows the theme and the interface
   // style; Excalidraw's dark-theme inversion is not applied to it.
@@ -465,6 +491,11 @@ try {
   assert.deepEqual(fixture.workingDraft(), beforeArchive, "archive, filtering and restore leave Working Head unchanged");
   writes.length = 0;
   await shoot(tab, "05-side-card");
+  // The header strip takes its own clicks: nothing under it is picked, and the open inspector stays.
+  const strip = await surface.locator(".design-tree__strip").boundingBox();
+  await tab.mouse.click(strip.x + strip.width / 3, strip.y + strip.height / 2);
+  await tab.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  assert.equal(await surface.locator('.design-tree-inspector[data-node="candidate:run-massing-d"]').count(), 1, "a click on the headers leaves the selection");
   card = await clickNode(S1);
   assert.match(await card.innerText(), /Stage · accepted checkpoint/);
   assert.equal(await card.locator('[data-action="accept"]').count(), 0, "a Stage cannot be accepted again");
@@ -473,8 +504,9 @@ try {
   assert.match(await card.innerText(), /Endorsed by\s*Review Architect/);
   writes.length = 0;
   card = await clickNode("candidate:run-facade-c");
-  assert.match(await card.locator(".design-tree-inspector__warning").innerText(), /review checks were still open \(1\)/,
-    "an option admitted with review checks open says so in its inspector");
+  assert.match(await card.locator(".design-tree-inspector__warning").innerText(), /review checks did not pass \(1\)/,
+    "an option admitted although review checks did not pass says so in its inspector");
+  assert.match(await card.innerText(), /Checks\s*1 violated/, "its Checks row says what its red bar shows");
   assert.equal(await surface.locator(".design-tree__notice").count(), 0, "this runtime reports admitted options");
   card = await clickNode("current");
   assert.equal(await card.locator('[data-action="accept"]').count(), 1, "Current offers Accept");
@@ -517,7 +549,10 @@ try {
   await toast.filter({ hasText: "Current is now “D · Terraced wedge”" }).waitFor();
   await toast.hover();
   assert.equal((await toast.innerText()).replace(/\s+/g, " ").trim(), "Current is now “D · Terraced wedge” · Undo");
-  assert.equal(await card.locator(".design-tree-inspector__outcome").count(), 0, "the toast is the one confirmation");
+  // The toast is the one confirmation: the inspector's refusal is gone and says nothing in its place.
+  assert.equal(await toast.count(), 1, "one toast confirms the Continue");
+  await card.locator('[role="alert"]').waitFor({ state: "detached" });
+  assert.equal(await card.getByText(/Current is now|Model edits in Modeling/).count(), 0, "the inspector repeats neither the refusal nor the toast");
   assert.equal(recorded, 1, "Record edits and continue records the edits once, then continues");
   assert.deepEqual(writes.at(-1), { method: "PUT", name: "/api/working-draft",
     body: { projectId: PROJECT, runId: "run-massing-d", baseRevisionSha256: "rev-0001", branchId: null } });
@@ -644,6 +679,24 @@ try {
   await tab.keyboard.press("Enter");
   await surface.locator(".design-tree-inspector").waitFor();
   await shoot(tab, "10-list");
+  // #353: docked beside the list, the inspector leaves focus on the row. Narrower than 560 px it covers the list,
+  // so focus goes into it, and back to the row when it closes.
+  const lastRow = await items.last().getAttribute("data-node");
+  assert.equal(await tab.evaluate(() => document.activeElement?.dataset.node), lastRow);
+  await tab.keyboard.press("Escape");
+  await surface.locator(".design-tree-inspector").waitFor({ state: "detached" });
+  await tab.setViewportSize({ width: 520, height: 900 });
+  await items.last().focus();
+  await tab.keyboard.press("Enter");
+  const overlay = surface.locator(".design-tree-inspector");
+  await overlay.waitFor();
+  assert.equal(await overlay.evaluate((element) => getComputedStyle(element).position), "absolute", "under 560 px the inspector covers the list");
+  await tab.waitForFunction(() => document.activeElement?.classList.contains("design-tree-inspector"));
+  await shoot(tab, "10b-list-overlay");
+  await tab.keyboard.press("Escape");
+  await overlay.waitFor({ state: "detached" });
+  await tab.waitForFunction((row) => document.activeElement?.dataset.node === row, lastRow);
+  await tab.setViewportSize({ width: 1440, height: 900 });
   await bar.getByRole("button", { name: "Canvas", exact: true }).click();
   await tab.waitForFunction(() => window.__treeApi?.getSceneElements().length > 20);
 
@@ -756,7 +809,16 @@ try {
   await hubPage.waitForFunction(() => document.querySelector('.chat-project-workspace:not([hidden]) .design-tree__canvas')?.dataset.level === "mid");
   assert.equal((await scene(hubPage)).elements.some((element) => element.data?.node === "candidate:run-massing-a"), false,
     "a fresh workspace read keeps the restored rejection out of the default projection");
-  const hubCard = await clickCanvasNode(hubPage, hubSurface, "current");
+  // A narrow panel opens on the growing tip: Current's card is in view, below the headers, before anything moves it.
+  const tip = await hubPage.evaluate(() => {
+    const api = window.__treeApi, state = api.getAppState(), zoom = state.zoom.value;
+    const card = api.getSceneElements().find((element) => element.id === "current:card");
+    const canvas = document.querySelector(".chat-project-workspace:not([hidden]) .design-tree__canvas").getBoundingClientRect();
+    return { left: (card.x + state.scrollX) * zoom, right: (card.x + card.width + state.scrollX) * zoom, top: (card.y + state.scrollY) * zoom,
+      bottom: (card.y + card.height + state.scrollY) * zoom, width: canvas.width, height: canvas.height };
+  });
+  assert.ok(tip.left >= 0 && tip.right <= tip.width && tip.top >= 36 && tip.bottom <= tip.height, `Current is in view: ${JSON.stringify(tip)}`);
+  const hubCard = await clickCanvasNode(hubPage, hubSurface, "current", { reveal: false });
   assert.match(await hubCard.innerText(), /Current is exactly S3/, "a narrow panel opens on the growing tip, and its nodes answer clicks");
   await shoot(hubPage, "12-hub-rail-tree");
   // Closed, the inspector gives this narrow Hub panel its whole width back.

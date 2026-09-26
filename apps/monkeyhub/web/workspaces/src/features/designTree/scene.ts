@@ -99,7 +99,7 @@ export interface TreeElementData {
 
 const LINE_HEIGHT = 1.2;
 
-const WIDE = /[ᄀ-ᅟ⺀-꓏가-힣豈-﫿︰-﹏＀-｠￠-￦]/u;
+const WIDE = /[\u1100-\u115F\u2E80-\uA4CF\uAC00-\uD7A3\uF900-\uFAFF\uFE30-\uFE4F\uFF00-\uFF60\uFFE0-\uFFE6]/u;
 /** A generous estimate of a line's width: a clipped name must never make Excalidraw wrap. */
 export function textWidth(value: string, size: number): number {
   let width = 0;
@@ -119,7 +119,7 @@ export function clip(value: string, size: number, width: number): string {
   return `${out.trimEnd()}…`;
 }
 
-const TOKEN = /[ᄀ-ᅟ⺀-꓏가-힣豈-﫿︰-﹏＀-｠￠-￦]|[^\sᄀ-ᅟ⺀-꓏가-힣豈-﫿︰-﹏＀-｠￠-￦]+|\s+/gu;
+const TOKEN = /[\u1100-\u115F\u2E80-\uA4CF\uAC00-\uD7A3\uF900-\uFAFF\uFE30-\uFE4F\uFF00-\uFF60\uFFE0-\uFFE6]|[^\s\u1100-\u115F\u2E80-\uA4CF\uAC00-\uD7A3\uF900-\uFAFF\uFE30-\uFE4F\uFF00-\uFF60\uFFE0-\uFFE6]+|\s+/gu;
 
 /** Up to `lines` lines: words for Latin text, characters for CJK; what does not fit ends in an ellipsis. */
 export function wrap(value: string, size: number, width: number, lines: number): string[] {
@@ -150,6 +150,8 @@ type Style = Partial<{ strokeColor: string; backgroundColor: string; strokeWidth
 /** Inside a card: the status bar at its left edge, then the words. */
 const BAR = { inset: 6, width: 3.5 };
 const PAD = { left: 16, right: 10, top: 6 };
+/** The review mark in an option card's top-right corner. */
+const MARK = { inset: 14, top: 5, size: 14 };
 
 export function buildTreeScene(tree: GrowthTree, layout: GrowthLayout, options: SceneOptions): TreeScene {
   const { level, words, fontFamily } = options;
@@ -314,22 +316,26 @@ export function buildTreeScene(tree: GrowthTree, layout: GrowthLayout, options: 
     const bar = barColour(node);
     if (bar) rect(`${node.id}:bar`, { x: card.x + BAR.inset, y: card.y + BAR.inset + 2, width: BAR.width, height: card.height - (BAR.inset + 2) * 2 },
       { backgroundColor: bar, strokeColor: "transparent", opacity }, data("status", { node: node.id }), false);
-    // Admitted for comparison with review checks still open (#294 Q2): a mark beside the bar's colour, explained in
-    // the inspector. The words keep clear of its corner.
+    // Admitted for comparison although review checks did not pass (#294 Q2): a mark beside the bar's colour,
+    // explained in the inspector, in the card's top-right corner.
     const marked = Boolean(node.candidate?.blockedBy.length);
-    if (marked) text(`${node.id}:review`, card.x + card.width - 14, card.y + 5, "!", 14, VIOLATED, data("status", { node: node.id }), opacity);
+    if (marked) text(`${node.id}:review`, card.x + card.width - MARK.inset, card.y + MARK.top, "!", MARK.size, VIOLATED, data("status", { node: node.id }), opacity);
     const nameSize = close ? 13 : 12 * k, small = close ? 11.5 : 11 * s;
     // The letter keeps a column of its own; a lone option has none and its name takes the width.
     const letter = pending ? null : node.letter;
     const letterSize = nameSize * 1.2;
     const left = card.x + PAD.left + (letter ? letterSize * 0.72 + 6 : 0);
-    const width = card.x + card.width - (marked ? 18 : PAD.right) - left;
+    const width = card.x + card.width - PAD.right - left;
     const rows: { role: "letter" | "name" | "summary" | "status"; value: string; size: number; color: string }[] = [];
     if (pending) rows.push({ role: "letter", value: clip(words.pending(node.pending!.status), small, width), size: small, color: FAINT });
-    // A name takes two lines where the card has the room for them.
+    // A name takes two lines where the card has the room for them. Only its first line can reach the review
+    // mark's corner; one long enough to is wrapped short of it.
     const room = card.height - PAD.top * 2 - rows.reduce((sum, row) => sum + row.size * LINE_HEIGHT, 0);
     const lines = !close && 2 * nameSize * LINE_HEIGHT <= room ? 2 : 1;
-    for (const value of wrap(words.name(node), nameSize, width, lines)) rows.push({ role: "name", value, size: nameSize, color: INK });
+    const clearOfMark = card.x + card.width - MARK.inset - 4 - left;
+    let names = wrap(words.name(node), nameSize, width, lines);
+    if (marked && names.length > 0 && textWidth(names[0], nameSize) > clearOfMark) names = wrap(words.name(node), nameSize, clearOfMark, lines);
+    for (const value of names) rows.push({ role: "name", value, size: nameSize, color: INK });
     if (close) {
       // A running line's summary is its progress detail.
       if (node.summary) rows.push({ role: "summary", value: clip(node.summary, small, width), size: small, color: INK_2 });

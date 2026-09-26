@@ -94,18 +94,37 @@ function planarProblems(tree: Tree, drawing: Drawing): string[] {
     const [x, y] = edge.points.at(-1)!;
     if (Math.abs(x - target.card.x) > 1e-6 || Math.abs(y - target.y) > 1e-6) problems.push(`edge to ${edge.to} misses its card`);
   }
-  // #353: the root and each Stage on the trunk open a column; the columns meet edge to edge, left to right,
-  // and every node lies inside the one it is drawn in, so a header names everything under it.
-  const opened = tree.trunk.filter((id, index) => index === 0 || tree.nodes.get(id)!.kind === "stage");
-  if (drawing.columns.map((column) => column.node).join("|") !== opened.join("|")) problems.push("the columns are not the trunk's Stages");
+  // #353: each Stage on the trunk heads a column that holds what led to it, and stands at its right end; what
+  // grows past the last Stage, Current among it, stands in a trailing column. The columns meet edge to edge, left
+  // to right, and every node lies inside its own, so a header names everything under it.
+  const isStage = (id: string) => tree.nodes.get(id)!.kind === "stage";
+  const tip = tree.trunk.at(-1)!;
+  const trailing = !isStage(tip) || (tree.children.get(tip) ?? []).length > 0;
+  const heads = [...tree.trunk.filter(isStage), ...(trailing ? [null] : [])];
+  if (JSON.stringify(drawing.columns.map((column) => column.node)) !== JSON.stringify(heads)) problems.push("the columns are not the trunk's Stages");
   drawing.columns.forEach((column, index) => {
     const next = drawing.columns[index + 1];
     if (!(column.width > 0) || (next && Math.abs(column.x + column.width - next.x) > 1e-6)) problems.push(`column ${index} does not meet the next`);
   });
+  const columnOf = (id: string) => drawing.nodes.get(id)!.column;
+  // A trunk node stands in the column of the next Stage it leads to: as many columns in as Stages come before it.
+  tree.trunk.forEach((id, index) => {
+    if (columnOf(id) !== tree.trunk.slice(0, index).filter(isStage).length) problems.push(`${id} stands in the wrong column`);
+  });
+  // Off the trunk, a node stands with what it grew towards: past a Stage it grew from, beside any other trunk node.
+  for (const id of drawing.nodes.keys()) {
+    if (onTrunk.has(id)) continue;
+    let anchor = tree.nodes.get(id)!.parent;
+    while (anchor !== null && !onTrunk.has(anchor)) anchor = tree.nodes.get(anchor)!.parent;
+    if (anchor === null || columnOf(id) !== columnOf(anchor) + (isStage(anchor) ? 1 : 0)) problems.push(`${id} stands in the wrong column`);
+  }
   for (const node of drawing.nodes.values()) {
     const column = drawing.columns[node.column];
     const box = node.footprint;
     if (!column || box.x < column.x || box.x + box.width > column.x + column.width) problems.push(`${node.id} leaves its column`);
+    // A column's Stage stands at its right end, clear of everything else the column holds.
+    const head = column?.node ? drawing.nodes.get(column.node)! : null;
+    if (head && head.id !== node.id && box.x + box.width > head.card.x - 1e-6) problems.push(`${node.id} reaches past ${head.id}`);
   }
   const count = (kind: string) => [...tree.nodes.values()].filter((node) => node.kind === kind).length;
   if (drawing.columns.reduce((sum, column) => sum + column.options, 0) !== count("candidate") ||
@@ -484,7 +503,7 @@ test("the scene draws three levels of detail and hit targets for every node", as
   }
 });
 
-test("each Stage opens a column, the options not taken hang under the chosen one, and a card's bar says its checks (#353)", async (t) => {
+test("each Stage heads a column of what led to it, Current's work trails them, and a card's bar says its checks (#353)", async (t) => {
   const api = await harness(t);
   const fixture = api.createDesignTreeFixture();
   const source = sourceOf(fixture);
@@ -493,13 +512,18 @@ test("each Stage opens a column, the options not taken hang under the chosen one
   const drawing = api.layoutGrowthTree(tree);
   const stage = (run: string) => `stage:${fixture.state.stages.find((row) => row.run === run)!.ref}`;
   assert.deepEqual(planarProblems(tree, drawing), []);
-  assert.deepEqual(drawing.columns.map((column) => column.node), [stage("run-site"), stage("run-s1-massing"), stage("run-s2-layout")]);
-  assert.deepEqual(drawing.columns.map((column) => [column.options, column.pending]), [[5, 0], [4, 0], [1, 2]]);
-  // Massing C stays on the trunk; A, B, D and E hang under it, level with it, in letter order.
+  // S0 holds itself; S1 the Massing Study that led to it; S2 the Facade Study; then Current with the Entrance
+  // option and the running work, which grow towards S3.
+  assert.deepEqual(drawing.columns.map((column) => column.node), [stage("run-site"), stage("run-s1-massing"), stage("run-s2-layout"), null]);
+  assert.deepEqual(drawing.columns.map((column) => [column.options, column.pending]), [[0, 0], [5, 0], [4, 0], [1, 2]]);
+  assert.equal(drawing.nodes.get("current")!.column, 3);
+  assert.equal(drawing.columns[1].start, drawing.nodes.get("candidate:run-massing-c")!.x, "a header lines up with its column's first card");
+  // Massing C stays on the trunk; A, B, D and E hang under it, level with it, in letter order, before S1.
   const chosen = drawing.nodes.get("candidate:run-massing-c")!;
   const hung = ["a", "b", "d", "e"].map((letter) => drawing.nodes.get(`candidate:run-massing-${letter}`)!);
-  assert.ok(hung.every((node) => node.x === chosen.x && node.y > chosen.y && node.column === 0));
+  assert.ok(hung.every((node) => node.x === chosen.x && node.y > chosen.y && node.column === 1));
   assert.deepEqual(hung.map((node) => node.y), hung.map((node) => node.y).sort((a, b) => a - b));
+  assert.ok(drawing.nodes.get(stage("run-s1-massing"))!.x > chosen.x + chosen.card.width);
   // Current stands level with the running work that waits beside it.
   assert.equal(drawing.nodes.get("pending:running:job-entrance-b")!.x, drawing.nodes.get("current")!.x);
   // A twig that was continued hands its row on: Facade A + 2 edits stands level with Facade A.
@@ -511,7 +535,16 @@ test("each Stage opens a column, the options not taken hang under the chosen one
   const en = api.treeWords(translator(messagesEn) as never, tree), zh = api.treeWords(translator(messagesZhCN) as never, tree);
   assert.deepEqual([en.check(node("candidate:run-facade-c")), zh.check(node("candidate:run-facade-c"))], ["1 violated", "1 项违反"]);
   assert.deepEqual([en.check(node("candidate:run-facade-b")), zh.check(node("candidate:run-massing-e"))], ["Passed", "未查"]);
-  assert.deepEqual(en.column(node(stage("run-s1-massing"))), { id: "S1", name: "Massing" });
+  assert.deepEqual(en.column(stage("run-s1-massing"), stage("run-site")), { id: "S1", name: "Massing", next: false });
+  // The trailing column works towards S3, the Stage Accept would add after the line's newest.
+  assert.deepEqual([en.column(null, stage("run-s2-layout")), zh.column(null, stage("run-s2-layout"))],
+    [{ id: "S3", name: "Next Stage", next: true }, { id: "S3", name: "下一阶段", next: true }]);
+  // Continued from an older Stage, the next Stage there is not S3: the header names no number.
+  fixture.selectWorkingDraft({ projectId: "riverside-library", runId: "run-massing-d", baseRevisionSha256: fixture.workingDraft().revisionSha256 ?? null });
+  const rerooted = api.buildGrowthTree(sourceOf(fixture));
+  const rerootedDrawing = api.layoutGrowthTree(rerooted);
+  assert.deepEqual(rerootedDrawing.columns.map((column) => column.node), [stage("run-site"), null]);
+  assert.deepEqual(api.treeWords(translator(messagesEn) as never, rerooted).column(null, stage("run-site")), { id: "", name: "Next Stage", next: true });
   assert.equal(zh.scene.name(node("candidate:run-massing-c")), "Stepped courtyard block", "the card's letter stands beside its name, not in it");
 
   const palette = Object.fromEntries(Object.keys(api.LIGHT_TREE_PALETTE).map((name, index) =>
@@ -521,18 +554,34 @@ test("each Stage opens a column, the options not taken hang under the chosen one
   assert.deepEqual(["candidate:run-facade-b", "candidate:run-facade-c", "candidate:run-massing-e", "pending:running:job-entrance-b"].map(bar),
     [palette.held, palette.violated, palette.unchecked, palette.running]);
   assert.equal(bar("current"), undefined, "Stages and Current carry no status bar");
-  // Every word on a card stays inside it, at every text scale the middle and close levels use.
+  // Every word on a card stays inside it, and clear of its review mark, at every text scale the middle and close
+  // levels use, in both languages.
+  type Text = { id: string; type: string; x: number; y: number; text?: string; fontSize?: number; customData: { tree: { node?: string; role: string } } };
   const levels = (["mid", "close"] as const).flatMap((level) => (level === "mid" ? [1, 1.25, 1.5, 1.75, 2] : [1])
-    .map((textScale) => api.buildTreeScene(tree, drawing, { level, textScale, selected: null, fontFamily: 2, words: zh.scene, palette })));
-  for (const element of [scene, ...levels].flatMap((result) => result.skeletons) as unknown as
-    { type: string; x: number; y: number; text?: string; fontSize?: number; customData: { tree: { node?: string; role: string } } }[]) {
-    const placed = element.customData.tree.node ? drawing.nodes.get(element.customData.tree.node) : undefined;
-    if (element.type !== "text" || !placed || element.customData.tree.role === "fork") continue;
+    .flatMap((textScale) => [en, zh].map((words) => api.buildTreeScene(tree, drawing, { level, textScale, selected: null, fontFamily: 2, words: words.scene, palette }))));
+  const box = (element: Text) => {
     const lines = element.text!.split("\n");
-    const widest = Math.max(...lines.map((line) => api.textWidth(line, element.fontSize!)));
-    assert.ok(element.x >= placed.card.x && element.x + widest <= placed.card.x + placed.card.width + 1e-6 && element.y >= placed.card.y
-      && element.y + lines.length * element.fontSize! * 1.2 <= placed.card.y + placed.card.height + 1e-6, `${element.customData.tree.node}: "${element.text}" leaves its card`);
+    return { x: element.x, y: element.y, right: element.x + Math.max(...lines.map((line) => api.textWidth(line, element.fontSize!))),
+      bottom: element.y + lines.length * element.fontSize! * 1.2 };
+  };
+  for (const result of [scene, ...levels]) {
+    const texts = (result.skeletons as unknown as Text[]).filter((element) => element.type === "text" && element.customData.tree.role !== "fork");
+    const marks = new Map(texts.filter((element) => element.id.endsWith(":review")).map((element) => [element.customData.tree.node!, box(element)]));
+    for (const element of texts) {
+      const placed = element.customData.tree.node ? drawing.nodes.get(element.customData.tree.node) : undefined;
+      if (!placed) continue;
+      const own = box(element);
+      assert.ok(own.x >= placed.card.x && own.right <= placed.card.x + placed.card.width + 1e-6 && own.y >= placed.card.y
+        && own.bottom <= placed.card.y + placed.card.height + 1e-6, `${placed.id}: "${element.text}" leaves its card`);
+      const mark = marks.get(placed.id);
+      if (mark && !element.id.endsWith(":review")) assert.ok(own.right <= mark.x || own.x >= mark.right || own.bottom <= mark.y || own.y >= mark.bottom,
+        `${placed.id}: "${element.text}" runs into its review mark`);
+    }
   }
+  assert.ok(levels.some((result) => (result.skeletons as unknown as Text[]).some((element) => element.id === "candidate:run-facade-c:review")));
+  // A long first line is wrapped short of the mark; the rest of the name keeps the card's width.
+  const facadeC = (scene.skeletons as unknown as Text[]).filter((element) => element.id.startsWith("candidate:run-facade-c:name")).map((element) => element.text);
+  assert.deepEqual(facadeC, ["Perforated", "terracotta screen"]);
 });
 
 test("text fits its box, and a turned rectangle keeps its own hit area", async (t) => {
@@ -544,6 +593,11 @@ test("text fits its box, and a turned rectangle keeps its own hit area", async (
   assert.ok(rows[1].endsWith("…"));
   assert.ok(rows.every((row) => api.textWidth(row, 12) <= 90));
   assert.deepEqual(api.wrap("九格环庭", 12, 30, 2), ["九格", "环庭"]);
+  // Only CJK, Hangul and full-width forms count double. The compatibility ideographs start at U+F900; the ranges
+  // are written as escapes, so no editor's normalisation can move that start to U+8C48 and widen the rest.
+  assert.deepEqual([api.textWidth("\uF900", 10), api.textWidth("\uFAFF", 10), api.textWidth("\uFF21", 10)], [10, 10, 10]);
+  assert.ok(api.textWidth("\uE000", 10) < 10 && api.textWidth("\uA500", 10) < 10, "private use and Vai are not measured as CJK");
+  assert.deepEqual(api.wrap("\uA500\uA501 \uE000", 10, 100, 1), ["\uA500\uA501 \uE000"], "and they wrap as words");
   const box = { x: 0, y: 0, width: 100, height: 20, angle: Math.PI / 2 };
   assert.equal(api.sceneBoxContains(box, { x: 50, y: 50 }), true, "rotated about its centre, the box stands upright");
   assert.equal(api.sceneBoxContains(box, { x: 90, y: 10 }), false);

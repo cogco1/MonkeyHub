@@ -1,10 +1,13 @@
 /**
  * A planar left-to-right drawing of the growth tree, one column per Stage.
  *
- * The trunk runs along y = 0 through the Working Head's lineage, and each
- * Stage on it opens a column of its own that nothing drawn before it reaches
- * into, so a column's header names everything under it (#353). At each point
- * the trunk passes, the options not taken hang below it as a stack of cards,
+ * The trunk runs along y = 0 through the Working Head's lineage. Each Stage
+ * on it heads a column that holds what led to it: the options its Study
+ * weighed, the chosen one on the trunk, and the Stage itself at the column's
+ * right end, clear of everything else in it (#353). What grows from a Stage
+ * opens the next column, and Current with the work growing towards the next
+ * Stage stands in a trailing column after the last one. At each point the
+ * trunk passes, the options not taken hang below it as a stack of cards,
  * level with the option that was chosen, whose Study comes first. Each leaves
  * on its own elbow, the farthest leftmost, so the elbows nest. A side branch
  * grows along its own row through whatever was continued there, and its own
@@ -69,13 +72,13 @@ export interface Fork {
   readonly region: Box;
 }
 
-/** One Stage on the trunk and everything drawn for it: the band its header names, rule to rule. */
+/** One Stage on the trunk and what led to it: the band its header names, rule to rule. */
 export interface StageColumn {
-  /** The Stage that opens it, or the project start. */
-  readonly node: string;
+  /** The Stage at its right end that heads it; null for the trailing column, where Current works towards the next. */
+  readonly node: string | null;
   readonly x: number;
   readonly width: number;
-  /** Where its first card starts; the header lines up with it. */
+  /** Where its first card on the trunk starts; the header lines up with it. */
   readonly start: number;
   readonly options: number;
   readonly pending: number;
@@ -87,7 +90,7 @@ export interface GrowthLayout {
   /** The trunk as one polyline through its nodes' centres, left to right. */
   readonly trunk: readonly (readonly [number, number])[];
   readonly forks: readonly Fork[];
-  /** Left to right, one per Stage on the trunk; the first is the root's. */
+  /** Left to right, one per Stage on the trunk, then the trailing column when anything grows past the last. */
   readonly columns: readonly StageColumn[];
   readonly bounds: Box;
 }
@@ -111,8 +114,10 @@ export const GEOMETRY = {
   elbow: 14,
   /** Between a row's cards and the first card hung below them, and between stacked cards. */
   rowGap: 20,
-  /** Between the last card of one Stage's column and the next Stage. */
+  /** From a Stage to the first card after it: the rule between their columns stands halfway. */
   columnGap: 56,
+  /** The narrowest a column is drawn, so its header reads even when it holds one Stage alone. */
+  minColumn: 150,
 } as const;
 
 const visual = (kind: TreeNodeKind) => kind === "stage" ? GEOMETRY.stage : kind === "current" ? GEOMETRY.current
@@ -124,8 +129,12 @@ export function layoutGrowthTree(tree: GrowthTree): GrowthLayout {
   const edges: LayoutEdge[] = [];
   const trunk: [number, number][] = [];
   const forks: Fork[] = [];
-  const opened: { node: string; start: number }[] = [];
-  let column = 0, far = -Infinity;
+  // Column by column: the Stage heading each (null until one closes it), the rules between them, and
+  // where each one's trunk starts. Column 0 begins half a gap left of the root.
+  const heads: (string | null)[] = [null];
+  const rules: number[] = [];
+  const starts: number[] = [];
+  let column = 0, far = -Infinity, columnLeft = -GEOMETRY.columnGap / 2;
   const kids = (id: string) => tree.children.get(id) ?? [];
   const kindOf = (id: string) => tree.nodes.get(id)!.kind;
   const weights = new Map<string, number>();
@@ -197,8 +206,8 @@ export function layoutGrowthTree(tree: GrowthTree): GrowthLayout {
    * of. Returns the right edge of everything the row placed.
    */
   function lay(path: readonly string[], x0: number, y: number, side: Side, fromTrunk: boolean, clear = -Infinity): number {
-    // A stack hangs below the tallest card its row carries from there to the end of the column, so no
-    // later card on the row reaches into it: Current's column hangs lower than the others.
+    // A stack hangs below the tallest card its row carries from there up to the next Stage, which stands clear
+    // to the right of it, so no card level with the stack reaches into it: Current's column hangs lower.
     const halfFrom = (index: number) => {
       if (side !== 0) return GEOMETRY.card.height / 2;
       let half = 0;
@@ -207,20 +216,29 @@ export function layoutGrowthTree(tree: GrowthTree): GrowthLayout {
     };
     let x = x0, previous: Box | null = null, right = x0;
     path.forEach((id, index) => {
-      if (side === 0 && index > 0 && kindOf(id) === "stage") {
-        // A Stage on the trunk opens the next column, clear of everything drawn before it.
-        x = Math.max(x, far + GEOMETRY.columnGap);
-        column += 1;
-        opened.push({ node: id, start: x });
-      }
+      // A Stage on the trunk closes the column of what led to it, right of everything the column holds.
+      const closes = side === 0 && kindOf(id) === "stage";
+      if (closes && index > 0) x = Math.max(x, far + GEOMETRY.gap);
+      if (side === 0 && starts[column] === undefined) starts[column] = x;
       const role: NodeRole = side === 0 ? "trunk" : index === 0 ? (fromTrunk ? "twig" : "option") : "branch";
       const card = place(id, x, y, side, role, side !== 0 && !(fromTrunk && index === 0));
+      if (closes) heads[column] = id;
       if (side === 0) trunk.push([x + card.width / 2, y]);
       else if (previous) edges.push({ kind: "branch", from: path[index - 1], to: id, points: [[previous.x + previous.width, y], [x, y]] });
       right = Math.max(right, card.x + card.width);
       const next = path[index + 1];
       const groups = sideGroups(id, next);
       const members = groups.flatMap((group) => group.members);
+      // What grows from a Stage leads to the next one: it opens the next column, after a rule halfway to it.
+      let rule: number | null = null;
+      if (closes && (next !== undefined || members.length > 0)) {
+        rule = Math.max(card.x + card.width + GEOMETRY.columnGap / 2, columnLeft + GEOMETRY.minColumn);
+        rules.push(rule);
+        heads.push(null);
+        columnLeft = rule;
+        column += 1;
+        clear = Math.max(clear, rule);
+      }
       // The last point of a side row hands the row on to its first option; the rest hang below.
       const level = side !== 0 && next === undefined ? members[0] ?? null : null;
       const hung = members.filter((member) => member !== level);
@@ -266,26 +284,22 @@ export function layoutGrowthTree(tree: GrowthTree): GrowthLayout {
           options, continued, pending, region: boxOf([id, ...order.slice(start)]) });
       }
       previous = card;
-      // The next point stands level with the options it was chosen from.
-      x = Math.max(x + card.width + GEOMETRY.gap, stack ?? -Infinity);
+      // The next point stands level with the options it was chosen from, and clear of a rule.
+      x = Math.max(x + card.width + GEOMETRY.gap, stack ?? -Infinity, rule === null ? -Infinity : rule + GEOMETRY.columnGap / 2);
     });
     return right;
   }
 
-  if (tree.trunk.length) opened.push({ node: tree.trunk[0], start: 0 });
   lay(tree.trunk, 0, 0, 0, false);
 
-  // Each column reaches halfway across the gap to its neighbours; the rule between them stands there.
-  const bands = opened.map((open, index) => {
+  // A column runs rule to rule; the last reaches half a gap past what it holds.
+  const columns: StageColumn[] = heads.map((node, index) => {
     const ids = order.filter((id) => placed.get(id)!.column === index);
     const box = boxOf(ids);
-    return { ...open, ids, left: box.x, right: box.x + box.width };
-  });
-  const columns: StageColumn[] = bands.map((band, index) => {
-    const left = index === 0 ? band.left - GEOMETRY.columnGap / 2 : (bands[index - 1].right + band.left) / 2;
-    const right = index === bands.length - 1 ? band.right + GEOMETRY.columnGap / 2 : (band.right + bands[index + 1].left) / 2;
-    return { node: band.node, x: left, width: right - left, start: band.start,
-      options: band.ids.filter((id) => kindOf(id) === "candidate").length, pending: band.ids.filter((id) => kindOf(id) === "pending").length };
+    const left = index === 0 ? Math.min(box.x, 0) - GEOMETRY.columnGap / 2 : rules[index - 1];
+    const right = index < rules.length ? rules[index] : Math.max(box.x + box.width + GEOMETRY.columnGap / 2, left + GEOMETRY.minColumn);
+    return { node, x: left, width: right - left, start: starts[index] ?? box.x,
+      options: ids.filter((id) => kindOf(id) === "candidate").length, pending: ids.filter((id) => kindOf(id) === "pending").length };
   });
   return { nodes: placed, edges, trunk, forks, columns, bounds: boxOf(order) };
 }

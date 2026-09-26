@@ -66,30 +66,39 @@
 
 /* #353: one column per Stage, between the scene and the canvas's own controls. A column stands where the
    scene puts it, (x + scrollX) * zoom, from the two properties the canvas keeps current; its header stays
-   at the top while the tree pans under it. */
+   at the top while the tree pans under it. The strip behind the headers takes its own clicks. */
 .design-tree__columns { position: absolute; inset: 0; z-index: 3; overflow: hidden; pointer-events: none; }
-.design-tree__columns::before { content: ""; position: absolute; top: 0; right: 0; left: 0; height: 36px; background: var(--ground); }
-.design-tree-column { position: absolute; top: 0; bottom: 0; container-type: inline-size;
+.design-tree__strip { position: absolute; top: 0; right: 0; left: 0; height: 36px; background: var(--ground); pointer-events: auto; }
+.design-tree-column { position: absolute; top: 0; bottom: 0; overflow: hidden; container-type: inline-size;
   left: calc((var(--column-x) + var(--tree-scroll-x, 0)) * var(--tree-zoom, 1) * 1px); width: calc(var(--column-width) * var(--tree-zoom, 1) * 1px); }
 .design-tree-column + .design-tree-column { border-left: 1px solid var(--line); }
-.design-tree-column__head { display: flex; align-items: center; gap: 8px; height: 36px; box-sizing: border-box;
-  padding: 0 12px 0 max(10px, calc(var(--column-inset) * var(--tree-zoom, 1) * 1px)); color: var(--muted); font-size: calc(13px * var(--font-scale, 1));
-  white-space: nowrap; }
+/* The header's words start over the column's first card; once the column's left edge has passed the canvas's,
+   they stay pinned at the canvas's left while any of the column is in view, and shrink with what is left of it. */
+.design-tree-column__head { display: flex; align-items: center; gap: 8px; height: 36px; box-sizing: border-box; overflow: hidden;
+  padding: 0 12px 0 max(10px, calc(var(--column-inset) * var(--tree-zoom, 1) * 1px),
+    calc(10px - (var(--column-x) + var(--tree-scroll-x, 0)) * var(--tree-zoom, 1) * 1px));
+  color: var(--muted); font-size: calc(13px * var(--font-scale, 1)); white-space: nowrap; }
+.design-tree-column__title { display: flex; flex: 0 1 auto; align-items: baseline; gap: 8px; min-width: 0; }
 .design-tree-column__id { flex: none; color: var(--ink); font-family: var(--font-tech); font-weight: 600; }
 .design-tree-column__name { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .design-tree-column__line { flex: 1 1 0; min-width: 12px; height: 1px; background: var(--rule-soft); }
 .design-tree-column__count { flex: none; color: var(--faint); font-family: var(--font-tech); font-size: var(--text-caption); font-variant-numeric: tabular-nums; }
+/* The trailing column works towards a Stage no one has accepted yet. */
+.design-tree-column[data-next] .design-tree-column__id { color: var(--muted); font-weight: 500; }
+.design-tree-column[data-next] .design-tree-column__line { background: none; border-top: 1px dashed var(--rule-soft); }
 @container (max-width: 110px) { .design-tree-column__line, .design-tree-column__count { display: none; } }
 @container (max-width: 56px) { .design-tree-column__name { display: none; } }
 
-/* L5: the status bars' colours, as the canvas draws them, at the status line's right end. */
+/* L5: the status bars' colours and the earlier lines' dashes, as the canvas draws them, at the status line's right end. */
 .design-tree-legend { display: inline-flex; gap: 12px; }
 .design-tree-legend > span { display: inline-flex; align-items: center; gap: 5px; }
-.design-tree-legend > span::before { content: ""; flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--legend); }
+.design-tree-legend > [data-check]::before { content: ""; flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--legend); }
 .design-tree-legend > [data-check="held"] { --legend: var(--held); }
 .design-tree-legend > [data-check="violated"] { --legend: var(--violated); }
 .design-tree-legend > [data-check="unchecked"] { --legend: var(--unchecked); }
 .design-tree-legend > [data-check="running"] { --legend: var(--processing); }
+.design-tree-legend > [data-check="set-aside"] { --legend: var(--rule-soft); }
+.design-tree-legend > [data-line="earlier"]::before { content: ""; flex: none; width: 14px; border-top: 1.5px dashed var(--rule); opacity: .7; }
 
 /* #353: the selected node's inspector, docked at the right edge like Modeling's versions: the canvas gives
    it the room; where the tree is narrower than 560 px it covers the canvas instead. */
@@ -99,6 +108,9 @@
 @container design-tree (max-width: 560px) {
   .design-tree-inspector { position: absolute; top: 0; right: 0; bottom: 0; width: 100%; border-left: 0; }
 }
+/* Focus is moved here when the inspector covers the surface; the ring shows only for the keyboard. */
+.design-tree-inspector:focus { outline: none; }
+.design-tree-inspector:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .design-tree-inspector__head { display: flex; align-items: flex-start; gap: 10px; min-height: 44px; box-sizing: border-box; padding: 10px 10px 10px 16px;
   border-bottom: 1px solid var(--line); }
 .design-tree-inspector__identity { display: grid; flex: 1; gap: 2px; min-width: 0; }

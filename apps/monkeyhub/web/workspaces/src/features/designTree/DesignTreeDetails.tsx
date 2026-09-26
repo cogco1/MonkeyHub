@@ -7,7 +7,7 @@
  * and asks first. A done act confirms itself in the toast beside the chip
  * (FN-5); a refused one says why here.
  */
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { usePreferences } from "../settings/preferences";
 import { useT } from "../../i18n/useT";
 import { CURRENT, type GrowthTree, type TreeNode } from "./model";
@@ -30,6 +30,19 @@ export function DesignTreeDetails({ tree, node, words, data, confirmAccept, onCo
   const t = useT();
   const { language, developerMode } = usePreferences();
   const [confirmClosedFor, setConfirmClosedFor] = useState<string | null>(null);
+  // Where the inspector covers the surface (narrower than 560 px), focus follows it in, so it never stays on a
+  // hidden row or node; closed, focus goes back where it was. Docked beside the tree, focus stays put.
+  const aside = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    const element = aside.current;
+    if (!element || getComputedStyle(element).position !== "absolute") return;
+    const before = document.activeElement instanceof HTMLElement && document.activeElement !== document.body ? document.activeElement : null;
+    element.focus({ preventScroll: true });
+    return () => {
+      const now = document.activeElement;
+      if (before?.isConnected && (now === null || now === document.body || element.contains(now))) before.focus({ preventScroll: true });
+    };
+  }, [node.id]);
   const { recording, failure, recordAndContinue } = useRecordAndContinue(data, onRecordEdits);
   const title = words.title(node);
   const parent = words.byId(node.parent);
@@ -97,7 +110,7 @@ export function DesignTreeDetails({ tree, node, words, data, confirmAccept, onCo
   const source = node.kind === "stage" ? data.source?.history.stages.find(stage => stage.stageRef === node.stage?.ref)?.modelSource
     : node.kind === "candidate" ? data.source?.history.candidates?.find(candidate => candidate.candidateId === node.candidate?.candidateId)?.modelSource
       : node.kind === "current" ? data.source?.workingSource.head?.modelSource : null;
-  return <aside className="design-tree-inspector" aria-label={title} data-node={node.id} data-kind={node.kind}>
+  return <aside ref={aside} tabIndex={-1} className="design-tree-inspector" aria-label={title} data-node={node.id} data-kind={node.kind}>
     <div className="design-tree-inspector__head">
       <div className="design-tree-inspector__identity"><strong>{title}</strong><span>{role}</span></div>
       <button type="button" className="design-tree-inspector__close" aria-label={t("designTree.action.close")} onClick={onClose}>×</button>

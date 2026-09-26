@@ -257,15 +257,20 @@ export default function DesignTreeCanvas({ tree, words, selected, fitRequest, ce
           return level === previous.level && textScale === previous.textScale ? previous : { level, textScale };
         });
       }} />
-    {/* #353: one column per Stage on the trunk, its header at the top of the canvas; the list names the same nodes to assistive technology. */}
+    {/* #353: one column per Stage on the trunk, headed at the top of the canvas, then the trailing column of the work
+        growing towards the next Stage; the list names the same nodes to assistive technology. The header strip takes
+        its own clicks, so nothing under it is picked or deselected through it. */}
     <div className="design-tree__columns" ref={columns} aria-hidden="true">
-      {layout.columns.map((column) => {
-        const head = words.column(tree.nodes.get(column.node)!);
-        return <div key={column.node} className="design-tree-column" data-node={column.node}
+      <div className="design-tree__strip" />
+      {layout.columns.map((column, index) => {
+        const head = words.column(column.node, layout.columns[index - 1]?.node ?? null);
+        return <div key={column.node ?? "next"} className="design-tree-column" data-node={column.node ?? undefined} data-next={head.next || undefined}
           style={{ "--column-x": column.x, "--column-width": column.width, "--column-inset": column.start - column.x } as CSSProperties}>
           <div className="design-tree-column__head">
-            {head.id && <span className="design-tree-column__id">{head.id}</span>}
-            {head.name && <span className="design-tree-column__name">{head.name}</span>}
+            <span className="design-tree-column__title">
+              {head.id && <span className="design-tree-column__id">{head.id}</span>}
+              {head.name && <span className="design-tree-column__name">{head.name}</span>}
+            </span>
             <span className="design-tree-column__line" />
             {column.options > 0 && <span className="design-tree-column__count">{column.options}</span>}
           </div>
