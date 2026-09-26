@@ -15,8 +15,8 @@
         "tools.devctl"
       ],
       "write_scope": [
-        ".gitignore",
         ".github/pull_request_template.md",
+        ".gitignore",
         "AGENTS.md",
         "CONTRIBUTING.md",
         "README.md",
@@ -25,11 +25,13 @@
         "docs/CANONICAL_SPINE.md",
         "docs/DRAWING_V0_AUDIT.md",
         "docs/DYNAMIC_MAP.md",
+        "docs/REPO_LAYOUT.md",
         "docs/STAGE_BRANCH_CANDIDATE_PLAN.md",
         "docs/TEAM_ONBOARDING.md",
         "docs/VISION.md",
         "docs/WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.md",
         "docs/mapping/",
+        "labs/README.md",
         "tools/archcheck.py",
         "tools/devctl.py"
       ],
