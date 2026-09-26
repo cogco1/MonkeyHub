@@ -1,0 +1,1 @@
+Worker 49624 absent after close; checked before reopen

@@ -245,3 +245,43 @@ Optional `MONKEYHUB_TEST_RENDERER=swiftshader` reproduces the software renderer.
 `PYTHON` select installed runtimes. The full installed EXE lifecycle needs the package
 workflow environment; optional/native skips are not passes. Live paid AI provider,
 new Penguin final renders, signed production release publishing remain NOT TESTED.
+
+## Final pre-delivery product and evidence audit
+
+Actual production code tested: `0aaf5984716532f51d1185b820c799b9b6232acf`, after
+normally merging main `d266d589` (#343/#348). Its [health](product-0aaf5984/health.json)
+identifies the running source; [summary](product-0aaf5984/summary.json),
+[before](product-0aaf5984/before.json), [after](product-0aaf5984/after-reopen.json),
+[UI](product-0aaf5984/after-reopen.png), and [file hashes](product-0aaf5984/files-after-reopen.json)
+are actual observations, not synthetic screenshots.
+
+- Existing saved state restored after Modeling → Board → Drawing → Physical,
+  full-page refresh and close/reopen. Worker 49624 exited before worker 36816
+  started. **141 content files, full scene/drawings/geometry response and all
+  103 UI control values exactly equal**. There are still 12 drawings (8 current,
+  4 stale); no new drawing regeneration or save revision in this readback cycle.
+- Geometry response SHA-256:
+  `53f86e03dcef5a8fcea918aaa02813aeaf93e3e5a2c38b0c216355f7e7013cca`.
+  Original source GLB remains
+  `b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54`.
+- Board loaded after its upstream menu changes; Drawing still has no Working Head.
+  Model and photo background are visible after resources finish loading. This
+  does not diagnose the earlier background-only incident. Jagged boundaries remain.
+- Final local build PASS. Full AI/Physical browser **14/14 PASS**, no paid provider;
+  [complete log](local/final-main-render-browser.log). Injected HTTP failures and
+  one nonfatal ResizeObserver warning remain visible in the log. Isolated live Hub
+  has no Cycles host configured; no new final render is claimed.
+- A final audit found one evidence manifest entry (`process-exit.txt`) hashed
+  Windows CRLF bytes while Git stores LF. The collector now treats text suffixes
+  consistently. Only the manifest hash/byte count was corrected; underlying
+  process-exit statement was unchanged. Manifest verification uses committed Git
+  blobs, not Windows checkout line endings.
+- The subsequent evidence-only commit changes this report, its bounded artifacts
+  and manifest, not production or tests. Final SHA and all five fresh CI jobs are
+  recorded in the PR body. Checks from `0aaf5984` are not substituted.
+
+The `307b26dd` verification failed at the synthetic merge's scope check after main
+advanced, before backend suites ran:
+[actual failure](https://github.com/cogco1/MonkeyHub/actions/runs/36267756359/job/108475574905).
+The normal main merge passed the unchanged gate. Superseded/cancelled CI jobs are
+not counted as passes.

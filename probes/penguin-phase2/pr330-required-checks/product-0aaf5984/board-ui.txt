@@ -1,0 +1,100 @@
+- button "后退到上一个对话" [disabled]:
+- button "前进到下一个对话" [disabled]:
+- button "展开项目栏":
+- menubar "菜单":
+  - menuitem "文件"
+  - menuitem "编辑"
+  - menuitem "视图"
+  - menuitem "帮助"
+- main:
+  - button "展开项目栏":
+  - text: penguin-test
+  - 'heading "PR #330 final HEAD acceptance 外部对话" [level=1]':
+    - text: "PR #330 final HEAD acceptance"
+    - generic: 外部对话
+  - log:
+    - heading "开始项目对话" [level=2]
+    - paragraph: 描述你想做的事。需要看模型或图纸时，在右侧打开工具。
+  - status:
+    - strong: 外部对话
+    - paragraph: 已连接 agent 的回复和进度会在这里显示。请回到原应用继续对话。
+  - status
+- complementary "项目浏览器":
+  - group "工作面菜单与项目位置":
+    - radiogroup "画板模式":
+      - radio "画板" [checked]
+      - radio "排版"
+    - textbox "画布标题": MonkeyBoard
+    - button "项目资料"
+    - button "上传 PDF / 图片"
+    - generic "更多画板操作"
+    - option "合并 PDF" [selected]
+    - option "单页 PDF"
+    - option "PNG"
+    - option "JPEG"
+    - status: 已保存
+    - region "项目位置":
+      - button "尚无阶段 · 当前":
+        - generic: 尚无阶段 · 当前
+      - status
+  - region "MonkeyBoard":
+    - region "形状":
+      - heading "形状" [level=2]
+      - generic "选择 — V 或 1":
+        - radio "选择" [checked]
+      - generic "矩形 — R 或 2":
+        - radio "矩形"
+      - generic "菱形 — D 或 3":
+        - radio "菱形"
+      - generic "椭圆 — O 或 4":
+        - radio "椭圆"
+      - generic "箭头 — A 或 5":
+        - radio "箭头"
+      - generic "线条 — L 或 6":
+        - radio "线条"
+      - generic "自由书写 — P 或 7":
+        - radio "自由书写"
+      - generic "文字 — T 或 8":
+        - radio "文字"
+      - generic "橡皮 — E 或 0":
+        - radio "橡皮"
+      - button "更多工具":
+      - generic "素材库":
+        - checkbox "素材库"
+      - generic "绘制后保持所选的工具栏状态 — Q":
+        - checkbox "绘制后保持所选的工具栏状态"
+      - generic "抓手（平移工具） — H":
+        - radio "抓手（平移工具） — H"
+    - button:
+    - button "撤销" [disabled]:
+    - button "重做" [disabled]:
+    - generic: 绘制 Canvas
+    - generic: Antarctic landscape.jpg · 1/1
+    - generic: 滚轮缩放 · 空格或鼠标中键平移 · Shift 多选 · 双击图纸即可编辑该页
+    - generic: 选中图纸可打开原始页面。
+- navigation "项目工具栏":
+  - group "工作面":
+    - generic: 工作面
+    - button "建模":
+      - generic: 建模
+    - button "画板" [pressed]:
+      - generic: 画板
+    - button "状态树":
+      - generic: 状态树
+  - group "工具":
+    - generic: 工具
+    - button "图纸":
+      - generic: 图纸
+    - button "渲染":
+      - generic: 渲染
+    - button "制作":
+      - generic: 制作
+    - button "用量":
+      - generic: 用量
+  - group "此项目":
+    - generic: 此项目
+    - 'button "此项目: penguin-test"':
+      - generic: penguin-test
+  - button "收起工具" [pressed]:
+    - generic: 收起工具
+- region "通知"
