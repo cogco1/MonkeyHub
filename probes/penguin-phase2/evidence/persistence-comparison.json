@@ -1,0 +1,25 @@
+{
+  "status": "PASS",
+  "logicalSceneExactAcrossFinalColdReopen": true,
+  "allDrawingRecordsExactAcrossFinalColdReopen": true,
+  "changedGeometrySceneExactAcrossColdReopen": true,
+  "changedGeometryDrawingsExactAcrossColdReopen": true,
+  "oldProcessesExited": [
+    26416,
+    23480
+  ],
+  "finalWorker": {
+    "workerId": "studio:<user>\\onedrive\\桌面\\rhino\\ai workflow\\penguin test\\project\\penguin-test",
+    "serviceId": "studio",
+    "projectId": "penguin-test",
+    "projectDir": "<user>\\OneDrive\\桌面\\Rhino\\AI Workflow\\Penguin test\\project\\penguin-test",
+    "instanceId": "f15351c4-27ce-4dde-b3a9-0c94faee6984",
+    "processId": 40088,
+    "desiredState": "running",
+    "state": "ready",
+    "healthy": true,
+    "url": "http://127.0.0.1:57231/",
+    "error": null
+  },
+  "restoredSceneRevision": "06a5995bc2ad3200a3e9e1721da3f66ad70637a7808afc2d25dbc1b803ee44f6"
+}

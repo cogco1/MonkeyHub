@@ -20,6 +20,7 @@ export default function PhysicalWorkspace({ projectId, active, zh }: { projectId
   const [documents, setDocuments] = useState<SourceDocumentDto[]>([]), [drawings, setDrawings] = useState<Drawing[]>([]), [jobs, setJobs] = useState<RenderJobDto[]>([]);
   const [selectedMaterial, setSelectedMaterial] = useState("body"), [suggestion, setSuggestion] = useState(false), [features, setFeatures] = useState("");
   const urls = useRef(new Map<string, Promise<string>>());
+  const readSequence = useRef(0), editSequence = useRef(0);
   const label = (en: string, cn: string) => zh ? cn : en;
   const request = useCallback(async <T,>(path: string, method: "GET" | "POST" | "PUT" = "GET", body?: unknown): Promise<T> => {
     const result = await connection.client.request<T>({ url: path, method, ...(body === undefined ? {} : { body, headers: { "Content-Type": "application/json" } }) });
@@ -28,11 +29,18 @@ export default function PhysicalWorkspace({ projectId, active, zh }: { projectId
   }, [connection]);
   const act = async (work: () => Promise<void>) => { setBusy(true);setError(null);try { await work(); } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); } finally { setBusy(false); } };
   const refresh = useCallback(async () => {
-    const scene = await request<SceneState>("/api/render/scene");setState(scene);setValue(scene.scene);setDirty(false);
-    setGeometry(scene.scene ? await request<Geometry>("/api/render/geometry") : null);
-    setDocuments((await studio.documents()).documents);setDrawings(await request<Drawing[]>("/api/render/drawings"));
-    setJobs((await studio.renderJobs()).jobs.filter(j => j.execution === "host"));
+    const read = ++readSequence.current, edit = editSequence.current;
+    const scene = await request<SceneState>("/api/render/scene");
+    const [geometry, documents, drawings, jobs] = await Promise.all([
+      scene.scene ? request<Geometry>("/api/render/geometry") : Promise.resolve(null),
+      studio.documents(), request<Drawing[]>("/api/render/drawings"), studio.renderJobs(),
+    ]);
+    // Apply a coherent read only if no newer read or local edit overtook it.
+    if (read !== readSequence.current || edit !== editSequence.current) return;
+    setState(scene);setValue(scene.scene);setDirty(false);setGeometry(geometry);
+    setDocuments(documents.documents);setDrawings(drawings);setJobs(jobs.jobs.filter(j => j.execution === "host"));
   }, [request, studio]);
+  useEffect(() => () => { readSequence.current++; }, [refresh]);
   const dirtyRef = useRef(dirty); dirtyRef.current = dirty;
   useEffect(() => { if (active && !dirtyRef.current) void act(refresh); }, [active, refresh]);
   useEffect(() => {
@@ -46,7 +54,7 @@ export default function PhysicalWorkspace({ projectId, active, zh }: { projectId
     if (!promise) { promise = studio.documentFile(ref.runId, ref.assetSha256, "scene-image.png", ref.revisionRef).then(file => URL.createObjectURL(file));urls.current.set(key, promise); }
     return promise;
   }, [studio]);
-  const edit = (change: (scene: PhysicalScene) => void) => { setValue(old => { if (!old) return old; const next = structuredClone(old);change(next);return next; });setDirty(true); };
+  const edit = (change: (scene: PhysicalScene) => void) => { editSequence.current++;setValue(old => { if (!old) return old; const next = structuredClone(old);change(next);return next; });setDirty(true); };
   const save = () => act(async () => {
     if (!value) return;const next = await request<SceneState>("/api/render/scene", "PUT", { expectedRevision: state?.sceneRevision ?? null, scene: value });
     setState(old => ({ ...next, cyclesAvailable: old?.cyclesAvailable }));setValue(next.scene);setDirty(false);

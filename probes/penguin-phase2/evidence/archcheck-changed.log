@@ -1,0 +1,64 @@
+apps/archflow-studio/api/archflow_studio_api/application/geometry_sources.py:1: SCOPE_UNDECLARED: commit 8afa896f names no work item; apps/archflow-studio/api/archflow_studio_api/application/geometry_sources.py is outside its write scope
+apps/archflow-studio/api/archflow_studio_api/application/mesh_drawings.py:1: SCOPE_UNDECLARED: commit 8afa896f names no work item; apps/archflow-studio/api/archflow_studio_api/application/mesh_drawings.py is outside its write scope
+apps/archflow-studio/api/archflow_studio_api/application/physical_render.py:1: SCOPE_UNDECLARED: commit 8afa896f names no work item; apps/archflow-studio/api/archflow_studio_api/application/physical_render.py is outside its write scope
+apps/archflow-studio/api/archflow_studio_api/application/render_scene.py:1: SCOPE_UNDECLARED: commit 8afa896f names no work item; apps/archflow-studio/api/archflow_studio_api/application/render_scene.py is outside its write scope
+apps/archflow-studio/api/archflow_studio_api/application/rendering.py:1: SCOPE_UNDECLARED: commit 8afa896f names no work item; apps/archflow-studio/api/archflow_studio_api/application/rendering.py is outside its write scope
+apps/archflow-studio/api/archflow_studio_api/application/representation_dependencies.py:1: SCOPE_UNDECLARED: commit 8afa896f names no work item; apps/archflow-studio/api/archflow_studio_api/application/representation_dependencies.py is outside its write scope
+apps/archflow-studio/api/archflow_studio_api/application/runtime.py:1: SCOPE_UNDECLARED: commit 8afa896f names no work item; apps/archflow-studio/api/archflow_studio_api/application/runtime.py is outside its write scope
+apps/archflow-studio/api/archflow_studio_api/main.py:1: SCOPE_UNDECLARED: commit 8afa896f names no work item; apps/archflow-studio/api/archflow_studio_api/main.py is outside its write scope
+apps/archflow-studio/api/archflow_studio_api/routes/rendering.py:1: SCOPE_UNDECLARED: commit 8afa896f names no work item; apps/archflow-studio/api/archflow_studio_api/routes/rendering.py is outside its write scope
+apps/archflow-studio/api/archflow_studio_api/transport/render_scene.py:1: SCOPE_UNDECLARED: commit 8afa896f names no work item; apps/archflow-studio/api/archflow_studio_api/transport/render_scene.py is outside its write scope
+apps/archflow-studio/api/archflow_studio_api/transport/rendering.py:1: SCOPE_UNDECLARED: commit 8afa896f names no work item; apps/archflow-studio/api/archflow_studio_api/transport/rendering.py is outside its write scope
+apps/monkeyhub/web/workspaces/src/api/generated/index.ts:1: SCOPE_UNDECLARED: commit 20a489a8 names no work item; apps/monkeyhub/web/workspaces/src/api/generated/index.ts is outside its write scope
+apps/monkeyhub/web/workspaces/src/api/generated/index.ts:1: SCOPE_UNDECLARED: commit 8afa896f names no work item; apps/monkeyhub/web/workspaces/src/api/generated/index.ts is outside its write scope
+apps/monkeyhub/web/workspaces/src/api/generated/sdk.gen.ts:1: SCOPE_UNDECLARED: commit 8afa896f names no work item; apps/monkeyhub/web/workspaces/src/api/generated/sdk.gen.ts is outside its write scope
+apps/monkeyhub/web/workspaces/src/api/generated/types.gen.ts:1: SCOPE_UNDECLARED: commit 20a489a8 names no work item; apps/monkeyhub/web/workspaces/src/api/generated/types.gen.ts is outside its write scope
+apps/monkeyhub/web/workspaces/src/api/generated/types.gen.ts:1: SCOPE_UNDECLARED: commit 8afa896f names no work item; apps/monkeyhub/web/workspaces/src/api/generated/types.gen.ts is outside its write scope
+apps/monkeyhub/web/workspaces/src/workspaces/render/PhysicalPreview.tsx:1: SCOPE_UNDECLARED: commit 8afa896f names no work item; apps/monkeyhub/web/workspaces/src/workspaces/render/PhysicalPreview.tsx is outside its write scope
+apps/monkeyhub/web/workspaces/src/workspaces/render/PhysicalWorkspace.tsx:1: SCOPE_UNDECLARED: commit 8afa896f names no work item; apps/monkeyhub/web/workspaces/src/workspaces/render/PhysicalWorkspace.tsx is outside its write scope
+apps/monkeyhub/web/workspaces/src/workspaces/render/RenderWorkspace.tsx:1: SCOPE_UNDECLARED: commit 8afa896f names no work item; apps/monkeyhub/web/workspaces/src/workspaces/render/RenderWorkspace.tsx is outside its write scope
+apps/monkeyhub/web/workspaces/src/workspaces/render/render.css:1: SCOPE_UNDECLARED: commit 8afa896f names no work item; apps/monkeyhub/web/workspaces/src/workspaces/render/render.css is outside its write scope
+apps/monkeyhub/web/workspaces/src/workspaces/render/sceneTypes.ts:1: SCOPE_UNDECLARED: commit 8afa896f names no work item; apps/monkeyhub/web/workspaces/src/workspaces/render/sceneTypes.ts is outside its write scope
+apps/monkeyhub/web/workspaces/test/renderWorkspace.browser.mjs:1: SCOPE_UNDECLARED: commit 8afa896f names no work item; apps/monkeyhub/web/workspaces/test/renderWorkspace.browser.mjs is outside its write scope
+archflow/adapters/blender_projection.py:1: SCOPE_UNDECLARED: commit 8afa896f names no work item; archflow/adapters/blender_projection.py is outside its write scope
+archflow/adapters/blender_scene_worker.py:1: SCOPE_UNDECLARED: commit 8afa896f names no work item; archflow/adapters/blender_scene_worker.py is outside its write scope
+archflow/adapters/blender_worker.py:1: SCOPE_UNDECLARED: commit 8afa896f names no work item; archflow/adapters/blender_worker.py is outside its write scope
+archflow/adapters/model_formats.py:1: SCOPE_UNDECLARED: commit 20a489a8 names no work item; archflow/adapters/model_formats.py is outside its write scope
+archflow/adapters/model_formats.py:1: SCOPE_UNDECLARED: commit 8afa896f names no work item; archflow/adapters/model_formats.py is outside its write scope
+archflow/adapters/model_providers.py:1: SCOPE_UNDECLARED: commit 20a489a8 names no work item; archflow/adapters/model_providers.py is outside its write scope
+archflow/adapters/model_providers.py:1: SCOPE_UNDECLARED: commit 8afa896f names no work item; archflow/adapters/model_providers.py is outside its write scope
+archflow/adapters/render_projection.py:1: SCOPE_UNDECLARED: commit 8afa896f names no work item; archflow/adapters/render_projection.py is outside its write scope
+archflow/project/record_kinds.py:1: SCOPE_UNDECLARED: commit 8afa896f names no work item; archflow/project/record_kinds.py is outside its write scope
+monkeydiagram/mesh_views.py:1: SCOPE_UNDECLARED: commit 8afa896f names no work item; monkeydiagram/mesh_views.py is outside its write scope
+probes/penguin-phase2/README.md:1: SCOPE_VIOLATION: commit 6ae15069 is GH-319; probes/penguin-phase2/README.md is outside its write scope
+probes/penguin-phase2/drawings/height-110-percent/front.svg:1: SCOPE_VIOLATION: commit 6ae15069 is GH-319; probes/penguin-phase2/drawings/height-110-percent/front.svg is outside its write scope
+probes/penguin-phase2/drawings/height-110-percent/isometric.svg:1: SCOPE_VIOLATION: commit 6ae15069 is GH-319; probes/penguin-phase2/drawings/height-110-percent/isometric.svg is outside its write scope
+probes/penguin-phase2/drawings/height-110-percent/side.svg:1: SCOPE_VIOLATION: commit 6ae15069 is GH-319; probes/penguin-phase2/drawings/height-110-percent/side.svg is outside its write scope
+probes/penguin-phase2/drawings/height-110-percent/top.svg:1: SCOPE_VIOLATION: commit 6ae15069 is GH-319; probes/penguin-phase2/drawings/height-110-percent/top.svg is outside its write scope
+probes/penguin-phase2/drawings/original/front.svg:1: SCOPE_VIOLATION: commit 6ae15069 is GH-319; probes/penguin-phase2/drawings/original/front.svg is outside its write scope
+probes/penguin-phase2/drawings/original/isometric.svg:1: SCOPE_VIOLATION: commit 6ae15069 is GH-319; probes/penguin-phase2/drawings/original/isometric.svg is outside its write scope
+probes/penguin-phase2/drawings/original/side.svg:1: SCOPE_VIOLATION: commit 6ae15069 is GH-319; probes/penguin-phase2/drawings/original/side.svg is outside its write scope
+probes/penguin-phase2/drawings/original/top.svg:1: SCOPE_VIOLATION: commit 6ae15069 is GH-319; probes/penguin-phase2/drawings/original/top.svg is outside its write scope
+probes/penguin-phase2/evidence/02-penguin-pbr-preview.png:1: SCOPE_VIOLATION: commit 6ae15069 is GH-319; probes/penguin-phase2/evidence/02-penguin-pbr-preview.png is outside its write scope
+probes/penguin-phase2/evidence/03-drawings-stale.png:1: SCOPE_VIOLATION: commit 6ae15069 is GH-319; probes/penguin-phase2/evidence/03-drawings-stale.png is outside its write scope
+probes/penguin-phase2/evidence/04-drawings-updated.png:1: SCOPE_VIOLATION: commit 6ae15069 is GH-319; probes/penguin-phase2/evidence/04-drawings-updated.png is outside its write scope
+probes/penguin-phase2/evidence/05-production-3dm.png:1: SCOPE_VIOLATION: commit 6ae15069 is GH-319; probes/penguin-phase2/evidence/05-production-3dm.png is outside its write scope
+probes/penguin-phase2/evidence/06-final-preview-reopened.png:1: SCOPE_VIOLATION: commit 6ae15069 is GH-319; probes/penguin-phase2/evidence/06-final-preview-reopened.png is outside its write scope
+probes/penguin-phase2/evidence/07-drawing-in-product.png:1: SCOPE_VIOLATION: commit 6ae15069 is GH-319; probes/penguin-phase2/evidence/07-drawing-in-product.png is outside its write scope
+probes/penguin-phase2/evidence/08-review-physical-before.png:1: SCOPE_VIOLATION: commit 6ae15069 is GH-319; probes/penguin-phase2/evidence/08-review-physical-before.png is outside its write scope
+probes/penguin-phase2/evidence/09-modeling-front.png:1: SCOPE_VIOLATION: commit 6ae15069 is GH-319; probes/penguin-phase2/evidence/09-modeling-front.png is outside its write scope
+probes/penguin-phase2/evidence/10-modeling-after-physical-camera.png:1: SCOPE_VIOLATION: commit 6ae15069 is GH-319; probes/penguin-phase2/evidence/10-modeling-after-physical-camera.png is outside its write scope
+probes/penguin-phase2/evidence/11-board-loaded.png:1: SCOPE_VIOLATION: commit 6ae15069 is GH-319; probes/penguin-phase2/evidence/11-board-loaded.png is outside its write scope
+probes/penguin-phase2/evidence/12-drawing-workspace.png:1: SCOPE_VIOLATION: commit 6ae15069 is GH-319; probes/penguin-phase2/evidence/12-drawing-workspace.png is outside its write scope
+probes/penguin-phase2/evidence/13-review-reopened.png:1: SCOPE_VIOLATION: commit 6ae15069 is GH-319; probes/penguin-phase2/evidence/13-review-reopened.png is outside its write scope
+probes/penguin-phase2/evidence/Penguin-Cycles-Phase2.png:1: SCOPE_VIOLATION: commit 6ae15069 is GH-319; probes/penguin-phase2/evidence/Penguin-Cycles-Phase2.png is outside its write scope
+probes/penguin-phase2/evidence/camera-checks.json:1: SCOPE_VIOLATION: commit 6ae15069 is GH-319; probes/penguin-phase2/evidence/camera-checks.json is outside its write scope
+probes/penguin-phase2/evidence/conversion-readback.json:1: SCOPE_VIOLATION: commit 6ae15069 is GH-319; probes/penguin-phase2/evidence/conversion-readback.json is outside its write scope
+probes/penguin-phase2/evidence/cycles-readback.json:1: SCOPE_VIOLATION: commit 6ae15069 is GH-319; probes/penguin-phase2/evidence/cycles-readback.json is outside its write scope
+probes/penguin-phase2/evidence/drawing-quantitative.json:1: SCOPE_VIOLATION: commit 6ae15069 is GH-319; probes/penguin-phase2/evidence/drawing-quantitative.json is outside its write scope
+probes/penguin-phase2/evidence/persistence-comparison.json:1: SCOPE_VIOLATION: commit 6ae15069 is GH-319; probes/penguin-phase2/evidence/persistence-comparison.json is outside its write scope
+probes/penguin-phase2/evidence/production-quantitative.json:1: SCOPE_VIOLATION: commit 6ae15069 is GH-319; probes/penguin-phase2/evidence/production-quantitative.json is outside its write scope
+probes/penguin-phase2/evidence/review-persistence.json:1: SCOPE_VIOLATION: commit 6ae15069 is GH-319; probes/penguin-phase2/evidence/review-persistence.json is outside its write scope
+probes/penguin-phase2/evidence/three-cycles-material-consistency.json:1: SCOPE_VIOLATION: commit 6ae15069 is GH-319; probes/penguin-phase2/evidence/three-cycles-material-consistency.json is outside its write scope
+probes/penguin-phase2/issues-reviewed.json:1: SCOPE_VIOLATION: commit 6ae15069 is GH-319; probes/penguin-phase2/issues-reviewed.json is outside its write scope
+probes/penguin-phase2/manifest.json:1: SCOPE_VIOLATION: commit 6ae15069 is GH-319; probes/penguin-phase2/manifest.json is outside its write scope

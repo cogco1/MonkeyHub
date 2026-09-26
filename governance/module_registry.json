@@ -407,6 +407,7 @@
         "tests/test_blender_cad.py",
         "tests/test_blender_projection.py",
         "tests/test_model_formats.py",
+        "tests/inspect_model_conversion.py",
         "tests/model_export_glb_reader.mjs",
         "tests/test_model_providers.py",
         "tests/test_occt_native_models.py",

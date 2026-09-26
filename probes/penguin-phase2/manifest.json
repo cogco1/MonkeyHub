@@ -1,0 +1,275 @@
+{
+  "date": "2026-09-26",
+  "originalCommit": "8afa896f968b489ff860cfee485d661dfb4c8324",
+  "upstreamIntegrated": "e33fbf46",
+  "artifactPolicy": "bounded promoted probe evidence; large inputs/native scenes retained in existing external project envelope",
+  "inputsAndLargeRetainedOutputs": [
+    {
+      "path": "input/Penguin.glb",
+      "bytes": 1529424,
+      "sha256": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54"
+    },
+    {
+      "path": "Reference/Antarctic landscape.jpg",
+      "bytes": 245692,
+      "sha256": "3d767430cda161153e7902638d1e23cb9819c2d926b995d41dfdadec82d8caa3"
+    },
+    {
+      "path": "Reference/Penguin render reference image.png",
+      "bytes": 1952386,
+      "sha256": "5bb428354f6d9a7fd8d3e2d7cbf6baf51565fa4d6690146d2e3776e4faa23db4"
+    },
+    {
+      "path": "conversion/phase2/Penguin-production.3dm",
+      "bytes": 715092,
+      "sha256": "e82472a70e4ef3f9f8be37dd25197fae30a252078d71ee8f0f228047b7e75b99"
+    },
+    {
+      "path": "blender/phase2/scene.blend",
+      "bytes": 3097048,
+      "sha256": "c90e401828c5dba4611c0c242ba05bc9ffab8ca1e24b3e5e08ca518ad96575d7"
+    },
+    {
+      "path": "render/phase2/Penguin-Cycles.png",
+      "bytes": 1588537,
+      "sha256": "4a5b5fd8da5d8cc26b59ad0bd77064bdb03403d43f225388204210358b44cd1e"
+    }
+  ],
+  "publishedFiles": [
+    {
+      "path": ".gitignore",
+      "bytes": 87,
+      "sha256": "d1dc482599f98a56167b6a846a72aaa6a1f5c44898c24ab8c0e0f80b44eafb4e"
+    },
+    {
+      "path": "drawings/height-110-percent/front.svg",
+      "bytes": 23448,
+      "sha256": "84e31cdb116c7f650281d794a711ad324996c70047991b9fd56ee4c24be74743"
+    },
+    {
+      "path": "drawings/height-110-percent/isometric.svg",
+      "bytes": 24824,
+      "sha256": "52913069f3904731b95bb3126007773d4190907b8365ec1b78fcd3561c5c21bf"
+    },
+    {
+      "path": "drawings/height-110-percent/side.svg",
+      "bytes": 23601,
+      "sha256": "51dc18de82e7482ae227e173772d7aa759cab462ad6e6f5d0fa8d6daed0f1171"
+    },
+    {
+      "path": "drawings/height-110-percent/top.svg",
+      "bytes": 22997,
+      "sha256": "c94fe4ff25bb901b1770a0f35d79a55687011a2407cb30c3001dd6bb2d08a76e"
+    },
+    {
+      "path": "drawings/original/front.svg",
+      "bytes": 23448,
+      "sha256": "ecbd92959771906ced4cd3e04ceae1f8ccee683b722e82e94a802d5dbe1589bc"
+    },
+    {
+      "path": "drawings/original/isometric.svg",
+      "bytes": 26114,
+      "sha256": "3e08851d85a500b837ea95ce5847daba62a9adf692da6946b05e0987f1755f90"
+    },
+    {
+      "path": "drawings/original/side.svg",
+      "bytes": 23615,
+      "sha256": "9b68064e38a462ca3f1d47cc6e197c3d53c6c80319aa47e9efd29979cc15ef15"
+    },
+    {
+      "path": "drawings/original/top.svg",
+      "bytes": 22997,
+      "sha256": "c94fe4ff25bb901b1770a0f35d79a55687011a2407cb30c3001dd6bb2d08a76e"
+    },
+    {
+      "path": "evidence/02-penguin-pbr-preview.png",
+      "bytes": 550477,
+      "sha256": "c7bbe675cb2c345d6d693b9c05fa5838e0c986440eee3937d9d638690bc36359"
+    },
+    {
+      "path": "evidence/03-drawings-stale.png",
+      "bytes": 421962,
+      "sha256": "0da99bb38600c2ab4a99355a3ff7ffa6508d60a3e2e8c8fdf196b52b07ad5a8a"
+    },
+    {
+      "path": "evidence/04-drawings-updated.png",
+      "bytes": 411894,
+      "sha256": "280f2f4716e773bb627d202623e9df94b70baf9a2fd0ca9fa63761f6f09109b2"
+    },
+    {
+      "path": "evidence/05-production-3dm.png",
+      "bytes": 333534,
+      "sha256": "daf073af1c146566583b4ad89ed6411dba40e00a8a04516118f5daf81811584e"
+    },
+    {
+      "path": "evidence/06-final-preview-reopened.png",
+      "bytes": 550456,
+      "sha256": "3b341f4d1e6b4c4aee30f5e482e728fe9d92d623c6bd898fd8fbba3ae22bc643"
+    },
+    {
+      "path": "evidence/07-drawing-in-product.png",
+      "bytes": 372120,
+      "sha256": "9e5e89da4d37864e7f902e8c93d63b0539b5c105faf896f660f00ce76b02cbba"
+    },
+    {
+      "path": "evidence/08-review-physical-before.png",
+      "bytes": 548299,
+      "sha256": "27e99add92d0936adb08e879bb845c2c817466735b2d712c11728d06a825947d"
+    },
+    {
+      "path": "evidence/09-modeling-front.png",
+      "bytes": 345026,
+      "sha256": "8a2ed645a28f324a6726f11667019b2134f8da40c706d7094980d6e9702d695d"
+    },
+    {
+      "path": "evidence/10-modeling-after-physical-camera.png",
+      "bytes": 344946,
+      "sha256": "351093c218eb99d49fc1f1a2f4a281eae5dd0e73521f52bdf88935c12c1e302f"
+    },
+    {
+      "path": "evidence/11-board-loaded.png",
+      "bytes": 349196,
+      "sha256": "85aa1237f9de94da6d5ce1377ee9ad8adacfd390c6070f4547042e7fc4823e6c"
+    },
+    {
+      "path": "evidence/12-drawing-workspace.png",
+      "bytes": 321213,
+      "sha256": "893f261204228d624c051fb322e410e97b7907e4babd1e9fc721b174fb3c5f2c"
+    },
+    {
+      "path": "evidence/13-review-reopened.png",
+      "bytes": 548299,
+      "sha256": "27e99add92d0936adb08e879bb845c2c817466735b2d712c11728d06a825947d"
+    },
+    {
+      "path": "evidence/api-check-review.log",
+      "bytes": 880,
+      "sha256": "2cbbd901cf7c45296017258c82f6108b11e99b6c68387b43c5f989eb10c26da7"
+    },
+    {
+      "path": "evidence/api-generate-merge-rerun.log",
+      "bytes": 879,
+      "sha256": "532c45eebee2ca8ff6df6bee6d6a38a9b77d2e29c17aa30dfc6cee78fcf752e2"
+    },
+    {
+      "path": "evidence/api-generate-merge.log",
+      "bytes": 980,
+      "sha256": "bb77ab372db9064734a0e10530e530676ac50acc870e1228e59f2b708ca89a91"
+    },
+    {
+      "path": "evidence/api-tests-review.log",
+      "bytes": 128,
+      "sha256": "6d141cb1e296e3958cfa768571226e355ef53ac8bbbd98c28c7a56a1ee7956f2"
+    },
+    {
+      "path": "evidence/archcheck-changed.log",
+      "bytes": 12320,
+      "sha256": "4ec86c012c5a9d196d75e2513b0d7a9581a75d5002e17f1f394858a66253544e"
+    },
+    {
+      "path": "evidence/archcheck-review-rerun.log",
+      "bytes": 40,
+      "sha256": "a3a1b4ebd58d3c879827a93bf8d265783af673e48347471d993ed3fa53bcc38e"
+    },
+    {
+      "path": "evidence/archcheck-review.log",
+      "bytes": 105,
+      "sha256": "8f88516575516af4c5fcf51ae5f2ddec4b892dc7c5560463d7a508391443ce97"
+    },
+    {
+      "path": "evidence/browser-physical-initial.log",
+      "bytes": 2471,
+      "sha256": "8354314bb3f9a4b86c66ea1c0c07704d0c712ee2c0a21265b25f62dd9671d24c"
+    },
+    {
+      "path": "evidence/browser-physical-rerun.log",
+      "bytes": 3329,
+      "sha256": "421f29fe62a2ff6d231c959868455e9b54c7d0659cf62570dd314bdf7688be39"
+    },
+    {
+      "path": "evidence/browser-regression-initial.log",
+      "bytes": 2934,
+      "sha256": "9f0d1f47f72351eae00b103b736d1a957417ab2279dac33ccda7e88fa4d619be"
+    },
+    {
+      "path": "evidence/camera-checks.json",
+      "bytes": 2891,
+      "sha256": "5287746bf9b18ae801f36b8432aa62a97e9bec6f9cc2ae8d760c2058e301137f"
+    },
+    {
+      "path": "evidence/camera-unit-review.log",
+      "bytes": 384,
+      "sha256": "1c5ce3c77cde4df222a1cb0c861066100eec8ac10097782c25045be4090bec0c"
+    },
+    {
+      "path": "evidence/conversion-readback.json",
+      "bytes": 8512,
+      "sha256": "450d5d2b2c19b4826ec472be9bea1752528ec0e5afffcef408e20ba4cf289a86"
+    },
+    {
+      "path": "evidence/cycles-readback.json",
+      "bytes": 3015,
+      "sha256": "fbcc24ed85ab551c31c99a5561026453df48093fc8d76c79655b6b035569e28a"
+    },
+    {
+      "path": "evidence/drawing-quantitative.json",
+      "bytes": 7374,
+      "sha256": "3a735e8f71d145f4ab2beb0c07facb6e9a8b52078ac6d54480cd4509b4b85b14"
+    },
+    {
+      "path": "evidence/frontend-build-review.log",
+      "bytes": 20654,
+      "sha256": "2e087416cdd9fb61d5e24d26be59a2391d9a871447070f6eb92aa05f32319600"
+    },
+    {
+      "path": "evidence/merge-conversion-initial.log",
+      "bytes": 4250,
+      "sha256": "d1b2242e2131daec78c71a303b5f52522c00cd2ec5e823ee2cbad70b74384f33"
+    },
+    {
+      "path": "evidence/Penguin-Cycles-Phase2.png",
+      "bytes": 1286181,
+      "sha256": "2c6520c9da1360469fa5aa30d5331391aa20531c97626c5b05fd91ae704828f1"
+    },
+    {
+      "path": "evidence/persistence-comparison.json",
+      "bytes": 914,
+      "sha256": "2ca6afc5a8147f09266783539354fc0545eda1d705850e564d07cced30be6c55"
+    },
+    {
+      "path": "evidence/production-quantitative.json",
+      "bytes": 866,
+      "sha256": "90145760cd23ac4fb11887fea8534205a8c4f17522f1d2bc039ccd4cc78bde86"
+    },
+    {
+      "path": "evidence/review-persistence.json",
+      "bytes": 1030,
+      "sha256": "c8c009055e8ef01e609dec3518d7226c1a07985b6cbeb2f12599fc197e8ed1b1"
+    },
+    {
+      "path": "evidence/root-tests-review.log",
+      "bytes": 7394,
+      "sha256": "1cd1d5d52b8e8ff01433c57d6daa5264fa2361e8b33dc6a3ab00c9fa9aaba3c8"
+    },
+    {
+      "path": "evidence/root-tests-with-blender.log",
+      "bytes": 7271,
+      "sha256": "917cc1fde05c36c2383e87a54e6970e565fdb60fa4a7a7e7749b51ae91b1a91e"
+    },
+    {
+      "path": "evidence/three-cycles-material-consistency.json",
+      "bytes": 557,
+      "sha256": "d0b3fbcd21f3a9b524afd98459610bbbc7bfd7c151e9c77b32806ff1d6804432"
+    },
+    {
+      "path": "issues-reviewed.json",
+      "bytes": 1611,
+      "sha256": "329dc8b69c8f870b9d38167c28484508bdaea675cf38e4b0ae320acee6a3a258"
+    },
+    {
+      "path": "README.md",
+      "bytes": 18122,
+      "sha256": "7304f1838ba6ed273794a931fe74a819d83807303f8b56acad042f8260033d06"
+    }
+  ]
+}

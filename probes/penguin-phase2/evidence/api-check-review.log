@@ -1,0 +1,14 @@
+warning: The `fitz` API is deprecated and will be removed in future. Use `import pymupdf` instead.
+Dumped ArchFlow Studio API OpenAPI to <repo>\apps\monkeyhub\web\workspaces\.generated\openapi.json
+Dumped MonkeyHub API OpenAPI to <repo>\apps\monkeyhub\web\.generated\openapi.json
+[90m@hey-api/openapi-ts v0.99.0[39m
+
+[90m[Job 1] [39m[90m~[39m [36mGenerating...[39m
+[90m[Job 1] [39m[36m  [1] [39m.generated/openapi.json
+[90m[Job 1] [39m[32m✓[39m [96m<repo>\apps\monkeyhub\web\workspaces\.generated\api-check[39m [90m· 4 files · 1s[39m
+[90m@hey-api/openapi-ts v0.99.0[39m
+
+[90m[Job 1] [39m[90m~[39m [36mGenerating...[39m
+[90m[Job 1] [39m[36m  [1] [39m.generated/openapi.json
+[90m[Job 1] [39m[32m✓[39m [96m<repo>\apps\monkeyhub\web\.generated\api-check[39m [90m· 4 files · 433ms[39m
+Both API clients match their schemas.
