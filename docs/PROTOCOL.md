@@ -1640,12 +1640,25 @@ certified bytes and values through `application/render_contract.py`, has no proj
 writer, and performs one call without automatic retry or model fallback.
 
 MonkeyHub resolves `renderProvider`, `renderModel` and `renderTimeoutS` from the
-existing local user preferences. For Gemini only, it forwards the explicitly
-named launch secret `MONKEYHUB_RENDER_API_KEY` as the Runtime key above. User
-preferences and HTTP settings never contain keys; saving preferences affects
-subsequently opened project Runtimes, without silently restarting active work.
-A new or changed launch key requires launching Hub again with that environment;
-reopening a project cannot change the environment of an already running Hub.
+existing local user preferences. For Gemini only, it forwards a key as the
+Runtime key above: the launch variable `MONKEYHUB_RENDER_API_KEY` when the Hub
+was started with one, otherwise the key saved from Hub settings in the account's
+Windows Credential Manager (#334), read again for every Runtime the Hub opens.
+Saving preferences or a key affects subsequently opened project Runtimes,
+without silently restarting active work.
+
+Provider keys are write-only over HTTP. `PUT /api/credentials/{gemini|coding-plan}`
+stores one and `DELETE` removes it; `GET /api/credentials` answers only whether a
+key is in use and where it comes from (`saved`, `environment`, or for Coding Plan
+`claude-config`), never the key, and a malformed request is refused without
+echoing its body. User preferences never contain keys. A Coding Plan conversation
+receives the saved `codingPlanBaseUrl` preference and saved token as
+`ANTHROPIC_BASE_URL` and `ANTHROPIC_AUTH_TOKEN`, with any `ANTHROPIC_API_KEY`
+removed; other conversations never receive them. Saved keys are also redacted
+from transcripts and errors. `POST /api/links/{id}/open` opens one of the Hub's
+own provider key pages in the system browser, and
+`POST /api/chat/providers/{codex|claude}/login` opens that CLI's own sign-in in a
+console window of its own.
 
 Retained `StudioRenderJob@1` native rows remain read-only history with
 `request: null`. Their exact output documents remain usable, but a client cannot

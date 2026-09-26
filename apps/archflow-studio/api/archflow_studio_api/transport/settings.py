@@ -42,6 +42,12 @@ class UserSettingsDto(BaseModel):
     chat_model: str | None = Field(
         default=None, alias="chatModel", min_length=1, pattern=r"^[^\x00-\x1f\x7f]+$",
     )
+    # The Anthropic-compatible endpoint a Coding Plan conversation talks to (#334).
+    # An address, not a secret: the token that goes with it is kept in the
+    # account's credential store by the Hub and is never a preference.
+    coding_plan_base_url: str | None = Field(
+        default=None, alias="codingPlanBaseUrl", min_length=1, max_length=512, pattern=r"^https?://[^\s?#@]+$",
+    )
     # MonkeyHub's automatic desktop updates; absent means on. The Hub reads
     # and writes it; the Project Runtime ignores it.
     auto_update: bool | None = Field(default=None, alias="autoUpdate")
