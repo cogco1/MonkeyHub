@@ -1,0 +1,57 @@
+{
+  "runtimeId": "aef887ec-0318-588d-870a-9e410b824e64",
+  "projectId": "penguin-test",
+  "projectDir": "C:\\Users\\jiayu\\OneDrive\\桌面\\Rhino\\AI Workflow\\Penguin test\\project\\penguin-test",
+  "state": "open",
+  "workers": [
+    {
+      "workerId": "studio:c:\\users\\jiayu\\onedrive\\桌面\\rhino\\ai workflow\\penguin test\\project\\penguin-test",
+      "serviceId": "studio",
+      "projectId": "penguin-test",
+      "projectDir": "C:\\Users\\jiayu\\OneDrive\\桌面\\Rhino\\AI Workflow\\Penguin test\\project\\penguin-test",
+      "instanceId": "464d0739-6292-4e3c-8e1e-51f8b2e7ccce",
+      "processId": 44272,
+      "desiredState": "running",
+      "state": "ready",
+      "healthy": true,
+      "url": "http://127.0.0.1:56802/",
+      "error": null
+    }
+  ],
+  "operations": [],
+  "sessions": [
+    {
+      "id": "979aa924-8ffd-4d34-a7bc-b9479d309501",
+      "projectId": "penguin-test",
+      "projectDir": "C:\\Users\\jiayu\\OneDrive\\桌面\\Rhino\\AI Workflow\\Penguin test\\project\\penguin-test",
+      "title": "PR #330 final HEAD acceptance",
+      "provider": "codex",
+      "model": null,
+      "status": "idle",
+      "archived": false,
+      "createdAt": "2026-09-26T19:46:09.189024+00:00",
+      "updatedAt": "2026-09-26T19:46:09.189024+00:00",
+      "error": null,
+      "sourceSessionId": "pr330-required-checks-49563f72",
+      "attention": null
+    }
+  ],
+  "retained": {
+    "projectId": "penguin-test",
+    "projectDir": "C:\\Users\\jiayu\\OneDrive\\桌面\\Rhino\\AI Workflow\\Penguin test\\project\\penguin-test",
+    "published": {
+      "version": 0,
+      "stateSha256": "cad0ab2377fa9727bec3a928146eb40f8e9aa69fd0a559d6f65f46545d288de7"
+    },
+    "jobs": [],
+    "candidates": [],
+    "branches": [],
+    "stages": [],
+    "errors": [],
+    "runsScanned": 26,
+    "hasMore": false
+  },
+  "projection": "ready",
+  "clients": 1,
+  "error": null
+}

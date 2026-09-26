@@ -3,7 +3,7 @@
 2026-09-26. **Draft / overall PARTIAL.** Related to #319, #321, #324, #327;
 none is complete. This supplement preserves [the preceding report](../review-pr330/README.md)
 and the original `8afa896f` history. It does not certify D5 rendering or add product features.
-PR branch: `codex/319-penguin-scene`. Local isolation branch: `codex/pr330-required-checks`.
+PR branch: `codex/319-penguin-scene`. Local delivery branch: `codex/pr330-ci-delivery`.
 The PR description records the final published SHA and its five actual check results;
 earlier checks below are diagnosis, not final-HEAD acceptance.
 
@@ -114,6 +114,26 @@ The minimal correction stays in the existing desktop lifecycle test owner:
 
 The unrelated ChatGPT temporary screenshot-path failure is not used as an explanation.
 
+### Follow-up from the first corrected CI run
+
+HEAD `49563f72` passed Studio web and both first-run checks, but Windows native
+setup failed **10/10** before exercising the lifecycle: runner temporary paths used
+`C:/Users/RUNNER~1/...`, while P036 returned canonical `C:/Users/runneradmin/...`
+lock paths. `relative_to()` correctly rejected the different lexical prefixes.
+[Actual CI exception stacks](49563-native-short-path-failure.log),
+[job](https://github.com/cogco1/MonkeyHub/actions/runs/36266944296/job/108473332493).
+Subsequent package/shortcut and signed-install tests did not run in that attempt.
+
+The scanner now resolves the project root once before enumeration, matching the
+repository's canonical namespace. It still excludes only the same two owner paths;
+no error suppression, additional exclusion or permission change. A new real Windows
+`GetShortPathNameW` alias regression fails before this correction and passes after,
+including while the actual owner locks are held. It also exercises a parent/name
+alias on volumes without generated 8.3 names, instead of silently skipping.
+[Before](local/short-path-before.log), [all three lock regressions after](local/short-path-after.log).
+The final commit must run all five required checks again; none of the earlier
+green jobs is substituted for that run.
+
 ## Additional regression found during required follow-up
 
 The isolated full AI/Physical browser run failed at the old AI source-replacement
@@ -156,6 +176,27 @@ Original saved scene content was restored as a new immutable sequence.
 [This follow-up's pre-operation snapshot](product-before.json) retains scene/drawings
 and a hash of the full geometry response; full arrays stay in the user's project.
 Final-HEAD cold readback and UI observations are reported separately in the PR body.
+
+Additional actual product regression on `49563f72` (before the test-only path fix):
+isolated Hub health confirmed that SHA; actual native worker 25620 exited and the
+reopened worker was 44272. All **141 persistent files** retained identical hashes;
+full scene, 12 drawing records and geometry response matched exactly after refresh
+and reopen. All **103 DOM input/select values** matched before switching, after
+switching and after cold reopen. Source GLB hash remains `b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54`.
+[Summary](product-49563f72/summary.json), [saved state](product-49563f72/before.json),
+[reopened](product-49563f72/after-reopen.json), [actual UI](product-49563f72/after-reopen.png),
+[file hashes](product-49563f72/files-after-reopen.json), [closed worker](product-49563f72/closed.json).
+No new scene revision or drawing regeneration was claimed in this readback-only run;
+the prior changed-state test and full browser update scenarios remain separate evidence.
+The first local close probe used the wrong `projection == stopped` condition; the
+correct API condition is `state == closed` and stopped workers/null PIDs. That probe
+was not counted as close acceptance; the documented cycle was repeated in order.
+An early loading screenshot had only one control and failed the 103-control check;
+acceptance waited for the complete real scene, rather than calling that blank state
+a missing-model fix. Browser pointer targeting was offset in the narrow host window;
+actual workspace switches were completed using keyboard activation and checked.
+Board loaded (no dynamic-module error); Drawing still reports no retained Working
+Head, and jagged Penguin material boundaries remain visible.
 
 Geometry source remains MonkeyHub/OCCT or retained imported mesh; P036 is the writer.
 Geometry revision identifies source geometry, scene revision identifies appearance,

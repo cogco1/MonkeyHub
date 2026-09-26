@@ -373,16 +373,19 @@ class DesktopRuntimeTests(unittest.TestCase):
         # P036's two declared advisory locks carry no project content. Windows
         # forbids reading their locked byte during an ordinary guarded read.
         # Do not exclude arbitrary *.lock/temp files or swallow content errors.
-        self.record("project-snapshot-start",
-                    excludedRepositoryLocks=sorted(str(path.relative_to(self.project)) for path in self.project_locks))
+        # Repository lock paths are canonical. RUNNER~1 and runneradmin may
+        # identify the same Windows directory; compare in that same namespace.
+        project = self.project.resolve()
+        self.record("project-snapshot-start", requestedProject=str(self.project), canonicalProject=str(project),
+                    excludedRepositoryLocks=sorted(str(path.relative_to(project)) for path in self.project_locks))
         contents = {}
-        for path in self.project.rglob("*"):
+        for path in project.rglob("*"):
             if not path.is_file() or path in self.project_locks:
                 continue
             try:
-                contents[str(path.relative_to(self.project))] = path.read_bytes()
+                contents[str(path.relative_to(project))] = path.read_bytes()
             except OSError as error:
-                self.record("project-read-failed", path=str(path.relative_to(self.project)),
+                self.record("project-read-failed", path=str(path.relative_to(project)),
                             operation="Path.read_bytes", errno=error.errno,
                             winerror=getattr(error, "winerror", None),
                             exception=repr(error), stack=traceback.format_exc(),
@@ -882,7 +885,7 @@ with ExitStack() as stack:
             pid = int(child.stdout.readline())
             self.reader.native.track(pid)
             self.reader.record("test-locks-acquired", holderPid=pid, launcherPid=child.pid,
-                               paths=[str(path.relative_to(self.reader.project)) for path in paths])
+                               paths=[str(path.relative_to(self.reader.project.resolve())) for path in paths])
             yield
         finally:
             if child.poll() is None:
@@ -928,6 +931,25 @@ with ExitStack() as stack:
         self.assertEqual(self.reader.project_bytes(), before)
         asset.write_bytes(b"changed retained bytes")
         self.assertNotEqual(self.reader.project_bytes(), before)
+
+    def test_project_path_alias_uses_same_exact_lock_contract(self):
+        before = self.reader.project_bytes()
+        original = self.reader.project.resolve()
+        kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel.GetShortPathNameW.argtypes = [wintypes.LPCWSTR, wintypes.LPWSTR, wintypes.DWORD]
+        kernel.GetShortPathNameW.restype = wintypes.DWORD
+        buffer = ctypes.create_unicode_buffer(32768)
+        count = kernel.GetShortPathNameW(str(original), buffer, len(buffer))
+        self.assertTrue(0 < count < len(buffer), ctypes.get_last_error())
+        alias = Path(buffer.value)
+        # Also works when the test volume disables generation of 8.3 aliases:
+        # an existing parent/name alias still exercises canonical path identity.
+        self.reader.project = alias / ".." / alias.name
+        self.assertNotEqual(str(self.reader.project), str(original))
+        self.assertEqual(self.reader.project.resolve(), original)
+        with self.held(sorted(self.reader.project_locks)):
+            self.assertEqual(self.reader.project_bytes(), before)
+        self.assertEqual(self.reader.project_bytes(), before)
 
 
 if __name__ == "__main__":
