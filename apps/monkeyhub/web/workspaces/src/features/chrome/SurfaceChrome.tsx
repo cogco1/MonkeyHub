@@ -4,7 +4,8 @@
  * status line (L5): what is selected, whether it is saved, how to work it. Instruments, a
  * surface's own tool palette or a card that asks for action, stay the surface's own.
  */
-import type { ButtonHTMLAttributes, ReactNode } from "react";
+import { createContext, useContext, useMemo, useState, type ButtonHTMLAttributes, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import "./chrome.css";
 
 export function SurfaceBar({ label, children, end }: { label: string; children?: ReactNode; end?: ReactNode }) {
@@ -12,6 +13,46 @@ export function SurfaceBar({ label, children, end }: { label: string; children?:
     <div className="surface-bar__items">{children}</div>
     {end != null && end !== false && <div className="surface-bar__end">{end}</div>}
   </div>;
+}
+
+const ProjectBarSlots = createContext<{ readonly menus: HTMLElement | null; readonly words: HTMLElement | null } | null>(null);
+
+/**
+ * The project's one bar over all its surfaces: the surface on screen puts its menus on the
+ * left (`SurfaceMenus`), and the project's position stays at the right end, mounted once for
+ * every surface. With nothing to show, the bar takes no room.
+ */
+export function ProjectBar({ label, lead, position, children }: {
+  label: string;
+  /** Menus the project itself shows on the left, such as the Board | Layout switch. */
+  lead?: ReactNode;
+  position?: ReactNode;
+  children?: ReactNode;
+}) {
+  const [menus, setMenus] = useState<HTMLElement | null>(null);
+  const [words, setWords] = useState<HTMLElement | null>(null);
+  const slots = useMemo(() => ({ menus, words }), [menus, words]);
+  return <>
+    <div className="surface-bar project-bar" role="group" aria-label={label}>
+      <div className="surface-bar__items"><span className="project-bar__lead">{lead}</span><span className="project-bar__menus" ref={setMenus} /></div>
+      <div className="surface-bar__end"><span className="project-bar__words" ref={setWords} />{position}</div>
+    </div>
+    <ProjectBarSlots.Provider value={slots}>{children}</ProjectBarSlots.Provider>
+  </>;
+}
+
+/**
+ * A surface's menus and quiet words: in the project bar while the surface is on screen, or in
+ * a bar of its own where there is no project bar.
+ */
+export function SurfaceMenus({ label, active, children, end }: { label: string; active: boolean; children?: ReactNode; end?: ReactNode }) {
+  const slots = useContext(ProjectBarSlots);
+  if (!slots) return <SurfaceBar label={label} end={end}>{children}</SurfaceBar>;
+  if (!active) return null;
+  return <>
+    {slots.menus && createPortal(children, slots.menus)}
+    {slots.words && end != null && end !== false && createPortal(end, slots.words)}
+  </>;
 }
 
 /** Parallel views or modes as words; the one showing is underlined. */

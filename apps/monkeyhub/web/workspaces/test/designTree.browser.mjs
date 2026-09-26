@@ -258,7 +258,9 @@ try {
   assert.equal(await chip.getAttribute("aria-pressed"), "true");
   await shoot(tab, "01b-ready-notice-opens-study");
   if (shots) await inChinese("01c-ready-notice-opens-study-zh");
-  await tab.locator('[data-project-surface="tree"]').getByRole("button", { name: "Back to Modeling" }).click();
+  // #337: the tree's menus sit in the project bar, over whichever surface is open.
+  const bar = tab.locator(".project-bar");
+  await bar.getByRole("button", { name: "Back to Modeling" }).click();
   await tab.getByTestId("arch-stub").waitFor();
   assert.equal(await ready.count(), 0, "an option that was opened is no longer new");
 
@@ -268,10 +270,14 @@ try {
   await surface.locator(".design-tree__canvas canvas").first().waitFor();
   await tab.waitForFunction(() => window.__treeApi?.getSceneElements().length > 20);
   // The notice left the canvas centred on the ready option; Fit shows the whole tree again.
-  await surface.getByRole("button", { name: "Fit", exact: true }).click();
+  await bar.getByRole("button", { name: "Fit", exact: true }).click();
   await tab.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(resolve)))));
   await tab.waitForFunction(() => document.querySelector(".design-tree__canvas")?.dataset.level === "mid");
   assert.equal(await chip.getAttribute("aria-pressed"), "true");
+  // #337: one bar, not two: the tree's menus on its left, the Stage position at its right end.
+  assert.equal(await surface.locator(".surface-bar").count(), 0, "the tree has no bar of its own under the project bar");
+  const [fitBox, chipBox, barBox] = await Promise.all([bar.getByRole("button", { name: "Fit", exact: true }).boundingBox(), chip.boundingBox(), bar.boundingBox()]);
+  assert.ok(chipBox.x > fitBox.x + fitBox.width && barBox.x + barBox.width - (chipBox.x + chipBox.width) < 40, "the position sits at the bar's right end");
   assert.equal(await tab.getByTestId("arch-stub").isVisible(), false, "the tree replaces the view, it is not drawn over it");
   assert.ok(loaded.some((url) => /excalidraw/i.test(url)), "the canvas loads with the tree");
   const scene = (target = tab) => target.evaluate(() => {
@@ -407,7 +413,7 @@ try {
   assert.ok(view.elements.filter((element) => element.data?.role === "summary").length >= 3, "close: summaries");
   assert.ok(view.elements.some((element) => element.data?.role === "status"), "close: status");
   await shoot(tab, "04-tree-close");
-  await surface.getByRole("button", { name: "Fit", exact: true }).click();
+  await bar.getByRole("button", { name: "Fit", exact: true }).click();
   await tab.waitForFunction(() => document.querySelector(".design-tree__canvas")?.dataset.level === "mid");
 
   // Clicking a node shows its side card; Accept exists on Current only.
@@ -432,7 +438,7 @@ try {
   await card.waitFor({ state: "detached" });
   assert.equal((await scene()).elements.some((element) => element.data?.node === "candidate:run-massing-d"), false,
     "an archived Candidate leaves the default canvas");
-  await surface.getByRole("button", { name: "Show processed (1)", exact: true }).click();
+  await bar.getByRole("button", { name: "Show processed (1)", exact: true }).click();
   card = await clickNode("candidate:run-massing-d");
   await card.getByRole("button", { name: "Undo archive", exact: true }).waitFor();
   assert.match(await card.innerText(), /Endorsed by\s*Review Architect/);
@@ -442,7 +448,7 @@ try {
   assert.equal(await card.locator('[data-action="continue"]').isEnabled(), true, "archiving does not add a new Continue restriction");
   await card.getByRole("button", { name: "Undo archive", exact: true }).click();
   await card.getByRole("button", { name: "Archive", exact: true }).waitFor();
-  assert.equal(await surface.getByRole("button", { name: /Show processed/ }).count(), 0, "restore returns to the default projection");
+  assert.equal(await bar.getByRole("button", { name: /Show processed/ }).count(), 0, "restore returns to the default projection");
   assert.equal(await card.locator("strong").innerText(), "D · Terraced wedge", "cancelling archive retains the selected Study option");
   assert.deepEqual(fixture.workingDraft(), beforeArchive, "archive, filtering and restore leave Working Head unchanged");
   writes.length = 0;
@@ -612,7 +618,7 @@ try {
   await surface.locator(".design-tree__canvas canvas").first().waitFor();
 
   // The list shows the same nodes to the keyboard.
-  await surface.getByRole("button", { name: "List", exact: true }).click();
+  await bar.getByRole("button", { name: "List", exact: true }).click();
   const items = surface.getByRole("treeitem");
   await items.first().waitFor();
   // Four Stages, ten admitted options, two running lines and Current.
@@ -626,20 +632,25 @@ try {
   await tab.keyboard.press("Enter");
   await surface.locator(".design-tree-card").waitFor();
   await shoot(tab, "10-list");
-  await surface.getByRole("button", { name: "Canvas", exact: true }).click();
+  await bar.getByRole("button", { name: "Canvas", exact: true }).click();
   await tab.waitForFunction(() => window.__treeApi?.getSceneElements().length > 20);
 
   // Leaving returns to the previous surface; the chip reopens the tree.
-  await surface.getByRole("button", { name: "Back to Modeling" }).click();
+  await bar.getByRole("button", { name: "Back to Modeling" }).click();
   await tab.getByTestId("arch-stub").waitFor();
   assert.equal(await chip.getAttribute("aria-pressed"), "false");
   await tab.getByTestId("workspace-board").click();
   await tab.getByTestId("board-stub").waitFor();
+  // Board | Layout are text tabs in the same bar, beside the position.
+  const boardModes = bar.getByRole("radiogroup", { name: "Board mode", exact: true });
+  assert.deepEqual(await boardModes.getByRole("radio").allInnerTexts(), ["Board", "Layout"]);
+  assert.equal(await bar.getByRole("button", { name: "Back to Modeling" }).count(), 0, "the tree's menus leave the bar with the tree");
+  await shoot(tab, "10a-board-bar");
   await chip.click();
-  await surface.getByRole("button", { name: "Back to Board" }).click();
+  await bar.getByRole("button", { name: "Back to Board" }).click();
   await tab.getByTestId("board-stub").waitFor();
   await chip.click();
-  await surface.getByRole("button", { name: "Back to Board" }).waitFor();
+  await bar.getByRole("button", { name: "Back to Board" }).waitFor();
   await chip.click();
   await tab.getByTestId("board-stub").waitFor();
 
@@ -649,8 +660,8 @@ try {
   assert.equal((await chip.innerText()).replace(/\s+/g, " ").trim(), "S3 · 当前 · 2 个运行中");
   await chip.click();
   await surface.getByRole("heading", { name: "状态树" }).waitFor();
-  await surface.getByRole("button", { name: "列表", exact: true }).waitFor();
-  await surface.getByRole("button", { name: "返回画板" }).waitFor();
+  await bar.getByRole("button", { name: "列表", exact: true }).waitFor();
+  await bar.getByRole("button", { name: "返回画板" }).waitFor();
   await shoot(tab, "11-zh");
 
   // A result the architect turned down cannot become a Stage: Current's card says so before anyone asks.
@@ -675,14 +686,14 @@ try {
   // Review actions use the same node's accessible list row, independent of that view.
   await tab.keyboard.press("Escape");
   await card.waitFor({ state: "detached" });
-  await surface.getByRole("button", { name: "List", exact: true }).click();
+  await bar.getByRole("button", { name: "List", exact: true }).click();
   const rejectedOption = surface.locator('[role="treeitem"][data-node="candidate:run-massing-a"]');
   await rejectedOption.click();
   card = surface.locator('.design-tree-card[data-node="candidate:run-massing-a"]');
   await card.waitFor();
   await card.getByRole("button", { name: "Reject", exact: true }).click();
   await card.waitFor({ state: "detached" });
-  await surface.getByRole("button", { name: "Show processed (1)", exact: true }).click();
+  await bar.getByRole("button", { name: "Show processed (1)", exact: true }).click();
   await rejectedOption.click();
   await card.getByText(/Rejected/).waitFor();
   assert.equal(await card.getByRole("button", { name: "Undo archive", exact: true }).count(), 0,
@@ -693,13 +704,13 @@ try {
   await card.getByText(/Rejected/).waitFor();
   assert.equal(reviews.get("candidate:run-massing-a").disposition, "rejected");
   assert.equal(await card.locator("strong").innerText(), "A · Slab bar along the river");
-  assert.equal(await surface.getByRole("button", { name: "Hide processed", exact: true }).getAttribute("aria-pressed"), "true",
+  assert.equal(await bar.getByRole("button", { name: "Hide processed", exact: true }).getAttribute("aria-pressed"), "true",
     "the restored rejection remains visible in processed items");
   assert.deepEqual(writes.slice(reviewWritesStart).map(({ name, body }) => [name, body.action]),
     ["reject", "archive", "restore"].map((action) => ["/api/candidate-reviews", action]));
   assert.deepEqual({ draft: fixture.workingDraft(), stages: fixture.designHistory().stages }, beforeRejectedReview,
     "reject, archive and restore leave Working Head and Stage history unchanged");
-  await surface.getByRole("button", { name: "Hide processed", exact: true }).click();
+  await bar.getByRole("button", { name: "Hide processed", exact: true }).click();
   await card.waitFor({ state: "detached" });
   await context.close();
 
@@ -725,6 +736,7 @@ try {
   await hubPage.getByTestId("arch-stub").waitFor();
   await railButton("Design tree").click();
   const hubSurface = hubPage.locator('.chat-project-workspace:not([hidden]) [data-project-surface="tree"]');
+  const hubBar = hubPage.locator('.chat-project-workspace:not([hidden]) .project-bar');
   await hubSurface.locator(".design-tree__canvas canvas").first().waitFor();
   assert.equal(await railButton("Design tree").getAttribute("aria-pressed"), "true");
   assert.match(hubPage.url(), /view=tree/, "the tree has its own deep link");
@@ -738,17 +750,17 @@ try {
   // The same floating card covers list rows in this narrow Hub panel until closed.
   await hubPage.keyboard.press("Escape");
   await hubCard.waitFor({ state: "detached" });
-  await hubSurface.getByRole("button", { name: "Show processed (1)", exact: true }).click();
-  await hubSurface.getByRole("button", { name: "List", exact: true }).click();
+  await hubBar.getByRole("button", { name: "Show processed (1)", exact: true }).click();
+  await hubBar.getByRole("button", { name: "List", exact: true }).click();
   await hubSurface.locator('[role="treeitem"][data-node="candidate:run-massing-a"]').click();
   const reopenedReview = hubSurface.locator('.design-tree-card[data-node="candidate:run-massing-a"]');
   await reopenedReview.getByText(/Rejected/).waitFor();
   assert.equal(await reopenedReview.locator("strong").innerText(), "A · Slab bar along the river");
-  await hubSurface.getByRole("button", { name: "Hide processed", exact: true }).click();
+  await hubBar.getByRole("button", { name: "Hide processed", exact: true }).click();
   await reopenedReview.waitFor({ state: "detached" });
-  await hubSurface.getByRole("button", { name: "Canvas", exact: true }).click();
+  await hubBar.getByRole("button", { name: "Canvas", exact: true }).click();
   await hubSurface.locator(".design-tree__canvas canvas").first().waitFor();
-  await hubSurface.getByRole("button", { name: "Back to Modeling" }).click();
+  await hubBar.getByRole("button", { name: "Back to Modeling" }).click();
   await hubPage.getByTestId("arch-stub").waitFor();
   assert.equal(await railButton("Modeling").getAttribute("aria-pressed"), "true", "leaving returns to the surface it came from");
   await hubPage.locator(".chat-project-workspace:not([hidden]) .stage-chip").click();
