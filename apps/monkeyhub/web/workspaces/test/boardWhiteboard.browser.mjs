@@ -58,7 +58,7 @@ with mock.patch("tests.support.RHINO_DESIGN_STATE_DIGEST", digest):
 print(json.dumps({"models": models, "pdf": base64.b64encode(two_page_pdf()).decode()}))
 `, root, repoRoot], { cwd: apiRoot, encoding: "utf8", env: pythonEnv });
   assert.equal(fixture.status, 0, fixture.stderr || fixture.stdout);
-  const { models: [modelSource, alternateModelSource], pdf } = JSON.parse(fixture.stdout.trim());
+  const { models: [modelSource, alternateModelSource], pdf } = JSON.parse(fixture.stdout.trim().split(/\r?\n/).at(-1));
   const apiPort = await new Promise((resolve) => {
     const probe = createHttpServer();
     probe.listen(0, "127.0.0.1", () => { const { port } = probe.address(); probe.close(() => resolve(port)); });
@@ -233,13 +233,78 @@ print(json.dumps({"models": models, "pdf": base64.b64encode(two_page_pdf()).deco
   const bound = await call("POST", `/api/documents/${firstDocument.assetSha256}/model-source`, {
     projectId: project.projectId, runId: firstDocument.runId, modelSource });
   assert.deepEqual(bound.modelSource, modelSource);
+  let workingCase = "current", workingReads = 0, releaseDelayed, delayedRequest;
+  await page.route("**/api/working-source?workspace=modeling", async (route) => {
+    const requestCase = workingCase; workingReads += 1;
+    const source = requestCase === "unknown" ? null : ["stale", "delayed-stale"].includes(requestCase) ? alternateModelSource : modelSource;
+    if (requestCase === "delayed-stale") {
+      delayedRequest = route.request();
+      await new Promise((resolve) => { releaseDelayed = resolve; });
+    }
+    await route.fulfill({ json: { projectId: requestCase === "other-project" ? "another-project" : project.projectId,
+      workspace: "modeling", policy: "live", revisionSha256: "f".repeat(64), head: source ? {
+        runId: source.runId, stateDigest: source.stateDigest, recordDigest: "e".repeat(64), accepted: true,
+        origin: "branch-head", label: "Current stage", modelSource: source, lineage: [source.runId],
+      } : null, compatible: source !== null, source } });
+  });
+  await page.route("**/api/design-history?branchId=main", (route) => route.fulfill({ json: {
+    projectId: project.projectId, branchId: "main", branches: [{ branchId: "main", label: "Main", headStageRef: "current-stage" }],
+    stages: [{ stageRef: "old-stage", label: "Atrium study", branchId: "main", modelSource, stageId: "stage-1",
+      createdAt: "2026-09-25T09:00:00Z", parentStageRef: null }], explorations: [],
+  } }));
+  const datedDocuments = await call("GET", "/api/documents");
+  datedDocuments.documents[0].generatedAt = "2026-09-26T10:30:00Z";
+  datedDocuments.documents[0].projectId = "another-project";
+  datedDocuments.documents[0].sourceStageRef = "old-stage";
+  await page.route("**/api/documents", (route) => route.fulfill({ json: datedDocuments }), { times: 1 });
   await page.reload({ waitUntil: "domcontentloaded" });
   await page.locator(".monkeyboard-initializing").waitFor({ state: "hidden" });
   await fit(); await selectAll();
   const feedback = () => page.locator(".monkeyboard-context").getByRole("button", { name: "Send design feedback", exact: true });
+  await page.getByText("Current editing source unavailable", { exact: true }).waitFor();
+  assert.match(await page.locator(".monkeyboard-context-identity").innerText(), /Stage · Unknown stage · Generated Sep 26, 2026/);
+  assert.equal(submissions.length, 0, "A page claiming another project remains view-only until the existing handoff validates it");
+  datedDocuments.documents[0].projectId = project.projectId;
+  const sameProjectStage = (route) => route.fulfill({ json: datedDocuments });
+  await page.route("**/api/documents", sameProjectStage);
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.locator(".monkeyboard-initializing").waitFor({ state: "hidden" });
+  await fit(); await selectAll();
   await feedback().waitFor(); assert.equal(await feedback().isEnabled(), true);
   assert.equal(await page.locator(".monkeyboard-context").getByRole("button", { name: "Link model in MonkeyDiagram", exact: true }).count(), 0);
-  assert.equal(await page.locator(".monkeyboard-context-binding").innerText(), "Model linked");
+  const sourceStatus = page.locator(".monkeyboard-context-binding");
+  await page.getByText("Matches current editing source", { exact: true }).waitFor();
+  assert.equal(await sourceStatus.innerText(), "Matches current editing source");
+
+  // The selected page compares all three model-source fields with the current
+  // modeling source. The existing five-second document refresh updates the
+  // read-only warning while Board stays visible; it never changes selection or
+  // sends the existing feedback action.
+  const refreshWorkingSource = async (expected) => {
+    await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+    await page.getByText(expected, { exact: true }).waitFor();
+    assert.equal(submissions.length, 0, "Freshness display must not send feedback");
+  };
+  workingCase = "stale";
+  await page.getByText("Different from current editing source", { exact: true }).waitFor({ timeout: 7_000 });
+  assert.match(await page.locator(".monkeyboard-context-identity").innerText(), /Stage · Atrium study · Generated Sep 26, 2026/);
+  assert.equal(submissions.length, 0, "The document refresh must only update source information");
+  workingCase = "unknown"; await refreshWorkingSource("Current editing source unavailable");
+  workingCase = "other-project"; await refreshWorkingSource("Current editing source unavailable");
+  workingCase = "current"; await refreshWorkingSource("Matches current editing source");
+  // An older request that finishes last cannot replace the newer current read.
+  workingCase = "delayed-stale"; const beforeDelayed = workingReads;
+  await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+  for (let attempt = 0; workingReads === beforeDelayed && attempt < 100; attempt++) await delay(20);
+  assert.equal(typeof releaseDelayed, "function", "The old source read must be held before starting the new read");
+  const currentResponse = page.waitForResponse((response) => response.url().endsWith("/api/working-source?workspace=modeling") && response.request() !== delayedRequest);
+  workingCase = "current"; await refreshWorkingSource("Matches current editing source");
+  await (await currentResponse).finished();
+  const oldResponse = page.waitForResponse((response) => response.request() === delayedRequest);
+  releaseDelayed(); await (await oldResponse).finished();
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  assert.equal(await sourceStatus.innerText(), "Matches current editing source");
+  await page.unroute("**/api/documents", sameProjectStage);
   for (const [name, width, height] of [["dock-wide", 1440, 1000], ["dock-narrow", 620, 900], ["dock-phone", 390, 844]]) {
     await page.setViewportSize({ width, height });
     const dock = page.locator(".monkeyboard-context");
