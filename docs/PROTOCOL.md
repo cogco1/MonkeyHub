@@ -656,9 +656,9 @@ requests `agent` unless the request names a kind itself. The request boundary
 records who asked, as for decisions: `actorId`, `authenticated` and `origin`, where
 `hub` means a runtime the Hub manages and `studio` one it does not; a Hub-managed
 runtime serves both its window and its Agent, which is why `sourceKind` is asked for.
-All three are retained in the revision's drawing receipt, never in `viewRecipe`, so
-they neither make nor distinguish revisions: an identical request returns the
-retained revision as it was asked for. Every SourceDocument with a `revisionRef`
+Who asked, `reason` and `sourceKind` are retained in the revision's drawing receipt,
+never in `viewRecipe`, so they neither make nor distinguish revisions: an identical
+request returns the retained revision as it was asked for. Every SourceDocument with a `revisionRef`
 reads `previousRevisionRef`, `attribution`, `reason` and `sourceKind` from that
 receipt, read-only; a revision retained before they were recorded reads null.
 

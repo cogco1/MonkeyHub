@@ -316,8 +316,8 @@ class DrawingCorrectionsDto(BaseModel):
     pairs: list[DrawingCorrectionPairDto] = Field(description=(
         "Each revision of drawingId paired with the revision it continued, in the order drawn; empty without drawingId."))
     suggestions: list[RecipeSuggestionDto] = Field(description=(
-        "Project-wide: a pen or the hatch spacing that was changed the same way, in representation-only revisions "
-        "no agent asked for, on at least two drawings that no active recipe already gives that value."))
+        "Project-wide: a pen or the hatch spacing changed the same way, in representation-only revisions no agent "
+        "asked for, on at least two drawings to which no active recipe already gives that key."))
 
 DrawingStyleId = Literal["arch400-white", "arch364-technical"]
 
