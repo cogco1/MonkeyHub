@@ -222,6 +222,50 @@ class HubTraceTests(unittest.TestCase):
             server.server_close()
             thread.join(2)
 
+    def test_a_visual_review_is_a_visual_observation_under_its_turn_with_its_images_and_no_prompt(self):
+        trace = HubTurnObserver(self.store, "turn", "project", "codex", None)
+        trace.ready()
+        arguments = {"taskClass": "spatial_formal", "reason": "first_bundle", "domain": "modeling",
+                     "sourceRefs": [{"kind": "model", "runId": "run-001", "stateDigest": "a" * 64, "assetSha256": "b" * 64}],
+                     "viewRecipe": ["front", "axon"], "task": "private-review-task",
+                     "criteria": [{"criterionId": "entry", "text": "private-review-criterion"}]}
+        answer = {"observation": {"reviewId": "vr-0123456789abcdef", "observations": [
+                      {"findingId": "f1", "description": "private-review-finding", "escalate": False}]},
+                  "usage": {"provider": "codex", "imageInputs": 2, "inputTokens": 1200},
+                  "allowance": {"taskClass": "spatial_formal", "allowed": 2, "used": 1}}
+        trace.tool("look", "visual_review", arguments, running=True)
+        trace.tool("look", "visual_review", arguments, running=False,
+                   result={"content": [{"type": "text", "text": json.dumps(answer)}], "structured_content": None})
+        trace.tool("again", "visual_review", arguments, running=True)
+        trace.tool("again", "visual_review", arguments, running=False, failed=True,
+                   result={"content": [{"type": "text", "text": '{"code": "VISUAL_BUDGET_EXHAUSTED"}'}]})
+        view = "/api/drawings/model-view?runId=run-001&stateDigest=" + "a" * 64 + "&assetSha256=" + "b" * 64 + "&view=top"
+        for identifier, method, path in (("view", "GET", view), ("page", "POST", "/api/board/export")):
+            trace.tool(identifier, "studio_request", {"method": method, "path": path}, running=True)
+            trace.tool(identifier, "studio_request", {"method": method, "path": path}, running=False, result="{}")
+        trace.finish("succeeded")
+        rows = {row.event_id: row for row in self.rows()}
+        look, again = rows["hub:tool:turn:look"], rows["hub:tool:turn:again"]
+        self.assertEqual((look.phase, look.parent_event_id, look.turn_id, look.status),
+                         ("tool_call", "hub:turn:turn", "turn", "succeeded"))
+        self.assertEqual({key: look.details[key] for key in ("tool_name", "request_kind", "image_inputs", "output_refs")},
+                         {"tool_name": "visual_review", "request_kind": "visual_observation", "image_inputs": 2,
+                          "output_refs": ["vr-0123456789abcdef"]})
+        # A refused look reports no image count: unknown is not zero.
+        self.assertEqual((again.status, again.details["request_kind"]), ("failed", "visual_observation"))
+        self.assertNotIn("image_inputs", again.details)
+        # A raw view or page read hands the Agent one image and is a read, not a mutation.
+        for identifier in ("view", "page"):
+            self.assertEqual((rows[f"hub:tool:turn:{identifier}"].details["request_kind"],
+                              rows[f"hub:tool:turn:{identifier}"].details["image_inputs"]), ("image_read", 1))
+        exported = json.dumps([row.to_dict() for row in rows.values()])
+        for private in ("private-review-task", "private-review-criterion", "private-review-finding"):
+            self.assertNotIn(private, exported)
+        (built,) = build_traces([row.to_dict() for row in rows.values()])["traces"]
+        span = next(span for span in built["spans"] if span["event_id"] == "hub:tool:turn:look")
+        self.assertEqual((span["parent_event_id"], span["details"]["request_kind"], span["details"]["image_inputs"]),
+                         ("hub:turn:turn", "visual_observation", 2))
+
     def test_non_finite_tool_payload_cannot_fail_the_observed_turn(self):
         trace = HubTurnObserver(self.store, "turn", "project", "codex", None)
         trace.ready()
@@ -320,6 +364,29 @@ class CliTraceTests(unittest.TestCase):
         finally:
             trace.finish("succeeded")
             self.store._running.pop(session.id, None)
+
+    def test_a_visual_review_the_cli_reports_is_traced_under_the_turn_it_answers(self):
+        session = self.create()
+        saved = self.store._sessions[session.id]
+        trace = HubTurnObserver(self.store.usage_log, "turn", session.projectId, "codex", None)
+        trace.ready()
+        self.store._running[session.id] = chat._Running(trace=trace)
+        answer = {"observation": {"reviewId": "vr-00000000000000aa", "observations": []},
+                  "usage": {"imageInputs": 3}, "allowance": {"taskClass": "spatial_formal", "allowed": 2, "used": 1}}
+        item = {"type": "mcp_tool_call", "id": "look", "tool": "visual_review", "server": "monkeyhub",
+                "arguments": {"taskClass": "spatial_formal", "task": "private-cli-review-task"}, "status": "in_progress"}
+        try:
+            self.store._event(saved, {"type": "item.started", "item": item}, {})
+            self.store._event(saved, {"type": "item.completed", "item": {**item, "status": "completed", "result": {
+                "content": [{"type": "text", "text": json.dumps(answer)}], "structured_content": None}}}, {})
+        finally:
+            trace.finish("succeeded")
+            self.store._running.pop(session.id, None)
+        events, _ = self.store.usage_log.read()
+        look = next(row for row in events if row.event_id == "hub:tool:turn:look")
+        self.assertEqual((look.turn_id, look.parent_event_id, look.status), ("turn", "hub:turn:turn", "succeeded"))
+        self.assertEqual((look.details["request_kind"], look.details["image_inputs"]), ("visual_observation", 3))
+        self.assertNotIn("private-cli-review-task", json.dumps([row.to_dict() for row in events]))
 
     def test_cli_turn_is_live_then_completed_under_exact_native_identity(self):
         session = self.create()

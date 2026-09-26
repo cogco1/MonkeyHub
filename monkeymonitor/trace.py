@@ -69,7 +69,8 @@ def _safe_details(details):
     codes = {"tool_name", "request_kind", "billing_plan", "provider_timing_basis", "native_turn_id",
              "cache_status", "cache_reason", "execution_path", "retry_reason", "wait_reason", "task_type",
              "validator_scope", "duplicate_status", "duplicate_reason", "reuse_opportunity"}
-    counts = {"first_token_ms", "model_inference_ms", "input_bytes", "output_bytes", "retry_attempt", "http_status"}
+    counts = {"first_token_ms", "model_inference_ms", "input_bytes", "output_bytes", "retry_attempt", "http_status",
+              "image_inputs"}
     for key in codes & details.keys():
         safe[key] = _code(details[key])
     for key in (counts | {"blocking", "success", "validator_pass", "escalation", "input_equivalent",

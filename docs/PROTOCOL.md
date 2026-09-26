@@ -301,6 +301,22 @@ or `VISUAL_PROVIDER_UNAVAILABLE` when the runtime's provider is deterministic. O
 refusals keep their code and status. A failed provider call answers 502 `VISUAL_PROVIDER_FAILED`
 with the `budgetState` that counts the spent review and the call's `usage`.
 
+MonkeyHub gives the Agent this route as its own `visual_review` tool and never through
+`studio_request` or `studio_schema`, so the allowance cannot be bypassed. The Agent declares
+`taskClass` (with `polishRounds` for `polish`) and the review's own fields; Hub fills `projectId` and
+`budgetState`. Hub holds one allowance for each user message the Agent answers, and the next message
+starts a new one. Until a review of it is spent, a new declaration replaces the class; after that
+another class answers `409 VISUAL_TASK_CLASS_FIXED`. More than two polish rounds need the user's own
+words in that message asking to keep refining (`409 VISUAL_POLISH_NOT_ASKED` otherwise). Hub keeps
+the `budgetState` each answer hands back: a 4xx refusal spends nothing, while a 5xx answer, or a sent
+review that is never answered (`504 VISUAL_REVIEW_UNANSWERED`), counts as spent. The Agent receives the
+`observation`, with `escalate: true` on each finding whose `targetRefs` name a `preserve:*`
+condition (a question for the architect rather than for another review), the provider's `usage`
+and the `allowance` (`taskClass`, `allowed`, `used`), never an image. The Hub trace records the call
+under its turn as a tool call with `request_kind` `visual_observation`, `image_inputs` from that usage
+and the review id, and none of the request's text; a raw `model-view` or page read through
+`studio_request` is recorded as `image_read` with one image input.
+
 **The program sheet.** A sheet is `ProgramSheet@1` and travels whole in both directions, carrying
 the `stateDigest` of the record it was read from. `POST /api/program` refuses `409 STALE_BASE` when
 that is not the state the project answers with now, and `422 PROGRAM_SHEET_INVALID` when the kernel
@@ -614,6 +630,10 @@ are rejected before persistence. A maximum of 100 objects is supported. Rebuilds
 retain unresolved objects in the recipe and report `missing` / `outside-view` in
 `POST /api/drawings/plans/status`; unresolved objects are omitted from the output
 rather than silently repositioned. Drawing revisions never advance Design HEAD.
+The Hub Agent reaches these through `studio_request`: the plan write is admitted like
+any other drawing write, and `GET /api/drawings/plans/vector`, `GET
+/api/drawings/plans/dimensions` and `POST /api/drawings/plans/status` are reads sent
+straight to the bound Studio, with no `operationId`.
 
 A rebuild that names `previousRevisionRef` registers the new revision as that
 revision's whole-document replacement: its `replacesPages` names the previous
@@ -1257,7 +1277,9 @@ intermediate runs, and a rejection or Continue only on the user's own words.
 The prepared default reads design and drawing decisions together, so the Agent is
 handed the same project recipe a new drawing starts from: a drawing decision
 whose `typedBinding` is `{"kind": "recipe", "graphics": {…}}` over the closed
-paper-space keys `cutLineMm`, `visibleLineMm` and `hatchSpacingMm`. Copy work,
+paper-space keys `cutLineMm`, `visibleLineMm` and `hatchSpacingMm`. Hub's context note
+names the order a new drawing reads it in: an explicit value in the drawing request, then
+the drawing's own previous revision, then the project recipe, then the default. Copy work,
 or a turn that wants one domain alone, selects `decisionContext.domain` on the
 existing context read. Full applicable decision slices pass through, while
 revoked, deferred or inapplicable records do not. Chat feedback cannot retain a
