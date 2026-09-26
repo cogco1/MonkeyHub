@@ -9,11 +9,15 @@ from __future__ import annotations
 
 import json
 import unittest
+from unittest.mock import patch
+from xml.etree import ElementTree
 
 from fastapi.testclient import TestClient
 
 from archflow.adapters.occt_backend import occt_available
 from archflow.project.refs import record_ref_from_uri
+from archflow_studio_api.application.binding import bound_project
+from archflow_studio_api.application.drawings import generate_section_perspective
 from monkeydiagram.drawing_elevation import SECTION_PERSPECTIVE_KIND, read_model_axis_elevation
 from archflow_studio_api.main import create_app
 from archflow_studio_api.settings import StudioSettings
@@ -100,6 +104,41 @@ class SectionPerspectiveApiTests(CandidateTestCase):
         self.assertEqual(moved.json()["viewRecipe"]["camera"]["eye"], [1.0, 9.0, 1.6])
         self.assertEqual(self.repository.read_head(), self.head)
 
+    def test_material_hatch_and_beyond_fade_reach_the_svg_and_old_requests_are_unchanged(self):
+        svg_ns = "{http://www.w3.org/2000/svg}"
+        plain = self.post()
+        self.assertEqual(plain.status_code, 201, plain.text)
+        self.assertEqual(set(plain.json()["viewRecipe"]["graphics"]), {"cutLineMm", "visibleLineMm", "hatchSpacingMm"})
+        cut = read_model_axis_elevation(
+            self.repository, record_ref_from_uri(plain.json()["revisionRef"], PROJECT_ID)).receipt["projection"]["cut_object_ids"]
+        self.assertIn("obj-room-floor", cut)
+        # The Studio room's export names no materials; its floor is given one as a CAD program's user text would.
+        binding = bound_project(self.app.state)
+        with patch("monkeydiagram.drawing_elevation.object_semantics", return_value={"obj-room-floor": {"material": "concrete"}}):
+            document = generate_section_perspective(
+                binding, source_stage_ref=self.stage["stageRef"], model_source=None,
+                section={"line": [[0, 2.5], [4, 2.5]], "keep": "right"}, scale_denominator=50,
+                hatch={"byMaterial": {"concrete": {"poche": True}}}, beyond={"fade": 0.5})
+        self.assertEqual(document.view_recipe["request"]["graphics"], {
+            "cutLineMm": 0.5, "visibleLineMm": 0.25, "hatchSpacingMm": 0.5,
+            "hatch": {"byMaterial": {"concrete": {"spacingMm": 0.5, "angleDeg": 45.0, "poche": True}}},
+            "beyond": {"fade": 0.5}})
+        ruled = read_model_axis_elevation(self.repository, record_ref_from_uri(document.revision_ref, PROJECT_ID))
+        root = ElementTree.fromstring(ruled.svg)
+        filled = root.find(f"{svg_ns}g[@id='section-hatch']").findall(f"{svg_ns}polygon")
+        self.assertEqual([(polygon.get("data-object"), polygon.get("data-material")) for polygon in filled],
+                         [("obj-room-floor", "concrete")])
+        self.assertEqual(root.find(f"{svg_ns}g[@id='visible']").get("stroke"), "#808080")
+        self.assertNotEqual(document.revision_ref, plain.json()["revisionRef"])
+        # An empty byMaterial and a zero fade are the old request: its registered revision, not a redraw.
+        cleared = generate_section_perspective(
+            binding, source_stage_ref=self.stage["stageRef"], model_source=None,
+            section={"line": [[0, 2.5], [4, 2.5]], "keep": "right"}, scale_denominator=50,
+            hatch={"byMaterial": {}}, beyond={"fade": 0})
+        self.assertEqual(cleared.revision_ref, plain.json()["revisionRef"])
+        self.assertEqual(self.post().json(), plain.json())
+        self.assertEqual(self.repository.read_head(), self.head)
+
     def test_refusals_are_named_and_register_nothing(self):
         for code, changes in (
             ("SECTION_PLANE_MISSES_MODEL", {"section": {"line": [[0, 50], [4, 50]], "keep": "right"}}),
@@ -110,6 +149,12 @@ class SectionPerspectiveApiTests(CandidateTestCase):
             ("SECTION_VALUE_NOT_FINITE", {"section": {"line": [[0, 2.5], [4, float("nan")]], "keep": "right"}}),
             ("DRAWING_OBJECT_UNKNOWN", {"hiddenObjectIds": ["not-a-physical-object"]}),
             ("REQUEST_INVALID", {"section": {"line": [[0, 2.5], [4, 2.5]], "keep": "behind"}}),
+            # The cut plan's material rule and fade refusals.
+            ("REQUEST_INVALID", {"hatch": {"byMaterial": {"concrete": {"spacingMm": .1}}}}),
+            ("REQUEST_INVALID", {"beyond": {"fade": 1.5}}),
+            ("REQUEST_INVALID", {"hatch": {"byMaterial": {"": {"poche": True}}}}),
+            ("REQUEST_INVALID", {"hatch": {"byMaterial": {"stone": {"angleDeg": 180}}}}),
+            ("REQUEST_INVALID", {"hatch": {"byMaterial": {"stone": {"colour": "grey"}}}}),
         ):
             with self.subTest(code=code):
                 response = self.post(**changes)
