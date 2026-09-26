@@ -158,18 +158,21 @@
       "id": "GH-328",
       "stream": "planning",
       "status": "active",
-      "goal": "Personalisation offers selectable interface styles on one mechanism: Classic (today's look, the default), Quiet instrument, Title block and Night flight (demo). The choice is a user setting beside theme and size, applied as data-ui-style; each style is tokens plus shared instrument rules (brand mark, aligned bars, section rules, tabular counts, a thread spine, >=3:1 control borders, a status-bar notice).",
+      "goal": "Personalisation offers selectable interface styles on one mechanism: Classic (today's look, the default), Quiet instrument, Title block and Night flight (demo). The choice is a user setting beside theme and size, applied as data-ui-style; each style is tokens plus shared instrument rules (brand mark, aligned bars, section rules, tabular counts, a thread spine, >=3:1 control borders, a status-bar notice). Settings is paged like the desktop app's own: a page list (Display, Conversations, AI Render, Workspace, Software update) beside one page of rows, and the interface styles are preview cards on Display.",
       "depends_on": [],
       "issue": "https://github.com/cogco1/MonkeyHub/issues/328",
       "write_scope": [
         "apps/archflow-studio/api/archflow_studio_api/transport/settings.py",
         "apps/monkeyhub/web/src/ChatShell.css",
+        "apps/monkeyhub/web/src/ChatShell.tsx",
         "apps/monkeyhub/web/src/api/generated/index.ts",
         "apps/monkeyhub/web/src/api/generated/sdk.gen.ts",
         "apps/monkeyhub/web/src/api/generated/types.gen.ts",
         "apps/monkeyhub/web/src/main.tsx",
         "apps/monkeyhub/web/src/notifications/attention.css",
         "apps/monkeyhub/web/src/styles.css",
+        "apps/monkeyhub/web/test/chatShell.browser.mjs",
+        "apps/monkeyhub/web/test/settingsAutosave.browser.mjs",
         "apps/monkeyhub/web/workspaces/src/api/generated/index.ts",
         "apps/monkeyhub/web/workspaces/src/api/generated/sdk.gen.ts",
         "apps/monkeyhub/web/workspaces/src/api/generated/types.gen.ts",
@@ -183,7 +186,8 @@
       "acceptance": [
         "uiStyle is a validated user setting (classic|quiet|titleblock|night) saved with theme and size; Classic keeps today's look.",
         "Quiet, Title block and Night share the instrument rules; Title block and Night add their palettes and technical type; light themes covered where the style has one.",
-        "Checked in Chinese and English, dark and light, sidebar open and collapsed; no undefined CSS variable; control borders >=3:1."
+        "Checked in Chinese and English, dark and light, sidebar open and collapsed; no undefined CSS variable; control borders >=3:1.",
+        "Settings opens on Display with a vertical tab list (arrows, Home, End); each page is rows of setting and control; a ready update opens straight on Software update; every existing field keeps its id and autosave."
       ],
       "lanes": [
         {
@@ -194,7 +198,7 @@
           "base_ref": "e33fbf46",
           "contributor": "Claude",
           "reviewer": "Claude root task",
-          "handoff": "Visual research directions as selectable styles; ChatShell.tsx and the i18n catalogs stay with Codex's GH-281 (local copy objects instead).",
+          "handoff": "Visual research directions as selectable styles, and the paged Settings the owner asked for. ChatShell.tsx is touched only in the Settings dialog (props type, page state, dialog markup, one icon), away from GH-281's hunks; the i18n catalogs stay with GH-281, so the new words are local copy objects.",
           "modules": [
             "hub.shell",
             "studio.shell"
@@ -214,7 +218,10 @@
             "apps/monkeyhub/web/src/api/generated/types.gen.ts",
             "apps/monkeyhub/web/workspaces/src/api/generated/index.ts",
             "apps/monkeyhub/web/workspaces/src/api/generated/sdk.gen.ts",
-            "apps/monkeyhub/web/workspaces/src/api/generated/types.gen.ts"
+            "apps/monkeyhub/web/workspaces/src/api/generated/types.gen.ts",
+            "apps/monkeyhub/web/src/ChatShell.tsx",
+            "apps/monkeyhub/web/test/chatShell.browser.mjs",
+            "apps/monkeyhub/web/test/settingsAutosave.browser.mjs"
           ],
           "depends_on": [],
           "status": "active",
