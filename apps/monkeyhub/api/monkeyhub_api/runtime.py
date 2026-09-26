@@ -442,6 +442,13 @@ class OperationManager:
             recent = [row for row in values if row not in active][-50:]
             return [*active, *recent, *(self._shown(row) for row in self._retained.values())]
 
+    def _has_active(self) -> bool:
+        # Liveness needs status only, not detached display copies of the whole
+        # admission history on every project heartbeat.
+        with self._lock:
+            return (any(row.record.status in _ACTIVE for row in self._operations.values())
+                    or any(row.status in _ACTIVE for row in self._retained.values()))
+
     def acknowledge(self, operation_id: str) -> OperationRecord:
         """Dismiss one operation's notice; its record and outcome stay as they are.
 
@@ -717,7 +724,7 @@ class ProjectRuntimeManager:
             runtime.error = None
             runtime.projection = "ready" if alive else "stale" if worker else "unknown"
             runtime.projection_key = projection_key
-        busy = any(row.status in _ACTIVE for row in runtime.operations.records()) or any(row.get("status") in {"queued", "running"} for row in retained.get("jobs", []))
+        busy = runtime.operations._has_active() or any(row.get("status") in {"queued", "running"} for row in retained.get("jobs", []))
         self.applications.set_busy(project_dir=runtime.project_dir, busy=busy)
         if previous is not None and previous.get("published") != retained.get("published"):
             self.emit("state/committed", runtime.runtime_id)
@@ -980,13 +987,14 @@ class ProjectRuntimeManager:
 
     def _watch(self, runtime: ProjectRuntime):
         next_retained_read = next_work_copy_check = 0.0
+        last_snapshot_inputs = last_retained = None
         while not self._closing.is_set():
             force_read = runtime.wake.is_set()
             runtime.wake.clear()
             workers = self.applications.worker_snapshots(project_dir=runtime.project_dir)
             worker_states = tuple((row.instance_id, row.state, row.healthy) for row in workers)
             drained = runtime.state == "closed" and not any(row.process_id is not None for row in workers)
-            active = any(row.status in _ACTIVE for row in runtime.operations.records()) or any(
+            active = runtime.operations._has_active() or any(
                 row.get("status") in {"queued", "running"} for row in (runtime.retained or {}).get("jobs", []))
             due = (drained or force_read or active or worker_states != runtime.last_workers
                    or time.monotonic() >= next_retained_read)
@@ -1040,13 +1048,25 @@ class ProjectRuntimeManager:
             with self._lock:
                 chat_changed = project_key(runtime.project_dir) in self._chat_changed
                 self._chat_changed.discard(project_key(runtime.project_dir))
-            snapshot = self.project_snapshot(runtime).model_dump()
-            if snapshot != runtime.last_snapshot or chat_changed:
-                previous = runtime.last_snapshot
-                runtime.last_snapshot = snapshot
-                self.emit("agent/progress" if chat_changed else "project/updated", runtime.runtime_id)
-                if previous and previous.get("projection") != snapshot["projection"]:
-                    self.emit("projection/updated" if snapshot["projection"] == "ready" else "projection/invalidated", runtime.runtime_id)
+            with runtime.lock:
+                retained = runtime.retained
+                snapshot_inputs = (workers, runtime.state, runtime.projection, self._clients,
+                    runtime.error, runtime.work_copy_error,
+                    tuple(row.failure for row in runtime.work_copies.values()))
+            # Active work and wakes still read the complete view. Idle ticks
+            # compare only small status values; retained refresh replaces its
+            # value, and the existing chat callback reports session changes.
+            # Work-copy refusals and worker details can change between reads.
+            if (due or chat_changed or snapshot_inputs != last_snapshot_inputs
+                    or retained is not last_retained):
+                last_snapshot_inputs, last_retained = snapshot_inputs, retained
+                snapshot = self.project_snapshot(runtime).model_dump()
+                if snapshot != runtime.last_snapshot or chat_changed:
+                    previous = runtime.last_snapshot
+                    runtime.last_snapshot = snapshot
+                    self.emit("agent/progress" if chat_changed else "project/updated", runtime.runtime_id)
+                    if previous and previous.get("projection") != snapshot["projection"]:
+                        self.emit("projection/updated" if snapshot["projection"] == "ready" else "projection/invalidated", runtime.runtime_id)
             if drained:
                 break
             runtime.wake.wait(1)

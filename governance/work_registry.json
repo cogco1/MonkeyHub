@@ -155,6 +155,36 @@
       ]
     },
     {
+      "id": "GH-314",
+      "stream": "planning",
+      "status": "ready",
+      "goal": "Remove unchanged heartbeat snapshot reconstruction and operation-history copies from the Hub project watcher, preserving work-copy observation, external refresh and recovery responsiveness.",
+      "depends_on": [],
+      "issue": "https://github.com/cogco1/MonkeyHub/issues/314",
+      "branch": "codex/314-idle-runtime-cost",
+      "worktree": "codex-314-idle-runtime-cost",
+      "base_ref": "17d18aadc4c707085c5ff76c018ab5e7c5ed1ec4",
+      "contributor": "Codex",
+      "reviewer": null,
+      "handoff": "Source-only slice ready for parent integration; fixed main 17d18aad including PR #320 is merged. Claude owns the running Hub release. Original #314 acceptance remains pending: measure the same five real projects idle for two minutes and verify average Hub CPU below 0.05 cores on the installed build.",
+      "modules": [
+        "hub.shell"
+      ],
+      "write_scope": [
+        "apps/monkeyhub/api/monkeyhub_api/runtime.py",
+        "apps/monkeyhub/api/tests/test_project_runtime.py",
+        "apps/monkeyhub/api/tests/test_runtime_operations.py",
+        "governance/work_registry.json",
+        "docs/DYNAMIC_MAP.md",
+        "docs/mapping/planning/INDEX.md"
+      ],
+      "acceptance": [
+        "Unchanged idle heartbeats do not reconstruct operation records or project snapshots; equivalent isolated workloads record before/after counts and time.",
+        "Operation, chat, worker, work-copy error, client and projection changes remain visible with the existing heartbeat and wake behavior; external changes remain discoverable on the existing due cadence.",
+        "Focused runtime tests, archcheck and changed-scope checks pass; this slice does not claim the real five-project CPU threshold or change the running Hub."
+      ]
+    },
+    {
       "id": "GH-66",
       "stream": "planning",
       "status": "ready",
@@ -201,24 +231,6 @@
         "2026-09-26: resume GH-66 from the shared e33fbf46 baseline in its assigned isolated worktree; release historical Render/Diagram paths. GH-291 owns drawing revision/replacement and GH-252 owns recipe/decision reuse.",
         "2026-09-26: closeout implements autosave and pending-import recovery, explicit Board order, bounded repeatable layout, embedded-font PDF and supported editable source PDF primitives in PPTX. Unsupported source semantics retain raster appearance; exact source/freeze and model HEAD boundaries are verified.",
         "2026-09-26: PR #332 Linux follow-up uses isolated checkout /workspace/MonkeyHub at efb13984. The failing request returned HTTP 422 PUBLICATION_FONT_GLYPH; Publish now chooses a TrueType-outline CJK face consistently, CI installs Debian fonts-wqy-microhei, and the regression requires readable Chinese PDF text rather than conditionally omitting it."
-      ]
-    },
-    {
-      "id": "GH-281",
-      "stream": "planning",
-      "status": "active",
-      "goal": "Reconcile the reviewed PR with the existing mainline at its bounded integration overlap.",
-      "depends_on": [],
-      "issue": "https://github.com/cogco1/MonkeyHub/issues/281",
-      "branch": "codex/merge-cloud-batch",
-      "worktree": "C:/Users/asus/.codex/worktrees/merge-cloud-batch/ARCHFLOW_V4",
-      "base_ref": "676630d2b17e5a85d4a1761afd7b285d3bf5fd6f",
-      "contributor": "Codex integration",
-      "reviewer": "Independent bounded Codex review",
-      "handoff": "Preserve the original PR head and current mainline behavior in a normal integration merge; release this temporary merge scope in the following commit.",
-      "write_scope": [
-        "apps/monkeyhub/web/src/ChatShell.tsx",
-        "apps/monkeyhub/web/test/chatShell.browser.mjs"
       ]
     }
   ]
