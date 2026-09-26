@@ -285,3 +285,32 @@ advanced, before backend suites ran:
 [actual failure](https://github.com/cogco1/MonkeyHub/actions/runs/36267756359/job/108475574905).
 The normal main merge passed the unchanged gate. Superseded/cancelled CI jobs are
 not counted as passes.
+
+## Further CI finding: test diagnostics also need canonical paths
+
+On `c29cfec5`, all eight original installed native tests passed, including
+`test_native_close_drains_accepted_work_and_reopen_preserves_project`.
+The alias scanner regression also passed, but two new forced-lock tests **ERROR**
+in their diagnostic `relative_to()` calls. One compared canonical locks to a
+short project root; the other compared a short asset path to a canonical root.
+This is a distinct test-diagnostic defect, not a new permission failure.
+[Actual stacks](c29-native-diagnostic-alias-failure.log),
+[actual native drain/reopen events](diagnosis/c29-native-reopen-events.json),
+[CI job](https://github.com/cogco1/MonkeyHub/actions/runs/36268318263/job/108477334694).
+Package/shortcut and signed-install checks were skipped after this failure.
+
+Both diagnostic conversions now resolve **both** operands. Every real lock test
+starts from an existing parent/name path alias, so the long-path local machine
+also exercises this condition. The negative control additionally asserts that
+the diagnostic identifies exactly `user-asset.lock`, never an escaping-looking
+`../demo-project/user-asset.lock`. No assertion or file access was removed.
+
+Before correction, the deterministic local run gives **1 ERROR + 1 FAIL**;
+after, **3 PASS**, retaining actual errno 13 / Win32 33 on locked content.
+[Before](local/diagnostic-alias-before-complete.log),
+[after](local/diagnostic-alias-after-complete.log).
+The initial alias probe before adding the diagnostic-name assertion had only
+one error; [that result is retained too](local/diagnostic-alias-before.log).
+This follow-up changes test diagnostic paths and evidence only. Actual product
+code is still the tested `0aaf5984` tree. All five required checks must execute
+again on the subsequent final HEAD; previous successes are not combined with it.

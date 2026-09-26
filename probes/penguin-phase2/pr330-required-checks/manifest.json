@@ -25,6 +25,11 @@
     "sha256": "45e842c5713b628c89e1a80b017d2493f205815d927d4f657796b489f984bf32"
   },
   {
+    "path": "c29-native-diagnostic-alias-failure.log",
+    "bytes": 4556,
+    "sha256": "6015b8a56217bc46f567693ff7456efec0eab31650af47d5a7e6be53e0956159"
+  },
+  {
     "path": "camera-analysis.json",
     "bytes": 3137,
     "sha256": "eeba649e784e034c8c127a1fed113761b2020100120ce3312ae02c67515f08b2"
@@ -280,6 +285,11 @@
     "sha256": "3b087805071f59ad7ef9e30dbe7c649bb4bafa4271a52be7c7c228eb2c573c4e"
   },
   {
+    "path": "diagnosis/c29-native-reopen-events.json",
+    "bytes": 5958,
+    "sha256": "d0e14780fe7612d5da4aaf00f3c89ee18cf69a2e7029595b7409912807f7c49a"
+  },
+  {
     "path": "historical-size-refresh/after-refresh.json",
     "bytes": 43252,
     "sha256": "5e0a2f2c5a432802682243d672b6ceb2b15b445de0061967f3b980c53614ba07"
@@ -343,6 +353,21 @@
     "path": "local/chat.log",
     "bytes": 2219,
     "sha256": "e52500049521c525b4bd1b623a39e12d01f76077e91b781bb8574bccfec5eb47"
+  },
+  {
+    "path": "local/diagnostic-alias-after-complete.log",
+    "bytes": 1618,
+    "sha256": "504d3bb59003c356be3974643c0b489061e3567abaffa22edfffc51eb08ad3f6"
+  },
+  {
+    "path": "local/diagnostic-alias-before-complete.log",
+    "bytes": 2765,
+    "sha256": "2f2a68db11e7c857d6476b15982d40de9d6b602844975fd2c9119dbcf68a49f7"
+  },
+  {
+    "path": "local/diagnostic-alias-before.log",
+    "bytes": 2869,
+    "sha256": "38ec7027604a06749b40b5666f16d735d29812c8145fb6c049f6f70f580cf988"
   },
   {
     "path": "local/final-main-build.log",
@@ -616,7 +641,7 @@
   },
   {
     "path": "README.md",
-    "bytes": 21325,
-    "sha256": "2a23c445493d8e52c64b9c8c502f4a4f9a1c7b1d24bc34517876e985e9533651"
+    "bytes": 23195,
+    "sha256": "f229684e5cfd5928b3589d942159cc702246cafd796feb8930c371f39077d69c"
   }
 ]

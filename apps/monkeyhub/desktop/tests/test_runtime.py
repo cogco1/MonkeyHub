@@ -859,7 +859,9 @@ class ProjectSnapshotTests(unittest.TestCase):
         fixture.make_project(Path(self.temporary.name))
         self.reader = DesktopRuntimeTests()
         self.reader._testMethodName = self._testMethodName
-        self.reader.project = Path(self.temporary.name) / fixture.PROJECT_ID
+        # Exercise every lock diagnostic through a valid non-canonical spelling,
+        # even when this host does not generate Windows 8.3 directory aliases.
+        self.reader.project = Path(self.temporary.name) / fixture.PROJECT_ID / ".." / fixture.PROJECT_ID
         self.reader.project_locks = frozenset(FilesystemProjectRepository.open(self.reader.project).lock_paths())
         self.reader.events = []
         self.reader.native = WindowsProcesses()
@@ -885,7 +887,7 @@ with ExitStack() as stack:
             pid = int(child.stdout.readline())
             self.reader.native.track(pid)
             self.reader.record("test-locks-acquired", holderPid=pid, launcherPid=child.pid,
-                               paths=[str(path.relative_to(self.reader.project.resolve())) for path in paths])
+                               paths=[str(path.resolve().relative_to(self.reader.project.resolve())) for path in paths])
             yield
         finally:
             if child.poll() is None:
@@ -912,7 +914,7 @@ with ExitStack() as stack:
                 native = windows_read_probe(path)
                 self.assertEqual(raised.exception.errno, 13)
                 self.assertEqual(native["winerror"], 33)  # ERROR_LOCK_VIOLATION
-                self.reader.record("old-scan-reproduced", path=str(path.relative_to(self.reader.project)),
+                self.reader.record("old-scan-reproduced", path=str(path.resolve().relative_to(self.reader.project.resolve())),
                                    errno=raised.exception.errno, nativeRead=native)
             self.assertEqual(self.reader.project_bytes(), before)
         self.assertEqual(self.reader.project_bytes(), before)
@@ -926,6 +928,7 @@ with ExitStack() as stack:
         before = self.reader.project_bytes()
         self.assertEqual(before["user-asset.lock"], b"original retained bytes")
         with self.held([asset]):
+            self.assertEqual(self.reader.events[-1]["paths"], ["user-asset.lock"])
             with self.assertRaises(PermissionError):
                 self.reader.project_bytes()
         self.assertEqual(self.reader.project_bytes(), before)
