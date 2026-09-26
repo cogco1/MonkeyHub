@@ -110,6 +110,8 @@ footer{font-size:var(--text-caption);line-height:1.8;color:var(--muted);border-t
 .fab-scroll{flex:1;min-height:0;overflow:auto}
 .fab-page{width:min(760px,100%)}
 .fab-status .status-line__start{flex:none;max-width:100%}
+.fab-status__state{display:none}
+.fab-view .surface-bar__items>.menu-separator[data-row-end]{visibility:hidden}
 .fab-form>.help{margin-top:0}
 .fab-form fieldset{padding:0;margin:18px 0 0;border:0;min-width:0;display:grid;gap:14px}
 .fab-form fieldset>.help,.fab-form fieldset>.actions,.fab-form fieldset>.advanced{margin:0}
@@ -134,6 +136,7 @@ footer{font-size:var(--text-caption);line-height:1.8;color:var(--muted);border-t
 
 @media(max-width:480px){.toolbar{padding:7px 12px;gap:7px}
 .fab-view .surface-bar__end{display:none}
+.fab-status__state{display:inline}
 .connection{font-size:var(--text-caption);margin-right:0}
 .wordmark{font-size:var(--text-ui)}
 .toolbar .btn{padding:5px 8px;font-size:var(--text-caption)}

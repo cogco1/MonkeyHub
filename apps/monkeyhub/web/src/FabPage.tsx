@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import type { AppearancePreferences } from "../../../shared-web/src/appearance.js";
 import { MenuCommand, MenuSeparator, MenuTabs, StatusLine, SurfaceBar } from "../workspaces/src/features/chrome/SurfaceChrome";
 import type { createClient } from "./api/generated/client";
+import { useRowEndSeparators } from "./surfaceBarRows";
 import {
   getFabProfilesApiFabProfilesGet, prepareFabApiFabPreparePost, sendFabApiFabSendPost,
   type FabProfile, type FabPrepareResult, type FabSendResult,
@@ -105,7 +106,9 @@ export function FabPage({ preferences, client, readResult }: Props) {
         inputUnit: unit as "mm" | "cm" | "m" | "in", scale: scale.trim(), xyMarginMm: Number(xy), zClearanceMm: Number(z),
       } })));
     } catch (cause) { setPrepareError(detailOf(cause)); }
-    finally { busyRef.current = false; setBusy(null); }
+    // The step is shown again as it ends, so its result or failure is seen; the other step's form is
+    // disabled while this runs, so nothing typed there is interrupted.
+    finally { busyRef.current = false; setBusy(null); setView("prepare"); }
   };
   const send = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -121,7 +124,7 @@ export function FabPage({ preferences, client, readResult }: Props) {
         remoteName: remote.trim() || null, timeout: Number(timeout), dryRun,
       } })));
     } catch (cause) { setSendError(detailOf(cause)); }
-    finally { busyRef.current = false; setBusy(null); }
+    finally { busyRef.current = false; setBusy(null); setView("send"); }
   };
   const openDisplaySettings = () => {
     // Fab is hosted in the Hub's tool iframe.  Ask that existing shell to open
@@ -129,9 +132,11 @@ export function FabPage({ preferences, client, readResult }: Props) {
     window.parent.postMessage({ type: "monkeyhub:open-settings", page: "display" }, window.location.origin);
   };
   const working = busy === "prepare" ? t.preparing : busy === "check" ? t.checking : busy === "send" ? t.sending : null;
+  const root = useRef<HTMLDivElement>(null);
+  useRowEndSeparators(root);
   // #337: one bar (the two steps and Display settings as words, the file operation running at the right end),
   // the step's form, and one status line for the printer profiles. The step not on screen keeps what was typed in it.
-  return <div className="fab-view">
+  return <div className="fab-view" ref={root}>
     <SurfaceBar label="MonkeyFab" end={working && <span role="status">{working}</span>}>
       <MenuTabs label={t.views} value={view} onChange={(next) => setView(next)} options={[{ value: "prepare" as const, label: t.prepareTab }, { value: "send" as const, label: t.sendTab }]} />
       <MenuSeparator />
@@ -167,7 +172,9 @@ export function FabPage({ preferences, client, readResult }: Props) {
       </div>
     </main></div>
     <StatusLine className="fab-status" end={<span title={t.intro}>{t.intro}</span>}>
-      <span role="status">MonkeyFab{profiles ? ` · ${t.profiles(Object.keys(profiles).length)}` : !profileError ? ` · ${t.loading}` : ""}</span>
+      <span role="status">MonkeyFab{profiles ? ` · ${t.profiles(Object.keys(profiles).length)}` : !profileError ? ` · ${t.loading}` : ""}
+        {/* A narrow window has no room for it at the bar's end. */}
+        {working && <span className="fab-status__state"> · {working}</span>}</span>
     </StatusLine>
   </div>;
 }
