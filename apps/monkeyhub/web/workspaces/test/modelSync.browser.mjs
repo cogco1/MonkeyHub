@@ -338,7 +338,7 @@ async function narrowRecord(narrowBefore){
   assert.equal((await toolAt()).y,narrowBefore.y,'Record above the tools moved them down or up');
   const record=await button('Record').boundingBox(),tools=await page.locator('.model-tools button.model-tool-button:not([data-tool-icon="sync"])').evaluateAll(nodes=>
     nodes.map(node=>node.getBoundingClientRect()).filter(box=>box.width>0).map(({x,y,width,height})=>({x,y,width,height})));
-  assert.ok(record&&record.x>=0&&record.x+record.width<=700,'Record stays on screen at a narrow width');
+  assert.ok(record&&record.x>=0&&record.x+record.width<=page.viewportSize().width,'Record stays on screen at a narrow width');
   for(const box of tools)assert.ok(record.x+record.width<=box.x||box.x+box.width<=record.x||record.y+record.height<=box.y||box.y+box.height<=record.y,
     `Record covers a tool at ${JSON.stringify(box)}`);
   await page.setViewportSize(size);

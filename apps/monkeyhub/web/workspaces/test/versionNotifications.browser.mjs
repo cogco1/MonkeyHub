@@ -427,6 +427,7 @@ try {
       assert.equal(await versionsToggle().getAttribute("aria-expanded"), "false");
       assert.equal(await toolsToggle().getAttribute("aria-expanded"), "false");
       assert.equal(await viewToolsToggle().getAttribute("aria-expanded"), "false");
+      assert.equal(await page.locator("#annotation-tools").count(), 0, "Tracing paper is closed by default");
       assert.equal(await page.locator("#conversation-panel").count(), 0);
       const width = await page.evaluate(() => ({ viewport: innerWidth, document: document.documentElement.scrollWidth,
         body: document.body.scrollWidth }));
