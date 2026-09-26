@@ -718,7 +718,10 @@ cut, a dimension.
 representation change of class `recipe` whose `sourceKind` is not `agent`; each of
 `cutLineMm`, `visibleLineMm` and `hatchSpacingMm` it changed joins the group of that
 key and its direction, `increase` or `decrease` (2→3 and 2→4 are one direction),
-unless an active recipe already gives that drawing the key. A group spanning at least
+unless the recipe that drawing reads already decides the key: a `hard` or
+`strong_preference` value changes only by superseding its decision, while a
+`soft_preference` (an imported default among them) covers only a correction to its own
+value, so corrections away from it are still offered. A group spanning at least
 two distinct drawings is one suggestion: `suggestionId` (derived from `field`,
 `direction`, `value` and `drawingIds`, so the same offer keeps its id), `field`,
 `direction`, `value` (the paper value of the group's most recent after revision),
