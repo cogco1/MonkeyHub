@@ -155,6 +155,135 @@
       ]
     },
     {
+      "id": "GH-223",
+      "stream": "planning",
+      "status": "active",
+      "goal": "Correction capture reaches drawing production: a new drawing takes the project's accepted drawing recipe, below an explicit value and the drawing's own previous revision.",
+      "depends_on": [],
+      "issue": "https://github.com/cogco1/MonkeyHub/issues/223",
+      "write_scope": [
+        "apps/archflow-studio/api/archflow_studio_api/application/drawing_plans.py",
+        "docs/mapping/planning/GH-223-correction-capture.md"
+      ],
+      "card": "docs/mapping/planning/GH-223-correction-capture.md",
+      "acceptance": [
+        "05-S3b: generate_plan resolves explicit > previous revision of the same drawing > project recipe (hard > strong > soft) > code default; revoking the recipe returns new drawings to the default.",
+        "test_drawing_plans pins the order, including that a rebuild keeps its own values."
+      ],
+      "lanes": [
+        {
+          "id": "recipe-read",
+          "issue": "https://github.com/cogco1/MonkeyHub/issues/223",
+          "branch": "codex/223-recipe-read",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-223-recipe-read",
+          "base_ref": "bf80accc",
+          "contributor": "Claude",
+          "reviewer": "Claude root task",
+          "handoff": "05-S3b per V4_RUNTIME handoff/260925_next-batch-plan/05_correction-capture.md §3 (consumption) and 03 C4; reads decisions.project_recipe from batch G.",
+          "modules": [
+            "studio.artifacts"
+          ],
+          "write_scope": [
+            "apps/archflow-studio/api/archflow_studio_api/application/drawing_plans.py"
+          ],
+          "depends_on": [],
+          "status": "active",
+          "blocked_reason": null
+        }
+      ]
+    },
+    {
+      "id": "GH-291",
+      "stream": "planning",
+      "status": "active",
+      "goal": "Render follows a rebuilt drawing through its registered replacement instead of its own front-end fallback.",
+      "depends_on": [],
+      "issue": "https://github.com/cogco1/MonkeyHub/issues/291",
+      "write_scope": [
+        "apps/monkeyhub/web/workspaces/src/workspaces/render/RenderWorkspace.tsx",
+        "apps/monkeyhub/web/workspaces/test/boardReplacement.browser.mjs",
+        "apps/monkeyhub/web/workspaces/test/renderWorkspace.browser.mjs",
+        "docs/mapping/planning/GH-291-render-consumers.md"
+      ],
+      "card": "docs/mapping/planning/GH-291-render-consumers.md",
+      "acceptance": [
+        "291-S2: RenderWorkspace drops the fallback; boardReplacement and renderWorkspace browser tests cover an arriving cut-plan rebuild and the changed-source step through the relation."
+      ],
+      "lanes": [
+        {
+          "id": "render-consumers",
+          "issue": "https://github.com/cogco1/MonkeyHub/issues/291",
+          "branch": "codex/291-render-consumers",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-291-render-consumers",
+          "base_ref": "bf80accc",
+          "contributor": "Claude",
+          "reviewer": "Claude root task",
+          "handoff": "291-S2 per V4_RUNTIME handoff/260925_next-batch-plan/02_291.md §4; not Board.tsx, ModelPreview.tsx, renderView.ts or PublishWorkspace.tsx (GH-66).",
+          "modules": [
+            "hub.shell"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/web/workspaces/src/workspaces/render/RenderWorkspace.tsx",
+            "apps/monkeyhub/web/workspaces/test/boardReplacement.browser.mjs",
+            "apps/monkeyhub/web/workspaces/test/renderWorkspace.browser.mjs"
+          ],
+          "depends_on": [],
+          "status": "active",
+          "blocked_reason": null
+        }
+      ]
+    },
+    {
+      "id": "GH-303",
+      "stream": "planning",
+      "status": "active",
+      "goal": "The Hub Agent reviews visually through one bounded tool: visual_review calls the runtime route under a per-turn budget the Hub holds, returns findings rather than images, and is traced as visual_observation; the Agent can also place drawing dressing through studio_request.",
+      "depends_on": [],
+      "issue": "https://github.com/cogco1/MonkeyHub/issues/303",
+      "write_scope": [
+        "apps/monkeyhub/api/monkeyhub_api/chat.py",
+        "apps/monkeyhub/api/monkeyhub_api/chat_trace.py",
+        "apps/monkeyhub/api/tests/test_chat.py",
+        "apps/monkeyhub/api/tests/test_chat_trace.py",
+        "docs/mapping/planning/GH-303-hub-agent.md",
+        "monkeymonitor/trace.py",
+        "monkeymonitor/usage.py"
+      ],
+      "card": "docs/mapping/planning/GH-303-hub-agent.md",
+      "acceptance": [
+        "303-S2: visual_review tool with a Hub-held VisualReviewBudget per turn; spatial tasks get two reviews and a third is refused VISUAL_BUDGET_EXHAUSTED; deterministic tasks are refused VISUAL_REVIEW_NOT_WARRANTED; findings touching preserve targets are marked escalate.",
+        "chat_trace records the tool as a visual_observation span under the turn with image_inputs counted and no prompt text; monkeymonitor usage knows image_inputs.",
+        "244-S3: the Agent places three dressing objects through POST /api/drawings/plans with dressingOperations and each stays individually editable; 05-S3b adds the recipe sentence to the context note."
+      ],
+      "lanes": [
+        {
+          "id": "hub-agent",
+          "issue": "https://github.com/cogco1/MonkeyHub/issues/303",
+          "branch": "codex/303-hub-agent",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-303-hub-agent",
+          "base_ref": "bf80accc",
+          "contributor": "Claude",
+          "reviewer": "Claude root task",
+          "handoff": "303-S2 per V4_RUNTIME handoff/260925_next-batch-plan/06_303.md, 244-S3 per 03_244.md (not docs/DRAWING_V0_AUDIT.md, GH-66 holds it) and the 05-S3b context-note sentence.",
+          "modules": [
+            "hub.shell",
+            "monkeymonitor"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/api/monkeyhub_api/chat.py",
+            "apps/monkeyhub/api/monkeyhub_api/chat_trace.py",
+            "apps/monkeyhub/api/tests/test_chat.py",
+            "apps/monkeyhub/api/tests/test_chat_trace.py",
+            "monkeymonitor/usage.py",
+            "monkeymonitor/trace.py"
+          ],
+          "depends_on": [],
+          "status": "active",
+          "blocked_reason": null
+        }
+      ]
+    },
+    {
       "id": "GH-66",
       "stream": "planning",
       "status": "active",
