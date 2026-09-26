@@ -8419,6 +8419,14 @@ export type SectionPerspectiveRequestDto = {
      * Poché hatch spacing on paper; default 0.5 mm.
      */
     hatchSpacingMm?: number | null;
+    /**
+     * Material hatch and poché rules for the cut on paper, as a cut plan takes them; each is stored complete and an empty byMaterial draws none.
+     */
+    hatch?: PlanHatchDto | null;
+    /**
+     * Fading of what lies beyond the cut, as in a cut plan; fade 0 draws it black.
+     */
+    beyond?: PlanBeyondDto | null;
 };
 
 /**
