@@ -614,6 +614,10 @@ are rejected before persistence. A maximum of 100 objects is supported. Rebuilds
 retain unresolved objects in the recipe and report `missing` / `outside-view` in
 `POST /api/drawings/plans/status`; unresolved objects are omitted from the output
 rather than silently repositioned. Drawing revisions never advance Design HEAD.
+The Hub Agent reaches these through `studio_request`: the plan write is admitted like
+any other drawing write, and `GET /api/drawings/plans/vector`, `GET
+/api/drawings/plans/dimensions` and `POST /api/drawings/plans/status` are reads sent
+straight to the bound Studio, with no `operationId`.
 
 A rebuild that names `previousRevisionRef` registers the new revision as that
 revision's whole-document replacement: its `replacesPages` names the previous

@@ -1134,12 +1134,26 @@ class ChatTests(unittest.TestCase):
                         "/api/document-annotations", "baseRevisionSha256",
                         "GET /api/drawings/styles", "POST /api/drawings/sheets",
                         "/api/proposals/elevation", "POST /api/drawings/section-perspectives", "剖透视",
-                        "keep: 'left'|'right'", "POST /api/board/export"):
+                        "keep: 'left'|'right'", "POST /api/board/export",
+                        # Entourage on a cut plan (#244): the typed edit, its
+                        # symbols and the reads that show where each one landed.
+                        "POST /api/drawings/plans", "previousRevisionRef", "dressingOperations",
+                        "'person-plan'|'tree-plan'", "GET /api/drawings/plans/vector",
+                        "POST /api/drawings/plans/status", "GET /api/drawings/plans/dimensions"):
             self.assertIn(stated, request_tool["description"], stated)
         self.assertIn("clarify a field or correct a request", schema_tool["description"])
+        plans = []
 
         def request(base, path, method="GET", body=None, timeout=None, *, headers=None):
+            if path == "/api/drawings/plans/status":
+                # A POST that only reads goes to the bound Studio unadmitted.
+                self.assertEqual((base, method, headers), ("http://127.0.0.1:8791", "POST", None))
+                return {"method": method, "body": body, "path": path}
             path = self._studio_tool_path(base, path, method, headers, session)
+            if path == "/api/drawings/plans":
+                plans.append(body)
+                if any(row.get("id") == "missing" for row in body.get("dressingOperations") or ()):
+                    raise HubFailure(422, "DRAWING_DRESSING_MISSING", "No dressing object missing exists in this drawing revision.")
             if path == f"/api/chat/sessions/{session.id}":
                 return session.model_dump()
             if path == "/api/settings/apps":
@@ -1213,6 +1227,42 @@ class ChatTests(unittest.TestCase):
                     "method": "POST", "path": "/api/drawings/section-perspectives",
                     "body": {**section_body, "projectId": "other"}})
             self.assertEqual(other_project_section.exception.error.code, "CHAT_PROJECT_MISMATCH")
+            # Three entourage objects in one typed batch, admitted like any
+            # drawing write and forwarded as asked; the reads go straight to
+            # the Studio, and a refused batch comes back once, in its own words.
+            placing = {"projectId": session.projectId, "sourceStageRef": "stage-base", "drawingId": "room-plan",
+                       "previousRevisionRef": "retained-plan-1", "dressingOperations": [
+                           {"op": "insert", "id": name, "object": {"id": name, "assetId": asset, "positionUv": [u, 1],
+                                                                   "size": 0.6}}
+                           for name, asset, u in (("person-a", "person-plan", 1), ("person-b", "person-plan", 2),
+                                                  ("tree-a", "tree-plan", 3))]}
+            placed = chat.call_tool(self.store.hub_url, session.id, "studio_request", {
+                "method": "POST", "path": "/api/drawings/plans", "body": placing})
+            self.assertEqual((placed["path"], placed["body"]), ("/api/drawings/plans", placing))
+            retained = "runId=studio-drawing-1&assetSha256=" + "b" * 64 + "&revisionRef=retained-plan-2"
+            vector = chat.call_tool(self.store.hub_url, session.id, "studio_request", {
+                "method": "GET", "path": "/api/drawings/plans/vector?" + retained})
+            self.assertEqual((vector["method"], vector["path"]), ("GET", "/api/drawings/plans/vector?" + retained))
+            status_body = {"runId": "studio-drawing-1", "assetSha256": "b" * 64, "revisionRef": "retained-plan-2"}
+            status = chat.call_tool(self.store.hub_url, session.id, "studio_request", {
+                "method": "POST", "path": "/api/drawings/plans/status", "body": status_body})
+            self.assertEqual(status["body"], status_body)
+            with self.assertRaises(HubFailure) as admitted_read:
+                chat.call_tool(self.store.hub_url, session.id, "studio_request", {
+                    "method": "POST", "path": "/api/drawings/plans/status", "body": status_body,
+                    "operationId": str(uuid4())})
+            self.assertEqual(admitted_read.exception.error.code, "CHAT_TOOL_INVALID")
+            choices = chat.call_tool(self.store.hub_url, session.id, "studio_request", {
+                "method": "GET", "path": "/api/drawings/plans/dimensions?sourceRunId=studio-candidate&stateDigest="
+                + "d" * 64 + "&assetSha256=" + "e" * 64})
+            self.assertTrue(choices["path"].startswith("/api/drawings/plans/dimensions?"))
+            refused_batch = {**placing, "previousRevisionRef": "retained-plan-2", "dressingOperations": [
+                {"op": "move", "id": "person-a", "positionUv": [2, 2]}, {"op": "delete", "id": "missing"}]}
+            with self.assertRaises(HubFailure) as missing:
+                chat.call_tool(self.store.hub_url, session.id, "studio_request", {
+                    "method": "POST", "path": "/api/drawings/plans", "body": refused_batch})
+            self.assertEqual((missing.exception.status, missing.exception.error.code), (422, "DRAWING_DRESSING_MISSING"))
+            self.assertEqual(plans, [placing, refused_batch], "each batch is sent once, and a refusal is not retried")
             annotation_body = {"projectId": session.projectId, "runId": "studio-drawing-1",
                                "assetSha256": "b" * 64, "pageIndex": 0,
                                "drawingRevisionRef": "retained-drawing", "baseRevisionSha256": "c" * 64,
@@ -1232,10 +1282,12 @@ class ChatTests(unittest.TestCase):
                 "method": "GET", "path": "/api/documents",
             })
             self.assertEqual(schema["operation"]["summary"], "list drawings")
-            for method, path in (("POST", "/api/documents"), ("GET", "/api/documents/asset-1/bytes")):
-                with self.assertRaises(HubFailure) as refused:
-                    chat.call_tool(self.store.hub_url, session.id, "studio_request", {"method": method, "path": path})
-                self.assertEqual(refused.exception.error.code, "CHAT_TOOL_UNAVAILABLE")
+            for method, path in (("POST", "/api/documents"), ("GET", "/api/documents/asset-1/bytes"),
+                                 ("POST", "/api/drawings/plans/dimension-proposal")):
+                for tool in ("studio_request", "studio_schema"):
+                    with self.subTest(tool=tool, path=path), self.assertRaises(HubFailure) as refused:
+                        chat.call_tool(self.store.hub_url, session.id, tool, {"method": method, "path": path})
+                    self.assertEqual(refused.exception.error.code, "CHAT_TOOL_UNAVAILABLE")
             # A documented template can be read as a schema, which is what an
             # exploring turn used to fail on.
             for template in ("/api/options/{option_id}/select", "/api/proposals/sketch", "/api/project/modeling",

@@ -6734,6 +6734,7 @@
         "ProjectRuntimeProvider / useStudio / useConnection: project-bound client and protocol identity",
         "ProjectWorkspace: Arch/Board/Design tree navigation, exact Board page visit and candidate preview without editing-base change",
         "studio_request POST /api/board/export: one registered clean-source page as a native MCP PNG image; studio_schema exposes the existing export request",
+        "studio_request POST /api/drawings/plans (dressingOperations place and edit entourage) with the reads GET /api/drawings/plans/vector, GET /api/drawings/plans/dimensions and POST /api/drawings/plans/status",
         "POST /api/chat/presentation/bind",
         "POST /api/chat/sessions/{id}/presentation",
         "GET /api/chat/sessions/{id}/documents/{messageId}/{index}",
@@ -6917,7 +6918,8 @@
         "apps/monkeyhub/web/test/worktreeGraph.test.ts",
         "apps/monkeyhub/web/workspaces/test/designTree.test.ts",
         "apps/monkeyhub/web/workspaces/test/designTree.browser.mjs",
-        "apps/monkeyhub/api/tests/test_chat_admission.py"
+        "apps/monkeyhub/api/tests/test_chat_admission.py",
+        "apps/archflow-studio/api/tests/test_agent_drawing_dressing.py"
       ],
       "depends_on": [
         "project.repository",

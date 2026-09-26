@@ -2383,9 +2383,12 @@ def _stop_process(process: subprocess.Popen) -> None:
             process.kill()
 
 
-_READ = re.compile(r"^/api/(exports(?:/[A-Za-z0-9_-]+)?|project|state(?:/frame|/volumes)?|semantics|program|options|board|artifacts|model-assets/[0-9a-f]{64}/index|documents|document-annotations|studies/[A-Za-z0-9][A-Za-z0-9._-]{0,79}|decisions(?:/[A-Za-z0-9_-]+)?|drawings/(?:styles|model-view)|capabilities(?:/[A-Za-z0-9_.-]+)?|proposals/[A-Za-z0-9_-]+|jobs/[A-Za-z0-9_-]+|candidates/[A-Za-z0-9_-]+(?:/compare)?|admissions|working-source|working-draft/revision)$")
-_POST = re.compile(r"^/api/(exports|project/modeling|intents/context|board/export|decisions(?:/[A-Za-z0-9_-]+/revisions)?|state/closure|capabilities/[A-Za-z0-9_.-]+/run|proposals|proposals/(sketch|transform|push-pull|delete|elevation)|proposals/[A-Za-z0-9_-]+/candidate|program|options|options/[A-Za-z0-9_-]+/select|candidates/combine|drawings/(elevations|sheets|section-perspectives)|admissions)$")
+_READ = re.compile(r"^/api/(exports(?:/[A-Za-z0-9_-]+)?|project|state(?:/frame|/volumes)?|semantics|program|options|board|artifacts|model-assets/[0-9a-f]{64}/index|documents|document-annotations|studies/[A-Za-z0-9][A-Za-z0-9._-]{0,79}|decisions(?:/[A-Za-z0-9_-]+)?|drawings/(?:styles|model-view|plans/vector|plans/dimensions)|capabilities(?:/[A-Za-z0-9_.-]+)?|proposals/[A-Za-z0-9_-]+|jobs/[A-Za-z0-9_-]+|candidates/[A-Za-z0-9_-]+(?:/compare)?|admissions|working-source|working-draft/revision)$")
+_POST = re.compile(r"^/api/(exports|project/modeling|intents/context|board/export|decisions(?:/[A-Za-z0-9_-]+/revisions)?|state/closure|capabilities/[A-Za-z0-9_.-]+/run|proposals|proposals/(sketch|transform|push-pull|delete|elevation)|proposals/[A-Za-z0-9_-]+/candidate|program|options|options/[A-Za-z0-9_-]+/select|candidates/combine|drawings/(elevations|sheets|section-perspectives|plans|plans/status)|admissions)$")
 _WRITE = re.compile(r"^/api/(board|document-annotations|working-draft)$")
+# POSTs that only read. They go to the bound Studio as a GET would, with no
+# mutation admission: there is nothing to admit, recover or replay.
+_POST_READS = {"/api/intents/context", "/api/drawings/plans/status"}
 # Besides retained feedback, the Agent's judgments Hub binds to the user's own
 # message (#294 Q3): a closed loop's admission, and a Continue on the user's words.
 _BOUND_WORDS = {("POST", "/api/admissions"), ("PUT", "/api/working-draft")}
@@ -2967,8 +2970,8 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
         raise HubFailure(422, "CHAT_FEEDBACK_QUOTE", "feedbackQuote only selects the user's words for feedback, an admission or a Continue.")
     if "producer" in arguments and name != "studio_schema":
         raise HubFailure(422, "CHAT_TOOL_INVALID", "producer selects an authoring schema; it belongs to studio_schema.")
-    if "operationId" in arguments and (name != "studio_request" or method == "GET"
-                                      or (method == "POST" and parsed.path == "/api/board/export")):
+    if "operationId" in arguments and (name != "studio_request" or method == "GET" or (
+            method == "POST" and parsed.path in {"/api/board/export", "/api/drawings/plans/status"})):
         raise HubFailure(422, "CHAT_TOOL_INVALID", "operationId identifies a Studio mutation request.")
     if "awaitSeconds" in arguments and name != "studio_request":
         # Only one tool can wait for anything. Quietly dropping the option here
@@ -3124,7 +3127,7 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
     if wait is not None and checkpoint:
         proposal = _request_json(base, parsed.path.removesuffix("/candidate"))
         comparison = {"sourceRunId": proposal.get("sourceRunId")}
-    if method in {"POST", "PUT"} and parsed.path != "/api/intents/context":
+    if method in {"POST", "PUT"} and parsed.path not in _POST_READS:
         from uuid import uuid5, NAMESPACE_URL
         runtime_id = str(uuid5(NAMESPACE_URL, f"{session['projectId']}:{os.path.normcase(str(Path(session['projectDir']).resolve()))}"))
         operation_id = arguments.get("operationId") or str(uuid4())
@@ -3337,6 +3340,14 @@ def _mcp(hub: str, chat_id: str | None, external: ChatPresentationBindRequest | 
         "depth, hiddenObjectIds, scaleDenominator (e.g. 50 for a room) and drawingId. Like elevations it registers the drawing in the documents list",
         "and returns that document; see it with POST /api/board/export using its runId, assetSha256, revisionRef and pageIndex 0.",
         "Refusals are named, e.g. SECTION_PLANE_MISSES_MODEL or SECTION_EYE_ON_KEPT_SIDE; correct the plane or camera rather than retrying.",
+        "CUT PLAN: POST /api/drawings/plans makes or rebuilds a retained cut plan from modelSource or sourceStageRef (read its schema). To place entourage",
+        "on a retained plan, send its previousRevisionRef with dressingOperations, one batch applied whole: {op: 'insert', id, object: {id, assetId: 'person-plan'|'tree-plan',",
+        "positionUv: [u, v], size, flipped?, anchorObjectId?}}, {op: 'move', id, positionUv}, {op: 'scale', id, size}, {op: 'flip', id, flipped} or {op: 'delete', id}.",
+        "Positions and sizes are in the source model's length unit; with anchorObjectId, positionUv is an offset from that object's projected centre.",
+        "Each object keeps its id and stays editable on its own; a refused batch writes nothing. Add reason with the user's correction when one asked for it.",
+        "GET /api/drawings/plans/vector?runId=&assetSha256=&revisionRef= reads the plan's SVG, symbols and anchor choices; POST /api/drawings/plans/status",
+        "{runId, assetSha256, revisionRef} says whether it is current and which objects are missing or outside the view; GET /api/drawings/plans/dimensions lists",
+        "the dimensions a plan can place. Drawing revisions never move the design.",
         "OBSERVE: GET /api/drawings/model-view?runId=<id>&stateDigest=<digest>&assetSha256=<3dm sha256>&view=front returns an MCP image with exact source metadata.",
         "Read modelSource from the awaited result's artifacts or the candidate's 3dm artifact. Views: front/back/left/right/top. This is a read-only orthographic line projection from complete retained STEP; unsupported sources refuse rather than show a proxy.",
         "GET /api/drawings/styles and POST /api/drawings/sheets compose a sheet from exact modelSource, styleId and scaleDenominator.",
