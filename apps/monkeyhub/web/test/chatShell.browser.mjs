@@ -249,6 +249,7 @@ await page.route((url) => url.pathname.startsWith("/api/"), async (route) => {
     return json({ paths: ["D:\\fixture\\usage.jsonl"] });
   }
   if (url.pathname === "/api/settings/apps") { if (method === "PUT") settings = data(); return json(settings); }
+  if (url.pathname === "/api/credentials") return json(["gemini", "coding-plan"].map((id) => ({ id, configured: false, source: null, variable: null, saved: false, storeAvailable: true })));
   if (url.pathname === "/api/settings/user") {
     if (method === "PUT") { const body = data(); if (settingsWriteGate) await settingsWriteGate; preferences = body; }
     return json(preferences);
@@ -1335,7 +1336,9 @@ try {
   await page.locator("#render-provider").selectOption("gemini");
   await page.locator("#render-model").fill("gemini-3.1-flash-image");
   await page.locator("#render-timeout").fill("75");
-  assert.equal(await page.locator('input[type="password"]').count(), 0, "render credentials never enter settings UI");
+  // #334: keys go in through password fields that never show a saved key back.
+  const keyFields = page.locator('input[type="password"]');
+  assert.deepEqual(await keyFields.evaluateAll((nodes) => nodes.map((node) => [node.id, node.value])), [["coding-plan-token", ""], ["gemini-key", ""]]);
   const rechecks = providerReads.filter((value) => value === "true").length;
   await settingsPage("Conversations");
   await page.locator("#recheck-connections").click();

@@ -130,6 +130,39 @@ class ChatProvider(BaseModel):
     modelDetail: str = ""
 
 
+CredentialId = Literal["gemini", "coding-plan"]
+
+
+class CredentialStatus(BaseModel):
+    """Whether a provider key is in use and where it comes from (#334); never the key."""
+
+    id: CredentialId
+    configured: bool
+    # saved: this account's credential store, written from Hub settings.
+    # environment: a variable the Hub was launched with; it wins and is named.
+    # claude-config: the Claude CLI's own endpoint configuration, used for
+    # Coding Plan while the Hub holds no Coding Plan token of its own.
+    source: Literal["saved", "environment", "claude-config"] | None = None
+    variable: str | None = None
+    saved: bool = False
+    storeAvailable: bool = True
+
+
+class CredentialWrite(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    key: SecretStr = Field(description="Written once; no response ever carries it.")
+
+
+class CredentialCheck(BaseModel):
+    id: CredentialId
+    result: Literal["accepted", "rejected", "unreachable", "missing"]
+    detail: str
+
+
+ProviderLinkId = Literal["gemini-keys", "zhipu-keys", "moonshot-keys", "deepseek-keys", "bailian-keys"]
+
+
 class ChatProject(BaseModel):
     projectId: str
     projectDir: str

@@ -52,9 +52,11 @@ if __package__ in {None, ""}:
 from archflow.project.refs import ProjectRecordRef, require_identifier
 from archflow.project.repository import FilesystemProjectRepository
 from archflow.state.state_record import StateRecord
-from archflow_studio_api.settings import read_application_settings
+from archflow_studio_api.settings import read_application_settings, read_user_settings
 
 from pydantic import Field
+
+from . import credentials
 
 from .models import (
     ChatAttachment, ChatAttention, ChatCreateRequest, ChatDesignContext, ChatDetail, ChatMessage, ChatPostRequest, ChatProject,
@@ -254,11 +256,45 @@ def _claude_env() -> dict[str, str]:
     return values
 
 
+def _coding_plan_env() -> dict[str, str]:
+    """The Coding Plan endpoint and token saved in Hub settings (#334), when both are.
+
+    They reach Coding Plan conversations only; a plain Claude Code conversation
+    keeps the CLI's own login and configuration."""
+    token = credentials.saved("coding-plan")
+    try:
+        base = read_user_settings().coding_plan_base_url
+    except Exception:  # noqa: BLE001 - unreadable preferences mean no saved endpoint
+        base = None
+    return {"ANTHROPIC_BASE_URL": base, "ANTHROPIC_AUTH_TOKEN": token} if token and base else {}
+
+
+def claude_plan_configured(environment: Mapping[str, str] | None = None) -> bool:
+    """Whether the Claude CLI's own configuration names an Anthropic-compatible endpoint and its credential."""
+    env = _claude_env() if environment is None else environment
+    return bool(env.get("ANTHROPIC_BASE_URL") and (env.get("ANTHROPIC_AUTH_TOKEN") or env.get("ANTHROPIC_API_KEY")))
+
+
+# #334: each CLI's own sign-in; it runs in a console of its own and may open the browser.
+_LOGIN_ARGS = {"codex": ("login",), "claude": ("auth", "login")}
+
+
+def _open_console(command_line: str, cwd: str) -> None:
+    """Run a command in a new console window. `start` gives it that window's own
+    keyboard; the short-lived starter reads nothing, so the Hub's stdin stays the Hub's."""
+    subprocess.Popen(f'cmd.exe /d /c start "MonkeyHub sign-in" {command_line}', cwd=cwd,
+                     stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                     creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+
+
 def _redact(text: str, environment: Mapping[str, str] | None = None) -> str:
     """Never expose provider credentials in the transcript or an error body."""
     for key, value in (environment or os.environ).items():
         if re.search(r"key|token|secret|password|access.?code", key, re.I) and len(value) >= 8:
             text = text.replace(value, "[redacted]")
+    # Keys saved in Hub settings are never in the environment of this process.
+    for value in credentials.saved_values():
+        text = text.replace(value, "[redacted]")
     text = re.sub(r"\bsk-[A-Za-z0-9_-]{12,}\b", "[redacted]", text)
     text = re.sub(r"\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b", "[redacted]", text)
     return re.sub(
@@ -919,10 +955,26 @@ class ChatStore:
             self._check_thread = thread
         thread.start()
 
+    def open_login(self, provider: str) -> None:
+        """Open the CLI's own sign-in in a console window; the provider check reads the result (#334)."""
+        commands = self.commands if self.commands is not None else _cli_commands()
+        name = "Codex" if provider == "codex" else "Claude Code"
+        if provider not in commands:
+            raise HubFailure(409, "CHAT_PROVIDER_MISSING", f"The {name} CLI is not installed on this computer.")
+        if os.name != "nt":
+            raise HubFailure(409, "CHAT_LOGIN_UNSUPPORTED", f"Sign in by running the {name} CLI's login in a terminal.")
+        parts = (*commands[provider], *_LOGIN_ARGS[provider])
+        if any('"' in part for part in parts):
+            raise HubFailure(409, "CHAT_PROVIDER_MISSING", f"The {name} CLI path cannot be started from here.")
+        # cmd /k keeps the window open, so the CLI's last words stay readable.
+        line = " ".join(f'"{part}"' for part in parts)
+        _open_console(f'cmd.exe /d /k "{line}"', str(Path.home()))
+
     def providers(self, refresh: bool = False) -> list[ChatProvider]:
         commands = self.commands if self.commands is not None else _cli_commands()
         env = _claude_env()
-        configured_plan = bool(env.get("ANTHROPIC_BASE_URL") and (env.get("ANTHROPIC_AUTH_TOKEN") or env.get("ANTHROPIC_API_KEY")))
+        saved_plan = bool(_coding_plan_env())
+        configured_plan = saved_plan or claude_plan_configured(env)
         self._check(refresh)
         with self._lock:
             checked, checking = dict(self._checked), self._checking and self._checked_at is None
@@ -933,8 +985,9 @@ class ChatStore:
                          detail="Uses the installed Claude CLI and its saved login or configuration." if "claude" in commands else "Claude CLI is not installed."),
             ChatProvider(id="coding-plan", label="Coding Plan", available="claude" in commands and configured_plan,
                          installed="claude" in commands,
-                         detail="Uses the Claude CLI's existing Anthropic-compatible endpoint and authentication." if configured_plan and "claude" in commands
-                         else "No executable Coding Plan configuration was found. Configure the existing Claude CLI endpoint and authentication first."),
+                         detail="Uses the Coding Plan endpoint and token saved in Hub settings." if saved_plan and "claude" in commands
+                         else "Uses the Claude CLI's existing Anthropic-compatible endpoint and authentication." if configured_plan and "claude" in commands
+                         else "No Coding Plan endpoint and token yet. Enter them in Hub settings, under Conversations."),
         ]
         if self._use_acp:
             codex = rows[0]
@@ -1637,6 +1690,12 @@ class ChatStore:
         commands = self.commands if self.commands is not None else _cli_commands()
         kind = "codex" if session.provider == "codex" else "claude"
         environment = _claude_env() if kind == "claude" else dict(os.environ)
+        plan = _coding_plan_env() if session.provider == "coding-plan" else {}
+        if plan:
+            # The saved endpoint takes this conversation, with its own token only:
+            # an Anthropic key of the architect's must not travel to a third party.
+            environment.pop("ANTHROPIC_API_KEY", None)
+            environment.update(plan)
         environment["MONKEYHUB_PRESENTATION_TOKEN"] = self.presentation_token(session.id)
         mcp = self._tool_connection(session)
         model = session.model

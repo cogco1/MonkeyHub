@@ -11073,6 +11073,10 @@ export type UserSettingsDto = {
      */
     chatModel?: string | null;
     /**
+     * Codingplanbaseurl
+     */
+    codingPlanBaseUrl?: string | null;
+    /**
      * Autoupdate
      */
     autoUpdate?: boolean | null;
