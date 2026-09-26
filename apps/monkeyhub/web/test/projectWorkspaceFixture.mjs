@@ -99,6 +99,8 @@ export async function createProjectWorkspaceFixture(runtimes, sessions) {
       if (name === "/api/publication") return json({ projectId, revisionSha256: null, title: `Layout ${projectId}`,
         spec: { width: 1280, height: 720, template: "hero" }, pages: [], sources: [] });
       if (name === "/api/drawings/styles") return json({ styles: [] });
+      // #320: Drawing reads a drawing's recipe corrections; this fixture retains none.
+      if (name === "/api/drawings/corrections") return json({ projectId, drawingId: url.searchParams.get("drawingId"), pairs: [], suggestions: [] });
       // #271: the head a real runtime would resolve for this fixture, and its read-only Worktree Graph.
       const home = current.assets.get(current.home).dto;
       const tree = designTrees.get(projectId);

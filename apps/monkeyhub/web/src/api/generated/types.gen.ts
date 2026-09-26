@@ -1891,6 +1891,10 @@ export type UserSettingsDto = {
      */
     fontScale?: 0.9 | 1 | 1.1 | null;
     /**
+     * Uistyle
+     */
+    uiStyle?: 'classic' | 'quiet' | 'titleblock' | 'night' | null;
+    /**
      * Intentprovider
      */
     intentProvider?: 'deterministic' | 'codex' | 'anthropic' | null;

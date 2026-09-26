@@ -473,6 +473,8 @@ await page.route((url) => url.pathname.startsWith("/api/"), async (route) => {
 const railWidth = () => page.evaluate(() => document.querySelector(".chat-rail").getBoundingClientRect().width);
 // GH-302: Hub settings have no Save button; each change saves itself and the status line says Saved.
 const settingsSaved = () => page.waitForFunction(() => document.querySelector("#settings-save-state")?.dataset.state === "saved");
+// #328: Settings is paged; each page opens from the list beside it.
+const settingsPage = (name) => page.getByRole("dialog").getByRole("tab", { name, exact: true }).click();
 const boxOf = (selector) => page.evaluate((value) => {
   const node = document.querySelector(value);
   return node ? node.getBoundingClientRect().width : 0;
@@ -589,7 +591,7 @@ const autosavedModelRestart = async () => {
   };
   const blocker = "A model draft is still being saved. Wait a moment before restarting.";
   const restart = page.getByRole("button", { name: "Restart to update", exact: true });
-  const openSettings = () => page.getByRole("button", { name: "Hub settings", exact: true }).click();
+  const openSettings = async () => { await page.getByRole("button", { name: "Hub settings", exact: true }).click(); await settingsPage("Software update"); };
   const closeSettings = () => page.getByRole("dialog").getByRole("button", { name: "Close", exact: true }).click();
   const restartAllowed = async (message) => {
     await page.waitForFunction(() => [...document.querySelectorAll("button")].find((button) => button.textContent === "Restart to update")?.disabled === false);
@@ -1315,6 +1317,7 @@ try {
   // B — the global defaults live in the bottom-left Hub settings only.
   await page.getByRole("button", { name: "Hub settings", exact: true }).click();
   const dialog = page.getByRole("dialog").filter({ hasText: "Hub settings (global)" });
+  await settingsPage("Conversations");
   await dialog.getByRole("heading", { name: "New conversation defaults" }).waitFor();
   await dialog.getByText("The model list comes from this CLI's own catalogue.").waitFor();
   assert.deepEqual(await page.locator("#default-chat-model option").allInnerTexts(),
@@ -1328,11 +1331,13 @@ try {
   await dialog.getByText("This CLI offers no model list; a model id can be entered by hand.").waitFor();
   await page.locator("#default-chat-model").selectOption("__custom__");
   await page.locator("#default-chat-model-custom").fill("claude-opus-5");
+  await settingsPage("AI Render");
   await page.locator("#render-provider").selectOption("gemini");
   await page.locator("#render-model").fill("gemini-3.1-flash-image");
   await page.locator("#render-timeout").fill("75");
   assert.equal(await page.locator('input[type="password"]').count(), 0, "render credentials never enter settings UI");
   const rechecks = providerReads.filter((value) => value === "true").length;
+  await settingsPage("Conversations");
   await page.locator("#recheck-connections").click();
   await page.waitForFunction((count) => true, rechecks);
   assert.equal(await page.locator("#save-appearance, #save-launch").count(), 0, "Hub settings have no Save buttons");
@@ -1718,6 +1723,7 @@ try {
 
   await page.screenshot({ path: path.join(temporary, "desktop.png"), fullPage: true });
   await page.getByRole("button", { name: "Hub settings", exact: true }).click();
+  await settingsPage("Workspace");
   await page.getByText("More launch options", { exact: true }).click();
   const diagnostics = page.getByRole("checkbox", { name: "Developer / Research Mode", exact: true });
   const checkBox = await diagnostics.boundingBox();
@@ -1729,6 +1735,7 @@ try {
   assert.equal(await page.getByRole("checkbox", { name: "Event stream", exact: true }).isVisible(), true);
   await diagnostics.uncheck();
   const englishStageLabel = await visibleWorkspace().locator(".stage").getAttribute("aria-label");
+  await settingsPage("Display");
   await page.locator("#theme").selectOption("dark");
   await page.locator("#language").selectOption("zh-CN");
   assert.equal(await page.locator("html").getAttribute("lang"), "zh-CN");
@@ -1922,6 +1929,7 @@ try {
   // hidden composer. Opening/closing settings must preserve the actual files.
   updateStatus = { ...updateStatus, state: "ready", prepared: preparedPatch, canApply: true };
   await page.getByRole("button", { name: "Hub settings", exact: true }).click();
+  await settingsPage("Software update");
   await page.getByText("A conversation has unsent text or attachments. Send or remove them before restarting.").waitFor();
   assert.equal(await page.getByRole("button", { name: "Restart to update", exact: true }).isDisabled(), true);
   assert.equal(appliedPatches, 0);
@@ -1961,6 +1969,7 @@ try {
   updateStatus = { ...updateStatus, state: "ready", prepared: preparedPatch, canApply: true };
   assert.equal(await page.locator("#chat-input").inputValue(), "");
   await page.getByRole("button", { name: "Hub settings", exact: true }).click();
+  await settingsPage("Software update");
   await page.getByText("A conversation has unsent text or attachments. Send or remove them before restarting.").waitFor();
   assert.equal(await page.getByRole("button", { name: "Restart to update", exact: true }).isDisabled(), true,
     "Project A's hidden draft blocks restart even though B's visible composer is empty");
@@ -2602,6 +2611,7 @@ try {
   await page.waitForFunction(() => document.querySelector("#chat-input")?.value === "Keep this sentence through a reload");
   updateStatus = { ...updateStatus, state: "ready", prepared: preparedPatch, canApply: true };
   await page.getByRole("button", { name: "Hub settings", exact: true }).click();
+  await settingsPage("Software update");
   await page.getByRole("button", { name: "Restart to update", exact: true }).waitFor();
   assert.equal(await page.getByText("A conversation has unsent text or attachments. Send or remove them before restarting.").count(), 0,
     "kept text alone does not hold the update restart");
@@ -2875,6 +2885,7 @@ try {
     assert.equal(await page.locator(".chat-composer .chat-attachments li").count(), 0);
     updateStatus = { ...updateStatus, state: "ready", prepared: preparedPatch, canApply: true };
     await page.getByRole("button", { name: "Hub settings", exact: true }).click();
+    await settingsPage("Software update");
     await page.getByText("A conversation has unsent text or attachments. Send or remove them before restarting.").waitFor();
     assert.equal(await page.getByRole("button", { name: "Restart to update", exact: true }).isDisabled(), true);
     assert.equal(appliedPatches, 0);
@@ -2890,6 +2901,7 @@ try {
   // Patch preparation transfers the ZIP bytes exactly, polls until ready,
   // preserves settings edits, and delegates restart without a document reload.
   await page.getByRole("button", { name: "Hub settings", exact: true }).click();
+  await settingsPage("Software update");
   await page.getByText("fixture-current-desktop", { exact: true }).waitFor();
   // Automatic updates are on by default and named as the unsigned prerelease
   // channel. The switch saves at once; checking never restarts the page.
@@ -2945,11 +2957,14 @@ try {
   assert.ok(patchPolls >= 2); await page.getByText("1.0 MiB", { exact: true }).waitFor();
   let releaseSettings; settingsWriteGate = new Promise((resolve) => { releaseSettings = resolve; });
   // Every earlier choice in this test saved itself, so the theme may already be dark.
+  await settingsPage("Display");
   await page.locator("#theme").selectOption(await page.locator("#theme").inputValue() === "dark" ? "light" : "dark");
+  await settingsPage("Software update");
   await page.getByText("A settings change is still being saved or could not be saved. Wait, or fix the marked setting, before restarting.", { exact: true }).waitFor();
   assert.equal(await page.getByRole("button", { name: "Restart to update", exact: true }).isDisabled(), true);
   settingsWriteGate = null; releaseSettings();
   await settingsSaved();
+  await settingsPage("Display");
   await page.locator("#theme").selectOption("dark"); await settingsSaved();
   await page.waitForFunction(() => ![...document.querySelectorAll("button")].find((button) => button.textContent === "Restart to update")?.disabled);
   // The desktop dialog is usable at a small viewport, in dark mode, with
@@ -2957,19 +2972,24 @@ try {
   await page.locator("#font-scale").selectOption("1.1");
   await settingsSaved();
   await page.emulateMedia({ reducedMotion: "reduce" }); await page.setViewportSize({ width: 390, height: 844 });
+  await settingsPage("Software update");
   await page.locator(".software-update").scrollIntoViewIfNeeded();
   assert.equal(await page.locator(".software-update").evaluate((node) => node.scrollWidth <= node.clientWidth + 1), true);
   assert.equal(await page.getByRole("dialog").evaluate((node) => node.scrollWidth <= node.clientWidth + 1), true);
   for (const button of await page.locator(".software-update__actions button").all()) assert.ok((await button.boundingBox()).height >= 44);
   await page.getByRole("dialog").screenshot({ path: path.join(temporary, "software-update-small-dark.png") });
+  await settingsPage("Display");
   await page.locator("#language").selectOption("zh-CN"); await settingsSaved();
+  await settingsPage("软件更新");
   await page.getByRole("heading", { name: "软件更新", exact: true }).waitFor();
   await page.getByText("自动更新：开 · 未签名预发布通道", { exact: true }).waitFor();
   await page.locator(".software-update").scrollIntoViewIfNeeded();
   await page.getByRole("dialog").screenshot({ path: path.join(temporary, "software-update-small-zh.png") });
   await page.setViewportSize({ width: 1440, height: 960 });
   await page.getByRole("dialog").screenshot({ path: path.join(temporary, "software-update-wide-zh.png") });
+  await settingsPage("显示");
   await page.locator("#language").selectOption("en"); await settingsSaved();
+  await settingsPage("Software update");
   updateApplyFailure = true;
   await page.getByRole("button", { name: "Restart to update", exact: true }).click();
   await page.getByText("A task started before restart. Wait and retry.", { exact: true }).waitFor();

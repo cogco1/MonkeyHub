@@ -17,3 +17,10 @@
 @keyframes attention-enter{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 @media(max-width:900px){.attention-toast__view{min-height:44px}.attention-toast__close{width:44px;height:44px}}
 @media(prefers-reduced-motion:reduce){.attention-toast{animation:none;transition:none}}
+/* #328: in the instrument styles a notice carries its state as a bar on its left edge instead of a dot. */
+:where([data-ui-style=quiet],[data-ui-style=titleblock],[data-ui-style=night]) .attention-toast{border-left:var(--stroke-mark) solid var(--held);border-radius:var(--radius-lg)}
+:where([data-ui-style=quiet],[data-ui-style=titleblock],[data-ui-style=night]) .attention-toast[data-kind=permission]{border-left-color:var(--accent)}
+:where([data-ui-style=quiet],[data-ui-style=titleblock],[data-ui-style=night]) .attention-toast[data-kind=failed]{border-left-color:var(--violated)}
+:where([data-ui-style=quiet],[data-ui-style=titleblock],[data-ui-style=night]) .attention-toast__mark{display:none}
+:where([data-ui-style=quiet],[data-ui-style=titleblock],[data-ui-style=night]) .attention-toast__view{font-weight:600}
+:where([data-ui-style=night]) .attention-toast{box-shadow:0 0 18px rgba(95,211,230,.18)}

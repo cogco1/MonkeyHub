@@ -238,7 +238,7 @@ class UserSettingsRouteTests(unittest.TestCase):
         self.assertFalse(user_settings_path().exists())
 
     def test_save_survives_a_fresh_process_configuration_without_switching_the_compiler(self) -> None:
-        payload = {"language": "zh-CN", "theme": "light", "fontScale": 1.1,
+        payload = {"language": "zh-CN", "theme": "light", "fontScale": 1.1, "uiStyle": "titleblock",
                    "intentProvider": "codex", "intentModel": "saved-model", "intentTimeoutS": 45.5}
         response = self.client.put("/api/settings/user", json=payload)
         self.assertEqual((response.status_code, response.json()), (200, payload))
@@ -270,7 +270,8 @@ class UserSettingsRouteTests(unittest.TestCase):
         self.client.put("/api/settings/user", json={"theme": "light"})
         for payload in ({"language": "zh"}, {"language": ["en"]}, {"theme": "auto"},
                         {"theme": ["light"]}, {"intentProvider": ["codex"]}, {"fontScale": True},
-                        {"fontScale": 2}, {"intentProvider": "new-provider"},
+                        {"fontScale": 2}, {"uiStyle": "neon"}, {"uiStyle": ["quiet"]},
+                        {"intentProvider": "new-provider"},
                         {"intentModel": "  "}, {"intentModel": "invalid\u0000model"},
                         {"intentTimeoutS": 0}, {"intentTimeoutS": True},
                         {"intentTimeoutS": "60"}, {"token": "private-token"},

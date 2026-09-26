@@ -80,6 +80,8 @@ const until = async (read, label) => {
   while (!await read()) { if (Date.now() > deadline) assert.fail(label); await page.waitForTimeout(25); }
 };
 const openSettings = async (name = "Hub settings") => { await page.getByRole("button", { name, exact: true }).click(); await dialog.waitFor(); };
+// #328: Settings is paged; each page opens from the list beside it.
+const openPage = (name) => dialog.getByRole("tab", { name, exact: true }).click();
 const passed = [];
 async function step(name, action) { await action(); passed.push(name); console.log(`PASS ${name}`); }
 try {
@@ -103,8 +105,33 @@ try {
     assert.equal(await page.locator("html").getAttribute("data-theme"), "dark");
   });
 
+  await step("Settings opens on Display, its pages follow the list, and a style card saves at once", async () => {
+    assert.equal(await dialog.getByRole("tab", { name: "Display", exact: true }).getAttribute("aria-selected"), "true");
+    assert.deepEqual(await dialog.getByRole("tab").allInnerTexts(), ["Display", "Conversations", "AI Render", "Workspace", "Software update"]);
+    const before = userWrites.length;
+    await dialog.getByRole("radio", { name: /^Title block/ }).check();
+    await until(() => userWrites.length === before + 1, "choosing a style writes the preferences document");
+    assert.equal(userWrites.at(-1).uiStyle, "titleblock");
+    assert.equal(await page.locator("html").getAttribute("data-ui-style"), "titleblock");
+    await status.filter({ hasText: /^Saved$/ }).waitFor();
+    await dialog.screenshot({ path: path.join(screenshots, "settings-display-titleblock-en.png") });
+    // Arrows, Home and End move along the list and open each page.
+    await dialog.getByRole("tab", { name: "Display", exact: true }).focus();
+    await page.keyboard.press("ArrowDown");
+    assert.equal(await dialog.getByRole("tab", { name: "Conversations", exact: true }).getAttribute("aria-selected"), "true");
+    await page.locator("#default-chat-provider").waitFor();
+    await page.keyboard.press("End");
+    await dialog.getByRole("heading", { name: "Software update", exact: true }).waitFor();
+    await page.keyboard.press("Home");
+    await page.locator("#theme").waitFor();
+    await dialog.getByRole("radio", { name: /^Classic/ }).check();
+    await until(() => userWrites.at(-1)?.uiStyle === "classic", "Classic is saved back");
+    await status.filter({ hasText: /^Saved$/ }).waitFor();
+  });
+
   await step("typed text is saved once, after its pause", async () => {
     const before = userWrites.length;
+    await openPage("AI Render");
     await page.locator("#render-model").pressSequentially("gemini-3.1-flash-image", { delay: 20 });
     await status.filter({ hasText: /^Saving…$/ }).waitFor();
     await status.filter({ hasText: /^Saved$/ }).waitFor();
@@ -126,6 +153,7 @@ try {
   });
 
   await step("a folder and a port are validated before the launch settings are saved", async () => {
+    await openPage("Workspace");
     await page.locator("#workspace-dir").fill("relative\\projects");
     await dialog.getByRole("alert").filter({ hasText: "The folder for new projects must be a full path" }).waitFor();
     assert.equal(launchWrites.length, 0, "a relative folder is not sent");
@@ -160,6 +188,7 @@ try {
 
   await step("closing Settings saves what is still waiting for its pause", async () => {
     const before = userWrites.length;
+    await openPage("AI Render");
     await page.locator("#render-model").fill("gemini-3.1-flash-image-preview");
     const typedAt = Date.now();
     await dialog.getByRole("button", { name: "Close", exact: true }).click();
@@ -170,9 +199,11 @@ try {
 
   await step("the software update switch keeps its own save beside autosave", async () => {
     await openSettings();
+    await openPage("Software update");
     const autoSwitch = page.getByRole("switch");
     await autoSwitch.click();
     await page.getByText("Automatic updates: Off · Unsigned prerelease channel", { exact: true }).waitFor();
+    await openPage("Display");
     await page.locator("#font-scale").selectOption("1.1");
     await until(() => userWrites.at(-1)?.fontScale === 1.1, "text size saved");
     assert.equal(userWrites.at(-1).autoUpdate, false, "autosave carries the switch's value, never an older one");
@@ -190,6 +221,7 @@ try {
     await dialog.screenshot({ path: path.join(screenshots, "settings-saving-zh.png") });
     userGate = null; release();
     await status.filter({ hasText: /^已保存$/ }).waitFor();
+    await openPage("AI 渲染");
     await page.locator("#render-timeout").fill("0");
     await status.filter({ hasText: /^有未保存修改$/ }).waitFor();
     await dialog.screenshot({ path: path.join(screenshots, "settings-invalid-zh.png") });

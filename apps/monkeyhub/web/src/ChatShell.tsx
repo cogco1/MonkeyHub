@@ -19,9 +19,13 @@ import { SoftwareUpdateSettings, type RestartBlocker } from "./SoftwareUpdateSet
 import "./ChatShell.css";
 
 type AppId = AppStatus["appId"] | "drawing" | "publish" | "tree";
+/** #328: Hub settings come as pages, each named in the dialog's list; the shell adds
+    Software update as the last page and keeps which page is open. */
+export type SettingsPage = { readonly id: string; readonly label: string; readonly icon: string; readonly body: ReactNode };
+export type HubSettings = { readonly pages: readonly SettingsPage[]; readonly updateLabel: string; readonly status: ReactNode; readonly notice: ReactNode };
 type Props = {
   preferences: AppearancePreferences;
-  settings: ReactNode;
+  settings: HubSettings;
   settingsDirty?: boolean;
   configuredProject: string | null;
   /** The saved global defaults a *new* conversation starts with. */
@@ -158,6 +162,7 @@ function Icon({ name }: { name: string }) {
     refresh: <path d="M20 10a8 8 0 1 0-2 8M20 4v6h-6" />,
     tree: <><circle cx="5" cy="12" r="2" /><circle cx="19" cy="12" r="2" /><circle cx="12" cy="5" r="2" /><path d="M7 12h10M12 7v5M12 12l-4 6M12 12l4 6" /></>,
     settings: <><path d="M4 7h16M4 17h16" /><circle cx="9" cy="7" r="3" /><circle cx="15" cy="17" r="3" /></>,
+    display: <><circle cx="12" cy="12" r="8.5" /><path d="M12 3.5a8.5 8.5 0 0 1 0 17Z" fill="currentColor" /></>,
   };
   return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.65" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name] ?? paths.chat}</svg>;
 }
@@ -502,6 +507,8 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
   const archiveDialog = useRef<HTMLDialogElement>(null);
   const restoreDialog = useRef<HTMLDialogElement>(null);
   const settingsDialog = useRef<HTMLDialogElement>(null);
+  const settingsPane = useRef<HTMLDivElement>(null);
+  const [settingsPage, setSettingsPage] = useState<string | null>(null);
   const input = useRef<HTMLTextAreaElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const messages = useRef<HTMLDivElement>(null);
@@ -805,10 +812,22 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
     const timer = window.setInterval(() => { if (!document.hidden) void read(); }, 60_000);
     return () => { live = false; window.clearInterval(timer); };
   }, [settingsOpen]);
-  const openSettings = () => { setSettingsOpen(true); settingsDialog.current?.showModal(); };
-  const openSoftwareUpdate = () => {
-    openSettings();
-    requestAnimationFrame(() => document.getElementById("software-update-heading")?.scrollIntoView({ block: "start" }));
+  // Settings opens on its first page; a ready update opens straight on Software update.
+  const settingsTabs = [...settings.pages, { id: "update", label: settings.updateLabel, icon: "update" }];
+  const shownSettingsPage = settingsPage ?? settingsTabs[0].id;
+  const showSettingsPage = (page: string | null) => { setSettingsPage(page); settingsPane.current?.scrollTo({ top: 0 }); };
+  const openSettings = () => { showSettingsPage(null); setSettingsOpen(true); settingsDialog.current?.showModal(); };
+  const openSoftwareUpdate = () => { showSettingsPage("update"); setSettingsOpen(true); settingsDialog.current?.showModal(); };
+  // The page list is a vertical tab list: arrows, Home and End move along it and open the page.
+  const moveSettingsTab = (event: KeyboardEvent<HTMLDivElement>) => {
+    const index = settingsTabs.findIndex((tab) => tab.id === shownSettingsPage);
+    const target = event.key === "ArrowDown" ? index + 1 : event.key === "ArrowUp" ? index - 1
+      : event.key === "Home" ? 0 : event.key === "End" ? settingsTabs.length - 1 : null;
+    if (target === null) return;
+    event.preventDefault();
+    const tab = settingsTabs[(target + settingsTabs.length) % settingsTabs.length];
+    showSettingsPage(tab.id);
+    document.getElementById(`settings-tab-${tab.id}`)?.focus();
   };
   useEffect(() => { if (input.current) { input.current.style.height = "auto"; input.current.style.height = `${Math.min(input.current.scrollHeight, 180)}px`; } }, [draft]);
   const focusConversation = () => {
@@ -1731,11 +1750,26 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
       <div className="chat-dialog__actions"><button type="button" className="btn" onClick={() => restoreDialog.current?.close()}>{t.close}</button>
         <button type="submit" className="btn btn--primary" disabled={busy || !restorePath.trim()}>{busy ? t.restoring : t.restoreRun}</button></div>
     </form></dialog>
-    <dialog ref={settingsDialog} className="chat-dialog chat-dialog--settings" closedby={updateRestarting ? "none" : "closerequest"}
+    <dialog ref={settingsDialog} className="chat-dialog chat-dialog--settings" aria-labelledby="settings-heading" closedby={updateRestarting ? "none" : "closerequest"}
       onClose={() => setSettingsOpen(false)} onCancel={(event) => { if (updateRestarting) event.preventDefault(); }}>
-      <div className="chat-dialog__heading"><h2>{t.settingsHeading}</h2><button className="chat-icon" aria-label={t.close} disabled={updateRestarting} onClick={() => settingsDialog.current?.close()}><Icon name="close" /></button></div>
-      <div inert={updateRestarting}>{settings}</div>
-      <SoftwareUpdateSettings language={preferences.language} open={settingsOpen} restartBlocker={restartBlocker} onRestarting={setUpdateRestarting} />
+      <button className="chat-icon settings-close" aria-label={t.close} disabled={updateRestarting} onClick={() => settingsDialog.current?.close()}><Icon name="close" /></button>
+      <nav className="settings-nav" inert={updateRestarting}>
+        <h2 id="settings-heading">{t.settingsHeading}</h2>
+        <div className="settings-tabs" role="tablist" aria-orientation="vertical" aria-labelledby="settings-heading" onKeyDown={moveSettingsTab}>
+          {settingsTabs.map((tab) => <button key={tab.id} type="button" role="tab" id={`settings-tab-${tab.id}`} className="settings-tab" aria-controls={`settings-page-${tab.id}`}
+            aria-selected={tab.id === shownSettingsPage} tabIndex={tab.id === shownSettingsPage ? 0 : -1} onClick={() => showSettingsPage(tab.id)}><Icon name={tab.icon} /><span>{tab.label}</span></button>)}
+        </div>
+        <div className="settings-nav__status">{settings.status}</div>
+      </nav>
+      <div className="settings-pane" ref={settingsPane}>
+        <div inert={updateRestarting}>{settings.notice}
+          {settings.pages.map((page) => <section key={page.id} role="tabpanel" id={`settings-page-${page.id}`} className="settings-page" aria-labelledby={`settings-tab-${page.id}`}
+            hidden={page.id !== shownSettingsPage}>{page.body}</section>)}
+        </div>
+        <section role="tabpanel" id="settings-page-update" className="settings-page" aria-labelledby="settings-tab-update" hidden={shownSettingsPage !== "update"}>
+          <SoftwareUpdateSettings language={preferences.language} open={settingsOpen} restartBlocker={restartBlocker} onRestarting={setUpdateRestarting} />
+        </section>
+      </div>
     </dialog>
   </div>;
 }
