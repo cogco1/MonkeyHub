@@ -688,11 +688,14 @@ try {
       const names = language === "en" ? {
         archive: "Archived chats", settings: "Hub settings", project: "This project: Project A", close: "Close",
         menu: "Attachments and new topic", topic: "New topic", send: "Send", empty: "Write a message or add an attachment first.",
+        sidebarToggle: /^(Hide|Show) projects$/,
       } : {
         archive: "已归档对话", settings: "Hub 设置", project: "此项目: Project A", close: "关闭",
         menu: "附件与新话题", topic: "新话题", send: "发送", empty: "请先输入消息或添加附件。",
+        sidebarToggle: /^(收起|展开)项目栏$/,
       };
-      const sidebarToggle = page.locator(".chat-sidebar__top button");
+      // #337: the sidebar toggle sits in the menu row; its name says what a click does.
+      const sidebarToggle = page.locator(".chat-menubar").getByRole("button", { name: names.sidebarToggle });
       if (await page.locator(".chat-shell").getAttribute("data-sidebar") === "true") await sidebarToggle.click();
       for (const name of [names.archive, names.settings]) {
         const button = page.getByRole("button", { name, exact: true });
@@ -1450,6 +1453,32 @@ try {
   assert.equal(await page.locator('.chat-process__row[aria-expanded="true"]').count(), 0, "a reloaded chat shows its turns folded");
   await page.locator(".chat-browser").waitFor();
   assert.ok(Math.abs(await boxOf(".chat-browser") - savedWidth) < 12, "the panel width is restored");
+
+  // #337: the menu row. File opens from the keyboard and names what it does; Escape
+  // returns to the word; View changes the theme through the same saved preferences.
+  const fileWord = page.getByRole("menuitem", { name: "File", exact: true });
+  await fileWord.focus();
+  await page.keyboard.press("ArrowDown");
+  const fileMenu = page.getByRole("menu", { name: "File", exact: true });
+  assert.deepEqual((await fileMenu.getByRole("menuitem").allInnerTexts()).map((text) => text.trim()),
+    ["New chat", "New project…", "Add existing project…", "Export project archive…", "Restore project archive…", "Settings…"]);
+  await page.keyboard.press("Escape");
+  await fileMenu.waitFor({ state: "detached" });
+  await page.waitForFunction(() => document.activeElement?.id === "hub-menu-file"); // Escape returns to the menu's word
+  await page.getByRole("menuitem", { name: "View", exact: true }).click();
+  await page.getByRole("menuitemradio", { name: "Dark", exact: true }).click();
+  await page.waitForFunction(() => document.documentElement.dataset.theme === "dark");
+  await page.screenshot({ path: path.join(temporary, "menu-row-dark.png") });
+  await page.getByRole("menuitem", { name: "View", exact: true }).click();
+  await page.getByRole("menuitemradio", { name: "Light", exact: true }).click();
+  await page.waitForFunction(() => document.documentElement.dataset.theme === "light");
+  // Every interface style draws the same row; the crops are for review by eye.
+  for (const [style, name] of [["quiet", "Quiet instrument"], ["titleblock", "Title block"], ["night", "Night flight"], ["classic", "Classic"]]) {
+    await page.getByRole("menuitem", { name: "View", exact: true }).click();
+    await page.getByRole("menuitemradio", { name, exact: true }).click();
+    await page.waitForFunction((value) => (document.documentElement.getAttribute("data-ui-style") ?? "classic") === value, style);
+    await page.screenshot({ path: path.join(temporary, `menu-row-${style}.png`), clip: { x: 0, y: 0, width: 760, height: 180 } });
+  }
 
   // B — the global defaults live in the bottom-left Hub settings only.
   await page.getByRole("button", { name: "Hub settings", exact: true }).click();
@@ -2455,14 +2484,14 @@ try {
   await documentDialog.getByRole("button", { name: "Close", exact: true }).click();
   await page.screenshot({ path: path.join(temporary, "external-presentation.png"), fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.locator(".chat-sidebar__top .chat-icon").click();
+  await page.locator(".chat-menubar").getByRole("button", { name: /^(Hide|Show) projects$/ }).click();
   await preview.click();
   const previewBounds = await imageDialog.boundingBox();
   assert.ok(previewBounds.x >= 0 && previewBounds.x + previewBounds.width <= 390, "the image dialog fits a narrow viewport");
   await page.screenshot({ path: path.join(temporary, "external-image-mobile.png") });
   await page.keyboard.press("Escape");
   await page.setViewportSize({ width: 1440, height: 960 });
-  await page.locator(".chat-sidebar__top .chat-icon").click();
+  await page.locator(".chat-menubar").getByRole("button", { name: /^(Hide|Show) projects$/ }).click();
   await page.reload();
   await page.getByRole("button", { name: "Enlarge image: facade.png", exact: true }).waitFor();
   await page.getByRole("button", { name: "Project A", exact: true }).first().click();

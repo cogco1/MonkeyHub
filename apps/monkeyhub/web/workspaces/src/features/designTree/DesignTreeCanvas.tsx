@@ -3,8 +3,8 @@
  *
  * View mode: the tree is a projection of retained facts, never an edited
  * scene, and nothing here is saved. The scene is rebuilt only when the tree,
- * the selection or the level of detail changes. Fitting is the host's own:
- * Excalidraw's fit rounds zoom down to tenths and stops at 10 %.
+ * the selection, the level of detail or the Hub's colours change. Fitting is
+ * the host's own: Excalidraw's fit rounds zoom down to tenths and stops at 10 %.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { CaptureUpdateAction, convertToExcalidrawElements, FONT_FAMILY } from "@excalidraw/excalidraw";
@@ -13,7 +13,7 @@ import { CANVAS_APP_STATE, PROJECT_CANVAS_CLASS, ProjectCanvas, useScenePointer,
 import { topmostAt } from "../canvas/sceneHit";
 import { layoutGrowthTree, type Box } from "./layout";
 import { CURRENT, trunkKey, type GrowthTree } from "./model";
-import { buildTreeScene, type SceneHit, type SceneWords, type ZoomLevel } from "./scene";
+import { buildTreeScene, LIGHT_TREE_PALETTE, type SceneHit, type SceneWords, type TreePalette, type ZoomLevel } from "./scene";
 
 const TREE_ZOOM: ZoomRange = { min: 0.05, max: 4 };
 const TREE_UI: UIOptions = {
@@ -21,6 +21,61 @@ const TREE_UI: UIOptions = {
     changeViewBackgroundColor: false, toggleTheme: false },
   tools: { image: false },
 };
+
+/** The Hub token each scene colour takes (#337). */
+const PALETTE_TOKENS: Readonly<Record<keyof TreePalette, string>> = {
+  ground: "--ground", ink: "--ink", ink2: "--ink-2", faint: "--faint", accent: "--accent", onAccent: "--accent-ink",
+  accentSoft: "--accent-soft", paper: "--panel-2", tile: "--panel", twig: "--rule", muted: "--rule-soft",
+  running: "--processing", warn: "--unchecked",
+};
+
+/**
+ * The palette from the Hub's tokens as they are now. A translucent token is laid
+ * on the ground, so a card still hides the lines under it.
+ */
+function readTreePalette(): TreePalette {
+  const probe = document.createElement("canvas").getContext("2d");
+  if (!probe) return LIGHT_TREE_PALETTE;
+  const rgba = (value: string): readonly [number, number, number, number] | null => {
+    if (!value) return null;
+    // The browser reads any CSS colour; one it cannot read leaves the marker.
+    probe.fillStyle = "#010203";
+    probe.fillStyle = value;
+    const read = String(probe.fillStyle);
+    const hex = /^#([0-9a-f]{6})$/i.exec(read);
+    if (hex) return read === "#010203" && value.toLowerCase() !== "#010203" ? null
+      : [parseInt(hex[1].slice(0, 2), 16), parseInt(hex[1].slice(2, 4), 16), parseInt(hex[1].slice(4), 16), 1];
+    const parts = /^rgba?\(([^)]*)\)$/i.exec(read)?.[1].split(",").map(Number);
+    return parts?.length === 4 && parts.every(Number.isFinite) ? [parts[0], parts[1], parts[2], parts[3]] : null;
+  };
+  const style = getComputedStyle(document.documentElement);
+  const token = (name: keyof TreePalette) => rgba(style.getPropertyValue(PALETTE_TOKENS[name]).trim()) ?? rgba(LIGHT_TREE_PALETTE[name])!;
+  const ground = token("ground");
+  const opaque = (name: keyof TreePalette) => {
+    const [r, g, b, a] = token(name);
+    return `#${[[r, ground[0]], [g, ground[1]], [b, ground[2]]].map(([top, under]) =>
+      Math.round(top * a + under * (1 - a)).toString(16).padStart(2, "0")).join("")}`;
+  };
+  return Object.fromEntries((Object.keys(PALETTE_TOKENS) as (keyof TreePalette)[]).map((name) => [name, opaque(name)])) as unknown as TreePalette;
+}
+
+/** The palette, read again when the theme or the interface style changes. */
+function useTreePalette(): TreePalette {
+  const [palette, setPalette] = useState(readTreePalette);
+  useEffect(() => {
+    const update = () => setPalette((previous) => {
+      const next = readTreePalette();
+      return (Object.keys(next) as (keyof TreePalette)[]).every((name) => next[name] === previous[name]) ? previous : next;
+    });
+    const observer = new MutationObserver(update);
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme", "data-ui-style"] });
+    const media = window.matchMedia("(prefers-color-scheme: dark)");
+    media.addEventListener("change", update);
+    update();
+    return () => { observer.disconnect(); media.removeEventListener("change", update); };
+  }, []);
+  return palette;
+}
 
 /** Far below 50 %, close from 125 %; a small band keeps the level from flickering at the edge. */
 export function levelFor(zoom: number, previous: ZoomLevel): ZoomLevel {
@@ -55,15 +110,17 @@ export default function DesignTreeCanvas({ tree, words, selected, fitRequest, ce
   const [ready, setReady] = useState(false);
   const layout = useMemo(() => layoutGrowthTree(tree), [tree]);
   const [detail, setDetail] = useState<{ level: ZoomLevel; textScale: number }>({ level: "mid", textScale: 1 });
+  const palette = useTreePalette();
   const scene = useMemo(() => {
-    const built = buildTreeScene(tree, layout, { ...detail, selected, fontFamily: FONT_FAMILY.Helvetica, words });
-    return { elements: convertToExcalidrawElements(built.skeletons, { regenerateIds: false }), hits: built.hits };
-  }, [tree, layout, detail, selected, words]);
+    const built = buildTreeScene(tree, layout, { ...detail, selected, fontFamily: FONT_FAMILY.Helvetica, words, palette });
+    return { elements: convertToExcalidrawElements(built.skeletons, { regenerateIds: false }), hits: built.hits, ground: palette.ground };
+  }, [tree, layout, detail, selected, words, palette]);
   const hits = useRef<SceneHit[]>(scene.hits);
-  const [initialData] = useState<ExcalidrawInitialDataState>(() => ({ elements: scene.elements, appState: { ...CANVAS_APP_STATE } }));
+  const [initialData] = useState<ExcalidrawInitialDataState>(() => ({ elements: scene.elements,
+    appState: { ...CANVAS_APP_STATE, viewBackgroundColor: scene.ground } }));
   useEffect(() => {
     hits.current = scene.hits;
-    canvas.current?.updateScene({ elements: scene.elements, captureUpdate: CaptureUpdateAction.NEVER });
+    canvas.current?.updateScene({ elements: scene.elements, appState: { viewBackgroundColor: scene.ground }, captureUpdate: CaptureUpdateAction.NEVER });
   }, [scene, ready]);
 
   const drawn = useRef(layout);

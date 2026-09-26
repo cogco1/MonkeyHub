@@ -402,6 +402,27 @@ test("the scene draws three levels of detail and hit targets for every node", as
   for (const id of tree.nodes.keys()) assert.ok(mid.hits.some((hit) => hit.node === id), `${id} can be clicked`);
   const massingD = drawing.nodes.get("candidate:run-massing-d")!;
   assert.equal(api.topmostAt(mid.hits, { x: massingD.card.x + 10, y: massingD.y })?.node, "candidate:run-massing-d");
+  // #337: every colour is the palette's the canvas passes; left out, the light theme's.
+  const palette = Object.fromEntries(Object.keys(api.LIGHT_TREE_PALETTE).map((name, index) =>
+    [name, `#0000${index.toString(16).padStart(2, "0")}`])) as unknown as typeof api.LIGHT_TREE_PALETTE;
+  const tinted = (level: "far" | "mid" | "close", textScale: number) => api.buildTreeScene(tree, drawing,
+    { level, textScale, selected: "current", fontFamily: 2, words: words as never, palette });
+  const byId = (result: ReturnType<typeof scene>, id: string) =>
+    result.skeletons.find((element) => (element as { id?: string }).id === id) as unknown as { strokeColor?: string; backgroundColor?: string };
+  assert.equal(byId(mid, "trunk").strokeColor, api.LIGHT_TREE_PALETTE.accent);
+  const near = tinted("mid", 1.5);
+  assert.equal(byId(near, "trunk").strokeColor, palette.accent);
+  assert.equal(byId(near, "current:card").backgroundColor, palette.accentSoft);
+  const stage = [...tree.nodes.values()].find((node) => node.kind === "stage")!;
+  assert.equal(byId(near, `${stage.id}:card`).backgroundColor, palette.ink);
+  assert.equal(byId(near, `${stage.id}:name`).strokeColor, palette.paper, "a Stage's name is paper on ink");
+  const given = new Set(Object.values(palette));
+  for (const element of [near, tinted("far", 4), tinted("close", 1)].flatMap((result) => result.skeletons)) {
+    const { id, strokeColor, backgroundColor } = element as { id?: string; strokeColor?: string; backgroundColor?: string };
+    for (const colour of [strokeColor, backgroundColor]) {
+      if (colour && colour !== "transparent") assert.ok(given.has(colour), `${id} draws ${colour}, which is not the palette's`);
+    }
+  }
 });
 
 test("text fits its box, and a turned rectangle keeps its own hit area", async (t) => {
