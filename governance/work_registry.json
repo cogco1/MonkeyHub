@@ -153,29 +153,6 @@
       "notes": [
         "2026-09-08 rule alignment: Awaiting the first concrete evidence consumer and a check of existing Reading/source references. The earlier proposed ledger and private Atlas field superset are not a mandate to add a core record."
       ]
-    },
-    {
-      "id": "GH-282",
-      "stream": "planning",
-      "status": "active",
-      "goal": "Repair exact selector in remote Monitor browser regression",
-      "depends_on": [],
-      "write_scope": [
-        "apps/monkeyhub/web/test/chatShell.browser.mjs",
-        ".github/workflows/verify.yml"
-      ],
-      "branch": "codex/merge-cloud-batch",
-      "worktree": "C:/Users/asus/.codex/worktrees/merge-cloud-batch/ARCHFLOW_V4",
-      "base_ref": "b6aa5b1298c203418db45b76133519c9604fe048",
-      "contributor": "Codex cloud with Codex integration",
-      "reviewer": "Codex",
-      "handoff": "Review the scoped cloud patch and run remote CI",
-      "modules": [
-        "hub.shell"
-      ],
-      "acceptance": [
-        "Project filter assertion reaches the real select; all browser suites execute."
-      ]
     }
   ]
 }
