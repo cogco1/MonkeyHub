@@ -101,6 +101,9 @@ let browser, page, hold = false, release, broken = false, refuseNext = false, cu
 
 const requests = [], statusRequests = [], dimensionQueries = [], drives = [], errors = [], passed = [], vectorBytes = new Map();
 const sectionRequests = [], planOnlyCalls = [];
+// 05-S4: the runtime's offers, the decisions this page writes, and the ones retained.
+let offers = [];
+const correctionReads = [], decisionCalls = [], decisionRequests = [], revisionRequests = [], decisions = [];
 
 async function step(name, action) { current = name; await action(); passed.push(name); console.log(`PASS ${name}`); }
 const revision = () => page.getByRole("combobox", { name: "Drawing", exact: true });
@@ -215,6 +218,34 @@ try {
       targetModelSource, targetStageRef, lengthUnit: "meter", bindingChanged: outdated,
       dimensions: sourceDocument.viewRecipe.dimensions.map(d => ({ ...d, status: broken === "outside-view" ? "outside-view" : broken ? "missing" : "resolved", value: .9, label: "900 mm",
         offsetMm: d.placement.offsetMm, canDrive: !outdated && !broken, parameterKey: "door-width", detail: broken ? "Door anchor is missing." : null })) } });
+  });
+  await page.route("**/api/drawings/corrections?*", route => {
+    const query = Object.fromEntries(new URL(route.request().url()).searchParams); correctionReads.push(query);
+    // Like the runtime: a key an active project recipe already gives is not offered again.
+    const covered = new Set(decisions.filter(row => row.status === "active").flatMap(row => Object.keys(row.typedBinding.graphics)));
+    return route.fulfill({ json: { projectId: query.projectId, drawingId: null, pairs: [],
+      suggestions: query.projectId === "drawing-project" ? offers.filter(offer => !covered.has(offer.field)) : [] } });
+  });
+  // A decision keeps what it was asked with; a recipe's values become what a new drawing starts from.
+  const recipeFrom = graphics => page.evaluate(graphics => Object.assign(window.drawingFixture.recipe, graphics), graphics);
+  await page.route("**/api/decisions", async route => {
+    decisionCalls.push(route.request().method());
+    if (route.request().method() === "GET") return route.fulfill({ json: { projectId: "drawing-project", decisions } });
+    const body = route.request().postDataJSON(); decisionRequests.push(body);
+    const decision = { ...body, decisionId: `decision-${decisions.length + 1}`, revisionRef: `decision-revision-${decisionRequests.length}`, previousRevisionRef: null, status: "active" };
+    decisions.push(decision); await recipeFrom(body.typedBinding.graphics);
+    return route.fulfill({ status: 201, json: decision });
+  });
+  await page.route("**/api/decisions/*/revisions", async route => {
+    const decisionId = new URL(route.request().url()).pathname.split("/").at(-2), body = route.request().postDataJSON();
+    decisionCalls.push("REVISE"); revisionRequests.push({ decisionId, body });
+    const index = decisions.findIndex(row => row.decisionId === decisionId);
+    if (index < 0 || decisions[index].revisionRef !== body.expectedRevisionRef)
+      return route.fulfill({ status: 409, json: { code: "DECISION_REVISION_STALE", detail: "Fixture: read the decision again." } });
+    decisions[index] = { ...body.replacement, decisionId, revisionRef: `decision-revision-${decisionId}-${revisionRequests.length}`,
+      previousRevisionRef: decisions[index].revisionRef, status: "active" };
+    await recipeFrom(body.replacement.typedBinding.graphics);
+    return route.fulfill({ status: 201, json: decisions[index] });
   });
   await page.route("**/api/drawings/plans/dimension-proposal", route => {
     const body = route.request().postDataJSON(); drives.push(body);
@@ -676,6 +707,85 @@ try {
     // New drawings, appearance autosaves, explicit rebuilds, LIVE rebinds and retries alike.
     assert.ok(requests.length > 20);
     assert.deepEqual(requests.filter(body => body.sourceKind !== "human"), []);
+  });
+  const offerPage = { runId: legacyDocument.runId, assetSha256: legacyDocument.assetSha256, revisionRef: legacyDocument.revisionRef, pageIndex: 0 };
+  const hatchOffer = () => page.getByRole("region", { name: "2 drawings set hatch spacing to 4 mm — save as project recipe?", exact: true });
+  const cutOffer = () => page.getByRole("region", { name: "2 drawings set cut line to 0.5 mm — save as project recipe?", exact: true });
+  await step("a correction repeated on two drawings is offered, and Ignore writes nothing for the rest of the session", async () => {
+    const evidence = [{ drawingId: "floor-plan", beforeRevisionRef: "revision-1", afterRevisionRef: "revision-2" },
+      { drawingId: "floor-plan-2", beforeRevisionRef: "revision-3", afterRevisionRef: "revision-4" }];
+    offers = [{ suggestionId: "offer-hatch", field: "hatchSpacingMm", direction: "increase", value: 4, drawingIds: ["floor-plan", "floor-plan-2"], evidence, page: offerPage },
+      { suggestionId: "offer-cut", field: "cutLineMm", direction: "increase", value: 0.5, drawingIds: ["floor-plan", "floor-plan-2"], evidence, page: offerPage }];
+    await page.getByRole("button", { name: "Refresh sources", exact: true }).click();
+    await hatchOffer().waitFor(); await cutOffer().waitFor();
+    assert.equal(correctionReads.at(-1).projectId, "drawing-project");
+    await page.screenshot({ path: join(screenshots, "drawing-recipe-offers.png"), fullPage: true });
+    await page.setViewportSize({ width: 390, height: 844 });
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, "the offers fit a narrow screen");
+    await page.screenshot({ path: join(screenshots, "drawing-recipe-offers-narrow.png") });
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await cutOffer().getByRole("button", { name: "Ignore", exact: true }).click();
+    await cutOffer().waitFor({ state: "detached" });
+    assert.deepEqual(decisionCalls, [], "ignoring an offer writes nothing");
+    // Another project and back: the Drawing opens anew, and the ignored offer stays ignored in this session.
+    const elsewhere = correctionReads.length;
+    await page.evaluate(() => window.drawingFixture.setProject("another-project"));
+    await until(() => Promise.resolve(correctionReads.slice(elsewhere).some(read => read.projectId === "another-project")), Boolean, "another project's offers read");
+    assert.equal(await hatchOffer().count(), 0, "another project has no offers");
+    const reads = correctionReads.length;
+    await page.evaluate(() => window.drawingFixture.setProject("drawing-project"));
+    await until(() => Promise.resolve(correctionReads.slice(reads).some(read => read.projectId === "drawing-project")), Boolean, "the offers read again");
+    await hatchOffer().waitFor();
+    assert.equal(await cutOffer().count(), 0);
+    assert.deepEqual(decisionCalls, []);
+  });
+  await step("saving an offer writes one human project recipe, and a new drawing starts from it", async () => {
+    await hatchOffer().getByRole("button", { name: "Save", exact: true }).click();
+    await page.getByText("Saved: new drawings start from hatch spacing 4 mm.", { exact: true }).waitFor();
+    assert.deepEqual(decisionCalls, ["POST"], "exactly one decision is written");
+    assert.deepEqual(decisionRequests[0], { projectId: "drawing-project", rawLanguage: "Save as project recipe: 2 drawings set hatch spacing to 4 mm.",
+      disposition: "require", strength: "strong_preference", targetRef: "drawing:hatch", scope: { domain: "drawing", extent: "project" },
+      source: { kind: "document", ...offerPage }, applicability: "scope", sourceKind: "human", typedBinding: { kind: "recipe", graphics: { hatchSpacingMm: 4 } } });
+    await hatchOffer().waitFor({ state: "detached" });
+    await revision().selectOption("");
+    await page.getByRole("button", { name: "Generate cut plan", exact: true }).click();
+    await until(() => revision().inputValue(), value => value !== "", "a new drawing opened");
+    assert.equal("hatchSpacingMm" in requests.at(-1), false, "a new drawing leaves the hatch spacing to the recipe");
+    const graphics = page.locator("details", { has: page.getByText("Linework and hatch", { exact: true }) });
+    if (!await graphics.evaluate(node => node.open)) await page.getByText("Linework and hatch", { exact: true }).click();
+    assert.equal(await pen("Hatch spacing (paper mm)").inputValue(), "4", "the saved recipe is what the new drawing was drawn with");
+    assert.deepEqual(decisionCalls, ["POST"]);
+  });
+  await step("the linework controls save an open drawing's values as the project recipe, superseding a value it changes", async () => {
+    const saveRecipe = page.getByRole("button", { name: "Save as project recipe", exact: true });
+    const [, , shownRef] = JSON.parse(await revision().inputValue());
+    const shown = await page.evaluate(ref => window.drawingFixture.documents.find(d => d.revisionRef === ref), shownRef);
+    await saveRecipe.click();
+    await page.getByText("Saved as the project recipe: cut line 0.35 mm, visible line 0.18 mm, hatch spacing 4 mm.", { exact: true }).waitFor();
+    // The hatch spacing already is the recipe; the linework gets its own decision, cited on this drawing's page.
+    assert.deepEqual(decisionCalls.slice(1), ["GET", "POST"]);
+    assert.deepEqual(decisionRequests[1], { projectId: "drawing-project", rawLanguage: "Save as project recipe: cut line 0.35 mm, visible line 0.18 mm, hatch spacing 4 mm.",
+      disposition: "require", strength: "strong_preference", targetRef: "drawing:lineweight", scope: { domain: "drawing", extent: "project" },
+      source: { kind: "document", runId: shown.runId, assetSha256: shown.assetSha256, revisionRef: shown.revisionRef, pageIndex: 0 },
+      applicability: "scope", sourceKind: "human", typedBinding: { kind: "recipe", graphics: { cutLineMm: .35, visibleLineMm: .18 } } });
+    const before = await revision().inputValue();
+    await pen("Hatch spacing (paper mm)").fill("5");
+    assert.equal(await saveRecipe.isDisabled(), true, "unsaved values are not yet on a page to cite");
+    await until(() => revision().inputValue(), value => value !== before, "the edit saved itself");
+    await until(() => saveRecipe.isEnabled(), Boolean, "the saved revision can be cited");
+    await saveRecipe.click();
+    await page.getByText("Saved as the project recipe: cut line 0.35 mm, visible line 0.18 mm, hatch spacing 5 mm.", { exact: true }).waitFor();
+    assert.deepEqual(decisionCalls.slice(3), ["GET", "REVISE"], "the hatch recipe is superseded, never duplicated");
+    const [, , savedRef] = JSON.parse(await revision().inputValue());
+    assert.equal(revisionRequests[0].decisionId, "decision-1");
+    assert.deepEqual(revisionRequests[0].body, { projectId: "drawing-project", expectedRevisionRef: "decision-revision-1", action: "supersede",
+      replacement: { ...decisionRequests[1], rawLanguage: "Save as project recipe: cut line 0.35 mm, visible line 0.18 mm, hatch spacing 5 mm.", targetRef: "drawing:hatch",
+        source: { ...decisionRequests[1].source, revisionRef: savedRef, assetSha256: (await page.evaluate(ref => window.drawingFixture.documents.find(d => d.revisionRef === ref), savedRef)).assetSha256 },
+        typedBinding: { kind: "recipe", graphics: { hatchSpacingMm: 5 } } } });
+    await saveRecipe.click();
+    await page.getByText("These values already are the project recipe.", { exact: true }).waitFor();
+    assert.deepEqual(decisionCalls.slice(5), ["GET"], "values the recipe already holds write nothing");
+    assert.equal(drives.length, 0);
   });
   assert.deepEqual(errors, []);
   console.log(JSON.stringify({ passed, screenshots, generationRequests: requests.length, dimensionProposals: drives.length }));

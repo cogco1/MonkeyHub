@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useStudio } from "../../api/ProjectRuntimeContext";
 import { asStudioApiError, type StudioApiError } from "../../api/client";
-import type { DesignStageDto, ModelSourceDto, PlanDimensionChoicesDto, PlanStatusDto, PlanVectorDto, PlanDressingDto, ProjectArtifactDto, SectionLineDto, SourceDocumentDto, WorkingSourceDto } from "../../api/generated";
+import type { DesignStageDto, ModelSourceDto, PlanDimensionChoicesDto, PlanStatusDto, PlanVectorDto, PlanDressingDto, ProjectArtifactDto, RecipeSuggestionDto, SectionLineDto, SourceDocumentDto, WorkingSourceDto } from "../../api/generated";
 import { ErrorPanel } from "../../app/ErrorPanel";
 import { usePreferences } from "../../features/settings/preferences";
 import { DocumentSurface } from "./DocumentCanvas";
-import { defaultPlanForm, drawingDocumentKey, keptOnChosenVersion, latestRevisions, liveAction, PAPER_PENS, planFormFromDocument, planRequestFields, type PlanForm } from "./drawingPlan";
+import { defaultPlanForm, drawingDocumentKey, keptOnChosenVersion, latestRevisions, liveAction, PAPER_PENS, planFormFromDocument, planRequestFields,
+  RECIPE_TARGETS, recipeDecision, recipeWrites, type PaperPen, type PlanForm } from "./drawingPlan";
 import { DressingControls, DressingOverlay } from "./DrawingDressing";
 import "./DrawingCanvas.css";
 
@@ -37,7 +38,12 @@ const copy = {
     pickHint: "Point at a line to see which object it draws; click it to select that object.",
     tooMany: "This drawing has {count} lines, so it is shown as an image; choose its objects from the list.",
     hideObject: "Hide this object", hiddenObjects: "Hidden objects", showObject: "Show again", notInModel: "not in this model", noMaterial: "no material",
-    roles: { cut: "cut", beyond: "beyond", hidden: "hidden line", other: "line" } },
+    roles: { cut: "cut", beyond: "beyond", hidden: "hidden line", other: "line" },
+    pens: { cutLineMm: "cut line", visibleLineMm: "visible line", hatchSpacingMm: "hatch spacing" },
+    offer: "{count} drawings set {field} to {value} mm — save as project recipe?", offerWords: "Save as project recipe: {count} drawings set {field} to {value} mm.",
+    save: "Save", ignore: "Ignore", offerSaved: "Saved: new drawings start from {field} {value} mm.",
+    saveRecipe: "Save as project recipe", saveRecipeHint: "New drawings in this project start from this drawing's saved linework and hatch.",
+    recipeWords: "Save as project recipe: {values}.", recipeSaved: "Saved as the project recipe: {values}.", recipeSame: "These values already are the project recipe." },
 
   "zh-CN": { title: "Drawing · 图纸", intro: "跟随项目当前模型的剖切平面。", source: "出图版本", revision: "图纸", fresh: "新建剖切平面",
     noModel: "项目当前模型还没有可出图的精确几何。", refresh: "刷新来源", generating: "正在生成…", generate: "生成剖切平面",
@@ -66,9 +72,19 @@ const copy = {
     pickHint: "指向线条可查看它来自哪个对象，点击即可选中该对象。",
     tooMany: "此图共有 {count} 条线，以图片显示；请从列表中选择对象。",
     hideObject: "隐藏此对象", hiddenObjects: "已隐藏对象", showObject: "重新显示", notInModel: "不在当前模型中", noMaterial: "无材质",
-    roles: { cut: "剖切", beyond: "看线", hidden: "隐藏线", other: "线" } },
+    roles: { cut: "剖切", beyond: "看线", hidden: "隐藏线", other: "线" },
+    pens: { cutLineMm: "剖切线宽", visibleLineMm: "可见线宽", hatchSpacingMm: "填充间距" },
+    offer: "{count} 张图纸都把{field}设为 {value} mm——存为项目表达设定？", offerWords: "存为项目表达设定：{count} 张图纸都把{field}设为 {value} mm。",
+    save: "保存", ignore: "忽略", offerSaved: "已保存：新图纸的{field}从 {value} mm 开始。",
+    saveRecipe: "存为项目表达设定", saveRecipeHint: "此项目的新图纸将从这张图已保存的线型与填充开始。",
+    recipeWords: "存为项目表达设定：{values}。", recipeSaved: "已存为项目表达设定：{values}。", recipeSame: "这些数值已是项目表达设定。" },
 } as const;
 type Copy = (typeof copy)[keyof typeof copy];
+const fill = (template: string, values: Record<string, string | number>) => template.replace(/\{(\w+)\}/g, (_, key: string) => String(values[key] ?? ""));
+/** A paper value as the page states it: at most three decimals, no trailing zeros. */
+const mm = (value: number) => String(Number(value.toFixed(3)));
+// Offers a person ignored, by project: remembered for this session only, and never written anywhere (05-S4).
+const ignoredOffers = new Map<string, Set<string>>();
 
 type SourceAsset = { runId: string; assetSha256: string };
 // The drawings this workspace opens. A section perspective is generated and read here; its plan-only
@@ -271,6 +287,10 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
   // What each object was, so a hidden one keeps its name after it leaves the drawing.
   const seen = useRef(new Map<string, PlanObject>());
   useEffect(() => { picture?.objects.forEach((object, id) => seen.current.set(id, object)); }, [picture]);
+  // 05-S4: corrections repeated across drawings, which the runtime offers as a project recipe; read again after each write.
+  const [offered, setOffered] = useState<{ projectId: string; suggestions: RecipeSuggestionDto[] } | null>(null);
+  const [corrections, setCorrections] = useState(0), [, setIgnoring] = useState(0), [recipeSaving, setRecipeSaving] = useState(false);
+  const [offerNote, setOfferNote] = useState<string | null>(null), [recipeNote, setRecipeNote] = useState<string | null>(null);
   const [error, setError] = useState<StudioApiError | null>(null), [busy, setBusy] = useState(false);
   // Why edited appearance is not being saved: the pause ended on an invalid field, or the
   // save was refused. The next edit clears it; a refusal can also be retried, never in a loop.
@@ -349,6 +369,14 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
     return () => { cancelled = true; };
   }, [studio, projectId, active, refreshKey, refresh]);
   useEffect(() => {
+    if (!active) return;
+    let cancelled = false;
+    void studio.drawingCorrections(projectId).then(value => {
+      if (!cancelled && value.projectId === projectId) setOffered({ projectId, suggestions: value.suggestions });
+    }).catch(() => { /* An offer is optional: the drawing works without it, and the next write or refresh reads it again. */ });
+    return () => { cancelled = true; };
+  }, [studio, projectId, active, refreshKey, refresh, corrections]);
+  useEffect(() => {
     // A visible drawing notices when the Working Head moves; the position's
     // revision is cheap to read and changes with every retained working result.
     if (!active) return;
@@ -405,7 +433,7 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
 
   function openDocument(document: SourceDocumentDto | null) {
     setSelected(document ? drawingDocumentKey(document) : ""); setVector(null); setDirty(false); setAppearanceHeld(null); setError(null);
-    setExplicitTarget(false); setAutomaticTarget(null); setStatus(null); setPicked(null);
+    setExplicitTarget(false); setAutomaticTarget(null); setStatus(null); setPicked(null); setOfferNote(null); setRecipeNote(null);
     if (!document) setTarget(defaultTarget);
     setForm(document && isCutPlan(document) ? planFormFromDocument(document, lengthUnit) : defaultPlanForm(lengthUnit));
   }
@@ -432,7 +460,7 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
     } catch (cause) { if (mounted.current && scope.current === origin) setError(asStudioApiError(cause)); }
     finally { if (mounted.current) setImporting(false); }
   }
-  function update(patch: Partial<PlanForm>) { setForm(current => ({ ...current, ...patch })); setDirty(true); setAppearanceHeld(null); }
+  function update(patch: Partial<PlanForm>) { setForm(current => ({ ...current, ...patch })); setDirty(true); setAppearanceHeld(null); setRecipeNote(null); }
   const dimensions = form.dimensions ?? [];
   // Hiding is this drawing's appearance: it saves as a revision and never touches the design.
   const hiddenIds = form.hiddenObjectIds ?? [], hiddenSet = new Set(hiddenIds);
@@ -468,12 +496,62 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
       setDocuments(current => [...current.filter(item => drawingDocumentKey(item) !== drawingDocumentKey(result)), result]);
       if (drawingDocumentKey(result) !== selected) setVector(null);
       setSelected(drawingDocumentKey(result)); setForm(planFormFromDocument(result, lengthUnit)); setDirty(false); setAppearanceHeld(null);
+      setCorrections(value => value + 1);
       return true;
     } catch (cause) {
       if (mounted.current && scope.current === origin) { setError(asStudioApiError(cause)); if (!target) setAppearanceHeld("refused"); }
       return false;
     }
     finally { if (mounted.current) { setBusy(false); setLiveBusy(false); } }
+  };
+  const offers = offered?.projectId === projectId ? offered.suggestions.filter(offer => !ignoredOffers.get(projectId)?.has(offer.suggestionId)) : [];
+  const offerText = (offer: RecipeSuggestionDto, template: string) =>
+    fill(template, { count: offer.drawingIds.length, field: text.pens[offer.field], value: mm(offer.value) });
+  /** Ignoring an offer hides it for this session and writes nothing. */
+  const ignoreOffer = (offer: RecipeSuggestionDto) => {
+    ignoredOffers.set(projectId, new Set([...ignoredOffers.get(projectId) ?? [], offer.suggestionId]));
+    setIgnoring(value => value + 1);
+  };
+  /** Saving an offer is one decision: the person's project recipe for that value, evidenced by the page the offer names. */
+  const saveOffer = async (offer: RecipeSuggestionDto) => {
+    if (recipeSaving || !active) return;
+    setRecipeSaving(true); setError(null); setOfferNote(null);
+    try {
+      await studio.saveDecision(recipeDecision({ projectId, words: offerText(offer, text.offerWords), target: RECIPE_TARGETS[offer.field],
+        graphics: { [offer.field]: offer.value }, page: offer.page }));
+      if (!mounted.current) return;
+      setOffered(current => current && { ...current, suggestions: current.suggestions.filter(item => item.suggestionId !== offer.suggestionId) });
+      setOfferNote(fill(text.offerSaved, { field: text.pens[offer.field], value: mm(offer.value) }));
+      setCorrections(value => value + 1);
+    } catch (cause) { if (mounted.current) setError(asStudioApiError(cause)); }
+    finally { if (mounted.current) setRecipeSaving(false); }
+  };
+  /**
+   * Save the open revision's linework and hatch as the project recipe, evidenced by its page. A value the
+   * recipe already holds for the whole project is superseded rather than duplicated; values it holds as they
+   * are write nothing.
+   */
+  const saveRecipe = async () => {
+    const values = Object.fromEntries(PAPER_PENS.map(key => [key, form[key]])) as Record<PaperPen, number>;
+    if (!source?.revisionRef || recipeSaving || busy || dirty || !active || PAPER_PENS.some(key => !Number.isFinite(values[key]))) return;
+    const page = { runId: source.runId, assetSha256: source.assetSha256, revisionRef: source.revisionRef, pageIndex: 0 };
+    const listed = PAPER_PENS.map(key => `${text.pens[key]} ${mm(values[key])} mm`).join(language === "zh-CN" ? "，" : ", ");
+    setRecipeSaving(true); setError(null); setRecipeNote(null);
+    try {
+      const retained = await studio.decisions();
+      if (retained.projectId !== projectId) throw new Error("The decisions belong to another project.");
+      const writes = recipeWrites(retained.decisions, values);
+      for (const write of writes) {
+        const decision = recipeDecision({ projectId, words: fill(text.recipeWords, { values: listed }), target: write.target, graphics: write.graphics, page });
+        if (write.replaces) await studio.reviseDecision(write.replaces.decisionId,
+          { projectId, expectedRevisionRef: write.replaces.revisionRef, action: "supersede", replacement: decision });
+        else await studio.saveDecision(decision);
+      }
+      if (!mounted.current) return;
+      setRecipeNote(writes.length > 0 ? fill(text.recipeSaved, { values: listed }) : text.recipeSame);
+      setCorrections(value => value + 1);
+    } catch (cause) { if (mounted.current) setError(asStudioApiError(cause)); }
+    finally { if (mounted.current) setRecipeSaving(false); }
   };
   /** Generate a section perspective of the drawing's target and open it; nothing else changes. */
   const generateSection = async () => {
@@ -560,6 +638,15 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
     <div className="drawing-body">
       <div className="drawing-main">
         <div className="drawing-context">
+        {offers.length > 0 && <div className="drawing-offers">{offers.map(offer => {
+          const label = offerText(offer, text.offer);
+          return <section key={offer.suggestionId} className="drawing-offer" aria-label={label}><p>{label}</p>
+            <div className="drawing-offer__actions">
+              <button type="button" className="btn btn--accent" disabled={recipeSaving || !active} onClick={() => void saveOffer(offer)}>{text.save}</button>
+              <button type="button" disabled={recipeSaving} onClick={() => ignoreOffer(offer)}>{text.ignore}</button>
+            </div></section>;
+        })}</div>}
+        {offerNote && <p className="drawing-offer-note" role="status">{offerNote}</p>}
         <div className="drawing-context__fields">
         <label className="drawing-field">{text.revision}<select value={selected} disabled={busy} onChange={event => { void chooseDocument(event.target.value); }}>
           <option value="">{text.fresh}</option>{latest.map(item => <option key={drawingDocumentKey(item)} value={drawingDocumentKey(item)}>
@@ -619,7 +706,11 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
           {numeric("bottom", `${text.bottom} (${lengthUnit || "…"})`)}
           {numeric("scaleDenominator", text.scale, 1, "1")}
           <details><summary>{text.graphics}</summary>{numeric("cutLineMm", text.cutLine, 0.01)}{numeric("visibleLineMm", text.visibleLine, 0.01)}{numeric("hatchSpacingMm", text.hatch, 0.1)}
-            {!source && <p className="drawing-field__hint">{text.penHint}</p>}</details>
+            {!source && <p className="drawing-field__hint">{text.penHint}</p>}
+            {source && <div className="drawing-recipe">
+              <button type="button" disabled={recipeSaving || dirty || !source.revisionRef} onClick={() => void saveRecipe()}>{text.saveRecipe}</button>
+              <p className="drawing-field__hint" role={recipeNote ? "status" : undefined}>{recipeNote ?? text.saveRecipeHint}</p>
+            </div>}</details>
         </fieldset>}
         {source && !perspectiveOpen && picture && <fieldset disabled={busy || !active}><legend>{text.objects}</legend>
           <label className="drawing-field">{text.object}<select value={pickedObject?.id ?? ""} onChange={event => setPicked(event.target.value || null)}>
