@@ -1853,12 +1853,15 @@ class FilesystemProjectRepository:
         )
 
     def load_json(self, ref: ProjectRecordRef) -> dict[str, Any]:
-        self._require_record(ref)
-        path = self.layout.resolve_record(ref)
+        path = self._record_path(ref)
         data = _read_bytes(path)
         if _sha256(data) != ref.sha256:
             raise ProjectIntegrityError(f"record digest mismatch: {ref.relative_path}")
         return _parse_json_document(data, path.name)
+
+    def _record_path(self, ref: ProjectRecordRef) -> Path:
+        self._require_record(ref)
+        return self.layout.resolve_record(ref)
 
     def _require_design_stage(self, ref: ProjectRecordRef) -> dict[str, Any]:
         self._require_record(ref)
@@ -2090,7 +2093,11 @@ class FilesystemProjectRepository:
         pattern = "*.json" if record_kind is None else f"{record_kind}-*.json"
         for path in sorted(directory.glob(pattern)):
             if record_kind is None:
-                digest = _sha256(_read_bytes(path))
+                # The digest is the one these bytes have, so they are parsed
+                # as read instead of read again to be checked against it (#314).
+                data = _read_bytes(path)
+                ref = self._record_ref(path, _sha256(data), "application/json")
+                _parse_json_document(data, self._record_path(ref).name)
             else:
                 try:
                     kind, digest = parse_record_file_name(path.name)
@@ -2098,8 +2105,8 @@ class FilesystemProjectRepository:
                     raise ProjectIntegrityError(str(exc)) from exc
                 if kind != record_kind:
                     continue
-            ref = self._record_ref(path, digest, "application/json")
-            self.load_json(ref)
+                ref = self._record_ref(path, digest, "application/json")
+                self.load_json(ref)
             refs.append(ref)
         return tuple(refs)
 

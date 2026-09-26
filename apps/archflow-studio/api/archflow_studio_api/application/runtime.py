@@ -142,7 +142,7 @@ def inspect_runtime(
             if candidate_id not in tracked and delta is None:
                 # A normal project run is not a Studio candidate. The retained
                 # harness, not an id prefix, identifies older candidate runs.
-                if not any(record_kind(ref) == STUDIO_CANDIDATE_WORKFLOW for ref in binding.record_refs(candidate_id)):
+                if not binding.record_refs(candidate_id, kind=STUDIO_CANDIDATE_WORKFLOW):
                     continue
             row = replace(row, base=binding.load_run(candidate_id).base)
             if delta is not None:

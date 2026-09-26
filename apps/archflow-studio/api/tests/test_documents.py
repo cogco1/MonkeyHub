@@ -9,6 +9,7 @@ from io import BytesIO
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 from PIL import Image
@@ -16,7 +17,7 @@ from pypdf import PdfReader, PdfWriter
 from pypdf.generic import DecodedStreamObject, NameObject, RectangleObject
 
 from archflow.project.ports import PersistenceArea, PersistenceDestination
-from archflow.project.record_kinds import STUDIO_MODEL_ASSET, STUDIO_SOURCE_DOCUMENT
+from archflow.project.record_kinds import STUDIO_DOCUMENT_MODEL_SOURCE, STUDIO_MODEL_ASSET, STUDIO_SOURCE_DOCUMENT
 from archflow.project.refs import ProjectRecordRef, record_file_name
 from archflow.project.repository import FilesystemProjectRepository
 from archflow_studio_api.application.artifacts import (
@@ -239,6 +240,25 @@ class SourceDocumentTests(unittest.TestCase):
         self.assertEqual(reopened.get("/api/documents", params={"runId": REFERENCE_RUN_ID}).json()["documents"], [first])
         self.assertEqual(reopened.get("/api/documents", params={"runId": "missing-run"}).status_code, 404)
         self.assertEqual(self.repository.read_head(), before)
+
+    def test_a_listing_reads_only_the_document_records(self) -> None:
+        document = self.upload(image_bytes(), "plan.png", "image/png").json()
+        binding = bound_project(self.client.app.state)
+        records = binding.repository.layout.run(REFERENCE_RUN_ID).records
+        others = {path.name for path in records.glob("*.json")
+                  if not path.name.startswith((f"{STUDIO_SOURCE_DOCUMENT}-", f"{STUDIO_DOCUMENT_MODEL_SOURCE}-"))}
+        self.assertTrue(others, "the reference run keeps the runner's records beside the document")
+        read_bytes, read = Path.read_bytes, []
+
+        def recorded(path: Path) -> bytes:
+            read.append(path.name)
+            return read_bytes(path)
+
+        with patch.object(Path, "read_bytes", autospec=True, side_effect=recorded):
+            listed = list_documents(binding, REFERENCE_RUN_ID)
+        self.assertEqual([row.asset_sha256 for row in listed], [document["assetSha256"]])
+        # A run's other records can be most of a project's bytes; its documents are listed without them (#314).
+        self.assertFalse(others & set(read))
 
     def test_upload_without_run_works_before_any_model_or_stage_and_reopens(self) -> None:
         empty_dir = self.root / "empty" / PROJECT_ID

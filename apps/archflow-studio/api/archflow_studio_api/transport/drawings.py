@@ -2,11 +2,17 @@
 
 from __future__ import annotations
 
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .artifacts import ModelSourceDto
+
+
+CLEANUP_REPORT = (
+    "The deterministic cleanup the projection owner applied to this revision's lines - per-rule counts and "
+    "input/output line counts - exactly as the revision's receipt retains it; null for a revision drawn before "
+    "cleanup existed. It is never part of viewRecipe.")
 
 
 class PlanDimensionPlacementDto(BaseModel):
@@ -81,6 +87,39 @@ class PlanVectorDto(BaseModel):
     svg: str
     assets: list[PlanDressingAssetDto]
     anchors: list[PlanDressingAnchorDto]
+    cleanup: dict[str, Any] | None = Field(default=None, description=CLEANUP_REPORT)
+
+
+class PlanHatchRuleDto(BaseModel):
+    """How the cut of one material is drawn, in paper units."""
+    model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
+    spacing_mm: float | None = Field(alias="spacingMm", default=None, ge=0.5, le=20, allow_inf_nan=False,
+                                     description="Perpendicular hatch spacing on paper, mm. Omitted takes this revision's hatchSpacingMm.")
+    angle_deg: float | None = Field(alias="angleDeg", default=None, ge=0, lt=180, allow_inf_nan=False,
+                                    description="Hatch direction, degrees anticlockwise from the sheet's x axis. Omitted is 45.")
+    poche: bool = Field(default=False, description="Fill this material's cut solid (poché) instead of hatching it.")
+
+
+class PlanHatchDto(BaseModel):
+    """Material-keyed hatch and poché for cut solids; a material without a rule keeps hatchSpacingMm at 45 degrees."""
+    model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
+    by_material: dict[Annotated[str, Field(min_length=1, max_length=100)], PlanHatchRuleDto] = Field(
+        alias="byMaterial", max_length=100,
+        description="Rules by the model's material name. Each is stored complete; an empty map removes every rule.")
+
+    @model_validator(mode="after")
+    def printable_names(self):
+        if any(ord(char) < 32 or ord(char) == 127 for name in self.by_material for char in name):
+            raise ValueError("material names cannot contain control characters")
+        return self
+
+
+class PlanBeyondDto(BaseModel):
+    """How lines below the cut plane read against the cut."""
+    model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
+    fade: float = Field(ge=0, le=1, allow_inf_nan=False,
+                        description="Grey level of the lines below the cut: 0 draws them black like visible lines "
+                                    "(and removes the rule), 1 fades them out.")
 
 
 class DrawingAssetSourceDto(BaseModel):
@@ -115,6 +154,11 @@ class PlanRequestDto(DrawingSourceRequestDto):
     cut_line_mm: float | None = Field(alias="cutLineMm", default=None, gt=0, le=2, allow_inf_nan=False)
     visible_line_mm: float | None = Field(alias="visibleLineMm", default=None, gt=0, le=2, allow_inf_nan=False)
     hatch_spacing_mm: float | None = Field(alias="hatchSpacingMm", default=None, ge=0.5, le=20, allow_inf_nan=False)
+    hatch: PlanHatchDto | None = Field(default=None, description=(
+        "Material hatch and poché rules on paper, beside the pens and hatchSpacingMm. Omitted keeps the previous "
+        "revision's rules; an empty byMaterial removes them."))
+    beyond: PlanBeyondDto | None = Field(default=None, description=(
+        "Fading of the lines below the cut. Omitted keeps the previous revision's; fade 0 removes it."))
     hidden_object_ids: list[str] | None = Field(alias="hiddenObjectIds", default=None, max_length=10000)
     dimensions: list[PlanDimensionDto] | None = Field(default=None, max_length=100)
     dressing: list[PlanDressingDto] | None = Field(default=None, max_length=100)
@@ -122,6 +166,9 @@ class PlanRequestDto(DrawingSourceRequestDto):
     follow: Literal["live", "frozen"] | None = Field(default=None, description=(
         "live follows the project's Working Head; frozen keeps this drawing on its chosen source until it is "
         "rebuilt. Omitted keeps the previous revision's choice; a new drawing is live."))
+    reason: str | None = Field(default=None, min_length=1, max_length=200, description=(
+        "Why this revision is asked for, in the asker's own words, such as the correction an agent was given; "
+        "omit it for a direct edit. Retained with the revision beside who asked, never in its recipe."))
 
     @model_validator(mode="after")
     def one_dressing_edit(self):
@@ -181,6 +228,7 @@ class PlanStatusDto(BaseModel):
     dimensions: list[PlanDimensionReadDto] = Field(default_factory=list)
     unresolved_object_ids: list[str] = Field(alias="unresolvedObjectIds", default_factory=list)
     dressing: list[PlanDressingReadDto] = Field(default_factory=list)
+    cleanup: dict[str, Any] | None = Field(default=None, description=CLEANUP_REPORT)
 
 
 class PlanDimensionChoicesDto(BaseModel):
@@ -196,6 +244,10 @@ class PlanDimensionProposalRequestDto(PlanStatusRequestDto):
 
 DrawingStyleId = Literal["arch400-white", "arch364-technical"]
 
+# The five model-axis directions and one isometric axonometric: the view from
+# the -X, -Y, +Z side, Z up on the sheet. All are orthographic line projections.
+ModelViewName = Literal["front", "back", "left", "right", "top", "axon"]
+
 
 class ModelViewDto(BaseModel):
     """Transient pixels from a verified model, not a material render or saved drawing."""
@@ -203,7 +255,7 @@ class ModelViewDto(BaseModel):
     model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
 
     source: ModelSourceDto
-    view: Literal["front", "back", "left", "right", "top"]
+    view: ModelViewName
     mime_type: Literal["image/png"] = Field(alias="mimeType", default="image/png")
     data: str = Field(description="Base64 PNG bytes from the exact source model's orthographic line projection.")
     width: int = Field(ge=1, le=1024)

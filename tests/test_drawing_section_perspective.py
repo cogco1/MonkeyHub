@@ -27,6 +27,7 @@ from monkeydiagram.drawing_elevation import (
     SectionPerspectiveView,
     freeze_section_perspective,
     list_model_axis_elevations,
+    object_semantics,
     project_section_perspective,
     read_elevation_source,
     read_model_axis_elevation,
@@ -385,6 +386,11 @@ class FreezeSectionPerspectiveTests(unittest.TestCase):
         self.assertEqual(projection["removed_object_ids"], ["table", "wall-south"])
         self.assertEqual(projection["cut_object_ids"], sorted(CUT_BOXES))
         self.assertEqual(projection["hidden_polylines"], 0)
+        # The kept parts' faces on the picture plane repeat the cut; it is drawn once, by the section,
+        # at 0.05 mm on the sheet measured where the scale holds.
+        self.assertEqual(receipt["cleanup"]["tolerance"], 0.05 * 25 / 1000)
+        self.assertGreater(receipt["cleanup"]["cut_precedence"], 0)
+        self.assertEqual(drawing.cleanup, receipt["cleanup"])
         self.assertEqual(self.repository.read_head(), self.head)
         self.assertEqual(drawing.run.base, self.source_run.base)
 
@@ -394,25 +400,33 @@ class FreezeSectionPerspectiveTests(unittest.TestCase):
         self.assertEqual((cold.svg, cold.png, cold.receipt), (drawing.svg, drawing.png, receipt))
         self.assertEqual(receipt["artifacts"]["svg"]["sha256"], hashlib.sha256(cold.svg).hexdigest())
         self.assertEqual(receipt["artifacts"]["png"]["sha256"], hashlib.sha256(cold.png).hexdigest())
-        # The receipt's request, on its verified source, draws the retained files again.
+        # The receipt's request, on its verified source and that source's semantics, draws the retained files again.
         request = view["request"]
+        verified = read_elevation_source(reopened, self.source)
         replay = project_section_perspective(
-            read_elevation_source(reopened, self.source).entries, object_ids=projection["selected_object_ids"], unit="meter",
+            verified.entries, object_ids=projection["selected_object_ids"], unit="meter",
             view=SectionPerspectiveView(name=request["name"], section=request["section"], camera=request["camera"],
                                         depth=request["depth"], hidden_object_ids=tuple(request["hiddenObjectIds"]),
                                         scale_denominator=int(request["scale"].split(":")[1]), graphics=request["graphics"],
-                                        linear_deflection=request["linear_deflection"]))
+                                        linear_deflection=request["linear_deflection"]),
+            semantics=object_semantics(verified.receipt))
         self.assertEqual((replay.svg, replay.png), (cold.svg, cold.png))
         again = freeze_section_perspective(reopened, source=self.source, view=self.view(), drawing_run_id="drawing-run")
         self.assertEqual((again.receipt_ref, again.svg_ref, again.png_ref), (drawing.receipt_ref, drawing.svg_ref, drawing.png_ref))
 
     def test_hidden_objects_are_left_out_of_cut_and_view(self) -> None:
         drawing = freeze_section_perspective(self.repository, source=self.source, drawing_run_id="drawing-run",
-                                             view=self.view(hidden_object_ids=("column", "wall-west")))
+                                             view=self.view(hidden_object_ids=("column", "wall-west")),
+                                             attribution={"actorId": "local", "authenticated": False, "origin": "hub"},
+                                             reason="Take the column out of the section")
         self.assertTrue({"column", "wall-west"}.isdisjoint(drawing.receipt["projection"]["selected_object_ids"]))
         self.assertTrue({"column", "wall-west"}.isdisjoint(svg_objects(drawing.svg)))
         self.assertEqual(drawing.receipt["projection"]["cut_object_ids"], ["floor", "roof", "wall-east"])
         self.assertEqual(drawing.receipt["view"]["hiddenObjectIds"], ["column", "wall-west"])
+        # Who asked and why are kept with this revision only; they are not part of the view.
+        self.assertEqual((drawing.attribution, drawing.reason),
+                         ({"actorId": "local", "authenticated": False, "origin": "hub"}, "Take the column out of the section"))
+        self.assertNotIn("attribution", drawing.receipt["view"])
 
     def test_refusals_after_reading_the_model_are_named_and_write_nothing(self) -> None:
         for code, view in (
@@ -472,6 +486,10 @@ class NativeSectionPerspectiveRetentionTests(unittest.TestCase):
                 self.assertEqual(drawing.receipt["projection"]["cut_object_ids"], [object_id])
                 self.assertGreater(drawing.receipt["projection"]["section_regions"], 0)
                 self.assertEqual(svg_objects(drawing.svg), (object_id,))
+                # A native model has no expected semantics: its lines name their object and nothing more.
+                self.assertIn(b"data-object=", drawing.svg)
+                self.assertNotIn(b"data-component", drawing.svg)
+                self.assertNotIn(b"data-material", drawing.svg)
                 self.assertTrue(all(event["details"]["input_identity"]["model_sha256"] == digest for event in observations))
                 reopened = FilesystemProjectRepository.open(root)
                 cold = read_model_axis_elevation(reopened, drawing.receipt_ref)

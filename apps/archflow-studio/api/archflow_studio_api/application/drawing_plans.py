@@ -21,7 +21,7 @@ from monkeydiagram.drawing_elevation import (
 )
 
 from .artifacts import (
-    ModelSource, _document_pages, _document_source_lock, document_bytes, list_documents,
+    ModelSource, _document_pages, _document_source_lock, document_bytes, drawing_revision_replacement, list_documents,
 )
 from .binding import retained_sources
 from .drawings import _complete_source, _elevation_view, _selected_source, _document_source, DrawingAssetSource
@@ -99,20 +99,59 @@ def _edit_dressing(objects, operations):
 
 
 def plan_vector(binding, *, run_id, asset_sha256, revision_ref):
-    """Retained SVG and its exact-source anchor choices; no regeneration or write."""
+    """Retained SVG, its exact-source anchor choices and cleanup report; no regeneration or write."""
     from monkeydiagram.drawing_svg import dressing_assets
     document = _plan_document(binding, run_id, asset_sha256, revision_ref)
     drawing = read_model_axis_elevation(binding.repository, record_ref_from_uri(revision_ref, binding.project_id))
     _, receipt = _complete_source(binding, _document_source(document), None if document.source_stage_ref is None else record_ref_from_uri(document.source_stage_ref, binding.project_id))
     return {"svg": drawing.svg.decode("utf-8"), "assets": dressing_assets(),
-            "anchors": plan_dressing_anchors(receipt)}
+            "anchors": plan_dressing_anchors(receipt), "cleanup": drawing.receipt.get("cleanup")}
+
+
+def _cleanup_report(binding, revision_ref):
+    """The projection owner's cleanup report, exactly as this revision's receipt retains it.
+
+    Only the receipt holds it, never the recipe, so it never decides which
+    revision a request reuses; a revision drawn before cleanup has none.
+    """
+    return binding.repository.load_json(record_ref_from_uri(revision_ref, binding.project_id)).get("cleanup")
+
+
+def _paper_rules(retained, hatch, beyond, spacing_mm):
+    """Material hatch/poché and the fading of lines beyond the cut, in paper units (03 C3).
+
+    Each rule is the request's, else the previous revision's. A material rule
+    is stored complete - an omitted spacing is this revision's hatchSpacingMm,
+    an omitted angle 45 degrees - so the recipe alone says how each material is
+    drawn. No rule, an empty ``byMaterial`` or a zero fade is an absent key: a
+    recipe without them is exactly the recipe it was before they existed.
+    """
+    rules = {}
+    by_material = deepcopy(retained.get("hatch", {}).get("byMaterial", {})) if hatch is None else {
+        material: {"spacingMm": float(spacing_mm if rule.get("spacingMm") is None else rule["spacingMm"]),
+                   "angleDeg": float(45 if rule.get("angleDeg") is None else rule["angleDeg"]),
+                   "poche": bool(rule.get("poche", False))}
+        for material, rule in sorted(hatch["byMaterial"].items())}
+    if by_material:
+        rules["hatch"] = {"byMaterial": by_material}
+    fade = retained.get("beyond", {}).get("fade", 0) if beyond is None else beyond["fade"]
+    if fade:
+        rules["beyond"] = {"fade": float(fade)}
+    return rules
 
 
 @retained_sources
-def generate_plan(binding, *, source_stage_ref=None, model_source=None, drawing_id=None,
+def generate_plan(binding, *, attribution, reason=None, source_stage_ref=None, model_source=None, drawing_id=None,
                   previous_revision_ref=None, cut_height=None, bottom=None, scale_denominator=None,
-                  crop_uv=None, cut_line_mm=None, visible_line_mm=None, hatch_spacing_mm=None,
+                  crop_uv=None, cut_line_mm=None, visible_line_mm=None, hatch_spacing_mm=None, hatch=None, beyond=None,
                   hidden_object_ids=None, dimensions=None, dressing=None, dressing_operations=None, follow=None, source_asset=None):
+    """One cut-plan revision, or the retained one an identical request already made.
+
+    ``attribution`` is who asked, as the request boundary knows it, and
+    ``reason`` why, in their words when given (05 3.2(A)). Both are retained
+    with the revision's receipt, never in its recipe, so they neither make nor
+    distinguish revisions: a reused revision keeps its own.
+    """
     previous = None if previous_revision_ref is None else _previous_plan(binding, previous_revision_ref)
     old = {} if previous is None else previous.view_recipe
     if previous is not None and drawing_id not in (None, previous.drawing_id):
@@ -145,10 +184,11 @@ def generate_plan(binding, *, source_stage_ref=None, model_source=None, drawing_
             x0, y0, x1, y1 = frame.crop_uv
             frame = replace(frame, crop_uv=(x0-margin, y0-margin, x1+margin, y1+margin))
         graphics = old.get("graphics", {})
+        spacing = hatch_spacing_mm if hatch_spacing_mm is not None else graphics.get("hatchSpacingMm", 2)
         recipe = {"kind": "cut-plan", "name": drawing_id, "frame": frame.to_dict(), "graphics": {
             "cutLineMm": cut_line_mm if cut_line_mm is not None else graphics.get("cutLineMm", .35),
             "visibleLineMm": visible_line_mm if visible_line_mm is not None else graphics.get("visibleLineMm", .18),
-            "hatchSpacingMm": hatch_spacing_mm if hatch_spacing_mm is not None else graphics.get("hatchSpacingMm", 2),
+            "hatchSpacingMm": spacing, **_paper_rules(graphics, hatch, beyond, spacing),
         }, "hiddenObjectIds": sorted(set(hidden_object_ids if hidden_object_ids is not None else old.get("hiddenObjectIds", []))),
             "dimensions": list(dimensions if dimensions is not None else old.get("dimensions", []))}
         # A drawing made from a chosen version stays on it until a person rebuilds
@@ -192,7 +232,14 @@ def generate_plan(binding, *, source_stage_ref=None, model_source=None, drawing_
                 binding, model_source, stage_ref, verified, frame, recipe["dimensions"], hidden_object_ids=recipe["hiddenObjectIds"])
             drawing = freeze_cut_plan(binding.repository, source=source, recipe=recipe,
                                       drawing_run_id=f"studio-drawing-{uuid4().hex}", dimensions=resolved,
-                                      previous_revision_ref=previous_revision_ref)
+                                      previous_revision_ref=previous_revision_ref, reason=reason,
+                                      attribution={"actorId": attribution.actor_id, "authenticated": attribution.authenticated,
+                                                   "origin": attribution.origin})
+            pages = _document_pages(drawing.png, "image/png")
+            # A rebuild answers for its previous revision's page wherever that
+            # page is placed (#291); a fork or a changed page shape does not.
+            replaces = () if previous is None else drawing_revision_replacement(
+                binding, previous, pages, list_documents(binding))
             run = binding.load_run(model_source.run_id)
             binding.repository.put_json(
                 run=run, destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=run.run_id),
@@ -200,7 +247,8 @@ def generate_plan(binding, *, source_stage_ref=None, model_source=None, drawing_
                 payload={"schema": "StudioSourceDocument@1", "project_id": binding.project_id,
                          "run_id": run.run_id, "asset_sha256": drawing.png_ref.sha256,
                          "file_name": f"{drawing_id}.png", "mime_type": "image/png", "size_bytes": len(drawing.png),
-                         "pages": [asdict(page) for page in _document_pages(drawing.png, "image/png")],
+                         "pages": [asdict(page) for page in pages],
+                         "replaces_pages": [asdict(row) for row in replaces],
                          "modelSource": None if isinstance(model_source, DrawingAssetSource) else model_source.to_dict(), "sourceStageRef": selected_stage,
                          "drawingId": drawing_id, "revisionRef": drawing.receipt_ref.uri,
                          "viewRecipe": recipe, "generatedAt": datetime.now(timezone.utc).isoformat()},
@@ -274,8 +322,10 @@ def plan_status(binding, *, run_id, asset_sha256, revision_ref, target_model_sou
                 working: WorkingSources | None = None):
     document = _plan_document(binding, run_id, asset_sha256, revision_ref)
     result = {"status": "unknown", "detail": "The exact target could not be verified.", "dimensions": [],
-              "targetModelSource": None, "targetStageRef": target_stage_ref, "lengthUnit": None, "bindingChanged": False}
+              "targetModelSource": None, "targetStageRef": target_stage_ref, "lengthUnit": None, "bindingChanged": False,
+              "cleanup": None}
     try:
+        result["cleanup"] = _cleanup_report(binding, revision_ref)
         imported = _document_source(document)
         if isinstance(imported, DrawingAssetSource):
             _, receipt = _complete_source(binding, imported, None)

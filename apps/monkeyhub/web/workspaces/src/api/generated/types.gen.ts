@@ -3924,6 +3924,34 @@ export type EpisodeProposalDto = {
 };
 
 /**
+ * EvidenceRegionDto
+ *
+ * A normalized box, top-left origin, on one frame this review sent.
+ */
+export type EvidenceRegionDto = {
+    /**
+     * Viewref
+     */
+    viewRef: string;
+    /**
+     * X0
+     */
+    x0: number;
+    /**
+     * Y0
+     */
+    y0: number;
+    /**
+     * X1
+     */
+    x1: number;
+    /**
+     * Y1
+     */
+    y1: number;
+};
+
+/**
  * ExportTimingDto
  *
  * One seat's export, as its ``cad`` block times it.
@@ -5197,6 +5225,30 @@ export type ModelSourceIndexDto = {
 };
 
 /**
+ * ModelSourceRefDto
+ *
+ * One exact retained model: its run, the State digest it projects to and the model asset it exported.
+ */
+export type ModelSourceRefDto = {
+    /**
+     * Kind
+     */
+    kind: 'model';
+    /**
+     * Runid
+     */
+    runId: string;
+    /**
+     * Statedigest
+     */
+    stateDigest: string;
+    /**
+     * Assetsha256
+     */
+    assetSha256: string;
+};
+
+/**
  * ModelUpload
  */
 export type ModelUpload = {
@@ -5224,7 +5276,7 @@ export type ModelViewDto = {
     /**
      * View
      */
-    view: 'front' | 'back' | 'left' | 'right' | 'top';
+    view: 'front' | 'back' | 'left' | 'right' | 'top' | 'axon';
     /**
      * Mimetype
      */
@@ -5336,6 +5388,58 @@ export type ObjectBindingDto = {
 };
 
 /**
+ * ObservationUsageDto
+ *
+ * What one review cost, as the provider reported it.
+ */
+export type ObservationUsageDto = {
+    /**
+     * Provider
+     */
+    provider: string;
+    /**
+     * Model
+     */
+    model: string;
+    /**
+     * Providercalls
+     */
+    providerCalls: number;
+    /**
+     * Imageinputs
+     */
+    imageInputs: number;
+    /**
+     * Imagebytes
+     */
+    imageBytes: number;
+    /**
+     * Inputtokens
+     */
+    inputTokens: number | null;
+    /**
+     * Cachedinputtokens
+     */
+    cachedInputTokens: number | null;
+    /**
+     * Outputtokens
+     */
+    outputTokens: number | null;
+    /**
+     * Reasoningoutputtokens
+     */
+    reasoningOutputTokens: number | null;
+    /**
+     * Durationms
+     */
+    durationMs: number | null;
+    /**
+     * Receiptid
+     */
+    receiptId: string | null;
+};
+
+/**
  * OptionsDto
  *
  * The wire form of ``GET /api/options``: the baseline and every option.
@@ -5363,6 +5467,36 @@ export type OptionsDto = {
      * the whole transform vocabulary, so a client offers no button the server would refuse
      */
     transforms: Array<string>;
+};
+
+/**
+ * PageSourceRefDto
+ *
+ * One page of an exact registered document revision (a drawing, a render result, an upload).
+ */
+export type PageSourceRefDto = {
+    /**
+     * Kind
+     */
+    kind: 'page';
+    /**
+     * Runid
+     */
+    runId: string;
+    /**
+     * Assetsha256
+     */
+    assetSha256: string;
+    /**
+     * Revisionref
+     *
+     * The registration's exact revisionRef, as GET /api/documents lists it; null names the registration that carries none and is never a wildcard.
+     */
+    revisionRef: string | null;
+    /**
+     * Pageindex
+     */
+    pageIndex: number;
 };
 
 /**
@@ -5627,6 +5761,20 @@ export type PickResolutionDto = {
      * why nothing was resolved, when nothing was
      */
     detail: string | null;
+};
+
+/**
+ * PlanBeyondDto
+ *
+ * How lines below the cut plane read against the cut.
+ */
+export type PlanBeyondDto = {
+    /**
+     * Fade
+     *
+     * Grey level of the lines below the cut: 0 draws them black like visible lines (and removes the rule), 1 fades them out.
+     */
+    fade: number;
 };
 
 /**
@@ -5971,6 +6119,48 @@ export type PlanDressingReadDto = {
 };
 
 /**
+ * PlanHatchDto
+ *
+ * Material-keyed hatch and poché for cut solids; a material without a rule keeps hatchSpacingMm at 45 degrees.
+ */
+export type PlanHatchDto = {
+    /**
+     * Bymaterial
+     *
+     * Rules by the model's material name. Each is stored complete; an empty map removes every rule.
+     */
+    byMaterial: {
+        [key: string]: PlanHatchRuleDto;
+    };
+};
+
+/**
+ * PlanHatchRuleDto
+ *
+ * How the cut of one material is drawn, in paper units.
+ */
+export type PlanHatchRuleDto = {
+    /**
+     * Spacingmm
+     *
+     * Perpendicular hatch spacing on paper, mm. Omitted takes this revision's hatchSpacingMm.
+     */
+    spacingMm?: number | null;
+    /**
+     * Angledeg
+     *
+     * Hatch direction, degrees anticlockwise from the sheet's x axis. Omitted is 45.
+     */
+    angleDeg?: number | null;
+    /**
+     * Poche
+     *
+     * Fill this material's cut solid (poché) instead of hatching it.
+     */
+    poche?: boolean;
+};
+
+/**
  * PlanRequestDto
  */
 export type PlanRequestDto = {
@@ -6028,6 +6218,14 @@ export type PlanRequestDto = {
      */
     hatchSpacingMm?: number | null;
     /**
+     * Material hatch and poché rules on paper, beside the pens and hatchSpacingMm. Omitted keeps the previous revision's rules; an empty byMaterial removes them.
+     */
+    hatch?: PlanHatchDto | null;
+    /**
+     * Fading of the lines below the cut. Omitted keeps the previous revision's; fade 0 removes it.
+     */
+    beyond?: PlanBeyondDto | null;
+    /**
      * Hiddenobjectids
      */
     hiddenObjectIds?: Array<string> | null;
@@ -6049,6 +6247,12 @@ export type PlanRequestDto = {
      * live follows the project's Working Head; frozen keeps this drawing on its chosen source until it is rebuilt. Omitted keeps the previous revision's choice; a new drawing is live.
      */
     follow?: 'live' | 'frozen' | null;
+    /**
+     * Reason
+     *
+     * Why this revision is asked for, in the asker's own words, such as the correction an agent was given; omit it for a direct edit. Retained with the revision beside who asked, never in its recipe.
+     */
+    reason?: string | null;
 };
 
 /**
@@ -6088,6 +6292,14 @@ export type PlanStatusDto = {
      * Dressing
      */
     dressing?: Array<PlanDressingReadDto>;
+    /**
+     * Cleanup
+     *
+     * The deterministic cleanup the projection owner applied to this revision's lines - per-rule counts and input/output line counts - exactly as the revision's receipt retains it; null for a revision drawn before cleanup existed. It is never part of viewRecipe.
+     */
+    cleanup?: {
+        [key: string]: unknown;
+    } | null;
 };
 
 /**
@@ -6129,6 +6341,34 @@ export type PlanVectorDto = {
      * Anchors
      */
     anchors: Array<PlanDressingAnchorDto>;
+    /**
+     * Cleanup
+     *
+     * The deterministic cleanup the projection owner applied to this revision's lines - per-rule counts and input/output line counts - exactly as the revision's receipt retains it; null for a revision drawn before cleanup existed. It is never part of viewRecipe.
+     */
+    cleanup?: {
+        [key: string]: unknown;
+    } | null;
+};
+
+/**
+ * PriorFindingDto
+ *
+ * One compact unresolved finding of an earlier review in the same loop.
+ */
+export type PriorFindingDto = {
+    /**
+     * Findingref
+     */
+    findingRef: string;
+    /**
+     * Type
+     */
+    type: 'spatial' | 'proportion' | 'relation' | 'preserve' | 'artifact' | 'legibility' | 'composition';
+    /**
+     * Description
+     */
+    description: string;
 };
 
 /**
@@ -7629,6 +7869,28 @@ export type RepresentationStateDto = {
      * Detail
      */
     detail: string | null;
+};
+
+/**
+ * RevisionAttributionDto
+ *
+ * Who asked for a drawing revision, as the request boundary knew it.
+ */
+export type RevisionAttributionDto = {
+    /**
+     * Actorid
+     */
+    actorId: string;
+    /**
+     * Authenticated
+     */
+    authenticated: boolean;
+    /**
+     * Origin
+     *
+     * hub: through a runtime the Hub manages (its Agent or its window); studio: a runtime no Hub manages.
+     */
+    origin: string;
 };
 
 /**
@@ -9593,6 +9855,22 @@ export type SourceDocumentDto = {
      * Replacespages
      */
     replacesPages?: Array<DocumentPageReplacementDto>;
+    /**
+     * Previousrevisionref
+     *
+     * Read only: the drawing revision this revision continued, from its receipt.
+     */
+    previousRevisionRef?: string | null;
+    /**
+     * Read only: who asked for this drawing revision, from its receipt; null when it was not recorded.
+     */
+    attribution?: RevisionAttributionDto | null;
+    /**
+     * Reason
+     *
+     * Read only: why this drawing revision was asked for, from its receipt; null when none was given or recorded.
+     */
+    reason?: string | null;
 };
 
 /**
@@ -10769,6 +11047,243 @@ export type ViewportCaptureRequestDto = {
      * Pngbase64
      */
     pngBase64: string;
+};
+
+/**
+ * VisualBudgetStateDto
+ *
+ * One task loop's Harness allowance, held by the caller between reviews.
+ *
+ * The runtime keeps no loop state: send the ``budgetState`` of the last answer
+ * (or a fresh one for a new loop) with each review of the loop.
+ */
+export type VisualBudgetStateDto = {
+    /**
+     * Taskclass
+     *
+     * deterministic_edit takes no review; spatial_formal allows a first_bundle review and one after_repair follow-up; polish allows the 1-4 polish rounds an explicit request named.
+     */
+    taskClass: 'deterministic_edit' | 'spatial_formal' | 'polish';
+    /**
+     * Allowed
+     *
+     * The policy's allowance for taskClass: 0, 2, or the polish rounds.
+     */
+    allowed: number;
+    /**
+     * Used
+     *
+     * Reviews this loop has spent; at or past allowed is exhausted.
+     */
+    used: number;
+    /**
+     * Lastfindingids
+     *
+     * The finding ids of the loop's last review, which an after_repair review must address.
+     */
+    lastFindingIds?: Array<string>;
+};
+
+/**
+ * VisualCriterionDto
+ */
+export type VisualCriterionDto = {
+    /**
+     * Criterionid
+     */
+    criterionId: string;
+    /**
+     * Text
+     */
+    text: string;
+};
+
+/**
+ * VisualFindingDto
+ *
+ * What is visible about the request's own criteria or preserve conditions: evidence, never a verdict.
+ */
+export type VisualFindingDto = {
+    /**
+     * Findingid
+     */
+    findingId: string;
+    /**
+     * Type
+     */
+    type: 'spatial' | 'proportion' | 'relation' | 'preserve' | 'artifact' | 'legibility' | 'composition';
+    /**
+     * Targetrefs
+     */
+    targetRefs: Array<string>;
+    /**
+     * Description
+     */
+    description: string;
+    /**
+     * Confidence
+     */
+    confidence: number;
+    /**
+     * Severity
+     */
+    severity: 'info' | 'minor' | 'major';
+    evidenceRegion: EvidenceRegionDto | null;
+};
+
+/**
+ * VisualObservationDto
+ *
+ * The observation bound to the frames the runtime rendered and sent; the provider never names its source.
+ */
+export type VisualObservationDto = {
+    /**
+     * Reviewid
+     */
+    reviewId: string;
+    /**
+     * Reviewindex
+     */
+    reviewIndex: number;
+    /**
+     * Domain
+     */
+    domain: 'modeling' | 'board' | 'drawing' | 'render';
+    /**
+     * Sourcerefs
+     */
+    sourceRefs: Array<ModelSourceRefDto | PageSourceRefDto>;
+    /**
+     * Viewrefs
+     */
+    viewRefs: Array<string>;
+    /**
+     * Framesha256
+     *
+     * SHA-256 of each frame sent, in viewRefs order.
+     */
+    frameSha256: Array<string>;
+    /**
+     * Observations
+     */
+    observations: Array<VisualFindingDto>;
+    /**
+     * Unresolvedquestions
+     */
+    unresolvedQuestions: Array<string>;
+    /**
+     * Suggestedchecks
+     */
+    suggestedChecks: Array<string>;
+};
+
+/**
+ * VisualReviewDto
+ *
+ * The wire form of ``POST /api/visual-reviews``.
+ */
+export type VisualReviewDto = {
+    observation: VisualObservationDto;
+    usage: ObservationUsageDto;
+    /**
+     * The loop's allowance after this review; send it back with the next.
+     */
+    budgetState: VisualBudgetStateDto;
+};
+
+/**
+ * VisualReviewRefusalDto
+ *
+ * A refused or failed visual review: the error body, plus what the caller needs to go on.
+ */
+export type VisualReviewRefusalDto = {
+    /**
+     * Code
+     */
+    code: string;
+    /**
+     * Detail
+     */
+    detail: string;
+    /**
+     * Sourceref
+     *
+     * VISUAL_SOURCE_MISMATCH: the named source its owner does not retain exactly.
+     */
+    sourceRef?: ({
+        kind: 'model';
+    } & ModelSourceRefDto) | ({
+        kind: 'page';
+    } & PageSourceRefDto) | null;
+    /**
+     * The allowance as it now stands: unchanged by a refusal, one review spent by a failed provider call.
+     */
+    budgetState?: VisualBudgetStateDto | null;
+    /**
+     * What a failed provider call still cost.
+     */
+    usage?: ObservationUsageDto | null;
+};
+
+/**
+ * VisualReviewRequestDto
+ *
+ * One bounded visual review of exact sources, which the runtime renders itself.
+ */
+export type VisualReviewRequestDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Domain
+     */
+    domain: 'modeling' | 'board' | 'drawing' | 'render';
+    /**
+     * Sourcerefs
+     *
+     * A modeling review names one exact model; board, drawing and render reviews name 1-4 registered pages with distinct page indexes.
+     */
+    sourceRefs: Array<ModelSourceRefDto | PageSourceRefDto>;
+    /**
+     * Viewrecipe
+     *
+     * For a model, the model-view directions to render (front, back, left, right, top); for pages, page-<pageIndex> of each named page.
+     */
+    viewRecipe: Array<string>;
+    /**
+     * Task
+     */
+    task: string;
+    /**
+     * Criteria
+     */
+    criteria: Array<VisualCriterionDto>;
+    /**
+     * Preserve
+     */
+    preserve?: Array<string>;
+    /**
+     * Priorobservations
+     */
+    priorObservations?: Array<PriorFindingDto>;
+    /**
+     * Knownfacts
+     *
+     * Short exact readback values (elevations, clear dimensions) the observer should not ask about again.
+     */
+    knownFacts?: Array<string>;
+    /**
+     * Reason
+     */
+    reason: 'first_bundle' | 'after_repair' | 'polish_round';
+    /**
+     * Addressedfindingids
+     *
+     * For after_repair only: the findings of the last review that the repair addressed.
+     */
+    addressedFindingIds?: Array<string>;
+    budgetState: VisualBudgetStateDto;
 };
 
 /**
@@ -13365,7 +13880,7 @@ export type ReadModelViewApiDrawingsModelViewGetData = {
         /**
          * View
          */
-        view?: 'front' | 'back' | 'left' | 'right' | 'top';
+        view?: 'front' | 'back' | 'left' | 'right' | 'top' | 'axon';
     };
     url: '/api/drawings/model-view';
 };
@@ -14378,6 +14893,49 @@ export type CompileIntentApiIntentsPostResponses = {
 };
 
 export type CompileIntentApiIntentsPostResponse = CompileIntentApiIntentsPostResponses[keyof CompileIntentApiIntentsPostResponses];
+
+export type ReviewVisualSourcesApiVisualReviewsPostData = {
+    body: VisualReviewRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/visual-reviews';
+};
+
+export type ReviewVisualSourcesApiVisualReviewsPostErrors = {
+    /**
+     * Refused before the provider was called; the allowance is unchanged
+     */
+    409: VisualReviewRefusalDto;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+    /**
+     * The provider call failed; budgetState counts the spent review and usage its cost
+     */
+    502: VisualReviewRefusalDto;
+};
+
+export type ReviewVisualSourcesApiVisualReviewsPostError = ReviewVisualSourcesApiVisualReviewsPostErrors[keyof ReviewVisualSourcesApiVisualReviewsPostErrors];
+
+export type ReviewVisualSourcesApiVisualReviewsPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: VisualReviewDto;
+};
+
+export type ReviewVisualSourcesApiVisualReviewsPostResponse = ReviewVisualSourcesApiVisualReviewsPostResponses[keyof ReviewVisualSourcesApiVisualReviewsPostResponses];
 
 export type ReadOptionsApiOptionsGetData = {
     body?: never;

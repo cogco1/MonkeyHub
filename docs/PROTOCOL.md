@@ -127,6 +127,7 @@ tolerate it.
 | GET | `/api/candidates/{candidateId}/validation` | the kernel's validation receipt and the server's review readiness (§5) | reads shared + published | stable |
 | POST | `/api/intents` → 201 | one of four outcomes: the resolved target and the proposal it became, or the pending intent the refusal belongs to (§5.1) | reads work in progress + shared | provisional |
 | POST | `/api/intents/context` | `ContextPack@1` against an exact source, with optional scalar, multiple-object, component or whole-project focus, dependency facts and bounded design-context supplements | reads work in progress + shared + published | provisional |
+| POST | `/api/visual-reviews` | one bounded visual review of exact sources: the runtime renders every frame through the source's own projection owner, looks once through the configured provider, and answers the observation, its usage and the loop's next `budgetState`. It accepts no pixels | reads shared; calls the configured provider | provisional |
 | POST | `/api/proposals/{proposalId}/decision` → 201 | an explicit judgement: accepted with its successful `candidateId`, rejected, or modified into a linked replacement (§5.2) | accepted is **written into its named run**; other decisions stay in memory until a candidate run against the same state | provisional |
 | GET | `/api/episodes?stateDigest=` | the judgements this process holds, each saying whether it lives in a run or only in memory (§5.2) | server memory + reads shared | provisional |
 | GET | `/api/episodes/{episodeId}` | one of them | server memory + reads shared | provisional |
@@ -239,10 +240,14 @@ is available through the existing project-bound Hub MCP tool; no Study writer is
 Hub `designContext.studyEvidence` forwards the same references when preparing a fresh task.
 
 For visual observation, `GET /api/drawings/model-view` requires exact `runId`, `stateDigest` and
-`assetSha256` from a complete `ModelSource`, plus `view=front|back|left|right|top` (default front).
+`assetSha256` from a complete `ModelSource`, plus `view=front|back|left|right|top|axon` (default
+front); `axon` is the isometric view from the -X, -Y, +Z side with Z up, cropped by the same rule
+as the others: every physical object's retained bounds plus a 5% margin.
 It returns source metadata and an inline PNG (base64 `data`, `mimeType`, width/height, and
 `representation=orthographic-line-projection`), with longest dimension at most 1024 pixels.
-It reuses the retained STEP projection and creates no drawing record or project file.
+It reuses the retained STEP projection and creates no drawing record or project file. The
+source is verified on every read; the projection of a view already drawn for the same exact
+source is reused from process memory, never written.
 Incomplete/composed-only, Rhino-only or mismatched sources refuse; no bounding-box image stands
 in for missing geometry. MonkeyHub exposes the image as native MCP image content and keeps
 source metadata in a separate text block.
@@ -264,6 +269,37 @@ an explicit `revisionRef` (null when the registered source has none), defaults `
 project/run/asset/revision/page identity, raster dimensions and `annotationsIncluded: false`.
 `CHAT_IMAGE_TOO_LARGE` means to read the same page at a smaller `maxEdge`; invalid PNG responses
 report `CHAT_IMAGE_INVALID`. Runtime source/revision/page refusals retain their code and status.
+
+**Visual review.** `POST /api/visual-reviews` looks at exact sources once, under a caller-held
+allowance, and answers structured findings instead of images. The body names `projectId`,
+`domain` (`modeling`, `board`, `drawing` or `render`), 1–4 `sourceRefs`, `viewRecipe`, `task`
+(at most 600 characters), 1–8 `criteria` (`criterionId`, `text`), up to 6 `preserve`
+conditions, up to 6 `priorObservations`, up to 8 `knownFacts` of at most 120 characters (exact
+readback values the observer should not ask about again), `reason` (`first_bundle`,
+`after_repair` or `polish_round`), `addressedFindingIds` for an `after_repair` review, and
+`budgetState` (`taskClass`, `allowed`, `used`, `lastFindingIds`). A modeling review names one
+model (`kind: "model"` with `runId`, `stateDigest`, `assetSha256`) and model-view directions
+(`front`, `back`, `left`, `right`, `top` or the axonometric `axon`); the other domains name registered pages (`kind: "page"` with `runId`, `assetSha256`, an explicit
+`revisionRef` and `pageIndex`) and the recipe `page-<pageIndex>` of each. No field carries
+pixels and every object refuses unknown fields: the runtime renders each frame in process, with
+`model_view` for each recipe view or a one-page PNG export at 1600 px, and each owner verifies
+its exact source before it draws. The route keeps no loop state and writes nothing to the
+project; when Monitor is configured, each review is one `visual_observation` span.
+
+The answer is `observation` (`reviewId`, `reviewIndex`, `sourceRefs`, `viewRefs`, `frameSha256`,
+and findings with `findingId`, `type`, `targetRefs`, `description`, `confidence`, `severity` and
+an optional `evidenceRegion`, plus `unresolvedQuestions` and `suggestedChecks`; there is no
+verdict), `usage` as the provider reported it, and the next `budgetState`, which the caller sends
+back with the loop's next review. Its allowance must be the policy's own for `taskClass`: 0 for
+`deterministic_edit`, 2 for `spatial_formal` (a `first_bundle` review, then one `after_repair`
+review whose `addressedFindingIds` name findings of the last review), and the 1–4 rounds an
+explicit `polish` request named. Before any provider call, 409 answers `VISUAL_SOURCE_MISMATCH`
+with the `sourceRef` its owner does not retain exactly (a stale `stateDigest`, an unregistered
+asset, or a missing run, revision or page); `VISUAL_BUDGET_EXHAUSTED`,
+`VISUAL_REVIEW_NOT_WARRANTED` or `VISUAL_REVIEW_OUT_OF_ORDER` with the unchanged `budgetState`;
+or `VISUAL_PROVIDER_UNAVAILABLE` when the runtime's provider is deterministic. Other owner
+refusals keep their code and status. A failed provider call answers 502 `VISUAL_PROVIDER_FAILED`
+with the `budgetState` that counts the spent review and the call's `usage`.
 
 **The program sheet.** A sheet is `ProgramSheet@1` and travels whole in both directions, carrying
 the `stateDigest` of the record it was read from. `POST /api/program` refuses `409 STALE_BASE` when
@@ -579,11 +615,65 @@ retain unresolved objects in the recipe and report `missing` / `outside-view` in
 `POST /api/drawings/plans/status`; unresolved objects are omitted from the output
 rather than silently repositioned. Drawing revisions never advance Design HEAD.
 
+A rebuild that names `previousRevisionRef` registers the new revision as that
+revision's whole-document replacement: its `replacesPages` names the previous
+page exactly as an upload's would, so a Board page updates in place, Publish
+offers the new page and Render follows it. It registers none when the previous
+revision already has a replacement (a rebuild from a historical revision forks,
+and the fork is a new page) or when the page's visible aspect ratio changed; an
+identical request returns the retained revision and registers nothing. Why a page
+was replaced is derived, never stored: the same drawing from the same exact source
+(model, Stage and imported asset) is a representation change, which Render does
+not count as a newer input; the same drawing from another source is a source
+change; a document without `drawingId` is an upload.
+
+A cut-plan request may say why it is asked for: `reason`, 1–200 characters in the
+asker's words (an agent passes the correction it was given; a direct edit omits
+it). The request boundary records who asked, as for decisions: `actorId`,
+`authenticated` and `origin`, where `hub` means a runtime the Hub manages and
+`studio` one it does not. Both are retained in the revision's drawing receipt,
+never in `viewRecipe`, so they neither make nor distinguish revisions: an identical
+request returns the retained revision as it was asked for. Every SourceDocument
+with a `revisionRef` reads `previousRevisionRef`, `attribution` and `reason` from
+that receipt, read-only; a revision retained before they were recorded reads null.
+
 `GET /api/drawings/plans/vector?runId=…&assetSha256=…&revisionRef=…` reads the
 verified retained SVG, built-in vector symbols and exact source anchor choices.
 SVG `data-dressing` groups remain independently editable and do not claim the
 architectural `data-object` identity used by projected model vectors. The PNG and
 SVG share one rendering input. This read does not regenerate or create a revision.
+
+Cut-plan pens and hatch are paper values in `viewRecipe.graphics`: `cutLineMm`,
+`visibleLineMm` and `hatchSpacingMm`, and, optionally, `hatch` and `beyond`, which
+the request names in the same form. `hatch: {byMaterial: {<material>: {spacingMm?,
+angleDeg?, poche?}}}` draws the cut of each named model material with its own hatch
+(spacing 0.5–20 mm, angle 0–180 degrees) or solid poché; a rule is stored complete,
+an omitted spacing taking the revision's `hatchSpacingMm` and an omitted angle 45
+degrees, and a material without a rule keeps `hatchSpacingMm` at 45 degrees.
+`beyond: {fade}` (0–1) greys the lines below the cut. A request without them keeps
+the previous revision's; an empty `byMaterial` or a zero `fade` removes them, and a
+recipe without them is exactly the recipe it was before they existed, so it keeps
+its retained drawing and bytes. Paper values do not change with the scale. Imported
+models carry no material semantics, so their cuts keep the general hatch.
+
+A projected vector (`polyline` or poché `polygon`) names its physical object in
+`data-object` and, for a model compiled from design state, its `data-component` and
+`data-material` (the CAD program's `archflow:component` / `archflow:material`); an
+imported native model names objects only. The group is the role: `section` is the cut
+and a cut plan's `visible` lies beyond it. A poché is one stroke-free even-odd `polygon`
+in `g#section-hatch`. Before the SVG, a deterministic cleanup at 0.05 mm on the sheet
+drops strokes shorter than that, projected edges lying on the cut and hidden lines under
+visible ones or inside the cut, and joins an object's collinear pieces. The drawing
+receipt keeps its per-rule counts under `cleanup` (never in the recipe) and, when the
+application gives them, the revision's `attribution` and `reason`; receipts retained
+earlier have none.
+
+`POST /api/drawings/plans/status` and `GET /api/drawings/plans/vector` also return
+`cleanup`: the deterministic line cleanup the projection owner retained with that
+revision's receipt (per-rule counts and input/output line counts), passed through
+unchanged, or null for a revision drawn before cleanup existed. It is kept in the
+receipt only, never in `viewRecipe`, so it never decides which revision a request
+reuses.
 
 Servers advertising `drawing-elevations` accept `{projectId, sourceStageRef, view}`
 or an exact candidate `modelSource` instead of `sourceStageRef`. Views are front,
@@ -747,9 +837,10 @@ Every failure, without exception, is one body:
 {"code": "STALE_BASE", "detail": "…"}
 ```
 
-plus `question` and — when non-empty — `acceptedForms` for `BLOCKED_NEEDS_HUMAN`, and `outcome`,
+plus `question` and — when non-empty — `acceptedForms` for `BLOCKED_NEEDS_HUMAN`, `outcome`,
 `pendingIntent` and `authoredControlDraft` for a refusal that belongs to a clarification chain
-(§5.1). That includes
+(§5.1), and `sourceRef`, `budgetState` and `usage` for a refused or failed visual review (§4).
+That includes
 unknown paths (`404 NOT_FOUND`), wrong methods (`405 METHOD_NOT_ALLOWED`), unreadable requests
 (`422 REQUEST_INVALID`) and server bugs (`500 INTERNAL_ERROR`, which says nothing about itself).
 Anything the framework refuses before a route runs keeps its own status under `HTTP_ERROR`.

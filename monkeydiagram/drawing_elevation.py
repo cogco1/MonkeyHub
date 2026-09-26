@@ -22,6 +22,8 @@ What this module decides and nothing else:
 - the frame is checked to be right-handed and consistent (``look`` is the
   opposite of ``right x up``), the crop window and near/far are finite and
   ordered, and the receipt records exactly what was applied;
+- the drawn lines are cleaned at ``CLEANUP_TOLERANCE_MM`` on the sheet
+  (``clean_drawing``) and the receipt's ``cleanup`` says what was removed;
 - the drawing run is created with ``base = source run base`` or, when it
   exists, is used only if it already carries that base;
 - nothing is written until the projection and both renderings succeeded;
@@ -48,7 +50,7 @@ import math
 import re
 from copy import deepcopy
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, is_dataclass
 from datetime import datetime, timezone
 from io import BytesIO
 from pathlib import PurePosixPath
@@ -70,7 +72,10 @@ from archflow.adapters.occt_backend import OcctSectionPerspective, project_occt_
 from monkeydiagram.drawing_svg import (
     PNG_MEDIA_TYPE,
     SVG_MEDIA_TYPE,
+    CleanupReport,
     DrawingSvgError,
+    clean_drawing,
+    crop_polylines,
     drawing_svg,
     render_svg_png,
     svg_objects,
@@ -96,6 +101,8 @@ STEP_MEDIA_TYPE = "model/step"
 _STEP_FILE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._@-]{0,159}\.step$")
 _UNITS = ("meter", "millimeter", "inch", "foot")
 _TOLERANCE = 1e-9
+#: Paper tolerance of the drawing cleanup: at any sheet scale, what differs by less is not seen.
+CLEANUP_TOLERANCE_MM = 0.05
 
 
 class DrawingElevationError(ValueError):
@@ -154,6 +161,38 @@ def _finite(value, label: str) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
         raise DrawingElevationError(f"{label} must be a finite number")
     return float(value)
+
+
+def object_semantics(receipt: Mapping[str, Any]) -> dict[str, dict[str, str]]:
+    """Each physical object's component and material, as its CAD receipt's expected semantics state them.
+
+    They are the ``archflow:component`` and ``archflow:material`` user text
+    the CAD program gave the object; an object with neither is left out.  A
+    native model has no expected semantics, so its drawing names objects only.
+    """
+
+    semantics = {}
+    for object_id, row in (receipt.get("expected_semantics") or {}).get("objects", {}).items():
+        text = row.get("user_text") if isinstance(row, Mapping) else None
+        if not isinstance(text, Mapping):
+            continue
+        values = {key: text.get(f"archflow:{key}") for key in ("component", "material")}
+        values = {key: value for key, value in values.items() if isinstance(value, str) and value}
+        if values:
+            semantics[object_id] = values
+    return semantics
+
+
+def _cleaned(lines, regions, *, crop_uv, hidden_lines: bool, unit: str, scale_denominator: int):
+    """The lines one drawing draws, cropped to its window and cleaned at the paper tolerance, with the report.
+
+    The tolerance is ``CLEANUP_TOLERANCE_MM`` on the sheet, in the source's
+    unit at the drawing's scale.  Hidden lines take part only when drawn.
+    """
+
+    drawn = lines if hidden_lines else tuple(line for line in lines if line.kind != "hidden")
+    tolerance = CLEANUP_TOLERANCE_MM * scale_denominator / (1000.0 * UNIT_METRES[unit])
+    return clean_drawing(crop_polylines(drawn, crop_uv), regions, tolerance=tolerance)
 
 
 @dataclass(frozen=True, slots=True)
@@ -290,11 +329,16 @@ class ElevationView:
 
 @dataclass(frozen=True, slots=True)
 class ElevationProjection:
-    """The in-memory result: every solved polyline, and the SVG and PNG of the cropped drawing."""
+    """The in-memory result: every solved polyline, and the SVG and PNG of the cropped, cleaned drawing.
+
+    ``lines`` stay as solved, so the receipt's counts keep their meaning;
+    ``cleanup`` reports what ``clean_drawing`` removed before the SVG.
+    """
 
     lines: tuple[OcctDrawingPolyline, ...]
     svg: bytes
     png: bytes
+    cleanup: CleanupReport | None = None
 
     def counts(self) -> dict[str, Any]:
         visible = [line for line in self.lines if line.kind == "visible"]
@@ -311,14 +355,15 @@ class ElevationProjection:
 def project_model_axis_elevation(
     entries: Sequence[StepEntry], *, object_ids: Sequence[str], view: ElevationView, unit: str,
     operation_observer: Callable[[Mapping[str, Any]], None] | None = None,
-    parent_event_id: str | None = None,
+    parent_event_id: str | None = None, semantics: Mapping[str, Mapping[str, str]] | None = None,
 ) -> ElevationProjection:
     """Solve, crop and render one elevation of the named shapes; writes nothing.
 
     Every object in ``object_ids`` takes part in the one visibility solve
     (restricted to the view's near/far slab); the crop then clips the
-    result to the sheet window.  The SVG holds visible polylines, plus
-    hidden ones when the view asks for them, each naming its object.
+    result to the sheet window and ``clean_drawing`` cleans it.  The SVG
+    holds visible polylines, plus hidden ones when the view asks for them,
+    each naming its object and, from ``semantics``, its component and material.
     """
 
     if not isinstance(view, ElevationView):
@@ -335,16 +380,18 @@ def project_model_axis_elevation(
             observation["emitted_object_ids"] = sorted({line.object_id for line in lines})
         with _observed_stage(operation_observer, "drawing.svg", parent_event_id=parent_event_id,
                              details={"input_object_ids": sorted({line.object_id for line in lines})}) as observation:
+            cleaned, cleanup = _cleaned(lines, (), crop_uv=view.crop_uv, hidden_lines=view.hidden_lines, unit=unit,
+                                        scale_denominator=view.scale_denominator)
             svg = drawing_svg(
-                lines, crop_uv=view.crop_uv, unit=unit, scale_denominator=view.scale_denominator,
-                hidden_lines=view.hidden_lines, title=view.name,
+                cleaned, crop_uv=view.crop_uv, unit=unit, scale_denominator=view.scale_denominator,
+                hidden_lines=view.hidden_lines, title=view.name, semantics=semantics,
             )
             observation["emitted_object_ids"] = list(svg_objects(svg))
         with _observed_stage(operation_observer, "drawing.png", parent_event_id=parent_event_id):
             png = render_svg_png(svg)
     except (OcctBackendError, DrawingSvgError) as exc:
         raise DrawingElevationError(f"elevation {view.name}: {exc}") from exc
-    return ElevationProjection(lines=lines, svg=svg, png=png)
+    return ElevationProjection(lines=lines, svg=svg, png=png, cleanup=cleanup)
 
 
 @dataclass(frozen=True, slots=True)
@@ -358,6 +405,24 @@ class ElevationDrawing:
     png_ref: ProjectArtifactRef
     svg: bytes
     png: bytes
+
+    @property
+    def cleanup(self) -> Mapping[str, Any] | None:
+        """The receipt's ``CleanupReport`` counts; None for a drawing retained before cleanup was recorded."""
+
+        return self.receipt.get("cleanup")
+
+    @property
+    def attribution(self) -> Mapping[str, Any] | None:
+        """Who asked for this revision, as the application stated it; None when it was not recorded."""
+
+        return self.receipt.get("attribution")
+
+    @property
+    def reason(self) -> str | None:
+        """Why this revision was asked for; None when no reason was recorded."""
+
+        return self.receipt.get("reason")
 
 
 @dataclass(frozen=True, slots=True)
@@ -534,8 +599,47 @@ def _source_binding(source, verified):
             "object_identity": "STEP shape name = CAD receipt physical object id"}
 
 
+def _revision_provenance(attribution, reason) -> dict[str, Any]:
+    """Who asked for a drawing revision and why, as the application states them; checked before anything is drawn.
+
+    ``attribution`` is a flat mapping of JSON values, such as the Studio's
+    ``{"actorId", "authenticated", "origin"}``, or a dataclass of them, whose
+    field names are then written in camelCase.  ``reason`` is the words the
+    revision was asked with.  Neither is interpreted here, but both must be
+    text a receipt can hold, so a refusal comes before any file is written.
+    What is not given is not written, so an earlier receipt and a revision
+    without them both read as None.
+    """
+
+    provenance: dict[str, Any] = {}
+    if attribution is not None:
+        if is_dataclass(attribution) and not isinstance(attribution, type):
+            attribution = {re.sub(r"_([a-z])", lambda match: match.group(1).upper(), key): value
+                           for key, value in asdict(attribution).items()}
+        if (not isinstance(attribution, Mapping) or not attribution
+                or any(not isinstance(key, str) or not key for key in attribution)
+                or any(not (value is None or isinstance(value, (str, bool))
+                            or (isinstance(value, (int, float)) and math.isfinite(value)))
+                       for value in attribution.values())):
+            raise DrawingElevationError("attribution must be a flat mapping of names to text, true/false or numbers")
+        provenance["attribution"] = dict(attribution)
+    if reason is not None:
+        if not isinstance(reason, str):
+            raise DrawingElevationError("reason must be text")
+        if reason.strip():
+            provenance["reason"] = reason
+    texts = [reason or "", *(key for key in provenance.get("attribution", {})),
+             *(value for value in provenance.get("attribution", {}).values() if isinstance(value, str))]
+    try:
+        for text in texts:
+            text.encode("utf-8")
+    except UnicodeEncodeError as exc:
+        raise DrawingElevationError("attribution and reason must be text a receipt can hold") from exc
+    return provenance
+
+
 def _retain_projection(repository, *, source, verified, projection, view, name, drawing_run_id,
-                       backend, head_before, projection_details=None, previous_revision_ref=None):
+                       backend, head_before, projection_details=None, previous_revision_ref=None, provenance=None):
     """The one receipt/artifact boundary for elevation, cut-plan and section-perspective projections."""
     if isinstance(source, NativeModelSource) and verified.receipt.get("modelSource") is None:
         view = {**view, "sourceAsset": {"runId": source.run_id, "assetSha256": source.artifact.sha256}, "follow": "frozen"}
@@ -569,8 +673,12 @@ def _retain_projection(repository, *, source, verified, projection, view, name, 
             },
             "artifacts": {"svg": _ref_dict(svg_ref), "png": _ref_dict(png_ref)},
         }
+        # What the cleanup removed describes this drawing, not its recipe: it is kept here only.
+        if projection.cleanup is not None:
+            payload["cleanup"] = projection.cleanup.to_dict()
         if previous_revision_ref is not None:
             payload["previousRevisionRef"] = previous_revision_ref
+        payload.update(provenance or {})
         receipt_ref = repository.put_json(
             run=run, destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=run.run_id),
             record_kind=DRAWING_PROJECTION_RECEIPT, payload=payload,
@@ -627,15 +735,18 @@ def resolve_plan_dressing(recipe: Mapping, receipt: Mapping) -> list[dict]:
 def freeze_cut_plan(
     repository: FilesystemProjectRepository, *, source: ElevationSource | NativeModelSource, recipe: Mapping,
     drawing_run_id: str, dimensions: tuple[Mapping, ...] = (), previous_revision_ref: str | None = None,
+    attribution: Mapping[str, Any] | None = None, reason: str | None = None,
 ) -> ElevationDrawing:
     """Retain a horizontal section and the exact below-cut visibility in the existing drawing envelope.
 
     ``recipe`` retains representation intent; ``dimensions`` contains the application's resolved
     source measurements or explicit unresolved statuses. Neither can change the source model.
     Coordinates are the verified STEP's CAD Z-up frame and length unit, never Program Y-up.
+    ``attribution`` and ``reason`` say who asked for this revision and why (``_revision_provenance``).
     """
     if not isinstance(repository, FilesystemProjectRepository):
         raise TypeError("repository must be FilesystemProjectRepository")
+    provenance = _revision_provenance(attribution, reason)
     try:
         recipe = deepcopy(dict(recipe))
         _require(recipe.get("kind") == CUT_PLAN_KIND, "the view recipe must be a cut-plan")
@@ -685,10 +796,14 @@ def freeze_cut_plan(
         regions = section_occt_regions(verified.entries, **common)
         background = project_occt_lines(verified.entries, **common, depth_range=(0, view.far_depth))
         lines = background + sections
-        svg = drawing_svg(lines, crop_uv=view.crop_uv, unit=verified.length_unit,
+        # The clipped slab's top edges lie on the cut; the cleanup leaves them to the section.
+        cleaned, cleanup = _cleaned(lines, regions, crop_uv=view.crop_uv, hidden_lines=view.hidden_lines,
+                                    unit=verified.length_unit, scale_denominator=view.scale_denominator)
+        svg = drawing_svg(cleaned, crop_uv=view.crop_uv, unit=verified.length_unit,
                           scale_denominator=view.scale_denominator, hidden_lines=view.hidden_lines,
-                          title=recipe["name"], regions=regions, graphics=graphics, dimensions=resolved, dressing=dressing)
-        projection = ElevationProjection(lines=lines, svg=svg, png=render_svg_png(svg))
+                          title=recipe["name"], regions=regions, graphics=graphics, dimensions=resolved, dressing=dressing,
+                          semantics=object_semantics(verified.receipt))
+        projection = ElevationProjection(lines=lines, svg=svg, png=render_svg_png(svg), cleanup=cleanup)
     except (OcctBackendError, DrawingSvgError) as exc:
         raise DrawingElevationError(f"cut-plan {view.name}: {exc}") from exc
     return _retain_projection(
@@ -699,14 +814,14 @@ def freeze_cut_plan(
             "selected_object_ids": list(selected), "section_polylines": len(sections),
             "section_regions": len(regions), "dimensions": resolved, "unresolvedObjectIds": unresolved_objects,
             **({"dressing": dressing} if "dressing" in recipe else {}),
-        }, previous_revision_ref=previous_revision_ref,
+        }, previous_revision_ref=previous_revision_ref, provenance=provenance,
     )
 
 
 def freeze_model_axis_elevation(
     repository: FilesystemProjectRepository, *, source: ElevationSource | NativeModelSource, view: ElevationView, drawing_run_id: str,
     operation_observer: Callable[[Mapping[str, Any]], None] | None = None,
-    parent_event_id: str | None = None,
+    parent_event_id: str | None = None, attribution: Mapping[str, Any] | None = None, reason: str | None = None,
 ) -> ElevationDrawing:
     """Project retained STEP or native 3DM and retain SVG, PNG and receipt in the drawing run.
 
@@ -714,12 +829,14 @@ def freeze_model_axis_elevation(
     inconsistent, or the drawing run exists with another base.  A repeat
     with the same source and view writes the same bytes to the same paths
     (the repository accepts identical content) and returns the same refs.
+    ``attribution`` and ``reason`` say who asked and why (``_revision_provenance``).
     """
 
     if not isinstance(repository, FilesystemProjectRepository):
         raise TypeError("repository must be FilesystemProjectRepository")
     if not isinstance(view, ElevationView):
         raise TypeError("view must be ElevationView")
+    provenance = _revision_provenance(attribution, reason)
     identity = {"view_recipe": {key: value for key, value in view.to_dict().items()
                                 if key not in {"uv_definition", "depth_definition"}}}
     if isinstance(source, ElevationSource):
@@ -737,12 +854,12 @@ def freeze_model_axis_elevation(
         observation["input_object_ids"] = list(verified.physical_object_ids)
     projection = project_model_axis_elevation(
         verified.entries, object_ids=verified.physical_object_ids, view=view, unit=verified.length_unit,
-        operation_observer=observer, parent_event_id=parent_event_id,
+        operation_observer=observer, parent_event_id=parent_event_id, semantics=object_semantics(verified.receipt),
     )
     with _observed_stage(observer, "drawing.persist", parent_event_id=parent_event_id) as observation:
         drawing = _retain_projection(
             repository, source=source, verified=verified, projection=projection, view=view.to_dict(), name=view.name,
-            drawing_run_id=drawing_run_id, backend=backend, head_before=head_before,
+            drawing_run_id=drawing_run_id, backend=backend, head_before=head_before, provenance=provenance,
         )
         observation["output_refs"] = [drawing.receipt_ref.uri, drawing.svg_ref.uri, drawing.png_ref.uri]
     return drawing
@@ -961,12 +1078,17 @@ class SectionPerspectiveView:
 
 @dataclass(frozen=True, slots=True)
 class SectionPerspectiveProjection:
-    """The in-memory section perspective: the resolved view, the exact solve, and its SVG and PNG."""
+    """The in-memory section perspective: the resolved view, the exact solve, and its SVG and PNG.
+
+    ``perspective`` stays as solved; ``cleanup`` reports what ``clean_drawing``
+    removed before the SVG.
+    """
 
     view: Mapping[str, Any]
     perspective: OcctSectionPerspective
     svg: bytes
     png: bytes
+    cleanup: CleanupReport | None = None
 
     @property
     def lines(self) -> tuple[OcctDrawingPolyline, ...]:
@@ -1017,14 +1139,15 @@ def _perspective_image(point, frame, eye, focus) -> tuple[float, float]:
 def project_section_perspective(
     entries: Sequence[StepEntry], *, object_ids: Sequence[str], view: SectionPerspectiveView, unit: str,
     operation_observer: Callable[[Mapping[str, Any]], None] | None = None,
-    parent_event_id: str | None = None,
+    parent_event_id: str | None = None, semantics: Mapping[str, Mapping[str, str]] | None = None,
 ) -> SectionPerspectiveProjection:
     """Cut, solve and render one section perspective of the named shapes; writes nothing.
 
     The plane's section of the selected objects places the default camera
     and must exist: a plane that misses them is refused by name.  The
     resolved view (plane, frame, camera and crop) is returned with the
-    drawing so the receipt records exactly what was drawn.
+    drawing so the receipt records exactly what was drawn.  ``semantics``
+    names each object's component and material in the SVG.
     """
 
     if not isinstance(view, SectionPerspectiveView):
@@ -1095,10 +1218,13 @@ def project_section_perspective(
         }
         with _observed_stage(operation_observer, "drawing.svg", parent_event_id=parent_event_id,
                              details={"input_object_ids": sorted({line.object_id for line in perspective.lines})}) as observation:
+            # The scale holds at the section plane, so the paper tolerance is measured there.
+            cleaned, cleanup = _cleaned(perspective.lines, perspective.regions, crop_uv=crop, hidden_lines=False,
+                                        unit=unit, scale_denominator=view.scale_denominator)
             svg = drawing_svg(
-                perspective.lines, crop_uv=crop, unit=unit, scale_denominator=view.scale_denominator,
+                cleaned, crop_uv=crop, unit=unit, scale_denominator=view.scale_denominator,
                 hidden_lines=False, title=view.name, regions=perspective.regions, graphics=view.graphics,
-                projection=SECTION_PERSPECTIVE_KIND,
+                projection=SECTION_PERSPECTIVE_KIND, semantics=semantics,
             )
             observation["emitted_object_ids"] = list(svg_objects(svg))
         with _observed_stage(operation_observer, "drawing.png", parent_event_id=parent_event_id):
@@ -1107,7 +1233,7 @@ def project_section_perspective(
         raise
     except (OcctBackendError, DrawingSvgError) as exc:
         raise DrawingElevationError(f"section perspective {view.name}: {exc}") from exc
-    return SectionPerspectiveProjection(view=resolved, perspective=perspective, svg=svg, png=png)
+    return SectionPerspectiveProjection(view=resolved, perspective=perspective, svg=svg, png=png, cleanup=cleanup)
 
 
 def section_perspective_objects(verified: VerifiedElevationSource, hidden_object_ids: Sequence[str]) -> tuple[str, ...]:
@@ -1132,7 +1258,7 @@ def section_perspective_objects(verified: VerifiedElevationSource, hidden_object
 def freeze_section_perspective(
     repository: FilesystemProjectRepository, *, source: ElevationSource | NativeModelSource, view: SectionPerspectiveView,
     drawing_run_id: str, operation_observer: Callable[[Mapping[str, Any]], None] | None = None,
-    parent_event_id: str | None = None,
+    parent_event_id: str | None = None, attribution: Mapping[str, Any] | None = None, reason: str | None = None,
 ) -> ElevationDrawing:
     """Draw a section perspective of verified STEP or native geometry and retain SVG, PNG and receipt.
 
@@ -1141,12 +1267,14 @@ def freeze_section_perspective(
     projection and both renderings succeeded, and ``_retain_projection``
     retains the receipt with the exact plane and camera.  A repeat with the
     same source and view writes the same bytes and returns the same refs.
+    ``attribution`` and ``reason`` say who asked and why (``_revision_provenance``).
     """
 
     if not isinstance(repository, FilesystemProjectRepository):
         raise TypeError("repository must be FilesystemProjectRepository")
     if not isinstance(view, SectionPerspectiveView):
         raise TypeError("view must be SectionPerspectiveView")
+    provenance = _revision_provenance(attribution, reason)
     identity = {"view_recipe": view.request()}
     if isinstance(source, ElevationSource):
         identity["step_sha256"] = source.step_sha256
@@ -1166,13 +1294,13 @@ def freeze_section_perspective(
         observation["input_object_ids"] = list(selected)
     projection = project_section_perspective(
         verified.entries, object_ids=selected, view=view, unit=verified.length_unit,
-        operation_observer=observer, parent_event_id=parent_event_id,
+        operation_observer=observer, parent_event_id=parent_event_id, semantics=object_semantics(verified.receipt),
     )
     with _observed_stage(observer, "drawing.persist", parent_event_id=parent_event_id) as observation:
         drawing = _retain_projection(
             repository, source=source, verified=verified, projection=projection, view=dict(projection.view),
             name=view.name, drawing_run_id=drawing_run_id, backend=backend, head_before=head_before,
-            projection_details=projection.details(selected),
+            projection_details=projection.details(selected), provenance=provenance,
         )
         observation["output_refs"] = [drawing.receipt_ref.uri, drawing.svg_ref.uri, drawing.png_ref.uri]
     return drawing
@@ -1221,6 +1349,7 @@ def list_model_axis_elevations(repository: FilesystemProjectRepository, drawing_
 
 
 __all__ = [
+    "CLEANUP_TOLERANCE_MM",
     "CUT_PLAN_KIND",
     "DEFAULT_SECTION_EYE_HEIGHT_M",
     "DEFAULT_SECTION_FOV_DEG",
@@ -1242,6 +1371,7 @@ __all__ = [
     "freeze_model_axis_elevation",
     "freeze_cut_plan",
     "freeze_section_perspective",
+    "object_semantics",
     "plan_dressing_anchors",
     "resolve_plan_dressing",
     "list_model_axis_elevations",
