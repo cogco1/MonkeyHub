@@ -155,6 +155,125 @@
       ]
     },
     {
+      "id": "GH-303",
+      "stream": "planning",
+      "status": "active",
+      "goal": "The drawing consumer of visual observation is measured: a --drawing benchmark compares compiler output, the project recipe, one visual review, and a typed repair with one re-check, on real cut plans.",
+      "depends_on": [],
+      "issue": "https://github.com/cogco1/MonkeyHub/issues/303",
+      "write_scope": [
+        "docs/2026-09-26-drawing-visual-benchmark.md",
+        "docs/mapping/planning/GH-303-drawing-benchmark.md",
+        "tools/benchmark_visual_observation.py"
+      ],
+      "card": "docs/mapping/planning/GH-303-drawing-benchmark.md",
+      "acceptance": [
+        "303-S3: tools/benchmark_visual_observation.py --drawing runs arms A compiler / B +recipe / C +1 review / D +repair+review in the owner's fixed order (drawing checks → recipe → visual_review(domain=drawing) → typed expression repair → ≤1 re-check).",
+        "It records remaining manual corrections, provider and image cost, wall clock, and whether the second look changed acceptance; results go to a new docs file, images stay local; no product code changes."
+      ],
+      "lanes": [
+        {
+          "id": "drawing-benchmark",
+          "issue": "https://github.com/cogco1/MonkeyHub/issues/303",
+          "branch": "codex/303-drawing-benchmark",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-303-drawing-benchmark",
+          "base_ref": "1e38914c",
+          "contributor": "Claude",
+          "reviewer": "Claude root task",
+          "handoff": "303-S3 per V4_RUNTIME handoff/260925_next-batch-plan/06_303.md; small smoke run only, full-run command documented for the owner.",
+          "modules": [
+            "studio.intent"
+          ],
+          "write_scope": [
+            "tools/benchmark_visual_observation.py",
+            "docs/2026-09-26-drawing-visual-benchmark.md"
+          ],
+          "depends_on": [],
+          "status": "active",
+          "blocked_reason": null
+        }
+      ]
+    },
+    {
+      "id": "GH-252",
+      "stream": "planning",
+      "status": "active",
+      "goal": "A project's confirmed drawing recipe can travel: exported as a versioned file with its evidence digest and imported by a second project as a person-confirmed soft preference, so one project's accepted correction becomes another project's default.",
+      "depends_on": [],
+      "issue": "https://github.com/cogco1/MonkeyHub/issues/252",
+      "write_scope": [
+        "apps/archflow-studio/api/archflow_studio_api/application/decisions.py",
+        "docs/mapping/planning/GH-252-recipe-export.md",
+        "tools/export_drawing_recipe.py"
+      ],
+      "card": "docs/mapping/planning/GH-252-recipe-export.md",
+      "acceptance": [
+        "tools/export_drawing_recipe.py exports one active recipe decision (values, target, strength, source digest; no project content) and imports it into another project as one human soft_preference project-scope decision citing the export file hash.",
+        "Two synthetic projects show: correction on the first → confirmed recipe → exported → imported → the second project's new drawing starts from it."
+      ],
+      "lanes": [
+        {
+          "id": "recipe-export",
+          "issue": "https://github.com/cogco1/MonkeyHub/issues/252",
+          "branch": "codex/252-recipe-export",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-252-recipe-export",
+          "base_ref": "1e38914c",
+          "contributor": "Claude",
+          "reviewer": "Claude root task",
+          "handoff": "First #252 slice per V4_RUNTIME handoff/260925_next-batch-plan/07_252-268-investigation.md §A.3-1 and §A.4.",
+          "modules": [
+            "studio.intent"
+          ],
+          "write_scope": [
+            "tools/export_drawing_recipe.py",
+            "apps/archflow-studio/api/archflow_studio_api/application/decisions.py"
+          ],
+          "depends_on": [],
+          "status": "active",
+          "blocked_reason": null
+        }
+      ]
+    },
+    {
+      "id": "GH-268",
+      "stream": "planning",
+      "status": "active",
+      "goal": "A self-contained research lab shows state-conditioned strategy rollouts: four strategies start fresh sessions from one immutable state snapshot of a finite controlled environment, an external evaluator scores outcomes apart from tokens, and baseline allocators assign extra rollouts.",
+      "depends_on": [],
+      "issue": "https://github.com/cogco1/MonkeyHub/issues/268",
+      "write_scope": [
+        "docs/mapping/planning/GH-268-strategy-allocation.md",
+        "labs/strategy_allocation/"
+      ],
+      "card": "docs/mapping/planning/GH-268-strategy-allocation.md",
+      "acceptance": [
+        "labs/strategy_allocation/ holds state_snapshot, a deterministic 4-case environment with a hidden reference table only the evaluator reads, strategies A–D over one base model with ephemeral calls, an external evaluator, rollout records (JSON/CSV) and equal/round-robin allocators; no OCBA yet.",
+        "A collaborator package (README, state_schema.json, strategy and allocator interfaces, fixtures, benchmark.py) runs without reading MonkeyHub code; deterministic tests use fake strategies; a small real smoke run is recorded."
+      ],
+      "lanes": [
+        {
+          "id": "strategy-allocation",
+          "issue": "https://github.com/cogco1/MonkeyHub/issues/268",
+          "branch": "codex/268-strategy-allocation",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-268-strategy-allocation",
+          "base_ref": "1e38914c",
+          "contributor": "Claude",
+          "reviewer": "Claude root task",
+          "handoff": "First #268 slice per V4_RUNTIME handoff/260925_next-batch-plan/07_252-268-investigation.md §B.3-B.4; reuse labs/candidate_evaluation/allocation.py without changing it.",
+          "modules": [
+            "studio.intent",
+            "monkeymonitor"
+          ],
+          "write_scope": [
+            "labs/strategy_allocation/"
+          ],
+          "depends_on": [],
+          "status": "active",
+          "blocked_reason": null
+        }
+      ]
+    },
+    {
       "id": "GH-66",
       "stream": "planning",
       "status": "active",

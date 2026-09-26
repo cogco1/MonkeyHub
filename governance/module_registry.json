@@ -4904,7 +4904,9 @@
         "project.repository",
         "state.stage_workflow",
         "studio.board",
-        "studio.study"
+        "studio.study",
+        "adapters.drawing_svg",
+        "archflow.adapters.occt_backend"
       ],
       "used_by": [
         "apps/archflow-studio/api/archflow_studio_api/application/candidate.py",
@@ -5020,7 +5022,8 @@
         "tests/test_nonadjacent_stage_context.py",
         "apps/archflow-studio/api/tests/test_visual_observation.py",
         "apps/archflow-studio/api/tests/test_visual_reviews.py",
-        "apps/archflow-studio/api/tests/test_candidate_admission.py"
+        "apps/archflow-studio/api/tests/test_candidate_admission.py",
+        "tests/test_benchmark_visual_observation.py"
       ],
       "notes": "CANONICAL_SPINE 2.1 makes this the door live-model authoring re-enters by: typed intent, then record, then runner. clarification.py retired require_grammatical: the same two refusals, in the same words, with the target the agent had just worked out kept instead of thrown away.",
       "files": [
