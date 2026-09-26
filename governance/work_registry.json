@@ -170,7 +170,8 @@
         "apps/monkeyhub/web/src/styles.css",
         "apps/monkeyhub/web/src/i18n/messages.en.ts",
         "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
-        "apps/monkeyhub/web/test/chatShell.browser.mjs"
+        "apps/monkeyhub/web/test/chatShell.browser.mjs",
+        "apps/monkeyhub/web/src/DesktopTitleBar.tsx"
       ],
       "card": "docs/mapping/planning/GH-354-title-bar.md",
       "acceptance": [
@@ -199,7 +200,8 @@
             "apps/monkeyhub/web/src/styles.css",
             "apps/monkeyhub/web/src/i18n/messages.en.ts",
             "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
-            "apps/monkeyhub/web/test/chatShell.browser.mjs"
+            "apps/monkeyhub/web/test/chatShell.browser.mjs",
+            "apps/monkeyhub/web/src/DesktopTitleBar.tsx"
           ],
           "depends_on": [],
           "status": "active",
