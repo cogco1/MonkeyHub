@@ -1735,6 +1735,7 @@ try {
   assert.equal(await page.getByRole("checkbox", { name: "Event stream", exact: true }).isVisible(), true);
   await diagnostics.uncheck();
   const englishStageLabel = await visibleWorkspace().locator(".stage").getAttribute("aria-label");
+  await settingsPage("Display");
   await page.locator("#theme").selectOption("dark");
   await page.locator("#language").selectOption("zh-CN");
   assert.equal(await page.locator("html").getAttribute("lang"), "zh-CN");
