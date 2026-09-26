@@ -16,6 +16,7 @@ from ..application.design_history import (
     DesignHistory,
     PoolCandidate,
     PoolStudy,
+    ReviewJudgement,
     StageView,
 )
 from .artifacts import ModelSourceDto, model_source_dto
@@ -45,6 +46,18 @@ class AcceptanceEvidenceDto(BaseModel):
     audit_ref: str = Field(alias="auditRef")
 
 
+class ReviewJudgementDto(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, frozen=True)
+    review_ref: str = Field(alias="reviewRef")
+    disposition: Literal["unreviewed", "rejected", "archived"]
+    endorsed: bool
+    actor_id: str = Field(alias="actorId")
+    occurred_at: str = Field(alias="occurredAt")
+    reason: str | None
+    endorsed_by: str | None = Field(default=None, alias="endorsedBy")
+    endorsed_at: str | None = Field(default=None, alias="endorsedAt")
+
+
 class DesignStageDto(BaseModel):
     model_config = ConfigDict(populate_by_name=True, frozen=True)
     stage_ref: str = Field(alias="stageRef")
@@ -58,6 +71,7 @@ class DesignStageDto(BaseModel):
     # Null for a Stage committed before acceptance evidence was retained: the
     # older record stays readable and says nothing it cannot prove.
     acceptance: AcceptanceEvidenceDto | None = Field(default=None)
+    review: ReviewJudgementDto | None = None
 
 
 class DesignBranchDto(BaseModel):
@@ -113,6 +127,16 @@ class DesignCandidateDto(BaseModel):
         description="The review-readiness clauses that did not hold when a person admitted it as a comparison "
         "option (the violation marker, owner decision Q2); empty when it was review-ready.")
     supersedes: list[str] = Field(description="Attempts this result replaced within its loop; hidden by default.")
+    review: ReviewJudgementDto | None = None
+
+
+class ReviewJudgementRequestDto(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
+    project_id: str = Field(alias="projectId", min_length=1)
+    subject_kind: Literal["candidate", "stage"] = Field(alias="subjectKind")
+    subject_ref: str = Field(alias="subjectRef", min_length=1)
+    action: Literal["reject", "archive", "restore", "endorse"]
+    reason: str | None = Field(default=None, min_length=1, max_length=2000)
 
 
 class DesignStudyDto(BaseModel):
@@ -281,7 +305,7 @@ def stage_dto(view: StageView) -> DesignStageDto:
         branch_id=view.stage.branch_id, label=view.stage.label,
         candidate_id=view.stage.candidate_id, model_source=model_source_dto(view.model_source),
         record_digest=view.record_digest, accepted_by=accepted_by,
-        acceptance=acceptance_dto(view.acceptance),
+        acceptance=acceptance_dto(view.acceptance), review=review_dto(view.review),
     )
 
 
@@ -304,8 +328,16 @@ def candidate_dto(candidate: PoolCandidate) -> DesignCandidateDto:
         admitted_at=candidate.admitted_at, admission_ref=candidate.admission_ref, legacy=candidate.legacy,
         accepted_stage_ref=candidate.accepted_stage_ref, continued_from=candidate.continued_from,
         in_working_head_lineage=candidate.in_working_head_lineage, blocked_by=list(candidate.blocked_by),
-        supersedes=list(candidate.supersedes),
+        supersedes=list(candidate.supersedes), review=review_dto(candidate.review),
     )
+
+
+def review_dto(review: ReviewJudgement | None) -> ReviewJudgementDto | None:
+    if review is None:
+        return None
+    return ReviewJudgementDto(review_ref=review.ref, disposition=review.disposition, endorsed=review.endorsed,
+                              actor_id=review.actor_id, occurred_at=review.occurred_at, reason=review.reason,
+                              endorsed_by=review.endorsed_by, endorsed_at=review.endorsed_at)
 
 
 def study_dto(study: PoolStudy) -> DesignStudyDto:

@@ -44,6 +44,7 @@ BASE_CAPABILITIES: tuple[str, ...] = (
     "artifacts",
     "board-scenes",
     "candidate-admission",
+    "candidate-review",
     "candidates",
     "captures",
     "compare",

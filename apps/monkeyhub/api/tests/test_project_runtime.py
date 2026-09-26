@@ -19,8 +19,11 @@ from uuid import uuid4
 
 from test_monkeyhub_lifecycle import LocalHubCase, ROOT, project_fixture, wait_for
 from archflow.project.repository import FilesystemProjectRepository
-from monkeyhub_api.models import HubFailure
-from monkeyhub_api.runtime import ProjectRuntimeManager, _WorkCopyObservation
+from archflow_studio_api.application.binding import ProjectBinding
+from archflow_studio_api.settings import StudioSettings
+from monkeyhub_api.models import ChatSummary, HubError, HubFailure
+from monkeyhub_api.runtime import HttpResult, OperationManager, ProjectRuntime, ProjectRuntimeManager, _WorkCopyObservation
+from monkeyhub_api.workers import WorkerSnapshot
 
 
 class ProjectRuntimeHttpTests(LocalHubCase):
@@ -954,7 +957,12 @@ for _ in range(5):
                 # several normal status ticks with a healthy, idle real worker.
                 time.sleep(1.2)
                 idle_scans = scans.call_count
-                time.sleep(3.2)
+                runtime = manager.get(runtime_id)
+                with patch.object(manager, "project_snapshot", wraps=manager.project_snapshot) as snapshots, \
+                     patch.object(runtime.operations, "records", wraps=runtime.operations.records) as records:
+                    time.sleep(3.2)
+                    snapshots.assert_not_called()
+                    records.assert_not_called()
                 self.assertEqual(scans.call_count, idle_scans, "Idle status polling rescanned retained history")
                 operation_id = str(uuid4())
                 proposed = self.proxy(client, runtime_id, "/api/proposals", "POST", operation_id=operation_id, json={
@@ -982,6 +990,90 @@ for _ in range(5):
                 self.assertIsNone(crashed["workers"][0]["processId"])
                 self.assertEqual(crashed["workers"][0]["instanceId"], original["instanceId"])
                 self.assertEqual(self.project_bytes(self.project), before)
+
+    def test_idle_snapshot_gate_keeps_operation_chat_and_status_updates_visible(self):
+        # Drive the real watcher one heartbeat at a time over an isolated
+        # project. No server, provider or owned process is started here.
+        workers, sessions, ticks, copy_errors = [], [], [], []
+        now = [0.0]
+        applications = SimpleNamespace(worker_snapshots=lambda **_: tuple(workers), set_busy=lambda **_: None)
+        chats = SimpleNamespace(list=lambda **kw: [row for row in sessions if row.archived == kw.get("archived", False)])
+        manager = ProjectRuntimeManager(applications, chats)
+        runtime = ProjectRuntime("idle", self.project_id, str(self.project), OperationManager(self.project_id),
+                                 ProjectBinding.open(StudioSettings(project_dir=self.project, cad_export="off")))
+        chat = ChatSummary(id="chat", projectId=self.project_id, projectDir=str(self.project), title="status",
+                           provider="codex", createdAt="2026-09-26", updatedAt="2026-09-26")
+        admitted = []
+
+        def observe(_runtime):
+            if copy_errors:
+                raise OSError("editable copy unavailable")
+
+        def heartbeat(_timeout):
+            current = runtime.last_snapshot
+            kinds = [row["kind"] for row in manager.events.replay()]
+            tick = len(ticks)
+            ticks.append(current)
+            if tick == 0:
+                self.assertIsNotNone(current)
+            elif tick == 1:
+                self.assertIs(current, ticks[0], "An unchanged heartbeat rebuilt the snapshot")
+                admission, _ = runtime.operations.admit(str(uuid4()), "POST", "/api/proposals", b"{}",
+                    retained=runtime.retained, source="studio", session_id=None)
+                admitted.append(admission)  # Still in flight, before the forwarder's completion wake.
+            elif tick == 2:
+                self.assertEqual(current["operations"][0]["status"], "executing")
+                runtime.operations.replied(admitted[0], HttpResult(200, b"{}", {}))
+                runtime.wake.set()
+            elif tick == 3:
+                self.assertEqual(current["operations"][0]["status"], "completed")
+                sessions.append(chat)
+                manager.chat_changed(chat)
+            elif tick == 4:
+                self.assertEqual(current["sessions"][0]["id"], chat.id)
+                self.assertEqual(kinds[-1], "agent/progress")
+                manager._clients = 1
+            elif tick == 5:
+                self.assertEqual(current["clients"], 1)
+                workers.append(WorkerSnapshot("worker", "studio", self.project_id, str(self.project),
+                    "instance", None, "stopped", "stopped", False, None, None))
+            elif tick == 6:
+                self.assertEqual(current["projection"], "stale")
+                self.assertEqual(kinds[-1], "projection/invalidated")
+                workers[0] = replace(workers[0], error=HubError(code="WORKER_DETAIL", detail="changed detail"))
+            elif tick == 7:
+                self.assertEqual(current["workers"][0]["error"]["code"], "WORKER_DETAIL")
+                copy_errors.append(True)
+            elif tick == 8:
+                self.assertEqual(current["error"]["code"], "WORK_COPY_READ_FAILED")
+                copy_errors.clear()
+            elif tick == 9:
+                self.assertIsNone(current["error"])
+                runtime.work_copies[("run", "asset", None)] = SimpleNamespace(
+                    failure=HubError(code="COPY_REFUSED", detail="not registered"))
+            elif tick == 10:
+                self.assertEqual(current["error"]["code"], "COPY_REFUSED")
+                runtime.work_copies.clear()
+                runtime.projection = "ready"
+            elif tick == 11:
+                self.assertIsNone(current["error"])
+                self.assertEqual(kinds[-1], "projection/updated")
+                # A separate read may update retained results between ticks.
+                runtime.retained = {**runtime.retained, "runsScanned": 99}
+            elif tick == 12:
+                self.assertEqual(current["retained"]["runs_scanned"], 99)
+                self.repository.create_run("external-new-run")
+                self.assertFalse(runtime.wake.is_set())
+                now[0] = 30.0  # A separate client has no Hub wake; the due pass must see it.
+            elif tick == 13:
+                self.assertIn("external-new-run", [row[0] for row in runtime.work_copy_key])
+                manager._closing.set()
+
+        with patch.object(runtime.wake, "wait", side_effect=heartbeat), \
+             patch.object(manager, "_observe_work_copies", side_effect=observe), \
+             patch("monkeyhub_api.runtime.time.monotonic", side_effect=lambda: now[0]):
+            manager._watch(runtime)
+        self.assertEqual(len(ticks), 14)
 
 
 class WorkCopyObservationTests(unittest.TestCase):

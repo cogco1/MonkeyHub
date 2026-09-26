@@ -19,6 +19,7 @@ import { treeWords } from "../features/designTree/words";
 import { useT } from "../i18n/useT";
 
 const Drawing = lazy(() => import("../workspaces/monkeydiagram/DrawingCanvas"));
+const RecipeTransfer = lazy(() => import("../workspaces/monkeydiagram/RecipeTransfer"));
 const Publish = lazy(() => import("../workspaces/publish/PublishWorkspace"));
 const Render = lazy(() => import("../workspaces/render/RenderWorkspace"));
 // The shared canvas host (features/canvas) sets Excalidraw's local font path.
@@ -232,9 +233,10 @@ export function ProjectWorkspace({ workspace, expectedProjectId, candidateRunId 
       </Suspense>
     </div>}
     {(drawingVisited || workspace === "drawing") && <div data-project-surface="drawing" hidden={workspace !== "drawing"} inert={!active || workspace !== "drawing"}
-      style={{ height: "100%", minHeight: 0, display: workspace === "drawing" ? "block" : "none" }}>
+      style={{ height: "100%", minHeight: 0, display: workspace === "drawing" ? "flex" : "none", flexDirection: "column" }}>
       <Suspense fallback={<LoadingOverlay mode="boot" status="Drawing" />}>
-        <Drawing projectId={boundProjectId.current!} active={active && workspace === "drawing"} refreshKey={refreshKey + attempt} />
+        <RecipeTransfer key={boundProjectId.current!} projectId={boundProjectId.current!} active={active && workspace === "drawing"} />
+        <div style={{ flex: 1, minHeight: 0 }}><Drawing projectId={boundProjectId.current!} active={active && workspace === "drawing"} refreshKey={refreshKey + attempt} /></div>
       </Suspense>
     </div>}
     {(boardVisited || workspace === "board") && <div data-project-surface="board" hidden={workspace !== "board" || pageOpen} inert={!active || workspace !== "board" || pageOpen}

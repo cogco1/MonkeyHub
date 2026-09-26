@@ -1,11 +1,20 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
+import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import { useConnection, useStudio } from "../../api/ProjectRuntimeContext";
 import { publicationClient } from "../../api/publication";
 import { asStudioApiError } from "../../api/client";
 import type { PublicationDto, PublicationElementDto, SourceDocumentDto } from "../../api/generated";
 import { pageSource, documentKey } from "../monkeyboard/boardScene";
 import { usePreferences } from "../../features/settings/preferences";
+import { createPublicationSaveQueue } from "./publicationSaveQueue";
 import "./publish.css";
+
+// Only failed/in-flight project drafts outlive their surface, in this UI session.
+// The saved document remains exclusively in P036; browser close warns on these drafts.
+const pendingPublications = new Map<string, ReturnType<typeof createPublicationSaveQueue>>();
+const guardPending = (event: BeforeUnloadEvent) => {
+  if ([...pendingPublications.values()].some((queue) => queue.pending())) { event.preventDefault(); event.returnValue = ""; }
+};
 
 function SourceImage({ item, projectId }: { item: PublicationElementDto; projectId: string }) {
   const studio = useStudio();
@@ -17,14 +26,35 @@ function SourceImage({ item, projectId }: { item: PublicationElementDto; project
     let live = true, retainedUrl = "";
     setUrl(""); setError("");
     void (async () => {
-      const blob = await studio.exportBoard({ projectId, pages: [item.source!], format: "png", zip: false, maxEdge: 2048 });
-      const image = await createImageBitmap(blob);
+      const source = item.source!;
+      const blob = await studio.documentFile(source.runId, source.assetSha256, "publication-source", source.revisionRef);
+      let image: ImageBitmap;
+      if (blob.type === "application/pdf") {
+        const renderer = await import("pdfjs-dist");
+        renderer.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
+        const loading = renderer.getDocument({ data: await blob.arrayBuffer() });
+        try {
+          const pdf = await loading.promise, page = await pdf.getPage(source.pageIndex + 1);
+          const original = page.getViewport({ scale: 1 });
+          const view = page.getViewport({ scale: Math.min(2, 2048 / Math.max(original.width, original.height)) });
+          const canvas = document.createElement("canvas");
+          canvas.width = Math.ceil(view.width); canvas.height = Math.ceil(view.height);
+          await page.render({ canvas, canvasContext: canvas.getContext("2d", { alpha: true })!, viewport: view, background: "rgba(0,0,0,0)" }).promise;
+          image = await createImageBitmap(canvas);
+        } finally { await loading.destroy(); }
+      } else {
+        const original = await createImageBitmap(blob);
+        const scale = Math.min(1, 2048 / Math.max(original.width, original.height));
+        try { image = await createImageBitmap(original, { resizeWidth: Math.max(1, Math.round(original.width * scale)), resizeHeight: Math.max(1, Math.round(original.height * scale)) }); }
+        finally { original.close(); }
+      }
       try {
         const [l, t, r, b] = item.crop ?? [0, 0, 0, 0];
         const canvas = document.createElement("canvas");
-        canvas.width = Math.max(1, Math.round(image.width * (1 - l - r)));
-        canvas.height = Math.max(1, Math.round(image.height * (1 - t - b)));
-        canvas.getContext("2d")!.drawImage(image, l * image.width, t * image.height, canvas.width, canvas.height, 0, 0, canvas.width, canvas.height);
+        const left = Math.round(l * image.width), top = Math.round(t * image.height);
+        canvas.width = Math.max(1, Math.round((1 - r) * image.width) - left);
+        canvas.height = Math.max(1, Math.round((1 - b) * image.height) - top);
+        canvas.getContext("2d")!.drawImage(image, left, top, canvas.width, canvas.height, 0, 0, canvas.width, canvas.height);
         const cropped = await new Promise<Blob>((resolve, reject) => canvas.toBlob((value) => value ? resolve(value) : reject(new Error("Image preview failed"))));
         if (live) { retainedUrl = URL.createObjectURL(cropped); setUrl(retainedUrl); }
       } finally { image.close(); }
@@ -37,13 +67,18 @@ function SourceImage({ item, projectId }: { item: PublicationElementDto; project
 export default function PublishWorkspace({ projectId, active, refreshKey = 0, boardRequest = null }: { projectId: string; active: boolean; refreshKey?: number; boardRequest?: { revision: string; ids: string[]; requestId: string } | null }) {
   const studio = useStudio(), connection = useConnection();
   const api = useMemo(() => publicationClient(connection), [connection]);
+  const cacheKey = JSON.stringify([connection.baseUrl, projectId]);
   const { language } = usePreferences();
   const zh = language !== "en";
   const [draft, setDraft] = useState<PublicationDto | null>(null);
   const [documents, setDocuments] = useState<SourceDocumentDto[]>([]);
-  const [dirty, setDirty] = useState(false), dirtyRef = useRef(false);
+  const queue = useRef<ReturnType<typeof createPublicationSaveQueue> | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
+  const [dirty, setDirty] = useState(false);
   const [pageIndex, setPageIndex] = useState(0), [selected, setSelected] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false), [error, setError] = useState("");
+  const [running, setBusy] = useState(false), [importing, setImporting] = useState(false), [error, setError] = useState("");
+  const busy = running || importing;
   const [attempt, setAttempt] = useState(0), [asset, setAsset] = useState("");
   const [scale, setScale] = useState(1);
   const handledBoardRequest = useRef<string | null>(null);
@@ -51,26 +86,60 @@ export default function PublishWorkspace({ projectId, active, refreshKey = 0, bo
   const viewport = useRef<HTMLDivElement>(null);
   const drag = useRef<{ pointer: number; startX: number; startY: number; item: PublicationElementDto; resize: boolean } | null>(null);
   const alive = useRef(true), locked = useRef(false);
-  useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
+  useEffect(() => { alive.current = true; return () => {
+    alive.current = false;
+    const pending = queue.current;
+    pending?.dispose();
+    if (!pending?.pending()) return;
+    pendingPublications.set(cacheKey, pending);
+    window.addEventListener("beforeunload", guardPending);
+    void pending.flush().then(() => {
+      if (pendingPublications.get(cacheKey) === pending && !pending.pending()) pendingPublications.delete(cacheKey);
+      if (!pendingPublications.size) window.removeEventListener("beforeunload", guardPending);
+    }).catch(() => {});
+  }; }, [cacheKey]);
+  useEffect(() => {
+    const guard = (event: BeforeUnloadEvent) => { if (queue.current?.pending()) { event.preventDefault(); event.returnValue = ""; } };
+    window.addEventListener("beforeunload", guard);
+    return () => window.removeEventListener("beforeunload", guard);
+  }, []);
+  useEffect(() => { if (!active) void queue.current?.flush().catch(() => {}); }, [active]);
   useEffect(() => {
     if (!active) return;
     let live = true;
+    const notify = (next: PublicationDto, changed: boolean, writing: boolean, cause: unknown) => {
+      if (!alive.current) return;
+      ++readEpoch.current; setDraft(next); setDirty(changed); setSaving(writing);
+      setImporting(queue.current?.importing() ?? false);
+      setSaveError(cause ? asStudioApiError(cause).detail : "");
+    };
+    // Take over the pending writer before a GET can race its final acknowledgement.
+    const pending = pendingPublications.get(cacheKey);
+    if (!queue.current && pending) {
+      queue.current = pending; pending.resume(api.save, notify);
+      pendingPublications.delete(cacheKey);
+      if (!pendingPublications.size) window.removeEventListener("beforeunload", guardPending);
+    }
     const epoch = readEpoch.current;
     void Promise.all([api.read(), studio.documents()]).then(([saved, sources]) => {
-      if (!live || epoch !== readEpoch.current) return;
+      if (!live) return;
       if (saved.projectId !== projectId || sources.projectId !== projectId) throw new Error("The publication response belongs to another project.");
-      if (!dirtyRef.current) setDraft(saved);
-      setDocuments(sources.documents); setError("");
+      setDocuments(sources.documents);
+      if (epoch !== readEpoch.current) return;
+      if (!queue.current) {
+        queue.current = createPublicationSaveQueue(saved, api.save, notify); setDraft(saved);
+      } else queue.current.accept(saved);
+      setError("");
     }).catch((cause) => { if (live) setError(asStudioApiError(cause).detail); });
     return () => { live = false; };
-  }, [active, api, studio, projectId, refreshKey, attempt]);
+  }, [active, api, studio, projectId, cacheKey, refreshKey, attempt]);
   useEffect(() => {
     const node = viewport.current;
     if (!node || !draft) return;
     const observer = new ResizeObserver(() => setScale(Math.min(1, Math.max(.1, (node.clientWidth - 40) / draft.spec.width!))));
     observer.observe(node); return () => observer.disconnect();
   }, [draft?.spec.width, !!draft]);
-  const change = (next: PublicationDto) => { dirtyRef.current = true; setDirty(true); setDraft(next); };
+  const change = (next: PublicationDto) => { queue.current?.change(next); };
   const page = draft?.pages[pageIndex];
   const item = page?.elements.find((element) => element.id === selected);
   const updateItem = (patch: Partial<PublicationElementDto>) => {
@@ -78,11 +147,8 @@ export default function PublishWorkspace({ projectId, active, refreshKey = 0, bo
     change({ ...draft, pages: draft.pages.map((row, index) => index === pageIndex ? { ...row, elements: row.elements.map((element) => element.id === item.id ? { ...element, ...patch } : element) } : row) });
   };
   const save = async () => {
-    if (!draft) throw new Error("Publication is not loaded");
-    const saved = await api.save({ projectId, baseRevisionSha256: draft.revisionSha256, title: draft.title, spec: draft.spec, pages: draft.pages });
-    if (saved.projectId !== projectId) throw new Error("The saved publication belongs to another project.");
-    if (alive.current) { setDraft(saved); dirtyRef.current = false; setDirty(false); }
-    return saved;
+    if (!queue.current) throw new Error("Publication is not loaded");
+    return queue.current.flush();
   };
   const run = async (action: () => Promise<unknown>) => {
     if (locked.current) return;
@@ -95,14 +161,17 @@ export default function PublishWorkspace({ projectId, active, refreshKey = 0, bo
     if (!active || !draft || !boardRequest || handledBoardRequest.current === boardRequest.requestId || locked.current) return;
     handledBoardRequest.current = boardRequest.requestId;
     void run(async () => {
-      const saved = dirtyRef.current ? await save() : draft;
-      const updated = await api.fromBoard({ projectId, baseRevisionSha256: saved.revisionSha256,
-        boardRevisionSha256: boardRequest.revision, elementIds: boardRequest.ids });
-      if (alive.current) { setDraft(updated); dirtyRef.current = false; setDirty(false); setPageIndex(Math.max(0, Math.min(saved.pages.length, updated.pages.length - 1))); }
+      let previousLength = 0;
+      const updated = await queue.current!.append((saved) => {
+        previousLength = saved.pages.length;
+        return api.fromBoard({ projectId, baseRevisionSha256: saved.revisionSha256,
+          boardRevisionSha256: boardRequest.revision, elementIds: boardRequest.ids });
+      });
+      if (alive.current) setPageIndex(Math.max(0, Math.min(previousLength, updated.pages.length - 1)));
     });
   }, [active, boardRequest, !!draft, busy, attempt]);
   const exportFile = async (format: "pdf" | "pptx") => {
-    const saved = dirty || !draft?.revisionSha256 ? await save() : draft;
+    const saved = await save();
     const blob = await api.export({ projectId, revisionSha256: saved.revisionSha256!, format });
     if (!alive.current) return;
     const url = URL.createObjectURL(blob), anchor = document.createElement("a");
@@ -137,16 +206,21 @@ export default function PublishWorkspace({ projectId, active, refreshKey = 0, bo
       : { x: Math.max(0, Math.min(draft.spec.width! - initial.width, initial.x + dx)), y: Math.max(0, Math.min(draft.spec.height! - initial.height, initial.y + dy)) };
     change({ ...draft, pages: draft.pages.map((row, index) => index === pageIndex ? { ...row, elements: row.elements.map((element) => element.id === initial.id ? { ...element, ...patch } : element) } : row) });
   };
+  const reload = () => {
+    if (queue.current?.pending() && !window.confirm(zh ? "放弃未保存的排版，重新读取？" : "Discard unsaved changes and reload?")) return;
+    ++readEpoch.current; queue.current?.discard(); queue.current = null; setDirty(false); setDraft(null);
+    setError(""); setSaveError(""); setAttempt((value) => value + 1);
+  };
   if (!draft) return <section className="publish-workspace"><p>{error || (zh ? "正在读取排版…" : "Loading publication…")}</p>{error && <button onClick={() => setAttempt((value) => value + 1)}>{zh ? "重试" : "Retry"}</button>}</section>;
   return <section className="publish-workspace" aria-label="Publish">
     <header className="publish-toolbar">
       <strong>Publish</strong><input aria-label={zh ? "文件标题" : "Publication title"} value={draft.title} disabled={busy} onChange={(event) => change({ ...draft, title: event.target.value })} />
-      <span role="status">{dirty ? (zh ? "未保存" : "Unsaved") : (zh ? "已保存" : "Saved")}</span>
-      <button disabled={busy} onClick={() => void run(save)}>{zh ? "保存" : "Save"}</button>
+      <span role="status">{saveError ? (zh ? "保存失败" : "Not saved") : saving ? (zh ? "正在保存…" : "Saving…") : dirty ? (zh ? "等待保存…" : "Waiting to save…") : (zh ? "已保存" : "Saved")}</span>
       <button disabled={busy || !draft.pages.length} onClick={() => void run(() => exportFile("pptx"))}>PPTX</button>
       <button disabled={busy || !draft.pages.length} onClick={() => void run(() => exportFile("pdf"))}>PDF</button>
     </header>
-    {error && <div role="alert" className="publish-error">{error}<button onClick={() => { if (!dirtyRef.current || window.confirm(zh ? "放弃未保存的排版，重新读取？" : "Discard unsaved changes and reload?")) { ++readEpoch.current; dirtyRef.current = false; setDirty(false); setDraft(null); setError(""); handledBoardRequest.current = null; setAttempt((value) => value + 1); } }}>{zh ? "重新读取" : "Reload"}</button></div>}
+    {saveError && <div role="alert" className="publish-error">{saveError}<button disabled={busy || saving} onClick={() => void queue.current?.retry().then(() => { setError(""); setAttempt((value) => value + 1); }).catch(() => {})}>{zh ? "重试保存" : "Retry save"}</button><button disabled={busy || saving} onClick={reload}>{zh ? "重新读取" : "Reload"}</button></div>}
+    {error && <div role="alert" className="publish-error">{error}<button disabled={busy || saving} onClick={reload}>{zh ? "重新读取" : "Reload"}</button></div>}
     <div className="publish-body">
       <aside className="publish-pages" aria-label={zh ? "页面顺序" : "Page order"}>
         <button disabled={busy || draft.pages.length >= 60} onClick={addPage}>{zh ? "+ 添加页" : "+ Page"}</button>
@@ -173,7 +247,29 @@ export default function PublishWorkspace({ projectId, active, refreshKey = 0, bo
           <button onClick={() => addElement("text")}>{zh ? "添加文字" : "Add text"}</button>
           <label>{zh ? "项目图纸 / 图片" : "Project drawing / image"}<select aria-label={zh ? "项目图纸 / 图片" : "Project drawing / image"} value={asset} onChange={(event) => setAsset(event.target.value)}><option value="">{zh ? "选择来源" : "Choose source"}</option>{documents.map((source) => <option value={documentKey(source)} key={documentKey(source)}>{source.fileName}</option>)}</select></label>
           <button disabled={!asset} onClick={() => addElement("image")}>{zh ? "放入此页" : "Place on page"}</button>
-          <button onClick={() => { if (!page) return; let textIndex = 0, imageIndex = 0; change({ ...draft, pages: draft.pages.map((row, index) => index === pageIndex ? { ...row, elements: row.elements.map((element) => element.kind === "text" ? { ...element, x: 48, y: 28 + textIndex++ * 50, width: draft.spec.width! - 96, height: 50 } : { ...element, x: 48 + imageIndex++ * ((draft.spec.width! - 96) / Math.max(1, row.elements.filter((e) => e.kind === "image").length)), y: 130, width: (draft.spec.width! - 96) / Math.max(1, row.elements.filter((e) => e.kind === "image").length), height: draft.spec.height! - 155 }) } : row) }); }}>{zh ? "应用图文布局" : "Apply image + title layout"}</button>
+          <button onClick={() => {
+            if (!page) return;
+            const margin = draft.spec.width! * .05, top = draft.spec.height! * .05, gap = draft.spec.height! * .025;
+            const texts = page.elements.filter((element) => element.kind === "text");
+            const images = page.elements.filter((element) => element.kind === "image");
+            const textHeight = texts.reduce((total, element) => total + Math.max(element.height, (element.fontSize ?? 24) * 1.4) + gap, 0);
+            const imageTop = top + textHeight;
+            const imageHeight = draft.spec.height! - top - imageTop;
+            const imageWidth = (draft.spec.width! - 2 * margin - gap * Math.max(0, images.length - 1)) / Math.max(1, images.length);
+            if (imageHeight < (images.length ? draft.spec.height! * .2 : 0) || imageWidth < 20) {
+              setError(zh ? "文字过多，无法应用图文布局。请缩短文字、调整文字框或分到其他页面。" : "There is not enough room for this layout. Shorten the text, resize text boxes or split content across pages."); return;
+            }
+            setError("");
+            let textY = top, imageIndex = 0;
+            change({ ...draft, pages: draft.pages.map((row, index) => index === pageIndex ? { ...row, elements: row.elements.map((element) => {
+              if (element.kind === "text") {
+                const height = Math.max(element.height, (element.fontSize ?? 24) * 1.4), y = textY; textY += height + gap;
+                return { ...element, x: margin, y, width: draft.spec.width! - 2 * margin, height };
+              }
+              const width = imageWidth;
+              return { ...element, x: margin + imageIndex++ * (width + gap), y: imageTop, width, height: imageHeight };
+            }) } : row) });
+          }}>{zh ? "应用图文布局" : "Apply image + title layout"}</button>
         </fieldset>
         {item && <fieldset disabled={busy}><legend>{zh ? "选中对象" : "Selected object"}</legend>
           {item.kind === "text" && <><label>{zh ? "文字" : "Text"}<textarea aria-label={zh ? "文字" : "Text"} value={item.text} onChange={(event) => updateItem({ text: event.target.value })} /></label><label>{zh ? "字号" : "Font size"}<input type="number" min="8" max="96" value={item.fontSize} onChange={(event) => updateItem({ fontSize: Number(event.target.value) })} /></label></>}

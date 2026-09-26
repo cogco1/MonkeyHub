@@ -270,3 +270,61 @@ class RecipeImportTests(RecipeTravelFixture):
         self.assertEqual((revoked["status"], revoked["source"], revoked["rawLanguage"]),
                          ("revoked", source, IMPORT_WORDS))
         self.assertEqual(self.layer(self.second), {})
+
+
+class RecipeTransferRouteTests(RecipeTravelFixture):
+    def export_route(self, recipe):
+        return self.client.get(f"/api/decisions/{recipe['decisionId']}/recipe-export",
+                               params={"expectedRevisionRef": recipe["revisionRef"]})
+
+    def import_body(self, document):
+        return {"projectId": PROJECT_ID, "content": json.dumps(document), "confirmed": True,
+                "sourceKind": "human", "rawLanguage": IMPORT_WORDS}
+
+    def test_inspection_does_not_save_and_confirmed_import_uses_the_boundary_actor(self):
+        recipe = self.recipe()
+        response = self.export_route(recipe)
+        self.assertEqual(response.status_code, 200, response.text)
+        document = json.loads(response.json()["content"])
+        self.assertEqual(document, self.exported(recipe))
+        inspect = self.second.post("/api/drawing-recipes/inspect", json={"projectId": PROJECT_ID, "content": json.dumps(document)})
+        self.assertEqual(inspect.status_code, 200, inspect.text)
+        preview = inspect.json()
+        self.assertEqual((preview["sourceDecisionId"], preview["sourceRevisionSha256"], preview["exportSha256"]),
+                         (recipe["decisionId"], document["source"]["revisionSha256"], document["sha256"]))
+        self.assertEqual(preview["importStrength"], "soft_preference")
+        self.second_is_untouched()
+        for confirmed in (False, "true", 1, None):
+            body = {**self.import_body(document), "confirmed": confirmed}
+            self.assertEqual(self.second.post("/api/drawing-recipes/import", json=body).status_code, 422)
+        for fields in ({"sourceKind": "agent"}, {"attribution": {"actorId": "pretend"}}):
+            self.assertEqual(self.second.post("/api/drawing-recipes/import", json={**self.import_body(document), **fields}).status_code, 422)
+        self.second_is_untouched()
+        self.second.app.state.managed_instance_id = "isolated-hub"
+        imported = self.second.post("/api/drawing-recipes/import", json=self.import_body(document))
+        self.assertEqual(imported.status_code, 201, imported.text)
+        decision = imported.json()
+        self.assertEqual(decision["attribution"], {"actorId": LOCAL_ACTOR_ID, "authenticated": False, "origin": "hub"})
+        self.assertEqual(decision["source"], {"kind": "recipe-export", "exportSha256": document["sha256"]})
+        conflict = self.second.post("/api/drawing-recipes/import", json=self.import_body(document))
+        self.assertEqual((conflict.status_code, conflict.json()["code"]), (409, "DECISION_RECIPE_CONFLICT"))
+        self.assertEqual(self.decisions(self.second), [decision])
+
+    def test_selected_revision_must_still_be_current_and_files_cannot_change_before_import(self):
+        recipe = self.recipe()
+        document = json.loads(self.export_route(recipe).json()["content"])
+        self.revise(self.client, recipe, action="revoke", reason="withdraw")
+        stale = self.export_route(recipe)
+        self.assertEqual((stale.status_code, stale.json()["code"]), (409, "DECISION_STALE"))
+        tampered = deepcopy(document)
+        tampered["recipe"]["graphics"]["hatchSpacingMm"] = 4
+        for path in ("inspect", "import"):
+            body = self.import_body(tampered) if path == "import" else {"projectId": PROJECT_ID, "content": json.dumps(tampered)}
+            refused = self.second.post(f"/api/drawing-recipes/{path}", json=body)
+            self.assertEqual((refused.status_code, refused.json()["code"]), (422, "RECIPE_EXPORT_INVALID"))
+            mismatch = self.second.post(f"/api/drawing-recipes/{path}", json={**body, "projectId": "another-project"})
+            self.assertEqual((mismatch.status_code, mismatch.json()["code"]), (403, "PROJECT_MISMATCH"))
+        self.second_is_untouched()
+        for content in ("not json", "[]", "null"):
+            refused = self.second.post("/api/drawing-recipes/inspect", json={"projectId": PROJECT_ID, "content": content})
+            self.assertEqual((refused.status_code, refused.json()["code"]), (422, "RECIPE_EXPORT_INVALID"))

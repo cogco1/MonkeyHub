@@ -212,6 +212,7 @@ class ViewportCapture:
     sha256: str
     media_type: str
     size_bytes: int
+    document: SourceDocument | None = None
 
 
 MAX_DOCUMENT_BYTES = 32 * 1024 * 1024
@@ -554,17 +555,17 @@ def drawing_revision_replacement(
 
     ``pages`` are the new revision's PNG pages; ``documents`` every registered
     document of the project. The upload path's own validation decides the
-    rest. Two cases register nothing rather than refuse the rebuild: a
-    previous revision that already has a replacement (a rebuild from a
-    historical revision forks, and a fork is a new page), and a page whose
-    visible aspect ratio changed (a board could not show it in the old frame).
+    rest. A page whose visible aspect ratio changed registers no replacement
+    (a board could not show it in the old frame). An already replaced revision
+    refuses a competing rebuild, just as the upload path does.
     """
 
     target = DocumentReplacementTarget(previous.run_id, previous.asset_sha256, previous.revision_ref)
     replacements = _whole_document_replacement(target, PNG_MEDIA_TYPE, pages, documents)
     replaced = _page_replacements(documents)
     if any((page.run_id, page.asset_sha256, page.revision_ref, page.page_index) in replaced for page in replacements):
-        return ()
+        raise StudioError(409, "DOCUMENT_REPLACEMENT_CONFLICT",
+                          "An old page already has a registered replacement; replace that newer page instead.")
     if not all(_same_visible_aspect(old, new) for old, new in zip(previous.pages, pages)):
         return ()
     _validate_page_replacements(binding, None, None, pages, replacements, documents)
@@ -1025,9 +1026,12 @@ def save_viewport_capture(
     binding: ProjectBinding,
     run_id: str,
     png_base64: str,
+    model_source: ModelSource | None = None,
 ) -> ViewportCapture:
     """Retain one PNG below the explicitly named existing run through P036."""
 
+    if isinstance(png_base64, str) and len(png_base64) > 4 * ((MAX_DOCUMENT_BYTES + 2) // 3):
+        raise StudioError(413, "DOCUMENT_TOO_LARGE", "Source documents may contain at most 32 MiB.")
     if not isinstance(png_base64, str) or not png_base64:
         raise StudioError(
             422,
@@ -1042,6 +1046,8 @@ def save_viewport_capture(
             "CAPTURE_INVALID",
             "the viewport capture is not valid base64 PNG data",
         ) from exc
+    if len(png_bytes) > MAX_DOCUMENT_BYTES:
+        raise StudioError(413, "DOCUMENT_TOO_LARGE", "Source documents may contain at most 32 MiB.")
     # Pillow tolerates a truncated IEND checksum; captures must be complete.
     if not png_bytes.endswith(PNG_END):
         raise StudioError(
@@ -1062,6 +1068,15 @@ def save_viewport_capture(
             "the viewport capture is not a readable PNG image",
         ) from exc
     run = binding.load_run(run_id)
+    if model_source is not None:
+        if model_source.run_id != run_id:
+            raise StudioError(409, "MODEL_SOURCE_MISMATCH", "The capture run must be the exact model source run.")
+        require_model_source(binding, model_source)
+        # Identical pixels may describe distinct models in one run. Their
+        # registrations must not collide or rebind an existing source image.
+        # Run and state are binding identity, retained on SourceDocument;
+        # moving identical model pixels to another run must preserve bytes.
+        png_bytes = _png_with_content_identity(png_bytes, model_source.asset_sha256)
 
     digest = hashlib.sha256(png_bytes).hexdigest()
     workspace_path = f"studio-captures/viewport-{digest}.png"
@@ -1084,6 +1099,11 @@ def save_viewport_capture(
             f"{binding.project_id}: the viewport capture could not be retained "
             f"in run {run.run_id}: {error_sentence(exc)}",
         ) from exc
+    document = None if model_source is None else save_document(
+        binding, run_id, f"viewport-{digest}.png", PNG_MEDIA_TYPE,
+        base64.b64encode(png_bytes).decode("ascii"), model_source=model_source,
+        view_recipe={"kind": "viewport-preview"},
+    )
     return ViewportCapture(
         project_id=ref.project_id,
         run_id=run.run_id,
@@ -1091,7 +1111,25 @@ def save_viewport_capture(
         sha256=ref.sha256,
         media_type=ref.media_type,
         size_bytes=len(png_bytes),
+        document=document,
     )
+
+
+@retained_sources
+def read_model_preview(binding: ProjectBinding, source: ModelSource) -> SourceDocument | None:
+    """An exact-source viewport capture, never an uploaded reference image.
+
+    This verifies the retained source and image bytes, not correspondence
+    inferred from pixels. The browser is responsible for its capture binding.
+    """
+
+    require_model_source(binding, source)
+    document = next((row for row in list_documents(binding, source.run_id)
+                     if row.model_source == source and row.view_recipe == {"kind": "viewport-preview"}
+                     and row.mime_type == PNG_MEDIA_TYPE), None)
+    if document is not None:
+        _registered_document_bytes(binding, document)
+    return document
 
 
 def list_artifacts(

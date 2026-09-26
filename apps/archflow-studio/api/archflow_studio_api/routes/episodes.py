@@ -27,7 +27,7 @@ from ..transport.errors import StudioError
 from ..application.monitoring import candidate_event_id
 from ..application.design_history import (
     accept_design_candidate, admit_results, fork_design_branch, initialize_design_stage,
-    list_admissions, read_design_history, stage_ref_from,
+    list_admissions, read_design_history, save_review_judgement, stage_ref_from,
 )
 from ..application.episodes import (
     add_working_copy_option, list_working_copies,
@@ -36,9 +36,9 @@ from ..application.episodes import (
 from ..transport.artifacts import model_source_from
 from ..transport.design_history import (
     AcceptDesignCandidateRequestDto, AdmissionListDto, AdmissionRequestDto, CandidateAdmissionDto,
-    DesignBranchDto, DesignHistoryDto, DesignStageDto,
+    DesignBranchDto, DesignHistoryDto, DesignStageDto, ReviewJudgementDto, ReviewJudgementRequestDto,
     ForkDesignBranchRequestDto, InitializeDesignStageRequestDto,
-    admission_dto, branch_dto, history_dto, stage_dto,
+    admission_dto, branch_dto, history_dto, review_dto, stage_dto,
 )
 from ..transport.proposal import (
     WorkingCopyDto, WorkingCopyListDto,
@@ -64,6 +64,18 @@ def read_committed_design_history(request: Request, branch_id: str = Query(defau
     """Committed Stages of one line, and the project's admitted Candidates and Studies."""
     return history_dto(read_design_history(bound_project(request.app.state), branch_id,
                                            include_rejected=include == "rejected"))
+
+
+@router.post("/candidate-reviews", response_model=ReviewJudgementDto, response_model_by_alias=True, status_code=201)
+def review_candidate_or_stage(request: Request, payload: ReviewJudgementRequestDto) -> ReviewJudgementDto:
+    """Retain a review judgement; it deliberately performs no design-position write."""
+    binding = bound_project(request.app.state)
+    _require_bound_project(binding, payload.project_id)
+    if request.app.state.settings.sync_url:
+        raise StudioError(409, "SYNC_REVIEW_SHARED", "Candidate reviews are not synchronized yet.")
+    return review_dto(save_review_judgement(binding, subject_kind=payload.subject_kind,
+                                             subject_ref=payload.subject_ref, action=payload.action,
+                                             reason=payload.reason, attribution=_attribution(request)))
 
 
 @router.post("/design-stages/initialize", response_model=DesignStageDto, response_model_by_alias=True, status_code=201)

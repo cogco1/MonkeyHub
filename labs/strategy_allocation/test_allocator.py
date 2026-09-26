@@ -1,4 +1,4 @@
-"""AllocationState -> NextAllocation: the equal and round-robin baselines over SequentialAllocator."""
+"""AllocationState -> NextAllocation adapters over the existing SequentialAllocator."""
 
 import unittest
 from dataclasses import fields
@@ -64,8 +64,28 @@ class AllocatorTests(unittest.TestCase):
         names = {item.name for item in fields(AllocationState)} | {item.name for item in fields(StrategyStatistics)}
         self.assertFalse(any(word in name for name in names for word in ("token", "transcript", "proposal", "plan")))
 
-    def test_only_the_v0_baselines_exist_in_this_slice(self):
-        for name in ("ocba", "cost_ocba", "epsilon_greedy"):
+    def test_ocba_reuses_the_existing_rule_and_observes_between_allocations(self):
+        outcomes = {
+            "A": [1, 0, 1, 0],
+            "B": [1, 1, 1, 0],
+            "C": [1, 0, 0, 0],
+            "D": [1, 1, 0, 0],
+        }
+        decision = make_rule("ocba").next_allocation(state(outcomes, parallel_capacity=8))
+        self.assertEqual(decision.total, 1)
+        self.assertIn(next(iter(decision.as_dict())), ARMS)
+        self.assertEqual(decision.diagnostics[0], "sequential-ocba-v2/ocba")
+        self.assertIn("classical OCBA", decision.diagnostics[1])
+        self.assertIn("one rollout", decision.diagnostics[2])
+
+    def test_ocba_balances_when_bernoulli_warmup_has_zero_variance(self):
+        outcomes = {"A": [1, 1], "B": [1, 0], "C": [0, 0], "D": [1, 0]}
+        decision = make_rule("ocba").next_allocation(state(outcomes))
+        self.assertEqual(decision.as_dict(), {"A": 1})
+        self.assertIn("zero empirical variance", decision.diagnostics[1])
+
+    def test_only_supported_rules_exist_in_this_slice(self):
+        for name in ("cost_ocba", "epsilon_greedy"):
             with self.subTest(name=name), self.assertRaises(ValueError):
                 make_rule(name)
         with self.assertRaises(ValueError):

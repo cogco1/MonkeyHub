@@ -55,6 +55,15 @@ class ExperimentTests(unittest.TestCase):
             self.assertLessEqual(max(counts.values()) - min(counts.values()), 1)
             self.assertEqual(sorted(mine[0]["order"]), ["A", "B", "C", "D"])
 
+    def test_ocba_uses_the_same_budget_but_observes_after_each_adaptive_rollout(self):
+        records, out = self.run_fake(rule="ocba", budget_per_case=12, cases=("local-conflict",))
+        steps = [json.loads(line) for line in (out / "allocation.jsonl").read_text(encoding="utf-8").splitlines()]
+        self.assertEqual(len(records), 12)
+        self.assertEqual(steps[0]["allocations"], {"A": 1})
+        self.assertTrue(all(sum(step["allocations"].values()) == 1 for step in steps[:-1]))
+        self.assertEqual(steps[-1]["stoppingReason"], "insufficient_budget")
+        self.assertEqual(verify(out), [])
+
     def test_failures_are_retained_and_count_as_unsuccessful_samples(self):
         runner = FakeRunner({
             "A": lambda request, rng: FakeReply(status="timeout"),

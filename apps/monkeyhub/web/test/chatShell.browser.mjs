@@ -143,6 +143,8 @@ const archiveSummaryFor = (projectId, projectDir, archivePath) => ({
   archivePath, archiveBytes: 5242880, archiveSha256: "c".repeat(64), verified: true, projectDir,
 });
 const apps = ["monkeyarch", "monkeyboard", "monkeyrender", "monkeyfab", "monkeymonitor"].map((appId) => ({ appId, title: appId, serviceId: appId === "monkeyfab" ? "hub" : appId === "monkeymonitor" ? "monitor" : "studio", state: "running", processId: 1234, available: true, url: `${origin}/tool?app=${appId}` }));
+// Fab uses the built Hub page so its settings button exercises the real iframe bridge.
+Object.assign(apps.find((app) => app.appId === "monkeyfab"), { url: `${origin}/?view=fab`, apiUrl: `${origin}/` });
 // Exercise the actual Hub Monitor page, including its navigation and effects.
 // A static /tool fixture concealed Monitor's former top-window redirect loop.
 Object.assign(apps.find((app) => app.appId === "monkeymonitor"), { url: `${origin}/?view=monitor`, apiUrl: `${origin}/` });
@@ -255,6 +257,10 @@ await page.route((url) => url.pathname.startsWith("/api/"), async (route) => {
     return json(preferences);
   }
   if (url.pathname === "/api/apps") return json(url.searchParams.has("projectDir") ? appsFor(url.searchParams.get("projectDir")) : apps);
+  if (method === "GET" && url.pathname === "/api/fab/profiles") return json({ h2s: {
+    key: "h2s", label: "Fixture H2S", nominal_volume_mm: [300, 300, 300], usable_origin_mm: [0, 0, 0],
+    usable_volume_mm: [290, 290, 290], notes: "Synthetic browser fixture", sources: [],
+  } });
   if (url.pathname === "/api/runtime") { runtimeReads++; if (runtimeReadGate) await runtimeReadGate; return json(runtimeSnapshot()); }
   if (url.pathname === "/api/runtime/projects/open") {
     const body = data(), project = projects.find((item) => item.projectDir === body.projectDir && item.projectId === body.projectId);
@@ -666,7 +672,125 @@ const autosavedModelRestart = async () => {
   await page.evaluate(() => localStorage.removeItem("monkeyhub.chat-view.v1"));
 };
 try {
-  if (process.env.MONKEYHUB_UI_FOCUS === "attachments") {
+  if (process.env.MONKEYHUB_UI_FOCUS === "accessibility") {
+    const cdp = await page.context().newCDPSession(page);
+    const accessible = async (role, name) => {
+      const { nodes } = await cdp.send("Accessibility.getFullAXTree");
+      const node = nodes.find((entry) => !entry.ignored && entry.role?.value === role && entry.name?.value === name);
+      assert.ok(node, `${role} ${name} is present in the browser accessibility tree`);
+      return node;
+    };
+    const focused = async (locator) => assert.equal(await locator.evaluate((node) => node === document.activeElement), true);
+    for (const language of ["en", "zh-CN"]) {
+      preferences = { ...preferences, language };
+      await page.goto(origin);
+      await page.waitForFunction(() => document.querySelector("#chat-input") && !document.querySelector("#chat-input").disabled);
+      const names = language === "en" ? {
+        archive: "Archived chats", settings: "Hub settings", project: "This project: Project A", close: "Close",
+        menu: "Attachments and new topic", topic: "New topic", send: "Send", empty: "Write a message or add an attachment first.",
+      } : {
+        archive: "已归档对话", settings: "Hub 设置", project: "此项目: Project A", close: "关闭",
+        menu: "附件与新话题", topic: "新话题", send: "发送", empty: "请先输入消息或添加附件。",
+      };
+      const sidebarToggle = page.locator(".chat-sidebar__top button");
+      if (await page.locator(".chat-shell").getAttribute("data-sidebar") === "true") await sidebarToggle.click();
+      for (const name of [names.archive, names.settings]) {
+        const button = page.getByRole("button", { name, exact: true });
+        await button.focus(); await focused(button);
+        await accessible("button", name);
+      }
+      await page.getByRole("button", { name: names.archive, exact: true }).press("Enter");
+      const active = page.locator(".chat-archive-toggle");
+      assert.equal(await active.getAttribute("aria-pressed"), "true");
+      await accessible("button", await active.getAttribute("aria-label"));
+      await active.press("Enter");
+      await page.getByRole("button", { name: names.settings, exact: true }).press("Enter");
+      await page.locator(".chat-dialog--settings").waitFor({ state: "visible" });
+      await page.keyboard.press("Escape");
+      await page.locator(".chat-dialog--settings").waitFor({ state: "hidden" });
+
+      const projectButton = page.getByRole("button", { name: names.project, exact: true });
+      const projectName = await accessible("button", names.project);
+      assert.equal(projectName.name.value.includes(projects[0].projectDir), false);
+      await projectButton.focus(); await projectButton.press("Enter");
+      const close = page.locator(".chat-project-card__head").getByRole("button", { name: names.close, exact: true });
+      await focused(close);
+      assert.equal(await projectButton.getAttribute("aria-controls"), "chat-project-info");
+      await page.keyboard.press("Escape");
+      assert.equal(await page.locator(".chat-project-card").count(), 0);
+      await focused(projectButton);
+      // Escape also closes after Tab leaves the card, or focus returns to its trigger.
+      await projectButton.press("Enter");
+      await page.keyboard.press("Tab");
+      await page.keyboard.press("Escape");
+      await focused(projectButton);
+      await projectButton.press("Enter");
+      await projectButton.focus(); await page.keyboard.press("Escape");
+      await focused(projectButton);
+      await projectButton.press("Enter");
+      await close.press("Enter"); await focused(projectButton);
+      // A modal launched from this nonmodal card owns the first Escape.
+      await projectButton.press("Enter");
+      await page.locator(".chat-project-card__archive button").first().click();
+      await page.locator("dialog.chat-dialog--archive").first().waitFor({ state: "visible" });
+      await page.keyboard.press("Escape");
+      await page.locator("dialog.chat-dialog--archive").first().waitFor({ state: "hidden" });
+      assert.equal(await page.locator(".chat-project-card").count(), 1);
+      await page.keyboard.press("Escape"); await focused(projectButton);
+
+      const send = page.getByRole("button", { name: names.send, exact: true });
+      assert.equal(await send.isDisabled(), true);
+      assert.equal((await accessible("button", names.send)).description.value, names.empty);
+      assert.equal(await send.getAttribute("title"), names.empty);
+      assert.equal(await page.locator("#chat-input").getAttribute("aria-keyshortcuts"), "Enter Shift+Enter");
+      assert.equal((await accessible("button", names.send)).properties.find((property) => property.name === "keyshortcuts").value.value, "Enter");
+      await page.locator("#chat-input").fill("First line");
+      await page.locator("#chat-input").press("Shift+Enter");
+      assert.equal(await page.locator("#chat-input").inputValue(), "First line\n");
+      assert.equal(writes.filter(([, route]) => route.endsWith("/messages")).length, 0);
+      await page.locator("#chat-input").fill("");
+      const menu = composerMenu(names.menu);
+      await menu.focus(); await menu.press("Enter");
+      await page.keyboard.press("ArrowDown");
+      const topic = page.getByRole("menuitemcheckbox", { name: names.topic, exact: true });
+      await focused(topic);
+      const topicAX = await accessible("menuitemcheckbox", names.topic);
+      assert.equal(topicAX.properties.find((property) => property.name === "checked").value.value, "false");
+      assert.ok(topicAX.description.value.length > 0);
+      await page.keyboard.press("Escape"); await focused(menu);
+      await sidebarToggle.click();
+    }
+    preferences = { ...preferences, language: "en" };
+    await page.goto(origin);
+    await page.waitForFunction(() => document.querySelector("#chat-input") && !document.querySelector("#chat-input").disabled);
+    await page.locator("#chat-input").fill("Check keyboard sending");
+    await page.locator("#chat-input").press("Enter");
+    await page.getByRole("button", { name: "Stop", exact: true }).waitFor();
+    assert.equal(writes.filter(([, route]) => route.endsWith("/messages")).length, 1, "Enter sends once");
+    assert.equal((await accessible("combobox", "Model")).description.value, "The model can be changed once this reply finishes.");
+    assert.equal((await accessible("button", "Interject")).description.value, "Write a message to interject first.");
+    const archive = page.locator(".chat-thread-action").first();
+    assert.equal(await archive.isDisabled(), true);
+    assert.ok((await accessible("button", await archive.getAttribute("aria-label"))).description.value.length > 0);
+    await composerMenu().click();
+    const blockedTopic = page.getByRole("menuitemcheckbox", { name: "New topic", exact: true });
+    assert.equal((await accessible("menuitemcheckbox", "New topic")).description.value, "Wait for this reply to finish before starting a new topic.");
+    await blockedTopic.focus(); await page.keyboard.press("Enter");
+    assert.equal(await blockedTopic.getAttribute("aria-checked"), "false", "the disabled choice does not activate by keyboard");
+    await page.keyboard.press("Escape");
+    await page.getByRole("button", { name: "Stop", exact: true }).click();
+
+    projects.splice(0); sessions.splice(0); settings.projectDir = null;
+    await page.evaluate(() => { localStorage.removeItem("monkeyhub.chat-view.v1"); localStorage.removeItem("monkeyhub.chat-drafts.v1"); });
+    await page.goto(origin);
+    await page.getByRole("button", { name: "This project", exact: true }).waitFor();
+    for (const name of ["Send", "Attachments and new topic", "Modeling", "Board", "Drawings", "Render", "Design tree"]) {
+      const button = page.getByRole("button", { name, exact: true });
+      assert.equal(await button.isDisabled(), true);
+      assert.equal((await accessible("button", name)).description.value, "Add or choose a project first.");
+    }
+    await cdp.detach();
+  } else if (process.env.MONKEYHUB_UI_FOCUS === "attachments") {
     const restoredFocus = [];
     for (const theme of ["dark", "light"]) {
       for (const fontScale of [0.9, 1, 1.1]) {
@@ -783,14 +907,26 @@ try {
   await studioReady();
   assert.equal(writes.filter(([, pathname, body]) => pathname === "/api/project/modeling" && body.projectId === "harbour-study").length, 0);
   await page.getByRole("button", { name: "Fabrication", exact: true }).click();
-  await page.waitForFunction(() => document.querySelector("iframe:not([hidden])")?.src.includes("app=monkeyfab"));
+  await page.waitForFunction(() => document.querySelector("iframe:not([hidden])")?.src.includes("view=fab"));
+  const fabFrame = page.frameLocator('iframe:not([hidden])');
+  await fabFrame.locator('#fab-printer option[value="h2s"]').waitFor({ state: "attached" });
+  assert.equal(await fabFrame.locator('#fab-printer option[value="h2s"]').innerText(), "Fixture H2S");
+  assert.equal(await fabFrame.locator("#fab-source").isEnabled(), true, "the real Fab page loaded its printer profiles from the API fixture");
+  await fabFrame.getByRole("button", { name: "Display settings", exact: true }).click();
+  const hubSettings = page.getByRole("dialog").filter({ hasText: "Hub settings (global)" });
+  await hubSettings.waitFor();
+  assert.equal(await hubSettings.getByRole("tab", { name: "Display", exact: true }).getAttribute("aria-selected"), "true",
+    "Fab opens the existing Hub Display settings page");
+  assert.equal(await fabFrame.getByRole("heading", { name: "MonkeyFab", exact: true }).count(), 1,
+    "opening settings leaves the hosted Fab page mounted instead of loading a second Hub in its iframe");
+  await hubSettings.getByRole("button", { name: "Close", exact: true }).click();
   assert.ok(!writes.some(([, pathname]) => pathname === "/api/project/modeling"),
     "new-project creation and independent tools leave modeling inputs alone");
   await page.getByRole("button", { name: "Project A", exact: true }).first().click();
   const beforeIndependent = writes.length;
   const beforeIndependentProject = settings.projectDir;
   await page.getByRole("button", { name: "Fabrication", exact: true }).click();
-  await page.waitForFunction(() => document.querySelector("iframe:not([hidden])")?.src.includes("app=monkeyfab"));
+  await page.waitForFunction(() => document.querySelector("iframe:not([hidden])")?.src.includes("view=fab"));
   const beforeMonitorNavigation = documentLoads;
   const composer = page.getByRole("textbox", { name: "What would you like to do in this project?" });
   await composer.fill("Keep this conversation while viewing usage");
@@ -1270,7 +1406,7 @@ try {
   await entry("Drawings").click();
   await waitWorkspace("drawing");
   await entry("Fabrication").click();
-  await page.waitForFunction(() => document.querySelector("iframe:not([hidden])")?.src.includes("app=monkeyfab"));
+  await page.waitForFunction(() => document.querySelector("iframe:not([hidden])")?.src.includes("view=fab"));
   assert.equal(await entry("Fabrication").getAttribute("aria-description"), "Close Fabrication and return to Board");
   await entry("Fabrication").click();
   await waitWorkspace("board");
@@ -2087,10 +2223,10 @@ try {
   await page.getByRole("button", { name: "Modeling", exact: true }).click();
   await waitWorkspace();
   await page.getByRole("button", { name: "Fabrication", exact: true }).click();
-  await page.waitForFunction(() => document.querySelector("iframe:not([hidden])")?.src.includes("app=monkeyfab"));
+  await page.waitForFunction(() => document.querySelector("iframe:not([hidden])")?.src.includes("view=fab"));
   assert.equal(new URL(page.url()).searchParams.has("runtimeId"), false);
   await page.reload();
-  await page.waitForFunction(() => document.querySelector("iframe:not([hidden])")?.src.includes("app=monkeyfab"));
+  await page.waitForFunction(() => document.querySelector("iframe:not([hidden])")?.src.includes("view=fab"));
   assert.equal(await page.locator('.chat-project[data-selected="true"] .chat-project__name').innerText(), "Project B");
   await page.getByRole("button", { name: "Usage", exact: true }).click();
   await waitMonitor();

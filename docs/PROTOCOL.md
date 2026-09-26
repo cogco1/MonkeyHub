@@ -104,7 +104,8 @@ tolerate it.
 | POST | `/api/model-assets` → 201 | original 3DM bytes (`projectId`, `fileName`, `contentBase64`, maximum 128 MiB). Both `runId` and `stateDigest` bind a composed model; omitting both retains an external source by exact byte digest. External rows have `representation=external` and null `modelSource`, design state and Stage; they are viewable original files, not semantic edit bases. Retries reuse exact registered bytes and preserve earlier revisions. No HEAD change | **writes shared source** | provisional |
 | GET | `/api/model-assets/{asset_sha256}/index` | exact `runId` + `stateDigest`; GUID-sorted native object metadata, units and source binding. `offset` / `limit` (default 50, maximum 200), optional repeated `objectId` GUIDs (maximum 200). Returns `objectCount`, `matchedCount`, `nextOffset`; unknown GUIDs fail with 404, mismatched source with 409. Names, layers and raw user strings are not inferred architectural roles. No geometry validation, scope admission or edit | reads shared | provisional |
 | POST | `/api/artifacts/{sha256}/rhino-export` → 201 | that run's exact STEP imported into this machine's Rhino and kept as an editable `*.work.3dm`; body carries `runId`, because the same bytes can be exported by more than one run. Ordinary and blocking, one export at a time; the answer is the work model's own artifact row, carrying `sourceStepSha256`. Asking again for the same source answers with the model already made. Without a local Rhino or shell: 409 `RHINO_HOST_UNAVAILABLE` | **writes shared workspace** | stable |
-| POST | `/api/captures` → 201 | a viewport PNG retained under the named existing run's `workspaces/studio-captures/`; body carries `runId` and `pngBase64`, response carries its project-relative path and digest | **writes shared workspace** | stable |
+| POST | `/api/captures` → 201 | a viewport PNG (maximum 32 MiB) retained under the named existing run's `workspaces/studio-captures/`; body carries `runId` and `pngBase64`, response carries its project-relative path and digest. Optional exact `modelSource` also registers a preview in the existing source-document store and adds `document` to the response; source run must equal `runId` | **writes shared workspace + optional source document** | stable |
+| GET | `/api/model-assets/{asset_sha256}/preview` | required `runId` + `stateDigest`; verifies the exact retained model and returns its registered viewport `SourceDocument`, or `null` when none exists. Image bytes use the existing documents route and SHA-256 verification. Ordinary uploaded images are never selected | reads shared | provisional |
 | POST | `/api/pick/resolve` | what the object a user clicked actually is (§6) | reads work in progress + shared | stable |
 | POST | `/api/proposals` → 201 | a typed, exact-base `DecisionOperator` with its closure and impact. Never applied | reads work in progress + shared | stable |
 | GET | `/api/proposals/{proposalId}` | that proposal, as it was returned | server memory | stable |
@@ -113,6 +114,7 @@ tolerate it.
 | GET | `/api/candidates/{candidateId}` | the finished candidate, read back out of the records its run retained | reads shared | stable |
 | POST | `/api/candidates/combine` → 202 | a new candidate from independent saved component changes sharing one Stage (§5.4) | writes shared | provisional |
 | GET | `/api/design-history?branchId=main` | design branch pointers, their reachable committed Stages, and the project's admitted `candidates[]` and `studies[]` with `warnings[]` (§5.5); `include=rejected` also lists retained rejections | reads shared + design refs + the admissions review | provisional |
+| POST | `/api/candidate-reviews` → 201 | reject, archive/restore or endorse one exact Candidate, or endorse one exact Stage; actor, UTC time and an optional reason are retained | **writes the `studio-candidate-reviews` review**; moves no Working Head, Stage or formal HEAD | provisional |
 | POST | `/api/design-stages/initialize` → 201 | explicit initial Stage from a complete exact model | writes review + design ref | provisional |
 | POST | `/api/candidates/{candidateId}/accept` | immutable Stage and atomic advancement of its expected design branch head; a run with a live rejection is refused (§5.5) | writes review + design ref | provisional |
 | POST | `/api/admissions` → 201 | one closed loop's `CandidateAdmission@1` through the completion gate Stage acceptance shares (§5.5); an identical retry answers 200 with the record it repeats | **writes the `studio-admissions` review** | provisional |
@@ -336,6 +338,17 @@ process restart. This does not recover an interrupted in-memory job or a missing
 candidate**, naming its run and job in the refusal: running a sheet is a read of the record, and
 only keeping one needs an owner this protocol does not yet have.
 
+**Model preview images.** The browser captures only a stable retained model after loading,
+outside candidate execution; it skips local edits, blended or proposal previews and rechecks
+the exact source before and after asynchronous capture. Existing previews are read lazily;
+an absent, stale or unreadable image falls back to the model icon. A source-bound capture adds
+an ancillary PNG identity chunk without changing pixels, so identical pictures of distinct
+models cannot rebind the same document. The server verifies the run/state/model binding and
+PNG bytes; the pixel-to-model correspondence is the caller's declaration, not geometric
+validation. Previews use `viewRecipe.kind=viewport-preview`, have no drawing revision, and
+never enter StateRecord, candidate execution, or canonical HEAD. Unbound captures keep their
+original workspace-only response and do not become previews.
+
 **Server memory.** Proposals, jobs and events live in the process and are lost on restart. A
 client treats `PROPOSAL_NOT_FOUND` and `JOB_NOT_FOUND` as ordinary and never uses the event
 stream as a record of anything: what a run did is in the run.
@@ -539,7 +552,7 @@ Running a candidate makes a reversible result, not a design decision. It does no
 proposal accepted or reject other open proposals. The job registry already links the proposal
 and candidate; the run only flushes earlier explicit judgements against its base.
 
-The existing proposal endorsement route is `POST /api/proposals/{id}/decision` with
+The legacy proposal-decision route is `POST /api/proposals/{id}/decision` with
 `{"decision":"accepted","candidateId":"<the chosen candidate>","reason":"<optional reason>"}`.
 The candidate must have succeeded in this process and belong to that proposal. No latest-run
 default is used. `candidateId` is required for acceptance and refused for the other decisions;
@@ -547,6 +560,17 @@ default is used. `candidateId` is required for acceptance and refused for the ot
 formal-issue authority. It retains the existing `DeliberationEpisode@1` in the named candidate run
 and preserves other proposals and alternatives against the same base. It does not create
 a design Stage. Previously retained episodes remain readable.
+
+That route remains for proposal deliberation and retained-data compatibility; it is not direction
+endorsement. Persistent review uses `/api/candidate-reviews` against an exact retained Candidate
+or Stage. Endorsement is independent: it neither accepts a Stage nor becomes an acceptance or
+publication prerequisite. Review requests carry `projectId`, `subjectKind` (`candidate` or
+`stage`), the exact `subjectRef`, `action` (`reject`, `archive`, `restore`, or `endorse`),
+and an optional `reason`; only endorsement applies to a Stage. Restoring an archived
+Candidate recovers its previous disposition, including an earlier rejection. History
+includes the latest review actor/time and the endorsement event's own `endorsedBy` /
+`endorsedAt`, so archiving by another person does not replace the endorsement attribution.
+These reviews currently refuse synchronized-project writes with `SYNC_REVIEW_SHARED`.
 
 Rejections and modifications made before a run remain process memory: `producedRun` is `null`
 and `persistence` is `in-memory (not version history)`. When a candidate meets those judgements,
@@ -638,10 +662,14 @@ straight to the bound Studio, with no `operationId`.
 A rebuild that names `previousRevisionRef` registers the new revision as that
 revision's whole-document replacement: its `replacesPages` names the previous
 page exactly as an upload's would, so a Board page updates in place, Publish
-offers the new page and Render follows it. It registers none when the previous
-revision already has a replacement (a rebuild from a historical revision forks,
-and the fork is a new page) or when the page's visible aspect ratio changed; an
-identical request returns the retained revision and registers nothing. Why a page
+offers the new page and Render follows it. A changed visible aspect ratio registers
+no replacement because the old frame cannot preserve the page's marks. A competing
+rebuild of an already replaced revision fails with `DOCUMENT_REPLACEMENT_CONFLICT`
+before projection writes anything. An identical retry of that predecessor's request,
+or an unchanged request for a revision itself, returns its retained result. Restoring
+an older recipe from a newer revision creates a new revision and replacement even
+when its pixels match history, preserving the correction's before/after and actor.
+Why a page
 was replaced is derived, never stored: the same drawing from the same exact source
 (model, Stage and imported asset) is a representation change, which Render does
 not count as a newer input; the same drawing from another source is a source
@@ -758,6 +786,37 @@ more strongly. The import writes through the Studio's decision function under th
 project's HEAD lock, the lock a runtime takes for every decision write, so it may run
 while a runtime has the project open; the runtime reads the decision on its next
 request.
+
+The local Runtime also exposes this transfer from the Drawing workspace:
+
+- `GET /api/decisions/{decision_id}/recipe-export?expectedRevisionRef=...` returns
+  `{fileName, content}` with the portable file text unchanged. A stale selection
+  is `409 DECISION_STALE`; refresh the recipe list before exporting a newer revision.
+- `POST /api/drawing-recipes/inspect` takes `{projectId, content}` (the exact JSON
+  file text) and returns
+  `projectId`, `targetRef`, `graphics`, `sourceDecisionId`, `sourceRevisionSha256`,
+  `exportSha256` and `importStrength: soft_preference`. This validates the file's
+  closed content and digest without writing any decision.
+- `POST /api/drawing-recipes/import` takes the same exact document plus
+  `confirmed: true`, `sourceKind: human` and `rawLanguage` (the displayed choice).
+  The file text is parsed only in Python: JavaScript must not normalize `3.0` to `3`
+  and change its canonical digest. It validates again and returns the retained
+  `DecisionDto` with HTTP 201.
+  Conflicts use the existing `DECISION_RECIPE_CONFLICT`; there is no implicit
+  supersession. Attribution comes from the Runtime boundary, never the file.
+
+Export and inspection require the existing `read` grant; import requires `accept`.
+These routes are local Runtime operations, excluded from the shared-project service.
+Hub forwards inspection as a read: no operation journal, notification or watcher wake,
+including when the file is refused. Confirmed import keeps normal write admission.
+The bound chat's decision tools remain feedback-only: they do not automatically
+promote or import recipes. Drawing offers a file preview and explicit import action;
+choosing or cancelling a file writes nothing. The retained import cites the portable
+file's digest, while the file carries the original decision revision digest. New
+cut plans consume the imported values through `project_recipe`; previous revisions
+keep their values and explicit drawing values still take precedence. `hard` sorts
+first in the existing recipe reader but is not an enforced office standard. This
+transfer creates neither team preferences nor firm rules.
 
 A projected vector (`polyline` or poché `polygon`) names its physical object in
 `data-object` and, for a model compiled from design state, its `data-component` and
@@ -1632,15 +1691,28 @@ cannot be verified, `missing` when the page's own bytes cannot be read, and
 pages answer through their owners. A missing file cannot be made available by freezing it.
 
 `POST /api/publication/from-board` takes an exact Board revision and selected
-element/frame ids. Registered image pages are appended top-to-bottom then
-left-to-right using the same hero rule. Repeating the same retained selection
-does not duplicate pages. This bounded handoff consumes clean source pages,
+element/frame ids in narrative order. Frames expand top-to-bottom then
+left-to-right; duplicate children are placed once. The Board UI supplies its
+selection in visual reading order, and each page uses the same hero rule.
+Repeating the same retained selection does not duplicate pages. This bounded handoff consumes clean source pages,
 not Board review marks or freehand drawings.
 
 `POST /api/publication/export` requires an exact saved publication revision
 and `format: pptx | pdf`. It returns transient download bytes, not a design
 issue. Both compilers use the same page coordinates and measured text lines.
-PPTX has native editable text boxes and separate images; PDF is deterministic
-for the same retained inputs. The first slice embeds Drawing/PDF pages as
-raster images (up to 2048 pixels), not editable CAD/vector objects. Text that
-does not fit its box and unavailable exact sources cause explicit refusal.
+PPTX has native editable text boxes and separate images. Supported simple PDF
+lines, rectangles, polygons and horizontal text become editable objects;
+unsupported PDF content remains a raster preview (up to 2048 pixels), named
+with the fallback reason in the PPTX. PDF export keeps ordinary source PDF
+vectors and uses their exact crop, scale and order; pages with annotations,
+transparency-group isolation or optional layers retain their rendered appearance.
+Authored text uses one measured font in both formats, embedded in PDF; missing glyphs or overflowing text refuse export.
+PDF is deterministic for the same retained inputs and installed font.
+
+Publish serializes autosaves after a typing pause and flushes pending edits
+before export, Board handoff and leaving the workspace/project. A save response
+acknowledges only the sent content; later typing remains pending. Failed saves
+keep the draft and expose retry/reload, including after closing and reopening
+that project within the same UI session. Reloading or closing a page with
+unsaved content requires an explicit discard; an unavailable exact source still
+refuses export.

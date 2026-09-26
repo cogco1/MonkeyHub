@@ -17,6 +17,8 @@ from archflow_studio_api.main import create_app
 from archflow_studio_api.settings import StudioSettings
 
 from .support import PROJECT_ID, REFERENCE_RUN_ID, make_project
+from .support import runner_state_digest, retain_runner_receipt
+from .test_working_copies import register_model
 
 
 # A complete 2 x 2 RGBA PNG, not only a file signature.
@@ -198,6 +200,107 @@ class UnboundViewportCaptureTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 503)
         self.assertEqual(response.json()["code"], "PROJECT_NOT_BOUND")
+
+
+class RetainedModelPreviewTests(unittest.TestCase):
+    def setUp(self) -> None:
+        temporary = tempfile.TemporaryDirectory(prefix="retained-model-preview-")
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+        self.repository, _ = make_project(self.root)
+        self.settings = StudioSettings(cad_export="off", project_dir=self.root / PROJECT_ID)
+        self.client = TestClient(create_app(self.settings))
+        self.addCleanup(self.client.close)
+        self.model_bytes = (Path(__file__).parent / "fixtures/model-source-a.3dm").read_bytes()
+        self.source = register_model(self.client, REFERENCE_RUN_ID,
+                                     runner_state_digest(self.repository, REFERENCE_RUN_ID), self.model_bytes)["modelSource"]
+
+    def preview(self, source=None, client=None):
+        source = source or self.source
+        return (client or self.client).get(f"/api/model-assets/{source['assetSha256']}/preview", params={
+            "runId": source["runId"], "stateDigest": source["stateDigest"]})
+
+    def capture(self, source=None):
+        source = source or self.source
+        return self.client.post("/api/captures", json={**request_payload(source["runId"]), "modelSource": source})
+
+    def test_exact_preview_is_idempotent_and_survives_project_copy_and_reopen(self):
+        before = self.repository.read_head()
+        self.assertIsNone(self.preview().json())
+        saved = self.capture()
+        self.assertEqual(saved.status_code, 201, saved.text)
+        document = saved.json()["document"]
+        self.assertEqual(document["modelSource"], self.source)
+        self.assertEqual(document["viewRecipe"], {"kind": "viewport-preview"})
+        self.assertEqual(self.capture().json(), saved.json())
+        self.assertEqual(self.repository.read_head(), before)
+        documents = self.client.get("/api/documents").json()["documents"]
+        self.assertEqual(len(documents), 1)
+        self.assertIsNone(documents[0]["drawingId"])
+        self.assertIsNone(documents[0]["revisionRef"])
+        self.assertEqual(self.client.get("/api/worktrees").json()["representations"], [])
+        copied = self.root / "another-machine" / PROJECT_ID
+        shutil.copytree(self.root / PROJECT_ID, copied)
+        with TestClient(create_app(StudioSettings(cad_export="off", project_dir=copied))) as reopened:
+            found = self.preview(client=reopened)
+            self.assertEqual(found.status_code, 200, found.text)
+            self.assertEqual(found.json(), documents[0])
+            response = reopened.get(f"/api/documents/{document['assetSha256']}/bytes", params={"runId": self.source["runId"]})
+            self.assertEqual(response.status_code, 200, response.text)
+            self.assertEqual(hashlib.sha256(response.content).hexdigest(), document["assetSha256"])
+            with Image.open(BytesIO(response.content)) as image:
+                self.assertEqual(image.getpixel((0, 0)), (174, 204, 218, 255))
+
+    def test_run_state_and_asset_cannot_borrow_another_models_preview(self):
+        self.assertEqual(self.capture().status_code, 201)
+        other = register_model(self.client, REFERENCE_RUN_ID, self.source["stateDigest"],
+                               (Path(__file__).parent / "fixtures/model-source-b.3dm").read_bytes())["modelSource"]
+        self.assertIsNone(self.preview(other).json())
+        other_run = self.repository.create_run("other-model-run")
+        retain_runner_receipt(self.repository, other_run, design_state_digest=runner_state_digest(self.repository, other_run.run_id))
+        same_bytes = register_model(self.client, other_run.run_id,
+                                    runner_state_digest(self.repository, other_run.run_id), self.model_bytes)["modelSource"]
+        self.assertIsNone(self.preview(same_bytes).json())
+        rebound = self.capture(same_bytes)
+        self.assertEqual(rebound.status_code, 201, rebound.text)
+        self.assertEqual(rebound.json()["document"]["assetSha256"], self.preview().json()["assetSha256"])
+        self.assertEqual(rebound.json()["document"]["modelSource"], same_bytes)
+        # Identical PNG pixels in a single run can be bound to two real models.
+        second = self.capture(other)
+        self.assertEqual(second.status_code, 201, second.text)
+        self.assertNotEqual(self.preview().json()["assetSha256"], second.json()["document"]["assetSha256"])
+        for key in ("stateDigest", "assetSha256"):
+            stale = {**self.source, key: "f" * 64}
+            self.assertEqual(self.preview(stale).status_code, 409)
+            self.assertEqual(self.capture(stale).status_code, 409)
+        mismatch = self.client.post("/api/captures", json={**request_payload(other_run.run_id), "modelSource": self.source})
+        self.assertEqual(mismatch.status_code, 409)
+
+    def test_ordinary_uploaded_image_and_plain_capture_are_not_model_previews(self):
+        body = {"projectId": PROJECT_ID, "runId": self.source["runId"],
+            "fileName": "viewport-fake.png", "mimeType": "image/png", "contentBase64": base64.b64encode(PNG_BYTES).decode(),
+            "modelSource": self.source}
+        spoofed = self.client.post("/api/documents", json={**body, "viewRecipe": {"kind": "viewport-preview"}})
+        self.assertEqual(spoofed.status_code, 422)
+        uploaded = self.client.post("/api/documents", json=body)
+        self.assertEqual(uploaded.status_code, 201, uploaded.text)
+        self.assertIsNone(self.preview().json())
+        self.assertEqual(self.client.post("/api/captures", json=request_payload(self.source["runId"])).status_code, 201)
+        self.assertIsNone(self.preview().json())
+
+    def test_image_tampering_is_refused_after_reopen(self):
+        document = self.capture().json()["document"]
+        sha = document["assetSha256"]
+        self.repository.layout.resolve_relative(f"objects/sha256/{sha[:2]}/{sha}").write_bytes(b"damaged")
+        with TestClient(create_app(self.settings)) as reopened:
+            response = self.preview(client=reopened)
+            self.assertEqual(response.status_code, 409)
+            self.assertEqual(response.json()["code"], "DOCUMENT_DIGEST_MISMATCH")
+
+    def test_invalid_png_is_refused_before_bound_preview_registration(self):
+        response = self.client.post("/api/captures", json={**request_payload(self.source["runId"], b"broken"), "modelSource": self.source})
+        self.assertEqual(response.status_code, 422)
+        self.assertIsNone(self.preview().json())
 
 
 if __name__ == "__main__":

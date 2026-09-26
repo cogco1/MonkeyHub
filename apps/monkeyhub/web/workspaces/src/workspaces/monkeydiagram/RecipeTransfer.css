@@ -1,0 +1,14 @@
+.recipe-transfer { flex: none; max-height: 45%; overflow: auto; padding: 0 16px; border-bottom: 1px solid var(--line); color: var(--ink); background: var(--panel); font-size: var(--text-ui); }
+.recipe-transfer summary { cursor: pointer; padding: 10px 0; }
+.recipe-transfer p { margin: 8px 0; line-height: 1.5; overflow-wrap: anywhere; }
+.recipe-transfer__body { padding-bottom: 12px; }
+.recipe-transfer ul { list-style: none; padding: 0; }
+.recipe-transfer li { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
+.recipe-transfer li > details { flex-basis: 100%; }
+.recipe-transfer button { margin-right: 8px; min-height: 36px; padding: 7px 10px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--panel-2); color: var(--ink); font: inherit; cursor: pointer; }
+.recipe-transfer button:hover:not(:disabled) { background: var(--surface-hover); }
+.recipe-transfer button:disabled { opacity: .5; cursor: default; }
+.recipe-transfer__file { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; }
+.recipe-transfer input { max-width: 100%; min-width: 0; font: inherit; }
+.recipe-transfer__preview { margin-top: 12px; padding: 12px; border: 1px solid var(--line); border-radius: var(--radius-sm); }
+.recipe-transfer :is(button, input, summary):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
