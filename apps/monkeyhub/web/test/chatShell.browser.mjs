@@ -1009,6 +1009,9 @@ try {
   // Project navigation is separate from the independent-tool lifecycle above.
   await page.getByRole("button", { name: "Project B", exact: true }).first().click();
   await page.waitForFunction(() => document.querySelector(".chat-header__project")?.textContent === "Project B");
+  await studioReady();
+  assert.equal(writes.filter(([, pathname, , target]) => pathname === "/api/apps/monkeyrender/start" && target === "D:\\fixture\\B").length, 1,
+    "Project B starts its Runtime once on the first project navigation");
   await page.getByRole("button", { name: "Usage", exact: true }).click();
   await waitMonitor();
   await page.waitForFunction(() => document.querySelector(".monitor-heading select")?.value === "B");
@@ -1618,7 +1621,10 @@ try {
   assert.equal(settings.projectDir, "D:\\fixture\\A", "cross-project chat leaves the default project unchanged");
   assert.equal(runningA.status, "running", "A continues while B starts its own turn");
   assert.ok(!writes.slice(beforeSwitchWrites).some(([method, pathname]) => pathname.endsWith("/stop") || (method === "PUT" && pathname === "/api/settings/apps")), "switching never stops A or rewrites its configuration");
-  assert.equal(writes.slice(beforeSwitchWrites).filter(([, pathname, , target]) => pathname === "/api/apps/monkeyrender/start" && target === "D:\\fixture\\B").length, 1);
+  assert.equal(writes.slice(beforeSwitchWrites).filter(([, pathname, , target]) => pathname === "/api/apps/monkeyrender/start" && target === "D:\\fixture\\B").length, 0,
+    "starting B's conversation reuses the Runtime already opened while viewing its usage");
+  assert.equal(writes.filter(([, pathname, , target]) => pathname === "/api/apps/monkeyrender/start" && target === "D:\\fixture\\B").length, 1,
+    "Project B has still started exactly once");
 
   // C — the gear follows the conversation's project rather than keeping the old one.
   await page.getByRole("button", { name: /Project B/ }).last().click();
