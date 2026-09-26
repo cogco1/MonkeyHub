@@ -16,6 +16,7 @@ import { boardViewAppState, captureBoardView, pageSourceAt, type BoardDocumentOp
 import { boardDocumentFrameName, documentKey, documentMime, findSource, imageSource, isTracingPaperReview, nextDocumentPosition, pageKey, pageReplacements, pageSource, selectedPageSource, type BoardDraft, type PageSource } from "./boardScene";
 import { BoardSketchError, calibrateSketchFrame, insideSketchFrame, newSketchFrameData, sketchActionsFromFrame, sketchFrameData, sketchFrameIds, sketchSummary, type BoardSketchRequest, type SketchFrameData, type SketchSkipReason } from "./boardSketch";
 import "./board.css";
+import { MenuCommand, StatusLine, SurfaceMenus } from "../../features/chrome/SurfaceChrome";
 
 const copy = {
   en: { loading: "Opening board…", loadFailed: "The board could not be opened.", retry: "Retry", sources: "Project documents", upload: "Upload PDF / image", title: "Board title", saved: "Saved", saving: "Saving…", dirty: "Unsaved changes", saveError: "Changes have not been saved.", conflict: "Another saved version exists. Your current canvas is preserved; these changes have not overwritten the saved board.", add: "Add page", open: "Open in MonkeyDiagram", openPage: "Edit this page", openHint: "Double-click a drawing to edit its page", fit: "Fit board", busy: "Receiving document…", clearAnnotations: "Clear annotations", clearAnnotationsHint: "Clear all drawn marks and text; keep drawings and frames. Ctrl+Z to undo.", crit: "Crit mode", critSubmit: "Submit", critExit: "Exit", export: "Export board pages", exportClean: "Clean originals · marks excluded", exportMerged: "Merged PDF", exportPages: "One PDF per page", exportPng: "PNG", exportJpeg: "JPEG", exportZip: "ZIP for transfer", exporting: "Preparing export…", exportDone: "Export ready.", exportEmpty: "Place at least one registered drawing page on the board before exporting.", empty: "Upload a PDF, PNG or JPEG to begin. New project drawings will appear here.", hint: "Wheel to zoom · Space or middle mouse to pan · Shift to select several", auto: "New documents arrive automatically", previewError: "Some page previews could not be loaded. The saved layout is retained.", unsupported: "Use PDF, PNG or JPEG files.", unbound: "This image has no registered project source. Upload its original file first.", page: "Page", pages: "pages", received: "Received", pending: "Pending", dismiss: "Dismiss", sourceError: "Project documents could not be refreshed.", select: "Select a drawing to open its original.", refresh: "Retry previews / receive", unknown: "Unknown error" },
@@ -1102,13 +1103,15 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
   };
   const boardText = whiteboardCopy[language];
   return <section className={`monkeyboard${critMode ? " monkeyboard--crit" : ""}`} aria-label="MonkeyBoard">
-    <header className="monkeyboard-topbar">
-      <div className="monkeyboard-heading"><input aria-label={text.title} value={title} maxLength={200} onChange={(event) => { const value = event.target.value; setTitle(value); titleRef.current = value; capture(canvas.current?.getSceneElementsIncludingDeleted() ?? []); }} onBlur={() => { const value = titleRef.current.trim() || "MonkeyBoard"; titleRef.current = value; setTitle(value); capture(canvas.current?.getSceneElementsIncludingDeleted() ?? []); }} /></div>
-      <span className={`monkeyboard-save-state${saveState.error ? " is-error" : ""}`} role="status">{saveState.error ? text.dirty : saveState.saving ? text.saving : saveState.dirty ? text.dirty : text.saved}</span>
-      <button aria-expanded={sourcesOpen} aria-controls="monkeyboard-project-documents" onClick={() => setSourcesOpen((open) => !open)}>{text.sources}</button>
-      <button className="monkeyboard-primary" disabled={!ready || busy || saveState.conflict} onClick={() => input.current?.click()}>{text.upload}</button>
+    {/* #337: Board's menus sit in the project bar after Board | Layout, its save state at the bar's right end;
+        crit mode shows the drawings alone. */}
+    <SurfaceMenus label="MonkeyBoard" active={active && !critMode}
+      end={<span className={`monkeyboard-save-state${saveState.error ? " is-error" : ""}`} role="status">{saveState.error ? text.dirty : saveState.saving ? text.saving : saveState.dirty ? text.dirty : text.saved}</span>}>
+      <input className="surface-title monkeyboard-title" aria-label={text.title} value={title} maxLength={200} onChange={(event) => { const value = event.target.value; setTitle(value); titleRef.current = value; capture(canvas.current?.getSceneElementsIncludingDeleted() ?? []); }} onBlur={() => { const value = titleRef.current.trim() || "MonkeyBoard"; titleRef.current = value; setTitle(value); capture(canvas.current?.getSceneElementsIncludingDeleted() ?? []); }} />
+      <MenuCommand aria-expanded={sourcesOpen} aria-controls="monkeyboard-project-documents" onClick={() => setSourcesOpen((open) => !open)}>{text.sources}</MenuCommand>
+      <MenuCommand disabled={!ready || busy || saveState.conflict} onClick={() => input.current?.click()}>{text.upload}</MenuCommand>
       <details ref={actions} className="monkeyboard-actions" onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) closeActions(); }} onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); closeActions(); actions.current?.querySelector("summary")?.focus(); } }}>
-        <summary>{boardText.more}</summary>
+        <summary className="menu-command">{boardText.more}</summary>
         <div className="monkeyboard-actions-panel" role="group" aria-label={boardText.more}>
           <button disabled={!ready} onClick={() => canvas.current?.scrollToContent(undefined, { fitToContent: true, animate: false })}>{text.fit}</button>
           <button disabled={!ready || busy || saveState.conflict || feedbackWaiting} onClick={openFeedback}>{feedbackWaiting ? text.busy : feedbackCopy[language].action}</button>
@@ -1126,8 +1129,8 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
           </div>
         </div>
       </details>
-      <input ref={input} type="file" accept="application/pdf,image/png,image/jpeg,.pdf,.png,.jpg,.jpeg" multiple hidden onChange={(event) => { void upload([...event.target.files ?? []]); event.target.value = ""; }} />
-    </header>
+    </SurfaceMenus>
+    <input ref={input} type="file" accept="application/pdf,image/png,image/jpeg,.pdf,.png,.jpg,.jpeg" multiple hidden onChange={(event) => { void upload([...event.target.files ?? []]); event.target.value = ""; }} />
     {saveState.error !== null && <div className="monkeyboard-alert" role="alert"><span>{saveState.conflict ? text.conflict : `${text.saveError} ${errorText(saveState.error)}`}</span>{!saveState.conflict && <button onClick={() => { void queue.retry().catch(() => {}); }}>{text.retry}</button>}</div>}
     {(previewFailed || sourceError) && <div className="monkeyboard-alert" role="alert"><span>{previewFailed ? text.previewError : `${text.sourceError} ${sourceError}`}</span><button onClick={retryVisuals} disabled={busy}>{text.refresh}</button></div>}
     {notice && <div className="monkeyboard-alert" role="alert"><span>{notice}</span><button onClick={() => setNotice("")} aria-label={text.dismiss}>×</button></div>}
@@ -1214,7 +1217,8 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
         </div>}
       </div>
     </div>
-    <footer className="monkeyboard-footer"><span>{text.hint}{onOpenDocument ? ` · ${text.openHint}` : ""}</span>{source && selected ? <span title={source.fileName}>{source.fileName} · {selected.pageIndex + 1}/{source.pageCount}</span> : <span>{text.select}</span>}</footer>
+    <StatusLine className="monkeyboard-footer" end={source && selected ? <span title={source.fileName}>{source.fileName} · {selected.pageIndex + 1}/{source.pageCount}</span> : text.select}>
+      {text.hint}{onOpenDocument ? ` · ${text.openHint}` : ""}</StatusLine>
     {feedback && <FeedbackDialog active={active} onOpenDocument={openDocument} selection={feedback} language={language} returnFocus={feedbackReturnFocus.current} onCancel={() => { feedbackOpen.current = false; setFeedback(null); }} onSubmit={submitFeedback} />}
     {replacement && <ReplacementDialog active={active} target={replacement} language={language} returnFocus={replacementReturnFocus.current} onCancel={() => { replacementOpen.current = false; setReplacement(null); }} onSubmit={replacePage} />}
   </section>;

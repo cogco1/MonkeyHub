@@ -91,20 +91,22 @@ try {
   const pub = () => page.locator('[data-project-surface="publish"]:visible');
   async function step(name, action) { current = name; await action(); passed.push(name); console.log("PASS", name); }
   const board = () => page.locator('[data-project-surface="board"]:visible');
+  // #337: Board's and Layout's menus sit in the project bar over the surface on screen.
+  const bar = () => page.locator('.project-bar:visible');
   async function sendBoardSelection() {
     await board().locator('.monkeyboard-canvas canvas').first().waitFor();
     await until(() => api('pub-a', '/api/board'), (value) => value.elements.filter((item) => item.type === 'image' && !item.isDeleted).length === 2, 'Board has the retained source page');
     await board().locator('.excalidraw').focus();
     await page.keyboard.press('Escape'); await page.keyboard.press('v'); await page.keyboard.press('Control+a');
-    const actions = board().locator('details').filter({ has: page.locator('summary', { hasText: 'More board actions' }) });
+    const actions = bar().locator('details').filter({ has: page.locator('summary', { hasText: 'More board actions' }) });
     if (!await actions.evaluate((element) => element.open)) await actions.locator('summary').click();
-    await board().getByRole('button', { name: 'Add to Publish', exact: true }).click();
-    await pub().getByLabel('Publication title').waitFor();
+    await bar().getByRole('button', { name: 'Add to Publish', exact: true }).click();
+    await bar().getByLabel('Publication title').waitFor();
   }
   await page.goto(vite.resolvedUrls.local[0] + "?lang=en");
   await step("create native text and a real registered image page", async () => {
     await pub().getByRole("button", { name: "+ Page", exact: true }).click();
-    await pub().getByLabel("Publication title").fill("Structure review");
+    await bar().getByLabel("Publication title").fill("Structure review");
     await pub().getByRole("button", { name: "Add text", exact: true }).click();
     await pub().getByLabel("Text", { exact: true }).fill("One building, three rooms");
     await pub().getByLabel("Project drawing / image").selectOption({ label: "Room plan.png" });
@@ -125,7 +127,7 @@ try {
     await page.screenshot({ path: path.join(temporary, "publish-wide.png"), fullPage: true });
   });
   await step("PPTX and PDF export the saved source; switching project isolates pages", async () => {
-    for (const format of ["PPTX", "PDF"]) { const pending = page.waitForEvent("download"); await pub().getByRole("button", { name: format, exact: true }).click(); const result = await pending; const content = await readFile(await result.path()); assert.ok(content.length > 1000); assert.ok(result.suggestedFilename().endsWith(format.toLowerCase())); }
+    for (const format of ["PPTX", "PDF"]) { const pending = page.waitForEvent("download"); await bar().getByRole("button", { name: format, exact: true }).click(); const result = await pending; const content = await readFile(await result.path()); assert.ok(content.length > 1000); assert.ok(result.suggestedFilename().endsWith(format.toLowerCase())); }
     await page.locator('#project-switch').click(); await pub().getByRole("button", { name: "+ Page", exact: true }).waitFor();
     assert.equal(await pub().locator('.publish-page').count(), 0);
     await page.locator('#project-switch').click(); await pub().locator('.publish-page').waitFor();
@@ -152,20 +154,20 @@ try {
     });
     await page.getByRole('button', { name: 'publish', exact: true }).click();
     await until(() => captured, Boolean, 'old publication read captured');
-    await pub().getByLabel('Publication title').fill('Newer saved review');
+    await bar().getByLabel('Publication title').fill('Newer saved review');
     await until(() => api('pub-a', '/api/publication'), (value) => value.title === 'Newer saved review', 'new save reaches P036');
-    await until(() => pub().getByRole('status').textContent(), (value) => value === 'Saved', 'save response completes');
+    await until(() => bar().locator('.publish-save-state').textContent(), (value) => value === 'Saved', 'save response completes');
     release();
     await delay(250);
-    assert.equal(await pub().getByLabel('Publication title').inputValue(), 'Newer saved review');
+    assert.equal(await bar().getByLabel('Publication title').inputValue(), 'Newer saved review');
     await page.unroute(readingPublication);
-    await pub().getByLabel('Publication title').fill('Subsequent edit still saves');
+    await bar().getByLabel('Publication title').fill('Subsequent edit still saves');
     await until(() => api('pub-a', '/api/publication'), (value) => value.title === 'Subsequent edit still saves', 'no stale revision remains in the UI');
     assert.equal(await pub().getByRole('alert').count(), 0);
   });
   await step('Board selection appends an exact page while preserving unsaved publication edits', async () => {
     const before = await api('pub-a', '/api/publication');
-    await pub().getByLabel('Publication title').fill('Unsaved manual review title');
+    await bar().getByLabel('Publication title').fill('Unsaved manual review title');
     await page.getByRole('button', { name: 'board', exact: true }).click();
     await sendBoardSelection();
     const appended = await until(() => api('pub-a', '/api/publication'), (value) => value.pages.length === before.pages.length + 2, 'Board page appended');
@@ -185,18 +187,18 @@ try {
       const response = await route.fetch(); captured = true; await gate; await route.fulfill({ response });
     });
     const download = page.waitForEvent('download');
-    await pub().getByRole('button', { name: 'PDF', exact: true }).click();
+    await bar().getByRole('button', { name: 'PDF', exact: true }).click();
     await until(() => captured, Boolean, 'export response delayed');
     await page.getByRole('button', { name: 'board', exact: true }).click();
     const handed = page.waitForResponse((response) => response.url().includes('/pub-a/api/publication/from-board') && response.request().method() === 'POST');
     await sendBoardSelection();
-    assert.equal(await pub().getByRole('button', { name: 'PDF', exact: true }).isDisabled(), true, 'export still owns the in-flight operation');
+    assert.equal(await bar().getByRole('button', { name: 'PDF', exact: true }).isDisabled(), true, 'export still owns the in-flight operation');
     release(); await download;
     const response = await handed;
     assert.equal(response.status(), 200, await response.text());
     const after = await api('pub-a', '/api/publication');
     assert.deepEqual(after.pages, before.pages, 'retrying the same retained Board selection is idempotent');
-    await until(() => pub().getByRole('button', { name: 'PDF', exact: true }).isEnabled(), Boolean, 'handoff response applied');
+    await until(() => bar().getByRole('button', { name: 'PDF', exact: true }).isEnabled(), Boolean, 'handoff response applied');
     assert.equal(await pub().locator('.publish-page').count(), 1, 'idempotent handoff still shows an existing page');
     assert.deepEqual(await api('pub-a', '/fixture/head'), head);
     await page.unroute('**/pub-a/api/publication/export');
@@ -213,13 +215,13 @@ try {
       failed = true;
       await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ detail: 'Temporary save failure' }) });
     });
-    await pub().getByLabel('Publication title').fill('Retain this after failure');
+    await bar().getByLabel('Publication title').fill('Retain this after failure');
     await until(() => failed, Boolean, 'save refused');
     await pub().getByRole('button', { name: 'Retry save', exact: true }).waitFor();
-    assert.equal(await pub().getByLabel('Publication title').inputValue(), 'Retain this after failure');
+    assert.equal(await bar().getByLabel('Publication title').inputValue(), 'Retain this after failure');
     await page.unroute(savingPublication);
     await pub().getByRole('button', { name: 'Retry save', exact: true }).click();
-    await until(() => pub().getByRole('status').textContent(), (value) => value === 'Saved', 'retry acknowledged');
+    await until(() => bar().locator('.publish-save-state').textContent(), (value) => value === 'Saved', 'retry acknowledged');
     assert.equal((await api('pub-a', '/api/publication')).title, 'Retain this after failure');
     await delay(300);
     assert.deepEqual((await api('pub-a', '/api/publication')).pages, kept, 'retry must not replay the previous Board import');
@@ -236,19 +238,19 @@ try {
       if (writes === 1) { captured = true; await gate; }
       await route.fulfill({ response });
     });
-    await pub().getByLabel('Publication title').fill('First typing pause');
+    await bar().getByLabel('Publication title').fill('First typing pause');
     await until(() => captured, Boolean, 'autosave request paused');
-    await pub().getByLabel('Publication title').fill('Newest edit during save');
+    await bar().getByLabel('Publication title').fill('Newest edit during save');
     assert.equal(writes, 1, 'writes remain serialized');
     release();
-    await until(() => pub().getByRole('status').textContent(), (value) => value === 'Saved', 'latest edit acknowledged');
+    await until(() => bar().locator('.publish-save-state').textContent(), (value) => value === 'Saved', 'latest edit acknowledged');
     assert.equal((await api('pub-a', '/api/publication')).title, 'Newest edit during save');
     await page.unroute(savingPublication);
-    await pub().getByLabel('Publication title').fill('Final edit before project switch');
+    await bar().getByLabel('Publication title').fill('Final edit before project switch');
     await page.locator('#project-switch').click();
     await until(() => api('pub-a', '/api/publication'), (value) => value.title === 'Final edit before project switch', 'unmount flush');
     await page.locator('#project-switch').click();
-    await until(() => pub().getByLabel('Publication title').inputValue(), (value) => value === 'Final edit before project switch', 'cold project read');
+    await until(() => bar().getByLabel('Publication title').inputValue(), (value) => value === 'Final edit before project switch', 'cold project read');
     assert.equal(await pub().getByRole('button', { name: 'Save', exact: true }).count(), 0);
   });
   await step('immediate project reopen cannot adopt a GET older than its pending save', async () => {
@@ -263,37 +265,37 @@ try {
       }
       return route.continue();
     });
-    await pub().getByLabel('Publication title').fill('Pending across immediate reopen');
+    await bar().getByLabel('Publication title').fill('Pending across immediate reopen');
     await until(() => writeCaptured, Boolean, 'PUT held before commit');
     await page.locator('#project-switch').click();
     await pub().getByRole('button', { name: '+ Page', exact: true }).waitFor();
     await page.locator('#project-switch').click();
     await until(() => readCaptured, Boolean, 'old GET captured on new surface');
-    assert.equal(await pub().getByLabel('Publication title').inputValue(), 'Pending across immediate reopen');
+    assert.equal(await bar().getByLabel('Publication title').inputValue(), 'Pending across immediate reopen');
     releaseWrite();
-    await until(() => pub().getByRole('status').textContent(), (value) => value === 'Saved', 'pending save acknowledged after remount');
+    await until(() => bar().locator('.publish-save-state').textContent(), (value) => value === 'Saved', 'pending save acknowledged after remount');
     releaseRead(); await delay(250);
-    assert.equal(await pub().getByLabel('Publication title').inputValue(), 'Pending across immediate reopen');
+    assert.equal(await bar().getByLabel('Publication title').inputValue(), 'Pending across immediate reopen');
     assert.equal(await pub().getByLabel('Project drawing / image').locator('option', { hasText: 'Room plan.png' }).count(), 1, 'source list survives a rejected old publication read');
     await page.unroute(publicationRoute);
-    await pub().getByLabel('Publication title').fill('Next edit has the correct saved base');
-    await until(() => pub().getByRole('status').textContent(), (value) => value === 'Saved', 'CAS base retained');
+    await bar().getByLabel('Publication title').fill('Next edit has the correct saved base');
+    await until(() => bar().locator('.publish-save-state').textContent(), (value) => value === 'Saved', 'CAS base retained');
     assert.equal((await api('pub-a', '/api/publication')).title, 'Next edit has the correct saved base');
   });
   await step('failed autosave survives project close until it can be retried', async () => {
     const savingPublication = (url) => url.pathname === '/pub-a/api/publication';
     await page.route(savingPublication, (route) => route.request().method() === 'PUT'
       ? route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ detail: 'Offline for close' }) }) : route.continue());
-    await pub().getByLabel('Publication title').fill('Recover this after closing project');
+    await bar().getByLabel('Publication title').fill('Recover this after closing project');
     await pub().getByRole('button', { name: 'Retry save', exact: true }).waitFor();
     await page.locator('#project-switch').click();
     await pub().getByRole('button', { name: '+ Page', exact: true }).waitFor();
     await page.locator('#project-switch').click();
     await pub().getByRole('button', { name: 'Retry save', exact: true }).waitFor();
-    assert.equal(await pub().getByLabel('Publication title').inputValue(), 'Recover this after closing project');
+    assert.equal(await bar().getByLabel('Publication title').inputValue(), 'Recover this after closing project');
     await page.unroute(savingPublication);
     await pub().getByRole('button', { name: 'Retry save', exact: true }).click();
-    await until(() => pub().getByRole('status').textContent(), (value) => value === 'Saved', 'reopened failure recovered');
+    await until(() => bar().locator('.publish-save-state').textContent(), (value) => value === 'Saved', 'reopened failure recovered');
   });
   await step('Board import completes across immediate project close/reopen without a stale editing base', async () => {
     let release, captured = false;
@@ -306,15 +308,15 @@ try {
     await page.locator('#project-switch').click();
     await pub().getByRole('button', { name: '+ Page', exact: true }).waitFor();
     await page.locator('#project-switch').click();
-    await pub().getByLabel('Publication title').waitFor();
-    assert.equal(await pub().getByLabel('Publication title').isDisabled(), true, 'import owns the document until acknowledgement');
+    await bar().getByLabel('Publication title').waitFor();
+    assert.equal(await bar().getByLabel('Publication title').isDisabled(), true, 'import owns the document until acknowledgement');
     release();
-    await until(() => pub().getByLabel('Publication title').isEnabled(), Boolean, 'import delivered to remounted surface');
+    await until(() => bar().getByLabel('Publication title').isEnabled(), Boolean, 'import delivered to remounted surface');
     await page.unroute('**/pub-a/api/publication/from-board');
     const imported = await api('pub-a', '/api/publication');
     assert.ok(imported.pages.length >= before.pages.length);
-    await pub().getByLabel('Publication title').fill('Edit after reopened Board import');
-    await until(() => pub().getByRole('status').textContent(), (value) => value === 'Saved', 'imported CAS base available');
+    await bar().getByLabel('Publication title').fill('Edit after reopened Board import');
+    await until(() => bar().locator('.publish-save-state').textContent(), (value) => value === 'Saved', 'imported CAS base available');
     assert.equal((await api('pub-a', '/api/publication')).title, 'Edit after reopened Board import');
     assert.deepEqual((await api('pub-a', '/api/publication')).pages, imported.pages);
   });
@@ -330,13 +332,13 @@ try {
     await page.locator('#project-switch').click();
     await pub().getByRole('button', { name: '+ Page', exact: true }).waitFor();
     await page.locator('#project-switch').click();
-    await pub().getByLabel('Publication title').waitFor(); release();
+    await bar().getByLabel('Publication title').waitFor(); release();
     await pub().getByRole('button', { name: 'Retry save', exact: true }).waitFor();
     await page.unroute('**/pub-a/api/publication/from-board');
     const response = page.waitForResponse((reply) => reply.url().endsWith('/api/publication/from-board') && reply.request().method() === 'POST');
     await pub().getByRole('button', { name: 'Retry save', exact: true }).click();
     assert.equal((await response).status(), 200);
-    await until(() => pub().getByRole('status').textContent(), (value) => value === 'Saved', 'retained Board command retried');
+    await until(() => bar().locator('.publish-save-state').textContent(), (value) => value === 'Saved', 'retained Board command retried');
     assert.equal(await pub().getByRole('alert').count(), 0);
   });
   await step('repeatable layout separates multiple text boxes from images and refuses overfull content', async () => {
@@ -348,27 +350,27 @@ try {
     await pub().getByLabel('Project drawing / image').selectOption({ label: 'Room plan.png' });
     await pub().getByRole('button', { name: 'Place on page', exact: true }).click();
     await pub().getByRole('button', { name: 'Apply image + title layout', exact: true }).click();
-    await until(() => pub().getByRole('status').textContent(), (value) => value === 'Saved', 'rule saved');
+    await until(() => bar().locator('.publish-save-state').textContent(), (value) => value === 'Saved', 'rule saved');
     const layout = (await api('pub-a', '/api/publication')).pages.at(-1);
     const texts = layout.elements.filter((item) => item.kind === 'text'), picture = layout.elements.find((item) => item.kind === 'image');
     assert.ok(texts.every((item) => item.y + item.height <= picture.y));
     for (let i = 1; i < texts.length; ++i) assert.ok(texts[i-1].y + texts[i-1].height < texts[i].y);
     await pub().getByRole('button', { name: 'Apply image + title layout', exact: true }).click();
-    await until(() => pub().getByRole('status').textContent(), (value) => value === 'Saved', 'repeat rule saved');
+    await until(() => bar().locator('.publish-save-state').textContent(), (value) => value === 'Saved', 'repeat rule saved');
     assert.deepEqual((await api('pub-a', '/api/publication')).pages.at(-1), layout);
     await pub().getByLabel('width', { exact: true }).fill('320');
     await pub().getByRole('button', { name: 'Center horizontally', exact: true }).click();
     assert.equal(await pub().getByLabel('x', { exact: true }).inputValue(), '320');
     await pub().locator('.publish-element').filter({ hasText: 'Third note' }).click();
     await pub().getByLabel('height', { exact: true }).fill('220');
-    await until(() => pub().getByRole('status').textContent(), (value) => value === 'Saved', 'large text box saved');
+    await until(() => bar().locator('.publish-save-state').textContent(), (value) => value === 'Saved', 'large text box saved');
     const before = (await api('pub-a', '/api/publication')).pages;
     await pub().getByRole('button', { name: 'Apply image + title layout', exact: true }).click();
     await pub().getByRole('alert').filter({ hasText: 'not enough room' }).waitFor();
     assert.deepEqual((await api('pub-a', '/api/publication')).pages, before, 'refused rule preserves authored placement');
     await pub().getByLabel('height', { exact: true }).fill('75');
     await pub().getByRole('button', { name: 'Apply image + title layout', exact: true }).click();
-    await until(() => pub().getByRole('status').textContent(), (value) => value === 'Saved', 'layout repaired');
+    await until(() => bar().locator('.publish-save-state').textContent(), (value) => value === 'Saved', 'layout repaired');
   });
   await step('image and PDF previews preserve transparency when composed over other content', async () => {
     for (const body of await api('pub-a', '/fixture/transparency')) {
@@ -392,7 +394,7 @@ try {
       assert.equal(alpha[0], 0, name + ' keeps the background transparent');
       assert.ok(alpha[1] >= 126 && alpha[1] <= 129, name + ' keeps partial opacity');
     }
-    await until(() => pub().getByRole('status').textContent(), (value) => value === 'Saved', 'transparent placements saved');
+    await until(() => bar().locator('.publish-save-state').textContent(), (value) => value === 'Saved', 'transparent placements saved');
   });
   await step('saved pages and identical PDF reopen after an actual Runtime restart', async () => {
     const before = await api('pub-a', '/api/publication');
@@ -403,7 +405,7 @@ try {
     const exited = new Promise((resolve) => running.child.once('exit', resolve));
     running.child.kill(); await exited;
     await startRuntime('pub-a', running.port);
-    await page.reload(); await pub().getByLabel('Publication title').waitFor();
+    await page.reload(); await bar().getByLabel('Publication title').waitFor();
     assert.deepEqual(await api('pub-a', '/api/publication'), before);
     assert.deepEqual(await output(), original);
     assert.deepEqual(await api('pub-a', '/fixture/head'), head);

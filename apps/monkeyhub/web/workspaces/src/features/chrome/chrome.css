@@ -1,7 +1,8 @@
 /* #337: one bar, words for modes and commands, and one status line: the same on every surface. */
 .surface-bar { display: flex; flex: none; align-items: center; gap: 16px; min-height: 44px; box-sizing: border-box; padding: 0 16px;
   border-bottom: 1px solid var(--line); background: var(--ground); }
-.surface-bar__items { display: flex; align-items: center; gap: 16px; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+/* Menus that do not fit wrap onto a second row: every command stays in sight, and a menu's panel is never clipped. */
+.surface-bar__items { display: flex; flex-wrap: wrap; align-items: center; gap: 0 16px; min-width: 0; }
 .surface-bar__end { display: flex; flex: none; align-items: center; gap: 12px; margin-left: auto; color: var(--faint);
   font-size: var(--text-caption); white-space: nowrap; }
 .menu-tabs { display: flex; align-self: stretch; gap: 14px; }
@@ -15,6 +16,11 @@
 .menu-command[aria-expanded="true"], .menu-command[aria-pressed="true"] { color: var(--ink); text-decoration: underline 2px var(--accent);
   text-underline-offset: 6px; }
 .menu-separator { flex: none; width: 1px; height: 16px; background: var(--line); }
+/* A surface's name, editable in place: bold words as wide as they are, showing a field's edge only while hovered or typed in.
+   The bar-scoped selector outranks the Hub's form-field rule. */
+.surface-bar .surface-bar__items .surface-title { field-sizing: content; width: auto; min-width: 6ch; max-width: min(240px, 30vw); min-height: 32px; box-sizing: border-box; padding: 4px 6px;
+  border: 1px solid transparent; border-radius: 5px; background: transparent; color: var(--ink); font: inherit; font-size: var(--text-ui); font-weight: 600; }
+.surface-bar .surface-bar__items .surface-title:hover:not(:disabled), .surface-bar .surface-bar__items .surface-title:focus { border-color: var(--line); }
 .status-line { display: flex; flex: none; align-items: center; gap: 16px; min-height: 28px; box-sizing: border-box; padding: 4px 16px;
   border-top: 1px solid var(--line); color: var(--faint); font-size: var(--text-caption); }
 .status-line__start, .status-line__end { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -24,6 +30,8 @@
 .project-workspace:has(> .project-bar) { display: flex; flex-direction: column; }
 .project-bar { position: relative; }
 .project-bar__lead, .project-bar__menus, .project-bar__words { display: contents; }
+/* A line between the project's own menus (Board | Layout) and the surface's, only when both are there. */
+.project-bar__lead:empty + .project-bar__gap, .project-bar__gap:has(+ .project-bar__menus:empty) { display: none; }
 .project-bar .surface-bar__end { flex: 0 1 auto; align-self: stretch; min-width: 0; }
 .project-bar:not(:has(.project-bar__lead:not(:empty), .project-bar__menus:not(:empty), .project-bar__words:not(:empty), .design-tree-bar)) { display: none; }
 :where([data-ui-style="quiet"], [data-ui-style="titleblock"], [data-ui-style="night"]) .surface-bar { border-bottom-color: var(--rule-soft); }
