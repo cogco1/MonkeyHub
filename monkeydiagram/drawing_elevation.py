@@ -424,6 +424,12 @@ class ElevationDrawing:
 
         return self.receipt.get("reason")
 
+    @property
+    def source_kind(self) -> str | None:
+        """What kind of asker the application said asked, such as a person or an agent; None when it did not say."""
+
+        return self.receipt.get("sourceKind")
+
 
 @dataclass(frozen=True, slots=True)
 class VerifiedElevationSource:
@@ -599,16 +605,18 @@ def _source_binding(source, verified):
             "object_identity": "STEP shape name = CAD receipt physical object id"}
 
 
-def _revision_provenance(attribution, reason) -> dict[str, Any]:
+def _revision_provenance(attribution, reason, source_kind=None) -> dict[str, Any]:
     """Who asked for a drawing revision and why, as the application states them; checked before anything is drawn.
 
     ``attribution`` is a flat mapping of JSON values, such as the Studio's
     ``{"actorId", "authenticated", "origin"}``, or a dataclass of them, whose
     field names are then written in camelCase.  ``reason`` is the words the
-    revision was asked with.  Neither is interpreted here, but both must be
-    text a receipt can hold, so a refusal comes before any file is written.
-    What is not given is not written, so an earlier receipt and a revision
-    without them both read as None.
+    revision was asked with, and ``source_kind`` the kind of asker the
+    request says it came from, such as the Studio's ``human`` or ``agent``.
+    None of them is interpreted here, but each must be text a receipt can
+    hold, so a refusal comes before any file is written.  What is not given
+    is not written, so an earlier receipt and a revision without them both
+    read as None.
     """
 
     provenance: dict[str, Any] = {}
@@ -623,18 +631,19 @@ def _revision_provenance(attribution, reason) -> dict[str, Any]:
                        for value in attribution.values())):
             raise DrawingElevationError("attribution must be a flat mapping of names to text, true/false or numbers")
         provenance["attribution"] = dict(attribution)
-    if reason is not None:
-        if not isinstance(reason, str):
-            raise DrawingElevationError("reason must be text")
-        if reason.strip():
-            provenance["reason"] = reason
-    texts = [reason or "", *(key for key in provenance.get("attribution", {})),
+    for key, text in (("reason", reason), ("sourceKind", source_kind)):
+        if text is not None:
+            if not isinstance(text, str):
+                raise DrawingElevationError(f"{key} must be text")
+            if text.strip():
+                provenance[key] = text
+    texts = [reason or "", source_kind or "", *(key for key in provenance.get("attribution", {})),
              *(value for value in provenance.get("attribution", {}).values() if isinstance(value, str))]
     try:
         for text in texts:
             text.encode("utf-8")
     except UnicodeEncodeError as exc:
-        raise DrawingElevationError("attribution and reason must be text a receipt can hold") from exc
+        raise DrawingElevationError("attribution, reason and sourceKind must be text a receipt can hold") from exc
     return provenance
 
 
@@ -735,18 +744,19 @@ def resolve_plan_dressing(recipe: Mapping, receipt: Mapping) -> list[dict]:
 def freeze_cut_plan(
     repository: FilesystemProjectRepository, *, source: ElevationSource | NativeModelSource, recipe: Mapping,
     drawing_run_id: str, dimensions: tuple[Mapping, ...] = (), previous_revision_ref: str | None = None,
-    attribution: Mapping[str, Any] | None = None, reason: str | None = None,
+    attribution: Mapping[str, Any] | None = None, reason: str | None = None, source_kind: str | None = None,
 ) -> ElevationDrawing:
     """Retain a horizontal section and the exact below-cut visibility in the existing drawing envelope.
 
     ``recipe`` retains representation intent; ``dimensions`` contains the application's resolved
     source measurements or explicit unresolved statuses. Neither can change the source model.
     Coordinates are the verified STEP's CAD Z-up frame and length unit, never Program Y-up.
-    ``attribution`` and ``reason`` say who asked for this revision and why (``_revision_provenance``).
+    ``attribution``, ``reason`` and ``source_kind`` say who asked for this revision, why and as
+    what kind of asker (``_revision_provenance``).
     """
     if not isinstance(repository, FilesystemProjectRepository):
         raise TypeError("repository must be FilesystemProjectRepository")
-    provenance = _revision_provenance(attribution, reason)
+    provenance = _revision_provenance(attribution, reason, source_kind)
     try:
         recipe = deepcopy(dict(recipe))
         _require(recipe.get("kind") == CUT_PLAN_KIND, "the view recipe must be a cut-plan")

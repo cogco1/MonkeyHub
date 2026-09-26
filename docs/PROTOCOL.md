@@ -649,13 +649,18 @@ change; a document without `drawingId` is an upload.
 
 A cut-plan request may say why it is asked for: `reason`, 1–200 characters in the
 asker's words (an agent passes the correction it was given; a direct edit omits
-it). The request boundary records who asked, as for decisions: `actorId`,
-`authenticated` and `origin`, where `hub` means a runtime the Hub manages and
-`studio` one it does not. Both are retained in the revision's drawing receipt,
-never in `viewRecipe`, so they neither make nor distinguish revisions: an identical
-request returns the retained revision as it was asked for. Every SourceDocument
-with a `revisionRef` reads `previousRevisionRef`, `attribution` and `reason` from
-that receipt, read-only; a revision retained before they were recorded reads null.
+it). It may also say who it comes from: `sourceKind` is `human` for a person's own
+edit (the Drawing canvas sends it) or `agent` for an agent's reading of what a
+person asked; omitted is unknown. The Hub's `studio_request` marks the Agent's plan
+requests `agent` unless the request names a kind itself. The request boundary
+records who asked, as for decisions: `actorId`, `authenticated` and `origin`, where
+`hub` means a runtime the Hub manages and `studio` one it does not; a Hub-managed
+runtime serves both its window and its Agent, which is why `sourceKind` is asked for.
+All three are retained in the revision's drawing receipt, never in `viewRecipe`, so
+they neither make nor distinguish revisions: an identical request returns the
+retained revision as it was asked for. Every SourceDocument with a `revisionRef`
+reads `previousRevisionRef`, `attribution`, `reason` and `sourceKind` from that
+receipt, read-only; a revision retained before they were recorded reads null.
 
 `GET /api/drawings/plans/vector?runId=…&assetSha256=…&revisionRef=…` reads the
 verified retained SVG, built-in vector symbols and exact source anchor choices.
@@ -697,8 +702,8 @@ in `g#section-hatch`. Before the SVG, a deterministic cleanup at 0.05 mm on the 
 drops strokes shorter than that, projected edges lying on the cut and hidden lines under
 visible ones or inside the cut, and joins an object's collinear pieces. The drawing
 receipt keeps its per-rule counts under `cleanup` (never in the recipe) and, when the
-application gives them, the revision's `attribution` and `reason`; receipts retained
-earlier have none.
+application gives them, the revision's `attribution`, `reason` and `sourceKind`;
+receipts retained earlier have none.
 
 `POST /api/drawings/plans/status` and `GET /api/drawings/plans/vector` also return
 `cleanup`: the deterministic line cleanup the projection owner retained with that

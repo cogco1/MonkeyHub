@@ -169,6 +169,11 @@ class PlanRequestDto(DrawingSourceRequestDto):
     reason: str | None = Field(default=None, min_length=1, max_length=200, description=(
         "Why this revision is asked for, in the asker's own words, such as the correction an agent was given; "
         "omit it for a direct edit. Retained with the revision beside who asked, never in its recipe."))
+    source_kind: Literal["human", "agent"] | None = Field(alias="sourceKind", default=None, description=(
+        "Who this request comes from: human for a person's own edit in the drawing, agent for an agent's reading "
+        "of what a person asked. Omitted is unknown; the Hub marks its Agent's requests agent. Retained with the "
+        "revision beside who asked, never in its recipe, and an agent's revision is never counted toward a "
+        "project recipe suggestion."))
 
     @model_validator(mode="after")
     def one_dressing_edit(self):

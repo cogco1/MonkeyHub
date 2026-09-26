@@ -268,11 +268,18 @@ class SourceDocument:
     generated_at: str | None = None
     replaces_pages: tuple[DocumentPageReplacement, ...] = ()
     # What a drawing revision's own receipt says: the revision it continued,
-    # who asked for it and why. Read, never registered; None where it says none.
+    # who asked for it and why, and whether its request came from a person
+    # (``human``) or an agent (``agent``). Read, never registered; None where
+    # it says none.
     previous_revision_ref: str | None = None
     attribution: ActorAttribution | None = None
     reason: str | None = None
+    source_kind: str | None = None
 
+
+# What a cut-plan request may say it came from: a person's own edit, or an
+# agent's reading of what a person asked (05 §5). Unsaid is unknown.
+REVISION_SOURCE_KINDS = ("human", "agent")
 
 # Receipt fields a listing reads, by record URI. A record's name carries its
 # digest, so one read answers for the life of the process.
@@ -285,7 +292,8 @@ def _revision_provenance(binding: ProjectBinding, revision_ref: str) -> dict[str
 
     A receipt that cannot be read says nothing here: serving the revision's
     bytes refuses it by name, and one damaged revision must not cost a
-    listing every other document.
+    listing every other document. Only the two kinds of asker a request can
+    state are read; any other value says nothing either.
     """
 
     with _revision_provenance_lock:
@@ -301,8 +309,10 @@ def _revision_provenance(binding: ProjectBinding, revision_ref: str) -> dict[str
     if (isinstance(who, Mapping) and isinstance(who.get("actorId"), str)
             and isinstance(who.get("authenticated"), bool) and isinstance(who.get("origin"), str)):
         attribution = ActorAttribution(who["actorId"], who["authenticated"], who["origin"])
+    kind = receipt.get("sourceKind")
     known = {"previous_revision_ref": _text(receipt.get("previousRevisionRef")),
-             "attribution": attribution, "reason": _text(receipt.get("reason"))}
+             "attribution": attribution, "reason": _text(receipt.get("reason")),
+             "source_kind": kind if kind in REVISION_SOURCE_KINDS else None}
     with _revision_provenance_lock:
         if len(_REVISION_PROVENANCE) >= 100_000:
             _REVISION_PROVENANCE.clear()
@@ -679,7 +689,7 @@ def save_document(
                 payload={"schema": "StudioSourceDocument@1", **{
                     key: value for key, value in asdict(document).items() if key not in (
                         "model_source", "model_source_binding_ref", "drawing_id", "revision_ref", "source_stage_ref", "view_recipe", "generated_at",
-                        "previous_revision_ref", "attribution", "reason",
+                        "previous_revision_ref", "attribution", "reason", "source_kind",
                     )
                 }, **({"modelSource": model_source.to_dict()} if model_source else {}),
                 **({"drawingId": drawing_id} if drawing_id is not None else {}),

@@ -163,17 +163,19 @@ def _paper_rules(retained, hatch, beyond, spacing_mm):
 
 
 @retained_sources
-def generate_plan(binding, *, attribution, reason=None, source_stage_ref=None, model_source=None, drawing_id=None,
-                  previous_revision_ref=None, cut_height=None, bottom=None, scale_denominator=None,
+def generate_plan(binding, *, attribution, reason=None, source_kind=None, source_stage_ref=None, model_source=None,
+                  drawing_id=None, previous_revision_ref=None, cut_height=None, bottom=None, scale_denominator=None,
                   crop_uv=None, cut_line_mm=None, visible_line_mm=None, hatch_spacing_mm=None, hatch=None, beyond=None,
                   hidden_object_ids=None, dimensions=None, dressing=None, dressing_operations=None, follow=None, source_asset=None):
     """One cut-plan revision, or the retained one an identical request already made.
 
     A new drawing takes the project recipe for the pens and hatch spacing its
     request leaves open; a rebuild keeps its own (``_paper_values``).
-    ``attribution`` is who asked, as the request boundary knows it, and
-    ``reason`` why, in their words when given (05 3.2(A)). Both are retained
-    with the revision's receipt, never in its recipe, so they neither make nor
+    ``attribution`` is who asked, as the request boundary knows it, ``reason``
+    why, in their words when given (05 3.2(A)), and ``source_kind`` whether
+    the request says a person (``human``) or an agent (``agent``) asked, or
+    None when it does not say (05 §5). All three are retained with the
+    revision's receipt, never in its recipe, so they neither make nor
     distinguish revisions: a reused revision keeps its own.
     """
     previous = None if previous_revision_ref is None else _previous_plan(binding, previous_revision_ref)
@@ -255,7 +257,7 @@ def generate_plan(binding, *, attribution, reason=None, source_stage_ref=None, m
                 binding, model_source, stage_ref, verified, frame, recipe["dimensions"], hidden_object_ids=recipe["hiddenObjectIds"])
             drawing = freeze_cut_plan(binding.repository, source=source, recipe=recipe,
                                       drawing_run_id=f"studio-drawing-{uuid4().hex}", dimensions=resolved,
-                                      previous_revision_ref=previous_revision_ref, reason=reason,
+                                      previous_revision_ref=previous_revision_ref, reason=reason, source_kind=source_kind,
                                       attribution={"actorId": attribution.actor_id, "authenticated": attribution.authenticated,
                                                    "origin": attribution.origin})
             pages = _document_pages(drawing.png, "image/png")
