@@ -155,6 +155,36 @@
       ]
     },
     {
+      "id": "GH-314",
+      "stream": "planning",
+      "status": "active",
+      "goal": "Remove unchanged heartbeat snapshot reconstruction and operation-history copies from the Hub project watcher, preserving work-copy observation, external refresh and recovery responsiveness.",
+      "depends_on": [],
+      "issue": "https://github.com/cogco1/MonkeyHub/issues/314",
+      "branch": "codex/314-idle-runtime-cost",
+      "worktree": "codex-314-idle-runtime-cost",
+      "base_ref": "f9077fadb66ac686bc62eef9558a10b19b41e5e4",
+      "contributor": "Codex",
+      "reviewer": null,
+      "handoff": "Parent task reviews and integrates this source-only slice; Claude owns PR #320 and the running Hub release. The original five-project idle CPU acceptance remains a separate installed-build measurement.",
+      "modules": [
+        "hub.shell"
+      ],
+      "write_scope": [
+        "apps/monkeyhub/api/monkeyhub_api/runtime.py",
+        "apps/monkeyhub/api/tests/test_project_runtime.py",
+        "apps/monkeyhub/api/tests/test_runtime_operations.py",
+        "governance/work_registry.json",
+        "docs/DYNAMIC_MAP.md",
+        "docs/mapping/planning/INDEX.md"
+      ],
+      "acceptance": [
+        "Unchanged idle heartbeats do not reconstruct operation records or project snapshots; equivalent isolated workloads record before/after counts and time.",
+        "Operation, chat, worker, work-copy error, client and projection changes remain visible with the existing heartbeat and wake behavior; external changes remain discoverable on the existing due cadence.",
+        "Focused runtime tests, archcheck and changed-scope checks pass; this slice does not claim the real five-project CPU threshold or change the running Hub."
+      ]
+    },
+    {
       "id": "GH-66",
       "stream": "planning",
       "status": "active",
