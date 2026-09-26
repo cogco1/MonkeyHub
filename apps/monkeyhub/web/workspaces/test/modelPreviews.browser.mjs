@@ -69,7 +69,7 @@ window.captureRace = async (phase) => {
  const saved=await retainModelPreview(studio,source,async()=>{calls.push('pixels');if(phase==='pixels')current=false;return new Blob(['png']);},()=>current);
  return {calls,saved};
 };
-function App(){const [workspace,setWorkspace]=useState('arch');
+function App(){const [workspace,setWorkspace]=useState(new URLSearchParams(location.search).get('workspace')==='board'?'board':'arch');
  return <UserPreferencesProvider baseUrl={location.origin}>
   <ProjectWorkspace expectedProjectId="demo-project" workspace={workspace} onWorkspaceChange={setWorkspace}/>
  </UserPreferencesProvider>;}
@@ -107,7 +107,7 @@ try {
     plugins: [{ name: 'model-previews-fixture', resolveId(id) { if (id === '/model-previews-fixture.tsx') return path.join(webRoot,'model-previews-fixture.tsx').replaceAll('\\','/'); },
       load(id) { if (id === path.join(webRoot,'model-previews-fixture.tsx').replaceAll('\\','/')) return fixture; },
       configureServer(vite) { vite.middlewares.use((request,response,next) => {
-        if (request.url !== '/') return next(); response.setHeader('content-type','text/html');
+        if (request.url?.split('?')[0] !== '/') return next(); response.setHeader('content-type','text/html');
         response.end('<html><head><meta charset="utf-8"/><style>html,body,#root{height:100%;margin:0}*{box-sizing:border-box}</style></head><body><div id="root" class="project-workspace"></div><script type="module" src="/model-previews-fixture.tsx"></script></body></html>');
       }); },
     }],
@@ -199,6 +199,48 @@ try {
     }
     assert.deepEqual(await page.evaluate(()=>window.captureRace('stable')),{calls:['read','pixels','save'],saved:true});
     assert.deepEqual(errors,[]);
+  });
+  await step('model thumbnails leave Board unchanged until explicitly placed, including after reopening', async () => {
+    const image = await preview(a.modelSource), before = await api('/api/board');
+    const boardWrites = [];
+    const recordWrite = request => {
+      if (request.method() === 'PUT' && new URL(request.url()).pathname === '/api/board') boardWrites.push(request.postDataJSON());
+    };
+    page.on('request', recordWrite);
+    const boardUrl = `${server.resolvedUrls.local[0]}?workspace=board`;
+    const waitForBoard = async () => {
+      await page.locator('[data-project-surface="board"]:visible .monkeyboard-canvas canvas').first().waitFor();
+      await page.locator('.monkeyboard-initializing').waitFor({ state: 'hidden' });
+    };
+    const waitForDiscovery = async () => {
+      // Observe the real five-second discovery tick and its save debounce.
+      await page.waitForResponse(response => response.request().method() === 'GET' && new URL(response.url()).pathname === '/api/documents');
+      await delay(1000);
+    };
+    await page.goto(boardUrl); await waitForBoard();
+    await page.getByRole('button', { name: 'Project documents', exact: true }).click();
+    const source = page.locator('.monkeyboard-source').filter({ hasText: image.fileName });
+    await source.waitFor();
+    await waitForDiscovery();
+    assert.deepEqual(await api('/api/board'), before, 'automatic preview discovery must preserve the saved scene and revision');
+    assert.deepEqual(boardWrites, [], 'automatic previews must not trigger a Board save');
+
+    await source.getByRole('button', { name: 'Add page', exact: true }).click();
+    const placed = await until(() => api('/api/board'), board => board.elements.some(element =>
+      !element.isDeleted && element.type === 'image' && element.customData?.sourceDocument?.assetSha256 === image.assetSha256), 'explicit thumbnail placement saved');
+    const images = placed.elements.filter(element => !element.isDeleted && element.type === 'image');
+    assert.equal(images.length, 1, 'placing one thumbnail must not receive other model previews');
+    assert.deepEqual(images[0].customData.sourceDocument, {
+      runId: image.runId, assetSha256: image.assetSha256, revisionRef: null, pageIndex: 0,
+    });
+    assert.ok(boardWrites.length > 0);
+    boardWrites.length = 0;
+    await page.reload(); await waitForBoard(); await waitForDiscovery();
+    assert.deepEqual(await api('/api/board'), placed, 'reopening must retain the explicitly placed preview without adding other thumbnails');
+    assert.deepEqual(boardWrites, [], 'reopening a saved preview must not produce another scene revision');
+    assert.equal(await api('/fixture/head'), head);
+    assert.deepEqual(errors, []);
+    page.off('request', recordWrite);
   });
   console.log(JSON.stringify({passed,screenshots:temporary}));
 } catch(error) {
