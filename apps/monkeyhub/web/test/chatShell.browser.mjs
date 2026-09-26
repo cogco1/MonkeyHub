@@ -211,7 +211,7 @@ await page.route((url) => url.pathname.startsWith("/api/"), async (route) => {
           mimeType: "image/png", sizeBytes: (studyCapturedPreviews.get(previewSha)?.png ?? Buffer.from(externalImage, "base64")).length,
           pageCount: 1, pages: [], modelSource: asset.dto.modelSource, modelSourceBindingRef: "fixture", revisionRef: null } });
       }
-      return route.fulfill({ json: null });
+      return route.fulfill({ json: null, contentType: "application/json" });
     }
     // Keep the real viewport capture and its existing retained-preview event in
     // the regression: this candidate has no image until the architect views it.
