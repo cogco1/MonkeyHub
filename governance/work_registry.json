@@ -153,6 +153,28 @@
       "notes": [
         "2026-09-08 rule alignment: Awaiting the first concrete evidence consumer and a check of existing Reading/source references. The earlier proposed ledger and private Atlas field superset are not a mandate to add a core record."
       ]
+    },
+    {
+      "id": "GH-285",
+      "stream": "planning",
+      "status": "active",
+      "goal": "Integrate current project-bar selectors with validated Study preview regression",
+      "depends_on": [],
+      "write_scope": [
+        "apps/monkeyhub/web/test/chatShell.browser.mjs"
+      ],
+      "branch": "codex/285-study-previews-current",
+      "worktree": "C:/Users/asus/.codex/worktrees/merge-cloud-batch/ARCHFLOW_V4",
+      "base_ref": "b7b0cae946dd8d6f0fee0c2e6323186852d0c1db",
+      "contributor": "Codex",
+      "reviewer": "Codex",
+      "handoff": "Retain both merged UI selectors and strict camera and preview checks",
+      "modules": [
+        "hub.shell"
+      ],
+      "acceptance": [
+        "Current main project-bar selectors and strict capture/preview browser checks coexist."
+      ]
     }
   ]
 }
