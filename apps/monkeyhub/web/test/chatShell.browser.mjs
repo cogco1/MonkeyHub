@@ -1001,15 +1001,18 @@ try {
   await projectFilter.selectOption("harbour-study");
   assert.equal(await callCard.innerText(), "0", "the opening project remains selectable after choosing All even with no records");
   await page.getByRole("button", { name: "Project A", exact: true }).first().click();
+  await page.waitForFunction(() => document.querySelector(".chat-header__project")?.textContent === "Project A");
   await page.getByRole("button", { name: "Usage", exact: true }).click();
   await waitMonitor();
   await page.locator(".chat-usage").click();
   await waitMonitor();
+  await page.waitForFunction(() => document.querySelector(".monitor-heading select")?.value === "");
   assert.equal(await projectFilter.inputValue(), "", "the sidebar totals open all projects even while Project A is selected");
   await projectFilter.selectOption("A");
   await page.getByRole("menuitem", { name: "Help", exact: true }).click();
   await page.getByRole("menuitem", { name: "Usage and task records", exact: true }).click();
   await waitMonitor();
+  await page.waitForFunction(() => document.querySelector(".monitor-heading select")?.value === "");
   assert.equal(await projectFilter.inputValue(), "", "the global Help menu opens all projects");
   await projectFilter.selectOption("A");
   await page.screenshot({ path: path.join(temporary, "monitor-panel.png") });
