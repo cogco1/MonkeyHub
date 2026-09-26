@@ -228,7 +228,8 @@ class LoginTests(CredentialTestCase):
         store = ChatStore(self.root / "runtime", "http://127.0.0.1:18790",
                           commands={"codex": (r"C:\Users\fixture\AppData\Roaming\npm\codex.cmd",)})
         self.addCleanup(store.shutdown)
-        with patch.object(chat, "_open_console") as opened, patch.object(chat.os, "name", "nt"):
+        # The console check is replaced, not os.name: pathlib reads os.name to choose its flavour.
+        with patch.object(chat, "_open_console") as opened, patch.object(chat, "_console_available", return_value=True):
             store.open_login("codex")
             with self.assertRaises(HubFailure) as missing:
                 store.open_login("claude")

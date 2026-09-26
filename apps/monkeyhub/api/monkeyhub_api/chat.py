@@ -279,6 +279,11 @@ def claude_plan_configured(environment: Mapping[str, str] | None = None) -> bool
 _LOGIN_ARGS = {"codex": ("login",), "claude": ("auth", "login")}
 
 
+def _console_available() -> bool:
+    """A sign-in window is a Windows console; elsewhere the person runs the CLI's login themselves."""
+    return os.name == "nt"
+
+
 def _open_console(command_line: str, cwd: str) -> None:
     """Run a command in a new console window. `start` gives it that window's own
     keyboard; the short-lived starter reads nothing, so the Hub's stdin stays the Hub's."""
@@ -961,7 +966,7 @@ class ChatStore:
         name = "Codex" if provider == "codex" else "Claude Code"
         if provider not in commands:
             raise HubFailure(409, "CHAT_PROVIDER_MISSING", f"The {name} CLI is not installed on this computer.")
-        if os.name != "nt":
+        if not _console_available():
             raise HubFailure(409, "CHAT_LOGIN_UNSUPPORTED", f"Sign in by running the {name} CLI's login in a terminal.")
         parts = (*commands[provider], *_LOGIN_ARGS[provider])
         if any('"' in part for part in parts):
