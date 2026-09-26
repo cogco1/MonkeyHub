@@ -603,13 +603,16 @@ const showEntry = async (name) => {
   if (await page.locator(".chat-shell").getAttribute("data-panel") === "false") await entry.click();
 };
 /** The architect opens a result read-only from Modeling's Versions: results never open themselves (#302). */
-const viewCandidate = async (runId) => {
+const viewCandidate = async (runId, afterOpen) => {
   await showEntry("Modeling");
   await waitWorkspace();
   await page.waitForFunction(() => !document.querySelector('.chat-project-workspace:not([hidden]) .boot'));
   const toggle = visibleWorkspace().locator(".stage__versions-toggle");
   if (await toggle.getAttribute("aria-expanded") !== "true") await toggle.click();
   await visibleWorkspace().locator(".vcard__export").filter({ hasText: `${runId}.3dm` }).first().click();
+  // A retained preview waits for an undisturbed view. Let that actual capture
+  // finish before this helper clicks Versions again to inspect selection.
+  if (afterOpen) await afterOpen();
   await toggle.click();
   await waitCandidate(runId);
 };
@@ -1817,8 +1820,7 @@ try {
   await page.getByRole("button", { name: "Send", exact: true }).waitFor();
   await resultLeftViewAlone("finishing the turn does not open its result either");
   await studyB.evaluate((element) => { element.captureMarker = "waiting"; });
-  await viewCandidate("cand-B-final");
-  await studyB.locator('[data-candidate="cand-B-final"] img').waitFor();
+  await viewCandidate("cand-B-final", () => studyB.locator('[data-candidate="cand-B-final"] img').waitFor());
   const capturedStudyPreview = studyCapturedPreviews.get("preview-B-cand-B-final".padEnd(64, "0"));
   assert.ok(capturedStudyPreview, "viewing the candidate retains its previously missing preview");
   assert.deepEqual(capturedStudyPreview.source, workspaceFixture.projects.get("B").assets.get("cand-B-final").dto.modelSource);
@@ -3404,6 +3406,9 @@ try {
   }
   assert.deepEqual(errors, []);
   console.log(JSON.stringify({ passed: true, sessions: sessions.length, writes: writes.length, screenshots: temporary }));
-} catch (error) { console.error(JSON.stringify({ screenshots: temporary, errors, workspaceRequests: workspaceFixture.requests.slice(-15) }));
+} catch (error) { console.error(JSON.stringify({ screenshots: temporary, errors, workspaceRequests: workspaceFixture.requests.slice(-15),
+  studyPreviewReads: studyPreviewReads.slice(-15),
+  studyCapturedSources: [...studyCapturedPreviews.values()].map(({ source }) => source),
+}));
   await page.screenshot({ path: path.join(temporary, "failure.png") }); throw error;
 } finally { await browser.close(); await new Promise((resolve) => server.close(resolve)); }
