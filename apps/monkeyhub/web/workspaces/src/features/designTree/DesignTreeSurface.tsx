@@ -92,6 +92,9 @@ export default function DesignTreeSurface({ data, markSeen, active, returnTo, on
       <MenuSeparator />
       <MenuTabs label={t("designTree.mode.label")} value={mode} onChange={(next) => setMode(next)}
         options={[{ value: "canvas" as const, label: t("designTree.mode.canvas") }, { value: "list" as const, label: t("designTree.mode.list") }]} />
+      {tree && tree.processedCount > 0 && <><MenuSeparator /><MenuCommand aria-pressed={data.showProcessed}
+        onClick={() => data.setShowProcessed(!data.showProcessed)}>{data.showProcessed
+          ? t("designTree.processed.hide") : t("designTree.processed.show", { count: tree.processedCount })}</MenuCommand></>}
       {mode === "canvas" && tree && <><MenuSeparator /><MenuCommand onClick={() => setFitRequest((value) => value + 1)}>{t("designTree.fit")}</MenuCommand></>}
     </SurfaceBar>
     {data.source && !data.admissions && <p className="design-tree__notice">{t("designTree.noAdmissions")}</p>}

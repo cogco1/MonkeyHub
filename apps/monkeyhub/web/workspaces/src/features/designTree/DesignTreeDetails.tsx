@@ -76,6 +76,7 @@ export function DesignTreeDetails({ tree, node, words, data, confirmAccept, onCo
   }
   const disposition = review?.disposition === "rejected" ? t("designTree.review.rejected")
     : review?.disposition === "archived" ? t("designTree.review.archived") : "";
+  const processed = review?.disposition === "rejected" || review?.disposition === "archived";
   const isAnchor = tree.nodes.get(CURRENT)?.parent === node.id && tree.nodes.get(CURRENT)?.current?.editsAfter === 0;
   // A refusal of this node's act (Accept is Current's); a done act answers in the toast instead.
   const refused = data.outcome?.kind === "refused" && data.outcome.node === node.id ? data.outcome.error ?? null : null;
@@ -103,6 +104,8 @@ export function DesignTreeDetails({ tree, node, words, data, confirmAccept, onCo
     {node.kind !== "pending" && node.summary && <p className="design-tree-card__summary">{node.summary}</p>}
     {(node.candidate?.blockedBy.length ?? 0) > 0 && <p className="design-tree-card__warning" role="note">
       <span aria-hidden="true">!</span> {t("designTree.review.note", { count: node.candidate!.blockedBy.length })}</p>}
+    {node.kind === "current" && (node.current?.sourceDisposition === "rejected" || node.current?.sourceDisposition === "archived") &&
+      <p className="design-tree-card__warning" role="note"><span aria-hidden="true">!</span> {t("designTree.current.processed")}</p>}
     {facts.length > 0 && <dl className="design-tree-card__facts">{facts.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>}
     {(node.kind === "candidate" || node.kind === "stage") && <>
       {review && <p className="design-tree-card__note">{review.endorsed ? t("designTree.review.endorsed") : ""}
@@ -118,7 +121,7 @@ export function DesignTreeDetails({ tree, node, words, data, confirmAccept, onCo
       {data.canReview && <div className="design-tree-card__actions">
         <button type="button" className="btn btn--small" disabled={busy} onClick={() => void data.review(node.id, "endorse")}>{t("designTree.action.endorse")}</button>
         {node.kind === "candidate" && <>
-          <button type="button" className="btn btn--small" disabled={busy} onClick={() => void data.review(node.id, "reject")}>{t("designTree.action.reject")}</button>
+          {!processed && <button type="button" className="btn btn--small" disabled={busy} onClick={() => void data.review(node.id, "reject")}>{t("designTree.action.reject")}</button>}
           <button type="button" className="btn btn--small" disabled={busy} onClick={() => void data.review(node.id, review?.disposition === "archived" ? "restore" : "archive")}>
             {t(review?.disposition === "archived" ? "designTree.action.restore" : "designTree.action.archive")}</button>
         </>}

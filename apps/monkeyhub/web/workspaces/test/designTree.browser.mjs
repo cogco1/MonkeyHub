@@ -23,6 +23,7 @@ const shots = process.env.DESIGN_TREE_SCREENSHOTS ? path.resolve(process.env.DES
 const serveOnly = process.argv.includes("--serve");
 const errors = [], unexpected = [], external = [], writes = [];
 const reviews = new Map();
+const dispositionsBeforeArchive = new Map();
 let recorded = 0;
 const http = createHttpServer();
 let vite, browser, fixture, fixtureModule, runtimeId = null;
@@ -69,11 +70,13 @@ async function runtime(request, response, url, body) {
     if (method === "POST" && name === "/api/candidate-reviews") {
       writes.push({ method, name, body });
       const key = `${body.subjectKind}:${body.subjectRef}`, previous = reviews.get(key);
+      const previousDisposition = previous?.disposition ?? "unreviewed";
+      if (body.action === "archive" && previousDisposition !== "archived") dispositionsBeforeArchive.set(key, previousDisposition);
       const actorId = body.action === "endorse" ? "Review Architect" : "Archive Architect";
       const occurredAt = body.action === "endorse" ? "2026-09-26T12:00:00Z" : "2026-09-27T15:00:00Z";
       const review = { reviewRef: `project://${PROJECT}/runs/studio-candidate-reviews/review/candidate-review/${"a".repeat(64)}`,
         disposition: body.action === "archive" ? "archived" : body.action === "reject" ? "rejected"
-          : body.action === "restore" ? "unreviewed" : previous?.disposition ?? "unreviewed",
+          : body.action === "restore" && previousDisposition === "archived" ? dispositionsBeforeArchive.get(key) ?? "unreviewed" : previousDisposition,
         endorsed: body.action === "endorse" || previous?.endorsed || false, actorId, occurredAt, reason: body.reason,
         endorsedBy: body.action === "endorse" ? actorId : previous?.endorsedBy ?? null,
         endorsedAt: body.action === "endorse" ? occurredAt : previous?.endorsedAt ?? null };
@@ -422,14 +425,24 @@ try {
   assert.match(await card.innerText(), /Endorsed by\s*Review Architect/);
   const endorsementTime = await card.getByText("Endorsed", { exact: true }).locator("..").locator("dd").innerText();
   assert.ok(endorsementTime.length > 0, "the endorsement has a visible time");
+  const beforeArchive = fixture.workingDraft();
   await card.getByRole("button", { name: "Archive", exact: true }).click();
-  await card.getByRole("button", { name: "Restore", exact: true }).waitFor();
+  await card.waitFor({ state: "detached" });
+  assert.equal((await scene()).elements.some((element) => element.data?.node === "candidate:run-massing-d"), false,
+    "an archived Candidate leaves the default canvas");
+  await surface.getByRole("button", { name: "Show processed (1)", exact: true }).click();
+  card = await clickNode("candidate:run-massing-d");
+  await card.getByRole("button", { name: "Undo archive", exact: true }).waitFor();
   assert.match(await card.innerText(), /Endorsed by\s*Review Architect/);
   assert.match(await card.innerText(), /Last reviewed by\s*Archive Architect/);
   assert.equal(await card.getByText("Endorsed", { exact: true }).locator("..").locator("dd").innerText(), endorsementTime,
     "archiving keeps the original endorsement's attribution and time");
-  await card.getByRole("button", { name: "Restore", exact: true }).click();
+  assert.equal(await card.locator('[data-action="continue"]').isEnabled(), true, "archiving does not add a new Continue restriction");
+  await card.getByRole("button", { name: "Undo archive", exact: true }).click();
   await card.getByRole("button", { name: "Archive", exact: true }).waitFor();
+  assert.equal(await surface.getByRole("button", { name: /Show processed/ }).count(), 0, "restore returns to the default projection");
+  assert.equal(await card.locator("strong").innerText(), "D · Terraced wedge", "cancelling archive retains the selected Study option");
+  assert.deepEqual(fixture.workingDraft(), beforeArchive, "archive, filtering and restore leave Working Head unchanged");
   writes.length = 0;
   await shoot(tab, "05-side-card");
   card = await clickNode(S1);
@@ -650,6 +663,34 @@ try {
   assert.equal(await card.locator('[data-action="accept"]').isDisabled(), true);
   fixture.state.head = acceptedHead;
   fixture.state.revision += 1;
+
+  // Cancelling an archive restores the previous rejection, never an unreviewed direction.
+  await tab.evaluate(() => { window.__workspaceFixture.setLanguage("en"); window.dispatchEvent(new Event("focus")); });
+  await card.getByText(/Current is exactly S3/).waitFor();
+  const beforeRejectedReview = structuredClone({ draft: fixture.workingDraft(), stages: fixture.designHistory().stages });
+  const reviewWritesStart = writes.length;
+  card = await clickNode("candidate:run-massing-a");
+  await card.getByRole("button", { name: "Reject", exact: true }).click();
+  await card.waitFor({ state: "detached" });
+  await surface.getByRole("button", { name: "Show processed (1)", exact: true }).click();
+  card = await clickNode("candidate:run-massing-a");
+  await card.getByText(/Rejected/).waitFor();
+  assert.equal(await card.getByRole("button", { name: "Undo archive", exact: true }).count(), 0,
+    "a rejection is not presented as an archive that can be cancelled");
+  await card.getByRole("button", { name: "Archive", exact: true }).click();
+  await card.getByRole("button", { name: "Undo archive", exact: true }).click();
+  await card.getByRole("button", { name: "Archive", exact: true }).waitFor();
+  await card.getByText(/Rejected/).waitFor();
+  assert.equal(reviews.get("candidate:run-massing-a").disposition, "rejected");
+  assert.equal(await card.locator("strong").innerText(), "A · Slab bar along the river");
+  assert.equal(await surface.getByRole("button", { name: "Hide processed", exact: true }).getAttribute("aria-pressed"), "true",
+    "the restored rejection remains visible in processed items");
+  assert.deepEqual(writes.slice(reviewWritesStart).map(({ name, body }) => [name, body.action]),
+    ["reject", "archive", "restore"].map((action) => ["/api/candidate-reviews", action]));
+  assert.deepEqual({ draft: fixture.workingDraft(), stages: fixture.designHistory().stages }, beforeRejectedReview,
+    "reject, archive and restore leave Working Head and Stage history unchanged");
+  await surface.getByRole("button", { name: "Hide processed", exact: true }).click();
+  await card.waitFor({ state: "detached" });
   await context.close();
 
   // ------------------------------------------------------------------ Part B: the Hub rail's 状态树 entry.
@@ -679,9 +720,20 @@ try {
   assert.match(hubPage.url(), /view=tree/, "the tree has its own deep link");
   await hubPage.waitForFunction(() => window.__treeApi?.getSceneElements().length > 20);
   await hubPage.waitForFunction(() => document.querySelector('.chat-project-workspace:not([hidden]) .design-tree__canvas')?.dataset.level === "mid");
+  assert.equal((await scene(hubPage)).elements.some((element) => element.data?.node === "candidate:run-massing-a"), false,
+    "a fresh workspace read keeps the restored rejection out of the default projection");
   const hubCard = await clickCanvasNode(hubPage, hubSurface, "current");
   assert.match(await hubCard.innerText(), /Current is exactly S3/, "a narrow panel opens on the growing tip, and its nodes answer clicks");
   await shoot(hubPage, "12-hub-rail-tree");
+  await hubSurface.getByRole("button", { name: "Show processed (1)", exact: true }).click();
+  await hubSurface.getByRole("button", { name: "List", exact: true }).click();
+  await hubSurface.locator('[role="treeitem"][data-node="candidate:run-massing-a"]').click();
+  const reopenedReview = hubSurface.locator('.design-tree-card[data-node="candidate:run-massing-a"]');
+  await reopenedReview.getByText(/Rejected/).waitFor();
+  assert.equal(await reopenedReview.locator("strong").innerText(), "A · Slab bar along the river");
+  await hubSurface.getByRole("button", { name: "Hide processed", exact: true }).click();
+  await reopenedReview.waitFor({ state: "detached" });
+  await hubSurface.getByRole("button", { name: "Canvas", exact: true }).click();
   await hubSurface.getByRole("button", { name: "Back to Modeling" }).click();
   await hubPage.getByTestId("arch-stub").waitFor();
   assert.equal(await railButton("Modeling").getAttribute("aria-pressed"), "true", "leaving returns to the surface it came from");
