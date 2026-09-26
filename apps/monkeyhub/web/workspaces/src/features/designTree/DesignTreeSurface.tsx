@@ -114,8 +114,9 @@ export default function DesignTreeSurface({ data, markSeen, active, returnTo, on
       {tree && node && <DesignTreeDetails tree={tree} node={node} words={words} data={data} confirmAccept={confirmAccept}
         onConfirmAccept={setConfirmAccept} onClose={() => select(null)} onView={view} onRecordEdits={onRecordEdits} />}
     </div>
-    {/* #337 L5: what is selected, else how to work the canvas; the status bars' colours at the right end. */}
-    <StatusLine className="design-tree__status" end={tree && mode === "canvas" && <span className="design-tree-legend">
+    {/* #337 L5: what is selected, else how to work the canvas; the status bars' colours at the right end,
+        for the eye only: the inspector's Checks and the list say the same in words. */}
+    <StatusLine className="design-tree__status" end={tree && mode === "canvas" && <span className="design-tree-legend" aria-hidden="true">
       {(["held", "violated", "unchecked", "running"] as const).map((check) =>
         <span key={check} data-check={check}>{t(`designTree.check.${check}` as MessageKey)}</span>)}
     </span>}>{node ? t("designTree.selected", { name: words.title(node) }) : t("designTree.hint")}</StatusLine>

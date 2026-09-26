@@ -314,14 +314,16 @@ export function buildTreeScene(tree: GrowthTree, layout: GrowthLayout, options: 
     const bar = barColour(node);
     if (bar) rect(`${node.id}:bar`, { x: card.x + BAR.inset, y: card.y + BAR.inset + 2, width: BAR.width, height: card.height - (BAR.inset + 2) * 2 },
       { backgroundColor: bar, strokeColor: "transparent", opacity }, data("status", { node: node.id }), false);
-    // Admitted for comparison with review checks still open (#294 Q2): a mark beside the bar's colour, explained in the inspector.
-    if (node.candidate?.blockedBy.length) text(`${node.id}:review`, card.x + card.width - 14, card.y + 5, "!", 14, VIOLATED, data("status", { node: node.id }), opacity);
+    // Admitted for comparison with review checks still open (#294 Q2): a mark beside the bar's colour, explained in
+    // the inspector. The words keep clear of its corner.
+    const marked = Boolean(node.candidate?.blockedBy.length);
+    if (marked) text(`${node.id}:review`, card.x + card.width - 14, card.y + 5, "!", 14, VIOLATED, data("status", { node: node.id }), opacity);
     const nameSize = close ? 13 : 12 * k, small = close ? 11.5 : 11 * s;
     // The letter keeps a column of its own; a lone option has none and its name takes the width.
     const letter = pending ? null : node.letter;
     const letterSize = nameSize * 1.2;
     const left = card.x + PAD.left + (letter ? letterSize * 0.72 + 6 : 0);
-    const width = card.x + card.width - PAD.right - left;
+    const width = card.x + card.width - (marked ? 18 : PAD.right) - left;
     const rows: { role: "letter" | "name" | "summary" | "status"; value: string; size: number; color: string }[] = [];
     if (pending) rows.push({ role: "letter", value: clip(words.pending(node.pending!.status), small, width), size: small, color: FAINT });
     // A name takes two lines where the card has the room for them.
