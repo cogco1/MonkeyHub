@@ -155,13 +155,13 @@
       ]
     },
     {
-      "id": "GH-282",
+      "id": "GH-289",
       "stream": "planning",
       "status": "active",
-      "goal": "Wait for project navigation in browser acceptance",
+      "goal": "Use the visible list for processed candidate browser acceptance",
       "depends_on": [],
       "write_scope": [
-        "apps/monkeyhub/web/test/chatShell.browser.mjs"
+        "apps/monkeyhub/web/workspaces/test/designTree.browser.mjs"
       ],
       "branch": "codex/merge-cloud-batch",
       "worktree": "C:/Users/asus/.codex/worktrees/merge-cloud-batch/ARCHFLOW_V4",
