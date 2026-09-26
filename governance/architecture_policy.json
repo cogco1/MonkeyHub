@@ -160,6 +160,16 @@
       "reason": "Creates the output directory the verification writes its receipts into."
     },
     {
+      "path": "tools/export_drawing_recipe.py",
+      "function": "_write_export",
+      "operations": [
+        "open_write"
+      ],
+      "kind": "recipe_export",
+      "owner": "studio.intent",
+      "reason": "Exclusively creates the one new DrawingRecipeExport@1 file a person names with --out: a project recipe's values, target and hold, its decision id and revision sha256, and its own sha256, nothing else of the project. It never replaces a file and never writes into a project; an import is retained by the decisions application under the project's lock."
+    },
+    {
       "path": "apps/archflow-studio/api/archflow_studio_api/application/candidate.py",
       "function": "_run_successor",
       "operations": [
