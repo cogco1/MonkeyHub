@@ -271,6 +271,39 @@ class GithubClaimTests(_GithubClaimCases, unittest.TestCase):
         self.commit("Clarify contribution guidance", {"CONTRIBUTING.md": "guidance\n"})
         self.assertEqual({("CONTRIBUTING.md", "SCOPE_UNDECLARED")}, self.found())
 
+    def test_pausing_a_claim_does_not_borrow_its_previous_scope(self) -> None:
+        paused = {**_claim("GH-60", "apps/feature/", status="blocked"), "blocked_reason": "Waiting for review"}
+        self.commit("GH-60: pause and still change the feature", {
+            REGISTRY_PATH: self.registry_of(paused, _claim("GH-61", "apps/other/")),
+            "apps/feature/value.py": "VALUE = 1\n",
+        })
+        self.assertEqual({("apps/feature/value.py", "SCOPE_UNDECLARED")}, self.found())
+
+    def test_pausing_a_lane_does_not_borrow_its_previous_scope(self) -> None:
+        lane = {**_claim("ui", "apps/other/ui/"), "id": "ui"}
+        self.base = self.commit("GH-61/ui: claim the lane", {
+            REGISTRY_PATH: self.registry_of(_claim("GH-60", "apps/feature/"), self.laned("GH-61", "apps/other/", lane)),
+        })
+        paused = {**lane, "status": "blocked", "blocked_reason": "Waiting for review"}
+        self.commit("GH-61/ui: pause and still change the view", {
+            REGISTRY_PATH: self.registry_of(_claim("GH-60", "apps/feature/"), self.laned("GH-61", "apps/other/", paused)),
+            "apps/other/ui/view.py": "VALUE = 1\n",
+        })
+        self.assertEqual({("apps/other/ui/view.py", "SCOPE_UNDECLARED")}, self.found())
+
+    def test_a_release_that_names_only_the_issue_says_which_lane_to_name(self) -> None:
+        lane = {**_claim("ui", "apps/other/ui/"), "id": "ui"}
+        self.base = self.commit("GH-61/ui: claim the lane", {
+            REGISTRY_PATH: self.registry_of(_claim("GH-60", "apps/feature/"), self.laned("GH-61", "apps/other/", lane)),
+        })
+        self.commit("P000-governance: release GH-61 ui", {
+            REGISTRY_PATH: self.registry_of(_claim("GH-60", "apps/feature/")),
+            "apps/other/ui/view.py": "VALUE = 2\n",
+        })
+        undeclared = [row for row in self.findings() if row.code == "SCOPE_UNDECLARED"]
+        self.assertEqual(["apps/other/ui/view.py"], [row.path for row in undeclared])
+        self.assertIn("GH-61/<lane>", undeclared[0].message)
+
     def test_an_issue_claimed_through_lanes_is_claimed_by_lane(self) -> None:
         lane = {**_claim("api", "apps/api/"), "id": "api"}
         self.base = self.commit("GH-62/api: claim the lane", {

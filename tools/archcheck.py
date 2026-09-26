@@ -1029,10 +1029,11 @@ def check_changed_scopes(
             if isinstance(item, dict) and item.get("status") in LEGACY_LIVE_STATUSES
         }
 
-    def claims_at(revision: str) -> dict[str, tuple[list[str], ...]]:
-        """Each live claim with the scopes that must all cover a path it writes."""
+    def claims_at(revision: str) -> dict[str, tuple[list[str], ...] | None]:
+        """Each registered claim: the scopes that must all cover a path it
+        writes, or None while it is registered but not live."""
 
-        claims: dict[str, tuple[list[str], ...]] = {}
+        claims: dict[str, tuple[list[str], ...] | None] = {}
         if not retired_at(revision):
             # A card-era first parent: a lane also stays inside its card.
             for card_id, card in cards_at(revision).items():
@@ -1054,8 +1055,7 @@ def check_changed_scopes(
             else:
                 rows = []
             for name, row in rows:
-                if _live(row):
-                    claims[name] = (_paths(row.get("write_scope")),)
+                claims[name] = (_paths(row.get("write_scope")),) if _live(row) else None
         return claims
 
     head = _git(root, "rev-parse", "HEAD").strip()
@@ -1110,9 +1110,14 @@ def check_changed_scopes(
                 )
             claim_id = _commit_claim(message)
             claims = claims_at(revision)
-            scopes = claims.get(claim_id) if claim_id else None
-            if scopes is None and claim_id and parents:
-                scopes = claims_at(parents[0]).get(claim_id)
+            previous: dict[str, tuple[list[str], ...] | None] = {}
+            if claim_id in claims:
+                scopes = claims[claim_id]
+            else:
+                # Only the commit that removes a claim writes on its parent's
+                # scope; one that keeps it registered but not live does not.
+                previous = claims_at(parents[0]) if claim_id and parents else {}
+                scopes = previous.get(claim_id)
             if scopes is not None:
                 required = tuple(scope + shared for scope in scopes)
                 code = "SCOPE_VIOLATION"
@@ -1123,7 +1128,7 @@ def check_changed_scopes(
                 code = "SCOPE_UNDECLARED"
                 if claim_id is None:
                     named = f"commit {revision[:8]} names no work item"
-                elif any(name.startswith(claim_id + "/") for name in claims):
+                elif any(name.startswith(claim_id + "/") for name in (*claims, *previous)):
                     named = f"commit {revision[:8]} names {claim_id}, which is claimed through its lanes; name {claim_id}/<lane>"
                 else:
                     named = f"commit {revision[:8]} names {claim_id}, which has no live claim at that commit"

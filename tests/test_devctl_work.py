@@ -188,7 +188,17 @@ class WorkLookupTests(unittest.TestCase):
         code, result = self._json()
         self.assertEqual(code, 0)
         self.assertEqual(result, {"query": None, "items": [], "findings": []})
+        self.assertEqual(self._run(), (0, "No live claims.\n"))
         self.assertEqual(self._json("GH-56")[0], 1)
+
+    def test_an_unreadable_registry_is_named_instead_of_a_traceback(self):
+        for label, text in (("list", "[]"), ("truncated", "{"), ("empty", ""), ("items", '{"schema": "x"}')):
+            with self.subTest(case=label):
+                self.registry_path.write_text(text, encoding="utf-8")
+                with self.assertRaises(SystemExit) as raised:
+                    devctl.main(["work"])
+                self.assertIsInstance(raised.exception.code, str)
+                self.assertIn("work registry", raised.exception.code)
 
     def test_malformed_claims_report_findings_instead_of_crashing(self):
         original = deepcopy(self.data)

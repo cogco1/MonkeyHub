@@ -90,6 +90,8 @@ python tools/devctl.py work --json
 
 已释放的 lane 合并 `main` 时，若 merge 的合并 diff 含共享范围以外的文件，先把该 lane 原样恢复进 registry，再以 `GH-<n>/<lane>: merge origin/main` 为标题合并，最后释放。
 
+#358 之前开出的分支合并 `main` 时用 merge，不要 rebase（rebase 会在旧格式的 claim 提交处冲突）。在同一个 merge 提交里把自己的 registry 条目改成上面的 @3 形状，并删掉分支上残留的 `docs/mapping/planning/GH-<n>-*.md`：`docs/mapping/` 已不在共享范围，放到之后的提交里删会越出 scope。此后的 claim／release 提交标题写 `GH-<n>[/<lane>]: …`。
+
 ## 接着读什么
 
 - [`CLA.md`](CLA.md) — 贡献版权/专利授权与双重许可边界。

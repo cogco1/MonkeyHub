@@ -247,14 +247,19 @@ def _print_module_lookup(result: dict) -> None:
 def load_registry() -> dict:
     """The live work registry; tools.archcheck validates what is in it."""
 
-    data = json.loads(REGISTRY_PATH.read_text(encoding="utf-8"))
+    from tools.archcheck import ArchitecturePolicyError, load_work_registry
+
+    try:
+        data = load_work_registry(ROOT)
+    except ArchitecturePolicyError as exc:
+        raise SystemExit(str(exc)) from exc
+    if data is None:
+        raise SystemExit(f"no work registry at {REGISTRY_PATH}")
     if data.get("schema") != REGISTRY_SCHEMA:
         raise SystemExit(
-            f"unsupported registry schema {data.get('schema')!r}; since #358 it is {REGISTRY_SCHEMA}, "
-            "live GitHub Issue claims only"
+            f"unsupported work registry schema {data.get('schema')!r}; since #358 it is "
+            f"{REGISTRY_SCHEMA}, live GitHub Issue claims only"
         )
-    if not isinstance(data.get("items"), list):
-        raise SystemExit("the work registry's items must be a list")
     return data
 
 
@@ -291,7 +296,7 @@ def _issue_link(work_id: object) -> str:
 
 def _print_work_lookup(result: dict) -> None:
     if not result["items"]:
-        print(f"No work matches {result['query']!r}.")
+        print("No live claims." if result["query"] is None else f"No work matches {result['query']!r}.")
     for row in result["items"]:
         print(f"{row.get('id')} [{row.get('status')}] {_issue_link(row.get('id'))}".rstrip())
         print(f"  {row.get('branch') or 'unassigned'} | base {row.get('base_ref') or 'unassigned'} | {row.get('contributor') or 'unassigned'}")
