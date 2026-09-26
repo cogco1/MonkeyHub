@@ -730,6 +730,32 @@ ordered by field and direction. A suggestion is only an offer. A person saves it
 `page`, after which the recipe gives the key and it is no longer offered. Another
 project is refused with `PROJECT_MISMATCH`.
 
+A recipe can travel to another project (#252) as a file, `DrawingRecipeExport@1`:
+`{schema, recipe: {targetRef, strength, graphics}, source: {decisionId, revisionSha256},
+sha256}`. `graphics` holds only the values the recipe sets, `strength` is the hold it had,
+`revisionSha256` is the exact revision exported, and `sha256` is the SHA-256 of the
+canonical JSON (sorted keys, no whitespace, ASCII escapes) of every other field: the
+export's identity, so one revision always exports to the same content. No page, path,
+run, project id, actor or wording travels. `tools/export_drawing_recipe.py export
+--project <dir> --decision <id> --out <file>` writes one active recipe decision and
+never replaces a file; `import --project <dir> --file <file>` refuses a file with any
+other field, a value a cut-plan request would refuse or content that does not hash to
+its `sha256` (`422 RECIPE_EXPORT_INVALID`), shows the decision it would retain and
+writes nothing. With `--confirm`, a person's confirmation, it retains that decision: a
+`require` drawing decision with the export's target and values, `sourceKind: human`,
+held `soft_preference` for the whole project, applying by `scope`, attributed to the
+tool's own boundary (`tool:export-drawing-recipe`, unauthenticated, origin `tool`) and
+citing the new source kind `{"kind": "recipe-export", "exportSha256": …}`. Only the
+import writes that source, after checking the file: `POST /api/decisions` and a
+supersession still name a board, page or design run, and `DecisionDto.source` reads
+all four. A key the project already holds as a project `soft_preference` is `409
+DECISION_RECIPE_CONFLICT`; the imported decision revokes and supersedes like any
+other, and a person who confirms a value on one of the project's own pages holds it
+more strongly. The import writes through the Studio's decision function under the
+project's HEAD lock, the lock a runtime takes for every decision write, so it may run
+while a runtime has the project open; the runtime reads the decision on its next
+request.
+
 A projected vector (`polyline` or poché `polygon`) names its physical object in
 `data-object` and, for a model compiled from design state, its `data-component` and
 `data-material` (the CAD program's `archflow:component` / `archflow:material`); an
