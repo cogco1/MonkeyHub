@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { createServer as createHttpServer } from "node:http";
-import { mkdtemp, readFile } from "node:fs/promises";
+import { mkdtemp, readFile, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -15,7 +15,7 @@ const repoRoot = path.resolve(webRoot, "../../../..");
 const apiRoot = path.join(repoRoot, "apps/archflow-studio/api");
 const temporary = await mkdtemp(path.join(tmpdir(), "monkeyhub-external-import-browser-"));
 const pythonEnv = { ...process.env, PYTHONUTF8: "1", PYTHONPATH: [repoRoot, apiRoot].join(path.delimiter) };
-const passed = [], errors = [], requests = [], observations = [];
+const passed = [], errors = [], requests = [], resourceRequests = [], observations = [];
 let browser, page, server, child, origin, current, runtimeLog = "";
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 async function until(read, accepts, label) {
@@ -85,10 +85,17 @@ async function shown(sha) {
     const card = panel.locator('.vcard__export').filter({ hasText: artifact.fileName });
     return { selected: await card.count() ? await card.getAttribute('aria-pressed') : null,
       disabled: await card.count() ? await card.isDisabled() : true,
-      loading: await surface().locator('.viewport-state--loading').count() };
-  }, value => value.selected === 'true' && !value.disabled && value.loading === 0, 'retained model visible');
+      loading: await surface().locator('.viewport-state--loading').count(),
+      viewportError: await surface().locator('.viewport-state--error').count(),
+      alert: await surface().getByRole('alert').allTextContents() };
+  }, value => value.selected === 'true' && !value.disabled && value.loading === 0 && value.viewportError === 0,
+  'retained model visible');
 }
 try {
+  for (const relative of ['rhino3dm/rhino3dm.js', 'rhino3dm/rhino3dm.wasm', 'nurbsFallback.worker.js']) {
+    assert.ok((await stat(path.join(webRoot, '../.generated/public', relative))).size > 0,
+      `${relative} is missing; run npm run sync before this browser smoke`);
+  }
   const port = await freePort(); origin = `http://127.0.0.1:${port}`;
   child = spawn(process.env.PYTHON ?? 'python', ['-c', pythonSource, temporary, String(port)],
     { cwd: apiRoot, env: pythonEnv, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
@@ -110,9 +117,21 @@ try {
   browser = await chromium.launch({ headless: true, channel: 'chrome' });
   page = await browser.newPage({ viewport: { width: 1440, height: 1050 } }); page.setDefaultTimeout(20000);
   page.on('pageerror', error => errors.push(String(error)));
-  page.on('request', request => { if (request.url().includes('/api/')) requests.push({url:request.url(), method:request.method()}); });
-  page.on('response', async response => { if (response.url().includes('/api/') && response.status() >= 400) console.error(`${response.status()} ${response.url()} ${await response.text().catch(()=> '')}`); });
-  await page.goto(server.resolvedUrls.local[0]);
+  page.on('request', request => {
+    if (request.url().includes('/api/')) requests.push({url:request.url(), method:request.method()});
+    if (/rhino3dm|nurbsFallback\.worker|\.wasm(?:\?|$)/.test(request.url()))
+      resourceRequests.push({url:request.url(), method:request.method(), status:null});
+  });
+  page.on('requestfailed', request => {
+    const row=resourceRequests.findLast(item=>item.url===request.url() && item.status===null);
+    if(row) row.status=`FAILED: ${request.failure()?.errorText ?? 'unknown'}`;
+  });
+  page.on('response', async response => {
+    const row=resourceRequests.findLast(item=>item.url===response.url() && item.status===null);
+    if(row) row.status=response.status();
+    if (response.url().includes('/api/') && response.status() >= 400) console.error(`${response.status()} ${response.url()} ${await response.text().catch(()=> '')}`);
+  });
+  await page.goto(server.resolvedUrls.local[0], {waitUntil:'domcontentloaded'});
   await viewport().waitFor();
   await until(() => page.evaluate(() => window.externalImportContext), value => value?.designContext?.stateDigest, 'authored editing context ready');
   const beforeContext = await page.evaluate(() => window.externalImportContext);
@@ -121,10 +140,12 @@ try {
   const b = await readFile(path.join(apiRoot, 'tests/fixtures/model-source-b.3dm'));
   let first, second;
   await step('drop original 3DM, retain exact bytes and display without semantic authority', async () => {
-    const start = performance.now(); await drop(a, 'external-a.3dm');
+    await drop(a, 'external-a.3dm');
     first = (await until(rows, value => value.length === 1, 'external registration'))[0];
     await shown(first.sha256);
-    observations.push({ operation:'first small-fixture drop to visible', durationMs:Math.round(performance.now()-start), inputBytes:a.length });
+    observations.push({ operation:'first small-fixture import functional smoke', operationId:null, timing:null,
+      inputBytes:a.length, sourceVisible:'unknown', firstVisibleFrame:'not measured',
+      reason:'the browser smoke has no operation-bound start/end event window' });
     assert.equal(first.representation, 'external'); assert.equal(first.modelSource,null); assert.equal(first.designStateDigest,null); assert.equal(first.sourceStageRef,null);
     const downloaded = Buffer.from(await (await fetch(origin+`/api/artifacts/${first.sha256}/bytes`)).arrayBuffer()); assert.deepEqual(downloaded,a);
     assert.equal((await api('/fixture/metrics')).head,head);
@@ -144,12 +165,13 @@ try {
     assert.equal((await rows()).length,2); assert.equal(await surface().locator('.viewport-state--error').count(),0);
     assert.equal(await surface().locator('.vcard__export[aria-pressed="true"]').count(),1);
     assert.match(await surface().locator('.vcard__export[aria-pressed="true"]').innerText(),/external-b\.3dm/);
+    assert.equal((await api('/fixture/metrics')).head,head);
   });
   await step('page reopen and selecting either old source preserves exact original bytes', async () => {
     await page.reload(); await viewport().waitFor();
     for (const row of [first,second]) {
       const panel=await versions(); const open=panel.locator('.vcard__export').filter({hasText:row.fileName}); await open.click();
-      await until(()=>open.getAttribute('aria-pressed'),value=>value==='true','selected source installed');
+      await shown(row.sha256);
       const downloaded=Buffer.from(await(await fetch(origin+`/api/artifacts/${row.sha256}/bytes`)).arrayBuffer());
       assert.deepEqual(downloaded,row.sha256===first.sha256?a:b);
       assert.equal(await surface().locator('.viewport-state--error').count(),0);
@@ -169,10 +191,20 @@ try {
     assert.deepEqual(errors,[]);
     await page.screenshot({path:path.join(temporary,'external-reopened.png'),fullPage:true});
   });
-  console.log(JSON.stringify({passed,observations,screenshots:temporary,scope:'small public fixtures, not a large-model latency benchmark'}));
+  assert.ok(resourceRequests.some(row=>row.url.endsWith('/rhino3dm/rhino3dm.wasm') && row.status===200),
+    `Rhino WASM was not loaded: ${JSON.stringify(resourceRequests)}`);
+  console.log(JSON.stringify({passed,observations,resourceRequests,screenshots:temporary,scope:'small public fixtures, not a large-model latency benchmark'}));
 } catch(error) {
   await page?.screenshot({path:path.join(temporary,'failure.png'),fullPage:true}).catch(()=>{});
-  console.error(`FAIL ${current}; ${temporary}\n${runtimeLog}`); console.error(errors); throw error;
+  const ui = await page?.evaluate(() => ({
+    selected:[...document.querySelectorAll('.vcard__export[aria-pressed="true"]')].map(node=>node.textContent?.trim()),
+    disabled:[...document.querySelectorAll('.vcard__export:disabled')].map(node=>node.textContent?.trim()),
+    loading:document.querySelectorAll('.viewport-state--loading').length,
+    viewportError:[...document.querySelectorAll('.viewport-state--error')].map(node=>node.textContent?.trim()),
+  })).catch(error=>({diagnosticError:String(error)}));
+  console.error(`FAIL ${current}; ${temporary}\n${runtimeLog}`);
+  console.error(JSON.stringify({ui,pageErrors:errors,artifactBytesRequests:requests.filter(row=>/\/artifacts\/[^/]+\/bytes/.test(row.url)),resourceRequests}));
+  throw error;
 } finally {
   await browser?.close(); await server?.close();
   if(child?.exitCode===null){const stopped=new Promise(resolve=>child.once('exit',resolve));child.kill();await stopped;}
