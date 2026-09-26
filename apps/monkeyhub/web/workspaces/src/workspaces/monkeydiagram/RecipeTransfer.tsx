@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useStudio } from "../../api/ProjectRuntimeContext";
 import { asStudioApiError } from "../../api/client";
 import type { DecisionDto, RecipeGraphicsDto, RecipeInspectDto } from "../../api/generated";
@@ -24,8 +24,12 @@ const words = {
   },
 };
 
-/** Transfer an explicitly saved recipe, never a drawing, model or automatic preference. */
-export default function RecipeTransfer({ projectId, active = true }: { projectId: string; active?: boolean }) {
+/**
+ * Transfer an explicitly saved recipe, never a drawing, model or automatic preference. #337: the Drawing places
+ * the parts: the saved recipes and the file choice are a menu in its bar, a file waiting for confirmation asks
+ * in its row above the drawing, and what happened is a quiet note on its status line.
+ */
+export function useRecipeTransfer(projectId: string, active = true): { menu: ReactNode; row: ReactNode; note: string | null } {
   const studio = useStudio(), { language } = usePreferences(), text = words[language];
   const [open, setOpen] = useState(false), [recipes, setRecipes] = useState<DecisionDto[]>([]);
   const [busy, setBusy] = useState(false), [error, setError] = useState<string | null>(null), [note, setNote] = useState<string | null>(null);
@@ -36,6 +40,8 @@ export default function RecipeTransfer({ projectId, active = true }: { projectId
     setRecipes([]); setPending(null); setError(null); setNote(null); setOpen(false); setBusy(false);
     return () => { generation.current += 1; };
   }, [studio, projectId]);
+  // The menu does not stay open behind another surface.
+  useEffect(() => { if (!active) setOpen(false); }, [active]);
 
   const values = (graphics: RecipeGraphicsDto) => (Object.keys(text.pens) as (keyof typeof text.pens)[])
     .filter(key => graphics[key] != null).map(key => `${text.pens[key]} ${graphics[key]} mm`).join(" · ");
@@ -93,12 +99,18 @@ export default function RecipeTransfer({ projectId, active = true }: { projectId
     finally { if (token === generation.current) setBusy(false); }
   }
 
-  return <details className="recipe-transfer" open={open} onToggle={event => {
+  // The panel closes when attention leaves it, as when the file dialog opens; its file field stays mounted, so the
+  // chosen file still arrives.
+  const menu = <details className="recipe-transfer" open={open} onToggle={event => {
     const expanded = event.currentTarget.open; setOpen(expanded);
     if (expanded && !open && active && !busy) void refresh();
-  }}>
-    <summary>{text.title}</summary>
-    {open && <div className="recipe-transfer__body">
+  }} onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false); }}
+    onKeyDown={event => {
+      if (event.key !== "Escape" || !open) return;
+      event.preventDefault(); event.stopPropagation(); setOpen(false); event.currentTarget.querySelector("summary")?.focus();
+    }}>
+    <summary className="menu-command">{text.title}</summary>
+    <div className="recipe-transfer__body" tabIndex={-1}>
       <p>{text.hint}</p>
       <button type="button" disabled={busy || !active} onClick={() => void refresh()}>{text.refresh}</button>
       {recipes.length === 0 && !busy && <p>{text.empty}</p>}
@@ -110,16 +122,19 @@ export default function RecipeTransfer({ projectId, active = true }: { projectId
       <label className="recipe-transfer__file">{text.file}<input type="file" accept=".json,application/json" disabled={busy || !active} onChange={event => {
         const file = event.target.files?.[0]; event.target.value = ""; if (file) void inspect(file);
       }} /></label>
-      {pending && <div className="recipe-transfer__preview">
-        <strong>{values(pending.preview.graphics)}</strong><p>{text.preview}</p>
-        <details><summary>{text.version}</summary><p>{text.fileVersion}: {pending.preview.exportSha256}</p>
-          <p>{text.decision}: {pending.preview.sourceDecisionId}</p><p>{text.source}: {pending.preview.sourceRevisionSha256}</p></details>
-        <button type="button" disabled={busy || !active} onClick={() => void confirm()}>{text.confirm}</button>
-        <button type="button" disabled={busy} onClick={() => setPending(null)}>{text.cancel}</button>
-      </div>}
-      {busy && <p role="status">{text.working}</p>}
-      {note && <p role="status">{note}</p>}
-      {error && <p role="alert">{error}</p>}
-    </div>}
+    </div>
   </details>;
+  const row = (pending || error) && <>
+    {pending && <div className="recipe-transfer__preview">
+      <div><strong>{values(pending.preview.graphics)}</strong><p>{text.preview}</p>
+        <details><summary>{text.version}</summary><p>{text.fileVersion}: {pending.preview.exportSha256}</p>
+          <p>{text.decision}: {pending.preview.sourceDecisionId}</p><p>{text.source}: {pending.preview.sourceRevisionSha256}</p></details></div>
+      <div className="recipe-transfer__actions">
+        <button type="button" className="btn--accent" disabled={busy || !active} onClick={() => void confirm()}>{text.confirm}</button>
+        <button type="button" disabled={busy} onClick={() => setPending(null)}>{text.cancel}</button>
+      </div>
+    </div>}
+    {error && <p className="recipe-transfer__error" role="alert">{error}</p>}
+  </>;
+  return { menu, row, note: busy ? text.working : note };
 }

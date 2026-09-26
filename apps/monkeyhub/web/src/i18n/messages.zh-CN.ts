@@ -53,6 +53,7 @@ export const messagesZhCN = {
   "workspace.monkeyarch": "MonkeyArch · 3D",
   "workspace.monkeydiagram": "MonkeyDiagram · 图纸",
   "workspace.monkeyboard": "MonkeyBoard · 画板",
+  "drawing.picked": "已选中 {object}",
   "board.sketch.you": "来自 MonkeyBoard 的草图：{summary}",
   "board.sketch.preparing": "正在为项目准备首个模型…",
   "board.sketch.what": "MonkeyBoard 草图",

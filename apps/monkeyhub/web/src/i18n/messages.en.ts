@@ -51,6 +51,7 @@ export const messagesEn = {
   "workspace.monkeyarch": "MonkeyArch · 3D",
   "workspace.monkeydiagram": "MonkeyDiagram · Drawings",
   "workspace.monkeyboard": "MonkeyBoard · Board",
+  "drawing.picked": "Picked {object}",
   "board.sketch.you": "Sketch from MonkeyBoard: {summary}",
   "board.sketch.preparing": "Preparing the project for its first model…",
   "board.sketch.what": "MonkeyBoard sketch",

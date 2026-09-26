@@ -1,14 +1,28 @@
-.recipe-transfer { flex: none; max-height: 45%; overflow: auto; padding: 0 16px; border-bottom: 1px solid var(--line); color: var(--ink); background: var(--panel); font-size: var(--text-ui); }
-.recipe-transfer summary { cursor: pointer; padding: 10px 0; }
-.recipe-transfer p { margin: 8px 0; line-height: 1.5; overflow-wrap: anywhere; }
-.recipe-transfer__body { padding-bottom: 12px; }
+/* #337: Reuse drawing recipes is a word in the Drawing's bar whose panel opens under it (across the bar on a phone);
+   a file waiting to be imported asks in the Drawing's row above the drawing. */
+.recipe-transfer { position: relative; }
+.recipe-transfer > summary { list-style: none; }
+.recipe-transfer > summary::-webkit-details-marker { display: none; }
+.recipe-transfer[open] > summary { color: var(--ink); text-decoration: underline 2px var(--accent); text-underline-offset: 6px; }
+.recipe-transfer__body { position: absolute; z-index: 40; top: calc(100% + 4px); left: 0; width: min(340px, calc(100vw - 32px)); max-height: calc(100dvh - 160px); overflow-y: auto; padding: 4px 12px 12px; box-sizing: border-box; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); box-shadow: var(--shadow); color: var(--ink); font-size: var(--text-ui); white-space: normal; }
+@media (max-width: 640px) { .recipe-transfer { position: static; } .recipe-transfer__body { left: 16px; right: 16px; width: auto; } }
+/* The panel takes focus when clicked, so a click inside it never reads as leaving it. */
+.recipe-transfer__body:focus { outline: none; }
+.recipe-transfer__body summary, .recipe-transfer__preview summary { cursor: pointer; padding: 6px 0; }
+:is(.recipe-transfer__body, .recipe-transfer__preview) p { margin: 8px 0; line-height: 1.5; overflow-wrap: anywhere; }
 .recipe-transfer ul { list-style: none; padding: 0; }
 .recipe-transfer li { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
 .recipe-transfer li > details { flex-basis: 100%; }
-.recipe-transfer button { margin-right: 8px; min-height: 36px; padding: 7px 10px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--panel-2); color: var(--ink); font: inherit; cursor: pointer; }
-.recipe-transfer button:hover:not(:disabled) { background: var(--surface-hover); }
-.recipe-transfer button:disabled { opacity: .5; cursor: default; }
+:is(.recipe-transfer__body, .recipe-transfer__preview) button { margin-right: 8px; min-height: 36px; padding: 7px 10px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--panel-2); color: var(--ink); font: inherit; cursor: pointer; }
+:is(.recipe-transfer__body, .recipe-transfer__preview) button:hover:not(:disabled) { background: var(--surface-hover); }
+:is(.recipe-transfer__body, .recipe-transfer__preview) button:disabled { opacity: .5; cursor: default; }
 .recipe-transfer__file { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; }
 .recipe-transfer input { max-width: 100%; min-width: 0; font: inherit; }
-.recipe-transfer__preview { margin-top: 12px; padding: 12px; border: 1px solid var(--line); border-radius: var(--radius-sm); }
-.recipe-transfer :is(button, input, summary):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* A chosen file's values, waiting for a person to import them or not. */
+.recipe-transfer__preview { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; padding: 8px 12px; border: 1px solid var(--accent); border-left-width: 3px; border-radius: var(--radius-sm); background: var(--accent-soft); color: var(--ink); font-size: var(--text-ui); }
+.recipe-transfer__preview > div:first-child { flex: 1 1 240px; min-width: 0; }
+.recipe-transfer__actions { display: flex; flex: none; gap: 8px; }
+.recipe-transfer__actions > button { margin-right: 0; }
+.recipe-transfer__actions > .btn--accent { border-color: var(--accent); font-weight: 600; }
+.recipe-transfer__error { margin: 0; padding: 8px 12px; border: 1px solid var(--violated); border-radius: var(--radius-sm); color: var(--ink); font-size: var(--text-ui); overflow-wrap: anywhere; }
+:is(.recipe-transfer, .recipe-transfer__preview) :is(button, input, summary):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }

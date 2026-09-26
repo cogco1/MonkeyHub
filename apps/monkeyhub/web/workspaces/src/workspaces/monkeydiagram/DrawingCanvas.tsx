@@ -3,15 +3,18 @@ import { useStudio } from "../../api/ProjectRuntimeContext";
 import { asStudioApiError, type StudioApiError } from "../../api/client";
 import type { DesignStageDto, ModelSourceDto, PlanDimensionChoicesDto, PlanStatusDto, PlanVectorDto, PlanDressingDto, ProjectArtifactDto, RecipeSuggestionDto, SectionLineDto, SourceDocumentDto, WorkingSourceDto } from "../../api/generated";
 import { ErrorPanel } from "../../app/ErrorPanel";
+import { MenuCommand, MenuSeparator, StatusLine, SurfaceMenus } from "../../features/chrome/SurfaceChrome";
 import { usePreferences } from "../../features/settings/preferences";
+import { useT } from "../../i18n/useT";
 import { DocumentSurface } from "./DocumentCanvas";
 import { defaultPlanForm, drawingDocumentKey, keptOnChosenVersion, latestRevisions, liveAction, PAPER_PENS, planFormFromDocument, planRequestFields,
   RECIPE_TARGETS, recipeDecision, recipeWrites, type PaperPen, type PlanForm } from "./drawingPlan";
 import { DressingControls, DressingOverlay } from "./DrawingDressing";
+import { useRecipeTransfer } from "./RecipeTransfer";
 import "./DrawingCanvas.css";
 
 const copy = {
-  en: { title: "Drawing", intro: "Cut plans that follow the current project model.", source: "Version to draw", revision: "Drawing", fresh: "New cut plan", drawingName: "New cut-plan name", drawingNameHint: "Optional; applies to the new cut plan, not a section perspective. Later revisions keep this name.",
+  en: { title: "Drawing", source: "Version to draw", revision: "Drawing", fresh: "New cut plan", drawingName: "New cut-plan name", drawingNameHint: "Optional; applies to the new cut plan, not a section perspective. Later revisions keep this name.",
     noModel: "The current project model has no exact geometry to draw yet.", refresh: "Refresh sources", generating: "Generating…", generate: "Generate cut plan",
     rebuild: "Rebuild on this version", another: "Draw another version", anotherHint: "A version chosen here is drawn once and is not updated automatically.",
     earlier: "Earlier revisions", earlierView: "Earlier revision · not updated automatically", openLatest: "Open the current revision",
@@ -45,7 +48,7 @@ const copy = {
     saveRecipe: "Save as project recipe", saveRecipeHint: "New drawings in this project start from this drawing's saved linework and hatch.",
     recipeWords: "Save as project recipe: {values}.", recipeSaved: "Saved as the project recipe: {values}.", recipeSame: "These values already are the project recipe." },
 
-  "zh-CN": { title: "Drawing · 图纸", intro: "跟随项目当前模型的剖切平面。", source: "出图版本", revision: "图纸", fresh: "新建剖切平面", drawingName: "新建剖切平面名称", drawingNameHint: "可选；仅用于新建剖切平面，不用于剖透视。后续修订会继承此名称。",
+  "zh-CN": { title: "图纸", source: "出图版本", revision: "图纸", fresh: "新建剖切平面", drawingName: "新建剖切平面名称", drawingNameHint: "可选；仅用于新建剖切平面，不用于剖透视。后续修订会继承此名称。",
     noModel: "项目当前模型还没有可出图的精确几何。", refresh: "刷新来源", generating: "正在生成…", generate: "生成剖切平面",
     rebuild: "基于此版本重建", another: "绘制其他版本", anotherHint: "在这里选择的版本只按一次绘制，不会自动更新。",
     earlier: "较早版本", earlierView: "较早版本 · 不自动更新", openLatest: "打开当前版本",
@@ -232,11 +235,11 @@ function PlanPreview({ source, file, vector, picture, hidden, picked, onPick, ob
   const scale = Math.max(0.02, Math.min((bounds.width - 32) / page.width, (bounds.height - 32) / page.height)) * zoom;
   const hovered = hover && picture?.objects.get(hover.mark.object);
   return <section className="drawing-preview" aria-label={source.fileName}>
+    {/* #337: the drawing's one tool group, over the bottom of the canvas; the bar names the drawing. */}
     <div className="drawing-preview__tools">
       <button type="button" aria-label={text.zoomOut} disabled={zoom <= 0.25} onClick={() => setZoom(value => Math.max(0.25, value / 1.25))}>−</button>
       <button type="button" onClick={() => setZoom(1)}>{text.fit}</button>
       <button type="button" aria-label={text.zoomIn} disabled={zoom >= 8} onClick={() => setZoom(value => Math.min(8, value * 1.25))}>+</button>
-      <span>{source.fileName}</span>
     </div>
     <div className="drawing-preview__viewport" ref={viewport} tabIndex={0} data-ready={inline || ready}
       onKeyDown={event => { if (event.key === "Escape" && picked) { event.preventDefault(); onPick(null); } }}>
@@ -267,11 +270,12 @@ function PlanPreview({ source, file, vector, picture, hidden, picked, onPick, ob
 export default function DrawingCanvas({ projectId, active = true, refreshKey = 0 }: {
   projectId: string; active?: boolean; refreshKey?: number;
 }) {
-  const studio = useStudio(), { language } = usePreferences(), text = copy[language];
-  const controls = useRef<HTMLFormElement>(null);
+  const studio = useStudio(), { language } = usePreferences(), text = copy[language], t = useT();
+  const controls = useRef<HTMLFormElement>(null), controlsId = useId();
+  const recipes = useRecipeTransfer(projectId, active);
   const [documents, setDocuments] = useState<SourceDocumentDto[]>([]), [stages, setStages] = useState<DesignStageDto[]>([]);
   const [assets, setAssets] = useState<ProjectArtifactDto[]>([]), [importing, setImporting] = useState(false);
-  const importInput = useRef<HTMLInputElement>(null);
+  const importInput = useRef<HTMLInputElement>(null), anotherMenu = useRef<HTMLDetailsElement>(null);
   const [selected, setSelected] = useState(""), [target, setTarget] = useState("");
   const [drawingName, setDrawingName] = useState("");
   const [explicitTarget, setExplicitTarget] = useState(false), [defaultTarget, setDefaultTarget] = useState("");
@@ -459,6 +463,8 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
       setAssets(current => [artifact, ...current.filter(item => item.runId !== artifact.runId || item.sha256 !== artifact.sha256)]);
       setTarget(assetKey({ runId: artifact.runId, assetSha256: artifact.sha256 }));
       setExplicitTarget(true);
+      // The file dialog closed the menu it was chosen from; it opens again on the imported model and its notes.
+      if (anotherMenu.current) anotherMenu.current.open = true;
     } catch (cause) { if (mounted.current && scope.current === origin) setError(asStudioApiError(cause)); }
     finally { if (mounted.current) setImporting(false); }
   }
@@ -616,7 +622,9 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
     const time = generated && !Number.isNaN(generated.getTime()) ? generated.toLocaleString(language) : null;
     return [document.fileName, sourceName(document), time].filter(Boolean).join(" · ");
   };
-  const statusLine = statusLoading ? text.checking : liveBusy ? text.updating
+  // A status still to be read for the open cut plan is being checked, not unknown.
+  const checking = statusLoading || (status === null && Boolean(source?.revisionRef) && isCutPlan(source) && active && error === null);
+  const statusLine = checking ? text.checking : liveBusy ? text.updating
     : historical ? text.earlierView : explicitTarget || kept ? text.chosenView
     : action === "blocked" ? text.stale
     : status?.status === "current" && !status.bindingChanged ? text.liveCurrent : text[status?.status ?? "unknown"];
@@ -639,74 +647,106 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
     return <label className="drawing-field">{label}<input type="number" min={min} step={step} required={!open} placeholder={open ? text.recipePen : undefined}
       value={Number.isFinite(form[key]) ? form[key] : ""} onChange={event => update({ [key]: event.currentTarget.valueAsNumber })} /></label>;
   };
+  // #337: the source's state asks in the row above the drawing while it needs a person: a kept or earlier drawing, a
+  // current model it cannot be redrawn on, broken anchors, a state that could not be read, or an imported model's
+  // conversion notes. Following, checking and updating are a quiet word at the bar's right end.
+  const statusAsks = source !== null && (perspectiveOpen ? Boolean(savedArtifact?.sourceImport)
+    : historical || explicitTarget || kept || action === "blocked" || (!checking && !liveBusy && action !== "rebuild" && status?.status !== "current"));
+  const statusFollow = historical || explicitTarget || kept ? "frozen" : "live";
+  const statusState = liveBusy ? "updating" : action === "blocked" ? "outdated" : status?.status ?? "unknown";
+  const saving = source !== null && (perspectiveOpen ? busy : (busy && !liveBusy) || (dirty && appearanceHeld === null));
+  const held = source !== null && !perspectiveOpen && dirty && !busy && appearanceHeld !== null;
+  const attention = statusAsks || held || error !== null || offers.length > 0 || Boolean(recipes.row);
+  // The status line: what is picked, else what just happened, else how to pick on this drawing.
+  const note = recipes.note ?? offerNote;
+  const statusWords = pickedObject ? t("drawing.picked", { object: objectLabel(text, pickedObject) }) : note ? <span role="status">{note}</span>
+    : source && !perspectiveOpen && picture ? picture.image ? text.tooMany.replace("{count}", String(picture.lines)) : text.pickHint : null;
 
   return <div className="drawing-workspace" aria-label={text.title}>
-    <header className="drawing-header"><div><h1>{text.title}</h1><p>{text.intro}</p></div>
-      <button type="button" disabled={busy || loading} onClick={() => setRefresh(value => value + 1)}>{text.refresh}</button></header>
-    <div className="drawing-body">
-      <div className="drawing-main">
-        <div className="drawing-context">
-        {offers.length > 0 && <div className="drawing-offers">{offers.map(offer => {
-          const label = offerText(offer, text.offer);
-          return <section key={offer.suggestionId} className="drawing-offer" aria-label={label}><p>{label}</p>
-            <div className="drawing-offer__actions">
-              <button type="button" className="btn btn--accent" disabled={recipeSaving || !active} onClick={() => void saveOffer(offer)}>{text.save}</button>
-              <button type="button" disabled={recipeSaving} onClick={() => ignoreOffer(offer)}>{text.ignore}</button>
-            </div></section>;
-        })}</div>}
-        {offerNote && <p className="drawing-offer-note" role="status">{offerNote}</p>}
-        <div className="drawing-context__fields">
-        <label className="drawing-field">{text.revision}<select value={selected} disabled={busy} onChange={event => { void chooseDocument(event.target.value); }}>
-          <option value="">{text.fresh}</option>{latest.map(item => <option key={drawingDocumentKey(item)} value={drawingDocumentKey(item)}>
-            {documentLabel(item)}</option>)}
-          {earlier.length > 0 && <optgroup label={text.earlier}>{earlier.map(item => <option key={drawingDocumentKey(item)} value={drawingDocumentKey(item)}>
-            {documentLabel(item)}</option>)}</optgroup>}</select></label>
-        <div className="drawing-context__target">
-          <p className="drawing-field__hint" role="note">{live && !live.compatible && live.reason && !source ? live.reason : text.live}</p>
-          <details className="drawing-another" open={explicitTarget || undefined}><summary>{text.another}</summary>
-            <label className="drawing-field">{text.source}<select value={selectedTargetValue} disabled={busy || loading || statusLoading}
-              onChange={event => { setTarget(event.target.value); setExplicitTarget(event.target.value !== ""); setError(null); }}>
-              <option value="">{text.live}</option>
-              {stages.map(item => <option key={item.stageRef} value={item.stageRef}>{item.label} · {item.branchId}</option>)}
-              {drawableAssets.length > 0 && <optgroup label={text.imported}>{drawableAssets.map(item => item.sha256 && <option key={`${item.runId}:${item.sha256}`}
-                value={assetKey({ runId: item.runId, assetSha256: item.sha256 })}>{item.sourceImport?.sourceFileName ?? item.fileName}</option>)}</optgroup>}</select></label>
-            {chosenAsset?.sourceImport && chosenAsset !== savedArtifact && importNotice(chosenAsset)}
-            <input ref={importInput} className="visually-hidden" type="file" accept=".3dm,.skp" onChange={event => {
-              const file = event.currentTarget.files?.[0]; if (file) void importModel(file); event.currentTarget.value = "";
-            }} />
-            <button type="button" disabled={busy || importing || !active} onClick={() => importInput.current?.click()}>{importing ? text.importing : text.importModel}</button>
-            <p className="drawing-field__hint">{text.anotherHint}</p>
-            {explicitTarget && source && !perspectiveOpen && <button type="button" disabled={!stage || busy || statusLoading} onClick={() => void generate(stage, { follow: "frozen" })}>{text.rebuild}</button>}
-          </details></div>
+    {/* #337: the drawing on screen, where it is drawn from and its commands are words in the project bar; its save
+        and source states are quiet words at the bar's right end. */}
+    <SurfaceMenus label={text.title} active={active} end={<>
+      {saving && <span className="drawing-save-state drawing-quiet" role="status">{perspectiveOpen ? text.generating : text.saving}</span>}
+      {source && !statusAsks && (perspectiveOpen
+        ? <span className="drawing-status drawing-quiet" role="status" data-kind="section-perspective">{text.sectionView}</span>
+        : <span className="drawing-status drawing-quiet" role="status" data-follow={statusFollow} data-status={statusState} title={status?.detail}>{statusLine}</span>)}
+      {!source && !explicitTarget && <span className="drawing-quiet">{text.live}</span>}
+    </>}>
+      <select className="surface-title" aria-label={text.revision} value={selected} disabled={busy} onChange={event => { void chooseDocument(event.target.value); }}>
+        <option value="">{text.fresh}</option>{latest.map(item => <option key={drawingDocumentKey(item)} value={drawingDocumentKey(item)}>
+          {documentLabel(item)}</option>)}
+        {earlier.length > 0 && <optgroup label={text.earlier}>{earlier.map(item => <option key={drawingDocumentKey(item)} value={drawingDocumentKey(item)}>
+          {documentLabel(item)}</option>)}</optgroup>}</select>
+      <MenuSeparator />
+      {/* Its panel closes when attention leaves it, as when the file dialog opens; the file field stays mounted. */}
+      <details ref={anotherMenu} className="drawing-another" onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) event.currentTarget.open = false; }}
+        onKeyDown={event => {
+          if (event.key !== "Escape" || !event.currentTarget.open) return;
+          event.preventDefault(); event.stopPropagation(); event.currentTarget.open = false; event.currentTarget.querySelector("summary")?.focus();
+        }}>
+        <summary className="menu-command">{text.another}</summary>
+        <div className="drawing-another__panel" tabIndex={-1}>
+          <label className="drawing-field">{text.source}<select value={selectedTargetValue} disabled={busy || loading || statusLoading}
+            onChange={event => { setTarget(event.target.value); setExplicitTarget(event.target.value !== ""); setError(null); }}>
+            <option value="">{text.live}</option>
+            {stages.map(item => <option key={item.stageRef} value={item.stageRef}>{item.label} · {item.branchId}</option>)}
+            {drawableAssets.length > 0 && <optgroup label={text.imported}>{drawableAssets.map(item => item.sha256 && <option key={`${item.runId}:${item.sha256}`}
+              value={assetKey({ runId: item.runId, assetSha256: item.sha256 })}>{item.sourceImport?.sourceFileName ?? item.fileName}</option>)}</optgroup>}</select></label>
+          {chosenAsset?.sourceImport && chosenAsset !== savedArtifact && importNotice(chosenAsset)}
+          <input ref={importInput} className="visually-hidden" type="file" accept=".3dm,.skp" onChange={event => {
+            const file = event.currentTarget.files?.[0]; if (file) void importModel(file); event.currentTarget.value = "";
+          }} />
+          <button type="button" disabled={busy || importing || !active} onClick={() => importInput.current?.click()}>{importing ? text.importing : text.importModel}</button>
+          <p className="drawing-field__hint">{text.anotherHint}</p>
         </div>
-        {source && perspectiveOpen && <section className="drawing-status" aria-label={text.status} data-kind="section-perspective">
-          <div className="drawing-status__summary">
-            <span className="drawing-source">{text.sourceOfPage}: <b>{sourceName(source)}</b></span>
-            <strong role="status">{text.sectionView}</strong>
-            {savedArtifact?.sourceImport && importNotice(savedArtifact)}
-          </div>
-        </section>}
-        {source && !perspectiveOpen && <section className="drawing-status" aria-label={text.status}
-          data-follow={historical || explicitTarget || kept ? "frozen" : "live"}
-          data-status={liveBusy ? "updating" : action === "blocked" ? "outdated" : status?.status ?? "unknown"}>
+      </details>
+      {source && !perspectiveOpen && <MenuCommand title={text.downloadHint} disabled={busy || dirty || !active || !vector} onClick={downloadSvg}>{text.download}</MenuCommand>}
+      {recipes.menu}
+      <MenuCommand disabled={busy || loading} onClick={() => setRefresh(value => value + 1)}>{text.refresh}</MenuCommand>
+    </SurfaceMenus>
+    {/* One row above the drawing, only while something asks for a person. */}
+    {attention && <div className="drawing-attention">
+      {statusAsks && source && (perspectiveOpen ? <section className="drawing-status" aria-label={text.status} data-kind="section-perspective">
+        <div className="drawing-status__summary">
+          <span className="drawing-source">{text.sourceOfPage}: <b>{sourceName(source)}</b></span>
+          <strong role="status">{text.sectionView}</strong>
+          {savedArtifact?.sourceImport && importNotice(savedArtifact)}
+        </div>
+      </section>
+        : <section className="drawing-status" aria-label={text.status} data-follow={statusFollow} data-status={statusState}>
           <div className="drawing-status__summary">
             <span className="drawing-source">{text.sourceOfPage}: <b>{sourceName(source)}</b></span>
             <strong role="status">{statusLine}</strong>
-            <p>{status?.detail ?? (!statusLoading ? text.statusError : "")}</p>
+            <p>{status?.detail ?? (!checking ? text.statusError : "")}</p>
             {savedArtifact?.sourceImport && importNotice(savedArtifact)}
           </div>
           {historical && latest.some(item => item.drawingId === source.drawingId) &&
             <button type="button" disabled={busy} onClick={() => { void chooseDocument(drawingDocumentKey(latest.find(item => item.drawingId === source.drawingId)!)); }}>{text.openLatest}</button>}
           {kept && !historical && !explicitTarget &&
             <button type="button" disabled={busy || !liveTarget} onClick={() => void generate(liveTarget, { follow: "live" })}>{text.followAgain}</button>}
-        </section>}
-        </div>
+          {explicitTarget && <button type="button" disabled={!stage || busy || statusLoading} onClick={() => void generate(stage, { follow: "frozen" })}>{text.rebuild}</button>}
+        </section>)}
+      {held && <div className="drawing-held" role="status"><p>{text.held}</p>
+        {appearanceHeld === "refused" && <button className="btn btn--accent" type="submit" form={controlsId} disabled={busy || !(source?.modelSource || documentAsset(source))}>{text.retry}</button>}</div>}
+      {error && <ErrorPanel error={error} what={text.title} />}
+      {offers.map(offer => {
+        const label = offerText(offer, text.offer);
+        return <section key={offer.suggestionId} className="drawing-offer" aria-label={label}><p>{label}</p>
+          <div className="drawing-offer__actions">
+            <button type="button" className="btn btn--accent" disabled={recipeSaving || !active} onClick={() => void saveOffer(offer)}>{text.save}</button>
+            <button type="button" disabled={recipeSaving} onClick={() => ignoreOffer(offer)}>{text.ignore}</button>
+          </div></section>;
+      })}
+      {recipes.row}
+    </div>}
+    <div className="drawing-body">
+      <div className="drawing-main">
         <div className="drawing-canvas">{source && file ? <PlanPreview key={source.drawingId ?? selected} source={source} file={file} vector={vector}
           picture={picture} hidden={hiddenIds} picked={pickedObject?.id ?? null} onPick={setPicked} objects={form.dressing} selected={selectedDressing}
           onSelect={setSelectedDressing} onChange={dressing => update({ dressing })} disabled={busy || !active} />
           : <div className="drawing-empty" role="status">{loading || source ? text.loading : stage ? text.empty : live?.reason ?? text.noModel}</div>}</div>
       </div>
-      <form ref={controls} className="drawing-controls" aria-label={text.settings} onSubmit={event => { event.preventDefault(); void generate(source ? null : stage, !source && explicitTarget ? { follow: "frozen" } : {}); }}>
+      <form id={controlsId} ref={controls} className="drawing-controls" aria-label={text.settings} onSubmit={event => { event.preventDefault(); void generate(source ? null : stage, !source && explicitTarget ? { follow: "frozen" } : {}); }}>
         <div className="drawing-controls__fields">
         <p className="drawing-unit">{lengthUnit ? `${text.sourceHint} ${lengthUnit}` : text.unitUnknown}</p>
         {!perspectiveOpen && <fieldset disabled={busy || !active || !lengthUnit}><legend>{text.representation}</legend>
@@ -727,10 +767,10 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
           <label className="drawing-field">{text.object}<select value={pickedObject?.id ?? ""} onChange={event => setPicked(event.target.value || null)}>
             <option value="">{text.noObject}</option>
             {listedObjects.map(({ object, label }) => <option key={object.id} value={object.id}>{label}</option>)}</select></label>
-          {pickedObject ? <div className="drawing-object-picked">
+          {pickedObject && <div className="drawing-object-picked">
             <strong>{objectLabel(text, pickedObject)}</strong><small>{pickedObject.id}</small>
             <button type="button" onClick={() => hideObject(pickedObject.id)}>{text.hideObject}</button>
-          </div> : <p>{picture.image ? text.tooMany.replace("{count}", String(picture.lines)) : text.pickHint}</p>}
+          </div>}
           {hiddenIds.length > 0 && <div className="drawing-object-hidden"><strong>{text.hiddenObjects}</strong><ul>{hiddenIds.map(id => {
             const name = hiddenName(id);
             return <li key={id}><span>{name}{status?.unresolvedObjectIds?.includes(id) ? ` · ${text.notInModel}` : ""}</span>
@@ -773,21 +813,14 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
           </fieldset>
         </details>
         </div>
-        <div className="drawing-actions">
-        {source ? <p className="drawing-save-state" role="status">{perspectiveOpen ? busy ? text.generating : ""
-          : busy || (dirty && appearanceHeld === null) ? text.saving : dirty ? text.held : ""}</p>
-          : <button className="btn btn--accent" type="submit" disabled={busy || loading || !lengthUnit || !stage}>
-            {busy ? text.generating : text.generate}</button>}
-
-        {source && appearanceHeld === "refused" && <button className="btn btn--accent" type="submit" disabled={busy || !(source.modelSource || documentAsset(source))}>{text.retry}</button>}
-        {source && !perspectiveOpen && <><button className="drawing-download" type="button" disabled={busy || dirty || !active || !vector} onClick={downloadSvg}>{text.download}</button>
-
-          <p>{text.downloadHint}</p></>}
-        {error && <ErrorPanel error={error} what={text.title} />}
-        </div>
+        {/* A new cut plan's one primary action; an open drawing saves itself, and its commands are in the bar. */}
+        {!source && <div className="drawing-actions">
+          <button className="btn btn--accent" type="submit" disabled={busy || loading || !lengthUnit || !stage}>{busy ? text.generating : text.generate}</button>
+        </div>}
       </form>
       <form id={sectionFormId} ref={sectionForm} hidden aria-label={text.section}
         onSubmit={event => { event.preventDefault(); void generateSection(); }} />
     </div>
+    <StatusLine>{statusWords}</StatusLine>
   </div>;
 }

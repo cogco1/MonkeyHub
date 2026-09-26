@@ -473,7 +473,8 @@ try {
     const before = await revision().inputValue(), sent = requests.length;
     refuseNext = true;
     await page.getByLabel("Cut height (meter)", { exact: true }).fill("1.4");
-    await page.locator(".drawing-actions .error-panel").waitFor();
+    // #337: a refusal asks in the row above the drawing.
+    await page.locator(".drawing-attention .error-panel").waitFor();
     await page.getByText("Appearance changes are not saved yet; fix the marked field or retry.", { exact: true }).waitFor();
     assert.equal(await page.getByLabel("Cut height (meter)", { exact: true }).inputValue(), "1.4", "the refused edit stays in its field");
     await new Promise(resolve => setTimeout(resolve, 1200));

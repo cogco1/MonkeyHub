@@ -11,18 +11,24 @@ const scratch = await mkdtemp(join(tmpdir(), "recipe-transfer-"));
 const fixture = `
 import React,{useState} from 'react';
 import {createRoot} from 'react-dom/client';
-import RecipeTransfer from '/src/workspaces/monkeydiagram/RecipeTransfer';
+import {useRecipeTransfer} from '/src/workspaces/monkeydiagram/RecipeTransfer';
+import {ProjectBar,StatusLine,SurfaceMenus} from '/src/features/chrome/SurfaceChrome';
 import {UserPreferencesProvider,usePreferences} from '/test/TestProviders.tsx';
 import '/src/styles.css';
 import '/@fs/${root}/../../../shared-web/src/base.css';
+// As the Drawing places it (#337): the menu in the project bar, a file to confirm in the row above the drawing, the note on the status line.
+function Transfer({projectId}){
+ const recipes=useRecipeTransfer(projectId);
+ return <><SurfaceMenus label="Drawing" active>{recipes.menu}</SurfaceMenus>{recipes.row}<div style={{flex:1,padding:24}}>Drawing</div><StatusLine>{recipes.note}</StatusLine></>;
+}
 function App(){
  const [project,setProject]=useState('second-project'),preferences=usePreferences();
  window.fixture={setProject,setLanguage:preferences.setLanguage,setTheme:preferences.setTheme};
- return <><RecipeTransfer key={project} projectId={project}/><div style={{flex:1,padding:24}}>Drawing</div></>;
+ return <ProjectBar label="Surface menus"><Transfer key={project} projectId={project}/></ProjectBar>;
 }
 createRoot(document.getElementById('root')).render(<UserPreferencesProvider><App/></UserPreferencesProvider>);`;
 const server = await createServer({ root, configFile: false, resolve: { dedupe: ["react", "react-dom"] }, publicDir: false, logLevel: "error", cacheDir: join(scratch, "vite"),
-  optimizeDeps: { noDiscovery: true, include: ["react", "react-dom/client", "react/jsx-runtime", "react/jsx-dev-runtime"] },
+  optimizeDeps: { noDiscovery: true, include: ["react", "react-dom", "react-dom/client", "react/jsx-runtime", "react/jsx-dev-runtime"] },
   server: { host: "127.0.0.1", port: 0, strictPort: true }, plugins: [{ name: "recipe-fixture",
     resolveId(id) { if (id === "/recipe-fixture.tsx") return `${root}/recipe-fixture.tsx`; },
     load(id) { if (id === `${root}/recipe-fixture.tsx`) return fixture; },
@@ -98,6 +104,8 @@ try {
   assert.equal(writes.length, 1);
   assert.deepEqual({ ...writes[0], rawLanguage: undefined }, { projectId: "second-project", content, confirmed: true, sourceKind: "human", rawLanguage: undefined });
   assert.ok(writes[0].rawLanguage.includes(document.sha256));
+  // The menu closed when the import was confirmed in the row; it opens again to refresh.
+  await page.getByText("Reuse drawing recipes", { exact: true }).click();
   await page.getByRole("button", { name: "Refresh saved recipes" }).click();
   await upload();
   await page.getByRole("button", { name: "Import as project preference", exact: true }).click();
