@@ -1,0 +1,73 @@
+{
+  "config": {
+    "budget_per_case": 8,
+    "cases": [
+      "provided-source",
+      "open-direction"
+    ],
+    "experiment_id": "smoke-2026-09-26",
+    "horizon": 3,
+    "outcome_metric": "success",
+    "parallel_capacity": 4,
+    "rule": "equal",
+    "seed": 268,
+    "strategies": [
+      "A",
+      "B",
+      "C",
+      "D"
+    ],
+    "timeout_s": 180.0,
+    "token_cap": 4000,
+    "warmup": 2
+  },
+  "createdAt": "2026-09-26T03:29:59+00:00",
+  "plannedRollouts": 16,
+  "runner": {
+    "arguments": [
+      "exec",
+      "--json",
+      "--ephemeral",
+      "--skip-git-repo-check",
+      "--ignore-user-config",
+      "--color",
+      "never",
+      "-s",
+      "read-only"
+    ],
+    "model": "cli-default",
+    "provider": "codex-exec",
+    "providerVersion": "codex-cli 0.153.4",
+    "sampling": {
+      "reasoningEffort": "cli-default",
+      "seed": "not exposed by codex exec; the rollout seed is recorded only",
+      "temperature": "not exposed by codex exec"
+    },
+    "session": "one fresh ephemeral process per rollout in an empty directory; the prompt arrives on a stdin pipe the runner owns and closes; no session is resumed",
+    "tokenCap": "codex exec has no output-token limit; the harness checks reported output tokens after the call"
+  },
+  "snapshots": {
+    "open-direction": {
+      "digest": "59cbbcf8785c21932c88a8f208de39e8b4925f77e910102ad184f36cbb6ba6b8",
+      "snapshotId": "open-direction@v0/b3acae63bb92"
+    },
+    "provided-source": {
+      "digest": "e0d9f807dc2d5d4ed209951b0edc2091f433fcd6df967c9588544100e283a781",
+      "snapshotId": "provided-source@v0/01620226d856"
+    }
+  },
+  "strategyVersions": {
+    "A": "A-free-choice@1",
+    "B": "B-fixed-procedure@1",
+    "C": "C-state-ranked@1",
+    "D": "D-short-lookahead@1"
+  },
+  "versions": {
+    "environment": "strategy-allocation-env@0",
+    "evaluator": "strategy-allocation-evaluator@0",
+    "promptContract": "strategy-allocation-prompt@1",
+    "recordFormat": "strategy-allocation-rollout@1",
+    "reference": "strategy-allocation-reference@0",
+    "sequentialAllocator": "sequential-ocba-v2"
+  }
+}

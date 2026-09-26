@@ -123,7 +123,7 @@ tolerate it.
 | PUT | `/api/working-draft` | Continue: the working position, and so the Working Head, moves onto `runId`, or back to the default with `null`, under the `baseRevisionSha256` compare-and-swap; a move onto a run retains who made it as `AuditEvent@1` `design.continued` beside that run (§4.1). `messageSource` with `rawLanguage` marks the Hub Agent continuing on the user's bound words | **writes the working position + that run's review** | provisional |
 | GET | `/api/worktrees` | read-only Worktree Graph V0 (§4.1): the head line, other accepted lines, running and interrupted changes with their exact base and declared read/write refs, retained results off the head's line with `relation` and `reconcile` (`can-combine`, `conflict` with the shared refs, `unknown`), each finished line's `admission` (`admitted`, `rejected`, `superseded`, `none`) and `studyId` (§5.5), and drawing/render `current`/`stale`/`frozen`/`running`/`unavailable` states, a drawing's as the Drawing tool reads it (§4.1). Nothing is merged or started | reads the working position + shared + design refs + the admissions review + server memory | provisional |
 | POST | `/api/drawings/elevations` → 201 | exact-model elevation document with drawing/revision/Stage/view references | writes shared drawing artifacts and document registration | provisional |
-| POST | `/api/drawings/section-perspectives` → 201 | exact-model section perspective document: `section` (`{line, keep}` or `{origin, normal}`) cuts the retained STEP, the kept side is drawn in perspective with the section plane as picture plane (true to scale at `scaleDenominator`), the cut in poché; optional `camera` (`{eye, target, up?, fovDeg?}` or the default one-point `{eyeHeight?, fovDeg?}`), `depth`, `hiddenObjectIds`; the view recipe records the request, plane and resolved camera; refusals are named (`SECTION_PLANE_MISSES_MODEL`, `SECTION_EYE_ON_KEPT_SIDE`, …) | writes shared drawing artifacts and document registration | provisional |
+| POST | `/api/drawings/section-perspectives` → 201 | exact-model section perspective document: `section` (`{line, keep}` or `{origin, normal}`) cuts the retained STEP, the kept side is drawn in perspective with the section plane as picture plane (true to scale at `scaleDenominator`), the cut in poché; optional `camera` (`{eye, target, up?, fovDeg?}` or the default one-point `{eyeHeight?, fovDeg?}`), `depth`, `hiddenObjectIds`; `cutLineMm`, `visibleLineMm`, `hatchSpacingMm` and, validated and stored as a cut plan's, `hatch.byMaterial.<material>` (`{spacingMm 0.5–20, angleDeg 0–<180, poche}`, stored complete: spacing defaults to this request's `hatchSpacingMm`, angle 45, poché false) and `beyond.fade` (0–1), so the cut takes the material hatch/poché and the fade greys what lies beyond it; an empty `byMaterial` or a zero fade is the request without them; the view recipe records the request, plane and resolved camera; refusals are named (`SECTION_PLANE_MISSES_MODEL`, `SECTION_EYE_ON_KEPT_SIDE`, …) | writes shared drawing artifacts and document registration | provisional |
 | GET | `/api/candidates/{candidateId}/validation` | the kernel's validation receipt and the server's review readiness (§5) | reads shared + published | stable |
 | POST | `/api/intents` → 201 | one of four outcomes: the resolved target and the proposal it became, or the pending intent the refusal belongs to (§5.1) | reads work in progress + shared | provisional |
 | POST | `/api/intents/context` | `ContextPack@1` against an exact source, with optional scalar, multiple-object, component or whole-project focus, dependency facts and bounded design-context supplements | reads work in progress + shared + published | provisional |
@@ -718,7 +718,10 @@ cut, a dimension.
 representation change of class `recipe` whose `sourceKind` is not `agent`; each of
 `cutLineMm`, `visibleLineMm` and `hatchSpacingMm` it changed joins the group of that
 key and its direction, `increase` or `decrease` (2→3 and 2→4 are one direction),
-unless an active recipe already gives that drawing the key. A group spanning at least
+unless the recipe that drawing reads already decides the key: a `hard` or
+`strong_preference` value changes only by superseding its decision, while a
+`soft_preference` (an imported default among them) covers only a correction to its own
+value, so corrections away from it are still offered. A group spanning at least
 two distinct drawings is one suggestion: `suggestionId` (derived from `field`,
 `direction`, `value` and `drawingIds`, so the same offer keeps its id), `field`,
 `direction`, `value` (the paper value of the group's most recent after revision),
@@ -729,6 +732,32 @@ ordered by field and direction. A suggestion is only an offer. A person saves it
 `POST /api/decisions`, a `require` drawing decision with a recipe `typedBinding` citing
 `page`, after which the recipe gives the key and it is no longer offered. Another
 project is refused with `PROJECT_MISMATCH`.
+
+A recipe can travel to another project (#252) as a file, `DrawingRecipeExport@1`:
+`{schema, recipe: {targetRef, strength, graphics}, source: {decisionId, revisionSha256},
+sha256}`. `graphics` holds only the values the recipe sets, `strength` is the hold it had,
+`revisionSha256` is the exact revision exported, and `sha256` is the SHA-256 of the
+canonical JSON (sorted keys, no whitespace, ASCII escapes) of every other field: the
+export's identity, so one revision always exports to the same content. No page, path,
+run, project id, actor or wording travels. `tools/export_drawing_recipe.py export
+--project <dir> --decision <id> --out <file>` writes one active recipe decision and
+never replaces a file; `import --project <dir> --file <file>` refuses a file with any
+other field, a value a cut-plan request would refuse or content that does not hash to
+its `sha256` (`422 RECIPE_EXPORT_INVALID`), shows the decision it would retain and
+writes nothing. With `--confirm`, a person's confirmation, it retains that decision: a
+`require` drawing decision with the export's target and values, `sourceKind: human`,
+held `soft_preference` for the whole project, applying by `scope`, attributed to the
+tool's own boundary (`tool:export-drawing-recipe`, unauthenticated, origin `tool`) and
+citing the new source kind `{"kind": "recipe-export", "exportSha256": …}`. Only the
+import writes that source, after checking the file: `POST /api/decisions` and a
+supersession still name a board, page or design run, and `DecisionDto.source` reads
+all four. A key the project already holds as a project `soft_preference` is `409
+DECISION_RECIPE_CONFLICT`; the imported decision revokes and supersedes like any
+other, and a person who confirms a value on one of the project's own pages holds it
+more strongly. The import writes through the Studio's decision function under the
+project's HEAD lock, the lock a runtime takes for every decision write, so it may run
+while a runtime has the project open; the runtime reads the decision on its next
+request.
 
 A projected vector (`polyline` or poché `polygon`) names its physical object in
 `data-object` and, for a model compiled from design state, its `data-component` and

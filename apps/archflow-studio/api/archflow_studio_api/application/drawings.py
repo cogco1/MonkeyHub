@@ -358,14 +358,17 @@ def generate_section_perspective(
     binding: ProjectBinding, *, source_stage_ref: str | None, model_source: ModelSource | None,
     section: dict[str, Any], camera: dict[str, Any] | None = None, depth: float | None = None,
     hidden_object_ids: tuple[str, ...] = (), drawing_id: str | None = None, scale_denominator: int = 100,
-    graphics: dict[str, float] | None = None, monitor: StudioMonitor | None = None, source_asset=None,
+    graphics: dict[str, float] | None = None, hatch: dict[str, Any] | None = None, beyond: dict[str, Any] | None = None,
+    monitor: StudioMonitor | None = None, source_asset=None,
 ) -> SourceDocument:
     """One section perspective of a verified source, retained and registered like an elevation.
 
     The same source resolution, cache, monitoring and documents-list
     registration as ``generate_elevation``; an identical request on the same
-    source reads the registered revision back.  The drawing owner's refusals
-    keep their names on the wire.
+    source reads the registered revision back.  ``hatch`` and ``beyond`` are a
+    cut plan's material rules and fade, which the view checks and stores
+    complete beside the pens.  The drawing owner's refusals keep their names
+    on the wire.
     """
 
     monitor = monitor if monitor is not None else StudioMonitor(None)
@@ -384,6 +387,9 @@ def generate_section_perspective(
             raise
         drawing_id = drawing_id or SECTION_PERSPECTIVE_KIND
         require_identifier(drawing_id, "drawing_id")
+        rules = {key: value for key, value in (("hatch", hatch), ("beyond", beyond)) if value is not None}
+        if rules:
+            graphics = {**(graphics or {}), **rules}
         try:
             view = SectionPerspectiveView(
                 name=drawing_id, section=section, camera=camera, depth=depth, hidden_object_ids=tuple(hidden_object_ids),

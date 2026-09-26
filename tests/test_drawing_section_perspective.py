@@ -273,6 +273,30 @@ class SectionPerspectiveGeometryTests(unittest.TestCase):
         explicit = self.project(camera={"eye": camera["eye"], "target": camera["target"], "fovDeg": camera["fov_deg"]})
         self.assertEqual(explicit.svg, self.default.svg)
 
+    def test_material_hatch_poche_and_beyond_fade_reach_the_svg_as_in_a_cut_plan(self) -> None:
+        from xml.etree import ElementTree
+
+        svg_ns = "{http://www.w3.org/2000/svg}"
+        semantics = {"floor": {"material": "concrete"}, "roof": {"material": "concrete"},
+                     "wall-west": {"material": "brick"}, "wall-east": {"material": "brick"}}
+        graphics = {"hatch": {"byMaterial": {"concrete": {"poche": True}, "brick": {"spacingMm": 2, "angleDeg": 135}}},
+                    "beyond": {"fade": 0.5}}
+        view = SectionPerspectiveView(name="room-section", section=deepcopy(SECTION), scale_denominator=25, graphics=graphics)
+        ruled = project_section_perspective(self.entries, object_ids=DRAWN, view=view, unit="meter", semantics=semantics)
+        root = ElementTree.fromstring(ruled.svg)
+        material = root.find(f"{svg_ns}g[@id='section-hatch']")
+        # Concrete's cut is filled (poché); brick's is hatched by its own rule.
+        self.assertEqual(sorted((p.get("data-object"), p.get("data-material")) for p in material.findall(f"{svg_ns}polygon")),
+                         [("floor", "concrete"), ("roof", "concrete")])
+        self.assertEqual({line.get("data-object") for line in material.findall(f"{svg_ns}polyline")}, {"wall-west", "wall-east"})
+        # What lies beyond the cut is greyed; the cut keeps its black pen.
+        self.assertEqual(root.find(f"{svg_ns}g[@id='visible']").get("stroke"), "#808080")
+        self.assertEqual(root.find(f"{svg_ns}g[@id='section']").get("stroke"), "#000")
+        self.assertEqual(ruled.view["graphics"], view.graphics)
+        # No rule, an empty byMaterial and a zero fade draw today's exact bytes.
+        plain = self.project(graphics={"hatch": {"byMaterial": {}}, "beyond": {"fade": 0}})
+        self.assertEqual((plain.svg, plain.png, plain.view), (self.default.svg, self.default.png, self.default.view))
+
 
 class SectionPerspectiveRequestTests(unittest.TestCase):
     """Every refusal is made before the model is read, and names the rule it broke."""
@@ -300,6 +324,41 @@ class SectionPerspectiveRequestTests(unittest.TestCase):
         ):
             with self.subTest(code=code, changes=changes), self.assertRaises(SectionPerspectiveError) as refused:
                 SectionPerspectiveView(name="refused", **changes)
+            self.assertEqual(refused.exception.code, code)
+
+    def test_material_rules_and_fade_are_stored_complete_and_refused_as_in_a_cut_plan(self) -> None:
+        view = SectionPerspectiveView(name="ruled", section=deepcopy(SECTION), graphics={
+            "hatchSpacingMm": 1.5, "beyond": {"fade": 0.4},
+            "hatch": {"byMaterial": {"timber": {"spacingMm": 3, "angleDeg": 135}, "concrete": {"poche": True}}}})
+        self.assertEqual(view.graphics, {
+            "cutLineMm": 0.5, "visibleLineMm": 0.25, "hatchSpacingMm": 1.5,
+            "hatch": {"byMaterial": {"concrete": {"spacingMm": 1.5, "angleDeg": 45.0, "poche": True},
+                                     "timber": {"spacingMm": 3.0, "angleDeg": 135.0, "poche": False}}},
+            "beyond": {"fade": 0.4}})
+        self.assertEqual(view.request()["graphics"], view.graphics)
+        plain = SectionPerspectiveView(name="ruled", section=deepcopy(SECTION))
+        for empty in ({"hatch": {"byMaterial": {}}}, {"beyond": {"fade": 0}}, {"hatch": None, "beyond": None}):
+            with self.subTest(empty=empty):
+                self.assertEqual(SectionPerspectiveView(name="ruled", section=deepcopy(SECTION), graphics=empty).request(),
+                                 plain.request())
+        for code, graphics in (
+            ("SECTION_REQUEST_INVALID", {"hatch": {"byMaterial": {"concrete": {"spacingMm": 0.1}}}}),
+            ("SECTION_REQUEST_INVALID", {"hatch": {"byMaterial": {"concrete": {"spacingMm": 21}}}}),
+            ("SECTION_REQUEST_INVALID", {"hatch": {"byMaterial": {"stone": {"angleDeg": 180}}}}),
+            ("SECTION_REQUEST_INVALID", {"hatch": {"byMaterial": {"stone": {"angleDeg": -1}}}}),
+            ("SECTION_REQUEST_INVALID", {"hatch": {"byMaterial": {"stone": {"colour": "grey"}}}}),
+            ("SECTION_REQUEST_INVALID", {"hatch": {"byMaterial": {"stone": {"poche": "yes"}}}}),
+            ("SECTION_REQUEST_INVALID", {"hatch": {"byMaterial": {"": {"poche": True}}}}),
+            ("SECTION_REQUEST_INVALID", {"hatch": {"byMaterial": {"a\nb": {"poche": True}}}}),
+            ("SECTION_REQUEST_INVALID", {"hatch": {}}),
+            ("SECTION_REQUEST_INVALID", {"beyond": {"fade": 1.5}}),
+            ("SECTION_REQUEST_INVALID", {"beyond": {}}),
+            ("SECTION_REQUEST_INVALID", {"layers": {}}),
+            ("SECTION_VALUE_NOT_FINITE", {"beyond": {"fade": float("nan")}}),
+            ("SECTION_VALUE_NOT_FINITE", {"hatch": {"byMaterial": {"stone": {"angleDeg": float("inf")}}}}),
+        ):
+            with self.subTest(graphics=graphics), self.assertRaises(SectionPerspectiveError) as refused:
+                SectionPerspectiveView(name="refused", section=deepcopy(SECTION), graphics=graphics)
             self.assertEqual(refused.exception.code, code)
 
     def test_a_horizontal_section_needs_only_an_up_across_it(self) -> None:

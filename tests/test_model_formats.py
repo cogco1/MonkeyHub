@@ -29,6 +29,65 @@ def changed_glb(changes, binary=None):
             + struct.pack("<I4s", len(binary), b"BIN\x00") + binary)
 
 
+CUBE = [(x, y, z) for x in (0, 2) for y in (0, 2) for z in (0, 2)]
+# Outward counter-clockwise quads of the cube above, meters/Z-up.
+CUBE_QUADS = [(0, 1, 3, 2), (4, 6, 7, 5), (0, 4, 5, 1), (2, 3, 7, 6), (0, 2, 6, 4), (1, 5, 7, 3)]
+CUBE_TRIANGLES = [t for a, b, c, d in CUBE_QUADS for t in ((a, b, c), (a, c, d))]
+
+
+def authored_glb(vertices, triangles, normals=None, colors=None, material=None):
+    """A GLB with the optional attributes the adapter's own writer never emits."""
+    binary, views, accessors = bytearray(), [], []
+
+    def add(rows, fmt, kind, component, **extra):
+        offset = len(binary)
+        for row in rows:
+            binary.extend(struct.pack("<" + fmt, *row))
+        binary.extend(b"\0" * (-len(binary) % 4))
+        views.append({"buffer": 0, "byteOffset": offset, "byteLength": len(rows) * struct.calcsize("<" + fmt)})
+        accessors.append({"bufferView": len(views) - 1, "componentType": component, "count": len(rows), "type": kind, **extra})
+        return len(accessors) - 1
+
+    # Test geometry is written meters/Z-up; glTF is Y-up.
+    attributes = {"POSITION": add([(x, z, -y) for x, y, z in vertices], "fff", "VEC3", 5126)}
+    if normals is not None:
+        attributes["NORMAL"] = add([(x, z, -y) for x, y, z in normals], "fff", "VEC3", 5126)
+    if colors is not None:
+        attributes["COLOR_0"] = add(colors, "BBBB", "VEC4", 5121, normalized=True)
+    primitive = {"attributes": attributes, "indices": add([(i,) for t in triangles for i in t], "I", "SCALAR", 5125)}
+    document = {"asset": {"version": "2.0"}, "scene": 0, "scenes": [{"nodes": [0]}],
+                "nodes": [{"mesh": 0, "name": "Authored"}], "meshes": [{"primitives": [primitive]}],
+                "accessors": accessors, "bufferViews": views, "buffers": [{"byteLength": len(binary)}]}
+    if material is not None:
+        primitive["material"] = 0
+        document["materials"] = [material]
+    encoded = json.dumps(document).encode()
+    encoded += b" " * (-len(encoded) % 4)
+    return (struct.pack("<4sII", b"glTF", 2, 28 + len(encoded) + len(binary))
+            + struct.pack("<I4s", len(encoded), b"JSON") + encoded
+            + struct.pack("<I4s", len(binary), b"BIN\x00") + bytes(binary))
+
+
+def reopened_mesh(output):
+    """The converted 3DM as a viewer opens it: file bytes read back by rhino3dm."""
+    import rhino3dm as r
+    model = r.File3dm.FromByteArray(output)
+    item = model.Objects[0]
+    mesh = item.Geometry
+    vertices = [(v.X, v.Y, v.Z) for v in mesh.Vertices]
+    normals = [(mesh.Normals[i].X, mesh.Normals[i].Y, mesh.Normals[i].Z) for i in range(len(mesh.Normals))]
+    faces = [tuple(face[:3]) for face in mesh.Faces]
+    return model, item, vertices, normals, faces
+
+
+def cross(u, v):
+    return (u[1]*v[2] - u[2]*v[1], u[2]*v[0] - u[0]*v[2], u[0]*v[1] - u[1]*v[0])
+
+
+def dot(u, v):
+    return sum(a * b for a, b in zip(u, v))
+
+
 class FormatTests(unittest.TestCase):
     def test_materialless_indexed_and_nonindexed_meshes_have_visible_fallback(self):
         import rhino3dm as r
@@ -61,6 +120,92 @@ class FormatTests(unittest.TestCase):
         self.assertAlmostEqual(result.roughness,.3,places=5)
         self.assertAlmostEqual(result.metallic,.7,places=5)
         for a,b in zip(result.base_color,mesh.base_color):self.assertAlmostEqual(a,b,delta=.005)
+
+    def assert_outward(self, vertices, normals, faces):
+        centre = [sum(p[i] for p in vertices) / len(vertices) for i in range(3)]
+        self.assertEqual(len(normals), len(vertices))
+        for point, normal in zip(vertices, normals):
+            self.assertAlmostEqual(dot(normal, normal), 1, places=5)
+            self.assertGreater(dot(normal, [point[i] - centre[i] for i in range(3)]), 0)
+        for a, b, c in faces:
+            pa, pb, pc = vertices[a], vertices[b], vertices[c]
+            face = cross([pb[i] - pa[i] for i in range(3)], [pc[i] - pa[i] for i in range(3)])
+            middle = [(pa[i] + pb[i] + pc[i]) / 3 - centre[i] for i in range(3)]
+            self.assertGreater(dot(face, middle), 0, (a, b, c))
+
+    def test_glb_without_normals_or_material_reopens_shaded_and_not_black(self):
+        import rhino3dm as r
+        # Two faces wound inward: the closed shell must come back outward throughout.
+        triangles = list(CUBE_TRIANGLES)
+        triangles[0], triangles[7] = triangles[0][::-1], triangles[7][::-1]
+        output, info = convert(authored_glb(CUBE, triangles), "glb", "3dm")
+        model, item, vertices, normals, faces = reopened_mesh(output)
+        self.assert_outward(vertices, normals, faces)
+        material = model.Materials[item.Attributes.MaterialIndex]
+        self.assertEqual(item.Attributes.MaterialSource, r.ObjectMaterialSource.MaterialFromObject)
+        for colour in (material.DiffuseColor, item.Attributes.DrawColor(model), model.Layers[0].Color):
+            self.assertGreater(sum(colour[:3]), 3 * 128, colour)
+        self.assertEqual(info["display"]["normals"], {"kept": 0, "computed": 1, "recomputed": 0})
+        self.assertEqual(info["display"]["winding"], {"reversedTriangles": 2, "closedShells": 1})
+        self.assertEqual(info["display"]["material"]["defaulted"], 1)
+        self.assertIn("vertex-normals-and-display-material", info["outputValidation"]["checks"])
+        notes = " ".join(info["warnings"])
+        for phrase in ("normals computed", "2 triangle(s) were reversed", "neutral"):
+            self.assertIn(phrase, notes)
+        self.assertNotIn("normals are omitted", notes)
+        self.assertIn("neutral display material", info["losses"]["materials"])
+
+    def test_inward_closed_shell_is_turned_outward(self):
+        output, info = convert(authored_glb(CUBE, [t[::-1] for t in CUBE_TRIANGLES]), "glb", "3dm")
+        self.assert_outward(*reopened_mesh(output)[2:])
+        self.assertEqual(info["display"]["winding"]["reversedTriangles"], 12)
+
+    def test_open_surface_keeps_source_winding_and_split_seams_stay_connected(self):
+        # A downward-facing open square whose two triangles share no vertex indices.
+        vertices = [(0, 0, 0), (0, 1, 0), (1, 1, 0), (0, 0, 0), (1, 1, 0), (1, 0, 0)]
+        output, info = convert(authored_glb(vertices, [(0, 1, 2), (3, 4, 5)]), "glb", "3dm")
+        _, _, _, normals, faces = reopened_mesh(output)
+        self.assertEqual(faces, [(0, 1, 2), (3, 4, 5)])
+        for normal in normals:
+            self.assertAlmostEqual(normal[2], -1, places=6)
+        self.assertEqual(info["display"]["winding"], {"reversedTriangles": 0, "closedShells": 0})
+
+    def test_source_normals_vertex_colours_and_material_are_kept(self):
+        import rhino3dm as r
+        vertices = [(0, 0, 0), (1, 0, 0), (0, 1, 0)]
+        tilted = (0.0, 0.6, 0.8)
+        colors = [(255, 0, 0, 255), (0, 255, 0, 255), (0, 0, 255, 255)]
+        material = {"name": "Beak", "pbrMetallicRoughness": {"baseColorFactor": [1.0, 0.2, 0.0, 1.0]}}
+        output, info = convert(authored_glb(vertices, [(0, 1, 2)], [tilted] * 3, colors, material), "glb", "3dm")
+        model, item, _, normals, _ = reopened_mesh(output)
+        for normal in normals:
+            for a, b in zip(normal, tilted):
+                self.assertAlmostEqual(a, b, places=6)
+        mesh = item.Geometry
+        self.assertEqual([tuple(mesh.VertexColors[i][:3]) for i in range(3)], [c[:3] for c in colors])
+        native = model.Materials[item.Attributes.MaterialIndex]
+        self.assertEqual(native.Name, "Beak")
+        # Linear glTF factors become 8-bit sRGB.
+        self.assertEqual(tuple(native.DiffuseColor), (255, 124, 0, 255))
+        self.assertEqual(item.Attributes.Name, "Authored")
+        self.assertEqual(info["display"]["normals"]["kept"], 1)
+        self.assertEqual(info["display"]["material"]["kept"], 1)
+        self.assertEqual(info["display"]["vertexColors"]["kept"], 1)
+        self.assertIn("Source vertex normals kept", " ".join(info["warnings"]))
+
+    def test_source_normals_against_the_winding_are_recomputed(self):
+        vertices = [(0, 0, 0), (1, 0, 0), (0, 1, 0)]
+        output, info = convert(authored_glb(vertices, [(0, 1, 2)], [(0, 0, -1)] * 3), "glb", "3dm")
+        for normal in reopened_mesh(output)[3]:
+            self.assertAlmostEqual(normal[2], 1, places=6)
+        self.assertEqual(info["display"]["normals"]["recomputed"], 1)
+
+    def test_invalid_glb_vertex_attributes_are_refused(self):
+        vertices = [(0, 0, 0), (1, 0, 0), (0, 1, 0)]
+        with self.assertRaisesRegex(ConversionError, "position count"):
+            GLB().read(authored_glb(vertices, [(0, 1, 2)], [(0, 0, 1)] * 2))
+        with self.assertRaisesRegex(ConversionError, "baseColorFactor"):
+            GLB().read(authored_glb(vertices, [(0, 1, 2)], material={"pbrMetallicRoughness": {"baseColorFactor": [1, 1]}}))
 
     def test_three_dm_preserves_only_explicit_source_object_ids(self):
         adapter = ThreeDM()
@@ -96,6 +241,10 @@ class FormatTests(unittest.TestCase):
         p = model.Objects[0].Geometry.Vertices[0]
         self.assertEqual((p.X, p.Y, p.Z), (1, 2, 3))
         self.assertTrue(info["warnings"])
+        # Closing and reopening the written file keeps the shaded display state.
+        reopened = ThreeDM().read(base64.b64decode(model.Encode()))
+        self.assertEqual(reopened.meshes[0].normals, [(0, 0, 1)] * 3)
+        self.assertEqual(reopened.meshes[0].material.color, (200, 200, 200, 255))
 
     def test_3dm_millimeters_to_glb_signature_and_scale(self):
         import rhino3dm as r

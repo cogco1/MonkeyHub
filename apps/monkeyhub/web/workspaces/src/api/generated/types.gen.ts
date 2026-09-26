@@ -2265,7 +2265,9 @@ export type DecisionDto = {
         kind: 'document';
     } & DocumentDecisionSourceDto) | ({
         kind: 'design';
-    } & DesignDecisionSourceDto);
+    } & DesignDecisionSourceDto) | ({
+        kind: 'recipe-export';
+    } & RecipeExportDecisionSourceDto);
     /**
      * Applicability
      */
@@ -7792,6 +7794,27 @@ export type RecipeBindingRequestDto = {
 };
 
 /**
+ * RecipeExportDecisionSourceDto
+ *
+ * The recipe export an imported project recipe came from, named by its own sha256.
+ *
+ * Retained, never requested: a decision request names a board, a page or a
+ * design run. tools/export_drawing_recipe.py writes this source when a person
+ * confirms an import, after reading that export and checking its content
+ * against the digest. The export file itself stays outside the project.
+ */
+export type RecipeExportDecisionSourceDto = {
+    /**
+     * Kind
+     */
+    kind: 'recipe-export';
+    /**
+     * Exportsha256
+     */
+    exportSha256: string;
+};
+
+/**
  * RecipeGraphicsDto
  *
  * The paper-space values one project recipe sets; a key it leaves out is null.
@@ -8704,6 +8727,14 @@ export type SectionPerspectiveRequestDto = {
      * Poché hatch spacing on paper; default 0.5 mm.
      */
     hatchSpacingMm?: number | null;
+    /**
+     * Material hatch and poché rules for the cut on paper, as a cut plan takes them; each is stored complete and an empty byMaterial draws none.
+     */
+    hatch?: PlanHatchDto | null;
+    /**
+     * Fading of what lies beyond the cut, as in a cut plan; fade 0 draws it black.
+     */
+    beyond?: PlanBeyondDto | null;
 };
 
 /**
