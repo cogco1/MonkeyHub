@@ -234,20 +234,37 @@
       ]
     },
     {
-      "id": "GH-292",
+      "id": "GH-291",
       "stream": "planning",
-      "status": "active",
-      "goal": "Reconcile the reviewed PR with the existing mainline at its bounded integration overlap.",
+      "status": "ready",
+      "goal": "Close drawing revision replacement gaps: exact before/after identity on restoration, idempotent retries, conflicting stale rebuild refusal and persisted consumer regressions.",
       "depends_on": [],
-      "issue": "https://github.com/cogco1/MonkeyHub/issues/292",
-      "branch": "codex/merge-cloud-batch",
-      "worktree": "C:/Users/asus/.codex/worktrees/merge-cloud-batch/ARCHFLOW_V4",
-      "base_ref": "676630d2b17e5a85d4a1761afd7b285d3bf5fd6f",
-      "contributor": "Codex integration",
-      "reviewer": "Independent bounded Codex review",
-      "handoff": "Preserve the original PR head and current mainline behavior in a normal integration merge; release this temporary merge scope in the following commit.",
+      "issue": "https://github.com/cogco1/MonkeyHub/issues/291",
+      "branch": "codex/291-drawing-revision-closeout",
+      "worktree": "D:/MONKEYHUB_DEV/workspace/worktrees/codex-291-drawing-revision-closeout",
+      "base_ref": "e33fbf4656402ead75fb4adcad946c71c81a2dff",
+      "contributor": "Codex",
+      "reviewer": "Independent bounded read-only Codex review; parent integration",
+      "handoff": "Replacement/restoration and cold-reopen assertions pass. The full Board script fails its later remote-frame autofocus during a live stroke assertion, reproduced with the untouched e33fbf4 fixture; parent coordinates Board.tsx focusSources/scheduleUpdateFocus separately. Parent integration reads progress; Board/Publish production belongs to GH-66, correction/decision reuse to GH-252. PR #326 adds independent artifacts preview behavior; do not absorb its changes.",
+      "modules": [
+        "studio.artifacts"
+      ],
       "write_scope": [
-        "apps/monkeyhub/web/workspaces/src/api/generated/types.gen.ts"
+        "apps/archflow-studio/api/archflow_studio_api/application/drawing_plans.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/artifacts.py",
+        "apps/archflow-studio/api/tests/test_drawing_plans.py",
+        "apps/monkeyhub/web/workspaces/test/boardReplacement.browser.mjs",
+        "governance/work_registry.json",
+        "governance/module_registry.json",
+        "docs/PROTOCOL.md",
+        "docs/SYSTEM_MAP.md",
+        "docs/DYNAMIC_MAP.md",
+        "docs/mapping/planning/INDEX.md"
+      ],
+      "acceptance": [
+        "Rebuilt revisions retain exact source and before/after attribution; same-page consumers follow the sole replacesPages chain after cold reopen without changing design branches or HEAD.",
+        "Identical retries reuse their result; conflicting stale or concurrent rebuilds cannot silently fork; returning to older graphics remains a new replacement.",
+        "Existing upload, page mapping, pinned sources, broken-anchor and consumer behavior remain verified."
       ]
     }
   ]

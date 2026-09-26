@@ -650,10 +650,14 @@ straight to the bound Studio, with no `operationId`.
 A rebuild that names `previousRevisionRef` registers the new revision as that
 revision's whole-document replacement: its `replacesPages` names the previous
 page exactly as an upload's would, so a Board page updates in place, Publish
-offers the new page and Render follows it. It registers none when the previous
-revision already has a replacement (a rebuild from a historical revision forks,
-and the fork is a new page) or when the page's visible aspect ratio changed; an
-identical request returns the retained revision and registers nothing. Why a page
+offers the new page and Render follows it. A changed visible aspect ratio registers
+no replacement because the old frame cannot preserve the page's marks. A competing
+rebuild of an already replaced revision fails with `DOCUMENT_REPLACEMENT_CONFLICT`
+before projection writes anything. An identical retry of that predecessor's request,
+or an unchanged request for a revision itself, returns its retained result. Restoring
+an older recipe from a newer revision creates a new revision and replacement even
+when its pixels match history, preserving the correction's before/after and actor.
+Why a page
 was replaced is derived, never stored: the same drawing from the same exact source
 (model, Stage and imported asset) is a representation change, which Render does
 not count as a newer input; the same drawing from another source is a source

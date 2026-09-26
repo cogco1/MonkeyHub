@@ -60,7 +60,7 @@ let headlessPreviewAvailable = false, headlessPreviewFailures = 0;
 let replacementBytes, replacement;
 // Two revisions of one cut plan with the same page shape; the rebuild names
 // the first as the page it replaces, as a rebuilt drawing registers (#291).
-let planBytes, rebuiltPlanBytes, planDocument, rebuiltPlan;
+let planBytes, rebuiltPlanBytes, planDocument, rebuiltPlan, restoredPlan;
 const uploadBytes = pdfBytes([[0.3, 0.3, 0.3], [0.9, 0.7, 0.1]]);
 let uploadedReplacement;
 // The explicit editable copy of one whole registered document.
@@ -201,6 +201,8 @@ try {
   planDocument = cutPlan(planBytes, "plan-revision-1", "2026-09-25T10:00:00+00:00");
   rebuiltPlan = { ...cutPlan(rebuiltPlanBytes, "plan-revision-2", "2026-09-25T10:05:00+00:00"),
     previousRevisionRef: planDocument.revisionRef, replacesPages: [{ ...pageSource(planDocument, 0), newPageIndex: 0 }] };
+  restoredPlan = { ...cutPlan(planBytes, "plan-revision-3", "2026-09-25T10:10:00+00:00"),
+    previousRevisionRef: rebuiltPlan.revisionRef, replacesPages: [{ ...pageSource(rebuiltPlan, 0), newPageIndex: 0 }] };
   page.on("pageerror", (error) => failures.push(error.stack ?? error.message));
   await page.route((url) => url.pathname.startsWith("/api/"), async (route) => {
     const request = route.request(), url = new URL(request.url());
@@ -246,7 +248,7 @@ try {
           return await route.fulfill({ contentType: "application/pdf", body: uploadBytes });
         }
         if (url.pathname === `/api/documents/${planDocument.assetSha256}/bytes`) {
-          assert.equal(url.searchParams.get("revisionRef"), planDocument.revisionRef);
+          assert.ok([planDocument.revisionRef, restoredPlan.revisionRef].includes(url.searchParams.get("revisionRef")));
           return await route.fulfill({ contentType: "image/png", body: planBytes });
         }
         if (url.pathname === `/api/documents/${rebuiltPlan.assetSha256}/bytes`) {
@@ -591,6 +593,24 @@ try {
   await quiet.getByRole("button", { name: "Dismiss", exact: true }).click();
   await quiet.waitFor({ state: "hidden" });
 
+  // Restoring the original pixels is still a new revision in the same chain.
+  // It must update the exact placed page, including after the Board reopens.
+  documents = [...documents, restoredPlan];
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await page.waitForFunction(({ id, revision }) => window.__boardApi.getSceneElements().some((element) =>
+    element.id === id && element.customData?.sourceDocument?.revisionRef === revision), { id: planImageId, revision: restoredPlan.revisionRef });
+  await untilSaved((board) => board.elements.find((element) => element.id === planImageId)
+    ?.customData?.sourceDocument?.revisionRef === restoredPlan.revisionRef, "The restored revision reaches the saved board");
+  const restored = await readScene();
+  assert.deepEqual(persisted(restored.elements), saved.elements, "The restored revision and marks reach the saved board");
+  assert.deepEqual(byId(restored, planImageId).customData.sourceDocument, pageSource(restoredPlan, 0));
+  assert.deepEqual(geometry(byId(restored, planImageId)), geometry(byId(marked, planImageId)));
+  assert.deepEqual(persisted([byId(restored, planFrameId)]), persisted([byId(marked, planFrameId)]));
+  assert.deepEqual(persisted([byId(restored, "plan-mark")]), persisted([byId(marked, "plan-mark")]));
+  assert.deepEqual(activeIds(restored, "image"), activeIds(marked, "image"));
+  await quiet.getByRole("button", { name: "Dismiss", exact: true }).click();
+  await quiet.waitFor({ state: "hidden" });
+
   // Clear marks through both real buttons, with a single keyboard undo/redo.
   // Include a real Crit pen stroke and arrow/text bindings to a retained page.
   await page.locator(".monkeyboard-actions summary").click();
@@ -656,6 +676,9 @@ try {
   assert.deepEqual(activeIds(await readScene(), "image"), activeIds(beforeClear, "image"));
   assert.deepEqual(activeIds(await readScene(), "frame"), activeIds(beforeClear, "frame"));
   assert.deepEqual(saved.seenDocuments, seenBeforeReopen);
+  assert.deepEqual(byId(await readScene(), planImageId).customData.sourceDocument, pageSource(restoredPlan, 0),
+    "Cold reopen retains the new revision even when its pixels match the original");
+  assert.deepEqual(geometry(byId(await readScene(), planImageId)), geometry(byId(marked, planImageId)));
   await select(["kept-frame"]);
   const chineseUpdate = updateAction("更新此页原图");
   await chineseUpdate.waitFor(); assert.equal(await chineseUpdate.isEnabled(), true);

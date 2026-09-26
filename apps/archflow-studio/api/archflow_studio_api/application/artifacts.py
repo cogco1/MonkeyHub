@@ -555,17 +555,17 @@ def drawing_revision_replacement(
 
     ``pages`` are the new revision's PNG pages; ``documents`` every registered
     document of the project. The upload path's own validation decides the
-    rest. Two cases register nothing rather than refuse the rebuild: a
-    previous revision that already has a replacement (a rebuild from a
-    historical revision forks, and a fork is a new page), and a page whose
-    visible aspect ratio changed (a board could not show it in the old frame).
+    rest. A page whose visible aspect ratio changed registers no replacement
+    (a board could not show it in the old frame). An already replaced revision
+    refuses a competing rebuild, just as the upload path does.
     """
 
     target = DocumentReplacementTarget(previous.run_id, previous.asset_sha256, previous.revision_ref)
     replacements = _whole_document_replacement(target, PNG_MEDIA_TYPE, pages, documents)
     replaced = _page_replacements(documents)
     if any((page.run_id, page.asset_sha256, page.revision_ref, page.page_index) in replaced for page in replacements):
-        return ()
+        raise StudioError(409, "DOCUMENT_REPLACEMENT_CONFLICT",
+                          "An old page already has a registered replacement; replace that newer page instead.")
     if not all(_same_visible_aspect(old, new) for old, new in zip(previous.pages, pages)):
         return ()
     _validate_page_replacements(binding, None, None, pages, replacements, documents)

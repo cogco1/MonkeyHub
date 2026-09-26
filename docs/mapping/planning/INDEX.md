@@ -12,5 +12,6 @@
 | P113 | blocked | Make retained research evidence usable by one identified design or export consumer. First check existing Reading and source references; extend their existing owner if sufficient. The earlier ledger/import/export design is a proposal to revisit only if that consumer demonstrates a missing contract. | [P113](P113-evidence-ledger.md) |
 | GH-314 | ready | Remove unchanged heartbeat snapshot reconstruction and operation-history copies from the Hub project watcher, preserving work-copy observation, external refresh and recovery responsiveness. | [GH-314](https://github.com/cogco1/MonkeyHub/issues/314) |
 | GH-66 | ready | Close the first Publish workflow: ordered Board handoff, reliable autosave/reopen, editable output and repeatable layout; independently verify exact-source replacement/freeze. | [GH-66](https://github.com/cogco1/MonkeyHub/issues/66) |
+| GH-291 | ready | Close drawing revision replacement gaps: exact before/after identity on restoration, idempotent retries, conflicting stale rebuild refusal and persisted consumer regressions. | [GH-291](https://github.com/cogco1/MonkeyHub/issues/291) |
 
 [Back to RMPA](../README.md)
