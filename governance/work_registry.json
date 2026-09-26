@@ -219,7 +219,7 @@
     {
       "id": "GH-291",
       "stream": "planning",
-      "status": "active",
+      "status": "ready",
       "goal": "Close drawing revision replacement gaps: exact before/after identity on restoration, idempotent retries, conflicting stale rebuild refusal and persisted consumer regressions.",
       "depends_on": [],
       "issue": "https://github.com/cogco1/MonkeyHub/issues/291",
@@ -227,8 +227,8 @@
       "worktree": "D:/MONKEYHUB_DEV/workspace/worktrees/codex-291-drawing-revision-closeout",
       "base_ref": "e33fbf4656402ead75fb4adcad946c71c81a2dff",
       "contributor": "Codex",
-      "reviewer": null,
-      "handoff": "Parent integration reads progress; Board/Publish production belongs to GH-66, correction/decision reuse to GH-252. PR #326 adds independent artifacts preview behavior; do not absorb its changes.",
+      "reviewer": "Independent bounded read-only Codex review; parent integration",
+      "handoff": "Replacement/restoration and cold-reopen assertions pass. The full Board script fails its later remote-frame autofocus during a live stroke assertion, reproduced with the untouched e33fbf4 fixture; parent coordinates Board.tsx focusSources/scheduleUpdateFocus separately. Parent integration reads progress; Board/Publish production belongs to GH-66, correction/decision reuse to GH-252. PR #326 adds independent artifacts preview behavior; do not absorb its changes.",
       "modules": [
         "studio.artifacts"
       ],
