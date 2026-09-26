@@ -211,7 +211,7 @@ async function diagnosticRendered(candidate) {
 }
 /** The architect's explicit "Continue from here" on the model on screen. */
 async function continueFromViewed(runId) {
-  await page.locator(".stage__foot .editing-base").getByRole("button", { name: "Continue from here", exact: true }).click();
+  await page.locator(".stage-decision .editing-base").getByRole("button", { name: "Continue from here", exact: true }).click();
   await until(snapshot, (value) => value.editingRunId === runId && !value.changingBase, `Continue did not make ${runId} the editing base`);
 }
 /**
@@ -552,6 +552,8 @@ try {
         assert.ok(candidate);
         return await json({ candidateId: candidate.candidateId, jobId: candidate.jobId, status: "running" }, 202);
       }
+      // #326: a retained model's preview; these fixtures retain none, and a runtime without one answers null.
+      if (method === "GET" && /^\/api\/model-assets\/[0-9a-f]{64}\/preview$/.test(name)) return await json(null);
       assert.fail(`Unexpected request: ${method} ${name}`);
     } catch (error) {
       errors.push(error.stack ?? String(error)); await route.fulfill({ status: 500, body: String(error) }).catch(() => {});
@@ -570,7 +572,7 @@ try {
     const [c1, c2] = viewBaseCandidates;
     const REFUSED_UNSYNCED = "The editing base was not changed: local model edits are not recorded yet and are kept in the working draft. Record them and continue, or undo them on the model you edited.";
     const NOT_SAVED = "This editing choice could not be saved in this browser; it applies to this tab only.";
-    const footer = () => page.locator(".stage__foot .editing-base");
+    const footer = () => page.locator(".editing-base");
     const notices = () => footer().locator(".editing-base__notice").allInnerTexts();
     const continueButton = () => footer().getByRole("button", { name: "Continue from here", exact: true });
     const undoButton = () => page.getByRole("button", { name: "Undo model", exact: true });
@@ -672,19 +674,19 @@ try {
       for (const width of [1440, 800, 390]) {
         await page.setViewportSize({ width, height: 900 });
         await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
-        const layout = await page.locator(".stage__context").evaluate((node) => {
+        const layout = await page.locator(".stage-decision").evaluate((node) => {
           if (!getComputedStyle(node).getPropertyValue("--ink").trim()) throw new Error("Load the real Hub theme before checking layout");
           const box = node.getBoundingClientRect(), notice = node.querySelector(".editing-base__notice");
           const line = notice.getBoundingClientRect(), lineHeight = parseFloat(getComputedStyle(notice).lineHeight);
           const tools = document.querySelector(".stage-model .viewtools").getBoundingClientRect();
           return { left: box.left, right: box.right, width: box.width, top: box.top, bottom: box.bottom,
             lineLeft: line.left, lineRight: line.right, lineRows: Math.round(line.height / lineHeight),
-            toolsBottom: tools.bottom, overflow: document.documentElement.scrollWidth > innerWidth,
+            toolsTop: tools.top, overflow: document.documentElement.scrollWidth > innerWidth,
             overlap: Math.min(box.right, tools.right) > Math.max(box.left, tools.left) && Math.min(box.bottom, tools.bottom) > Math.max(box.top, tools.top) };
         });
-        assert.ok(layout.width <= 761 && layout.left >= 0 && layout.right <= width + 1 && layout.bottom <= 900 && !layout.overflow,
-          `The footer box must stay within 760px and the page at ${width}px: ${JSON.stringify(layout)}`);
-        assert.ok(!layout.overlap && layout.toolsBottom <= layout.top, `The notice must not push the footer over the toolbar at ${width}px: ${JSON.stringify(layout)}`);
+        assert.ok(layout.left >= 0 && layout.right <= width + 1 && layout.bottom <= 900 && !layout.overflow,
+          `The question row must stay within the page at ${width}px: ${JSON.stringify(layout)}`);
+        assert.ok(!layout.overlap && layout.bottom <= layout.toolsTop, `The notice must stay above the toolbar, clear of it, at ${width}px: ${JSON.stringify(layout)}`);
         assert.ok(layout.lineLeft >= layout.left && layout.lineRight <= layout.right + 1, `The notice must wrap inside its box at ${width}px`);
         if (width === 390) assert.ok(layout.lineRows > 1, `The notice must wrap at phone width: ${JSON.stringify(layout)}`);
         if (screenshots) await page.screenshot({ path: path.join(screenshots, `unsynced-refusal-${width}.png`) });
@@ -912,9 +914,9 @@ try {
       await until(snapshot, value => value.localCommands.length === 1, "The local command was not retained");
     };
     // Opening a chat result only shows it; editing it follows the explicit Continue.
-    const notice = () => page.locator(".stage__foot .editing-base .editing-base__notice");
+    const notice = () => page.locator(".stage-decision .editing-base .editing-base__notice");
     const continueFromView = async (runId) => {
-      await page.locator(".stage__foot .editing-base").getByRole("button", { name: "Continue from here", exact: true }).click();
+      await page.locator(".stage-decision .editing-base").getByRole("button", { name: "Continue from here", exact: true }).click();
       await until(snapshot, value => value.editingRunId === runId && !value.changingBase, "Continue did not make the viewed candidate the editing base");
     };
 
@@ -1472,10 +1474,10 @@ try {
         const separation = await page.evaluate(() => {
           const history = document.querySelector('#stage-versions-panel').getBoundingClientRect();
           const tools = document.querySelector('.viewtools-wrap').getBoundingClientRect();
-          return { historyBottom: history.bottom, toolsTop: tools.top, historyTop: history.top };
+          return { historyTop: history.top, historyLeft: history.left, toolsRight: tools.right,
+            apart: Math.min(history.right, tools.right) <= Math.max(history.left, tools.left) || Math.min(history.bottom, tools.bottom) <= Math.max(history.top, tools.top) };
         });
-        assert.ok(separation.historyBottom <= separation.toolsTop - 4,
-          `${label} and version history physically overlap at ${size.width}px`);
+        assert.ok(separation.apart, `${label} and version history physically overlap at ${size.width}px: ${JSON.stringify(separation)}`);
         assert.ok(separation.historyTop >= 0, 'Version history must stay inside the visible page');
         await button.click();
         assert.equal(await page.locator('#stage-versions-panel').count(), 0);
@@ -1540,7 +1542,7 @@ try {
     assert.equal((await snapshot()).editingRunId, historyA.candidateId);
     // Dismiss the overlay before reaching the drawing's autosave error; a longer retained history may cover it.
     await page.locator("#stage-versions-panel").getByRole("button", { name: "Close", exact: true }).click();
-    await page.locator(".stage__foot .editing-base").getByRole("button", { name: "Continue from here", exact: true }).click();
+    await page.locator(".stage-decision .editing-base").getByRole("button", { name: "Continue from here", exact: true }).click();
     await delay(150);
     assert.equal((await snapshot()).editingRunId, historyA.candidateId, "A drawing that could not be saved keeps the editing base");
     assert.equal((await snapshot()).documentView.revisionRef, lastDrawing.revisionRef);
