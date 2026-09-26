@@ -288,6 +288,48 @@ test("a turned-down result cannot become a Stage: Accept says so first, and the 
     (error: { code?: string }) => error.code === "CANDIDATE_REJECTED");
 });
 
+test("processed Candidates are hidden by default, retain their Study identity, and leave the head and acceptance unchanged", async (t) => {
+  const api = await harness(t);
+  const fixture = api.createDesignTreeFixture();
+  const source = sourceOf(fixture);
+  const rejected = source.history.candidates!.find((row) => row.candidateId === "run-massing-a")!;
+  const archived = source.history.candidates!.find((row) => row.candidateId === "run-massing-b")!;
+  rejected.review = { reviewRef: "review-a", disposition: "rejected", endorsed: false,
+    actorId: "Review Architect", occurredAt: "2026-09-27T15:00:00Z", reason: "Does not meet brief", endorsedBy: null, endorsedAt: null };
+  archived.review = { ...rejected.review, reviewRef: "review-b", disposition: "archived", actorId: "Archive Architect" };
+  const accepted = source.history.candidates!.find((row) => row.candidateId === "run-entrance-a")!;
+  accepted.acceptedStageRef = fixture.state.branchHead;
+  accepted.review = { ...rejected.review, reviewRef: "review-accepted" };
+
+  const normal = api.buildGrowthTree(source);
+  assert.equal(normal.processedCount, 2);
+  assert.equal(normal.nodes.has("candidate:run-massing-a"), false);
+  assert.equal(normal.nodes.has("candidate:run-massing-b"), false);
+  assert.equal(normal.nodes.has("candidate:run-entrance-a"), true, "an accepted Stage lineage is not filtered by a later review");
+  assert.equal(normal.nodes.get("current")!.current!.headRunId, fixture.state.head, "filtering never moves Working Head");
+
+  const shown = api.buildGrowthTree(source, true);
+  assert.equal(shown.nodes.get("candidate:run-massing-a")!.letter, "A");
+  assert.equal(shown.nodes.get("candidate:run-massing-b")!.letter, "B");
+  assert.equal(shown.nodes.get("candidate:run-massing-a")!.candidate!.review!.actorId, "Review Architect");
+  assert.equal(shown.nodes.get("candidate:run-massing-a")!.candidate!.review!.occurredAt, "2026-09-27T15:00:00Z");
+
+  fixture.selectWorkingDraft({ projectId: "riverside-library", runId: "run-massing-a",
+    baseRevisionSha256: fixture.workingDraft().revisionSha256 ?? null });
+  const processedCurrent = api.buildGrowthTree({ ...source, workingSource: fixture.workingSource() });
+  assert.equal(processedCurrent.nodes.get("current")!.current!.headRunId, "run-massing-a");
+  assert.equal(processedCurrent.nodes.get("current")!.current!.sourceDisposition, "rejected");
+  assert.deepEqual(processedCurrent.accept, api.buildGrowthTree(sourceOf(fixture)).accept,
+    "review disposition does not introduce a new Stage acceptance rule");
+
+  archived.review = { ...archived.review, disposition: "unreviewed" };
+  const restored = api.buildGrowthTree({ ...source, workingSource: fixture.workingSource() });
+  assert.equal(restored.nodes.has("candidate:run-massing-a"), false, "the other Candidate remains rejected");
+  assert.equal(restored.nodes.has("candidate:run-massing-b"), true);
+  assert.equal(restored.nodes.get("candidate:run-massing-b")!.letter, "B", "cancelling archive keeps the Study option identity");
+  assert.equal(restored.nodes.get("current")!.current!.headRunId, fixture.state.head);
+});
+
 test("a runtime without the admission contract shows Stages, Current and running work only", async (t) => {
   const api = await harness(t);
   const fixture = api.createDesignTreeFixture();

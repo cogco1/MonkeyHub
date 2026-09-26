@@ -55,6 +55,8 @@ export interface DesignTreeData {
   readonly status: "loading" | "ready" | "failed";
   readonly source: DesignTreeSource | null;
   readonly tree: GrowthTree | null;
+  readonly showProcessed: boolean;
+  setShowProcessed(value: boolean): void;
   readonly error: StudioApiError | null;
   /** The runtime can move the Working Head. */
   readonly canContinue: boolean;
@@ -156,6 +158,7 @@ export function useDesignTree({ studio, capabilities, projectId, active, refresh
   const [outcome, setOutcome] = useState<DesignTreeOutcome | null>(null);
   const [toast, setToast] = useState<DesignTreeToast | null>(null);
   const [nudge, setNudge] = useState(0);
+  const [showProcessed, setShowProcessed] = useState(false);
   const reads = useRef(0);
   const busyRef = useRef(false);
   const headMoved = useRef(onHeadMoved);
@@ -200,7 +203,7 @@ export function useDesignTree({ studio, capabilities, projectId, active, refresh
     };
   }, [available, active, load]);
 
-  const tree = useMemo(() => source ? buildGrowthTree(source) : null, [source]);
+  const tree = useMemo(() => source ? buildGrowthTree(source, showProcessed) : null, [source, showProcessed]);
 
   const run = useCallback(async (action: DesignTreeAction,
     write: () => Promise<{ outcome: DesignTreeOutcome | null; toast: ToastBody; undo: ContinueUndo | null }>) => {
@@ -260,10 +263,12 @@ export function useDesignTree({ studio, capabilities, projectId, active, refresh
     if (!canReview || !projectId || !node || (node.kind !== "candidate" && node.kind !== "stage") || busyRef.current) return false;
     busyRef.current = true; setBusy({ kind: "review", node: nodeId }); setOutcome(null);
     try {
-      await studio.reviewCandidate({ projectId, subjectKind: node.kind,
+      const judgement = await studio.reviewCandidate({ projectId, subjectKind: node.kind,
         subjectRef: node.kind === "candidate" ? node.candidate!.candidateId : node.stage!.ref,
         action, reason: reason?.trim() || null });
-      await load(); return true;
+      await load();
+      if (action === "restore" && judgement.disposition === "unreviewed") setShowProcessed(false);
+      return true;
     } catch (cause) {
       setOutcome({ kind: "refused", node: nodeId, error: asStudioApiError(cause) }); return false;
     } finally { busyRef.current = false; setBusy(null); }
@@ -291,7 +296,8 @@ export function useDesignTree({ studio, capabilities, projectId, active, refresh
   }, []);
 
   return {
-    available, admissions, status: available ? status : "loading", source, tree, error, canContinue, canReview, busy, outcome, toast,
+    available, admissions, status: available ? status : "loading", source, tree, showProcessed, setShowProcessed,
+    error, canContinue, canReview, busy, outcome, toast,
     reload: () => setNudge((value) => value + 1),
     continueFrom, acceptCurrent, review, undo,
     clearOutcome: () => setOutcome(null),

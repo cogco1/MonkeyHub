@@ -11,7 +11,7 @@ import { DressingControls, DressingOverlay } from "./DrawingDressing";
 import "./DrawingCanvas.css";
 
 const copy = {
-  en: { title: "Drawing", intro: "Cut plans that follow the current project model.", source: "Version to draw", revision: "Drawing", fresh: "New cut plan",
+  en: { title: "Drawing", intro: "Cut plans that follow the current project model.", source: "Version to draw", revision: "Drawing", fresh: "New cut plan", drawingName: "New cut-plan name", drawingNameHint: "Optional; applies to the new cut plan, not a section perspective. Later revisions keep this name.",
     noModel: "The current project model has no exact geometry to draw yet.", refresh: "Refresh sources", generating: "Generating…", generate: "Generate cut plan",
     rebuild: "Rebuild on this version", another: "Draw another version", anotherHint: "A version chosen here is drawn once and is not updated automatically.",
     earlier: "Earlier revisions", earlierView: "Earlier revision · not updated automatically", openLatest: "Open the current revision",
@@ -45,7 +45,7 @@ const copy = {
     saveRecipe: "Save as project recipe", saveRecipeHint: "New drawings in this project start from this drawing's saved linework and hatch.",
     recipeWords: "Save as project recipe: {values}.", recipeSaved: "Saved as the project recipe: {values}.", recipeSame: "These values already are the project recipe." },
 
-  "zh-CN": { title: "Drawing · 图纸", intro: "跟随项目当前模型的剖切平面。", source: "出图版本", revision: "图纸", fresh: "新建剖切平面",
+  "zh-CN": { title: "Drawing · 图纸", intro: "跟随项目当前模型的剖切平面。", source: "出图版本", revision: "图纸", fresh: "新建剖切平面", drawingName: "新建剖切平面名称", drawingNameHint: "可选；仅用于新建剖切平面，不用于剖透视。后续修订会继承此名称。",
     noModel: "项目当前模型还没有可出图的精确几何。", refresh: "刷新来源", generating: "正在生成…", generate: "生成剖切平面",
     rebuild: "基于此版本重建", another: "绘制其他版本", anotherHint: "在这里选择的版本只按一次绘制，不会自动更新。",
     earlier: "较早版本", earlierView: "较早版本 · 不自动更新", openLatest: "打开当前版本",
@@ -273,6 +273,7 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
   const [assets, setAssets] = useState<ProjectArtifactDto[]>([]), [importing, setImporting] = useState(false);
   const importInput = useRef<HTMLInputElement>(null);
   const [selected, setSelected] = useState(""), [target, setTarget] = useState("");
+  const [drawingName, setDrawingName] = useState("");
   const [explicitTarget, setExplicitTarget] = useState(false), [defaultTarget, setDefaultTarget] = useState("");
   const targetWasChosen = useRef(false); targetWasChosen.current = explicitTarget;
   const [automaticTarget, setAutomaticTarget] = useState<{ modelSource: ModelSourceDto; stageRef: string | null } | null>(null);
@@ -433,6 +434,7 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
 
   function openDocument(document: SourceDocumentDto | null) {
     setSelected(document ? drawingDocumentKey(document) : ""); setVector(null); setDirty(false); setAppearanceHeld(null); setError(null);
+    setDrawingName("");
     setExplicitTarget(false); setAutomaticTarget(null); setStatus(null); setPicked(null); setOfferNote(null); setRecipeNote(null);
     if (!document) setTarget(defaultTarget);
     setForm(document && isCutPlan(document) ? planFormFromDocument(document, lengthUnit) : defaultPlanForm(lengthUnit));
@@ -479,6 +481,7 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
    */
   const requestRevision = (drawn: PlanTarget, follow?: "live" | "frozen") =>
     studio.drawingPlan({ projectId, ...targetSource(drawn), ...planRequestFields(form), sourceKind: "human",
+      ...(!source && drawingName.trim() ? { fileName: drawingName.trim() } : {}),
       ...(source?.drawingId ? { drawingId: source.drawingId } : {}), ...(source?.revisionRef ? { previousRevisionRef: source.revisionRef } : {}),
       ...(follow ? { follow } : {}) });
   /** Write a revision on a target, or on the drawing's own source; `follow` records a person's choice. True once it is open. */
@@ -602,12 +605,17 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
     const imported = documentAsset(document);
     if (imported) {
       const artifact = assets.find(item => item.runId === imported.runId && item.sha256 === imported.assetSha256);
-      return artifact?.sourceImport?.sourceFileName ?? artifact?.fileName ?? `${text.imported} · ${imported.assetSha256.slice(0, 8)}`;
+      return artifact?.sourceImport?.sourceFileName ?? artifact?.fileName ?? text.imported;
     }
     return stages.find(item => item.stageRef === document.sourceStageRef)?.label ??
       (live?.head && document.modelSource?.runId === live.head.runId && live.head.label ? live.head.label : text.workingVersion);
   };
   const action = source ? liveAction({ live: liveMode, dirty, attempted: false, status }) : "none";
+  const documentLabel = (document: SourceDocumentDto) => {
+    const generated = document.generatedAt ? new Date(document.generatedAt) : null;
+    const time = generated && !Number.isNaN(generated.getTime()) ? generated.toLocaleString(language) : null;
+    return [document.fileName, sourceName(document), time].filter(Boolean).join(" · ");
+  };
   const statusLine = statusLoading ? text.checking : liveBusy ? text.updating
     : historical ? text.earlierView : explicitTarget || kept ? text.chosenView
     : action === "blocked" ? text.stale
@@ -650,9 +658,9 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
         <div className="drawing-context__fields">
         <label className="drawing-field">{text.revision}<select value={selected} disabled={busy} onChange={event => { void chooseDocument(event.target.value); }}>
           <option value="">{text.fresh}</option>{latest.map(item => <option key={drawingDocumentKey(item)} value={drawingDocumentKey(item)}>
-            {item.fileName}</option>)}
+            {documentLabel(item)}</option>)}
           {earlier.length > 0 && <optgroup label={text.earlier}>{earlier.map(item => <option key={drawingDocumentKey(item)} value={drawingDocumentKey(item)}>
-            {item.fileName} · {item.generatedAt ?? item.revisionRef?.split("/").at(-1)?.slice(0, 8)}</option>)}</optgroup>}</select></label>
+            {documentLabel(item)}</option>)}</optgroup>}</select></label>
         <div className="drawing-context__target">
           <p className="drawing-field__hint" role="note">{live && !live.compatible && live.reason && !source ? live.reason : text.live}</p>
           <details className="drawing-another" open={explicitTarget || undefined}><summary>{text.another}</summary>
@@ -702,6 +710,9 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
         <div className="drawing-controls__fields">
         <p className="drawing-unit">{lengthUnit ? `${text.sourceHint} ${lengthUnit}` : text.unitUnknown}</p>
         {!perspectiveOpen && <fieldset disabled={busy || !active || !lengthUnit}><legend>{text.representation}</legend>
+          {!source && <label className="drawing-field">{text.drawingName}<input type="text" maxLength={236} value={drawingName}
+            placeholder={text.fresh} onChange={event => setDrawingName(event.currentTarget.value)} />
+            <span className="drawing-field__hint">{text.drawingNameHint}</span></label>}
           {numeric("cutHeight", `${text.cutHeight} (${lengthUnit || "…"})`)}
           {numeric("bottom", `${text.bottom} (${lengthUnit || "…"})`)}
           {numeric("scaleDenominator", text.scale, 1, "1")}

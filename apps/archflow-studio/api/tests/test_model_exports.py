@@ -12,6 +12,7 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 from archflow_studio_api.main import create_app
 from archflow_studio_api.settings import StudioSettings
+from archflow_studio_api.application.binding import bound_project
 from archflow.adapters.model_formats import GLB, ThreeDM, Mesh, Scene, convert, ConversionError
 from .support import make_project, PROJECT_ID, REFERENCE_RUN_ID
 
@@ -183,8 +184,90 @@ class ExportJobTests(unittest.TestCase):
         self.assertEqual(second['status'],'succeeded',second)
         self.assertEqual(second['sourceSha256'],first['sourceSha256'])
         self.assertFalse(second['converted'])
+        self.assertNotEqual(second['exportId'], first['exportId'])
+        self.assertEqual(
+            self.client.get(second['downloadPath']).content,
+            self.repository.layout.resolve_relative(second['outputArtifact']['relative_path']).read_bytes(),
+        )
+        self.assertEqual(self.repository.read_head(), self.head)
+
+    def test_missing_output_is_a_stable_refusal_and_source_can_be_retried(self):
+        first = self.finish(self.submit())
+        original_source = self.repository.layout.resolve_relative(first['sourceArtifact']['relative_path']).read_bytes()
+        original_report = self.client.get(f"/api/exports/{first['exportId']}").json()
+        other = self.finish(self.submit())
+        other_bytes = self.client.get(other['downloadPath']).content
+        self.repository.layout.resolve_relative(first['outputArtifact']['relative_path']).unlink()
+
+        refused = self.client.get(first['downloadPath'])
+        self.assertEqual(refused.status_code, 409)
+        self.assertEqual(refused.json()['code'], 'EXPORT_OUTPUT_MISSING')
+        with TestClient(create_app(self.settings)) as cold:
+            cold_refused = cold.get(first['downloadPath'])
+            self.assertEqual(cold_refused.status_code, 409)
+            self.assertEqual(cold_refused.json(), refused.json())
+
+        retry = self.finish(self.client.post('/api/exports', json={
+            'targetFormat': '3dm', 'sourceArtifactId': first['sourceArtifactId']}))
+        self.assertNotEqual(retry['exportId'], first['exportId'])
+        self.assertEqual(retry['sourceSha256'], first['sourceSha256'])
+        retry_bytes = self.client.get(retry['downloadPath']).content
+        self.assertEqual(len(ThreeDM().read(retry_bytes).meshes), 1)
+        self.assertEqual(
+            retry_bytes,
+            self.repository.layout.resolve_relative(retry['outputArtifact']['relative_path']).read_bytes(),
+        )
+        self.assertEqual(self.client.get(other['downloadPath']).content, other_bytes)
+        self.assertEqual(self.repository.layout.resolve_relative(first['sourceArtifact']['relative_path']).read_bytes(), original_source)
+        self.assertEqual(self.client.get(f"/api/exports/{first['exportId']}").json(), original_report)
+        self.assertEqual(self.repository.read_head(), self.head)
+
+    def test_unreadable_output_is_a_stable_refusal_even_as_root(self):
+        result = self.finish(self.submit())
+        output = self.repository.layout.resolve_relative(result['outputArtifact']['relative_path'])
+        original_read_bytes = Path.read_bytes
+
+        def read_bytes(path):
+            if path == output:
+                raise PermissionError(13, 'Permission denied', path)
+            return original_read_bytes(path)
+
+        with patch.object(Path, 'read_bytes', autospec=True, side_effect=read_bytes):
+            refused = self.client.get(result['downloadPath'])
+        self.assertEqual(refused.status_code, 409)
+        self.assertEqual(refused.json()['code'], 'EXPORT_OUTPUT_UNREADABLE')
+
+    def test_missing_retained_source_is_refused_without_creating_retry(self):
+        first = self.finish(self.submit())
+        self.repository.layout.resolve_relative(first['sourceArtifact']['relative_path']).unlink()
+        before = set(bound_project(self.app.state).run_ids())
+        refused = self.client.post('/api/exports', json={
+            'targetFormat': 'glb', 'sourceArtifactId': first['sourceArtifactId']})
+        self.assertEqual(refused.status_code, 409)
+        self.assertEqual(refused.json()['code'], 'EXPORT_SOURCE_MISSING')
+        self.assertEqual(set(bound_project(self.app.state).run_ids()), before)
+
+    def test_unreadable_retained_source_is_refused_without_creating_retry(self):
+        first = self.finish(self.submit())
+        source = self.repository.layout.resolve_relative(first['sourceArtifact']['relative_path'])
+        original_read_bytes = Path.read_bytes
+
+        def read_bytes(path):
+            if path == source:
+                raise OSError(5, 'Input/output error', path)
+            return original_read_bytes(path)
+
+        before = set(bound_project(self.app.state).run_ids())
+        with patch.object(Path, 'read_bytes', autospec=True, side_effect=read_bytes):
+            refused = self.client.post('/api/exports', json={
+                'targetFormat': 'glb', 'sourceArtifactId': first['sourceArtifactId']})
+        self.assertEqual(refused.status_code, 409)
+        self.assertEqual(refused.json()['code'], 'EXPORT_SOURCE_UNREADABLE')
+        self.assertEqual(set(bound_project(self.app.state).run_ids()), before)
 
     def test_tampered_output_cannot_be_downloaded(self):
         result = self.finish(self.submit())
         self.repository.layout.resolve_relative(result["outputArtifact"]["relative_path"]).write_bytes(b"tampered")
-        self.assertEqual(self.client.get(result["downloadPath"]).status_code,409)
+        refused = self.client.get(result["downloadPath"])
+        self.assertEqual(refused.status_code,409)
+        self.assertEqual(refused.json()['code'], 'EXPORT_DIGEST_MISMATCH')

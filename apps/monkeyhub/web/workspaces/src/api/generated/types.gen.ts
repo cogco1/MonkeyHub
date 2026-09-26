@@ -6316,6 +6316,12 @@ export type PlanRequestDto = {
      */
     drawingId?: string | null;
     /**
+     * Filename
+     *
+     * Optional human-readable name for a new cut plan. A missing extension is completed as .png; only .png is accepted. Existing drawings keep their name: omitted or blank inherits it, and a different name is refused. The name is display metadata and never supplies drawingId or a storage path.
+     */
+    fileName?: string | null;
+    /**
      * Previousrevisionref
      */
     previousRevisionRef?: string | null;
