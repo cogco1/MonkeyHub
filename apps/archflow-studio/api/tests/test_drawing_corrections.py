@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import base64
 from copy import deepcopy
+from dataclasses import replace
 import os
 from pathlib import Path
 import random
@@ -28,8 +29,9 @@ from archflow.adapters.three_dm_inspector import inspect_three_dm_index
 from archflow.contracts.canonical import canonical_digest
 from archflow.project.refs import record_ref_from_uri
 from archflow_studio_api.application.artifacts import DocumentPage, ModelSource, SourceDocument
+from archflow_studio_api.application.decisions import RecipeValue
 from archflow_studio_api.application.drawing_corrections import (
-    classify, corrections, recipe_diff, recipe_suggestions,
+    classify, corrections, recipe_diff, recipe_holds, recipe_suggestions,
 )
 from archflow_studio_api.main import create_app
 from archflow_studio_api.settings import StudioSettings
@@ -202,6 +204,16 @@ class SuggestionTests(unittest.TestCase):
             self.offer("hatchSpacingMm", "increase", 4.0, ["plan-a", "plan-b"],
                        self.evidence((self.a1, self.a2), (self.b1, self.b2)), self.b2),
         ])
+
+    def test_only_a_soft_preference_lets_corrections_away_from_its_value_be_offered(self):
+        soft = RecipeValue(value=3.0, decision_id="imported", revision_ref="revision", strength="soft_preference",
+                           extent="project")
+        self.assertFalse(recipe_holds(None, 4.0))
+        self.assertTrue(recipe_holds(replace(soft, strength="strong_preference"), 4.0),
+                        "a person's recipe changes only by superseding that decision")
+        self.assertTrue(recipe_holds(replace(soft, strength="hard"), 4.0))
+        self.assertTrue(recipe_holds(soft, 3.0), "a correction to the soft value offers nothing new")
+        self.assertFalse(recipe_holds(soft, 4.0), "corrections away from an imported default are still offered")
 
     def test_one_drawing_or_a_covered_field_is_no_offer_and_the_output_is_deterministic(self):
         pairs = corrections(self.documents)

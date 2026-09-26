@@ -1,0 +1,317 @@
+{
+  "cases": [
+    {
+      "allocationByRound": [
+        {
+          "A": 1,
+          "B": 1,
+          "C": 1,
+          "D": 1
+        },
+        {
+          "A": 1,
+          "B": 1,
+          "C": 1,
+          "D": 1
+        },
+        {}
+      ],
+      "arms": [
+        {
+          "failureReasons": {
+            "none": 2
+          },
+          "firstActionClasses": {
+            "optimal": 2
+          },
+          "mean": 1.0,
+          "meanExcessSteps": 0.0,
+          "n": 2,
+          "plans": {
+            "ReadProvidedSource>Model": 2
+          },
+          "promptSha256": [
+            "8ebf6ee7697abb798435e9e9e0230ee628b258e09114397b1df1a9b8f6f4faaf"
+          ],
+          "resources": {
+            "humanInterruptions": 0,
+            "meanCachedInputTokens": 0.0,
+            "meanInputTokens": 18782.0,
+            "meanOutputTokens": 71.0,
+            "meanReasoningOutputTokens": 0.0,
+            "meanWallSeconds": 7.101,
+            "providerToolCalls": 0
+          },
+          "statuses": {
+            "ok": 2
+          },
+          "strategyId": "A",
+          "successes": 2,
+          "variance": 0.0
+        },
+        {
+          "failureReasons": {
+            "none": 2
+          },
+          "firstActionClasses": {
+            "optimal": 2
+          },
+          "mean": 1.0,
+          "meanExcessSteps": 0.0,
+          "n": 2,
+          "plans": {
+            "ReadProvidedSource>Model": 2
+          },
+          "promptSha256": [
+            "afa04f6c6c978a07a9d2ecc4d7c7d74518d9d6986c4d2a519445c50e03ac0195"
+          ],
+          "resources": {
+            "humanInterruptions": 0,
+            "meanCachedInputTokens": 0.0,
+            "meanInputTokens": 18869.0,
+            "meanOutputTokens": 67.5,
+            "meanReasoningOutputTokens": 14.0,
+            "meanWallSeconds": 5.961,
+            "providerToolCalls": 0
+          },
+          "statuses": {
+            "ok": 2
+          },
+          "strategyId": "B",
+          "successes": 2,
+          "variance": 0.0
+        },
+        {
+          "failureReasons": {
+            "none": 2
+          },
+          "firstActionClasses": {
+            "optimal": 2
+          },
+          "mean": 1.0,
+          "meanExcessSteps": 0.0,
+          "n": 2,
+          "plans": {
+            "ReadProvidedSource>Model": 2
+          },
+          "promptSha256": [
+            "172ee8ccf74aa46e834b68e3214bdcde1658a72ff565e6e1ddf17af048a9c1c2"
+          ],
+          "resources": {
+            "humanInterruptions": 0,
+            "meanCachedInputTokens": 7232.0,
+            "meanInputTokens": 18865.0,
+            "meanOutputTokens": 131.0,
+            "meanReasoningOutputTokens": 0.0,
+            "meanWallSeconds": 7.7035,
+            "providerToolCalls": 0
+          },
+          "statuses": {
+            "ok": 2
+          },
+          "strategyId": "C",
+          "successes": 2,
+          "variance": 0.0
+        },
+        {
+          "failureReasons": {
+            "none": 2
+          },
+          "firstActionClasses": {
+            "optimal": 2
+          },
+          "mean": 1.0,
+          "meanExcessSteps": 0.0,
+          "n": 2,
+          "plans": {
+            "ReadProvidedSource>Model": 2
+          },
+          "promptSha256": [
+            "4f6fc518c96333d10c62480d0dbf19347ce479cc03ec81527b4b8c354768b520"
+          ],
+          "resources": {
+            "humanInterruptions": 0,
+            "meanCachedInputTokens": 0.0,
+            "meanInputTokens": 19345.0,
+            "meanOutputTokens": 72.0,
+            "meanReasoningOutputTokens": 0.0,
+            "meanWallSeconds": 6.883,
+            "providerToolCalls": 0
+          },
+          "statuses": {
+            "ok": 2
+          },
+          "strategyId": "D",
+          "successes": 2,
+          "variance": 0.0
+        }
+      ],
+      "caseId": "provided-source",
+      "rollouts": 8,
+      "snapshotDigest": [
+        "e0d9f807dc2d5d4ed209951b0edc2091f433fcd6df967c9588544100e283a781"
+      ],
+      "stoppingReason": "insufficient_budget"
+    },
+    {
+      "allocationByRound": [
+        {
+          "A": 1,
+          "B": 1,
+          "C": 1,
+          "D": 1
+        },
+        {
+          "A": 1,
+          "B": 1,
+          "C": 1,
+          "D": 1
+        },
+        {}
+      ],
+      "arms": [
+        {
+          "failureReasons": {
+            "not_completed": 2
+          },
+          "firstActionClasses": {
+            "optimal": 2
+          },
+          "mean": 0.0,
+          "meanExcessSteps": 0.0,
+          "n": 2,
+          "plans": {
+            "LocalStudy": 2
+          },
+          "promptSha256": [
+            "686c9e62aab80a4c3249a67a6e471349ce7fc60785cf148dd3b52e92c4d37ef7"
+          ],
+          "resources": {
+            "humanInterruptions": 0,
+            "meanCachedInputTokens": 0.0,
+            "meanInputTokens": 18501.0,
+            "meanOutputTokens": 61.0,
+            "meanReasoningOutputTokens": 0.0,
+            "meanWallSeconds": 6.062,
+            "providerToolCalls": 0
+          },
+          "statuses": {
+            "ok": 2
+          },
+          "strategyId": "A",
+          "successes": 0,
+          "variance": 0.0
+        },
+        {
+          "failureReasons": {
+            "not_completed": 2
+          },
+          "firstActionClasses": {
+            "optimal": 2
+          },
+          "mean": 0.0,
+          "meanExcessSteps": null,
+          "n": 2,
+          "plans": {
+            "LocalStudy>CoarseModel>Inspect": 2
+          },
+          "promptSha256": [
+            "095cc13a1967427659f3af1185594fd607b5d5080a76a053d2da34e2ddcd7a74"
+          ],
+          "resources": {
+            "humanInterruptions": 0,
+            "meanCachedInputTokens": 0.0,
+            "meanInputTokens": 18584.0,
+            "meanOutputTokens": 142.0,
+            "meanReasoningOutputTokens": 73.0,
+            "meanWallSeconds": 8.187,
+            "providerToolCalls": 0
+          },
+          "statuses": {
+            "ok": 2
+          },
+          "strategyId": "B",
+          "successes": 0,
+          "variance": 0.0
+        },
+        {
+          "failureReasons": {
+            "not_completed": 2
+          },
+          "firstActionClasses": {
+            "optimal": 2
+          },
+          "mean": 0.0,
+          "meanExcessSteps": 0.0,
+          "n": 2,
+          "plans": {
+            "LocalStudy": 2
+          },
+          "promptSha256": [
+            "bc535432ed2720db3de3f7990c999d54a51514b4b213c0440384915a83630113"
+          ],
+          "resources": {
+            "humanInterruptions": 0,
+            "meanCachedInputTokens": 0.0,
+            "meanInputTokens": 18572.0,
+            "meanOutputTokens": 100.0,
+            "meanReasoningOutputTokens": 0.0,
+            "meanWallSeconds": 6.914,
+            "providerToolCalls": 0
+          },
+          "statuses": {
+            "ok": 2
+          },
+          "strategyId": "C",
+          "successes": 0,
+          "variance": 0.0
+        },
+        {
+          "failureReasons": {
+            "not_completed": 2
+          },
+          "firstActionClasses": {
+            "optimal": 2
+          },
+          "mean": 0.0,
+          "meanExcessSteps": 0.0,
+          "n": 2,
+          "plans": {
+            "LocalStudy": 2
+          },
+          "promptSha256": [
+            "e004124b7ac130e4ab0e2e3a721f1e1a59b528bedd1cf004cce2c05f1975481b"
+          ],
+          "resources": {
+            "humanInterruptions": 0,
+            "meanCachedInputTokens": 0.0,
+            "meanInputTokens": 18834.0,
+            "meanOutputTokens": 81.0,
+            "meanReasoningOutputTokens": 14.5,
+            "meanWallSeconds": 6.375,
+            "providerToolCalls": 0
+          },
+          "statuses": {
+            "ok": 2
+          },
+          "strategyId": "D",
+          "successes": 0,
+          "variance": 0.0
+        }
+      ],
+      "caseId": "open-direction",
+      "rollouts": 8,
+      "snapshotDigest": [
+        "59cbbcf8785c21932c88a8f208de39e8b4925f77e910102ad184f36cbb6ba6b8"
+      ],
+      "stoppingReason": "insufficient_budget"
+    }
+  ],
+  "distinctSessions": 16,
+  "experimentId": "smoke-2026-09-26",
+  "missingSessionIds": 0,
+  "outcomeMetric": "success",
+  "providerCalls": 16,
+  "rollouts": 16,
+  "rule": "equal"
+}
