@@ -135,17 +135,26 @@ jobs:
         run: npm test && npm run build
 
       - name: Install browser test dependencies
+        id: browser-deps
         working-directory: apps/monkeyhub/web
         run: |
           npm install --no-save --package-lock=false playwright
           npx playwright install --with-deps chrome
 
-      - name: Project usage, candidate review and drawing browser regressions
+      - name: Project usage browser regression
+        if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
         working-directory: apps/monkeyhub/web
-        run: |
-          node test/chatShell.browser.mjs
-          node workspaces/test/designTree.browser.mjs
-          node workspaces/test/drawingCanvas.browser.mjs
+        run: node test/chatShell.browser.mjs
+
+      - name: Candidate review browser regression
+        if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
+        working-directory: apps/monkeyhub/web
+        run: node workspaces/test/designTree.browser.mjs
+
+      - name: Drawing browser regression
+        if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
+        working-directory: apps/monkeyhub/web
+        run: node workspaces/test/drawingCanvas.browser.mjs
 
   studio:
     name: Studio first-run (${{ matrix.os }})

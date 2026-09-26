@@ -939,7 +939,7 @@ try {
   await composer.fill("Keep this conversation while viewing usage");
   await page.getByRole("button", { name: "Usage", exact: true }).click();
   await waitMonitor();
-  const projectFilter = page.locator(".monitor-heading").getByLabel("Project", { exact: true });
+  const projectFilter = page.locator(".monitor-heading").getByRole("combobox");
   assert.equal(await projectFilter.inputValue(), "A", "Usage opened from Project A starts in that project's scope");
   const callCard = page.locator(".monitor-stat").filter({ has: page.getByText("Model calls", { exact: true }) }).locator("strong");
   assert.equal(await callCard.innerText(), "37", "four Codex task boundaries are not model calls");
