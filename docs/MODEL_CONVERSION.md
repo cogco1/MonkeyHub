@@ -98,8 +98,16 @@ Current geometry scope: static indexed/non-indexed GLB triangle primitives with
 identity node transforms; uncompressed buffers embedded in one GLB; 3DM meshes
 or BREPs with saved render meshes. Other entities and transformed/deformed GLB
 nodes fail explicitly. Geometry is exported in meters with the appropriate axis
-conversion. Material/texture/normal metadata is not transferred. These routes do
-not establish complete SketchUp, Rhino or DWG round-trip fidelity.
+conversion. A written 3DM is ready for shaded display: each edge-connected patch
+is wound consistently and closed shells face outward; valid source vertex
+normals are kept and missing or contradicting ones are computed from the
+triangles; a GLB base colour material and vertex colours are kept, and a mesh
+without a material receives the neutral `MonkeyHub neutral` material instead of
+the black a new 3DM layer draws with. The job's `warnings` and `display` record
+say what was kept, computed, reversed or defaulted, and output validation
+reopens the 3DM to check normals and material. Textures, UVs and PBR maps are
+not transferred, and the GLB writer carries no normals or materials. These
+routes do not establish complete SketchUp, Rhino or DWG round-trip fidelity.
 
 ## Verification
 
