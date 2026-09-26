@@ -2203,6 +2203,15 @@ try {
   await waitWorkspace();
   await page.getByRole("button", { name: "Fabrication", exact: true }).click();
   await page.waitForFunction(() => document.querySelector("iframe:not([hidden])")?.src.includes("app=monkeyfab"));
+  const fabFrame = page.frameLocator('iframe:not([hidden])');
+  await fabFrame.getByRole("button", { name: "Display settings", exact: true }).click();
+  const hubSettings = page.getByRole("dialog").filter({ hasText: "Hub settings (global)" });
+  await hubSettings.waitFor();
+  assert.equal(await hubSettings.getByRole("tab", { name: "Display", exact: true }).getAttribute("aria-selected"), "true",
+    "Fab opens the existing Hub Display settings page");
+  assert.equal(await fabFrame.getByRole("heading", { name: "MonkeyFab", exact: true }).count(), 1,
+    "opening settings leaves the hosted Fab page mounted instead of loading a second Hub in its iframe");
+  await hubSettings.getByRole("button", { name: "Close", exact: true }).click();
   assert.equal(new URL(page.url()).searchParams.has("runtimeId"), false);
   await page.reload();
   await page.waitForFunction(() => document.querySelector("iframe:not([hidden])")?.src.includes("app=monkeyfab"));

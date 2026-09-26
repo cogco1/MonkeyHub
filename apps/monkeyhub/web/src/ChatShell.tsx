@@ -836,6 +836,20 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
   const showSettingsPage = (page: string | null) => { setSettingsPage(page); settingsPane.current?.scrollTo({ top: 0 }); };
   const openSettings = () => { showSettingsPage(null); setSettingsOpen(true); settingsDialog.current?.showModal(); };
   const openSoftwareUpdate = () => { showSettingsPage("update"); setSettingsOpen(true); settingsDialog.current?.showModal(); };
+  useEffect(() => {
+    const openHostedSettings = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin || event.source === window) return;
+      const hostedFrame = [...document.querySelectorAll<HTMLIFrameElement>(".chat-browser iframe")]
+        .some((frame) => frame.contentWindow === event.source);
+      if (!hostedFrame) return;
+      if (event.data?.type !== "monkeyhub:open-settings" || event.data.page !== "display") return;
+      showSettingsPage("display");
+      setSettingsOpen(true);
+      settingsDialog.current?.showModal();
+    };
+    window.addEventListener("message", openHostedSettings);
+    return () => window.removeEventListener("message", openHostedSettings);
+  }, []);
   // The page list is a vertical tab list: arrows, Home and End move along it and open the page.
   const moveSettingsTab = (event: KeyboardEvent<HTMLDivElement>) => {
     const index = settingsTabs.findIndex((tab) => tab.id === shownSettingsPage);
