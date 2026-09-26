@@ -2,7 +2,7 @@
   "date": "2026-09-26",
   "originalCommit": "8afa896f968b489ff860cfee485d661dfb4c8324",
   "upstreamIntegrated": "e33fbf46",
-  "artifactPolicy": "bounded promoted probe evidence; large inputs/native scenes retained in existing external project envelope",
+  "artifactPolicy": "bounded promoted probe evidence; large inputs/native scenes retained in existing external project envelope; published text hashes use Git LF normalization",
   "inputsAndLargeRetainedOutputs": [
     {
       "path": "input/Penguin.glb",
@@ -143,88 +143,88 @@
     },
     {
       "path": "evidence/api-check-review.log",
-      "bytes": 880,
-      "sha256": "2cbbd901cf7c45296017258c82f6108b11e99b6c68387b43c5f989eb10c26da7"
+      "bytes": 866,
+      "sha256": "c6f29525abf03479e229215a060b17dcc9bcbcbca3a44c59fa318d1977cbe8af"
     },
     {
       "path": "evidence/api-generate-merge-rerun.log",
-      "bytes": 879,
-      "sha256": "532c45eebee2ca8ff6df6bee6d6a38a9b77d2e29c17aa30dfc6cee78fcf752e2"
+      "bytes": 865,
+      "sha256": "e4be4081cef7639eef42db483119c9d3025782efa9357f2c2717e5e7f40858da"
     },
     {
       "path": "evidence/api-generate-merge.log",
-      "bytes": 980,
-      "sha256": "bb77ab372db9064734a0e10530e530676ac50acc870e1228e59f2b708ca89a91"
+      "bytes": 970,
+      "sha256": "e3ea8d5cc4a79fd0894947607b966ae94eeee685be6038cc0939a93e04f584ad"
     },
     {
       "path": "evidence/api-tests-review.log",
-      "bytes": 128,
-      "sha256": "6d141cb1e296e3958cfa768571226e355ef53ac8bbbd98c28c7a56a1ee7956f2"
+      "bytes": 126,
+      "sha256": "a2da5d14916caa3bd39a3fa5769eb8823227b185d4fa66b5bed2dec4611fc745"
     },
     {
       "path": "evidence/archcheck-changed.log",
-      "bytes": 12320,
-      "sha256": "4ec86c012c5a9d196d75e2513b0d7a9581a75d5002e17f1f394858a66253544e"
+      "bytes": 5672,
+      "sha256": "eb5d373dfb3ee0832de51c192077089569e1d9f74b599f87350cdb736ff8793e"
     },
     {
       "path": "evidence/archcheck-review-rerun.log",
-      "bytes": 40,
-      "sha256": "a3a1b4ebd58d3c879827a93bf8d265783af673e48347471d993ed3fa53bcc38e"
+      "bytes": 39,
+      "sha256": "01da0b8d234bcdff3284b4010660d5543cf51053df281f25dc42eaf89ebc341f"
     },
     {
       "path": "evidence/archcheck-review.log",
-      "bytes": 105,
-      "sha256": "8f88516575516af4c5fcf51ae5f2ddec4b892dc7c5560463d7a508391443ce97"
+      "bytes": 104,
+      "sha256": "d10f0ecb4cb34cad4210132f3cae7861d8d27603ddf3e0b30709524d2b67587e"
     },
     {
       "path": "evidence/browser-physical-initial.log",
-      "bytes": 2471,
-      "sha256": "8354314bb3f9a4b86c66ea1c0c07704d0c712ee2c0a21265b25f62dd9671d24c"
+      "bytes": 2429,
+      "sha256": "9a1a379a974c1d2cb5484c496f2f1f6afa4058aa41f7d825d6296aa878486ca0"
     },
     {
       "path": "evidence/browser-physical-rerun.log",
-      "bytes": 3329,
-      "sha256": "421f29fe62a2ff6d231c959868455e9b54c7d0659cf62570dd314bdf7688be39"
+      "bytes": 3306,
+      "sha256": "f19a20c15435d930018b148c28b41e54ea289b926c1fea8ece36d76763d134d4"
     },
     {
       "path": "evidence/browser-regression-initial.log",
-      "bytes": 2934,
-      "sha256": "9f0d1f47f72351eae00b103b736d1a957417ab2279dac33ccda7e88fa4d619be"
+      "bytes": 2915,
+      "sha256": "d96a118511f1d7f37e55751f9e5155b35b73d647b0a3feab60bfa619f05e3ac9"
     },
     {
       "path": "evidence/camera-checks.json",
-      "bytes": 2891,
-      "sha256": "5287746bf9b18ae801f36b8432aa62a97e9bec6f9cc2ae8d760c2058e301137f"
+      "bytes": 2764,
+      "sha256": "ede535442c35ba535625368dd3f7e365aeeaf11d19021501408f15b2c2c9d734"
     },
     {
       "path": "evidence/camera-unit-review.log",
-      "bytes": 384,
-      "sha256": "1c5ce3c77cde4df222a1cb0c861066100eec8ac10097782c25045be4090bec0c"
+      "bytes": 373,
+      "sha256": "baf9d8273a9584f0980e5c39779a2dd15568ab2c6df1cd3bbedfcedbffbf2ecb"
     },
     {
       "path": "evidence/conversion-readback.json",
-      "bytes": 8512,
-      "sha256": "450d5d2b2c19b4826ec472be9bea1752528ec0e5afffcef408e20ba4cf289a86"
+      "bytes": 8246,
+      "sha256": "f35f2e5ef19eb2576a223d96151fec0379a4bb4a4a328a90af1294f7c80e9125"
     },
     {
       "path": "evidence/cycles-readback.json",
-      "bytes": 3015,
-      "sha256": "fbcc24ed85ab551c31c99a5561026453df48093fc8d76c79655b6b035569e28a"
+      "bytes": 2871,
+      "sha256": "90a4533676f82f56c33759dbcf0718decca755ebc87e129a63198de4ba1bdb3f"
     },
     {
       "path": "evidence/drawing-quantitative.json",
-      "bytes": 7374,
-      "sha256": "3a735e8f71d145f4ab2beb0c07facb6e9a8b52078ac6d54480cd4509b4b85b14"
+      "bytes": 7167,
+      "sha256": "ec43883ef693d04fb3588698efce4b7a0785d4680bcb2ea45192e4131ed8c77f"
     },
     {
       "path": "evidence/frontend-build-review.log",
-      "bytes": 20654,
-      "sha256": "2e087416cdd9fb61d5e24d26be59a2391d9a871447070f6eb92aa05f32319600"
+      "bytes": 20435,
+      "sha256": "4b5e7fa0c046aa4a3f233380d4be62c681deea2b6ffbb86db28c705764ef4101"
     },
     {
       "path": "evidence/merge-conversion-initial.log",
-      "bytes": 4250,
-      "sha256": "d1b2242e2131daec78c71a303b5f52522c00cd2ec5e823ee2cbad70b74384f33"
+      "bytes": 4216,
+      "sha256": "77cf213f829d452091efa09aa65ef130220bcb0b7d15491fdfc3b537846043ea"
     },
     {
       "path": "evidence/Penguin-Cycles-Phase2.png",
@@ -233,33 +233,33 @@
     },
     {
       "path": "evidence/persistence-comparison.json",
-      "bytes": 914,
-      "sha256": "2ca6afc5a8147f09266783539354fc0545eda1d705850e564d07cced30be6c55"
+      "bytes": 890,
+      "sha256": "101944a171b387addfd7bb92407611c2f5f3398e41004b4d1df8c345adeea997"
     },
     {
       "path": "evidence/production-quantitative.json",
-      "bytes": 866,
-      "sha256": "90145760cd23ac4fb11887fea8534205a8c4f17522f1d2bc039ccd4cc78bde86"
+      "bytes": 820,
+      "sha256": "a4f9715b749d7b7704503bf4f3b1e5328ccb6201a5f533c4bc15398a81318c78"
     },
     {
       "path": "evidence/review-persistence.json",
-      "bytes": 1030,
-      "sha256": "c8c009055e8ef01e609dec3518d7226c1a07985b6cbeb2f12599fc197e8ed1b1"
+      "bytes": 1005,
+      "sha256": "b5e31f02b5cff122b3da9169aa697386d0ec0583620e1f637401e203d563b495"
     },
     {
       "path": "evidence/root-tests-review.log",
-      "bytes": 7394,
-      "sha256": "1cd1d5d52b8e8ff01433c57d6daa5264fa2361e8b33dc6a3ab00c9fa9aaba3c8"
+      "bytes": 7341,
+      "sha256": "791164e4380c7d9d368e2e7d53f369fc3e8a20b744e60cc9a23bc9fa9716c45b"
     },
     {
       "path": "evidence/root-tests-with-blender.log",
-      "bytes": 7271,
-      "sha256": "917cc1fde05c36c2383e87a54e6970e565fdb60fa4a7a7e7749b51ae91b1a91e"
+      "bytes": 7218,
+      "sha256": "4066276047dbf726d3885c48d7bba5d1dccbf6fc2545dbdf58dfe8f65823394e"
     },
     {
       "path": "evidence/three-cycles-material-consistency.json",
-      "bytes": 557,
-      "sha256": "d0b3fbcd21f3a9b524afd98459610bbbc7bfd7c151e9c77b32806ff1d6804432"
+      "bytes": 532,
+      "sha256": "95490fd4ede007557e1c4185c2a9957ca330a74b981f57cb676f477b5978f867"
     },
     {
       "path": "issues-reviewed.json",
@@ -269,7 +269,7 @@
     {
       "path": "README.md",
       "bytes": 18122,
-      "sha256": "7304f1838ba6ed273794a931fe74a819d83807303f8b56acad042f8260033d06"
+      "sha256": "9e80ccc64c3f70f128aad809ba57e45d065c71d1287d34d775c9056222e95cf5"
     }
   ]
 }
