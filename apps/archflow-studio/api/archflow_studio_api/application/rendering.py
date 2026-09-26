@@ -168,6 +168,13 @@ class RenderJobRecords:
         self.adapter = adapter
         self.monitor = monitor
         self.executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="render-image")
+        # Moves under ``lock`` with every change of any attempt's state, so a
+        # reader can tell its listing is out of date without reading one.
+        self.version = 0
+
+    def _changed(self):
+        with self.lock:
+            self.version += 1
 
     def stop_accepting(self):
         with self.lock:
@@ -184,11 +191,14 @@ class RenderJobRecords:
         return [RenderCapabilityDto(**asdict(self.adapter.capability()))]
 
     def _record(self, binding, row):
+        # Every submission and transition - running, finished, failed,
+        # uncertain - is retained through here, and moves the version.
         binding.repository.put_json(
             run=binding.load_run(row["jobId"]),
             destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=row["jobId"]),
             record_kind=STUDIO_RENDER_JOB, payload=row,
         )
+        self._changed()
 
     def _load(self, binding, job_id):
         if not re.fullmatch(r"render-[0-9a-f]{32}", job_id) or job_id not in binding.run_ids():
@@ -348,6 +358,8 @@ class RenderJobRecords:
                                  "sourceSnapshots": row["sourceSnapshots"], "providerId": row["providerId"], "model": row["model"]},
                     generated_at=_now(),
                 )
+            # A retained result already reads as succeeded, before its transition.
+            self._changed()
             status = "succeeded"
             self._transition(binding, row, status=status, finishedAt=_now(), documentSha256=document.asset_sha256,
                              providerRequestId=output.provider_request_id, inputTokens=output.input_tokens,

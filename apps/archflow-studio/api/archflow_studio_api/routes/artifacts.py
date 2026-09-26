@@ -60,6 +60,11 @@ from ..transport.errors import StudioError
 
 router = APIRouter(tags=["artifacts"])
 
+# Content-addressed bytes (ADR-008): the URL names the digest, so a copy a
+# browser keeps can never go stale. Its own copy is all it skips - every read
+# this server makes from disk still hashes the bytes before they are served.
+IMMUTABLE = "private, max-age=31536000, immutable"
+
 
 @router.get("/model-assets/{asset_sha256}/preview", response_model=SourceDocumentDto | None, response_model_by_alias=True)
 def read_retained_model_preview(
@@ -193,7 +198,7 @@ def read_document_bytes(request: Request, asset_sha256: str, run_id: str = Query
         headers={
             "ETag": f'"{document.asset_sha256}"',
             "Content-Disposition": _content_disposition(document.file_name, asset_sha256).replace("attachment;", "inline;", 1),
-            "Cache-Control": "no-store",
+            "Cache-Control": IMMUTABLE,
             "X-Content-Type-Options": "nosniff",
         },
     )
@@ -303,8 +308,9 @@ def read_artifact_bytes(request: Request, sha256: str) -> Response:
             "Content-Disposition": _content_disposition(
                 record.file_name, sha256
             ),
-            # Never cached: the next request must verify the file again.
-            "Cache-Control": "no-store",
+            # The URL is the digest, so a browser's copy cannot go stale; the
+            # server still verifies the bytes every time it reads them from disk.
+            "Cache-Control": IMMUTABLE,
         },
     )
 
