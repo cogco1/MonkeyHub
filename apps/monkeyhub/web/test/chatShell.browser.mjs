@@ -978,6 +978,35 @@ try {
   assert.equal(await missingEndSpan.locator("summary > span").last().innerText(), "—", "an unclosed span has unknown duration, not zero or a live timer");
   await missingEndSpan.locator("summary").click();
   assert.equal(await missingEndSpan.locator("dd").first().innerText(), "End not observed");
+  await page.screenshot({ path: path.join(temporary, "monitor-panel.png") });
+  assert.equal(await composer.inputValue(), "Keep this conversation while viewing usage");
+  assert.equal(documentLoads, beforeMonitorNavigation, "opening Monitor keeps the current Hub document and conversation");
+  assert.equal(settings.projectDir, beforeIndependentProject, "independent tools leave the shared Studio on its existing project");
+  assert.ok(writes.slice(beforeIndependent).every(([, pathname]) => ["/api/apps/monkeyfab/start", "/api/apps/monkeymonitor/start"].includes(pathname)),
+    "independent tools neither stop Studio nor rewrite its project configuration");
+  await page.getByRole("button", { name: "Hub settings", exact: true }).click();
+  await page.locator("#language").selectOption("zh-CN");
+  assert.equal(await missingEndSpan.locator("dd").first().textContent(), "结束时间未观测");
+  assert.deepEqual(await page.locator('.chat-rail__group[aria-label="工作面"] .chat-rail__tool').evaluateAll((nodes) =>
+    nodes.map((node) => node.getAttribute("aria-label"))), ["建模", "画板", "状态树"], "the Surfaces group is named in the Chinese catalog too");
+  assert.deepEqual(await page.locator('.chat-rail__group[aria-label="工具"] .chat-rail__tool').evaluateAll((nodes) =>
+    nodes.map((node) => node.getAttribute("aria-label"))), ["图纸", "渲染", "制作", "用量"], "the Tools group is named in the Chinese catalog too");
+  assert.equal(await page.locator(".chat-rail").getByRole("button", { name: "排版", exact: true }).count(), 0, "no rail 排版");
+  assert.equal(await page.locator(".monitor-trace-summary > span").filter({ has: page.getByText("首个候选", { exact: true }) }).locator("strong").textContent(), "—");
+  await page.locator("#language").selectOption("en");
+  await page.getByRole("dialog").getByRole("button", { name: "Close", exact: true }).click();
+  // Failed data reads stay visible and do not drive a base/effect retry loop.
+  monitorFailure = true;
+  const beforeFailedRead = monitorReads.filter((route) => route === "/api/events").length;
+  await page.locator(".monitor-page").getByRole("button", { name: "Refresh", exact: true }).click();
+  await page.locator(".monitor-page").getByRole("alert").filter({ hasText: "Monitor fixture is temporarily unavailable." }).waitFor();
+  await page.waitForTimeout(750);
+  assert.ok(monitorReads.filter((route) => route === "/api/events").length - beforeFailedRead <= 2,
+    "a failed Monitor read does not immediately restart itself through effect dependencies");
+  monitorFailure = false;
+  await page.locator(".monitor-page").getByRole("button", { name: "Reconnect", exact: true }).click();
+  await waitMonitor();
+  // Project navigation is separate from the independent-tool lifecycle above.
   await page.getByRole("button", { name: "Project B", exact: true }).first().click();
   await page.waitForFunction(() => document.querySelector(".chat-header__project")?.textContent === "Project B");
   await page.getByRole("button", { name: "Usage", exact: true }).click();
@@ -1015,34 +1044,6 @@ try {
   await page.waitForFunction(() => document.querySelector(".monitor-heading select")?.value === "");
   assert.equal(await projectFilter.inputValue(), "", "the global Help menu opens all projects");
   await projectFilter.selectOption("A");
-  await page.screenshot({ path: path.join(temporary, "monitor-panel.png") });
-  assert.equal(await composer.inputValue(), "Keep this conversation while viewing usage");
-  assert.equal(documentLoads, beforeMonitorNavigation, "opening Monitor keeps the current Hub document and conversation");
-  assert.equal(settings.projectDir, beforeIndependentProject, "independent tools leave the shared Studio on its existing project");
-  assert.ok(writes.slice(beforeIndependent).every(([, pathname]) => ["/api/apps/monkeyfab/start", "/api/apps/monkeymonitor/start"].includes(pathname)),
-    "independent tools neither stop Studio nor rewrite its project configuration");
-  await page.getByRole("button", { name: "Hub settings", exact: true }).click();
-  await page.locator("#language").selectOption("zh-CN");
-  assert.equal(await missingEndSpan.locator("dd").first().textContent(), "结束时间未观测");
-  assert.deepEqual(await page.locator('.chat-rail__group[aria-label="工作面"] .chat-rail__tool').evaluateAll((nodes) =>
-    nodes.map((node) => node.getAttribute("aria-label"))), ["建模", "画板", "状态树"], "the Surfaces group is named in the Chinese catalog too");
-  assert.deepEqual(await page.locator('.chat-rail__group[aria-label="工具"] .chat-rail__tool').evaluateAll((nodes) =>
-    nodes.map((node) => node.getAttribute("aria-label"))), ["图纸", "渲染", "制作", "用量"], "the Tools group is named in the Chinese catalog too");
-  assert.equal(await page.locator(".chat-rail").getByRole("button", { name: "排版", exact: true }).count(), 0, "no rail 排版");
-  assert.equal(await page.locator(".monitor-trace-summary > span").filter({ has: page.getByText("首个候选", { exact: true }) }).locator("strong").textContent(), "—");
-  await page.locator("#language").selectOption("en");
-  await page.getByRole("dialog").getByRole("button", { name: "Close", exact: true }).click();
-  // Failed data reads stay visible and do not drive a base/effect retry loop.
-  monitorFailure = true;
-  const beforeFailedRead = monitorReads.filter((route) => route === "/api/events").length;
-  await page.locator(".monitor-page").getByRole("button", { name: "Refresh", exact: true }).click();
-  await page.locator(".monitor-page").getByRole("alert").filter({ hasText: "Monitor fixture is temporarily unavailable." }).waitFor();
-  await page.waitForTimeout(750);
-  assert.ok(monitorReads.filter((route) => route === "/api/events").length - beforeFailedRead <= 2,
-    "a failed Monitor read does not immediately restart itself through effect dependencies");
-  monitorFailure = false;
-  await page.locator(".monitor-page").getByRole("button", { name: "Reconnect", exact: true }).click();
-  await waitMonitor();
   // A hidden mounted Monitor must not poll or take top-level navigation back.
   await page.getByRole("button", { name: "Hide tools" }).click();
   await page.locator(".monitor-page").waitFor({ state: "hidden" });
