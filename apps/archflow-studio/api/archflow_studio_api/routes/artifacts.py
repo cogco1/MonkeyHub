@@ -26,6 +26,7 @@ from ..application.artifacts import (
     save_document,
     register_model_asset,
     read_model_source_index,
+    read_model_preview,
     require_model_source,
     save_viewport_capture,
 )
@@ -58,6 +59,19 @@ from ..transport.artifacts import (
 from ..transport.errors import StudioError
 
 router = APIRouter(tags=["artifacts"])
+
+
+@router.get("/model-assets/{asset_sha256}/preview", response_model=SourceDocumentDto | None, response_model_by_alias=True)
+def read_retained_model_preview(
+    request: Request, asset_sha256: str,
+    run_id: str = Query(alias="runId", min_length=1),
+    state_digest: str = Query(alias="stateDigest", pattern=r"^[0-9a-f]{64}$"),
+) -> SourceDocumentDto | None:
+    if not re.fullmatch(r"[0-9a-f]{64}", asset_sha256):
+        raise StudioError(422, "MODEL_SOURCE_INVALID", "Use the exact model asset SHA-256.")
+    source = model_source_from(ModelSourceDto(run_id=run_id, state_digest=state_digest, asset_sha256=asset_sha256))
+    document = read_model_preview(bound_project(request.app.state), source)
+    return document_dto(document) if document is not None else None
 
 
 @router.get("/model-assets/{asset_sha256}/index", response_model=ModelSourceIndexDto, response_model_by_alias=True)
@@ -226,6 +240,7 @@ def read_artifacts(request: Request) -> ArtifactListDto:
     "/captures",
     response_model=ViewportCaptureDto,
     response_model_by_alias=True,
+    response_model_exclude_none=True,
     status_code=201,
 )
 def create_viewport_capture(
@@ -239,6 +254,7 @@ def create_viewport_capture(
             bound_project(request.app.state),
             payload.run_id,
             payload.png_base64,
+            model_source_from(payload.model_source) if payload.model_source is not None else None,
         )
     )
 

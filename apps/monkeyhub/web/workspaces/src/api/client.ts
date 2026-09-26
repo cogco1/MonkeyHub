@@ -59,6 +59,7 @@ import {
   createProposalApiProposalsPost,
   createTracingPaperReviewApiTracingPaperReviewsPost,
   createViewportCaptureApiCapturesPost,
+  readRetainedModelPreviewApiModelAssetsAssetSha256PreviewGet,
   exportBoardApiBoardExportPost,
   getUserSettingsApiSettingsUserGet,
   putUserSettingsApiSettingsUserPut,
@@ -403,14 +404,21 @@ export const createStudioClient = (connection: ServerConnection) => ({
   },
 
   /** Retain this browser-rendered PNG in the loaded run's P036 workspace. */
-  async capture(runId: string, png: Blob): Promise<ViewportCaptureDto> {
+  async capture(runId: string, png: Blob, modelSource?: ModelSourceDto): Promise<ViewportCaptureDto> {
     const pngBase64 = base64Of(await png.arrayBuffer());
     return call(
       "POST /api/captures",
       createViewportCaptureApiCapturesPost({ client: connection.client,
-        body: { runId, pngBase64 },
+        body: { runId, pngBase64, ...(modelSource ? { modelSource } : {}) },
       }),
     );
+  },
+
+  modelPreview(source: ModelSourceDto): Promise<SourceDocumentDto | null> {
+    return call("GET /api/model-assets/preview", readRetainedModelPreviewApiModelAssetsAssetSha256PreviewGet({
+      client: connection.client, path: { asset_sha256: source.assetSha256 },
+      query: { runId: source.runId, stateDigest: source.stateDigest },
+    }));
   },
 
   async retainRenderView(body: Omit<RenderViewSourceRequestDto, "pngBase64">, png: Blob): Promise<SourceDocumentDto> {

@@ -71,6 +71,7 @@ import {
 } from "../features/artifacts/artifactLabels";
 import { isViewable, viewableArtifacts } from "../features/artifacts/artifactSelection";
 import { useWorkModelExport } from "../features/artifacts/useWorkModelExport";
+import { useRetainedModelPreview } from "../features/artifacts/useRetainedModelPreview";
 import { Conversation } from "../features/conversation/Conversation";
 import type { Choice } from "../features/conversation/cards/QuestionCard";
 import type { Selection } from "../features/conversation/Composer";
@@ -758,6 +759,14 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
     model.source.sourceRunId === (projection?.referenceRunSource === "none" ? null : projection?.referenceRun.runId)));
   const chatDraft = chatDrafts.some((model) => unsaved(model, autosaveEnabled)) ? "unsaved"
     : chatDrafts.length > 0 ? "unsynced" : null;
+  const previewLoadRequest = modelLoadRequest.current;
+  const previewInteractionEpoch = modelInteractionEpoch.current;
+  useRetainedModelPreview(loadedModelSource,
+    active && viewerStatus === "ready" && !modelLoading && !localEditingRef.current && blendState === null && ghostProposalId === null,
+    () => viewportRef.current?.capturePng() ?? Promise.resolve(null),
+    () => !localEditingRef.current && viewerStatusRef.current === "ready" && modelLoadRequest.current === previewLoadRequest
+      && modelInteractionEpoch.current === previewInteractionEpoch
+      ? currentViewSourceRef.current : null);
   useEffect(() => {
     onRenderReader?.(() => {
       const view = viewportRef.current?.renderView();
