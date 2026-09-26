@@ -219,7 +219,7 @@
     {
       "id": "GH-281",
       "stream": "planning",
-      "status": "active",
+      "status": "ready",
       "goal": "Name collapsed Hub controls, expose actual keyboard shortcuts, close project information with Escape and describe disabled chat actions.",
       "depends_on": [],
       "issue": "https://github.com/cogco1/MonkeyHub/issues/281",
