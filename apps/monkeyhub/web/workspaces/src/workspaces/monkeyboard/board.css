@@ -55,7 +55,8 @@
 .monkeyboard-context-identity > span { color: var(--muted); font-size: var(--text-caption); }
 .monkeyboard-context-identity > strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
 .monkeyboard-context-binding { max-width: 100%; overflow-wrap: anywhere; padding: 4px 7px; border: 1px solid var(--line); border-radius: 5px; color: var(--muted); font-size: var(--text-caption); }
-.monkeyboard-context-binding.is-linked { color: var(--accent); background: var(--accent-soft); }
+.monkeyboard-context-binding.is-current { color: var(--accent); background: var(--accent-soft); }
+.monkeyboard-context-binding.is-stale { color: var(--warning, #b45309); background: color-mix(in srgb, currentColor 9%, transparent); }
 .monkeyboard-context-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
 .monkeyboard-context-actions > button { max-width: 100%; overflow-wrap: anywhere; }
 .monkeyboard-context-actions > .monkeyboard-context-next { margin-left: auto; }

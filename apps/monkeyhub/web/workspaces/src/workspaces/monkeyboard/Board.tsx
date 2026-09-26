@@ -5,7 +5,7 @@ import type { AppState, BinaryFiles, DataURL, ExcalidrawImperativeAPI, Excalidra
 
 import { useStudio } from "../../api/ProjectRuntimeContext";
 import type { StudioClient } from "../../api/client";
-import type { BoardDto, FrameLevelDto, SourceDocumentDto } from "../../api/generated";
+import type { BoardDto, FrameLevelDto, ModelSourceDto, SourceDocumentDto, WorkingSourceDto } from "../../api/generated";
 import { CANVAS_APP_STATE, PROJECT_CANVAS_CLASS, ProjectCanvas, useScenePointer, useWheelZoom } from "../../features/canvas/ProjectCanvas";
 import { usePreferences } from "../../features/settings/preferences";
 import { renderDocumentVisual } from "../monkeydiagram/documentVisualInput";
@@ -24,9 +24,19 @@ const copy = {
 type Copy = typeof copy.en;
 
 const selectionCopy = {
-  en: { selected: "Selected drawing", linked: "Model linked", unlinked: "Drawing only" },
-  "zh-CN": { selected: "选中图纸", linked: "已关联模型", unlinked: "尚未关联模型" },
+  en: { selected: "Selected drawing", current: "Matches current editing source", stale: "Older than current editing source", unknown: "Current editing source unavailable", unlinked: "Drawing only", generated: "Generated", currentStage: "Current" },
+  "zh-CN": { selected: "选中图纸", current: "与当前建模修改起点一致", stale: "不是当前建模修改起点", unknown: "暂无法确认是否为当前修改起点", unlinked: "尚未关联模型", generated: "生成于", currentStage: "当前" },
 };
+
+type SourceFreshness = "current" | "stale" | "unknown" | "unlinked";
+function sameModelSource(left: ModelSourceDto, right: ModelSourceDto): boolean {
+  return left.runId === right.runId && left.stateDigest === right.stateDigest && left.assetSha256 === right.assetSha256;
+}
+function sourceFreshness(document: SourceDocumentDto, boardProjectId: string, working: WorkingSourceDto | null): SourceFreshness {
+  if (!document.modelSource) return "unlinked";
+  if (!working || working.projectId !== boardProjectId || document.projectId !== boardProjectId || !working.source) return "unknown";
+  return sameModelSource(document.modelSource, working.source) ? "current" : "stale";
+}
 
 const whiteboardCopy = {
   en: { more: "More board actions", hideSources: "Hide project documents", welcome: "Drop a drawing or image here", gestures: "Circle, draw an arrow, or type a note.", example: "Drawing + arrow + note", designHint: "Select a project drawing and your marks to discover design feedback.", oneSource: "Mark the drawing you want changed inside its own frame. Other selected drawings travel as reference only.", connectReference: "Draw an arrow between the edit drawing and each extra drawing, and select it too, to send them as reference.", referenceMarks: "Marks on a reference drawing cannot be sent. Select that reference's image on its own.", stale: "This drawing is no longer available. Select its current page from project documents.", outside: "Move the selected marks fully onto the drawing before sending.", unsupported: "This selection cannot be sent yet. Use solid outline marks on an uncropped drawing.", invalid: "A selected object has invalid geometry. Redraw it before sending.", linkModel: "Link model in MonkeyDiagram" },
@@ -403,6 +413,7 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
   const refreshedPreviews = useRef(new Set<string>());
   const [previewFailed, setPreviewFailed] = useState(failures.length > 0);
   const [sourceError, setSourceError] = useState("");
+  const [modelingSource, setModelingSource] = useState<WorkingSourceDto | null>(null);
   const [sketchSelection, setSketchSelection] = useState<SketchSelection | null>(null);
   const sketchKey = useRef("");
   const [sketchLevels, setSketchLevels] = useState<FrameLevelDto[] | null>(null);
@@ -412,6 +423,17 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
   // so the panel never shows a number that would not be sent.
   const [sketchHeight, setSketchHeight] = useState("");
   const [sketchSending, setSketchSending] = useState(false);
+  const refreshModelingSource = useCallback(() => {
+    void studio.workingSource("modeling").then((working) => {
+      if (alive.current) setModelingSource(working.projectId === board.projectId ? working : null);
+    }, () => { if (alive.current) setModelingSource(null); });
+  }, [board.projectId, studio]);
+  useEffect(() => {
+    if (active) refreshModelingSource();
+    const visible = () => { if (document.visibilityState === "visible" && active) refreshModelingSource(); };
+    document.addEventListener("visibilitychange", visible);
+    return () => document.removeEventListener("visibilitychange", visible);
+  }, [active, refreshModelingSource]);
   const announceUpdates = useCallback((sources: PageSource[], next: SourceDocumentDto[]) => {
     const arrived = [...new Map(sources.map((source) => [pageKey(source), source])).values()].flatMap((source) => {
       const document = findSource(next, source);
@@ -923,6 +945,7 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
   const source = selected && findSource(documents, selected);
   const contextSource = context?.source ?? selected;
   const contextDocument = contextSource && findSource(documents, contextSource);
+  const contextFreshness = contextDocument ? sourceFreshness(contextDocument, board.projectId, modelingSource) : null;
   const openReplacement = (document: SourceDocumentDto, pageIndex: number) => {
     replacementReturnFocus.current = window.document.activeElement instanceof HTMLElement ? window.document.activeElement : null;
     replacementOpen.current = true; setReplacement({ document, pageIndex });
@@ -1195,8 +1218,14 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
             <div className="monkeyboard-context-identity">
               <span>{selectionCopy[language].selected} · {contextSource.pageIndex + 1}/{contextDocument.pageCount}</span>
               <strong title={contextDocument.fileName}>{contextDocument.fileName}</strong>
+              <span>{[
+                contextFreshness === "current" && modelingSource?.head?.label
+                  ? `${selectionCopy[language].currentStage} · ${modelingSource.head.label}` : null,
+                contextDocument.generatedAt
+                  ? `${selectionCopy[language].generated} ${new Date(contextDocument.generatedAt).toLocaleString(language, { dateStyle: "medium", timeStyle: "short" })}` : null,
+              ].filter(Boolean).join(" · ")}</span>
             </div>
-            <span className={`monkeyboard-context-binding${contextDocument.modelSource ? " is-linked" : ""}`}>{contextDocument.modelSource ? selectionCopy[language].linked : selectionCopy[language].unlinked}</span>
+            <span className={`monkeyboard-context-binding is-${contextFreshness}`}>{selectionCopy[language][contextFreshness!]}</span>
           </div>}
           <div className="monkeyboard-context-actions">
             {source && selected && onOpenDocument && <button disabled={!ready || busy || saveState.conflict} onClick={() => openDocument(selected)}>{text.openPage}</button>}
