@@ -2798,7 +2798,7 @@
         "Optional operation_observer and parent event id for source load, global hidden-line solve, SVG, PNG and persistence intervals",
         "cut-plan recipe (graphics may add hatch.byMaterial and beyond.fade) and verified dimension read values; optional previous drawing revision ref",
         "optional attribution and reason for the revision, from the application (freeze_cut_plan, freeze_model_axis_elevation, freeze_section_perspective), and for a cut plan the optional source_kind",
-        "SectionPerspectiveView: section, camera, depth, hidden objects, scale and pens"
+        "SectionPerspectiveView: section, camera, depth, hidden objects, scale, pens and, as a cut plan takes them, material hatch/poché rules and the beyond fade"
       ],
       "outputs": [
         "ElevationProjection",
