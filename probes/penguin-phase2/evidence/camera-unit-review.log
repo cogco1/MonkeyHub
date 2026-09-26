@@ -1,0 +1,11 @@
+✔ perspective: borrowed model and camera preserve the projected geometry (6.526ms)
+✔ orthographic: borrowed model and camera preserve the projected geometry (1.2994ms)
+✔ preview letterboxes wide and narrow hosts without changing source aspect (0.2871ms)
+ℹ tests 3
+ℹ suites 0
+ℹ pass 3
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 335.9962

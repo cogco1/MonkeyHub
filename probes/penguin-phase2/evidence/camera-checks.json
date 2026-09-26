@@ -1,0 +1,128 @@
+{
+  "checks": [
+    {
+      "step": "after-modeling-front",
+      "camera": [
+        {
+          "name": "Projectionperspectiveorthographic",
+          "value": "perspective"
+        },
+        {
+          "name": "Camera position X",
+          "value": "1.3"
+        },
+        {
+          "name": "Camera position Y",
+          "value": "-2.3"
+        },
+        {
+          "name": "Camera position Z",
+          "value": "0.75"
+        },
+        {
+          "name": "Camera target X",
+          "value": "0"
+        },
+        {
+          "name": "Camera target Y",
+          "value": "0"
+        },
+        {
+          "name": "Camera target Z",
+          "value": "0.5"
+        },
+        {
+          "name": "FOV",
+          "value": "28"
+        },
+        {
+          "name": "Orthographic height",
+          "value": "1.3"
+        }
+      ]
+    },
+    {
+      "step": "physical-ortho-position-target-scale-edits",
+      "camera": [
+        {
+          "name": "Projectionperspectiveorthographic",
+          "value": "orthographic"
+        },
+        {
+          "name": "Camera position X",
+          "value": "2"
+        },
+        {
+          "name": "Camera position Y",
+          "value": "-2.3"
+        },
+        {
+          "name": "Camera position Z",
+          "value": "0.75"
+        },
+        {
+          "name": "Camera target X",
+          "value": "0.1"
+        },
+        {
+          "name": "Camera target Y",
+          "value": "0"
+        },
+        {
+          "name": "Camera target Z",
+          "value": "0.5"
+        },
+        {
+          "name": "FOV",
+          "value": "28"
+        },
+        {
+          "name": "Orthographic height",
+          "value": "1.6"
+        }
+      ]
+    },
+    {
+      "step": "physical-edits-survive-workspace-roundtrip",
+      "camera": [
+        {
+          "name": "Projectionperspectiveorthographic",
+          "value": "orthographic"
+        },
+        {
+          "name": "Camera position X",
+          "value": "2"
+        },
+        {
+          "name": "Camera position Y",
+          "value": "-2.3"
+        },
+        {
+          "name": "Camera position Z",
+          "value": "0.75"
+        },
+        {
+          "name": "Camera target X",
+          "value": "0.1"
+        },
+        {
+          "name": "Camera target Y",
+          "value": "0"
+        },
+        {
+          "name": "Camera target Z",
+          "value": "0.5"
+        },
+        {
+          "name": "FOV",
+          "value": "28"
+        },
+        {
+          "name": "Orthographic height",
+          "value": "1.6"
+        }
+      ]
+    }
+  ],
+  "note": "Manual checks read DOM camera fields. Cross-workspace orbit/pan/dolly gestures not independently tested; automated Physical gestures covered separately."
+}

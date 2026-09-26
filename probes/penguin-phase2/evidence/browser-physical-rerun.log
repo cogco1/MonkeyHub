@@ -1,0 +1,23 @@
+Failed to load resource: the server responded with a status of 404 (Not Found)
+PASS Render starts without model initialization; capability defaults and ordered original uploads
+PASS source comparison, zoom and authenticated-byte download keep exact generation identity
+PASS zoomed result can be dragged and Fit resets the image viewport
+Failed to load resource: the server responded with a status of 404 (Not Found)
+PASS project and workspace switches preserve inputs, stop hidden polling and do not cancel or resend
+Failed to load resource: the server responded with a status of 503 (Service Unavailable)
+PASS selected-image loading, HTTP failure and corrupt bytes recover by read without generating
+PASS failure preserves old image; unknown and refresh never replay the provider
+PASS a changed source marks its result outdated without silently rebinding the original
+Failed to load resource: the server responded with a status of 404 (Not Found)
+PASS Board receives the same exact page, selects it and can restore only the explicitly deleted old result
+PASS wide, medium, narrow and dark layouts remain usable; all rendering leaves Design HEAD unchanged
+Failed to load resource: net::ERR_FAILED
+PASS a source and direction alone can generate; a lost response recovers by read without replay
+PASS retained native result reopens in its own project without invented source or paid replay
+PASS perspective and orthographic model views become exact frozen inputs without generating until requested
+1:39:37 AM [vite] (client) [Unhandled error] Error: ResizeObserver loop completed with undelivered notifications.
+ > ../../../../../../../../../../../../../../@vite/client:539:50
+
+PASS Physical real geometry, camera gestures, reload and late scene reads preserve edits without AI replay
+PASS cold real Hub Render leaves every project content file unchanged; entering Arch seeds only then
+{"passed":["Render starts without model initialization; capability defaults and ordered original uploads","source comparison, zoom and authenticated-byte download keep exact generation identity","zoomed result can be dragged and Fit resets the image viewport","project and workspace switches preserve inputs, stop hidden polling and do not cancel or resend","selected-image loading, HTTP failure and corrupt bytes recover by read without generating","failure preserves old image; unknown and refresh never replay the provider","a changed source marks its result outdated without silently rebinding the original","Board receives the same exact page, selects it and can restore only the explicitly deleted old result","wide, medium, narrow and dark layouts remain usable; all rendering leaves Design HEAD unchanged","a source and direction alone can generate; a lost response recovers by read without replay","retained native result reopens in its own project without invented source or paid replay","perspective and orthographic model views become exact frozen inputs without generating until requested","Physical real geometry, camera gestures, reload and late scene reads preserve edits without AI replay","cold real Hub Render leaves every project content file unchanged; entering Arch seeds only then"],"screenshots":"<user>\\AppData\\Local\\Temp\\monkeyhub-render-browser-R0EBL3","actualProvider":false,"requests":310}

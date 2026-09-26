@@ -1,0 +1,9 @@
+{
+  "status": "ok",
+  "service": "monkeyhub-api",
+  "serverVersion": "0.1.0",
+  "processId": 32856,
+  "parentProcessId": 35644,
+  "managedInstanceId": null,
+  "sourceRevision": "0aaf5984716532f51d1185b820c799b9b6232acf"
+}

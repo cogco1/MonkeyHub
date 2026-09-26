@@ -9,6 +9,8 @@ import json
 import math
 import shutil
 import subprocess
+import os
+from pathlib import Path
 from dataclasses import dataclass
 
 import archflow.adapters.cad_execution as cad
@@ -18,6 +20,34 @@ from archflow.adapters.blender_worker import READBACK_PREFIX, UNIT_SETTINGS
 from archflow.adapters.cad_backend import CadExecutionRequest, CadExecutionResult, OcctBackend
 from archflow.adapters.cad_program import _rgb
 from archflow.contracts.canonical import canonical_json
+
+def render_scene_projection(plan, images, workspace: Path, executable: str):
+    """Project a retained Render Scene in a caller-owned speculative workspace.
+
+    Unlike execute_blender_projection's OCCT receipt contract this accepts an
+    already resolved imported-mesh plan; it never claims an exact STEP source.
+    """
+    workspace=workspace.resolve(strict=True)
+    for digest,data in images.items():
+        if len(digest)!=64 or any(c not in '0123456789abcdef' for c in digest):
+            raise ValueError('Invalid image content identity')
+        (workspace/(digest+'.image')).write_bytes(data)
+    path=workspace/'scene-plan.json';path.write_text(canonical_json(plan),encoding='utf-8')
+    worker=Path(__file__).with_name('blender_worker.py')
+    model=workspace/'scene.blend';image=workspace/'render.png'
+    environment={key:value for key,value in os.environ.items() if key not in ('PYTHONHOME','PYTHONPATH','VIRTUAL_ENV')}
+    for arguments in [('build',str(path),str(model)),('scene-render',str(model),str(path),str(image))]:
+        # Direct output avoids a full pipe stalling native host startup and
+        # preserves diagnostics even if a host times out midway through a phase.
+        with (workspace/'blender.log').open('ab') as log:
+            process=subprocess.run([executable,'--background','--factory-startup','--python-exit-code','1','--python',str(worker),'--',*arguments],
+                cwd=workspace,stdin=subprocess.DEVNULL,stdout=log,stderr=subprocess.STDOUT,env=environment,timeout=1800,
+                creationflags=subprocess.CREATE_NO_WINDOW if os.name=='nt' else 0)
+        if process.returncode:raise RuntimeError('Blender projection failed; see the retained job log.')
+    report=json.loads((workspace/'readback.json').read_text(encoding='utf-8'))
+    if not image.is_file() or report['sceneRevision']!=plan['render_scene']['sceneRevision']:
+        raise RuntimeError('Blender did not return the requested scene revision')
+    return report
 
 
 @dataclass(frozen=True)

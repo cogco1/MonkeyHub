@@ -1,0 +1,31 @@
+Failed to load resource: the server responded with a status of 404 (Not Found)
+PASS Render starts without model initialization; capability defaults and ordered original uploads
+PASS source comparison, zoom and authenticated-byte download keep exact generation identity
+PASS zoomed result can be dragged and Fit resets the image viewport
+PASS project and workspace switches preserve inputs, stop hidden polling and do not cancel or resend
+Failed to load resource: the server responded with a status of 404 (Not Found)
+Failed to load resource: the server responded with a status of 503 (Service Unavailable)
+PASS selected-image loading, HTTP failure and corrupt bytes recover by read without generating
+PASS failure preserves old image; unknown and refresh never replay the provider
+FAIL a changed source marks its result outdated without silently rebinding the original; C:\Users\jiayu\AppData\Local\Temp\monkeyhub-render-browser-paZGGV
+[]
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+
+AssertionError [ERR_ASSERTION]: The input did not match the regular expression /revised-source/. Input:
+
+'5. source.png'
+
+    at file:///C:/Users/jiayu/OneDrive/%E6%96%87%E6%A1%A3/ChatGPT/Blender%20skill/projection-development/workspace/worktrees/codex-pr330-required-checks/apps/monkeyhub/web/workspaces/test/renderWorkspace.browser.mjs:384:12
+    at async step (file:///C:/Users/jiayu/OneDrive/%E6%96%87%E6%A1%A3/ChatGPT/Blender%20skill/projection-development/workspace/worktrees/codex-pr330-required-checks/apps/monkeyhub/web/workspaces/test/renderWorkspace.browser.mjs:161:19)
+    at async file:///C:/Users/jiayu/OneDrive/%E6%96%87%E6%A1%A3/ChatGPT/Blender%20skill/projection-development/workspace/worktrees/codex-pr330-required-checks/apps/monkeyhub/web/workspaces/test/renderWorkspace.browser.mjs:368:3 {
+  generatedMessage: true,
+  code: 'ERR_ASSERTION',
+  actual: '5. source.png',
+  expected: /revised-source/,
+  operator: 'match',
+  diff: 'simple'
+}
+
+Node.js v24.21.0

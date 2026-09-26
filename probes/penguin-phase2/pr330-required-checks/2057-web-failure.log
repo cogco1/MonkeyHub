@@ -1,0 +1,75 @@
+2026-09-26T17:05:26.9085516Z {"toolbar":940,"layout":{"width":582,"height":50,"overflow":false,"groups":[{"height":48,"overflow":false},{"height":48,"overflow":false},{"height":48,"overflow":false}]}}
+2026-09-26T17:05:27.5584905Z {"toolbar":620,"layout":{"width":500,"height":44,"overflow":false,"groups":[{"height":42,"overflow":false},{"height":42,"overflow":false},{"height":42,"overflow":false}]}}
+2026-09-26T17:05:28.0490908Z {"toolbar":332,"layout":{"width":304,"height":86,"overflow":false,"groups":[{"height":42,"overflow":false},{"height":42,"overflow":false},{"height":42,"overflow":false}]}}
+2026-09-26T17:05:30.9132618Z {"screenshotComparison":"the chosen camera view survives Board/model switches","dimensions":{"actual":[620,920],"expected":[620,920]},"differentPixels":0,"maxChannelDelta":0,"samples":[]}
+2026-09-26T17:05:45.6550471Z {"screenshotComparison":"refreshing keeps the camera chosen after the candidate appeared","dimensions":{"actual":[755,920],"expected":[755,920]},"differentPixels":5,"maxChannelDelta":28,"samples":[{"x":667,"y":801,"actual":[236,236,237,255],"expected":[238,238,239,255]},{"x":668,"y":801,"actual":[193,193,194,255],"expected":[207,207,208,255]},{"x":667,"y":802,"actual":[231,231,232,255],"expected":[233,233,234,255]},{"x":668,"y":802,"actual":[156,156,157,255],"expected":[184,184,185,255]},{"x":668,"y":803,"actual":[193,194,197,255],"expected":[197,197,199,255]}]}
+2026-09-26T17:05:45.6572301Z {"screenshots":"/tmp/monkeyhub-chat-ui-EzL8QZ","errors":[],"workspaceRequests":[{"runtimeId":"17f7799f-8317-4a40-ad69-63f7e41b310d","projectId":"B","name":"/api/model-assets/66ddfec9e31b8a2bcd378d11bac8334b8b2ffec317fa65af49ddc18704be662d/preview","method":"GET","body":null,"query":{"runId":"cand-B-1","stateDigest":"a90ca0f00da517c62d51d7e25d75edc62f1206aa41707e1ea8bfecbc728866b8"}},{"runtimeId":"17f7799f-8317-4a40-ad69-63f7e41b310d","projectId":"B","name":"/api/artifacts/780d910ae3cf9e0887e0fd666555d0e8ed2a5121c9ca5bc3e1aa5a8288392656/bytes","method":"GET","body":null,"query":{},"runId":"cand-B-final"},{"runtimeId":"17f7799f-8317-4a40-ad69-63f7e41b310d","projectId":"B","name":"/api/state","method":"GET","body":null,"query":{"run":"cand-B-final"}},{"runtimeId":"17f7799f-8317-4a40-ad69-63f7e41b310d","projectId":"B","name":"/api/artifacts","method":"GET","body":null,"query":{}},{"runtimeId":"17f7799f-8317-4a40-ad69-63f7e41b310d","projectId":"B","name":"/api/model-assets/2f3f63ee45d5ab8ffe1d3f7c4304db192340f4e61311ead50401c0bcec1a41d7/preview","method":"GET","body":null,"query":{"runId":"home-B","stateDigest":"a69207141368c0c96bc3bf594b10adfba95dddd61f3fb93ee865b6089a5fb7ac"}},{"runtimeId":"17f7799f-8317-4a40-ad69-63f7e41b310d","projectId":"B","name":"/api/model-assets/780d910ae3cf9e0887e0fd666555d0e8ed2a5121c9ca5bc3e1aa5a8288392656/preview","method":"GET","body":null,"query":{"runId":"cand-B-final","stateDigest":"9acbd452efcd14fb1288e7441f9e04ef0d885355cdff2ec633dfd8e735e0f1b4"}},{"runtimeId":"17f7799f-8317-4a40-ad69-63f7e41b310d","projectId":"B","name":"/api/model-assets/66ddfec9e31b8a2bcd378d11bac8334b8b2ffec317fa65af49ddc18704be662d/preview","method":"GET","body":null,"query":{"runId":"cand-B-1","stateDigest":"a90ca0f00da517c62d51d7e25d75edc62f1206aa41707e1ea8bfecbc728866b8"}},{"runtimeId":"17f7799f-8317-4a40-ad69-63f7e41b310d","projectId":"B","name":"/api/worktrees","method":"GET","body":null,"query":{}},{"runtimeId":"17f7799f-8317-4a40-ad69-63f7e41b310d","projectId":"B","name":"/api/project","method":"GET","body":null,"query":{}},{"runtimeId":"17f7799f-8317-4a40-ad69-63f7e41b310d","projectId":"B","name":"/api/artifacts","method":"GET","body":null,"query":{}},{"runtimeId":"17f7799f-8317-4a40-ad69-63f7e41b310d","projectId":"B","name":"/api/protocol","method":"GET","body":null,"query":{}},{"runtimeId":"17f7799f-8317-4a40-ad69-63f7e41b310d","projectId":"B","name":"/api/board","method":"GET","body":null,"query":{}},{"runtimeId":"17f7799f-8317-4a40-ad69-63f7e41b310d","projectId":"B","name":"/api/state","method":"GET","body":null,"query":{}},{"runtimeId":"17f7799f-8317-4a40-ad69-63f7e41b310d","projectId":"B","name":"/api/project","method":"GET","body":null,"query":{}},{"runtimeId":"17f7799f-8317-4a40-ad69-63f7e41b310d","projectId":"B","name":"/api/documents","method":"GET","body":null,"query":{}}]}
+2026-09-26T17:05:45.8008505Z node:internal/modules/run_main:107
+2026-09-26T17:05:45.8008904Z     triggerUncaughtException(
+2026-09-26T17:05:45.8009184Z     ^
+2026-09-26T17:05:45.8009301Z
+2026-09-26T17:05:45.8011498Z AssertionError [ERR_ASSERTION]: refreshing keeps the camera chosen after the candidate appeared: {"dimensions":{"actual":[755,920],"expected":[755,920]},"differentPixels":5,"maxChannelDelta":28,"samples":[{"x":667,"y":801,"actual":[236,236,237,255],"expected":[238,238,239,255]},{"x":668,"y":801,"actual":[193,193,194,255],"expected":[207,207,208,255]},{"x":667,"y":802,"actual":[231,231,232,255],"expected":[233,233,234,255]},{"x":668,"y":802,"actual":[156,156,157,255],"expected":[184,184,185,255]},{"x":668,"y":803,"actual":[193,194,197,255],"expected":[197,197,199,255]}]}
+2026-09-26T17:05:45.8014179Z
+2026-09-26T17:05:45.8014282Z 5 !== 0
+2026-09-26T17:05:45.8014408Z
+2026-09-26T17:05:45.8014937Z     at assertSameScreenshotPixels (file:///home/runner/work/MonkeyHub/MonkeyHub/apps/monkeyhub/web/test/chatShell.browser.mjs:532:10)
+2026-09-26T17:05:45.8015871Z     at async file:///home/runner/work/MonkeyHub/MonkeyHub/apps/monkeyhub/web/test/chatShell.browser.mjs:1773:3 {
+2026-09-26T17:05:45.8016418Z   generatedMessage: false,
+2026-09-26T17:05:45.8016679Z   code: 'ERR_ASSERTION',
+2026-09-26T17:05:45.8016926Z   actual: 5,
+2026-09-26T17:05:45.8017133Z   expected: 0,
+2026-09-26T17:05:45.8017364Z   operator: 'strictEqual',
+2026-09-26T17:05:45.8017608Z   diff: 'simple'
+2026-09-26T17:05:45.8017825Z }
+2026-09-26T17:05:45.8017927Z
+2026-09-26T17:05:45.8018021Z Node.js v24.21.0
+2026-09-26T17:05:45.8244915Z ##[error]Process completed with exit code 1.
+2026-09-26T17:05:45.8303637Z ##[group]Run node workspaces/test/designTree.browser.mjs
+2026-09-26T17:05:45.8304136Z [36;1mnode workspaces/test/designTree.browser.mjs[0m
+2026-09-26T17:05:45.8367757Z shell: /usr/bin/bash -e {0}
+2026-09-26T17:05:45.8368038Z env:
+2026-09-26T17:05:45.8368329Z   pythonLocation: /opt/hostedtoolcache/Python/3.12.14/x64
+2026-09-26T17:05:45.8368797Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.12.14/x64/lib/pkgconfig
+2026-09-26T17:05:45.8369259Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.14/x64
+2026-09-26T17:05:45.8369690Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.14/x64
+2026-09-26T17:05:45.8370100Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.14/x64
+2026-09-26T17:05:45.8370509Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.12.14/x64/lib
+2026-09-26T17:05:45.8370857Z ##[endgroup]
+2026-09-26T17:06:11.2823626Z {"passed":"chip → tree, trunk, twigs, planar, three zoom levels, side card, review-open warning, View read-only, Continue re-roots via PUT /api/working-draft, its toast's Undo puts the previous Current back through the same PUT, Accept on Current only via POST accept with a toast and no Undo, a toast stays while hovered and then fades, no toast on refusal, the chip's viewing state continues from here, a rejected Current cannot be accepted, keyboard list, return to previous surface, zh copy, Hub rail entry and deep link","writes":["PUT /api/working-draft","PUT /api/working-draft","PUT /api/working-draft","PUT /api/working-draft","POST /api/candidates/run-entrance-a/accept","PUT /api/working-draft","PUT /api/working-draft","POST /api/candidate-reviews","POST /api/candidate-reviews","POST /api/candidate-reviews"]}
+2026-09-26T17:06:11.4005299Z ##[group]Run node workspaces/test/drawingCanvas.browser.mjs
+2026-09-26T17:06:11.4006048Z [36;1mnode workspaces/test/drawingCanvas.browser.mjs[0m
+2026-09-26T17:06:11.4071522Z shell: /usr/bin/bash -e {0}
+2026-09-26T17:06:11.4071797Z env:
+2026-09-26T17:06:11.4072085Z   pythonLocation: /opt/hostedtoolcache/Python/3.12.14/x64
+2026-09-26T17:06:11.4072538Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.12.14/x64/lib/pkgconfig
+2026-09-26T17:06:11.4073454Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.14/x64
+2026-09-26T17:06:11.4073857Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.14/x64
+2026-09-26T17:06:11.4074266Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.14/x64
+2026-09-26T17:06:11.4074665Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.12.14/x64/lib
+2026-09-26T17:06:11.4075001Z ##[endgroup]
+2026-09-26T17:06:13.5380447Z PASS the newest drawing opens LIVE on the Working Head and a new cut plan draws the head
+2026-09-26T17:06:14.5175415Z PASS appearance updates retain semantic dimension and previous revision without design calls
+2026-09-26T17:06:15.1637147Z PASS when the Working Head moves the LIVE drawing rebuilds once on it, while an earlier revision stays frozen
+2026-09-26T17:06:15.2760268Z PASS a Working Head that cannot be drawn is stated, not silently rebound
+2026-09-26T17:06:15.4780168Z PASS drawing another version is explicit, never rebuilds by itself and preserves dimension intention
+2026-09-26T17:06:15.9963257Z PASS a drawing made from a chosen version stays on it after reopening until it follows again
+2026-09-26T17:06:16.1918447Z PASS broken anchors remain visible and cannot drive, while prior revisions remain selectable
+2026-09-26T17:06:17.9380885Z PASS a late generation response never changes another workspace selection
+2026-09-26T17:06:18.1224869Z PASS an empty representation field cannot silently reuse old values during rebuild
+2026-09-26T17:06:20.2972281Z PASS SVG people and trees remain independently editable through drag, keyboard, mirror, save and reopen
+2026-09-26T17:06:21.3903453Z PASS SVG download preserves exact saved vector bytes, scale, source objects and entourage
+2026-09-26T17:06:22.2710889Z PASS retained dimensions can be removed without rewriting their original revision
+2026-09-26T17:06:24.9128582Z PASS a refused appearance save keeps its edits, says so and can be retried
+2026-09-26T17:06:25.1608018Z PASS keyboard controls and English/Chinese narrow layouts keep the drawing usable
+2026-09-26T17:06:26.3057108Z PASS an imported 3DM draws from its retained asset and reopens without following HEAD
+2026-09-26T17:06:26.4837089Z PASS a SketchUp upload selects the server-returned 3DM for drawing
+2026-09-26T17:06:27.4236294Z PASS a response for a previous project never opens a document in the new project
+2026-09-26T17:06:27.8297465Z PASS a section perspective is generated on the drawing's target from its own form and opens as a drawing
+2026-09-26T17:06:28.1189299Z PASS a section perspective from an imported SKP keeps its exact asset and warning on reopen
+2026-09-26T17:06:28.3511860Z PASS a projected line says which object it draws: its component, material and role
+2026-09-26T17:06:30.3965042Z PASS a hidden object stays hidden through its rebuild, and no design request is made
+2026-09-26T17:06:31.9509970Z PASS a plan past the inline line limit is an image whose objects can still be hidden from the list
+2026-09-26T17:06:32.1560848Z PASS a new drawing sends only the pens a person set and shows the ones it was drawn with
+2026-09-26T17:06:32.1561662Z PASS every revision the Drawing asks for is a person's own edit
+2026-09-26T17:06:32.4992630Z PASS a correction repeated on two drawings is offered, and Ignore writes nothing for the rest of the session
+2026-09-26T17:06:32.7390470Z PASS saving an offer writes one human project recipe, and a new drawing starts from it

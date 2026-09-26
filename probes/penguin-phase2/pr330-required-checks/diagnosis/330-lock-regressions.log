@@ -1,0 +1,8 @@
+test_declared_locks_do_not_block_complete_content_comparison (__main__.ProjectSnapshotTests.test_declared_locks_do_not_block_complete_content_comparison) ... ok
+test_other_lock_named_content_is_checked_and_read_errors_propagate (__main__.ProjectSnapshotTests.test_other_lock_named_content_is_checked_and_read_errors_propagate) ... {"event": "project-read-failed", "time": 1790450391.7296782, "monotonic": 66608.078, "testProcessId": 24740, "path": "user-asset.lock", "operation": "Path.read_bytes", "errno": 13, "winerror": null, "exception": "PermissionError(13, 'Permission denied')", "stack": "Traceback (most recent call last):\n  File \"C:\\Users\\jiayu\\OneDrive\\文档\\ChatGPT\\Blender skill\\projection-development\\workspace\\worktrees\\codex-monkeyhub-current\\apps\\monkeyhub\\desktop\\tests\\test_runtime.py\", line 383, in project_bytes\n    contents[str(path.relative_to(self.project))] = path.read_bytes()\n                                                    ^^^^^^^^^^^^^^^^^\n  File \"C:\\Users\\jiayu\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\Lib\\pathlib.py\", line 1020, in read_bytes\n    return f.read()\n           ^^^^^^^^\nPermissionError: [Errno 13] Permission denied\n", "nativeRead": {"operation": "ReadFile(first byte)", "ok": false, "winerror": 33, "bytesRead": 0}, "trackedProcesses": {"21388": {"exited": false}}}
+ok
+
+----------------------------------------------------------------------
+Ran 2 tests in 1.211s
+
+OK

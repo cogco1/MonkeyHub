@@ -139,6 +139,18 @@ def _owner_status(binding: ProjectBinding, document: SourceDocument, working: Wo
 
     recipe = document.view_recipe or {}
     try:
+        if recipe.get("kind") == "mesh-orthographic":
+            from .mesh_drawings import drawing_status
+            return drawing_status(binding, recipe)
+        if recipe.get("kind") == "cycles-render":
+            from .render_scene import latest_scene
+            from .geometry_sources import current_geometry
+            scene,geometry=latest_scene(binding),current_geometry(binding)
+            if not scene or not geometry:
+                return UNAVAILABLE,"The scene or geometry is unavailable."
+            if recipe['sceneRevision']!=scene['sceneRevision'] or recipe['geometryRevision']!=geometry['geometryRevision']:
+                return OUTDATED,"Geometry or scene changed after this Cycles render."
+            return CURRENT,None
         if recipe.get("kind") == "cut-plan":
             # Drawing owns its read set, anchors and dimensions: a change outside
             # the crop leaves the drawing current, against the Working Head or
@@ -170,6 +182,8 @@ def _upstream(document: SourceDocument) -> tuple[dict[str, Any], ...]:
     """The exact retained refs this page was made from, in the owner's own field names."""
 
     recipe = document.view_recipe or {}
+    if recipe.get('kind') in ('mesh-orthographic','cycles-render'):
+        return tuple({key:recipe[key]} for key in ('geometry','geometryRevision','sceneRevision') if key in recipe)
     if recipe.get("kind") == "ai-render":
         request = recipe.get("request")
         if not isinstance(request, Mapping):

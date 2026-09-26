@@ -1,0 +1,34 @@
+test_declared_locks_do_not_block_complete_content_comparison (__main__.ProjectSnapshotTests.test_declared_locks_do_not_block_complete_content_comparison) ... ERROR
+test_other_lock_named_content_is_checked_and_read_errors_propagate (__main__.ProjectSnapshotTests.test_other_lock_named_content_is_checked_and_read_errors_propagate) ... FAIL
+test_project_path_alias_uses_same_exact_lock_contract (__main__.ProjectSnapshotTests.test_project_path_alias_uses_same_exact_lock_contract) ... ok
+
+======================================================================
+ERROR: test_declared_locks_do_not_block_complete_content_comparison (__main__.ProjectSnapshotTests.test_declared_locks_do_not_block_complete_content_comparison)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\jiayu\OneDrive\文档\ChatGPT\Blender skill\projection-development\workspace\worktrees\codex-pr330-required-checks\apps\monkeyhub\desktop\tests\test_runtime.py", line 917, in test_declared_locks_do_not_block_complete_content_comparison
+    self.reader.record("old-scan-reproduced", path=str(path.relative_to(self.reader.project)),
+                                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\jiayu\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\pathlib.py", line 682, in relative_to
+    raise ValueError(f"{str(self)!r} is not in the subpath of {str(other)!r}")
+ValueError: 'C:\\Users\\jiayu\\AppData\\Local\\Temp\\monkeyhub-snapshot-nyzbt3ht\\demo-project\\design\\branches.lock' is not in the subpath of 'C:\\Users\\jiayu\\AppData\\Local\\Temp\\monkeyhub-snapshot-nyzbt3ht\\demo-project\\..\\demo-project'
+
+======================================================================
+FAIL: test_other_lock_named_content_is_checked_and_read_errors_propagate (__main__.ProjectSnapshotTests.test_other_lock_named_content_is_checked_and_read_errors_propagate)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\jiayu\OneDrive\文档\ChatGPT\Blender skill\projection-development\workspace\worktrees\codex-pr330-required-checks\apps\monkeyhub\desktop\tests\test_runtime.py", line 931, in test_other_lock_named_content_is_checked_and_read_errors_propagate
+    self.assertEqual(self.reader.events[-1]["paths"], ["user-asset.lock"])
+AssertionError: Lists differ: ['..\\demo-project\\user-asset.lock'] != ['user-asset.lock']
+
+First differing element 0:
+'..\\demo-project\\user-asset.lock'
+'user-asset.lock'
+
+- ['..\\demo-project\\user-asset.lock']
++ ['user-asset.lock']
+
+----------------------------------------------------------------------
+Ran 3 tests in 1.657s
+
+FAILED (failures=1, errors=1)

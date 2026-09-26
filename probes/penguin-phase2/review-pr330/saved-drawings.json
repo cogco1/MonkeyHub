@@ -1,0 +1,2138 @@
+[
+  {
+    "document": {
+      "projectId": "penguin-test",
+      "runId": "mesh-view-3858635f738d0333a23cd7fae3f2f3de72aa9a6d",
+      "assetSha256": "8b01ab77300267068d8bf08345ca74f2cb3f7a9a902b032b0ebd798e0197f749",
+      "fileName": "isometric.png",
+      "mimeType": "image/png",
+      "sizeBytes": 19758,
+      "pageCount": 1,
+      "pages": [
+        {
+          "pageIndex": 0,
+          "width": 1024.0,
+          "height": 1480.0,
+          "rotation": 0
+        }
+      ],
+      "modelSource": null,
+      "modelSourceBindingRef": null,
+      "drawingId": "mesh-isometric",
+      "revisionRef": null,
+      "sourceStageRef": null,
+      "viewRecipe": {
+        "dimensions": [
+          {
+            "id": "overall-width",
+            "reference": {
+              "axis": 0,
+              "kind": "projected-extent"
+            },
+            "status": "resolved",
+            "valueMeters": 0.5670857729570943
+          },
+          {
+            "id": "overall-height",
+            "reference": {
+              "axis": 1,
+              "kind": "projected-extent"
+            },
+            "status": "resolved",
+            "valueMeters": 0.9526486164646444
+          }
+        ],
+        "drawingRevision": "3858635f738d0333a23cd7fae3f2f3de72aa9a6d188701591059750d4f7fd787",
+        "featureReferences": [
+          {
+            "id": "eye-center",
+            "reason": "Imported meshes have no stable semantic feature IDs. Select a new reference explicitly.",
+            "status": "unresolved"
+          }
+        ],
+        "geometry": {
+          "artifact": {
+            "artifact_id": "source-model",
+            "media_type": "application/octet-stream",
+            "project_id": "penguin-test",
+            "relative_path": "objects/sha256/b8/b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+            "sha256": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54"
+          },
+          "format": "glb",
+          "geometryRevision": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+          "kind": "retained-import",
+          "label": "20260914 雪企鹅.glb",
+          "preview": {
+            "assetSha256": "e82472a70e4ef3f9f8be37dd25197fae30a252078d71ee8f0f228047b7e75b99",
+            "runId": "studio-model-e82472a70e4ef3f9f8be37dd25197fae30a252078d71ee8f0f228047b7e75b99"
+          },
+          "previewExportId": "export-7d7b8e919a3845cc8f47d110c7deecc5",
+          "projectId": "penguin-test",
+          "runId": "export-7d7b8e919a3845cc8f47d110c7deecc5",
+          "schema": "StudioGeometrySelection@1",
+          "sequence": 3
+        },
+        "geometryRevision": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+        "kind": "mesh-orthographic",
+        "right": [
+          0.7071067811865475,
+          -0.7071067811865475,
+          0
+        ],
+        "scale": 5,
+        "svg": {
+          "artifact_id": "drawing-svg",
+          "media_type": "image/svg+xml",
+          "project_id": "penguin-test",
+          "relative_path": "runs/mesh-view-3858635f738d0333a23cd7fae3f2f3de72aa9a6d/workspaces/drawing.svg",
+          "sha256": "3e08851d85a500b837ea95ce5847daba62a9adf692da6946b05e0987f1755f90"
+        },
+        "up": [
+          0.4082482904638631,
+          0.4082482904638631,
+          0.8164965809277261
+        ],
+        "view": "isometric"
+      },
+      "generatedAt": "2026-09-26T16:47:14.476663+00:00",
+      "replacesPages": [],
+      "previousRevisionRef": null,
+      "attribution": null,
+      "reason": null,
+      "sourceKind": null
+    },
+    "recipe": {
+      "dimensions": [
+        {
+          "id": "overall-width",
+          "reference": {
+            "axis": 0,
+            "kind": "projected-extent"
+          },
+          "status": "resolved",
+          "valueMeters": 0.5670857729570943
+        },
+        {
+          "id": "overall-height",
+          "reference": {
+            "axis": 1,
+            "kind": "projected-extent"
+          },
+          "status": "resolved",
+          "valueMeters": 0.9526486164646444
+        }
+      ],
+      "drawingRevision": "3858635f738d0333a23cd7fae3f2f3de72aa9a6d188701591059750d4f7fd787",
+      "featureReferences": [
+        {
+          "id": "eye-center",
+          "reason": "Imported meshes have no stable semantic feature IDs. Select a new reference explicitly.",
+          "status": "unresolved"
+        }
+      ],
+      "geometry": {
+        "artifact": {
+          "artifact_id": "source-model",
+          "media_type": "application/octet-stream",
+          "project_id": "penguin-test",
+          "relative_path": "objects/sha256/b8/b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+          "sha256": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54"
+        },
+        "format": "glb",
+        "geometryRevision": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+        "kind": "retained-import",
+        "label": "20260914 雪企鹅.glb",
+        "preview": {
+          "assetSha256": "e82472a70e4ef3f9f8be37dd25197fae30a252078d71ee8f0f228047b7e75b99",
+          "runId": "studio-model-e82472a70e4ef3f9f8be37dd25197fae30a252078d71ee8f0f228047b7e75b99"
+        },
+        "previewExportId": "export-7d7b8e919a3845cc8f47d110c7deecc5",
+        "projectId": "penguin-test",
+        "runId": "export-7d7b8e919a3845cc8f47d110c7deecc5",
+        "schema": "StudioGeometrySelection@1",
+        "sequence": 3
+      },
+      "geometryRevision": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+      "kind": "mesh-orthographic",
+      "right": [
+        0.7071067811865475,
+        -0.7071067811865475,
+        0
+      ],
+      "scale": 5,
+      "svg": {
+        "artifact_id": "drawing-svg",
+        "media_type": "image/svg+xml",
+        "project_id": "penguin-test",
+        "relative_path": "runs/mesh-view-3858635f738d0333a23cd7fae3f2f3de72aa9a6d/workspaces/drawing.svg",
+        "sha256": "3e08851d85a500b837ea95ce5847daba62a9adf692da6946b05e0987f1755f90"
+      },
+      "up": [
+        0.4082482904638631,
+        0.4082482904638631,
+        0.8164965809277261
+      ],
+      "view": "isometric"
+    },
+    "status": "current",
+    "reason": null
+  },
+  {
+    "document": {
+      "projectId": "penguin-test",
+      "runId": "mesh-view-318bc0fd3578dbd669fe1c56b17299a9679c5daf",
+      "assetSha256": "1075846ae20113d31eed48bca3d83f67ba2d6d07e0301b37c5837aa1cc792b25",
+      "fileName": "top.png",
+      "mimeType": "image/png",
+      "sizeBytes": 13211,
+      "pageCount": 1,
+      "pages": [
+        {
+          "pageIndex": 0,
+          "width": 1092.0,
+          "height": 1148.0,
+          "rotation": 0
+        }
+      ],
+      "modelSource": null,
+      "modelSourceBindingRef": null,
+      "drawingId": "mesh-top",
+      "revisionRef": null,
+      "sourceStageRef": null,
+      "viewRecipe": {
+        "dimensions": [
+          {
+            "id": "overall-width",
+            "reference": {
+              "axis": 0,
+              "kind": "projected-extent"
+            },
+            "status": "resolved",
+            "valueMeters": 0.6242896914482117
+          },
+          {
+            "id": "overall-height",
+            "reference": {
+              "axis": 1,
+              "kind": "projected-extent"
+            },
+            "status": "resolved",
+            "valueMeters": 0.6717120409011841
+          }
+        ],
+        "drawingRevision": "318bc0fd3578dbd669fe1c56b17299a9679c5daf39cb1fd1fa2e218568cd51ad",
+        "featureReferences": [
+          {
+            "id": "eye-center",
+            "reason": "Imported meshes have no stable semantic feature IDs. Select a new reference explicitly.",
+            "status": "unresolved"
+          }
+        ],
+        "geometry": {
+          "artifact": {
+            "artifact_id": "source-model",
+            "media_type": "application/octet-stream",
+            "project_id": "penguin-test",
+            "relative_path": "objects/sha256/b8/b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+            "sha256": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54"
+          },
+          "format": "glb",
+          "geometryRevision": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+          "kind": "retained-import",
+          "label": "20260914 雪企鹅.glb",
+          "preview": {
+            "assetSha256": "e82472a70e4ef3f9f8be37dd25197fae30a252078d71ee8f0f228047b7e75b99",
+            "runId": "studio-model-e82472a70e4ef3f9f8be37dd25197fae30a252078d71ee8f0f228047b7e75b99"
+          },
+          "previewExportId": "export-7d7b8e919a3845cc8f47d110c7deecc5",
+          "projectId": "penguin-test",
+          "runId": "export-7d7b8e919a3845cc8f47d110c7deecc5",
+          "schema": "StudioGeometrySelection@1",
+          "sequence": 3
+        },
+        "geometryRevision": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+        "kind": "mesh-orthographic",
+        "right": [
+          1,
+          0,
+          0
+        ],
+        "scale": 5,
+        "svg": {
+          "artifact_id": "drawing-svg",
+          "media_type": "image/svg+xml",
+          "project_id": "penguin-test",
+          "relative_path": "runs/mesh-view-318bc0fd3578dbd669fe1c56b17299a9679c5daf/workspaces/drawing.svg",
+          "sha256": "c94fe4ff25bb901b1770a0f35d79a55687011a2407cb30c3001dd6bb2d08a76e"
+        },
+        "up": [
+          0,
+          1,
+          0
+        ],
+        "view": "top"
+      },
+      "generatedAt": "2026-09-26T16:47:10.390872+00:00",
+      "replacesPages": [],
+      "previousRevisionRef": null,
+      "attribution": null,
+      "reason": null,
+      "sourceKind": null
+    },
+    "recipe": {
+      "dimensions": [
+        {
+          "id": "overall-width",
+          "reference": {
+            "axis": 0,
+            "kind": "projected-extent"
+          },
+          "status": "resolved",
+          "valueMeters": 0.6242896914482117
+        },
+        {
+          "id": "overall-height",
+          "reference": {
+            "axis": 1,
+            "kind": "projected-extent"
+          },
+          "status": "resolved",
+          "valueMeters": 0.6717120409011841
+        }
+      ],
+      "drawingRevision": "318bc0fd3578dbd669fe1c56b17299a9679c5daf39cb1fd1fa2e218568cd51ad",
+      "featureReferences": [
+        {
+          "id": "eye-center",
+          "reason": "Imported meshes have no stable semantic feature IDs. Select a new reference explicitly.",
+          "status": "unresolved"
+        }
+      ],
+      "geometry": {
+        "artifact": {
+          "artifact_id": "source-model",
+          "media_type": "application/octet-stream",
+          "project_id": "penguin-test",
+          "relative_path": "objects/sha256/b8/b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+          "sha256": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54"
+        },
+        "format": "glb",
+        "geometryRevision": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+        "kind": "retained-import",
+        "label": "20260914 雪企鹅.glb",
+        "preview": {
+          "assetSha256": "e82472a70e4ef3f9f8be37dd25197fae30a252078d71ee8f0f228047b7e75b99",
+          "runId": "studio-model-e82472a70e4ef3f9f8be37dd25197fae30a252078d71ee8f0f228047b7e75b99"
+        },
+        "previewExportId": "export-7d7b8e919a3845cc8f47d110c7deecc5",
+        "projectId": "penguin-test",
+        "runId": "export-7d7b8e919a3845cc8f47d110c7deecc5",
+        "schema": "StudioGeometrySelection@1",
+        "sequence": 3
+      },
+      "geometryRevision": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+      "kind": "mesh-orthographic",
+      "right": [
+        1,
+        0,
+        0
+      ],
+      "scale": 5,
+      "svg": {
+        "artifact_id": "drawing-svg",
+        "media_type": "image/svg+xml",
+        "project_id": "penguin-test",
+        "relative_path": "runs/mesh-view-318bc0fd3578dbd669fe1c56b17299a9679c5daf/workspaces/drawing.svg",
+        "sha256": "c94fe4ff25bb901b1770a0f35d79a55687011a2407cb30c3001dd6bb2d08a76e"
+      },
+      "up": [
+        0,
+        1,
+        0
+      ],
+      "view": "top"
+    },
+    "status": "current",
+    "reason": null
+  },
+  {
+    "document": {
+      "projectId": "penguin-test",
+      "runId": "mesh-view-ba80601902706dea743290bb2dfda3fb9655b17a",
+      "assetSha256": "8605b0b4719c2b73bdb132869fb2427c67d210def22e29de7f92df35c7fef008",
+      "fileName": "side.png",
+      "mimeType": "image/png",
+      "sizeBytes": 18791,
+      "pageCount": 1,
+      "pages": [
+        {
+          "pageIndex": 0,
+          "width": 1148.0,
+          "height": 1535.0,
+          "rotation": 0
+        }
+      ],
+      "modelSource": null,
+      "modelSourceBindingRef": null,
+      "drawingId": "mesh-side",
+      "revisionRef": null,
+      "sourceStageRef": null,
+      "viewRecipe": {
+        "dimensions": [
+          {
+            "id": "overall-width",
+            "reference": {
+              "axis": 0,
+              "kind": "projected-extent"
+            },
+            "status": "resolved",
+            "valueMeters": 0.6717120409011841
+          },
+          {
+            "id": "overall-height",
+            "reference": {
+              "axis": 1,
+              "kind": "projected-extent"
+            },
+            "status": "resolved",
+            "valueMeters": 1.0
+          }
+        ],
+        "drawingRevision": "ba80601902706dea743290bb2dfda3fb9655b17a214bef3c9d9350bf0f931419",
+        "featureReferences": [
+          {
+            "id": "eye-center",
+            "reason": "Imported meshes have no stable semantic feature IDs. Select a new reference explicitly.",
+            "status": "unresolved"
+          }
+        ],
+        "geometry": {
+          "artifact": {
+            "artifact_id": "source-model",
+            "media_type": "application/octet-stream",
+            "project_id": "penguin-test",
+            "relative_path": "objects/sha256/b8/b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+            "sha256": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54"
+          },
+          "format": "glb",
+          "geometryRevision": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+          "kind": "retained-import",
+          "label": "20260914 雪企鹅.glb",
+          "preview": {
+            "assetSha256": "e82472a70e4ef3f9f8be37dd25197fae30a252078d71ee8f0f228047b7e75b99",
+            "runId": "studio-model-e82472a70e4ef3f9f8be37dd25197fae30a252078d71ee8f0f228047b7e75b99"
+          },
+          "previewExportId": "export-7d7b8e919a3845cc8f47d110c7deecc5",
+          "projectId": "penguin-test",
+          "runId": "export-7d7b8e919a3845cc8f47d110c7deecc5",
+          "schema": "StudioGeometrySelection@1",
+          "sequence": 3
+        },
+        "geometryRevision": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+        "kind": "mesh-orthographic",
+        "right": [
+          0,
+          1,
+          0
+        ],
+        "scale": 5,
+        "svg": {
+          "artifact_id": "drawing-svg",
+          "media_type": "image/svg+xml",
+          "project_id": "penguin-test",
+          "relative_path": "runs/mesh-view-ba80601902706dea743290bb2dfda3fb9655b17a/workspaces/drawing.svg",
+          "sha256": "9b68064e38a462ca3f1d47cc6e197c3d53c6c80319aa47e9efd29979cc15ef15"
+        },
+        "up": [
+          0,
+          0,
+          1
+        ],
+        "view": "side"
+      },
+      "generatedAt": "2026-09-26T16:47:05.642281+00:00",
+      "replacesPages": [],
+      "previousRevisionRef": null,
+      "attribution": null,
+      "reason": null,
+      "sourceKind": null
+    },
+    "recipe": {
+      "dimensions": [
+        {
+          "id": "overall-width",
+          "reference": {
+            "axis": 0,
+            "kind": "projected-extent"
+          },
+          "status": "resolved",
+          "valueMeters": 0.6717120409011841
+        },
+        {
+          "id": "overall-height",
+          "reference": {
+            "axis": 1,
+            "kind": "projected-extent"
+          },
+          "status": "resolved",
+          "valueMeters": 1.0
+        }
+      ],
+      "drawingRevision": "ba80601902706dea743290bb2dfda3fb9655b17a214bef3c9d9350bf0f931419",
+      "featureReferences": [
+        {
+          "id": "eye-center",
+          "reason": "Imported meshes have no stable semantic feature IDs. Select a new reference explicitly.",
+          "status": "unresolved"
+        }
+      ],
+      "geometry": {
+        "artifact": {
+          "artifact_id": "source-model",
+          "media_type": "application/octet-stream",
+          "project_id": "penguin-test",
+          "relative_path": "objects/sha256/b8/b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+          "sha256": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54"
+        },
+        "format": "glb",
+        "geometryRevision": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+        "kind": "retained-import",
+        "label": "20260914 雪企鹅.glb",
+        "preview": {
+          "assetSha256": "e82472a70e4ef3f9f8be37dd25197fae30a252078d71ee8f0f228047b7e75b99",
+          "runId": "studio-model-e82472a70e4ef3f9f8be37dd25197fae30a252078d71ee8f0f228047b7e75b99"
+        },
+        "previewExportId": "export-7d7b8e919a3845cc8f47d110c7deecc5",
+        "projectId": "penguin-test",
+        "runId": "export-7d7b8e919a3845cc8f47d110c7deecc5",
+        "schema": "StudioGeometrySelection@1",
+        "sequence": 3
+      },
+      "geometryRevision": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+      "kind": "mesh-orthographic",
+      "right": [
+        0,
+        1,
+        0
+      ],
+      "scale": 5,
+      "svg": {
+        "artifact_id": "drawing-svg",
+        "media_type": "image/svg+xml",
+        "project_id": "penguin-test",
+        "relative_path": "runs/mesh-view-ba80601902706dea743290bb2dfda3fb9655b17a/workspaces/drawing.svg",
+        "sha256": "9b68064e38a462ca3f1d47cc6e197c3d53c6c80319aa47e9efd29979cc15ef15"
+      },
+      "up": [
+        0,
+        0,
+        1
+      ],
+      "view": "side"
+    },
+    "status": "current",
+    "reason": null
+  },
+  {
+    "document": {
+      "projectId": "penguin-test",
+      "runId": "mesh-view-27d79d8d74de0ac126b75598a95c14d00dc12e61",
+      "assetSha256": "e5acc15563ae122a53b79ef2164141ea5b2dc5decfd43aac4c5e536c84fb87f6",
+      "fileName": "front.png",
+      "mimeType": "image/png",
+      "sizeBytes": 18221,
+      "pageCount": 1,
+      "pages": [
+        {
+          "pageIndex": 0,
+          "width": 1092.0,
+          "height": 1535.0,
+          "rotation": 0
+        }
+      ],
+      "modelSource": null,
+      "modelSourceBindingRef": null,
+      "drawingId": "mesh-front",
+      "revisionRef": null,
+      "sourceStageRef": null,
+      "viewRecipe": {
+        "dimensions": [
+          {
+            "id": "overall-width",
+            "reference": {
+              "axis": 0,
+              "kind": "projected-extent"
+            },
+            "status": "resolved",
+            "valueMeters": 0.6242896914482117
+          },
+          {
+            "id": "overall-height",
+            "reference": {
+              "axis": 1,
+              "kind": "projected-extent"
+            },
+            "status": "resolved",
+            "valueMeters": 1.0
+          }
+        ],
+        "drawingRevision": "27d79d8d74de0ac126b75598a95c14d00dc12e61f55d4cdf23738ba60aef643a",
+        "featureReferences": [
+          {
+            "id": "eye-center",
+            "reason": "Imported meshes have no stable semantic feature IDs. Select a new reference explicitly.",
+            "status": "unresolved"
+          }
+        ],
+        "geometry": {
+          "artifact": {
+            "artifact_id": "source-model",
+            "media_type": "application/octet-stream",
+            "project_id": "penguin-test",
+            "relative_path": "objects/sha256/b8/b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+            "sha256": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54"
+          },
+          "format": "glb",
+          "geometryRevision": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+          "kind": "retained-import",
+          "label": "20260914 雪企鹅.glb",
+          "preview": {
+            "assetSha256": "e82472a70e4ef3f9f8be37dd25197fae30a252078d71ee8f0f228047b7e75b99",
+            "runId": "studio-model-e82472a70e4ef3f9f8be37dd25197fae30a252078d71ee8f0f228047b7e75b99"
+          },
+          "previewExportId": "export-7d7b8e919a3845cc8f47d110c7deecc5",
+          "projectId": "penguin-test",
+          "runId": "export-7d7b8e919a3845cc8f47d110c7deecc5",
+          "schema": "StudioGeometrySelection@1",
+          "sequence": 3
+        },
+        "geometryRevision": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+        "kind": "mesh-orthographic",
+        "right": [
+          1,
+          0,
+          0
+        ],
+        "scale": 5,
+        "svg": {
+          "artifact_id": "drawing-svg",
+          "media_type": "image/svg+xml",
+          "project_id": "penguin-test",
+          "relative_path": "runs/mesh-view-27d79d8d74de0ac126b75598a95c14d00dc12e61/workspaces/drawing.svg",
+          "sha256": "ecbd92959771906ced4cd3e04ceae1f8ccee683b722e82e94a802d5dbe1589bc"
+        },
+        "up": [
+          0,
+          0,
+          1
+        ],
+        "view": "front"
+      },
+      "generatedAt": "2026-09-26T16:47:01.381771+00:00",
+      "replacesPages": [],
+      "previousRevisionRef": null,
+      "attribution": null,
+      "reason": null,
+      "sourceKind": null
+    },
+    "recipe": {
+      "dimensions": [
+        {
+          "id": "overall-width",
+          "reference": {
+            "axis": 0,
+            "kind": "projected-extent"
+          },
+          "status": "resolved",
+          "valueMeters": 0.6242896914482117
+        },
+        {
+          "id": "overall-height",
+          "reference": {
+            "axis": 1,
+            "kind": "projected-extent"
+          },
+          "status": "resolved",
+          "valueMeters": 1.0
+        }
+      ],
+      "drawingRevision": "27d79d8d74de0ac126b75598a95c14d00dc12e61f55d4cdf23738ba60aef643a",
+      "featureReferences": [
+        {
+          "id": "eye-center",
+          "reason": "Imported meshes have no stable semantic feature IDs. Select a new reference explicitly.",
+          "status": "unresolved"
+        }
+      ],
+      "geometry": {
+        "artifact": {
+          "artifact_id": "source-model",
+          "media_type": "application/octet-stream",
+          "project_id": "penguin-test",
+          "relative_path": "objects/sha256/b8/b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+          "sha256": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54"
+        },
+        "format": "glb",
+        "geometryRevision": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+        "kind": "retained-import",
+        "label": "20260914 雪企鹅.glb",
+        "preview": {
+          "assetSha256": "e82472a70e4ef3f9f8be37dd25197fae30a252078d71ee8f0f228047b7e75b99",
+          "runId": "studio-model-e82472a70e4ef3f9f8be37dd25197fae30a252078d71ee8f0f228047b7e75b99"
+        },
+        "previewExportId": "export-7d7b8e919a3845cc8f47d110c7deecc5",
+        "projectId": "penguin-test",
+        "runId": "export-7d7b8e919a3845cc8f47d110c7deecc5",
+        "schema": "StudioGeometrySelection@1",
+        "sequence": 3
+      },
+      "geometryRevision": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+      "kind": "mesh-orthographic",
+      "right": [
+        1,
+        0,
+        0
+      ],
+      "scale": 5,
+      "svg": {
+        "artifact_id": "drawing-svg",
+        "media_type": "image/svg+xml",
+        "project_id": "penguin-test",
+        "relative_path": "runs/mesh-view-27d79d8d74de0ac126b75598a95c14d00dc12e61/workspaces/drawing.svg",
+        "sha256": "ecbd92959771906ced4cd3e04ceae1f8ccee683b722e82e94a802d5dbe1589bc"
+      },
+      "up": [
+        0,
+        0,
+        1
+      ],
+      "view": "front"
+    },
+    "status": "current",
+    "reason": null
+  },
+  {
+    "document": {
+      "projectId": "penguin-test",
+      "runId": "mesh-view-e5624f0c86afb433d836de75fa4bbb616110d746",
+      "assetSha256": "5869f686528c2dd2aed6589badace18ff11af0ad64b2edf36db2358dd704e606",
+      "fileName": "isometric.png",
+      "mimeType": "image/png",
+      "sizeBytes": 20511,
+      "pageCount": 1,
+      "pages": [
+        {
+          "pageIndex": 0,
+          "width": 1036.0,
+          "height": 1585.0,
+          "rotation": 0
+        }
+      ],
+      "modelSource": null,
+      "modelSourceBindingRef": null,
+      "drawingId": "mesh-isometric",
+      "revisionRef": null,
+      "sourceStageRef": null,
+      "viewRecipe": {
+        "dimensions": [
+          {
+            "id": "overall-width",
+            "reference": {
+              "axis": 0,
+              "kind": "projected-extent"
+            },
+            "status": "resolved",
+            "valueMeters": 0.5670857729570943
+          },
+          {
+            "id": "overall-height",
+            "reference": {
+              "axis": 1,
+              "kind": "projected-extent"
+            },
+            "status": "resolved",
+            "valueMeters": 1.0324555626028133
+          }
+        ],
+        "drawingRevision": "e5624f0c86afb433d836de75fa4bbb616110d7464a1f37fb026dfcaa36816721",
+        "featureReferences": [
+          {
+            "id": "eye-center",
+            "reason": "Imported meshes have no stable semantic feature IDs. Select a new reference explicitly.",
+            "status": "unresolved"
+          }
+        ],
+        "geometry": {
+          "artifact": {
+            "artifact_id": "source-model",
+            "media_type": "application/octet-stream",
+            "project_id": "penguin-test",
+            "relative_path": "objects/sha256/e2/e2bf78f0c510c641f22fd4dc34cd87d87a202873bdad8998b48015f28497070e",
+            "sha256": "e2bf78f0c510c641f22fd4dc34cd87d87a202873bdad8998b48015f28497070e"
+          },
+          "format": "glb",
+          "geometryRevision": "e2bf78f0c510c641f22fd4dc34cd87d87a202873bdad8998b48015f28497070e",
+          "kind": "retained-import",
+          "label": "Penguin-height-110-percent.glb",
+          "preview": {
+            "assetSha256": "f54e943e480cfeca0c0d055bc9d2d1e856619262e722c860c95fe7b7087b5207",
+            "runId": "studio-model-f54e943e480cfeca0c0d055bc9d2d1e856619262e722c860c95fe7b7087b5207"
+          },
+          "previewExportId": "export-66a6781d94c648848a23a32a537a9eb6",
+          "projectId": "penguin-test",
+          "runId": "export-66a6781d94c648848a23a32a537a9eb6",
+          "schema": "StudioGeometrySelection@1",
+          "sequence": 2
+        },
+        "geometryRevision": "e2bf78f0c510c641f22fd4dc34cd87d87a202873bdad8998b48015f28497070e",
+        "kind": "mesh-orthographic",
+        "right": [
+          0.7071067811865475,
+          -0.7071067811865475,
+          0
+        ],
+        "scale": 5,
+        "svg": {
+          "artifact_id": "drawing-svg",
+          "media_type": "image/svg+xml",
+          "project_id": "penguin-test",
+          "relative_path": "runs/mesh-view-e5624f0c86afb433d836de75fa4bbb616110d746/workspaces/drawing.svg",
+          "sha256": "52913069f3904731b95bb3126007773d4190907b8365ec1b78fcd3561c5c21bf"
+        },
+        "up": [
+          0.4082482904638631,
+          0.4082482904638631,
+          0.8164965809277261
+        ],
+        "view": "isometric"
+      },
+      "generatedAt": "2026-09-26T05:01:10.026843+00:00",
+      "replacesPages": [],
+      "previousRevisionRef": null,
+      "attribution": null,
+      "reason": null,
+      "sourceKind": null
+    },
+    "recipe": {
+      "dimensions": [
+        {
+          "id": "overall-width",
+          "reference": {
+            "axis": 0,
+            "kind": "projected-extent"
+          },
+          "status": "resolved",
+          "valueMeters": 0.5670857729570943
+        },
+        {
+          "id": "overall-height",
+          "reference": {
+            "axis": 1,
+            "kind": "projected-extent"
+          },
+          "status": "resolved",
+          "valueMeters": 1.0324555626028133
+        }
+      ],
+      "drawingRevision": "e5624f0c86afb433d836de75fa4bbb616110d7464a1f37fb026dfcaa36816721",
+      "featureReferences": [
+        {
+          "id": "eye-center",
+          "reason": "Imported meshes have no stable semantic feature IDs. Select a new reference explicitly.",
+          "status": "unresolved"
+        }
+      ],
+      "geometry": {
+        "artifact": {
+          "artifact_id": "source-model",
+          "media_type": "application/octet-stream",
+          "project_id": "penguin-test",
+          "relative_path": "objects/sha256/e2/e2bf78f0c510c641f22fd4dc34cd87d87a202873bdad8998b48015f28497070e",
+          "sha256": "e2bf78f0c510c641f22fd4dc34cd87d87a202873bdad8998b48015f28497070e"
+        },
+        "format": "glb",
+        "geometryRevision": "e2bf78f0c510c641f22fd4dc34cd87d87a202873bdad8998b48015f28497070e",
+        "kind": "retained-import",
+        "label": "Penguin-height-110-percent.glb",
+        "preview": {
+          "assetSha256": "f54e943e480cfeca0c0d055bc9d2d1e856619262e722c860c95fe7b7087b5207",
+          "runId": "studio-model-f54e943e480cfeca0c0d055bc9d2d1e856619262e722c860c95fe7b7087b5207"
+        },
+        "previewExportId": "export-66a6781d94c648848a23a32a537a9eb6",
+        "projectId": "penguin-test",
+        "runId": "export-66a6781d94c648848a23a32a537a9eb6",
+        "schema": "StudioGeometrySelection@1",
+        "sequence": 2
+      },
+      "geometryRevision": "e2bf78f0c510c641f22fd4dc34cd87d87a202873bdad8998b48015f28497070e",
+      "kind": "mesh-orthographic",
+      "right": [
+        0.7071067811865475,
+        -0.7071067811865475,
+        0
+      ],
+      "scale": 5,
+      "svg": {
+        "artifact_id": "drawing-svg",
+        "media_type": "image/svg+xml",
+        "project_id": "penguin-test",
+        "relative_path": "runs/mesh-view-e5624f0c86afb433d836de75fa4bbb616110d746/workspaces/drawing.svg",
+        "sha256": "52913069f3904731b95bb3126007773d4190907b8365ec1b78fcd3561c5c21bf"
+      },
+      "up": [
+        0.4082482904638631,
+        0.4082482904638631,
+        0.8164965809277261
+      ],
+      "view": "isometric"
+    },
+    "status": "outdated",
+    "reason": "Geometry changed. Regenerate this view and recompute its measurements."
+  },
+  {
+    "document": {
+      "projectId": "penguin-test",
+      "runId": "mesh-view-479de28c5281e7be480b794ab6314e4666096628",
+      "assetSha256": "1075846ae20113d31eed48bca3d83f67ba2d6d07e0301b37c5837aa1cc792b25",
+      "fileName": "top.png",
+      "mimeType": "image/png",
+      "sizeBytes": 13211,
+      "pageCount": 1,
+      "pages": [
+        {
+          "pageIndex": 0,
+          "width": 1092.0,
+          "height": 1148.0,
+          "rotation": 0
+        }
+      ],
+      "modelSource": null,
+      "modelSourceBindingRef": null,
+      "drawingId": "mesh-top",
+      "revisionRef": null,
+      "sourceStageRef": null,
+      "viewRecipe": {
+        "dimensions": [
+          {
+            "id": "overall-width",
+            "reference": {
+              "axis": 0,
+              "kind": "projected-extent"
+            },
+            "status": "resolved",
+            "valueMeters": 0.6242896914482117
+          },
+          {
+            "id": "overall-height",
+            "reference": {
+              "axis": 1,
+              "kind": "projected-extent"
+            },
+            "status": "resolved",
+            "valueMeters": 0.6717120409011841
+          }
+        ],
+        "drawingRevision": "479de28c5281e7be480b794ab6314e46660966288d989626613cfae361d81691",
+        "featureReferences": [
+          {
+            "id": "eye-center",
+            "reason": "Imported meshes have no stable semantic feature IDs. Select a new reference explicitly.",
+            "status": "unresolved"
+          }
+        ],
+        "geometry": {
+          "artifact": {
+            "artifact_id": "source-model",
+            "media_type": "application/octet-stream",
+            "project_id": "penguin-test",
+            "relative_path": "objects/sha256/e2/e2bf78f0c510c641f22fd4dc34cd87d87a202873bdad8998b48015f28497070e",
+            "sha256": "e2bf78f0c510c641f22fd4dc34cd87d87a202873bdad8998b48015f28497070e"
+          },
+          "format": "glb",
+          "geometryRevision": "e2bf78f0c510c641f22fd4dc34cd87d87a202873bdad8998b48015f28497070e",
+          "kind": "retained-import",
+          "label": "Penguin-height-110-percent.glb",
+          "preview": {
+            "assetSha256": "f54e943e480cfeca0c0d055bc9d2d1e856619262e722c860c95fe7b7087b5207",
+            "runId": "studio-model-f54e943e480cfeca0c0d055bc9d2d1e856619262e722c860c95fe7b7087b5207"
+          },
+          "previewExportId": "export-66a6781d94c648848a23a32a537a9eb6",
+          "projectId": "penguin-test",
+          "runId": "export-66a6781d94c648848a23a32a537a9eb6",
+          "schema": "StudioGeometrySelection@1",
+          "sequence": 2
+        },
+        "geometryRevision": "e2bf78f0c510c641f22fd4dc34cd87d87a202873bdad8998b48015f28497070e",
+        "kind": "mesh-orthographic",
+        "right": [
+          1,
+          0,
+          0
+        ],
+        "scale": 5,
+        "svg": {
+          "artifact_id": "drawing-svg",
+          "media_type": "image/svg+xml",
+          "project_id": "penguin-test",
+          "relative_path": "runs/mesh-view-479de28c5281e7be480b794ab6314e4666096628/workspaces/drawing.svg",
+          "sha256": "c94fe4ff25bb901b1770a0f35d79a55687011a2407cb30c3001dd6bb2d08a76e"
+        },
+        "up": [
+          0,
+          1,
+          0
+        ],
+        "view": "top"
+      },
+      "generatedAt": "2026-09-26T05:01:05.973114+00:00",
+      "replacesPages": [],
+      "previousRevisionRef": null,
+      "attribution": null,
+      "reason": null,
+      "sourceKind": null
+    },
+    "recipe": {
+      "dimensions": [
+        {
+          "id": "overall-width",
+          "reference": {
+            "axis": 0,
+            "kind": "projected-extent"
+          },
+          "status": "resolved",
+          "valueMeters": 0.6242896914482117
+        },
+        {
+          "id": "overall-height",
+          "reference": {
+            "axis": 1,
+            "kind": "projected-extent"
+          },
+          "status": "resolved",
+          "valueMeters": 0.6717120409011841
+        }
+      ],
+      "drawingRevision": "479de28c5281e7be480b794ab6314e46660966288d989626613cfae361d81691",
+      "featureReferences": [
+        {
+          "id": "eye-center",
+          "reason": "Imported meshes have no stable semantic feature IDs. Select a new reference explicitly.",
+          "status": "unresolved"
+        }
+      ],
+      "geometry": {
+        "artifact": {
+          "artifact_id": "source-model",
+          "media_type": "application/octet-stream",
+          "project_id": "penguin-test",
+          "relative_path": "objects/sha256/e2/e2bf78f0c510c641f22fd4dc34cd87d87a202873bdad8998b48015f28497070e",
+          "sha256": "e2bf78f0c510c641f22fd4dc34cd87d87a202873bdad8998b48015f28497070e"
+        },
+        "format": "glb",
+        "geometryRevision": "e2bf78f0c510c641f22fd4dc34cd87d87a202873bdad8998b48015f28497070e",
+        "kind": "retained-import",
+        "label": "Penguin-height-110-percent.glb",
+        "preview": {
+          "assetSha256": "f54e943e480cfeca0c0d055bc9d2d1e856619262e722c860c95fe7b7087b5207",
+          "runId": "studio-model-f54e943e480cfeca0c0d055bc9d2d1e856619262e722c860c95fe7b7087b5207"
+        },
+        "previewExportId": "export-66a6781d94c648848a23a32a537a9eb6",
+        "projectId": "penguin-test",
+        "runId": "export-66a6781d94c648848a23a32a537a9eb6",
+        "schema": "StudioGeometrySelection@1",
+        "sequence": 2
+      },
+      "geometryRevision": "e2bf78f0c510c641f22fd4dc34cd87d87a202873bdad8998b48015f28497070e",
+      "kind": "mesh-orthographic",
+      "right": [
+        1,
+        0,
+        0
+      ],
+      "scale": 5,
+      "svg": {
+        "artifact_id": "drawing-svg",
+        "media_type": "image/svg+xml",
+        "project_id": "penguin-test",
+        "relative_path": "runs/mesh-view-479de28c5281e7be480b794ab6314e4666096628/workspaces/drawing.svg",
+        "sha256": "c94fe4ff25bb901b1770a0f35d79a55687011a2407cb30c3001dd6bb2d08a76e"
+      },
+      "up": [
+        0,
+        1,
+        0
+      ],
+      "view": "top"
+    },
+    "status": "outdated",
+    "reason": "Geometry changed. Regenerate this view and recompute its measurements."
+  },
+  {
+    "document": {
+      "projectId": "penguin-test",
+      "runId": "mesh-view-12ca78c83225de182a1bed46dc1d147d7aac1f86",
+      "assetSha256": "2f5f855240bfaa268f2cbc189be487ac839dfe77591da2c1fc977d1ea8520bfd",
+      "fileName": "side.png",
+      "mimeType": "image/png",
+      "sizeBytes": 20343,
+      "pageCount": 1,
+      "pages": [
+        {
+          "pageIndex": 0,
+          "width": 1183.0,
+          "height": 1689.0,
+          "rotation": 0
+        }
+      ],
+      "modelSource": null,
+      "modelSourceBindingRef": null,
+      "drawingId": "mesh-side",
+      "revisionRef": null,
+      "sourceStageRef": null,
+      "viewRecipe": {
+        "dimensions": [
+          {
+            "id": "overall-width",
+            "reference": {
+              "axis": 0,
+              "kind": "projected-extent"
+            },
+            "status": "resolved",
+            "valueMeters": 0.6717120409011841
+          },
+          {
+            "id": "overall-height",
+            "reference": {
+              "axis": 1,
+              "kind": "projected-extent"
+            },
+            "status": "resolved",
+            "valueMeters": 1.100000023841858
+          }
+        ],
+        "drawingRevision": "12ca78c83225de182a1bed46dc1d147d7aac1f86754e15690c54a75a39d85d29",
+        "featureReferences": [
+          {
+            "id": "eye-center",
+            "reason": "Imported meshes have no stable semantic feature IDs. Select a new reference explicitly.",
+            "status": "unresolved"
+          }
+        ],
+        "geometry": {
+          "artifact": {
+            "artifact_id": "source-model",
+            "media_type": "application/octet-stream",
+            "project_id": "penguin-test",
+            "relative_path": "objects/sha256/e2/e2bf78f0c510c641f22fd4dc34cd87d87a202873bdad8998b48015f28497070e",
+            "sha256": "e2bf78f0c510c641f22fd4dc34cd87d87a202873bdad8998b48015f28497070e"
+          },
+          "format": "glb",
+          "geometryRevision": "e2bf78f0c510c641f22fd4dc34cd87d87a202873bdad8998b48015f28497070e",
+          "kind": "retained-import",
+          "label": "Penguin-height-110-percent.glb",
+          "preview": {
+            "assetSha256": "f54e943e480cfeca0c0d055bc9d2d1e856619262e722c860c95fe7b7087b5207",
+            "runId": "studio-model-f54e943e480cfeca0c0d055bc9d2d1e856619262e722c860c95fe7b7087b5207"
+          },
+          "previewExportId": "export-66a6781d94c648848a23a32a537a9eb6",
+          "projectId": "penguin-test",
+          "runId": "export-66a6781d94c648848a23a32a537a9eb6",
+          "schema": "StudioGeometrySelection@1",
+          "sequence": 2
+        },
+        "geometryRevision": "e2bf78f0c510c641f22fd4dc34cd87d87a202873bdad8998b48015f28497070e",
+        "kind": "mesh-orthographic",
+        "right": [
+          0,
+          1,
+          0
+        ],
+        "scale": 5,
+        "svg": {
+          "artifact_id": "drawing-svg",
+          "media_type": "image/svg+xml",
+          "project_id": "penguin-test",
+          "relative_path": "runs/mesh-view-12ca78c83225de182a1bed46dc1d147d7aac1f86/workspaces/drawing.svg",
+          "sha256": "51dc18de82e7482ae227e173772d7aa759cab462ad6e6f5d0fa8d6daed0f1171"
+        },
+        "up": [
+          0,
+          0,
+          1
+        ],
+        "view": "side"
+      },
+      "generatedAt": "2026-09-26T05:01:02.227525+00:00",
+      "replacesPages": [],
+      "previousRevisionRef": null,
+      "attribution": null,
+      "reason": null,
+      "sourceKind": null
+    },
+    "recipe": {
+      "dimensions": [
+        {
+          "id": "overall-width",
+          "reference": {
+            "axis": 0,
+            "kind": "projected-extent"
+          },
+          "status": "resolved",
+          "valueMeters": 0.6717120409011841
+        },
+        {
+          "id": "overall-height",
+          "reference": {
+            "axis": 1,
+            "kind": "projected-extent"
+          },
+          "status": "resolved",
+          "valueMeters": 1.100000023841858
+        }
+      ],
+      "drawingRevision": "12ca78c83225de182a1bed46dc1d147d7aac1f86754e15690c54a75a39d85d29",
+      "featureReferences": [
+        {
+          "id": "eye-center",
+          "reason": "Imported meshes have no stable semantic feature IDs. Select a new reference explicitly.",
+          "status": "unresolved"
+        }
+      ],
+      "geometry": {
+        "artifact": {
+          "artifact_id": "source-model",
+          "media_type": "application/octet-stream",
+          "project_id": "penguin-test",
+          "relative_path": "objects/sha256/e2/e2bf78f0c510c641f22fd4dc34cd87d87a202873bdad8998b48015f28497070e",
+          "sha256": "e2bf78f0c510c641f22fd4dc34cd87d87a202873bdad8998b48015f28497070e"
+        },
+        "format": "glb",
+        "geometryRevision": "e2bf78f0c510c641f22fd4dc34cd87d87a202873bdad8998b48015f28497070e",
+        "kind": "retained-import",
+        "label": "Penguin-height-110-percent.glb",
+        "preview": {
+          "assetSha256": "f54e943e480cfeca0c0d055bc9d2d1e856619262e722c860c95fe7b7087b5207",
+          "runId": "studio-model-f54e943e480cfeca0c0d055bc9d2d1e856619262e722c860c95fe7b7087b5207"
+        },
+        "previewExportId": "export-66a6781d94c648848a23a32a537a9eb6",
+        "projectId": "penguin-test",
+        "runId": "export-66a6781d94c648848a23a32a537a9eb6",
+        "schema": "StudioGeometrySelection@1",
+        "sequence": 2
+      },
+      "geometryRevision": "e2bf78f0c510c641f22fd4dc34cd87d87a202873bdad8998b48015f28497070e",
+      "kind": "mesh-orthographic",
+      "right": [
+        0,
+        1,
+        0
+      ],
+      "scale": 5,
+      "svg": {
+        "artifact_id": "drawing-svg",
+        "media_type": "image/svg+xml",
+        "project_id": "penguin-test",
+        "relative_path": "runs/mesh-view-12ca78c83225de182a1bed46dc1d147d7aac1f86/workspaces/drawing.svg",
+        "sha256": "51dc18de82e7482ae227e173772d7aa759cab462ad6e6f5d0fa8d6daed0f1171"
+      },
+      "up": [
+        0,
+        0,
+        1
+      ],
+      "view": "side"
+    },
+    "status": "outdated",
+    "reason": "Geometry changed. Regenerate this view and recompute its measurements."
+  },
+  {
+    "document": {
+      "projectId": "penguin-test",
+      "runId": "mesh-view-d91129df6fb908d07d2174ef74d93eac8d1ee911",
+      "assetSha256": "061b6c417a53d4093bae1676abbec0e31038e82e7160a27419c613f91d581d9f",
+      "fileName": "front.png",
+      "mimeType": "image/png",
+      "sizeBytes": 19431,
+      "pageCount": 1,
+      "pages": [
+        {
+          "pageIndex": 0,
+          "width": 1127.0,
+          "height": 1689.0,
+          "rotation": 0
+        }
+      ],
+      "modelSource": null,
+      "modelSourceBindingRef": null,
+      "drawingId": "mesh-front",
+      "revisionRef": null,
+      "sourceStageRef": null,
+      "viewRecipe": {
+        "dimensions": [
+          {
+            "id": "overall-width",
+            "reference": {
+              "axis": 0,
+              "kind": "projected-extent"
+            },
+            "status": "resolved",
+            "valueMeters": 0.6242896914482117
+          },
+          {
+            "id": "overall-height",
+            "reference": {
+              "axis": 1,
+              "kind": "projected-extent"
+            },
+            "status": "resolved",
+            "valueMeters": 1.100000023841858
+          }
+        ],
+        "drawingRevision": "d91129df6fb908d07d2174ef74d93eac8d1ee91136e83c40d9bbb345c486dbbd",
+        "featureReferences": [
+          {
+            "id": "eye-center",
+            "reason": "Imported meshes have no stable semantic feature IDs. Select a new reference explicitly.",
+            "status": "unresolved"
+          }
+        ],
+        "geometry": {
+          "artifact": {
+            "artifact_id": "source-model",
+            "media_type": "application/octet-stream",
+            "project_id": "penguin-test",
+            "relative_path": "objects/sha256/e2/e2bf78f0c510c641f22fd4dc34cd87d87a202873bdad8998b48015f28497070e",
+            "sha256": "e2bf78f0c510c641f22fd4dc34cd87d87a202873bdad8998b48015f28497070e"
+          },
+          "format": "glb",
+          "geometryRevision": "e2bf78f0c510c641f22fd4dc34cd87d87a202873bdad8998b48015f28497070e",
+          "kind": "retained-import",
+          "label": "Penguin-height-110-percent.glb",
+          "preview": {
+            "assetSha256": "f54e943e480cfeca0c0d055bc9d2d1e856619262e722c860c95fe7b7087b5207",
+            "runId": "studio-model-f54e943e480cfeca0c0d055bc9d2d1e856619262e722c860c95fe7b7087b5207"
+          },
+          "previewExportId": "export-66a6781d94c648848a23a32a537a9eb6",
+          "projectId": "penguin-test",
+          "runId": "export-66a6781d94c648848a23a32a537a9eb6",
+          "schema": "StudioGeometrySelection@1",
+          "sequence": 2
+        },
+        "geometryRevision": "e2bf78f0c510c641f22fd4dc34cd87d87a202873bdad8998b48015f28497070e",
+        "kind": "mesh-orthographic",
+        "right": [
+          1,
+          0,
+          0
+        ],
+        "scale": 5,
+        "svg": {
+          "artifact_id": "drawing-svg",
+          "media_type": "image/svg+xml",
+          "project_id": "penguin-test",
+          "relative_path": "runs/mesh-view-d91129df6fb908d07d2174ef74d93eac8d1ee911/workspaces/drawing.svg",
+          "sha256": "84e31cdb116c7f650281d794a711ad324996c70047991b9fd56ee4c24be74743"
+        },
+        "up": [
+          0,
+          0,
+          1
+        ],
+        "view": "front"
+      },
+      "generatedAt": "2026-09-26T05:00:58.514336+00:00",
+      "replacesPages": [],
+      "previousRevisionRef": null,
+      "attribution": null,
+      "reason": null,
+      "sourceKind": null
+    },
+    "recipe": {
+      "dimensions": [
+        {
+          "id": "overall-width",
+          "reference": {
+            "axis": 0,
+            "kind": "projected-extent"
+          },
+          "status": "resolved",
+          "valueMeters": 0.6242896914482117
+        },
+        {
+          "id": "overall-height",
+          "reference": {
+            "axis": 1,
+            "kind": "projected-extent"
+          },
+          "status": "resolved",
+          "valueMeters": 1.100000023841858
+        }
+      ],
+      "drawingRevision": "d91129df6fb908d07d2174ef74d93eac8d1ee91136e83c40d9bbb345c486dbbd",
+      "featureReferences": [
+        {
+          "id": "eye-center",
+          "reason": "Imported meshes have no stable semantic feature IDs. Select a new reference explicitly.",
+          "status": "unresolved"
+        }
+      ],
+      "geometry": {
+        "artifact": {
+          "artifact_id": "source-model",
+          "media_type": "application/octet-stream",
+          "project_id": "penguin-test",
+          "relative_path": "objects/sha256/e2/e2bf78f0c510c641f22fd4dc34cd87d87a202873bdad8998b48015f28497070e",
+          "sha256": "e2bf78f0c510c641f22fd4dc34cd87d87a202873bdad8998b48015f28497070e"
+        },
+        "format": "glb",
+        "geometryRevision": "e2bf78f0c510c641f22fd4dc34cd87d87a202873bdad8998b48015f28497070e",
+        "kind": "retained-import",
+        "label": "Penguin-height-110-percent.glb",
+        "preview": {
+          "assetSha256": "f54e943e480cfeca0c0d055bc9d2d1e856619262e722c860c95fe7b7087b5207",
+          "runId": "studio-model-f54e943e480cfeca0c0d055bc9d2d1e856619262e722c860c95fe7b7087b5207"
+        },
+        "previewExportId": "export-66a6781d94c648848a23a32a537a9eb6",
+        "projectId": "penguin-test",
+        "runId": "export-66a6781d94c648848a23a32a537a9eb6",
+        "schema": "StudioGeometrySelection@1",
+        "sequence": 2
+      },
+      "geometryRevision": "e2bf78f0c510c641f22fd4dc34cd87d87a202873bdad8998b48015f28497070e",
+      "kind": "mesh-orthographic",
+      "right": [
+        1,
+        0,
+        0
+      ],
+      "scale": 5,
+      "svg": {
+        "artifact_id": "drawing-svg",
+        "media_type": "image/svg+xml",
+        "project_id": "penguin-test",
+        "relative_path": "runs/mesh-view-d91129df6fb908d07d2174ef74d93eac8d1ee911/workspaces/drawing.svg",
+        "sha256": "84e31cdb116c7f650281d794a711ad324996c70047991b9fd56ee4c24be74743"
+      },
+      "up": [
+        0,
+        0,
+        1
+      ],
+      "view": "front"
+    },
+    "status": "outdated",
+    "reason": "Geometry changed. Regenerate this view and recompute its measurements."
+  },
+  {
+    "document": {
+      "projectId": "penguin-test",
+      "runId": "mesh-view-f7c52436ccd04ff2dbeb86ba6260620374b1053a",
+      "assetSha256": "8b01ab77300267068d8bf08345ca74f2cb3f7a9a902b032b0ebd798e0197f749",
+      "fileName": "isometric.png",
+      "mimeType": "image/png",
+      "sizeBytes": 19758,
+      "pageCount": 1,
+      "pages": [
+        {
+          "pageIndex": 0,
+          "width": 1024.0,
+          "height": 1480.0,
+          "rotation": 0
+        }
+      ],
+      "modelSource": null,
+      "modelSourceBindingRef": null,
+      "drawingId": "mesh-isometric",
+      "revisionRef": null,
+      "sourceStageRef": null,
+      "viewRecipe": {
+        "dimensions": [
+          {
+            "id": "overall-width",
+            "reference": {
+              "axis": 0,
+              "kind": "projected-extent"
+            },
+            "status": "resolved",
+            "valueMeters": 0.5670857729570943
+          },
+          {
+            "id": "overall-height",
+            "reference": {
+              "axis": 1,
+              "kind": "projected-extent"
+            },
+            "status": "resolved",
+            "valueMeters": 0.9526486164646444
+          }
+        ],
+        "drawingRevision": "f7c52436ccd04ff2dbeb86ba6260620374b1053a10c20b063ccc342af4f44855",
+        "featureReferences": [
+          {
+            "id": "eye-center",
+            "reason": "Imported meshes have no stable semantic feature IDs. Select a new reference explicitly.",
+            "status": "unresolved"
+          }
+        ],
+        "geometry": {
+          "artifact": {
+            "artifact_id": "source-model",
+            "media_type": "application/octet-stream",
+            "project_id": "penguin-test",
+            "relative_path": "objects/sha256/b8/b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+            "sha256": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54"
+          },
+          "format": "glb",
+          "geometryRevision": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+          "kind": "retained-import",
+          "label": "20260914 雪企鹅.glb",
+          "preview": {
+            "assetSha256": "e82472a70e4ef3f9f8be37dd25197fae30a252078d71ee8f0f228047b7e75b99",
+            "runId": "studio-model-e82472a70e4ef3f9f8be37dd25197fae30a252078d71ee8f0f228047b7e75b99"
+          },
+          "previewExportId": "export-7d7b8e919a3845cc8f47d110c7deecc5",
+          "projectId": "penguin-test",
+          "runId": "export-7d7b8e919a3845cc8f47d110c7deecc5",
+          "schema": "StudioGeometrySelection@1",
+          "sequence": 1
+        },
+        "geometryRevision": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+        "kind": "mesh-orthographic",
+        "right": [
+          0.7071067811865475,
+          -0.7071067811865475,
+          0
+        ],
+        "scale": 5,
+        "svg": {
+          "artifact_id": "drawing-svg",
+          "media_type": "image/svg+xml",
+          "project_id": "penguin-test",
+          "relative_path": "runs/mesh-view-f7c52436ccd04ff2dbeb86ba6260620374b1053a/workspaces/drawing.svg",
+          "sha256": "3e08851d85a500b837ea95ce5847daba62a9adf692da6946b05e0987f1755f90"
+        },
+        "up": [
+          0.4082482904638631,
+          0.4082482904638631,
+          0.8164965809277261
+        ],
+        "view": "isometric"
+      },
+      "generatedAt": "2026-09-26T04:51:46.891857+00:00",
+      "replacesPages": [],
+      "previousRevisionRef": null,
+      "attribution": null,
+      "reason": null,
+      "sourceKind": null
+    },
+    "recipe": {
+      "dimensions": [
+        {
+          "id": "overall-width",
+          "reference": {
+            "axis": 0,
+            "kind": "projected-extent"
+          },
+          "status": "resolved",
+          "valueMeters": 0.5670857729570943
+        },
+        {
+          "id": "overall-height",
+          "reference": {
+            "axis": 1,
+            "kind": "projected-extent"
+          },
+          "status": "resolved",
+          "valueMeters": 0.9526486164646444
+        }
+      ],
+      "drawingRevision": "f7c52436ccd04ff2dbeb86ba6260620374b1053a10c20b063ccc342af4f44855",
+      "featureReferences": [
+        {
+          "id": "eye-center",
+          "reason": "Imported meshes have no stable semantic feature IDs. Select a new reference explicitly.",
+          "status": "unresolved"
+        }
+      ],
+      "geometry": {
+        "artifact": {
+          "artifact_id": "source-model",
+          "media_type": "application/octet-stream",
+          "project_id": "penguin-test",
+          "relative_path": "objects/sha256/b8/b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+          "sha256": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54"
+        },
+        "format": "glb",
+        "geometryRevision": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+        "kind": "retained-import",
+        "label": "20260914 雪企鹅.glb",
+        "preview": {
+          "assetSha256": "e82472a70e4ef3f9f8be37dd25197fae30a252078d71ee8f0f228047b7e75b99",
+          "runId": "studio-model-e82472a70e4ef3f9f8be37dd25197fae30a252078d71ee8f0f228047b7e75b99"
+        },
+        "previewExportId": "export-7d7b8e919a3845cc8f47d110c7deecc5",
+        "projectId": "penguin-test",
+        "runId": "export-7d7b8e919a3845cc8f47d110c7deecc5",
+        "schema": "StudioGeometrySelection@1",
+        "sequence": 1
+      },
+      "geometryRevision": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+      "kind": "mesh-orthographic",
+      "right": [
+        0.7071067811865475,
+        -0.7071067811865475,
+        0
+      ],
+      "scale": 5,
+      "svg": {
+        "artifact_id": "drawing-svg",
+        "media_type": "image/svg+xml",
+        "project_id": "penguin-test",
+        "relative_path": "runs/mesh-view-f7c52436ccd04ff2dbeb86ba6260620374b1053a/workspaces/drawing.svg",
+        "sha256": "3e08851d85a500b837ea95ce5847daba62a9adf692da6946b05e0987f1755f90"
+      },
+      "up": [
+        0.4082482904638631,
+        0.4082482904638631,
+        0.8164965809277261
+      ],
+      "view": "isometric"
+    },
+    "status": "current",
+    "reason": null
+  },
+  {
+    "document": {
+      "projectId": "penguin-test",
+      "runId": "mesh-view-fa145074fa56bddd329498155a1f5b5797bee410",
+      "assetSha256": "1075846ae20113d31eed48bca3d83f67ba2d6d07e0301b37c5837aa1cc792b25",
+      "fileName": "top.png",
+      "mimeType": "image/png",
+      "sizeBytes": 13211,
+      "pageCount": 1,
+      "pages": [
+        {
+          "pageIndex": 0,
+          "width": 1092.0,
+          "height": 1148.0,
+          "rotation": 0
+        }
+      ],
+      "modelSource": null,
+      "modelSourceBindingRef": null,
+      "drawingId": "mesh-top",
+      "revisionRef": null,
+      "sourceStageRef": null,
+      "viewRecipe": {
+        "dimensions": [
+          {
+            "id": "overall-width",
+            "reference": {
+              "axis": 0,
+              "kind": "projected-extent"
+            },
+            "status": "resolved",
+            "valueMeters": 0.6242896914482117
+          },
+          {
+            "id": "overall-height",
+            "reference": {
+              "axis": 1,
+              "kind": "projected-extent"
+            },
+            "status": "resolved",
+            "valueMeters": 0.6717120409011841
+          }
+        ],
+        "drawingRevision": "fa145074fa56bddd329498155a1f5b5797bee410bef328a33ceec02776e0e504",
+        "featureReferences": [
+          {
+            "id": "eye-center",
+            "reason": "Imported meshes have no stable semantic feature IDs. Select a new reference explicitly.",
+            "status": "unresolved"
+          }
+        ],
+        "geometry": {
+          "artifact": {
+            "artifact_id": "source-model",
+            "media_type": "application/octet-stream",
+            "project_id": "penguin-test",
+            "relative_path": "objects/sha256/b8/b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+            "sha256": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54"
+          },
+          "format": "glb",
+          "geometryRevision": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+          "kind": "retained-import",
+          "label": "20260914 雪企鹅.glb",
+          "preview": {
+            "assetSha256": "e82472a70e4ef3f9f8be37dd25197fae30a252078d71ee8f0f228047b7e75b99",
+            "runId": "studio-model-e82472a70e4ef3f9f8be37dd25197fae30a252078d71ee8f0f228047b7e75b99"
+          },
+          "previewExportId": "export-7d7b8e919a3845cc8f47d110c7deecc5",
+          "projectId": "penguin-test",
+          "runId": "export-7d7b8e919a3845cc8f47d110c7deecc5",
+          "schema": "StudioGeometrySelection@1",
+          "sequence": 1
+        },
+        "geometryRevision": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+        "kind": "mesh-orthographic",
+        "right": [
+          1,
+          0,
+          0
+        ],
+        "scale": 5,
+        "svg": {
+          "artifact_id": "drawing-svg",
+          "media_type": "image/svg+xml",
+          "project_id": "penguin-test",
+          "relative_path": "runs/mesh-view-fa145074fa56bddd329498155a1f5b5797bee410/workspaces/drawing.svg",
+          "sha256": "c94fe4ff25bb901b1770a0f35d79a55687011a2407cb30c3001dd6bb2d08a76e"
+        },
+        "up": [
+          0,
+          1,
+          0
+        ],
+        "view": "top"
+      },
+      "generatedAt": "2026-09-26T04:51:42.492019+00:00",
+      "replacesPages": [],
+      "previousRevisionRef": null,
+      "attribution": null,
+      "reason": null,
+      "sourceKind": null
+    },
+    "recipe": {
+      "dimensions": [
+        {
+          "id": "overall-width",
+          "reference": {
+            "axis": 0,
+            "kind": "projected-extent"
+          },
+          "status": "resolved",
+          "valueMeters": 0.6242896914482117
+        },
+        {
+          "id": "overall-height",
+          "reference": {
+            "axis": 1,
+            "kind": "projected-extent"
+          },
+          "status": "resolved",
+          "valueMeters": 0.6717120409011841
+        }
+      ],
+      "drawingRevision": "fa145074fa56bddd329498155a1f5b5797bee410bef328a33ceec02776e0e504",
+      "featureReferences": [
+        {
+          "id": "eye-center",
+          "reason": "Imported meshes have no stable semantic feature IDs. Select a new reference explicitly.",
+          "status": "unresolved"
+        }
+      ],
+      "geometry": {
+        "artifact": {
+          "artifact_id": "source-model",
+          "media_type": "application/octet-stream",
+          "project_id": "penguin-test",
+          "relative_path": "objects/sha256/b8/b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+          "sha256": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54"
+        },
+        "format": "glb",
+        "geometryRevision": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+        "kind": "retained-import",
+        "label": "20260914 雪企鹅.glb",
+        "preview": {
+          "assetSha256": "e82472a70e4ef3f9f8be37dd25197fae30a252078d71ee8f0f228047b7e75b99",
+          "runId": "studio-model-e82472a70e4ef3f9f8be37dd25197fae30a252078d71ee8f0f228047b7e75b99"
+        },
+        "previewExportId": "export-7d7b8e919a3845cc8f47d110c7deecc5",
+        "projectId": "penguin-test",
+        "runId": "export-7d7b8e919a3845cc8f47d110c7deecc5",
+        "schema": "StudioGeometrySelection@1",
+        "sequence": 1
+      },
+      "geometryRevision": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+      "kind": "mesh-orthographic",
+      "right": [
+        1,
+        0,
+        0
+      ],
+      "scale": 5,
+      "svg": {
+        "artifact_id": "drawing-svg",
+        "media_type": "image/svg+xml",
+        "project_id": "penguin-test",
+        "relative_path": "runs/mesh-view-fa145074fa56bddd329498155a1f5b5797bee410/workspaces/drawing.svg",
+        "sha256": "c94fe4ff25bb901b1770a0f35d79a55687011a2407cb30c3001dd6bb2d08a76e"
+      },
+      "up": [
+        0,
+        1,
+        0
+      ],
+      "view": "top"
+    },
+    "status": "current",
+    "reason": null
+  },
+  {
+    "document": {
+      "projectId": "penguin-test",
+      "runId": "mesh-view-24406171dc3c260b3fb4b5c8258173dd6b15a3ad",
+      "assetSha256": "8605b0b4719c2b73bdb132869fb2427c67d210def22e29de7f92df35c7fef008",
+      "fileName": "side.png",
+      "mimeType": "image/png",
+      "sizeBytes": 18791,
+      "pageCount": 1,
+      "pages": [
+        {
+          "pageIndex": 0,
+          "width": 1148.0,
+          "height": 1535.0,
+          "rotation": 0
+        }
+      ],
+      "modelSource": null,
+      "modelSourceBindingRef": null,
+      "drawingId": "mesh-side",
+      "revisionRef": null,
+      "sourceStageRef": null,
+      "viewRecipe": {
+        "dimensions": [
+          {
+            "id": "overall-width",
+            "reference": {
+              "axis": 0,
+              "kind": "projected-extent"
+            },
+            "status": "resolved",
+            "valueMeters": 0.6717120409011841
+          },
+          {
+            "id": "overall-height",
+            "reference": {
+              "axis": 1,
+              "kind": "projected-extent"
+            },
+            "status": "resolved",
+            "valueMeters": 1.0
+          }
+        ],
+        "drawingRevision": "24406171dc3c260b3fb4b5c8258173dd6b15a3ade6b8382c8a9333c3d114330a",
+        "featureReferences": [
+          {
+            "id": "eye-center",
+            "reason": "Imported meshes have no stable semantic feature IDs. Select a new reference explicitly.",
+            "status": "unresolved"
+          }
+        ],
+        "geometry": {
+          "artifact": {
+            "artifact_id": "source-model",
+            "media_type": "application/octet-stream",
+            "project_id": "penguin-test",
+            "relative_path": "objects/sha256/b8/b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+            "sha256": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54"
+          },
+          "format": "glb",
+          "geometryRevision": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+          "kind": "retained-import",
+          "label": "20260914 雪企鹅.glb",
+          "preview": {
+            "assetSha256": "e82472a70e4ef3f9f8be37dd25197fae30a252078d71ee8f0f228047b7e75b99",
+            "runId": "studio-model-e82472a70e4ef3f9f8be37dd25197fae30a252078d71ee8f0f228047b7e75b99"
+          },
+          "previewExportId": "export-7d7b8e919a3845cc8f47d110c7deecc5",
+          "projectId": "penguin-test",
+          "runId": "export-7d7b8e919a3845cc8f47d110c7deecc5",
+          "schema": "StudioGeometrySelection@1",
+          "sequence": 1
+        },
+        "geometryRevision": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+        "kind": "mesh-orthographic",
+        "right": [
+          0,
+          1,
+          0
+        ],
+        "scale": 5,
+        "svg": {
+          "artifact_id": "drawing-svg",
+          "media_type": "image/svg+xml",
+          "project_id": "penguin-test",
+          "relative_path": "runs/mesh-view-24406171dc3c260b3fb4b5c8258173dd6b15a3ad/workspaces/drawing.svg",
+          "sha256": "9b68064e38a462ca3f1d47cc6e197c3d53c6c80319aa47e9efd29979cc15ef15"
+        },
+        "up": [
+          0,
+          0,
+          1
+        ],
+        "view": "side"
+      },
+      "generatedAt": "2026-09-26T04:51:38.921132+00:00",
+      "replacesPages": [],
+      "previousRevisionRef": null,
+      "attribution": null,
+      "reason": null,
+      "sourceKind": null
+    },
+    "recipe": {
+      "dimensions": [
+        {
+          "id": "overall-width",
+          "reference": {
+            "axis": 0,
+            "kind": "projected-extent"
+          },
+          "status": "resolved",
+          "valueMeters": 0.6717120409011841
+        },
+        {
+          "id": "overall-height",
+          "reference": {
+            "axis": 1,
+            "kind": "projected-extent"
+          },
+          "status": "resolved",
+          "valueMeters": 1.0
+        }
+      ],
+      "drawingRevision": "24406171dc3c260b3fb4b5c8258173dd6b15a3ade6b8382c8a9333c3d114330a",
+      "featureReferences": [
+        {
+          "id": "eye-center",
+          "reason": "Imported meshes have no stable semantic feature IDs. Select a new reference explicitly.",
+          "status": "unresolved"
+        }
+      ],
+      "geometry": {
+        "artifact": {
+          "artifact_id": "source-model",
+          "media_type": "application/octet-stream",
+          "project_id": "penguin-test",
+          "relative_path": "objects/sha256/b8/b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+          "sha256": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54"
+        },
+        "format": "glb",
+        "geometryRevision": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+        "kind": "retained-import",
+        "label": "20260914 雪企鹅.glb",
+        "preview": {
+          "assetSha256": "e82472a70e4ef3f9f8be37dd25197fae30a252078d71ee8f0f228047b7e75b99",
+          "runId": "studio-model-e82472a70e4ef3f9f8be37dd25197fae30a252078d71ee8f0f228047b7e75b99"
+        },
+        "previewExportId": "export-7d7b8e919a3845cc8f47d110c7deecc5",
+        "projectId": "penguin-test",
+        "runId": "export-7d7b8e919a3845cc8f47d110c7deecc5",
+        "schema": "StudioGeometrySelection@1",
+        "sequence": 1
+      },
+      "geometryRevision": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+      "kind": "mesh-orthographic",
+      "right": [
+        0,
+        1,
+        0
+      ],
+      "scale": 5,
+      "svg": {
+        "artifact_id": "drawing-svg",
+        "media_type": "image/svg+xml",
+        "project_id": "penguin-test",
+        "relative_path": "runs/mesh-view-24406171dc3c260b3fb4b5c8258173dd6b15a3ad/workspaces/drawing.svg",
+        "sha256": "9b68064e38a462ca3f1d47cc6e197c3d53c6c80319aa47e9efd29979cc15ef15"
+      },
+      "up": [
+        0,
+        0,
+        1
+      ],
+      "view": "side"
+    },
+    "status": "current",
+    "reason": null
+  },
+  {
+    "document": {
+      "projectId": "penguin-test",
+      "runId": "mesh-view-94a7fe34611521d27f9b6f5aa040c8b6833b324b",
+      "assetSha256": "e5acc15563ae122a53b79ef2164141ea5b2dc5decfd43aac4c5e536c84fb87f6",
+      "fileName": "front.png",
+      "mimeType": "image/png",
+      "sizeBytes": 18221,
+      "pageCount": 1,
+      "pages": [
+        {
+          "pageIndex": 0,
+          "width": 1092.0,
+          "height": 1535.0,
+          "rotation": 0
+        }
+      ],
+      "modelSource": null,
+      "modelSourceBindingRef": null,
+      "drawingId": "mesh-front",
+      "revisionRef": null,
+      "sourceStageRef": null,
+      "viewRecipe": {
+        "dimensions": [
+          {
+            "id": "overall-width",
+            "reference": {
+              "axis": 0,
+              "kind": "projected-extent"
+            },
+            "status": "resolved",
+            "valueMeters": 0.6242896914482117
+          },
+          {
+            "id": "overall-height",
+            "reference": {
+              "axis": 1,
+              "kind": "projected-extent"
+            },
+            "status": "resolved",
+            "valueMeters": 1.0
+          }
+        ],
+        "drawingRevision": "94a7fe34611521d27f9b6f5aa040c8b6833b324bb898d458fc60cd0758df5667",
+        "featureReferences": [
+          {
+            "id": "eye-center",
+            "reason": "Imported meshes have no stable semantic feature IDs. Select a new reference explicitly.",
+            "status": "unresolved"
+          }
+        ],
+        "geometry": {
+          "artifact": {
+            "artifact_id": "source-model",
+            "media_type": "application/octet-stream",
+            "project_id": "penguin-test",
+            "relative_path": "objects/sha256/b8/b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+            "sha256": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54"
+          },
+          "format": "glb",
+          "geometryRevision": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+          "kind": "retained-import",
+          "label": "20260914 雪企鹅.glb",
+          "preview": {
+            "assetSha256": "e82472a70e4ef3f9f8be37dd25197fae30a252078d71ee8f0f228047b7e75b99",
+            "runId": "studio-model-e82472a70e4ef3f9f8be37dd25197fae30a252078d71ee8f0f228047b7e75b99"
+          },
+          "previewExportId": "export-7d7b8e919a3845cc8f47d110c7deecc5",
+          "projectId": "penguin-test",
+          "runId": "export-7d7b8e919a3845cc8f47d110c7deecc5",
+          "schema": "StudioGeometrySelection@1",
+          "sequence": 1
+        },
+        "geometryRevision": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+        "kind": "mesh-orthographic",
+        "right": [
+          1,
+          0,
+          0
+        ],
+        "scale": 5,
+        "svg": {
+          "artifact_id": "drawing-svg",
+          "media_type": "image/svg+xml",
+          "project_id": "penguin-test",
+          "relative_path": "runs/mesh-view-94a7fe34611521d27f9b6f5aa040c8b6833b324b/workspaces/drawing.svg",
+          "sha256": "ecbd92959771906ced4cd3e04ceae1f8ccee683b722e82e94a802d5dbe1589bc"
+        },
+        "up": [
+          0,
+          0,
+          1
+        ],
+        "view": "front"
+      },
+      "generatedAt": "2026-09-26T04:51:35.240081+00:00",
+      "replacesPages": [],
+      "previousRevisionRef": null,
+      "attribution": null,
+      "reason": null,
+      "sourceKind": null
+    },
+    "recipe": {
+      "dimensions": [
+        {
+          "id": "overall-width",
+          "reference": {
+            "axis": 0,
+            "kind": "projected-extent"
+          },
+          "status": "resolved",
+          "valueMeters": 0.6242896914482117
+        },
+        {
+          "id": "overall-height",
+          "reference": {
+            "axis": 1,
+            "kind": "projected-extent"
+          },
+          "status": "resolved",
+          "valueMeters": 1.0
+        }
+      ],
+      "drawingRevision": "94a7fe34611521d27f9b6f5aa040c8b6833b324bb898d458fc60cd0758df5667",
+      "featureReferences": [
+        {
+          "id": "eye-center",
+          "reason": "Imported meshes have no stable semantic feature IDs. Select a new reference explicitly.",
+          "status": "unresolved"
+        }
+      ],
+      "geometry": {
+        "artifact": {
+          "artifact_id": "source-model",
+          "media_type": "application/octet-stream",
+          "project_id": "penguin-test",
+          "relative_path": "objects/sha256/b8/b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+          "sha256": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54"
+        },
+        "format": "glb",
+        "geometryRevision": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+        "kind": "retained-import",
+        "label": "20260914 雪企鹅.glb",
+        "preview": {
+          "assetSha256": "e82472a70e4ef3f9f8be37dd25197fae30a252078d71ee8f0f228047b7e75b99",
+          "runId": "studio-model-e82472a70e4ef3f9f8be37dd25197fae30a252078d71ee8f0f228047b7e75b99"
+        },
+        "previewExportId": "export-7d7b8e919a3845cc8f47d110c7deecc5",
+        "projectId": "penguin-test",
+        "runId": "export-7d7b8e919a3845cc8f47d110c7deecc5",
+        "schema": "StudioGeometrySelection@1",
+        "sequence": 1
+      },
+      "geometryRevision": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+      "kind": "mesh-orthographic",
+      "right": [
+        1,
+        0,
+        0
+      ],
+      "scale": 5,
+      "svg": {
+        "artifact_id": "drawing-svg",
+        "media_type": "image/svg+xml",
+        "project_id": "penguin-test",
+        "relative_path": "runs/mesh-view-94a7fe34611521d27f9b6f5aa040c8b6833b324b/workspaces/drawing.svg",
+        "sha256": "ecbd92959771906ced4cd3e04ceae1f8ccee683b722e82e94a802d5dbe1589bc"
+      },
+      "up": [
+        0,
+        0,
+        1
+      ],
+      "view": "front"
+    },
+    "status": "current",
+    "reason": null
+  }
+]

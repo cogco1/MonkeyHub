@@ -9,7 +9,7 @@ import struct
 from uuid import UUID
 
 FORMATS = ("3dm", "skp", "glb", "dwg")
-VERSION = "monkeyhub-mesh/1"
+VERSION = "monkeyhub-mesh/3"
 # Display colour of a mesh whose source carried no material: a light neutral
 # grey, not the black a new 3DM layer and object would otherwise draw with.
 FALLBACK_MATERIAL = "MonkeyHub neutral"
@@ -39,6 +39,10 @@ class Mesh:
     normals: list | None = None
     colors: list | None = None  # sRGB 0-255 red, green, blue per vertex
     material: Material | None = None
+    texcoords: list | None = None
+    base_color: tuple | None = None
+    roughness: float = 0.65
+    metallic: float = 0.0
 
 
 @dataclass
@@ -57,6 +61,17 @@ class Scene:
         for mesh in self.meshes:
             if any(len(t) != 3 or any(i < 0 or i >= len(mesh.vertices) for i in t) for t in mesh.triangles):
                 raise ConversionError("Invalid triangle indices.")
+            for name, values, width in (("normals", mesh.normals, 3), ("UV", mesh.texcoords, 2)):
+                if values is not None and (len(values) != len(mesh.vertices) or any(
+                        len(v) != width or any(not math.isfinite(c) for c in v) for v in values)):
+                    raise ConversionError("Invalid mesh " + name + ".")
+            if mesh.normals is not None and any(sum(c*c for c in n) < 1e-20 for n in mesh.normals):
+                raise ConversionError("Mesh normals must be nonzero.")
+            if mesh.base_color is not None and (len(mesh.base_color) != 4 or any(
+                    not math.isfinite(c) or not 0 <= c <= 1 for c in mesh.base_color)):
+                raise ConversionError("Invalid base color.")
+            if any(not math.isfinite(c) or not 0 <= c <= 1 for c in (mesh.roughness, mesh.metallic)):
+                raise ConversionError("Invalid PBR material factors.")
         return {"objectCount": len(self.meshes), "layerCount": len({m.layer for m in self.meshes}),
                 "triangleCount": sum(len(m.triangles) for m in self.meshes),
                 "boundsMetersZUp": [[min(p[i] for p in points) for i in range(3)],
@@ -165,6 +180,11 @@ def _kept_normals(mesh, triangles):
 
 def display_mesh(mesh):
     """Winding, normals and material a shaded viewer needs; returns the mesh and what was done."""
+    if mesh.material is None and mesh.base_color is not None:
+        srgb = lambda c: round(255 * (12.92*c if c <= .0031308 else 1.055*c**(1/2.4)-.055))
+        mesh = replace(mesh, material=Material(mesh.name + " material",
+                       tuple(srgb(c) for c in mesh.base_color[:3]) + (round(255*mesh.base_color[3]),),
+                       1-mesh.base_color[3]))
     triangles, reversed_count, closed = orient_triangles(mesh.vertices, mesh.triangles)
     normals = _kept_normals(mesh, triangles)
     record = {"normals": "kept" if normals else "computed" if not mesh.normals else "recomputed",
@@ -235,7 +255,7 @@ class ThreeDM:
                 warnings.append("Exact BREP geometry is approximated by its saved render mesh.")
             else:
                 raise ConversionError("Unsupported 3DM entity: " + type(geometry).__name__ + ". No entities were silently dropped.")
-            vertices, triangles, normals, colors = [], [], [], []
+            vertices, triangles, normals, colors, texcoords = [], [], [], [], []
             for piece in pieces:
                 offset = len(vertices)
                 vertices.extend([(v.X * scale, v.Y * scale, v.Z * scale) for v in piece.Vertices])
@@ -243,6 +263,7 @@ class ThreeDM:
                     triangles.append((a + offset, b + offset, c + offset))
                     if c != d:
                         triangles.append((a + offset, c + offset, d + offset))
+                texcoords.extend([(v.X, v.Y) for v in piece.TextureCoordinates])
                 # Per-vertex lists count only when every piece carries a complete one.
                 count = len(piece.Vertices)
                 normals = None if normals is None or len(piece.Normals) != count else normals + [
@@ -250,9 +271,18 @@ class ThreeDM:
                 colors = None if colors is None or piece.VertexColors.Count != count else colors + [
                     tuple(piece.VertexColors[i][:3]) for i in range(count)]
             layer = model.Layers.FindIndex(item.Attributes.LayerIndex)
+            native_material = self._material(model, item.Attributes, layer)
+            index = item.Attributes.MaterialIndex if item.Attributes.MaterialSource == r.ObjectMaterialSource.MaterialFromObject else (layer.RenderMaterialIndex if layer else -1)
+            native = model.Materials[index] if native_material and 0 <= index < len(model.Materials) else None
+            pbr = native.PhysicallyBased if native else None
+            linear = lambda c: c / 12.92 if c <= .04045 else ((c + .055) / 1.055) ** 2.4
+            rgba = tuple(linear(c/255) for c in native_material.color[:3]) + (1-native_material.transparency,) if native_material else None
             meshes.append(Mesh(item.Attributes.Name or "Mesh", vertices, triangles, layer.Name if layer else "Default",
-                               str(item.Attributes.Id), normals, colors, self._material(model, item.Attributes, layer)))
-        warnings.append("Materials, textures, custom normals, CAD metadata and layer hierarchy are not preserved; layers are flattened into the default layer in GLB.")
+                               str(item.Attributes.Id), normals, colors, native_material,
+                               texcoords=texcoords if len(texcoords)==len(vertices) else None, base_color=rgba,
+                               roughness=pbr.Roughness if pbr and pbr.Supported else .65,
+                               metallic=pbr.Metallic if pbr and pbr.Supported else 0.0))
+        warnings.append("Texture images, CAD metadata and layer hierarchy are not preserved; layers are flattened in GLB.")
         scene = Scene(meshes, str(units), list(dict.fromkeys(warnings)))
         scene.metrics()
         return scene
@@ -273,6 +303,7 @@ class ThreeDM:
     def write(self, scene):
         """Shaded-display-ready 3DM; the scene's warnings and display record say what was done."""
         r = self.r
+        scene.metrics()
         prepared = display_scene(scene)
         scene.warnings[:], scene.display = prepared.warnings, prepared.display
         model = r.File3dm()
@@ -286,12 +317,16 @@ class ThreeDM:
                 # A new layer draws black; objects below carry their own colour.
                 layer.Color = FALLBACK_COLOR
                 layers[item.layer] = model.Layers.Add(layer)
-            if item.material not in materials:
+            material_key = (item.material, item.roughness, item.metallic)
+            if material_key not in materials:
                 material = r.Material()
                 material.Name = item.material.name
                 material.DiffuseColor = item.material.color
                 material.Transparency = item.material.transparency
-                materials[item.material] = model.Materials.Add(material)
+                material.ToPhysicallyBased()
+                material.PhysicallyBased.Roughness = item.roughness
+                material.PhysicallyBased.Metallic = item.metallic
+                materials[material_key] = model.Materials.Add(material)
             mesh = r.Mesh()
             for p in item.vertices:
                 mesh.Vertices.Add(*p)
@@ -299,12 +334,14 @@ class ThreeDM:
                 mesh.Faces.AddFace(*t)
             for n in item.normals:
                 mesh.Normals.Add(*n)
+            for uv in item.texcoords or ():
+                mesh.TextureCoordinates.__add__(*uv)
             for c in item.colors or ():
                 mesh.VertexColors.Add(*c[:3])
             attr = r.ObjectAttributes()
             attr.Name, attr.LayerIndex = item.name, layers[item.layer]
             attr.MaterialSource = r.ObjectMaterialSource.MaterialFromObject
-            attr.MaterialIndex = materials[item.material]
+            attr.MaterialIndex = materials[material_key]
             attr.ColorSource = r.ObjectColorSource.ColorFromObject
             attr.ObjectColor = item.material.color
             if item.source_object_id is not None:
@@ -365,7 +402,7 @@ class GLB:
             types = {5126: ("f", 4), 5125: ("I", 4), 5123: ("H", 2), 5121: ("B", 1)}
             component = integer(a["componentType"], "accessor componentType")
             # glTF colours may be floats or normalized unsigned bytes/shorts.
-            shapes = ("VEC3", "VEC4") if kind == "color" else ("VEC3",) if kind in ("position", "normal") else ("SCALAR",)
+            shapes = ("VEC3", "VEC4") if kind == "color" else ("VEC3",) if kind in ("position", "normal") else ("VEC2",) if kind == "uv" else ("SCALAR",)
             normalized = kind == "color" and component in (5121, 5123)
             if a.get("sparse") or bool(a.get("normalized")) != normalized or a["type"] not in shapes or component not in types:
                 raise ConversionError("Unsupported GLB accessor.")
@@ -373,7 +410,7 @@ class GLB:
                 raise ConversionError("Positions and normals must be floats and indices unsigned integers.")
             if kind == "color" and component == 5125:
                 raise ConversionError("Unsupported GLB accessor.")
-            components = {"SCALAR": 1, "VEC3": 3, "VEC4": 4}[a["type"]]
+            components = {"SCALAR": 1, "VEC2": 2, "VEC3": 3, "VEC4": 4}[a["type"]]
             view = reference("bufferViews", a["bufferView"])
             reference("buffers", view.get("buffer", 0))
             fmt, component_width = types[component]
@@ -412,7 +449,7 @@ class GLB:
                             tuple(srgb(v) for v in factor[:3]) + (255,),
                             1.0 - alpha if source.get("alphaMode") == "BLEND" else 0.0)
 
-        meshes, warnings = [], ["Mesh geometry only: no CAD solids reconstructed. Textures, UVs and PBR maps are not transferred; hierarchy and instances are flattened."]
+        meshes, warnings = [], ["Mesh geometry only: no CAD solids reconstructed. Texture images and PBR maps are not transferred; hierarchy and instances are flattened."]
         def visit(index, parents):
             node = reference("nodes", index)
             if index in parents:
@@ -434,9 +471,14 @@ class GLB:
                     colors = [tuple(srgb(v) for v in row[:3]) for row in accessor(attributes["COLOR_0"], "color")] if "COLOR_0" in attributes else None
                     if any(values is not None and len(values) != len(vertices) for values in (normals, colors)):
                         raise ConversionError("GLB vertex attributes must match the position count.")
+                    texcoords = accessor(attributes["TEXCOORD_0"], "uv") if "TEXCOORD_0" in attributes else None
+                    pbr = reference("materials", primitive["material"]).get("pbrMetallicRoughness", {}) if "material" in primitive else {}
+                    source_material = material(primitive)
                     meshes.append(Mesh(node.get("name") or reference("meshes", node["mesh"]).get("name") or "Mesh",
                                        vertices, [tuple(indices[i:i+3]) for i in range(0, len(indices), 3)],
-                                       normals=normals, colors=colors, material=material(primitive)))
+                                       normals=normals, colors=colors, material=source_material,
+                                       texcoords=texcoords, base_color=tuple(pbr.get("baseColorFactor", [1,1,1,1])) if source_material else None,
+                                       roughness=pbr.get("roughnessFactor", .65), metallic=pbr.get("metallicFactor", 0.0)))
             for child in node.get("children", []):
                 visit(child, parents + [index])
         for root in reference("scenes", doc.get("scene", 0)).get("nodes", []):
@@ -450,6 +492,10 @@ class GLB:
         doc = {"asset": {"version": "2.0", "generator": self.version}, "scene": 0,
                "scenes": [{"nodes": list(range(len(scene.meshes)))}], "nodes": [], "meshes": [], "accessors": [], "bufferViews": []}
         for n, mesh in enumerate(scene.meshes):
+            if mesh.base_color is None and mesh.material is not None:
+                linear = lambda c: c / 12.92 if c <= .04045 else ((c + .055) / 1.055) ** 2.4
+                mesh = replace(mesh, base_color=tuple(linear(c/255) for c in mesh.material.color[:3]) + (1-mesh.material.transparency,))
+            position_index = len(doc["accessors"])
             points = [(x, z, -y) for x, y, z in mesh.vertices]
             for values, fmt, typ, component in ((points, "fff", "VEC3", 5126),
                     ([(i,) for t in mesh.triangles for i in t], "I", "SCALAR", 5125)):
@@ -461,7 +507,22 @@ class GLB:
                 if typ == "VEC3":
                     a.update(min=[min(p[i] for p in points) for i in range(3)], max=[max(p[i] for p in points) for i in range(3)])
                 doc["accessors"].append(a)
-            doc["meshes"].append({"primitives": [{"attributes": {"POSITION": 2*n}, "indices": 2*n+1}]})
+            primitive = {"attributes": {"POSITION": position_index}, "indices": position_index+1}
+            for name, values, width in (("NORMAL", [(x,z,-y) for x,y,z in mesh.normals] if mesh.normals else None, 3),
+                                        ("TEXCOORD_0", mesh.texcoords, 2)):
+                if values is None:
+                    continue
+                offset = len(binary)
+                for row in values:
+                    binary.extend(struct.pack("<"+"f"*width,*row))
+                doc["bufferViews"].append({"buffer":0,"byteOffset":offset,"byteLength":len(binary)-offset})
+                primitive["attributes"][name] = len(doc["accessors"])
+                doc["accessors"].append({"bufferView":len(doc["bufferViews"])-1,"componentType":5126,"count":len(values),"type":"VEC"+str(width)})
+            if mesh.base_color is not None:
+                materials = doc.setdefault("materials",[])
+                primitive["material"] = len(materials)
+                materials.append({"pbrMetallicRoughness":{"baseColorFactor":mesh.base_color,"roughnessFactor":mesh.roughness,"metallicFactor":mesh.metallic}})
+            doc["meshes"].append({"primitives": [primitive]})
             doc["nodes"].append({"mesh": n, "name": mesh.name})
         doc["buffers"] = [{"byteLength": len(binary)}]
         encoded = json.dumps(doc, separators=(",", ":")).encode()

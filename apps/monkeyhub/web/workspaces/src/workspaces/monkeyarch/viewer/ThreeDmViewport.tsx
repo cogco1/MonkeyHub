@@ -1996,7 +1996,28 @@ export const ThreeDmViewport = forwardRef<
     scene.add(grid);
 
     let runtime: ViewportRuntime;
-    const render = () => renderer.render(scene, runtime.camera);
+    const render = () => {
+      renderer.render(scene, runtime.camera);
+      // Opt-in read-only diagnostics: report the camera that actually rendered,
+      // without restoring a pose, scheduling frames, or creating design state.
+      const canvas = renderer.domElement;
+      if (canvas.hasAttribute("data-observe-render")) {
+        const active = runtime.camera;
+        const ortho = active as OrthographicCamera;
+        canvas.dispatchEvent(new CustomEvent("monkeyarch:rendered", { bubbles: true, detail: {
+          time: performance.now(), model: runtime.model?.uuid ?? null,
+          position: active.position.toArray(), quaternion: active.quaternion.toArray(),
+          target: controls.target.toArray(), up: active.up.toArray(),
+          projection: projectionMode(active), fov: perspectiveCamera.fov, zoom: active.zoom,
+          near: active.near, far: active.far,
+          frustum: ortho.isOrthographicCamera ? [ortho.left, ortho.right, ortho.top, ortho.bottom] : null,
+          worldMatrix: active.matrixWorld.toArray(), projectionMatrix: active.projectionMatrix.toArray(),
+          rect: canvas.getBoundingClientRect().toJSON(),
+          renderSize: [canvas.width, canvas.height], pixelRatio: renderer.getPixelRatio(),
+          devicePixelRatio: window.devicePixelRatio,
+        } }));
+      }
+    };
 
     // The tokens can change under a running canvas — a theme toggle, or the OS
     // switching at dusk — and the grid's colours are baked into its vertices,

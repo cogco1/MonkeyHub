@@ -1,0 +1,42 @@
+Failed to load resource: the server responded with a status of 404 (Not Found)
+PASS Render starts without model initialization; capability defaults and ordered original uploads
+PASS source comparison, zoom and authenticated-byte download keep exact generation identity
+PASS zoomed result can be dragged and Fit resets the image viewport
+Failed to load resource: the server responded with a status of 404 (Not Found)
+PASS project and workspace switches preserve inputs, stop hidden polling and do not cancel or resend
+Failed to load resource: the server responded with a status of 503 (Service Unavailable)
+PASS selected-image loading, HTTP failure and corrupt bytes recover by read without generating
+PASS failure preserves old image; unknown and refresh never replay the provider
+PASS a changed source marks its result outdated without silently rebinding the original
+Failed to load resource: the server responded with a status of 404 (Not Found)
+PASS Board receives the same exact page, selects it and can restore only the explicitly deleted old result
+PASS wide, medium, narrow and dark layouts remain usable; all rendering leaves Design HEAD unchanged
+Failed to load resource: net::ERR_FAILED
+PASS a source and direction alone can generate; a lost response recovers by read without replay
+PASS retained native result reopens in its own project without invented source or paid replay
+PASS perspective and orthographic model views become exact frozen inputs without generating until requested
+1:37:32 AM [vite] (client) [Unhandled error] Error: ResizeObserver loop completed with undelivered notifications.
+ > ../../../../../../../../../../../../../../@vite/client:539:50
+
+FAIL Physical real geometry, camera gestures, reload and late scene reads preserve edits without AI replay; <temp>/monkeyhub-render-browser-0VnVua
+[]
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+
+AssertionError [ERR_ASSERTION]: late saved scene must not replace a newer camera edit
+
+'0.25' !== '0.75'
+
+    at <repo>/apps/monkeyhub/web/workspaces/test/renderWorkspace.browser.mjs:674:12
+    at async step (<repo>/apps/monkeyhub/web/workspaces/test/renderWorkspace.browser.mjs:161:19)
+    at async <repo>/apps/monkeyhub/web/workspaces/test/renderWorkspace.browser.mjs:626:3 {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: '0.25',
+  expected: '0.75',
+  operator: 'strictEqual',
+  diff: 'simple'
+}
+
+Node.js v24.21.0

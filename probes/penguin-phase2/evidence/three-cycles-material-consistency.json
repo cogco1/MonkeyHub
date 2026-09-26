@@ -1,0 +1,26 @@
+{
+  "status": "PASS",
+  "geometryRevision": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+  "sceneRevision": "06a5995bc2ad3200a3e9e1721da3f66ad70637a7808afc2d25dbc1b803ee44f6",
+  "threeJsMaterialCounts": [
+    {
+      "0": 13941,
+      "1": 1836,
+      "2": 378,
+      "3": 351,
+      "4": 8,
+      "5": 3086
+    }
+  ],
+  "cyclesNativeMaterialCounts": [
+    {
+      "0": 13941,
+      "1": 1836,
+      "2": 378,
+      "3": 351,
+      "4": 8,
+      "5": 3086
+    }
+  ],
+  "everyTriangleAssignmentMatches": true
+}

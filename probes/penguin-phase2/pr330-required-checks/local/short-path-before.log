@@ -1,0 +1,23 @@
+test_project_path_alias_uses_same_exact_lock_contract (__main__.ProjectSnapshotTests.test_project_path_alias_uses_same_exact_lock_contract) ... ERROR
+
+======================================================================
+ERROR: test_project_path_alias_uses_same_exact_lock_contract (__main__.ProjectSnapshotTests.test_project_path_alias_uses_same_exact_lock_contract)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\jiayu\OneDrive\文档\ChatGPT\Blender skill\projection-development\workspace\worktrees\codex-pr330-required-checks\apps\monkeyhub\desktop\tests\test_runtime.py", line 947, in test_project_path_alias_uses_same_exact_lock_contract
+    self.assertEqual(self.reader.project_bytes(), before)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\jiayu\OneDrive\文档\ChatGPT\Blender skill\projection-development\workspace\worktrees\codex-pr330-required-checks\apps\monkeyhub\desktop\tests\test_runtime.py", line 377, in project_bytes
+    excludedRepositoryLocks=sorted(str(path.relative_to(self.project)) for path in self.project_locks))
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\jiayu\OneDrive\文档\ChatGPT\Blender skill\projection-development\workspace\worktrees\codex-pr330-required-checks\apps\monkeyhub\desktop\tests\test_runtime.py", line 377, in <genexpr>
+    excludedRepositoryLocks=sorted(str(path.relative_to(self.project)) for path in self.project_locks))
+                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\jiayu\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\pathlib.py", line 682, in relative_to
+    raise ValueError(f"{str(self)!r} is not in the subpath of {str(other)!r}")
+ValueError: 'C:\\Users\\jiayu\\AppData\\Local\\Temp\\monkeyhub-snapshot-9zy1udot\\demo-project\\design\\branches.lock' is not in the subpath of 'C:\\Users\\jiayu\\AppData\\Local\\Temp\\MODF31~1\\DEMO-P~1\\..\\DEMO-P~1'
+
+----------------------------------------------------------------------
+Ran 1 test in 0.426s
+
+FAILED (errors=1)

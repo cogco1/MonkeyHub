@@ -113,6 +113,9 @@ NO_VERSION_IDENTITY = {
     "StudioModelAsset@1": "an asset by digest; no base",
     "StudioModelExport@1": "source/output artifact hashes and an optional source run/state content digest; no canonical version",
     "StudioRenderJob@2": "an image attempt bound to document, model-content and Stage refs; its run manifest owns the canonical base",
+    "StudioGeometrySelection@1": "retained source artifact/file hashes, run ids and a selection sequence; no canonical version",
+    "StudioRenderScene@1": "visualization content digest and retained geometry selection; sequence is not a canonical version",
+    "StudioRenderJob@3": "freezes the scene and geometry content digests, artifact refs and selection; its run manifest owns the canonical base",
     "StudioScopedDecision@1": "a scoped judgement: it names content digests, run ids and record "
     "refs, and embeds no canonical version; its fixed run manifest owns that base",
     "StudioSourceDocument@1": "an uploaded document by digest; no base",

@@ -1,0 +1,208 @@
+{
+  "status": "PASS",
+  "views": [
+    {
+      "phase": "original",
+      "view": "isometric",
+      "geometryRevision": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+      "drawingRevision": "f7c52436ccd04ff2dbeb86ba6260620374b1053a10c20b063ccc342af4f44855",
+      "geometryProjectedExtentMeters": [
+        0.5670857729570943,
+        0.9526486164646444
+      ],
+      "drawingDimensionsMeters": [
+        0.5670857729570943,
+        0.9526486164646444
+      ],
+      "dimensionMaxErrorMeters": 0.0,
+      "svgSilhouetteExtentErrorMeters": 4.861646464437985e-05,
+      "displayedLabelErrorMillimeters": 0.0003835353555814436,
+      "scale": "1:5",
+      "featureReferences": [
+        {
+          "id": "eye-center",
+          "reason": "Imported meshes have no stable semantic feature IDs. Select a new reference explicitly.",
+          "status": "unresolved"
+        }
+      ]
+    },
+    {
+      "phase": "original",
+      "view": "top",
+      "geometryRevision": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+      "drawingRevision": "fa145074fa56bddd329498155a1f5b5797bee410bef328a33ceec02776e0e504",
+      "geometryProjectedExtentMeters": [
+        0.6242896914482117,
+        0.6717120409011841
+      ],
+      "drawingDimensionsMeters": [
+        0.6242896914482117,
+        0.6717120409011841
+      ],
+      "dimensionMaxErrorMeters": 0.0,
+      "svgSilhouetteExtentErrorMeters": 1.2040901184118269e-05,
+      "displayedLabelErrorMillimeters": 0.00030855178829369834,
+      "scale": "1:5",
+      "featureReferences": [
+        {
+          "id": "eye-center",
+          "reason": "Imported meshes have no stable semantic feature IDs. Select a new reference explicitly.",
+          "status": "unresolved"
+        }
+      ]
+    },
+    {
+      "phase": "original",
+      "view": "side",
+      "geometryRevision": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+      "drawingRevision": "24406171dc3c260b3fb4b5c8258173dd6b15a3ade6b8382c8a9333c3d114330a",
+      "geometryProjectedExtentMeters": [
+        0.6717120409011841,
+        1.0
+      ],
+      "drawingDimensionsMeters": [
+        0.6717120409011841,
+        1.0
+      ],
+      "dimensionMaxErrorMeters": 0.0,
+      "svgSilhouetteExtentErrorMeters": 1.2040901184118269e-05,
+      "displayedLabelErrorMillimeters": 4.0901184092945186e-05,
+      "scale": "1:5",
+      "featureReferences": [
+        {
+          "id": "eye-center",
+          "reason": "Imported meshes have no stable semantic feature IDs. Select a new reference explicitly.",
+          "status": "unresolved"
+        }
+      ]
+    },
+    {
+      "phase": "original",
+      "view": "front",
+      "geometryRevision": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+      "drawingRevision": "94a7fe34611521d27f9b6f5aa040c8b6833b324bb898d458fc60cd0758df5667",
+      "geometryProjectedExtentMeters": [
+        0.6242896914482117,
+        1.0
+      ],
+      "drawingDimensionsMeters": [
+        0.6242896914482117,
+        1.0
+      ],
+      "dimensionMaxErrorMeters": 0.0,
+      "svgSilhouetteExtentErrorMeters": 1.030855178829615e-05,
+      "displayedLabelErrorMillimeters": 0.00030855178829369834,
+      "scale": "1:5",
+      "featureReferences": [
+        {
+          "id": "eye-center",
+          "reason": "Imported meshes have no stable semantic feature IDs. Select a new reference explicitly.",
+          "status": "unresolved"
+        }
+      ]
+    },
+    {
+      "phase": "height-110-percent",
+      "view": "isometric",
+      "geometryRevision": "e2bf78f0c510c641f22fd4dc34cd87d87a202873bdad8998b48015f28497070e",
+      "drawingRevision": "e5624f0c86afb433d836de75fa4bbb616110d7464a1f37fb026dfcaa36816721",
+      "geometryProjectedExtentMeters": [
+        0.5670857729570943,
+        1.0324555626028133
+      ],
+      "drawingDimensionsMeters": [
+        0.5670857729570943,
+        1.0324555626028133
+      ],
+      "dimensionMaxErrorMeters": 0.0,
+      "svgSilhouetteExtentErrorMeters": 5.556260281336378e-05,
+      "displayedLabelErrorMillimeters": 0.00043739718648794224,
+      "scale": "1:5",
+      "featureReferences": [
+        {
+          "id": "eye-center",
+          "reason": "Imported meshes have no stable semantic feature IDs. Select a new reference explicitly.",
+          "status": "unresolved"
+        }
+      ]
+    },
+    {
+      "phase": "height-110-percent",
+      "view": "top",
+      "geometryRevision": "e2bf78f0c510c641f22fd4dc34cd87d87a202873bdad8998b48015f28497070e",
+      "drawingRevision": "479de28c5281e7be480b794ab6314e46660966288d989626613cfae361d81691",
+      "geometryProjectedExtentMeters": [
+        0.6242896914482117,
+        0.6717120409011841
+      ],
+      "drawingDimensionsMeters": [
+        0.6242896914482117,
+        0.6717120409011841
+      ],
+      "dimensionMaxErrorMeters": 0.0,
+      "svgSilhouetteExtentErrorMeters": 1.2040901184118269e-05,
+      "displayedLabelErrorMillimeters": 0.00030855178829369834,
+      "scale": "1:5",
+      "featureReferences": [
+        {
+          "id": "eye-center",
+          "reason": "Imported meshes have no stable semantic feature IDs. Select a new reference explicitly.",
+          "status": "unresolved"
+        }
+      ]
+    },
+    {
+      "phase": "height-110-percent",
+      "view": "side",
+      "geometryRevision": "e2bf78f0c510c641f22fd4dc34cd87d87a202873bdad8998b48015f28497070e",
+      "drawingRevision": "12ca78c83225de182a1bed46dc1d147d7aac1f86754e15690c54a75a39d85d29",
+      "geometryProjectedExtentMeters": [
+        0.6717120409011841,
+        1.100000023841858
+      ],
+      "drawingDimensionsMeters": [
+        0.6717120409011841,
+        1.100000023841858
+      ],
+      "dimensionMaxErrorMeters": 0.0,
+      "svgSilhouetteExtentErrorMeters": 1.2040901184118269e-05,
+      "displayedLabelErrorMillimeters": 4.0901184092945186e-05,
+      "scale": "1:5",
+      "featureReferences": [
+        {
+          "id": "eye-center",
+          "reason": "Imported meshes have no stable semantic feature IDs. Select a new reference explicitly.",
+          "status": "unresolved"
+        }
+      ]
+    },
+    {
+      "phase": "height-110-percent",
+      "view": "front",
+      "geometryRevision": "e2bf78f0c510c641f22fd4dc34cd87d87a202873bdad8998b48015f28497070e",
+      "drawingRevision": "d91129df6fb908d07d2174ef74d93eac8d1ee91136e83c40d9bbb345c486dbbd",
+      "geometryProjectedExtentMeters": [
+        0.6242896914482117,
+        1.100000023841858
+      ],
+      "drawingDimensionsMeters": [
+        0.6242896914482117,
+        1.100000023841858
+      ],
+      "dimensionMaxErrorMeters": 0.0,
+      "svgSilhouetteExtentErrorMeters": 1.030855178829615e-05,
+      "displayedLabelErrorMillimeters": 0.00030855178829369834,
+      "scale": "1:5",
+      "featureReferences": [
+        {
+          "id": "eye-center",
+          "reason": "Imported meshes have no stable semantic feature IDs. Select a new reference explicitly.",
+          "status": "unresolved"
+        }
+      ]
+    }
+  ],
+  "maximumDimensionErrorMeters": 0.0,
+  "maximumSvgSilhouetteExtentErrorMeters": 5.556260281336378e-05,
+  "maximumDisplayedLabelErrorMillimeters": 0.00043739718648794224
+}

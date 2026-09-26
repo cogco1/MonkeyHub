@@ -1,0 +1,145 @@
+2026-09-26T19:51:01.8228181Z ERROR: test_force_killing_own_shell_closes_stdin_and_drains_all_workers (__main__.DesktopRuntimeTests.test_force_killing_own_shell_closes_stdin_and_drains_all_workers)
+2026-09-26T19:51:01.8229359Z ----------------------------------------------------------------------
+2026-09-26T19:51:01.8230154Z Traceback (most recent call last):
+2026-09-26T19:51:01.8231217Z   File "D:\a\MonkeyHub\MonkeyHub\apps\monkeyhub\desktop\tests\test_runtime.py", line 360, in setUp
+2026-09-26T19:51:01.8232213Z     self.before = self.project_bytes()
+2026-09-26T19:51:01.8233191Z                   ~~~~~~~~~~~~~~~~~~^^
+2026-09-26T19:51:01.8234291Z   File "D:\a\MonkeyHub\MonkeyHub\apps\monkeyhub\desktop\tests\test_runtime.py", line 377, in project_bytes
+2026-09-26T19:51:01.8235670Z     excludedRepositoryLocks=sorted(str(path.relative_to(self.project)) for path in self.project_locks))
+2026-09-26T19:51:01.8236750Z                             ~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-09-26T19:51:01.8237751Z   File "D:\a\MonkeyHub\MonkeyHub\apps\monkeyhub\desktop\tests\test_runtime.py", line 377, in <genexpr>
+2026-09-26T19:51:01.8238998Z     excludedRepositoryLocks=sorted(str(path.relative_to(self.project)) for path in self.project_locks))
+2026-09-26T19:51:01.8240248Z                                        ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^
+2026-09-26T19:51:01.8240927Z   File "pathlib\_local.py", line 385, in relative_to
+2026-09-26T19:51:01.8244136Z ValueError: 'C:\\Users\\runneradmin\\AppData\\Local\\Temp\\MonkeyHub desktop 测试 95gfr22d\\projects\\demo-project\\HEAD.lock' is not in the subpath of 'C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\MonkeyHub desktop 测试 95gfr22d\\projects\\demo-project'
+2026-09-26T19:51:01.8245637Z
+2026-09-26T19:51:01.8245928Z ======================================================================
+2026-09-26T19:51:01.8247510Z ERROR: test_lost_update_helper_drains_trial_and_allows_same_runtime_reopen (__main__.DesktopRuntimeTests.test_lost_update_helper_drains_trial_and_allows_same_runtime_reopen)
+2026-09-26T19:51:01.8248966Z ----------------------------------------------------------------------
+2026-09-26T19:51:01.8249692Z Traceback (most recent call last):
+2026-09-26T19:51:01.8250582Z   File "D:\a\MonkeyHub\MonkeyHub\apps\monkeyhub\desktop\tests\test_runtime.py", line 360, in setUp
+2026-09-26T19:51:01.8251421Z     self.before = self.project_bytes()
+2026-09-26T19:51:01.8251922Z                   ~~~~~~~~~~~~~~~~~~^^
+2026-09-26T19:51:01.8252837Z   File "D:\a\MonkeyHub\MonkeyHub\apps\monkeyhub\desktop\tests\test_runtime.py", line 377, in project_bytes
+2026-09-26T19:51:01.8254083Z     excludedRepositoryLocks=sorted(str(path.relative_to(self.project)) for path in self.project_locks))
+2026-09-26T19:51:01.8255499Z                             ~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-09-26T19:51:01.8256482Z   File "D:\a\MonkeyHub\MonkeyHub\apps\monkeyhub\desktop\tests\test_runtime.py", line 377, in <genexpr>
+2026-09-26T19:51:01.8257703Z     excludedRepositoryLocks=sorted(str(path.relative_to(self.project)) for path in self.project_locks))
+2026-09-26T19:51:01.8258620Z                                        ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^
+2026-09-26T19:51:01.8259591Z   File "pathlib\_local.py", line 385, in relative_to
+2026-09-26T19:51:01.8261904Z ValueError: 'C:\\Users\\runneradmin\\AppData\\Local\\Temp\\MonkeyHub desktop 测试 g7u6s_jm\\projects\\demo-project\\design\\branches.lock' is not in the subpath of 'C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\MonkeyHub desktop 测试 g7u6s_jm\\projects\\demo-project'
+2026-09-26T19:51:01.8263382Z
+2026-09-26T19:51:01.8264411Z ======================================================================
+2026-09-26T19:51:01.8265996Z ERROR: test_native_close_drains_accepted_work_and_reopen_preserves_project (__main__.DesktopRuntimeTests.test_native_close_drains_accepted_work_and_reopen_preserves_project)
+2026-09-26T19:51:01.8267376Z ----------------------------------------------------------------------
+2026-09-26T19:51:01.8268006Z Traceback (most recent call last):
+2026-09-26T19:51:01.8268879Z   File "D:\a\MonkeyHub\MonkeyHub\apps\monkeyhub\desktop\tests\test_runtime.py", line 360, in setUp
+2026-09-26T19:51:01.8269699Z     self.before = self.project_bytes()
+2026-09-26T19:51:01.8270173Z                   ~~~~~~~~~~~~~~~~~~^^
+2026-09-26T19:51:01.8271060Z   File "D:\a\MonkeyHub\MonkeyHub\apps\monkeyhub\desktop\tests\test_runtime.py", line 377, in project_bytes
+2026-09-26T19:51:01.8272278Z     excludedRepositoryLocks=sorted(str(path.relative_to(self.project)) for path in self.project_locks))
+2026-09-26T19:51:01.8273311Z                             ~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-09-26T19:51:01.8274287Z   File "D:\a\MonkeyHub\MonkeyHub\apps\monkeyhub\desktop\tests\test_runtime.py", line 377, in <genexpr>
+2026-09-26T19:51:01.8275484Z     excludedRepositoryLocks=sorted(str(path.relative_to(self.project)) for path in self.project_locks))
+2026-09-26T19:51:01.8276422Z                                        ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^
+2026-09-26T19:51:01.8277812Z   File "pathlib\_local.py", line 385, in relative_to
+2026-09-26T19:51:01.8279802Z ValueError: 'C:\\Users\\runneradmin\\AppData\\Local\\Temp\\MonkeyHub desktop 测试 ozw215d5\\projects\\demo-project\\HEAD.lock' is not in the subpath of 'C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\MonkeyHub desktop 测试 ozw215d5\\projects\\demo-project'
+2026-09-26T19:51:01.8280922Z
+2026-09-26T19:51:01.8281209Z ======================================================================
+2026-09-26T19:51:01.8282550Z ERROR: test_occupied_unrelated_port_is_never_attached_or_stopped (__main__.DesktopRuntimeTests.test_occupied_unrelated_port_is_never_attached_or_stopped)
+2026-09-26T19:51:01.8283638Z ----------------------------------------------------------------------
+2026-09-26T19:51:01.8284188Z Traceback (most recent call last):
+2026-09-26T19:51:01.8284941Z   File "D:\a\MonkeyHub\MonkeyHub\apps\monkeyhub\desktop\tests\test_runtime.py", line 360, in setUp
+2026-09-26T19:51:01.8285680Z     self.before = self.project_bytes()
+2026-09-26T19:51:01.8286058Z                   ~~~~~~~~~~~~~~~~~~^^
+2026-09-26T19:51:01.8286730Z   File "D:\a\MonkeyHub\MonkeyHub\apps\monkeyhub\desktop\tests\test_runtime.py", line 377, in project_bytes
+2026-09-26T19:51:01.8287628Z     excludedRepositoryLocks=sorted(str(path.relative_to(self.project)) for path in self.project_locks))
+2026-09-26T19:51:01.8288379Z                             ~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-09-26T19:51:01.8289091Z   File "D:\a\MonkeyHub\MonkeyHub\apps\monkeyhub\desktop\tests\test_runtime.py", line 377, in <genexpr>
+2026-09-26T19:51:01.8290214Z     excludedRepositoryLocks=sorted(str(path.relative_to(self.project)) for path in self.project_locks))
+2026-09-26T19:51:01.8290926Z                                        ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^
+2026-09-26T19:51:01.8291399Z   File "pathlib\_local.py", line 385, in relative_to
+2026-09-26T19:51:01.8292986Z ValueError: 'C:\\Users\\runneradmin\\AppData\\Local\\Temp\\MonkeyHub desktop 测试 uzoa2mp2\\projects\\demo-project\\HEAD.lock' is not in the subpath of 'C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\MonkeyHub desktop 测试 uzoa2mp2\\projects\\demo-project'
+2026-09-26T19:51:01.8293961Z
+2026-09-26T19:51:01.8294194Z ======================================================================
+2026-09-26T19:51:01.8295261Z ERROR: test_owned_hub_crash_shows_failure_without_restarting_or_replaying (__main__.DesktopRuntimeTests.test_owned_hub_crash_shows_failure_without_restarting_or_replaying)
+2026-09-26T19:51:01.8296882Z ----------------------------------------------------------------------
+2026-09-26T19:51:01.8297462Z Traceback (most recent call last):
+2026-09-26T19:51:01.8298071Z   File "D:\a\MonkeyHub\MonkeyHub\apps\monkeyhub\desktop\tests\test_runtime.py", line 360, in setUp
+2026-09-26T19:51:01.8298624Z     self.before = self.project_bytes()
+2026-09-26T19:51:01.8298993Z                   ~~~~~~~~~~~~~~~~~~^^
+2026-09-26T19:51:01.8299570Z   File "D:\a\MonkeyHub\MonkeyHub\apps\monkeyhub\desktop\tests\test_runtime.py", line 377, in project_bytes
+2026-09-26T19:51:01.8300372Z     excludedRepositoryLocks=sorted(str(path.relative_to(self.project)) for path in self.project_locks))
+2026-09-26T19:51:01.8301051Z                             ~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-09-26T19:51:01.8301903Z   File "D:\a\MonkeyHub\MonkeyHub\apps\monkeyhub\desktop\tests\test_runtime.py", line 377, in <genexpr>
+2026-09-26T19:51:01.8302733Z     excludedRepositoryLocks=sorted(str(path.relative_to(self.project)) for path in self.project_locks))
+2026-09-26T19:51:01.8303340Z                                        ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^
+2026-09-26T19:51:01.8303767Z   File "pathlib\_local.py", line 385, in relative_to
+2026-09-26T19:51:01.8305277Z ValueError: 'C:\\Users\\runneradmin\\AppData\\Local\\Temp\\MonkeyHub desktop 测试 wt_oen3t\\projects\\demo-project\\design\\branches.lock' is not in the subpath of 'C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\MonkeyHub desktop 测试 wt_oen3t\\projects\\demo-project'
+2026-09-26T19:51:01.8306212Z
+2026-09-26T19:51:01.8306397Z ======================================================================
+2026-09-26T19:51:01.8307330Z ERROR: test_retained_chat_and_settings_are_visible_before_first_write (__main__.DesktopRuntimeTests.test_retained_chat_and_settings_are_visible_before_first_write)
+2026-09-26T19:51:01.8308185Z ----------------------------------------------------------------------
+2026-09-26T19:51:01.8308613Z Traceback (most recent call last):
+2026-09-26T19:51:01.8309196Z   File "D:\a\MonkeyHub\MonkeyHub\apps\monkeyhub\desktop\tests\test_runtime.py", line 360, in setUp
+2026-09-26T19:51:01.8309749Z     self.before = self.project_bytes()
+2026-09-26T19:51:01.8310078Z                   ~~~~~~~~~~~~~~~~~~^^
+2026-09-26T19:51:01.8310677Z   File "D:\a\MonkeyHub\MonkeyHub\apps\monkeyhub\desktop\tests\test_runtime.py", line 377, in project_bytes
+2026-09-26T19:51:01.8311471Z     excludedRepositoryLocks=sorted(str(path.relative_to(self.project)) for path in self.project_locks))
+2026-09-26T19:51:01.8312143Z                             ~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-09-26T19:51:01.8312776Z   File "D:\a\MonkeyHub\MonkeyHub\apps\monkeyhub\desktop\tests\test_runtime.py", line 377, in <genexpr>
+2026-09-26T19:51:01.8313573Z     excludedRepositoryLocks=sorted(str(path.relative_to(self.project)) for path in self.project_locks))
+2026-09-26T19:51:01.8314163Z                                        ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^
+2026-09-26T19:51:01.8314590Z   File "pathlib\_local.py", line 385, in relative_to
+2026-09-26T19:51:01.8316204Z ValueError: 'C:\\Users\\runneradmin\\AppData\\Local\\Temp\\MonkeyHub desktop 测试 wscgsxej\\projects\\demo-project\\design\\branches.lock' is not in the subpath of 'C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\MonkeyHub desktop 测试 wscgsxej\\projects\\demo-project'
+2026-09-26T19:51:01.8317356Z
+2026-09-26T19:51:01.8317555Z ======================================================================
+2026-09-26T19:51:01.8318590Z ERROR: test_temporary_health_loss_preserves_unsubmitted_draft_without_navigation (__main__.DesktopRuntimeTests.test_temporary_health_loss_preserves_unsubmitted_draft_without_navigation)
+2026-09-26T19:51:01.8319527Z ----------------------------------------------------------------------
+2026-09-26T19:51:01.8319944Z Traceback (most recent call last):
+2026-09-26T19:51:01.8320518Z   File "D:\a\MonkeyHub\MonkeyHub\apps\monkeyhub\desktop\tests\test_runtime.py", line 360, in setUp
+2026-09-26T19:51:01.8321191Z     self.before = self.project_bytes()
+2026-09-26T19:51:01.8321555Z                   ~~~~~~~~~~~~~~~~~~^^
+2026-09-26T19:51:01.8322373Z   File "D:\a\MonkeyHub\MonkeyHub\apps\monkeyhub\desktop\tests\test_runtime.py", line 377, in project_bytes
+2026-09-26T19:51:01.8323206Z     excludedRepositoryLocks=sorted(str(path.relative_to(self.project)) for path in self.project_locks))
+2026-09-26T19:51:01.8323871Z                             ~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-09-26T19:51:01.8324506Z   File "D:\a\MonkeyHub\MonkeyHub\apps\monkeyhub\desktop\tests\test_runtime.py", line 377, in <genexpr>
+2026-09-26T19:51:01.8325275Z     excludedRepositoryLocks=sorted(str(path.relative_to(self.project)) for path in self.project_locks))
+2026-09-26T19:51:01.8325891Z                                        ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^
+2026-09-26T19:51:01.8326319Z   File "pathlib\_local.py", line 385, in relative_to
+2026-09-26T19:51:01.8327789Z ValueError: 'C:\\Users\\runneradmin\\AppData\\Local\\Temp\\MonkeyHub desktop 测试 3cozptad\\projects\\demo-project\\design\\branches.lock' is not in the subpath of 'C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\MonkeyHub desktop 测试 3cozptad\\projects\\demo-project'
+2026-09-26T19:51:01.8328696Z
+2026-09-26T19:51:01.8328909Z ======================================================================
+2026-09-26T19:51:01.8329781Z ERROR: test_update_trial_waits_for_commit_before_loading_project_ui (__main__.DesktopRuntimeTests.test_update_trial_waits_for_commit_before_loading_project_ui)
+2026-09-26T19:51:01.8330642Z ----------------------------------------------------------------------
+2026-09-26T19:51:01.8331030Z Traceback (most recent call last):
+2026-09-26T19:51:01.8331514Z   File "D:\a\MonkeyHub\MonkeyHub\apps\monkeyhub\desktop\tests\test_runtime.py", line 360, in setUp
+2026-09-26T19:51:01.8331996Z     self.before = self.project_bytes()
+2026-09-26T19:51:01.8332264Z                   ~~~~~~~~~~~~~~~~~~^^
+2026-09-26T19:51:01.8332775Z   File "D:\a\MonkeyHub\MonkeyHub\apps\monkeyhub\desktop\tests\test_runtime.py", line 377, in project_bytes
+2026-09-26T19:51:01.8333519Z     excludedRepositoryLocks=sorted(str(path.relative_to(self.project)) for path in self.project_locks))
+2026-09-26T19:51:01.8334099Z                             ~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-09-26T19:51:01.8334682Z   File "D:\a\MonkeyHub\MonkeyHub\apps\monkeyhub\desktop\tests\test_runtime.py", line 377, in <genexpr>
+2026-09-26T19:51:01.8335383Z     excludedRepositoryLocks=sorted(str(path.relative_to(self.project)) for path in self.project_locks))
+2026-09-26T19:51:01.8335917Z                                        ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^
+2026-09-26T19:51:01.8336286Z   File "pathlib\_local.py", line 385, in relative_to
+2026-09-26T19:51:01.8337789Z ValueError: 'C:\\Users\\runneradmin\\AppData\\Local\\Temp\\MonkeyHub desktop 测试 _b6mswlm\\projects\\demo-project\\HEAD.lock' is not in the subpath of 'C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\MonkeyHub desktop 测试 _b6mswlm\\projects\\demo-project'
+2026-09-26T19:51:01.8338774Z
+2026-09-26T19:51:01.8338958Z ======================================================================
+2026-09-26T19:51:01.8339791Z ERROR: test_declared_locks_do_not_block_complete_content_comparison (__main__.ProjectSnapshotTests.test_declared_locks_do_not_block_complete_content_comparison)
+2026-09-26T19:51:01.8356518Z ----------------------------------------------------------------------
+2026-09-26T19:51:01.8358595Z Traceback (most recent call last):
+2026-09-26T19:51:01.8359823Z   File "D:\a\MonkeyHub\MonkeyHub\apps\monkeyhub\desktop\tests\test_runtime.py", line 903, in test_declared_locks_do_not_block_complete_content_comparison
+2026-09-26T19:51:01.8360957Z     before = self.reader.project_bytes()
+2026-09-26T19:51:01.8361864Z   File "D:\a\MonkeyHub\MonkeyHub\apps\monkeyhub\desktop\tests\test_runtime.py", line 377, in project_bytes
+2026-09-26T19:51:01.8363775Z     excludedRepositoryLocks=sorted(str(path.relative_to(self.project)) for path in self.project_locks))
+2026-09-26T19:51:01.8364830Z                             ~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-09-26T19:51:01.8365578Z   File "D:\a\MonkeyHub\MonkeyHub\apps\monkeyhub\desktop\tests\test_runtime.py", line 377, in <genexpr>
+2026-09-26T19:51:01.8366304Z     excludedRepositoryLocks=sorted(str(path.relative_to(self.project)) for path in self.project_locks))
+2026-09-26T19:51:01.8366838Z                                        ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^
+2026-09-26T19:51:01.8367200Z   File "pathlib\_local.py", line 385, in relative_to
+2026-09-26T19:51:01.8368295Z ValueError: 'C:\\Users\\runneradmin\\AppData\\Local\\Temp\\monkeyhub-snapshot-3bvef7ky\\demo-project\\HEAD.lock' is not in the subpath of 'C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\monkeyhub-snapshot-3bvef7ky\\demo-project'
+2026-09-26T19:51:01.8369070Z
+2026-09-26T19:51:01.8369241Z ======================================================================
+2026-09-26T19:51:01.8370107Z ERROR: test_other_lock_named_content_is_checked_and_read_errors_propagate (__main__.ProjectSnapshotTests.test_other_lock_named_content_is_checked_and_read_errors_propagate)
+2026-09-26T19:51:01.8370916Z ----------------------------------------------------------------------

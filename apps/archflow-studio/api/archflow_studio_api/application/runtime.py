@@ -135,6 +135,11 @@ def inspect_runtime(
     candidates: list[RuntimeCandidate] = []
     for candidate_id in selected:
         job = by_candidate.get(candidate_id)
+        # Export/render jobs reuse the execution queue, but do not produce a
+        # design candidate or runner receipt. Their own retained readers own
+        # recovery; showing them as broken candidates is a false warning.
+        if job is not None and job.kind in ("export", "render"):
+            continue
         row = RuntimeCandidate(candidate_id, "needs_recovery", job_id=job.job_id if job else None,
                                proposal_id=job.proposal_id if job else None)
         try:

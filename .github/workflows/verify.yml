@@ -144,7 +144,18 @@ jobs:
       - name: Project usage browser regression
         if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
         working-directory: apps/monkeyhub/web
+        env:
+          MONKEYHUB_TEST_ARTIFACTS: ${{ runner.temp }}/monkeyhub-browser-evidence
         run: node test/chatShell.browser.mjs
+
+      - name: Keep project usage browser evidence
+        if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: project-usage-browser-${{ github.sha }}
+          path: ${{ runner.temp }}/monkeyhub-browser-evidence/
+          retention-days: 14
+          if-no-files-found: error
 
       - name: Candidate review browser regression
         if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}

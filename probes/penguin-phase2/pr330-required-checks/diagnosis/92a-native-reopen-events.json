@@ -1,0 +1,187 @@
+[
+  {
+    "event": "project-snapshot-start",
+    "time": 1790450780.0484111,
+    "monotonic": 1352.4907337,
+    "testProcessId": 6952
+  },
+  {
+    "event": "project-snapshot-complete",
+    "time": 1790450780.053439,
+    "monotonic": 1352.4957617,
+    "testProcessId": 6952,
+    "files": 10
+  },
+  {
+    "event": "launch-start",
+    "time": 1790450780.0665536,
+    "monotonic": 1352.5088762,
+    "testProcessId": 6952,
+    "trial": false
+  },
+  {
+    "event": "shell-created",
+    "time": 1790450780.0695722,
+    "monotonic": 1352.5118945,
+    "testProcessId": 6952,
+    "pid": 3324
+  },
+  {
+    "event": "hub-ready",
+    "time": 1790450783.8818123,
+    "monotonic": 1356.3241024,
+    "testProcessId": 6952,
+    "shellPid": 3324,
+    "hubPid": 1192,
+    "instance": "39807245-7254-429d-a023-4ae0f223f974"
+  },
+  {
+    "event": "project-open-start",
+    "time": 1790450784.5503454,
+    "monotonic": 1356.9926309,
+    "testProcessId": 6952
+  },
+  {
+    "event": "project-snapshot-start",
+    "time": 1790450801.5717497,
+    "monotonic": 1374.0139496,
+    "testProcessId": 6952
+  },
+  {
+    "event": "project-snapshot-complete",
+    "time": 1790450801.578549,
+    "monotonic": 1374.0207488,
+    "testProcessId": 6952,
+    "files": 10
+  },
+  {
+    "event": "owned-processes-drained",
+    "time": 1790450805.4140902,
+    "monotonic": 1377.8562155,
+    "testProcessId": 6952,
+    "pids": [
+      1192,
+      4488,
+      8236
+    ]
+  },
+  {
+    "event": "project-snapshot-start",
+    "time": 1790450806.021141,
+    "monotonic": 1378.4632572,
+    "testProcessId": 6952
+  },
+  {
+    "event": "project-snapshot-complete",
+    "time": 1790450806.0260274,
+    "monotonic": 1378.4681428,
+    "testProcessId": 6952,
+    "files": 10
+  },
+  {
+    "event": "owned-processes-drained",
+    "time": 1790450809.2377653,
+    "monotonic": 1381.6798322,
+    "testProcessId": 6952,
+    "pids": [
+      1192,
+      4488,
+      8236
+    ]
+  },
+  {
+    "event": "project-snapshot-start",
+    "time": 1790450809.8575814,
+    "monotonic": 1382.2996414,
+    "testProcessId": 6952
+  },
+  {
+    "event": "project-snapshot-complete",
+    "time": 1790450809.862554,
+    "monotonic": 1382.3046127,
+    "testProcessId": 6952,
+    "files": 10
+  },
+  {
+    "event": "launch-start",
+    "time": 1790450809.86316,
+    "monotonic": 1382.3052183,
+    "testProcessId": 6952,
+    "trial": false
+  },
+  {
+    "event": "shell-created",
+    "time": 1790450809.8658438,
+    "monotonic": 1382.3079021,
+    "testProcessId": 6952,
+    "pid": 3124
+  },
+  {
+    "event": "hub-ready",
+    "time": 1790450813.0045874,
+    "monotonic": 1385.4466084,
+    "testProcessId": 6952,
+    "shellPid": 3124,
+    "hubPid": 2780,
+    "instance": "1df41ab5-035d-4ea5-afe5-7ef7a50ad233"
+  },
+  {
+    "event": "project-open-start",
+    "time": 1790450813.5099761,
+    "monotonic": 1385.9519914,
+    "testProcessId": 6952
+  },
+  {
+    "event": "project-snapshot-start",
+    "time": 1790450818.3627007,
+    "monotonic": 1390.8046629,
+    "testProcessId": 6952
+  },
+  {
+    "event": "project-snapshot-complete",
+    "time": 1790450818.370992,
+    "monotonic": 1390.8129535,
+    "testProcessId": 6952,
+    "files": 10
+  },
+  {
+    "event": "owned-processes-drained",
+    "time": 1790450821.953874,
+    "monotonic": 1394.3957815,
+    "testProcessId": 6952,
+    "pids": [
+      1688,
+      2780,
+      7304
+    ]
+  },
+  {
+    "event": "project-snapshot-start",
+    "time": 1790450822.563047,
+    "monotonic": 1395.0049471,
+    "testProcessId": 6952
+  },
+  {
+    "event": "project-snapshot-complete",
+    "time": 1790450822.5682683,
+    "monotonic": 1395.0101674,
+    "testProcessId": 6952,
+    "files": 10
+  },
+  {
+    "event": "test-finished",
+    "time": 1790450822.5689418,
+    "monotonic": 1395.0108407,
+    "testProcessId": 6952,
+    "shells": [
+      {
+        "pid": 3324,
+        "exitCode": 0
+      },
+      {
+        "pid": 3124,
+        "exitCode": 0
+      }
+    ]
+  }
+]

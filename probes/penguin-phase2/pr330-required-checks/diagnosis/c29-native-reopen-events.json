@@ -1,0 +1,223 @@
+[
+  {
+    "event": "project-snapshot-start",
+    "time": 1790453754.777801,
+    "monotonic": 723.941807,
+    "testProcessId": 7572,
+    "requestedProject": "C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\MonkeyHub desktop 测试 p1dodpge\\projects\\demo-project",
+    "canonicalProject": "C:\\Users\\runneradmin\\AppData\\Local\\Temp\\MonkeyHub desktop 测试 p1dodpge\\projects\\demo-project",
+    "excludedRepositoryLocks": [
+      "HEAD.lock",
+      "design\\branches.lock"
+    ]
+  },
+  {
+    "event": "project-snapshot-complete",
+    "time": 1790453754.7823267,
+    "monotonic": 723.9463321,
+    "testProcessId": 7572,
+    "files": 9
+  },
+  {
+    "event": "launch-start",
+    "time": 1790453754.794587,
+    "monotonic": 723.9585924,
+    "testProcessId": 7572,
+    "trial": false
+  },
+  {
+    "event": "shell-created",
+    "time": 1790453754.7973266,
+    "monotonic": 723.9613317,
+    "testProcessId": 7572,
+    "pid": 2472
+  },
+  {
+    "event": "hub-ready",
+    "time": 1790453758.1760933,
+    "monotonic": 727.3400841,
+    "testProcessId": 7572,
+    "shellPid": 2472,
+    "hubPid": 5684,
+    "instance": "344a7747-07e6-400a-b335-60b676ec36cf"
+  },
+  {
+    "event": "project-open-start",
+    "time": 1790453758.638535,
+    "monotonic": 727.802524,
+    "testProcessId": 7572
+  },
+  {
+    "event": "project-snapshot-start",
+    "time": 1790453775.5414574,
+    "monotonic": 744.7052214,
+    "testProcessId": 7572,
+    "requestedProject": "C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\MonkeyHub desktop 测试 p1dodpge\\projects\\demo-project",
+    "canonicalProject": "C:\\Users\\runneradmin\\AppData\\Local\\Temp\\MonkeyHub desktop 测试 p1dodpge\\projects\\demo-project",
+    "excludedRepositoryLocks": [
+      "HEAD.lock",
+      "design\\branches.lock"
+    ]
+  },
+  {
+    "event": "project-snapshot-complete",
+    "time": 1790453775.547514,
+    "monotonic": 744.711278,
+    "testProcessId": 7572,
+    "files": 9
+  },
+  {
+    "event": "owned-processes-drained",
+    "time": 1790453777.602338,
+    "monotonic": 746.7660787,
+    "testProcessId": 7572,
+    "pids": [
+      5684,
+      6072,
+      7632
+    ]
+  },
+  {
+    "event": "project-snapshot-start",
+    "time": 1790453778.2196534,
+    "monotonic": 747.3833882,
+    "testProcessId": 7572,
+    "requestedProject": "C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\MonkeyHub desktop 测试 p1dodpge\\projects\\demo-project",
+    "canonicalProject": "C:\\Users\\runneradmin\\AppData\\Local\\Temp\\MonkeyHub desktop 测试 p1dodpge\\projects\\demo-project",
+    "excludedRepositoryLocks": [
+      "HEAD.lock",
+      "design\\branches.lock"
+    ]
+  },
+  {
+    "event": "project-snapshot-complete",
+    "time": 1790453778.2243826,
+    "monotonic": 747.3881172,
+    "testProcessId": 7572,
+    "files": 9
+  },
+  {
+    "event": "owned-processes-drained",
+    "time": 1790453781.3313656,
+    "monotonic": 750.4950547,
+    "testProcessId": 7572,
+    "pids": [
+      5684,
+      6072,
+      7632
+    ]
+  },
+  {
+    "event": "project-snapshot-start",
+    "time": 1790453781.9404614,
+    "monotonic": 751.1041403,
+    "testProcessId": 7572,
+    "requestedProject": "C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\MonkeyHub desktop 测试 p1dodpge\\projects\\demo-project",
+    "canonicalProject": "C:\\Users\\runneradmin\\AppData\\Local\\Temp\\MonkeyHub desktop 测试 p1dodpge\\projects\\demo-project",
+    "excludedRepositoryLocks": [
+      "HEAD.lock",
+      "design\\branches.lock"
+    ]
+  },
+  {
+    "event": "project-snapshot-complete",
+    "time": 1790453781.9449413,
+    "monotonic": 751.1086195,
+    "testProcessId": 7572,
+    "files": 9
+  },
+  {
+    "event": "launch-start",
+    "time": 1790453781.9455693,
+    "monotonic": 751.1092476,
+    "testProcessId": 7572,
+    "trial": false
+  },
+  {
+    "event": "shell-created",
+    "time": 1790453781.9483228,
+    "monotonic": 751.1120008,
+    "testProcessId": 7572,
+    "pid": 8752
+  },
+  {
+    "event": "hub-ready",
+    "time": 1790453785.296825,
+    "monotonic": 754.4604506,
+    "testProcessId": 7572,
+    "shellPid": 8752,
+    "hubPid": 3464,
+    "instance": "095696f0-64e7-4405-8c24-446cfdc78fb4"
+  },
+  {
+    "event": "project-open-start",
+    "time": 1790453785.7751505,
+    "monotonic": 754.9387697,
+    "testProcessId": 7572
+  },
+  {
+    "event": "project-snapshot-start",
+    "time": 1790453790.9014742,
+    "monotonic": 760.0650318,
+    "testProcessId": 7572,
+    "requestedProject": "C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\MonkeyHub desktop 测试 p1dodpge\\projects\\demo-project",
+    "canonicalProject": "C:\\Users\\runneradmin\\AppData\\Local\\Temp\\MonkeyHub desktop 测试 p1dodpge\\projects\\demo-project",
+    "excludedRepositoryLocks": [
+      "HEAD.lock",
+      "design\\branches.lock"
+    ]
+  },
+  {
+    "event": "project-snapshot-complete",
+    "time": 1790453790.9083235,
+    "monotonic": 760.0718811,
+    "testProcessId": 7572,
+    "files": 9
+  },
+  {
+    "event": "owned-processes-drained",
+    "time": 1790453794.1751144,
+    "monotonic": 763.3386413,
+    "testProcessId": 7572,
+    "pids": [
+      3464,
+      8304,
+      8604
+    ]
+  },
+  {
+    "event": "project-snapshot-start",
+    "time": 1790453794.788821,
+    "monotonic": 763.9523436,
+    "testProcessId": 7572,
+    "requestedProject": "C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\MonkeyHub desktop 测试 p1dodpge\\projects\\demo-project",
+    "canonicalProject": "C:\\Users\\runneradmin\\AppData\\Local\\Temp\\MonkeyHub desktop 测试 p1dodpge\\projects\\demo-project",
+    "excludedRepositoryLocks": [
+      "HEAD.lock",
+      "design\\branches.lock"
+    ]
+  },
+  {
+    "event": "project-snapshot-complete",
+    "time": 1790453794.79329,
+    "monotonic": 763.9568118,
+    "testProcessId": 7572,
+    "files": 9
+  },
+  {
+    "event": "test-finished",
+    "time": 1790453794.7940767,
+    "monotonic": 763.9575989,
+    "testProcessId": 7572,
+    "shells": [
+      {
+        "pid": 2472,
+        "exitCode": 0
+      },
+      {
+        "pid": 8752,
+        "exitCode": 0
+      }
+    ]
+  }
+]

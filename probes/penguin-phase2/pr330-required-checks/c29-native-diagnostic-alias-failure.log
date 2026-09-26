@@ -1,0 +1,37 @@
+2026-09-26T20:16:34.8602316Z test_native_close_drains_accepted_work_and_reopen_preserves_project (__main__.DesktopRuntimeTests.test_native_close_drains_accepted_work_and_reopen_preserves_project) ... ok
+2026-09-26T20:17:52.7265426Z test_declared_locks_do_not_block_complete_content_comparison (__main__.ProjectSnapshotTests.test_declared_locks_do_not_block_complete_content_comparison) ... ERROR
+2026-09-26T20:17:52.9825808Z test_other_lock_named_content_is_checked_and_read_errors_propagate (__main__.ProjectSnapshotTests.test_other_lock_named_content_is_checked_and_read_errors_propagate) ... ERROR
+2026-09-26T20:17:53.2589330Z test_project_path_alias_uses_same_exact_lock_contract (__main__.ProjectSnapshotTests.test_project_path_alias_uses_same_exact_lock_contract) ... ok
+2026-09-26T20:17:53.2592381Z ERROR: test_declared_locks_do_not_block_complete_content_comparison (__main__.ProjectSnapshotTests.test_declared_locks_do_not_block_complete_content_comparison)
+2026-09-26T20:17:53.2595872Z   File "D:\a\MonkeyHub\MonkeyHub\apps\monkeyhub\desktop\tests\test_runtime.py", line 915, in test_declared_locks_do_not_block_complete_content_comparison
+2026-09-26T20:17:53.2605156Z ERROR: test_other_lock_named_content_is_checked_and_read_errors_propagate (__main__.ProjectSnapshotTests.test_other_lock_named_content_is_checked_and_read_errors_propagate)
+2026-09-26T20:17:53.2608757Z   File "D:\a\MonkeyHub\MonkeyHub\apps\monkeyhub\desktop\tests\test_runtime.py", line 928, in test_other_lock_named_content_is_checked_and_read_errors_propagate
+
+2026-09-26T20:17:53.2592381Z ERROR: test_declared_locks_do_not_block_complete_content_comparison (__main__.ProjectSnapshotTests.test_declared_locks_do_not_block_complete_content_comparison)
+2026-09-26T20:17:53.2593841Z ----------------------------------------------------------------------
+2026-09-26T20:17:53.2594517Z Traceback (most recent call last):
+2026-09-26T20:17:53.2595872Z   File "D:\a\MonkeyHub\MonkeyHub\apps\monkeyhub\desktop\tests\test_runtime.py", line 915, in test_declared_locks_do_not_block_complete_content_comparison
+2026-09-26T20:17:53.2597534Z     self.reader.record("old-scan-reproduced", path=str(path.relative_to(self.reader.project)),
+2026-09-26T20:17:53.2598865Z                                                        ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+2026-09-26T20:17:53.2599588Z   File "pathlib\_local.py", line 385, in relative_to
+2026-09-26T20:17:53.2601684Z ValueError: 'C:\\Users\\runneradmin\\AppData\\Local\\Temp\\monkeyhub-snapshot-70e25nsq\\demo-project\\design\\branches.lock' is not in the subpath of 'C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\monkeyhub-snapshot-70e25nsq\\demo-project'
+2026-09-26T20:17:53.2603180Z
+2026-09-26T20:17:53.2603505Z ======================================================================
+2026-09-26T20:17:53.2605156Z ERROR: test_other_lock_named_content_is_checked_and_read_errors_propagate (__main__.ProjectSnapshotTests.test_other_lock_named_content_is_checked_and_read_errors_propagate)
+2026-09-26T20:17:53.2606711Z ----------------------------------------------------------------------
+2026-09-26T20:17:53.2607395Z Traceback (most recent call last):
+2026-09-26T20:17:53.2608757Z   File "D:\a\MonkeyHub\MonkeyHub\apps\monkeyhub\desktop\tests\test_runtime.py", line 928, in test_other_lock_named_content_is_checked_and_read_errors_propagate
+2026-09-26T20:17:53.2610029Z     with self.held([asset]):
+2026-09-26T20:17:53.2610463Z          ~~~~~~~~~^^^^^^^^^
+2026-09-26T20:17:53.2611046Z   File "contextlib.py", line 141, in __enter__
+2026-09-26T20:17:53.2612024Z   File "D:\a\MonkeyHub\MonkeyHub\apps\monkeyhub\desktop\tests\test_runtime.py", line 888, in held
+2026-09-26T20:17:53.2613233Z     paths=[str(path.relative_to(self.reader.project.resolve())) for path in paths])
+2026-09-26T20:17:53.2614105Z                ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-09-26T20:17:53.2614775Z   File "pathlib\_local.py", line 385, in relative_to
+2026-09-26T20:17:53.2616824Z ValueError: 'C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\monkeyhub-snapshot-h9vbmisf\\demo-project\\user-asset.lock' is not in the subpath of 'C:\\Users\\runneradmin\\AppData\\Local\\Temp\\monkeyhub-snapshot-h9vbmisf\\demo-project'
+2026-09-26T20:17:53.2619024Z
+2026-09-26T20:17:53.2619398Z ----------------------------------------------------------------------
+2026-09-26T20:17:53.2620059Z Ran 11 tests in 172.381s
+2026-09-26T20:17:53.2620318Z
+2026-09-26T20:17:53.2620515Z FAILED (errors=2)
+2026-09-26T20:17:53.3807601Z ##[error]Process completed with exit code 1.

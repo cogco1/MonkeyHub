@@ -853,7 +853,17 @@ def _commit_card(message: str) -> str | None:
 
     subject = message.splitlines()[0] if message.strip() else ""
     found = CARD_ID.findall(subject) or CARD_ID.findall(message)
-    return found[-1] if found else None
+    if found:
+        return found[-1]
+    # Compatibility for a single, explicit trailing GitHub issue reference.
+    # This only identifies a claim: check_changed_scopes still requires its
+    # historical registry entry and enforces both parent and lane write scopes.
+    # Incidental mentions, ambiguous references and malformed GH markers must
+    # not acquire authority through this fallback.
+    suffix = re.search(r"(?:^|\s)\(#([1-9][0-9]*)\)\s*$", subject)
+    if suffix and re.findall(r"#\d+", subject) == [f"#{suffix[1]}"] and "GH-" not in message:
+        return f"GH-{suffix[1]}"
+    return None
 
 
 def _git_json(root: Path, revision: str, path: str) -> dict[str, Any] | None:

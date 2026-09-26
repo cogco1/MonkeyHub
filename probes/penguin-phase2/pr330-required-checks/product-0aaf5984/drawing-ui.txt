@@ -1,0 +1,90 @@
+- button "后退到上一个对话" [disabled]:
+- button "前进到下一个对话" [disabled]:
+- button "展开项目栏":
+- menubar "菜单":
+  - menuitem "文件"
+  - menuitem "编辑"
+  - menuitem "视图"
+  - menuitem "帮助"
+- main:
+  - button "展开项目栏":
+  - text: penguin-test
+  - 'heading "PR #330 final HEAD acceptance 外部对话" [level=1]':
+    - text: "PR #330 final HEAD acceptance"
+    - generic: 外部对话
+  - log:
+    - heading "开始项目对话" [level=2]
+    - paragraph: 描述你想做的事。需要看模型或图纸时，在右侧打开工具。
+  - status:
+    - strong: 外部对话
+    - paragraph: 已连接 agent 的回复和进度会在这里显示。请回到原应用继续对话。
+  - status
+- complementary "项目浏览器":
+  - group "工作面菜单与项目位置":
+    - region "项目位置":
+      - button "尚无阶段 · 当前":
+        - generic: 尚无阶段 · 当前
+      - status
+  - generic "复用图面配方"
+  - generic "Drawing · 图纸":
+    - heading "Drawing · 图纸" [level=1]
+    - paragraph: 跟随项目当前模型的剖切平面。
+    - button "刷新来源"
+    - text: 图纸
+    - combobox "图纸":
+      - option "新建剖切平面" [selected]
+    - note: This project has no retained working state yet.
+    - generic "绘制其他版本"
+    - option "跟随项目当前模型" [selected]
+    - option "penguin.3dm"
+    - option "penguin-neutral-preview.3dm"
+    - option "Imported-model.3dm"
+    - option "Imported-model.3dm"
+    - status: This project has no retained working state yet.
+    - form "图纸设置":
+      - paragraph: 正在读取模型单位
+      - group "图纸表达":
+        - generic: 图纸表达
+        - text: 新建剖切平面名称
+        - textbox "新建剖切平面名称 可选；仅用于新建剖切平面，不用于剖透视。后续修订会继承此名称。" [disabled]:
+          - /placeholder: 新建剖切平面
+        - generic: 可选；仅用于新建剖切平面，不用于剖透视。后续修订会继承此名称。
+        - text: 剖切高度 (…)
+        - spinbutton "剖切高度 (…)" [disabled]: "1.2"
+        - text: 视图底部 (…)
+        - spinbutton "视图底部 (…)" [disabled]: "0"
+        - text: "比例分母（1 : n）"
+        - 'spinbutton "比例分母（1 : n）" [disabled]': "100"
+        - generic "线型与填充"
+      - generic "剖透视"
+      - option "垂直于 X（x = 位置）" [disabled]
+      - option "垂直于 Y（y = 位置）" [disabled] [selected]
+      - option "+Y" [disabled] [selected]
+      - option "−Y" [disabled]
+      - button "生成剖切平面" [disabled]
+- navigation "项目工具栏":
+  - group "工作面":
+    - generic: 工作面
+    - button "建模":
+      - generic: 建模
+    - button "画板":
+      - generic: 画板
+    - button "状态树":
+      - generic: 状态树
+  - group "工具":
+    - generic: 工具
+    - button "图纸" [active] [pressed]:
+      - generic: 图纸
+    - button "渲染":
+      - generic: 渲染
+    - button "制作":
+      - generic: 制作
+    - button "用量":
+      - generic: 用量
+  - group "此项目":
+    - generic: 此项目
+    - 'button "此项目: penguin-test"':
+      - generic: penguin-test
+  - button "收起工具" [pressed]:
+    - generic: 收起工具
+- region "通知"

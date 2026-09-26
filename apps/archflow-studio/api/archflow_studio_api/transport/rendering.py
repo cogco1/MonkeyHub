@@ -98,6 +98,8 @@ class RenderJobDto(BaseModel):
     input_tokens: int | None = Field(alias="inputTokens", default=None)
     output_tokens: int | None = Field(alias="outputTokens", default=None)
     cost_usd: float | None = Field(alias="costUsd", default=None)
+    geometry_revision: str | None = Field(alias="geometryRevision", default=None)
+    scene_revision: str | None = Field(alias="sceneRevision", default=None)
 
 
 class RenderJobListDto(BaseModel):

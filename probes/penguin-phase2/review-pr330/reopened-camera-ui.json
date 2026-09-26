@@ -1,0 +1,38 @@
+[
+  {
+    "name": "Projectionperspectiveorthographic",
+    "value": "orthographic"
+  },
+  {
+    "name": "Camera position X",
+    "value": "1.4"
+  },
+  {
+    "name": "Camera position Y",
+    "value": "-2.1"
+  },
+  {
+    "name": "Camera position Z",
+    "value": "0.85"
+  },
+  {
+    "name": "Camera target X",
+    "value": "0.05"
+  },
+  {
+    "name": "Camera target Y",
+    "value": "0"
+  },
+  {
+    "name": "Camera target Z",
+    "value": "0.55"
+  },
+  {
+    "name": "FOV",
+    "value": "32"
+  },
+  {
+    "name": "Orthographic height",
+    "value": "1.5"
+  }
+]

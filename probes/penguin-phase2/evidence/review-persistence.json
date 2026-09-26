@@ -1,0 +1,26 @@
+{
+  "status": "PASS",
+  "sceneExact": true,
+  "allEightDrawingRecordsExact": true,
+  "beforeProcessId": 40088,
+  "afterProcessId": 32508,
+  "oldWorkerStopped": true,
+  "newWorkerReady": true,
+  "sceneRevision": "06a5995bc2ad3200a3e9e1721da3f66ad70637a7808afc2d25dbc1b803ee44f6",
+  "geometryRevision": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+  "currentDrawings": 4,
+  "staleDrawings": 4,
+  "temporaryFailures": [
+    {
+      "code": "SERVICE_IDENTITY_MISMATCH",
+      "cause": "old Hub source identity predates merged commit",
+      "resolution": "restart Hub from same checkout and project/runtime roots"
+    },
+    {
+      "code": "unverifiable source version",
+      "cause": "elevated user account Git safe-directory check",
+      "resolution": "process-scoped safe.directory; no global Git config change"
+    }
+  ],
+  "scope": "stored imported geometry, materials, camera, lights, render settings, drawing settings/history. Not OCCT Working Head or bidirectional camera."
+}

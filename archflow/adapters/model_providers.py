@@ -80,10 +80,7 @@ class InProcessMeshProvider:
                               "structure": "unchanged", "geometry": "unchanged"} if source == target else {
             "units": "Normalized to meters; scale and placement checked by readback.",
             "layers": "Flattened; layer counts are recorded in source/output metrics.",
-            "materials": ("Base colour materials, vertex colours and valid normals are kept; missing normals are computed "
-                          "and meshes without a material receive a neutral display material. Textures, UVs and PBR maps "
-                          "are not transferred." if target == "3dm" else
-                          "Materials, textures and custom normals are not transferred."),
+            "materials": "Base color, roughness/metallic, vertex normals and UV are preserved where supported; materialless meshes receive a neutral display material. Vertex colors are retained when writing 3DM. Texture images and other shading attributes are not transferred.",
             "structure": "Hierarchy, instances and CAD metadata are not transferred.",
             "geometry": "Triangle meshes only; saved BREP render meshes approximate exact surfaces; no solids reconstructed.",
         })

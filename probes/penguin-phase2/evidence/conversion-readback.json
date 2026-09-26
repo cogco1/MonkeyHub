@@ -1,0 +1,267 @@
+{
+  "converter": "monkeyhub-mesh/3",
+  "sourceSHA256": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+  "outputSHA256": "acc871ec4ee50ac49df1dd7b9db8420583f80f0141f1d9639f3855ff67c6181c",
+  "sourceMeshes": 1,
+  "outputMeshes": 1,
+  "units": "UnitSystem.Meters",
+  "meshes": [
+    {
+      "name": "geometry_0",
+      "vertices": 58790,
+      "triangles": 19600,
+      "maxVertexErrorMeters": 0.0,
+      "identicalTriangleIndices": true,
+      "minimumNormalCosine": 0.9999999999999987,
+      "materialIndex": 0,
+      "diffuseRGBA": [
+        200,
+        200,
+        200,
+        255
+      ]
+    }
+  ],
+  "productionReport": {
+    "converter": [
+      "monkeyhub-mesh/3-glb2",
+      "rhino3dm/8.32.2"
+    ],
+    "warnings": [
+      "Mesh geometry only: no CAD solids reconstructed. Texture images and PBR maps are not transferred; hierarchy and instances are flattened.",
+      "Source vertex normals kept on 1 mesh(es).",
+      "1 mesh(es) had no material and received the neutral 'MonkeyHub neutral' display material."
+    ],
+    "converted": true,
+    "display": {
+      "normals": {
+        "kept": 1,
+        "computed": 0,
+        "recomputed": 0
+      },
+      "winding": {
+        "reversedTriangles": 0,
+        "closedShells": 1
+      },
+      "material": {
+        "kept": 0,
+        "defaulted": 1,
+        "fallback": {
+          "name": "MonkeyHub neutral",
+          "color": [
+            200,
+            200,
+            200,
+            255
+          ]
+        }
+      },
+      "vertexColors": {
+        "kept": 0
+      }
+    },
+    "losses": {
+      "units": "Normalized to meters; scale and placement checked by readback.",
+      "layers": "Flattened; layer counts are recorded in source/output metrics.",
+      "materials": "Base color, roughness/metallic, vertex normals and UV are preserved where supported; materialless meshes receive a neutral display material. Vertex colors are retained when writing 3DM. Texture images and other shading attributes are not transferred.",
+      "structure": "Hierarchy, instances and CAD metadata are not transferred.",
+      "geometry": "Triangle meshes only; saved BREP render meshes approximate exact surfaces; no solids reconstructed."
+    },
+    "sourceUnits": "Meters",
+    "outputUnits": "UnitSystem.Meters",
+    "coordinateSystem": "meters/Z-up (validation)",
+    "sourceMetrics": {
+      "objectCount": 1,
+      "layerCount": 1,
+      "triangleCount": 19600,
+      "boundsMetersZUp": [
+        [
+          -0.31214484572410583,
+          -0.33585602045059204,
+          0.0
+        ],
+        [
+          0.31214484572410583,
+          0.33585602045059204,
+          1.0
+        ]
+      ]
+    },
+    "outputMetrics": {
+      "objectCount": 1,
+      "layerCount": 1,
+      "triangleCount": 19600,
+      "boundsMetersZUp": [
+        [
+          -0.31214484572410583,
+          -0.33585602045059204,
+          0.0
+        ],
+        [
+          0.31214484572410583,
+          0.33585602045059204,
+          1.0
+        ]
+      ]
+    },
+    "sourceFormat": "glb",
+    "targetFormat": "3dm",
+    "provider": "InProcessMeshProvider",
+    "providerVersion": "monkeyhub-mesh/3",
+    "executionMode": "headless",
+    "executionHost": "in-process",
+    "providerCandidates": [
+      {
+        "provider": "InProcessMeshProvider",
+        "providerVersion": "monkeyhub-mesh/3",
+        "executionMode": "headless",
+        "executionHost": "in-process",
+        "available": true,
+        "verified": true,
+        "status": "available",
+        "reason": "Verified bounded meshes; unsupported geometry is refused and losses are reported.",
+        "inputFormats": [
+          "3dm",
+          "glb"
+        ],
+        "outputFormats": [
+          "3dm",
+          "glb"
+        ]
+      },
+      {
+        "provider": "SketchUpDesktopProvider",
+        "providerVersion": "native-discovery/1",
+        "executionMode": "local desktop",
+        "executionHost": "local-application",
+        "available": false,
+        "verified": false,
+        "status": "blocked-runtime",
+        "reason": "\u5f53\u524d\u6ca1\u6709\u914d\u7f6e\u53ef\u7528\u7684\u6267\u884c\u5668: Software was not found in the inspected locations; no verified automation bridge/validator is configured.",
+        "inputFormats": [],
+        "outputFormats": [],
+        "discovery": {
+          "detected": false,
+          "installations": [],
+          "operatingSystem": "Windows",
+          "versionCompatibility": "unverified",
+          "licenseStatus": "unverified",
+          "automationStatus": "not-implemented",
+          "candidateInputFormats": [
+            "skp",
+            "dwg"
+          ],
+          "candidateOutputFormats": [
+            "skp",
+            "dwg",
+            "glb"
+          ],
+          "diagnostics": []
+        }
+      },
+      {
+        "provider": "AutoCADCoreProvider",
+        "providerVersion": "native-discovery/1",
+        "executionMode": "headless",
+        "executionHost": "local-application",
+        "available": false,
+        "verified": false,
+        "status": "blocked-runtime",
+        "reason": "\u5f53\u524d\u6ca1\u6709\u914d\u7f6e\u53ef\u7528\u7684\u6267\u884c\u5668: Software detected, but no verified automation bridge/validator is configured; version compatibility, entitlement and session readiness are unverified.",
+        "inputFormats": [],
+        "outputFormats": [],
+        "discovery": {
+          "detected": true,
+          "installations": [
+            {
+              "product": "autocad-core",
+              "executableName": "accoreconsole.exe",
+              "version": null,
+              "versionHint": "2025",
+              "versionVerified": false,
+              "evidence": "standard-install-directory"
+            }
+          ],
+          "operatingSystem": "Windows",
+          "versionCompatibility": "unverified",
+          "licenseStatus": "unverified",
+          "automationStatus": "not-implemented",
+          "candidateInputFormats": [
+            "dwg"
+          ],
+          "candidateOutputFormats": [
+            "dwg"
+          ],
+          "diagnostics": []
+        }
+      },
+      {
+        "provider": "AutoCADDesktopProvider",
+        "providerVersion": "native-discovery/1",
+        "executionMode": "local desktop",
+        "executionHost": "local-application",
+        "available": false,
+        "verified": false,
+        "status": "blocked-runtime",
+        "reason": "\u5f53\u524d\u6ca1\u6709\u914d\u7f6e\u53ef\u7528\u7684\u6267\u884c\u5668: Software detected, but no verified automation bridge/validator is configured; version compatibility, entitlement and session readiness are unverified.",
+        "inputFormats": [],
+        "outputFormats": [],
+        "discovery": {
+          "detected": true,
+          "installations": [
+            {
+              "product": "autocad",
+              "executableName": "acad.exe",
+              "version": null,
+              "versionHint": "2025",
+              "versionVerified": false,
+              "evidence": "standard-install-directory"
+            }
+          ],
+          "operatingSystem": "Windows",
+          "versionCompatibility": "unverified",
+          "licenseStatus": "unverified",
+          "automationStatus": "not-implemented",
+          "candidateInputFormats": [
+            "dwg"
+          ],
+          "candidateOutputFormats": [
+            "dwg"
+          ],
+          "diagnostics": []
+        }
+      }
+    ],
+    "intermediateFormats": [],
+    "usedIntermediateFormats": false,
+    "previewArtifacts": [],
+    "previewPolicy": {
+      "status": "not-generated",
+      "sourceDimension": 3,
+      "suggestedFormats": [
+        "png",
+        "jpg",
+        "glb"
+      ],
+      "role": "sibling-preview",
+      "mayInvent3DGeometry": false
+    },
+    "artifactRoles": {
+      "sourceArtifact": "original",
+      "outputArtifact": "delivery",
+      "previewArtifacts": "preview"
+    },
+    "outputValidation": {
+      "status": "passed",
+      "checks": [
+        "signature",
+        "source-and-output-reopen",
+        "object-and-triangle-counts",
+        "meter-scale-and-bounds",
+        "vertex-normals-and-display-material"
+      ],
+      "sourceDimension": 3,
+      "outputDimension": 3
+    }
+  }
+}

@@ -1,0 +1,28 @@
+2026-09-26T19:16:15.7583873Z [36;1mpython tools/archcheck.py --changed origin/main[0m
+2026-09-26T19:16:15.7648822Z shell: /usr/bin/bash -e {0}
+2026-09-26T19:16:15.7649091Z env:
+2026-09-26T19:16:15.7649369Z   pythonLocation: /opt/hostedtoolcache/Python/3.12.14/x64
+2026-09-26T19:16:15.7649830Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.12.14/x64/lib/pkgconfig
+2026-09-26T19:16:15.7650281Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.14/x64
+2026-09-26T19:16:15.7650675Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.14/x64
+2026-09-26T19:16:15.7651089Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.14/x64
+2026-09-26T19:16:15.7651493Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.12.14/x64/lib
+2026-09-26T19:16:15.7651821Z ##[endgroup]
+2026-09-26T19:16:15.9760575Z apps/monkeyhub/web/test/chatShell.browser.mjs:1: SCOPE_UNDECLARED: commit ec40937e names no work item; apps/monkeyhub/web/test/chatShell.browser.mjs is outside its write scope
+2026-09-26T19:16:15.9867795Z ##[error]Process completed with exit code 1.
+2026-09-26T19:16:16.0050362Z Post job cleanup.
+2026-09-26T19:16:16.0932539Z [command]/usr/bin/git version
+2026-09-26T19:16:16.0984597Z git version 2.55.0
+2026-09-26T19:16:16.1020607Z Temporarily overriding HOME='/home/runner/work/_temp/552ddd5a-99fc-4b13-aa23-614d0a0cbb83' before making global git config changes
+2026-09-26T19:16:16.1022448Z Adding repository directory to the temporary git global config as a safe directory
+2026-09-26T19:16:16.1027016Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/MonkeyHub/MonkeyHub
+2026-09-26T19:16:16.1069506Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-09-26T19:16:16.1108293Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-09-26T19:16:16.1367076Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-09-26T19:16:16.1421767Z http.https://github.com/.extraheader
+2026-09-26T19:16:16.1423878Z [command]/usr/bin/git config --local --unset-all http.https://github.com/.extraheader
+2026-09-26T19:16:16.1462500Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-09-26T19:16:16.1794322Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-09-26T19:16:16.1846549Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-09-26T19:16:16.2319356Z Cleaning up orphan processes
+2026-09-26T19:16:16.2611583Z ##[warning]Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/setup-python@v5. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/

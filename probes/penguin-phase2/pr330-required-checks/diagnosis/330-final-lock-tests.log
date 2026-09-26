@@ -1,0 +1,33 @@
+test_declared_locks_do_not_block_complete_content_comparison (__main__.ProjectSnapshotTests.test_declared_locks_do_not_block_complete_content_comparison) ... ERROR
+test_other_lock_named_content_is_checked_and_read_errors_propagate (__main__.ProjectSnapshotTests.test_other_lock_named_content_is_checked_and_read_errors_propagate) ... ERROR
+
+======================================================================
+ERROR: test_declared_locks_do_not_block_complete_content_comparison (__main__.ProjectSnapshotTests.test_declared_locks_do_not_block_complete_content_comparison)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\jiayu\OneDrive\文档\ChatGPT\Blender skill\projection-development\workspace\worktrees\codex-monkeyhub-current\apps\monkeyhub\desktop\tests\test_runtime.py", line 853, in setUp
+    spec.loader.exec_module(fixture)
+  File "<frozen importlib._bootstrap_external>", line 999, in exec_module
+  File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+  File "C:\Users\jiayu\OneDrive\文档\ChatGPT\Blender skill\projection-development\workspace\worktrees\codex-monkeyhub-current\apps\archflow-studio\api\tests\support.py", line 19, in <module>
+    import archflow_studio_api  # noqa: F401
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^
+ModuleNotFoundError: No module named 'archflow_studio_api'
+
+======================================================================
+ERROR: test_other_lock_named_content_is_checked_and_read_errors_propagate (__main__.ProjectSnapshotTests.test_other_lock_named_content_is_checked_and_read_errors_propagate)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\jiayu\OneDrive\文档\ChatGPT\Blender skill\projection-development\workspace\worktrees\codex-monkeyhub-current\apps\monkeyhub\desktop\tests\test_runtime.py", line 853, in setUp
+    spec.loader.exec_module(fixture)
+  File "<frozen importlib._bootstrap_external>", line 999, in exec_module
+  File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+  File "C:\Users\jiayu\OneDrive\文档\ChatGPT\Blender skill\projection-development\workspace\worktrees\codex-monkeyhub-current\apps\archflow-studio\api\tests\support.py", line 19, in <module>
+    import archflow_studio_api  # noqa: F401
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^
+ModuleNotFoundError: No module named 'archflow_studio_api'
+
+----------------------------------------------------------------------
+Ran 2 tests in 0.094s
+
+FAILED (errors=2)
