@@ -58,6 +58,9 @@ const distantBytes = pdfBytes([[0.2, 0.7, 0.8]]);
 const distantDocument = sourceDocument(distantBytes, "Headless new frame.pdf", 1, "distant-drawing-revision");
 let headlessPreviewAvailable = false, headlessPreviewFailures = 0;
 let replacementBytes, replacement;
+// Two revisions of one cut plan with the same page shape; the rebuild names
+// the first as the page it replaces, as a rebuilt drawing registers (#291).
+let planBytes, rebuiltPlanBytes, planDocument, rebuiltPlan;
 const uploadBytes = pdfBytes([[0.3, 0.3, 0.3], [0.9, 0.7, 0.1]]);
 let uploadedReplacement;
 // The explicit editable copy of one whole registered document.
@@ -114,6 +117,15 @@ async function waitForPageInView(id) {
 }
 // JSON omits undefined fields; Board uses Excalidraw's restored empty bindings.
 const persisted = (elements) => JSON.parse(JSON.stringify(elements.map((element) => ({ ...element, boundElements: element.boundElements ?? [] }))));
+// The save indicator can still read "Saved" from before a change; the board
+// this server retained is the answer.
+async function untilSaved(accepts, label) {
+  const deadline = Date.now() + 30_000;
+  while (!accepts(saved)) {
+    if (Date.now() > deadline) assert.fail(`${label}: ${JSON.stringify(saved.seenDocuments)}`);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+}
 
 try {
   vite = await createServer({ root: webRoot, configFile: false, resolve: { dedupe: ["react", "react-dom"] }, logLevel: "error", cacheDir,
@@ -179,6 +191,16 @@ try {
   // document owner has no single file that can stand for it.
   workCopyRefusal = "Pages of this document are answered for by different documents now, "
     + "so no single file can stand for it.";
+  [planBytes, rebuiltPlanBytes] = (await page.evaluate(() => ["#e9e4d8", "#2f4f9e"].map((fill) => {
+    const canvas = document.createElement("canvas"); canvas.width = 200; canvas.height = 120;
+    const context = canvas.getContext("2d"); context.fillStyle = fill; context.fillRect(0, 0, 200, 120);
+    return canvas.toDataURL("image/png").split(",")[1];
+  }))).map((encoded) => Buffer.from(encoded, "base64"));
+  const cutPlan = (bytes, revisionRef, generatedAt) => ({ ...sourceDocument(bytes, "floor-plan.png", 1, revisionRef, "image/png"),
+    drawingId: "floor-plan", viewRecipe: { kind: "cut-plan", name: "floor-plan" }, generatedAt });
+  planDocument = cutPlan(planBytes, "plan-revision-1", "2026-09-25T10:00:00+00:00");
+  rebuiltPlan = { ...cutPlan(rebuiltPlanBytes, "plan-revision-2", "2026-09-25T10:05:00+00:00"),
+    previousRevisionRef: planDocument.revisionRef, replacesPages: [{ ...pageSource(planDocument, 0), newPageIndex: 0 }] };
   page.on("pageerror", (error) => failures.push(error.stack ?? error.message));
   await page.route((url) => url.pathname.startsWith("/api/"), async (route) => {
     const request = route.request(), url = new URL(request.url());
@@ -222,6 +244,14 @@ try {
         if (url.pathname === `/api/documents/${uploadedReplacement.assetSha256}/bytes`) {
           assert.equal(url.searchParams.get("revisionRef"), uploadedReplacement.revisionRef);
           return await route.fulfill({ contentType: "application/pdf", body: uploadBytes });
+        }
+        if (url.pathname === `/api/documents/${planDocument.assetSha256}/bytes`) {
+          assert.equal(url.searchParams.get("revisionRef"), planDocument.revisionRef);
+          return await route.fulfill({ contentType: "image/png", body: planBytes });
+        }
+        if (url.pathname === `/api/documents/${rebuiltPlan.assetSha256}/bytes`) {
+          assert.equal(url.searchParams.get("revisionRef"), rebuiltPlan.revisionRef);
+          return await route.fulfill({ contentType: "image/png", body: rebuiltPlanBytes });
         }
         assert.equal(url.pathname, `/api/documents/${replacement.assetSha256}/bytes`);
         assert.equal(url.searchParams.get("revisionRef"), replacement.revisionRef);
@@ -496,6 +526,71 @@ try {
   assert.deepEqual(activeIds(afterUpload, "image"), activeIds(reopened, "image"));
   assert.deepEqual(saved.elements, persisted(afterUpload.elements), "The dialog completes only after its updated scene is saved");
 
+  // A rebuilt cut plan arrives registered as its previous revision's whole
+  // replacement (#291). The first revision is placed as a new page like any
+  // other; its rebuild then updates that placed page where it is, marks and all.
+  const beforePlan = await readScene(), scrollsBeforePlan = await scrollCount();
+  documents = [...documents, planDocument];
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  const planImageId = await (await page.waitForFunction((revision) => window.__boardApi.getSceneElements().find((element) =>
+    element.type === "image" && element.customData?.sourceDocument?.revisionRef === revision)?.id, planDocument.revisionRef)).jsonValue();
+  const planFrameId = byId(await readScene(), planImageId).frameId;
+  assert.ok(planFrameId, "The first revision arrives in its own frame");
+  assert.deepEqual(activeIds(await readScene(), "image"), [...activeIds(beforePlan, "image"), planImageId].sort(),
+    "The first revision of a drawing is placed as one new page");
+  await page.waitForFunction((count) => window.__boardScrolls.length === count + 1, scrollsBeforePlan);
+  await quiet.waitFor();
+  await quiet.getByRole("button", { name: "Dismiss", exact: true }).click();
+  await quiet.waitFor({ state: "hidden" });
+  // Mark the placed plan and look elsewhere, so that its rebuild has to come back into view.
+  await page.evaluate(({ image, frame }) => {
+    const api = window.__boardApi, { convertToExcalidrawElements, CaptureUpdateAction } = window.__boardHelpers;
+    const placed = api.getSceneElements().find(({ id }) => id === image);
+    const mark = convertToExcalidrawElements([{ type: "ellipse", id: "plan-mark", x: placed.x + placed.width * 0.2, y: placed.y + placed.height * 0.25,
+      width: placed.width * 0.4, height: placed.height * 0.4, strokeColor: "#e03131", strokeWidth: 3, roughness: 0, frameId: frame }], { regenerateIds: false });
+    api.updateScene({ elements: [...api.getSceneElementsIncludingDeleted(), ...mark],
+      appState: { zoom: { value: 1 }, scrollX: -6000, scrollY: 0 }, captureUpdate: CaptureUpdateAction.IMMEDIATELY });
+  }, { image: planImageId, frame: planFrameId });
+  await untilSaved((board) => board.elements.some((element) => element.id === "plan-mark"), "The mark on the first revision is saved");
+  const marked = await readScene(), scrollsBeforeRebuild = await scrollCount();
+  documents = [...documents, rebuiltPlan];
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await page.waitForFunction(({ id, revision }) => window.__boardApi.getSceneElements().some((element) =>
+    element.id === id && element.customData?.sourceDocument?.revisionRef === revision), { id: planImageId, revision: rebuiltPlan.revisionRef });
+  const rebuilt = await readScene();
+  assert.deepEqual(byId(rebuilt, planImageId).customData.sourceDocument, pageSource(rebuiltPlan, 0), "The rebuild answers for the placed page");
+  assert.deepEqual(geometry(byId(rebuilt, planImageId)), geometry(byId(marked, planImageId)), "A rebuild keeps the page's position, size, flip, angle and frame");
+  assert.deepEqual(byId(rebuilt, planFrameId), byId(marked, planFrameId), "A rebuild never reconstructs the drawing's frame");
+  assert.deepEqual(byId(rebuilt, "plan-mark"), byId(marked, "plan-mark"), "A mark on the earlier revision stays where it was drawn");
+  for (const id of ["kept-image", "kept-frame", "unmapped-image", "existing-mark", "mark-during-preview"]) {
+    assert.deepEqual(byId(rebuilt, id), byId(marked, id), `A rebuilt drawing leaves ${id} alone`);
+  }
+  assert.deepEqual(activeIds(rebuilt, "image"), activeIds(marked, "image"), "A rebuild is never placed as another page");
+  assert.deepEqual(activeIds(rebuilt, "frame"), activeIds(marked, "frame"));
+  assert.equal(rebuilt.elements.length, marked.elements.length, "No page or frame is appended for a rebuild");
+  await page.waitForFunction((count) => window.__boardScrolls.length === count + 1, scrollsBeforeRebuild);
+  await waitForPageInView(planImageId);
+  assert.notDeepEqual(viewport(await readScene()), viewport(marked), "Receiving a rebuild must reveal its page automatically");
+  const planPixel = await page.evaluate(async (id) => {
+    const api = window.__boardApi, image = api.getSceneElements().find((element) => element.id === id);
+    const bitmap = new Image(); bitmap.src = api.getFiles()[image.fileId].dataURL; await bitmap.decode();
+    const canvas = document.createElement("canvas"); canvas.width = 1; canvas.height = 1;
+    const context = canvas.getContext("2d"); context.drawImage(bitmap, 0, 0, 1, 1);
+    return [...context.getImageData(0, 0, 1, 1).data];
+  }, planImageId);
+  assert.ok(planPixel[2] > 120 && planPixel[0] < 90, `The displayed page must be the rebuilt revision: ${planPixel}`);
+  await quiet.waitFor();
+  assert.equal(await quiet.count(), 1, "One rebuilt drawing produces exactly one quiet notice");
+  assert.equal(await quiet.getAttribute("role"), "status", "A rebuilt drawing is reported politely, not as an alert");
+  assert.equal(await quiet.locator("span").first().innerText(), `«${rebuiltPlan.fileName}» updated`);
+  assert.equal(await page.locator(".monkeyboard-alert[role=alert]").filter({ hasText: `«${rebuiltPlan.fileName}» updated` }).count(), 0,
+    "A rebuilt drawing must not use the error surface");
+  await untilSaved((board) => board.seenDocuments.includes(documentKey(rebuiltPlan)) && board.elements.find((element) =>
+    element.id === planImageId)?.customData?.sourceDocument?.revisionRef === rebuiltPlan.revisionRef, "The rebuilt page reaches the saved board");
+  assert.deepEqual(saved.elements, persisted((await readScene()).elements), "The rebuilt page and its kept mark are what the board retains");
+  await quiet.getByRole("button", { name: "Dismiss", exact: true }).click();
+  await quiet.waitFor({ state: "hidden" });
+
   // Clear marks through both real buttons, with a single keyboard undo/redo.
   // Include a real Crit pen stroke and arrow/text bindings to a retained page.
   await page.locator(".monkeyboard-actions summary").click();
@@ -717,7 +812,7 @@ try {
   assert.equal(await chineseUpdate.isDisabled(), true, "Conflicted local state cannot upload another replacement");
   assert.equal(uploads.length, 1);
   assert.deepEqual(failures, []); assert.deepEqual(escaped, []);
-  console.log(JSON.stringify({ passed: "Excalidraw replacement and remote-frame autofocus once, deferred until a live stroke ends, exact source/crop/marks preservation, repeated polling preserves user navigation, editable work copy, clear annotations and undo/redo, save/reopen and CAS", writes: writes.length, uploads: uploads.length, workCopies: workCopies.length, conflicts, documentReads, fileReads: fileReads.length }));
+  console.log(JSON.stringify({ passed: "Excalidraw replacement and remote-frame autofocus once, deferred until a live stroke ends, exact source/crop/marks preservation, a rebuilt cut plan updating its placed page in place, repeated polling preserves user navigation, editable work copy, clear annotations and undo/redo, save/reopen and CAS", writes: writes.length, uploads: uploads.length, workCopies: workCopies.length, conflicts, documentReads, fileReads: fileReads.length }));
 } catch (error) {
   console.error(JSON.stringify({ failures, escaped, writes: writes.length, documentReads,
     visible: await page?.locator("body").innerText().catch(() => "") }));

@@ -1465,12 +1465,15 @@ attempt needs a new UUID. `errorCode` and `error` contain only bounded safe reas
 raw provider errors, credentials and image bytes never enter diagnostics.
 `sourceState` is derived as `current`, `outdated` or `unavailable` by following the
 retained request through every source and reference, transitively: an explicit
-replacement of one of those pages makes it outdated; so does a model-bound page whose
-exact state is no longer the Working Head's design (§4.1), and a cut-plan page whose
-drawing reads changed geometry, anchors or dimensions. A later accepted Stage alone
+replacement of one of those pages makes it outdated, unless it only redraws the same
+drawing from the same exact source; so does a model-bound page whose exact state is no
+longer the Working Head's design (§4.1), and a cut-plan page whose drawing reads
+changed geometry, anchors or dimensions. A later accepted Stage alone
 changes nothing unless it becomes the Working Head. For a page bound to no model state,
 current means the exact registered page remains available and unreplaced, not that it
-matches an untracked external model or active view.
+matches an untracked external model or active view. An outdated result's updated source
+is where its pages' registered replacements lead; a newer drawing revision that
+registered none is another page, not an update.
 Old output registrations remain readable independently of source availability.
 `document` is the retained SourceDocument, and `resultAvailable` independently
 reports whether its immutable bytes can still be read. Usage and cost stay null
