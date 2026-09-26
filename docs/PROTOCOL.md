@@ -114,6 +114,7 @@ tolerate it.
 | GET | `/api/candidates/{candidateId}` | the finished candidate, read back out of the records its run retained | reads shared | stable |
 | POST | `/api/candidates/combine` → 202 | a new candidate from independent saved component changes sharing one Stage (§5.4) | writes shared | provisional |
 | GET | `/api/design-history?branchId=main` | design branch pointers, their reachable committed Stages, and the project's admitted `candidates[]` and `studies[]` with `warnings[]` (§5.5); `include=rejected` also lists retained rejections | reads shared + design refs + the admissions review | provisional |
+| POST | `/api/candidate-reviews` → 201 | reject, archive/restore or endorse one exact Candidate, or endorse one exact Stage; actor, UTC time and an optional reason are retained | **writes the `studio-candidate-reviews` review**; moves no Working Head, Stage or formal HEAD | provisional |
 | POST | `/api/design-stages/initialize` → 201 | explicit initial Stage from a complete exact model | writes review + design ref | provisional |
 | POST | `/api/candidates/{candidateId}/accept` | immutable Stage and atomic advancement of its expected design branch head; a run with a live rejection is refused (§5.5) | writes review + design ref | provisional |
 | POST | `/api/admissions` → 201 | one closed loop's `CandidateAdmission@1` through the completion gate Stage acceptance shares (§5.5); an identical retry answers 200 with the record it repeats | **writes the `studio-admissions` review** | provisional |
@@ -551,7 +552,7 @@ Running a candidate makes a reversible result, not a design decision. It does no
 proposal accepted or reject other open proposals. The job registry already links the proposal
 and candidate; the run only flushes earlier explicit judgements against its base.
 
-The existing proposal endorsement route is `POST /api/proposals/{id}/decision` with
+The legacy proposal-decision route is `POST /api/proposals/{id}/decision` with
 `{"decision":"accepted","candidateId":"<the chosen candidate>","reason":"<optional reason>"}`.
 The candidate must have succeeded in this process and belong to that proposal. No latest-run
 default is used. `candidateId` is required for acceptance and refused for the other decisions;
@@ -559,6 +560,17 @@ default is used. `candidateId` is required for acceptance and refused for the ot
 formal-issue authority. It retains the existing `DeliberationEpisode@1` in the named candidate run
 and preserves other proposals and alternatives against the same base. It does not create
 a design Stage. Previously retained episodes remain readable.
+
+That route remains for proposal deliberation and retained-data compatibility; it is not direction
+endorsement. Persistent review uses `/api/candidate-reviews` against an exact retained Candidate
+or Stage. Endorsement is independent: it neither accepts a Stage nor becomes an acceptance or
+publication prerequisite. Review requests carry `projectId`, `subjectKind` (`candidate` or
+`stage`), the exact `subjectRef`, `action` (`reject`, `archive`, `restore`, or `endorse`),
+and an optional `reason`; only endorsement applies to a Stage. Restoring an archived
+Candidate recovers its previous disposition, including an earlier rejection. History
+includes the latest review actor/time and the endorsement event's own `endorsedBy` /
+`endorsedAt`, so archiving by another person does not replace the endorsement attribution.
+These reviews currently refuse synchronized-project writes with `SYNC_REVIEW_SHARED`.
 
 Rejections and modifications made before a run remain process memory: `producedRun` is `null`
 and `persistence` is `in-memory (not version history)`. When a candidate meets those judgements,

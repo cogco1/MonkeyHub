@@ -4687,7 +4687,8 @@
         "Composing explicitly selected exact Study evidence revisions into ContextPack separately from design facts and applicable decisions; no implicit Study scan, acceptance or project write.",
         "the source-bound, read-only visual observation channel (GH-303): VisualReviewRequest over exact model or registered-page sources, EvidenceFrame values taken from the model-view and page-export owners' own answers, the strict VisualObservation answer and its validation, the VisualObservationProvider seam with the configured Studio model transport as its implementation, the Harness review allowance VisualReviewBudget, and POST /api/visual-reviews, which has those owners render the frames in-process from the exact sources a caller names",
         "candidate admission: one CandidateAdmission@1 per closed loop (a task, one worktree of it, or one person's act) in the fixed explicit studio-admissions P036 run, written only through the completion gate Stage acceptance shares, with the boundary's actor, the stated task, Study and bound message, each result's outcome, pinned model, receipt and superseded attempts",
-        "the Candidate Pool read for the Design Tree: admitted Candidates and their Studies from admission records and from legacy facts that already prove admission (a committed Stage's run, a retained Exploration's non-base option, an accepted episode's produced run), with lineage-derived continuedFrom and acceptedStageRef and Working Head membership"
+        "the Candidate Pool read for the Design Tree: admitted Candidates and their Studies from admission records and from legacy facts that already prove admission (a committed Stage's run, a retained Exploration's non-base option, an accepted episode's produced run), with lineage-derived continuedFrom and acceptedStageRef and Working Head membership",
+        "the attributable, revisioned rejection, archival/restoration and endorsement of an exact retained Candidate or Stage; this changes no design position"
       ],
       "does_not_own": [
         "running the proposal - studio.candidate",
@@ -4739,7 +4740,8 @@
         "VisualObservation bound to the frames actually sent, with ObservationUsage and a visual_observation MonkeyMonitor span over the provider's model_request row",
         "the visual-review answer: observation, usage and the loop's next budgetState; 409 VISUAL_SOURCE_MISMATCH (with sourceRef), VISUAL_BUDGET_EXHAUSTED, VISUAL_REVIEW_NOT_WARRANTED, VISUAL_REVIEW_OUT_OF_ORDER or VISUAL_PROVIDER_UNAVAILABLE before any provider call, and 502 VISUAL_PROVIDER_FAILED with the spent budgetState and usage",
         "retained CandidateAdmission@1 records and their DTOs",
-        "candidates[] and studies[] on the design history read"
+        "candidates[] and studies[] on the design history read",
+        "CandidateReview"
       ],
       "public_api": [
         "POST /api/intents",
@@ -4896,7 +4898,8 @@
         "admission_index",
         "CandidatePool",
         "PoolCandidate",
-        "PoolStudy"
+        "PoolStudy",
+        "POST /api/candidate-reviews"
       ],
       "depends_on": [
         "contracts.canonical",

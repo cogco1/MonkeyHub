@@ -14,7 +14,7 @@
  * before admission never do. This module is pure and has no copy: the
  * surfaces word it.
  */
-import type { AdmissionActorDto, DesignCandidateDto, DesignStageDto, DesignStudyDto, WorkingHeadDto, WorktreeLineDto } from "../../api/generated";
+import type { AdmissionActorDto, DesignCandidateDto, DesignStageDto, DesignStudyDto, ReviewJudgementDto, WorkingHeadDto, WorktreeLineDto } from "../../api/generated";
 import type { DesignTreeSource } from "./contract";
 
 export type TreeNodeKind = "origin" | "stage" | "candidate" | "pending" | "current";
@@ -30,10 +30,12 @@ export interface StageFacts {
   readonly acceptedAt: string | null;
   /** The run accepted as this Stage: the one option that is it, not an ancestor it grew from. */
   readonly candidateId: string;
+  readonly review: ReviewJudgementDto | null;
 }
 
 export interface CandidateFacts {
   readonly candidateId: string;
+  readonly review: ReviewJudgementDto | null;
   readonly admittedBy: string | null;
   readonly admittedOrigin: string | null;
   readonly admittedAt: string | null;
@@ -160,7 +162,7 @@ export function buildGrowthTree(source: DesignTreeSource): GrowthTree {
     const name = stage.label && stage.label !== `S${number}` ? stage.label : null;
     nodes.set(id, { id, kind: "stage", parent: null, runId: stage.modelSource.runId, label: name, summary: null, letter: null, studyId: null,
       stage: { ref: stage.stageRef, number, name, branchId: stage.branchId, acceptedBy: stage.acceptedBy,
-        acceptedAt: stage.acceptance?.occurredAt ?? null, candidateId: stage.candidateId } });
+        acceptedAt: stage.acceptance?.occurredAt ?? null, candidateId: stage.candidateId, review: stage.review ?? null } });
     stageByRun.set(stage.candidateId, id);
     stageByRun.set(stage.modelSource.runId, id);
   }
@@ -203,7 +205,7 @@ export function buildGrowthTree(source: DesignTreeSource): GrowthTree {
       summary: candidate.summary?.trim() || null, letter: letters.get(id) ?? null, studyId: candidate.studyId ?? null,
       candidate: { candidateId: candidate.candidateId, admittedBy: actor, admittedOrigin: origin, admittedAt: candidate.admittedAt ?? null,
         legacy: candidate.legacy ?? null, baseStageRef: candidate.baseStageRef ?? null, acceptedStage: stageLabel(candidate.acceptedStageRef),
-        blockedBy: [...(candidate.blockedBy ?? [])] } });
+        blockedBy: [...(candidate.blockedBy ?? [])], review: candidate.review ?? null } });
     // Where the option grew from: the option it continued, else its Study's
     // start (its base run when that is on the tree, else its Stage), else the
     // Stage its work began on.

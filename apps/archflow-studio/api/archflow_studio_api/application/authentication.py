@@ -181,6 +181,8 @@ def request_action(method: str, path: str, *, shared_project: bool) -> str | Non
         # Result admission and recipe import are explicit judgments using the
         # existing decision grant. Neither accepts a Stage. Both are Runtime consumers.
         return "accept"
+    if not shared_project and method == "POST" and path == "/api/candidate-reviews":
+        return "accept"
     if method in {"GET", "HEAD"}:
         if not shared_project or any(re.fullmatch(pattern, path) for pattern in _SHARED_READ_PATHS):
             return "read"

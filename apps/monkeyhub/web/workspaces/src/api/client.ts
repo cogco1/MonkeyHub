@@ -20,6 +20,7 @@ import type { DecisionDto, DecisionListDto, DecisionRequestDto, DecisionRevision
 import { exportDrawingRecipeApiDecisionsDecisionIdRecipeExportGet, inspectDrawingRecipeApiDrawingRecipesInspectPost,
   importDrawingRecipeApiDrawingRecipesImportPost } from "./generated";
 import type { RecipeExportFileDto, RecipeInspectDto, RecipeInspectRequestDto, RecipeImportRequestDto } from "./generated";
+import type { ReviewJudgementDto, ReviewJudgementRequestDto } from "./generated";
 import { retainStudyApiStudiesPost, discoverStudiesApiStudiesGet,
   proposeStudyApiStudiesProposePost } from "./generated";
 import {
@@ -45,6 +46,7 @@ import {
   readBoardApiBoardGet,
   updateBoardApiBoardPut,
   readCommittedDesignHistoryApiDesignHistoryGet,
+  reviewCandidateOrStageApiCandidateReviewsPost,
   createElevationApiDrawingsElevationsPost,
   createElevationProposalApiProposalsElevationPost,
   readDrawingStylesApiDrawingsStylesGet,
@@ -301,6 +303,9 @@ export const createStudioClient = (connection: ServerConnection) => ({
   },
   designHistory(branchId = "main", signal?: AbortSignal): Promise<DesignHistoryDto> {
     return call("GET /api/design-history", readCommittedDesignHistoryApiDesignHistoryGet({ client: connection.client, query: { branchId }, signal }));
+  },
+  reviewCandidate(body: ReviewJudgementRequestDto): Promise<ReviewJudgementDto> {
+    return call("POST /api/candidate-reviews", reviewCandidateOrStageApiCandidateReviewsPost({ client: connection.client, body }));
   },
   initializeStage(body: InitializeDesignStageRequestDto): Promise<DesignStageDto> {
     return call("POST /api/design-stages/initialize", initializeCommittedDesignApiDesignStagesInitializePost({ client: connection.client, body }));

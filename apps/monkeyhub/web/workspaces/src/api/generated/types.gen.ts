@@ -2626,6 +2626,7 @@ export type DesignCandidateDto = {
      * Attempts this result replaced within its loop; hidden by default.
      */
     supersedes: Array<string>;
+    review?: ReviewJudgementDto | null;
 };
 
 /**
@@ -2759,6 +2760,7 @@ export type DesignStageDto = {
      */
     acceptedBy: string;
     acceptance?: AcceptanceEvidenceDto | null;
+    review?: ReviewJudgementDto | null;
 };
 
 /**
@@ -8172,6 +8174,70 @@ export type RepresentationStateDto = {
      * Detail
      */
     detail: string | null;
+};
+
+/**
+ * ReviewJudgementDto
+ */
+export type ReviewJudgementDto = {
+    /**
+     * Reviewref
+     */
+    reviewRef: string;
+    /**
+     * Disposition
+     */
+    disposition: 'unreviewed' | 'rejected' | 'archived';
+    /**
+     * Endorsed
+     */
+    endorsed: boolean;
+    /**
+     * Actorid
+     */
+    actorId: string;
+    /**
+     * Occurredat
+     */
+    occurredAt: string;
+    /**
+     * Reason
+     */
+    reason: string | null;
+    /**
+     * Endorsedby
+     */
+    endorsedBy?: string | null;
+    /**
+     * Endorsedat
+     */
+    endorsedAt?: string | null;
+};
+
+/**
+ * ReviewJudgementRequestDto
+ */
+export type ReviewJudgementRequestDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Subjectkind
+     */
+    subjectKind: 'candidate' | 'stage';
+    /**
+     * Subjectref
+     */
+    subjectRef: string;
+    /**
+     * Action
+     */
+    action: 'reject' | 'archive' | 'restore' | 'endorse';
+    /**
+     * Reason
+     */
+    reason?: string | null;
 };
 
 /**
@@ -15978,6 +16044,41 @@ export type ReadCommittedDesignHistoryApiDesignHistoryGetResponses = {
 };
 
 export type ReadCommittedDesignHistoryApiDesignHistoryGetResponse = ReadCommittedDesignHistoryApiDesignHistoryGetResponses[keyof ReadCommittedDesignHistoryApiDesignHistoryGetResponses];
+
+export type ReviewCandidateOrStageApiCandidateReviewsPostData = {
+    body: ReviewJudgementRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/candidate-reviews';
+};
+
+export type ReviewCandidateOrStageApiCandidateReviewsPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReviewCandidateOrStageApiCandidateReviewsPostError = ReviewCandidateOrStageApiCandidateReviewsPostErrors[keyof ReviewCandidateOrStageApiCandidateReviewsPostErrors];
+
+export type ReviewCandidateOrStageApiCandidateReviewsPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: ReviewJudgementDto;
+};
+
+export type ReviewCandidateOrStageApiCandidateReviewsPostResponse = ReviewCandidateOrStageApiCandidateReviewsPostResponses[keyof ReviewCandidateOrStageApiCandidateReviewsPostResponses];
 
 export type InitializeCommittedDesignApiDesignStagesInitializePostData = {
     body: InitializeDesignStageRequestDto;
