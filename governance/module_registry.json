@@ -3965,6 +3965,7 @@
         "optional source run for project-wide discovery or project source-material upload",
         "optional exact DocumentPageReplacement values mapping registered old pages to uploaded page indices",
         "the request boundary's ActorAttribution and an optional reason for each cut-plan revision",
+        "the project recipe layer (studio.intent project_recipe) for the Stage a new cut plan's source is under",
         "Optional StudioMonitor for drawing generation/cache comparison and model registration stages (binding, decode, digest, lock wait, lookup, inspection, persistence and verification) through the existing application functions"
       ],
       "outputs": [
@@ -4104,6 +4105,7 @@
         "Cut-plan status and vector reads return the projection owner's cleanup report exactly as the revision's receipt retains it, null before cleanup existed; it never enters viewRecipe or the reuse comparison.",
         "Each cut-plan revision's receipt records who asked - the request boundary's actor and origin, never a body field - and the optional reason; neither enters viewRecipe or the reuse comparison. Documents with a revisionRef read previousRevisionRef, attribution and reason from that immutable receipt, cached per record by its digest-bearing ref; a receipt without them, or one that cannot be read, reads null.",
         "Cut-plan graphics are extended, never replaced: optional material-keyed hatch/poche rules, stored complete, and a beyond-the-cut fade are paper values taken from the request, else the previous revision; no rule, an empty byMaterial or a zero fade is an absent key, so an old recipe is unchanged and reuses its retained drawing.",
+        "A cut plan's pens and hatch spacing (cutLineMm, visibleLineMm, hatchSpacingMm) are the request's, else the previous revision's, else the project recipe's, else the code default (03-C4). Every revision holds all three, so a rebuild keeps its own values and reads no recipe; a recipe value is written into viewRecipe exactly as a requested one, so reuse stays exact and a drawing made before the recipe keeps its revision and bytes. A revoked recipe no longer applies and a hard one is read first, never enforced.",
         "Design width proposals require two uniquely verified cut STEP jambs, an unlocked direct parameter with matching units and the drawing's exact source on the Working Head, or another line's latest accepted Stage. Placement edits change only paper representation and dimensions outside the view cannot drive.",
         "a drawing's default status target is the Working Head's exact drawable source; an undrawable head is reported, never rebound",
         "External imported drawings never invent design state or driving dimensions; exact source run/hash and representation edits survive restart. Missing SKP runtime and unsupported 3DM geometry are explicit errors.",
@@ -4901,7 +4903,8 @@
         "apps/archflow-studio/api/tests/test_intent_agent_timeout.py",
         "apps/archflow-studio/api/tests/test_gestures.py",
         "apps/archflow-studio/api/tests/test_pick.py",
-        "apps/archflow-studio/api/tests/test_proposals.py"
+        "apps/archflow-studio/api/tests/test_proposals.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/drawing_plans.py"
       ],
       "invariants": [
         "an utterance is parsed, never interpreted; scalar edits use the four forms; component edits use the typed Entity, Parameter and Relation payload",

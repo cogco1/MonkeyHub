@@ -24,6 +24,7 @@ from .artifacts import (
     ModelSource, _document_pages, _document_source_lock, document_bytes, drawing_revision_replacement, list_documents,
 )
 from .binding import retained_sources
+from .decisions import project_recipe
 from .drawings import _complete_source, _elevation_view, _selected_source, _document_source, DrawingAssetSource
 from .drawing_dimensions import resolve_plan_dimensions, list_plan_dimension_intents
 from .intent import component_edit_proposal
@@ -33,6 +34,9 @@ from .proposals import proposal_from
 from ..transport.errors import StudioError
 
 UNIT_METRES = {"meter": 1.0, "millimeter": .001, "inch": .0254, "foot": .3048}
+# What the code draws a cut plan with when nothing else names a value: the
+# last of the four layers its pens and hatch spacing are read from (03-C4).
+PAPER_DEFAULTS = {"cutLineMm": .35, "visibleLineMm": .18, "hatchSpacingMm": 2}
 
 
 def _plan_source(binding, source_stage_ref, model_source, source_asset=None):
@@ -117,6 +121,24 @@ def _cleanup_report(binding, revision_ref):
     return binding.repository.load_json(record_ref_from_uri(revision_ref, binding.project_id)).get("cleanup")
 
 
+def _paper_values(binding, stage_ref, retained, requested):
+    """The pens and hatch spacing in paper millimetres, by precedence (03-C4).
+
+    Each is the request's, else the previous revision's, else the project
+    recipe's, else the code default. Every revision holds all three, so a
+    rebuild keeps its own values (D-05-2) and the recipe - read only while a
+    value is still open - reaches a new drawing. Its value is written exactly
+    as a requested one would be, so reuse compares what is drawn and a drawing
+    made before the recipe keeps its revision. ``stage_ref`` is the Stage the
+    source is under. A revoked recipe no longer applies; a hard one reads
+    first and is not enforced (D-05-3).
+    """
+    values = {key: requested[key] if requested[key] is not None else retained.get(key) for key in PAPER_DEFAULTS}
+    project = project_recipe(binding, stage_ref=stage_ref) if None in values.values() else {}
+    return {key: value if value is not None else project[key].value if key in project else PAPER_DEFAULTS[key]
+            for key, value in values.items()}
+
+
 def _paper_rules(retained, hatch, beyond, spacing_mm):
     """Material hatch/poché and the fading of lines beyond the cut, in paper units (03 C3).
 
@@ -147,6 +169,8 @@ def generate_plan(binding, *, attribution, reason=None, source_stage_ref=None, m
                   hidden_object_ids=None, dimensions=None, dressing=None, dressing_operations=None, follow=None, source_asset=None):
     """One cut-plan revision, or the retained one an identical request already made.
 
+    A new drawing takes the project recipe for the pens and hatch spacing its
+    request leaves open; a rebuild keeps its own (``_paper_values``).
     ``attribution`` is who asked, as the request boundary knows it, and
     ``reason`` why, in their words when given (05 3.2(A)). Both are retained
     with the revision's receipt, never in its recipe, so they neither make nor
@@ -184,11 +208,11 @@ def generate_plan(binding, *, attribution, reason=None, source_stage_ref=None, m
             x0, y0, x1, y1 = frame.crop_uv
             frame = replace(frame, crop_uv=(x0-margin, y0-margin, x1+margin, y1+margin))
         graphics = old.get("graphics", {})
-        spacing = hatch_spacing_mm if hatch_spacing_mm is not None else graphics.get("hatchSpacingMm", 2)
+        selected_stage = None if stage_ref is None else stage_ref.uri
+        values = _paper_values(binding, selected_stage, graphics, {
+            "cutLineMm": cut_line_mm, "visibleLineMm": visible_line_mm, "hatchSpacingMm": hatch_spacing_mm})
         recipe = {"kind": "cut-plan", "name": drawing_id, "frame": frame.to_dict(), "graphics": {
-            "cutLineMm": cut_line_mm if cut_line_mm is not None else graphics.get("cutLineMm", .35),
-            "visibleLineMm": visible_line_mm if visible_line_mm is not None else graphics.get("visibleLineMm", .18),
-            "hatchSpacingMm": spacing, **_paper_rules(graphics, hatch, beyond, spacing),
+            **values, **_paper_rules(graphics, hatch, beyond, values["hatchSpacingMm"]),
         }, "hiddenObjectIds": sorted(set(hidden_object_ids if hidden_object_ids is not None else old.get("hiddenObjectIds", []))),
             "dimensions": list(dimensions if dimensions is not None else old.get("dimensions", []))}
         # A drawing made from a chosen version stays on it until a person rebuilds
@@ -220,7 +244,6 @@ def generate_plan(binding, *, attribution, reason=None, source_stage_ref=None, m
         retained_hidden = set(old.get("hiddenObjectIds", []))
         if unknown_hidden - retained_hidden:
             raise StudioError(422, "DRAWING_OBJECT_UNKNOWN", "A newly hidden object must exist in the selected exact model.")
-        selected_stage = None if stage_ref is None else stage_ref.uri
         with _document_source_lock:
             for document in list_documents(binding, model_source.run_id):
                 if (document.drawing_id == drawing_id and _document_source(document) == model_source

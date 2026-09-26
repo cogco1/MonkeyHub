@@ -656,6 +656,18 @@ recipe without them is exactly the recipe it was before they existed, so it keep
 its retained drawing and bytes. Paper values do not change with the scale. Imported
 models carry no material semantics, so their cuts keep the general hatch.
 
+A new cut plan starts from the project recipe: the active drawing decisions whose
+`typedBinding` is `{"kind": "recipe", "graphics": {…}}` (a person's confirmed
+`require`), for the project or the Stage the drawing's source is under. Each of
+`cutLineMm`, `visibleLineMm` and `hatchSpacingMm` is the request's value, else the
+previous revision's, else the recipe's (per key `hard`, then `strong_preference`, then
+`soft_preference`; a Stage's own before the project's), else the code default (0.35,
+0.18 and 2 mm). Every revision holds all three, so a rebuild keeps its own values and
+never reads the recipe. A recipe value is written into `viewRecipe.graphics` exactly as
+a requested one: an identical request reuses the revision it made, and a drawing made
+before the recipe keeps its revision and bytes. A revoked recipe no longer applies; a
+`hard` one is read first but not enforced, so an explicit value is still drawn.
+
 A projected vector (`polyline` or poché `polygon`) names its physical object in
 `data-object` and, for a model compiled from design state, its `data-component` and
 `data-material` (the CAD program's `archflow:component` / `archflow:material`); an
