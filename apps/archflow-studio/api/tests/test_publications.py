@@ -216,7 +216,9 @@ class PublicationTests(unittest.TestCase):
             "baseRevisionSha256": saved["revisionSha256"], "boardRevisionSha256": revision, "elementIds": ["not-saved"]})
         self.assertEqual(invalid.status_code, 409, invalid.text)
         self.assertEqual(self.files(), before)
-        self.assertEqual(len(PdfReader(BytesIO(self.export(saved["revisionSha256"]).content)).pages), 2)
+        exported = self.export(saved["revisionSha256"])
+        self.assertEqual(exported.status_code, 200, exported.text)
+        self.assertEqual(len(PdfReader(BytesIO(exported.content)).pages), 2)
         self.assert_design_unchanged()
 
     def test_text_overflow_is_reported_for_both_formats_without_writes(self):
@@ -393,9 +395,9 @@ class PublicationTests(unittest.TestCase):
         content["elements"][0].update(text="WWWWWWW", width=140, height=60, fontSize=20)
         content["elements"].append({"id": "bottom", "kind": "text", "x": 10, "y": 376,
             "width": 200, "height": 24, "text": "gypqj", "fontSize": 20})
-        if all(ord(char) in font.face.charToGlyph for char in "中文"):
-            content["elements"].append({"id": "cjk", "kind": "text", "x": 20, "y": 100,
-                "width": 200, "height": 30, "text": "中文", "fontSize": 20})
+        self.assertTrue(all(ord(char) in font.face.charToGlyph for char in "中文"))
+        content["elements"].append({"id": "cjk", "kind": "text", "x": 20, "y": 100,
+            "width": 200, "height": 30, "text": "中文", "fontSize": 20})
         saved = self.save_publication(request([content]))
         pdf = self.export(saved["revisionSha256"])
         self.assertEqual(pdf.status_code, 200)
@@ -406,8 +408,7 @@ class PublicationTests(unittest.TestCase):
             spans = [span for block in parsed[0].get_text("dict")["blocks"] for line in block.get("lines", []) for span in line["spans"]]
             self.assertTrue(any(span["text"] == "gypqj" for span in spans))
             self.assertLessEqual(max(span["bbox"][3] for span in spans), 400)
-            if len(content["elements"]) == 3:
-                self.assertIn("中文", parsed[0].get_text())
+            self.assertIn("中文", parsed[0].get_text())
         deck = Presentation(BytesIO(self.export(saved["revisionSha256"], "pptx").content))
         title = deck.slides[0].shapes[0]
         # Independently read installed glyph advances, rather than asserting the

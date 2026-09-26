@@ -55,6 +55,9 @@ jobs:
         run: git diff --check origin/${{ github.base_ref || 'main' }}...HEAD
 
       # Clean-machine verification: install exactly what the suites below need.
+      - name: Install publication fonts
+        run: sudo apt-get update && sudo apt-get install --yes fonts-wqy-microhei
+
       - name: Install project
         run: >-
           python -m pip install -e ".[cad-occt]"

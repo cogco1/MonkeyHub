@@ -27,11 +27,17 @@ from .publications import read_publication
 
 @lru_cache(maxsize=1)
 def _font():
-    # Use one installed face for measurement, embedded PDF and PPTX. Drawing
-    # already supplies the portable Latin-font fallback.
+    # Use one installed face for measurement, embedded PDF and PPTX. Prefer a
+    # CJK face on every platform so the result does not depend on whether the
+    # first text encountered happens to be Latin. Linux CI/runtime images
+    # install fonts-wqy-microhei; Windows packages use Microsoft YaHei.
     from .drawings import _sheet_fonts
-    path = Path(os.environ.get("WINDIR", "C:/Windows")) / "Fonts/msyh.ttc"
-    if not path.is_file():
+    candidates = (
+        Path(os.environ.get("WINDIR", "C:/Windows")) / "Fonts/msyh.ttc",
+        Path("/usr/share/fonts/truetype/wqy/wqy-microhei.ttc"),
+    )
+    path = next((candidate for candidate in candidates if candidate.is_file()), None)
+    if path is None:
         path = _sheet_fonts()["normal"]
     font = TTFont("AF_Publication", str(path), subfontIndex=0)
     pdfmetrics.registerFont(font)

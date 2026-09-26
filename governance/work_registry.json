@@ -161,17 +161,18 @@
       "goal": "Close the first Publish workflow: ordered Board handoff, reliable autosave/reopen, editable output and repeatable layout; independently verify exact-source replacement/freeze.",
       "depends_on": [],
       "issue": "https://github.com/cogco1/MonkeyHub/issues/66",
-      "branch": "codex/66-publish-closeout",
-      "worktree": "codex-66-publish-closeout",
-      "base_ref": "e33fbf4656402ead75fb4adcad946c71c81a2dff",
+      "branch": "codex/merge-cloud-batch",
+      "worktree": "C:/Users/asus/.codex/worktrees/merge-cloud-batch/ARCHFLOW_V4",
+      "base_ref": "efb139847f9579fb2b134aa4a2854eef4f519783",
       "contributor": "Codex",
       "reviewer": "Independent Codex UI concurrency review and publication compiler review; coordinating task integration",
-      "handoff": "Ready for independent PR review on the e33fbf46 baseline. Verified 20 publication/dependency tests, 7 queue tests and 16 isolated browser scenarios including actual Runtime restart. Source output parsing and PDF visual checks passed. Merge/installed desktop acceptance remains with the coordinating task; no full templates/charts/report suite is claimed.",
+      "handoff": "PR #332 Linux CI closeout is ready for review from the efb13984 baseline. The isolated cloud checkout reproduced HTTP 422 PUBLICATION_FONT_GLYPH for 图纸.pdf, then verified the focused test and all 18 publication/dependency tests with the explicit Linux CJK font install; archcheck passes. Merge/installed desktop acceptance remains with the coordinating task.",
       "modules": [
         "studio.publication",
         "studio.board"
       ],
       "write_scope": [
+        ".github/workflows/verify.yml",
         "apps/archflow-studio/api/archflow_studio_api/application/publications.py",
         "apps/archflow-studio/api/archflow_studio_api/application/publication_output.py",
         "apps/archflow-studio/api/archflow_studio_api/routes/publications.py",
@@ -198,7 +199,8 @@
         "2026-09-25: archflow/project/record_kinds.py is handed to GH-294/admission-record, which registers the owner-approved candidate-admission kind (audit Q1); GH-66 reclaims it if Publish needs another kind.",
         "2026-09-25: monkeydiagram/drawing_elevation.py, monkeydiagram/drawing_svg.py and routes/drawings.py are handed to GH-307/section-perspective, which adds the owner-requested section perspective view to the one projection pipeline; GH-66 keeps its Publish paths and reclaims these if Publish needs drawing changes.",
         "2026-09-26: resume GH-66 from the shared e33fbf46 baseline in its assigned isolated worktree; release historical Render/Diagram paths. GH-291 owns drawing revision/replacement and GH-252 owns recipe/decision reuse.",
-        "2026-09-26: closeout implements autosave and pending-import recovery, explicit Board order, bounded repeatable layout, embedded-font PDF and supported editable source PDF primitives in PPTX. Unsupported source semantics retain raster appearance; exact source/freeze and model HEAD boundaries are verified."
+        "2026-09-26: closeout implements autosave and pending-import recovery, explicit Board order, bounded repeatable layout, embedded-font PDF and supported editable source PDF primitives in PPTX. Unsupported source semantics retain raster appearance; exact source/freeze and model HEAD boundaries are verified.",
+        "2026-09-26: PR #332 Linux follow-up uses isolated checkout /workspace/MonkeyHub at efb13984. The failing request returned HTTP 422 PUBLICATION_FONT_GLYPH; Publish now chooses a TrueType-outline CJK face consistently, CI installs Debian fonts-wqy-microhei, and the regression requires readable Chinese PDF text rather than conditionally omitting it."
       ]
     }
   ]
