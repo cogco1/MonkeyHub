@@ -5,7 +5,7 @@ from __future__ import annotations
 import unittest
 
 from archflow.semantics.conditions import CONDITION_IDS
-from archflow.semantics.registry import COMPOUND_PHRASES, resolve_semantic_kind, suggest_semantic
+from archflow.semantics.registry import COMPOUND_PHRASES, resolve_semantic_kind, suggest_semantic, suggest_semantic_kind
 from archflow.semantics.roles import ROLE_IDS
 from archflow.state.state_record import Entity, Relation, StateRecord, StateRecordError
 
@@ -30,6 +30,16 @@ class RegistryTests(unittest.TestCase):
         self.assertTrue(suggest_semantic("clearence"))
         self.assertIn("condition.clearance", suggest_semantic("clearence"))
 
+    def test_a_semantic_kind_is_answered_with_aliases_never_ids_or_an_axis(self) -> None:
+        """#408: "wall" was refused with "nearest: condition.axis"."""
+
+        self.assertEqual(suggest_semantic_kind("clearence"), ("clearance",))
+        for word in ("wall", "slab", "column", "beam", "window", "axsi", "墙"):
+            for hit in suggest_semantic_kind(word):
+                self.assertFalse(hit.startswith(("role.", "condition.")), (word, hit))
+                self.assertNotIn(resolve_semantic_kind(hit).conditions, (("condition.axis",),), (word, hit))
+        self.assertEqual(suggest_semantic_kind("wall"), ())
+
 
 class RecordRulesTests(unittest.TestCase):
     def _record(self, kind: str | None, *, relations: tuple[Relation, ...] = (), refs: tuple[str, ...] = (), **extra: object) -> StateRecord:
@@ -50,6 +60,10 @@ class RecordRulesTests(unittest.TestCase):
         with self.assertRaises(StateRecordError) as raised:
             self._record("semi_outdoor_transition_zone_v2")
         self.assertIn("nearest", str(raised.exception))
+        with self.assertRaises(StateRecordError) as raised:
+            self._record("wall")
+        self.assertNotIn("condition.", str(raised.exception))
+        self.assertNotIn("axis", str(raised.exception))
         with self.assertRaises(StateRecordError):
             self._record(None, roles=["role.made_up"])
         with self.assertRaises(StateRecordError):

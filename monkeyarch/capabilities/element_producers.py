@@ -79,7 +79,7 @@ def producer_signatures() -> dict[str, dict[str, Any]]:
     scalar = {"anyOf": [{"type": "number"}, {"type": "string", "pattern": r"^@[A-Za-z0-9_.:-]+$"}],
               "description": "A value in metres, or an explicit @parameter binding."}
     identifier = {"type": "string", "minLength": 1}
-    grid_role = {**identifier, "description": "The existing GridAxis@1 fields.role, not its entity_id."}
+    grid_role = {**identifier, "description": "Optional reference system: the role (not entity_id) of a GridAxis@1 the project already declares."}
     level_id = {**identifier, "description": "The existing Level@1 entity_id, not its role."}
     plan = {"anyOf": [
         obj({"point": {"type": "array", "items": scalar, "minItems": 2, "maxItems": 2,
@@ -177,7 +177,7 @@ def producer_signatures() -> dict[str, dict[str, Any]]:
         "producer": "wall",
         "label": "墙体与宿主开口",
         "description": (
-            "A straight wall placed by explicit project-local points, existing grids or host references. Its hosted opening may be "
+            "A straight wall placed by explicit project-local points; existing grids or hosts are optional reference systems. Its hosted opening may be "
             "rectangular or semicircular. No opening type means an empty passage, with no frame or leaf. "
             "Types supply reusable defaults; instance params and references override named defaults. "
             "References and dimensions must come from the project or an explicit design proposal. "

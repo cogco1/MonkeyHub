@@ -3528,6 +3528,7 @@ def _mcp(hub: str, chat_id: str | None, external: ChatPresentationBindRequest | 
         "Read studio_schema POST /api/proposals for the producers the running Studio offers, then with producer set to one of them for its authoring contract.",
         "Geometry binds parameters with '@key'; formulas belong in parameters[].expr with inputs, and value must match the expression.",
         "When meaning is stated, GET /api/semantics supplies registered semantic_kind aliases; role.* and condition.* IDs are not those aliases.",
+        "If the user's word for a part is not a registered alias, keep it in the summary and leave semanticKind out; never guess a nearby id.",
         "Keep early forms generic until their role is established; enrich them by upserting the same component id, never by recreating them.",
         "Existing object identity, hosted features and intended relationships matter when changing representation.",
         "",

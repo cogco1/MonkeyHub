@@ -635,7 +635,8 @@ class ChatTests(unittest.TestCase):
         tools = {tool["name"]: tool for tool in _tools_of(chat)}
         modelling = tools["studio_request"]["description"]
         for contract in ("/api/proposals/sketch", "/api/capabilities", "sourceRunId",
-                         "keep", "against=<runId>", "never send the request again"):
+                         "keep", "against=<runId>", "never send the request again",
+                         "never guess a nearby id"):
             self.assertIn(contract, modelling)
         for provider in ("codex", "claude"):
             with self.subTest(provider=provider):

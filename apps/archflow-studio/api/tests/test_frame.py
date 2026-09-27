@@ -122,16 +122,13 @@ class FrameTestCase(unittest.TestCase):
         axis, = frame_of(record).axes
         self.assertEqual(axis.elements_on, (BASE,))
 
-    def test_a_record_without_a_grid_says_so(self) -> None:
+    def test_a_record_without_a_grid_does_not_mention_one(self) -> None:
+        """A grid is an optional reference system, not a lack to report on every read (#408)."""
+
         record = StateRecord.from_dict(_without(RECORD_PAYLOAD, "GridAxis@1"))
         frame = frame_of(record)
         self.assertEqual(frame.axes, ())
-        self.assertIn(
-            "no GridAxis@1 in the record: grid-axis references are unavailable; "
-            "explicit project-local points and sketch profiles can still place "
-            "elements in plan, with a declared base level",
-            frame.honesty,
-        )
+        self.assertFalse([line for line in frame.honesty if "grid" in line.lower()], frame.honesty)
 
     def test_a_diagonal_axis_gets_no_constant_and_the_honesty_says_why(self) -> None:
         record = StateRecord.from_dict(_diagonal_axis(PORTICO_RECORD_PAYLOAD))

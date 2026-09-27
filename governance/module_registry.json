@@ -3055,6 +3055,7 @@
       "owns": [
         "resolution of semantic text to registered ids (resolve_semantic_kind)",
         "nearest-id suggestions for refusals (suggest_semantic)",
+        "nearest-alias suggestions for a semantic_kind refusal, never an id or an axis concept (suggest_semantic_kind)",
         "the compound phrases existing records were authored with (COMPOUND_PHRASES)"
       ],
       "does_not_own": [
@@ -3071,6 +3072,7 @@
         "SemanticResolution",
         "resolve_semantic_kind",
         "suggest_semantic",
+        "suggest_semantic_kind",
         "registered_ids",
         "COMPOUND_PHRASES"
       ],

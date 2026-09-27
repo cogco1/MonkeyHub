@@ -107,7 +107,9 @@ class GeometryFirstAuthoringTests(unittest.TestCase):
         tree = {node["componentId"]: node for node in self.state(run)["componentTree"]}
         # The wall-like slab stays a generic prism: nothing names it a wall.
         self.assertEqual({tree[c]["semanticKind"] for c in ("mass", "path", "screen")}, {None})
-        self.assertEqual(tree["model"]["semanticKind"], "building")
+        # The seeded root is unclassified too: nothing in a fresh project is a
+        # classification template for new parts (#408).
+        self.assertIsNone(tree["model"]["semanticKind"])
 
     def test_an_explicitly_requested_wall_and_window_need_no_grid(self) -> None:
         proposal = self.created(self.client.post("/api/proposals", json={
@@ -128,6 +130,51 @@ class GeometryFirstAuthoringTests(unittest.TestCase):
         wall = record.entity("north-wall-body")
         self.assertEqual(wall.fields["producer"], "wall")
         self.assertEqual(wall.fields["params"]["openings"][0]["opening_id"], "window")
+
+    def test_a_fresh_frame_does_not_mention_a_grid(self) -> None:
+        frame = self.client.get("/api/state/frame")
+        self.assertEqual(frame.status_code, 200, frame.text)
+        self.assertNotIn("gridaxis", frame.text.lower())
+        self.assertFalse([line for line in frame.json()["honesty"] if "grid" in line.lower()])
+
+    def test_this_is_a_wall_with_a_window_is_modelled_not_refused(self) -> None:
+        """#408, sentence c: "a 10 m wall with a 1.2 x 1.5 m window", with the user's word "wall"."""
+
+        proposal = self.created(self.client.post("/api/proposals", json={
+            "stateDigest": self.state()["stateDigest"], "keep": ["entity:ground"], "semanticEdit": {
+                "summary": "A 10 m wall with a 1.2 x 1.5 m window",
+                "entities": [
+                    {"entity_id": "wall-a", "schema": "Component@1", "parent_id": "model",
+                     "fields": {"semantic_kind": "wall"}},
+                    {"entity_id": "wall-a-body", "schema": "Element@1", "parent_id": "wall-a", "fields": {
+                        "component_id": "wall-a", "producer": "wall",
+                        "references": {"base": {"level": "ground"},
+                                       "line": {"from": {"point": [0, 0]}, "to": {"point": [10, 0]}}},
+                        "params": {"height": 3, "thickness": 0.24, "openings": [
+                            {"opening_id": "window", "kind": "window", "along": 4.4, "width": 1.2, "sill": 0.9, "head": 2.4}]}}},
+                ]}}))
+        self.assertEqual(proposal["status"], "proposed")
+        self.assertIn("'wall'", proposal["change"]["summary"])
+        component = next(e for e in proposal["change"]["edits"]["entities"] if e["entity_id"] == "wall-a")
+        self.assertNotIn("semantic_kind", component["fields"])
+        record = self.retained(self.candidate(proposal))
+        self.assertFalse(any(entity.schema == "GridAxis@1" for entity in record.entities))
+        self.assertIsNone(component_semantics(record.entity("wall-a")), "no nearby id is guessed")
+        self.assertEqual(record.entity("wall-a").fields["intent"], "wall", "the user's word is kept")
+        self.assertEqual(record.entity("wall-a-body").fields["params"]["openings"][0]["width"], 1.2)
+
+    def test_an_unregistered_word_does_not_refuse_a_sketch_and_a_registered_one_is_kept(self) -> None:
+        base = {"parentComponentId": "model", "baseLevel": "ground", "height": 3}
+        unregistered = self.created(self.client.post("/api/proposals/sketch", json={
+            "stateDigest": self.state()["stateDigest"], "componentId": "block", "elementId": "block-body",
+            "profile": SQUARE, "semanticKind": "墙体", **base}))
+        block = next(e for e in unregistered["change"]["edits"]["entities"] if e["entity_id"] == "block")
+        self.assertEqual(block["fields"], {"intent": "墙体"})
+        registered = self.created(self.client.post("/api/proposals/sketch", json={
+            "stateDigest": self.state()["stateDigest"], "componentId": "cover", "elementId": "cover-body",
+            "profile": SQUARE, "semanticKind": "roof", **base}))
+        cover = next(e for e in registered["change"]["edits"]["entities"] if e["entity_id"] == "cover")
+        self.assertEqual(cover["fields"]["semantic_kind"], "roof")
 
     def test_naming_a_generic_component_later_keeps_its_identity(self) -> None:
         run = self.sketch_generic_forms()
