@@ -27,6 +27,7 @@ from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Callable, Mapping, Sequence
 
 from archflow.adapters.cad_patch import CadPatchError, build_patch_prelude, select_patch_operations
+from archflow.adapters.local_cad_discovery import SoftwareDiscoveryRegistry
 from archflow.adapters.cad_program import (
     LONG_PATH_HELPER_SOURCE,
     CadTranslationError,
@@ -1177,14 +1178,7 @@ def prepare_rhino_three_dm_export(
 def discover_rhino_executables() -> tuple[Path, ...]:
     """Read-only discovery; never launches or attaches to Rhino."""
 
-    candidates: list[Path] = []
-    for version in range(9, 5, -1):
-        candidate = Path(
-            os.environ.get("ProgramFiles", r"C:\Program Files")
-        ) / f"Rhino {version}" / "System" / "Rhino.exe"
-        if candidate.is_file() and not candidate.is_symlink():
-            candidates.append(candidate.resolve())
-    return tuple(candidates)
+    return tuple(row.executable for row in SoftwareDiscoveryRegistry().discover("rhino").installations)
 
 
 def discover_powershell() -> Path | None:
