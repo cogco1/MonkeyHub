@@ -178,7 +178,7 @@ test("the shipped export control and versions panel answer for the model on scre
   const controls = () => page.evaluate(() => window.__workModel.controls);
   const button = page.locator("[data-work-model-export]");
   const openViewTools = async () => {
-    const toggle = page.locator('button[aria-controls="view-tools"]');
+    const toggle = page.locator('button[aria-controls="stage-export-menu"]');
     if (await toggle.getAttribute("aria-expanded") !== "true") await toggle.click();
   };
 
@@ -219,7 +219,7 @@ test("the shipped export control and versions panel answer for the model on scre
     await page.locator("[data-work-model-error]").waitFor({ timeout: 10_000 });
     assert.match(await page.locator("[data-work-model-error]").innerText(), /RHINO_HOST_UNAVAILABLE|no Rhino here/);
     assert.deepEqual(posts.at(-1), { sha256: step.sha256, body: { runId: "run-a" } });
-    assert.equal(await page.locator(".viewtools [data-work-model-save]").count(), 0);
+    assert.equal(await page.locator("#stage-export-menu [data-work-model-save]").count(), 0);
     assert.equal(await button.isEnabled(), true);
   });
 
@@ -250,7 +250,7 @@ test("the shipped export control and versions panel answer for the model on scre
     await page.evaluate((viewed) => window.__workModel.show(viewed), { runId: "run-a", shas: [preview.sha256] });
     await page.waitForFunction((expected) => window.__workModel.controls.exported === expected, work.sha256);
     await openViewTools();
-    const save = page.locator(".viewtools [data-work-model-save]");
+    const save = page.locator("#stage-export-menu [data-work-model-save]");
     await save.waitFor({ timeout: 5_000 });
     assert.match(await save.getAttribute("href"), new RegExp(`/api/artifacts/${work.sha256}/bytes$`));
     assert.equal(await save.getAttribute("download"), work.fileName);
