@@ -1,0 +1,131 @@
+name: Nightly release promotion
+
+# Promotes a verified main into a Windows prerelease without a person having to
+# push release-candidate by hand. Two entries share one promote step:
+#   - every night at 03:00 Beijing (19:00 UTC), and on manual dispatch;
+#   - right after a pull request labelled `release` merges into main.
+# Only a fast-forward of release-candidate to a main commit whose own
+# `ArchFlow Verify` run succeeded is ever pushed. See docs/testing/nightly-release.md.
+
+on:
+  schedule:
+    - cron: "0 19 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Check and report what would be promoted without pushing or dispatching
+        type: boolean
+        default: false
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+# One promotion at a time; a running promotion is never cancelled halfway.
+concurrency:
+  group: nightly-release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  promote:
+    name: Promote verified main to release-candidate
+    if: >-
+      github.event_name != 'pull_request'
+      || (github.event.pull_request.merged == true
+          && contains(github.event.pull_request.labels.*.name, 'release'))
+    runs-on: ubuntu-latest
+    # The post-merge path may wait up to 40 minutes for verification.
+    timeout-minutes: 50
+    permissions:
+      contents: write
+      actions: write
+    steps:
+      # Always main, never the pull request's merge ref, which a closed pull
+      # request may no longer have.
+      - name: Check out main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Promote
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          ACTIONS_URL: ${{ github.server_url }}/${{ github.repository }}/actions/workflows/desktop.yml
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run == true }}
+          # The post-merge path promotes exactly the merge commit and waits for
+          # its verification; the nightly path takes main as it is now.
+          TARGET_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.merge_commit_sha || '' }}
+          WAIT_SECONDS: ${{ github.event_name == 'pull_request' && '2400' || '0' }}
+          # Only an explicitly requested release fails when it cannot be promoted.
+          FAIL_IF_NOT_PROMOTED: ${{ github.event_name == 'pull_request' }}
+        run: |
+          set -euo pipefail
+          summary() { echo "$*" >> "$GITHUB_STEP_SUMMARY"; echo "$*"; }
+          stop() {
+            summary "$1"
+            if [ "$FAIL_IF_NOT_PROMOTED" = "true" ]; then
+              echo "::error::$1"; exit 1
+            fi
+            echo "::notice::$1"; exit 0
+          }
+
+          git fetch --quiet origin main release-candidate
+          MAIN="${TARGET_SHA:-$(git rev-parse origin/main)}"
+          RC="$(git rev-parse origin/release-candidate)"
+          summary "main: \`$MAIN\`"
+          summary "release-candidate: \`$RC\`"
+
+          if ! git merge-base --is-ancestor "$MAIN" origin/main; then
+            stop "\`$MAIN\` is not on main; nothing is promoted."
+          fi
+          if [ "$MAIN" = "$RC" ]; then
+            summary "No change since the last release; nothing is promoted."
+            exit 0
+          fi
+          if git merge-base --is-ancestor "$MAIN" "$RC"; then
+            summary "release-candidate already contains \`$MAIN\`; nothing is promoted."
+            exit 0
+          fi
+          if ! git merge-base --is-ancestor "$RC" "$MAIN"; then
+            summary "release-candidate \`$RC\` is not an ancestor of \`$MAIN\`: only a fast-forward is promoted. Reconcile release-candidate by hand."
+            echo "::error::release-candidate has diverged from main; refusing a non-fast-forward promotion"
+            exit 1
+          fi
+
+          # The latest ArchFlow Verify run of this exact commit on main must have
+          # succeeded. The post-merge path waits for it, polling every minute.
+          deadline=$(( $(date +%s) + WAIT_SECONDS ))
+          while :; do
+            run="$(gh run list --repo "$REPOSITORY" --workflow verify.yml --branch main \
+              --commit "$MAIN" --limit 1 --json databaseId,status,conclusion \
+              --jq '.[0] // {} | "\(.status // "missing") \(.conclusion // "" | if . == "" then "none" else . end) \(.databaseId // "none")"')"
+            read -r status conclusion run_id <<< "$run"
+            if [ "$status" = "completed" ]; then break; fi
+            if [ "$(date +%s)" -ge "$deadline" ]; then
+              if [ "$status" = "missing" ]; then
+                stop "No ArchFlow Verify run exists for \`$MAIN\` on main; nothing is promoted."
+              fi
+              stop "ArchFlow Verify run $run_id for \`$MAIN\` is still $status; nothing is promoted."
+            fi
+            echo "ArchFlow Verify for $MAIN is $status; checking again in 60 s"
+            sleep 60
+          done
+          if [ "$conclusion" != "success" ]; then
+            stop "ArchFlow Verify run $run_id for \`$MAIN\` concluded $conclusion; nothing is promoted."
+          fi
+          summary "ArchFlow Verify run $run_id for \`$MAIN\` succeeded."
+
+          if [ "$DRY_RUN" = "true" ]; then
+            summary "Dry run: would fast-forward release-candidate from \`$RC\` to \`$MAIN\` and dispatch desktop.yml."
+            exit 0
+          fi
+
+          # A plain push is a fast-forward or it is rejected; never forced. A push
+          # made with GITHUB_TOKEN starts no workflow, so the build is dispatched.
+          git push origin "$MAIN:refs/heads/release-candidate"
+          gh workflow run desktop.yml --repo "$REPOSITORY" --ref release-candidate
+          summary "Promoted \`$MAIN\` to release-candidate and dispatched the Windows prerelease build: $ACTIONS_URL"
