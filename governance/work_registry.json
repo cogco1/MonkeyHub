@@ -1,4 +1,32 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": []
+  "items": [
+    {
+      "id": "GH-406",
+      "lanes": [
+        {
+          "id": "tree-zoom",
+          "status": "active",
+          "branch": "codex/406-tree-semantic-zoom",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-406-tree-semantic-zoom",
+          "base_ref": "32a426ec",
+          "contributor": "Claude",
+          "reviewer": "Claude root task",
+          "handoff": "cloud session; master integrates",
+          "modules": [
+            "hub.shell"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/web/workspaces/src/features/designTree/",
+            "apps/monkeyhub/web/workspaces/src/features/canvas/",
+            "apps/monkeyhub/web/workspaces/src/features/artifacts/ModelThumbnail.tsx",
+            "apps/monkeyhub/web/workspaces/src/features/artifacts/useRetainedModelPreview.ts",
+            "apps/monkeyhub/web/workspaces/src/features/artifacts/modelThumbnail.css",
+            "apps/monkeyhub/web/workspaces/test/"
+          ],
+          "depends_on": []
+        }
+      ]
+    }
+  ]
 }
