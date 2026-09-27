@@ -294,11 +294,13 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
   );
   // The session opens on the saved position even when a Board note brought this
   // page up: a note on another model version asks before the base moves (#302).
-  const { binding, session, changingBase, baseError, persistenceFailed, reload, refreshWorkingCopies, refreshWorkingDraft, saveSyncedBase, recoverFromStaleBase } = useSession(pushNotice, server.capabilities,
+  const { binding, session, changingBase, baseError, persistenceFailed, reload, failure: sessionFailure, refreshWorkingCopies, refreshWorkingDraft, saveSyncedBase, recoverFromStaleBase } = useSession(pushNotice, server.capabilities,
     undefined, true, expectedProjectId);
   const [documentIntentStatus, setDocumentIntentStatus] = useState<"pending" | "asking" | "switching" | "ready" | "done">(initialDocumentIntent ? "pending" : "done");
   // Why the note could not continue yet, when recording the edits would let it (#302).
   const [documentIntentNotice, setDocumentIntentNotice] = useState<string | null>(null);
+  // The refusal the note's own Continue met; wherever it is shown, it is worded as the Board's.
+  const [documentIntentError, setDocumentIntentError] = useState<StudioApiError | null>(null);
   const documentIntentStarted = useRef(false);
   const documentIntentSubmitted = useRef(false);
   const sketchSubmitted = useRef(false);
@@ -541,6 +543,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
     documentIntentStarted.current = false;
     documentIntentSubmitted.current = false;
     setDocumentIntentNotice(null);
+    setDocumentIntentError(null);
     setDocumentIntentStatus(initialDocumentIntent ? "pending" : "done");
     if (initialDocumentIntent) setConversationOpen(true);
   }, [initialDocumentIntent]);
@@ -2245,6 +2248,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
     setDocumentIntentStatus("switching");
     void (async () => {
       const refused = { reason: null as string | null, unrecorded: false };
+      const failedBefore = sessionFailure();
       const next = await changeEditingBase(intent.modelSource.runId, intent.modelSource,
         intent.sourceStageRef ?? undefined, undefined, true, (reason, unrecorded = false) => { refused.reason = reason; refused.unrecorded = unrecorded; });
       // Only unrecorded edits stand in the way: the note waits, offering to record them (#302).
@@ -2257,15 +2261,20 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
           next.projection.stateDigest !== intent.modelSource.stateDigest ||
           next.projection.referenceRun.runId !== intent.modelSource.runId ||
           (intent.sourceStageRef !== null && next.projection.sourceStageRef !== intent.sourceStageRef)) {
+        // The session refused the note's own model or Stage: its code says why in the Board's words (#355).
+        const failure = sessionFailure();
+        if (!next && refused.reason === null && failure !== null && failure !== failedBefore) throw failure;
         throw new Error(refused.reason ?? "The drawing's exact model and Stage could not be restored. Its marks are saved; this design instruction has not been submitted.");
       }
       setDocumentIntentStatus("ready");
     })().catch((cause) => {
+      const error = asStudioApiError(cause);
+      setDocumentIntentError(error);
       setDocumentIntentStatus("done");
       setDraft(intent.utterance);
-      append({ kind: "refusal", error: asStudioApiError(cause), what: "MonkeyBoard" });
+      append({ kind: "refusal", error, what: "MonkeyBoard" });
     });
-  }, [append, changeEditingBase, initialDocumentIntent]);
+  }, [append, changeEditingBase, initialDocumentIntent, sessionFailure]);
   // How the note's model is named where the choice is asked: its Stage, else its listed version.
   const documentIntentModel = initialDocumentIntent ? designHistory?.stages.find((stage) =>
     sameModelSource(stage.modelSource, initialDocumentIntent.modelSource))?.label ??
@@ -3475,7 +3484,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
           </p>
           {initialDocumentIntent && (documentIntentStatus !== "done" || draft === initialDocumentIntent.utterance) && <p>{initialDocumentIntent.utterance}</p>}
           {developerMode && sourceRunId !== null && <p className="mono">{sourceRunId}</p>}
-          {error && <ErrorPanel error={error} />}
+          {error && <ErrorPanel error={error} what={error === documentIntentError ? "MonkeyBoard" : undefined} />}
           {baseNotice && <p className="refusal__lead" role="alert">{baseNotice}</p>}
           <button type="button" className="btn" disabled={changingBase}
             onClick={() => { if (missingChosenModel) void loadArtifacts(); else void reload(); }}>

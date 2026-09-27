@@ -246,6 +246,11 @@ try {
         if (url.pathname === "/api/working-copies") return await json({ workingCopies: [group] });
         if (url.pathname === "/api/state") {
           const requestedRun = url.searchParams.get("run");
+          // #266: an imported model's own upload run is inspectable, never actionable, as a runtime answers it.
+          if (artifacts.artifacts.some((row) => row.runId === requestedRun && row.representation === "external")) {
+            return await json({ ...state, referenceRun: { ...referenceRun, runId: requestedRun }, referenceRunSource: "query",
+              matchesReferenceReceipt: false, catalog: null, honesty: ["The upload run has no runner receipt; inspection only."] });
+          }
           assert.ok(!requestedRun || [runId, sourceC.runId].includes(requestedRun));
           return await json(requestedRun === sourceC.runId ? stateC : state);
         }
@@ -352,6 +357,17 @@ try {
       }
       // #326: a retained model's preview; these fixtures retain none, and a runtime without one answers null.
       if (method === "GET" && /^\/api\/model-assets\/[0-9a-f]{64}\/preview$/.test(url.pathname)) return await json(null);
+      if (method === "POST" && url.pathname === "/api/model-assets") {
+        // #266: a chosen local file is retained as an external model of its own upload run,
+        // as the runtime registers it: no design state, no source.
+        const body = request.postDataJSON(); assert.equal(body.projectId, projectId);
+        const bytes = Buffer.from(body.contentBase64, "base64"), sha256 = createHash("sha256").update(bytes).digest("hex");
+        const imported = { ...artifact(sourceA, body.fileName, bytes), artifactId: sha256, runId: `studio-model-${sha256}`,
+          modelSource: null, stageId: null, sha256, designStateDigest: null, representation: "external" };
+        models.set(sha256, bytes);
+        if (!artifacts.artifacts.some((row) => row.runId === imported.runId)) artifacts.artifacts.push(imported);
+        return await json(imported, 201);
+      }
       assert.fail(`Unexpected API request: ${method} ${url.pathname}${url.search}`);
     } catch (error) { errors.push(error.stack ?? String(error)); await route.abort("blockedbyclient"); }
   });
@@ -628,12 +644,17 @@ try {
     const currentInk = () => page.evaluate(() => window.__modelInkSnapshot);
     const loadLocal = async (name, buffer) => {
       await localInput.setInputFiles({ name, mimeType: "application/octet-stream", buffer });
-      await until(snapshot, (value) => value.fileName === name && value.sourceLabel === "LOCAL · UNBOUND" && !value.loading,
+      // Since #266 the chosen file is retained as an imported model and opened from its own bytes.
+      const label = `IMPORTED · ${name} · ${createHash("sha256").update(buffer).digest("hex").slice(0, 8)}`;
+      await until(snapshot, (value) => value.fileName === name && value.sourceLabel === label && !value.loading,
         "The local file was not accepted");
     };
     const drawLine = async () => {
-      const toggle = page.locator('button[aria-controls="annotation-tools"]');
-      if (await toggle.getAttribute("aria-expanded") !== "true") await toggle.click();
+      // #352: tracing paper is in the tools' own More.
+      if (await page.locator("#annotation-tools").count() === 0) {
+        await page.locator('button[aria-controls="model-tools-more"]').click();
+        await page.locator('button[aria-controls="annotation-tools"]').click();
+      }
       await page.locator("#annotation-tools").getByRole("button", { name: "╱ Line", exact: true }).click();
       const overlay = page.locator('canvas.annotate[data-armed="true"]');
       const box = await overlay.boundingBox(); assert.ok(box);

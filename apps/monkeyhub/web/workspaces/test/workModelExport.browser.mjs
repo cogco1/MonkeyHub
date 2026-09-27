@@ -178,17 +178,19 @@ test("the shipped export control and versions panel answer for the model on scre
   const controls = () => page.evaluate(() => window.__workModel.controls);
   const button = page.locator("[data-work-model-export]");
   const openViewTools = async () => {
-    const toggle = page.locator('button[aria-controls="view-tools"]');
+    const toggle = page.locator('button[aria-controls="stage-export-menu"]');
     if (await toggle.getAttribute("aria-expanded") !== "true") await toggle.click();
   };
 
   await t.test("the embedded stage offers it in its own view tools, for the model being viewed", async () => {
     assert.deepEqual(errors, []);
-    // Embedded: the desktop page's versions toggle is not rendered here, so
-    // this control is not hiding behind it.
-    assert.equal(await page.locator("button.stage__versions-toggle").count(), 0);
+    // The Hub is the stage's only host since #168, so Versions is always offered
+    // (a bar menu opening a docked inspector since #345); this control is
+    // reached with Versions closed, not from behind it.
+    assert.equal(await page.locator("button.stage__versions-toggle").getAttribute("aria-expanded"), "false");
     await openViewTools();
     await button.waitFor({ state: "visible", timeout: 5_000 });
+    assert.equal(await page.locator("#stage-versions-panel").count(), 0);
     assert.equal(await button.isEnabled(), true);
     assert.equal((await controls()).source, step.sha256);
   });
@@ -217,7 +219,7 @@ test("the shipped export control and versions panel answer for the model on scre
     await page.locator("[data-work-model-error]").waitFor({ timeout: 10_000 });
     assert.match(await page.locator("[data-work-model-error]").innerText(), /RHINO_HOST_UNAVAILABLE|no Rhino here/);
     assert.deepEqual(posts.at(-1), { sha256: step.sha256, body: { runId: "run-a" } });
-    assert.equal(await page.locator(".viewtools [data-work-model-save]").count(), 0);
+    assert.equal(await page.locator("#stage-export-menu [data-work-model-save]").count(), 0);
     assert.equal(await button.isEnabled(), true);
   });
 
@@ -248,7 +250,7 @@ test("the shipped export control and versions panel answer for the model on scre
     await page.evaluate((viewed) => window.__workModel.show(viewed), { runId: "run-a", shas: [preview.sha256] });
     await page.waitForFunction((expected) => window.__workModel.controls.exported === expected, work.sha256);
     await openViewTools();
-    const save = page.locator(".viewtools [data-work-model-save]");
+    const save = page.locator("#stage-export-menu [data-work-model-save]");
     await save.waitFor({ timeout: 5_000 });
     assert.match(await save.getAttribute("href"), new RegExp(`/api/artifacts/${work.sha256}/bytes$`));
     assert.equal(await save.getAttribute("download"), work.fileName);

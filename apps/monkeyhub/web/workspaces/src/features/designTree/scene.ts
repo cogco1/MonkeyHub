@@ -3,9 +3,10 @@
  *
  * The caller passes the skeletons through `convertToExcalidrawElements`, the
  * way MonkeyBoard places its pages. Semantic zoom only changes what is drawn,
- * never where: far shows the trunk, Stage milestones and counts; middle adds
- * option cards with their letter and short name; close adds a one-line
- * summary and a status. Author, time and runs belong to the side card.
+ * never where: far shows the trunk, Stage milestones and counts; middle draws
+ * each option as a small card with its letter, short name and status bar;
+ * close adds a one-line summary and a status. Author, time and runs belong to
+ * the inspector, and the Stage columns' headers are the canvas's own (#353).
  * Colours come from a palette the canvas reads from the Hub's tokens (#337), so
  * the tree follows the theme and interface style and is never inverted.
  * Every hit target is produced with the element it stands for, because view
@@ -14,7 +15,7 @@
 import type { ExcalidrawElementSkeleton } from "@excalidraw/excalidraw/data/transform";
 import type { SceneBox } from "../canvas/sceneHit";
 import type { Box, Fork, GrowthLayout, LayoutEdge, PlacedNode } from "./layout";
-import { CURRENT, type GrowthTree, type PendingStatus, type TreeNode } from "./model";
+import { checkOf, type GrowthTree, type PendingStatus, type TreeNode } from "./model";
 
 export type ZoomLevel = "far" | "mid" | "close";
 
@@ -22,8 +23,8 @@ export type ZoomLevel = "far" | "mid" | "close";
 export interface SceneWords {
   current: string;
   origin: string;
-  stage(node: TreeNode): string;
-  option(node: TreeNode): string;
+  /** A card's name beside its letter: an option's label, or a running line's. */
+  name(node: TreeNode): string;
   pending(status: PendingStatus): string;
   currentAt: string;
   accept: string;
@@ -57,22 +58,24 @@ export interface TreePalette {
   readonly accentSoft: string;
   /** A card's face, and words on an ink fill. */
   readonly paper: string;
-  /** The inset behind an option's letter. */
-  readonly tile: string;
   /** Option lines and option card edges. */
   readonly twig: string;
-  /** Branches left behind, and what cannot be done now. */
+  /** Branches left behind, what cannot be done now, and options set aside in review. */
   readonly muted: string;
   /** Work still running. */
   readonly running: string;
-  /** Review checks still open. */
-  readonly warn: string;
+  /** Review checks that held when the option was admitted. */
+  readonly held: string;
+  /** Review checks that did not hold: the violation marker (#294 Q2). */
+  readonly violated: string;
+  /** Admitted by an earlier record that carried no review verdict. */
+  readonly unchecked: string;
 }
 
 /** The light theme's colours, for a test or a canvas that cannot read the Hub's tokens. */
 export const LIGHT_TREE_PALETTE: TreePalette = {
   ground: "#f4f5f0", ink: "#29352d", ink2: "#41414a", faint: "#6b716a", accent: "#356b9e", onAccent: "#ffffff", accentSoft: "#e8eff6",
-  paper: "#ffffff", tile: "#eceee8", twig: "#7b837a", muted: "#9ea39c", running: "#8d948c", warn: "#a86a12",
+  paper: "#ffffff", twig: "#7b837a", muted: "#9ea39c", running: "#56656e", held: "#3d7754", violated: "#a64e47", unchecked: "#8a6123",
 };
 
 export interface SceneHit extends SceneBox {
@@ -96,7 +99,7 @@ export interface TreeElementData {
 
 const LINE_HEIGHT = 1.2;
 
-const WIDE = /[ᄀ-ᅟ⺀-꓏가-힣豈-﫿︰-﹏＀-｠￠-￦]/u;
+const WIDE = /[\u1100-\u115F\u2E80-\uA4CF\uAC00-\uD7A3\uF900-\uFAFF\uFE30-\uFE4F\uFF00-\uFF60\uFFE0-\uFFE6]/u;
 /** A generous estimate of a line's width: a clipped name must never make Excalidraw wrap. */
 export function textWidth(value: string, size: number): number {
   let width = 0;
@@ -116,7 +119,7 @@ export function clip(value: string, size: number, width: number): string {
   return `${out.trimEnd()}…`;
 }
 
-const TOKEN = /[ᄀ-ᅟ⺀-꓏가-힣豈-﫿︰-﹏＀-｠￠-￦]|[^\sᄀ-ᅟ⺀-꓏가-힣豈-﫿︰-﹏＀-｠￠-￦]+|\s+/gu;
+const TOKEN = /[\u1100-\u115F\u2E80-\uA4CF\uAC00-\uD7A3\uF900-\uFAFF\uFE30-\uFE4F\uFF00-\uFF60\uFFE0-\uFFE6]|[^\s\u1100-\u115F\u2E80-\uA4CF\uAC00-\uD7A3\uF900-\uFAFF\uFE30-\uFE4F\uFF00-\uFF60\uFFE0-\uFFE6]+|\s+/gu;
 
 /** Up to `lines` lines: words for Latin text, characters for CJK; what does not fit ends in an ellipsis. */
 export function wrap(value: string, size: number, width: number, lines: number): string[] {
@@ -144,10 +147,16 @@ export function wrap(value: string, size: number, width: number, lines: number):
 type Skeleton = ExcalidrawElementSkeleton;
 type Style = Partial<{ strokeColor: string; backgroundColor: string; strokeWidth: number; strokeStyle: "solid" | "dashed" | "dotted"; opacity: number }>;
 
+/** Inside a card: the status bar at its left edge, then the words. */
+const BAR = { inset: 6, width: 3.5 };
+const PAD = { left: 16, right: 10, top: 6 };
+/** The review mark in an option card's top-right corner. */
+const MARK = { inset: 14, top: 5, size: 14 };
+
 export function buildTreeScene(tree: GrowthTree, layout: GrowthLayout, options: SceneOptions): TreeScene {
   const { level, words, fontFamily } = options;
-  const { ink: INK, ink2: INK_2, faint: FAINT, accent: ACCENT, onAccent: ON_ACCENT, accentSoft: ACCENT_SOFT, paper: PAPER, tile: TILE,
-    twig: TWIG, muted: MUTED, running: RUNNING, warn: WARN } = options.palette ?? LIGHT_TREE_PALETTE;
+  const { ink: INK, ink2: INK_2, faint: FAINT, accent: ACCENT, onAccent: ON_ACCENT, accentSoft: ACCENT_SOFT, paper: PAPER,
+    twig: TWIG, muted: MUTED, running: RUNNING, held: HELD, violated: VIOLATED, unchecked: UNCHECKED } = options.palette ?? LIGHT_TREE_PALETTE;
   const k = options.textScale;
   const skeletons: Skeleton[] = [];
   const hits: SceneHit[] = [];
@@ -179,25 +188,26 @@ export function buildTreeScene(tree: GrowthTree, layout: GrowthLayout, options: 
   };
   const ring = (id: string, box: Box, pad: number) => rect(`${id}:ring`, { x: box.x - pad, y: box.y - pad, width: box.width + pad * 2, height: box.height + pad * 2 },
     { strokeColor: ACCENT, strokeWidth: 2.5 }, data("ring", { node: id }));
+  /** The status bar's colour: review checks as retained, work still running, or set aside in review. */
+  const barColour = (node: TreeNode): string | null => {
+    const disposition = node.candidate?.review?.disposition;
+    if (disposition === "rejected" || disposition === "archived") return MUTED;
+    const check = checkOf(node);
+    return check === "held" ? HELD : check === "violated" ? VIOLATED : check === "unchecked" ? UNCHECKED : check === "running" ? RUNNING : null;
+  };
 
   // Edges first, so every card sits on its lines.
   const far = level === "far";
   const weight = far ? Math.min(k, 8) : 1;
   if (layout.trunk.length > 1) polyline("trunk", layout.trunk, { strokeColor: ACCENT, strokeWidth: 4 * weight }, data("trunk"));
   layout.edges.forEach((edge, index) => {
-    const style: Style = edge.kind === "twig" ? { strokeColor: TWIG, strokeWidth: 1.5 * weight, strokeStyle: "dashed" }
+    // An option's elbow is a thin solid line: a stack's elbows nest into one bracket beside it.
+    const style: Style = edge.kind === "twig" ? { strokeColor: TWIG, strokeWidth: 1.25 * weight, strokeStyle: "solid" }
       : edge.kind === "pending" ? { strokeColor: RUNNING, strokeWidth: 1.5 * weight, strokeStyle: "dotted" }
         : edge.kind === "branch" ? { strokeColor: MUTED, strokeWidth: 1.5 * weight, strokeStyle: "dashed", opacity: 60 }
           : { strokeColor: MUTED, strokeWidth: 1.25 * weight, strokeStyle: "dashed", opacity: 45 };
     polyline(`edge:${index}:${edge.to}`, edge.points, style, data("edge", { node: edge.to, edge: edge.kind }));
   });
-
-  const trunkIndex = new Map(tree.trunk.map((id, index) => [id, index]));
-  const nextTrunkX = (placed: PlacedNode) => {
-    const index = trunkIndex.get(placed.id);
-    const next = index === undefined ? undefined : tree.trunk[index + 1];
-    return next ? layout.nodes.get(next)!.x : placed.x + placed.footprint.width * 3;
-  };
 
   for (const placed of layout.nodes.values()) {
     const node = tree.nodes.get(placed.id)!;
@@ -205,19 +215,18 @@ export function buildTreeScene(tree: GrowthTree, layout: GrowthLayout, options: 
     else drawNear(node, placed);
   }
   if (far) {
-    // Counts sit under the trunk, each up to the next point that has its own
-    // and never under Current's pill.
+    // Counts sit above the trunk, where nothing else is drawn (every option hangs below it), clear of
+    // Current's pill and the Stage marks, each up to the next point that has its own.
     const trunkForks = layout.forks.filter((fork) => !fork.muted).sort((a, b) => a.x - b.x);
-    const tip = layout.nodes.get(CURRENT);
-    const tipLeft = tip ? tip.card.x + tip.card.width / 2 - (textWidth(words.current, Math.min(13 * k, 72)) + 24 * k) / 2 : Infinity;
+    const lift = (Math.min(13 * k, 72) * LINE_HEIGHT + 12 * k) / 2 + 4 * k;
     trunkForks.forEach((fork, index) => {
       const size = Math.min(11 * k, 64);
-      const stop = Math.min(trunkForks[index + 1]?.x ?? Infinity, tipLeft > fork.x ? tipLeft : Infinity);
-      const limit = (Number.isFinite(stop) ? stop : fork.x + fork.region.width + 600 * k) - fork.x - 12 * k;
+      const stop = trunkForks[index + 1]?.x ?? fork.x + fork.region.width + 600 * k;
+      const limit = stop - fork.x - 12 * k;
       const variants = words.fork(fork);
       const label = variants.find((variant) => textWidth(variant, size) <= limit) ?? clip(variants.at(-1) ?? "", size, limit);
       if (!label) return;
-      const y = fork.y + Math.min(12 * k, 30);
+      const y = fork.y - lift - size * LINE_HEIGHT;
       text(`fork:${fork.node}`, fork.x + 6 * k, y, label, size, INK_2, data("fork", { node: fork.node }));
       hits.push({ x: fork.x, y, width: textWidth(label, size) + 12 * k, height: size * LINE_HEIGHT, node: fork.node, action: "zoom", zoomTo: fork.region });
     });
@@ -229,14 +238,16 @@ export function buildTreeScene(tree: GrowthTree, layout: GrowthLayout, options: 
     const opacity = placed.muted ? 45 : 100;
     if (node.kind === "stage" || node.kind === "origin") {
       const mark = Math.min(18 * k, 72);
-      rect(`${node.id}:card`, { x: cx - mark / 2, y: cy - mark / 2, width: mark, height: mark }, { backgroundColor: INK, strokeColor: placed.role === "trunk" ? ACCENT : INK, strokeWidth: 2 * Math.min(k, 6), opacity }, data("card", { node: node.id }));
-      const size = Math.min((placed.muted ? 10 : 13) * k, 72);
-      const limit = placed.side === 0 ? Math.max(size * 3, nextTrunkX(placed) - placed.x - 8 * k) : GEOMETRY_FALLBACK * k;
-      const label = clip(node.kind === "stage" ? words.stage(node) : words.origin, size, limit);
-      const y = cy - mark / 2 - size * LINE_HEIGHT - 6 * k;
-      text(`${node.id}:name`, placed.x, y, label, size, INK, data("name", { node: node.id }), opacity);
-      if (options.selected === node.id) ring(node.id, { x: cx - mark / 2, y: cy - mark / 2, width: mark, height: mark }, 4 * k);
-      hits.push({ x: Math.min(placed.x, cx - mark / 2), y, width: Math.max(textWidth(label, size), mark), height: cy + mark / 2 - y, node: node.id, action: "select" });
+      const box = { x: cx - mark / 2, y: cy - mark / 2, width: mark, height: mark };
+      rect(`${node.id}:card`, box, { backgroundColor: INK, strokeColor: placed.role === "trunk" ? ACCENT : INK, strokeWidth: 2 * Math.min(k, 6), opacity },
+        data("card", { node: node.id }));
+      // Under the mark, where nothing hangs: a column's header names its Stage in full.
+      const size = Math.min(13 * k, 72);
+      const label = node.kind === "stage" ? `S${node.stage!.number}` : clip(words.origin, size, placed.card.width);
+      const width = textWidth(label, size), y = cy + mark / 2 + 6 * k;
+      text(`${node.id}:name`, cx - width / 2, y, label, size, INK, data("name", { node: node.id }), opacity);
+      if (options.selected === node.id) ring(node.id, box, 4 * k);
+      hits.push({ x: Math.min(cx - width / 2, box.x), y: box.y, width: Math.max(width, mark), height: y + size * LINE_HEIGHT - box.y, node: node.id, action: "select" });
       return;
     }
     if (node.kind === "current") {
@@ -266,13 +277,16 @@ export function buildTreeScene(tree: GrowthTree, layout: GrowthLayout, options: 
     const selected = options.selected === node.id;
     const trunk = placed.role === "trunk";
     const s = Math.min(k, 1.5);
+    const close = level === "close";
     if (node.kind === "stage" || node.kind === "origin") {
       const stage = node.kind === "stage";
       rect(`${node.id}:card`, card, { backgroundColor: stage ? INK : PAPER, strokeColor: trunk ? ACCENT : INK, strokeWidth: trunk ? 2.5 : 1.5, opacity },
         data("card", { node: node.id }));
+      // A Stage is a milestone on its line; the header of the column it opens names it in full.
       const size = 14 * s;
-      const label = clip(stage ? words.stage(node) : words.origin, size, card.width - 24);
-      text(`${node.id}:name`, card.x + 12, placed.y - (size * LINE_HEIGHT) / 2, label, size, stage ? PAPER : INK, data("name", { node: node.id }), opacity);
+      const label = clip(stage ? `S${node.stage!.number}` : words.origin, size, card.width - 20);
+      text(`${node.id}:name`, stage ? card.x + (card.width - textWidth(label, size)) / 2 : card.x + 12, placed.y - (size * LINE_HEIGHT) / 2, label, size,
+        stage ? PAPER : INK, data("name", { node: node.id }), opacity);
       if (selected) ring(node.id, card, 6);
       hits.push({ ...card, node: node.id, action: "select" });
       return;
@@ -280,9 +294,9 @@ export function buildTreeScene(tree: GrowthTree, layout: GrowthLayout, options: 
     if (node.kind === "current") {
       rect(`${node.id}:card`, card, { backgroundColor: ACCENT_SOFT, strokeColor: ACCENT, strokeWidth: 2.5 }, data("card", { node: node.id }));
       const title = 15 * Math.min(k, 1.6), sub = 12 * s, button = 12 * Math.min(k, 1.4);
-      text(`${node.id}:name`, card.x + 14, card.y + 10, words.current, title, ACCENT, data("name", { node: node.id }));
-      text(`${node.id}:summary`, card.x + 14, card.y + 14 + title * LINE_HEIGHT, clip(words.currentAt, sub, card.width - 28), sub, INK, data("summary", { node: node.id }));
-      const box = { x: card.x + 12, y: card.y + card.height - 12 - Math.max(30, button * LINE_HEIGHT + 12), width: card.width - 24, height: Math.max(30, button * LINE_HEIGHT + 12) };
+      text(`${node.id}:name`, card.x + 14, card.y + 9, words.current, title, ACCENT, data("name", { node: node.id }));
+      text(`${node.id}:summary`, card.x + 14, card.y + 12 + title * LINE_HEIGHT, clip(words.currentAt, sub, card.width - 28), sub, INK, data("summary", { node: node.id }));
+      const box = { x: card.x + 12, y: card.y + card.height - 11 - Math.max(30, button * LINE_HEIGHT + 12), width: card.width - 24, height: Math.max(30, button * LINE_HEIGHT + 12) };
       const allowed = tree.accept.allowed;
       rect(`${node.id}:accept`, box, allowed ? { backgroundColor: ACCENT, strokeColor: ACCENT, strokeWidth: 1.5 } : { strokeColor: MUTED, strokeStyle: "dashed", strokeWidth: 1.5 },
         data("accept", { node: node.id }));
@@ -293,52 +307,51 @@ export function buildTreeScene(tree: GrowthTree, layout: GrowthLayout, options: 
       hits.push({ ...box, node: node.id, action: "accept" });
       return;
     }
+    // An option or a running line: a small card with its status bar, letter and name.
     const pending = node.kind === "pending";
-    const onLine = trunk || tree.continued.has(node.id);
     rect(`${node.id}:card`, card, pending
       ? { strokeColor: RUNNING, strokeStyle: "dotted", strokeWidth: 1.5, opacity }
       : { backgroundColor: PAPER, strokeColor: trunk ? ACCENT : TWIG, strokeWidth: trunk ? 2.5 : 1.5, strokeStyle: placed.muted ? "dashed" : "solid", opacity },
       data("card", { node: node.id }));
-    if (pending) {
-      const size = 11 * s;
-      const rows = wrap(words.pending(node.pending!.status), size, card.width - 14, 2);
-      text(`${node.id}:letter`, card.x + 7, placed.y - (rows.length * size * LINE_HEIGHT) / 2, rows.join("\n"), size, FAINT, data("letter", { node: node.id }), opacity);
-    } else {
-      rect(`${node.id}:tile`, { x: card.x + 6, y: card.y + 6, width: card.width - 12, height: card.height - 12 }, { backgroundColor: TILE, strokeColor: "transparent", opacity },
-        data("card", { node: node.id }), false);
-      const letter = node.letter ?? "·", size = 26;
-      text(`${node.id}:letter`, card.x + card.width / 2 - textWidth(letter, size) / 2, placed.y - (size * LINE_HEIGHT) / 2, letter, size, trunk ? ACCENT : FAINT,
-        data("letter", { node: node.id }), opacity);
-      ellipse(`${node.id}:state`, { x: card.x + card.width - 15, y: card.y + 5, width: 10, height: 10 },
-        onLine ? { backgroundColor: trunk ? ACCENT : PAPER, strokeColor: trunk ? ACCENT : TWIG, strokeWidth: 1.5, opacity } : { backgroundColor: MUTED, strokeColor: MUTED, opacity },
-        data("status", { node: node.id }));
-      // Admitted for comparison with review checks still open (#294 Q2): a small mark, explained in the side card.
-      if (node.candidate?.blockedBy.length) {
-        text(`${node.id}:review`, card.x + 10, card.y + 6, "!", 14, WARN, data("status", { node: node.id }), opacity);
-      }
-    }
-    const labels = placed.labels!;
-    const close = level === "close";
-    const nameSize = close ? 13 : 12 * k;
-    const summarySize = 11.5;
-    const nameRows = wrap(words.option(node), nameSize, labels.width, close ? 1 : 2);
-    const rows: { role: "name" | "summary" | "status"; value: string; size: number; color: string }[] =
-      nameRows.map((value) => ({ role: "name", value, size: nameSize, color: INK }));
+    const bar = barColour(node);
+    if (bar) rect(`${node.id}:bar`, { x: card.x + BAR.inset, y: card.y + BAR.inset + 2, width: BAR.width, height: card.height - (BAR.inset + 2) * 2 },
+      { backgroundColor: bar, strokeColor: "transparent", opacity }, data("status", { node: node.id }), false);
+    // Admitted for comparison although review checks did not pass (#294 Q2): a mark beside the bar's colour,
+    // explained in the inspector, in the card's top-right corner.
+    const marked = Boolean(node.candidate?.blockedBy.length);
+    if (marked) text(`${node.id}:review`, card.x + card.width - MARK.inset, card.y + MARK.top, "!", MARK.size, VIOLATED, data("status", { node: node.id }), opacity);
+    const nameSize = close ? 13 : 12 * k, small = close ? 11.5 : 11 * s;
+    // The letter keeps a column of its own; a lone option has none and its name takes the width.
+    const letter = pending ? null : node.letter;
+    const letterSize = nameSize * 1.2;
+    const left = card.x + PAD.left + (letter ? letterSize * 0.72 + 6 : 0);
+    const width = card.x + card.width - PAD.right - left;
+    const rows: { role: "letter" | "name" | "summary" | "status"; value: string; size: number; color: string }[] = [];
+    if (pending) rows.push({ role: "letter", value: clip(words.pending(node.pending!.status), small, width), size: small, color: FAINT });
+    // A name takes two lines where the card has the room for them. Only its first line can reach the review
+    // mark's corner; one long enough to is wrapped short of it.
+    const room = card.height - PAD.top * 2 - rows.reduce((sum, row) => sum + row.size * LINE_HEIGHT, 0);
+    const lines = !close && 2 * nameSize * LINE_HEIGHT <= room ? 2 : 1;
+    const clearOfMark = card.x + card.width - MARK.inset - 4 - left;
+    let names = wrap(words.name(node), nameSize, width, lines);
+    if (marked && names.length > 0 && textWidth(names[0], nameSize) > clearOfMark) names = wrap(words.name(node), nameSize, clearOfMark, lines);
+    for (const value of names) rows.push({ role: "name", value, size: nameSize, color: INK });
     if (close) {
       // A running line's summary is its progress detail.
-      if (node.summary) rows.push({ role: "summary", value: clip(node.summary, summarySize, labels.width), size: summarySize, color: INK_2 });
-      rows.push({ role: "status", value: clip(words.status(node), summarySize, labels.width), size: summarySize, color: FAINT });
+      if (node.summary) rows.push({ role: "summary", value: clip(node.summary, small, width), size: small, color: INK_2 });
+      if (!pending) rows.push({ role: "status", value: clip(words.status(node), small, width), size: small, color: FAINT });
     }
     const height = rows.reduce((sum, row) => sum + row.size * LINE_HEIGHT, 0);
-    let y = placed.side < 0 ? labels.y + labels.height - height - 5 : labels.y + 5;
+    let y = placed.y - height / 2;
     rows.forEach((row, index) => {
-      text(`${node.id}:${row.role}:${index}`, labels.x, y, row.value, row.size, row.color, data(row.role, { node: node.id }), opacity);
+      text(`${node.id}:${row.role}:${index}`, left, y, row.value, row.size, row.color, data(row.role, { node: node.id }), opacity);
       y += row.size * LINE_HEIGHT;
     });
+    if (letter) {
+      text(`${node.id}:letter`, card.x + PAD.left, placed.y - (letterSize * LINE_HEIGHT) / 2, letter, letterSize, trunk ? ACCENT : INK_2,
+        data("letter", { node: node.id }), opacity);
+    }
     if (selected) ring(node.id, card, 5);
     hits.push({ ...placed.footprint, node: node.id, action: "select" });
   }
 }
-
-/** Width allowed for a branch Stage's far label, in units of the text scale. */
-const GEOMETRY_FALLBACK = 180;

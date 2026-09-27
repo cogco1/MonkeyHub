@@ -98,6 +98,8 @@ const server = await createServer({ root, configFile: false, resolve: { dedupe: 
   }],
 });
 let browser, page, hold = false, release, broken = false, refuseNext = false, current;
+// A status answer held back, to look at the drawing while its source is checked again.
+let holdStatus = false, releaseStatus = null;
 
 const requests = [], statusRequests = [], dimensionQueries = [], drives = [], errors = [], passed = [], vectorBytes = new Map();
 const sectionRequests = [], planOnlyCalls = [];
@@ -112,6 +114,17 @@ const source = () => page.getByRole("combobox", { name: "Version to draw", exact
 const saveButton = () => page.getByRole("button", { name: "Retry saving", exact: true });
 const pen = label => page.getByLabel(label, { exact: true });
 const objectChoice = () => page.getByRole("combobox", { name: "Projected object", exact: true });
+// #337: the source's state is a quiet word at the bar's right end while all is well, and a row above the drawing while
+// it asks for a person; `settled` waits until its status has been read.
+const settled = ':not([aria-busy="true"])';
+const sourceWord = (attributes = "") => page.locator(`.surface-bar .drawing-state${attributes}`);
+const sourceRow = (attributes = "") => page.locator(`.drawing-attention .drawing-status${attributes}`);
+// The bar's menus: the version to draw under Draw another version; Download SVG and Refresh sources under More.
+const menu = name => page.locator(`details.drawing-${name}`);
+const isOpen = name => menu(name).evaluate(node => node.open);
+const openMenu = async name => { if (!await isOpen(name)) await menu(name).locator("summary").click(); };
+const moreCommand = async name => { await openMenu("more"); return page.getByRole("button", { name, exact: true }); };
+const refreshSources = async () => (await moreCommand("Refresh sources")).click();
 // The page's own drawing of a projected object, and where a plan point is on screen.
 const drawn = object => page.locator(`svg.drawing-vector-base .drawing-plan__lines [data-object="${object}"]`);
 const planPoint = (x, y) => page.evaluate(([x, y]) => {
@@ -199,6 +212,7 @@ try {
   });
   await page.route("**/api/drawings/plans/status", async route => {
     const body = route.request().postDataJSON(); statusRequests.push(body);
+    if (holdStatus) { holdStatus = false; await new Promise(resolve => { releaseStatus = resolve; }); releaseStatus = null; }
     const sourceDocument = await page.evaluate(body => window.drawingFixture.documents.find(d => d.revisionRef === body.revisionRef), body);
 
     if (sourceDocument.viewRecipe.kind !== "cut-plan") { planOnlyCalls.push(["status", body.revisionRef]); return route.fulfill({ status: 422, json: { code: "DRAWING_PLAN_REQUIRED", detail: "Not a cut plan." } }); }
@@ -257,8 +271,9 @@ try {
     const label = await revision().locator("option:checked").textContent();
     const time = await page.evaluate(value => new Date(value).toLocaleString("en"), legacyDocument.generatedAt);
     assert.equal(label.trim(), `${legacyDocument.fileName} · Accepted A · ${time}`, "the selector names the drawing, source and time, without internal identifiers");
-    await page.locator('.drawing-status[data-follow="live"][data-status="current"]').waitFor();
+    await sourceWord('[data-follow="live"][data-status="current"]' + settled).waitFor();
     await page.getByText("Current with the project model", { exact: true }).waitFor();
+    assert.equal(await page.locator(".drawing-attention").count(), 0, "a drawing current with the model asks nothing above it");
     assert.equal(requests.length, 0, "a drawing already reading the head is not rebuilt");
     assert.equal(statusRequests.at(-1).targetModelSource, undefined, "LIVE status asks the runtime for the Working Head");
     assert.equal(await page.getByRole("combobox", { name: "Choose a door", exact: true }).count(), 0);
@@ -304,12 +319,12 @@ try {
   await step("when the Working Head moves the LIVE drawing rebuilds once on it, while an earlier revision stays frozen", async () => {
     const generationCount = requests.length;
     assert.equal(await revision().inputValue(), legacyKey);
-    await page.locator('.drawing-status[data-follow="frozen"]').waitFor();
+    await sourceRow('[data-follow="frozen"]').waitFor();
     await page.getByText("Earlier revision · not updated automatically", { exact: true }).waitFor();
     const retainedBefore = await page.evaluate(() => structuredClone(window.drawingFixture.documents.find(document => document.revisionRef === "revision-legacy")));
     await page.evaluate(() => { window.drawingFixture.setActive(false); window.drawingFixture.head = "stage-B"; window.drawingFixture.revision += 1; });
     await page.evaluate(() => window.drawingFixture.setActive(true));
-    await page.locator('.drawing-status[data-follow="frozen"][data-status="outdated"]').waitFor();
+    await sourceRow('[data-follow="frozen"][data-status="outdated"]' + settled).waitFor();
     await new Promise(resolve => setTimeout(resolve, 300));
     assert.equal(requests.length, generationCount, "an earlier revision is never rebuilt automatically");
     assert.deepEqual(await page.evaluate(() => window.drawingFixture.documents.find(document => document.revisionRef === "revision-legacy")), retainedBefore,
@@ -318,10 +333,10 @@ try {
     await until(() => Promise.resolve(requests.length), value => value === generationCount + 1, "one automatic rebuild on the moved head");
     assert.deepEqual(requests.at(-1).modelSource, modelB); assert.equal(requests.at(-1).sourceStageRef, "stage-B");
     assert.equal(requests.at(-1).dimensions[0].id, savedDimension.id, "rebuilding keeps the retained dimension intention");
-    await page.locator('.drawing-status[data-follow="live"][data-status="current"]').waitFor();
+    await sourceWord('[data-follow="live"][data-status="current"]' + settled).waitFor();
     await page.evaluate(() => window.drawingFixture.setActive(false));
     await page.evaluate(() => window.drawingFixture.setActive(true));
-    await page.locator('.drawing-status[data-follow="live"][data-status="current"]').waitFor();
+    await sourceWord('[data-follow="live"][data-status="current"]' + settled).waitFor();
     assert.equal(requests.length, generationCount + 1, "the same head is never rebuilt twice");
   });
   await step("a Working Head that cannot be drawn is stated, not silently rebound", async () => {
@@ -333,22 +348,23 @@ try {
     assert.equal(requests.length, generationCount);
     await page.evaluate(() => { window.drawingFixture.setActive(false); window.drawingFixture.headDrawable = true; window.drawingFixture.revision += 1; });
     await page.evaluate(() => window.drawingFixture.setActive(true));
-    await page.locator('.drawing-status[data-follow="live"][data-status="current"]').waitFor();
+    await sourceWord('[data-follow="live"][data-status="current"]' + settled).waitFor();
     assert.equal(requests.length, generationCount);
   });
   await step("drawing another version is explicit, never rebuilds by itself and preserves dimension intention", async () => {
     const generationCount = requests.length;
     const oldSelection = await revision().inputValue();
-    await page.getByText("Draw another version", { exact: true }).click();
+    await openMenu("another");
     await source().selectOption("stage-A");
-    await page.locator('.drawing-status[data-follow="frozen"][data-status="outdated"]').waitFor();
-    await page.getByText("Drawn from a chosen version · not updated automatically", { exact: true }).waitFor();
+    assert.equal(await isOpen("another"), false, "a chosen version closes its menu, so the row with its next step is in sight");
+    await sourceRow('[data-follow="frozen"][data-status="outdated"]' + settled).waitFor();
+    await page.getByText("Draws Accepted A · not updated automatically", { exact: true }).waitFor();
     assert.deepEqual(statusRequests.at(-1).targetModelSource, modelA);
     assert.equal(requests.length, generationCount, "choosing a version never rebuilds by itself");
     assert.equal(await page.getByText("Change design width", { exact: true }).count(), 0);
     await page.getByRole("button", { name: "Rebuild on this version", exact: true }).click();
     await until(() => Promise.resolve(requests.length), value => value === generationCount + 1, "explicit rebuild");
-    await page.locator('.drawing-status[data-status="current"]').waitFor();
+    await sourceRow('[data-status="current"]' + settled).waitFor();
     assert.notEqual(await revision().inputValue(), oldSelection);
     assert.deepEqual(requests.at(-1).modelSource, modelA); assert.equal(requests.at(-1).dimensions[0].id, savedDimension.id);
     assert.equal(requests.at(-1).follow, "frozen", "the chosen version is recorded with the revision");
@@ -358,25 +374,35 @@ try {
     const kept = await revision().inputValue();
     await revision().selectOption(legacyKey);
     await revision().selectOption(kept);
-    await page.locator('.drawing-status[data-follow="frozen"][data-status="current"]').waitFor();
+    await sourceRow('[data-follow="frozen"][data-status="current"]' + settled).waitFor();
     await page.getByText("Drawn from a chosen version · not updated automatically", { exact: true }).waitFor();
     await new Promise(resolve => setTimeout(resolve, 300));
     assert.equal(requests.length, generationCount, "reopening never rebuilds a kept drawing on the head");
     await page.getByRole("button", { name: "Follow the current model again", exact: true }).click();
     await until(() => Promise.resolve(requests.length), value => value === generationCount + 1, "explicit return to LIVE");
     assert.equal(requests.at(-1).follow, "live"); assert.deepEqual(requests.at(-1).modelSource, modelB);
-    await page.locator('.drawing-status[data-follow="live"][data-status="current"]').waitFor();
+    await sourceWord('[data-follow="live"][data-status="current"]' + settled).waitFor();
   });
   await step("broken anchors remain visible and cannot drive, while prior revisions remain selectable", async () => {
     broken = true;
-    await page.getByRole("button", { name: "Refresh sources", exact: true }).click();
-    await page.locator('.drawing-status[data-status="partially-broken"]').waitFor();
+    await refreshSources();
+    await sourceRow('[data-status="partially-broken"]' + settled).waitFor();
+    // #349: checking the same drawing again keeps its row, says so inside it and moves nothing.
+    const viewport = page.locator(".drawing-preview__viewport"), before = await viewport.boundingBox();
+    holdStatus = true;
+    await refreshSources();
+    await until(() => Promise.resolve(Boolean(releaseStatus)), Boolean, "held status re-check");
+    await sourceRow('[data-status="partially-broken"][aria-busy="true"]').getByText("Checking source…", { exact: true }).waitFor();
+    assert.deepEqual(await viewport.boundingBox(), before, "the drawing does not move while its source is checked again");
+    releaseStatus();
+    await sourceRow('[data-status="partially-broken"]' + settled).getByText("Some anchors are broken", { exact: true }).waitFor();
+    assert.deepEqual(await viewport.boundingBox(), before);
     assert.equal(await page.getByText("Door anchor is missing.", { exact: true }).count(), 1);
     assert.equal(await page.getByRole("button", { name: "Create design candidate", exact: true }).count(), 0);
     assert.equal(await revision().locator("option").count(),
       1 + await page.evaluate(() => window.drawingFixture.documents.filter(document => document.projectId === "drawing-project").length));
     broken = "outside-view";
-    await page.getByRole("button", { name: "Refresh sources", exact: true }).click();
+    await refreshSources();
     await page.getByText("Dimension falls outside the drawing. Adjust its paper offset.", { exact: true }).waitFor();
     assert.equal(await page.getByLabel("Label offset (paper mm)", { exact: true }).isEnabled(), true);
     broken = false;
@@ -479,10 +505,12 @@ try {
     assert.equal(drives.length, 0, "appearance never invokes a design proposal");
   });
   await step("SVG download preserves exact saved vector bytes, scale, source objects and entourage", async () => {
-    const downloadButton = page.getByRole("button", { name: "Download SVG", exact: true });
-    await until(() => downloadButton.isEnabled(), Boolean, "saved SVG available");
+    // #337: Download SVG is a command in the bar's More menu, which its click closes.
+    const downloadButton = () => moreCommand("Download SVG");
+    await until(async () => (await downloadButton()).isEnabled(), Boolean, "saved SVG available");
     const [, , revisionRef] = JSON.parse(await revision().inputValue());
-    const [download] = await Promise.all([page.waitForEvent("download"), downloadButton.click()]);
+    const [download] = await Promise.all([page.waitForEvent("download"), (await downloadButton()).click()]);
+    assert.equal(await isOpen("more"), false, "a command closes its menu");
     const svg = await readFile(await download.path(), "utf8");
     assert.equal(svg, vectorBytes.get(revisionRef), "download is the retained SVG, not the display with dressing removed");
     assert.match(download.suggestedFilename(), /\.svg$/);
@@ -491,12 +519,12 @@ try {
     assert.match(svg, /data-object="obj-wall"/); assert.match(svg, /data-dressing=/);
     const beforeAdd = await revision().inputValue();
     await page.getByRole("button", { name: "Add person", exact: true }).click();
-    assert.equal(await downloadButton.isDisabled(), true, "unsaved appearance cannot be downloaded as a retained version");
+    assert.equal(await (await downloadButton()).isDisabled(), true, "unsaved appearance cannot be downloaded as a retained version");
     await until(() => revision().inputValue(), value => value !== beforeAdd, "the added person saved itself");
-    await until(() => downloadButton.isEnabled(), Boolean, "the saved revision downloads again");
+    await until(async () => (await downloadButton()).isEnabled(), Boolean, "the saved revision downloads again");
     await revision().selectOption(oldRevision);
-    await until(() => downloadButton.isEnabled(), Boolean, "historical SVG available");
-    const [oldDownload] = await Promise.all([page.waitForEvent("download"), downloadButton.click()]);
+    await until(async () => (await downloadButton()).isEnabled(), Boolean, "historical SVG available");
+    const [oldDownload] = await Promise.all([page.waitForEvent("download"), (await downloadButton()).click()]);
     const oldSvg = await readFile(await oldDownload.path(), "utf8");
     assert.equal(oldSvg, vectorBytes.get(legacyDocument.revisionRef));
     assert.doesNotMatch(oldSvg, /data-dressing=/, "historical download never inherits new or unsaved entourage");
@@ -513,7 +541,8 @@ try {
     const before = await revision().inputValue(), sent = requests.length;
     refuseNext = true;
     await page.getByLabel("Cut height (meter)", { exact: true }).fill("1.4");
-    await page.locator(".drawing-actions .error-panel").waitFor();
+    // #337: a refusal asks in the row above the drawing.
+    await page.locator(".drawing-attention .error-panel").waitFor();
     await page.getByText("Appearance changes are not saved yet; fix the marked field or retry.", { exact: true }).waitFor();
     assert.equal(await page.getByLabel("Cut height (meter)", { exact: true }).inputValue(), "1.4", "the refused edit stays in its field");
     await new Promise(resolve => setTimeout(resolve, 1200));
@@ -526,29 +555,46 @@ try {
   await step("keyboard controls and English/Chinese narrow layouts keep the drawing usable", async () => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.evaluate(() => window.drawingFixture.setLanguage("zh-CN"));
-    await page.getByRole("button", { name: "下载 SVG", exact: true }).waitFor();
+    await page.getByText("更多", { exact: true }).waitFor();
     await page.evaluate(() => { document.querySelector('.drawing-body').scrollTop = 0; document.querySelector('.drawing-controls__fields').scrollTop = 0; });
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
     await page.screenshot({ path: join(screenshots, "drawing-narrow.png"), fullPage: true });
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.evaluate(() => { window.drawingFixture.setLanguage("en"); window.drawingFixture.setTheme("dark"); });
     await page.evaluate(() => { document.querySelector('.drawing-body').scrollTop = 0; document.querySelector('.drawing-controls__fields').scrollTop = 0; });
-    const actionBounds = await page.getByRole("button", { name: "Download SVG", exact: true }).boundingBox();
-    assert.ok(actionBounds && actionBounds.y >= 0 && actionBounds.y + actionBounds.height <= 900, "the drawing's actions stay visible beside it while settings scroll");
+    const actionBounds = await menu("more").locator("summary").boundingBox();
+    assert.ok(actionBounds && actionBounds.y >= 0 && actionBounds.y + actionBounds.height <= 900, "the drawing's commands stay in sight above it while settings scroll");
     await page.screenshot({ path: join(screenshots, "drawing-wide-dark.png"), fullPage: true });
     // Choosing another version is a disclosed, explicit action; the LIVE drawing needs no choice.
-    if (!await source().isVisible()) await page.getByText("Draw another version", { exact: true }).click();
+    await openMenu("another");
     assert.equal(await source().locator("option").filter({ hasText: /^seat-rhino\.3dm$/ }).count(), 0);
     assert.equal(await source().inputValue(), "");
+    // Arrowing through the versions keeps the menu open; a version picked from the list closes it.
     await source().focus(); await page.keyboard.press("ArrowDown"); await page.keyboard.press("Enter");
     assert.equal(await source().inputValue(), "stage-A");
   });
+  await step("the bar's menus close on Escape and on a click outside them", async () => {
+    // Reuse drawing recipes, which reads the project's decisions when it opens, is covered by its own suite.
+    for (const name of ["another", "more"]) {
+      const word = menu(name);
+      if (!await word.evaluate(node => node.open)) await word.locator("summary").click();
+      await page.locator(".drawing-preview__viewport").click({ position: { x: 4, y: 4 } });
+      assert.equal(await word.evaluate(node => node.open), false, `${name} closes on a click outside it`);
+      await word.locator("summary").click();
+      assert.equal(await word.evaluate(node => node.open), true);
+      await page.keyboard.press("Escape");
+      assert.equal(await word.evaluate(node => node.open), false, `${name} closes on Escape`);
+      assert.equal(await word.locator("summary").evaluate(node => node === document.activeElement), true, "focus returns to its word");
+    }
+  });
   await step("an imported 3DM draws from its retained asset and reopens without following HEAD", async () => {
     await revision().selectOption("");
-    if (!await source().isVisible()) await page.getByText("Draw another version", { exact: true }).click();
-    await source().selectOption(`asset:${externalAsset.runId}:${externalAsset.assetSha256}`);
+    await openMenu("another");
     assert.equal(await source().locator("option").filter({ hasText: /^imported-house\.skp$/ }).count(), 1);
-    await page.getByText("Layer Roof was skipped.", { exact: true }).waitFor();
+    await source().selectOption(`asset:${externalAsset.runId}:${externalAsset.assetSha256}`);
+    // #349: the new drawing's chosen model is said at the bar's end, and its conversion notes ask in the row.
+    await page.locator(".surface-bar .drawing-next", { hasText: "Draws imported-house.skp · not updated automatically" }).waitFor();
+    await page.locator(".drawing-attention").getByText("Layer Roof was skipped.", { exact: true }).waitFor();
     await until(() => Promise.resolve(dimensionQueries.at(-1)), value => value?.sourceAssetRunId === externalAsset.runId, "external model units queried");
     assert.equal(dimensionQueries.at(-1).sourceAssetSha256, externalAsset.assetSha256);
     assert.equal(dimensionQueries.at(-1).stateDigest, undefined);
@@ -563,10 +609,10 @@ try {
     await revision().selectOption(saved);
     await page.getByRole("region", { name: "Source status" }).getByText("imported-house.skp", { exact: true }).waitFor();
     await page.getByRole("region", { name: "Source status" }).getByText("Layer Roof was skipped.", { exact: true }).waitFor();
-    await page.locator('.drawing-status[data-follow="frozen"][data-status="current"]').waitFor();
+    await sourceRow('[data-follow="frozen"][data-status="current"]' + settled).waitFor();
     await page.evaluate(() => { window.drawingFixture.setActive(false); window.drawingFixture.head = "stage-B"; window.drawingFixture.revision += 1; });
     await page.evaluate(() => window.drawingFixture.setActive(true));
-    await page.locator('.drawing-status[data-follow="frozen"][data-status="current"]').waitFor();
+    await sourceRow('[data-follow="frozen"][data-status="current"]' + settled).waitFor();
     assert.equal(requests.length, count, "reopening an external drawing never rebinds the Working Head");
     assert.equal(await page.getByText("Follow the current model again", { exact: true }).count(), 0);
     await page.getByLabel("Scale denominator (1 : n)", { exact: true }).fill("75");
@@ -578,8 +624,10 @@ try {
   await step("a SketchUp upload selects the server-returned 3DM for drawing", async () => {
     await revision().selectOption("");
     await page.locator('input[type="file"][accept=".3dm,.skp"]').setInputFiles({ name: "house.skp", mimeType: "application/octet-stream", buffer: Buffer.from("skp") });
-    await until(() => source().inputValue(), value => value === `asset:uploaded-skp:${"f".repeat(64)}`, "uploaded model selected");
+    await page.locator(".surface-bar .drawing-next", { hasText: "Draws house.skp · not updated automatically" }).waitFor();
     assert.deepEqual(await page.evaluate(() => window.drawingFixture.uploads), ["house.skp"]);
+    await openMenu("another");
+    assert.equal(await source().inputValue(), `asset:uploaded-skp:${"f".repeat(64)}`, "uploaded model selected");
     assert.equal(await source().locator("option").filter({ hasText: /^house\.skp$/ }).count(), 1);
     await page.getByRole("button", { name: "Generate cut plan", exact: true }).click();
     await until(() => revision().inputValue(), value => value !== "", "uploaded model drawing saved");
@@ -632,7 +680,7 @@ try {
     await page.locator('.drawing-preview__viewport[data-ready="true"]').waitFor();
     await page.screenshot({ path: join(screenshots, "drawing-section-perspective.png"), fullPage: true });
     assert.equal(await page.getByLabel("Cut height (meter)", { exact: true }).count(), 0, "cut-plan appearance is not offered for it");
-    assert.equal(await page.getByRole("button", { name: "Download SVG", exact: true }).count(), 0);
+    assert.equal(await menu("more").locator("button", { hasText: "Download SVG" }).count(), 0, "a section perspective has no SVG to download");
     assert.deepEqual(planOnlyCalls, [], "no cut-plan status or vector is asked for a section perspective");
     assert.equal(requests.length, generations, "no cut plan was generated");
     await page.evaluate(() => window.drawingFixture.setLanguage("zh-CN"));
@@ -642,7 +690,7 @@ try {
   await step("a section perspective from an imported SKP keeps its exact asset and warning on reopen", async () => {
     await page.evaluate(() => window.drawingFixture.setProject("drawing-project"));
     await revision().selectOption("");
-    if (!await source().isVisible()) await page.getByText("Draw another version", { exact: true }).click();
+    await openMenu("another");
     await source().selectOption(`asset:${externalAsset.runId}:${externalAsset.assetSha256}`);
     await page.getByText("Layer Roof was skipped.", { exact: true }).waitFor();
     const before = sectionRequests.length;
@@ -726,7 +774,7 @@ try {
     const dense = { ...legacyDocument, assetSha256: "7".repeat(64), fileName: "dense-plan.png", drawingId: "dense-plan", revisionRef: "revision-dense",
       generatedAt: "2026-09-21T00:00:00Z", viewRecipe: { ...legacyDocument.viewRecipe, dimensions: [], follow: "frozen" } };
     await page.evaluate(document => window.drawingFixture.documents.push(document), dense);
-    await page.getByRole("button", { name: "Refresh sources", exact: true }).click();
+    await refreshSources();
     await revision().selectOption(JSON.stringify([dense.runId, dense.assetSha256, dense.revisionRef]));
     await page.locator("img.drawing-vector-base").waitFor();
     await page.getByText("This drawing has 20001 lines, so it is shown as an image; choose its objects from the list.", { exact: true }).waitFor();
@@ -768,7 +816,7 @@ try {
       { drawingId: "floor-plan-2", beforeRevisionRef: "revision-3", afterRevisionRef: "revision-4" }];
     offers = [{ suggestionId: "offer-hatch", field: "hatchSpacingMm", direction: "increase", value: 4, drawingIds: ["floor-plan", "floor-plan-2"], evidence, page: offerPage },
       { suggestionId: "offer-cut", field: "cutLineMm", direction: "increase", value: 0.5, drawingIds: ["floor-plan", "floor-plan-2"], evidence, page: offerPage }];
-    await page.getByRole("button", { name: "Refresh sources", exact: true }).click();
+    await refreshSources();
     await hatchOffer().waitFor(); await cutOffer().waitFor();
     assert.equal(correctionReads.at(-1).projectId, "drawing-project");
     await page.screenshot({ path: join(screenshots, "drawing-recipe-offers.png"), fullPage: true });
@@ -792,13 +840,20 @@ try {
     assert.deepEqual(decisionCalls, []);
   });
   await step("saving an offer writes one human project recipe, and a new drawing starts from it", async () => {
+    // #349: what just happened shows on the status line over what is picked, until the pick changes.
+    await revision().selectOption(legacyKey);
+    await drawn("obj-wall").first().waitFor({ state: "attached" });
+    await objectChoice().selectOption("obj-wall");
     await hatchOffer().getByRole("button", { name: "Save", exact: true }).click();
-    await page.getByText("Saved: new drawings start from hatch spacing 4 mm.", { exact: true }).waitFor();
+    await page.locator(".status-line").getByText("Saved: new drawings start from hatch spacing 4 mm.", { exact: true }).waitFor();
     assert.deepEqual(decisionCalls, ["POST"], "exactly one decision is written");
     assert.deepEqual(decisionRequests[0], { projectId: "drawing-project", rawLanguage: "Save as project recipe: 2 drawings set hatch spacing to 4 mm.",
       disposition: "require", strength: "strong_preference", targetRef: "drawing:hatch", scope: { domain: "drawing", extent: "project" },
       source: { kind: "document", ...offerPage }, applicability: "scope", sourceKind: "human", typedBinding: { kind: "recipe", graphics: { hatchSpacingMm: 4 } } });
     await hatchOffer().waitFor({ state: "detached" });
+    await objectChoice().selectOption("obj-table");
+    await page.locator(".status-line").getByText("Picked Table · Oak · beyond", { exact: true }).waitFor();
+    assert.equal(await page.getByText("Saved: new drawings start from hatch spacing 4 mm.", { exact: true }).count(), 0, "a new pick clears the note");
     await revision().selectOption("");
     await page.getByRole("button", { name: "Generate cut plan", exact: true }).click();
     await until(() => revision().inputValue(), value => value !== "", "a new drawing opened");
@@ -844,4 +899,4 @@ try {
 } catch (error) {
   if (page) await page.screenshot({ path: join(screenshots, "failure.png"), fullPage: true }).catch(() => {});
   console.error(`FAIL ${current}; screenshots: ${screenshots}`, errors); throw error;
-} finally { if (release) release(); await browser?.close(); await server.close(); }
+} finally { if (release) release(); if (releaseStatus) releaseStatus(); await browser?.close(); await server.close(); }
