@@ -867,9 +867,17 @@ $pattern.Current.Value | ConvertTo-Json -Compress
         self.native.minimize(main)
         wait_for(lambda: self.native.minimized(main), "The open window did not minimize")
         logs = set(self.runtime.glob("logs/desktop-*.log"))
-        # Where no process may take the foreground (a busy desktop), Windows restores the
-        # window and flashes its taskbar button instead; everything else is still checked.
+        # Where no started process may take the foreground (someone is working on this
+        # desktop), Windows restores the window and flashes its taskbar button instead. The
+        # two front-window checks then report a skip; everything else is still checked.
         foreground = self.native.may_hand_over_foreground()
+
+        def in_front(hwnd, check):
+            with self.subTest(check):
+                if not foreground:
+                    self.skipTest("no started process may take the foreground on this desktop")
+                wait_for(lambda: self.native.foreground() == hwnd, f"Not in front: {check}")
+
         started = time.monotonic()
         repeat = self.start()
         classes = set()
@@ -886,14 +894,12 @@ $pattern.Current.Value | ConvertTo-Json -Compress
         self.assertIn("MonkeyHub is already running; switched to its window.", text)
         wait_for(lambda: not self.native.minimized(main), "The open window was not restored")
         wait_for(lambda: "event=activate" in self.log_text(), lambda: f"The open desktop was not asked: {self.log_text()}")
-        if foreground:
-            wait_for(lambda: self.native.foreground() == dialog, "The notice is not in front of the window it raised")
+        in_front(dialog, "the notice above the window it raised")
         classes.update(name for _, name, _ in self.native.top_level(repeat.pid))
         self.native.dismiss(dialog)
         self.assertEqual(repeat.wait(timeout=10), 0)
         self.assertNotIn("Tauri Window", classes)
-        if foreground:
-            wait_for(lambda: self.native.foreground() == main, "The open window is not in front after the notice")
+        in_front(main, "the raised window once the notice closes")
         self.untouched_by_the_refused_launch(logs)
         self.native.close_window(self.shell.pid)
         self.assertEqual(self.shell.wait(timeout=40), 0)
