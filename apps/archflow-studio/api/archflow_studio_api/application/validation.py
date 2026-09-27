@@ -29,7 +29,7 @@ The coverage description reads the published references and the candidate's
 exact retained StateRecord. A record can declare obligations without supplying
 an executable criterion or an authorized commitment. These sources are shown
 separately from the receipt: project conditions are not yet projected into its
-two normative gates (P110), and their empty input is not a successful check.
+two normative gates, and their empty input is not a successful check.
 
 Nothing here writes. A validation is a reading of records the run already
 retained; the published position, ``canonical/`` and ``input/`` are untouched,
@@ -111,7 +111,7 @@ MISSING_PROGRAM_DIGEST = (
 )
 
 VALIDATOR_NOTE = (
-    "Project conditions remain unchecked (P110): retained obligations are not "
+    "Project conditions remain unchecked: retained obligations are not "
     "projected into obligation-discharge, and this submission carries no "
     "obligation discharge. No source-backed authorized commitment and matching "
     "claim are supplied to authorized-commitment-claims. Record declarations, "
@@ -248,7 +248,7 @@ def _condition_sources(
     lines.append(
         "The candidate record is not substituted for the published sources. "
         "Recorded obligation statuses are declarations, not results of this "
-        "validation; project conditions remain unchecked (P110)."
+        "validation; project conditions remain unchecked."
     )
     return " ".join(lines)
 
@@ -413,7 +413,7 @@ def validate_candidate(
     has left.
 
     Source coverage follows the published references and the candidate's own
-    bound record. P110's requirement-to-result projection remains incomplete:
+    bound record. The requirement-to-result projection is not built yet:
     the normative gates still receive no obligations or commitments. Source
     descriptions therefore never expand ``effective_checks``.
     """
