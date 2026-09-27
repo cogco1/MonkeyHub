@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+from copy import deepcopy
 from dataclasses import asdict, dataclass, replace
 import hashlib
 from io import BytesIO
@@ -52,12 +53,13 @@ from pypdf import PdfReader
 from pypdf.errors import PdfReadError
 
 from archflow.project.record_kinds import (
-    SEAT_OCCT_EXECUTION, SEAT_RHINO_EXECUTION, STUDIO_SOURCE_DOCUMENT, STUDIO_MODEL_ASSET,
+    RUNNER_RUN_RECEIPT, SEAT_OCCT_EXECUTION, SEAT_RHINO_EXECUTION, STUDIO_SOURCE_DOCUMENT, STUDIO_MODEL_ASSET,
     STUDIO_DOCUMENT_MODEL_SOURCE,
 )
 from archflow.adapters.three_dm_inspector import inspect_three_dm_contents, inspect_three_dm_index, ThreeDmInspectionError
 from archflow.adapters.cad_program import ROOT_LAYER
 from archflow.project.layout import cad_workspace_path
+from archflow.project.memo import ContentMemo, PathStamps
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.refs import ProjectRecordRef, record_ref_from_uri
 from archflow.project.repository import ProjectRepositoryError
@@ -362,13 +364,19 @@ def _document_pages(data: bytes, mime_type: str) -> tuple[DocumentPage, ...]:
 
 
 def list_documents(binding: ProjectBinding, run_id: str | None = None) -> tuple[SourceDocument, ...]:
-    """Registered documents in one run, or across the bound project."""
+    """Registered documents in one run, or across the bound project.
+
+    One run's documents are kept per run under its stamp (``_run_documents``).
+    """
 
     if run_id is None:
         return _ordered_documents(
             document for source_run in binding.run_ids() for document in list_documents(binding, source_run)
         )
+    return _run_documents(binding, run_id)
 
+
+def _read_run_documents(binding: ProjectBinding, run_id: str) -> tuple[SourceDocument, ...]:
     # Only the two document kinds are read: a run's other records can be most
     # of the project's bytes, and every listing would read them all (#314).
     documents: dict[str, SourceDocument] = {}
@@ -1138,35 +1146,19 @@ def read_model_preview(binding: ProjectBinding, source: ModelSource) -> SourceDo
 def list_artifacts(
     binding: ProjectBinding, *, run_id: str | None = None, include_candidate_sources: bool = False,
 ) -> ArtifactListing:
-    """Certified artifacts in the requested run, or the whole project when omitted."""
+    """Certified artifacts in the requested run, or the whole project when omitted.
+
+    Each run is read on its own and kept per run under its stamp
+    (``_run_artifacts``); the project's listing is the runs' rows in run order.
+    """
 
     records: list[ArtifactRecord] = []
     skipped: list[str] = []
     for run_id in binding.run_ids() if run_id is None else (run_id,):
-        try:
-            record_refs = binding.record_refs(run_id)
-            refs = _receipt_refs(record_refs)
-            records.extend(_registered_model_assets(binding, run_id, record_refs))
-        except (StudioError, ProjectRepositoryError, ValueError, OSError):
+        rows, unreadable = _run_artifacts(binding, run_id)
+        records.extend(rows)
+        if unreadable:
             skipped.append(run_id)
-            continue
-        if not refs:
-            continue
-        # One walk of the run's workspaces answers every receipt in it.
-        index = _workspace_index(binding, run_id)
-        for ref in refs:
-            try:
-                payload = binding.repository.load_json(ref)
-            except (ProjectRepositoryError, ValueError, OSError):
-                # One receipt that will not load costs its own row and no
-                # more: the other receipts in this run still certify exactly
-                # what they certified. The run is named as skipped, because a
-                # listing that dropped a row silently would be a shorter
-                # answer indistinguishable from a complete one.
-                if run_id not in skipped:
-                    skipped.append(run_id)
-                continue
-            records.extend(_artifacts(binding, run_id, ref, payload, index))
     if include_candidate_sources:
         sources: dict[str, tuple[str, str] | None] = {}
         for row_index, record in enumerate(records):
@@ -1185,16 +1177,171 @@ def list_artifacts(
     )
 
 
-def _candidate_stage_source(binding: ProjectBinding, run_id: str) -> tuple[str, str] | None:
-    """Read a candidate's retained state digest and committed source, without a view."""
+def _read_run_artifacts(binding: ProjectBinding, run_id: str) -> tuple[tuple[ArtifactRecord, ...], bool]:
+    """One run's certified rows, and whether any of the run could not be read."""
 
+    records: list[ArtifactRecord] = []
+    try:
+        record_refs = binding.record_refs(run_id)
+        refs = _receipt_refs(record_refs)
+        records.extend(_registered_model_assets(binding, run_id, record_refs))
+    except (StudioError, ProjectRepositoryError, ValueError, OSError):
+        return (), True
+    if not refs:
+        return tuple(records), False
+    unreadable = False
+    # One walk of the run's workspaces answers every receipt in it.
+    index = _workspace_index(binding, run_id)
+    for ref in refs:
+        try:
+            payload = binding.repository.load_json(ref)
+        except (ProjectRepositoryError, ValueError, OSError):
+            # One receipt that will not load costs its own row and no
+            # more: the other receipts in this run still certify exactly
+            # what they certified. The run is named as skipped, because a
+            # listing that dropped a row silently would be a shorter
+            # answer indistinguishable from a complete one.
+            unreadable = True
+            continue
+        records.extend(_artifacts(binding, run_id, ref, payload, index))
+    return tuple(records), unreadable
+
+
+# ---- one run's listings, kept per run (ADR-008 phase 1a) ---------------------
+#
+# ``list_artifacts`` and ``list_documents`` read each run on its own, so what
+# one run yields is kept per run under that run's stamp: the stat of its
+# manifest and of its records directory; for artifacts also of every directory
+# and file under its workspaces, whose bytes decide ``available``; and of each
+# file outside the run that its rows cite - a registered model's blob, a
+# drawing revision's receipt. The run's stamp is taken before the run is read,
+# and a run whose stamp is not settled is read again every time. Rows are
+# handed out with their mutable parts copied.
+
+_RUN_ARTIFACTS = ContentMemo("studio.run-artifacts", max_entries=4096)
+_RUN_DOCUMENTS = ContentMemo("studio.run-documents", max_entries=4096)
+
+
+def _run_stamp(binding: ProjectBinding, run_id: str, *, workspaces: bool) -> tuple | None:
+    try:
+        run_layout = binding.repository.layout.run(run_id)
+    except ValueError:
+        return None
+    stamps = PathStamps()
+    stamps.file(run_layout.manifest)
+    stamps.directory(run_layout.records)
+    if workspaces:
+        stamps.tree(run_layout.workspaces)
+    return stamps.value()
+
+
+def _cited_stamp(paths: Iterable[Path]) -> tuple | None:
+    stamps = PathStamps()
+    stamps.files(paths)
+    return stamps.value()
+
+
+def _run_key(binding: ProjectBinding, run_id: str) -> tuple[str, str]:
+    return os.path.normcase(os.fspath(binding.repository.layout.root)), run_id
+
+
+def _run_artifacts(binding: ProjectBinding, run_id: str) -> tuple[tuple[ArtifactRecord, ...], bool]:
+    """``_read_run_artifacts``, kept under the run's stamp and its model blobs' stamps."""
+
+    key = _run_key(binding, run_id)
+    stamp = _run_stamp(binding, run_id, workspaces=True)
+    if stamp is not None:
+        kept = _RUN_ARTIFACTS.get(key)
+        if kept is not None and kept[0] == stamp and _cited_stamp(kept[3]) == kept[4]:
+            return tuple(_handed_artifact(row) for row in kept[1]), kept[2]
+    rows, unreadable = _read_run_artifacts(binding, run_id)
+    if stamp is not None:
+        root = binding.repository.layout.root
+        cited = tuple(root / row.relative_path for row in rows
+                      if row.status == "registered" and row.relative_path is not None)
+        cited_stamp = _cited_stamp(cited)
+        if cited_stamp is not None:
+            _RUN_ARTIFACTS.put(key, (stamp, rows, unreadable, cited, cited_stamp))
+    return tuple(_handed_artifact(row) for row in rows), unreadable
+
+
+def _handed_artifact(row: ArtifactRecord) -> ArtifactRecord:
+    return row if row.source_import is None else replace(row, source_import=deepcopy(row.source_import))
+
+
+def _run_documents(binding: ProjectBinding, run_id: str) -> tuple[SourceDocument, ...]:
+    """``_read_run_documents``, kept under the run's stamp and its revision receipts' stamps."""
+
+    key = _run_key(binding, run_id)
+    stamp = _run_stamp(binding, run_id, workspaces=False)
+    if stamp is not None:
+        kept = _RUN_DOCUMENTS.get(key)
+        if kept is not None and kept[0] == stamp and _cited_stamp(kept[2]) == kept[3]:
+            return tuple(_handed_document(document) for document in kept[1])
+    documents = _read_run_documents(binding, run_id)
+    if stamp is not None:
+        root = binding.repository.layout.root
+        try:
+            cited = tuple(root / record_ref_from_uri(document.revision_ref, binding.project_id).relative_path
+                          for document in documents if document.revision_ref is not None)
+        except (TypeError, ValueError):
+            cited = None
+        cited_stamp = None if cited is None else _cited_stamp(cited)
+        if cited_stamp is not None:
+            _RUN_DOCUMENTS.put(key, (stamp, documents, cited, cited_stamp))
+    return tuple(_handed_document(document) for document in documents)
+
+
+def _handed_document(document: SourceDocument) -> SourceDocument:
+    return document if document.view_recipe is None else replace(document, view_recipe=deepcopy(document.view_recipe))
+
+
+_CANDIDATE_SOURCES = ContentMemo("studio.candidate-sources", max_entries=4096)
+
+
+def _candidate_stage_source(binding: ProjectBinding, run_id: str) -> tuple[str, str] | None:
+    """Read a candidate's retained state digest and committed source, without a view.
+
+    What a clean reading found is kept per run (``_CANDIDATE_SOURCES``) under
+    the stamps of what it read: the run's manifest and records directory
+    (its delta, receipts and State Record live there), the design branches,
+    each runner receipt, whose time picks the newest, and the source Stage.
+    """
+
+    layout = binding.repository.layout
+    stamps = PathStamps()
+    stamps.file(layout.runs / run_id / "run.json")
+    stamps.directory(layout.runs / run_id / "records")
+    stamps.file(layout.design_branches)
+    stamp = stamps.value()
+    key = _run_key(binding, run_id)
+    if stamp is not None:
+        kept = _CANDIDATE_SOURCES.get(key)
+        if kept is not None and kept[0] == stamp and _cited_stamp(kept[1]) == kept[2]:
+            return kept[3]
+    source, cited, clean = _read_candidate_stage_source(binding, run_id)
+    if stamp is not None and clean:
+        cited_stamp = _cited_stamp(cited)
+        if cited_stamp is not None:
+            _CANDIDATE_SOURCES.put(key, (stamp, cited, cited_stamp, source))
+    return source
+
+
+def _read_candidate_stage_source(
+    binding: ProjectBinding, run_id: str,
+) -> tuple[tuple[str, str] | None, tuple[Path, ...], bool]:
+    """The source, the files outside the stamped directories it read, and whether nothing failed."""
+
+    root = binding.repository.layout.root
+    cited: list[Path] = []
     try:
         delta = binding.candidate_delta(run_id)
         if delta is None or delta.get("source_stage_ref") is None:
-            return None
+            return None, (), True
+        cited.extend(root / ref.relative_path for ref in binding.record_refs(run_id, kind=RUNNER_RUN_RECEIPT))
         newest = binding.newest_runner_receipt(run_id)
         if newest is None:
-            return None
+            return None, tuple(cited), True
         # reference_run also surveys every project run for projection warnings.
         # Use its same receipt chooser here, without that unrelated survey.
         reference = ReferenceRun(binding.load_run(run_id), "query", newest[1])
@@ -1202,13 +1349,14 @@ def _candidate_stage_source(binding: ProjectBinding, run_id: str) -> tuple[str, 
         state_digest = newest[1].get("design_state_digest")
         if (delta.get("result_record_digest") != record.digest or
                 not isinstance(state_digest, str) or not SHA256_HEX.fullmatch(state_digest)):
-            return None
+            return None, tuple(cited), True
         stage_ref = ProjectRecordRef.from_dict(delta["source_stage_ref"])
+        cited.append(root / stage_ref.relative_path)
         binding.design_stage(stage_ref)
-        return state_digest, stage_ref.uri
+        return (state_digest, stage_ref.uri), tuple(cited), True
     except (StudioError, ProjectRepositoryError, KeyError, TypeError, ValueError, OSError):
         # A missing or invalid candidate source must not hide certified bytes.
-        return None
+        return None, tuple(cited), False
 
 
 def artifact_model_source(record: ArtifactRecord) -> ModelSource | None:

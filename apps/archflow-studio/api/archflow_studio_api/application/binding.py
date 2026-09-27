@@ -13,6 +13,7 @@ from __future__ import annotations
 from collections import OrderedDict
 from dataclasses import dataclass
 from functools import wraps
+import os
 from pathlib import Path, PurePosixPath
 import threading
 import time
@@ -23,6 +24,7 @@ from starlette.datastructures import State
 
 from archflow.project.layout import LayoutFingerprint, layout_fingerprint
 from archflow.project.location import open_located_project
+from archflow.project.memo import ContentMemo, PathStamps
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import (
     DESIGN_STAGE,
@@ -84,6 +86,19 @@ READ_EPOCH = uuid4().hex
 FINGERPRINT_TTL_S = 1.0
 # Answers remembered per binding, least recently used first out.
 MEMO_ENTRIES = 128
+
+# Parsed State Records by content digest, shared by every binding in the
+# process (ADR-008 phase 1a; ``ProjectBinding.state_record``). Sized by the
+# records' JSON bytes: a parsed record holds about five times its file.
+_STATE_RECORDS = ContentMemo("studio.state-records", max_entries=64, max_size=16 * 1024 * 1024)
+# Committed Stage chains by project and the head and fork refs that fix them
+# (``ProjectBinding.design_history``); every value is a tuple of frozen values.
+_DESIGN_HISTORIES = ContentMemo("studio.design-histories", max_entries=256)
+# Each run's part of the reference-run survey, under the stamps of what it
+# read (``ProjectBinding._survey_run``).
+_SURVEY_RUNS = ContentMemo("studio.survey-runs", max_entries=4096)
+# What makes the survey skip a run rather than fail.
+_SURVEY_UNREADABLE = (StudioError, ProjectRepositoryError, ValueError, OSError)
 
 _T = TypeVar("_T")
 _MISSING = object()
@@ -178,8 +193,12 @@ class ProjectBinding:
         """The token an answer read from the project's files now is derived under.
 
         The fingerprint is taken again when it is more than ``FINGERPRINT_TTL_S``
-        old, when it was not stable, or when this process wrote since; so this
-        process's writes change the token at once, anyone else's within the TTL.
+        old or when this process wrote since; so this process's writes change
+        the token at once, anyone else's within the TTL. One that was not stable
+        is taken again at most once per TTL too, as ``memo`` already asks
+        (``_settling``): an unstable token is never answered 304 and keeps
+        nothing, so walking the project again for every request while it
+        settles would only make the first reads after a write slower (#365).
         """
 
         root = self.repository.layout.root
@@ -189,7 +208,7 @@ class ProjectBinding:
         with self._fingerprint_lock:
             now = self.clock()
             taken = self._fingerprinted
-            if (taken is None or taken.serial != serial or not taken.fingerprint.stable
+            if (taken is None or taken.serial != serial
                     or not 0 <= now - taken.taken_at < FINGERPRINT_TTL_S):
                 taken = _Fingerprinted(now, serial, layout_fingerprint(root))
                 self._fingerprinted = taken
@@ -315,6 +334,15 @@ class ProjectBinding:
                 f"Design branch {branch_id!r} does not exist.",
             )
         branch = DesignBranch.from_dict(branches[branch_id])
+        # A Stage names its parent by digest, so the head and fork refs fix
+        # the whole chain: it is walked once per pair (``_DESIGN_HISTORIES``),
+        # and each Stage file is still checked, head first, as the walk would.
+        key = (self.project_id, branch.head_stage, branch.fork_stage)
+        kept = _DESIGN_HISTORIES.get(key)
+        if kept is not None:
+            for retained, _ in reversed(kept):
+                self.repository.require_json(retained)
+            return kept
         ref: ProjectRecordRef | None = branch.head_stage
         history: list[tuple[ProjectRecordRef, DesignStage]] = []
         seen: set[ProjectRecordRef] = set()
@@ -357,7 +385,9 @@ class ProjectBinding:
                 "DESIGN_HISTORY_INVALID",
                 "The branch history does not reach its fork stage.",
             )
-        return tuple(reversed(history))
+        walked = tuple(reversed(history))
+        _DESIGN_HISTORIES.put(key, walked)
+        return walked
 
     def design_stage(self, ref: ProjectRecordRef) -> DesignStage:
         """Resolve a committed node; a prepared but unreferenced record is not one."""
@@ -517,7 +547,7 @@ class ProjectBinding:
                 "state_record_ref does not name this run's retained state-record",
             )
         try:
-            record = StateRecord.from_dict(self.repository.load_json(ref))
+            record = self.state_record(ref)
         except Exception as exc:
             raise _reference_state_not_exact(
                 reference,
@@ -546,6 +576,27 @@ class ProjectBinding:
             )
         return ref, record
 
+    def state_record(self, ref: ProjectRecordRef) -> StateRecord:
+        """The State Record retained at ``ref``, parsed once per content digest.
+
+        A record's digest names its bytes, and ``StateRecord.from_dict`` is a
+        pure function of them, so one parsed record answers for every ref with
+        that digest, in every binding of the process (``_STATE_RECORDS``).
+        The instance is shared: nobody may change it, and what it keeps
+        (``digest``, ``dependency_edges``) is taken once. The ref itself is
+        still checked on every call, exactly as ``load_json`` checks it, and
+        refused the same way.
+        """
+
+        key = (ref.sha256,) if isinstance(ref, ProjectRecordRef) else None
+        found = None if key is None else _STATE_RECORDS.get(key)
+        if found is not None:
+            self.repository.require_json(ref)
+            return found
+        record = StateRecord.from_dict(self.repository.load_json(ref))
+        _STATE_RECORDS.put(key, record, size=self.repository.require_json(ref))
+        return record
+
     def _mtime(self, ref: ProjectRecordRef) -> float:
         """When the record was last written; the only ordering P036 offers.
 
@@ -553,7 +604,7 @@ class ProjectBinding:
         newest on disk — a kernel card, not a choice made here.
         """
 
-        return self.repository.layout.resolve_record(ref).stat().st_mtime
+        return self.repository.record_stat(ref).st_mtime
 
     def _survey(
         self,
@@ -567,45 +618,102 @@ class ProjectBinding:
         directory without a manifest, or with a record the repository refuses,
         must not cost the client every other answer in the project. Such a run
         is skipped and named, and the projection says how many were skipped.
+
+        Each run's part of the survey is kept per run (``_survey_run``); the
+        chosen receipt is loaded for the caller.
         """
 
-        newest: tuple[
-            float,
-            str,
-            ProjectRecordRef,
-            Mapping[str, Any],
-        ] | None = None
+        newest: tuple[float, str, ProjectRecordRef] | None = None
         skipped: list[str] = []
         for run_id in self.run_ids():
-            before = newest
-            # The whole of one run's reading is inside the tolerance, not just
-            # its listing: a record that vanishes between being listed and
-            # being stat'ed is the same kind of accident as a run with no
-            # manifest, and both are skipped and named rather than fatal.
-            try:
-                for ref, payload in self._receipts_of(run_id):
-                    if not _is_complete(payload):
-                        continue
-                    if self._is_harness(payload):
-                        continue
-                    mtime = self._mtime(ref)
-                    if newest is None or mtime > newest[0]:
-                        newest = (mtime, run_id, ref, payload)
-            except (StudioError, ProjectRepositoryError, ValueError, OSError):
-                # Whatever this run offered came from a reading that did not
-                # finish, so it is rolled back before the run is named. A
-                # receipt chosen out of half a directory is not that run's
-                # newest, and the honesty line must not name a skipped run
-                # that the projection then went and bound itself to.
-                newest = before
+            offered = self._survey_run(run_id)
+            if offered is None:
                 skipped.append(run_id)
                 continue
-        chosen = (
-            None
-            if newest is None
-            else (newest[1], newest[2], newest[3])
-        )
-        return chosen, tuple(skipped)
+            for mtime, ref in offered:
+                if newest is None or mtime > newest[0]:
+                    newest = (mtime, run_id, ref)
+        if newest is None:
+            return None, tuple(skipped)
+        try:
+            payload = self.repository.load_json(newest[2])
+        except (ProjectRepositoryError, ValueError, OSError):
+            # Read in the survey, gone now: survey again, reading every run.
+            return self._survey_runs_uncached()
+        return (newest[1], newest[2], payload), tuple(skipped)
+
+    def _survey_runs_uncached(
+        self,
+    ) -> tuple[tuple[str, ProjectRecordRef, Mapping[str, Any]] | None, tuple[str, ...]]:
+        newest: tuple[float, str, ProjectRecordRef, Mapping[str, Any]] | None = None
+        skipped: list[str] = []
+        for run_id in self.run_ids():
+            try:
+                offered = self._read_survey_run(run_id)[0]
+            except _SURVEY_UNREADABLE:
+                skipped.append(run_id)
+                continue
+            for mtime, ref, payload in offered:
+                if newest is None or mtime > newest[0]:
+                    newest = (mtime, run_id, ref, payload)
+        return (None if newest is None else (newest[1], newest[2], newest[3])), tuple(skipped)
+
+    def _survey_run(self, run_id: str) -> tuple[tuple[float, ProjectRecordRef], ...] | None:
+        """One run's part of the survey: its complete design receipts and their times, in listing order.
+
+        None when the run could not be read: the whole of one run's reading
+        is inside the tolerance, not just its listing. A record that vanishes
+        between being listed and being stat'ed is the same kind of accident as
+        a run with no manifest, and both are skipped and named rather than
+        fatal; whatever such a run offered came from a reading that did not
+        finish, so none of it is offered. A run's part is kept
+        (``_SURVEY_RUNS``) under the stamps of its manifest, its records
+        directory and every receipt and workflow file it opened - a receipt's
+        time is what decides which one is newest.
+        """
+
+        runs = self.repository.layout.runs
+        key = (os.path.normcase(os.fspath(runs)), run_id)
+        stamps = PathStamps()
+        stamps.file(runs / run_id / "run.json")
+        stamps.directory(runs / run_id / "records")
+        stamp = stamps.value()
+        kept = None if stamp is None else _SURVEY_RUNS.get(key)
+        if kept is not None and kept[0] == stamp:
+            check = PathStamps()
+            check.files(kept[1])
+            if check.value() == kept[2]:
+                return kept[3]
+        try:
+            offered, opened = self._read_survey_run(run_id)
+        except _SURVEY_UNREADABLE:
+            return None
+        part = tuple((mtime, ref) for mtime, ref, _payload in offered)
+        if stamp is not None:
+            check = PathStamps()
+            check.files(opened)
+            opened_stamp = check.value()
+            if opened_stamp is not None:
+                _SURVEY_RUNS.put(key, (stamp, opened, opened_stamp, part))
+        return part
+
+    def _read_survey_run(
+        self, run_id: str,
+    ) -> tuple[tuple[tuple[float, ProjectRecordRef, Mapping[str, Any]], ...], tuple[Path, ...]]:
+        root = self.repository.layout.root
+        offered: list[tuple[float, ProjectRecordRef, Mapping[str, Any]]] = []
+        opened: list[Path] = []
+        for ref, payload in self._receipts_of(run_id):
+            opened.append(root / ref.relative_path)
+            workflow = _record_uri_path(root, payload.get("workflow_ref"), self.project_id)
+            if workflow is not None:
+                opened.append(workflow)
+            if not _is_complete(payload):
+                continue
+            if self._is_harness(payload):
+                continue
+            offered.append((self._mtime(ref), ref, payload))
+        return tuple(offered), tuple(opened)
 
     def reference_run(self, run_id: str | None = None) -> ReferenceRun:
         """Resolve which run answers: the request, the operator, then the rule."""
@@ -989,6 +1097,15 @@ def resolve_project(state: State, project_id: str) -> ProjectBinding:
         f"{binding.project_id}, which is also the project the unscoped paths "
         "answer for; GET /api/projects lists what there is.",
     )
+
+
+def _record_uri_path(root: Path, uri: object, project_id: str) -> Path | None:
+    """The file a ``project://`` record URI of this project names, or None if it names none."""
+
+    try:
+        return root / record_ref_from_uri(uri, project_id).relative_path
+    except (TypeError, ValueError):
+        return None
 
 
 def _is_complete(receipt: Mapping[str, Any]) -> bool:
