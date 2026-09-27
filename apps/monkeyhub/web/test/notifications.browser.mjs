@@ -103,6 +103,8 @@ await context.route((url) => url.pathname.startsWith("/api/"), async (route) => 
   if (url.pathname === "/api/chat/workspace") return json({ workspaceDir: "D:\\fixture", configured: true, projects: ["住宅"] });
   if (url.pathname === "/api/settings/user") return json(userSettings);
   if (url.pathname === "/api/settings/apps") return json(launch);
+  // #334: Settings lists which keys are in use; this Hub has none.
+  if (url.pathname === "/api/credentials") return json([]);
   if (url.pathname === "/api/apps") return json(apps());
   if (url.pathname === "/api/runtime") return json(runtimeSnapshot());
   if (url.pathname === "/api/runtime/projects/open") return json(runtime());
