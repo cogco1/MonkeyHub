@@ -517,7 +517,7 @@ interface NurbsFallbackFace {
  * start, or it crashed) fails what it held, and so does a library that could
  * not be fetched; the next parse then builds the loader again.
  */
-type LoaderWorker = Worker & { _callbacks: Record<number, { reject(reason: unknown): void }> };
+type LoaderWorker = Worker & { _callbacks: Record<number, { reject(reason: unknown): void }>; _taskLoad: number };
 type LoaderInternals = { workerPool: LoaderWorker[]; _getWorker(cost: number): Promise<LoaderWorker> };
 const RHINO_WORKERS = Math.max(2, Math.min(4, (typeof navigator === "undefined" ? 0 : navigator.hardwareConcurrency) || 2));
 let sharedLoader: Rhino3dmLoader | null = null;
@@ -551,6 +551,9 @@ function parse3dm(buffers: readonly ArrayBuffer[]): Promise<PromiseSettledResult
     const loader = sharedLoader ??= build3dmLoader();
     const pool = (loader as unknown as LoaderInternals).workerPool;
     loader.setWorkerLimit(Math.max(1, pool.length, Math.min(RHINO_WORKERS, buffers.length)));
+    // three's 3DMLoader never records a task's cost, so a worker's load turns NaN once its first task
+    // is released and every later task lands on one worker. Batches never overlap: each starts at zero.
+    for (const worker of pool) worker._taskLoad = 0;
     Object.assign(loader, { materials: [], warnings: [] });
     const settled = await Promise.allSettled(buffers.map((buffer) => new Promise<Object3D>((resolve, reject) => {
       loader.parse(buffer, resolve, reject);
