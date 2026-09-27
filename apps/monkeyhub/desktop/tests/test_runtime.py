@@ -947,7 +947,7 @@ $pattern.Current.Value | ConvertTo-Json -Compress
         self.assertEqual(self.shell.wait(timeout=40), 0)
         self.drained()
 
-    def test_an_explicit_other_runtime_root_runs_side_by_side(self):
+    def test_other_runtime_root_runs_side_by_side(self):
         """The lock belongs to one runtime root: an explicit other root opens its own window
         and Hub next to the first, and both close normally."""
         other = self.root / "other runtime"
