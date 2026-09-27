@@ -2080,6 +2080,55 @@
       "notes": "No dedicated test; the one test that imports ProjectManifest does so as a fixture, and real coverage comes through tests/test_project_repository.py."
     },
     {
+      "module_id": "project.memo",
+      "owner_path": "archflow/project/memo.py",
+      "purpose": "The one bounded, thread-safe memo every cache of values derived from a project's retained files uses (ADR-008 phase 1a), and the stat stamps and racy rule such a value is keyed by.",
+      "owns": [
+        "ContentMemo: a least-recently-used map from a tuple key to a value, bounded by its entry count and optionally by a total size its owner states for each entry",
+        "PathStamps: the stat stamps of the files, directories and trees a value is read from, taken before the read",
+        "settled: Git's racy rule for a stat stamp, with the layout fingerprint's two-second window"
+      ],
+      "does_not_own": [
+        "what a cache keeps, under which key, and when a write forgets it (its owner: project.repository, studio.binding, studio.artifacts)",
+        "the layout fingerprint and the window constant (project.layout)",
+        "reading or writing project files"
+      ],
+      "inputs": [
+        "tuple keys",
+        "values with a stated size",
+        "file, directory and tree paths"
+      ],
+      "outputs": [
+        "kept values",
+        "stamp tuples"
+      ],
+      "public_api": [
+        "ContentMemo",
+        "PathStamps",
+        "settled"
+      ],
+      "depends_on": [
+        "project.layout"
+      ],
+      "used_by": [
+        "archflow/project/repository.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/binding.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/artifacts.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/projection.py"
+      ],
+      "invariants": [
+        "a memo is never a source of truth: a kept value answers only what reading its files again would answer, and dropping any entry costs only that read",
+        "a value is kept only under a key naming everything it was read from: a content digest, or stat stamps whose times were settled (more than two seconds old) when taken",
+        "whoever keeps a value never changes it and hands out only immutable values or a fresh copy per caller",
+        "PathStamps reads metadata only: it opens, reads and writes no file"
+      ],
+      "status": "canonical",
+      "tests": [
+        "tests/test_project_memo.py"
+      ],
+      "notes": "Created because four owners needed the same bounded LRU and stamping (#365); a cache is not added beside it as an ad-hoc dict."
+    },
+    {
       "module_id": "project.ports",
       "owner_path": "archflow/project/ports.py",
       "purpose": "Persistence port protocols and the validated destination a producer must be handed before it is allowed to write anything.",
@@ -2447,7 +2496,8 @@
         "Read-only classification of the declared project format as current, supported legacy, too new or invalid",
         "Ephemeral retained-format inventories, preserved retained kinds and migration blockers through the existing guarded transfer closure; no second format manifest",
         "Forward format-1 to format-2 migration into a new empty directory from a disposable staging copy: the source is never written; every retained record is restated at the pointers its schema owner declares (project.version_refs) and re-hashed, and the rename cascades to a fixed point so every record ref, project:// URI and design branch naming it moves with it; a record carrying a legacy identity no owner declares blocks the migration; everything the declarations do not own is copied byte for byte; the migration retains its own ProjectFormatMigration@1 receipt in a format-migration run inside the project it produced",
-        "The project working position and explicit retention choices in design/working.json; CAS updates and expiry of superseded local recovery snapshots. No run is removed automatically."
+        "The project working position and explicit retention choices in design/working.json; CAS updates and expiry of superseded local recovery snapshots. No run is removed automatically.",
+        "the process-wide memos of verified record bytes (64 MB, no record above 4 MB), verified record identities and stamp-keyed listings (list_json, run manifests, design branches) (ADR-008 phase 1a)"
       ],
       "does_not_own": [
         "path naming inside a project (project.layout)",
@@ -2510,7 +2560,9 @@
         "StaleWorkingDraft",
         "FilesystemProjectRepository.working_draft_guard",
         "write_serial",
-        "add_write_observer"
+        "add_write_observer",
+        "FilesystemProjectRepository.require_json",
+        "FilesystemProjectRepository.record_stat"
       ],
       "depends_on": [
         "project.digests",
@@ -2521,7 +2573,8 @@
         "project.refs",
         "state.record",
         "project.version_refs",
-        "project.version_ref_owners"
+        "project.version_ref_owners",
+        "project.memo"
       ],
       "used_by": [
         "archflow/project/inputs.py",
@@ -2552,7 +2605,8 @@
         "Format planning refuses a source missing the existing advisory lock files rather than creating them; declared schema inventory is not a typed reference migration plan, and a supported legacy format 1 is upgradeable only through migrate_project_format into a new directory; the source is never written",
         "Working-draft cleanup never removes a run, input or shared object: an automatic candidate stays whether or not anything refers to it. It removes only local recovery snapshots that are neither the current localDraftRef nor updated within the last 24 hours, and one inconsistent snapshot refuses the whole expiry.",
         "Source validation and reference writes share the same cross-process guard as cleanup; in-process and filesystem locks are acquired in project, HEAD, design order. Full project archives preserve working metadata and local recovery; candidate synchronization never replaces the local working position.",
-        "every on-disk mutation this module makes is counted by write_serial for each registered root containing it and reported to that root's add_write_observer callbacks after it lands; an observer that raises is logged and never fails the write"
+        "every on-disk mutation this module makes is counted by write_serial for each registered root containing it and reported to that root's add_write_observer callbacks after it lands; an observer that raises is logged and never fails the write",
+        "load_json parses a payload of its own for every caller; kept verified bytes are used only while their file keeps the size and time it was read with, and only once that time was settled; a listing, a run manifest or the design branches are kept only under a settled stat stamp of the place they were read from, and a write this process makes forgets the kept places it can have changed (the written path, what lies below it and its directory's listing); verify reads every file itself"
       ],
       "status": "canonical",
       "tests": [
@@ -2562,7 +2616,8 @@
         "tests/test_project_transfer.py",
         "tests/test_project_format_migration.py",
         "tests/test_project_working_draft.py",
-        "tests/test_project_fingerprint.py"
+        "tests/test_project_fingerprint.py",
+        "tests/test_project_memo.py"
       ],
       "notes": "1311 lines carrying the whole persistence concept, including Windows sharing-violation retries around the HEAD swap; PreparedTransition and RecoveryReport are returned but never imported by name."
     },
@@ -3745,7 +3800,8 @@
         "developed_design_view takes the run's phase from its caller; there is no default phase (ADR-007 rule 1); retained serialized values stay readable without rewriting old records",
         "semantic edits check protected closure before and after the edit; a deleted entity releases its incident relationships, while remaining dangling references are refused",
         "a wall type supplies producer parameters and references, not a second instance store; changing a type or a bound parameter propagates to its instances",
-        "Lock changes alter only existing Parameter.lock_authority; exact bases and ordinary value/dependency protections remain enforced, new downstream bindings are allowed, and only an explicit unlock permits detaching existing locked bindings"
+        "Lock changes alter only existing Parameter.lock_authority; exact bases and ordinary value/dependency protections remain enforced, new downstream bindings are allowed, and only an explicit unlock permits detaching existing locked bindings",
+        "a record is a value: its readings (digest, state_digest, dependency_edges, resolve_element_bindings, per-entity parameter bindings, design_components_of per source and developed_design_view per argument tuple) are taken once per instance and kept on it; dataclasses.replace starts a new instance with nothing kept, and resolve_element_bindings hands each caller rows of its own"
       ],
       "status": "canonical",
       "tests": [
@@ -3754,7 +3810,8 @@
         "apps/archflow-studio/api/tests/test_projection.py",
         "tests/test_massing_metrics.py",
         "tests/test_lintel_bearing.py",
-        "tests/test_window_relational_update.py"
+        "tests/test_window_relational_update.py",
+        "apps/archflow-studio/api/tests/test_derivation_memo.py"
       ],
       "notes": "The projection is built here; state no longer imports runtime."
     },
@@ -4093,7 +4150,8 @@
         "state.record",
         "archflow.adapters.model_formats",
         "archflow.adapters.model_providers",
-        "archflow.adapters.sketchup_reader"
+        "archflow.adapters.sketchup_reader",
+        "project.memo"
       ],
       "used_by": [
         "apps/archflow-studio/api/archflow_studio_api/application/candidate.py",
@@ -4136,7 +4194,8 @@
         "a drawing's default status target is the Working Head's exact drawable source; an undrawable head is reported, never rebound",
         "External imported drawings never invent design state or driving dimensions; exact source run/hash and representation edits survive restart. Missing SKP runtime and unsupported 3DM geometry are explicit errors.",
         "SKP sourceImport metadata exposes the original file name and source artifact plus conversion warnings through model upload/listing and drawing receipts; import loss is never hidden by a successful projection.",
-        "A drawing correction is derived, never recorded (05 option A): GET /api/drawings/corrections reads the retained revisions and the active recipe decisions again on every call and writes nothing. A pair is only a revision and the one its receipt names, within one drawing; its class is a pure function of the recipe diff and the replacement cause, and a source rebuild is no correction. A suggestion is only offered: it counts representation-only recipe pairs no agent asked for, grouped by key and direction, needs two distinct drawings (D-05-1), skips a key an active recipe already gives that drawing, and becomes memory only by a person's recipe decision citing its page. V0 cleanup reports name no object, so no hide is classed a compiler defect."
+        "A drawing correction is derived, never recorded (05 option A): GET /api/drawings/corrections reads the retained revisions and the active recipe decisions again on every call and writes nothing. A pair is only a revision and the one its receipt names, within one drawing; its class is a pure function of the recipe diff and the replacement cause, and a source rebuild is no correction. A suggestion is only offered: it counts representation-only recipe pairs no agent asked for, grouped by key and direction, needs two distinct drawings (D-05-1), skips a key an active recipe already gives that drawing, and becomes memory only by a person's recipe decision citing its page. V0 cleanup reports name no object, so no hide is classed a compiler defect.",
+        "one run's artifact rows and documents are kept per run under the stamps of its manifest, its records directory, every directory and file under its workspaces (artifacts) and each file its rows cite outside the run; the project's listing is the runs' rows in run order and then the committed-source step, whose per-run answer is kept under the stamps of the run, the design branches, its runner receipts and its source Stage; mutable row parts are copied for each caller, and artifact_bytes still reads and hashes the file on every call"
       ],
       "status": "canonical",
       "tests": [
@@ -4156,7 +4215,8 @@
         "apps/archflow-studio/api/tests/test_section_perspective.py",
         "apps/archflow-studio/api/tests/test_native_drawings.py",
         "apps/archflow-studio/api/tests/test_drawing_corrections.py",
-        "apps/archflow-studio/api/tests/test_conditional_reads.py"
+        "apps/archflow-studio/api/tests/test_conditional_reads.py",
+        "apps/archflow-studio/api/tests/test_derivation_memo.py"
       ],
       "notes": "The viewer's only source of model bytes; digests are the identity, filenames are not.",
       "files": [
@@ -4392,7 +4452,8 @@
         "ReadToken",
         "READ_EPOCH",
         "ProjectBinding.read_token",
-        "ProjectBinding.memo"
+        "ProjectBinding.memo",
+        "ProjectBinding.state_record"
       ],
       "depends_on": [
         "project.inputs",
@@ -4415,7 +4476,8 @@
         "capabilities.element_producers",
         "contracts.canonical",
         "studio.artifacts",
-        "studio.render"
+        "studio.render",
+        "project.memo"
       ],
       "used_by": [
         "apps/archflow-studio/api/archflow_studio_api/application/projection.py",
@@ -4438,7 +4500,8 @@
         "main head Stage is the default when design history exists; a successful harness run alone never becomes a default committed Stage",
         "the Working Head is the architect's editing base, read from retained facts and never guessed from the newest file; a generated candidate is recorded and shown but never moves it, viewing history never moves it, and only the explicit working-draft selection (Continue, adopting the architect's own Sync, or the Hub Agent's Continue on the user's bound words through a Hub-managed Runtime) does; every selection onto a run is retained as an attributed design.continued event and admits no Candidate; a recorded continuation keeps its source position's branch",
         "a page's representation status is derived on read and never stored; an explicit page replacement answers before what the page depicts; a missing or unverifiable page or input is unavailable and is never rebound; a person's keep (a drawing's follow: frozen, Publish's freeze) is frozen; each consumer keeps its own wire words",
-        "an answer is remembered only in memory and only under a stable ReadToken; this process's writes change the token at once, another process's once the fingerprint's one-second time to live has passed"
+        "an answer is remembered only in memory and only under a stable ReadToken; this process's writes change the token at once, another process's once the fingerprint's one-second time to live has passed",
+        "a State Record is parsed once per content digest and shared by every binding in the process, and nobody changes it; state_record still checks the ref's file on every call. A design branch's Stage chain is kept by the head and fork refs that fix it, each Stage file still checked; each run's part of the reference-run survey is kept under the stamps of its manifest, records directory and the receipt and workflow files it read; a bound view's state digest is taken once per view"
       ],
       "status": "canonical",
       "tests": [
@@ -4454,7 +4517,8 @@
         "apps/archflow-studio/api/tests/test_working_source.py",
         "apps/archflow-studio/api/tests/test_attributed_continue.py",
         "apps/archflow-studio/api/tests/test_representation_dependencies.py",
-        "apps/archflow-studio/api/tests/test_conditional_reads.py"
+        "apps/archflow-studio/api/tests/test_conditional_reads.py",
+        "apps/archflow-studio/api/tests/test_derivation_memo.py"
       ],
       "notes": "Every other Studio concern reads the project through this one binding.",
       "files": [

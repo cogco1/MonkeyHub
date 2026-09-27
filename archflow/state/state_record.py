@@ -19,6 +19,7 @@ an adapter with a lineage note, scheduled for retirement with them.
 from __future__ import annotations
 
 import math
+from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from types import MappingProxyType
@@ -103,6 +104,27 @@ _INTERVAL_KINDS = frozenset({"clearance_interval"})   # these take interval_m; e
 
 class StateRecordError(ValueError):
     """Typed failure of the state record contracts."""
+
+
+_UNKEPT = object()
+
+
+def _kept(record: "StateRecord", name: str, compute: Callable[[], Any]) -> Any:
+    """``compute()``, a pure reading of ``record``, taken once and kept on the instance.
+
+    A record is a value: nothing changes it once it is built, so a reading of
+    it stays true for the instance's life, and a parsed record may be shared
+    (``ProjectBinding.state_record``). ``dataclasses.replace`` builds a new
+    instance, which starts with nothing kept. A reading that raises is not
+    kept. Whoever reads a kept value must not change it; a mutable reading is
+    copied for each caller instead (``resolve_element_bindings``).
+    """
+
+    found = record.__dict__.get(name, _UNKEPT)
+    if found is _UNKEPT:
+        found = compute()
+        object.__setattr__(record, name, found)
+    return found
 
 
 def _refs(values: object, field_name: str, *, allow_empty: bool = True) -> tuple[str, ...]:
@@ -483,9 +505,13 @@ class StateRecord:
         (``Parameter.reads``), so the closure, the protected-ref and lock checks
         and the recomputation after an edit all follow one declaration; a
         parameter whose ``inputs`` array was left empty is not thereby cut off
-        from its sources.
+        from its sources. A pure reading of the record: taken once and kept on
+        the instance (``_kept``).
         """
 
+        return _kept(self, "_dependency_edges_cache", self._dependency_edges)
+
+    def _dependency_edges(self) -> tuple[DependencyEdge, ...]:
         edges = [e for e in (r.dependency_edge() for r in self.relations) if e is not None]
         for p in self.parameters:
             for item in p.reads():
@@ -572,11 +598,8 @@ class StateRecord:
         projection under that run's envelope phase, and is not taken here.
         """
 
-        cached = getattr(self, "_state_digest_cache", None)
-        if cached is None:
-            cached = developed_design_view(self, run=self.run_ref, phase=RECORD_BINDING_PHASE).state_digest
-            object.__setattr__(self, "_state_digest_cache", cached)
-        return cached
+        return _kept(self, "_state_digest_cache",
+                     lambda: developed_design_view(self, run=self.run_ref, phase=RECORD_BINDING_PHASE).state_digest)
 
     # ---- serialization
     def to_dict(self) -> dict[str, object]:
@@ -603,8 +626,12 @@ class StateRecord:
     @property
     def digest(self) -> str:
         """Content identity: the design content, independent of the run and base
-        it is bound to. ``state_digest`` is the binding identity."""
+        it is bound to. ``state_digest`` is the binding identity. Taken once and
+        kept on the instance (``_kept``)."""
 
+        return _kept(self, "_digest_cache", self._content_digest)
+
+    def _content_digest(self) -> str:
         content = self.to_dict()
         for binding_key in ("run_id", "base"):  # what binds the record, not what it says (ADR-003)
             del content[binding_key]
@@ -661,9 +688,34 @@ def design_components_of(record: StateRecord, *, source_ref: str | None = None) 
     ``DesignComponent@1`` payload is taken exactly; one that carries only the
     semantics a record needs (kind, intent, volumes) is completed with the
     schematic defaults. This is the only builder: the developed-design
-    projection uses it too, so there is one component tree, not two.
+    projection uses it too, so there is one component tree, not two. The
+    tree of one record and ``source_ref`` is built once (``_kept``).
     """
 
+    return _kept_reading(record, "_design_components_cache", source_ref,
+                         lambda: _design_components(record, source_ref))
+
+
+def _kept_reading(record: StateRecord, name: str, key: Any, compute: Callable[[], Any]) -> Any:
+    """``compute()``, a pure reading of ``record`` under hashable, immutable ``key``, kept per key.
+
+    The table itself is what ``_kept`` keeps on the instance; it is filled
+    here and nowhere else.
+    """
+
+    try:
+        hash(key)
+    except TypeError:
+        return compute()  # an argument no caller should pass: read, and refused, as before
+    table: dict[Any, Any] = _kept(record, name, dict)
+    found = table.get(key, _UNKEPT)
+    if found is _UNKEPT:
+        found = compute()
+        table[key] = found
+    return found
+
+
+def _design_components(record: StateRecord, source_ref: str | None) -> tuple:
     from archflow.state.spatial import ComponentMaturity, DesignComponent
 
     out = []
@@ -787,7 +839,21 @@ def parameter_bindings_of(entity: Entity, record: StateRecord | None = None) -> 
 
     if entity.schema not in {"Element@1", "Type@1"}:
         return ()
-    fields = _element_fields(record, entity) if record is not None and entity.schema == "Element@1" else entity.fields
+    if record is None:
+        return _bindings_in(entity.fields)
+    # Read per record instance: one entry per entity id, answered only for
+    # the very entity object it was read from (a record's entities never
+    # change, so that object's bindings do not either).
+    kept: dict[str, tuple[Entity, tuple[tuple[str, str], ...]]] = _kept(record, "_parameter_bindings_cache", dict)
+    found = kept.get(entity.entity_id)
+    if found is not None and found[0] is entity:
+        return found[1]
+    bindings = _bindings_in(_element_fields(record, entity) if entity.schema == "Element@1" else entity.fields)
+    kept[entity.entity_id] = (entity, bindings)
+    return bindings
+
+
+def _bindings_in(fields: Mapping[str, Any]) -> tuple[tuple[str, str], ...]:
     out: list[tuple[str, str]] = []
     for field_name in ("params", "references"):
         out.extend(_binding_paths(fields.get(field_name, {}), field_name))
@@ -870,8 +936,22 @@ def resolve_element_bindings(record: StateRecord) -> dict[str, dict[str, Any]]:
     expression needs must agree with their declarations; a stale stored
     value among them is refused here, located at the binding, rather than
     read as either number.
+
+    The reading is taken once per record instance (``_kept``); each caller
+    gets the mapping, each row and each row's params and references as dicts
+    of its own; the values below them are shared, as a row's values always
+    shared the record's, and nobody changes them.
     """
 
+    kept = _kept(record, "_element_bindings_cache", lambda: _resolve_element_bindings(record))
+    return {
+        entity_id: {key: dict(value) if key in ("params", "references") and isinstance(value, dict) else value
+                    for key, value in fields.items()}
+        for entity_id, fields in kept.items()
+    }
+
+
+def _resolve_element_bindings(record: StateRecord) -> dict[str, dict[str, Any]]:
     elements = record.entities_of("Element@1")
     fields_by_id = {e.entity_id: _element_fields(record, e) for e in elements}
     bindings = {e.entity_id: parameter_bindings_of(replace(e, fields=fields_by_id[e.entity_id])) for e in elements}
@@ -1802,8 +1882,23 @@ def developed_design_view(record: StateRecord, *, run: RunRef, option_id: str | 
     see ``bootstrap_developed_state``. The record itself states no phase, so
     there is nothing here for a default to fall back on: a caller that omits
     it is a caller that has not said which run it is projecting.
+
+    The view is a pure function of the record and these arguments, all
+    hashable and immutable, and a frozen value: it is built once per record
+    instance and arguments (``_kept``).
     """
 
+    arguments = (run, option_id, evidence_ref, portfolio_id, branch_id, selection_decision_ref, phase)
+    if type(run) is not RunRef or type(phase) is not DesignPhase:
+        # Refused below exactly as ever; a text phase must not find the view
+        # its equal enum member was built for.
+        return _developed_design_view(record, *arguments)
+    return _kept_reading(record, "_developed_views_cache", arguments,
+                         lambda: _developed_design_view(record, *arguments))
+
+
+def _developed_design_view(record: StateRecord, run: RunRef, option_id: str | None, evidence_ref: str | None,
+                           portfolio_id: str, branch_id: str, selection_decision_ref: str, phase: DesignPhase):
     from dataclasses import replace as _replace
 
 

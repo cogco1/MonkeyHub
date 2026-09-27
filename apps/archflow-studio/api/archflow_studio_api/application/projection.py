@@ -31,6 +31,7 @@ from archflow.project.inputs import (
     load_authored_record,
 )
 from archflow.project.layout import AUTHORED_RECORD_PATH
+from archflow.project.memo import ContentMemo
 from archflow.project.refs import ProjectRecordRef, ProjectVersionRef, RunRef, record_ref_from_uri
 from archflow.state.developed_design import (
     DEVELOPED_PHASES,
@@ -72,6 +73,22 @@ SELECTION_DECISION_REF = "decision:declared-schematic-selection"
 # not a default for a run: a run states its phase in the envelope it
 # retained, and steps 1-3 of the rule read it there.
 UNSTATED_PHASE = DesignPhase.DESIGN_DEVELOPMENT
+
+# Each bound view's state digest, by the view itself (ADR-008 phase 1a). A
+# record's views are built once per arguments (``developed_design_view``) and
+# are frozen, so one view is digested once; the entry holds the view, so its
+# identity cannot pass to another view while the entry lives.
+_VIEW_DIGESTS = ContentMemo("studio.view-digests", max_entries=64)
+
+
+def _state_digest(state: DevelopedDesignState) -> str:
+    key = (id(state),)
+    kept = _VIEW_DIGESTS.get(key)
+    if kept is not None and kept[0] is state:
+        return kept[1]
+    digest = state.state_digest
+    _VIEW_DIGESTS.put(key, (state, digest))
+    return digest
 
 
 def drawing_context(record):
@@ -181,7 +198,7 @@ class StateProjection:
         could compare, and nothing produced it.
         """
 
-        return None if self.state is None else self.state.state_digest
+        return None if self.state is None else _state_digest(self.state)
 
     @property
     def reference_receipt(self) -> Mapping[str, Any] | None:
@@ -324,7 +341,7 @@ def project_state(
         if reference.source != "none" and not reference_state_exact
         else None
         if phase_error is not None
-        else state.state_digest == claimed
+        else _state_digest(state) == claimed
         if state is not None and isinstance(claimed, str)
         else None
     )
