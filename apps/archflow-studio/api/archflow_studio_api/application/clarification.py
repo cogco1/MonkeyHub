@@ -59,6 +59,7 @@ from typing import Mapping, Sequence
 from uuid import uuid4
 
 from archflow.project.refs import ProjectRecordRef
+from archflow.state.state_record import component_semantics
 from .artifacts import ModelSource
 
 from ..transport.errors import StudioError
@@ -750,19 +751,15 @@ def _component_kinds(
     """Every kind this component's identity and its declared intent name."""
 
     words = [component_id]
-    if projection.components is not None:
-        for component in projection.components:
-            if component.component_id == component_id:
-                words += [component.semantic_kind, component.intent]
-                break
-    else:
-        for entity in projection.record.entities_of("Component@1"):
-            if entity.entity_id == component_id:
-                words += [
-                    str(entity.fields.get("semantic_kind") or ""),
-                    str(entity.fields.get("intent") or ""),
-                ]
-                break
+    # The record's own statement of meaning, which is absent for geometry
+    # authored first; the kernel tree's neutral token is not one.
+    for entity in projection.record.entities_of("Component@1"):
+        if entity.entity_id == component_id:
+            words += [
+                component_semantics(entity) or "",
+                str(entity.fields.get("intent") or ""),
+            ]
+            break
     return kinds_in(" ".join(words))
 
 

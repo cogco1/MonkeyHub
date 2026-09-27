@@ -1,4 +1,4 @@
-"""One exact-base, grid-free wall chain reaches real CAD and survives restart."""
+"""An explicitly requested wall placed by project-local points: one exact-base chain, no GridAxis, real CAD and restart."""
 from __future__ import annotations
 import copy
 import importlib.util
@@ -17,9 +17,9 @@ from archflow_studio_api.main import create_app
 from archflow_studio_api.settings import StudioSettings
 
 
-class GridFreeWallIntegrationTests(unittest.TestCase):
+class WallProjectPointAuthoringTests(unittest.TestCase):
     def setUp(self):
-        temporary = tempfile.TemporaryDirectory(prefix="grid-free-wall-")
+        temporary = tempfile.TemporaryDirectory(prefix="wall-project-points-")
         self.addCleanup(temporary.cleanup)
         self.project = Path(temporary.name) / "free-wall"
         self.repository = FilesystemProjectRepository.initialize(self.project, project_id="free-wall",
