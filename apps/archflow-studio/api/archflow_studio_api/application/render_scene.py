@@ -18,8 +18,8 @@ def default_scene(binding):
     geometry=current_geometry(binding);mesh=read_geometry(binding,geometry)
     low,high=mesh.metrics()['boundsMetersZUp'];target=[(a+b)/2 for a,b in zip(low,high)]
     size=max(b-a for a,b in zip(low,high)) or 1
-    value={'geometryRevision':geometry['geometryRevision'],'materials':[{'id':'body','name':'Neutral','baseColor':'#b9bec8'}],
-        'assignments':{str(i):'body' for i in range(len(mesh.meshes))},
+    value={'geometryRevision':geometry['geometryRevision'],'materials':[{'id':'neutral','name':'Neutral','baseColor':'#b9bec8'}],
+        'assignments':{str(i):'neutral' for i in range(len(mesh.meshes))},
         'lights':[{'id':'key','type':'area','position':[target[0]+size*1.5,target[1]-size*2,target[2]+size*2],
                    'target':target,'intensity':120,'color':'#fff0dd','size':size*1.5},
                   {'id':'fill','type':'area','position':[target[0]-size*2,target[1]-size,target[2]+size],
