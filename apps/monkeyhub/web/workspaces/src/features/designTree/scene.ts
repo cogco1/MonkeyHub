@@ -5,8 +5,9 @@
  * way MonkeyBoard places its pages. Semantic zoom only changes what is drawn,
  * never where: far shows the trunk, Stage milestones and counts; middle draws
  * each option as a small card with its letter, short name and status bar;
- * close adds a one-line summary and a status. Author, time and runs belong to
- * the inspector, and the Stage columns' headers are the canvas's own (#353).
+ * close adds a one-line summary and a status, and a card whose model has a
+ * retained preview shows that image in place of the summary (#406). Author,
+ * time and runs belong to the inspector, and the Stage columns' headers are the canvas's own (#353).
  * Colours come from a palette the canvas reads from the Hub's tokens (#337), so
  * the tree follows the theme and interface style and is never inverted.
  * Every hit target is produced with the element it stands for, because view
@@ -43,6 +44,15 @@ export interface SceneOptions {
   readonly words: SceneWords;
   /** The light theme's colours when left out. */
   readonly palette?: TreePalette;
+  /** Close only: the preview image each node's card shows, by node id, once the canvas has it. */
+  readonly previews?: ReadonlyMap<string, ScenePreview>;
+}
+
+/** An image the canvas has added to Excalidraw's files, and its size in pixels. */
+export interface ScenePreview {
+  readonly fileId: string;
+  readonly width: number;
+  readonly height: number;
 }
 
 /** The scene's colours, each opaque: a card has to hide the lines under it. */
@@ -91,7 +101,7 @@ export interface TreeScene {
 
 /** What a test or a debugger can read back from an element: never shown. */
 export interface TreeElementData {
-  readonly role: "trunk" | "edge" | "card" | "ring" | "letter" | "name" | "summary" | "status" | "text" | "accept" | "dot" | "fork";
+  readonly role: "trunk" | "edge" | "card" | "ring" | "letter" | "name" | "summary" | "status" | "text" | "accept" | "dot" | "fork" | "preview";
   readonly node?: string;
   readonly edge?: LayoutEdge["kind"];
   readonly level: ZoomLevel;
@@ -152,10 +162,12 @@ const BAR = { inset: 6, width: 3.5 };
 const PAD = { left: 16, right: 10, top: 6 };
 /** The review mark in an option card's top-right corner. */
 const MARK = { inset: 14, top: 5, size: 14 };
+/** Where a close card shows its preview: beside an option's bar, and at Current's top right. */
+const PICTURE = { option: 80, current: 88, gap: 8 };
 
 export function buildTreeScene(tree: GrowthTree, layout: GrowthLayout, options: SceneOptions): TreeScene {
   const { level, words, fontFamily } = options;
-  const { ink: INK, ink2: INK_2, faint: FAINT, accent: ACCENT, onAccent: ON_ACCENT, accentSoft: ACCENT_SOFT, paper: PAPER,
+  const { ground: GROUND, ink: INK, ink2: INK_2, faint: FAINT, accent: ACCENT, onAccent: ON_ACCENT, accentSoft: ACCENT_SOFT, paper: PAPER,
     twig: TWIG, muted: MUTED, running: RUNNING, held: HELD, violated: VIOLATED, unchecked: UNCHECKED } = options.palette ?? LIGHT_TREE_PALETTE;
   const k = options.textScale;
   const skeletons: Skeleton[] = [];
@@ -185,6 +197,19 @@ export function buildTreeScene(tree: GrowthTree, layout: GrowthLayout, options: 
     if (!value) return;
     skeletons.push({ type: "text", id, x, y, text: value, fontSize: size, fontFamily, strokeColor: color, textAlign: "left",
       verticalAlign: "top", opacity, customData: custom } as unknown as Skeleton);
+  };
+  /** The image, as large as it fits in the slot and centred in it; a slot never stretches it. */
+  const picture = (id: string, slot: Box, preview: ScenePreview, opacity: number) => {
+    const scale = Math.min(slot.width / Math.max(1, preview.width), slot.height / Math.max(1, preview.height));
+    const width = preview.width * scale, height = preview.height * scale;
+    skeletons.push({ type: "image", id: `${id}:preview`, fileId: preview.fileId, status: "saved", x: slot.x + (slot.width - width) / 2,
+      y: slot.y + (slot.height - height) / 2, width, height, opacity, customData: data("preview", { node: id }) } as unknown as Skeleton);
+  };
+  /** A small label on a picture's corner, so the image does not hide the words it replaces. */
+  const tag = (id: string, x: number, y: number, value: string, size: number, fill: string, color: string, role: TreeElementData["role"], opacity: number) => {
+    rect(`${id}:tag`, { x, y, width: textWidth(value, size) + 8, height: size * LINE_HEIGHT + 2 }, { backgroundColor: fill, strokeColor: "transparent", opacity },
+      data("preview", { node: id }), false);
+    text(`${id}:${role}`, x + 4, y + 1, value, size, color, data(role, { node: id }), opacity);
   };
   const ring = (id: string, box: Box, pad: number) => rect(`${id}:ring`, { x: box.x - pad, y: box.y - pad, width: box.width + pad * 2, height: box.height + pad * 2 },
     { strokeColor: ACCENT, strokeWidth: 2.5 }, data("ring", { node: id }));
@@ -278,10 +303,19 @@ export function buildTreeScene(tree: GrowthTree, layout: GrowthLayout, options: 
     const trunk = placed.role === "trunk";
     const s = Math.min(k, 1.5);
     const close = level === "close";
+    const preview = close ? options.previews?.get(node.id) : undefined;
     if (node.kind === "stage" || node.kind === "origin") {
       const stage = node.kind === "stage";
       rect(`${node.id}:card`, card, { backgroundColor: stage ? INK : PAPER, strokeColor: trunk ? ACCENT : INK, strokeWidth: trunk ? 2.5 : 1.5, opacity },
         data("card", { node: node.id }));
+      if (stage && preview) {
+        // The accepted model fills its milestone; its number stays on the corner.
+        picture(node.id, { x: card.x + 3, y: card.y + 3, width: card.width - 6, height: card.height - 6 }, preview, opacity);
+        tag(node.id, card.x + 3, card.y + 3, `S${node.stage!.number}`, 11, INK, PAPER, "name", opacity);
+        if (selected) ring(node.id, card, 6);
+        hits.push({ ...card, node: node.id, action: "select" });
+        return;
+      }
       // A Stage is a milestone on its line; the header of the column it opens names it in full.
       const size = 14 * s;
       const label = clip(stage ? `S${node.stage!.number}` : words.origin, size, card.width - 20);
@@ -295,8 +329,13 @@ export function buildTreeScene(tree: GrowthTree, layout: GrowthLayout, options: 
       rect(`${node.id}:card`, card, { backgroundColor: ACCENT_SOFT, strokeColor: ACCENT, strokeWidth: 2.5 }, data("card", { node: node.id }));
       const title = 15 * Math.min(k, 1.6), sub = 12 * s, button = 12 * Math.min(k, 1.4);
       text(`${node.id}:name`, card.x + 14, card.y + 9, words.current, title, ACCENT, data("name", { node: node.id }));
-      text(`${node.id}:summary`, card.x + 14, card.y + 12 + title * LINE_HEIGHT, clip(words.currentAt, sub, card.width - 28), sub, INK, data("summary", { node: node.id }));
       const box = { x: card.x + 12, y: card.y + card.height - 11 - Math.max(30, button * LINE_HEIGHT + 12), width: card.width - 24, height: Math.max(30, button * LINE_HEIGHT + 12) };
+      const aside = preview ? PICTURE.current + PICTURE.gap : 0;
+      if (preview) {
+        const slot = { x: card.x + card.width - 12 - PICTURE.current, y: card.y + 9, width: PICTURE.current, height: box.y - 6 - (card.y + 9) };
+        picture(node.id, slot, preview, 100);
+      }
+      text(`${node.id}:summary`, card.x + 14, card.y + 12 + title * LINE_HEIGHT, clip(words.currentAt, sub, card.width - 28 - aside), sub, INK, data("summary", { node: node.id }));
       const allowed = tree.accept.allowed;
       rect(`${node.id}:accept`, box, allowed ? { backgroundColor: ACCENT, strokeColor: ACCENT, strokeWidth: 1.5 } : { strokeColor: MUTED, strokeStyle: "dashed", strokeWidth: 1.5 },
         data("accept", { node: node.id }));
@@ -321,24 +360,31 @@ export function buildTreeScene(tree: GrowthTree, layout: GrowthLayout, options: 
     const marked = Boolean(node.candidate?.blockedBy.length);
     if (marked) text(`${node.id}:review`, card.x + card.width - MARK.inset, card.y + MARK.top, "!", MARK.size, VIOLATED, data("status", { node: node.id }), opacity);
     const nameSize = close ? 13 : 12 * k, small = close ? 11.5 : 11 * s;
+    // With a preview the image stands beside the bar and carries the letter on its corner; the words take the rest.
+    const slot = preview && !pending ? { x: card.x + BAR.inset + BAR.width + 5, y: card.y + 6, width: PICTURE.option, height: card.height - 12 } : null;
+    if (slot && preview) {
+      rect(`${node.id}:slot`, slot, { backgroundColor: GROUND, strokeColor: "transparent", opacity }, data("preview", { node: node.id }), false);
+      picture(node.id, slot, preview, opacity);
+      if (node.letter) tag(node.id, slot.x, slot.y, node.letter, 11, PAPER, trunk ? ACCENT : INK_2, "letter", opacity);
+    }
     // The letter keeps a column of its own; a lone option has none and its name takes the width.
-    const letter = pending ? null : node.letter;
+    const letter = pending || slot ? null : node.letter;
     const letterSize = nameSize * 1.2;
-    const left = card.x + PAD.left + (letter ? letterSize * 0.72 + 6 : 0);
+    const left = slot ? slot.x + slot.width + PICTURE.gap : card.x + PAD.left + (letter ? letterSize * 0.72 + 6 : 0);
     const width = card.x + card.width - PAD.right - left;
     const rows: { role: "letter" | "name" | "summary" | "status"; value: string; size: number; color: string }[] = [];
     if (pending) rows.push({ role: "letter", value: clip(words.pending(node.pending!.status), small, width), size: small, color: FAINT });
     // A name takes two lines where the card has the room for them. Only its first line can reach the review
     // mark's corner; one long enough to is wrapped short of it.
     const room = card.height - PAD.top * 2 - rows.reduce((sum, row) => sum + row.size * LINE_HEIGHT, 0);
-    const lines = !close && 2 * nameSize * LINE_HEIGHT <= room ? 2 : 1;
+    const lines = (!close || slot) && 2 * nameSize * LINE_HEIGHT <= room - (slot ? small * LINE_HEIGHT : 0) ? 2 : 1;
     const clearOfMark = card.x + card.width - MARK.inset - 4 - left;
     let names = wrap(words.name(node), nameSize, width, lines);
     if (marked && names.length > 0 && textWidth(names[0], nameSize) > clearOfMark) names = wrap(words.name(node), nameSize, clearOfMark, lines);
     for (const value of names) rows.push({ role: "name", value, size: nameSize, color: INK });
     if (close) {
       // A running line's summary is its progress detail.
-      if (node.summary) rows.push({ role: "summary", value: clip(node.summary, small, width), size: small, color: INK_2 });
+      if (node.summary && !slot) rows.push({ role: "summary", value: clip(node.summary, small, width), size: small, color: INK_2 });
       if (!pending) rows.push({ role: "status", value: clip(words.status(node), small, width), size: small, color: FAINT });
     }
     const height = rows.reduce((sum, row) => sum + row.size * LINE_HEIGHT, 0);

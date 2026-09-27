@@ -8,15 +8,23 @@
  * The Stage columns' headers and rules are the page's own words over the
  * canvas (#353): they stay at its top while the tree pans under them, and
  * follow the view through two custom properties rather than a render.
+ * Close cards show their models' retained previews (#406): only the cards in
+ * view at the close level read theirs, and an image is added to Excalidraw's
+ * files once, with the first scene that draws it.
  */
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useReducer, useRef, useState, type CSSProperties } from "react";
 import { CaptureUpdateAction, convertToExcalidrawElements, FONT_FAMILY } from "@excalidraw/excalidraw";
-import type { AppState, ExcalidrawImperativeAPI, ExcalidrawInitialDataState, UIOptions } from "@excalidraw/excalidraw/types";
+import type { AppState, BinaryFileData, ExcalidrawImperativeAPI, ExcalidrawInitialDataState, UIOptions } from "@excalidraw/excalidraw/types";
+import { useStudio } from "../../api/ProjectRuntimeContext";
+import type { ModelSourceDto } from "../../api/generated";
+import { MODEL_PREVIEW_RETAINED, previewSourceKey, readModelPreview } from "../artifacts/useRetainedModelPreview";
 import { CANVAS_APP_STATE, PROJECT_CANVAS_CLASS, ProjectCanvas, useScenePointer, useWheelZoom, type ZoomRange } from "../canvas/ProjectCanvas";
 import { topmostAt } from "../canvas/sceneHit";
 import { layoutGrowthTree, type Box } from "./layout";
 import { CURRENT, trunkKey, type GrowthTree } from "./model";
-import { buildTreeScene, LIGHT_TREE_PALETTE, type SceneHit, type TreePalette, type ZoomLevel } from "./scene";
+import type { DesignTreeSource } from "./contract";
+import { createPreviewLoader, nodeModelSource, nodesWantingPreviews, type PreviewLoader } from "./previews";
+import { buildTreeScene, LIGHT_TREE_PALETTE, type SceneHit, type ScenePreview, type TreePalette, type ZoomLevel } from "./scene";
 import type { TreeWords } from "./words";
 
 const TREE_ZOOM: ZoomRange = { min: 0.05, max: 4 };
@@ -99,8 +107,31 @@ export function textScaleFor(zoom: number, level: ZoomLevel): number {
   return Math.min(24, 2 ** (Math.round(2 * Math.log2(1 / Math.max(zoom, 0.01))) / 2));
 }
 
-export default function DesignTreeCanvas({ tree, words, selected, fitRequest, centerOn = null, title, onSelect, onAccept, onLevel }: {
+/** A read preview, ready for Excalidraw's files. */
+interface TreePreviewImage extends ScenePreview {
+  readonly dataURL: string;
+  readonly mimeType: string;
+}
+
+/** The image as a data URL and its size, or null when the browser cannot read it. */
+async function previewImage(id: string, file: File): Promise<TreePreviewImage | null> {
+  const dataURL = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+  const image = new Image();
+  image.src = dataURL;
+  await image.decode();
+  if (!image.naturalWidth || !image.naturalHeight) return null;
+  return { fileId: `tree-preview-${id}`, dataURL, mimeType: file.type || "image/png", width: image.naturalWidth, height: image.naturalHeight };
+}
+
+export default function DesignTreeCanvas({ tree, source = null, words, selected, fitRequest, centerOn = null, title, onSelect, onAccept, onLevel }: {
   tree: GrowthTree;
+  /** What the tree was built from: it names each node's model, whose preview a close card shows. */
+  source?: DesignTreeSource | null;
   words: TreeWords;
   selected: string | null;
   /** Changes when the viewer asks to see the whole tree again. */
@@ -119,17 +150,81 @@ export default function DesignTreeCanvas({ tree, words, selected, fitRequest, ce
   const [width, setWidth] = useState(0);
   const layout = useMemo(() => layoutGrowthTree(tree), [tree]);
   const [detail, setDetail] = useState<{ level: ZoomLevel; textScale: number }>({ level: "mid", textScale: 1 });
+  const level = useRef<ZoomLevel>("mid");
   const palette = useTreePalette();
+
+  // Each node's model, by the preview key its image is read and kept under.
+  const models = useMemo(() => {
+    const byNode = new Map<string, string>(), byKey = new Map<string, ModelSourceDto>();
+    for (const node of tree.nodes.values()) {
+      const model = nodeModelSource(source, node);
+      if (!model) continue;
+      const key = previewSourceKey(model);
+      byNode.set(node.id, key);
+      byKey.set(key, model);
+    }
+    return { byNode, byKey };
+  }, [tree, source]);
+  const modelsNow = useRef(models);
+  modelsNow.current = models;
+  const studio = useStudio();
+  const [previewsRead, previewRead] = useReducer((count: number) => count + 1, 0);
+  const [loader, setLoader] = useState<PreviewLoader<TreePreviewImage> | null>(null);
+  useEffect(() => {
+    const created = createPreviewLoader<TreePreviewImage>(async (key) => {
+      const model = modelsNow.current.byKey.get(key);
+      const preview = model ? await readModelPreview(studio, model) : null;
+      return preview ? previewImage(preview.id, preview.file) : null;
+    }, { limit: 3, onChange: previewRead });
+    setLoader(created);
+    return () => created.dispose();
+  }, [studio]);
+  useEffect(() => {
+    if (!loader) return;
+    const retained = (event: Event) => {
+      const retainedFor = (event as CustomEvent<{ studio: unknown; key: string }>).detail;
+      if (retainedFor?.studio === studio) loader.refresh(retainedFor.key);
+    };
+    window.addEventListener(MODEL_PREVIEW_RETAINED, retained);
+    return () => window.removeEventListener(MODEL_PREVIEW_RETAINED, retained);
+  }, [studio, loader]);
+  /** Asks for the previews of the cards in view at the close level, and for nothing otherwise. */
+  const wantPreviews = () => {
+    const state = canvas.current?.getAppState();
+    const nodes = state ? nodesWantingPreviews(drawn.current, { scrollX: state.scrollX, scrollY: state.scrollY, zoom: state.zoom.value,
+      width: state.width, height: state.height }, level.current) : [];
+    loader?.want(nodes.flatMap((node) => modelsNow.current.byNode.get(node) ?? []));
+  };
+
   const scene = useMemo(() => {
-    const built = buildTreeScene(tree, layout, { ...detail, selected, fontFamily: FONT_FAMILY.Helvetica, words: words.scene, palette });
-    return { elements: convertToExcalidrawElements(built.skeletons, { regenerateIds: false }), hits: built.hits, ground: palette.ground };
-  }, [tree, layout, detail, selected, words, palette]);
+    const previews = new Map<string, TreePreviewImage>();
+    if (loader && detail.level === "close") {
+      for (const [node, key] of models.byNode) {
+        const image = loader.get(key);
+        if (image) previews.set(node, image);
+      }
+    }
+    const built = buildTreeScene(tree, layout, { ...detail, selected, fontFamily: FONT_FAMILY.Helvetica, words: words.scene, palette, previews });
+    return { elements: convertToExcalidrawElements(built.skeletons, { regenerateIds: false }), hits: built.hits, ground: palette.ground,
+      files: [...previews.values()] };
+  }, [tree, layout, detail, selected, words, palette, models, loader, previewsRead]);
   const hits = useRef<SceneHit[]>(scene.hits);
   const [initialData] = useState<ExcalidrawInitialDataState>(() => ({ elements: scene.elements,
     appState: { ...CANVAS_APP_STATE, viewBackgroundColor: scene.ground } }));
+  const filesAdded = useRef(new Set<string>());
   useEffect(() => {
     hits.current = scene.hits;
-    canvas.current?.updateScene({ elements: scene.elements, appState: { viewBackgroundColor: scene.ground }, captureUpdate: CaptureUpdateAction.NEVER });
+    const api = canvas.current;
+    if (!api) return;
+    api.updateScene({ elements: scene.elements, appState: { viewBackgroundColor: scene.ground }, captureUpdate: CaptureUpdateAction.NEVER });
+    // A new image's file goes in once the scene draws it: Excalidraw decodes the files its scene's images use.
+    const files: BinaryFileData[] = scene.files.filter((image) => !filesAdded.current.has(image.fileId)).map((image) => ({
+      id: image.fileId as BinaryFileData["id"], dataURL: image.dataURL as BinaryFileData["dataURL"],
+      mimeType: image.mimeType as BinaryFileData["mimeType"], created: Date.now() }));
+    if (files.length > 0) {
+      api.addFiles(files);
+      for (const file of files) filesAdded.current.add(file.id);
+    }
   }, [scene, ready]);
 
   // The headers follow the view: scene units to screen pixels, (x + scrollX) × zoom.
@@ -142,6 +237,7 @@ export default function DesignTreeCanvas({ tree, words, selected, fitRequest, ce
 
   const drawn = useRef(layout);
   drawn.current = layout;
+  useEffect(() => { if (ready) wantPreviews(); }, [ready, layout, models, loader, width]);
   const zoomFor = (box: Box, width: number, height: number, maxZoom: number) => Math.max(TREE_ZOOM.min,
     Math.min(maxZoom, (width - PAD * 2) / Math.max(1, box.width), (height - PAD * 2 - HEADER) / Math.max(1, box.height)));
   /** The box in view, centred; or, for the whole tree, hung from the headers as it grows downwards. */
@@ -251,11 +347,10 @@ export default function DesignTreeCanvas({ tree, words, selected, fitRequest, ce
       onScrollChange={(scrollX, _y, zoom) => {
         view.current = { scrollX, zoom: zoom.value };
         follow();
-        setDetail((previous) => {
-          const level = levelFor(zoom.value, previous.level);
-          const textScale = textScaleFor(zoom.value, level);
-          return level === previous.level && textScale === previous.textScale ? previous : { level, textScale };
-        });
+        level.current = levelFor(zoom.value, level.current);
+        const next = { level: level.current, textScale: textScaleFor(zoom.value, level.current) };
+        setDetail((previous) => next.level === previous.level && next.textScale === previous.textScale ? previous : next);
+        wantPreviews();
       }} />
     {/* #353: one column per Stage on the trunk, headed at the top of the canvas, then the trailing column of the work
         growing towards the next Stage; the list names the same nodes to assistive technology. The header strip takes
