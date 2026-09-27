@@ -153,61 +153,6 @@
       "notes": [
         "2026-09-08 rule alignment: Awaiting the first concrete evidence consumer and a check of existing Reading/source references. The earlier proposed ledger and private Atlas field superset are not a mandate to add a core record."
       ]
-    },
-    {
-      "id": "GH-363",
-      "stream": "planning",
-      "status": "active",
-      "goal": "Take 0a's project fingerprint off the request path (#363, ADR-008): a per-process background watcher keeps the fingerprint current from Windows directory-change notifications (ReadDirectoryChangesW via ctypes, recursive on the project root), recomputing only the directories that changed; requests read the latest computed token in O(1) and never scan; a missed or overflowed watch falls back to an incremental scan, plus a slow safety-net scan; the racy rule stays. Split out of 1b by the owner so the fix lands before the index.",
-      "depends_on": [],
-      "issue": "https://github.com/cogco1/MonkeyHub/issues/363",
-      "write_scope": [
-        "archflow/project/layout.py",
-        "archflow/project/repository.py",
-        "archflow/project/watch.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/binding.py",
-        "apps/archflow-studio/api/archflow_studio_api/transport/conditional.py",
-        "apps/monkeyhub/api/monkeyhub_api/runtime.py",
-        "apps/monkeyhub/api/tests/test_project_runtime.py",
-        "apps/archflow-studio/api/archflow_studio_api/main.py"
-      ],
-      "card": "docs/mapping/planning/GH-363-fingerprint-watch.md",
-      "acceptance": [
-        "With a busy disk (simulated by slowing stat in a test), an unchanged request (304 or cache hit) takes under 20 ms; no request thread ever runs a fingerprint scan.",
-        "An external write is seen within about a second on Windows through the watcher, and within TTL plus one scan where the watcher is unavailable; in-process writes still take effect immediately through the write sequence number.",
-        "Idle with nothing changing, the fingerprint costs no directory scans beyond the slow safety net; judge_0a still passes on the local fixtures."
-      ],
-      "lanes": [
-        {
-          "id": "fingerprint-watch",
-          "issue": "https://github.com/cogco1/MonkeyHub/issues/363",
-          "branch": "codex/363-fingerprint-watch",
-          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-363-fingerprint-watch",
-          "base_ref": "c4ed9500",
-          "contributor": "Claude",
-          "reviewer": "Claude root task",
-          "handoff": "Owner decision 2026-09-27: split from GH-365/projection-index-1b (cloud lane) to land first; if 1b also changed the fingerprint, this lane's version wins at 1b's integration. Local lane because the watcher must be tested on Windows. Real-project timings via D:\\MONKEYHUB_DEV\\temp\\projection-judges (private fixtures, local only).",
-          "modules": [
-            "project.layout",
-            "project.repository",
-            "studio.binding",
-            "hub.shell"
-          ],
-          "write_scope": [
-            "archflow/project/layout.py",
-            "archflow/project/repository.py",
-            "archflow/project/watch.py",
-            "apps/archflow-studio/api/archflow_studio_api/application/binding.py",
-            "apps/archflow-studio/api/archflow_studio_api/transport/conditional.py",
-            "apps/monkeyhub/api/monkeyhub_api/runtime.py",
-            "apps/monkeyhub/api/tests/test_project_runtime.py",
-            "apps/archflow-studio/api/archflow_studio_api/main.py"
-          ],
-          "depends_on": [],
-          "status": "active",
-          "blocked_reason": null
-        }
-      ]
     }
   ]
 }
