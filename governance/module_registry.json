@@ -992,7 +992,7 @@
         "tests/test_project_runner.py",
         "tests/test_prism_cutouts.py",
         "tests/test_occt_execution.py",
-        "tests/test_grid_free_wall.py"
+        "tests/test_wall_explicit_point_reference.py"
       ],
       "notes": "The single geometry-emission owner on the spine; monument vocabulary (solids of revolution, boolean chains, classical-order members) would be added here rather than beside it."
     },
@@ -1239,7 +1239,7 @@
       "tests": [
         "tests/test_derivations_and_references.py",
         "tests/test_element_producers.py",
-        "tests/test_grid_free_wall.py"
+        "tests/test_wall_explicit_point_reference.py"
       ],
       "notes": "The datum namespace boundary: level ids and element-top ids resolve here, so producers stay coordinate-free."
     },
@@ -3816,7 +3816,7 @@
         "CHECK_KINDS: the check_kind vocabulary a validator may name, one line of meaning each, and the field each kind takes; solid_nonpenetration requires explicit distinct final object_pairs and zero linear tolerance, and may check distinct outputs of the same host entity without a self-dependency",
         "the component tree, published levels and published grids read out of the record (design_components_of, project_levels_of, project_grids_of)",
         "the schematic pack and the bootstrap from a record to the developed-design projection (SchematicPack, schematic_proposal, bootstrap_developed_state, developed_design_view)",
-        "refusing unregistered semantics on Component@1 and dangling relationship_refs on Connection@1",
+        "refusing unregistered semantics on Component@1 and dangling relationship_refs on Connection@1; a Component@1 with no semantic_kind, roles or conditions is valid geometry whose meaning is not yet established, and component_semantics reports it as absent",
         "the one reading of a Volume@1 box in the kernel's voxel lattice - x and z plan, y up, inclusive cells (volume_boxes_of); the schematic pack read out of the record (schematic_pack_of), which developed_design_view and the massing metrics both use",
         "the closed StateRecord edit vocabulary and its one successor function: set_scalar, replace_massing, apply_program, reindex and edit_components (StateRecordEditKind, StateRecordOperator, apply_state_record_operator)",
         "adapting declared parameter expressions and explicit @parameter bindings to the existing state.derivation evaluator, locating stale/conflicting input declarations and recomputing declared downstream values through the existing successor operator",
@@ -3870,6 +3870,7 @@
         "apply_state_record_operator",
         "bootstrap_developed_state",
         "design_components_of",
+        "component_semantics",
         "developed_design_view",
         "project_grids_of",
         "project_levels_of",
@@ -5269,6 +5270,8 @@
         "apps/archflow-studio/api/tests/test_capabilities.py",
         "apps/archflow-studio/api/tests/test_delete.py",
         "apps/archflow-studio/api/tests/test_sketch.py",
+        "apps/archflow-studio/api/tests/test_geometry_first_authoring.py",
+        "apps/archflow-studio/api/tests/test_wall_project_point_authoring.py",
         "apps/archflow-studio/api/tests/test_deepening_parameterized_prisms.py",
         "apps/monkeyhub/web/workspaces/test/modelDraft.test.ts",
         "apps/monkeyhub/web/workspaces/test/syncModelDraft.test.ts",

@@ -66,7 +66,12 @@ jobs:
           -r apps/monkeyhub/api/requirements.txt
           httpx2 pytest
 
+      # This job installs every prerequisite its suites check for (PyMuPDF from
+      # the Studio requirements), so a missing one fails instead of skipping.
+      # Windows-only cases remain platform skips here.
       - name: Unit and integration tests
+        env:
+          ARCHFLOW_REQUIRE_FULL_ENV: "1"
         run: python -m unittest discover -s tests -t .
 
       - name: Fab geometry, CLI and upload boundaries
@@ -80,6 +85,7 @@ jobs:
       - name: Hub conversation and lifecycle tests
         env:
           PYTHONPATH: ${{ github.workspace }}
+          ARCHFLOW_REQUIRE_FULL_ENV: "1"
         run: python -m unittest discover -s apps/monkeyhub/api/tests
 
   web:
@@ -219,6 +225,28 @@ jobs:
       - name: Desktop update activation checks
         if: runner.os == 'Windows'
         run: python -m unittest discover -s apps/monkeyhub/api/tests -p test_updates.py -v
+
+      # The directory watch's notified and win32-less scanning tests only run
+      # on Windows (GH-388); a skip here would pass silently, so count them.
+      - name: Project watch on Windows
+        if: runner.os == 'Windows'
+        shell: python
+        run: |
+          import os, sys, unittest
+          suite = unittest.defaultTestLoader.discover("tests", pattern="test_project_watch.py", top_level_dir=".")
+          windows_only = ("NotifiedWatchTests", "ScanningWithoutWin32Tests")
+          def ids(s):
+              return [i for t in s for i in ids(t)] if isinstance(s, unittest.TestSuite) else [s.id()]
+          # Count before running: the runner releases each test once it has run.
+          ran_windows_only = sum(i.split(".")[-2] in windows_only for i in ids(suite))
+          result = unittest.TextTestRunner(verbosity=2).run(suite)
+          failed = len(result.failures) + len(result.errors)
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+              summary.write("### Project watch on Windows\n\n")
+              summary.write(f"run {result.testsRun} (Windows-only {ran_windows_only}), "
+                            f"skipped {len(result.skipped)}, failed {failed}\n")
+          if not result.wasSuccessful() or result.skipped or ran_windows_only < 20:
+              sys.exit(1)
 
       - name: API binding, protocol and candidate checks
         working-directory: apps/archflow-studio/api

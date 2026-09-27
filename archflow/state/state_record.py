@@ -468,9 +468,9 @@ class StateRecord:
                     raise StateRecordError(f"connection {connection.entity_id}: relationship_ref {ref!r} names no declared relation")
         for component in self.entities_of("Component@1"):
             kind = component.fields.get("semantic_kind")
-            roles, conditions = component.fields.get("roles", ()), component.fields.get("conditions", ())
-            if kind is None and not (roles or conditions):
-                raise StateRecordError(f"component {component.entity_id}: names no semantics (roles/conditions ids, or a semantic_kind that resolves)")
+            # A component may exist before its meaning is known: no semantic_kind
+            # and no roles/conditions is "not yet established", not invalid (#400).
+            # What *is* stated must still resolve to registered ids.
             if kind is not None:
                 if not isinstance(kind, str) or not kind or kind != kind.strip() or "+" in kind or "." in kind:
                     raise StateRecordError(f"component {component.entity_id}: semantic_kind must be one registered alias or phrase in local-id form; ids go in roles/conditions")
@@ -680,6 +680,22 @@ def _entity_references(fields: Mapping[str, Any]) -> tuple[tuple[str, str, str],
     return tuple(out)
 
 
+def component_semantics(entity: Entity) -> str | None:
+    """What a ``Component@1`` has been said to be, or None while nothing is established.
+
+    The stated ``semantic_kind`` when there is one, else its registered
+    roles/conditions ids joined with ``+`` (the form the registry resolves).
+    Absence is the answer for a component authored as geometry first; no
+    alias stands in for it.
+    """
+
+    kind = entity.fields.get("semantic_kind")
+    if isinstance(kind, str) and kind:
+        return kind
+    ids = [*entity.fields.get("roles", ()), *entity.fields.get("conditions", ())]
+    return "+".join(ids) if ids else None
+
+
 def design_components_of(record: StateRecord, *, source_ref: str | None = None) -> tuple:
     """The record's ``Component@1`` entities as the semantic component tree.
 
@@ -728,6 +744,10 @@ def _design_components(record: StateRecord, source_ref: str | None) -> tuple:
         refs = tuple(sorted({*(fields.get("source_refs") or ()), *((source_ref,) if source_ref else ()), *record.evidence_refs}))
         if not refs:
             raise StateRecordError(f"component {e.entity_id} has no source: give the entity source_refs, or the record evidence")
+        # The spatial tree needs a local-id token in every node. A component
+        # with no established semantics gets the neutral "component"; that token
+        # is not a semantic claim, and readers that report meaning ask
+        # ``component_semantics`` of the record instead.
         out.append(DesignComponent(
             component_id=e.entity_id, parent_component_id=e.parent_id, semantic_kind=str(fields.get("semantic_kind") or "-".join(i.split(".", 1)[1].replace("_", "-") for i in (*fields.get("roles", ()), *fields.get("conditions", ()))) or "component"),
             intent=str(fields.get("intent", e.entity_id)), maturity=ComponentMaturity(str(fields.get("maturity", "schematic"))),

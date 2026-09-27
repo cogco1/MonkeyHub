@@ -192,7 +192,7 @@ const releaseStudioStarts = () => {
   emitRuntime();
 };
 page.on("pageerror", (error) => errors.push(error.message));
-await page.route((url) => url.pathname.startsWith("/api/"), async (route) => {
+const hubApi = async (route) => {
   const req = route.request(), url = new URL(req.url()), method = req.method();
   if (url.pathname === "/api/runtime/events") return route.continue();
   if (/^\/api\/runtime\/projects\/[^/]+\/studio\//.test(url.pathname)) {
@@ -531,7 +531,8 @@ await page.route((url) => url.pathname.startsWith("/api/"), async (route) => {
     return json(session);
   }
   errors.push(`Unexpected request: ${method} ${url.pathname}`); return json({ detail: "Unexpected fixture request" }, 404);
-});
+};
+await page.route((url) => url.pathname.startsWith("/api/"), hubApi);
 const railWidth = () => page.evaluate(() => document.querySelector(".chat-rail").getBoundingClientRect().width);
 // GH-302: Hub settings have no Save button; each change saves itself and the status line says Saved.
 const settingsSaved = () => page.waitForFunction(() => document.querySelector("#settings-save-state")?.dataset.state === "saved");
@@ -766,6 +767,42 @@ const autosavedModelRestart = async () => {
   updateStatus = { ...updateStatus, state: "idle", prepared: null, canApply: false };
   await page.evaluate(() => localStorage.removeItem("monkeyhub.chat-view.v1"));
 };
+/**
+ * #364: a Hub left open on a project's Design Tree, with nothing changing, asks for less than ten
+ * things a minute. It runs in a page of its own on Playwright's clock, paused and moved a second at a
+ * time, so the minute is exact and takes seconds. The same walk counted 94 against main before
+ * #364 (38138370): build that checkout's web and run MONKEYHUB_WEB_DIST=<its dist> MONKEYHUB_UI_FOCUS=idle.
+ */
+async function idleMinute() {
+  if (!projects.some((row) => row.projectId === "T")) projects.push({ projectId: "T", projectDir: "D:\\fixture\\T", name: "Tree project", chatCount: 0, version: 2, stage: "S2" });
+  workspaceFixture.designTrees.set("T", { stages: ["tree-s0", "tree-s1", "tree-s2"], edits: ["tree-e2", "tree-e1"] });
+  const idle = await browser.newPage({ viewport: { width: 1440, height: 960 } });
+  idle.setDefaultTimeout(12000);
+  idle.on("pageerror", (error) => errors.push(error.message));
+  await idle.route((url) => url.pathname.startsWith("/api/"), hubApi);
+  await idle.clock.install();
+  try {
+    await idle.goto(origin);
+    await idle.getByRole("button", { name: "Tree project", exact: true }).first().click();
+    await idle.waitForFunction(() => ["Modeling", "Board"].every((label) =>
+      document.querySelector(`.chat-rail__tool[aria-label="${label}"]`)?.dataset.state === "running"));
+    await idle.waitForFunction(() => document.querySelector(".chat-composer")?.dataset.context === "ready");
+    await idle.getByRole("button", { name: "Design tree", exact: true }).click();
+    await idle.locator(".chat-project-workspace:not([hidden]) .design-tree").waitFor();
+    await idle.clock.pauseAt(await idle.evaluate(() => Date.now()) + 1000);
+    // Each second's answers land before the next second starts.
+    const seconds = async (count) => { for (let second = 0; second < count; second++) { await idle.clock.runFor(1000); await idle.waitForTimeout(100); } };
+    await seconds(5);
+    const asked = [], notModifiedBefore = workspaceFixture.notModified.length;
+    const listen = (request) => { const url = new URL(request.url()); if (url.pathname.startsWith("/api/")) asked.push(url.pathname.replace(/^\/api\/runtime\/projects\/[^/]+\/studio/, "(runtime)")); };
+    idle.on("request", listen);
+    await seconds(60);
+    idle.off("request", listen);
+    const byPath = asked.reduce((counts, name) => ({ ...counts, [name]: (counts[name] ?? 0) + 1 }), {});
+    console.log(JSON.stringify({ idleMinute: asked.length, byPath, notModified: workspaceFixture.notModified.length - notModifiedBefore }));
+    assert.ok(asked.length < 10, `an idle minute on the Design Tree asked for ${asked.length} things: ${JSON.stringify(byPath)}`);
+  } finally { await idle.close(); }
+}
 try {
   if (process.env.MONKEYHUB_UI_FOCUS === "accessibility") {
     const cdp = await page.context().newCDPSession(page);
@@ -950,6 +987,8 @@ try {
     await page.goto(origin);
     await composerMenu("附件与新话题").waitFor();
     await page.locator(".chat-composer").screenshot({ path: path.join(temporary, "composer-zh.png") });
+  } else if (process.env.MONKEYHUB_UI_FOCUS === "idle") {
+    await idleMinute();
   } else {
   if (process.env.MONKEYHUB_UI_FOCUS !== "updates") {
   await page.goto(origin);
@@ -2159,12 +2198,21 @@ try {
   await diagnostics.uncheck();
   const englishStageLabel = await visibleWorkspace().locator(".stage").getAttribute("aria-label");
   await settingsPage("Display");
-  await page.locator("#theme").selectOption("dark");
+  await page.locator("#theme").selectOption("dark"); await settingsSaved();
+  // GH-381: a choice made while the previous one is still being saved is saved
+  // after it, even when it equals what was saved before that.
+  let releaseChinese; settingsWriteGate = new Promise((resolve) => { releaseChinese = resolve; });
+  const chineseWrite = page.waitForRequest((req) => req.method() === "PUT" && new URL(req.url()).pathname === "/api/settings/user");
   await page.locator("#language").selectOption("zh-CN");
+  await chineseWrite;
   assert.equal(await page.locator("html").getAttribute("lang"), "zh-CN");
   assert.notEqual(await visibleWorkspace().locator(".stage").getAttribute("aria-label"), englishStageLabel, "workspace language follows Hub context");
   assert.equal(await page.locator("html").getAttribute("data-theme"), "dark");
   await page.locator("#language").selectOption("en");
+  settingsWriteGate = null; releaseChinese();
+  await page.waitForFunction(() => document.querySelector("#settings-save-state")?.dataset.state !== "saving");
+  assert.equal(await page.locator("#settings-save-state").getAttribute("data-state"), "saved");
+  assert.equal(preferences.language, "en", "the last language chosen is the one the Hub keeps");
   await page.getByRole("dialog").getByRole("button", { name: "Close", exact: true }).click();
   await page.screenshot({ path: path.join(temporary, "dark.png"), fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 });
@@ -3484,6 +3532,8 @@ try {
   updateApplyResponse = "normal";
   await page.keyboard.press("Escape");
   await page.getByRole("dialog").waitFor({ state: "hidden" });
+  updateStatus = { ...updateStatus, state: "idle", prepared: null, canApply: false, error: null };
+  await idleMinute();
   }
   assert.deepEqual(errors, []);
   console.log(JSON.stringify({ passed: true, sessions: sessions.length, writes: writes.length, screenshots: temporary }));
