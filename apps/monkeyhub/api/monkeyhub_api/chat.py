@@ -3484,7 +3484,8 @@ _PRESENTATION_DOCUMENTS = (
 )
 _NATIVE_PRESENTATION_INSTRUCTIONS = (
     "This is the current MonkeyHub conversation: normal text and progress already stream automatically. "
-    "Use chat_present only to show selected media, with kind=assistant or progress and status=streaming while work continues. "
+    "Use chat_present to show selected media with kind=assistant, or public commentary with kind=progress. "
+    "Hub binds status=streaming and completes the presentation when this native turn finishes. "
     "Supply a fresh UUID messageId; the current user turn is bound automatically. Do not republish the user's message. "
     "To update media, reuse messageId with a strictly increasing revision and retain the full content and attachments. "
     "No call here starts another model. " + _PRESENTATION_DOCUMENTS
@@ -3508,10 +3509,14 @@ def _present_tool(hub: str, chat_id: str, arguments: dict, token: str):
     body = dict(arguments)
     if set(body) - {"turnId", "messageId", "revision", "kind", "content", "status", "attachments", "documents"}:
         raise HubFailure(422, "CHAT_PRESENTATION_INVALID", "Use only the documented presentation fields; this connection fixes its destination.")
-    if not session.get("sourceSessionId") and "turnId" not in body:
-        user = next((row for row in reversed(session.get("messages", [])) if row["role"] == "user"), None)
-        if user:
-            body["turnId"] = user["id"]
+    if not session.get("sourceSessionId"):
+        # Native completion belongs to the CLI turn. A media card must remain
+        # revisable until that turn settles all its streaming messages.
+        body["status"] = "streaming"
+        if "turnId" not in body:
+            user = next((row for row in reversed(session.get("messages", [])) if row["role"] == "user"), None)
+            if user:
+                body["turnId"] = user["id"]
     uploads = []
     for item in body.get("attachments", []):
         item = dict(item)
@@ -3737,7 +3742,8 @@ def _mcp(hub: str, chat_id: str | None, external: ChatPresentationBindRequest | 
     tools = [
         {"name": "chat_present", "description": presentation_instructions, "inputSchema": {
             **ChatPresentationRequest.model_json_schema(),
-            "properties": {key: ({**value, "enum": ["progress", "assistant"]} if key == "kind" and not external else value)
+            "properties": {key: ({**value, "enum": ["progress", "assistant"]} if key == "kind" and not external else
+                                 {**value, "enum": ["streaming"], "default": "streaming"} if key == "status" and not external else value)
                            for key, value in ChatPresentationRequest.model_json_schema()["properties"].items()
                            if key not in {"projectId", "sourceSessionId"}},
             "required": ["turnId", "messageId", "kind"] if external else ["messageId", "kind"],

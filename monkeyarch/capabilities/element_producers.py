@@ -889,6 +889,8 @@ def edit_drawn_element(row: ElementRow, context: ProductionContext, *, kind: str
     A scaled profile is re-expressed in an orthonormal basis; an oblique
     extrusion is refused because the prism's pull must remain normal to its face.
     Loft sections retain their correspondence, closure and datum-relative heights.
+    Compress-above fixes the lower part of a planar surface in world +Y and
+    refuses a crossing face that would need to fold or acquire a new identity.
     """
 
     if row.producer not in {"prism", "planar-surface", "loft"}:
