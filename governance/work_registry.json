@@ -1,4 +1,45 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": []
+  "items": [
+    {
+      "id": "GH-367",
+      "lanes": [
+        {
+          "id": "projection-cache",
+          "status": "active",
+          "branch": "codex/367-projection-cache-r2",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-367-projection-cache-r2",
+          "base_ref": "2127be26",
+          "contributor": "Claude",
+          "reviewer": "Claude root task",
+          "handoff": "cloud session; master integrates",
+          "modules": [
+            "studio.artifacts",
+            "studio.shell",
+            "hub.shell"
+          ],
+          "write_scope": [
+            "apps/archflow-studio/api/archflow_studio_api/application/drawings.py",
+            "apps/archflow-studio/api/archflow_studio_api/application/projections.py",
+            "apps/archflow-studio/api/archflow_studio_api/application/projection.py",
+            "apps/archflow-studio/api/archflow_studio_api/main.py",
+            "apps/archflow-studio/api/archflow_studio_api/routes/projections.py",
+            "apps/archflow-studio/api/archflow_studio_api/settings.py",
+            "apps/archflow-studio/api/archflow_studio_api/transport/projections.py",
+            "apps/archflow-studio/api/tests/test_drawings.py",
+            "apps/archflow-studio/api/tests/test_projections.py",
+            "apps/monkeyhub/api/monkeyhub_api/applications.py",
+            "apps/monkeyhub/api/tests/test_applications.py",
+            "docs/SYSTEM_MAP.md",
+            "governance/architecture_policy.json",
+            "governance/module_registry.json",
+            "monkeydiagram/mesh_views.py",
+            "tests/test_mesh_views.py",
+            "apps/monkeyhub/web/workspaces/src/api/generated/"
+          ],
+          "depends_on": []
+        }
+      ]
+    }
+  ]
 }
