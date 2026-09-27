@@ -1,4 +1,28 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": []
+  "items": [
+    {
+      "id": "GH-380",
+      "lanes": [
+        {
+          "id": "p110-text",
+          "status": "active",
+          "branch": "codex/380-p110-text",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-380-p110-text",
+          "base_ref": "2127be26",
+          "contributor": "Claude",
+          "reviewer": "Claude root task",
+          "handoff": "cloud session; master integrates",
+          "modules": [
+            "studio.validation"
+          ],
+          "write_scope": [
+            "apps/archflow-studio/api/archflow_studio_api/application/validation.py",
+            "apps/archflow-studio/api/tests/test_validation.py"
+          ],
+          "depends_on": []
+        }
+      ]
+    }
+  ]
 }
