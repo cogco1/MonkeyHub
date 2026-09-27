@@ -286,8 +286,10 @@ def producer_signatures() -> dict[str, dict[str, Any]]:
     # Agents read this table in order, so it runs from the lowest sufficient
     # expression to the specialized realization: early modeling starts with a
     # profile, a face or a path, and a wall is chosen when its meaning is
-    # established (#400). No caller may depend on this order.
-    return {name: signatures[name] for name in ("prism", "planar-surface", "curve", "loft", "wall")}
+    # established (#400). No caller may depend on this order. A producer not
+    # yet ranked here follows the ranked ones instead of being dropped.
+    ranked = ("prism", "planar-surface", "curve", "loft", "wall")
+    return {name: signatures[name] for name in (*ranked, *sorted(set(signatures) - set(ranked)))}
 
 
 def _check_signature_value(value: Any, schema: Mapping[str, Any], field_name: str) -> None:
