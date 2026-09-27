@@ -814,17 +814,27 @@ class LayoutWatch:
         self._first.set()
 
     def _publish_unsettled(self) -> None:
-        """Say the last fingerprint can no longer be trusted, keeping its digest."""
+        """Say the last fingerprint can no longer be trusted, keeping its digest.
+
+        Before any walk succeeded there is none: readers waiting for the first
+        one get an unstable placeholder instead, and read uncached until a
+        walk succeeds.
+        """
 
         with self._published_changed:
             last = self._published
-            if last is None or not last.fingerprint.stable:
+            if last is not None and not last.fingerprint.stable:
                 return
             self._generation += 1
-            unsettled = LayoutFingerprint(last.fingerprint.digest, last.fingerprint.newest_mtime_ns,
-                                          _time_ns(), False)
-            self._published = WatchedLayout(unsettled, last.serial, self._generation, False)
+            if last is None:
+                unsettled = LayoutFingerprint("unwalked", 0, _time_ns(), False)
+                self._published = WatchedLayout(unsettled, -1, self._generation, False)
+            else:
+                unsettled = LayoutFingerprint(last.fingerprint.digest, last.fingerprint.newest_mtime_ns,
+                                              _time_ns(), False)
+                self._published = WatchedLayout(unsettled, last.serial, self._generation, False)
             self._published_changed.notify_all()
+        self._first.set()
 
     # ---- what moved
 

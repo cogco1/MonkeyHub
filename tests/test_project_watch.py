@@ -194,6 +194,26 @@ class ScanningWatchTests(_WatchCase):
         self.assertTrue(lease.watch.running)
         self.assertAgrees(lease)
 
+    def test_a_first_walk_that_fails_does_not_hold_its_readers(self) -> None:
+        real_walk = watch._Tree.walk
+        failed: list[bool] = []
+
+        def walk(tree, stopping):
+            if tree.root == str(self.root) and not failed:
+                failed.append(True)
+                raise RuntimeError("simulated: the first walk failed")
+            return real_walk(tree, stopping)
+
+        with mock.patch.object(watch._Tree, "walk", walk), \
+                self.assertLogs("archflow.project.watch", level="ERROR"):
+            started = time.monotonic()
+            lease = watch.watch_layout(self.root, notify=self.notify)
+            self.addCleanup(lease.release)
+            first = lease.latest()
+            self.assertLess(time.monotonic() - started, 5.0, "a reader waited out the failed first walk")
+            self.assertFalse(first.fingerprint.stable)
+            self.assertAgrees(lease, timeout=watch.POLL_S * 3 + 3)
+
     def test_a_missing_root_is_never_stable_and_is_seen_coming_back(self) -> None:
         lease = self.lease()
         aside = self.base / "aside"
