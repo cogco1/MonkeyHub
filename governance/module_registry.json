@@ -5558,7 +5558,7 @@
         "a changed commit uses the live claim it names in its own registry; only the commit closing that claim may use its first parent's live scope; later scope edits do not change earlier results",
         "a commit that names no claim may write only the policy's shared_write_scope and unclaimed_write_scope",
         "only active and review claims hold paths and checkouts; a lane is a claim of its own, and an Issue claimed through lanes carries nothing but its lanes",
-        "a commit on the pre-#358 registry keeps its card-era reading; once a parent is on the current registry a commit cannot return to the old one, so that reading cannot authorize card work again",
+        "a commit on the pre-#358 registry keeps its card-era reading, where a subject ending in a single (#n) with no other Issue reference or GH- marker names GH-n; once a parent is on the current registry a commit cannot return to the old one, so that reading cannot authorize card work again",
         "a current commit whose subject opens with a P###, M###, R### or P000-governance id is reported as a retired claim"
       ],
       "status": "canonical",

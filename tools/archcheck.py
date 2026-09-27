@@ -930,6 +930,23 @@ def _commit_claim(message: str, grammar: re.Pattern[str] = WORK_CLAIM) -> str | 
     return found[-1] if found else None
 
 
+def _legacy_issue_suffix(message: str) -> str | None:
+    """A card-era subject that ends with one ``(#<n>)`` and names no other Issue.
+
+    Some commits made before #358 carry their Issue only as that suffix
+    (GH-319's branch has one). It identifies the claim and nothing more: the
+    commit still meets that claim's scope as registered then. Incidental,
+    ambiguous or malformed references, and any message with a ``GH-`` marker,
+    claim nothing. Current commits name ``GH-<issue>`` explicitly.
+    """
+
+    subject = message.splitlines()[0] if message.strip() else ""
+    suffix = re.search(r"(?:^|\s)\(#([1-9][0-9]*)\)\s*$", subject)
+    if suffix and re.findall(r"#\d+", subject) == [f"#{suffix[1]}"] and "GH-" not in message:
+        return f"GH-{suffix[1]}"
+    return None
+
+
 def _paths(value: object) -> list[str]:
     return [entry for entry in value if isinstance(entry, str)] if isinstance(value, list) else []
 
@@ -1137,7 +1154,7 @@ def check_changed_scopes(
                     yield PolicyFinding(path, 1, code, f"{named}; {path} is outside its write scope")
             continue
         cards = cards_at(revision)
-        claim_id = _commit_claim(message, LEGACY_CARD_ID)
+        claim_id = _commit_claim(message, LEGACY_CARD_ID) or _legacy_issue_suffix(message)
         card_id, _, lane_id = (claim_id or "").partition("/")
         card_id = card_id or None
         card = cards.get(card_id) if card_id else None

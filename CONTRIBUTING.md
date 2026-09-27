@@ -86,7 +86,7 @@ python tools/devctl.py work --json
 2. `GH-<n>[/<lane>]: …` —— 实际修改，只落在该 claim 的 `write_scope` 与 policy 的 `shared_write_scope` 内；
 3. `GH-<n>[/<lane>]: release …` —— 从 registry 删除该 claim；按 lane 登记的 Issue 在最后一个 lane 释放时整项删除。
 
-`archcheck --changed <base>` 按每次提交自身的 policy 与 registry 检查；只有释放 claim 的那次提交可以沿用父提交里的 scope，未知或格式不完整的 GH id 不会部分匹配其他 Issue。规则与说明维护同样开 Issue、登记 claim；提交标题以 `P###`、`M###`、`R###` 或 `P000-governance` 开头会报 `RETIRED_WORK_CLAIM`。#358 之前的提交（其 registry 仍是旧 schema）保留当时的读法，一次提交之后不能再退回旧 schema。
+`archcheck --changed <base>` 按每次提交自身的 policy 与 registry 检查；只有释放 claim 的那次提交可以沿用父提交里的 scope，未知或格式不完整的 GH id 不会部分匹配其他 Issue。规则与说明维护同样开 Issue、登记 claim；提交标题以 `P###`、`M###`、`R###` 或 `P000-governance` 开头会报 `RETIRED_WORK_CLAIM`。#358 之前的提交（其 registry 仍是旧 schema）保留当时的读法，一次提交之后不能再退回旧 schema。旧提交里标题只以单个 `(#n)` 结尾、没有其他 Issue 引用和 `GH-` 标记的，按 `GH-<n>` 认领检查（GH-319 分支上有这样的提交）；新提交必须显式写 `GH-<n>`。
 
 已释放的 lane 合并 `main` 时，若 merge 的合并 diff 含共享范围以外的文件，先把该 lane 原样恢复进 registry，再以 `GH-<n>/<lane>: merge origin/main` 为标题合并，最后释放。
 
