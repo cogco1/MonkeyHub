@@ -1,4 +1,47 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": []
+  "items": [
+    {
+      "id": "GH-400",
+      "lanes": [
+        {
+          "id": "geometry-first",
+          "status": "active",
+          "branch": "codex/400-geometry-first",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-400-geometry-first",
+          "base_ref": "e46cf701",
+          "contributor": "Claude",
+          "reviewer": "Claude root task",
+          "handoff": "cloud session; master integrates",
+          "modules": [
+            "state.record",
+            "studio.intent",
+            "studio.binding",
+            "capabilities.element_producers",
+            "hub.shell"
+          ],
+          "write_scope": [
+            "archflow/state/state_record.py",
+            "archflow/semantics/",
+            "apps/archflow-studio/api/archflow_studio_api/application/",
+            "apps/archflow-studio/api/archflow_studio_api/transport/",
+            "apps/archflow-studio/api/archflow_studio_api/routes/",
+            "apps/archflow-studio/api/tests/",
+            "monkeyarch/capabilities/element_producers.py",
+            "apps/monkeyhub/api/monkeyhub_api/chat.py",
+            "apps/monkeyhub/api/tests/test_chat.py",
+            "tests/test_state_record.py",
+            "tests/test_element_producers.py",
+            "tests/test_grid_free_wall.py",
+            "tests/test_wall_explicit_point_reference.py",
+            "governance/module_registry.json",
+            "docs/SYSTEM_MAP.md",
+            "apps/monkeyhub/web/workspaces/src/api/generated/",
+            "apps/monkeyhub/web/workspaces/test/"
+          ],
+          "depends_on": []
+        }
+      ]
+    }
+  ]
 }
