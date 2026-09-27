@@ -1,23 +1,4 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": [
-    {
-      "id": "GH-358",
-      "status": "active",
-      "branch": "codex/358-retire-work-cards",
-      "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-358-retire-work-cards",
-      "base_ref": "38138370",
-      "contributor": "Claude",
-      "reviewer": null,
-      "handoff": "Ports GH-319's trailing (#n) claim rule (draft #330, 23137ba3) into the card-era reading, so #330 and #372 can take main's archcheck when they merge it.",
-      "modules": [
-        "tools.archcheck"
-      ],
-      "write_scope": [
-        "CONTRIBUTING.md",
-        "tools/archcheck.py"
-      ],
-      "depends_on": []
-    }
-  ]
+  "items": []
 }
