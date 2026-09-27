@@ -11,6 +11,7 @@ import hashlib
 import os
 from pathlib import Path, PurePosixPath
 import time
+from typing import Iterable
 
 from archflow.project.refs import (
     ProjectArtifactRef,
@@ -200,6 +201,60 @@ class LayoutFingerprint:
     scanned_at_ns: int
     stable: bool
 
+    @classmethod
+    def from_lines(
+        cls, lines: Iterable[str], *, newest_mtime_ns: int, scanned_at_ns: int, unreadable: bool,
+    ) -> LayoutFingerprint:
+        """The fingerprint of one scan's lines: sha256 over them sorted, and the racy rule.
+
+        The one place both readers of a layout - ``layout_fingerprint`` and the
+        watch that keeps it current (``archflow.project.watch``) - turn what they
+        saw into a digest, so equal sightings give equal digests.
+        """
+
+        text = "\n".join(sorted(lines))
+        return cls(
+            digest=hashlib.sha256(text.encode("utf-8", "surrogatepass")).hexdigest(),
+            newest_mtime_ns=newest_mtime_ns,
+            scanned_at_ns=scanned_at_ns,
+            stable=not unreadable and scanned_at_ns - newest_mtime_ns > FINGERPRINT_SETTLED_NS,
+        )
+
+
+def is_layout_directory(entry: os.DirEntry) -> bool:
+    """Whether the fingerprint walks into a listed entry: a directory, never a link or a junction."""
+
+    try:
+        return entry.is_dir(follow_symlinks=False) and not entry.is_junction()
+    except OSError:
+        return False
+
+
+def pointer_file_lines(root: Path | str) -> tuple[tuple[str, ...], int, bool]:
+    """Each pointer file's line, the newest time among them and whether one was unreadable.
+
+    A pointer file contributes its size and ``st_mtime_ns``, or that it is
+    missing; anything else that stops the ``stat`` is named and unreadable.
+    """
+
+    base = os.fspath(root)
+    lines: list[str] = []
+    newest = 0
+    unreadable = False
+    for relative in FINGERPRINT_POINTER_FILES:
+        try:
+            stat = os.stat(os.path.join(base, *relative.split("/")))
+        except FileNotFoundError:
+            lines.append(f"f {relative} missing")
+            continue
+        except OSError as exc:
+            lines.append(f"f {relative} unreadable {exc.errno}")
+            unreadable = True
+            continue
+        lines.append(f"f {relative} {stat.st_size} {stat.st_mtime_ns}")
+        newest = max(newest, stat.st_mtime_ns)
+    return tuple(lines), newest, unreadable
+
 
 def layout_fingerprint(root: Path | str) -> LayoutFingerprint:
     """Fingerprint a project from metadata only: no file is opened or read.
@@ -210,6 +265,10 @@ def layout_fingerprint(root: Path | str) -> LayoutFingerprint:
     sorted lines. A directory's own ``stat`` is used, never the copy of its
     times in its parent's listing: Windows updates that copy lazily. Anything
     that cannot be read is named in a line and makes the result unstable.
+
+    This walks the whole project, every time. Nothing on a request path calls
+    it: the project's layout watch (``archflow.project.watch``) keeps the same
+    fingerprint current in the background and is what a reader asks.
     """
 
     base = os.fspath(root)
@@ -239,11 +298,7 @@ def layout_fingerprint(root: Path | str) -> LayoutFingerprint:
         try:
             with os.scandir(path) as entries:
                 for entry in entries:
-                    try:
-                        directory = entry.is_dir(follow_symlinks=False) and not entry.is_junction()
-                    except OSError:
-                        directory = False
-                    if directory:
+                    if is_layout_directory(entry):
                         pending.append(
                             (f"{relative}/{entry.name}" if relative else entry.name, entry.path)
                         )
@@ -252,23 +307,11 @@ def layout_fingerprint(root: Path | str) -> LayoutFingerprint:
         except OSError as exc:
             lines.append(f"l {name} unreadable {exc.errno}")
             unreadable = True
-    for relative in FINGERPRINT_POINTER_FILES:
-        try:
-            stat = os.stat(os.path.join(base, *relative.split("/")))
-        except FileNotFoundError:
-            lines.append(f"f {relative} missing")
-            continue
-        except OSError as exc:
-            lines.append(f"f {relative} unreadable {exc.errno}")
-            unreadable = True
-            continue
-        lines.append(f"f {relative} {stat.st_size} {stat.st_mtime_ns}")
-        newest = max(newest, stat.st_mtime_ns)
-    lines.sort()
-    digest = hashlib.sha256("\n".join(lines).encode("utf-8", "surrogateescape")).hexdigest()
-    return LayoutFingerprint(
-        digest=digest,
-        newest_mtime_ns=newest,
+    pointers, pointer_newest, pointer_unreadable = pointer_file_lines(base)
+    lines.extend(pointers)
+    return LayoutFingerprint.from_lines(
+        lines,
+        newest_mtime_ns=max(newest, pointer_newest),
         scanned_at_ns=scanned_at_ns,
-        stable=not unreadable and scanned_at_ns - newest > FINGERPRINT_SETTLED_NS,
+        unreadable=unreadable or pointer_unreadable,
     )

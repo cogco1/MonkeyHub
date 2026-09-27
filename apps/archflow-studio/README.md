@@ -419,7 +419,8 @@ a fresh answer and a fresh event.
 And `effectiveChecks` is narrower than `validators` on purpose: a P036 published state is a ref-based
 `CanonicalProjectState@1` carrying no facts, commitments or obligations, so two of the three
 validators run over an empty state and find nothing to object to. That is not the same as
-passing them, and the payload says so (kernel card **P110**).
+passing them, and the payload says so. Projecting retained requirements into that state is
+an open kernel gap.
 
 ## 5. Three digests, and which to compare
 
@@ -463,11 +464,11 @@ conversation does not quote it: verbatim, counted on its tab, one click away —
 shell *handles* rather than merely displays is `STALE_BASE` — it re-projects and says "the
 project moved under you" in the transcript.
 
-## 7. Cards this slice stands on
+## 7. Kernel gaps this slice stands on
 
-- **P110** — CanonicalState projection. Why `effectiveChecks` is narrower than `validators`
-  (section 4).
-- Kernel-card candidates relayed to the repository owner from this slice, fixed nowhere in passing: typed
+- **CanonicalState projection.** Why `effectiveChecks` is narrower than `validators`
+  (section 4); no Issue schedules it yet.
+- Kernel gaps relayed to the repository owner from this slice, fixed nowhere in passing: typed
   `ParameterBinding` values; `runner-run-receipt` not carrying its own `receipt_ref` (the
   record it is in is the only thing a caller can name it with); non-ASCII path segments
   rejected by `require_project_relative_path`.

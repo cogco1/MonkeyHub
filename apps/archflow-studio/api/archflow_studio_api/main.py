@@ -161,12 +161,13 @@ def _authorization(scope: Scope) -> str:
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
-    """Prepare native drawing libraries and drain accepted work on shutdown.
+    """Prepare native drawing libraries; on shutdown drain accepted work and close the binding.
 
     A candidate run writes P036 records; killing its thread mid-run would
     leave a run directory nobody can account for. Shutting the worker down and
     waiting is the difference between a service that stops and one that stops
-    cleanly.
+    cleanly. Closing the binding stops its layout watch, which holds the
+    project folder open.
     """
 
     if app.state.settings.service_role != SHARED_PROJECT_ROLE:
@@ -181,6 +182,11 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.render_jobs.stop_accepting()
     await run_in_threadpool(app.state.render_jobs.shutdown)
     await run_in_threadpool(app.state.jobs.shutdown)
+    binding = getattr(app.state, "binding", None)
+    if binding is not None:
+        # Its layout watch holds a handle on the project folder: let go of it
+        # with the project, not whenever the process happens to exit.
+        await run_in_threadpool(binding.close)
 
 
 async def _diagnostic_request(request: Request,

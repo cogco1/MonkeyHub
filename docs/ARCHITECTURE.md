@@ -1,14 +1,14 @@
 # ArchFlow V4 architecture
 
 This document separates the implemented spine from the next architectural capability
-to develop. [VISION.md](VISION.md) defines the direction; [DYNAMIC_MAP.md](DYNAMIC_MAP.md)
-tracks live work. The goal is usable architectural work that people can understand,
+to develop. [VISION.md](VISION.md) defines the direction; GitHub Issues track the
+work. The goal is usable architectural work that people can understand,
 revise and hand over, not more editable objects or more infrastructure layers.
 
 One production spine. Who owns what is in [SYSTEM_MAP.md](SYSTEM_MAP.md) (generated from
 `governance/module_registry.json`); why it is one spine is in
 [CANONICAL_SPINE.md](CANONICAL_SPINE.md); the decisions a later session would be tempted to
-reverse are in [adr/](adr/README.md). Live work is in [DYNAMIC_MAP.md](DYNAMIC_MAP.md). What the
+reverse are in [adr/](adr/README.md). Who is editing which paths now is `python tools/devctl.py work`. What the
 Studio serves on the wire, and what a second client or a remote server may rely on, is
 [PROTOCOL.md](PROTOCOL.md) — the open ArchFlow protocol, version 2.
 
@@ -68,9 +68,7 @@ storage, candidate continuation and formal issue serve all four areas. Developme
 research tooling remain cross-cutting, not additional architectural workflow stages.
 Detailed ownership stays in SYSTEM_MAP and the existing registries.
 
-Remaining work and its acceptance are tracked in GitHub Issues (#60).
-[P115](mapping/planning/P115-capability-consolidation.md) is a frozen historical index that
-names the Issues carrying its remaining acceptance; derive no current task from it.
+Remaining work and its acceptance are tracked in GitHub Issues (#358).
 Delivered behavior is not reopened merely to fill a plan.
 
 ## The spine
@@ -133,7 +131,7 @@ this edit affects. They use the existing record, not three competing project sto
 | Express the project and change it | `state/state_record.py`: entities, parameters, relations, obligations and exact-base operators | `EDIT_COMPONENTS` adds atomic entity, parameter and relation edits and explicit removals alongside existing scalar, massing, program and reindex consumers. Reuse these operations; a new architectural action needs only its specific missing capability, not a second state model. |
 | Resolve dependencies | `StateRecord.dependency_edges/closure`, `capabilities/reference_resolver.py` and producer ordering | Traversing declared edges cannot discover a missing architectural dependency or decide which endpoint should govern a revision. |
 | Produce an assembly | `capabilities/element_producers.py`, with existing wall/opening solvers and geometry compiler | Stair and window producers remain reusable. Wall authoring with an arched opening now produces a real candidate in the project's side-support task. Successful solids do not establish passage alignment: the observed obstruction at the existing side entrance still needs correction. |
-| Check the result | `capabilities/relation_checks.py`, CAD readback and `validation/engine.py` | Declared relations are checked, but omitted requirements can remain unseen. Support-height agreement is not contact-area or structural-capacity analysis. P110 addresses the separate missing requirement input in Studio validation. |
+| Check the result | `capabilities/relation_checks.py`, CAD readback and `validation/engine.py` | Declared relations are checked, but omitted requirements can remain unseen. Support-height agreement is not contact-area or structural-capacity analysis. Studio validation still receives no retained project requirements, so a violated one can stay unseen; no Issue schedules that input yet. |
 | Continue, inspect and retain | Studio binding/candidate/viewer, `runtime/project_runner.py`, P036 | Explicit candidate continuation is implemented. Program and massing APIs now accept a selected source run; clients must pass it to continue that candidate, while omission preserves the default base. Continuation does not prove architectural correctness. |
 
 These are existing ownership boundaries, not new modules to create. Public APIs and
@@ -183,16 +181,17 @@ the architect changes that decision; ask about a real conflict, not an internal 
    show the candidate without parameter approval, then exercise a follow-up request
    against that visible result and verify the retained stair conditions and recovery.
    Exercise width, endpoint-height and footprint changes as this task requires. Extend the existing
-   operator/producer/check owners only where this task exposes a gap. P111's delivered
-   continuation is reused; P108 owns the real Studio trial and P110 owns requirement
-   projection. Neither is a blanket authorization for an assembly solver.
+   operator/producer/check owners only where this task exposes a gap. The delivered candidate
+   continuation is reused; the real-project revision is judged under #185 and the first-user
+   trial under #86. Neither is a blanket authorization for an assembly solver. Whether this
+   stair revision is still the first real-project trial is an open owner decision.
 2. **A second assembly only after that works.** A wall-opening-frame-glass revision
    can test whether the same project, action and checking mechanisms transfer.
    Reuse shared behavior and add only the opening-specific method; do not generate
    another whole building to avoid examining the first failure.
 3. **Consolidate demonstrated reuse and bottlenecks.** Extract shared code when real
-   consumers need it and remove the superseded production path together. P105
-   follows missing geometry vocabulary. The delivered OCCT export supports the bounded
+   consumers need it and remove the superseded production path together. Missing
+   geometry vocabulary is added to the existing producers when a task needs it. The delivered OCCT export supports the bounded
    solid/loft/boolean slice described in the [Studio README](../apps/archflow-studio/README.md);
    whole-stair/window production and synthetic candidate continuation are implemented.
    Explicitly uncapped polyline lofts preserve the drum and dome as open surfaces.
