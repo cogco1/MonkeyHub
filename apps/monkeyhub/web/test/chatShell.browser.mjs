@@ -111,6 +111,8 @@ page.on("request", (request) => {
   if (request.isNavigationRequest() && request.frame() === page.mainFrame()) documentLoads++;
 });
 let permissionResponseGate = Promise.resolve(), permissionFailure = null;
+// #351: a Fab upload check the walk holds open, and how many of the next ones fail.
+let fabSendGate = Promise.resolve(), fabSendFailures = 0;
 let modelingResponseGate = Promise.resolve();
 let modelingFailure = null;
 let chatCreationFailureFor = null;
@@ -303,6 +305,13 @@ await page.route((url) => url.pathname.startsWith("/api/"), async (route) => {
     return json(preferences);
   }
   if (url.pathname === "/api/apps") return json(url.searchParams.has("projectDir") ? appsFor(url.searchParams.get("projectDir")) : apps);
+  if (method === "POST" && url.pathname === "/api/fab/send") {
+    const body = data();
+    await fabSendGate;
+    if (fabSendFailures > 0) { fabSendFailures--; return json({ code: "FAB_SEND_FAILED", detail: "Fixture: the sliced file is missing." }, 422); }
+    return json({ file: body.source, remote_path: "/sdcard/model.gcode.3mf", bytes: 2048, plates: [1], host: body.host,
+      status: body.dryRun ? "validated" : "uploaded", print_started: false });
+  }
   if (method === "GET" && url.pathname === "/api/fab/profiles") return json({ h2s: {
     key: "h2s", label: "Fixture H2S", nominal_volume_mm: [300, 300, 300], usable_origin_mm: [0, 0, 0],
     usable_volume_mm: [290, 290, 290], notes: "Synthetic browser fixture", sources: [],
@@ -1001,6 +1010,35 @@ try {
   await fabFrame.locator('#fab-printer option[value="h2s"]').waitFor({ state: "attached" });
   assert.equal(await fabFrame.locator('#fab-printer option[value="h2s"]').innerText(), "Fixture H2S");
   assert.equal(await fabFrame.locator("#fab-source").isEnabled(), true, "the real Fab page loaded its printer profiles from the API fixture");
+  // #351: Fabrication's two steps are words in its bar. A step keeps what was typed in it while the other is
+  // shown, and a step whose file operation ends comes back into view with its result or failure.
+  const fabStep = (name) => fabFrame.locator(".surface-bar").getByRole("button", { name, exact: true });
+  const [fabModel, fabJob] = [String.raw`D:\fixture\model.stl`, String.raw`D:\fixture\model.gcode.3mf`];
+  await fabFrame.locator("#fab-source").fill(fabModel);
+  await fabStep("Upload job").click();
+  await fabFrame.locator("#fab-job").fill(fabJob);
+  await fabFrame.locator("#fab-host").fill("192.0.2.10");
+  await fabStep("Prepare parts").click();
+  assert.equal(await fabFrame.locator("#fab-source").inputValue(), fabModel, "the parts step keeps its input while the upload step is shown");
+  await fabStep("Upload job").click();
+  assert.equal(await fabFrame.locator("#fab-job").inputValue(), fabJob, "the upload step keeps its own");
+  let releaseFabSend;
+  fabSendGate = new Promise((resolve) => { releaseFabSend = resolve; });
+  fabSendFailures = 1;
+  await fabFrame.getByRole("button", { name: "Check file", exact: true }).click();
+  await fabFrame.locator(".surface-bar__end").getByText("Checking…", { exact: true }).waitFor();
+  await fabStep("Prepare parts").click();
+  assert.equal(await fabFrame.locator("#fab-source").isDisabled(), true, "the other step waits while a file operation runs");
+  releaseFabSend();
+  await fabFrame.getByRole("alert").filter({ hasText: "Fixture: the sliced file is missing." }).waitFor();
+  assert.equal(await fabStep("Upload job").getAttribute("aria-pressed"), "true", "a check that failed brings its step back into view");
+  fabSendGate = Promise.resolve();
+  await fabFrame.getByRole("button", { name: "Check file", exact: true }).click();
+  await fabFrame.getByRole("status").filter({ hasText: "Local check passed; file not sent" }).waitFor();
+  assert.equal(await fabFrame.getByRole("alert").count(), 0, "the passing check replaces the failure");
+  assert.equal(await fabFrame.locator("#fab-source").inputValue(), fabModel, "the parts step still holds its input");
+  assert.equal(writes.filter(([, pathname, body]) => pathname === "/api/fab/send" && body.dryRun && body.source === fabJob).length, 2,
+    "both checks sent the upload step's own file");
   await fabFrame.getByRole("button", { name: "Display settings", exact: true }).click();
   const hubSettings = page.getByRole("dialog").filter({ hasText: "Hub settings (global)" });
   await hubSettings.waitFor();
@@ -1021,18 +1059,25 @@ try {
   await composer.fill("Keep this conversation while viewing usage");
   await page.getByRole("button", { name: "Usage", exact: true }).click();
   await waitMonitor();
-  const projectFilter = page.locator(".monitor-heading").getByRole("combobox");
-  assert.equal(await projectFilter.inputValue(), "A", "Usage opened from Project A starts in that project's scope");
+  // #351: Usage's bar holds its views (Calls | Timeline) and its scope as words: the project it was opened
+  // from, by the name the sidebar shows, All, and a list of every project.
+  const usageBar = page.locator(".monitor-page .surface-bar");
+  const scopeNow = () => usageBar.locator('.monitor-scope [aria-pressed="true"]').innerText();
+  const scopeTo = (name) => usageBar.locator(".monitor-scope .menu-tabs").getByRole("button", { name, exact: true }).click();
+  const otherProject = usageBar.getByRole("combobox", { name: "Choose a project", exact: true });
+  const usageView = (name) => usageBar.getByRole("group", { name: "View", exact: true }).getByRole("button", { name, exact: true }).click();
+  const scopeIs = (name) => page.waitForFunction((value) => document.querySelector('.monitor-scope [aria-pressed="true"]')?.textContent === value, name);
+  assert.equal(await scopeNow(), "Project A", "Usage opened from Project A starts in that project's scope, named as the sidebar names it");
   const callCard = page.locator(".monitor-stat").filter({ has: page.getByText("Model calls", { exact: true }) }).locator("strong");
   assert.equal(await callCard.innerText(), "37", "four Codex task boundaries are not model calls");
   assert.equal(await page.locator('.monitor-section__head select option[value="project-B-task"]').count(), 0,
     "Project A's task timeline excludes Project B");
-  await projectFilter.selectOption("");
+  await scopeTo("All");
   assert.equal(await callCard.innerText(), "38", "All projects includes the separate Project B fixture record");
   await page.locator(".monitor-page").getByRole("button", { name: "Refresh", exact: true }).click();
   await waitMonitor();
-  assert.equal(await projectFilter.inputValue(), "", "refreshing and polling do not restore the opening project's filter");
-  await projectFilter.selectOption("A");
+  assert.equal(await scopeNow(), "All", "refreshing and polling do not restore the opening project's filter");
+  await scopeTo("Project A");
   await page.getByText("Showing 20 of 37 records", { exact: true }).waitFor();
   assert.equal(await page.locator(".monitor-table tbody tr").count(), 20);
   const displayedTokens = page.locator(".monitor-table tfoot tr").filter({ hasText: "Displayed model-call subtotal" }).locator("td").first();
@@ -1048,6 +1093,7 @@ try {
   assert.match(await displayedTokens.innerText(), /^800\s+16 recorded$/);
   assert.equal(await callCard.innerText(), "37", "expanding diagnostics does not change model-call totals");
   await page.getByLabel("Include tools and local operations").uncheck();
+  await usageView("Timeline");
   const firstCandidateCard = page.locator(".monitor-trace-summary > span").filter({ has: page.getByText("First candidate", { exact: true }) });
   assert.equal(await firstCandidateCard.locator("strong").innerText(), "—", "missing candidate readback timing must not fall back to verification time");
   await page.locator(".monitor-section__head select").selectOption(monitorCandidateTrace.trace_id);
@@ -1096,23 +1142,29 @@ try {
     "Project B starts its Runtime once on the first project navigation");
   await page.getByRole("button", { name: "Usage", exact: true }).click();
   await waitMonitor();
-  await page.waitForFunction(() => document.querySelector(".monitor-heading select")?.value === "B");
-  assert.equal(await projectFilter.inputValue(), "B", "reopening Usage from Project B establishes Project B's initial scope");
+  await scopeIs("Project B");
+  assert.equal(await scopeNow(), "Project B", "reopening Usage from Project B establishes Project B's initial scope");
+  assert.equal(await usageBar.locator('.menu-tab[aria-pressed="true"]').first().innerText(), "Timeline", "reopening resets the scope, not the view");
+  await usageView("Calls");
   assert.equal(await callCard.innerText(), "1");
+  await usageView("Timeline");
   await page.locator('.monitor-section__head select').selectOption("project-B-task");
+  await usageView("Calls");
   assert.equal(await page.locator(".monitor-table tbody tr").count(), 1, "Project B's records exclude Project A");
   await page.getByRole("button", { name: "harbour-study", exact: true }).first().click();
   await page.waitForFunction(() => document.querySelector(".chat-header__project")?.textContent === "harbour-study");
   await page.getByRole("button", { name: "Usage", exact: true }).click();
   await waitMonitor();
-  await page.waitForFunction(() => document.querySelector(".monitor-heading select")?.value === "harbour-study");
-  assert.equal(await projectFilter.inputValue(), "harbour-study");
+  await scopeIs("harbour-study");
+  assert.equal(await scopeNow(), "harbour-study");
   assert.equal(await callCard.innerText(), "0", "a project with no Monitor records shows zero rather than cross-project totals");
-  await page.getByText("No task records yet. Tasks started from MonkeyHub will appear here.", { exact: true }).waitFor();
   await page.getByText("No usage records yet.", { exact: true }).waitFor();
-  await projectFilter.selectOption("");
+  await usageView("Timeline");
+  await page.getByText("No task records yet. Tasks started from MonkeyHub will appear here.", { exact: true }).waitFor();
+  await usageView("Calls");
+  await scopeTo("All");
   assert.equal(await callCard.innerText(), "38");
-  await projectFilter.selectOption("harbour-study");
+  await scopeTo("harbour-study");
   assert.equal(await callCard.innerText(), "0", "the opening project remains selectable after choosing All even with no records");
   await page.getByRole("button", { name: "Project A", exact: true }).first().click();
   await page.waitForFunction(() => document.querySelector(".chat-header__project")?.textContent === "Project A");
@@ -1120,15 +1172,32 @@ try {
   await waitMonitor();
   await page.locator(".chat-usage").click();
   await waitMonitor();
-  await page.waitForFunction(() => document.querySelector(".monitor-heading select")?.value === "");
-  assert.equal(await projectFilter.inputValue(), "", "the sidebar totals open all projects even while Project A is selected");
-  await projectFilter.selectOption("A");
+  await scopeIs("All");
+  assert.equal(await scopeNow(), "All", "the sidebar totals open all projects even while Project A is selected");
+  assert.equal(await usageBar.locator(".monitor-scope .menu-tab").count(), 1, "a global opening names no project of its own");
+  // The list keeps one order and holds the project in scope, so the arrow keys step through it rather
+  // than back and forth between two projects.
+  const listed = () => otherProject.locator("option:not([hidden])").evaluateAll((nodes) => nodes.map((node) => node.textContent));
+  const everyProject = await listed();
+  assert.deepEqual(everyProject, ["Project A", "Project B"], "every project with records is listed by name");
+  await otherProject.selectOption("A");
+  assert.equal(await scopeNow(), "Project A", "a project chosen from the list becomes the scope");
+  assert.equal(await otherProject.inputValue(), "A", "the list shows the project in scope rather than springing back");
+  assert.deepEqual(await listed(), everyProject, "choosing a project leaves the list in its order");
+  await otherProject.focus();
+  await otherProject.press("ArrowDown");
+  await scopeIs("Project B");
+  await otherProject.press("ArrowDown");
+  await page.waitForTimeout(200);
+  assert.equal(await scopeNow(), "Project B", "the last project stays chosen; the keys do not flip back to the first");
+  await otherProject.press("ArrowUp");
+  await scopeIs("Project A");
   await page.getByRole("menuitem", { name: "Help", exact: true }).click();
   await page.getByRole("menuitem", { name: "Usage and task records", exact: true }).click();
   await waitMonitor();
-  await page.waitForFunction(() => document.querySelector(".monitor-heading select")?.value === "");
-  assert.equal(await projectFilter.inputValue(), "", "the global Help menu opens all projects");
-  await projectFilter.selectOption("A");
+  await scopeIs("All");
+  assert.equal(await scopeNow(), "All", "the global Help menu opens all projects");
+  await otherProject.selectOption("A");
   // A hidden mounted Monitor must not poll or take top-level navigation back.
   await page.getByRole("button", { name: "Hide tools" }).click();
   await page.locator(".monitor-page").waitFor({ state: "hidden" });
@@ -2456,6 +2525,8 @@ try {
   runtimeB.operations = [headlessOperation(newJob)];
   await page.goto(`${origin}/?view=monitor`);
   await waitMonitor();
+  await scopeIs("All");
+  assert.equal(await scopeNow(), "All", "a direct Monitor link opens all projects");
   emitRuntime();
   await page.waitForTimeout(600);
   assert.equal(await page.getByRole("button", { name: "Usage", exact: true }).getAttribute("aria-pressed"), "true",
