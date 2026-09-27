@@ -12,8 +12,14 @@ import type { Language } from "../../../../shared-web/src/appearance.js";
 import { addNotice, attentionCopy, noticeText, remember, settle, snapshotOf, titled, transitions, type AttentionEvent, type Snapshot } from "./attention";
 import { openChat } from "./openChat";
 
-/** How often the chat list is read. A reading never overlaps the one before it. */
+/** How often the chat list is read while a turn runs or waits. A reading never overlaps the one before it. */
 export const POLL_MS = 4000;
+/**
+ * How often it is read while every conversation is quiet. A turn this window
+ * starts is noticed sooner: the architect's own input reads the list again
+ * once it is older than POLL_MS.
+ */
+export const QUIET_POLL_MS = 30_000;
 /** Set once the OS has been asked to allow notifications: it is asked once, ever. */
 const ASKED_KEY = "monkeyhub.attention.systemAsked";
 
@@ -66,7 +72,7 @@ export function useAttention(language: Language): Attention {
   openRef.current = open;
 
   useEffect(() => {
-    let stopped = false, reading = false, again = false, timer: number | undefined;
+    let stopped = false, reading = false, again = false, timer: number | undefined, busy = false, readAt = 0;
     /** One OS notification for a moment the architect cannot see; permission is asked for once, ever. */
     const notify = (event: AttentionEvent) => {
       if (typeof Notification === "undefined") return;
@@ -91,10 +97,12 @@ export function useAttention(language: Language): Attention {
       if (stopped) return;
       if (reading) { again = true; return; }
       reading = true;
+      readAt = Date.now();
       window.clearTimeout(timer);
       try {
         const sessions = await readSessions();
         if (stopped) return;
+        busy = sessions.some((session) => session.status === "running" || session.attention === "permission");
         const onScreen = shown();
         const raised = transitions(baseline.current, sessions, onScreen ? openChatId() : null)
           .filter((event) => remember(seen.current, event.key));
@@ -109,7 +117,7 @@ export function useAttention(language: Language): Attention {
       } finally {
         reading = false;
         if (!stopped) {
-          if (again) { again = false; void read(); } else timer = window.setTimeout(() => void read(), POLL_MS);
+          if (again) { again = false; void read(); } else timer = window.setTimeout(() => void read(), busy ? POLL_MS : QUIET_POLL_MS);
         }
       }
     };
@@ -126,12 +134,17 @@ export function useAttention(language: Language): Attention {
       setNotices((stack) => stack.some((item) => item.chatId === current) ? stack.filter((item) => item.chatId !== current) : stack);
       void read();
     };
+    const onInput = () => { if (!busy && Date.now() - readAt > POLL_MS) void read(); };
     void read();
     document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("pointerdown", onInput, true);
+    window.addEventListener("keydown", onInput, true);
     return () => {
       stopped = true;
       window.clearTimeout(timer);
       document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("pointerdown", onInput, true);
+      window.removeEventListener("keydown", onInput, true);
     };
   }, []);
 

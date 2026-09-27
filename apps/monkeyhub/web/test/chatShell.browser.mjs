@@ -950,6 +950,25 @@ try {
     await page.goto(origin);
     await composerMenu("附件与新话题").waitFor();
     await page.locator(".chat-composer").screenshot({ path: path.join(temporary, "composer-zh.png") });
+  } else if (process.env.MONKEYHUB_UI_FOCUS === "idle") {
+    // #364: a Hub left open on a project's Design Tree, with nothing changing, asks for less than ten things a minute.
+    projects.push({ projectId: "T", projectDir: "D:\\fixture\\T", name: "Tree project", chatCount: 0, version: 2, stage: "S2" });
+    workspaceFixture.designTrees.set("T", { stages: ["tree-s0", "tree-s1", "tree-s2"], edits: ["tree-e2", "tree-e1"] });
+    await page.goto(origin);
+    await page.getByRole("button", { name: "Tree project", exact: true }).first().click();
+    await studioReady();
+    await contextReady();
+    await page.getByRole("button", { name: "Design tree", exact: true }).click();
+    await visibleWorkspace().locator(".design-tree").waitFor();
+    await page.waitForTimeout(5000);
+    const idle = [], notModifiedBefore = workspaceFixture.notModified.length;
+    const listen = (request) => { const url = new URL(request.url()); if (url.pathname.startsWith("/api/")) idle.push(url.pathname.replace(/^\/api\/runtime\/projects\/[^/]+\/studio/, "(runtime)")); };
+    page.on("request", listen);
+    await page.waitForTimeout(60_000);
+    page.off("request", listen);
+    const byPath = idle.reduce((counts, name) => ({ ...counts, [name]: (counts[name] ?? 0) + 1 }), {});
+    console.log(JSON.stringify({ idleMinute: idle.length, byPath, notModified: workspaceFixture.notModified.length - notModifiedBefore }));
+    assert.ok(idle.length < 10, `an idle minute on the Design Tree asked for ${idle.length} things: ${JSON.stringify(byPath)}`);
   } else {
   if (process.env.MONKEYHUB_UI_FOCUS !== "updates") {
   await page.goto(origin);

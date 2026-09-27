@@ -9,11 +9,12 @@
  * nothing here. Each act that changed the design confirms itself in a toast
  * beside the chip (FN-5); a refusal stays inline where it was asked for. The
  * facts are read again on a short interval while the workspace is on screen,
- * on focus, and after each action.
+ * on focus, and after each action; a read that finds the project unchanged
+ * keeps the tree it has.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { asStudioApiError, StudioApiError, type StudioClient } from "../../api/client";
-import type { DesignHistoryDto, WorkingDraftDto, WorkingDraftSelectionDto } from "../../api/generated";
+import type { DesignHistoryDto, WorkingDraftDto, WorkingDraftSelectionDto, WorktreeGraphDto } from "../../api/generated";
 import type { DesignTreeSource } from "./contract";
 import { continueRequest, continueUndo, DESIGN_TREE_UNDO_MOVED, DESIGN_TREE_UNSYNCED, undoRequest, type ContinueUndo,
   type HeadTarget } from "./continueUndo";
@@ -21,8 +22,8 @@ import { buildGrowthTree, type GrowthTree, type TreeNode } from "./model";
 
 export { DESIGN_TREE_UNDO_MOVED, DESIGN_TREE_UNSYNCED } from "./continueUndo";
 
-/** How often an open project re-reads its tree while it is on screen. */
-export const DESIGN_TREE_POLL_MS = 10_000;
+/** How often an open project re-reads its tree while it is on screen; an unchanged project answers in one request. */
+export const DESIGN_TREE_POLL_MS = 15_000;
 
 export type DesignTreeAction = { readonly kind: "continue" | "review"; readonly node: string } | { readonly kind: "accept" } | { readonly kind: "undo" };
 
@@ -104,19 +105,50 @@ async function moveHead(studio: StudioClient, projectId: string,
   }
 }
 
-/** Design history of every line, the working source and the Worktree Graph, read as one source. */
-export async function readDesignTreeSource(studio: StudioClient, projectId: string, signal?: AbortSignal): Promise<DesignTreeSource> {
-  const workingSource = await studio.workingSource("modeling", signal);
-  if (workingSource.projectId !== projectId) throw projectChanged();
+/** Sources that read every line's history, and those whose Worktree Graph answered before their working source was asked for. */
+const wholeSources = new WeakSet<DesignTreeSource>();
+const readInOrder = new WeakSet<DesignTreeSource>();
+
+/**
+ * Design history of every line, the working source and the Worktree Graph, read as one source.
+ *
+ * Given the source read last, a refresh stops at the first view the runtime
+ * answers as unchanged (304: the client hands back the same object). Each
+ * view's tag carries the project's read token (0a, transport/conditional.py),
+ * so an unchanged Worktree Graph means an unchanged project, and an unchanged
+ * working source means unchanged histories on every line. That holds only for
+ * views read after the one that vouches for them, so a refresh asks for them
+ * in that order; the first read of a project asks for the Graph and the
+ * working source together. A source missing a line it could not read vouches
+ * for nothing, and the next refresh reads every line again.
+ */
+export async function readDesignTreeSource(studio: StudioClient, projectId: string, signal?: AbortSignal,
+  previous: DesignTreeSource | null = null): Promise<DesignTreeSource> {
+  const last = previous?.projectId === projectId && wholeSources.has(previous) ? previous : null;
+  let worktrees: WorktreeGraphDto | null;
+  let workingSource: DesignTreeSource["workingSource"];
+  if (last) {
+    worktrees = await studio.worktrees(signal).catch(() => null);
+    if (worktrees !== null && worktrees === last.worktrees && readInOrder.has(last)) return last;
+    workingSource = await studio.workingSource("modeling", signal);
+  } else {
+    [workingSource, worktrees] = await Promise.all([studio.workingSource("modeling", signal), studio.worktrees(signal).catch(() => null)]);
+  }
+  if (workingSource.projectId !== projectId || (worktrees && worktrees.projectId !== projectId)) throw projectChanged();
+  if (last && workingSource === last.workingSource) {
+    const kept = worktrees === last.worktrees ? last : { ...last, worktrees };
+    wholeSources.add(kept);
+    if (worktrees !== null) readInOrder.add(kept);
+    return kept;
+  }
   const line = workingSource.head?.branchId ?? "main";
-  const [history, worktrees] = await Promise.all([
-    studio.designHistory(line, signal).catch((cause) => {
-      if (line === "main") throw cause;
-      return studio.designHistory("main", signal);
-    }),
-    studio.worktrees(signal).catch(() => null),
-  ]);
-  if (history.projectId !== projectId || (worktrees && worktrees.projectId !== projectId)) throw projectChanged();
+  let whole = true;
+  const history = await studio.designHistory(line, signal).catch((cause) => {
+    if (line === "main") throw cause;
+    whole = false;
+    return studio.designHistory("main", signal);
+  });
+  if (history.projectId !== projectId) throw projectChanged();
   // A future that a fork left behind lives on another line: read those Stages too.
   const others = await Promise.all(history.branches.filter((branch) => branch.branchId !== history.branchId)
     .map((branch) => studio.designHistory(branch.branchId, signal).catch(() => null)));
@@ -134,7 +166,12 @@ export async function readDesignTreeSource(studio: StudioClient, projectId: stri
   }
   const merged: DesignHistoryDto = { ...history, stages: [...stages.values()], candidates: [...candidates.values()],
     studies: [...studies.values()], warnings: [...warnings] };
-  return { projectId, history: merged, workingSource, worktrees };
+  const source = { projectId, history: merged, workingSource, worktrees };
+  if (whole && others.every((other) => other !== null)) {
+    wholeSources.add(source);
+    if (last && worktrees !== null) readInOrder.add(source);
+  }
+  return source;
 }
 
 export function useDesignTree({ studio, capabilities, projectId, active, refreshKey, onHeadMoved }: {
@@ -160,6 +197,8 @@ export function useDesignTree({ studio, capabilities, projectId, active, refresh
   const [nudge, setNudge] = useState(0);
   const [showProcessed, setShowProcessed] = useState(false);
   const reads = useRef(0);
+  const sourceRef = useRef<DesignTreeSource | null>(null);
+  sourceRef.current = source;
   const busyRef = useRef(false);
   const headMoved = useRef(onHeadMoved);
   headMoved.current = onHeadMoved;
@@ -173,7 +212,7 @@ export function useDesignTree({ studio, capabilities, projectId, active, refresh
     if (!available || !projectId) return;
     const read = ++reads.current;
     try {
-      const next = await readDesignTreeSource(studio, projectId, signal);
+      const next = await readDesignTreeSource(studio, projectId, signal, sourceRef.current);
       if (read !== reads.current || signal?.aborted) return;
       setSource(next); setError(null); setStatus("ready");
     } catch (cause) {

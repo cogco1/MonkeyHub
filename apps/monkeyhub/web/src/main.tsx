@@ -320,13 +320,16 @@ function App() {
     } else setLaunchIssue(issueOf(launch.reason));
     readingSettings.current = false;
   }, [hostedView]);
+  useEffect(() => { void refreshApps(); void readSettings(); }, [refreshApps, readSettings]);
+  // Every second while a service is starting or stopping; a settled list is read again each minute and on return.
+  const appsSettling = busyServices.size > 0 || statusIssue !== null || (apps ?? []).some((app) => app.state === "starting" || app.state === "stopping");
   useEffect(() => {
-    void refreshApps(); void readSettings();
     const refreshVisible = () => { if (!document.hidden) void refreshApps(); };
-    const timer = window.setInterval(refreshVisible, 1000);
+    const timer = window.setInterval(refreshVisible, appsSettling ? 1000 : 60_000);
     document.addEventListener("visibilitychange", refreshVisible);
-    return () => { window.clearInterval(timer); document.removeEventListener("visibilitychange", refreshVisible); };
-  }, [refreshApps, readSettings]);
+    window.addEventListener("focus", refreshVisible);
+    return () => { window.clearInterval(timer); document.removeEventListener("visibilitychange", refreshVisible); window.removeEventListener("focus", refreshVisible); };
+  }, [refreshApps, appsSettling]);
   // #334: once a sign-in window has opened, coming back to the Hub checks the CLIs again.
   useEffect(() => {
     if (!signInOpened) return;

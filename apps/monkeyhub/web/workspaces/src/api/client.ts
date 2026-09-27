@@ -193,6 +193,89 @@ function base64Of(buffer: ArrayBuffer): string {
   return window.btoa(binary);
 }
 
+/**
+ * The polled views the runtime answers conditionally (#363): design history,
+ * worktrees, artifacts, documents, working source, board and render jobs. The
+ * last 200 of each, by its path and query, is kept with its ETag; a refresh
+ * sends `If-None-Match`, and a 304 answers with the very object kept, so a
+ * caller can tell by identity that nothing changed. One request per view is
+ * in flight at a time: a read asked for while one is on the way joins it,
+ * unless this connection has written since that one was sent; then it is sent
+ * again once the earlier one has answered. A caller's abort only lets go of
+ * its own wait.
+ */
+type ConditionalRead = <T>(what: string, query: Record<string, unknown>,
+  send: (headers: Record<string, string> | undefined) => Promise<FieldsResult<T>>, signal?: AbortSignal) => Promise<T>;
+const reads = new WeakMap<ServerConnection, ConditionalRead>();
+function conditional(connection: ServerConnection): ConditionalRead {
+  const known = reads.get(connection);
+  if (known) return known;
+  const kept = new Map<string, { tag: string; data: unknown }>();
+  const pending = new Map<string, { writes: number; answer: Promise<unknown> }>();
+  let writes = 0;
+  connection.client.interceptors.request.use((request) => {
+    if (request.method !== "GET" && request.method !== "HEAD") writes += 1;
+    return request;
+  });
+  const read: ConditionalRead = <T,>(what: string, query: Record<string, unknown>,
+    send: (headers: Record<string, string> | undefined) => Promise<FieldsResult<T>>, signal?: AbortSignal): Promise<T> => {
+    const key = `${what}?${new URLSearchParams(Object.entries(query).filter(([, value]) => value != null)
+      .map(([name, value]) => [name, String(value)])).toString()}`;
+    const earlier = pending.get(key);
+    let shared = earlier?.writes === writes ? earlier.answer as Promise<T> : undefined;
+    if (!shared) {
+      const ask = () => {
+        const last = kept.get(key);
+        let tag: string | null = null;
+        return call(what, send(last ? { "If-None-Match": last.tag } : undefined).then((result) => {
+          if (last && result.response?.status === 304) return { data: last.data as T, response: result.response };
+          if (result.error === undefined) tag = result.response?.headers.get("ETag") ?? null;
+          return result;
+        })).then((data) => {
+          if (tag) kept.set(key, { tag, data });
+          else if (data !== last?.data) kept.delete(key);
+          return data;
+        });
+      };
+      const entry: { writes: number; answer: Promise<unknown> } = { writes, answer: Promise.resolve() };
+      shared = (earlier ? earlier.answer.then(ask, ask) : ask()).finally(() => { if (pending.get(key) === entry) pending.delete(key); });
+      entry.answer = shared;
+      pending.set(key, entry);
+    }
+    if (!signal) return shared;
+    const joined = shared;
+    return new Promise<T>((resolve, reject) => {
+      const abort = () => reject(new StudioApiError({ status: 0, code: NETWORK_ERROR, detail: `${what} never reached the API: the read was aborted.` }));
+      if (signal.aborted) { abort(); return; }
+      signal.addEventListener("abort", abort, { once: true });
+      joined.then(resolve, reject).finally(() => signal.removeEventListener("abort", abort));
+    });
+  };
+  reads.set(connection, read);
+  return read;
+}
+
+/** Model bytes by digest, for the whole app: the same sha256 is the same bytes, served immutable. */
+const MODEL_BYTES_LIMIT = 256 * 1024 * 1024;
+const modelBytes = new Map<string, Blob>();
+function keepModelBytes(sha256: string, blob: Blob) {
+  modelBytes.delete(sha256);
+  modelBytes.set(sha256, blob);
+  let size = 0;
+  for (const kept of modelBytes.values()) size += kept.size;
+  // The least recently opened go first; the model just opened always stays.
+  for (const [digest, kept] of modelBytes) {
+    if (size <= MODEL_BYTES_LIMIT || digest === sha256) break;
+    modelBytes.delete(digest); size -= kept.size;
+  }
+}
+function keptModelBytes(sha256: string): Blob | null {
+  const blob = modelBytes.get(sha256);
+  if (!blob) return null;
+  modelBytes.delete(sha256); modelBytes.set(sha256, blob);
+  return blob;
+}
+
 // Workspace startup reads `/api/project` and `/api/state`; runtime liveness
 // belongs to the Hub that started it.
 export const createStudioClient = (connection: ServerConnection) => ({
@@ -205,11 +288,12 @@ export const createStudioClient = (connection: ServerConnection) => ({
   },
   /** The current working source a workspace follows; the server resolves it from retained facts. */
   workingSource(workspace: WorkingSourceDto["workspace"] = "modeling", signal?: AbortSignal): Promise<WorkingSourceDto> {
-    return call("GET /api/working-source", readWorkingSourceApiWorkingSourceGet({ client: connection.client, query: { workspace }, signal }));
+    return conditional(connection)("GET /api/working-source", { workspace }, (headers) =>
+      readWorkingSourceApiWorkingSourceGet({ client: connection.client, query: { workspace }, headers }), signal);
   },
   /** Read-only: the Working Head, running work, other lines and whether they reconcile. */
   worktrees(signal?: AbortSignal): Promise<WorktreeGraphDto> {
-    return call("GET /api/worktrees", readWorktreesApiWorktreesGet({ client: connection.client, signal }));
+    return conditional(connection)("GET /api/worktrees", {}, (headers) => readWorktreesApiWorktreesGet({ client: connection.client, headers }), signal);
   },
   selectWorkingDraft(body: WorkingDraftSelectionDto): Promise<WorkingDraftDto> {
     return call("PUT /api/working-draft", selectCurrentWorkingDraftApiWorkingDraftPut({ client: connection.client, body }));
@@ -230,7 +314,7 @@ export const createStudioClient = (connection: ServerConnection) => ({
     return call("POST /api/studies/propose", proposeStudyApiStudiesProposePost({ client: connection.client, body }));
   },
   board(): Promise<BoardDto> {
-    return call("GET /api/board", readBoardApiBoardGet({ client: connection.client }));
+    return conditional(connection)("GET /api/board", {}, (headers) => readBoardApiBoardGet({ client: connection.client, headers }));
   },
   saveBoard(body: BoardRequestDto): Promise<BoardDto> {
     return call("PUT /api/board", updateBoardApiBoardPut({ client: connection.client, body }));
@@ -302,7 +386,8 @@ export const createStudioClient = (connection: ServerConnection) => ({
     return call("POST /api/candidates/combine", combineCandidatesApiCandidatesCombinePost({ client: connection.client, body }));
   },
   designHistory(branchId = "main", signal?: AbortSignal): Promise<DesignHistoryDto> {
-    return call("GET /api/design-history", readCommittedDesignHistoryApiDesignHistoryGet({ client: connection.client, query: { branchId }, signal }));
+    return conditional(connection)("GET /api/design-history", { branchId }, (headers) =>
+      readCommittedDesignHistoryApiDesignHistoryGet({ client: connection.client, query: { branchId }, headers }), signal);
   },
   reviewCandidate(body: ReviewJudgementRequestDto): Promise<ReviewJudgementDto> {
     return call("POST /api/candidate-reviews", reviewCandidateOrStageApiCandidateReviewsPost({ client: connection.client, body }));
@@ -392,7 +477,7 @@ export const createStudioClient = (connection: ServerConnection) => ({
   },
 
   artifacts(signal?: AbortSignal): Promise<ArtifactListDto> {
-    return call("GET /api/artifacts", readArtifactsApiArtifactsGet({ client: connection.client, signal }));
+    return conditional(connection)("GET /api/artifacts", {}, (headers) => readArtifactsApiArtifactsGet({ client: connection.client, headers }), signal);
   },
 
   /**
@@ -462,9 +547,12 @@ export const createStudioClient = (connection: ServerConnection) => ({
    * The certified bytes, as a `File` the viewer can open.
    *
    * The name is the receipt's; the digest in the path is what the server
-   * verifies the bytes against before it sends them.
+   * verifies the bytes against before it sends them. Bytes this app already
+   * downloaded are opened again from memory, without a request.
    */
   async artifactFile(sha256: string, fileName: string, trace?: OperationTrace, signal?: AbortSignal): Promise<File> {
+    const kept = keptModelBytes(sha256);
+    if (kept) return new File([kept], fileName, { type: "application/octet-stream" });
     const blob = await call<Blob>(
       `GET /api/artifacts/${sha256}/bytes`,
       readArtifactBytesApiArtifactsSha256BytesGet({ client: connection.client,
@@ -474,11 +562,12 @@ export const createStudioClient = (connection: ServerConnection) => ({
         signal,
       }) as Promise<FieldsResult<Blob>>,
     );
+    keepModelBytes(sha256, blob);
     return new File([blob], fileName, { type: "application/octet-stream" });
   },
 
   documents(runId?: string | null): Promise<SourceDocumentListDto> {
-    return call("GET /api/documents", readDocumentsApiDocumentsGet({ client: connection.client, query: { runId } }));
+    return conditional(connection)("GET /api/documents", { runId }, (headers) => readDocumentsApiDocumentsGet({ client: connection.client, query: { runId }, headers }));
   },
 
   renderCapabilities(): Promise<RenderCapabilitiesDto> {
@@ -486,7 +575,7 @@ export const createStudioClient = (connection: ServerConnection) => ({
   },
 
   renderJobs(): Promise<RenderJobListDto> {
-    return call("GET /api/render/jobs", listRenderJobsApiRenderJobsGet({ client: connection.client }));
+    return conditional(connection)("GET /api/render/jobs", {}, (headers) => listRenderJobsApiRenderJobsGet({ client: connection.client, headers }));
   },
 
   /** Only an explicit generation action submits; recovery reads renderJobs. */
