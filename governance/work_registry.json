@@ -1,33 +1,4 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": [
-    {
-      "id": "GH-376",
-      "lanes": [
-        {
-          "id": "projection-check",
-          "status": "active",
-          "branch": "codex/376-projection-check",
-          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-376-projection-check",
-          "base_ref": "c4ed9500",
-          "contributor": "Claude",
-          "reviewer": null,
-          "handoff": null,
-          "modules": [
-            "studio.shell"
-          ],
-          "write_scope": [
-            "tools/projection_check.py",
-            "apps/archflow-studio/api/tests/synthetic_project.py",
-            "apps/archflow-studio/api/tests/test_synthetic_project.py",
-            "apps/archflow-studio/api/tests/test_projection_check.py",
-            ".github/workflows/verify.yml",
-            "docs/testing/projection-check.md",
-            "governance/architecture_policy.json"
-          ],
-          "depends_on": []
-        }
-      ]
-    }
-  ]
+  "items": []
 }
