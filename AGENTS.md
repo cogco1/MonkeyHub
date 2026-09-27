@@ -105,15 +105,18 @@ writing it and ask the repository owner to decide its ownership.
 - `AGENTS.md` states durable working rules. `governance/module_registry.json` names
   each capability's owning module and public contract; an owner is not a person or a
   single-file limit. Module `canonical` denotes established ownership, not a released
-  application or issued project. GitHub Issues are the work items (`CONTRIBUTING.md`);
-  `governance/work_registry.json` holds live source-edit coordination and scopes.
-  `governance/architecture_policy.json` holds the checks enforced by archcheck.
-  Generated maps are views of these sources, not separate rules or runtime switches.
-- Work is `active` while progressing, `ready` when its prerequisites are met, and
-  `blocked` while awaiting a concrete input or decision, including an explicit pause.
-  Record the reason in the lane's `blocked_reason` or the existing card. Reuse the same
-  Issue for related fixes; remove a registry entry and its card only when its remaining
-  acceptance is complete.
+  application or issued project. A GitHub Issue is the only current task identity
+  (`CONTRIBUTING.md`); durable design decisions belong in `docs/ARCHITECTURE.md` or an
+  ADR. `governance/work_registry.json` holds only live source-edit claims, `GH-<issue>`
+  or `GH-<issue>/<lane>`, and their scopes. `governance/architecture_policy.json` holds
+  the checks enforced by archcheck. Generated maps are views of these sources, not
+  separate rules or runtime switches.
+- A claim is `active` while progressing, `review` while its result awaits review, and
+  `blocked` while awaiting a concrete input or decision, including an explicit pause;
+  record the reason in its `blocked_reason`. Reuse the same Issue for related fixes.
+  Remove the claim once its source work is done: the closed Issue, its PR and Git
+  history are the record. `P###`, `M###` and `R###` ids are historical references only
+  (#358).
 - A new domain capability may live in its own module and reach Studio through an
   existing application API or adapter. Extend the owning module's contract when needed;
   do not move independent implementation into core merely to make it callable. Change

@@ -18,7 +18,6 @@
     "labs"
   ],
   "shared_write_scope": [
-    "docs/mapping/",
     "governance/module_registry.json",
     "governance/work_registry.json",
     "tests/",
@@ -26,8 +25,12 @@
     "docs/PROTOCOL.md",
     "governance/architecture_policy.json",
     "docs/SYSTEM_MAP.md",
-    "docs/DYNAMIC_MAP.md",
     "docs/SEMANTIC_REGISTRY.md"
+  ],
+  "unclaimed_write_scope": [
+    "docs/adr/",
+    "docs/REPO_LAYOUT.md",
+    "CONTRIBUTING.md"
   ],
   "probe_root": "probes",
   "forbidden_instance_literals": [
@@ -127,7 +130,7 @@
       ],
       "kind": "rendered_docs",
       "owner": "tools.devctl",
-      "reason": "Renders DYNAMIC_MAP, the planning index, SYSTEM_MAP and SEMANTIC_REGISTRY from the registries; the files are committed."
+      "reason": "Renders SYSTEM_MAP and SEMANTIC_REGISTRY from the module registry and the semantic tables; the files are committed."
     },
     {
       "path": "tools/run_project.py",
