@@ -7,11 +7,12 @@ import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import { createServer as createHttpServer } from "node:http";
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { createServer } from "vite";
+import { penguinSuggestions } from "./fixtures/penguinRegions.ts";
 
 const webRoot = fileURLToPath(new URL("..", import.meta.url));
 const repoRoot = path.resolve(webRoot, "../../../..");
@@ -59,7 +60,7 @@ if capture_fixture:
     repo, _ = make_project(root)
     project_id, reference_run = PROJECT_ID, REFERENCE_RUN_ID
 else:
-    repo = FilesystemProjectRepository.initialize(root / project_id, project_id=project_id, initial_state={'project_id': project_id, 'version': 0})
+    repo = FilesystemProjectRepository.open(root / project_id) if (root / project_id / 'project.json').exists() else FilesystemProjectRepository.initialize(root / project_id, project_id=project_id, initial_state={'project_id': project_id, 'version': 0})
 project = root / project_id
 def image(color):
     canvas = Image.new('RGB', (720, 480), '#e2e4e0'); draw = ImageDraw.Draw(canvas)
@@ -101,6 +102,21 @@ def plan_model(revised: bool=False):
         from archflow.adapters.model_formats import ThreeDM
         adapter = ThreeDM(); model = adapter.read(data); model.meshes = model.meshes[1:]; data = adapter.write(model)
     return Response(data, media_type='application/octet-stream')
+@app.get('/fixture/facade-model')
+def facade_model():
+    # Explicit architectural test asset: door, glazing and wall strips around openings.
+    # These names describe authored fixture objects, never production semantic inference.
+    from archflow.adapters.model_formats import ThreeDM, Scene, Mesh
+    faces=[(0,2,1),(0,3,2),(4,5,6),(4,6,7),(0,1,5),(0,5,4),(1,2,6),(1,6,5),(2,3,7),(2,7,6),(3,0,4),(3,4,7)]
+    def box(name,x0,x1,z0,z1,depth=.2):
+        return Mesh(name,[(x0,0,z0),(x1,0,z0),(x1,depth,z0),(x0,depth,z0),(x0,0,z1),(x1,0,z1),(x1,depth,z1),(x0,depth,z1)],faces)
+    meshes=[box('Entrance door',.2,1.2,0,2.1,.06),box('Window glazing',2,3,1,2.1,.03)]
+    strips=[box('Wall',0,.2,0,3),box('Wall',1.2,2,0,3),box('Wall',3,4,0,3),box('Wall',.2,1.2,2.1,3),box('Wall',2,3,0,1),box('Wall',2,3,2.1,3)]
+    vertices=[]; triangles=[]
+    for part in strips:
+        offset=len(vertices);vertices.extend(part.vertices);triangles.extend(tuple(i+offset for i in face) for face in part.triangles)
+    meshes.append(Mesh('Facade wall',vertices,triangles))
+    return Response(ThreeDM().write(Scene(meshes,'Meters',[])),media_type='application/octet-stream')
 @app.get('/fixture/metrics')
 def metrics(): return {'calls':adapter.calls,'head':repr(repo.read_head())}
 @app.post('/fixture/release')
@@ -113,7 +129,10 @@ def legacy():
         'schema':'StudioRenderJob@1','projectId':project_id,'jobId':job_id,'instance':'retired-runtime','sequence':1,'status':'succeeded',
         'createdAt':'2026-09-21T00:00:00Z','renderer':'monkeyhub-three-webgl2-v1','documentSha256':document.asset_sha256})
     return {'jobId':job_id,'fileName':document.file_name}
-uvicorn.run(app,host='127.0.0.1',port=port,log_level='warning')
+@app.post('/fixture/shutdown')
+def shutdown(): server.should_exit=True; return {'ok':True}
+server=uvicorn.Server(uvicorn.Config(app,host='127.0.0.1',port=port,log_level='warning'))
+server.run()
 `;
 // Real Hub and its managed Runtime, with private settings and no CLI discovery.
 // Cold navigation checks persisted authored inputs, not only HEAD.
@@ -158,6 +177,7 @@ async function api(project, route, method = "GET", body) {
 }
 async function step(name, action) {
   if (process.argv.includes("--capture-only") && !name.startsWith("perspective and orthographic")) return;
+  if (process.argv.includes("--regions-only") && !name.startsWith("Physical real geometry") && !name.startsWith("model-driven region")) return;
   current = name; await action(); passed.push(name); console.log(`PASS ${name}`);
 }
 const fixture = `
@@ -215,7 +235,7 @@ try {
   for (const id of ["project-a", "project-b", "capture"]) {
     const port = await freePort();
     const child = spawn(python, ["-c", pythonSource, temporary, id, String(port)], { cwd: apiRoot, env: pythonEnv, stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
-    const process = { child, log: "" }; processes.push(process);
+    const process = { child, log: "", id, port }; processes.push(process);
     child.stdout.on("data", (chunk) => { process.log = (process.log + chunk).slice(-5000); });
     child.stderr.on("data", (chunk) => { process.log = (process.log + chunk).slice(-5000); });
     origins[id] = `http://127.0.0.1:${port}`;
@@ -691,6 +711,100 @@ try {
     assert.deepEqual(errors, []);
     await physicalPage.screenshot({ path: path.join(temporary, 'physical-regression.png'), fullPage: true });
     await physicalPage.close();
+  });
+  await step("model-driven region CRUD and project isolation survive real Runtime restart", async () => {
+    const regionPage = await browser.newPage({ viewport: { width: 1440, height: 1050 } });
+    regionPage.on('pageerror', error => errors.push(String(error)));
+    await regionPage.goto(origin);
+    const panel = () => regionPage.locator('.physical-workspace:visible');
+    const select = async id => {
+      await regionPage.getByRole('button', {name: id === 'project-a' ? 'Project A' : 'Project B', exact: true}).click();
+      await regionPage.getByRole('button', {name:'Physical', exact:true}).click();
+      await until(() => panel().getByRole('button', {name:'Reload saved scene', exact:true}).isEnabled(), Boolean, 'scene loaded');
+    };
+    const sourceBytes = process.env.PENGUIN_TEST_GLB ? await readFile(process.env.PENGUIN_TEST_GLB)
+      : Buffer.from(await (await fetch(origins['project-a']+'/fixture/plan-model')).arrayBuffer());
+    await select('project-a');
+    await panel().getByLabel('Import geometry', {exact:true}).setInputFiles({name:process.env.PENGUIN_TEST_GLB ? 'penguin-sample.glb' : 'retained-regions.3dm',mimeType:'application/octet-stream',buffer:sourceBytes});
+    await panel().locator('canvas').waitFor();
+    const initial = await api('project-a','/api/render/scene');
+    assert.deepEqual(initial.scene.regions, [], 'new model has no sample regions');
+    assert.deepEqual(initial.scene.materials.map(m=>m.name), ['Neutral']);
+    const regionConfig = process.env.PENGUIN_TEST_REGION_CONFIG ? JSON.parse(await readFile(process.env.PENGUIN_TEST_REGION_CONFIG, "utf8")) : penguinSuggestions(initial.scene);
+    const retained = {...initial.scene, ...regionConfig};
+    const savedA = await api('project-a','/api/render/scene','PUT',{scene:retained,expectedRevision:initial.sceneRevision});
+    await panel().getByRole('button',{name:'Reload saved scene',exact:true}).click();
+    await until(()=>panel().locator('[data-region-id]').count(),n=>n===7,'retained sample restored');
+    assert.equal(await panel().getByRole('button',{name:/Penguin|企鹅/}).count(),0);
+    const geometryA = await api('project-a','/api/render/geometry');
+    await regionPage.screenshot({path:path.join(temporary,'regions-retained-sample.png'),fullPage:true});
+    await select('project-b');
+    assert.equal(await panel().locator('[data-region-id]').count(),0,'architecture has no inherited regions');
+    assert.doesNotMatch(await panel().innerText(), /Penguin|企鹅|belly|beak|pupil|eye-right/);
+    const facade=Buffer.from(await (await fetch(origins['project-b']+'/fixture/facade-model')).arrayBuffer());
+    await panel().getByLabel('Import geometry',{exact:true}).setInputFiles({name:'facade.3dm',mimeType:'application/octet-stream',buffer:facade});
+    await until(()=>panel().getByRole('button',{name:'Reload saved scene',exact:true}).isEnabled(),Boolean,'facade imported');
+    if (await panel().getByRole('button',{name:'Rebind with neutral materials; clear old regions',exact:true}).count()) {
+      await panel().getByRole('button',{name:'Rebind with neutral materials; clear old regions',exact:true}).click();
+      await until(()=>panel().getByRole('button',{name:'Reload saved scene',exact:true}).isEnabled(),Boolean,'neutral facade rebound');
+    }
+    const geometryB = await api('project-b','/api/render/geometry');
+    const beforeB = await api('project-b','/api/render/scene');
+    assert.ok(geometryB.meshes.length >= 3, 'architecture fixture contains separately selectable objects');
+    for (const [index,name] of ['Door','Window','Wall'].entries()) {
+      await panel().getByLabel('Source mesh for new region',{exact:true}).selectOption(String(index));
+      await panel().getByRole('button',{name:'Add region',exact:true}).click();
+      const row=panel().locator('[data-region-id]').last(); await row.locator('summary').click();
+      await row.getByLabel('Region name',{exact:true}).fill(name);
+      await row.locator('summary').click();
+    }
+    const ids=await panel().locator('[data-region-id]').evaluateAll(es=>es.map(e=>e.dataset.regionId));
+    const wall=panel().locator('[data-region-id]').nth(2);await wall.locator('summary').click();
+    await wall.getByLabel('Region name',{exact:true}).fill('External wall');
+    assert.equal(await wall.getAttribute('data-region-id'),ids[2],'rename preserves identity');
+    await wall.getByLabel('Source mesh',{exact:true}).selectOption('0');
+    await wall.getByLabel('Source mesh',{exact:true}).selectOption('2');
+    await panel().getByRole('button',{name:'Add material',exact:true}).click();
+    await panel().getByLabel('Material name',{exact:true}).fill('Architecture finish');
+    const newMaterial=await panel().getByLabel('Material name',{exact:true}).inputValue();assert.equal(newMaterial,'Architecture finish');
+    await wall.getByRole('combobox',{name:'Material',exact:true}).selectOption({label:'Architecture finish'});
+    await panel().getByRole('button',{name:'Add region',exact:true}).click();
+    const extra=panel().locator('[data-region-id]').last();await extra.locator('summary').click();
+    await extra.getByRole('button',{name:'Remove region',exact:true}).click();
+    assert.equal(await panel().locator('[data-region-id]').count(),3);
+    await panel().getByRole('button',{name:'Save scene',exact:true}).click();
+    const savedB=await until(()=>api('project-b','/api/render/scene'),s=>s.scene.regions.length===3 && s.scene.regions[2].name==='External wall','architecture saved');
+    assert.deepEqual(savedB.scene.regions.map(r=>r.mesh),[0,1,2]);
+    assert.notEqual(savedB.sceneRevision,beforeB.sceneRevision);
+    assert.equal(savedB.scene.geometryRevision,geometryB.source.geometryRevision);
+    assert.deepEqual(await api('project-b','/api/render/geometry'),geometryB,'CRUD never changes source geometry');
+    await regionPage.screenshot({path:path.join(temporary,'regions-architecture.png'),fullPage:true});
+    await panel().getByLabel('Source mesh for new region',{exact:true}).scrollIntoViewIfNeeded();
+    await regionPage.screenshot({path:path.join(temporary,'regions-architecture-controls.png'),fullPage:true});
+    await select('project-a');
+    assert.deepEqual((await api('project-a','/api/render/scene')).scene,savedA.scene,'other project untouched');
+    assert.deepEqual(await api('project-a','/api/render/geometry'),geometryA);
+    await regionPage.reload();await select('project-a');
+    await until(()=>panel().locator('[data-region-id]').count(),n=>n===7,'sample after browser reload');
+    for (const id of ['project-a','project-b']) {
+      const owner=processes.find(p=>p.id===id);
+      await api(id,'/fixture/shutdown','POST');
+      await until(()=>owner.child.exitCode,n=>n!==null,'old Runtime stopped');
+      assert.equal(owner.child.exitCode,0);
+      const child=spawn(python,['-c',pythonSource,temporary,id,String(owner.port)],{cwd:apiRoot,env:pythonEnv,stdio:['ignore','pipe','pipe'],windowsHide:true});
+      const restarted={child,log:'',id,port:owner.port};processes.push(restarted);
+      child.stdout.on('data',x=>{restarted.log=(restarted.log+x).slice(-5000);});child.stderr.on('data',x=>{restarted.log=(restarted.log+x).slice(-5000);});
+      await until(()=>fetch(origins[id]+'/api/health').then(r=>r.ok).catch(()=>false),Boolean,'fresh Runtime ready');
+      const cold=await api(id,'/api/render/scene');const expected=id==='project-a'?savedA:savedB;
+      assert.deepEqual(cold.scene,expected.scene,'cold Runtime restores exact scene');assert.equal(cold.sceneRevision,expected.sceneRevision);
+    }
+    await regionPage.reload();await select('project-b');
+    await until(()=>panel().locator('[data-region-id]').count(),n=>n===3,'architecture after Runtime reopen');
+    assert.doesNotMatch(await panel().innerText(), /Penguin|企鹅|belly|beak|pupil|eye-right/);
+    assert.deepEqual(await panel().locator('[data-region-id] > summary').allTextContents(),['Door','Window','External wall']);
+    await select('project-a');await until(()=>panel().locator('[data-region-id]').count(),n=>n===7,'sample after switch back');
+    await writeFile(path.join(temporary,'region-isolation.json'),JSON.stringify({sample:process.env.PENGUIN_TEST_GLB?'actual-user-penguin':'architecture-with-retained-sample-config',inputSha256:createHash('sha256').update(sourceBytes).digest('hex'),savedA,savedB,geometryUnchanged:true,runtimeRestart:true},null,2));
+    await regionPage.close();assert.deepEqual(errors,[]);
   });
   await step("cold real Hub Render leaves every project content file unchanged; entering Arch seeds only then", async () => {
     const ports = [await freePort(), await freePort(), await freePort()];

@@ -1,0 +1,18 @@
+E
+======================================================================
+ERROR: tests.test_render_scene (unittest.loader._FailedTest.tests.test_render_scene)
+----------------------------------------------------------------------
+ImportError: Failed to import test module: tests.test_render_scene
+Traceback (most recent call last):
+  File "C:\Users\jiayu\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\unittest\loader.py", line 396, in _find_test_path
+    module = self._get_module_from_name(name)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\jiayu\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\unittest\loader.py", line 339, in _get_module_from_name
+    __import__(name)
+ModuleNotFoundError: No module named 'tests.test_render_scene'
+
+
+----------------------------------------------------------------------
+Ran 1 test in 0.000s
+
+FAILED (errors=1)

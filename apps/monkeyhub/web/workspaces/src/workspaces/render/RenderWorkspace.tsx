@@ -190,7 +190,7 @@ export default function RenderWorkspace({ projectId, active, refreshKey, onBoard
     </header>
     {mode === "ai" && <ModelPreview active={active} readView={readModelView} onModeling={onModeling} onCapture={() => void captureModelView()} capturing={uploading || sending} zh={zh} />}
     {error && <div className="render-error" role="alert">{error}</div>}
-    <div hidden={mode !== "physical"}><PhysicalWorkspace projectId={projectId} active={active && mode === "physical"} zh={zh} /></div>
+    <div hidden={mode !== "physical"}><PhysicalWorkspace key={projectId} projectId={projectId} active={active && mode === "physical"} zh={zh} /></div>
     <div className="render-ai-body" hidden={mode !== "ai"}>
       <form className="render-inputs" onSubmit={(event) => void generate(event)} hidden={mode !== "ai"}>
         <fieldset disabled={sending || uploading}>

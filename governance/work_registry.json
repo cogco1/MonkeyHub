@@ -180,12 +180,8 @@
         "apps/archflow-studio/api/archflow_studio_api/application/geometry_sources.py",
         "apps/archflow-studio/api/archflow_studio_api/application/mesh_drawings.py",
         "apps/archflow-studio/api/archflow_studio_api/application/physical_render.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/render_scene.py",
         "apps/archflow-studio/api/archflow_studio_api/transport/render_scene.py",
-        "apps/archflow-studio/api/tests/test_render_scene.py",
         "apps/monkeyhub/web/workspaces/src/workspaces/render/PhysicalPreview.tsx",
-        "apps/monkeyhub/web/workspaces/src/workspaces/render/PhysicalWorkspace.tsx",
-        "apps/monkeyhub/web/workspaces/src/workspaces/render/sceneTypes.ts",
         "archflow/adapters/blender_scene_worker.py",
         "archflow/adapters/render_projection.py",
         "monkeydiagram/mesh_views.py",
@@ -226,7 +222,6 @@
         "apps/monkeyhub/web/workspaces/src/api/generated/index.ts",
         "apps/monkeyhub/web/workspaces/src/api/generated/sdk.gen.ts",
         "apps/monkeyhub/web/workspaces/src/api/generated/types.gen.ts",
-        "apps/monkeyhub/web/workspaces/src/workspaces/render/RenderWorkspace.tsx",
         "apps/monkeyhub/web/workspaces/src/workspaces/render/render.css",
         "archflow/adapters/blender_projection.py",
         "archflow/adapters/blender_worker.py",
@@ -236,21 +231,48 @@
         "tests/inspect_model_conversion.py",
         "archflow/adapters/model_providers.py",
         "apps/archflow-studio/api/archflow_studio_api/application/runtime.py",
-        "apps/monkeyhub/web/workspaces/test/renderWorkspace.browser.mjs",
         "tools/archcheck.py",
         "CONTRIBUTING.md",
         "apps/monkeyhub/web/test/chatShell.browser.mjs",
-          "apps/monkeyhub/web/test/projectWorkspaceFixture.mjs",
-          "apps/monkeyhub/web/workspaces/src/workspaces/monkeyarch/viewer/ThreeDmViewport.tsx",
-          "apps/monkeyhub/desktop/tests/test_runtime.py",
-          ".github/workflows/verify.yml",
-          ".github/workflows/desktop.yml"
+        "apps/monkeyhub/web/test/projectWorkspaceFixture.mjs",
+        "apps/monkeyhub/web/workspaces/src/workspaces/monkeyarch/viewer/ThreeDmViewport.tsx",
+        "apps/monkeyhub/desktop/tests/test_runtime.py",
+        ".github/workflows/verify.yml",
+        ".github/workflows/desktop.yml"
       ],
       "card": "docs/mapping/planning/GH-319-penguin-scene.md",
       "acceptance": [
         "Original Penguin production import is visible without a test-only preview.",
         "Geometry changes mark drawings stale; update recomputes dimensions and preserves unresolved refs across reopen.",
         "Editable saved scene drives Three.js and Cycles with both revisions and survives project reopen."
+      ],
+      "notes": [
+        "GH-321 independent stacked follow-up owns region editor/default/tests paths after immutable PR 330 baseline 8e1388e2. No PR 330 content is rewritten. Working Head/camera/Board work remains GH-319; coordinate future overlapping edits."
+      ]
+    },
+    {
+      "id": "GH-321",
+      "stream": "implementation",
+      "status": "active",
+      "goal": "Remove global Penguin presets; user-selected model regions and two-project persistence regression. EXTEND studio.render and hub.shell. Stacked on PR 330, preserving its baseline.",
+      "depends_on": [
+        "GH-319"
+      ],
+      "write_scope": [
+        "apps/monkeyhub/web/workspaces/src/workspaces/render/sceneTypes.ts",
+        "apps/monkeyhub/web/workspaces/src/workspaces/render/PhysicalWorkspace.tsx",
+        "apps/monkeyhub/web/workspaces/src/workspaces/render/RenderWorkspace.tsx",
+        "apps/archflow-studio/api/archflow_studio_api/application/render_scene.py",
+        "apps/archflow-studio/api/tests/test_render_scene.py",
+        "apps/monkeyhub/web/workspaces/test/",
+        "probes/model-regions/",
+        "docs/mapping/planning/GH-321-model-regions.md"
+      ],
+      "card": "docs/mapping/planning/GH-321-model-regions.md",
+      "acceptance": [
+        "No Penguin production preset; retained project regions remain readable.",
+        "Selected source mesh regions can be named, edited and removed without geometry writes.",
+        "Penguin and architecture regions/materials survive save, reload and project switch independently."
       ]
     }
   ]

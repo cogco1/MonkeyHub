@@ -1,0 +1,11 @@
+warning: The `fitz` API is deprecated and will be removed in future. Use `import pymupdf` instead.
+test_geometry_change_marks_drawings_stale_and_recomputes_extent (tests.test_render_scene.RenderSceneTests.test_geometry_change_marks_drawings_stale_and_recomputes_extent) ... ok
+test_old_regions_and_invalid_camera_cannot_be_silently_rebound (tests.test_render_scene.RenderSceneTests.test_old_regions_and_invalid_camera_cannot_be_silently_rebound) ... ok
+test_one_scene_revision_conflict_and_cold_persistence (tests.test_render_scene.RenderSceneTests.test_one_scene_revision_conflict_and_cold_persistence) ... ok
+test_real_cycles_pins_scene_and_keeps_old_result_outdated_after_edit (tests.test_render_scene.RenderSceneTests.test_real_cycles_pins_scene_and_keeps_old_result_outdated_after_edit) ... skipped 'Requires an installed Blender for real host acceptance'
+test_retained_geometry_reports_missing_source_without_changing_selection (tests.test_render_scene.RenderSceneTests.test_retained_geometry_reports_missing_source_without_changing_selection) ... ok
+
+----------------------------------------------------------------------
+Ran 5 tests in 8.081s
+
+OK (skipped=1)

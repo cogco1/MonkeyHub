@@ -1,0 +1,499 @@
+{
+  "sample": "actual-user-penguin",
+  "inputSha256": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+  "savedA": {
+    "schema": "StudioRenderScene@1",
+    "projectId": "project-a",
+    "sceneRevision": "8e43d39f7f42f54a176bec7cf770304c6b2f7cbc0edb60b5c316b5f5d8783f78",
+    "sequence": 1,
+    "geometry": {
+      "artifact": {
+        "artifact_id": "source-model",
+        "media_type": "application/octet-stream",
+        "project_id": "project-a",
+        "relative_path": "objects/sha256/b8/b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+        "sha256": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54"
+      },
+      "format": "glb",
+      "geometryRevision": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+      "kind": "retained-import",
+      "label": "penguin-sample.glb",
+      "preview": {
+        "assetSha256": "8f50a7e61fc8ac79cc5e5be07edf449c22652500ab891a1db74fe34932199d81",
+        "runId": "studio-model-8f50a7e61fc8ac79cc5e5be07edf449c22652500ab891a1db74fe34932199d81"
+      },
+      "previewExportId": "export-906d00ca7f0f4c92b044f9389504913a",
+      "projectId": "project-a",
+      "runId": "export-906d00ca7f0f4c92b044f9389504913a",
+      "schema": "StudioGeometrySelection@1",
+      "sequence": 1
+    },
+    "scene": {
+      "geometryRevision": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+      "materials": [
+        {
+          "id": "body",
+          "name": "Dark back / head",
+          "baseColor": "#202831",
+          "roughness": 0.72,
+          "metallic": 0,
+          "texture": null,
+          "normalMap": null
+        },
+        {
+          "id": "belly",
+          "name": "White belly",
+          "baseColor": "#ece4ce",
+          "roughness": 0.78,
+          "metallic": 0,
+          "texture": null,
+          "normalMap": null
+        },
+        {
+          "id": "beak",
+          "name": "Beak",
+          "baseColor": "#de922c",
+          "roughness": 0.38,
+          "metallic": 0,
+          "texture": null,
+          "normalMap": null
+        },
+        {
+          "id": "eye",
+          "name": "Eye white",
+          "baseColor": "#fcf8ee",
+          "roughness": 0.22,
+          "metallic": 0,
+          "texture": null,
+          "normalMap": null
+        },
+        {
+          "id": "pupil",
+          "name": "Pupil",
+          "baseColor": "#11151a",
+          "roughness": 0.18,
+          "metallic": 0,
+          "texture": null,
+          "normalMap": null
+        },
+        {
+          "id": "feet",
+          "name": "Feet",
+          "baseColor": "#403b35",
+          "roughness": 0.55,
+          "metallic": 0,
+          "texture": null,
+          "normalMap": null
+        }
+      ],
+      "assignments": {
+        "0": "body"
+      },
+      "regions": [
+        {
+          "id": "belly",
+          "name": "belly",
+          "materialId": "belly",
+          "mesh": 0,
+          "shape": "ellipsoid",
+          "center": [
+            0,
+            -0.19,
+            0.39
+          ],
+          "radius": [
+            0.215,
+            0.21,
+            0.36
+          ],
+          "geometryRevision": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54"
+        },
+        {
+          "id": "beak",
+          "name": "beak",
+          "materialId": "beak",
+          "mesh": 0,
+          "shape": "box",
+          "center": [
+            0,
+            -0.29,
+            0.873
+          ],
+          "radius": [
+            0.15,
+            0.14,
+            0.04
+          ],
+          "geometryRevision": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54"
+        },
+        {
+          "id": "feet",
+          "name": "feet",
+          "materialId": "feet",
+          "mesh": 0,
+          "shape": "box",
+          "center": [
+            0,
+            0,
+            0.025
+          ],
+          "radius": [
+            0.4,
+            0.4,
+            0.04
+          ],
+          "geometryRevision": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54"
+        },
+        {
+          "id": "eye-right",
+          "name": "eye-right",
+          "materialId": "eye",
+          "mesh": 0,
+          "shape": "ellipsoid",
+          "center": [
+            0.116,
+            0.001,
+            0.875
+          ],
+          "radius": [
+            0.032,
+            0.044,
+            0.038
+          ],
+          "geometryRevision": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54"
+        },
+        {
+          "id": "eye-left",
+          "name": "eye-left",
+          "materialId": "eye",
+          "mesh": 0,
+          "shape": "ellipsoid",
+          "center": [
+            -0.116,
+            -0.001,
+            0.879
+          ],
+          "radius": [
+            0.032,
+            0.044,
+            0.038
+          ],
+          "geometryRevision": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54"
+        },
+        {
+          "id": "pupil-right",
+          "name": "pupil-right",
+          "materialId": "pupil",
+          "mesh": 0,
+          "shape": "ellipsoid",
+          "center": [
+            0.136,
+            -0.014,
+            0.886
+          ],
+          "radius": [
+            0.024,
+            0.017,
+            0.019
+          ],
+          "geometryRevision": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54"
+        },
+        {
+          "id": "pupil-left",
+          "name": "pupil-left",
+          "materialId": "pupil",
+          "mesh": 0,
+          "shape": "ellipsoid",
+          "center": [
+            -0.136,
+            -0.016,
+            0.89
+          ],
+          "radius": [
+            0.024,
+            0.017,
+            0.019
+          ],
+          "geometryRevision": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54"
+        }
+      ],
+      "lights": [
+        {
+          "id": "key",
+          "type": "area",
+          "position": [
+            1.5,
+            -2,
+            2.5
+          ],
+          "target": [
+            0,
+            0,
+            0.5
+          ],
+          "intensity": 120,
+          "color": "#fff0dd",
+          "size": 1.5
+        },
+        {
+          "id": "fill",
+          "type": "area",
+          "position": [
+            -2,
+            -1,
+            1.5
+          ],
+          "target": [
+            0,
+            0,
+            0.5
+          ],
+          "intensity": 55,
+          "color": "#d5e8ff",
+          "size": 2
+        }
+      ],
+      "environment": {
+        "color": "#c6d8e8",
+        "strength": 0.4,
+        "background": null,
+        "environmentMap": null
+      },
+      "camera": {
+        "position": [
+          2.5,
+          -3,
+          1.1
+        ],
+        "target": [
+          0,
+          0,
+          0.5
+        ],
+        "up": [
+          0,
+          0,
+          1
+        ],
+        "projection": "perspective",
+        "fov": 35,
+        "orthoScale": 1.3
+      },
+      "exposure": 0,
+      "settings": {
+        "width": 1000,
+        "height": 1200,
+        "samples": 128,
+        "denoise": true
+      }
+    },
+    "status": "current"
+  },
+  "savedB": {
+    "geometry": {
+      "artifact": {
+        "artifact_id": "source-model",
+        "media_type": "application/octet-stream",
+        "project_id": "project-b",
+        "relative_path": "objects/sha256/49/490b93d33b2476d348ab0090ce661bd1814a77adf842ee52f5ece4cbab7f4fe5",
+        "sha256": "490b93d33b2476d348ab0090ce661bd1814a77adf842ee52f5ece4cbab7f4fe5"
+      },
+      "format": "3dm",
+      "geometryRevision": "490b93d33b2476d348ab0090ce661bd1814a77adf842ee52f5ece4cbab7f4fe5",
+      "kind": "retained-import",
+      "label": "facade.3dm",
+      "preview": {
+        "assetSha256": "490b93d33b2476d348ab0090ce661bd1814a77adf842ee52f5ece4cbab7f4fe5",
+        "runId": "studio-model-490b93d33b2476d348ab0090ce661bd1814a77adf842ee52f5ece4cbab7f4fe5"
+      },
+      "previewExportId": "export-8872ba2934354a3c90f14b44ebfdc1bc",
+      "projectId": "project-b",
+      "runId": "export-8872ba2934354a3c90f14b44ebfdc1bc",
+      "schema": "StudioGeometrySelection@1",
+      "sequence": 2
+    },
+    "projectId": "project-b",
+    "scene": {
+      "assignments": {
+        "0": "neutral",
+        "1": "neutral",
+        "2": "neutral"
+      },
+      "camera": {
+        "fov": 35,
+        "orthoScale": 5.2,
+        "position": [
+          12,
+          -11.899999998509884,
+          3.9
+        ],
+        "projection": "perspective",
+        "target": [
+          2,
+          0.10000000149011612,
+          1.5
+        ],
+        "up": [
+          0,
+          0,
+          1
+        ]
+      },
+      "environment": {
+        "background": null,
+        "color": "#c6d8e8",
+        "environmentMap": null,
+        "strength": 0.4
+      },
+      "exposure": 0,
+      "geometryRevision": "490b93d33b2476d348ab0090ce661bd1814a77adf842ee52f5ece4cbab7f4fe5",
+      "lights": [
+        {
+          "color": "#fff0dd",
+          "id": "key",
+          "intensity": 120,
+          "position": [
+            8,
+            -7.899999998509884,
+            9.5
+          ],
+          "size": 6,
+          "target": [
+            2,
+            0.10000000149011612,
+            1.5
+          ],
+          "type": "area"
+        },
+        {
+          "color": "#d5e8ff",
+          "id": "fill",
+          "intensity": 55,
+          "position": [
+            -6,
+            -3.899999998509884,
+            5.5
+          ],
+          "size": 8,
+          "target": [
+            2,
+            0.10000000149011612,
+            1.5
+          ],
+          "type": "area"
+        }
+      ],
+      "materials": [
+        {
+          "baseColor": "#b9bec8",
+          "id": "neutral",
+          "metallic": 0,
+          "name": "Neutral",
+          "normalMap": null,
+          "roughness": 0.65,
+          "texture": null
+        },
+        {
+          "baseColor": "#aaaaaa",
+          "id": "material-1790471598678",
+          "metallic": 0,
+          "name": "Architecture finish",
+          "normalMap": null,
+          "roughness": 0.65,
+          "texture": null
+        }
+      ],
+      "regions": [
+        {
+          "center": [
+            0.700000025331974,
+            0.029999999329447746,
+            1.0499999523162842
+          ],
+          "geometryRevision": "490b93d33b2476d348ab0090ce661bd1814a77adf842ee52f5ece4cbab7f4fe5",
+          "id": "region-4c6e5eb9-2955-484c-80b3-f333ddc97286",
+          "materialId": "neutral",
+          "mesh": 0,
+          "name": "Door",
+          "radius": [
+            0.5000002323517323,
+            0.03000020932943821,
+            1.0500001623162747
+          ],
+          "shape": "box"
+        },
+        {
+          "center": [
+            2.5,
+            0.014999999664723873,
+            1.5499999523162842
+          ],
+          "geometryRevision": "490b93d33b2476d348ab0090ce661bd1814a77adf842ee52f5ece4cbab7f4fe5",
+          "id": "region-ab955c5c-ef50-4e13-b858-4a8a161dd736",
+          "materialId": "neutral",
+          "mesh": 1,
+          "name": "Window",
+          "radius": [
+            0.5000001099999904,
+            0.015000109664714337,
+            0.5500000623162746
+          ],
+          "shape": "box"
+        },
+        {
+          "center": [
+            2,
+            0.10000000149011612,
+            1.5
+          ],
+          "geometryRevision": "490b93d33b2476d348ab0090ce661bd1814a77adf842ee52f5ece4cbab7f4fe5",
+          "id": "region-d3f9413f-0753-4635-9d2d-a7294d47d666",
+          "materialId": "material-1790471598678",
+          "mesh": 2,
+          "name": "External wall",
+          "radius": [
+            2.0000004,
+            0.10000040149011612,
+            1.5000004
+          ],
+          "shape": "box"
+        }
+      ],
+      "settings": {
+        "denoise": true,
+        "height": 1200,
+        "samples": 128,
+        "width": 1000
+      }
+    },
+    "sceneRevision": "8044138e14e34ae54334db9b98925aa42f6453c2881a47247c897d0e0e38eff3",
+    "schema": "StudioRenderScene@1",
+    "sequence": 2,
+    "status": "current",
+    "currentGeometry": {
+      "artifact": {
+        "artifact_id": "source-model",
+        "media_type": "application/octet-stream",
+        "project_id": "project-b",
+        "relative_path": "objects/sha256/49/490b93d33b2476d348ab0090ce661bd1814a77adf842ee52f5ece4cbab7f4fe5",
+        "sha256": "490b93d33b2476d348ab0090ce661bd1814a77adf842ee52f5ece4cbab7f4fe5"
+      },
+      "format": "3dm",
+      "geometryRevision": "490b93d33b2476d348ab0090ce661bd1814a77adf842ee52f5ece4cbab7f4fe5",
+      "kind": "retained-import",
+      "label": "facade.3dm",
+      "preview": {
+        "assetSha256": "490b93d33b2476d348ab0090ce661bd1814a77adf842ee52f5ece4cbab7f4fe5",
+        "runId": "studio-model-490b93d33b2476d348ab0090ce661bd1814a77adf842ee52f5ece4cbab7f4fe5"
+      },
+      "previewExportId": "export-8872ba2934354a3c90f14b44ebfdc1bc",
+      "projectId": "project-b",
+      "runId": "export-8872ba2934354a3c90f14b44ebfdc1bc",
+      "schema": "StudioGeometrySelection@1",
+      "sequence": 2
+    },
+    "cyclesAvailable": false
+  },
+  "geometryUnchanged": true,
+  "runtimeRestart": true
+}

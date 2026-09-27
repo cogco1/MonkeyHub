@@ -90,7 +90,7 @@ class RenderSceneTests(unittest.TestCase):
 
     def test_old_regions_and_invalid_camera_cannot_be_silently_rebound(self):
         first=self.select();scene=self.client.get('/api/render/scene').json()['scene']
-        scene['regions']=[{'id':'belly','name':'Belly','materialId':'body','mesh':0,'shape':'box','center':[0,0,0],
+        scene['regions']=[{'id':'belly','name':'Belly','materialId':'neutral','mesh':0,'shape':'box','center':[0,0,0],
                            'radius':[1,1,1],'geometryRevision':first['geometryRevision']}]
         self.assertEqual(self.client.put('/api/render/scene',json={'scene':scene}).status_code,200)
         newer=self.select(2,first['geometryRevision'])
