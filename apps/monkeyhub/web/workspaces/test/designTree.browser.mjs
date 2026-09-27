@@ -597,14 +597,22 @@ try {
   await bar.getByRole("button", { name: "Fit", exact: true }).click();
   await tab.waitForFunction(() => document.querySelector(".design-tree__canvas")?.dataset.level === "mid");
   await tab.waitForFunction(() => !window.__treeApi.getSceneElements().some((element) => element.type === "image"));
-  await centre("candidate:run-facade-c", 1);
+  await centre("candidate:run-facade-c", 1.05);
   await settleFrames();
   assert.equal(await level(), "mid");
   assert.deepEqual(await images(), []);
   assert.equal(previewReads.length, reads, "zoomed out, nothing more is read");
   console.log(`design tree zoom levels: ${zoomShots} (far.png, mid.png, close.png)`);
+  // Fit again; the level is already the middle one, so wait for the fitted view itself before anything clicks on it.
+  const fitted = await tab.evaluate(() => window.__treeApi.getAppState().zoom.value);
   await bar.getByRole("button", { name: "Fit", exact: true }).click();
-  await tab.waitForFunction(() => document.querySelector(".design-tree__canvas")?.dataset.level === "mid");
+  await tab.waitForFunction((before) => window.__treeApi.getAppState().zoom.value !== before, fitted);
+  await tab.waitForFunction(() => new Promise((resolve) => {
+    const read = () => { const state = window.__treeApi.getAppState(); return `${state.zoom.value},${state.scrollX},${state.scrollY}`; };
+    const first = read();
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve(read() === first)));
+  }));
+  assert.equal(await level(), "mid");
 
   // Clicking a node shows its inspector; Accept exists on Current only.
   const clickNode = (id) => clickCanvasNode(tab, surface, id);
