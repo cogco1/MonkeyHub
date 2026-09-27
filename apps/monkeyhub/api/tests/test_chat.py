@@ -1464,6 +1464,55 @@ class ChatTests(unittest.TestCase):
             self.assertIn("loft", unavailable.exception.error.detail)
             self.assertIn("prism", unavailable.exception.error.detail)
 
+    def test_agent_guide_puts_geometry_first_and_takes_producers_from_studio(self):
+        """Ordinary geometry needs no GridAxis or semanticKind, and producers come from Studio (#400)."""
+
+        from archflow_studio_api.main import create_app as studio_app
+        from archflow_studio_api.settings import StudioSettings
+
+        tools = {tool["name"]: tool for tool in _tools_of(chat)}
+        modelling = tools["studio_request"]["description"]
+        self.assertNotIn("under a built component and semanticKind", modelling)
+        for rule in ("lowest sufficient expression", "semanticKind is optional",
+                     "Never ask for a GridAxis or a semanticKind for ordinary geometry",
+                     "only when the user asks for it or the meaning is already established"):
+            self.assertIn(rule, modelling)
+
+        project = self.root / "geometry-first"
+        FilesystemProjectRepository.initialize(project, project_id="geometry-first",
+                                               initial_state={"project_id": "geometry-first", "version": 0})
+        with TestClient(studio_app(StudioSettings(project_dir=project, cad_export="off"))) as client:
+            document = client.get("/openapi.json").json()
+        entity = document["components"]["schemas"]["SemanticEditRequestDto"]["properties"]["entities"]["items"]
+        offered = sorted({name for variant in entity["anyOf"]
+                          for item in variant["properties"]["fields"].get("anyOf", ())
+                          for name in item["properties"]["producer"]["enum"]})
+        self.assertIn("curve", offered)
+        # No hand-written producer list that could drift from Studio's.
+        producer_field = tools["studio_schema"]["inputSchema"]["properties"]["producer"]["description"]
+        self.assertEqual([name for name in offered if name in producer_field], [])
+        # The one producer the guide names, as its example of a specialized one, is Studio's.
+        self.assertIn("such as wall", modelling)
+        self.assertIn("wall", offered)
+
+        session = self.create()
+        with patch.object(chat, "_bound_studio", return_value=("http://127.0.0.1:8791", session.model_dump())), \
+                patch.object(chat, "_request_json", side_effect=lambda *a, **k: json.loads(json.dumps(document))):
+            with self.assertRaises(HubFailure) as unknown:
+                chat.call_tool(self.store.hub_url, session.id, "studio_schema", {
+                    "method": "POST", "path": "/api/proposals", "producer": "not-a-producer"})
+            self.assertIn(str(offered), unknown.exception.error.detail)
+            curve = chat.call_tool(self.store.hub_url, session.id, "studio_schema", {
+                "method": "POST", "path": "/api/proposals", "producer": "curve"})
+            fields = curve["components"]["schemas"]["SemanticEditRequestDto"]["properties"]["entities"]["items"]
+            selected = {name for variant in fields["anyOf"]
+                        for item in variant["properties"]["fields"].get("anyOf", ())
+                        for name in item["properties"]["producer"]["enum"]}
+            self.assertEqual(selected, {"curve"})
+            component = next(variant["properties"]["fields"] for variant in fields["anyOf"]
+                             if variant["properties"]["schema"]["enum"] == ["Component@1"])
+            self.assertNotIn("semantic_kind", component.get("required", ()))
+
     def test_existing_controls_and_candidate_continuation_are_discoverable(self):
         """One short pointer, and the bound path behind it — not a second hand-written contract."""
 

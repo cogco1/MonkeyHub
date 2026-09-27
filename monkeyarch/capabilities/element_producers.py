@@ -63,9 +63,9 @@ class ElementProducerError(ValueError):
 
 
 def producer_signatures() -> dict[str, dict[str, Any]]:
-    """The semantic authoring contracts the Studio can query and execute.
+    """The authoring contracts the Studio can query and execute.
 
-    Walls with hosted apertures, prisms, lofts, curves and bounded planar surfaces expose their
+    Prisms, bounded planar surfaces, curves, lofts and walls with hosted apertures expose their
     authored parameters here. Other existing producers remain executable;
     they are not advertised as semantic creation tools until their authored
     parameter contract is exposed here.
@@ -173,9 +173,7 @@ def producer_signatures() -> dict[str, dict[str, Any]]:
             "Only a horizontal upward extrusion publishes a horizontal top datum; tilted planes cannot claim one.",
         ],
     }
-    # The wall stays first: it is the signature the model schema's first
-    # element variant has always been, and order here is not a contract.
-    return {"wall": {
+    signatures = {"wall": {
         "producer": "wall",
         "label": "墙体与宿主开口",
         "description": (
@@ -285,6 +283,11 @@ def producer_signatures() -> dict[str, dict[str, Any]]:
             "A curve creates no face, thickness, support relation or top datum.",
         ],
     }}
+    # Agents read this table in order, so it runs from the lowest sufficient
+    # expression to the specialized realization: early modeling starts with a
+    # profile, a face or a path, and a wall is chosen when its meaning is
+    # established (#400). No caller may depend on this order.
+    return {name: signatures[name] for name in ("prism", "planar-surface", "curve", "loft", "wall")}
 
 
 def _check_signature_value(value: Any, schema: Mapping[str, Any], field_name: str) -> None:
