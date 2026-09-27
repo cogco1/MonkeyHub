@@ -66,6 +66,7 @@ class DrawingTests(CandidateTestCase):
 
     def test_model_view_projects_the_exact_step_without_writing_a_drawing(self):
         from monkeydiagram.drawing_elevation import project_model_axis_elevation
+        from monkeydiagram.mesh_views import mesh_line_view
 
         project_root = self.repository.layout.root
         before = {path.relative_to(project_root): path.read_bytes() for path in project_root.rglob("*") if path.is_file()}
@@ -73,7 +74,7 @@ class DrawingTests(CandidateTestCase):
             with self.subTest(view=view), patch(
                 "archflow_studio_api.application.drawings.project_model_axis_elevation",
                 wraps=project_model_axis_elevation,
-            ) as project:
+            ) as project, patch("archflow_studio_api.application.drawings.mesh_line_view", wraps=mesh_line_view) as mesh:
                 response = self.client.get("/api/drawings/model-view", params={**self.model, "view": view})
                 self.assertEqual(response.status_code, 200, response.text)
                 result = response.json()
@@ -86,12 +87,14 @@ class DrawingTests(CandidateTestCase):
                     self.assertEqual(image.size, (result["width"], result["height"]))
                     self.assertLessEqual(max(image.size), 1024)
                     self.assertLess(image.convert("L").getextrema()[0], 255, "the real model must leave visible lines")
-                self.assertEqual(project.call_count, 1, "one observation projects once")
+                self.assertEqual((project.call_count, mesh.call_count), (0, 1) if view == "axon" else (1, 0),
+                                 "one observation projects once")
         after = {path.relative_to(project_root): path.read_bytes() for path in project_root.rglob("*") if path.is_file()}
         self.assertEqual(after, before, "observation creates no project files or records and does not change HEAD")
 
     def test_axon_reads_the_top_view_source_and_bounds_and_a_repeat_is_not_projected_again(self):
         from monkeydiagram.drawing_elevation import project_model_axis_elevation
+        from monkeydiagram.mesh_views import mesh_line_view
 
         def read(client, view):
             response = client.get("/api/drawings/model-view", params={**self.model, "view": view})
@@ -99,37 +102,57 @@ class DrawingTests(CandidateTestCase):
             return response.json()
 
         with patch("archflow_studio_api.application.drawings.project_model_axis_elevation",
-                   wraps=project_model_axis_elevation) as project:
+                   wraps=project_model_axis_elevation) as project, \
+                patch("archflow_studio_api.application.drawings.mesh_line_view", wraps=mesh_line_view) as mesh:
             top, axon = read(self.client, "top"), read(self.client, "axon")
             again = read(self.client, "axon")
             with TestClient(create_app(self.settings)) as reopened:
                 cold = read(reopened, "axon")
-        self.assertEqual(project.call_count, 2, "a repeated view of the same exact source is not projected again")
+        # The elevation keeps the exact solve; the axonometric is drawn from the mesh.
+        self.assertEqual((project.call_count, mesh.call_count), (1, 1),
+                         "a repeated view of the same exact source is not projected again")
         self.assertEqual((again, cold), (axon, axon))
         self.assertEqual((top["source"], axon["source"]), (self.model, self.model))
         self.assertNotEqual(top["data"], axon["data"])
-        top_call, axon_call = project.call_args_list
-        # One exact source: the same physical objects of the same verified STEP.
-        self.assertEqual((top_call.kwargs["object_ids"], top_call.kwargs["unit"]),
-                         (axon_call.kwargs["object_ids"], axon_call.kwargs["unit"]))
-        self.assertEqual([entry.name for entry in top_call.args[0]], [entry.name for entry in axon_call.args[0]])
+        with Image.open(BytesIO(base64.b64decode(axon["data"]))) as image:
+            self.assertEqual(image.size, (axon["width"], axon["height"]))
+            self.assertEqual(max(image.size), 1024)
+            self.assertLess(image.convert("L").getextrema()[0], 128, "the real model must leave visible lines")
+        (top_call,), (axon_call,) = project.call_args_list, mesh.call_args_list
+        # One exact source: every physical object of the same verified STEP.
+        self.assertEqual(sorted(m.object_id for m in axon_call.args[0]), sorted(top_call.kwargs["object_ids"]))
         # One crop rule: every physical object's retained bounds on the view's own
         # sheet axes, with the same 5% margin.
         _, receipt = _complete_source(bound_project(self.app.state), ModelSource.from_dict(self.model), None)
         corners = [corner for name in receipt["physical_object_ids"] for corner in product(*zip(
             receipt["readback"][name]["bbox"]["min"], receipt["readback"][name]["bbox"]["max"]))]
-        for call in (top_call, axon_call):
-            view = call.kwargs["view"]
-            us = [sum(a * b for a, b in zip(corner, view.right)) for corner in corners]
-            vs = [sum(a * b for a, b in zip(corner, view.up)) for corner in corners]
+        for right, up, crop in ((top_call.kwargs["view"].right, top_call.kwargs["view"].up, top_call.kwargs["view"].crop_uv),
+                                (axon_call.kwargs["right"], axon_call.kwargs["up"], axon_call.kwargs["crop_uv"])):
+            us = [sum(a * b for a, b in zip(corner, right)) for corner in corners]
+            vs = [sum(a * b for a, b in zip(corner, up)) for corner in corners]
             margin = max(max(us) - min(us), max(vs) - min(vs), .001) * .05
-            for actual, expected in zip(view.crop_uv, (min(us) - margin, min(vs) - margin,
-                                                        max(us) + margin, max(vs) + margin)):
+            for actual, expected in zip(crop, (min(us) - margin, min(vs) - margin, max(us) + margin, max(vs) + margin)):
                 self.assertAlmostEqual(actual, expected, places=9)
         # The axonometric view looks down across the model, Z up on the sheet.
-        self.assertLess(axon_call.kwargs["view"].look[2], 0)
-        self.assertGreater(axon_call.kwargs["view"].up[2], 0)
+        right, up = axon_call.kwargs["right"], axon_call.kwargs["up"]
+        self.assertLess(-(right[0] * up[1] - right[1] * up[0]), 0)
+        self.assertGreater(up[2], 0)
         self.assertEqual(self.client.get("/api/documents", params={"runId": self.model["runId"]}).json()["documents"], [])
+
+    def test_a_drawn_view_reports_load_and_render_time_separately(self):
+        from archflow_studio_api.application.drawings import draw_model_view
+
+        binding = bound_project(self.app.state)
+        for view in ("axon", "front"):
+            with self.subTest(view=view):
+                drawn = draw_model_view(binding, model_source=ModelSource.from_dict(self.model), view=view, size_px=512)
+                self.assertGreater(drawn.load_s, 0)
+                self.assertGreater(drawn.render_s, 0)
+                self.assertLessEqual(max(drawn.width, drawn.height), 512)
+        tagged = draw_model_view(binding, model_source=ModelSource.from_dict(self.model), view="axon", size_px=256,
+                                 png_text={"archflow:recipe": "synthetic"})
+        with Image.open(BytesIO(tagged.png)) as image:
+            self.assertEqual(image.text, {"archflow:recipe": "synthetic"})
 
     def test_model_view_keeps_the_named_run_after_a_new_candidate_and_bounds_large_models(self):
         original = self.client.get("/api/drawings/model-view", params=self.model)

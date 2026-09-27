@@ -78,6 +78,25 @@ class StudioChildEnvironmentTests(unittest.TestCase):
         )
         self.assertEqual(environment["UNRELATED_SETTING"], "kept")
 
+    def test_the_child_gets_its_project_cache_directory_outside_the_project(self):
+        from types import SimpleNamespace
+
+        launches = []
+        self.applications.source_revision = "synthetic-revision"
+        with patch.dict(os.environ, self.inherited, clear=True), \
+                patch("monkeyhub_api.applications.ProjectManifest.from_dict",
+                      return_value=SimpleNamespace(project_id="synthetic-project")), \
+                patch.object(self.applications.supervisor, "start", side_effect=launches.append), \
+                patch.object(self.applications, "status"):
+            self.applications.start("monkeyarch", project_dir=str(self.project))
+        (launch,) = launches
+        runtime_id = self.applications.runtime_id("synthetic-project", launch.project_dir)
+        expected = (self.root / "runtime").resolve() / "cache" / "projects" / runtime_id
+        self.assertEqual(Path(launch.environment["ARCHFLOW_STUDIO_CACHE_DIR"]), expected)
+        self.assertFalse(expected.is_relative_to(self.project.resolve()))
+        with patch.dict(os.environ, launch.environment, clear=True):
+            self.assertEqual(StudioSettings.from_env().project_cache_dir, expected)
+
     def test_saved_preferences_and_settings_reach_the_child(self):
         self.save_preferences(intentProvider="codex", intentModel="gpt-5", intentTimeoutS=45.5)
         with patch.dict(os.environ, self.inherited, clear=True):
