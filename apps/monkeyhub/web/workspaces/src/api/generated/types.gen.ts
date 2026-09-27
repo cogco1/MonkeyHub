@@ -7052,6 +7052,67 @@ export type ProjectVersionDto = {
 };
 
 /**
+ * ProjectionStatusDto
+ *
+ * One projection key and where it stands. Pending or error: show a placeholder, do not cache it.
+ */
+export type ProjectionStatusDto = {
+    /**
+     * Key
+     */
+    key: string;
+    /**
+     * Status
+     */
+    status: 'pending' | 'done' | 'error';
+    /**
+     * Kind
+     */
+    kind: string;
+    /**
+     * Recipe
+     */
+    recipe: {
+        [key: string]: unknown;
+    };
+    /**
+     * Renderer
+     */
+    renderer: string;
+    /**
+     * Inputsha256
+     */
+    inputSha256: string;
+    source: ModelSourceDto;
+    /**
+     * Blobsha256
+     */
+    blobSha256?: string | null;
+    /**
+     * Bloburl
+     *
+     * Immutable PNG bytes; present only when status is done.
+     */
+    blobUrl?: string | null;
+    /**
+     * Attempts
+     */
+    attempts: number;
+    /**
+     * Error
+     */
+    error?: string | null;
+    /**
+     * Loadms
+     */
+    loadMs?: number | null;
+    /**
+     * Renderms
+     */
+    renderMs?: number | null;
+};
+
+/**
  * ProposalChangeDto
  *
  * The number as the record has it, and the number proposed for it.
@@ -17104,3 +17165,145 @@ export type ReadWorkingSourceApiWorkingSourceGetResponses = {
 };
 
 export type ReadWorkingSourceApiWorkingSourceGetResponse = ReadWorkingSourceApiWorkingSourceGetResponses[keyof ReadWorkingSourceApiWorkingSourceGetResponses];
+
+export type RequestProjectionApiProjectionsGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query: {
+        /**
+         * Runid
+         */
+        runId: string;
+        /**
+         * Statedigest
+         */
+        stateDigest: string;
+        /**
+         * Assetsha256
+         */
+        assetSha256: string;
+        /**
+         * Kind
+         */
+        kind?: string;
+        /**
+         * View
+         */
+        view?: string | null;
+        /**
+         * Size
+         */
+        size?: number | null;
+        /**
+         * Style
+         */
+        style?: string | null;
+    };
+    url: '/api/projections';
+};
+
+export type RequestProjectionApiProjectionsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RequestProjectionApiProjectionsGetError = RequestProjectionApiProjectionsGetErrors[keyof RequestProjectionApiProjectionsGetErrors];
+
+export type RequestProjectionApiProjectionsGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: ProjectionStatusDto;
+};
+
+export type RequestProjectionApiProjectionsGetResponse = RequestProjectionApiProjectionsGetResponses[keyof RequestProjectionApiProjectionsGetResponses];
+
+export type ReadProjectionBlobApiProjectionsBlobsSha256GetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path: {
+        /**
+         * Sha256
+         */
+        sha256: string;
+    };
+    query?: never;
+    url: '/api/projections/blobs/{sha256}';
+};
+
+export type ReadProjectionBlobApiProjectionsBlobsSha256GetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadProjectionBlobApiProjectionsBlobsSha256GetError = ReadProjectionBlobApiProjectionsBlobsSha256GetErrors[keyof ReadProjectionBlobApiProjectionsBlobsSha256GetErrors];
+
+export type ReadProjectionBlobApiProjectionsBlobsSha256GetResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
+export type ReadProjectionApiProjectionsKeyGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path: {
+        /**
+         * Key
+         */
+        key: string;
+    };
+    query?: never;
+    url: '/api/projections/{key}';
+};
+
+export type ReadProjectionApiProjectionsKeyGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadProjectionApiProjectionsKeyGetError = ReadProjectionApiProjectionsKeyGetErrors[keyof ReadProjectionApiProjectionsKeyGetErrors];
+
+export type ReadProjectionApiProjectionsKeyGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: ProjectionStatusDto;
+};
+
+export type ReadProjectionApiProjectionsKeyGetResponse = ReadProjectionApiProjectionsKeyGetResponses[keyof ReadProjectionApiProjectionsKeyGetResponses];
