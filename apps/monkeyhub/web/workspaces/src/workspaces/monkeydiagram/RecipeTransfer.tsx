@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useStudio } from "../../api/ProjectRuntimeContext";
 import { asStudioApiError } from "../../api/client";
 import type { DecisionDto, RecipeGraphicsDto, RecipeInspectDto } from "../../api/generated";
 import { usePreferences } from "../../features/settings/preferences";
+import { DrawingMenu } from "./DrawingMenu";
 import "./RecipeTransfer.css";
 
 const words = {
@@ -24,8 +25,13 @@ const words = {
   },
 };
 
-/** Transfer an explicitly saved recipe, never a drawing, model or automatic preference. */
-export default function RecipeTransfer({ projectId, active = true }: { projectId: string; active?: boolean }) {
+/**
+ * Transfer an explicitly saved recipe, never a drawing, model or automatic preference. #337: the Drawing places
+ * the parts: the saved recipes and the file choice are a menu in its bar, a file waiting for confirmation or a
+ * failure asks in its row above the drawing (the menu then closes, so the row is in sight), and what happened is a
+ * quiet note on its status line until the Drawing clears it.
+ */
+export function useRecipeTransfer(projectId: string, active = true): { menu: ReactNode; row: ReactNode; note: string | null; clearNote(): void } {
   const studio = useStudio(), { language } = usePreferences(), text = words[language];
   const [open, setOpen] = useState(false), [recipes, setRecipes] = useState<DecisionDto[]>([]);
   const [busy, setBusy] = useState(false), [error, setError] = useState<string | null>(null), [note, setNote] = useState<string | null>(null);
@@ -36,6 +42,9 @@ export default function RecipeTransfer({ projectId, active = true }: { projectId
     setRecipes([]); setPending(null); setError(null); setNote(null); setOpen(false); setBusy(false);
     return () => { generation.current += 1; };
   }, [studio, projectId]);
+  // The menu does not stay open behind another surface.
+  useEffect(() => { if (!active) setOpen(false); }, [active]);
+  const fail = (cause: unknown) => { setError(asStudioApiError(cause).detail); setOpen(false); };
 
   const values = (graphics: RecipeGraphicsDto) => (Object.keys(text.pens) as (keyof typeof text.pens)[])
     .filter(key => graphics[key] != null).map(key => `${text.pens[key]} ${graphics[key]} mm`).join(" · ");
@@ -48,7 +57,7 @@ export default function RecipeTransfer({ projectId, active = true }: { projectId
     const token = generation.current;
     setBusy(true); setError(null);
     try { const rows = await readRecipes(); if (token === generation.current) setRecipes(rows); }
-    catch (cause) { if (token === generation.current) setError(asStudioApiError(cause).detail); }
+    catch (cause) { if (token === generation.current) fail(cause); }
     finally { if (token === generation.current) setBusy(false); }
   }
   async function download(row: DecisionDto) {
@@ -62,7 +71,7 @@ export default function RecipeTransfer({ projectId, active = true }: { projectId
       anchor.href = url; anchor.download = file.fileName;
       anchor.click(); window.setTimeout(() => URL.revokeObjectURL(url), 1000);
       setNote(text.exported);
-    } catch (cause) { if (token === generation.current) setError(asStudioApiError(cause).detail); }
+    } catch (cause) { if (token === generation.current) fail(cause); }
     finally { if (token === generation.current) setBusy(false); }
   }
   async function inspect(file: File) {
@@ -73,8 +82,8 @@ export default function RecipeTransfer({ projectId, active = true }: { projectId
       const content = await file.text();
       const preview = await studio.inspectDrawingRecipe({ projectId, content });
       if (preview.projectId !== projectId) throw new Error("The recipe preview belongs to another project.");
-      if (token === generation.current) setPending({ content, preview });
-    } catch (cause) { if (token === generation.current) setError(asStudioApiError(cause).detail); }
+      if (token === generation.current) { setPending({ content, preview }); setOpen(false); }
+    } catch (cause) { if (token === generation.current) fail(cause); }
     finally { if (token === generation.current) setBusy(false); }
   }
   async function confirm() {
@@ -89,37 +98,37 @@ export default function RecipeTransfer({ projectId, active = true }: { projectId
       setPending(null); setNote(text.imported);
       const rows = await readRecipes();
       if (token === generation.current) setRecipes(rows);
-    } catch (cause) { if (token === generation.current) setError(asStudioApiError(cause).detail); }
+    } catch (cause) { if (token === generation.current) fail(cause); }
     finally { if (token === generation.current) setBusy(false); }
   }
 
-  return <details className="recipe-transfer" open={open} onToggle={event => {
-    const expanded = event.currentTarget.open; setOpen(expanded);
+  const menu = <DrawingMenu label={text.title} className="recipe-transfer" panelClassName="recipe-transfer__body" open={open} onOpenChange={expanded => {
+    setOpen(expanded);
     if (expanded && !open && active && !busy) void refresh();
   }}>
-    <summary>{text.title}</summary>
-    {open && <div className="recipe-transfer__body">
-      <p>{text.hint}</p>
-      <button type="button" disabled={busy || !active} onClick={() => void refresh()}>{text.refresh}</button>
-      {recipes.length === 0 && !busy && <p>{text.empty}</p>}
-      <ul>{recipes.map(row => <li key={row.decisionId}>
-        <span>{row.typedBinding?.kind === "recipe" && values(row.typedBinding.graphics)} · {row.scope.extent === "stage" ? text.stage : text.project}</span>
-        <button type="button" disabled={busy || !active} onClick={() => void download(row)}>{text.export}</button>
-        {row.source.kind === "recipe-export" && <details><summary>{text.version}</summary><p>{text.fileVersion}: {row.source.exportSha256}</p></details>}
-      </li>)}</ul>
-      <label className="recipe-transfer__file">{text.file}<input type="file" accept=".json,application/json" disabled={busy || !active} onChange={event => {
-        const file = event.target.files?.[0]; event.target.value = ""; if (file) void inspect(file);
-      }} /></label>
-      {pending && <div className="recipe-transfer__preview">
-        <strong>{values(pending.preview.graphics)}</strong><p>{text.preview}</p>
+    <p>{text.hint}</p>
+    <button type="button" disabled={busy || !active} onClick={() => void refresh()}>{text.refresh}</button>
+    {recipes.length === 0 && !busy && <p>{text.empty}</p>}
+    <ul>{recipes.map(row => <li key={row.decisionId}>
+      <span>{row.typedBinding?.kind === "recipe" && values(row.typedBinding.graphics)} · {row.scope.extent === "stage" ? text.stage : text.project}</span>
+      <button type="button" disabled={busy || !active} onClick={() => void download(row)}>{text.export}</button>
+      {row.source.kind === "recipe-export" && <details><summary>{text.version}</summary><p>{text.fileVersion}: {row.source.exportSha256}</p></details>}
+    </li>)}</ul>
+    <label className="recipe-transfer__file">{text.file}<input type="file" accept=".json,application/json" disabled={busy || !active} onChange={event => {
+      const file = event.target.files?.[0]; event.target.value = ""; if (file) void inspect(file);
+    }} /></label>
+  </DrawingMenu>;
+  const row = (pending || error) && <>
+    {pending && <div className="recipe-transfer__preview">
+      <div><strong>{values(pending.preview.graphics)}</strong><p>{text.preview}</p>
         <details><summary>{text.version}</summary><p>{text.fileVersion}: {pending.preview.exportSha256}</p>
-          <p>{text.decision}: {pending.preview.sourceDecisionId}</p><p>{text.source}: {pending.preview.sourceRevisionSha256}</p></details>
-        <button type="button" disabled={busy || !active} onClick={() => void confirm()}>{text.confirm}</button>
+          <p>{text.decision}: {pending.preview.sourceDecisionId}</p><p>{text.source}: {pending.preview.sourceRevisionSha256}</p></details></div>
+      <div className="recipe-transfer__actions">
+        <button type="button" className="btn--accent" disabled={busy || !active} onClick={() => void confirm()}>{text.confirm}</button>
         <button type="button" disabled={busy} onClick={() => setPending(null)}>{text.cancel}</button>
-      </div>}
-      {busy && <p role="status">{text.working}</p>}
-      {note && <p role="status">{note}</p>}
-      {error && <p role="alert">{error}</p>}
+      </div>
     </div>}
-  </details>;
+    {error && <p className="recipe-transfer__error" role="alert">{error}</p>}
+  </>;
+  return { menu, row, note: busy ? text.working : note, clearNote: () => setNote(null) };
 }
