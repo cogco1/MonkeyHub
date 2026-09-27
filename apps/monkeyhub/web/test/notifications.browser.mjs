@@ -11,7 +11,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const root = path.resolve(process.env.MONKEYHUB_WEB_DIST ?? fileURLToPath(new URL("../dist/", import.meta.url)));
 const screenshots = process.env.ATTENTION_SCREENSHOTS ?? await mkdtemp(path.join(tmpdir(), "monkeyhub-attention-"));
 await mkdir(screenshots, { recursive: true });
-const POLL_MS = 4000, FADE_MS = 8000;
+const POLL_MS = 4000, QUIET_POLL_MS = 30_000, FADE_MS = 8000;
 
 const projectDir = "D:\\fixture\\住宅";
 const runtimeId = "runtime-house";
@@ -103,6 +103,8 @@ await context.route((url) => url.pathname.startsWith("/api/"), async (route) => 
   if (url.pathname === "/api/chat/workspace") return json({ workspaceDir: "D:\\fixture", configured: true, projects: ["住宅"] });
   if (url.pathname === "/api/settings/user") return json(userSettings);
   if (url.pathname === "/api/settings/apps") return json(launch);
+  // #334: Settings lists which keys are in use; this Hub has none.
+  if (url.pathname === "/api/credentials") return json([]);
   if (url.pathname === "/api/apps") return json(apps());
   if (url.pathname === "/api/runtime") return json(runtimeSnapshot());
   if (url.pathname === "/api/runtime/projects/open") return json(runtime());
@@ -328,6 +330,47 @@ try {
     await page.clock.fastForward(1000);
     await page.waitForTimeout(150);
     assert.equal(documentLoads, loads, "the shell answered the event, so the page did not reload");
+  });
+
+  await step("with every chat quiet, a short turn is still noticed, hidden or not", async () => {
+    // #364: a quiet chat list is read every 30 s; input and hiding the window bring the next reading forward.
+    change("chat-sun", { status: "idle", attention: null });
+    await poll();
+    let before = sessionReads;
+    await page.clock.fastForward(QUIET_POLL_MS);
+    await page.waitForTimeout(150);
+    assert.ok(sessionReads > before, "quiet readings continue");
+    before = sessionReads;
+    await page.clock.fastForward(POLL_MS);
+    await page.waitForTimeout(150);
+    assert.equal(sessionReads, before, "a quiet list is not read every four seconds");
+    // The architect sends in this window: the key comes before the turn it starts.
+    await page.keyboard.press("Shift");
+    change("chat-site", { status: "running" });
+    await poll();
+    change("chat-site", { status: "idle" });
+    await poll();
+    await toast("「场地分析」已完成").waitFor();
+    await page.clock.fastForward(FADE_MS + 1000);
+    await page.clock.fastForward(500);
+    await toast("「场地分析」已完成").waitFor({ state: "detached" });
+    // Quiet again, and nothing typed for a while; a turn under way when the window is hidden, finished behind it.
+    await page.clock.fastForward(QUIET_POLL_MS);
+    await page.clock.fastForward(QUIET_POLL_MS);
+    await page.waitForTimeout(150);
+    const notesBefore = (await notes()).length;
+    change("chat-roof", { status: "running", error: null });
+    before = sessionReads;
+    await setVisibility("hidden");
+    await until(() => sessionReads > before, "hiding the window reads the chat list");
+    await page.waitForTimeout(150);
+    change("chat-roof", { status: "idle" });
+    await poll();
+    await until(async () => (await notes()).length === notesBefore + 1, "a turn finished behind the window reaches the OS");
+    assert.equal((await notes()).at(-1).title, "「屋面排水」已完成");
+    assert.equal(await page.title(), "(1) MonkeyHub");
+    await setVisibility("visible");
+    await until(async () => await page.title() === "MonkeyHub", "the count resets when the window is seen");
   });
 
   await step("a Hub page framed inside another leaves notices to that page", async () => {
