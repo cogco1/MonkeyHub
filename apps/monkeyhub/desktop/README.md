@@ -59,12 +59,31 @@ There is no checkout discovery or active-install fallback. With no overrides,
 the EXE uses its own parent as the source root and `%LOCALAPPDATA%/MonkeyHub` as
 the existing nonproject runtime root. Hub holds `runtime/hub.lock` through its
 complete shutdown, including a drain after the desktop is force-closed. A second
-desktop or browser Hub using the same root refuses to start; use a separate
-explicit runtime root when running independent instances.
+desktop on the same root brings the open window forward instead of starting (see
+below); a browser Hub using that root refuses to start. Use a separate explicit
+runtime root when running independent instances.
 An already-running older Hub that predates this lock must be stopped before
 using its runtime directory; this host does not stop or adopt that process.
 
 ## Lifecycle and diagnostics
+
+One desktop runs per runtime root (#373). Before it creates a window, a log or
+Hub, a window launch takes the Windows named mutex `Local\MonkeyHub-<hash>`. The
+hash is the first 32 hex digits of the SHA-256 of the canonical runtime root,
+written without a `\\?\` prefix or trailing separator and in lower case, so every
+spelling of one directory, a junction included, gets the same name. The owner keeps
+the mutex until its process exits, including the drain after closing. Its
+message-only window, whose class name carries the same hash, runs on its own thread.
+A repeated launch on that root finds this window, allows the owner to take the
+foreground and asks it to restore and raise its main window. It then shows the
+notice "MonkeyHub 已在运行，已切换到打开的窗口。" and exits with code 0 after OK.
+It opens no window, log or Hub. If the owner is still starting, the notice says so.
+`--version` and `--complete-update` take no mutex. `--update-trial` waits up to
+10 seconds for the previous desktop's mutex. If that desktop is still running,
+the trial exits non-zero without a notice or activation, and the update helper
+rolls back. Other runtime roots use other names, so explicit independent roots
+still run side by side. `hub.lock` stays the second guard, including against the
+browser entry.
 
 The shell selects an ephemeral `127.0.0.1` port and sends Hub a fresh managed
 instance UUID. A positive `/api/health` must match the spawned PID, desktop parent
@@ -161,6 +180,11 @@ input, not an application import from the development checkout. Reinstallation
 between close and reopen must preserve its retained bytes and user settings.
 The package manifest identifies Node/ACP versions, Python dependency lock and
 frontend asset hashes alongside the bound desktop/source version.
+For #373, unit tests cover the mutex name for different spellings of one root and
+for different roots, and a held versus abandoned mutex. The installed suite starts
+a second desktop on a root in use, which must raise the minimized first window and
+show its notice, and an update trial on a root in use, which must fail silently.
+It also starts a desktop on another explicit root, which must run alongside.
 
 This is an isolated environment on the Windows runner, which already supplies
 WebView2; it is not a second clean user machine. Clean-machine acceptance and root

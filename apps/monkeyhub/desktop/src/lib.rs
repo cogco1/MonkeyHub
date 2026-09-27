@@ -14,6 +14,7 @@ use url::Url;
 use uuid::Uuid;
 
 pub mod updates;
+pub mod single_instance;
 
 pub const SOURCE_REVISION: &str = env!("ARCHFLOW_SOURCE_REVISION");
 
