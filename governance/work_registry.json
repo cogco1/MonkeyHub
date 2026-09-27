@@ -1,27 +1,4 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": [
-    {
-      "id": "GH-411",
-      "lanes": [
-        {
-          "id": "fab-url",
-          "status": "active",
-          "branch": "codex/411-flaky-fab-url",
-          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-411-flaky-fab-url",
-          "base_ref": "89293470",
-          "contributor": "Claude",
-          "reviewer": "Claude root task",
-          "handoff": "cloud session; master integrates",
-          "modules": [
-            "hub.shell"
-          ],
-          "write_scope": [
-            "apps/monkeyhub/web/test/chatShell.browser.mjs"
-          ],
-          "depends_on": []
-        }
-      ]
-    }
-  ]
+  "items": []
 }
