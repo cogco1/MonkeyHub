@@ -539,6 +539,28 @@
       "kind": "distribution_build",
       "owner": "tools.package_monkeyapps",
       "reason": "Writes a developer delta ZIP only to the explicit output outside both input bundles; inputs are read-only and only the bounded temporary ZIP is cleaned on failure."
+    },
+    {
+      "path": "apps/archflow-studio/api/archflow_studio_api/application/projections.py",
+      "function": "put",
+      "operations": [
+        "mkdir",
+        "replace",
+        "unlink"
+      ],
+      "kind": "projection_cache",
+      "owner": "studio.artifacts",
+      "reason": "The projection cache (ADR-008, #367): PNG blobs named by their own sha256 under the project's Hub cache directory, never the project folder; written to a temp file then renamed, and removed by the reachability collector after a grace window. Derived, deletable and never cited as evidence."
+    },
+    {
+      "path": "apps/archflow-studio/api/archflow_studio_api/application/projections.py",
+      "function": "collect",
+      "operations": [
+        "unlink"
+      ],
+      "kind": "projection_cache",
+      "owner": "studio.artifacts",
+      "reason": "The projection cache (ADR-008, #367): PNG blobs named by their own sha256 under the project's Hub cache directory, never the project folder; written to a temp file then renamed, and removed by the reachability collector after a grace window. Derived, deletable and never cited as evidence."
     }
   ],
   "forbidden_layer_imports": [
