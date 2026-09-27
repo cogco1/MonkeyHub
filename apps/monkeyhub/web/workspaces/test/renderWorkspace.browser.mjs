@@ -51,8 +51,15 @@ from archflow_studio_api.settings import StudioSettings
 from archflow_studio_api.application.render_contract import RenderCapability, RenderOutput, RenderProviderError
 root, project_id, port = Path(sys.argv[1]), sys.argv[2], int(sys.argv[3])
 capture_fixture = project_id == 'capture'
+native_fixture = project_id == 'native'
 reference_run = None
-if capture_fixture:
+if native_fixture:
+    from tests.collaboration_support import seed_collaboration_project
+    root=root/'native'
+    seeded=seed_collaboration_project(root/'demo-project')
+    project_id='demo-project';reference_run=seeded['referenceRun']
+    repo=FilesystemProjectRepository.open(root/project_id)
+elif capture_fixture:
     from fastapi.testclient import TestClient
     from tests.support import PROJECT_ID, REFERENCE_RUN_ID, make_project, runner_state_digest
     from tests.test_working_copies import register_model
@@ -80,7 +87,7 @@ class Adapter:
         if 'UNKNOWN' in request.direction: raise RenderProviderError('unknown','transport_unknown')
         return RenderOutput(image('#c4a16d'), 'image/png')
 adapter=Adapter()
-app=create_app(StudioSettings(project_dir=project,reference_run=reference_run,cad_export='off',monitor_dir=root/'monitor'),render_adapter=adapter)
+app=create_app(StudioSettings(project_dir=project,reference_run=reference_run,cad_export='occt' if native_fixture else 'off',monitor_dir=root/'monitor'),render_adapter=adapter)
 if capture_fixture:
     client = TestClient(app)
     model_bytes = (Path.cwd()/'tests/fixtures/model-source-a.3dm').read_bytes()
@@ -178,6 +185,7 @@ async function api(project, route, method = "GET", body) {
 async function step(name, action) {
   if (process.argv.includes("--capture-only") && !name.startsWith("perspective and orthographic")) return;
   if (process.argv.includes("--regions-only") && !name.startsWith("Physical real geometry") && !name.startsWith("model-driven region")) return;
+  if (process.argv.includes("--working-only") && !name.startsWith("Physical follows real OCCT")) return;
   current = name; await action(); passed.push(name); console.log(`PASS ${name}`);
 }
 const fixture = `
@@ -231,8 +239,17 @@ window.captureFixture={source,setProjection,setIssue:value=>{sourceIssue=value;}
  snapshot:()=>{const view=readView();return view?{modelSource:view.modelSource,sourceStageRef:view.sourceStageRef,aspect:view.aspect,worldMatrix:view.camera.matrixWorld.toArray(),projectionMatrix:view.camera.projectionMatrix.toArray()}:null;}};
 createRoot(document.getElementById('root')).render(<UserPreferencesProvider baseUrl={location.origin+'/capture'}><RenderWorkspace projectId={source.projectId} active={true} refreshKey={0} onBoard={()=>{}} readModelView={readView} onModeling={()=>{}}/></UserPreferencesProvider>);
 `;
+const nativeFixture = `
+import React from 'react';
+import {createRoot} from 'react-dom/client';
+import {ProjectWorkspace} from '/src/app/ProjectWorkspace';
+import {UserPreferencesProvider} from '/test/TestProviders';
+import '/src/styles.css';
+import '/src/workspaces/render/render.css';
+createRoot(document.getElementById('root')).render(<UserPreferencesProvider baseUrl={location.origin+'/native'}><ProjectWorkspace expectedProjectId="demo-project" workspace="render" active={true} onWorkspaceChange={()=>{}}/></UserPreferencesProvider>);
+`;
 try {
-  for (const id of ["project-a", "project-b", "capture"]) {
+  for (const id of ["project-a", "project-b", "capture", "native"]) {
     const port = await freePort();
     const child = spawn(python, ["-c", pythonSource, temporary, id, String(port)], { cwd: apiRoot, env: pythonEnv, stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
     const process = { child, log: "", id, port }; processes.push(process);
@@ -244,12 +261,12 @@ try {
   server = await createServer({ root: webRoot, configFile: false, publicDir: "../.generated/public", cacheDir: path.join(temporary, "vite"), logLevel: "error",
     resolve: { dedupe: ["react", "react-dom"] }, optimizeDeps: { include: ["react", "react-dom/client", "react/jsx-runtime", "react/jsx-dev-runtime"] },
     server: { host: "127.0.0.1", port: 0, strictPort: true, proxy: Object.fromEntries(Object.entries(origins).map(([id, target]) => [`/${id}`, { target, rewrite: (url) => url.slice(id.length + 1) }])) },
-    plugins: [{ name: "render-fixture", resolveId(id) { if (["/render-fixture.tsx", "/camera-fixture.tsx"].includes(id)) return path.join(webRoot, id.slice(1)).replaceAll("\\", "/"); },
-      load(id) { if (id === path.join(webRoot, "render-fixture.tsx").replaceAll("\\", "/")) return fixture;
+    plugins: [{ name: "render-fixture", resolveId(id) { if (["/render-fixture.tsx", "/camera-fixture.tsx", "/working-fixture.tsx"].includes(id)) return path.join(webRoot, id.slice(1)).replaceAll("\\", "/"); },
+      load(id) { if (id === path.join(webRoot, "working-fixture.tsx").replaceAll("\\", "/")) return nativeFixture; if (id === path.join(webRoot, "render-fixture.tsx").replaceAll("\\", "/")) return fixture;
         if (id === path.join(webRoot, "camera-fixture.tsx").replaceAll("\\", "/")) return captureFixture; },
       configureServer(vite) { vite.middlewares.use((request, response, next) => {
-        if (request.url !== "/" && request.url !== "/camera") return next();
-        response.setHeader("content-type", "text/html"); response.end('<html><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><style>html,body,#root{height:100%;margin:0}nav{height:44px;display:flex;gap:8px}*{box-sizing:border-box}</style></head><body><div id="root" class="project-workspace"></div><script type="module" src="/'+(request.url === '/camera' ? 'camera' : 'render')+'-fixture.tsx"></script></body></html>');
+        if (request.url !== "/" && request.url !== "/camera" && request.url !== "/working") return next();
+        response.setHeader("content-type", "text/html"); response.end('<html><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><style>html,body,#root{height:100%;margin:0}nav{height:44px;display:flex;gap:8px}*{box-sizing:border-box}</style></head><body><div id="root" class="project-workspace"></div><script type="module" src="/'+(request.url === '/working' ? 'working' : request.url === '/camera' ? 'camera' : 'render')+'-fixture.tsx"></script></body></html>');
       }); },
     }],
   });
@@ -805,6 +822,35 @@ try {
     await select('project-a');await until(()=>panel().locator('[data-region-id]').count(),n=>n===7,'sample after switch back');
     await writeFile(path.join(temporary,'region-isolation.json'),JSON.stringify({sample:process.env.PENGUIN_TEST_GLB?'actual-user-penguin':'architecture-with-retained-sample-config',inputSha256:createHash('sha256').update(sourceBytes).digest('hex'),savedA,savedB,geometryUnchanged:true,runtimeRestart:true},null,2));
     await regionPage.close();assert.deepEqual(errors,[]);
+  });
+  await step("Physical follows real OCCT Working Head and marks derived drawings stale", async () => {
+    const nativePage=await browser.newPage({viewport:{width:1440,height:1050}});
+    nativePage.on('pageerror',e=>errors.push(String(e)));
+    const selectionWrites=[];nativePage.on('request',r=>{if(r.method()==='PUT' && r.url().endsWith('/api/render/geometry'))selectionWrites.push(r.url());});
+    await nativePage.goto(origin+'working');
+    const panel=nativePage.getByRole('region',{name:'Physical Render Scene',exact:true});
+    await panel.locator('canvas').waitFor().catch(async error=>{console.error(await nativePage.locator('body').innerText());console.error(processes.find(p=>p.id==='native').log);await nativePage.screenshot({path:path.join(temporary,'native-failure.png'),fullPage:true});throw error;});
+    assert.match(await panel.innerText(),/Following the current Working Head/);
+    await panel.getByRole('button',{name:'Save scene',exact:true}).click();
+    await until(()=>api('native','/api/render/scene'),s=>s.status==='current','native appearance saved');
+    await panel.getByRole('button',{name:'Generate / update four views',exact:true}).click();
+    await until(()=>api('native','/api/render/drawings'),r=>r.length===4,'native drawings');
+    const source=(await api('native','/api/render/geometry')).source;
+    const proposal=await api('native','/api/proposals','POST',{utterance:'set height to 1.1',elementId:'portico-base',targetComponentId:'portico',sourceRunId:source.runId,stateDigest:source.modelSource.stateDigest});
+    const started=await api('native',`/api/proposals/${proposal.proposalId}/candidate`,'POST');
+    await until(()=>api('native',`/api/jobs/${started.jobId}`),j=>j.status==='succeeded','OCCT candidate done');
+    assert.equal((await api('native','/api/render/geometry')).source.geometryRevision,source.geometryRevision);
+    const position=await api('native','/api/working-draft');
+    await api('native','/api/working-draft','PUT',{projectId:'demo-project',runId:started.candidateId,baseRevisionSha256:position.revisionSha256});
+    await panel.getByText('Geometry changed. Material regions and camera require review. Old regions are unresolved.',{exact:true}).waitFor();
+    const stale=await api('native','/api/render/drawings');assert.ok(stale.every(r=>r.status==='outdated'));
+    await panel.getByRole('button',{name:'Generate / update four views',exact:true}).click();
+    await until(()=>api('native','/api/render/drawings'),r=>r.length===8 && r.filter(d=>d.status==='current').length===4,'regenerated current native drawings');
+    await nativePage.reload();
+    await panel.getByText('Geometry changed. Material regions and camera require review. Old regions are unresolved.',{exact:true}).waitFor();
+    assert.equal(selectionWrites.length,0,'no duplicate geometry selection was written');
+    await nativePage.screenshot({path:path.join(temporary,'native-working-head.png'),fullPage:true});
+    await nativePage.close();assert.deepEqual(errors,[]);
   });
   await step("cold real Hub Render leaves every project content file unchanged; entering Arch seeds only then", async () => {
     const ports = [await freePort(), await freePort(), await freePort()];

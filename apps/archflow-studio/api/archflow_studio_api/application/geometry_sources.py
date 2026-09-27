@@ -6,16 +6,28 @@ from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.refs import ProjectArtifactRef
 from archflow.project.record_kinds import STUDIO_GEOMETRY_SELECTION
 from . import model_exports
+from .working_draft import resolve_working_source
 from .artifacts import artifact_bytes,register_model_asset
 from ..transport.errors import StudioError
 
 RUN = "studio-geometry"
 
 def current_geometry(binding):
-    if RUN not in binding.run_ids():
+    rows = [] if RUN not in binding.run_ids() else [
+        binding.repository.load_json(r) for r in binding.record_refs(RUN, kind=STUDIO_GEOMETRY_SELECTION)]
+    if rows:
+        # Explicit imported/registered selections remain frozen, including legacy scenes.
+        return max(rows, key=lambda r: r['sequence'])
+    working = resolve_working_source(binding, "render")
+    if not working.compatible or working.source is None:
         return None
-    rows=[binding.repository.load_json(r) for r in binding.record_refs(RUN,kind=STUDIO_GEOMETRY_SELECTION)]
-    return max(rows,key=lambda r:r['sequence']) if rows else None
+    model = working.source
+    artifact, _ = artifact_bytes(binding, model.asset_sha256, run_id=model.run_id)
+    return {'projectId': binding.project_id, 'runId': model.run_id,
+            'assetSha256': model.asset_sha256, 'geometryRevision': model.asset_sha256,
+            'format': '3dm', 'label': artifact.file_name, 'kind': 'working-head',
+            'modelSource': model.to_dict(), 'workingRevision': working.revision_sha256,
+            'warnings': list(working.warnings)}
 
 def geometry_bytes(binding, source):
     if source.get('artifact'):

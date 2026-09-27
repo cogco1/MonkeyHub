@@ -238,7 +238,14 @@
         "apps/monkeyhub/web/workspaces/src/workspaces/monkeyarch/viewer/ThreeDmViewport.tsx",
         "apps/monkeyhub/desktop/tests/test_runtime.py",
         ".github/workflows/verify.yml",
-        ".github/workflows/desktop.yml"
+        ".github/workflows/desktop.yml",
+        "apps/archflow-studio/api/tests/test_working_geometry.py",
+        "apps/monkeyhub/web/workspaces/src/workspaces/render/PhysicalWorkspace.tsx",
+        "apps/monkeyhub/web/workspaces/src/workspaces/render/sceneTypes.ts",
+        "probes/working-geometry/",
+        "apps/monkeyhub/web/workspaces/test/renderWorkspace.browser.mjs",
+        "apps/monkeyhub/web/workspaces/src/app/ProjectWorkspace.tsx",
+        "apps/monkeyhub/web/workspaces/src/workspaces/render/RenderWorkspace.tsx"
       ],
       "card": "docs/mapping/planning/GH-319-penguin-scene.md",
       "acceptance": [
@@ -247,7 +254,8 @@
         "Editable saved scene drives Three.js and Cycles with both revisions and survives project reopen."
       ],
       "notes": [
-        "GH-321 independent stacked follow-up owns region editor/default/tests paths after immutable PR 330 baseline 8e1388e2. No PR 330 content is rewritten. Working Head/camera/Board work remains GH-319; coordinate future overlapping edits."
+        "GH-321 independent stacked follow-up owns region editor/default/tests paths after immutable PR 330 baseline 8e1388e2. No PR 330 content is rewritten. Working Head/camera/Board work remains GH-319; coordinate future overlapping edits.",
+        "Independent Working Head slice based on PR 372. Region baseline unchanged; only source metadata UI paths handed back for this follow-up."
       ]
     },
     {
@@ -259,14 +267,12 @@
         "GH-319"
       ],
       "write_scope": [
-        "apps/monkeyhub/web/workspaces/src/workspaces/render/sceneTypes.ts",
-        "apps/monkeyhub/web/workspaces/src/workspaces/render/PhysicalWorkspace.tsx",
-        "apps/monkeyhub/web/workspaces/src/workspaces/render/RenderWorkspace.tsx",
         "apps/archflow-studio/api/archflow_studio_api/application/render_scene.py",
         "apps/archflow-studio/api/tests/test_render_scene.py",
-        "apps/monkeyhub/web/workspaces/test/",
         "probes/model-regions/",
-        "docs/mapping/planning/GH-321-model-regions.md"
+        "docs/mapping/planning/GH-321-model-regions.md",
+        "apps/monkeyhub/web/workspaces/test/materialRegions.test.ts",
+        "apps/monkeyhub/web/workspaces/test/fixtures/penguinRegions.ts"
       ],
       "card": "docs/mapping/planning/GH-321-model-regions.md",
       "acceptance": [

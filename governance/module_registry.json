@@ -3964,7 +3964,8 @@
         "SKP upload through the local standalone SDK, retaining original SKP and derived 3DM face geometry in the same P036 registration; retries reuse the verified original content",
         "the drawing correction projection (05-S2, application/drawing_corrections.py): each cut-plan revision paired with the registered revision its receipt names as previous, the pair's replacement_cause, a recipe_diff of the two view recipes by dotted path and a classify into compiler_defect, semantic_rule, recipe or local_override; and the project's recipe suggestions - a pen or hatch spacing changed the same way in representation-only revisions no agent asked for on at least two drawings no active recipe covers - each citing its exact revision pairs and the page a recipe decision would cite",
         "P036 imported geometry selection referencing original retained bytes; converted 3DM is an optional Modeling derivative",
-        "Imported mesh drawing source/view revisions, stale status and explicit regeneration with recomputed extents and preserved unresolved feature references"
+        "Imported mesh drawing source/view revisions, stale status and explicit regeneration with recomputed extents and preserved unresolved feature references",
+        "Physical retained geometry and mesh drawing consumers follow the existing LIVE Working Head when no explicit geometry selection exists; explicit retained imports remain frozen. Resolution writes no second selection or design state."
       ],
       "does_not_own": [
         "producing the export or its receipt - adapters.cad_execution through runtime.project_runner",
@@ -4165,7 +4166,8 @@
         "apps/archflow-studio/api/tests/test_section_perspective.py",
         "apps/archflow-studio/api/tests/test_native_drawings.py",
         "apps/archflow-studio/api/tests/test_drawing_corrections.py",
-        "apps/archflow-studio/api/tests/test_render_scene.py"
+        "apps/archflow-studio/api/tests/test_render_scene.py",
+        "apps/archflow-studio/api/tests/test_working_geometry.py"
       ],
       "notes": "The viewer's only source of model bytes; digests are the identity, filenames are not.",
       "files": [

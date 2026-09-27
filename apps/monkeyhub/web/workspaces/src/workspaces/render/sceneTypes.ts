@@ -9,7 +9,7 @@ export type PhysicalScene = {
   environment: { color: string; strength: number; background: ImageRef | null; environmentMap: ImageRef | null };
   camera: Camera; exposure: number; settings: { width: number; height: number; samples: number; denoise: boolean };
 };
-export type Geometry = { source: { geometryRevision: string }; meshes: { name: string; vertices: Vec3[]; triangles: [number, number, number][]; normals: Vec3[] | null; texcoords: [number, number][] | null }[] };
+export type Geometry = { source: { geometryRevision: string; kind?: string; warnings?: string[] }; meshes: { name: string; vertices: Vec3[]; triangles: [number, number, number][]; normals: Vec3[] | null; texcoords: [number, number][] | null }[] };
 export type SceneState = { scene: PhysicalScene | null; sceneRevision: string | null; status: string; cyclesAvailable?: boolean };
 
 /** User-selected source mesh bounds; no inferred semantic category or fixed coordinates. */

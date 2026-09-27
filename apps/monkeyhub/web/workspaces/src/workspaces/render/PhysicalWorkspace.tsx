@@ -13,7 +13,7 @@ function VectorInput({ label, value, onChange }: { label: string; value: Vec3; o
   return <fieldset className="physical-vector"><legend>{label}</legend>{value.map((v, i) => <Numeric key={i} label={`${label} ${["X", "Y", "Z"][i]}`} value={v} onChange={n => { const next = [...value] as Vec3;next[i] = n;onChange(next); }} />)}</fieldset>;
 }
 
-export default function PhysicalWorkspace({ projectId, active, zh }: { projectId: string; active: boolean; zh: boolean }) {
+export default function PhysicalWorkspace({ projectId, active, zh, refreshKey = 0 }: { projectId: string; active: boolean; zh: boolean; refreshKey?: number | string }) {
   const connection = useConnection(), studio = useStudio();
   const [state, setState] = useState<SceneState | null>(null), [value, setValue] = useState<PhysicalScene | null>(null), [geometry, setGeometry] = useState<Geometry | null>(null);
   const [dirty, setDirty] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState<string | null>(null);
@@ -42,7 +42,7 @@ export default function PhysicalWorkspace({ projectId, active, zh }: { projectId
   }, [request, studio]);
   useEffect(() => () => { readSequence.current++; }, [refresh]);
   const dirtyRef = useRef(dirty); dirtyRef.current = dirty;
-  useEffect(() => { if (active && !dirtyRef.current) void act(refresh); }, [active, refresh]);
+  useEffect(() => { if (active && !dirtyRef.current) void act(refresh); }, [active, refresh, refreshKey]);
   useEffect(() => {
     if (!active || !jobs.some(j => j.status === "queued" || j.status === "running")) return;
     const timer = window.setInterval(() => { void studio.renderJobs().then(result => setJobs(result.jobs.filter(j => j.execution === "host"))).catch(cause => setError(String(cause))); }, 2000);
@@ -84,6 +84,8 @@ export default function PhysicalWorkspace({ projectId, active, zh }: { projectId
       <button disabled={busy} onClick={() => void act(refresh)}>{label("Reload saved scene", "重读已保存场景")}</button>
       <button disabled={busy || !value || state?.status === "stale"} onClick={() => void save()}>{label("Save scene", "保存场景")}</button></div>
     <p role="status">{busy ? label("Working…", "处理中…") : dirty || state?.status === "unsaved" ? label("Unsaved scene edits", "场景有未保存修改") : state?.sceneRevision ? label("Saved scene", "已保存场景") : label("Import geometry to begin", "请先导入几何")} · geometry_revision: {geometry?.source.geometryRevision.slice(0,12) ?? "—"} · scene_revision: {state?.sceneRevision?.slice(0,12) ?? "—"}</p>
+    {geometry?.source.kind === "working-head" && <p>{label("Following the current Working Head. Saved appearances require review after geometry changes.", "正在跟随当前 Working Head；几何变化后，已保存外观需要复核。")}</p>}
+    {geometry?.source.warnings?.map(warning => <p role="alert" key={warning}>{warning}</p>)}
     {error && <p role="alert">{error}</p>}
     {state?.status === "stale" && <div role="alert"><p>{label("Geometry changed. Material regions and camera require review. Old regions are unresolved.", "几何已改变。材质区域和相机需要复核，旧区域未绑定。")}</p><button onClick={() => void act(async () => { const next = await request<PhysicalScene>("/api/render/scene/default");setValue(next);setState(old => old ? { ...old, status: "unsaved" } : old);setDirty(true); })}>{label("Rebind with neutral materials; clear old regions", "重新绑定为中性材质，清除旧区域")}</button></div>}
     {geometry && value && geometry.source.geometryRevision === value.geometryRevision && <PhysicalPreview geometry={geometry} value={value} imageUrl={imageUrl} onCamera={camera => edit(v => { v.camera = camera; })} />}

@@ -1,0 +1,26 @@
+warning: The `fitz` API is deprecated and will be removed in future. Use `import pymupdf` instead.
+test_explicit_penguin_import_stays_pinned_when_native_head_moves (tests.test_working_geometry.WorkingGeometryTests.test_explicit_penguin_import_stays_pinned_when_native_head_moves) ... FAIL
+test_native_parameter_revision_changes_scene_and_drawings_without_geometry_selection (tests.test_working_geometry.WorkingGeometryTests.test_native_parameter_revision_changes_scene_and_drawings_without_geometry_selection) ... FAIL
+
+======================================================================
+FAIL: test_explicit_penguin_import_stays_pinned_when_native_head_moves (tests.test_working_geometry.WorkingGeometryTests.test_explicit_penguin_import_stays_pinned_when_native_head_moves)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\jiayu\OneDrive\文档\ChatGPT\Blender skill\projection-development\workspace\worktrees\codex-319-working-geometry\apps\archflow-studio\api\tests\test_working_geometry.py", line 65, in test_explicit_penguin_import_stays_pinned_when_native_head_moves
+    native=self.client.get('/api/render/geometry');self.assertEqual(native.status_code,200,native.text)
+                                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 409 != 200 : {"code":"GEOMETRY_REQUIRED","detail":"Select a retained model or import a GLB first."}
+
+======================================================================
+FAIL: test_native_parameter_revision_changes_scene_and_drawings_without_geometry_selection (tests.test_working_geometry.WorkingGeometryTests.test_native_parameter_revision_changes_scene_and_drawings_without_geometry_selection)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\jiayu\OneDrive\文档\ChatGPT\Blender skill\projection-development\workspace\worktrees\codex-319-working-geometry\apps\archflow-studio\api\tests\test_working_geometry.py", line 35, in test_native_parameter_revision_changes_scene_and_drawings_without_geometry_selection
+    reply=self.client.get('/api/render/geometry');self.assertEqual(reply.status_code,200,reply.text)
+                                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 409 != 200 : {"code":"GEOMETRY_REQUIRED","detail":"Select a retained model or import a GLB first."}
+
+----------------------------------------------------------------------
+Ran 2 tests in 6.039s
+
+FAILED (failures=2)
