@@ -16,8 +16,9 @@ import { openChat } from "./openChat";
 export const POLL_MS = 4000;
 /**
  * How often it is read while every conversation is quiet. A turn this window
- * starts is noticed sooner: the architect's own input reads the list again
- * once it is older than POLL_MS.
+ * starts is still noticed within POLL_MS: the architect's own input brings the
+ * next reading forward to POLL_MS after it, and a window being hidden reads the
+ * list at once, so a turn that finishes behind it is not missed.
  */
 export const QUIET_POLL_MS = 30_000;
 /** Set once the OS has been asked to allow notifications: it is asked once, ever. */
@@ -72,7 +73,13 @@ export function useAttention(language: Language): Attention {
   openRef.current = open;
 
   useEffect(() => {
-    let stopped = false, reading = false, again = false, timer: number | undefined, busy = false, readAt = 0;
+    let stopped = false, reading = false, again = false, timer: number | undefined, dueAt = 0, busy = false;
+    /** The next reading, `ms` from now. */
+    const schedule = (ms: number) => {
+      window.clearTimeout(timer);
+      dueAt = Date.now() + ms;
+      timer = window.setTimeout(() => void read(), ms);
+    };
     /** One OS notification for a moment the architect cannot see; permission is asked for once, ever. */
     const notify = (event: AttentionEvent) => {
       if (typeof Notification === "undefined") return;
@@ -97,7 +104,6 @@ export function useAttention(language: Language): Attention {
       if (stopped) return;
       if (reading) { again = true; return; }
       reading = true;
-      readAt = Date.now();
       window.clearTimeout(timer);
       try {
         const sessions = await readSessions();
@@ -117,14 +123,15 @@ export function useAttention(language: Language): Attention {
       } finally {
         reading = false;
         if (!stopped) {
-          if (again) { again = false; void read(); } else timer = window.setTimeout(() => void read(), busy ? POLL_MS : QUIET_POLL_MS);
+          if (again) { again = false; void read(); } else schedule(busy ? POLL_MS : QUIET_POLL_MS);
         }
       }
     };
     const onVisibility = () => {
       const onScreen = shown();
       setVisible(onScreen);
-      if (!onScreen) return;
+      // Hidden: read now, so a turn already under way is followed at POLL_MS while nobody looks.
+      if (!onScreen) { void read(); return; }
       // Back on screen: the count is seen, the OS copies are no longer
       // needed, and the conversation shown speaks for itself.
       setUnseen(0);
@@ -134,7 +141,8 @@ export function useAttention(language: Language): Attention {
       setNotices((stack) => stack.some((item) => item.chatId === current) ? stack.filter((item) => item.chatId !== current) : stack);
       void read();
     };
-    const onInput = () => { if (!busy && Date.now() - readAt > POLL_MS) void read(); };
+    // Input comes before what it sends, so it brings the next reading forward instead of reading now.
+    const onInput = () => { if (!reading && dueAt - Date.now() > POLL_MS) schedule(POLL_MS); };
     void read();
     document.addEventListener("visibilitychange", onVisibility);
     window.addEventListener("pointerdown", onInput, true);

@@ -276,6 +276,8 @@ function App() {
   const appearanceEdits = useRef(0); const launchEdits = useRef(0);
   const settingsRef = useRef<HTMLElement>(null);
   const readingApps = useRef(false); const readingSettings = useRef(false);
+  // A read asked for while one is on the way is made again once it answers; `appsReadAt` is when the last one was sent.
+  const appsAgain = useRef(false); const appsReadAt = useRef(0);
   const actionLocks = useRef(new Set<string>());
   const t = (key: CopyKey) => translateMessage(copy[preferences.language], key);
   const appearanceDirty = JSON.stringify(preferences) !== JSON.stringify(savedAppearance) ||
@@ -284,11 +286,11 @@ function App() {
   const connected = apps !== null && statusIssue === null;
   useEffect(() => applyAppearance(preferences), [preferences]);
   const refreshApps = useCallback(async () => {
-    if (readingApps.current) return;
-    readingApps.current = true;
+    if (readingApps.current) { appsAgain.current = true; return; }
+    readingApps.current = true; appsReadAt.current = Date.now();
     try { setApps(await responseData<AppStatus[]>(listAppsApiAppsGet({ client: hubClient }))); setStatusIssue(null); }
     catch (cause) { setStatusIssue(issueOf(cause)); }
-    finally { readingApps.current = false; }
+    finally { readingApps.current = false; if (appsAgain.current) { appsAgain.current = false; void refreshApps(); } }
   }, []);
   const readSettings = useCallback(async (refreshConnections = false) => {
     if (readingSettings.current) return;
@@ -321,7 +323,11 @@ function App() {
     readingSettings.current = false;
   }, [hostedView]);
   useEffect(() => { void refreshApps(); void readSettings(); }, [refreshApps, readSettings]);
-  // Every second while a service is starting or stopping; a settled list is read again each minute and on return.
+  // Every second while a service is starting or stopping; a settled list is read again each minute, on return,
+  // at once when a project runtime opens, closes or its worker changes, and at most every ten seconds while other runtime news arrives.
+  const runtimeNews = useCallback((kind: string) => {
+    if (/^(runtime\/snapshot|project\/(opened|closed)|worker\/)/.test(kind) || Date.now() - appsReadAt.current > 10_000) void refreshApps();
+  }, [refreshApps]);
   const appsSettling = busyServices.size > 0 || statusIssue !== null || (apps ?? []).some((app) => app.state === "starting" || app.state === "stopping");
   useEffect(() => {
     const refreshVisible = () => { if (!document.hidden) void refreshApps(); };
@@ -575,7 +581,7 @@ function App() {
   return <UserPreferencesProvider appearance={preferences}><ChatShell preferences={preferences} configuredProject={savedLaunch?.projectDir ?? null} settings={settings}
     settingsDirty={appearanceDirty || launchDirty || settingsSaving || busyServices.size > 0}
     defaults={{ provider: savedChatDefaults.chatProvider ?? "codex", model: savedChatDefaults.chatModel }}
-    workspace={workspace} apps={statusIssue ? null : apps} onAppearance={changeAppearance} />{attention}</UserPreferencesProvider>;
+    workspace={workspace} apps={statusIssue ? null : apps} onRuntimeEvent={runtimeNews} onAppearance={changeAppearance} />{attention}</UserPreferencesProvider>;
 }
 const root = document.getElementById("root");
 if (!root) throw new Error("MonkeyHub root is missing.");
