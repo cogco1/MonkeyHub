@@ -196,59 +196,61 @@ function base64Of(buffer: ArrayBuffer): string {
 /**
  * The polled views the runtime answers conditionally (#363): design history,
  * worktrees, artifacts, documents, working source, board and render jobs. The
- * last 200 of each, by its path and query, is kept with its ETag; a refresh
- * sends `If-None-Match`, and a 304 answers with the very object kept, so a
- * caller can tell by identity that nothing changed. One request per view is
- * in flight at a time: a read asked for while one is on the way joins it,
- * unless this connection has written since that one was sent; then it is sent
- * again once the earlier one has answered. A caller's abort only lets go of
- * its own wait.
+ * last 200 of each, by its path and query, is kept with its ETag for the
+ * KEPT_VIEWS views read most recently; a refresh sends `If-None-Match`, and a
+ * 304 answers with the very object kept, so a caller can tell by identity that
+ * nothing changed. One request per view is in flight at a time, and no caller
+ * is answered by a request sent before it asked: those who ask while one is on
+ * the way share the one conditional read sent once it has answered (usually a
+ * 304), whatever changed meanwhile and whoever changed it. A caller's abort
+ * only lets go of its own wait.
  */
 type ConditionalRead = <T>(what: string, query: Record<string, unknown>,
   send: (headers: Record<string, string> | undefined) => Promise<FieldsResult<T>>, signal?: AbortSignal) => Promise<T>;
+const KEPT_VIEWS = 64;
 const reads = new WeakMap<ServerConnection, ConditionalRead>();
 function conditional(connection: ServerConnection): ConditionalRead {
   const known = reads.get(connection);
   if (known) return known;
   const kept = new Map<string, { tag: string; data: unknown }>();
-  const pending = new Map<string, { writes: number; answer: Promise<unknown> }>();
-  let writes = 0;
-  connection.client.interceptors.request.use((request) => {
-    if (request.method !== "GET" && request.method !== "HEAD") writes += 1;
-    return request;
-  });
+  const lanes = new Map<string, { sending: Promise<unknown>; queued: Promise<unknown> | null }>();
+  const keep = (key: string, value: { tag: string; data: unknown }) => {
+    kept.delete(key); kept.set(key, value);
+    for (const oldest of kept.keys()) { if (kept.size <= KEPT_VIEWS) break; kept.delete(oldest); }
+  };
   const read: ConditionalRead = <T,>(what: string, query: Record<string, unknown>,
     send: (headers: Record<string, string> | undefined) => Promise<FieldsResult<T>>, signal?: AbortSignal): Promise<T> => {
     const key = `${what}?${new URLSearchParams(Object.entries(query).filter(([, value]) => value != null)
       .map(([name, value]) => [name, String(value)])).toString()}`;
-    const earlier = pending.get(key);
-    let shared = earlier?.writes === writes ? earlier.answer as Promise<T> : undefined;
-    if (!shared) {
-      const ask = () => {
-        const last = kept.get(key);
-        let tag: string | null = null;
-        return call(what, send(last ? { "If-None-Match": last.tag } : undefined).then((result) => {
-          if (last && result.response?.status === 304) return { data: last.data as T, response: result.response };
-          if (result.error === undefined) tag = result.response?.headers.get("ETag") ?? null;
-          return result;
-        })).then((data) => {
-          if (tag) kept.set(key, { tag, data });
-          else if (data !== last?.data) kept.delete(key);
-          return data;
-        });
-      };
-      const entry: { writes: number; answer: Promise<unknown> } = { writes, answer: Promise.resolve() };
-      shared = (earlier ? earlier.answer.then(ask, ask) : ask()).finally(() => { if (pending.get(key) === entry) pending.delete(key); });
-      entry.answer = shared;
-      pending.set(key, entry);
-    }
+    const ask = () => {
+      const last = kept.get(key);
+      let tag: string | null = null;
+      return call(what, send(last ? { "If-None-Match": last.tag } : undefined).then((result) => {
+        if (last && result.response?.status === 304) return { data: last.data as T, response: result.response };
+        if (result.error === undefined) tag = result.response?.headers.get("ETag") ?? null;
+        return result;
+      })).then((data) => {
+        if (tag) keep(key, { tag, data });
+        else if (data !== last?.data) kept.delete(key);
+        return data;
+      });
+    };
+    const start = (): Promise<T> => {
+      const answer = ask();
+      const lane = { sending: answer as Promise<unknown>, queued: null as Promise<unknown> | null };
+      lanes.set(key, lane);
+      const settle = () => { if (lanes.get(key) === lane && lane.queued === null) lanes.delete(key); };
+      answer.then(settle, settle);
+      return answer;
+    };
+    const lane = lanes.get(key);
+    const shared = (lane ? lane.queued ??= lane.sending.then(start, start) : start()) as Promise<T>;
     if (!signal) return shared;
-    const joined = shared;
     return new Promise<T>((resolve, reject) => {
       const abort = () => reject(new StudioApiError({ status: 0, code: NETWORK_ERROR, detail: `${what} never reached the API: the read was aborted.` }));
       if (signal.aborted) { abort(); return; }
       signal.addEventListener("abort", abort, { once: true });
-      joined.then(resolve, reject).finally(() => signal.removeEventListener("abort", abort));
+      shared.then(resolve, reject).finally(() => signal.removeEventListener("abort", abort));
     });
   };
   reads.set(connection, read);
@@ -269,6 +271,9 @@ function keepModelBytes(sha256: string, blob: Blob) {
     modelBytes.delete(digest); size -= kept.size;
   }
 }
+/** Downloads on the way, by digest: two openings of the same model share one. The first opening's trace names it. */
+type ModelDownload = { blob: Promise<Blob>; waiting: number; abort: AbortController };
+const modelDownloads = new Map<string, ModelDownload>();
 function keptModelBytes(sha256: string): Blob | null {
   const blob = modelBytes.get(sha256);
   if (!blob) return null;
@@ -548,22 +553,47 @@ export const createStudioClient = (connection: ServerConnection) => ({
    *
    * The name is the receipt's; the digest in the path is what the server
    * verifies the bytes against before it sends them. Bytes this app already
-   * downloaded are opened again from memory, without a request.
+   * downloaded are opened again from memory, without a request, and bytes on
+   * the way are waited for, not asked for twice.
    */
   async artifactFile(sha256: string, fileName: string, trace?: OperationTrace, signal?: AbortSignal): Promise<File> {
     const kept = keptModelBytes(sha256);
     if (kept) return new File([kept], fileName, { type: "application/octet-stream" });
-    const blob = await call<Blob>(
-      `GET /api/artifacts/${sha256}/bytes`,
-      readArtifactBytesApiArtifactsSha256BytesGet({ client: connection.client,
-        path: { sha256 },
-        headers: traceHeaders(trace),
-        parseAs: "blob",
-        signal,
-      }) as Promise<FieldsResult<Blob>>,
-    );
-    keepModelBytes(sha256, blob);
-    return new File([blob], fileName, { type: "application/octet-stream" });
+    let download = modelDownloads.get(sha256);
+    if (!download) {
+      const abort = new AbortController();
+      const entry: ModelDownload = { abort, waiting: 0, blob: call<Blob>(
+        `GET /api/artifacts/${sha256}/bytes`,
+        readArtifactBytesApiArtifactsSha256BytesGet({ client: connection.client,
+          path: { sha256 },
+          headers: traceHeaders(trace),
+          parseAs: "blob",
+          signal: abort.signal,
+        }) as Promise<FieldsResult<Blob>>,
+      ).then((blob) => { keepModelBytes(sha256, blob); return blob; })
+        .finally(() => { if (modelDownloads.get(sha256) === entry) modelDownloads.delete(sha256); }) };
+      entry.blob.catch(() => undefined);
+      modelDownloads.set(sha256, download = entry);
+    }
+    const shared = download;
+    shared.waiting += 1;
+    try {
+      const blob = await new Promise<Blob>((resolve, reject) => {
+        const abort = () => reject(new StudioApiError({ status: 0, code: NETWORK_ERROR,
+          detail: `GET /api/artifacts/${sha256}/bytes never reached the API: the read was aborted.` }));
+        if (signal?.aborted) { abort(); return; }
+        signal?.addEventListener("abort", abort, { once: true });
+        shared.blob.then(resolve, reject).finally(() => signal?.removeEventListener("abort", abort));
+      });
+      return new File([blob], fileName, { type: "application/octet-stream" });
+    } finally {
+      // The download stops only when every opening that waited for it has let go.
+      shared.waiting -= 1;
+      if (shared.waiting === 0 && signal?.aborted) {
+        shared.abort.abort();
+        if (modelDownloads.get(sha256) === shared) modelDownloads.delete(sha256);
+      }
+    }
   },
 
   documents(runId?: string | null): Promise<SourceDocumentListDto> {
