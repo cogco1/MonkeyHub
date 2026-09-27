@@ -7,6 +7,7 @@ from starlette.requests import Request
 
 from ..application.artifacts import ModelSource
 from ..application.binding import bound_project
+from ..application.drawings import check_model_view_source
 from ..application.projections import (
     MODEL_LINES, PNG_MEDIA_TYPE, ProjectionError, ProjectionQueue, projection_queue, projection_spec,
 )
@@ -44,14 +45,20 @@ def request_projection(
     size: int | None = Query(default=None),
     style: str | None = Query(default=None),
 ):
-    """The status of one exact model's projection; a miss queues it and answers pending."""
+    """The status of one exact model's projection; a miss queues it and answers pending.
+
+    A miss or a due retry first verifies this exact source (409 when it cannot
+    be drawn), so one stale request never leaves an error for other runs.
+    """
 
     try:
         spec = projection_spec(ModelSource(run_id, state_digest, asset_sha256), kind,
                                {"view": view, "size": size, "style": style})
     except ProjectionError as exc:
         raise StudioError(422, "PROJECTION_RECIPE_INVALID", str(exc)) from exc
-    return _status(queue_of(request).request(spec))
+    binding = bound_project(request.app.state)
+    return _status(queue_of(request).request(
+        spec, check=lambda source: check_model_view_source(binding, source, spec.recipe["view"])))
 
 
 @router.get("/blobs/{sha256}", response_class=Response)

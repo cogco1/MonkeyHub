@@ -621,7 +621,8 @@
         "triangulating the named shapes at a caller-chosen chord error and naming the curve-only objects left out (triangulate)",
         "feature edges of each object's welded mesh: creases over CREASE_DEGREES, open boundaries, non-manifold edges and view silhouettes",
         "the scanline depth buffer at twice the output resolution and the edge visibility test against it, reduced to an anti-aliased greyscale PNG whose longer side is the requested size (mesh_line_view)",
-        "RENDERER_VERSION, which changes whenever the same input would draw different pixels",
+        "RENDERER_VERSION, which changes whenever the same input would draw different pixels, and mesh_pipeline: every setting and library version (OCP, numpy, Pillow) that changes the pixels",
+        "working memory bounded by pixel count: triangles are rasterised and edges sampled in chunks of at most a million candidate pixels, splitting a large triangle into row bands; the output side is at most MAX_SIZE_PX",
         "the caller-named PNG text chunks; no time or random id in the bytes"
       ],
       "does_not_own": [
@@ -647,7 +648,10 @@
         "MeshLineView",
         "MeshViewError",
         "RENDERER_VERSION",
-        "CREASE_DEGREES"
+        "CREASE_DEGREES",
+        "ANGULAR_DEFLECTION",
+        "MAX_SIZE_PX",
+        "mesh_pipeline"
       ],
       "depends_on": [
         "adapters.cad_execution",
@@ -660,6 +664,7 @@
       "invariants": [
         "the same shapes, frame and size give the same PNG bytes",
         "an edge is drawn only where the depth buffer does not hold a nearer surface beyond one and a half supersampled pixels",
+        "a cache key that holds mesh_pipeline() changes whenever this module would draw different pixels for the same input",
         "nothing is written; a mesh view is never retained as a drawing or cited as evidence"
       ],
       "status": "canonical",
@@ -4146,7 +4151,7 @@
         "direct native model drawing selection: registered external sourceAsset stays frozen and has no modelSource; state-bound composed 3DM uses its own geometry, never a partial paired STEP",
         "SKP upload through the local standalone SDK, retaining original SKP and derived 3DM face geometry in the same P036 registration; retries reuse the verified original content",
         "the drawing correction projection (05-S2, application/drawing_corrections.py): each cut-plan revision paired with the registered revision its receipt names as previous, the pair's replacement_cause, a recipe_diff of the two view recipes by dotted path and a classify into compiler_defect, semantic_rule, recipe or local_override; and the project's recipe suggestions - a pen or hatch spacing changed the same way in representation-only revisions no agent asked for on at least two drawings no active recipe covers - each citing its exact revision pairs and the page a recipe decision would cite",
-        "the content-keyed projection cache (ADR-008 #367): key = sha256(model asset sha256, kind, recipe hash, renderer version, SALT); PNG blobs in <project cache dir>/projections/blobs named by their own sha256, written then renamed and self-describing through text chunks; one status row per key behind StatusStore (InMemoryStatusStore is the part-A stand-in for the index table); one low-priority render subprocess with timeout, memory cap, leases, bounded retries and a collector with a grace window"
+        "the content-keyed projection cache (ADR-008 #367): key = sha256(model asset sha256, kind, recipe hash, renderer, SALT) where renderer is the mesh renderer's version plus a digest of drawings.model_view_pipeline (view frame, crop margin, chord tolerance, mesh_pipeline); a miss or due retry first checks the requester's source (check_model_view_source) and a retry draws from the latest requester's source; thumbnails read the run's own record, so a run on an older canonical base is drawn (require_readable) while actions keep require_actionable; PNG blobs in <project cache dir>/projections/blobs named by their own sha256, written then renamed and self-describing through text chunks; one status row per key behind StatusStore (InMemoryStatusStore is the part-A stand-in for the index table); one low-priority render subprocess with timeout, memory cap, leases, bounded retries and a collector with a grace window"
       ],
       "does_not_own": [
         "producing the export or its receipt - adapters.cad_execution through runtime.project_runner",
@@ -4256,7 +4261,9 @@
         "projection_spec",
         "ProjectionQueue",
         "StatusStore",
-        "draw_model_view"
+        "draw_model_view",
+        "check_model_view_source",
+        "model_view_pipeline"
       ],
       "depends_on": [
         "adapters.cad_execution",
@@ -4533,6 +4540,7 @@
         "record_kind",
         "ReferenceRun",
         "project_state",
+        "require_readable",
         "StateProjection",
         "ProjectedElement",
         "catalog_of",

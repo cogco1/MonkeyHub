@@ -18,9 +18,10 @@ random id). Nothing is written; retained drawings stay with
 from __future__ import annotations
 
 from dataclasses import dataclass
+from importlib import metadata
 from io import BytesIO
 import math
-from typing import Mapping, Sequence
+from typing import Any, Mapping, Sequence
 
 from archflow.adapters.cad_execution import StepEntry
 from archflow.adapters.occt_backend import OcctBackendError, tessellate_shape
@@ -29,9 +30,22 @@ from archflow.adapters.occt_backend import OcctBackendError, tessellate_shape
 RENDERER_VERSION = "mesh-lines-1"
 #: Adjacent triangles meeting at more than this angle draw their shared edge.
 CREASE_DEGREES = 30.0
+#: The angular deflection each face is triangulated with, in radians.
+ANGULAR_DEFLECTION = 0.5
+#: The largest output side. The full-frame buffers take about 40 bytes per
+#: supersampled pixel: some 170 MB at 1024 px, 670 MB at 2048 px.
+MAX_SIZE_PX = 2048
 _SUPERSAMPLE = 2
-# Candidate pixels rasterised at once; bounds the working memory to a few hundred MB.
-_CHUNK_PIXELS = 4_000_000
+# Vertices closer than this share of an object's extent are one vertex.
+_WELD = 1e-9
+# An edge sample is hidden only behind a surface nearer by more than this many fine pixels.
+_DEPTH_TOLERANCE = 1.5
+_PNG_COMPRESS_LEVEL = 6
+# Candidate pixels (and edge samples) handled at once. Each takes about ten
+# eight-byte temporaries, so a chunk stays near 100 MB however large the
+# triangles are: a triangle whose rows would exceed it is split into bands.
+_CHUNK_PIXELS = 1_000_000
+_LIBRARIES = ("cadquery-ocp", "numpy", "pillow")
 
 
 class MeshViewError(ValueError):
@@ -58,6 +72,24 @@ class ObjectMesh:
     triangles: tuple[tuple[int, int, int], ...]
 
 
+def mesh_pipeline() -> dict[str, Any]:
+    """Every setting of this module and library that changes the pixels drawn for the same input.
+
+    A cache key that holds this (and the caller's own frame and tolerance)
+    changes whenever an upgrade or an edited constant would draw differently.
+    """
+
+    def version(name: str) -> str:
+        try:
+            return metadata.version(name)
+        except metadata.PackageNotFoundError:
+            return "absent"
+
+    return {"renderer": RENDERER_VERSION, "creaseDegrees": CREASE_DEGREES, "angularDeflection": ANGULAR_DEFLECTION,
+            "supersample": _SUPERSAMPLE, "weld": _WELD, "depthTolerance": _DEPTH_TOLERANCE,
+            "pngCompressLevel": _PNG_COMPRESS_LEVEL, "libraries": {name: version(name) for name in _LIBRARIES}}
+
+
 def pixel_size(crop_uv: Sequence[float], size_px: int) -> float:
     """Model units per output pixel when the longer side of ``crop_uv`` spans ``size_px``."""
 
@@ -73,7 +105,8 @@ def triangulate(entries: Sequence[StepEntry], object_ids: Sequence[str], *, line
     meshes, skipped = [], []
     for entry in sorted((entry for entry in entries if entry.name in wanted), key=lambda entry: entry.name):
         try:
-            vertices, triangles = tessellate_shape(entry.shape, linear_deflection=linear_deflection)
+            vertices, triangles = tessellate_shape(entry.shape, linear_deflection=linear_deflection,
+                                                   angular_deflection=ANGULAR_DEFLECTION)
         except OcctBackendError:
             skipped.append(entry.name)
             continue
@@ -136,21 +169,28 @@ def _depth_buffer(np, x, y, z, triangles, width, height):
     gx = (dz1 * dy2 - dz2 * dy1) / area
     gy = (dz2 * dx1 - dz1 * dx2) / area
     z0 = tz[:, 0] - gx * tx[:, 0] - gy * ty[:, 0]
-    # Rows whose centre line the triangle crosses.
+    # Rows whose centre line the triangle crosses, and the most pixels one of
+    # them can cover: the triangle's own width, clipped to the image.
     first = np.maximum(np.ceil(ty.min(axis=1) - 0.5), 0).astype(np.int64)
     last = np.minimum(np.floor(ty.max(axis=1) - 0.5), height - 1).astype(np.int64)
     rows = np.maximum(last - first + 1, 0)
-    order = np.flatnonzero(rows)
+    wide = np.floor(tx.max(axis=1) - 0.5) - np.ceil(tx.min(axis=1) - 0.5) + 1
+    span = np.clip(wide, 1, width).astype(np.int64)
+    # Bands of at most ``band`` rows, so that no band holds more than a chunk.
+    band = np.maximum(_CHUNK_PIXELS // span, 1)
+    owner, index = _expand(np, -(-rows // band))
+    band_first = first[owner] + index * band[owner]
+    band_rows = np.minimum(band[owner], rows[owner] - index * band[owner])
+    budget = np.cumsum(band_rows * span[owner])
     begin = 0
-    budget = np.cumsum(rows[order])
-    while begin < len(order):
+    while begin < len(owner):
         base = budget[begin - 1] if begin else 0
-        end = max(begin + 1, int(np.searchsorted(budget, base + _CHUNK_PIXELS // 64, side="right")))
-        chunk = order[begin:end]
+        end = max(begin + 1, int(np.searchsorted(budget, base + _CHUNK_PIXELS, side="right")))
+        chunk = slice(begin, end)
         begin = end
-        owner, offset = _expand(np, rows[chunk])
-        tri = chunk[owner]
-        cy = first[tri] + offset + 0.5
+        row_owner, offset = _expand(np, band_rows[chunk])
+        tri = owner[chunk][row_owner]
+        cy = band_first[chunk][row_owner] + offset + 0.5
         left = np.full(len(tri), np.inf)
         right = np.full(len(tri), -np.inf)
         for i, j in ((0, 1), (1, 2), (2, 0)):
@@ -188,8 +228,8 @@ def mesh_line_view(
     import numpy as np
     from PIL import Image, PngImagePlugin
 
-    if isinstance(size_px, bool) or not isinstance(size_px, int) or not 16 <= size_px <= 4096:
-        raise MeshViewError("size_px must be a whole number of pixels from 16 to 4096")
+    if isinstance(size_px, bool) or not isinstance(size_px, int) or not 16 <= size_px <= MAX_SIZE_PX:
+        raise MeshViewError(f"size_px must be a whole number of pixels from 16 to {MAX_SIZE_PX}")
     u0, v0, u1, v1 = (float(value) for value in crop_uv)
     if not all(math.isfinite(value) for value in (u0, v0, u1, v1)) or not (u0 < u1 and v0 < v1):
         raise MeshViewError("crop_uv must be finite with u_min < u_max and v_min < v_max")
@@ -210,7 +250,7 @@ def mesh_line_view(
         if not len(vertices) or not len(triangles):
             continue
         extent = float(np.ptp(vertices, axis=0).max()) or 1.0
-        vertices, triangles = _welded(np, vertices, triangles, extent * 1e-9)
+        vertices, triangles = _welded(np, vertices, triangles, extent * _WELD)
         edges.append(_feature_edges(np, vertices, triangles, look, crease_cos) + base)
         xs.append((vertices @ right_v - u0) / fine)
         ys.append((v1 - vertices @ up_v) / fine)
@@ -228,24 +268,32 @@ def mesh_line_view(
         padded = np.pad(depth, 1, mode="edge")
         rows = np.maximum(np.maximum(padded[:-2], padded[1:-1]), padded[2:])
         farthest = np.maximum(np.maximum(rows[:, :-2], rows[:, 1:-1]), rows[:, 2:])
+        del padded, rows
         pairs = np.concatenate(edges)
         drawn = len(pairs)
-        if drawn:
-            ax, ay, az = x[pairs[:, 0]], y[pairs[:, 0]], z[pairs[:, 0]]
-            bx, by, bz = x[pairs[:, 1]], y[pairs[:, 1]], z[pairs[:, 1]]
-            steps = np.ceil(np.maximum(np.abs(bx - ax), np.abs(by - ay))).astype(np.int64) + 1
-            steps = np.minimum(steps, 4 * (big_w + big_h))
-            owner = np.repeat(np.arange(drawn), steps)
-            t = (np.arange(steps.sum()) - np.repeat(np.cumsum(steps) - steps, steps)) / np.maximum(steps - 1, 1)[owner]
-            sx = ax[owner] + (bx - ax)[owner] * t
-            sy = ay[owner] + (by - ay)[owner] * t
-            sz = az[owner] + (bz - az)[owner] * t
-            px, py = np.floor(sx).astype(np.int64), np.floor(sy).astype(np.int64)
+        ax, ay, az = x[pairs[:, 0]], y[pairs[:, 0]], z[pairs[:, 0]]
+        bx, by, bz = x[pairs[:, 1]], y[pairs[:, 1]], z[pairs[:, 1]]
+        steps = np.ceil(np.maximum(np.abs(bx - ax), np.abs(by - ay))).astype(np.int64) + 1
+        steps = np.minimum(steps, 4 * (big_w + big_h))
+        budget = np.cumsum(steps)
+        begin = 0
+        while begin < drawn:
+            # Edges in chunks of at most _CHUNK_PIXELS samples (or one edge).
+            base = budget[begin - 1] if begin else 0
+            end = max(begin + 1, int(np.searchsorted(budget, base + _CHUNK_PIXELS, side="right")))
+            chunk = slice(begin, end)
+            begin = end
+            owner, step = _expand(np, steps[chunk])
+            edge = owner + chunk.start
+            t = step / np.maximum(steps[edge] - 1, 1)
+            px = np.floor(ax[edge] + (bx - ax)[edge] * t).astype(np.int64)
+            py = np.floor(ay[edge] + (by - ay)[edge] * t).astype(np.int64)
+            sz = az[edge] + (bz - az)[edge] * t
             inside = (px >= 0) & (px < big_w) & (py >= 0) & (py < big_h)
             px, py, sz = px[inside], py[inside], sz[inside]
             # Depth tolerance: one and a half fine pixels in model units, the
             # most a face sloped at 55 degrees moves within one pixel's reach.
-            seen = sz <= farthest[py, px] + 1.5 * fine
+            seen = sz <= farthest[py, px] + _DEPTH_TOLERANCE * fine
             px, py = px[seen], py[seen]
             # Two fine pixels wide, so the reduced line is one full pixel.
             image[py, px] = 0
@@ -256,5 +304,5 @@ def mesh_line_view(
     for key, value in sorted((text or {}).items()):
         info.add_text(key, value)
     buffer = BytesIO()
-    picture.save(buffer, format="PNG", pnginfo=info, compress_level=6)
+    picture.save(buffer, format="PNG", pnginfo=info, compress_level=_PNG_COMPRESS_LEVEL)
     return MeshLineView(buffer.getvalue(), width, height, triangle_count, drawn)

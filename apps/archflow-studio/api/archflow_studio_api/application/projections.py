@@ -4,12 +4,16 @@ A projection is a picture derived from one retained model: today the
 axonometric line drawing of the model view, at a thumbnail size. It is
 addressed by a key, not by a run or a time::
 
-    key = sha256(input sha256, kind, sha256(recipe), renderer version, SALT)
+    key = sha256(input sha256, kind, sha256(recipe), renderer, SALT)
 
-The input is the model asset's own sha256; the recipe holds every field that
-changes the pixels (view, size, style). Changing ``SALT`` or the renderer's
-version gives every projection a new key, so earlier outputs are simply never
-asked for again and the collector removes them.
+The input is the model asset's own sha256; the recipe holds every field a
+request chooses (view, size, style). The renderer names everything else that
+changes the pixels: the mesh renderer's version and a digest of the whole
+pipeline (``drawings.model_view_pipeline``: the view frame, crop margin,
+tessellation tolerance, the mesh renderer's settings and the OCP, numpy and
+Pillow versions). Changing ``SALT`` or any of those gives every projection a
+new key, so earlier outputs are simply never asked for again and the
+collector removes them.
 
 Where things live, all under the project's Hub cache directory (never the
 project folder, never evidence; deleting it only means drawing again)::
@@ -32,6 +36,12 @@ long-lived render subprocess (``python -m`` this module), which opens the
 project read-only, verifies the exact model and draws. The subprocess makes
 the timeout and the memory cap real: past either it is killed or exits, and
 the next job starts a fresh one.
+
+A miss or a due retry first checks the requesting source (the route passes
+``check``), so a stale or unknown source is refused to its own requester and
+never becomes a row that every other run with the same model asset would
+inherit; a retry draws from the source of the request that asked for it, not
+from the row's first requester.
 """
 
 from __future__ import annotations
@@ -41,6 +51,7 @@ from collections import deque
 from dataclasses import dataclass, field, replace
 import hashlib
 import json
+import logging
 import os
 from pathlib import Path
 import queue
@@ -54,6 +65,8 @@ from typing import Any, Callable, Mapping, Protocol
 from archflow.contracts.canonical import canonical_digest
 
 from .artifacts import ModelSource
+
+_log = logging.getLogger(__name__)
 
 #: Bumped to invalidate every projection ever drawn, whatever its renderer.
 SALT = "archflow-projection-1"
@@ -74,18 +87,29 @@ BACKOFF_S = (30.0, 300.0)
 GRACE_S = 7 * 24 * 3600.0
 _COLLECT_EVERY_S = 3600.0
 _MAX_QUEUED = 256
+#: Lines of the render process's stderr kept for a failure's message.
+_STDERR_TAIL = 20
 
 
 class ProjectionError(ValueError):
     """A projection request names an unknown kind or recipe value."""
 
 
-def renderer_version(kind: str) -> str:
-    from monkeydiagram.mesh_views import RENDERER_VERSION
+def pipeline_of(kind: str, recipe: Mapping[str, Any]) -> dict[str, Any]:
+    """Everything besides the input and the recipe that changes this kind's pixels."""
+
+    from .drawings import model_view_pipeline
 
     if kind != MODEL_LINES:
         raise ProjectionError(f"unknown projection kind {kind!r}")
-    return RENDERER_VERSION
+    return model_view_pipeline(recipe["view"])
+
+
+def renderer_version(kind: str, recipe: Mapping[str, Any]) -> str:
+    """The mesh renderer's own version and a digest of the whole pipeline it runs in."""
+
+    pipeline = pipeline_of(kind, recipe)
+    return f"{pipeline['mesh']['renderer']}/{canonical_digest(pipeline)[:16]}"
 
 
 def recipe_of(kind: str, fields: Mapping[str, Any]) -> dict[str, Any]:
@@ -135,12 +159,13 @@ class ProjectionSpec:
     def png_text(self) -> dict[str, str]:
         return {"archflow:projection-key": self.key, "archflow:input-sha256": self.input_sha256,
                 "archflow:kind": self.kind, "archflow:recipe": json.dumps(dict(self.recipe), sort_keys=True),
-                "archflow:renderer": self.renderer}
+                "archflow:renderer": self.renderer,
+                "archflow:pipeline": json.dumps(pipeline_of(self.kind, self.recipe), sort_keys=True)}
 
 
 def projection_spec(source: ModelSource, kind: str = MODEL_LINES, recipe: Mapping[str, Any] | None = None) -> ProjectionSpec:
     complete = recipe_of(kind, recipe or {})
-    renderer = renderer_version(kind)
+    renderer = renderer_version(kind, complete)
     return ProjectionSpec(projection_key(source.asset_sha256, kind, complete, renderer=renderer),
                           kind, complete, renderer, source)
 
@@ -249,8 +274,11 @@ class StatusStore(Protocol):
     def release(self, key: str) -> None:
         """A cancel: remove the row and give its attempt back; nothing is recorded as failed."""
 
-    def retry(self, key: str) -> ProjectionStatus | None:
-        """Queue an error row again, keeping its attempts; None when it is not an error."""
+    def retry(self, key: str, spec: ProjectionSpec) -> ProjectionStatus | None:
+        """Queue an error row again, keeping its attempts, to be drawn from ``spec``'s source.
+
+        None when the row is not an error (for instance, another request retried it first).
+        """
 
     def reclaim(self, *, now: float, lease_s: float) -> tuple[str, ...]:
         """Turn leases older than ``lease_s`` (all of them at startup) back into queued rows."""
@@ -302,12 +330,12 @@ class InMemoryStatusStore:
         with self._lock:
             self._rows.pop(key, None)
 
-    def retry(self, key):
+    def retry(self, key, spec):
         with self._lock:
             row = self._rows.get(key)
             if row is None or row.status != ERROR:
                 return None
-            row = self._rows[key] = replace(row, status=PENDING, claimed_at=None, next_attempt_at=None)
+            row = self._rows[key] = replace(row, spec=spec, status=PENDING, claimed_at=None, next_attempt_at=None)
             return row
 
     def reclaim(self, *, now, lease_s):
@@ -362,6 +390,10 @@ class SubprocessRenderer:
         self.memory_cap_mb = memory_cap_mb
         self._process: subprocess.Popen | None = None
         self._answers: queue.Queue = queue.Queue()
+        self._stderr: deque[str] = deque(maxlen=_STDERR_TAIL)
+        #: Set once a render process has finished starting (for tests and diagnostics).
+        self.ready = threading.Event()
+        self._stderr_reader: threading.Thread | None = None
         self._lock = threading.Lock()
         self._cancelled = False
 
@@ -376,19 +408,37 @@ class SubprocessRenderer:
         process = subprocess.Popen(
             [sys.executable, "-m", "archflow_studio_api.application.projections",
              "--project-dir", str(self.project_dir), "--memory-cap-mb", str(self.memory_cap_mb)],
-            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             env=environment, creationflags=flags,
         )
         answers: queue.Queue = queue.Queue()
+        tail: deque[str] = deque(maxlen=_STDERR_TAIL)
+
+        ready = self.ready
+        ready.clear()
 
         def read() -> None:
             for line in process.stdout:
+                if line.startswith(_READY):  # imports done; not an answer
+                    ready.set()
+                    continue
                 answers.put(line)
             answers.put(None)
 
+        def read_errors() -> None:
+            for line in process.stderr:
+                tail.append(line.decode("utf-8", "replace").rstrip()[:500])
+
         threading.Thread(target=read, daemon=True, name="projection-render-reader").start()
-        self._answers = answers
+        self._stderr_reader = threading.Thread(target=read_errors, daemon=True, name="projection-render-stderr")
+        self._stderr_reader.start()
+        self._answers, self._stderr = answers, tail
         return process
+
+    def stderr_tail(self) -> str:
+        """The last lines the render process wrote to stderr, for diagnostics."""
+
+        return "\n".join(self._stderr)
 
     def render(self, spec, *, timeout_s):
         with self._lock:
@@ -414,7 +464,9 @@ class SubprocessRenderer:
                     raise RenderCancelled("cancelled")
             if code == _MEMORY_EXIT:
                 raise RenderFailed(f"memory cap of {self.memory_cap_mb} MB exceeded")
-            raise RenderFailed(f"render process exited with {code}")
+            self._stderr_reader.join(timeout=2)  # the process is gone: its stderr ends
+            tail = self.stderr_tail()
+            raise RenderFailed(f"render process exited with {code}" + (f": {tail[-1500:]}" if tail else ""))
         answer = json.loads(line)
         if not answer["ok"]:
             raise RenderFailed(answer["error"])
@@ -492,8 +544,13 @@ class ProjectionQueue:
             self._thread.start()
         self.collect()
 
-    def request(self, spec: ProjectionSpec) -> ProjectionStatus:
-        """The key's row; a miss, a vanished blob or a due retry queues the job."""
+    def request(self, spec: ProjectionSpec, check: Callable[[ModelSource], None] | None = None) -> ProjectionStatus:
+        """The key's row; a miss, a vanished blob or a due retry queues the job.
+
+        ``check(spec.source)`` runs before anything is queued and raises when
+        the requester's source cannot be drawn; the row is then left as it
+        was. A due retry draws from the source of the request that asks for it.
+        """
 
         self.start()
         row = self.store.get(spec.key)
@@ -501,14 +558,22 @@ class ProjectionQueue:
             self.store.release(row.key)  # the cache directory was cleared: draw again
             row = None
         if row is not None and row.status == ERROR and self._due(row):
-            row = self.store.retry(row.key)
-            self._push(row.key)
-        elif (row is not None and row.status == PENDING and row.claimed_at is not None
+            if check is not None:
+                check(spec.source)
+            retried = self.store.retry(row.key, spec)
+            if retried is None:  # another request retried it first
+                return self.store.get(row.key) or row
+            self._push(retried.key)
+            return retried
+        if (row is not None and row.status == PENDING and row.claimed_at is not None
                 and self.clock() - row.claimed_at >= self.lease_s and row.key != self._running):
             self.store.reclaim(now=self.clock(), lease_s=self.lease_s)  # a lost job: take the lease back
             row = self.store.get(row.key)
-            self._push(row.key)
+            if row is not None:
+                self._push(row.key)
         if row is None:
+            if check is not None:
+                check(spec.source)
             row = self.store.enqueue(spec)
             if row.status == PENDING and row.claimed_at is None:
                 self._push(row.key)
@@ -553,7 +618,7 @@ class ProjectionQueue:
 
         now = self.clock()
         stale = {row.key for row in self.store.rows()
-                 if row.spec.renderer != renderer_version(row.spec.kind)
+                 if row.spec.renderer != renderer_version(row.spec.kind, row.spec.recipe)
                  or row.key != projection_key(row.spec.input_sha256, row.spec.kind, row.spec.recipe,
                                               renderer=row.spec.renderer)}
         self.store.drop(stale)
@@ -594,7 +659,7 @@ class ProjectionQueue:
         for row in self.store.rows():
             if len(self._queued) >= _MAX_QUEUED:
                 break
-            if row.status == ERROR and self._due(row) and self.store.retry(row.key) is not None:
+            if row.status == ERROR and self._due(row) and self.store.retry(row.key, row.spec) is not None:
                 self._queued.append(row.key)
             elif row.status == PENDING and row.claimed_at is None and row.key not in self._queued:
                 self._queued.append(row.key)
@@ -606,6 +671,8 @@ class ProjectionQueue:
         while (key := self._next()) is not None:
             try:
                 self._run(key)
+            except Exception:  # a store error must not end the worker; the lease comes back later
+                _log.exception("projection job %s could not be recorded", key)
             finally:
                 with self._wake:
                     self._running = None
@@ -626,7 +693,7 @@ class ProjectionQueue:
         except Exception as exc:  # a failed job is recorded, never raised into the worker
             detail = f"{type(exc).__name__}: {exc}" if not isinstance(exc, RenderFailed) else str(exc)
             retry_at = self.clock() + _backoff(row.attempts) if row.attempts < self.max_attempts else None
-            self.store.fail(key, error=detail[:500], next_attempt_at=retry_at)
+            self.store.fail(key, error=detail[-2000:], next_attempt_at=retry_at)
             return
         self.store.finish(key, blob_sha256=blob, load_ms=round(result.load_s * 1000),
                           render_ms=round(result.render_s * 1000))
@@ -642,6 +709,7 @@ def projection_queue(settings) -> ProjectionQueue:
 # ---------------------------------------------------------------- the render process
 
 _MEMORY_EXIT = 70
+_READY = b'{"ready": true}'
 
 
 def _resident_bytes() -> int | None:
@@ -692,22 +760,28 @@ def _serve(project_dir: Path, memory_cap_mb: int) -> None:
     from ..settings import StudioSettings
     from ..transport.errors import StudioError
 
+    answers.write(_READY.decode("ascii") + "\n")
+    answers.flush()
     binding = None
-    for line in sys.stdin:
-        request = json.loads(line)
-        try:
-            if binding is None:
-                binding = ProjectBinding.open(StudioSettings(project_dir=project_dir, cad_export="off"))
-            drawn = draw_model_view(binding, model_source=ModelSource.from_dict(request["source"]),
-                                    view=request["view"], size_px=request["size"], png_text=request["text"])
-            answer = {"ok": True, "png": base64.b64encode(drawn.png).decode("ascii"),
-                      "loadS": drawn.load_s, "renderS": drawn.render_s}
-        except StudioError as exc:
-            answer = {"ok": False, "error": f"{exc.code}: {exc.detail}"}
-        except Exception as exc:  # reported to the queue as this job's failure
-            answer = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
-        answers.write(json.dumps(answer) + "\n")
-        answers.flush()
+    try:
+        for line in sys.stdin:
+            request = json.loads(line)
+            try:
+                if binding is None:
+                    binding = ProjectBinding.open(StudioSettings(project_dir=project_dir, cad_export="off"))
+                drawn = draw_model_view(binding, model_source=ModelSource.from_dict(request["source"]),
+                                        view=request["view"], size_px=request["size"], png_text=request["text"])
+                answer = {"ok": True, "png": base64.b64encode(drawn.png).decode("ascii"),
+                          "loadS": drawn.load_s, "renderS": drawn.render_s}
+            except StudioError as exc:
+                answer = {"ok": False, "error": f"{exc.code}: {exc.detail}"}
+            except Exception as exc:  # reported to the queue as this job's failure
+                answer = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+            answers.write(json.dumps(answer) + "\n")
+            answers.flush()
+    finally:
+        if binding is not None:
+            binding.close()
 
 
 if __name__ == "__main__":

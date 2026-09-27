@@ -100,5 +100,28 @@ class MeshLineViewTests(unittest.TestCase):
         self.assertEqual(([mesh.object_id for mesh in meshes], skipped), (["wall"], ("rail",)))
 
 
+class MeshLineViewMemoryTests(unittest.TestCase):
+    """Needs no OCP: the depth buffer works on triangles the caller supplies."""
+
+    def test_large_overlapping_faces_are_drawn_in_bounded_memory(self):
+        import tracemalloc
+
+        from monkeydiagram.mesh_views import ObjectMesh, mesh_line_view
+
+        # Twelve slabs, each filling the whole 1024 px view at its own depth: about
+        # 50 million candidate pixels, which used to be expanded a few hundred
+        # thousand rows at a time into gigabytes of temporaries.
+        slabs = [ObjectMesh(f"slab-{index}", ((0, index, 0), (10, index, 0), (10, index, 10), (0, index, 10)),
+                            ((0, 1, 2), (0, 2, 3))) for index in range(12)]
+        tracemalloc.start()
+        try:
+            view = mesh_line_view(slabs, right=(1, 0, 0), up=(0, 0, 1), crop_uv=(0, 0, 10, 10), size_px=1024)
+            _, peak = tracemalloc.get_traced_memory()
+        finally:
+            tracemalloc.stop()
+        self.assertEqual((view.width, view.height), (1024, 1024))
+        self.assertLess(peak, 300 * 1024 * 1024, f"peak {peak / 2**20:.0f} MB")
+
+
 if __name__ == "__main__":
     unittest.main()

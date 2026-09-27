@@ -29,16 +29,16 @@ from monkeydiagram.drawing_elevation import (
     SectionPerspectiveView, freeze_model_axis_elevation, freeze_section_perspective,
     project_model_axis_elevation, read_elevation_source, VerifiedElevationSource,
 )
-from monkeydiagram.mesh_views import MeshViewError, mesh_line_view, pixel_size, triangulate
+from monkeydiagram.mesh_views import MeshViewError, mesh_line_view, mesh_pipeline, pixel_size, triangulate
 
 from .artifacts import (
-    ModelSource, SourceDocument, _document_pages, _document_source_lock,
+    FORMAT_3DM, ArtifactRecord, ModelSource, SourceDocument, _document_pages, _document_source_lock, _unavailable,
     artifact_bytes, document_bytes, list_artifacts, list_documents, require_complete_model, require_model_source, save_document,
 )
 from .binding import retained_sources
 from .binding import ProjectBinding
 from .monitoring import StudioMonitor
-from .projection import project_state
+from .projection import StateProjection, project_state, require_readable
 from ..transport.errors import StudioError
 
 
@@ -94,16 +94,47 @@ def _selected_source(
     return model_source, stage_ref
 
 
+def _readable_model_source(
+    binding: ProjectBinding, source: ModelSource, projection: StateProjection,
+) -> ArtifactRecord:
+    """``require_model_source`` for a read of the run's own record: an older canonical base is allowed.
+
+    Both identities are still resolved: the run's exact retained state with a
+    matching receipt digest, and model bytes registered to that state.
+    """
+
+    require_readable(projection)
+    if not projection.reference_state_exact or (
+            projection.run.run_id, projection.state_digest) != (source.run_id, source.state_digest):
+        raise StudioError(409, "MODEL_SOURCE_MISMATCH", "The model source does not match the exact retained editing state.")
+    record = next((row for row in list_artifacts(binding, run_id=source.run_id).artifacts if (
+        row.run_id, row.design_state_digest, row.sha256, row.format
+    ) == (source.run_id, source.state_digest, source.asset_sha256, FORMAT_3DM)), None)
+    if record is None:
+        raise StudioError(409, "MODEL_SOURCE_UNREGISTERED", "This model has no retained artifact binding to the requested run state.")
+    if not record.available:
+        raise _unavailable(binding, record)
+    return record
+
+
 def _complete_source(
     binding: ProjectBinding, model: ModelSource | DrawingAssetSource, stage_ref: ProjectRecordRef | None,
+    *, read_only: bool = False,
 ) -> tuple[ElevationSource | NativeModelSource, dict[str, Any]]:
+    """The exact complete model ``model`` names and its CAD receipt.
+
+    ``read_only`` is for a picture of the run's own recorded state (the
+    projection cache): the run may stand on an older canonical base. Anything
+    that builds on the model keeps the default, which requires current HEAD.
+    """
+
     if isinstance(model, DrawingAssetSource):
         artifact, _ = artifact_bytes(binding, model.asset_sha256, run_id=model.run_id)
         if artifact.run_id != model.run_id or artifact.representation != "external":
             raise StudioError(409, "DRAWING_SOURCE_MISMATCH", "Choose an external model asset or use its exact modelSource.")
     else:
         projection = project_state(binding, model.run_id, source_stage_ref=stage_ref)
-        artifact = require_model_source(binding, model, projection)
+        artifact = (_readable_model_source if read_only else require_model_source)(binding, model, projection)
     cad_ref = record_ref_from_uri(artifact.receipt_ref, binding.project_id)
     if stage_ref is not None and binding.design_stage(stage_ref).model_ref != cad_ref:
         raise StudioError(409, "DRAWING_SOURCE_MISMATCH", "The selected Stage pins a different model receipt.")
@@ -129,22 +160,45 @@ def _complete_source(
     return ElevationSource(model.run_id, step.relative_path, step.sha256, cad_ref.relative_path, cad_ref.sha256), binding.repository.load_json(cad_ref)
 
 
+# Right, up and look of each view in the Z-up frame of the verified source
+# model. ``axon`` is the isometric view from the -X, -Y, +Z side, Z up on the
+# sheet; only the transient model view offers it.
+_VIEW_FRAMES = {
+    "front": ((1, 0, 0), (0, 0, 1), (0, 1, 0)),
+    "back": ((-1, 0, 0), (0, 0, 1), (0, -1, 0)),
+    "left": ((0, -1, 0), (0, 0, 1), (1, 0, 0)),
+    "right": ((0, 1, 0), (0, 0, 1), (-1, 0, 0)),
+    "top": ((1, 0, 0), (0, 1, 0), (0, 0, -1)),
+    "axon": ((1 / sqrt(2), -1 / sqrt(2), 0), (1 / sqrt(6), 1 / sqrt(6), 2 / sqrt(6)),
+             (1 / sqrt(3), 1 / sqrt(3), -1 / sqrt(3))),
+}
+#: The crop's margin around every physical object's bounds, as a share of the longer side.
+VIEW_MARGIN = 0.05
+#: The axonometric's chord error in output pixels: finer facets would not be seen.
+AXON_CHORD_PX = 0.5
+
+
+def model_view_pipeline(view: str) -> dict[str, Any]:
+    """Every input of drawing ``view`` other than the model and the pixel size.
+
+    The projection cache puts this into its key, so a change to the frame,
+    the margin, the tessellation rule or the mesh renderer and its libraries
+    gives new keys rather than stale pictures. Only the axonometric is drawn
+    from the mesh.
+    """
+
+    if view != "axon":
+        raise ValueError(f"only the axonometric model view has a mesh pipeline, not {view!r}")
+    right, up, look = _VIEW_FRAMES[view]
+    return {"view": view, "right": list(right), "up": list(up), "look": list(look), "margin": VIEW_MARGIN,
+            "chordPx": AXON_CHORD_PX, "mesh": mesh_pipeline()}
+
+
 def _elevation_view(
     receipt: dict[str, Any], direction: str, *, hidden_lines: bool, scale_denominator: int,
 ) -> ElevationView:
-    # Coordinates are the Z-up frame used by the verified source model. The
-    # crop follows the retained cold-read bounds of every physical object.
-    # ``axon`` is the isometric view from the -X, -Y, +Z side, Z up on the
-    # sheet; only the transient model view offers it.
-    right, up, look = {
-        "front": ((1, 0, 0), (0, 0, 1), (0, 1, 0)),
-        "back": ((-1, 0, 0), (0, 0, 1), (0, -1, 0)),
-        "left": ((0, -1, 0), (0, 0, 1), (1, 0, 0)),
-        "right": ((0, 1, 0), (0, 0, 1), (-1, 0, 0)),
-        "top": ((1, 0, 0), (0, 1, 0), (0, 0, -1)),
-        "axon": ((1 / sqrt(2), -1 / sqrt(2), 0), (1 / sqrt(6), 1 / sqrt(6), 2 / sqrt(6)),
-                 (1 / sqrt(3), 1 / sqrt(3), -1 / sqrt(3))),
-    }[direction]
+    # The crop follows the retained cold-read bounds of every physical object.
+    right, up, look = _VIEW_FRAMES[direction]
     try:
         physical = receipt["physical_object_ids"]
         measured = receipt["readback"]
@@ -156,7 +210,7 @@ def _elevation_view(
         us = [sum(a * b for a, b in zip(point, right)) for point in corners]
         vs = [sum(a * b for a, b in zip(point, up)) for point in corners]
         depths = [sum(a * b for a, b in zip(point, look)) for point in corners]
-        margin = max(max(us) - min(us), max(vs) - min(vs), 0.001) * 0.05
+        margin = max(max(us) - min(us), max(vs) - min(vs), 0.001) * VIEW_MARGIN
         return ElevationView(
             name=f"elevation-{direction}", origin=(0, 0, 0), look=look, right=right, up=up,
             crop_uv=(min(us) - margin, min(vs) - margin, max(us) + margin, max(vs) + margin),
@@ -188,6 +242,14 @@ class ModelViewDrawing:
     render_s: float
 
 
+def check_model_view_source(binding: ProjectBinding, model_source: ModelSource, view: str) -> None:
+    """Refuse, as ``draw_model_view`` would, a source that cannot be drawn; nothing is read beyond its records."""
+
+    if view not in _VIEW_FRAMES:
+        raise StudioError(422, "MODEL_VIEW_INVALID", f"There is no {view!r} model view.")
+    _complete_source(binding, model_source, None, read_only=True)
+
+
 def draw_model_view(
     binding: ProjectBinding, *, model_source: ModelSource, view: str, size_px: int = MODEL_VIEW_MAX_EDGE,
     png_text: dict[str, str] | None = None,
@@ -197,10 +259,12 @@ def draw_model_view(
     ``axon`` is drawn from the model's triangles against a depth buffer
     (``monkeydiagram.mesh_views``); the orthographic elevations keep the exact
     hidden-line solve. ``png_text`` becomes the axonometric PNG's text chunks.
+    This is a read of the run's own recorded state, so a run on an older
+    canonical base is drawn too.
     """
 
     started = perf_counter()
-    source, receipt = _complete_source(binding, model_source, None)
+    source, receipt = _complete_source(binding, model_source, None, read_only=True)
     return _draw_view(binding, source, receipt, view, size_px=size_px, png_text=png_text, started=started)
 
 
@@ -234,10 +298,9 @@ def _draw_view(binding, source, receipt, view, *, size_px, png_text, started) ->
 
 
 def _axon_meshes(verified: VerifiedElevationSource, crop_uv, size_px: int):
-    # Half an output pixel of chord error: finer facets would not be seen.
     # A curve-only object has no surface to hide or be hidden by; it is left out.
     meshes, _ = triangulate(verified.entries, verified.physical_object_ids,
-                            linear_deflection=pixel_size(crop_uv, size_px) / 2)
+                            linear_deflection=pixel_size(crop_uv, size_px) * AXON_CHORD_PX)
     if not meshes:
         raise MeshViewError("the model has no surfaces to draw")
     return meshes

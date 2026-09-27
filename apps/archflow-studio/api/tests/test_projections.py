@@ -4,13 +4,16 @@ from __future__ import annotations
 
 import base64
 from io import BytesIO
+import json
 import os
 from pathlib import Path
 import shutil
 import tempfile
+import sys
 import threading
+import time
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from fastapi.testclient import TestClient
 from PIL import Image, PngImagePlugin
@@ -24,8 +27,9 @@ from archflow_studio_api.application.projections import (
 )
 from archflow_studio_api.main import create_app
 from archflow_studio_api.settings import StudioSettings
+from archflow_studio_api.transport.errors import StudioError
 
-from .support import PROJECT_ID, make_empty_project
+from .support import PROJECT_ID, advance_head, make_empty_project
 
 ASSET = "a" * 64
 STATE = "b" * 64
@@ -47,11 +51,13 @@ class ScriptedRenderer:
     def __init__(self, *outcomes):
         self.outcomes = list(outcomes)
         self.calls = []
+        self.sources = []
         self.started = threading.Event()
         self.cancelled = threading.Event()
 
     def render(self, spec, *, timeout_s):
         self.calls.append(spec.key)
+        self.sources.append(spec.source)
         outcome = self.outcomes.pop(0) if self.outcomes else "ok"
         self.started.set()
         if outcome == "ok":
@@ -114,6 +120,39 @@ class KeyTests(unittest.TestCase):
             self.assertNotEqual(projection_spec(SOURCE).key, before)
         with patch.object(projections, "SALT", "archflow-projection-test"):
             self.assertNotEqual(projection_spec(SOURCE).key, before)
+
+    def test_every_pipeline_input_reaches_the_key(self):
+        from archflow_studio_api.application import drawings
+        from monkeydiagram import mesh_views
+
+        before = projection_spec(SOURCE)
+        right, up, look = drawings._VIEW_FRAMES["axon"]
+        real_version = mesh_views.metadata.version
+        changes = {
+            "frame": patch.dict(drawings._VIEW_FRAMES, {"axon": (right, up, tuple(-x for x in look))}),
+            "margin": patch.object(drawings, "VIEW_MARGIN", 0.1),
+            "tessellation": patch.object(drawings, "AXON_CHORD_PX", 0.25),
+            "angular deflection": patch.object(mesh_views, "ANGULAR_DEFLECTION", 0.25),
+            "crease": patch.object(mesh_views, "CREASE_DEGREES", 20.0),
+            "supersample": patch.object(mesh_views, "_SUPERSAMPLE", 3),
+            "depth tolerance": patch.object(mesh_views, "_DEPTH_TOLERANCE", 2.0),
+            "png": patch.object(mesh_views, "_PNG_COMPRESS_LEVEL", 9),
+            "OCP": patch.object(mesh_views.metadata, "version",
+                                lambda name: "7.9.9" if name == "cadquery-ocp" else real_version(name)),
+        }
+        keys = set()
+        for name, change in changes.items():
+            with self.subTest(input=name), change:
+                spec = projection_spec(SOURCE)
+                self.assertNotEqual(spec.key, before.key)
+                self.assertNotEqual(spec.renderer, before.renderer)
+                keys.add(spec.key)
+        self.assertEqual(len(keys), len(changes))
+        self.assertEqual(projection_spec(SOURCE).key, before.key)
+        pipeline = json.loads(before.png_text()["archflow:pipeline"])
+        self.assertEqual((pipeline["margin"], pipeline["chordPx"], pipeline["mesh"]["renderer"]),
+                         (drawings.VIEW_MARGIN, drawings.AXON_CHORD_PX, mesh_views.RENDERER_VERSION))
+        self.assertIn("cadquery-ocp", pipeline["mesh"]["libraries"])
 
     def test_recipes_are_complete_and_refuse_unknown_fields_and_values(self):
         self.assertEqual(recipe_of(MODEL_LINES, {"size": 256}), {"view": "axon", "size": 256, "style": "lines"})
@@ -194,31 +233,105 @@ class QueueTests(unittest.TestCase):
         self.assertEqual((again.status, again.blob_sha256), (DONE, blob))
         self.assertEqual(len(renderer.calls), 2)
 
-    def test_a_lost_lease_is_reclaimed_after_its_timeout_and_at_startup(self):
+    def test_a_lost_lease_is_reclaimed_after_its_timeout_and_a_live_one_is_left_alone(self):
+        renderer = ScriptedRenderer()
+        queue = self.queue(renderer, timeout_s=60)
+        queue.start()  # a running worker, with nothing to reclaim yet
+        spec = projection_spec(SOURCE)
+        queue.store.enqueue(spec)
+        claimed_at = self.clock()
+        queue.store.claim(spec.key, now=claimed_at)  # another worker took it and was lost
+        self.clock.now += queue.lease_s - 1
+        row = queue.request(spec)
+        self.settle(queue)
+        self.assertEqual((row.status, queue.store.get(spec.key).claimed_at), (PENDING, claimed_at),
+                         "a live lease is left alone")
+        self.assertEqual(renderer.calls, [], "the running worker was not handed a leased job")
+        self.clock.now += 1
+        self.assertEqual(queue.request(spec).status, PENDING)
+        self.settle(queue)
+        row = queue.store.get(spec.key)
+        self.assertEqual((row.status, row.attempts), (DONE, 2), "the lost attempt still counts")
+        self.assertEqual(renderer.calls, [spec.key])
+
+    def test_a_restart_reclaims_every_lease(self):
         store = InMemoryStatusStore()
         spec = projection_spec(SOURCE)
         store.enqueue(spec)
-        store.claim(spec.key, now=self.clock())  # a worker took it and was lost
+        store.claim(spec.key, now=self.clock())  # the process died while drawing it
         renderer = ScriptedRenderer()
-        queue = self.queue(renderer, store=store, timeout_s=60)
-        queue._thread = threading.current_thread()  # not started: no startup reclaim in this half
-        self.clock.now += queue.lease_s - 1
-        self.assertEqual(queue.request(spec).status, PENDING)
-        self.assertEqual(renderer.calls, [], "a live lease is left alone")
-        self.clock.now += 1
-        queue._thread = None
-        queue.start()
-        self.settle(queue)
-        self.assertEqual(store.get(spec.key).status, DONE)
-        self.assertEqual(store.get(spec.key).attempts, 2, "the lost attempt still counts")
-
-        later = projection_spec(ModelSource("run-later", STATE, "e" * 64))
-        store.enqueue(later)
-        store.claim(later.key, now=self.clock())
-        restarted = self.queue(ScriptedRenderer(), store=store, timeout_s=60)
-        restarted.start()  # a restart reclaims every lease at once
+        restarted = self.queue(renderer, store=store, timeout_s=60)
+        restarted.start()
         self.settle(restarted)
-        self.assertEqual(store.get(later.key).status, DONE)
+        self.assertEqual((store.get(spec.key).status, renderer.calls), (DONE, [spec.key]))
+
+    def test_a_source_that_cannot_be_drawn_leaves_no_row(self):
+        renderer = ScriptedRenderer()
+        queue = self.queue(renderer)
+        stale = projection_spec(ModelSource("run-stale", "c" * 64, ASSET))
+
+        def check(source):
+            if source.run_id == "run-stale":
+                raise StudioError(409, "MODEL_SOURCE_MISMATCH", "stale")
+
+        with self.assertRaises(StudioError):
+            queue.request(stale, check)
+        self.assertIsNone(queue.store.get(stale.key), "a refused request records nothing")
+        good = projection_spec(SOURCE)
+        self.assertEqual(good.key, stale.key, "both runs hold the same model asset")
+        queue.request(good, check)
+        self.settle(queue)
+        self.assertEqual(queue.request(stale, check).status, DONE, "a done key is served to every source")
+        self.assertEqual(renderer.sources, [SOURCE])
+
+    def test_a_retry_draws_from_the_newest_requester_not_the_first(self):
+        renderer = ScriptedRenderer("MODEL_SOURCE_MISMATCH: first requester went stale", "ok")
+        queue = self.queue(renderer)
+        first = projection_spec(ModelSource("run-first", "c" * 64, ASSET))
+        queue.request(first)
+        self.settle(queue)
+        self.assertEqual(queue.request(first).status, ERROR)
+        self.clock.now += projections.BACKOFF_S[0]
+        check = Mock()
+        later = projection_spec(SOURCE)
+        self.assertEqual(queue.request(later, check).status, PENDING)
+        check.assert_called_once_with(SOURCE)
+        self.settle(queue)
+        row = queue.request(later)
+        self.assertEqual((row.status, row.spec.source), (DONE, SOURCE))
+        self.assertEqual(renderer.sources, [first.source, SOURCE])
+
+    def test_two_requests_retrying_one_key_at_once_do_not_fail(self):
+        queue = self.queue(ScriptedRenderer("broken"))
+        spec = projection_spec(SOURCE)
+        queue.request(spec)
+        self.settle(queue)
+        self.clock.now += projections.BACKOFF_S[0]
+        errored = queue.store.get(spec.key)
+        # The other request's retry lands between this request's read and its own retry.
+        with patch.object(queue.store, "retry", return_value=None):
+            self.assertEqual(queue.request(spec), errored)
+
+    def test_a_store_error_does_not_stop_the_worker(self):
+        store = InMemoryStatusStore()
+        finish = store.finish
+        broken = [True]
+
+        def flaky_finish(key, **fields):
+            if broken.pop() if broken else False:
+                raise OSError("index unavailable")
+            finish(key, **fields)
+
+        store.finish = flaky_finish
+        renderer = ScriptedRenderer()
+        queue = self.queue(renderer, store=store)
+        first, second = projection_spec(SOURCE), projection_spec(ModelSource("run", STATE, "e" * 64))
+        with self.assertLogs(projections.__name__, "ERROR"):
+            queue.request(first)
+            self.settle(queue)
+        queue.request(second)
+        self.settle(queue)
+        self.assertEqual(store.get(second.key).status, DONE, "the worker still runs")
 
     def test_failures_retry_with_backoff_a_bounded_number_of_times(self):
         renderer = ScriptedRenderer("broken", "broken", "broken", "ok")
@@ -293,6 +406,22 @@ class QueueTests(unittest.TestCase):
         self.assertIsNotNone(queue.blobs.read(young))
 
 
+class RenderProcessFailureTests(unittest.TestCase):
+    def test_a_process_that_dies_reports_the_end_of_its_stderr(self):
+        real_popen = projections.subprocess.Popen
+
+        def broken(arguments, **options):
+            script = "import sys; sys.stderr.write('render boot failed\\n'); sys.exit(3)"
+            return real_popen([arguments[0], "-c", script], **options)
+
+        renderer = SubprocessRenderer(Path(tempfile.gettempdir()))
+        self.addCleanup(renderer.close)
+        with patch.object(projections.subprocess, "Popen", side_effect=broken):
+            with self.assertRaisesRegex(RenderFailed, "exited with 3: render boot failed"):
+                renderer.render(projection_spec(SOURCE), timeout_s=60)
+        self.assertFalse(renderer.ready.is_set())
+
+
 class RouteTests(unittest.TestCase):
     def setUp(self):
         self.root = Path(tempfile.mkdtemp())
@@ -304,6 +433,10 @@ class RouteTests(unittest.TestCase):
         self.app.state.projections = ProjectionQueue(self.root / "cache" / "projections", lambda: self.renderer)
         self.client = TestClient(self.app)
         self.addCleanup(self.client.close)
+        # The synthetic source names no real run; the render process tests check real ones.
+        checker = patch("archflow_studio_api.routes.projections.check_model_view_source")
+        self.check = checker.start()
+        self.addCleanup(checker.stop)
 
     def test_status_is_not_cached_and_the_blob_is_immutable(self):
         params = {**SOURCE.to_dict(), "size": 256}
@@ -326,6 +459,13 @@ class RouteTests(unittest.TestCase):
         self.assertTrue((self.root / "cache" / "projections" / "blobs" / f"{done['blobSha256']}.png").is_file())
         self.assertFalse(any("projections" in path.parts for path in (self.root / PROJECT_ID).rglob("*")),
                          "nothing is written into the project")
+
+    def test_a_source_that_cannot_be_drawn_is_refused_before_anything_is_queued(self):
+        self.check.side_effect = StudioError(409, "MODEL_SOURCE_MISMATCH", "The model source does not match.")
+        refused = self.client.get("/api/projections", params=SOURCE.to_dict())
+        self.assertEqual((refused.status_code, refused.json()["code"]), (409, "MODEL_SOURCE_MISMATCH"))
+        self.assertEqual(self.app.state.projections.store.rows(), ())
+        self.assertEqual(self.check.call_args.args[1:], (SOURCE, "axon"))
 
     def test_unknown_keys_blobs_and_recipes_are_refused(self):
         self.assertEqual(self.client.get(f"/api/projections/{'0' * 64}").json()["code"], "PROJECTION_UNKNOWN")
@@ -399,9 +539,70 @@ class RenderProcessTests(unittest.TestCase):
             renderer.render(spec, timeout_s=0.01)
         self.assertEqual(max(Image.open(BytesIO(renderer.render(spec, timeout_s=120).png)).size), 128)
 
-    def test_the_memory_cap_stops_the_process_as_a_failure(self):
-        with self.assertRaisesRegex(RenderFailed, "memory cap of 1 MB exceeded"):
-            self.renderer(memory_cap_mb=1).render(projection_spec(self.model), timeout_s=120)
+    @unittest.skipUnless(sys.platform.startswith("linux"), "reads the render process's memory from /proc")
+    def test_the_memory_cap_stops_the_process_during_a_render(self):
+        def memory_mb(process, field):
+            for line in Path(f"/proc/{process.pid}/status").read_text().splitlines():
+                if line.startswith(field + ":"):
+                    return int(line.split()[1]) / 1024
+            raise AssertionError(field)
+
+        spec = projection_spec(self.model, recipe={"size": 1024})
+        probe = self.renderer()
+        probe._process = probe._start()
+        self.assertTrue(probe.ready.wait(60))
+        started = memory_mb(probe._process, "VmRSS")
+        probe.render(spec, timeout_s=120)
+        peak = memory_mb(probe._process, "VmHWM")
+        if peak - started < 40:
+            self.skipTest(f"a render grows the process by only {peak - started:.0f} MB here")
+        cap = round(started + (peak - started) / 4)
+        capped = self.renderer(memory_cap_mb=cap)
+        with self.assertRaisesRegex(RenderFailed, f"memory cap of {cap} MB exceeded"):
+            capped.render(spec, timeout_s=120)
+        self.assertTrue(capped.ready.is_set(), "the process started and was stopped while rendering")
+
+    def test_a_stale_source_is_refused_and_does_not_poison_the_key(self):
+        cache = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, cache, True)
+        app = create_app(StudioSettings(project_dir=self.project_dir, cad_export="off", cache_dir=cache))
+        stale = ModelSource(self.model.run_id, "0" * 64, self.model.asset_sha256)
+        self.assertEqual(projection_spec(stale).key, projection_spec(self.model).key)
+        with TestClient(app) as client:
+            refused = client.get("/api/projections", params=stale.to_dict())
+            self.assertEqual(refused.status_code, 409, refused.text)
+            self.assertEqual(app.state.projections.store.rows(), (), "nothing queued for the stale source")
+            self.assertEqual(client.get("/api/projections", params=self.model.to_dict()).json()["status"], "pending")
+            self.assertTrue(app.state.projections.wait_idle(120))
+            self.assertEqual(client.get("/api/projections", params=self.model.to_dict()).json()["status"], "done")
+
+    def test_a_run_on_an_older_canonical_base_is_drawn_but_not_acted_on(self):
+        from archflow.project.repository import FilesystemProjectRepository
+        from archflow_studio_api.application.binding import ProjectBinding
+        from archflow_studio_api.application.drawings import draw_model_view
+        from archflow_studio_api.application.projection import project_state, require_actionable
+
+        copy = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, copy, True)
+        project = copy / PROJECT_ID
+        shutil.copytree(self.project_dir, project)
+        advance_head(FilesystemProjectRepository.open(project), run_id="promotion-after-model")
+        binding = ProjectBinding.open(StudioSettings(project_dir=project, cad_export="off"))
+        self.addCleanup(binding.close)
+        with self.assertRaises(StudioError) as refused:
+            require_actionable(project_state(binding, self.model.run_id))
+        self.assertEqual(refused.exception.code, "REFERENCE_BASE_STALE", "actions still need current HEAD")
+        drawn = draw_model_view(binding, model_source=self.model, view="axon", size_px=256)
+        self.assertEqual(max(drawn.width, drawn.height), 256)
+        app = create_app(StudioSettings(project_dir=project, cad_export="off", cache_dir=copy / "cache"))
+        with TestClient(app) as client:
+            params = {**self.model.to_dict(), "size": 256}
+            self.assertEqual(client.get("/api/projections", params=params).json()["status"], "pending")
+            self.assertTrue(app.state.projections.wait_idle(120))
+            done = client.get("/api/projections", params=params).json()
+            self.assertEqual(done["status"], "done", done)
+            with Image.open(BytesIO(client.get(done["blobUrl"]).content)) as image:
+                self.assertEqual(image.size, (drawn.width, drawn.height))
 
     def test_an_unknown_model_is_a_failure_not_a_crash(self):
         missing = ModelSource(self.model.run_id, self.model.state_digest, "f" * 64)
