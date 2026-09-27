@@ -14,6 +14,7 @@ import { CURRENT, type GrowthTree, type TreeNode } from "./model";
 import { DESIGN_TREE_UNSYNCED, useRecordAndContinue, type DesignTreeData } from "./useDesignTree";
 import { refusalWords, whenText, type TreeWords } from "./words";
 import { ModelThumbnail } from "../artifacts/ModelThumbnail";
+import { nodeModelSource } from "./previews";
 
 export function DesignTreeDetails({ tree, node, words, data, confirmAccept, onConfirmAccept, onClose, onView, onRecordEdits = null }: {
   tree: GrowthTree;
@@ -107,9 +108,7 @@ export function DesignTreeDetails({ tree, node, words, data, confirmAccept, onCo
       head: accept.lineHeadStage && tree.nodes.get(accept.lineHeadStage) ? words.title(tree.nodes.get(accept.lineHeadStage)!) : "—" })
       : accept.block === "no-stage" ? t("designTree.accept.noStage") : accept.block === "no-head" ? t("designTree.accept.noHead") : null;
   const showConfirm = confirmAccept && accept.allowed && confirmClosedFor !== node.id;
-  const source = node.kind === "stage" ? data.source?.history.stages.find(stage => stage.stageRef === node.stage?.ref)?.modelSource
-    : node.kind === "candidate" ? data.source?.history.candidates?.find(candidate => candidate.candidateId === node.candidate?.candidateId)?.modelSource
-      : node.kind === "current" ? data.source?.workingSource.head?.modelSource : null;
+  const source = nodeModelSource(data.source, node);
   return <aside ref={aside} tabIndex={-1} className="design-tree-inspector" aria-label={title} data-node={node.id} data-kind={node.kind}>
     <div className="design-tree-inspector__head">
       <div className="design-tree-inspector__identity"><strong>{title}</strong><span>{role}</span></div>

@@ -12,6 +12,7 @@ type Fixture = typeof import("../src/features/designTree/fixture.ts");
 type Hit = typeof import("../src/features/canvas/sceneHit.ts");
 type Words = typeof import("../src/features/designTree/words.ts");
 type Undo = typeof import("../src/features/designTree/continueUndo.ts");
+type Previews = typeof import("../src/features/designTree/previews.ts");
 
 async function harness(t: TestContext) {
   const vite = await createServer({
@@ -27,6 +28,7 @@ async function harness(t: TestContext) {
     ...await vite.ssrLoadModule("/src/features/canvas/sceneHit.ts") as Hit,
     ...await vite.ssrLoadModule("/src/features/designTree/words.ts") as Words,
     ...await vite.ssrLoadModule("/src/features/designTree/continueUndo.ts") as Undo,
+    ...await vite.ssrLoadModule("/src/features/designTree/previews.ts") as Previews,
   };
 }
 
@@ -603,4 +605,126 @@ test("text fits its box, and a turned rectangle keeps its own hit area", async (
   assert.equal(api.sceneBoxContains(box, { x: 90, y: 10 }), false);
   assert.equal(api.sceneBoxContains({ ...box, angle: 0 }, { x: 90, y: 10 }), true);
   assert.equal(api.sceneBoxContains({ x: Number.NaN, y: 0, width: 1, height: 1 }, { x: 0, y: 0 }), false);
+});
+
+test("close cards show the retained previews they have, and only close cards (#406)", async (t) => {
+  const api = await harness(t);
+  const fixture = api.createDesignTreeFixture();
+  const source = sourceOf(fixture);
+  const tree = api.buildGrowthTree(source);
+  const drawing = api.layoutGrowthTree(tree);
+  const words = {
+    current: "Current", origin: "Project start", name: (node: { label: string | null }) => node.label ?? "", pending: (status: string) => status,
+    currentAt: "at S2", accept: "Accept as S3", acceptBlocked: "Accept as next Stage", status: () => "Ready",
+    fork: (fork: { options: number }) => [`${fork.options} options`],
+  };
+  // Each node that names a model can show it; running lines and the project start have none.
+  const models = [...tree.nodes.values()].filter((node) => api.nodeModelSource(source, node));
+  assert.deepEqual(new Set(models.map((node) => node.kind)), new Set(["stage", "candidate", "current"]));
+  assert.equal([...tree.nodes.values()].filter((node) => node.kind === "pending").some((node) => api.nodeModelSource(source, node)), false);
+  const S1 = [...tree.nodes.values()].find((node) => node.kind === "stage" && node.stage!.number === 1)!.id;
+  const shown = ["candidate:run-massing-b", "candidate:run-facade-c", S1, "current"];
+  const previews = new Map(shown.map((id, index) => [id, { fileId: `file-${index}`, width: 160 + index * 40, height: 90 }]));
+  const scene = (level: "far" | "mid" | "close") =>
+    api.buildTreeScene(tree, drawing, { level, textScale: level === "far" ? 4 : 1, selected: null, fontFamily: 2, words: words as never, previews });
+  type Element = { id: string; type: string; x: number; y: number; width: number; height: number; fileId?: string; customData: { tree: { role: string; node?: string } } };
+  const images = (level: "far" | "mid" | "close") => (scene(level).skeletons as unknown as Element[]).filter((element) => element.type === "image");
+  assert.deepEqual(images("close").map((element) => element.customData.tree.node).sort(), [...shown].sort(), "one image for each node that has one");
+  assert.deepEqual(images("mid"), [], "the middle level draws no images");
+  assert.deepEqual(images("far"), [], "the far level draws no images");
+  const close = scene("close").skeletons as unknown as Element[];
+  for (const image of images("close")) {
+    const card = drawing.nodes.get(image.customData.tree.node!)!.card;
+    assert.ok(image.x >= card.x && image.y >= card.y && image.x + image.width <= card.x + card.width + 1e-6 && image.y + image.height <= card.y + card.height + 1e-6,
+      `${image.id} stays inside its card`);
+    const preview = previews.get(image.customData.tree.node!)!;
+    assert.ok(Math.abs(image.width / image.height - preview.width / preview.height) < 1e-6, `${image.id} keeps its proportions`);
+    assert.equal(image.fileId, preview.fileId);
+  }
+  // The image card keeps its letter, name and status, and its words stay clear of the image.
+  const massingB = close.filter((element) => element.customData.tree.node === "candidate:run-massing-b");
+  const picture = massingB.find((element) => element.type === "image")!;
+  assert.equal(massingB.find((element) => element.id === "candidate:run-massing-b:letter")?.type, "text");
+  for (const role of ["name", "status"]) {
+    const words = massingB.filter((element) => element.type === "text" && element.customData.tree.role === role);
+    assert.ok(words.length > 0 && words.every((element) => element.x >= picture.x + picture.width), `${role} beside the image`);
+  }
+  assert.equal(massingB.some((element) => element.customData.tree.role === "summary"), false, "the image takes the summary's place");
+  // A card without a preview is the close card it was, and every node can still be clicked.
+  const withoutPreviews = api.buildTreeScene(tree, drawing, { level: "close", textScale: 1, selected: null, fontFamily: 2, words: words as never });
+  const plain = (result: { skeletons: unknown[] }) => (result.skeletons as Element[]).filter((element) => element.customData.tree.node === "candidate:run-massing-a");
+  assert.deepEqual(plain(scene("close")), plain(withoutPreviews));
+  for (const id of tree.nodes.keys()) assert.ok(scene("close").hits.some((hit) => hit.node === id && hit.action === "select"), `${id} can be clicked`);
+});
+
+test("only cards in view at the close level want their previews", async (t) => {
+  const api = await harness(t);
+  const drawing = api.layoutGrowthTree(api.buildGrowthTree(sourceOf(api.createDesignTreeFixture())));
+  const current = drawing.nodes.get("current")!.card;
+  // A 400 × 300 view centred on Current at 150 %.
+  const view = { zoom: 1.5, width: 400, height: 300, scrollX: 200 / 1.5 - (current.x + current.width / 2), scrollY: 150 / 1.5 - (current.y + current.height / 2) };
+  const near = api.nodesWantingPreviews(drawing, view, "close");
+  assert.ok(near.includes("current"));
+  assert.ok(near.length < drawing.nodes.size / 2, `a view shows part of the tree: ${near}`);
+  const left = -view.scrollX, right = left + view.width / view.zoom;
+  for (const id of near) {
+    const card = drawing.nodes.get(id)!.card;
+    assert.ok(card.x < right && card.x + card.width > left, `${id} is in view`);
+  }
+  assert.deepEqual(api.nodesWantingPreviews(drawing, view, "mid"), [], "nothing is wanted at the middle level");
+  assert.deepEqual(api.nodesWantingPreviews(drawing, view, "far"), []);
+  assert.deepEqual(api.nodesWantingPreviews(drawing, { ...view, scrollX: view.scrollX + 1e6 }, "close"), [], "nothing off screen");
+});
+
+test("the preview loader reads each key once, a few at a time, only while it is wanted", async (t) => {
+  const api = await harness(t);
+  const calls: string[] = [];
+  const pending = new Map<string, (value: string | null) => void>();
+  let changes = 0;
+  const loader = api.createPreviewLoader<string>((key) => {
+    calls.push(key);
+    if (key === "broken") return Promise.reject(new Error("unreadable"));
+    return new Promise((resolve) => pending.set(key, resolve));
+  }, { limit: 2, onChange: () => { changes += 1; } });
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+  loader.want(["a", "b", "c", "d"]);
+  await settle();
+  assert.deepEqual(calls, ["a", "b"], "at most two at a time");
+  // The view moved on: c and d are no longer wanted, so they are never read.
+  loader.want(["a", "e"]);
+  pending.get("a")!("image-a");
+  pending.get("b")!(null);
+  await settle();
+  assert.deepEqual(calls, ["a", "b", "e"]);
+  assert.equal(loader.get("a"), "image-a");
+  assert.equal(loader.get("b"), null, "no preview is an answer, not an error");
+  assert.equal(loader.get("c"), undefined);
+  // Wanted again, a key already read is not read twice.
+  loader.want(["a", "b", "a"]);
+  await settle();
+  assert.deepEqual(calls, ["a", "b", "e"]);
+  // A failed read is no image.
+  loader.want(["broken"]);
+  await settle();
+  assert.equal(loader.get("broken"), null);
+  // A retained preview is read again; the old image stays until the new one arrives.
+  loader.want(["a"]);
+  loader.refresh("a");
+  await settle();
+  assert.equal(calls.filter((key) => key === "a").length, 2);
+  assert.equal(loader.get("a"), "image-a");
+  pending.get("a")!("image-a2");
+  await settle();
+  assert.equal(loader.get("a"), "image-a2");
+  // Nothing wanted, nothing read; a disposed loader reads nothing more.
+  const before = calls.length;
+  loader.want([]);
+  loader.refresh("b");
+  await settle();
+  assert.equal(calls.length, before);
+  loader.dispose();
+  loader.want(["x"]);
+  await settle();
+  assert.equal(calls.length, before);
+  assert.ok(changes >= 4);
 });
