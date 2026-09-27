@@ -1,27 +1,4 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": [
-    {
-      "id": "GH-388",
-      "lanes": [
-        {
-          "id": "windows-watch-ci",
-          "status": "active",
-          "branch": "codex/388-windows-watch-ci",
-          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-388-windows-watch-ci",
-          "base_ref": "2127be26",
-          "contributor": "Claude",
-          "reviewer": "Claude root task",
-          "handoff": "cloud session; master integrates",
-          "modules": [
-            "project.watch"
-          ],
-          "write_scope": [
-            ".github/workflows/verify.yml"
-          ],
-          "depends_on": []
-        }
-      ]
-    }
-  ]
+  "items": []
 }
