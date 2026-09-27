@@ -1348,9 +1348,17 @@ try {
   const savedEditingBases = await page.evaluate(() => localStorage.getItem("archflow-studio.user-preferences"));
   assert.ok(!savedEditingBases?.includes("cand-A-1"), "viewing a candidate does not save it as an editing choice");
   await visibleWorkspace().evaluate((element) => { element.switchMarker = "retained"; element.retainedCanvas = element.querySelector(".stage canvas"); });
-  await visibleWorkspace().locator('button[aria-controls="view-tools"]').click();
-  await visibleWorkspace().locator("#view-tools").getByRole("button", { name: "Top", exact: true }).click();
-  await visibleWorkspace().locator('button[aria-controls="view-tools"]').click();
+  // #352: at 1440 the tools are one row, and the standard views are in the bar's More.
+  assert.ok((await visibleWorkspace().locator(".model-tools").boundingBox()).height <= 52, "the tools are one row at 1440");
+  // Esc closes a bar menu's panel even after the focus dropped to the page, and returns to its menu.
+  await visibleWorkspace().locator('.project-bar button[aria-controls="stage-more-menu"]').click();
+  await page.evaluate(() => document.activeElement?.blur());
+  await page.keyboard.press("Escape");
+  await visibleWorkspace().locator("#stage-more-menu").waitFor({ state: "detached" });
+  assert.equal(await page.evaluate(() => document.activeElement?.getAttribute("aria-controls")), "stage-more-menu");
+  await visibleWorkspace().locator('.project-bar button[aria-controls="stage-more-menu"]').click();
+  await visibleWorkspace().locator("#stage-more-menu").getByRole("button", { name: "Top", exact: true }).click();
+  await visibleWorkspace().locator('.project-bar button[aria-controls="stage-more-menu"]').click();
   await page.mouse.move(10, 10);
   await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
   const preservedView = await visibleWorkspace().locator(".stage canvas").first().screenshot();
@@ -1833,9 +1841,9 @@ try {
   assert.equal(writes.filter(([, pathname]) => pathname.endsWith("/start")).length, beforeReadbackStarts, "showing a candidate in its existing project never starts the app again");
 
   // Refreshing a completed readback preserves the user's later camera view.
-  await visibleWorkspace().locator('button[aria-controls="view-tools"]').click();
-  await visibleWorkspace().locator("#view-tools").getByRole("button", { name: "Top", exact: true }).click();
-  await visibleWorkspace().locator('button[aria-controls="view-tools"]').click();
+  await visibleWorkspace().locator('.project-bar button[aria-controls="stage-more-menu"]').click();
+  await visibleWorkspace().locator("#stage-more-menu").getByRole("button", { name: "Top", exact: true }).click();
+  await visibleWorkspace().locator('.project-bar button[aria-controls="stage-more-menu"]').click();
   await page.mouse.move(10, 10);
   const beforeRefreshCanvas = await visibleWorkspace().locator(".stage canvas").first().screenshot();
   const beforeRefreshBytes = workspaceFixture.requests.filter((row) => row.name.endsWith("/bytes")).length;
