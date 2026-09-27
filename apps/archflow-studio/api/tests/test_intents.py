@@ -493,7 +493,9 @@ class SemanticIntentTests(IntentTestCase):
         schema = response_schema(strict=False)
         edits = schema["properties"]["semanticEdit"]["anyOf"][1]
         element = edits["properties"]["entities"]["items"]["anyOf"][0]
-        wall = element["properties"]["fields"]["anyOf"][0]
+        # Found by its producer, never by variant position: order is not a contract.
+        wall = next(variant for variant in element["properties"]["fields"]["anyOf"]
+                    if variant["properties"]["producer"]["enum"] == ["wall"])
         self.assertEqual(wall["properties"]["params"], producer_signatures()["wall"]["parameters"])
         self.assertFalse(wall["additionalProperties"])
         projection = project_state(bound_project(self.app.state))

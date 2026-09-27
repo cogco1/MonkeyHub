@@ -288,23 +288,14 @@ def sketch_prism_proposal(
                 f"{component_id} is new here: name parentComponentId as one of "
                 f"{sorted(components)} so a seat builds it.",
             )
-        # What the new part *is* belongs to the record's own vocabulary, and
-        # nothing here may invent one: the question is architectural and short,
-        # so it is asked rather than answered with a guess.
-        if semantic_kind is None:
-            from archflow.semantics.registry import registered_ids
-
-            raise StudioError(
-                422, "COMPONENT_KIND_REQUIRED",
-                f"{component_id} is new: say what it is as semanticKind. "
-                f"The record accepts {sorted(registered_ids())}, and the words already used here: "
-                f"{sorted({str(entity.fields.get('semantic_kind')) for entity in projection.record.entities_of('Component@1') if entity.fields.get('semantic_kind')})}.",
-            )
+        # Geometry first: the new part exists with its identity, placement and
+        # provenance before anyone says what it is. A stated semanticKind is
+        # kept; an unstated one stays absent, never guessed (#400).
         rows.append({
             "entity_id": component_id,
             "schema": "Component@1",
             "parent_id": parent_component_id,
-            "fields": {"intent": component_id, "semantic_kind": semantic_kind},
+            "fields": {"intent": component_id, **({"semantic_kind": semantic_kind} if semantic_kind is not None else {})},
         })
     row = {
         "entity_id": element_id,

@@ -262,7 +262,7 @@ def _scope(message: str, sheet: Mapping[str, Any]):
     target_kinds = kinds_in(" ".join(str(target.get(key, "")) for key in ("elementId", "componentId", "producer")))
     component = next((item for item in sheet.get("components", ()) if item["componentId"] == target.get("componentId")), {})
     if not target_kinds:
-        target_kinds = kinds_in(str(component.get("semanticKind", "")))
+        target_kinds = kinds_in(str(component.get("semanticKind") or ""))
     if named_kinds and not named_kinds.issubset(target_kinds):
         return (), (), "request_kind_disagrees_with_selection"
     fields = set()
