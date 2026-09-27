@@ -160,6 +160,17 @@
       "reason": "Creates the output directory the verification writes its receipts into."
     },
     {
+      "path": "tools/projection_check.py",
+      "function": "_write",
+      "operations": [
+        "mkdir",
+        "write_bytes"
+      ],
+      "kind": "verification_report",
+      "owner": "tools.projection_check",
+      "reason": "Writes the response bodies and side results of one base/candidate comparison under the caller's scratch --work directory, and the JSON result and Markdown summary a person names with --out and --summary. The project it is given is only copied; every read and the one review write go to that scratch copy."
+    },
+    {
       "path": "tools/export_drawing_recipe.py",
       "function": "_write_export",
       "operations": [
