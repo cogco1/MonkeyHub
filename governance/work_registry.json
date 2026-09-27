@@ -167,7 +167,8 @@
         "apps/archflow-studio/api/tests/test_synthetic_project.py",
         "apps/archflow-studio/api/tests/test_projection_check.py",
         ".github/workflows/verify.yml",
-        "docs/testing/projection-check.md"
+        "docs/testing/projection-check.md",
+        "governance/architecture_policy.json"
       ],
       "card": "docs/mapping/planning/GH-376-projection-check.md",
       "acceptance": [
@@ -195,7 +196,8 @@
             "apps/archflow-studio/api/tests/test_synthetic_project.py",
             "apps/archflow-studio/api/tests/test_projection_check.py",
             ".github/workflows/verify.yml",
-            "docs/testing/projection-check.md"
+            "docs/testing/projection-check.md",
+            "governance/architecture_policy.json"
           ],
           "depends_on": [],
           "status": "active",
