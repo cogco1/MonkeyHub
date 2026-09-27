@@ -1,38 +1,4 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": [
-    {
-      "id": "GH-363",
-      "lanes": [
-        {
-          "id": "fingerprint-watch",
-          "status": "active",
-          "branch": "codex/363-fingerprint-watch",
-          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-363-fingerprint-watch",
-          "base_ref": "c4ed9500",
-          "contributor": "Claude",
-          "reviewer": "Claude root task",
-          "handoff": "Owner decision 2026-09-27: split from GH-365/projection-index-1b (cloud lane) to land first; if 1b also changed the fingerprint, this lane's version wins at 1b's integration. Local lane because the watcher must be tested on Windows. Real-project timings via D:\\MONKEYHUB_DEV\\temp\\projection-judges (private fixtures, local only).",
-          "modules": [
-            "project.layout",
-            "project.repository",
-            "studio.binding",
-            "hub.shell"
-          ],
-          "write_scope": [
-            "archflow/project/layout.py",
-            "archflow/project/repository.py",
-            "archflow/project/watch.py",
-            "apps/archflow-studio/api/archflow_studio_api/application/binding.py",
-            "apps/archflow-studio/api/archflow_studio_api/transport/conditional.py",
-            "apps/monkeyhub/api/monkeyhub_api/runtime.py",
-            "apps/monkeyhub/api/tests/test_project_runtime.py",
-            "apps/archflow-studio/api/archflow_studio_api/main.py"
-          ],
-          "depends_on": [],
-          "blocked_reason": null
-        }
-      ]
-    }
-  ]
+  "items": []
 }
