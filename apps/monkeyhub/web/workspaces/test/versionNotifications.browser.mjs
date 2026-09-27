@@ -12,6 +12,20 @@ import { createServer } from "vite";
 // disposable API. Only the version lists and EventSource are simulated here.
 // Every API mutation is blocked in both the browser and the local proxy.
 // Required: STUDIO_AB_URL and STUDIO_AB_PROJECT_ROOT.
+//
+// Running it: start a Studio API on a disposable copy of the project, alone, on a free
+// port that is not 5187, 5188, 60616 or 60617, as workingCopy's header shows, then from
+// apps/monkeyhub/web set STUDIO_AB_URL, STUDIO_AB_PROJECT_ROOT (and PLAYWRIGHT_MODULE when
+// playwright is not installed here) and run node workspaces/test/versionNotifications.browser.mjs.
+// The copy must hold the retained Exploration m-upper-cabinets with options A and B, a
+// second exact 3dm in B's run and state, and A's own native 3dm export in A's run and state;
+// only the owner's project holds them.
+// Stale on main (#355), checked against an isolated API on a project built from the API's
+// tests.support: opening the page moves the browser's editingBases choice into the runtime's
+// working draft (PUT /api/working-draft, #225) and viewing a model without a retained
+// thumbnail captures one (POST /api/captures, #326), both refused by the rule above; and a
+// real runtime lists Versions in the Design Tree layout, whose Exploration buttons carry
+// neither "View …" nor aria-pressed. It needs a rewrite before it can pass.
 const webRoot = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 assert.ok(process.env.STUDIO_AB_URL, "Name the isolated API with STUDIO_AB_URL");
 assert.ok(process.env.STUDIO_AB_PROJECT_ROOT, "Name the isolated project with STUDIO_AB_PROJECT_ROOT");

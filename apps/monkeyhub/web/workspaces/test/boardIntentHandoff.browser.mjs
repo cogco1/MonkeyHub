@@ -144,6 +144,8 @@ try {
             return await json({ ...state, ...(scenario === "changed-stage" && !recovered ? { sourceStageRef: "different-stage" } : {}) });
           }
           if (url.pathname === "/api/artifacts") return await json({ projectId, artifacts });
+          // #326: a retained model's preview; this fixture retains none, and a runtime without one answers null.
+          if (/^\/api\/model-assets\/[0-9a-f]{64}\/preview$/.test(url.pathname)) return await json(null);
           const model = artifacts.find((row) => url.pathname === `/api/artifacts/${row.sha256}/bytes`);
           if (model) {
             modelReads.push(model.sha256);
