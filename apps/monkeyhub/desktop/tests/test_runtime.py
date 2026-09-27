@@ -292,6 +292,69 @@ class WindowsProcesses:
         if failure is not None:
             raise failure
 
+    # #373: the single-instance checks bind the few functions they add here, so the
+    # signature table above stays as it is.
+    def api(self, name, arguments, result):
+        function = getattr(self.user, name)
+        function.argtypes, function.restype = arguments, result
+        return function
+
+    def top_level(self, pid):
+        """Every top-level window of the process, shown or hidden, as (hwnd, class, visible)."""
+        class_name = self.api("GetClassNameW", [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int], ctypes.c_int)
+        found = []
+
+        @self.callback_type
+        def collect(hwnd, _):
+            owner = wintypes.DWORD()
+            self.user.GetWindowThreadProcessId(hwnd, ctypes.byref(owner))
+            if owner.value == pid:
+                name = ctypes.create_unicode_buffer(256)
+                class_name(hwnd, name, len(name))
+                found.append((hwnd, name.value, bool(self.user.IsWindowVisible(hwnd))))
+            return True
+
+        self.user.EnumWindows(collect, 0)
+        return found
+
+    def notice(self, pid):
+        """The process's shown message box as (hwnd, caption, text), or None."""
+        find = self.api("FindWindowExW", [wintypes.HWND, wintypes.HWND, wintypes.LPCWSTR, wintypes.LPCWSTR], wintypes.HWND)
+        send = self.api("SendMessageW", [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM], wintypes.LPARAM)
+        for hwnd, name, visible in self.top_level(pid):
+            if name != "#32770" or not visible:
+                continue
+            caption = ctypes.create_unicode_buffer(256)
+            self.user.GetWindowTextW(hwnd, caption, len(caption))
+            texts, label = [], None
+            while label := find(hwnd, label, "Static", None):
+                text = ctypes.create_unicode_buffer(1024)
+                send(label, 0x000D, len(text), ctypes.addressof(text))  # WM_GETTEXT, copied across processes
+                texts.append(text.value)
+            return hwnd, caption.value, "".join(texts)
+        return None
+
+    def dismiss(self, hwnd):
+        # A message box with only OK ignores a posted IDOK; closing it ends it like OK does.
+        if not self.user.PostMessageW(hwnd, 0x0010, 0, 0):  # WM_CLOSE
+            raise ctypes.WinError(ctypes.get_last_error())
+
+    def minimize(self, hwnd):
+        if not self.user.PostMessageW(hwnd, 0x0112, 0xF020, 0):  # WM_SYSCOMMAND SC_MINIMIZE
+            raise ctypes.WinError(ctypes.get_last_error())
+
+    def minimized(self, hwnd):
+        return bool(self.api("IsIconic", [wintypes.HWND], wintypes.BOOL)(hwnd))
+
+    def foreground(self):
+        return self.api("GetForegroundWindow", [], wintypes.HWND)()
+
+    def dpi_awareness(self, hwnd):
+        """0 when Windows stretches the window's bitmap at any scaling (blurry), 1 when it is
+        drawn at the system DPI, 2 when it is drawn at each monitor's DPI."""
+        context = self.api("GetWindowDpiAwarenessContext", [wintypes.HWND], ctypes.c_void_p)(hwnd)
+        return self.api("GetAwarenessFromDpiAwarenessContext", [ctypes.c_void_p], ctypes.c_int)(context)
+
 
 @unittest.skipUnless(os.name == "nt" and EXE, "Set MONKEYHUB_DESKTOP_EXE to run the real Windows EXE tests")
 class DesktopRuntimeTests(unittest.TestCase):
@@ -818,6 +881,193 @@ $pattern.Current.Value | ConvertTo-Json -Compress
         self.native.track_webviews(self.shell.pid)
         self.shell.kill()
         self.shell.wait(timeout=10)
+        self.drained()
+
+    # #373: one desktop per runtime root.
+    def start(self, *arguments, runtime=None):
+        """Start one more EXE, on this test's root or an explicit other one. Unlike launch(),
+        it waits for no log: a refused repeat launch writes none."""
+        runtime = runtime or self.runtime
+        if INSTALLED:
+            command = [str(Path(EXE))]  # The installed double-click defaults.
+            if runtime != self.runtime:
+                command += ["--runtime-root", str(runtime)]
+        else:
+            command = [str(Path(EXE)), "--source-root", str(ROOT), "--python", sys.executable,
+                       "--runtime-root", str(runtime), "--startup-timeout-seconds", "40"]
+        shell = subprocess.Popen(
+            [*command, *arguments], cwd=self.root, env=self.environment, stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=subprocess.CREATE_NO_WINDOW,
+        )
+        self.shells.append(shell)
+        self.native.track(shell.pid)
+        return shell
+
+    def without_project(self, *runtimes):
+        """Settings that name no project, so no Hub starts project workers: a drain that waits
+        for a worker still starting on a loaded runner is not what these tests are about."""
+        from archflow_studio_api.settings import save_application_settings
+        from archflow_studio_api.transport.settings import ApplicationSettingsDto
+
+        for runtime in (self.runtime, *runtimes):
+            studio_port, monitor_port = free_ports(2)
+            save_application_settings(runtime, ApplicationSettingsDto(
+                cadExport="off", studioPort=studio_port, monitorPort=monitor_port,
+            ))
+        self.saved_settings = (self.runtime / "config/applications.json").read_bytes()
+
+    def untouched_by_the_refused_launch(self, logs):
+        self.assertEqual(set(self.runtime.glob("logs/desktop-*.log")), logs, "A refused launch opened a log")
+        self.assertEqual(len(START.findall(self.log_text())), 1)
+        self.assertNotIn("failed", self.states())
+        self.assertFalse(any("Another Hub is using runtime directory" in path.read_text(errors="replace")
+                             for path in self.runtime.glob("logs/*.log")), "A second Hub was started")
+        self.assertEqual(request(self.url + "api/health")["processId"], self.hub_pid)
+
+    def test_repeated_launch_on_the_same_root_brings_the_open_window_forward(self):
+        """A second launch on this runtime root opens no window and starts no Hub. It restores
+        the open window, brings it to the front and says so; closing the notice ends it with 0."""
+        self.without_project()
+        self.launch()
+        self.ready()
+        [(main, _)] = self.native.windows(self.shell.pid)
+        self.native.minimize(main)
+        wait_for(lambda: self.native.minimized(main), "The open window did not minimize")
+        logs = set(self.runtime.glob("logs/desktop-*.log"))
+        started = time.monotonic()
+        repeat = self.start()
+        classes = set()
+
+        def notice():
+            classes.update(name for _, name, _ in self.native.top_level(repeat.pid))
+            self.assertIsNone(repeat.poll(), "The repeated launch ended without its notice")
+            return self.native.notice(repeat.pid)
+
+        dialog, caption, text = wait_for(notice, "The repeated launch showed no notice", timeout=30)
+        self.assertLess(time.monotonic() - started, 15, "The repeated launch was not quick")
+        self.assertEqual(caption, "MonkeyHub")
+        # The launch is per-monitor aware before its first window; Windows draws its message
+        # box at the system DPI, which is sharp at 125-150 % (an unaware one is stretched).
+        self.assertGreater(self.native.dpi_awareness(dialog), 0, "The notice is DPI-unaware")
+        wait_for(lambda: not self.native.minimized(main), "The open window was not restored")
+        answer = wait_for(lambda: re.search(
+            rf"event=relaunch requester={repeat.pid} answer=brought-forward minimized=true foreground=(true|false)",
+            self.log_text()), lambda: f"The open desktop was not asked: {self.log_text()}")
+        # The open desktop reports whether Windows gave its window the foreground; where it
+        # did not (someone is working on this desktop, or it takes no input), Windows flashes
+        # the taskbar button instead. The notice claims a switch only in the first case, and
+        # only then are the two front-window checks meaningful here.
+        foreground = answer.group(1) == "true"
+        if foreground:
+            self.assertIn("MonkeyHub 已在运行，已切换到打开的窗口。", text)
+            self.assertIn("MonkeyHub is already running; switched to its window.", text)
+        else:
+            self.assertIn("MonkeyHub 已在运行，请使用已打开的窗口。", text)
+            self.assertIn("MonkeyHub is already running; please use its open window.", text)
+
+        def in_front(hwnd, check):
+            with self.subTest(check):
+                if not foreground:
+                    self.skipTest("Windows kept the foreground elsewhere on this desktop")
+                wait_for(lambda: self.native.foreground() == hwnd, f"Not in front: {check}")
+
+        in_front(dialog, "the notice above the window it raised")
+        classes.update(name for _, name, _ in self.native.top_level(repeat.pid))
+        self.native.dismiss(dialog)
+        self.assertEqual(repeat.wait(timeout=10), 0)
+        self.assertNotIn("Tauri Window", classes)
+        in_front(main, "the raised window once the notice closes")
+        self.untouched_by_the_refused_launch(logs)
+        self.native.close_window(self.shell.pid)
+        self.assertEqual(self.shell.wait(timeout=40), 0)
+        self.drained()
+
+    def test_update_trial_on_a_root_in_use_fails_without_a_notice(self):
+        """The update helper starts a trial only after the previous desktop has exited. A trial
+        that still finds its root in use fails after a short wait, with no notice and no
+        activation, so the helper rolls back instead of waiting on a dialog."""
+        self.without_project()
+        self.launch()
+        self.ready()
+        [(main, _)] = self.native.windows(self.shell.pid)
+        self.native.minimize(main)
+        wait_for(lambda: self.native.minimized(main), "The open window did not minimize")
+        logs = set(self.runtime.glob("logs/desktop-*.log"))
+        trial = self.start("--update-trial")
+        classes = set()
+
+        def ended():
+            classes.update(name for _, name, _ in self.native.top_level(trial.pid))
+            return trial.poll() is not None
+
+        wait_for(ended, "The refused update trial did not exit", timeout=40)
+        self.assertNotEqual(trial.returncode, 0)
+        self.assertFalse(classes & {"#32770", "Tauri Window"}, classes)
+        self.assertTrue(self.native.minimized(main), "A refused update trial activated the open window")
+        self.assertNotIn("event=relaunch", self.log_text())
+        self.untouched_by_the_refused_launch(logs)
+        self.native.close_window(self.shell.pid)
+        self.assertEqual(self.shell.wait(timeout=40), 0)
+        self.drained()
+
+    def test_launch_while_the_open_desktop_closes_becomes_the_running_desktop(self):
+        """A launch while the open desktop is still draining shows no notice: it waits for that
+        desktop to exit, then starts as the running desktop with its own window and Hub."""
+        self.without_project()
+        self.launch()
+        self.ready()
+        first, first_pids, first_ports = self.shell, self.pids, self.ports
+        logs = set(self.runtime.glob("logs/desktop-*.log"))
+        with self.native.suspend(self.hub_pid):  # hold the first desktop in its drain
+            self.native.close_window(first.pid)
+            self.wait_state("stopping")
+            relaunch = self.start()
+            wait_for(lambda: f"event=relaunch requester={relaunch.pid} answer=closing" in self.log_text(),
+                     lambda: f"The closing desktop was not asked: {self.log_text()}")
+            time.sleep(1)  # it keeps waiting, quietly
+            self.assertIsNone(relaunch.poll(), "The launch gave up while the open desktop closed")
+            self.assertEqual([name for _, name, _ in self.native.top_level(relaunch.pid)
+                              if name in ("#32770", "Tauri Window")], [])
+            self.assertEqual(set(self.runtime.glob("logs/desktop-*.log")), logs)
+        self.assertEqual(first.wait(timeout=40), 0)
+        self.shell = relaunch
+        self.log = wait_for(lambda: next(iter(set(self.runtime.glob("logs/desktop-*.log")) - logs), None),
+                            lambda: f"The waiting launch did not start; exit={relaunch.poll()}")
+        self.ready()
+        self.assertIsNone(self.native.notice(relaunch.pid))
+        self.native.close_window(relaunch.pid)
+        self.assertEqual(relaunch.wait(timeout=40), 0)
+        self.pids, self.ports = self.pids | first_pids, self.ports | first_ports
+        self.drained()
+
+    def test_other_runtime_root_runs_side_by_side(self):
+        """The lock belongs to one runtime root: an explicit other root opens its own window
+        and Hub next to the first, and both close normally."""
+        other = self.root / "other runtime"
+        self.without_project(other)
+        self.launch()
+        self.ready()
+        first, first_hub, first_url = self.shell, self.hub_pid, self.url
+        first_pids, first_ports = self.pids, self.ports
+        try:
+            self.shell = self.start(runtime=other)
+            self.log = wait_for(lambda: next(iter(other.glob("logs/desktop-*.log")), None),
+                                lambda: f"No desktop log for the other root; EXE exit={self.shell.poll()}")
+            self.ready()
+            self.assertNotEqual(self.hub_pid, first_hub)
+            self.assertEqual(request(first_url + "api/health")["processId"], first_hub)
+            for shell in (first, self.shell):
+                self.assertIsNone(self.native.notice(shell.pid))
+                self.assertEqual(len(self.native.windows(shell.pid)), 1)
+            for shell in (self.shell, first):
+                self.native.close_window(shell.pid)
+                self.assertEqual(shell.wait(timeout=40), 0)
+        except BaseException:
+            for path in sorted(other.glob("logs/*.log")):
+                print(f"\n{self.id()} — other root {path.name}\n"
+                      f"{path.read_text(encoding='utf-8', errors='replace')[-12000:]}", file=sys.stderr)
+            raise
+        self.pids, self.ports = self.pids | first_pids, self.ports | first_ports
         self.drained()
 
 

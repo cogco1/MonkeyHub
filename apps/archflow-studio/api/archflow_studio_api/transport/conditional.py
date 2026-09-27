@@ -81,6 +81,18 @@ def _token(state: State) -> tuple[ProjectBinding, ReadToken]:
     return binding, binding.read_token()
 
 
+def _token_at_hand(state: State) -> tuple[ProjectBinding, ReadToken] | None:
+    """The token without leaving the event loop, once the binding is open and its watch has published.
+
+    Reading it is an attribute read and a counter (``ProjectBinding.read_token``);
+    only opening the project and the watch's first walk need the thread pool.
+    """
+
+    binding = getattr(state, "binding", None)
+    token = None if binding is None else binding.read_token(wait=False)
+    return None if token is None else (binding, token)
+
+
 async def _answer(send: Send, status: int, tag: str, body: bytes = b"", media_type: str | None = None) -> None:
     headers = [(b"etag", tag.encode("latin-1")), (b"cache-control", NOT_CACHED)]
     if status != 304:
@@ -106,7 +118,7 @@ class ConditionalReads:
             await self.app(scope, receive, send)
             return
         try:
-            binding, token = await run_in_threadpool(_token, self.state)
+            binding, token = _token_at_hand(self.state) or await run_in_threadpool(_token, self.state)
             versions = [(name, VERSIONS[name](self.state)) for name in listed]
         except Exception:  # noqa: BLE001 - the route states a binding failure itself
             await self.app(scope, receive, send)
