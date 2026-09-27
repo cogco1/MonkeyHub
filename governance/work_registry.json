@@ -15,7 +15,8 @@
       ],
       "write_scope": [
         "apps/monkeyhub/web/test/chatShell.browser.mjs",
-        "apps/monkeyhub/web/src/ChatShell.tsx"
+        "apps/monkeyhub/web/src/ChatShell.tsx",
+        "apps/monkeyhub/web/src/main.tsx"
       ],
       "depends_on": []
     }
