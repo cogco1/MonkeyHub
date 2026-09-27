@@ -55,7 +55,10 @@ def read_index(request: Request, table: str, limit: int = Query(default=1000, ge
     index = binding.index_reader()
     try:
         if index is None:
-            raise IndexUnavailable("no project index answers yet")
+            status = binding.index_status()
+            raise IndexUnavailable("this process keeps no project index" if status is None
+                                   else "it has not applied this process's last write yet" if status == "ready"
+                                   else f"project index: {status}")
         with index.snapshot() as snapshot:
             rows = snapshot.rows(table, filters, limit=limit + 1)
             token = snapshot.token

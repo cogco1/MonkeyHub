@@ -9,7 +9,8 @@ It can be deleted at any time; the next load builds it again.
   ``cache/projects/<runtime_id>``), never in the project folder.
 - One writer: the thread of the ``IndexKeeper`` (``keeper.py``) of the process
   that holds ``index.lock`` beside the file. Any other process that tries gets
-  ``IndexUnavailable`` and reads P036 itself. ``load`` and ``apply`` are that
+  ``IndexLocked`` (its keeper retries for a while: the holder may be exiting)
+  and meanwhile reads P036 itself. ``load`` and ``apply`` are that
   thread's alone; readers take ``snapshot`` from any thread and never wait for
   the writer (WAL).
 - ``meta`` states the stamp (schema version, projector version, project id and
@@ -123,6 +124,10 @@ assert set(_POINTER_AREAS) == set(FINGERPRINT_POINTER_FILES)
 
 class IndexUnavailable(RuntimeError):
     """The index cannot be used here; the caller reads P036 itself."""
+
+
+class IndexLocked(IndexUnavailable):
+    """Another writer holds ``index.lock``; it may give it up soon (a process that is exiting)."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -319,7 +324,7 @@ class _WriterLease:
                 fcntl.flock(self._handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
         except OSError as exc:
             self._handle.close()
-            raise IndexUnavailable(f"another process writes the index in {directory}") from exc
+            raise IndexLocked(f"another process writes the index in {directory}") from exc
 
     def release(self) -> None:
         if self._handle.closed:
@@ -441,8 +446,7 @@ class ProjectIndex:
         index or when a rebuild itself fails.
         """
 
-        if self._lease is None:
-            self._lease = _WriterLease(self.directory)
+        self.lock()
         places = line_places(lines)
         stamp = self._stamp()
         kept = self._open_kept(stamp)
@@ -462,6 +466,15 @@ class ProjectIndex:
         self.loaded = "reconciled" if changed else "reused"
         self._publish_open()
         return self._token
+
+    def lock(self) -> None:
+        """Take ``index.lock`` for this writer, unless it holds it already.
+
+        Raises ``IndexLocked`` while another writer holds it; ``load`` takes it too.
+        """
+
+        if self._lease is None:
+            self._lease = _WriterLease(self.directory)
 
     def apply(self, lines: Iterable[str] | None, scanned_at_ns: int, *,
               areas: Iterable[str] = (), reread: Iterable[str] = ()) -> IndexToken:

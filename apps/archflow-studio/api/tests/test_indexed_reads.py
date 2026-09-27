@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import base64
 from concurrent.futures import ThreadPoolExecutor
+import gc
 import hashlib
 import os
 from pathlib import Path
@@ -27,11 +28,13 @@ from unittest import mock
 
 from fastapi.testclient import TestClient
 
-from archflow.project.index import INDEX_FILE, ProjectIndex
+from archflow.project.index import INDEX_FILE, IndexLocked, ProjectIndex
+from archflow.project.index.store import _WriterLease
 from archflow_studio_api.application import artifacts
 from archflow_studio_api.application import binding as binding_module
-from archflow_studio_api.application.binding import bound_project
-from archflow_studio_api.application.index import StudioProjector
+from archflow_studio_api.application.binding import ProjectBinding, bound_project
+from archflow_studio_api.application.index import StudioProjector, attach_project_index
+from archflow_studio_api.application.synchronization import pull_shared_project
 from archflow_studio_api.main import create_app
 from archflow_studio_api.settings import SettingsError, StudioSettings
 from archflow_studio_api.transport.conditional import INDEXED_READS
@@ -271,6 +274,38 @@ class IndexedReadTests(DesignHistoryFixture):
         self.assertIsNotNone(keeper)
         self.assertIsNone(keeper.failure)
 
+    def test_a_shared_project_pull_binds_again_and_the_index_is_kept_by_one_keeper(self) -> None:
+        old = self.binding()
+        old_keeper = old.await_index(30)
+        old_thread = old_keeper._thread
+        pulled = pull_shared_project(self.indexed_app.state, client=_SharedProject(self.repository))
+        self.assertEqual(pulled.project_id, PROJECT_ID)
+
+        self.assertFalse(old_thread.is_alive(), "the old binding's keeper stopped")
+        self.assertIsNone(old_keeper.index._lease, "and gave up index.lock")
+        new = self.binding()
+        self.assertIsNot(new, old)
+        keeper = new.await_index(30)
+        self.assertIsNotNone(keeper, "the next binding has the index loaded")
+        self.assertIsNone(keeper.failure)
+        self.assertEqual(new.index_status(), "ready")
+        self.assertEqual([thread for thread in threading.enumerate() if thread.name.startswith("project-index:")],
+                         [keeper._thread], "one keeper runs")
+        self.assertIsNotNone(keeper.index._lease)
+        with self.assertRaises(IndexLocked, msg="index.lock is held"):
+            _WriterLease(self.index_dir)
+        self.assertEqual(self.indexed.get("/api/artifacts").content, self.client.get("/api/artifacts").content)
+
+    def test_a_binding_nobody_holds_stops_its_keeper(self) -> None:
+        binding = ProjectBinding.open(self.indexed_app.state.settings)
+        keeper = attach_project_index(binding, self.index_dir)
+        self.assertIsNotNone(keeper.wait_loaded(30), keeper.failure)
+        thread = keeper._thread
+        del binding
+        gc.collect()
+        self.assertTrue(wait_until(lambda: not thread.is_alive(), 10), "the keeper outlived its binding")
+        self.assertIsNone(keeper.index._lease, "index.lock was given up")
+
     def test_a_deleted_index_is_rebuilt_and_the_project_still_opens(self) -> None:
         binding = self.binding()
         epoch = binding.index_state().token.epoch
@@ -343,3 +378,18 @@ class IndexedReadTests(DesignHistoryFixture):
         started = time.perf_counter()
         response = self.indexed.get(route, headers=headers)
         return response.status_code, (time.perf_counter() - started) * 1000
+
+
+class _SharedProject:
+    """A shared project that holds exactly what the local one does: a pull transfers nothing."""
+
+    project_id = PROJECT_ID
+
+    def __init__(self, repository) -> None:
+        self.repository = repository
+
+    def manifest(self) -> dict:
+        return self.repository.export_transfer(include_contents=False)
+
+    def request(self, *args, **kwargs):
+        raise AssertionError("every file is already local")

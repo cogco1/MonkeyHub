@@ -18,12 +18,14 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 from typing import Any
+import weakref
 
 from archflow.project.index import (
     ArtifactRow,
     CandidateRow,
     DocumentRow,
     IndexKeeper,
+    IndexUnavailable,
     ProjectIndex,
     RecordRow,
     RunRows,
@@ -64,11 +66,23 @@ def _projector_version() -> str:
 
 
 class StudioProjector:
-    """The rows of one project, read through one binding."""
+    """The rows of one project, read through one binding.
+
+    The binding is held weakly: the keeper's thread holds this projector, and
+    must not keep alive a binding nobody else holds (collecting it stops the
+    keeper).
+    """
 
     def __init__(self, binding: ProjectBinding) -> None:
-        self.binding = binding
+        self._binding = weakref.ref(binding)
         self.version = _projector_version()
+
+    @property
+    def binding(self) -> ProjectBinding:
+        binding = self._binding()
+        if binding is None:
+            raise IndexUnavailable("the project's binding is gone")
+        return binding
 
     def run_ids(self) -> tuple[str, ...]:
         return self.binding.run_ids()
@@ -180,9 +194,11 @@ def attach_project_index(binding: ProjectBinding, directory: Path) -> IndexKeepe
 
     projector = StudioProjector(binding)
     root = binding.repository.layout.root
+    # Plain values: the stamp, like the projector, must not hold the binding.
+    project_id, version = binding.project_id, projector.version
     index = ProjectIndex(
         directory,
         projector=projector,
-        stamp=lambda: manifest_stamp(root, projector_version=projector.version, project_id=binding.project_id),
+        stamp=lambda: manifest_stamp(root, projector_version=version, project_id=project_id),
     )
     return binding.use_index(index)

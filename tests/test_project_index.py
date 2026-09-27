@@ -21,7 +21,9 @@ import tempfile
 import threading
 import time
 import unittest
+from unittest import mock
 
+from archflow.project.index import keeper as keeper_module
 from archflow.project.index import (
     INDEX_FILE,
     IndexKeeper,
@@ -460,13 +462,47 @@ class KeeperTests(_IndexCase):
     def test_a_second_keeper_on_the_same_directory_is_refused_and_answers_nothing(self) -> None:
         self.keeper()
         index, _ = self.index()
+        with mock.patch.object(keeper_module, "LOCK_RETRY_TOTAL_S", 0.3):
+            second = IndexKeeper(index, watch_layout(self.root, notify=False), name="second")
+            second.start()
+            self.addCleanup(second.stop)
+
+            self.assertIsNone(second.wait_loaded(30))
+        self.assertIn("another process", second.failure)
+        self.assertGreater(second.lock_attempts, 0, "it retried before giving up")
+        self.assertTrue(second.status.startswith("failed: "), second.status)
+        self.assertIsNone(second.readable())
+
+    def test_a_lock_given_up_while_the_keeper_retries_is_taken_and_the_index_loads(self) -> None:
+        first, _ = self.keeper()
+        index, _ = self.index()
         second = IndexKeeper(index, watch_layout(self.root, notify=False), name="second")
         second.start()
         self.addCleanup(second.stop)
+        self.assertTrue(wait_until(lambda: second.waiting is not None))
+        self.assertTrue(second.status.startswith("waiting for index.lock"), second.status)
+        self.assertIsNone(second.wait_loaded(0.2), "no index answers while another writer holds it")
 
-        self.assertIsNone(second.wait_loaded(30))
-        self.assertIn("another process", second.failure)
-        self.assertIsNone(second.readable())
+        # The other writer exits (a restart that overlapped it).
+        first.stop()
+        self.repository.create_run("run-002")
+        self.put("run-002", {"record": 2})
+        self.assertIsNotNone(second.wait_loaded(30), second.failure)
+        self.assertEqual(second.status, "ready")
+        self.assertIsNone(second.failure)
+        self.assertIsNotNone(second.wait_readable(10), "a write made while it waited is applied")
+        self.assertEqual(self.records(second.index, "run-002"), 1)
+
+    def test_a_keeper_stopped_while_it_waits_for_the_lock_ends_at_once(self) -> None:
+        self.keeper()
+        index, _ = self.index()
+        second = IndexKeeper(index, watch_layout(self.root, notify=False), name="second")
+        second.start()
+        self.assertTrue(wait_until(lambda: second.waiting is not None))
+        started = time.monotonic()
+        self.assertTrue(second.stop())
+        self.assertLess(time.monotonic() - started, 2)
+        self.assertEqual(second.status, "stopped")
 
     def test_reads_during_applies_are_consistent_snapshots_and_never_fail(self) -> None:
         projector = RecordingProjector(self.repository)

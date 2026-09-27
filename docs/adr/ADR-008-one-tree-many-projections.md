@@ -68,7 +68,9 @@ decision tree comes from two derived stores. Either store can be deleted at any 
   return, per run and for the tree; it derives nothing new.
 - The Hub names the directory: `<runtime root>/cache/projects/<runtime_id>` reaches the project runtime as
   `ARCHFLOW_STUDIO_INDEX_DIR`. Without it, no index is kept and every route reads the runs.
-- `index.lock` beside the file is the writer lease. A second process that asks is refused and reads P036.
+- `index.lock` beside the file is the writer lease. A second process that asks is refused and reads P036; its keeper
+  retries for a bounded time, since the holder may be a process that is exiting. Closing a binding (or collecting one
+  nobody closed, or a shared-project pull replacing it) stops its keeper and gives the lease up.
 - One `IndexKeeper` thread per index is its only writer. It hears of changes from the project's layout watch (#363): each
   publication (`LayoutSighting`) carries the fingerprint's own lines and the directories a notification or a write asked
   it to read again. This process's writes also reach it at once through the repository's write observer. No request

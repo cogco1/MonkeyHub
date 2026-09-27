@@ -10,6 +10,11 @@ change as it arrives:
   each ``LayoutSighting`` carries the fingerprint's lines, and the lines that
   moved since the last one say which runs to project again.
 
+``index.lock`` may still be held by a process that is exiting (a restart
+that overlaps it): the keeper retries taking it with a bounded back-off and
+says so in ``status`` meanwhile; every reader reads the project itself until
+the index has loaded.
+
 A reader asks ``state`` (one attribute read) whether the index answers yet,
 and ``readable`` whether it has applied every write this process made; it
 then reads a snapshot (``ProjectIndex.snapshot``), which never waits for the
@@ -30,7 +35,7 @@ from typing import Callable
 from archflow.project.repository import add_write_observer, project_path_key, write_serial
 from archflow.project.watch import LayoutLease, LayoutSighting
 
-from .store import IndexToken, IndexUnavailable, ProjectIndex, path_area
+from .store import IndexLocked, IndexToken, IndexUnavailable, ProjectIndex, path_area
 
 _LOG = logging.getLogger(__name__)
 
@@ -39,6 +44,11 @@ STOP_WAIT_S = 10.0
 # Written paths kept between two applies before they stop being told apart:
 # past it, the next apply projects every run again.
 WRITTEN_LIMIT = 4096
+# Taking ``index.lock`` from another writer: the first wait, the longest one,
+# and how long the keeper keeps trying before it gives the index up.
+LOCK_RETRY_FIRST_S = 0.1
+LOCK_RETRY_MAX_S = 5.0
+LOCK_RETRY_TOTAL_S = 120.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -83,6 +93,9 @@ class IndexKeeper:
         # What the keeper has done, for tests and diagnostics.
         self.applies = 0
         self.failure: str | None = None
+        # Why the keeper is waiting for ``index.lock``, while it is.
+        self.waiting: str | None = None
+        self.lock_attempts = 0
 
     # ---- readers
 
@@ -124,6 +137,21 @@ class IndexKeeper:
 
         self._loaded.wait(timeout)
         return self._state
+
+    @property
+    def status(self) -> str:
+        """One line on what the index is doing: ready, loading, waiting for its lock, failed or stopped."""
+
+        if self._state is not None:
+            return "ready"
+        if self.failure is not None:
+            return f"failed: {self.failure}"
+        if not self.running:
+            return "stopped"
+        waiting = self.waiting
+        if waiting is not None:
+            return f"waiting for index.lock ({waiting}; attempt {self.lock_attempts})"
+        return "loading"
 
     @property
     def running(self) -> bool:
@@ -219,6 +247,8 @@ class IndexKeeper:
 
     def _run(self) -> None:
         try:
+            if not self._lock():
+                return
             first = self._first_sighting()
             if first is None:
                 return
@@ -259,6 +289,39 @@ class IndexKeeper:
             _LOG.exception("project index of %s failed; every reader reads the project itself", self._name)
         finally:
             self._finish()
+
+    def _lock(self) -> bool:
+        """Take ``index.lock``, retrying with a bounded back-off; False once stopping.
+
+        Raises ``IndexLocked`` when another writer still holds it after
+        ``LOCK_RETRY_TOTAL_S``. Meanwhile the watch and the write observer keep
+        noting what changes, so the load that follows misses nothing.
+        """
+
+        delay = LOCK_RETRY_FIRST_S
+        deadline = time.monotonic() + LOCK_RETRY_TOTAL_S
+        while True:
+            try:
+                self.index.lock()
+            except IndexLocked as exc:
+                if time.monotonic() + delay > deadline:
+                    self.waiting = None
+                    raise
+                self.lock_attempts += 1
+                if self.waiting is None:
+                    _LOG.info("project index of %s waits for its lock: %s", self._name, exc)
+                self.waiting = str(exc)
+                # Other notices (a sighting, a write) wake the wait early; only stopping ends it.
+                retry_at = time.monotonic() + delay
+                with self._changed:
+                    while not self._stopping and (remaining := retry_at - time.monotonic()) > 0:
+                        self._changed.wait(remaining)
+                    if self._stopping:
+                        return False
+                delay = min(delay * 2, LOCK_RETRY_MAX_S)
+                continue
+            self.waiting = None
+            return True
 
     def _first_sighting(self) -> LayoutSighting | None:
         with self._changed:
