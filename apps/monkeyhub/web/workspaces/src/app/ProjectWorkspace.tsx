@@ -157,8 +157,11 @@ export function ProjectWorkspace({ workspace, expectedProjectId, candidateRunId 
     let live = true;
     setRefreshError(null);
     void (async () => {
+      // Both answers are needed; the handshake's refusal is the one said first.
+      const projectRead = studio.project();
+      projectRead.catch(() => undefined);
       const identity = await connection.probe();
-      const project = await studio.project();
+      const project = await projectRead;
       if (!live) return;
       if ((expectedProjectId !== undefined && project.projectId !== expectedProjectId) ||
           (boundProjectId.current !== undefined && project.projectId !== boundProjectId.current)) {

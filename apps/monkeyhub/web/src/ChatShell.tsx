@@ -37,6 +37,8 @@ type Props = {
   /** Where a new project is created, as the Hub reports it. */
   workspace: ChatWorkspace | null;
   apps: readonly AppStatus[] | null;
+  /** #364: each runtime event's kind, so the Hub can read its services again when they may have changed. */
+  onRuntimeEvent?: (kind: string) => void;
   /** #337: the View menu changes the same display choices as Settings. */
   onAppearance?: (patch: Partial<AppearancePreferences>) => void;
 };
@@ -471,7 +473,9 @@ function SurfaceSkeleton({ surface, name, step, startedAt = null, words, onCance
   </div>;
 }
 
-export function ChatShell({ preferences, settings, settingsDirty = false, configuredProject, defaults, workspace, apps, onAppearance }: Props) {
+export function ChatShell({ preferences, settings, settingsDirty = false, configuredProject, defaults, workspace, apps, onRuntimeEvent, onAppearance }: Props) {
+  const runtimeEventRef = useRef(onRuntimeEvent);
+  runtimeEventRef.current = onRuntimeEvent;
   const t = words[preferences.language], w = composerWords[preferences.language], s = shellWords[preferences.language];
   const [initial] = useState(readView);
   const [projects, setProjects] = useState<ChatProject[]>([]);
@@ -784,7 +788,11 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
         if (stream.readyState === EventSource.CLOSED && reconnectTimer === undefined) reconnectTimer = window.setTimeout(connect, 1500);
       };
       stream.addEventListener("runtime", (message) => {
-        try { const event: RuntimeEvent = JSON.parse((message as MessageEvent).data); if (event.snapshot) receiveRuntime(event.snapshot); } catch { /* Re-read the authoritative snapshot below. */ }
+        try {
+          const event: RuntimeEvent = JSON.parse((message as MessageEvent).data);
+          if (event.snapshot) receiveRuntime(event.snapshot);
+          runtimeEventRef.current?.(event.kind);
+        } catch { /* Re-read the authoritative snapshot below. */ }
         void refresh();
       });
     };
@@ -1334,7 +1342,8 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
     actionLock.current = true; setToolBusy(id); setError(null);
     try {
       const location = needsProject ? await ensureProject(target!, project!.projectId, id)
-        : apps?.find((item) => item.appId === id && item.state === "running")?.url ?? await startTool(id, undefined, entry.abort.signal);
+        // The Hub answers a running tool's start with its current address, so a stale list never supplies one.
+        : await startTool(id, undefined, entry.abort.signal);
       if (!current()) return false;
       let tab: ToolTab;
       if (needsProject) {
