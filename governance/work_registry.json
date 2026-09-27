@@ -153,6 +153,44 @@
       "notes": [
         "2026-09-08 rule alignment: Awaiting the first concrete evidence consumer and a check of existing Reading/source references. The earlier proposed ledger and private Atlas field superset are not a mandate to add a core record."
       ]
+    },
+    {
+      "id": "GH-373",
+      "stream": "planning",
+      "status": "active",
+      "goal": "A second launch of the MonkeyHub desktop on the same runtime root opens no second window (#373): the desktop takes a per-root single-instance lock before creating any window; when it is held, it brings the open window to the front, shows a short 'MonkeyHub is already running' notice and exits. Non-window calls (--version, --complete-update), the update trial handoff and independent explicit runtime roots keep working; hub.lock stays as the second guard.",
+      "depends_on": [],
+      "issue": "https://github.com/cogco1/MonkeyHub/issues/373",
+      "write_scope": [
+        "apps/monkeyhub/desktop/"
+      ],
+      "card": "docs/mapping/planning/GH-373-single-instance.md",
+      "acceptance": [
+        "With the installed desktop open, launching it again shows no second window, brings the open window to the front and shows the already-running notice.",
+        "The update handoff still works (tests/test_update_handoff.py and the installed desktop suite pass); two instances on different --runtime-root values still run together.",
+        "A new installed-suite test launches twice on one root: the second exits quickly without a second top-level window and the first comes to the front."
+      ],
+      "lanes": [
+        {
+          "id": "single-instance",
+          "issue": "https://github.com/cogco1/MonkeyHub/issues/373",
+          "branch": "codex/373-single-instance",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-373-single-instance",
+          "base_ref": "b73521c2",
+          "contributor": "Claude",
+          "reviewer": "Claude root task",
+          "handoff": "Independent of the #337 lanes. GH-354 (codex/354-title-bar) also edits apps/monkeyhub/desktop/src/main.rs and Cargo.toml/Cargo.lock; whichever merges later merges main first.",
+          "modules": [
+            "hub.shell"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/desktop/"
+          ],
+          "depends_on": [],
+          "status": "active",
+          "blocked_reason": null
+        }
+      ]
     }
   ]
 }
