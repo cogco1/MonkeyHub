@@ -163,6 +163,22 @@ consolidation decision, not a migration to rerun. Before writing code:
 Code under `archive/` is not extended and not imported; a lane returns only as a fold onto
 the spine.
 
+## Speed
+
+- An implementation session runs only the tests its change affects, plus
+  `python tools/archcheck.py`. The full regression is CI's job.
+- The master session reviews key behaviour. It spot-checks real projects locally only
+  for performance-sensitive changes; the synthetic check that runs in CI is described
+  in `docs/testing/projection-check.md`.
+- A PR the owner has approved for merge gets GitHub auto-merge. When several PRs are
+  ready, one integration PR (merge the reviewed branches, one CI run) beats serial
+  merges under the up-to-date rule.
+- Heavy work goes to cloud sessions. A local machine does not run full suites or
+  benchmarks while other heavy work runs on it.
+- `.github/workflows/nightly.yml` promotes a verified main to a prerelease every night;
+  label a PR `release` to ship it right after merge
+  ([nightly release](docs/testing/nightly-release.md)).
+
 ## Extend behavior, remove superseded paths
 
 Extend the existing owner by default. When replacing a mechanism, remove the
