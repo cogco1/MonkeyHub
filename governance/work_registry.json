@@ -13,6 +13,7 @@
       "apps/monkeyhub/api/monkeyhub_api/chat.py",
       "apps/monkeyhub/api/tests/test_chat.py",
       "apps/monkeyhub/api/tests/test_chat_presentation.py",
+      "apps/monkeyhub/web/workspaces/src/api/generated/",
       "apps/archflow-studio/api/archflow_studio_api/application/visual_reviews.py",
       "apps/archflow-studio/api/archflow_studio_api/application/visual_observation.py",
       "apps/archflow-studio/api/archflow_studio_api/transport/intent.py",
