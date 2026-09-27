@@ -1,27 +1,4 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": [
-    {
-      "id": "GH-32",
-      "lanes": [
-        {
-          "id": "action-discovery",
-          "status": "active",
-          "blocked_reason": null,
-          "branch": "codex/32-agent-action-discovery",
-          "worktree": "C:/Users/asus/.codex/worktrees/agent-action-discovery/ARCHFLOW_V4",
-          "base_ref": "32a426ecee5c77f005a94236c39895f94647c307",
-          "contributor": "Codex",
-          "modules": ["hub.shell"],
-          "write_scope": [
-            "apps/monkeyhub/api/monkeyhub_api/chat.py",
-            "apps/monkeyhub/api/tests/test_chat.py",
-            "docs/PROTOCOL.md",
-            "docs/WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.md"
-          ],
-          "depends_on": []
-        }
-      ]
-    }
-  ]
+  "items": []
 }
