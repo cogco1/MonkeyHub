@@ -33,7 +33,7 @@ import threading
 import time
 from typing import Literal, Mapping
 from urllib.error import HTTPError, URLError
-from urllib.parse import parse_qs, urlencode, urlsplit
+from urllib.parse import parse_qs, quote, urlencode, urlsplit
 from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
 from uuid import UUID, uuid4
 
@@ -2464,6 +2464,67 @@ _PAGE_IMAGE_MAX_EDGE = 2048
 _PAGE_IMAGE_MAX_BYTES = 4 * 1024 * 1024
 
 
+def _schema_allowed(method: str, path: str) -> bool:
+    """Apply the execution allow-list to a schema template, never to a write."""
+    pattern = {"GET": _READ, "POST": _POST, "PUT": _WRITE}.get(method)
+    return pattern is not None and any(
+        pattern.fullmatch(re.sub(r"\{[^}/]+\}", sample, path))
+        for sample in ("id", "0" * 64)
+    )
+
+
+def _available_actions(document: dict) -> list[dict]:
+    """A view of this Runtime and this chat's transport, not another registry."""
+    return [
+        {"method": method.upper(), "path": path,
+         "summary": str(operation.get("summary") or operation.get("operationId") or "")[:180]}
+        for path, operations in sorted(document.get("paths", {}).items())
+        for method, operation in sorted(operations.items())
+        if isinstance(operation, dict) and _schema_allowed(method.upper(), path)
+    ]
+
+
+def _discover_actions(base: str, arguments: dict) -> dict:
+    if set(arguments) - {"method", "path", "pathPrefix", "offset", "limit"}:
+        raise HubFailure(422, "CHAT_TOOL_INVALID", "Action discovery takes optional method, pathPrefix, offset and limit; omit path.")
+    method = arguments.get("method")
+    prefix = arguments.get("pathPrefix", "/api/")
+    offset, limit = arguments.get("offset", 0), arguments.get("limit", 30)
+    if (method is not None and (not isinstance(method, str) or method.upper() not in {"GET", "POST", "PUT"})
+            or not isinstance(prefix, str) or not re.fullmatch(r"/api(?:/[A-Za-z0-9_.{}-]*)*/?", prefix)
+            or type(offset) is not int or offset < 0 or type(limit) is not int or not 1 <= limit <= 50):
+        raise HubFailure(422, "CHAT_TOOL_INVALID", "Use method GET/POST/PUT, pathPrefix under /api, offset >= 0 and limit 1..50.")
+    rows = [row for row in _available_actions(_request_json(base, "/openapi.json"))
+            if row["path"].startswith(prefix) and (method is None or row["method"] == method.upper())]
+    result = {"actions": rows[offset:offset + limit], "total": len(rows), "offset": offset, "limit": limit,
+              "note": "Current Runtime actions exposed to this chat. Choose method/path for studio_schema to read inputs; "
+                      "studio_request executes. Project state, input validation and action-specific authority still apply."}
+    if offset + limit < len(rows):
+        result["next"] = {"tool": "studio_schema", "arguments": {**arguments, "offset": offset + limit, "limit": limit}}
+    return result
+
+
+def _action_refusal(base: str, method: str, path: str) -> HubFailure:
+    """Explain a refused path without choosing or executing a replacement."""
+    discovery = "Use studio_schema with no path to list current chat actions, then select an exact method/path."
+    try:
+        document = _request_json(base, "/openapi.json")
+    except (HubFailure, OSError, ValueError):
+        return HubFailure(422, "CHAT_TOOL_UNAVAILABLE",
+                          f"This path is not exposed to the chat; the Runtime action list could not be read. {discovery}")
+    exists = any(method.lower() in operations and re.fullmatch(re.sub(r"\{[^}]+\}", r"[^/]+", route), path)
+                 for route, operations in document.get("paths", {}).items())
+    if exists:
+        return HubFailure(422, "CHAT_TOOL_UNAVAILABLE", f"{method} {path} exists in the Runtime but is not exposed to chat. {discovery}")
+    domain = "/".join(path.split("/")[:3]) + "/"
+    related = [f"{row['method']} {row['path']}" for row in _available_actions(document)
+               if row["method"] == method and row["path"].startswith(domain)][:6]
+    suggestions = " Related available actions: " + "; ".join(related) + "." if related else ""
+    return HubFailure(422, "CHAT_ACTION_UNKNOWN",
+                      f"The current Runtime has no {method} {path}; this is an unknown action, not a permission denial."
+                      f"{suggestions} {discovery} Nothing was executed.")
+
+
 class _NoRedirect(HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         raise HubFailure(409, "CHAT_SERVICE_CHANGED", "The bound service redirected the request.")
@@ -2489,7 +2550,9 @@ def _request_json(base: str, path: str, method: str = "GET", body=None, timeout:
         # rather than made with a small amount of time granted to it here.
         raise TimeoutError(f"no time left to call {method} {path}")
     data = None if body is None else json.dumps(body, ensure_ascii=False).encode("utf-8")
-    request = Request(_url(base) + path, data=data, method=method, headers={
+    # Preserve existing escapes and delimiters, while allowing a natural-language
+    # capability query to contain Unicode without failing in urllib's ASCII URL.
+    request = Request(_url(base) + quote(path, safe="/%?=&:+,;@!$'()*~-._"), data=data, method=method, headers={
         "Content-Type": "application/json", **_trace_headers.get(), **(headers or {}),
     })
     try:
@@ -3174,13 +3237,19 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
             return _request_json(hub, path, "POST", body)
         raise HubFailure(422, "CHAT_TOOL_UNAVAILABLE", "The chat can list Fab profiles and validate a prepared job; uploads remain explicit in MonkeyFab.")
     base, session = _bound_studio(hub, chat_id)
+    if name == "studio_schema" and not path:
+        return _discover_actions(base, arguments)
+    if any(key in arguments for key in ("pathPrefix", "offset", "limit")):
+        raise HubFailure(422, "CHAT_TOOL_INVALID", "pathPrefix, offset and limit belong to studio_schema action discovery; omit path.")
     # Asking what a documented action takes is not calling it. The path is
     # checked against the same allow-list either way, with a schema question's
     # `{id}` segments standing for the id they name, so the templates this
     # tool's own description lists can actually be read.
-    checked = re.sub(r"\{[^}/]+\}", "id", parsed.path) if name == "studio_schema" else parsed.path
-    if parsed.scheme or parsed.netloc or parsed.fragment or method not in allowed or not allowed[method].fullmatch(checked):
+    if parsed.scheme or parsed.netloc or parsed.fragment or method not in allowed:
         raise HubFailure(422, "CHAT_TOOL_UNAVAILABLE", "This action is not exposed to the chat.")
+    permitted = _schema_allowed(method, parsed.path) if name == "studio_schema" else allowed[method].fullmatch(parsed.path)
+    if not permitted:
+        raise _action_refusal(base, method, parsed.path)
     query = parse_qs(parsed.query, keep_blank_values=True)
     if any(query[key] != [session["projectId"]] for key in ("projectId", "project_id") if key in query):
         raise HubFailure(409, "CHAT_PROJECT_MISMATCH", "A tool cannot select another project.")
@@ -3189,7 +3258,7 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
         template = next((route for route in document["paths"] if re.fullmatch(re.sub(r"\{[^}]+\}", r"[^/]+", route), parsed.path)), None)
         operation = document["paths"].get(template, {}).get(method.lower())
         if operation is None:
-            raise HubFailure(422, "CHAT_TOOL_UNAVAILABLE", "The running Studio has no matching action.")
+            raise HubFailure(422, "CHAT_ACTION_UNSUPPORTED", "The running Runtime has no matching action. Use studio_schema with no path to list this version's available actions.")
         if method == "POST" and parsed.path == "/api/exports":
             reference = operation["requestBody"]["content"]["application/json"]["schema"]["$ref"]
             schema = document["components"]["schemas"][reference.rsplit("/", 1)[-1]]
@@ -3333,6 +3402,12 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
         if started.get("status") == "succeeded" and started.get("downloadPath") == parsed.path + "/bytes":
             started = started | {"downloadUrl": base + started["downloadPath"]}
     if wait is None:
+        if method == "GET" and parsed.path == "/api/capabilities" and isinstance(started, dict):
+            started = {**started, "actionDiscovery": {
+                "tool": "studio_schema", "arguments": {},
+                "note": "These registered workflows are not the complete action list. studio_schema without path lists "
+                        "the actual Runtime actions exposed to this chat; optional pathPrefix narrows the list.",
+            }}
         if method == "POST" and parsed.path in {
             "/api/proposals", "/api/proposals/sketch", "/api/proposals/transform",
             "/api/proposals/push-pull", "/api/proposals/delete", "/api/proposals/elevation",
@@ -3425,8 +3500,11 @@ def _mcp(hub: str, chat_id: str | None, external: ChatPresentationBindRequest | 
     # that happened.
     input_schema = {"type": "object", "properties": dict(request_fields),
                     "required": ["method", "path"], "additionalProperties": False}
-    schema_input = {**input_schema, "properties": {
+    schema_input = {**input_schema, "required": [], "properties": {
         **input_schema["properties"],
+        "pathPrefix": {"type": "string", "description": "Discover actions below this API prefix (for example /api/drawings); omit path. Omit method to include reads AND writes."},
+        "offset": {"type": "integer", "minimum": 0, "description": "Action discovery page offset; omit path."},
+        "limit": {"type": "integer", "minimum": 1, "maximum": 50, "description": "Action discovery page size, default 30; omit path."},
         "producer": {"type": "string", "description": "For POST /api/proposals semantic authoring, select prism, loft, wall or planar-surface to read only that producer's request contract, excluding unrelated geometry and response schemas."},
     }}
     request_schema = {
@@ -3546,7 +3624,7 @@ def _mcp(hub: str, chat_id: str | None, external: ChatPresentationBindRequest | 
         "For invalid input, use the named schema to correct it. For stale state/conflicts, refresh the exact source and reconcile the change while preserving keep conditions.",
         "A refused request made no model. Distinguish unsupported operations from correctable inputs; report unresolved limits without inventing success.",
         "",
-        "ADMIT: when a task's loop is complete, POST /api/admissions once: {task: {kind: 'hub-chat'}, study: {id, label, baseRunId}",
+        "ADMIT: when a MODEL REVISION loop is complete, POST /api/admissions once for its new design results: {task: {kind: 'hub-chat'}, study: {id, label, baseRunId}",
         "(id an ASCII slug) for several alternatives built from one run, results: [{runId, outcome: 'admitted', supersedes: [attempt runIds it replaced], label}]}.",
         "outcome 'rejected' only where the user's words reject that result; add feedbackQuote with their exact passage.",
         "The chat fills messageSource and rawLanguage; never supply them. A refusal names each failing clause per run; an identical",
@@ -3570,6 +3648,7 @@ def _mcp(hub: str, chat_id: str | None, external: ChatPresentationBindRequest | 
         "Use each decision once for its relevant effect: preserve/filter for supported hard constraints, a generation preference for soft wording, or defer for unsupported effects. Inspect the next artifact and name any remaining gap; a context entry alone proves no behavior changed.",
         "PUT /api/board, /api/document-annotations. Use their schemas for exact inputs.",
         "DRAWINGS: POST /api/drawings/elevations automatically registers results in MonkeyDiagram's documents list.",
+        "Drawing-only tasks finish by reading the returned documents and exact files/pages; drawing registration does not require candidate admission. Do not admit the unchanged source model as a new design result. A later observation or admission failure does not undo a drawing already registered; report retained outputs and any remaining limitation separately.",
         "SECTION PERSPECTIVE (剖透视): POST /api/drawings/section-perspectives cuts the exact model with a section plane, removes the side the eye is on,",
         "and draws the kept side in true perspective: the cut filled (poché) and true to scale at 1:scaleDenominator, farther geometry smaller,",
         "lines perpendicular to the cut converging at the eye's point on it. Minimal body: {projectId, sourceStageRef or modelSource,",
@@ -3607,7 +3686,9 @@ def _mcp(hub: str, chat_id: str | None, external: ChatPresentationBindRequest | 
                            if key not in {"projectId", "sourceSessionId"}},
             "required": ["turnId", "messageId", "kind"] if external else ["messageId", "kind"],
         }},
-        {"name": "studio_schema", "description": "Read the exact request/response schema of an allowed Studio action. "
+        {"name": "studio_schema", "description": "Discover current chat actions by omitting path; optional pathPrefix (such as /api/drawings) narrows the list. "
+         "Omit method to include both reads and writes; follow next when paged. The list comes from the bound Runtime and chat allow-list. "
+         "With an exact method/path, read the request/response schema of that allowed Studio action. "
          "Use it to discover inputs, clarify a field or correct a request. Paths may contain template segments, "
          "such as /api/proposals/{id}/candidate. For semantic authoring, supply producer to select its request inputs.", "inputSchema": schema_input},
         {"name": "studio_request", "description": modelling, "inputSchema": request_schema},

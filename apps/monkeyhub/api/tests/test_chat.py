@@ -1121,6 +1121,201 @@ class ChatTests(unittest.TestCase):
                     self.assertEqual((result["method"], result["path"], result["body"]), (method, path, body))
         self.assertEqual(forwarded, routes, "Each request forwards once; reads preserve run and writes preserve exact source.")
 
+    def test_action_discovery_reads_real_runtime_contracts_without_prior_path_knowledge(self):
+        from archflow_studio_api.main import create_app as studio_app
+        from archflow_studio_api.settings import StudioSettings
+
+        runtime = studio_app(StudioSettings(project_dir=self.project, cad_export="off"))
+        self.addCleanup(runtime.state.jobs.shutdown)
+        self.addCleanup(runtime.state.render_jobs.shutdown)
+        document = runtime.openapi()
+        session = self.create()
+        calls = []
+        advertised = next(tool for tool in _tools_of(chat) if tool["name"] == "studio_schema")["inputSchema"]
+        self.assertNotIn("path", advertised.get("required", []))
+        self.assertNotIn("method", advertised.get("required", []))
+        self.assertIn("pathPrefix", advertised["properties"])
+
+        def request(base, path, method="GET", body=None, **kwargs):
+            calls.append((method, path))
+            self.assertEqual((base, method, path), ("http://127.0.0.1:8791", "GET", "/openapi.json"))
+            return json.loads(json.dumps(document))
+
+        with patch.object(chat, "_bound_studio", return_value=("http://127.0.0.1:8791", session.model_dump())), \
+                patch.object(chat, "_request_json", side_effect=request):
+            listing = chat.call_tool(self.store.hub_url, session.id, "studio_schema", {})
+            self.assertEqual((listing["offset"], listing["limit"]), (0, 30))
+            self.assertLessEqual(len(listing["actions"]), 30)
+            drawings = chat.call_tool(self.store.hub_url, session.id, "studio_schema", {"pathPrefix": "/api/drawings"})
+            actions = {(row["method"], row["path"]) for row in drawings["actions"]}
+            for path in ("elevations", "sheets", "section-perspectives", "plans"):
+                self.assertIn(("POST", f"/api/drawings/{path}"), actions)
+            self.assertIn(("GET", "/api/drawings/model-view"), actions)
+            self.assertNotIn(("POST", "/api/drawings/plans/dimension-proposal"), actions)
+            self.assertTrue(all(set(row) == {"method", "path", "summary"} for row in drawings["actions"]),
+                            "Discovery returns concise actions; contracts are read only after selecting one.")
+            selected = next(row for row in drawings["actions"] if row["path"].endswith("/sheets"))
+            schema = chat.call_tool(self.store.hub_url, session.id, "studio_schema",
+                                    {"method": selected["method"], "path": selected["path"]})
+            self.assertIn("modelSource", schema["components"]["schemas"]["SheetRequestDto"]["properties"])
+            model_source = schema["components"]["schemas"]["ModelSourceDto"]["properties"]
+            self.assertTrue({"runId", "stateDigest", "assetSha256"}.issubset(model_source))
+            assets = chat.call_tool(self.store.hub_url, session.id, "studio_schema", {"pathPrefix": "/api/model-assets"})
+            asset = next(row for row in assets["actions"] if row["path"].endswith("/index"))
+            self.assertEqual(asset["method"], "GET")
+            self.assertIn("{asset_sha256}", asset["path"])
+            asset_schema = chat.call_tool(self.store.hub_url, session.id, "studio_schema",
+                                          {"method": asset["method"], "path": asset["path"]})
+            self.assertEqual(asset_schema["path"], asset["path"])
+        self.assertTrue(calls)
+
+    def test_action_discovery_pages_and_reflects_new_allowed_runtime_routes(self):
+        session = self.create()
+        document = {"paths": {
+            "/api/drawings/model-view": {"get": {"summary": "Inspect an exact model"}},
+            "/api/drawings/sheets": {"post": {"summary": "Make a registered sheet"}},
+            "/api/documents": {"get": {"summary": "Read documents"}, "post": {"summary": "Register any document"}},
+            "/api/visual-reviews": {"post": {"summary": "Separate allowance"}},
+        }, "components": {"schemas": {}}}
+        with patch.object(chat, "_bound_studio", return_value=("http://127.0.0.1:8791", session.model_dump())), \
+                patch.object(chat, "_request_json", side_effect=lambda *a, **k: json.loads(json.dumps(document))):
+            first = chat.call_tool(self.store.hub_url, session.id, "studio_schema", {"limit": 2})
+            second = chat.call_tool(self.store.hub_url, session.id, "studio_schema", {"offset": 2, "limit": 2})
+            self.assertEqual((first["total"], second["total"]), (3, 3))
+            self.assertEqual(len(first["actions"]), 2)
+            self.assertEqual(len(second["actions"]), 1)
+            self.assertTrue(first.get("next"))
+            self.assertFalse(second.get("next"))
+            actions = {(row["method"], row["path"]) for row in first["actions"] + second["actions"]}
+            self.assertEqual(actions, {("GET", "/api/documents"), ("GET", "/api/drawings/model-view"),
+                                       ("POST", "/api/drawings/sheets")})
+            writes = chat.call_tool(self.store.hub_url, session.id, "studio_schema", {"method": "POST"})
+            self.assertEqual([(row["method"], row["path"]) for row in writes["actions"]],
+                             [("POST", "/api/drawings/sheets")])
+            # A route absent from this Runtime must not be advertised merely
+            # because Hub permits it. Once Runtime supplies it, no second
+            # hand-maintained capability list is needed.
+            document["paths"]["/api/drawings/elevations"] = {"post": {"summary": "Make elevations"}}
+            updated = chat.call_tool(self.store.hub_url, session.id, "studio_schema", {"method": "POST"})
+            self.assertEqual({row["path"] for row in updated["actions"]},
+                             {"/api/drawings/sheets", "/api/drawings/elevations"})
+            empty = chat.call_tool(self.store.hub_url, session.id, "studio_schema", {"offset": 100})
+            self.assertEqual(empty["actions"], [])
+            self.assertFalse(empty.get("next"))
+
+    def test_action_discovery_rejects_invalid_paging_and_preserves_project_binding(self):
+        session = self.create()
+        bound = ("http://127.0.0.1:8791", session.model_dump())
+        with patch.object(chat, "_bound_studio", return_value=bound), patch.object(chat, "_request_json") as request:
+            for arguments in ({"offset": -1}, {"offset": True}, {"offset": "0"},
+                              {"limit": 0}, {"limit": 51}, {"limit": False}, {"limit": "2"}):
+                with self.subTest(arguments=arguments), self.assertRaises(HubFailure) as failure:
+                    chat.call_tool(self.store.hub_url, session.id, "studio_schema", arguments)
+                self.assertEqual(failure.exception.error.code, "CHAT_TOOL_INVALID")
+            request.assert_not_called()
+        with patch.object(chat, "_bound_studio", side_effect=HubFailure(409, "CHAT_PROJECT_MISMATCH", "Wrong project")), \
+                patch.object(chat, "_request_json") as request:
+            with self.assertRaises(HubFailure) as failure:
+                chat.call_tool(self.store.hub_url, session.id, "studio_schema", {})
+            self.assertEqual(failure.exception.error.code, "CHAT_PROJECT_MISMATCH")
+            request.assert_not_called()
+
+    def test_unknown_drawing_action_recovers_without_automatically_writing(self):
+        session = self.create()
+        document = {"paths": {
+            "/api/drawings/elevations": {"post": {"summary": "Make elevations"}},
+            "/api/drawings/sheets": {"post": {"summary": "Make a registered sheet"}},
+            "/api/drawings/model-view": {"get": {"summary": "Inspect a model"}},
+            "/api/documents": {"get": {"summary": "List drawings"}, "post": {"summary": "Register a document"}},
+            "/api/visual-reviews": {"post": {"summary": "Separate allowance"}},
+        }, "components": {"schemas": {}}}
+        calls = []
+
+        def request(base, path, method="GET", body=None, timeout=None, *, headers=None):
+            path = self._studio_tool_path(base, path, method, headers, session)
+            calls.append((method, path, body))
+            if path == "/openapi.json":
+                return json.loads(json.dumps(document))
+            return {"method": method, "path": path, "body": body}
+
+        with patch.object(chat, "_bound_studio", return_value=("http://127.0.0.1:8791", session.model_dump())), \
+                patch.object(chat, "_request_json", side_effect=request):
+            for name in ("studio_schema", "studio_request"):
+                for path in ("/api/drawings/projection", "/api/drawings/sheet"):
+                    with self.subTest(name=name, path=path), self.assertRaises(HubFailure) as failure:
+                        chat.call_tool(self.store.hub_url, session.id, name, {"method": "POST", "path": path})
+                    self.assertEqual(failure.exception.error.code, "CHAT_ACTION_UNKNOWN")
+                    self.assertIn("studio_schema", failure.exception.error.detail)
+                    self.assertIn("/api/drawings/sheets", failure.exception.error.detail)
+                for path in ("/api/documents", "/api/visual-reviews"):
+                    with self.subTest(name=name, path=path), self.assertRaises(HubFailure) as failure:
+                        chat.call_tool(self.store.hub_url, session.id, name, {"method": "POST", "path": path})
+                    self.assertEqual(failure.exception.error.code, "CHAT_TOOL_UNAVAILABLE")
+                    self.assertIn("studio_schema", failure.exception.error.detail)
+            with self.assertRaises(HubFailure) as absent:
+                chat.call_tool(self.store.hub_url, session.id, "studio_schema",
+                               {"method": "POST", "path": "/api/drawings/section-perspectives"})
+            self.assertEqual(absent.exception.error.code, "CHAT_ACTION_UNSUPPORTED")
+            self.assertIn("studio_schema", absent.exception.error.detail)
+            for arguments in ({"method": "POST", "path": "https://remote.example/api/drawings/sheets"},
+                              {"method": "DELETE", "path": "/api/drawings/sheets"}):
+                with self.assertRaises(HubFailure) as invalid:
+                    chat.call_tool(self.store.hub_url, session.id, "studio_request", arguments)
+                self.assertEqual(invalid.exception.error.code, "CHAT_TOOL_UNAVAILABLE")
+            self.assertTrue(all(method == "GET" and path == "/openapi.json" for method, path, _ in calls))
+            listing = chat.call_tool(self.store.hub_url, session.id, "studio_schema",
+                                     {"method": "POST", "pathPrefix": "/api/drawings"})
+            selected = next(row for row in listing["actions"] if row["path"].endswith("/sheets"))
+            body = {"projectId": session.projectId, "modelSource": {
+                "runId": "candidate-exact", "stateDigest": "a" * 64, "assetSha256": "b" * 64}}
+            result = chat.call_tool(self.store.hub_url, session.id, "studio_request",
+                                    {"method": selected["method"], "path": selected["path"], "body": body})
+            self.assertEqual(result["body"], body)
+        self.assertEqual([row for row in calls if row[0] != "GET"], [("POST", "/api/drawings/sheets", body)])
+
+    def test_registered_capability_matches_always_point_to_complete_action_discovery(self):
+        session = self.create()
+        index = {"capabilities": [{"capabilityId": "candidate.modify_existing"}], "registered": 2, "note": None}
+        seen = []
+
+        def request(base, path, method="GET", body=None, **kwargs):
+            seen.append((method, path))
+            if path == "/openapi.json":
+                return {"paths": {"/api/drawings/sheets": {"post": {"summary": "Make a sheet"}}},
+                        "components": {"schemas": {}}}
+            self.assertEqual(path, "/api/capabilities?goal=drawings%20for%20candidate")
+            return dict(index)
+
+        with patch.object(chat, "_bound_studio", return_value=("http://127.0.0.1:8791", session.model_dump())), \
+                patch.object(chat, "_request_json", side_effect=request):
+            result = chat.call_tool(self.store.hub_url, session.id, "studio_request",
+                                    {"method": "GET", "path": "/api/capabilities?goal=drawings%20for%20candidate"})
+            self.assertEqual({key: result[key] for key in index}, index)
+            discovery = result["actionDiscovery"]
+            self.assertEqual((discovery["tool"], discovery["arguments"]), ("studio_schema", {}))
+            listing = chat.call_tool(self.store.hub_url, session.id, discovery["tool"], discovery["arguments"])
+            self.assertIn(("POST", "/api/drawings/sheets"), {(row["method"], row["path"]) for row in listing["actions"]})
+        self.assertTrue(all(method == "GET" for method, _ in seen))
+
+    def test_capability_query_encodes_chinese_and_spaces_without_encoding_percent_twice(self):
+        import io
+
+        paths = ("/api/capabilities?goal=重出 立面&run=candidate-1",
+                 "/api/capabilities?goal=%E9%87%8D%E5%87%BA%20%E7%AB%8B%E9%9D%A2&run=candidate-1")
+        seen = []
+
+        def open_request(request, **kwargs):
+            seen.append(request.full_url)
+            return io.BytesIO(b'{"capabilities": []}')
+
+        with patch.object(chat, "build_opener") as opener:
+            opener.return_value.open.side_effect = open_request
+            for path in paths:
+                self.assertEqual(chat._request_json("http://127.0.0.1:8791", path), {"capabilities": []})
+        self.assertEqual(seen, ["http://127.0.0.1:8791" + paths[1]] * 2)
+        query = parse_qs(urlsplit(seen[0]).query)
+        self.assertEqual(query, {"goal": ["重出 立面"], "run": ["candidate-1"]})
+
     def test_the_drawing_action_is_findable_and_callable_without_exploring(self):
         """What a request to make a form actually needs: the described path works."""
 
@@ -1170,7 +1365,11 @@ class ChatTests(unittest.TestCase):
                 return {"projectId": "chat-project", "projectDir": str(self.project)}
             if path == "/openapi.json":
                 return {"paths": {"/api/project/modeling": {"post": {"summary": "initialize"}},
-                                   "/api/documents": {"get": {"summary": "list drawings"}},
+                                   "/api/documents": {"get": {"summary": "list drawings"},
+                                                      "post": {"summary": "register documents outside chat"}},
+                                   "/api/documents/{asset_sha256}/bytes": {"get": {"summary": "read document bytes"}},
+                                   "/api/visual-reviews": {"post": {"summary": "separate review allowance"}},
+                                   "/api/drawings/plans/dimension-proposal": {"post": {"summary": "propose plan dimensions"}},
                                    "/api/proposals/sketch": {"post": {"summary": "draw"}},
                                    "/api/proposals/elevation": {"post": {"summary": "edit elevation"}},
                                    "/api/options/{option_id}/select": {"post": {"summary": "select"}}},
@@ -1925,6 +2124,9 @@ class ChatTests(unittest.TestCase):
                 return {"processId": 123, "sourceRevision": "same-revision"}
             if path == "/api/project":
                 return {"projectId": "chat-project", "projectDir": str(self.project)}
+            if path == "/openapi.json":
+                return {"paths": {"/api/state/closure": {"post": {"summary": "Read a declared closure"}}},
+                        "components": {"schemas": {}}}
             return {"method": method, "body": body, "path": path}
         with patch.object(chat, "_request_json", side_effect=request):
             result = chat.call_tool(self.store.hub_url, session.id, "studio_request", {"method": "POST", "path": "/api/proposals", "body": {"utterance": "set height to 1.2"}})
@@ -1935,7 +2137,7 @@ class ChatTests(unittest.TestCase):
             self.assertEqual(result["body"], closure_body)
             with self.assertRaises(HubFailure) as wrong_method:
                 chat.call_tool(self.store.hub_url, session.id, "studio_request", {"method": "GET", "path": "/api/state/closure"})
-            self.assertEqual(wrong_method.exception.error.code, "CHAT_TOOL_UNAVAILABLE")
+            self.assertEqual(wrong_method.exception.error.code, "CHAT_ACTION_UNKNOWN")
             index_path = "/api/model-assets/" + "a" * 64 + "/index?runId=source&stateDigest=" + "b" * 64 + "&limit=20"
             result = chat.call_tool(self.store.hub_url, session.id, "studio_request", {"method": "GET", "path": index_path})
             self.assertEqual(result["path"], index_path)
@@ -2640,11 +2842,14 @@ class ChatTests(unittest.TestCase):
             {"method": "GET"}, {"path": "/api/documents/" + "a" * 64 + "/bytes"},
         )]
         with patch.object(chat, "_bound_studio", return_value=("http://127.0.0.1:8791", {"projectId": "chat-project"})), \
-             patch.object(chat, "_request_json") as request:
+             patch.object(chat, "_request_json", return_value={"paths": {}}) as request:
             for value in invalid:
                 with self.subTest(value=value), self.assertRaises(HubFailure):
                     chat.call_tool(self.store.hub_url, "chat", "studio_request", value)
-            request.assert_not_called()
+            self.assertTrue(all(call.args == ("http://127.0.0.1:8791", "/openapi.json")
+                                and not call.kwargs for call in request.call_args_list),
+                            "A refused path may discover alternatives, but it must never export a page.")
+            request.reset_mock()
             request.return_value = {"data": "png", "mimeType": "image/png"}
             chat.call_tool(self.store.hub_url, "chat", "studio_request", arguments)
             self.assertEqual(request.call_args.kwargs, {"png": True})

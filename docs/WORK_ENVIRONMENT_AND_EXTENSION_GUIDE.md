@@ -145,7 +145,11 @@ prism/planar-surface 的轮廓坐标支持参数引用；渐变截面形体可�
 现有出图入口支持四向立面与未剖切的顶投影；文字和尺寸可通过已有文档批注接口绑定到准确页面，沿用其版本比较保存。
 `awaitSeconds` 限定为提交成功后的等待时间；超时或读取失败返回原任务的只读续查入口，不重复提交。
 未指定该选项时保持原来的单请求行为，Studio 的候选 HTTP 接口仍异步返回。
-其他动作按需查询现有 Studio schema。能力详情使用实际来源、目标字段和 keep 范围，请求结构继续引用 OpenAPI。
+其他动作先用 `studio_schema` 省略 `path` 查询当前聊天可用的 API；可传 `pathPrefix: /api/drawings`
+缩小范围，省略 `method` 同时查看读写动作，按返回的 `next` 翻页。选定准确 `method`／`path` 后查询具体 schema。
+目录取当前 Runtime OpenAPI 与聊天白名单的交集，登记能力匹配不代表已经列出全部动作；
+`GET /api/capabilities` 的聊天返回也给出此发现入口。未知路径与未向聊天开放的动作分别说明，建议不会自动执行。
+能力详情使用实际来源、目标字段和 keep 范围，请求结构继续引用 OpenAPI。
 每次调用核对 Hub、Studio 与聊天的项目绑定，执行继续经过已有 API；聊天记录与 CLI session id
 保存在 Hub runtime 的 `chats/`，建筑输入与结果仍在项目根。共享工具箱的自动检索与执行仍待接入，
 开发源码时继续按上表查询 owner。新成员的实际试用仍应验证首次配置、一次真实候选以及同项目续改。

@@ -1374,6 +1374,24 @@ record list. Nothing is sent or replayed, and the operation's status, reason and
 unchanged. A recoverable operation answers `409 OPERATION_NOT_ACKNOWLEDGEABLE` and stays until a
 retained result resolves it; an unknown id answers `404 OPERATION_NOT_FOUND`.
 
+The bound chat's `studio_schema` tool has two read-only modes. Omit `path` to discover
+actions in the current Runtime OpenAPI intersected with the existing chat allow-list.
+Optional `pathPrefix` (for example `/api/drawings`) and `method` narrow the list; omitting
+`method` includes both reads and writes. `offset` defaults to 0, `limit` to 30 (1–50).
+The reply contains only `actions` (`method`, `path`, `summary`), `total`, paging fields,
+an explanatory `note`, and a `next` tool call when more actions remain. Supply an exact
+`method`/`path` to read its existing request/response schema; `producer` still narrows
+semantic authoring inputs. Discovery neither grants authority nor proves input validity.
+The chat projection of `GET /api/capabilities` preserves its registered-workflow fields
+and adds `actionDiscovery` pointing to this tool; a matched workflow is not an exhaustive
+list of API actions. Unknown paths return `CHAT_ACTION_UNKNOWN` with bounded same-domain
+suggestions; an existing action outside the chat allow-list remains `CHAT_TOOL_UNAVAILABLE`.
+A permitted schema query absent from this Runtime returns `CHAT_ACTION_UNSUPPORTED`.
+No refusal automatically substitutes or executes a suggested action.
+Drawing-only tasks complete through their registered documents and exact output readback;
+model-candidate admission applies to new model revisions. A later observation or admission
+failure does not revoke a document already retained by its drawing owner.
+
 A chat message may carry an optional `designContext` with `stateDigest` and the same optional
 source, focus and supplement fields as `/api/intents/context`. When it is there,
 Hub prepares that one turn against the bound Studio's `POST /api/intents/context` (§4) and appends
