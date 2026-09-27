@@ -153,6 +153,66 @@
       "notes": [
         "2026-09-08 rule alignment: Awaiting the first concrete evidence consumer and a check of existing Reading/source references. The earlier proposed ledger and private Atlas field superset are not a mandate to add a core record."
       ]
+    },
+    {
+      "id": "GH-364",
+      "stream": "planning",
+      "status": "active",
+      "goal": "Projection 0b (#364, ADR-008), frontend only: one request in flight per resource with If-None-Match (304 keeps the state), hidden surfaces are not mounted and mounted ones pause polling, rhino3dm initialises once per app with an in-memory model LRU by sha, and Modeling's opening requests run in parallel where they can.",
+      "depends_on": [],
+      "issue": "https://github.com/cogco1/MonkeyHub/issues/364",
+      "write_scope": [
+        "apps/monkeyhub/web/workspaces/src/features/designTree/useDesignTree.ts",
+        "apps/monkeyhub/web/workspaces/src/app/",
+        "apps/monkeyhub/web/workspaces/src/workspaces/monkeyboard/Board.tsx",
+        "apps/monkeyhub/web/workspaces/src/workspaces/monkeyarch/",
+        "apps/monkeyhub/web/workspaces/src/features/stage/",
+        "apps/monkeyhub/web/workspaces/src/api/client.ts",
+        "apps/monkeyhub/web/src/ChatShell.tsx",
+        "apps/monkeyhub/web/src/main.tsx",
+        "apps/monkeyhub/web/src/MonitorPage.tsx",
+        "apps/monkeyhub/web/src/notifications/",
+        "apps/monkeyhub/web/test/",
+        "apps/monkeyhub/web/workspaces/test/"
+      ],
+      "card": "docs/mapping/planning/GH-364-projection-0b.md",
+      "acceptance": [
+        "Idle with the tree open and the project unchanged: fewer than 10 requests per minute.",
+        "Opening the same model a second time downloads no bytes and does not re-initialise the wasm.",
+        "Modeling's click-to-model time and the related browser suites compared against main before and after."
+      ],
+      "lanes": [
+        {
+          "id": "projection-0b",
+          "issue": "https://github.com/cogco1/MonkeyHub/issues/364",
+          "branch": "codex/364-projection-0b",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-364-projection-0b",
+          "base_ref": "38138370",
+          "contributor": "Claude",
+          "reviewer": "Claude root task",
+          "handoff": "Frontend only; relies on 0a's ETags already on main. RenderWorkspace polling is left to #330's rewrite. GH-354 also edits src/ChatShell.tsx (title bar): keep polling edits there minimal. Cloud lane dispatched by the root session 'MonkeyHub UI 重构任务清单' after agreeing the split with the ADR-008 author session 'MonkeyHub UI前端方案与逻辑审查'. Real-project performance numbers are measured locally before merge (private fixtures).",
+          "modules": [
+            "hub.shell"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/web/workspaces/src/features/designTree/useDesignTree.ts",
+            "apps/monkeyhub/web/workspaces/src/app/",
+            "apps/monkeyhub/web/workspaces/src/workspaces/monkeyboard/Board.tsx",
+            "apps/monkeyhub/web/workspaces/src/workspaces/monkeyarch/",
+            "apps/monkeyhub/web/workspaces/src/features/stage/",
+            "apps/monkeyhub/web/workspaces/src/api/client.ts",
+            "apps/monkeyhub/web/src/ChatShell.tsx",
+            "apps/monkeyhub/web/src/main.tsx",
+            "apps/monkeyhub/web/src/MonitorPage.tsx",
+            "apps/monkeyhub/web/src/notifications/",
+            "apps/monkeyhub/web/test/",
+            "apps/monkeyhub/web/workspaces/test/"
+          ],
+          "depends_on": [],
+          "status": "active",
+          "blocked_reason": null
+        }
+      ]
     }
   ]
 }
