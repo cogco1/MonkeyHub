@@ -847,6 +847,9 @@ class ChatStore:
             suffix = ".bin"
         return self.root / _identifier(session_id) / "attachments" / (_identifier(attachment.id) + suffix)
 
+    def _scratch_path(self, session_id: str) -> Path:
+        return self.root / _identifier(session_id) / "scratch"
+
     def attachment(self, session_id: str, attachment_id: str) -> tuple[ChatAttachment, Path]:
         with self._lock:
             session = self._session(session_id)
@@ -901,6 +904,8 @@ class ChatStore:
 
     def _save(self, session: _SavedChat, attachments: tuple[tuple[ChatAttachment, bytes], ...] = ()) -> None:
         self.root.mkdir(parents=True, exist_ok=True)
+        if session.provider != "codex":
+            self._scratch_path(session.id).mkdir(parents=True, exist_ok=True)
         path = self.root / f"{session.id}.json"
         temporary = path.with_suffix(".tmp")
         written = []
@@ -1728,6 +1733,7 @@ class ChatStore:
                     command += ["--image", str(path)]
             command.append("-")
         else:
+            scratch = self._scratch_path(session.id)
             command = [*commands[kind], "-p", "--output-format", "stream-json", "--verbose",
                        "--include-partial-messages", "--permission-mode", "dontAsk", "--permission-prompts", "none",
                        # Two different questions, and both have to be answered.
@@ -1738,6 +1744,7 @@ class ChatStore:
                        # plus this adapter's own tools and nothing else.
                        "--tools", "default", "--allowedTools", ",".join(_claude_approved(self.runtime_root)),
                        *(("--add-dir", session.projectDir) if workdir != session.projectDir else ()),
+                       "--add-dir", str(scratch),
                        "--strict-mcp-config", "--mcp-config", json.dumps({"mcpServers": {"monkeyhub": mcp}})]
             command += ["--resume", session.nativeSessionId] if session.nativeSessionId else ["--session-id", session.cliStartId or session.id]
             # Every turn reads stream-json from stdin, so a message sent while
@@ -2032,6 +2039,13 @@ class ChatStore:
                         if _source_checkout() is not None else
                         "This Hub runs from an installed bundle rather than a source checkout, so there is no code "
                         "here for you to change; say so instead of describing an edit you cannot make. "
+                    ) +
+                    (
+                        f"Use this chat's writable scratch directory at {self._scratch_path(session.id)} for "
+                        "temporary calculation scripts and derived working files; Write, Edit and Bash are available "
+                        "there. Use this directory rather than the CLI's protected .claude directory. Scratch files "
+                        "are not project records; save design results through the connected tools and P036. "
+                        if session.provider != "codex" else ""
                     ) +
                     "Do not switch Hub configuration, open a different project, or guess a service URL. "
                     "If a required domain action is unavailable, say what cannot be done.\n\n"

@@ -24,6 +24,7 @@ module registry 管软件归口与公开契约，work registry 只管未完成�
 新 Codex 对话通过锁定版本的 ACP SDK 与上游适配器保持连接，旧 CLI 对话仍可续接。
 源码环境的一次依赖安装见 [Hub README](../apps/monkeyhub/README.md#python-entry-and-development)；
 权限请求直接呈现在工具活动中，停止会取消仍待回答的请求。
+Claude / Coding Plan 聊天的计算脚本和临时文件放在 Hub 提供的 `runtime/chats/<chatId>/scratch`；启动参数明确授权该目录，提示提供准确路径。不要写入 Claude 受保护的 `.claude` 配置目录；scratch 不是项目状态，设计结果仍通过连接工具和 P036 保存。
 每个项目使用独立的 Project Runtime 进程与端口（代码仍在 `apps/archflow-studio/api`，契约见 [docs/PROJECT_RUNTIME.md](PROJECT_RUNTIME.md)），右侧的 MonkeyArch、MonkeyDiagram、MonkeyBoard 在同一项目内共用这一个进程。
 不同项目可以并行聊天与建模；切换项目不停止其他项目，也不改写默认项目配置。已打开的工具页直接切换，保留加载状态。
 候选成功读回后立即打开模型，无需等待聊天整轮结束；再次打开同一候选复用页面。
@@ -154,6 +155,7 @@ prism/planar-surface 的轮廓坐标支持参数引用；渐变截面形体可�
 成功交付图像花费一次既有 review 额度，但不产生 finding 或接受结论；因此 frames 后不能捏造 finding id 发起 `after_repair`。
 收到的渲染失败不花额度，未答复的请求仍按既有规则保守计次。模型需说明从实际图面看到的结果，不能用包围盒代替观察。
 原生 `chat_present` 只发送 `progress` 或 `assistant`；用户消息由 Hub 已有会话持有，外部会话呈现仍保留 `user` 类型。
+原生展示的 `status` 固定为 `streaming`，由 CLI 回合结束时完成；schema 仅暴露这个值，adapter 将旧的 `complete` 请求归一为 `streaming`，允许回合内更新同一消息。外部展示仍由调用方控制状态。
 大型参数提案的即时回复只列前 100 条变更和直接影响，明确总数、省略数及完整提案读取路径；冲突、锁、keep 和覆盖限制保持完整。
 现有出图入口支持四向立面与未剖切的顶投影；文字和尺寸可通过已有文档批注接口绑定到准确页面，沿用其版本比较保存。
 `awaitSeconds` 限定为提交成功后的等待时间；超时或读取失败返回原任务的只读续查入口，不重复提交。

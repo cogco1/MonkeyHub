@@ -33,7 +33,7 @@ from monkeyhub_api.models import (
 
 
 FAKE_CLI = r'''
-import json, os, sys, time, tomllib
+import json, os, subprocess, sys, time, tomllib
 from pathlib import Path
 from uuid import uuid4
 sys.stdin.reconfigure(encoding="utf-8")
@@ -83,6 +83,13 @@ if "mcp" in args and "list" in args:
                       {"name": "remote-unrelated", "enabled": True, "transport": {"type": "streamable_http"}}]))
     sys.exit(0)
 prompt = input_message["message"]["content"][0]["text"] if input_message else sys.stdin.read()
+if "scratch-computation-test" in prompt:
+    added = [args[index + 1] for index, value in enumerate(args) if value == "--add-dir"]
+    scratch = Path(added[-1])
+    script = scratch / "calculation.py"
+    script.write_text("print(6 * 7)\n", encoding="utf-8")
+    result = subprocess.check_output([sys.executable, str(script)], cwd=scratch, text=True)
+    (scratch / "result.txt").write_text(result, encoding="utf-8")
 config_path = Path(os.environ["CODEX_HOME"]) / "config.toml"
 config = tomllib.loads(config_path.read_text(encoding="utf-8")) if config_path.is_file() else {}
 profile = config.get("profiles", {}).get(config.get("profile"), {})
@@ -1012,7 +1019,7 @@ class ChatTests(unittest.TestCase):
         self.assertEqual(codex_command[codex_command.index("-C") + 1], str(source))
         self.assertEqual(codex_command[codex_command.index("--add-dir") + 1], str(self.project))
 
-        # Claude: its own built-in tools back, and the same two roots.
+        # Claude: its own built-in tools, the source and project, and chat scratch.
         self.assertEqual(claude_command[claude_command.index("--tools") + 1], "default")
         # Available is not approved. With nobody to answer a prompt, the tools a
         # headless turn may actually use have to be named, and editing and
@@ -1038,6 +1045,29 @@ class ChatTests(unittest.TestCase):
         self.assertEqual(resumed_codex[resumed_codex.index("resume") + 1], "thread-1")
         self.assertEqual(resumed_claude[resumed_claude.index("--resume") + 1], "session-1")
         self.assertIn("workspace-write", resumed_codex)
+
+    def test_claude_can_compute_in_separate_chat_scratch_in_bundle_and_checkout(self):
+        original = {p.relative_to(self.project): p.read_bytes() for p in self.project.rglob("*") if p.is_file()}
+        scratch_paths = []
+        for source in (None, chat._source_checkout()):
+            with self.subTest(source=source), patch.object(chat, "_source_checkout", return_value=source):
+                session = self.create(provider="claude")
+                self.post(session, "scratch-computation-test")
+                self.assertEqual(self.finished(session).status, "idle")
+                call = self.calls()[-1]
+                scratch = self.runtime / "chats" / session.id / "scratch"
+                scratch_paths.append(scratch)
+                added = [call["args"][index + 1] for index, value in enumerate(call["args"]) if value == "--add-dir"]
+                self.assertEqual(added, ([str(self.project)] if source is not None else []) + [str(scratch)])
+                self.assertEqual(Path(call["cwd"]).resolve(), (source or self.project).resolve())
+                self.assertIn(str(scratch), call["prompt"])
+                self.assertIn("temporary calculation scripts", call["prompt"])
+                self.assertIn("save design results through the connected tools and P036", call["prompt"])
+                self.assertEqual((scratch / "result.txt").read_text(encoding="utf-8").strip(), "42")
+                self.assertFalse(scratch.resolve().is_relative_to(self.project.resolve()))
+                self.assertNotIn(".claude", scratch.parts)
+        self.assertNotEqual(*scratch_paths)
+        self.assertEqual(original, {p.relative_to(self.project): p.read_bytes() for p in self.project.rglob("*") if p.is_file()})
 
     def test_a_turn_runs_where_the_source_is_and_says_what_it_may_change(self):
         session = self.create()

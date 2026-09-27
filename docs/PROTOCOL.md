@@ -1213,6 +1213,8 @@ limitation remains; this HTTP collaboration path does not depend on an SSE conne
 
 ## MonkeyHub project runtime
 
+Native Claude-compatible chats use `runtime/chats/<chatId>/scratch` under the explicit nonproject Hub runtime root for temporary calculation scripts and derived working files. ChatStore creates the directory, grants it through the existing CLI `--add-dir` argument and names it in the turn prompt. This does not grant writes to the CLI's protected configuration directory; retained design results still use the connected project APIs and P036.
+
 ### External conversation presentation
 
 `POST /api/chat/presentation/bind` accepts an existing `projectDir`, stable `sourceSessionId`,
@@ -1248,6 +1250,7 @@ for both external and native conversations. Native `chat_present` exposes only
 `kind: "progress" | "assistant"`: Hub already owns the actual user turn, so native providers
 do not manufacture or repeat a user message. External presentation retains
 `kind: "user" | "progress" | "assistant"` with explicit turn/message identities.
+Native presentation status is always `streaming` until the CLI turn finishes; its schema exposes only that value and the adapter normalizes older `complete` requests to it, so a provider can revise the same message before completion. External presentation status remains caller-controlled.
 The adapter alone can read an explicitly selected
 local attachment path and convert it to the existing bounded upload. Provider summaries,
 public commentary and document views confer no design acceptance or Board write authority.
