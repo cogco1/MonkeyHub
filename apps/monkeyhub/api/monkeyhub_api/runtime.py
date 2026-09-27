@@ -20,7 +20,6 @@ from urllib.parse import parse_qs, urlencode, urlsplit
 from urllib.request import ProxyHandler, Request, build_opener
 from uuid import UUID, uuid4, uuid5, NAMESPACE_URL
 
-from archflow.project.layout import LayoutFingerprint, layout_fingerprint
 from archflow.project.record_kinds import STUDIO_DOCUMENT_MODEL_SOURCE, STUDIO_SOURCE_DOCUMENT
 from archflow.project.repository import FilesystemProjectRepository, ProjectRepositoryError
 from archflow_studio_api.application.artifacts import (
@@ -29,7 +28,7 @@ from archflow_studio_api.application.artifacts import (
     document_bytes,
     list_document_work_copies,
 )
-from archflow_studio_api.application.binding import ProjectBinding
+from archflow_studio_api.application.binding import ProjectBinding, ReadToken
 from archflow_studio_api.application.events import StudioEvents
 from archflow_studio_api.settings import StudioSettings
 from archflow_studio_api.transport.errors import StudioError
@@ -1041,11 +1040,20 @@ class ProjectRuntimeManager:
         return repository.prune_working_draft(now=datetime.now(timezone.utc).isoformat())
 
     def _watch(self, runtime: ProjectRuntime):
+        try:
+            self._watch_project(runtime)
+        finally:
+            # The binding's layout watch holds the project folder open; a
+            # runtime that stopped observing lets go of it, and one opened
+            # again watches again on its first read.
+            runtime.binding.close()
+
+    def _watch_project(self, runtime: ProjectRuntime):
         next_retained_read = next_work_copy_check = 0.0
         last_snapshot_inputs = last_retained = None
-        # The project's layout when the last refresh the idle timer alone asked
-        # for began; None after any other refresh, which records none.
-        idle_layout: LayoutFingerprint | None = None
+        # The project's read token when the last refresh the idle timer alone
+        # asked for began; None after any other refresh, which records none.
+        idle_token: ReadToken | None = None
         while not self._closing.is_set():
             force_read = runtime.wake.is_set()
             runtime.wake.clear()
@@ -1057,14 +1065,16 @@ class ProjectRuntimeManager:
             prompted = drained or force_read or active or worker_states != runtime.last_workers
             due = prompted or time.monotonic() >= next_retained_read
             try:
-                layout = None
+                token = None
                 if due and not prompted:
                     # Only the idle fallback asks, and it asks only whether a
                     # separate client changed the project. If nothing on disk
-                    # moved since the last such read - a stable, equal layout
-                    # fingerprint - the retained history is not read again.
-                    layout = layout_fingerprint(runtime.project_dir)
-                    if idle_layout is not None and idle_layout.stable and layout.digest == idle_layout.digest:
+                    # moved since the last such read - an equal, stable read
+                    # token - the retained history is not read again. The
+                    # binding's layout watch keeps that token current on its
+                    # own thread, so asking walks nothing (#363).
+                    token = runtime.binding.read_token()
+                    if idle_token is not None and idle_token.stable and token == idle_token:
                         due = False
                         next_retained_read = time.monotonic() + _IDLE_RETAINED_REFRESH_S
                 if due:
@@ -1072,11 +1082,11 @@ class ProjectRuntimeManager:
                     # unchanged retained history on every idle heartbeat. Hub
                     # mutations wake this observer; the fallback sees changes
                     # made through a separate Studio/project client.
-                    idle_layout = None
+                    idle_token = None
                     self.refresh(runtime, cold=drained)
                     next_retained_read = time.monotonic() + _IDLE_RETAINED_REFRESH_S
                     # Taken before the read began, and kept only once it succeeded.
-                    idle_layout = layout
+                    idle_token = token
             except (HubFailure, StudioError, OSError, HTTPException, ValueError) as exc:
                 next_retained_read = time.monotonic() + _IDLE_RETAINED_REFRESH_S
                 with runtime.lock:
@@ -1285,3 +1295,6 @@ class ProjectRuntimeManager:
         for runtime in runtimes:
             if runtime.thread:
                 runtime.thread.join(timeout=12)
+            # Its observer closes it on the way out; one that never ran, or
+            # has not finished, still lets go of the folder here.
+            runtime.binding.close()

@@ -322,17 +322,51 @@ _WRITTEN_ROOTS_GUARD = threading.Lock()
 _WRITTEN_ROOTS: dict[str, _WrittenRoot] = {}
 
 
-def _written_root_key(root: Path | str) -> str:
-    text = os.path.normcase(os.fspath(root))
+def _plain_spelling(text: str) -> str:
+    """``text`` without a Win32 extended-length prefix: ``\\\\?\\C:\\p`` is ``C:\\p``.
+
+    The Hub hands out project paths carrying the prefix, and a directory must
+    have one key however it was spelled. A UNC path keeps its two slashes.
+    """
+
+    if text[:8].lower() == "\\\\?\\unc\\":
+        return "\\\\" + text[8:]
+    if text[:4] == "\\\\?\\" and text[5:7] == ":\\":
+        return text[4:]
+    return text
+
+
+def project_root_key(root: Path | str) -> str:
+    """The one key this process files a project root under, however it is spelled.
+
+    Normalized case, absolute, resolved and without an extended-length
+    prefix. ``write_serial``, ``add_write_observer`` and the layout watch
+    (``archflow.project.watch``) key by it, so two spellings of one directory
+    share one serial, one set of observers and one watch.
+    """
+
+    text = _plain_spelling(os.path.normcase(os.fspath(root)))
     with _WRITTEN_ROOTS_GUARD:
         if text in _WRITTEN_ROOTS:
             # Already a registered spelling: resolving again costs a syscall.
             return text
-    return os.path.normcase(os.path.abspath(os.fspath(Path(root).resolve(strict=False))))
+    resolved = os.path.abspath(os.fspath(Path(root).resolve(strict=False)))
+    return _plain_spelling(os.path.normcase(resolved))
+
+
+def project_path_key(path: Path | str) -> str:
+    """A path below a project root, spelled the way ``project_root_key`` spells the root.
+
+    Normalized case, absolute and without an extended-length prefix, but not
+    resolved, so it costs no file-system call: a written path is spelled so to
+    find the roots that contain it.
+    """
+
+    return _plain_spelling(os.path.normcase(os.path.abspath(os.fspath(path))))
 
 
 def _written_root(root: Path | str) -> _WrittenRoot:
-    key = _written_root_key(root)
+    key = project_root_key(root)
     with _WRITTEN_ROOTS_GUARD:
         return _WRITTEN_ROOTS.setdefault(key, _WrittenRoot())
 
@@ -341,7 +375,9 @@ def write_serial(root: Path | str) -> int:
     """How many writes this process has made below ``root`` since it started.
 
     Counts only this process: another process's writes are visible to a
-    reader through ``archflow.project.layout.layout_fingerprint``, never here.
+    reader through the project's layout fingerprint
+    (``archflow.project.layout``, kept current by ``archflow.project.watch``),
+    never here.
     """
 
     entry = _written_root(root)
@@ -548,7 +584,7 @@ def _note_write(path: Path | str) -> None:
     serial must also be able to see what was written.
     """
 
-    location = os.path.normcase(os.path.abspath(os.fspath(path)))
+    location = project_path_key(path)
     notified: list[tuple[Callable[[Path], object], ...]] = []
     roots: list[str] = []
     with _WRITTEN_ROOTS_GUARD:
@@ -1721,7 +1757,7 @@ class FilesystemProjectRepository:
         _written_root(layout.root)
         # The root's registered spelling: the first part of every key this
         # repository keeps in the read memos, and what ``_note_write`` names.
-        self._root_key = _written_root_key(layout.root)
+        self._root_key = project_root_key(layout.root)
 
     @classmethod
     def initialize(

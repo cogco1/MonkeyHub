@@ -123,6 +123,51 @@ class DesktopUpdateHandoffTests(unittest.TestCase):
         self.assertIn("event=stop-request", text)
         self.assertIn("state=rolled-back", text)
 
+    def test_a_launch_during_an_update_restart_leaves_the_restart_to_open_the_new_version(self):
+        """#373: while the running desktop drains to restart as the new version, a second
+        launch says MonkeyHub opens by itself and exits; the restart still opens the new one."""
+        (self.base / "fixture.json").write_text(json.dumps(
+            {"restart_target": self.target_commit, "drain_seconds": 3}))
+        command = [str(self.base / "MonkeyHub.exe"), "--runtime-root", str(self.runtime),
+                   "--startup-timeout-seconds", "10"]
+        old = self.launch(command)
+
+        def restarting():
+            text = "\n".join(path.read_text(errors="replace") for path in self.runtime.glob("logs/desktop-*.log"))
+            return "state=update-requested" in text and "state=stopping" in text
+
+        wait_for(restarting, "The running desktop did not begin its update restart")
+
+        def desktops():  # the update helper's own log is desktop-update-*.log
+            return {path for path in self.runtime.glob("logs/desktop-*.log")
+                    if not path.name.startswith("desktop-update-")}
+
+        logs = desktops()
+        relaunch = self.launch(command)
+        dialog, caption, text = wait_for(lambda: self.native.notice(relaunch.pid), "The second launch showed no notice")
+        self.assertEqual(caption, "MonkeyHub")
+        self.assertIn("MonkeyHub 正在为更新重新启动，稍后会自动打开。", text)
+        self.native.dismiss(dialog)
+        self.assertEqual(relaunch.wait(timeout=10), 0)
+        self.assertEqual(desktops(), logs, "The second launch started a desktop")
+        self.assertEqual(old.wait(timeout=30), 0)
+
+        def completed():
+            try:
+                return json.loads((self.runtime / "activation.json").read_text())
+            except (OSError, ValueError):
+                return None
+
+        record = wait_for(completed, "The update restart did not complete", timeout=60)
+        self.native.track(record["desktopPid"])
+        self.native.track(record["hubPid"])
+        self.native.track_webviews(record["desktopPid"])
+        self.assertEqual(record["path"], "/api/updates/complete")
+        self.assertEqual(record["sourceRevision"], self.target_commit)
+        wait_for(lambda: any(title == "MonkeyHub" for _, title in self.native.windows(record["desktopPid"])),
+                 "The new version did not open after the restart")
+        self.assertEqual(self.retained.read_bytes(), b"unchanged user data")
+
     def tearDown(self):
         # WindowsProcesses holds handles only to this test's known children.
         for pid in list(self.native.handles):

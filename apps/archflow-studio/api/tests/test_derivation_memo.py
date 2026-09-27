@@ -10,16 +10,17 @@ from __future__ import annotations
 from pathlib import Path
 import shutil
 import tempfile
+import threading
 import unittest
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
-from archflow.project.layout import layout_fingerprint
+from archflow.project import watch
 from archflow.project.record_kinds import STATE_RECORD
 from archflow.project.repository import ProjectIntegrityError
 from archflow_studio_api.application.artifacts import list_artifacts
-from archflow_studio_api.application.binding import FINGERPRINT_TTL_S, ProjectBinding
+from archflow_studio_api.application.binding import ProjectBinding
 from archflow_studio_api.main import create_app
 from archflow_studio_api.settings import StudioSettings
 
@@ -118,24 +119,33 @@ class ArtifactListingTests(_ProjectCase):
 
 
 class ReadTokenTests(_ProjectCase):
-    def test_a_settling_project_is_walked_once_per_time_to_live_and_at_once_after_a_write(self) -> None:
+    def test_a_read_token_is_read_never_walked_and_a_write_moves_it_at_once(self) -> None:
         binding = self.binding()
-        now = [50.0]
-        binding.clock = lambda: now[0]
-        with patch("archflow_studio_api.application.binding.layout_fingerprint", wraps=layout_fingerprint) as walk:
-            first = binding.read_token()
-            self.assertFalse(first.stable, "a project written just now has not settled")
-            self.assertEqual(binding.read_token(), first)
-            self.assertEqual(walk.call_count, 1)
+        self.addCleanup(binding.close)
+        first = binding.read_token()  # the first read waits for the watch's first walk
+        self.assertFalse(first.stable, "a project written just now has not settled")
+        walked: list[str] = []
+        original = watch._Tree._visit_one
 
-            now[0] += FINGERPRINT_TTL_S + 0.1
-            binding.read_token()
-            self.assertEqual(walk.call_count, 2)
+        def visit(tree, *args):
+            walked.append(threading.current_thread().name)
+            return original(tree, *args)
 
+        with patch.object(watch._Tree, "_visit_one", visit):
+            for _ in range(50):
+                again = binding.read_token()
+                self.assertEqual((again.serial, again.fingerprint), (first.serial, first.fingerprint))
             self.repository.create_run("run-later")
             after = binding.read_token()
-        self.assertEqual(walk.call_count, 3)
-        self.assertGreater(after.serial, first.serial)
+            self.assertGreater(after.serial, first.serial)
+            self.assertFalse(after.stable)
+            binding.layout_watch().sync()
+            seen = binding.read_token()
+        self.assertTrue(walked, "the watch never read the project")
+        self.assertEqual({name for name in walked if not name.startswith("layout-watch:")}, set(),
+                         "a reader's thread walked the project")
+        self.assertEqual(seen.serial, after.serial)
+        self.assertNotEqual(seen.fingerprint, first.fingerprint)
 
 
 class DesignHistoryReviewTests(DesignHistoryFixture):

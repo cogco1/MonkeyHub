@@ -326,6 +326,8 @@ fn supervise(
                                             &format!("Confirmed idle restart to {commit}"),
                                         );
                                         pending_update = Some(commit);
+                                        // #373: a later launch leaves this restart to open the new version.
+                                        monkeyhub_desktop::single_instance::restarting_for_update();
                                         shared.shutdown.store(true, Ordering::SeqCst);
                                     }
                                     Err(error) => {
@@ -414,6 +416,11 @@ fn run() -> Result<(), String> {
     args.retain(|arg| arg != "--update-trial");
     let config = LaunchConfig::from_args(args)?;
     let instance = Uuid::new_v4();
+    // #373: one desktop per runtime root, taken before any window, log or Hub exists. A
+    // repeated launch has brought the open window forward and told the person; it stops here.
+    if !monkeyhub_desktop::single_instance::claim(&config.runtime_root, trial)? {
+        return Ok(());
+    }
     let log = DiagnosticLog::open(&config.runtime_root, &instance.to_string())?;
     let data_directory = config.runtime_root.join("cache/desktop-webview");
     std::fs::create_dir_all(&data_directory)
@@ -468,6 +475,11 @@ fn run() -> Result<(), String> {
                     close_shared.shutdown.store(true, Ordering::SeqCst);
                     if close_shared.finished.load(Ordering::SeqCst) { close_app.exit(0); }
                 }
+            });
+            // #373: a later launch waits while this desktop closes, and otherwise brings it forward.
+            let closing = setup_shared.clone();
+            monkeyhub_desktop::single_instance::attach(&window, setup_log.clone(), move || {
+                closing.shutdown.load(Ordering::SeqCst)
             });
             if setup_shared.trial {
                 let trial_shared = setup_shared.clone();

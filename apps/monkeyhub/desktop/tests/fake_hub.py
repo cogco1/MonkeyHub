@@ -32,7 +32,8 @@ class Handler(BaseHTTPRequestHandler):
             "managedInstanceId": args.managed_instance_id,
             "sourceRevision": (Path.cwd() / "source-version.txt").read_text().strip(),
         }
-        body = json.dumps({"targetCommit": None} if self.path == "/api/updates/restart" else health).encode()
+        restart = {"targetCommit": options.get("restart_target")}  # a Hub that asks to restart
+        body = json.dumps(restart if self.path == "/api/updates/restart" else health).encode()
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
