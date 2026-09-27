@@ -245,7 +245,8 @@
         "probes/working-geometry/",
         "apps/monkeyhub/web/workspaces/test/renderWorkspace.browser.mjs",
         "apps/monkeyhub/web/workspaces/src/app/ProjectWorkspace.tsx",
-        "apps/monkeyhub/web/workspaces/src/workspaces/render/RenderWorkspace.tsx"
+        "apps/monkeyhub/web/workspaces/src/workspaces/render/RenderWorkspace.tsx",
+        "probes/physical-camera/"
       ],
       "card": "docs/mapping/planning/GH-319-penguin-scene.md",
       "acceptance": [

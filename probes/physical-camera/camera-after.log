@@ -1,0 +1,6 @@
+Failed to load resource: the server responded with a status of 404 (Not Found)
+2:07:30 PM [vite] (client) [Unhandled error] Error: ResizeObserver loop completed with undelivered notifications.
+ > ../../../../../../../../../../../../../../@vite/client:539:50
+
+PASS Physical real geometry, camera gestures, reload and late scene reads preserve edits without AI replay
+{"passed":["Physical real geometry, camera gestures, reload and late scene reads preserve edits without AI replay"],"screenshots":"C:\\Users\\jiayu\\AppData\\Local\\Temp\\monkeyhub-render-browser-2y3mBl","actualProvider":false,"requests":34}
