@@ -193,8 +193,12 @@ class ProjectBinding:
         """The token an answer read from the project's files now is derived under.
 
         The fingerprint is taken again when it is more than ``FINGERPRINT_TTL_S``
-        old, when it was not stable, or when this process wrote since; so this
-        process's writes change the token at once, anyone else's within the TTL.
+        old or when this process wrote since; so this process's writes change
+        the token at once, anyone else's within the TTL. One that was not stable
+        is taken again at most once per TTL too, as ``memo`` already asks
+        (``_settling``): an unstable token is never answered 304 and keeps
+        nothing, so walking the project again for every request while it
+        settles would only make the first reads after a write slower (#365).
         """
 
         root = self.repository.layout.root
@@ -204,7 +208,7 @@ class ProjectBinding:
         with self._fingerprint_lock:
             now = self.clock()
             taken = self._fingerprinted
-            if (taken is None or taken.serial != serial or not taken.fingerprint.stable
+            if (taken is None or taken.serial != serial
                     or not 0 <= now - taken.taken_at < FINGERPRINT_TTL_S):
                 taken = _Fingerprinted(now, serial, layout_fingerprint(root))
                 self._fingerprinted = taken

@@ -11,13 +11,15 @@ from pathlib import Path
 import shutil
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
+from archflow.project.layout import layout_fingerprint
 from archflow.project.record_kinds import STATE_RECORD
 from archflow.project.repository import ProjectIntegrityError
 from archflow_studio_api.application.artifacts import list_artifacts
-from archflow_studio_api.application.binding import ProjectBinding
+from archflow_studio_api.application.binding import FINGERPRINT_TTL_S, ProjectBinding
 from archflow_studio_api.main import create_app
 from archflow_studio_api.settings import StudioSettings
 
@@ -113,6 +115,27 @@ class ArtifactListingTests(_ProjectCase):
         self.assertEqual(self.rows(binding), {(REFERENCE_RUN_ID, "model.3dm"): True})
         model.unlink()
         self.assertEqual(self.rows(binding), {(REFERENCE_RUN_ID, "model.3dm"): False})
+
+
+class ReadTokenTests(_ProjectCase):
+    def test_a_settling_project_is_walked_once_per_time_to_live_and_at_once_after_a_write(self) -> None:
+        binding = self.binding()
+        now = [50.0]
+        binding.clock = lambda: now[0]
+        with patch("archflow_studio_api.application.binding.layout_fingerprint", wraps=layout_fingerprint) as walk:
+            first = binding.read_token()
+            self.assertFalse(first.stable, "a project written just now has not settled")
+            self.assertEqual(binding.read_token(), first)
+            self.assertEqual(walk.call_count, 1)
+
+            now[0] += FINGERPRINT_TTL_S + 0.1
+            binding.read_token()
+            self.assertEqual(walk.call_count, 2)
+
+            self.repository.create_run("run-later")
+            after = binding.read_token()
+        self.assertEqual(walk.call_count, 3)
+        self.assertGreater(after.serial, first.serial)
 
 
 class DesignHistoryReviewTests(DesignHistoryFixture):
