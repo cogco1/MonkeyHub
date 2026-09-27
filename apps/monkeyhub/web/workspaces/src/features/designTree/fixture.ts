@@ -41,7 +41,7 @@ interface CandidateFact {
   readonly admittedAt: string;
   continuedFrom: string | null;
   acceptedStage: string | null;
-  /** Review checks still open when a person admitted it for comparison (#294 Q2). */
+  /** Review checks that did not pass when a person admitted it for comparison (#294 Q2). */
   readonly blockedBy: readonly string[];
 }
 

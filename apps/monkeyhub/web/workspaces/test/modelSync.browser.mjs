@@ -306,7 +306,8 @@ page.on('response',response=>{
   })().catch(()=>{}));
 });
 async function stages(t0,label) {
-  await Promise.allSettled(timingReads);
+  // Timings are only reported: a body that never finishes (a cancelled download) must not hold the run.
+  await Promise.race([Promise.allSettled(timingReads),delay(10000)]);
   const rows=networkTimings.filter(row=>row.start>=t0);
   const stages=rows.filter(row=>!row.path.startsWith('/api/jobs/')||row.jobStatus==='succeeded');
   const parses=await page.evaluate(()=>window.__parseTimes??[]);
@@ -332,13 +333,13 @@ async function steadyTools(before,label){
 /** Where the row has no room beside the tools, Record takes a line above them and still covers none. */
 async function narrowRecord(narrowBefore){
   const size=page.viewportSize();
-  await page.setViewportSize({width:700,height:size.height});
+  await page.setViewportSize({width:560,height:size.height});
   await page.locator('.model-tools__sync--above').waitFor();
   await steadyTools(narrowBefore,'Record above the tools');
   assert.equal((await toolAt()).y,narrowBefore.y,'Record above the tools moved them down or up');
   const record=await button('Record').boundingBox(),tools=await page.locator('.model-tools button.model-tool-button:not([data-tool-icon="sync"])').evaluateAll(nodes=>
     nodes.map(node=>node.getBoundingClientRect()).filter(box=>box.width>0).map(({x,y,width,height})=>({x,y,width,height})));
-  assert.ok(record&&record.x>=0&&record.x+record.width<=700,'Record stays on screen at a narrow width');
+  assert.ok(record&&record.x>=0&&record.x+record.width<=page.viewportSize().width,'Record stays on screen at a narrow width');
   for(const box of tools)assert.ok(record.x+record.width<=box.x||box.x+box.width<=record.x||record.y+record.height<=box.y||box.y+box.height<=record.y,
     `Record covers a tool at ${JSON.stringify(box)}`);
   await page.setViewportSize(size);
@@ -346,7 +347,7 @@ async function narrowRecord(narrowBefore){
 }
 async function narrowToolAt(){
   const size=page.viewportSize();
-  await page.setViewportSize({width:700,height:size.height});
+  await page.setViewportSize({width:560,height:size.height});
   await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
   const at=await toolAt();
   await page.setViewportSize(size);
@@ -1020,9 +1021,9 @@ state=await snap();assert.equal(state.picked,block);assert.equal(state.selection
 await page.mouse.move(empty.x,empty.y);await page.mouse.down();await page.mouse.move(empty.x+40,empty.y+25,{steps:8});await page.mouse.up();
 state=await snap();assert.notDeepEqual(state.view.camera,selected.view.camera);assert.equal(state.picked,block);
 // Reframe through the current view menu; the primary Fit button was retired.
-await button('View tools').click();
-await page.locator('#view-tools').getByRole('button',{name:'Isometric',exact:true}).click();
-await button('View tools').click();
+await page.locator('button[aria-controls="stage-more-menu"]').click();
+await page.locator('#stage-more-menu').getByRole('button',{name:'Isometric',exact:true}).click();
+await page.locator('button[aria-controls="stage-more-menu"]').click();
 const typing=await blank();await button('Rectangle').click();await page.mouse.click(typing.x,typing.y);
 const textEntry=page.locator('.sketch-entry input'),beforeText=(await snap()).index;
 await textEntry.fill('12');await textEntry.press('Delete');await textEntry.press('Backspace');await textEntry.press('Control+z');
@@ -1056,7 +1057,9 @@ await stages(quietSyncWall,'quiet auto display');
 await button('Record').waitFor({state:'detached'});await steadyTools(steady,'Record leaving');
 state=await snap();assert.equal(candidateCalls().length,2);assert.ok((await exported(state.candidates[1])).has('obj-'+later));
 assert.equal(state.view.drafts.length,0,'the completed batch must not overlap its saved model');
-const continuedDraft=await call('GET','/api/working-draft');
+// #275 (GH-234): the saved base takes the batch first; only then is the fully synced recovery cleared.
+let continuedDraft=await call('GET','/api/working-draft');
+for(const end=Date.now()+15000;continuedDraft.localDraft!==null&&Date.now()<end;continuedDraft=await call('GET','/api/working-draft'))await delay(100);
 assert.equal(continuedDraft.current?.runId,state.candidates[1],'a second Sync after late edits must retain the adopted successor, not the previous completed candidate');
 assert.equal(continuedDraft.localDraft,null,'quiet adoption clears the old source recovery once the saved base holds the batch');
 console.log('6 · a delayed 422 after Undo releases Sync; corrected geometry replaces the failed snapshot');
@@ -1079,7 +1082,7 @@ assert.ok(correctedExport.has('obj-'+corrected));assert.ok(!correctedExport.has(
 assert.notEqual(state.base,failedBase);assert.equal(candidateCalls().length,3);
 console.log('7 · annotation and document keys cannot act on the local model');
 const inkObject=await rectangle(.8,.6);await pick(inkObject);const inkModelIndex=(await snap()).index;
-const annotate=page.locator('button[aria-controls="annotation-tools"]');await annotate.click();
+const moreTools=page.locator('button[aria-controls="model-tools-more"]'),annotate=page.locator('button[aria-controls="annotation-tools"]');await moreTools.click();await annotate.click();
 assert.deepEqual(await page.getByRole('group',{name:'Annotation colour',exact:true}).getByRole('button').evaluateAll(nodes=>nodes.map(node=>node.getAttribute('aria-label'))),
   ['Red','Blue','Yellow','White'],'annotation swatches announce colour names, not hex codes');
 const inkTool=page.locator('#annotation-tools').getByRole('button',{name:'╱ Line',exact:true});await inkTool.click();
@@ -1088,7 +1091,7 @@ await page.mouse.move(inkBox.x+inkBox.width*.4,inkBox.y+inkBox.height*.55);await
 await page.mouse.move(inkBox.x+inkBox.width*.6,inkBox.y+inkBox.height*.55,{steps:8});await page.mouse.up();
 await wait(s=>s.ink>0,'annotation stroke');await page.keyboard.press('Control+z');await wait(s=>s.ink===0,'annotation undo');
 await page.keyboard.press('Control+z');await page.keyboard.press('Delete');assert.equal((await snap()).index,inkModelIndex);
-await inkTool.click();await annotate.click();await page.keyboard.press('Control+z');await wait(s=>s.index===inkModelIndex-1,'model owns undo again');
+await inkTool.click();await moreTools.click();await annotate.click();await page.keyboard.press('Control+z');await wait(s=>s.index===inkModelIndex-1,'model owns undo again');
 await page.keyboard.press('Control+y');await wait(s=>s.index===inkModelIndex,'model redo after annotation');
 await page.evaluate(()=>window.__app().openDocuments(true));await wait(s=>s.documentOpen,'documents open');
 await page.keyboard.press('Control+z');await page.keyboard.press('Control+y');await page.keyboard.press('Delete');
