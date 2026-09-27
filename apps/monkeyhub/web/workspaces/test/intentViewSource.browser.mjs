@@ -650,8 +650,11 @@ try {
         "The local file was not accepted");
     };
     const drawLine = async () => {
-      const toggle = page.locator('button[aria-controls="annotation-tools"]');
-      if (await toggle.getAttribute("aria-expanded") !== "true") await toggle.click();
+      // #352: tracing paper is in the tools' own More.
+      if (await page.locator("#annotation-tools").count() === 0) {
+        await page.locator('button[aria-controls="model-tools-more"]').click();
+        await page.locator('button[aria-controls="annotation-tools"]').click();
+      }
       await page.locator("#annotation-tools").getByRole("button", { name: "╱ Line", exact: true }).click();
       const overlay = page.locator('canvas.annotate[data-armed="true"]');
       const box = await overlay.boundingBox(); assert.ok(box);
