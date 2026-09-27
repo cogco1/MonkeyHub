@@ -1,4 +1,39 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": []
+  "items": [
+    {
+      "id": "GH-364",
+      "lanes": [
+        {
+          "id": "projection-0b",
+          "status": "active",
+          "branch": "codex/364-projection-0b",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-364-projection-0b",
+          "base_ref": "38138370",
+          "contributor": "Claude",
+          "reviewer": "Claude root task",
+          "handoff": "Frontend only; relies on 0a's ETags already on main. RenderWorkspace polling is left to #330's rewrite. GH-354 also edits src/ChatShell.tsx (title bar): keep polling edits there minimal. Cloud lane dispatched by the root session 'MonkeyHub UI 重构任务清单' after agreeing the split with the ADR-008 author session 'MonkeyHub UI前端方案与逻辑审查'. Real-project performance numbers are measured locally before merge (private fixtures).",
+          "modules": [
+            "hub.shell"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/web/workspaces/src/features/designTree/useDesignTree.ts",
+            "apps/monkeyhub/web/workspaces/src/app/",
+            "apps/monkeyhub/web/workspaces/src/workspaces/monkeyboard/Board.tsx",
+            "apps/monkeyhub/web/workspaces/src/workspaces/monkeyarch/",
+            "apps/monkeyhub/web/workspaces/src/features/stage/",
+            "apps/monkeyhub/web/workspaces/src/api/client.ts",
+            "apps/monkeyhub/web/src/ChatShell.tsx",
+            "apps/monkeyhub/web/src/main.tsx",
+            "apps/monkeyhub/web/src/MonitorPage.tsx",
+            "apps/monkeyhub/web/src/notifications/",
+            "apps/monkeyhub/web/test/",
+            "apps/monkeyhub/web/workspaces/test/"
+          ],
+          "depends_on": [],
+          "blocked_reason": null
+        }
+      ]
+    }
+  ]
 }
