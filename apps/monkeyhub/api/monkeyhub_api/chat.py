@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import base64
 import binascii
+from hashlib import sha256
 from concurrent.futures import Future, InvalidStateError
 from contextlib import contextmanager, suppress
 from contextvars import ContextVar, copy_context
@@ -3075,7 +3076,7 @@ def _feedback_body(hub: str, base: str, chat_id: str, session: dict, path: str, 
 # answers, kept in this adapter while that is the message it answers. The
 # stdio loop answers one call at a time, so nothing else touches it meanwhile.
 _VISUAL_REVIEW_FIELDS = {"domain", "sourceRefs", "viewRecipe", "task", "criteria", "preserve",
-                         "priorObservations", "knownFacts", "reason", "addressedFindingIds"}
+                         "priorObservations", "knownFacts", "reason", "addressedFindingIds", "delivery"}
 # The runtime's allowance for each class the Agent can declare. The route
 # refuses any other number, so these can only ever agree with it.
 _VISUAL_ALLOWED = {"deterministic_edit": 0, "spatial_formal": 2}
@@ -3130,8 +3131,9 @@ def _visual_allowance(chat_id: str, message: dict, declared, rounds) -> dict:
 def _visual_review(hub: str, chat_id: str, arguments: dict) -> dict:
     """One bounded look through the bound Studio, under the answered message's allowance.
 
-    The runtime renders every frame from the exact sources named, answers
-    findings rather than images and writes nothing. Hub supplies the project
+    The runtime renders every frame from the exact sources named and writes
+    nothing. By default the current agent sees these images; an explicit
+    observation delivery uses the configured structured provider. Hub supplies the project
     and the allowance and keeps what the answer says of it: a refusal spends
     nothing, and a call the provider may have answered is spent. A finding
     that touches a preserve condition is marked escalate: it is a question for
@@ -3144,6 +3146,7 @@ def _visual_review(hub: str, chat_id: str, arguments: dict) -> dict:
     message = _user_message(chat_id, session, "A visual review")
     held = _visual_allowance(chat_id, message, arguments.get("taskClass"), arguments.get("polishRounds"))
     body = {key: value for key, value in arguments.items() if key in _VISUAL_REVIEW_FIELDS}
+    body.setdefault("delivery", "frames")
     body.update(projectId=session["projectId"], budgetState=dict(held))
 
     def spent(detail: str) -> str:
@@ -3153,10 +3156,11 @@ def _visual_review(hub: str, chat_id: str, arguments: dict) -> dict:
     try:
         answer = _request_json(base, "/api/visual-reviews", "POST", body, timeout=_VISUAL_REVIEW_WAIT_S)
     except HubFailure as refused:
-        # The route refuses before its provider call with a 4xx; a 5xx means
-        # the call was made, or may have been.
+        # Frames have no provider side effect: an HTTP refusal, including a
+        # renderer failure, delivered no review. A structured provider may
+        # already have been called when it returns 5xx.
         detail = refused.error.detail
-        detail = spent(detail) if refused.status >= 500 else f"{detail} {_allowance_note(held)}"
+        detail = spent(detail) if body["delivery"] == "observation" and refused.status >= 500 else f"{detail} {_allowance_note(held)}"
         raise HubFailure(refused.status, refused.error.code, detail) from refused
     except URLError:
         raise  # It never reached the Studio: nothing was spent.
@@ -3165,8 +3169,42 @@ def _visual_review(hub: str, chat_id: str, arguments: dict) -> dict:
             f"The Studio did not answer this review ({_reason(lost)}), so it counts as spent.")) from lost
     observation = answer.get("observation") if isinstance(answer, dict) else None
     state = answer.get("budgetState") if isinstance(answer, dict) else None
-    if (not isinstance(observation, dict) or not isinstance(state, dict) or type(state.get("used")) is not int
+    if (not isinstance(state, dict) or type(state.get("used")) is not int
+            or state["used"] != held["used"] + 1 or state["used"] > held["allowed"]
             or (state.get("taskClass"), state.get("allowed")) != (held["taskClass"], held["allowed"])):
+        raise HubFailure(502, "CHAT_TOOL_FAILED", spent("The Studio answered this review outside its contract."))
+    if body["delivery"] == "frames":
+        frames = answer.get("frames")
+        try:
+            if (answer.get("delivery") != "frames" or observation is not None or answer.get("usage") is not None
+                    or state.get("lastFindingIds") != [] or not isinstance(frames, list) or not 1 <= len(frames) <= 4):
+                raise ValueError("invalid frame delivery")
+            seen = set()
+            for frame in frames:
+                if (not isinstance(frame, dict) or frame.get("sourceRef") not in body.get("sourceRefs", [])
+                        or not isinstance(frame.get("viewRef"), str) or frame["viewRef"] in seen
+                        or frame.get("mimeType") != "image/png" or not isinstance(frame.get("data"), str)
+                        or len(frame["data"]) > 4 * ((_PAGE_IMAGE_MAX_BYTES + 2) // 3)):
+                    raise ValueError("invalid frame source or payload")
+                seen.add(frame["viewRef"])
+                data = base64.b64decode(frame["data"], validate=True)
+                if sha256(data).hexdigest() != frame.get("frameSha256"):
+                    raise ValueError("frame digest mismatch")
+                response = BytesIO(data)
+                response.headers = {"Content-Type": "image/png"}
+                picture = _page_image(response)
+                if (picture["width"], picture["height"]) != (frame.get("width"), frame.get("height")):
+                    raise ValueError("frame dimensions mismatch")
+            if any(source not in [frame["sourceRef"] for frame in frames] for source in body["sourceRefs"]):
+                raise ValueError("missing source frame")
+        except (ValueError, TypeError, KeyError, HubFailure) as invalid:
+            raise HubFailure(502, "CHAT_TOOL_FAILED", spent("The Studio answered invalid review frames.")) from invalid
+        held.update(used=state["used"], lastFindingIds=[])
+        return {"delivery": "frames", "frames": frames, "observation": None, "usage": None,
+                "note": "Inspect the images against the requested criteria. Delivery alone is not an observation or acceptance. "
+                        "No structured finding ids exist for an after_repair review.",
+                "allowance": {key: held[key] for key in ("taskClass", "allowed", "used")}}
+    if not isinstance(observation, dict):
         raise HubFailure(502, "CHAT_TOOL_FAILED", spent("The Studio answered this review outside its contract."))
     held.update(used=state["used"], lastFindingIds=list(state.get("lastFindingIds") or ()))
     findings = [{**row, "escalate": any(str(ref).startswith("preserve:") for ref in row.get("targetRefs") or ())}
@@ -3438,6 +3476,17 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
     return _finish(base, started, comparison, time.monotonic() + wait)
 
 
+_PRESENTATION_DOCUMENTS = (
+    "Project drawings belong to existing project document APIs; reference runId/assetSha256/revisionRef/pageIndex exactly. "
+    "A display reference does not mean a Board write succeeded."
+)
+_NATIVE_PRESENTATION_INSTRUCTIONS = (
+    "This is the current MonkeyHub conversation: normal text and progress already stream automatically. "
+    "Use chat_present only to show selected media, with kind=assistant or progress and status=streaming while work continues. "
+    "Supply a fresh UUID messageId; the current user turn is bound automatically. Do not republish the user's message. "
+    "To update media, reuse messageId with a strictly increasing revision and retain the full content and attachments. "
+    "No call here starts another model. " + _PRESENTATION_DOCUMENTS
+)
 _PRESENTATION_INSTRUCTIONS = (
     "This connection displays results in the bound MonkeyHub conversation. Call presentation_bind once if available. "
     "For each external user request, call chat_present with kind=user and fresh UUID turnId/messageId; "
@@ -3448,9 +3497,7 @@ _PRESENTATION_INSTRUCTIONS = (
     "Keep the source host response concise with the Hub URL. This does not suppress mandatory host output. "
     "No call here starts another model. On disconnect or refusal, report it in the source host; reconnect with presentation_bind, "
     "then replay only the same presentation snapshot, never a design mutation. "
-    "For Hub-native conversations, normal answers already stream automatically; use chat_present for media with status=streaming. "
-    "Project drawings belong to existing project document APIs; reference runId/assetSha256/revisionRef/pageIndex exactly. "
-    "A display reference does not mean a Board write succeeded."
+    + _PRESENTATION_DOCUMENTS
 )
 
 
@@ -3525,6 +3572,8 @@ def _mcp(hub: str, chat_id: str | None, external: ChatPresentationBindRequest | 
     # The review's own fields as the runtime route names them. projectId and
     # budgetState are Hub's to fill, so they are not offered at all.
     review_schema = {"type": "object", "properties": {
+        "delivery": {"type": "string", "enum": ["frames", "observation"], "default": "frames",
+                     "description": "frames returns exact images for you to inspect. observation uses the Runtime's separately configured structured visual provider."},
         "taskClass": {"type": "string", "enum": ["spatial_formal", "polish", "deterministic_edit"]},
         "polishRounds": {"type": "integer", "minimum": 1, "maximum": 4,
                          "description": "Only for polish: its rounds; above 2 only when the user asked to keep refining."},
@@ -3554,8 +3603,9 @@ def _mcp(hub: str, chat_id: str | None, external: ChatPresentationBindRequest | 
     }, "required": ["taskClass", "reason", "domain", "sourceRefs", "viewRecipe", "task", "criteria"],
         "additionalProperties": False}
     reviewing = chr(10).join([
-        "Look once at exact project sources and get findings back, never images: the bound Studio renders every frame itself",
-        "and one provider call reports what is visible about your criteria. Use it for a spatial or formal task (massing,",
+        "Look once at exact project sources: by default delivery=frames returns native images with source metadata for YOU to inspect.",
+        "The bound Runtime renders every frame; delivery alone supplies no findings or acceptance. Report only what you actually see.",
+        "Optional delivery=observation uses the separately configured structured provider and returns findings. Use a review for a spatial or formal task (massing,",
         "proportion, relations, composition, a sheet's hierarchy) after a meaningful batch. A deterministic edit (a value, a",
         "dimension, a count) is checked by readback, not looked at. When the user asks to see a view, read",
         "GET /api/drawings/model-view through studio_request instead.",
@@ -3564,10 +3614,11 @@ def _mcp(hub: str, chat_id: str | None, external: ChatPresentationBindRequest | 
         "only when the user's words in this message ask to keep refining, such as 继续优化 or 打磨). deterministic_edit allows none.",
         "Hub holds the allowance of the user message you are answering, fixes its class once a review is spent, and starts a",
         "new one with the user's next message.",
+        "Frames delivery creates no structured finding ids: after_repair is unavailable after it; never invent finding ids to get another look.",
         "A modeling review names one model {kind: 'model', runId, stateDigest, assetSha256}, the result's non-null modelSource",
         "unchanged, with viewRecipe from front, back, left, right, top, axon. Board, drawing and render reviews name registered",
         "pages {kind: 'page', runId, assetSha256, revisionRef, pageIndex} exactly as GET /api/documents lists them, with",
-        "viewRecipe page-<pageIndex> of each. criteria [{criterionId, text}] say what to inspect, preserve what must not be",
+        "viewRecipe page-<pageIndex> of each (deduplicate repeated page numbers); different documents may each have page 0 and receive unique frame names. criteria [{criterionId, text}] say what to inspect, preserve what must not be",
         "disturbed, and knownFacts are exact readback values (levels, clear sizes) the observer should not ask about again.",
         "A finding marked escalate touches a preserve condition: ask the user about it instead of repairing and reviewing again.",
         "Refusals spend nothing: VISUAL_BUDGET_EXHAUSTED, VISUAL_REVIEW_NOT_WARRANTED, VISUAL_REVIEW_OUT_OF_ORDER,",
@@ -3593,6 +3644,7 @@ def _mcp(hub: str, chat_id: str | None, external: ChatPresentationBindRequest | 
         "New components need parentComponentId under a built component and semanticKind; existing components can hold generic forms.",
         "",
         "EDIT: POST /api/proposals/transform, /api/proposals/push-pull, /api/proposals/elevation or /api/proposals/delete.",
+        "For a batch height compression of planar surfaces, transform kind=compress-above takes componentId OR elementIds, threshold and factor (0 < factor <= 1), plus exact source fields. It fixes Y <= threshold, scales height above it and inserts crossing-edge intersections in one proposal. Read the schema; do not calculate and submit individual polygon edits.",
         "Read each action's schema for its fields; tool errors identify unsupported operations. Choose methods that preserve design meaning.",
         "For an existing numeric control, GET /api/capabilities/candidate.modify_existing?target=<componentId>&elementId=<the element>&run=<candidateId>",
         "returns its current values, units and a ready request; edit that body and POST /api/capabilities/{capabilityId}/run.",
@@ -3670,7 +3722,7 @@ def _mcp(hub: str, chat_id: str | None, external: ChatPresentationBindRequest | 
         "the dimensions a plan can place. Drawing revisions never move the design. GET /api/drawings/corrections?projectId=[&drawingId=] reads how",
         "revisions changed and which repeated corrections the architect may save as a project recipe; only the architect can save one.",
         "SEE A VIEW: when the user asks to see a view, GET /api/drawings/model-view?runId=<id>&stateDigest=<digest>&assetSha256=<3dm sha256>&view=front returns an MCP image",
-        "with exact source metadata. To judge a spatial or formal result, call visual_review instead: it answers findings, not images.",
+        "with exact source metadata. To judge a spatial or formal result, call visual_review for a bounded bundle of exact images to inspect, or structured observations when configured.",
         "Read modelSource from the awaited result's artifacts or the candidate's 3dm artifact. Views: front/back/left/right/top/axon (axon is isometric). This is a read-only line projection from complete retained STEP; unsupported sources refuse rather than show a proxy.",
         "GET /api/drawings/styles and POST /api/drawings/sheets compose a sheet from exact modelSource, styleId and scaleDenominator.",
         "Top is an orthographic projection, not a cut plan. GET /api/documents?runId=<runId> reads that run's drawings.",
@@ -3679,10 +3731,12 @@ def _mcp(hub: str, chat_id: str | None, external: ChatPresentationBindRequest | 
         "Board arranges document references; generated drawings are saved by their drawing API.",
         "Stage acceptance, formal issue and printer upload are separate from this tool's reversible design actions.",
     ])
+    presentation_instructions = _PRESENTATION_INSTRUCTIONS if external else _NATIVE_PRESENTATION_INSTRUCTIONS
     tools = [
-        {"name": "chat_present", "description": _PRESENTATION_INSTRUCTIONS, "inputSchema": {
+        {"name": "chat_present", "description": presentation_instructions, "inputSchema": {
             **ChatPresentationRequest.model_json_schema(),
-            "properties": {key: value for key, value in ChatPresentationRequest.model_json_schema()["properties"].items()
+            "properties": {key: ({**value, "enum": ["progress", "assistant"]} if key == "kind" and not external else value)
+                           for key, value in ChatPresentationRequest.model_json_schema()["properties"].items()
                            if key not in {"projectId", "sourceSessionId"}},
             "required": ["turnId", "messageId", "kind"] if external else ["messageId", "kind"],
         }},
@@ -3728,7 +3782,7 @@ def _mcp(hub: str, chat_id: str | None, external: ChatPresentationBindRequest | 
             method, params = request.get("method"), request.get("params", {})
             if method == "initialize":
                 result = {"protocolVersion": params.get("protocolVersion", "2024-11-05"), "capabilities": {"tools": {}},
-                          "serverInfo": {"name": "monkeyhub", "version": "0.1.0"}, "instructions": _PRESENTATION_INSTRUCTIONS}
+                          "serverInfo": {"name": "monkeyhub", "version": "0.1.0"}, "instructions": presentation_instructions}
             elif method == "tools/list":
                 result = {"tools": tools}
             elif method == "tools/call":
@@ -3752,7 +3806,16 @@ def _mcp(hub: str, chat_id: str | None, external: ChatPresentationBindRequest | 
                                   and (str(arguments.get("method", "GET")).upper(),
                                        urlsplit(arguments.get("path", "")).path) in {
                                            ("GET", "/api/drawings/model-view"), ("POST", "/api/board/export")})
-                    if image_read:
+                    if name == "visual_review" and value.get("delivery") == "frames":
+                        metadata = {key: item for key, item in value.items() if key != "frames"}
+                        content = [{"type": "text", "text": _redact(json.dumps(metadata, ensure_ascii=False))}]
+                        for frame in value["frames"]:
+                            content.extend([
+                                {"type": "text", "text": _redact(json.dumps({key: item for key, item in frame.items() if key != "data"}, ensure_ascii=False))},
+                                {"type": "image", "mimeType": frame["mimeType"], "data": frame["data"]},
+                            ])
+                        result = {"content": content}
+                    elif image_read:
                         metadata = {key: item for key, item in value.items() if key != "data"}
                         result = {"content": [
                             {"type": "text", "text": _redact(json.dumps(metadata, ensure_ascii=False))},

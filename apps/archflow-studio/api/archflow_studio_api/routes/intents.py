@@ -54,7 +54,7 @@ from ..application.intent_requests import action_preflight
 from ..application.study import read_study, study_evidence_context
 from ..application.projection import StateProjection, project_state, require_actionable
 from ..application.proposals import proposal_from
-from ..application.visual_reviews import review_sources, visual_provider
+from ..application.visual_reviews import deliver_frames, review_sources, visual_provider
 from ..transport.errors import (
     BlockedNeedsHuman,
     MissingEditableControl,
@@ -74,7 +74,8 @@ from ..transport.intent import (
     IntentRequestDto,
     IntentTimingsDto,
     ModelAnnotationsDto, ModelAnnotationsRequestDto, model_annotations_dto,
-    VisualReviewDto, VisualReviewRefusalDto, VisualReviewRequestDto, visual_review_dto, visual_review_from,
+    VisualReviewDto, VisualReviewFramesDto, VisualReviewRefusalDto, VisualReviewRequestDto,
+    visual_frames_dto, visual_review_dto, visual_review_from,
     agent_dto,
     document_annotation_ref_from,
     document_annotations_dto,
@@ -658,30 +659,35 @@ def compile_intent(request: Request, body: IntentRequestDto) -> IntentDto:
 
 @router.post(
     "/visual-reviews",
-    response_model=VisualReviewDto,
+    response_model=VisualReviewDto | VisualReviewFramesDto,
     response_model_by_alias=True,
     responses={
         409: {"model": VisualReviewRefusalDto,
-              "description": "Refused before the provider was called; the allowance is unchanged"},
+              "description": "Refused before delivery or a provider call; the allowance is unchanged"},
         502: {"model": VisualReviewRefusalDto,
-              "description": "The provider call failed; budgetState counts the spent review and usage its cost"},
+              "description": "Rendering or the provider call failed; budgetState reports whether the review was spent"},
     },
 )
-def review_visual_sources(request: Request, body: VisualReviewRequestDto) -> VisualReviewDto:
+def review_visual_sources(request: Request, body: VisualReviewRequestDto) -> VisualReviewDto | VisualReviewFramesDto:
     """Render the named exact sources through their owners, then look at them once (GH-303).
 
     The caller sends source identities, never pixels. A model source is drawn by
     the model-view projection in each view of the recipe; a registered page is
     rasterized by the page export. Each owner verifies its exact source before
     it draws, so a stale or foreign source is refused before the provider is
-    called. The loop's allowance travels with the request and comes back
-    updated: this route keeps no loop state and writes nothing to the project.
+    called or frames are delivered to the caller. The loop's allowance travels
+    with the request and comes back updated: this route keeps no loop state and
+    writes nothing to the project.
     """
 
     binding = bound_project(request.app.state)
     _require_bound_project(binding, body.project_id)
-    provider = visual_provider(request.app.state.intent_compiler)
     review, budget = visual_review_from(body)
+    if body.delivery == "frames":
+        frames = deliver_frames(binding, review, reason=body.reason, budget=budget,
+                                addressed=tuple(body.addressed_finding_ids))
+        return visual_frames_dto(frames, budget)
+    provider = visual_provider(request.app.state.intent_compiler)
     result = review_sources(binding, review, reason=body.reason, budget=budget, provider=provider,
                             addressed=tuple(body.addressed_finding_ids), monitor=request.app.state.monitor)
     return visual_review_dto(result, budget)

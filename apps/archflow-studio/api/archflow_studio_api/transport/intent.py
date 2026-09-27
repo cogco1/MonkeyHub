@@ -10,6 +10,7 @@ something the record answered.
 
 from __future__ import annotations
 
+import base64
 from typing import Annotated, Any, Literal, Mapping, Sequence
 
 from pydantic import BaseModel, ConfigDict, Field, model_serializer, model_validator
@@ -26,7 +27,7 @@ from ..application.gestures import (
 from ..application.intent_agent import Compilation
 from ..application.visual_observation import (
     MAX_CRITERIA, MAX_FACT_TEXT, MAX_FACTS, MAX_FINDINGS, MAX_FRAMES, MAX_PRESERVE, MAX_PRIOR, MAX_TEXT, POLISH_CAP,
-    Criterion, PriorFinding, SourceRef, VisualReviewBudget, VisualReviewRequest, VisualReviewResult,
+    Criterion, EvidenceFrame, PriorFinding, SourceRef, VisualReviewBudget, VisualReviewRequest, VisualReviewResult,
 )
 from ..application.visual_reviews import planned_frames
 from .capability import CapabilitySourceDto, CapabilityTargetDto, KeepScopeDto, detail_dto
@@ -1017,15 +1018,21 @@ class VisualReviewRequestDto(BaseModel):
 
     project_id: str = Field(alias="projectId", min_length=1)
     domain: VisualDomain
+    delivery: Literal["observation", "frames"] = Field(
+        default="observation",
+        description="observation uses the configured structured provider; frames sends owner-rendered PNG evidence "
+        "to the caller's existing visual model, spends one review and returns no findings.",
+    )
     source_refs: list[VisualSourceRefDto] = Field(
         alias="sourceRefs", min_length=1, max_length=MAX_FRAMES,
         description="A modeling review names one exact model; board, drawing and render reviews name 1-4 "
-        "registered pages with distinct page indexes.",
+        "distinct registered pages; different documents may have the same page index.",
     )
     view_recipe: list[VisualView] = Field(
         alias="viewRecipe", min_length=1, max_length=MAX_FRAMES,
         description="For a model, the model-view directions to render (front, back, left, right, top); for "
-        "pages, page-<pageIndex> of each named page.",
+        "pages, the distinct page-<pageIndex> values of the named pages. The runtime gives repeated page numbers "
+        "unique source-<source ordinal>-page-<pageIndex> frame names automatically.",
     )
     task: str = Field(min_length=1, max_length=MAX_TEXT)
     criteria: list[VisualCriterionDto] = Field(min_length=1, max_length=MAX_CRITERIA)
@@ -1124,6 +1131,33 @@ class VisualReviewDto(BaseModel):
                                                description="The loop's allowance after this review; send it back with the next.")
 
 
+class VisualReviewFrameDto(BaseModel):
+    """One owner-rendered frame with its exact source and content, ready for native image delivery."""
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True)
+
+    source_ref: VisualSourceRefDto = Field(alias="sourceRef")
+    view_ref: str = Field(alias="viewRef")
+    representation: str
+    frame_sha256: str = Field(alias="frameSha256")
+    width: int
+    height: int
+    mime_type: Literal["image/png"] = Field(alias="mimeType", default="image/png")
+    data: str = Field(description="Base64-encoded PNG bytes, bounded by the visual observation channel.")
+
+
+class VisualReviewFramesDto(BaseModel):
+    """Evidence delivery, not an observation or approval. The caller still has to look at the images."""
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True)
+
+    delivery: Literal["frames"] = "frames"
+    observation: None = None
+    usage: None = None
+    frames: list[VisualReviewFrameDto]
+    budget_state: VisualBudgetStateDto = Field(alias="budgetState")
+
+
 class VisualReviewRefusalDto(BaseModel):
     """A refused or failed visual review: the error body, plus what the caller needs to go on."""
 
@@ -1163,3 +1197,13 @@ def visual_review_from(dto: VisualReviewRequestDto) -> tuple[VisualReviewRequest
 def visual_review_dto(result: VisualReviewResult, budget: VisualReviewBudget) -> VisualReviewDto:
     return VisualReviewDto.model_validate({"observation": result.observation.to_dict(),
                                            "usage": result.usage.to_dict(), "budgetState": budget.to_dict()})
+
+
+def visual_frames_dto(frames: Sequence[EvidenceFrame], budget: VisualReviewBudget) -> VisualReviewFramesDto:
+    return VisualReviewFramesDto.model_validate({
+        "frames": [{"sourceRef": frame.source.to_dict(), "viewRef": frame.view_ref,
+                    "representation": frame.representation, "frameSha256": frame.sha256,
+                    "width": frame.width, "height": frame.height, "mimeType": "image/png",
+                    "data": base64.b64encode(frame.png).decode("ascii")} for frame in frames],
+        "budgetState": budget.to_dict(),
+    })

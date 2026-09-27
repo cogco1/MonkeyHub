@@ -881,7 +881,8 @@ def drawn_element_placement(row: ElementRow, context: ProductionContext) -> dict
 
 def edit_drawn_element(row: ElementRow, context: ProductionContext, *, kind: str,
                        translation=None, axis=None, angle_degrees: float = 0.0,
-                       scale=None, origin=None, distance: float = 0.0, normal=None) -> ElementRow:
+                       scale=None, origin=None, distance: float = 0.0, normal=None,
+                       threshold=None, factor=None) -> ElementRow:
     """Revise a drawn face/prism or loft's parameters; never patch its exported mesh.
 
     Explicit plane axes retain the profile and the independent pull distance.
@@ -892,6 +893,8 @@ def edit_drawn_element(row: ElementRow, context: ProductionContext, *, kind: str
 
     if row.producer not in {"prism", "planar-surface", "loft"}:
         raise ElementProducerError(f"{row.element_id}: direct {kind} currently supports drawn faces, prisms and lofts, not {row.producer}")
+    if kind == "compress_above" and row.producer != "planar-surface":
+        raise ElementProducerError(f"{row.element_id}: compress-above currently supports planar-surface, not {row.producer}")
     if row.producer == "loft" and kind == "push_pull":
         raise ElementProducerError(f"{row.element_id}: push/pull cannot reinterpret a loft as a prism; edit its section controls")
     if "rectangular_cutouts" in row.params or "top" in row.references:
@@ -922,6 +925,50 @@ def edit_drawn_element(row: ElementRow, context: ProductionContext, *, kind: str
         extrusion_axis = (0.0, 1.0, 0.0)
     else:
         profile, extrusion_axis = _profile_on_work_plane(row)
+
+    if kind == "compress_above":
+        threshold = _finite(threshold, "compression threshold")
+        factor = _finite(factor, "compression factor")
+        if not 0 < factor <= 1:
+            raise ElementProducerError("compression factor must be greater than zero and at most one")
+        elevations = [point[1] + vertical_origin for point in profile]
+        tolerance = 1e-7
+        if factor == 1 or max(elevations) <= threshold + tolerance:
+            return row
+        base = row.references["base"]
+        if "datum" in base and base["datum"] not in context.references.level_ids():
+            raise ElementProducerError(f"{row.element_id}: this element is anchored to {base['datum']}; direct transform cannot detach its host")
+        if min(elevations) >= threshold - tolerance:
+            return edit_drawn_element(row, context, kind="scale", scale=[1, factor, 1], origin=[0, threshold, 0])
+
+        # A crossing edge acquires a corner at the fixed height. Transforming
+        # only its endpoints would move the part that must stay below it.
+        expanded = []
+        local_threshold = threshold - vertical_origin
+        for start, end in zip(profile, profile[1:]):
+            expanded.append(start)
+            low, high = sorted((start[1], end[1]))
+            if low < local_threshold - tolerance and high > local_threshold + tolerance:
+                fraction = (local_threshold - start[1]) / (end[1] - start[1])
+                expanded.append(tuple(start[i] + fraction * (end[i] - start[i]) for i in range(3)))
+        expanded.append(profile[-1])
+        transformed = [
+            (point[0], point[1] if point[1] <= local_threshold else
+             local_threshold + (point[1] - local_threshold) * factor, point[2])
+            for point in expanded
+        ]
+        relative = [[point[i] - plane["origin"][i] for i in range(3)] for point in transformed]
+        if any(abs(sum(a * b for a, b in zip(point, plane["normal"]))) > tolerance for point in relative):
+            raise ElementProducerError(
+                f"{row.element_id}: compress-above would fold a crossing surface out of its plane; "
+                "split that surface explicitly before compressing it"
+            )
+        params["profile"] = [[sum(a * b for a, b in zip(point, plane[key]))
+                              for key in ("xAxis", "yAxis")] for point in relative]
+        params["profile"][-1] = params["profile"][0]
+        result = replace(row, params=params)
+        _profile_on_work_plane(result)
+        return result
 
     if kind == "push_pull":
         distance = _finite(distance, "pull distance")

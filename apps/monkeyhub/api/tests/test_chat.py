@@ -2948,12 +2948,12 @@ class ChatTests(unittest.TestCase):
             ChatMessage(id=str(uuid4()), role="user", content=content, createdAt=chat._now()))
 
     def look(self, page, **changes):
-        return {"taskClass": "spatial_formal", "reason": "first_bundle", "domain": "board", "sourceRefs": [page],
+        return {"delivery": "observation", "taskClass": "spatial_formal", "reason": "first_bundle", "domain": "board", "sourceRefs": [page],
                 "viewRecipe": ["page-0"], "task": "Check that the sheet reads in the intended order.",
                 "criteria": [{"criterionId": "hierarchy", "text": "One drawing leads the sheet."}],
                 "preserve": ["Keep the drawn content as it is."], **changes}
 
-    def agent(self, session, *calls):
+    def agent(self, session, *calls, raw=False):
         """Each visual_review call as the Agent receives its answer, through the stdio adapter."""
         import io
 
@@ -2969,6 +2969,8 @@ class ChatTests(unittest.TestCase):
                 patch.object(chat.sys, "stdout", writer):
             chat._mcp(self.store.hub_url, session.id)
         results = [json.loads(line)["result"] for line in writer.getvalue().splitlines()]
+        if raw:
+            return results
         for result in results:
             self.assertEqual({row["type"] for row in result["content"]}, {"text"}, "findings, never images")
         return [(result.get("isError", False), json.loads(result["content"][0]["text"])) for result in results]
@@ -2982,7 +2984,7 @@ class ChatTests(unittest.TestCase):
                          {"taskClass", "reason", "domain", "sourceRefs", "viewRecipe", "task", "criteria"})
         self.assertFalse({"projectId", "budgetState"} & set(schema["properties"]))
         self.assertFalse(schema["additionalProperties"])
-        for stated in ("never images", "deterministic edit", "GET /api/drawings/model-view", "escalate",
+        for stated in ("native images", "deterministic edit", "GET /api/drawings/model-view", "escalate",
                        "after_repair", "继续优化", "VISUAL_BUDGET_EXHAUSTED", "axon", "page-<pageIndex>"):
             self.assertIn(stated, tool["description"], stated)
         page = {"kind": "page", "runId": "run-001", "assetSha256": "a" * 64, "revisionRef": None, "pageIndex": 0}
@@ -2992,6 +2994,82 @@ class ChatTests(unittest.TestCase):
                 with self.subTest(supplied=supplied), self.assertRaises(HubFailure) as refused:
                     chat.call_tool(self.store.hub_url, str(uuid4()), "visual_review", {**self.look(page), **supplied})
                 self.assertEqual(refused.exception.error.code, "CHAT_TOOL_INVALID")
+
+    def test_default_visual_review_delivers_native_images_without_a_second_provider(self):
+        import io
+        from hashlib import sha256
+        from PIL import Image
+
+        session, page, sent = self.looking()
+        self.say(session, "Look at this sheet's hierarchy.")
+        arguments = self.look(page)
+        arguments.pop("delivery")
+        first, = self.agent(session, arguments, raw=True)
+        self.assertFalse(first.get("isError"), first)
+        self.assertEqual([row["type"] for row in first["content"]], ["text", "text", "image"])
+        metadata = json.loads(first["content"][0]["text"])
+        frame = json.loads(first["content"][1]["text"])
+        png = base64.b64decode(first["content"][2]["data"], validate=True)
+        self.assertEqual(frame["sourceRef"], page)
+        self.assertEqual(frame["frameSha256"], sha256(png).hexdigest())
+        with Image.open(io.BytesIO(png)) as image:
+            image.load()
+            self.assertEqual(image.size, (frame["width"], frame["height"]))
+        self.assertIsNone(metadata["observation"])
+        self.assertIsNone(metadata["usage"])
+        self.assertEqual(metadata["allowance"]["used"], 1)
+        self.assertEqual(sent["provider"], [], "the current agent sees the images; no second provider is called")
+        refused, = self.agent(session, {**arguments, "reason": "after_repair", "addressedFindingIds": ["f1"]}, raw=True)
+        self.assertTrue(refused["isError"], refused)
+        self.assertEqual(json.loads(refused["content"][0]["text"])["code"], "VISUAL_REVIEW_NOT_WARRANTED")
+        self.assertEqual(sent["route"][-1]["budgetState"]["used"], 1)
+
+    def test_visual_frames_invalid_payload_cannot_reset_budget_or_reach_the_agent(self):
+        import io
+        from copy import deepcopy
+        from hashlib import sha256
+        from PIL import Image
+
+        session = self.create()
+        self.say(session, "Inspect the exact page.")
+        page = {"kind": "page", "runId": "run-001", "assetSha256": "a" * 64, "revisionRef": None, "pageIndex": 0}
+        stream = io.BytesIO()
+        Image.new("RGB", (2, 2)).save(stream, format="PNG")
+        payload = stream.getvalue()
+        answer = {"delivery": "frames", "observation": None, "usage": None,
+                  "budgetState": {"taskClass": "spatial_formal", "allowed": 2, "used": 1, "lastFindingIds": []},
+                  "frames": [{"sourceRef": page, "viewRef": "page-0", "representation": "registered-document-page",
+                              "frameSha256": sha256(payload).hexdigest(), "mimeType": "image/png", "width": 2, "height": 2,
+                              "data": base64.b64encode(payload).decode("ascii")}]}
+        for change in ("source", "digest", "dimension", "budget", "finding"):
+            bad = deepcopy(answer)
+            if change == "source":
+                bad["frames"][0]["sourceRef"]["assetSha256"] = "b" * 64
+            elif change == "digest":
+                bad["frames"][0]["data"] = base64.b64encode(b"wrong").decode("ascii")
+            elif change == "dimension":
+                bad["frames"][0]["width"] = 3
+            elif change == "budget":
+                bad["budgetState"]["used"] = 0
+            else:
+                bad["budgetState"]["lastFindingIds"] = ["f1"]
+            self.say(session, "Inspect the exact page again.")
+            with self.subTest(change=change), patch.object(chat, "_bound_studio", return_value=("runtime", self.store._sessions[session.id].model_dump())), \
+                    patch.object(chat, "_request_json", return_value=bad), self.assertRaises(HubFailure) as failure:
+                chat._visual_review(self.store.hub_url, session.id, self.look(page, delivery="frames"))
+            self.assertEqual(failure.exception.error.code, "CHAT_TOOL_FAILED")
+            self.assertEqual(chat._visual_allowances[session.id][1]["used"], 1)
+
+    def test_visual_frame_renderer_refusal_leaves_budget_available(self):
+        session = self.create()
+        self.say(session, "Inspect the exact page.")
+        page = {"kind": "page", "runId": "run-001", "assetSha256": "a" * 64, "revisionRef": None, "pageIndex": 0}
+        with patch.object(chat, "_bound_studio", return_value=("runtime", self.store._sessions[session.id].model_dump())), \
+                patch.object(chat, "_request_json", side_effect=HubFailure(502, "DRAWING_RENDER_FAILED", "Renderer failed.")), \
+                self.assertRaises(HubFailure) as failure:
+            chat._visual_review(self.store.hub_url, session.id, self.look(page, delivery="frames"))
+        self.assertEqual(failure.exception.error.code, "DRAWING_RENDER_FAILED")
+        self.assertEqual(chat._visual_allowances[session.id][1]["used"], 0)
 
     def test_a_spatial_look_gets_two_reviews_and_the_third_reaches_the_agent_as_exhausted(self):
         drawn, overlap = ({"type": kind, "target_refs": [target], "description": text, "confidence": 0.8,

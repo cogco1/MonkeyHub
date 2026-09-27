@@ -141,6 +141,19 @@ prism/planar-surface 的轮廓坐标支持参数引用；渐变截面形体可�
 `studio_schema` 的 `producer` 选项可只查询所需 producer 的请求契约，避免读取无关几何与重复响应字段。
 候选读回直接返回保留 inspection 的对象包围盒、单位和坐标系；首次候选没有上一 run 时不请求比较，inspection 缺失会明确说明。包围盒和技术检查不代替视觉检查或空间意图验收。
 已有标高编辑 `POST /api/proposals/elevation` 可通过聊天 MCP 调用并查询 schema，沿用项目绑定、准确来源和 keep 条件。
+需要保留下部、压低上部的 planar-surface 批量修改，可用已有 `POST /api/proposals/transform`
+的 `kind: compress-above`，传 `componentId` 或 `elementIds` 二选一、`threshold` 和 `factor`。
+阈值使用项目世界坐标 +Y 高程；`Y ≤ threshold` 保持，以上相对阈值乘 `0 < factor ≤ 1`。
+组件选择只匹配该组件，不隐式递归。适配器在一个提案内完成跨界交点和轮廓变换，Agent 不需逐面计算、修正字段或分块提交；
+随后走原 candidate 执行与读回。非平面结果、参数绑定和现有依赖限制会整批拒绝，不能据此声称任意模型均支持降高。
+
+实际看图使用 `visual_review`。原生聊天默认 `delivery: frames`，由 Runtime 按准确来源渲染，
+把原生图像交给当前聊天模型检查，不要求另配视觉 provider；只有明确选择 `delivery: observation`
+才使用 Runtime 已配置的结构化观察 provider。直接 Runtime API 默认仍是 `observation`，保留旧调用行为。
+不同文档都取第 0 页可以在同一次请求里查看，来源仍必须各自唯一；Runtime 自动区分帧名，不能改页码来凑唯一性。
+成功交付图像花费一次既有 review 额度，但不产生 finding 或接受结论；因此 frames 后不能捏造 finding id 发起 `after_repair`。
+收到的渲染失败不花额度，未答复的请求仍按既有规则保守计次。模型需说明从实际图面看到的结果，不能用包围盒代替观察。
+原生 `chat_present` 只发送 `progress` 或 `assistant`；用户消息由 Hub 已有会话持有，外部会话呈现仍保留 `user` 类型。
 大型参数提案的即时回复只列前 100 条变更和直接影响，明确总数、省略数及完整提案读取路径；冲突、锁、keep 和覆盖限制保持完整。
 现有出图入口支持四向立面与未剖切的顶投影；文字和尺寸可通过已有文档批注接口绑定到准确页面，沿用其版本比较保存。
 `awaitSeconds` 限定为提交成功后的等待时间；超时或读取失败返回原任务的只读续查入口，不重复提交。
