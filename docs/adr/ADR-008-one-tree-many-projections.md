@@ -66,8 +66,10 @@ decision tree comes from two derived stores. Either store can be deleted at any 
 - `archflow.project.index` owns the file, its stamp and its revision; the Studio's `StudioProjector` is the one projector. It
   stores what `record_refs`, `_run_artifacts`, `_run_documents`, `_candidate_stage_source` and `design_history` already
   return, per run and for the tree; it derives nothing new.
-- The Hub names the directory: `<runtime root>/cache/projects/<runtime_id>` reaches the project runtime as
-  `ARCHFLOW_STUDIO_INDEX_DIR`. Without it, no index is kept and every route reads the runs.
+- The Hub names the directory: the project's one cache directory, `<runtime root>/cache/projects/<runtime_id>`, reaches
+  the project runtime as `ARCHFLOW_STUDIO_CACHE_DIR`; the index keeps its file, `index.lock` and any `.corrupt-*` copy in
+  its `index` subdirectory, beside the projection cache's `projections`. Without that variable, no index is kept and
+  every route reads the runs.
 - `index.lock` beside the file is the writer lease. A second process that asks is refused and reads P036; its keeper
   retries for a bounded time, since the holder may be a process that is exiting. Closing a binding (or collecting one
   nobody closed, or a shared-project pull replacing it) stops its keeper and gives the lease up.

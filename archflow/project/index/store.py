@@ -6,7 +6,7 @@ derives from it, per run and for the design tree, so that a reader can ask
 It can be deleted at any time; the next load builds it again.
 
 - One file per project, in a cache directory the caller names (the Hub's
-  ``cache/projects/<runtime_id>``), never in the project folder.
+  ``cache/projects/<runtime_id>/index``), never in the project folder.
 - One writer: the thread of the ``IndexKeeper`` (``keeper.py``) of the process
   that holds ``index.lock`` beside the file. Any other process that tries gets
   ``IndexLocked`` (its keeper retries for a while: the holder may be exiting)

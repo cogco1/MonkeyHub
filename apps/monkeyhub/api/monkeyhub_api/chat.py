@@ -3427,7 +3427,7 @@ def _mcp(hub: str, chat_id: str | None, external: ChatPresentationBindRequest | 
                     "required": ["method", "path"], "additionalProperties": False}
     schema_input = {**input_schema, "properties": {
         **input_schema["properties"],
-        "producer": {"type": "string", "description": "For POST /api/proposals semantic authoring, select prism, loft, wall or planar-surface to read only that producer's request contract, excluding unrelated geometry and response schemas."},
+        "producer": {"type": "string", "description": "For POST /api/proposals authoring, name one producer the running Studio advertises to read only its request contract, excluding unrelated geometry and response schemas. The unfiltered POST /api/proposals schema lists the available producers, most general first; an unknown name is answered with that list."},
     }}
     request_schema = {
         "type": "object", "properties": {
@@ -3512,7 +3512,10 @@ def _mcp(hub: str, chat_id: str | None, external: ChatPresentationBindRequest | 
         "For several forms, use {stateDigest, sketches: [{componentId, elementId, profile, height, baseLevel}, ...]}.",
         "Items run in order; baseDatum: '<elementId>-top' can replace baseLevel to stack on an earlier form.",
         "sourceRunId, sourceStageRef, sourceProposalId and keep are top-level fields. A rejected batch saves nothing.",
-        "New components need parentComponentId under a built component and semanticKind; existing components can hold generic forms.",
+        "A new component needs only parentComponentId under a built component; semanticKind is optional and stated only when the user says what the part is.",
+        "GEOMETRY FIRST: early modeling uses the lowest sufficient expression: a sketched profile, face or path (POST /api/proposals/sketch) or the most general producer that fits.",
+        "Use a specialized producer such as wall only when the user asks for it or the meaning is already established.",
+        "Never ask for a GridAxis or a semanticKind for ordinary geometry; project-local points and levels are enough, and meaning can be added later to the same component.",
         "",
         "EDIT: POST /api/proposals/transform, /api/proposals/push-pull, /api/proposals/elevation or /api/proposals/delete.",
         "Read each action's schema for its fields; tool errors identify unsupported operations. Choose methods that preserve design meaning.",
@@ -3522,10 +3525,11 @@ def _mcp(hub: str, chat_id: str | None, external: ChatPresentationBindRequest | 
         "keep is a list of protected refs, e.g. ['entity:portico-base']. Use the actual target and source, not a guessed field.",
         "For linked dimensions, use POST /api/proposals with {stateDigest, semanticEdit: {summary, parameters: [...], entities: [...]}}.",
         "Use semanticEdit or utterance, not both. Existing omitted fields/dependencies are retained; revise upstream controls for linked edits.",
-        "Read studio_schema POST /api/proposals with producer (e.g. prism, loft, wall, planar-surface) for the actual authoring contract.",
+        "Read studio_schema POST /api/proposals for the producers the running Studio offers, then with producer set to one of them for its authoring contract.",
         "Geometry binds parameters with '@key'; formulas belong in parameters[].expr with inputs, and value must match the expression.",
-        "GET /api/semantics supplies registered semantic_kind aliases; role.* and condition.* IDs are not those aliases.",
-        "Keep early forms generic until their role is established. Existing object identity, hosted features and intended relationships matter when changing representation.",
+        "When meaning is stated, GET /api/semantics supplies registered semantic_kind aliases; role.* and condition.* IDs are not those aliases.",
+        "Keep early forms generic until their role is established; enrich them by upserting the same component id, never by recreating them.",
+        "Existing object identity, hosted features and intended relationships matter when changing representation.",
         "",
         "COMPOSE / OBSERVE / CONTINUE:",
         "Chain known edits in memory by passing the last proposalId as sourceProposalId; keep stateDigest at the chain's original baseStateDigest.",

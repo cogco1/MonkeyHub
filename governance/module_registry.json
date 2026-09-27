@@ -614,6 +614,66 @@
       "notes": "CREATE 2026-09-07 (A0 of docs/DRAWING_MODULE_ARCHITECTURE_PLAN.md): no owner serialised drawings; the PDF/DXF paper canvas in a teammate's worktree is a different output and stays out. Pillow renders the PNG (already installed with the Studio); no browser, image model or re-projection."
     },
     {
+      "module_id": "adapters.mesh_views",
+      "owner_path": "monkeydiagram/mesh_views.py",
+      "purpose": "Draw a fast look-only line view of named shapes from their triangles against a depth buffer: the model view's axonometric and the projection cache's thumbnails. Created because the exact hidden-line solve (adapters.cad_execution through runtime.drawing_elevation) grows too fast with object count for a view nobody retains, and no drawing owner rasterises meshes.",
+      "owns": [
+        "triangulating the named shapes at a caller-chosen chord error and naming the curve-only objects left out (triangulate)",
+        "feature edges of each object's welded mesh: creases over CREASE_DEGREES, open boundaries, non-manifold edges and view silhouettes",
+        "the scanline depth buffer at twice the output resolution and the edge visibility test against it, reduced to an anti-aliased greyscale PNG whose longer side is the requested size (mesh_line_view)",
+        "RENDERER_VERSION, which changes whenever the same input would draw different pixels, and mesh_pipeline: every setting and library version (OCP, numpy, Pillow) that changes the pixels",
+        "working memory bounded by pixel count: triangles are rasterised and edges sampled in chunks of at most a million candidate pixels, splitting a large triangle into row bands; the output side is at most MAX_SIZE_PX",
+        "the caller-named PNG text chunks; no time or random id in the bytes"
+      ],
+      "does_not_own": [
+        "exact retained drawings, their receipts and the elevation frames - runtime.drawing_elevation",
+        "choosing the view frame or crop and verifying the source - studio.artifacts (application/drawings.py)",
+        "caching, keys and the render queue - studio.artifacts (application/projections.py)"
+      ],
+      "inputs": [
+        "StepEntry tuple and object ids",
+        "chord deflection",
+        "right/up frame, crop window and pixel size",
+        "optional PNG text chunks"
+      ],
+      "outputs": [
+        "ObjectMesh tuple and skipped object ids",
+        "MeshLineView (PNG bytes, size, triangle and edge counts)"
+      ],
+      "public_api": [
+        "triangulate",
+        "mesh_line_view",
+        "pixel_size",
+        "ObjectMesh",
+        "MeshLineView",
+        "MeshViewError",
+        "RENDERER_VERSION",
+        "CREASE_DEGREES",
+        "ANGULAR_DEFLECTION",
+        "MAX_SIZE_PX",
+        "mesh_pipeline"
+      ],
+      "depends_on": [
+        "adapters.cad_execution",
+        "archflow.adapters.occt_backend"
+      ],
+      "used_by": [
+        "apps/archflow-studio/api/archflow_studio_api/application/drawings.py",
+        "tests/test_mesh_views.py"
+      ],
+      "invariants": [
+        "the same shapes, frame and size give the same PNG bytes",
+        "an edge is drawn only where the depth buffer does not hold a nearer surface beyond one and a half supersampled pixels",
+        "a cache key that holds mesh_pipeline() changes whenever this module would draw different pixels for the same input",
+        "nothing is written; a mesh view is never retained as a drawing or cited as evidence"
+      ],
+      "status": "canonical",
+      "tests": [
+        "tests/test_mesh_views.py"
+      ],
+      "notes": "numpy comes with the drawing requirements (shapely). GH-367 part A."
+    },
+    {
       "module_id": "adapters.three_dm_inspector",
       "owner_path": "archflow/adapters/three_dm_inspector.py",
       "purpose": "Read one .3dm file headlessly and return a deterministic, JSON-compatible summary of what is actually saved in it.",
@@ -932,7 +992,7 @@
         "tests/test_project_runner.py",
         "tests/test_prism_cutouts.py",
         "tests/test_occt_execution.py",
-        "tests/test_grid_free_wall.py"
+        "tests/test_wall_explicit_point_reference.py"
       ],
       "notes": "The single geometry-emission owner on the spine; monument vocabulary (solids of revolution, boolean chains, classical-order members) would be added here rather than beside it."
     },
@@ -1179,7 +1239,7 @@
       "tests": [
         "tests/test_derivations_and_references.py",
         "tests/test_element_producers.py",
-        "tests/test_grid_free_wall.py"
+        "tests/test_wall_explicit_point_reference.py"
       ],
       "notes": "The datum namespace boundary: level ids and element-top ids resolve here, so producers stay coordinate-free."
     },
@@ -2147,7 +2207,7 @@
       ],
       "does_not_own": [
         "what a row holds, and how it is derived (the projector: studio.binding's StudioProjector)",
-        "where the cache directory is (the caller names it: the Hub passes <runtime root>/cache/projects/<runtime_id>)",
+        "where the cache directory is (the caller names it: the Studio passes <runtime root>/cache/projects/<runtime_id>/index, the index subdirectory of the project cache directory the Hub names)",
         "reading or writing the project's files (project.repository); the index writes only inside its own directory",
         "the layout fingerprint and its lines (project.layout, kept current by project.watch)"
       ],
@@ -3865,7 +3925,7 @@
         "CHECK_KINDS: the check_kind vocabulary a validator may name, one line of meaning each, and the field each kind takes; solid_nonpenetration requires explicit distinct final object_pairs and zero linear tolerance, and may check distinct outputs of the same host entity without a self-dependency",
         "the component tree, published levels and published grids read out of the record (design_components_of, project_levels_of, project_grids_of)",
         "the schematic pack and the bootstrap from a record to the developed-design projection (SchematicPack, schematic_proposal, bootstrap_developed_state, developed_design_view)",
-        "refusing unregistered semantics on Component@1 and dangling relationship_refs on Connection@1",
+        "refusing unregistered semantics on Component@1 and dangling relationship_refs on Connection@1; a Component@1 with no semantic_kind, roles or conditions is valid geometry whose meaning is not yet established, and component_semantics reports it as absent",
         "the one reading of a Volume@1 box in the kernel's voxel lattice - x and z plan, y up, inclusive cells (volume_boxes_of); the schematic pack read out of the record (schematic_pack_of), which developed_design_view and the massing metrics both use",
         "the closed StateRecord edit vocabulary and its one successor function: set_scalar, replace_massing, apply_program, reindex and edit_components (StateRecordEditKind, StateRecordOperator, apply_state_record_operator)",
         "adapting declared parameter expressions and explicit @parameter bindings to the existing state.derivation evaluator, locating stale/conflicting input declarations and recomputing declared downstream values through the existing successor operator",
@@ -3919,6 +3979,7 @@
         "apply_state_record_operator",
         "bootstrap_developed_state",
         "design_components_of",
+        "component_semantics",
         "developed_design_view",
         "project_grids_of",
         "project_levels_of",
@@ -4199,7 +4260,8 @@
         "registering section perspective revisions from a complete verified source model in the existing document list with the same source resolution, cache, monitoring and registration as elevations, keeping the drawing owner's refusal names",
         "direct native model drawing selection: registered external sourceAsset stays frozen and has no modelSource; state-bound composed 3DM uses its own geometry, never a partial paired STEP",
         "SKP upload through the local standalone SDK, retaining original SKP and derived 3DM face geometry in the same P036 registration; retries reuse the verified original content",
-        "the drawing correction projection (05-S2, application/drawing_corrections.py): each cut-plan revision paired with the registered revision its receipt names as previous, the pair's replacement_cause, a recipe_diff of the two view recipes by dotted path and a classify into compiler_defect, semantic_rule, recipe or local_override; and the project's recipe suggestions - a pen or hatch spacing changed the same way in representation-only revisions no agent asked for on at least two drawings no active recipe covers - each citing its exact revision pairs and the page a recipe decision would cite"
+        "the drawing correction projection (05-S2, application/drawing_corrections.py): each cut-plan revision paired with the registered revision its receipt names as previous, the pair's replacement_cause, a recipe_diff of the two view recipes by dotted path and a classify into compiler_defect, semantic_rule, recipe or local_override; and the project's recipe suggestions - a pen or hatch spacing changed the same way in representation-only revisions no agent asked for on at least two drawings no active recipe covers - each citing its exact revision pairs and the page a recipe decision would cite",
+        "the content-keyed projection cache (ADR-008 #367): key = sha256(model asset sha256, kind, recipe hash, renderer, SALT) where renderer is the mesh renderer's version plus a digest of drawings.model_view_pipeline (view frame, crop margin, chord tolerance, mesh_pipeline); a miss or due retry first checks the requester's source (check_model_view_source) and a retry draws from the latest requester's source; thumbnails read the run's own record, so a run on an older canonical base is drawn (require_readable) while actions keep require_actionable; PNG blobs in <project cache dir>/projections/blobs named by their own sha256, written then renamed and self-describing through text chunks; one status row per key behind StatusStore (InMemoryStatusStore is the part-A stand-in for the index table); one low-priority render subprocess with timeout, memory cap, leases, bounded retries and a collector with a grace window"
       ],
       "does_not_own": [
         "producing the export or its receipt - adapters.cad_execution through runtime.project_runner",
@@ -4303,7 +4365,17 @@
         "recipe_suggestions",
         "Correction",
         "artifact_row_body",
-        "document_row_body"
+        "document_row_body",
+        "GET /api/projections",
+        "GET /api/projections/{key}",
+        "GET /api/projections/blobs/{sha256}",
+        "projection_key",
+        "projection_spec",
+        "ProjectionQueue",
+        "StatusStore",
+        "draw_model_view",
+        "check_model_view_source",
+        "model_view_pipeline"
       ],
       "depends_on": [
         "adapters.cad_execution",
@@ -4336,7 +4408,8 @@
         "archflow.adapters.model_providers",
         "archflow.adapters.sketchup_reader",
         "project.memo",
-        "project.index"
+        "project.index",
+        "adapters.mesh_views"
       ],
       "used_by": [
         "apps/archflow-studio/api/archflow_studio_api/application/candidate.py",
@@ -4380,7 +4453,8 @@
         "External imported drawings never invent design state or driving dimensions; exact source run/hash and representation edits survive restart. Missing SKP runtime and unsupported 3DM geometry are explicit errors.",
         "SKP sourceImport metadata exposes the original file name and source artifact plus conversion warnings through model upload/listing and drawing receipts; import loss is never hidden by a successful projection.",
         "A drawing correction is derived, never recorded (05 option A): GET /api/drawings/corrections reads the retained revisions and the active recipe decisions again on every call and writes nothing. A pair is only a revision and the one its receipt names, within one drawing; its class is a pure function of the recipe diff and the replacement cause, and a source rebuild is no correction. A suggestion is only offered: it counts representation-only recipe pairs no agent asked for, grouped by key and direction, needs two distinct drawings (D-05-1), skips a key an active recipe already gives that drawing, and becomes memory only by a person's recipe decision citing its page. V0 cleanup reports name no object, so no hide is classed a compiler defect.",
-        "one run's artifact rows and documents are kept per run under the stamps of its manifest, its records directory, every directory and file under its workspaces (artifacts) and each file its rows cite outside the run; the project's listing is the runs' rows in run order and then the committed-source step, whose per-run answer is kept under the stamps of the run, the design branches, its runner receipts and its source Stage; mutable row parts are copied for each caller, and artifact_bytes still reads and hashes the file on every call"
+        "one run's artifact rows and documents are kept per run under the stamps of its manifest, its records directory, every directory and file under its workspaces (artifacts) and each file its rows cite outside the run; the project's listing is the runs' rows in run order and then the committed-source step, whose per-run answer is kept under the stamps of the run, the design branches, its runner receipts and its source Stage; mutable row parts are copied for each caller, and artifact_bytes still reads and hashes the file on every call",
+        "A projection key names no run and no time; its blob is served immutable and never cited as evidence; deleting the cache directory only makes the next read draw again."
       ],
       "status": "canonical",
       "tests": [
@@ -4402,7 +4476,8 @@
         "apps/archflow-studio/api/tests/test_drawing_corrections.py",
         "apps/archflow-studio/api/tests/test_conditional_reads.py",
         "apps/archflow-studio/api/tests/test_derivation_memo.py",
-        "apps/archflow-studio/api/tests/test_indexed_reads.py"
+        "apps/archflow-studio/api/tests/test_indexed_reads.py",
+        "apps/archflow-studio/api/tests/test_projections.py"
       ],
       "notes": "The viewer's only source of model bytes; digests are the identity, filenames are not.",
       "files": [
@@ -4416,7 +4491,10 @@
         "apps/archflow-studio/api/archflow_studio_api/application/drawing_dimensions.py",
         "apps/archflow-studio/api/archflow_studio_api/application/drawing_corrections.py",
         "apps/archflow-studio/api/archflow_studio_api/application/model_exports.py",
-        "apps/archflow-studio/api/archflow_studio_api/routes/model_exports.py"
+        "apps/archflow-studio/api/archflow_studio_api/routes/model_exports.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/projections.py",
+        "apps/archflow-studio/api/archflow_studio_api/routes/projections.py",
+        "apps/archflow-studio/api/archflow_studio_api/transport/projections.py"
       ]
     },
     {
@@ -4536,7 +4614,7 @@
         "The current project working position (moved only by an explicit selection, never by recording a generated candidate), the automatic recovery listing of every unlabelled generated candidate however old, independent explicit saved versions and exact-source local command recovery through the P036 working-draft port; readback never executes a recovered request; every selection onto a run retains who made it as an AuditEvent@1 design.continued beside that run, ids only (actor, origin, previous head run, target run, chat message ids), and a selection whose event cannot be retained is undone.",
         "Resolving the Working Head for ordinary work: the readable retained working position, else the main line's accepted head, else the reference run, and each workspace's compatible exact source under a LIVE or FROZEN policy; resolving writes nothing; a live rejection of the working position is reported as a warning and never moves it",
         "The representation-status projection (#223): for one exact registered page, current, outdated, frozen or unavailable, the exact retained refs it was made from and its newest registered replacement, derived on every read by asking the page's owner (a cut plan's read set through plan_status, an AI render's retained request through Render's freshness, a page bound to one model state through model_is_current, a page bound to nothing through its replacements alone); it writes nothing and stores no status or dependency edge: the project-level dependency is this projection, not a second state",
-        "the Studio projector of the project index (StudioProjector): each run's records, artifacts, documents and candidate source and the committed stages, read through the same readers the routes use; attaching the index named by StudioSettings.index_dir to the one binding, kept current by its keeper; which listing reads the index (only when it holds every write this process made) and the read-only agent query route GET /api/index/{table}"
+        "the Studio projector of the project index (StudioProjector): each run's records, artifacts, documents and candidate source and the committed stages, read through the same readers the routes use; attaching the index in StudioSettings.project_index_dir (the index subdirectory of the Hub's project cache directory) to the one binding, kept current by its keeper; which listing reads the index (only when it holds every write this process made) and the read-only agent query route GET /api/index/{table}"
       ],
       "does_not_own": [
         "issuing a project version, and direct project file writes: the ProjectBinding object stays read-only, initial authored-input preparation and configured sync use project.repository ports; runtime.project_runner is the writer of a modeling run and project.issue the only issuer. A configured pull advances this Runtime's local design branch, and it does so entirely through project.repository's transfer and branch compare-and-swap ports; this owner writes no project file itself and moves no canonical HEAD",
@@ -4578,6 +4656,7 @@
         "record_kind",
         "ReferenceRun",
         "project_state",
+        "require_readable",
         "StateProjection",
         "ProjectedElement",
         "catalog_of",
@@ -5322,6 +5401,8 @@
         "apps/archflow-studio/api/tests/test_capabilities.py",
         "apps/archflow-studio/api/tests/test_delete.py",
         "apps/archflow-studio/api/tests/test_sketch.py",
+        "apps/archflow-studio/api/tests/test_geometry_first_authoring.py",
+        "apps/archflow-studio/api/tests/test_wall_project_point_authoring.py",
         "apps/archflow-studio/api/tests/test_deepening_parameterized_prisms.py",
         "apps/monkeyhub/web/workspaces/test/modelDraft.test.ts",
         "apps/monkeyhub/web/workspaces/test/syncModelDraft.test.ts",

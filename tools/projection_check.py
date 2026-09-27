@@ -21,8 +21,9 @@ artifact bytes ``immutable``; a base that predates them is not asked. Timings
 are reported, and fail only when the candidate's cold read is both more than
 twice the base's and more than 200 ms slower.
 
-With ``--index-dir`` (opt-in, ADR-008 phase 1b) the candidate keeps its project
-index in that directory, outside the project copy, and waits for the index to
+With ``--index-dir`` (opt-in, ADR-008 phase 1b) the candidate runs with that
+directory, outside the project copy, as its project cache directory, keeps its
+project index in ``<dir>/index`` and waits for the index to
 load before its cold reads; the result then says how the index loaded, how
 long that took and where it stood after the write. What is compared and judged
 does not change. Without it the candidate keeps no index.
@@ -164,7 +165,7 @@ def _worker(code_root: Path, project_dir: Path, mode: str, bodies: Path,
     import archflow
 
     result: dict[str, Any] = {"mode": mode, "archflow": str(Path(archflow.__file__).resolve())}
-    settings = StudioSettings(project_dir=project_dir, **({} if index_dir is None else {"index_dir": index_dir}))
+    settings = StudioSettings(project_dir=project_dir, **({} if index_dir is None else {"cache_dir": index_dir}))
     app = create_app(settings)
     with TestClient(app) as client:
         binding = None
@@ -175,7 +176,7 @@ def _worker(code_root: Path, project_dir: Path, mode: str, bodies: Path,
             binding = bound_project(app.state)
             keeper = binding.await_index(INDEX_WAIT_S)
             result["index"] = {
-                "dir": str(index_dir),
+                "dir": str(index_dir / "index"),
                 "loaded": None if keeper is None else keeper.index.loaded,
                 "loadMs": (time.perf_counter() - started) * 1000.0,
                 "failure": getattr(binding._index_keeper, "failure", None) if keeper is None else None,
@@ -489,7 +490,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--summary", type=Path, help="where to write the Markdown summary")
     parser.add_argument("--work", type=Path, help="scratch directory (default: a new temporary one)")
     parser.add_argument("--index-dir", type=Path,
-                        help="opt-in: the candidate keeps its project index here (outside the project) and waits "
+                        help="opt-in: the candidate's project cache directory (outside the project); it keeps its "
+                             "project index in <dir>/index and waits "
                              "for it to load; what is judged does not change")
     options = parser.parse_args(arguments)
     work = (options.work or Path(tempfile.mkdtemp(prefix="projection-check-"))).resolve()

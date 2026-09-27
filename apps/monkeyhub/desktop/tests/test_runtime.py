@@ -90,6 +90,9 @@ class WindowsProcesses:
             (self.user.GetWindowThreadProcessId, [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)], wintypes.DWORD),
             (self.user.GetWindowTextW, [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int], ctypes.c_int),
             (self.user.IsWindowVisible, [wintypes.HWND], wintypes.BOOL),
+            (self.user.IsWindowEnabled, [wintypes.HWND], wintypes.BOOL),
+            (self.user.IsHungAppWindow, [wintypes.HWND], wintypes.BOOL),
+            (self.user.GetClassNameW, [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int], ctypes.c_int),
             (self.user.PostMessageW, [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM], wintypes.BOOL),
         )
         for function, arguments, result in signatures:
@@ -233,6 +236,27 @@ class WindowsProcesses:
                 self.user.GetWindowTextW(hwnd, caption, len(caption))
                 if caption.value.startswith("MonkeyHub"):
                     found.append((hwnd, caption.value))
+            return True
+
+        self.user.EnumWindows(collect, 0)
+        return found
+
+    def describe_windows(self, pid):
+        """Every top-level window of pid, for diagnosing a stalled UI Automation step."""
+        found = []
+
+        @self.callback_type
+        def collect(hwnd, _):
+            owner = wintypes.DWORD()
+            self.user.GetWindowThreadProcessId(hwnd, ctypes.byref(owner))
+            if owner.value == pid:
+                caption, kind = ctypes.create_unicode_buffer(512), ctypes.create_unicode_buffer(256)
+                self.user.GetWindowTextW(hwnd, caption, len(caption))
+                self.user.GetClassNameW(hwnd, kind, len(kind))
+                found.append({"hwnd": hwnd, "title": caption.value, "class": kind.value,
+                              "visible": bool(self.user.IsWindowVisible(hwnd)),
+                              "enabled": bool(self.user.IsWindowEnabled(hwnd)),
+                              "hung": bool(self.user.IsHungAppWindow(hwnd))})
             return True
 
         self.user.EnumWindows(collect, 0)
@@ -607,54 +631,82 @@ class DesktopRuntimeTests(unittest.TestCase):
             self.assertEqual(self.user_file.read_bytes(), b"User data must survive reinstall and reopen.\n")
 
     def chat_draft(self, value=None):
-        """Use Windows' public UI Automation provider, with no product test hook."""
-        windows = self.native.windows(self.shell.pid)
-        self.assertEqual(len(windows), 1, windows)
+        """Use Windows' public UI Automation provider, with no product test hook.
+
+        A UI Automation request blocks until the owned process answers it: the
+        shell's UI thread for the native window, then WebView2, which builds its
+        accessibility tree on the first request, just after the project page
+        loads. UIA's default transaction timeout (20 s) exceeds one attempt, so a
+        slow first answer never surfaces as an error. Each attempt is a fresh,
+        killable client with the same 15 s budget; the owned process still
+        finishes the work that request started, so a bounded retry reaches the
+        ready tree. Setting the same draft again is idempotent.
+        """
         # The only interpolated text is a locally generated test draft.
         assignment = "" if value is None else """
 $draft = '""" + value.replace("'", "''") + """'
-[Console]::Error.WriteLine('UIA: focus input')
+Step 'focus input'
 $inputElement.SetFocus()
-[Console]::Error.WriteLine('UIA: set draft')
+Step 'set draft'
 $pattern.SetValue($draft)
 for ($attempt = 0; $attempt -lt 50 -and $pattern.Current.Value -ne $draft; $attempt++) {
     Start-Sleep -Milliseconds 100
 }
 """
-        script = f"""
+        attempts = []
+        for attempt in range(1, 4):
+            windows = self.native.windows(self.shell.pid)
+            self.assertEqual(len(windows), 1, self.native.describe_windows(self.shell.pid))
+            script = f"""
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
+$clock = [Diagnostics.Stopwatch]::StartNew()
+function Step($name) {{ [Console]::Error.WriteLine("UIA +$($clock.ElapsedMilliseconds)ms: $name") }}
+Step 'load UIAutomationClient'
 Add-Type -AssemblyName UIAutomationClient
-[Console]::Error.WriteLine('UIA: resolve owned window')
+Step 'resolve owned window {windows[0][0]}'
 $window = [System.Windows.Automation.AutomationElement]::FromHandle([IntPtr]{windows[0][0]})
 if ($window.Current.ProcessId -ne {self.shell.pid}) {{ throw 'Unexpected native window owner' }}
+Step "resolved window name=$($window.Current.Name) class=$($window.Current.ClassName) enabled=$($window.Current.IsEnabled)"
 $condition = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::AutomationIdProperty, 'chat-input')
 $inputElement = $null
-[Console]::Error.WriteLine('UIA: find chat input')
+Step 'find chat input'
 for ($attempt = 0; $attempt -lt 50 -and $null -eq $inputElement; $attempt++) {{
     $inputElement = $window.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $condition)
-    if ($null -eq $inputElement) {{ Start-Sleep -Milliseconds 100 }}
+    if ($null -eq $inputElement) {{
+        Step "chat input not exposed yet (search $($attempt + 1))"
+        Start-Sleep -Milliseconds 100
+    }}
 }}
 if ($null -eq $inputElement) {{ throw 'The owned Hub chat input was not accessible' }}
 if (-not $inputElement.Current.IsEnabled) {{ throw 'The owned Hub chat input was disabled' }}
-[Console]::Error.WriteLine('UIA: get value pattern')
+Step 'get value pattern'
 $pattern = $inputElement.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern)
 {assignment}
-[Console]::Error.WriteLine('UIA: read draft')
+Step 'read draft'
 $pattern.Current.Value | ConvertTo-Json -Compress
 """
-        try:
-            # UI Automation runs in its own non-UI MTA, without an STA message pump.
-            result = subprocess.run(
-                ["powershell.exe", "-Mta", "-NoProfile", "-NonInteractive", "-EncodedCommand",
-                 base64.b64encode(script.encode("utf-16-le")).decode("ascii")],
-                capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=15,
-                creationflags=subprocess.CREATE_NO_WINDOW,
-            )
-        except subprocess.TimeoutExpired as error:
-            self.fail(f"Owned chat UI Automation timed out: {error.stderr!r}")
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        return json.loads(result.stdout.strip())
+            started = time.monotonic()
+            try:
+                # UI Automation runs in its own non-UI MTA, without an STA message pump.
+                result = subprocess.run(
+                    ["powershell.exe", "-Mta", "-NoProfile", "-NonInteractive", "-EncodedCommand",
+                     base64.b64encode(script.encode("utf-16-le")).decode("ascii")],
+                    capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=15,
+                    creationflags=subprocess.CREATE_NO_WINDOW,
+                )
+            except subprocess.TimeoutExpired as error:
+                # Observe the owner after the stalled client was killed.
+                attempts.append(f"attempt {attempt} timed out after {time.monotonic() - started:.1f}s; "
+                                f"windows={self.native.describe_windows(self.shell.pid)}; "
+                                f"stderr={error.stderr!r}")
+                continue
+            self.assertEqual(result.returncode, 0, "\n".join(attempts + [result.stdout + result.stderr]))
+            if attempts:
+                # A run the retry rescued: CI logs show how often the first client stalls.
+                print("Owned chat UI Automation needed a retry:\n" + "\n".join(attempts), file=sys.stderr, flush=True)
+            return json.loads(result.stdout.strip())
+        self.fail("Owned chat UI Automation timed out:\n" + "\n".join(attempts))
 
     def test_retained_chat_and_settings_are_visible_before_first_write(self):
         from monkeyhub_api.chat import ChatStore, _SavedChat

@@ -460,11 +460,9 @@ function secondaryViewport() {
     scene: new Group(), restore: new Map(), blendT: null as number | null, render() {} };
   const scope = {
     runtimeRef: { current: runtime }, loadGenerationRef: { current: 0 }, secondaryLoadRequest: { current: 0 },
-    Rhino3dmLoader: class {
-      setLibraryPath() {} setWorkerLimit() {} dispose() {}
-      parse(bytes: ArrayBuffer, complete: (model: Group) => void) { parsed.set(new Uint8Array(bytes)[0], complete); }
-    },
-    navigator: { hardwareConcurrency: 1 }, Color, accentColour: () => "#2277dd",
+    parse3dm: ([bytes]: ArrayBuffer[]) => new Promise((resolve) =>
+      parsed.set(new Uint8Array(bytes)[0], (model: Group) => resolve([{ status: "fulfilled", value: model }]))),
+    Color, accentColour: () => "#2277dd",
     meshCount: () => 1, prepareLoadedModel, tintSecondary() {}, reportStatus() {},
     nurbsFallbackWarning: () => null, restoreOpacity,
     disposeScene: (model: Group) => disposed.push(model.name),

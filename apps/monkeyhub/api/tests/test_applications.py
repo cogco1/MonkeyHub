@@ -19,7 +19,6 @@ import textwrap
 import threading
 import unittest
 from unittest.mock import patch
-from uuid import NAMESPACE_URL, uuid5
 
 ROOT = Path(__file__).resolve().parents[4]
 for directory in (ROOT, ROOT / "apps/archflow-studio/api", ROOT / "apps/monkeyhub/api"):
@@ -27,11 +26,11 @@ for directory in (ROOT, ROOT / "apps/archflow-studio/api", ROOT / "apps/monkeyhu
         sys.path.insert(0, str(directory))
 
 from archflow_studio_api.transport.settings import ApplicationSettingsDto
+from archflow_studio_api.application.projections import projection_queue
 from archflow_studio_api.settings import StudioSettings
 from archflow_studio_api.render_adapters.gemini import adapter_from_settings
 from monkeyhub_api.applications import Applications
 from monkeyhub_api.models import HubFailure
-from monkeyhub_api.workers import project_key
 
 
 class StudioChildEnvironmentTests(unittest.TestCase):
@@ -80,19 +79,29 @@ class StudioChildEnvironmentTests(unittest.TestCase):
         )
         self.assertEqual(environment["UNRELATED_SETTING"], "kept")
 
-    def test_the_child_keeps_its_project_index_in_the_hub_cache(self):
-        (self.project / "project.json").write_text(
-            json.dumps({"schema": "ArchFlowProject@1", "project_id": "project-a", "format_version": 1}),
-            encoding="utf-8",
-        )
-        with patch.dict(os.environ, self.inherited, clear=True):
-            _, environment = self.applications._command("studio", self.settings())
-        index_dir = Path(environment["ARCHFLOW_STUDIO_INDEX_DIR"])
-        self.assertEqual(index_dir.parent, (self.root / "runtime").resolve() / "cache" / "projects")
-        self.assertEqual(index_dir.name, str(uuid5(NAMESPACE_URL, f"project-a:{project_key(str(self.project))}")))
-        self.assertFalse(index_dir.is_relative_to(self.project))
-        with patch.dict(os.environ, environment, clear=True):
-            self.assertEqual(StudioSettings.from_env().index_dir, index_dir)
+    def test_the_child_gets_its_project_cache_directory_outside_the_project(self):
+        from types import SimpleNamespace
+
+        launches = []
+        self.applications.source_revision = "synthetic-revision"
+        with patch.dict(os.environ, self.inherited, clear=True), \
+                patch("monkeyhub_api.applications.ProjectManifest.from_dict",
+                      return_value=SimpleNamespace(project_id="synthetic-project")), \
+                patch.object(self.applications.supervisor, "start", side_effect=launches.append), \
+                patch.object(self.applications, "status"):
+            self.applications.start("monkeyarch", project_dir=str(self.project))
+        (launch,) = launches
+        runtime_id = self.applications.runtime_id("synthetic-project", launch.project_dir)
+        expected = (self.root / "runtime").resolve() / "cache" / "projects" / runtime_id
+        self.assertEqual(Path(launch.environment["ARCHFLOW_STUDIO_CACHE_DIR"]), expected)
+        self.assertFalse(expected.is_relative_to(self.project.resolve()))
+        with patch.dict(os.environ, launch.environment, clear=True):
+            child = StudioSettings.from_env()
+        self.assertEqual(child.project_cache_dir, expected)
+        # One cache directory: the index and the projection cache are its subdirectories.
+        self.assertNotIn("ARCHFLOW_STUDIO_INDEX_DIR", launch.environment)
+        self.assertEqual(child.project_index_dir, expected / "index")
+        self.assertEqual(projection_queue(child).cache_root, expected / "projections")
 
     def test_saved_preferences_and_settings_reach_the_child(self):
         self.save_preferences(intentProvider="codex", intentModel="gpt-5", intentTimeoutS=45.5)

@@ -67,6 +67,14 @@ class Applications:
     def _project_key(project_dir: str | None) -> str:
         return project_key(project_dir)
 
+    def runtime_id(self, project_id: str, project_dir: str | None) -> str:
+        return str(uuid5(NAMESPACE_URL, f"{project_id}:{self._project_key(project_dir)}"))
+
+    def project_cache_dir(self, project_id: str, project_dir: str) -> Path:
+        """One open project's derived stores (index, projections): deletable, never in the project."""
+
+        return self.runtime_root / "cache" / "projects" / self.runtime_id(project_id, project_dir)
+
     def worker_snapshots(self, *, project_dir: str | None = None) -> tuple[WorkerSnapshot, ...]:
         return self.supervisor.snapshots(project_dir=project_dir)
 
@@ -124,7 +132,7 @@ class Applications:
             if state == "running":
                 url = child.url
                 if service == "studio":
-                    runtime_id = str(uuid5(NAMESPACE_URL, f"{child.project_id}:{self._project_key(child.project_dir)}"))
+                    runtime_id = self.runtime_id(child.project_id, child.project_dir)
                     query = urlencode({"view": "board" if app_id == "monkeyboard" else "render" if app_id == "monkeyrender" else "arch", "runtimeId": runtime_id})
                     url = f"http://127.0.0.1:{self.hub_port}/?{query}"
             return AppStatus(
@@ -173,6 +181,7 @@ class Applications:
                     project_id = ProjectManifest.from_dict(json.loads((Path(selected_project) / "project.json").read_text(encoding="utf-8-sig"))).project_id
                 except (OSError, ValueError, TypeError) as exc:
                     raise HubFailure(409, "PROJECT_REQUIRED", "The selected folder does not contain a valid project manifest.") from exc
+                environ["ARCHFLOW_STUDIO_CACHE_DIR"] = str(self.project_cache_dir(project_id, selected_project))
             self.supervisor.start(WorkerLaunch(
                 worker_id=key, service_id=service, project_id=project_id, project_dir=selected_project,
                 source_revision=self.source_revision, command=args, environment=environ,
@@ -209,16 +218,6 @@ class Applications:
             "ARCHFLOW_STUDIO_INTENT_PROVIDER": preferences.intent_provider or "deterministic",
             "MONKEYMONITOR_DATA_DIR": str(diagnostics),
         })
-        try:
-            project_id = ProjectManifest.from_dict(
-                json.loads((project / "project.json").read_text(encoding="utf-8-sig"))).project_id
-        except (OSError, ValueError, TypeError):
-            project_id = None
-        if project_id is not None:
-            # The project's derived index lives in the Hub cache, per runtime,
-            # never in the project folder (ADR-008 phase 1b).
-            runtime_id = str(uuid5(NAMESPACE_URL, f"{project_id}:{self._project_key(str(project))}"))
-            environ["ARCHFLOW_STUDIO_INDEX_DIR"] = str(self.runtime_root / "cache" / "projects" / runtime_id)
         if settings.reference_run:
             environ["ARCHFLOW_STUDIO_REFERENCE_RUN"] = settings.reference_run
         if preferences.intent_model:

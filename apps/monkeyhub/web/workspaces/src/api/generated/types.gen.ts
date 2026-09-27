@@ -1777,8 +1777,10 @@ export type ComponentNodeDto = {
     parentComponentId: string | null;
     /**
      * Semantickind
+     *
+     * What the component has been said to be; null while it is geometry whose meaning is not yet established.
      */
-    semanticKind: string;
+    semanticKind: string | null;
     /**
      * Intent
      */
@@ -3205,6 +3207,8 @@ export type DocumentTracingRequestDto = {
     parentComponentId?: string | null;
     /**
      * Semantickind
+     *
+     * optional: what a new component is, when stated; omit it for geometry whose meaning is not established
      */
     semanticKind?: string | null;
     /**
@@ -7099,6 +7103,67 @@ export type ProjectVersionDto = {
 };
 
 /**
+ * ProjectionStatusDto
+ *
+ * One projection key and where it stands. Pending or error: show a placeholder, do not cache it.
+ */
+export type ProjectionStatusDto = {
+    /**
+     * Key
+     */
+    key: string;
+    /**
+     * Status
+     */
+    status: 'pending' | 'done' | 'error';
+    /**
+     * Kind
+     */
+    kind: string;
+    /**
+     * Recipe
+     */
+    recipe: {
+        [key: string]: unknown;
+    };
+    /**
+     * Renderer
+     */
+    renderer: string;
+    /**
+     * Inputsha256
+     */
+    inputSha256: string;
+    source: ModelSourceDto;
+    /**
+     * Blobsha256
+     */
+    blobSha256?: string | null;
+    /**
+     * Bloburl
+     *
+     * Immutable PNG bytes; present only when status is done.
+     */
+    blobUrl?: string | null;
+    /**
+     * Attempts
+     */
+    attempts: number;
+    /**
+     * Error
+     */
+    error?: string | null;
+    /**
+     * Loadms
+     */
+    loadMs?: number | null;
+    /**
+     * Renderms
+     */
+    renderMs?: number | null;
+};
+
+/**
  * ProposalChangeDto
  *
  * The number as the record has it, and the number proposed for it.
@@ -8685,6 +8750,303 @@ export type SemanticEditRequestDto = {
         basis_refs?: Array<string>;
         fields?: {
             component_id?: string;
+            producer?: 'prism';
+            type_ref?: string | null;
+            references?: {
+                base?: {
+                    /**
+                     * The existing Level@1 entity_id, not its role.
+                     */
+                    level: string;
+                } | {
+                    datum: string;
+                    /**
+                     * A value in metres, or an explicit @parameter binding.
+                     */
+                    offset?: number | string;
+                } | {
+                    offset_from: {
+                        /**
+                         * The existing Level@1 entity_id, not its role.
+                         */
+                        level: string;
+                        /**
+                         * A value in metres, or an explicit @parameter binding.
+                         */
+                        offset: number | string;
+                    };
+                } | {
+                    /**
+                     * A value in metres, or an explicit @parameter binding.
+                     */
+                    elevation: number | string;
+                };
+                top?: {
+                    /**
+                     * The existing Level@1 entity_id, not its role.
+                     */
+                    level: string;
+                } | {
+                    datum: string;
+                    /**
+                     * A value in metres, or an explicit @parameter binding.
+                     */
+                    offset?: number | string;
+                } | {
+                    offset_from: {
+                        /**
+                         * The existing Level@1 entity_id, not its role.
+                         */
+                        level: string;
+                        /**
+                         * A value in metres, or an explicit @parameter binding.
+                         */
+                        offset: number | string;
+                    };
+                };
+            };
+            params?: {
+                /**
+                 * The closed plan profile in order; the first point is not repeated. Coordinates may bind @parameters.
+                 */
+                profile?: Array<[
+                    number | string,
+                    number | string
+                ]>;
+                /**
+                 * How far the profile is pulled; optional when references.top determines it.
+                 */
+                height?: number | string;
+                /**
+                 * Metres above references.base, added to that reference's own offset; defaults to zero. It moves the whole prism and leaves the height alone.
+                 */
+                elevation?: number | string;
+                /**
+                 * Optional orthonormal drawing frame relative to references.base. Profile pairs follow xAxis/yAxis; height follows normal. Omit for the retained XZ/+Y convention.
+                 */
+                work_plane?: {
+                    origin: [
+                        number,
+                        number,
+                        number
+                    ];
+                    xAxis: [
+                        number,
+                        number,
+                        number
+                    ];
+                    yAxis: [
+                        number,
+                        number,
+                        number
+                    ];
+                    normal: [
+                        number,
+                        number,
+                        number
+                    ];
+                };
+                /**
+                 * Openings through an axis-aligned rectangular profile.
+                 */
+                rectangular_cutouts?: Array<{
+                    cutout_id: string;
+                    span0: number;
+                    span1: number;
+                    bottom: number;
+                    top: number;
+                }>;
+            };
+            name?: string | null;
+            label?: string | null;
+            note?: string | null;
+        } | {
+            component_id?: string;
+            producer?: 'planar-surface';
+            type_ref?: string | null;
+            references?: {
+                base?: {
+                    /**
+                     * The existing Level@1 entity_id, not its role.
+                     */
+                    level: string;
+                } | {
+                    datum: string;
+                    /**
+                     * A value in metres, or an explicit @parameter binding.
+                     */
+                    offset?: number | string;
+                } | {
+                    offset_from: {
+                        /**
+                         * The existing Level@1 entity_id, not its role.
+                         */
+                        level: string;
+                        /**
+                         * A value in metres, or an explicit @parameter binding.
+                         */
+                        offset: number | string;
+                    };
+                } | {
+                    datum: string;
+                } | {
+                    /**
+                     * A value in metres, or an explicit @parameter binding.
+                     */
+                    elevation: number | string;
+                };
+            };
+            params?: {
+                /**
+                 * One simple boundary in work_plane coordinates (XZ when omitted), repeating its first vertex at the end.
+                 */
+                profile?: Array<[
+                    number | string,
+                    number | string
+                ]>;
+                /**
+                 * Metres above references.base, added to that reference's own offset; defaults to zero.
+                 */
+                elevation?: number | string;
+                work_plane?: {
+                    origin: [
+                        number,
+                        number,
+                        number
+                    ];
+                    xAxis: [
+                        number,
+                        number,
+                        number
+                    ];
+                    yAxis: [
+                        number,
+                        number,
+                        number
+                    ];
+                    normal: [
+                        number,
+                        number,
+                        number
+                    ];
+                };
+            };
+            name?: string | null;
+            label?: string | null;
+            note?: string | null;
+        } | {
+            component_id?: string;
+            producer?: 'curve';
+            type_ref?: string | null;
+            references?: {
+                base?: {
+                    /**
+                     * The existing Level@1 entity_id, not its role.
+                     */
+                    level: string;
+                } | {
+                    datum: string;
+                    /**
+                     * A value in metres, or an explicit @parameter binding.
+                     */
+                    offset?: number | string;
+                } | {
+                    offset_from: {
+                        /**
+                         * The existing Level@1 entity_id, not its role.
+                         */
+                        level: string;
+                        /**
+                         * A value in metres, or an explicit @parameter binding.
+                         */
+                        offset: number | string;
+                    };
+                };
+            };
+            params?: {
+                /**
+                 * Ordered points in work_plane coordinates (XZ when omitted); no closing segment is added.
+                 */
+                profile?: Array<[
+                    number | string,
+                    number | string
+                ]>;
+                /**
+                 * A value in metres, or an explicit @parameter binding.
+                 */
+                elevation?: number | string;
+                work_plane?: {
+                    origin: [
+                        number,
+                        number,
+                        number
+                    ];
+                    xAxis: [
+                        number,
+                        number,
+                        number
+                    ];
+                    yAxis: [
+                        number,
+                        number,
+                        number
+                    ];
+                    normal: [
+                        number,
+                        number,
+                        number
+                    ];
+                };
+            };
+            name?: string | null;
+            label?: string | null;
+            note?: string | null;
+        } | {
+            component_id?: string;
+            producer?: 'loft';
+            type_ref?: string | null;
+            references?: {
+                base?: {
+                    /**
+                     * The existing Level@1 entity_id, not its role.
+                     */
+                    level: string;
+                } | {
+                    datum: string;
+                };
+            };
+            params?: {
+                /**
+                 * Ordered sections of [X, Y-up, Z] points relative to the base datum; coordinates may bind @parameters.
+                 */
+                profiles?: Array<Array<[
+                    number | string,
+                    number | string,
+                    number | string
+                ]>>;
+                /**
+                 * The same number of vertices in every section; do not repeat the first vertex.
+                 */
+                profile_size?: number;
+                /**
+                 * straight (default) connects sections with ruled faces; normal interpolates between the sections.
+                 */
+                loft_type?: 'straight' | 'normal';
+                /**
+                 * Polyline sections (default); interpolated section curves are not exposed by this authoring path.
+                 */
+                profile_basis?: 'polyline';
+                /**
+                 * True (default) caps both ends into one solid; false leaves both end sections open as a surface.
+                 */
+                cap_ends?: boolean;
+                closed_profile?: true;
+            };
+            name?: string | null;
+            label?: string | null;
+            note?: string | null;
+        } | {
+            component_id?: string;
             producer?: 'wall';
             type_ref?: string | null;
             references?: {
@@ -8919,303 +9281,6 @@ export type SemanticEditRequestDto = {
                     type_id?: string;
                     interface_ref?: string;
                 }>;
-            };
-            name?: string | null;
-            label?: string | null;
-            note?: string | null;
-        } | {
-            component_id?: string;
-            producer?: 'prism';
-            type_ref?: string | null;
-            references?: {
-                base?: {
-                    /**
-                     * The existing Level@1 entity_id, not its role.
-                     */
-                    level: string;
-                } | {
-                    datum: string;
-                    /**
-                     * A value in metres, or an explicit @parameter binding.
-                     */
-                    offset?: number | string;
-                } | {
-                    offset_from: {
-                        /**
-                         * The existing Level@1 entity_id, not its role.
-                         */
-                        level: string;
-                        /**
-                         * A value in metres, or an explicit @parameter binding.
-                         */
-                        offset: number | string;
-                    };
-                } | {
-                    /**
-                     * A value in metres, or an explicit @parameter binding.
-                     */
-                    elevation: number | string;
-                };
-                top?: {
-                    /**
-                     * The existing Level@1 entity_id, not its role.
-                     */
-                    level: string;
-                } | {
-                    datum: string;
-                    /**
-                     * A value in metres, or an explicit @parameter binding.
-                     */
-                    offset?: number | string;
-                } | {
-                    offset_from: {
-                        /**
-                         * The existing Level@1 entity_id, not its role.
-                         */
-                        level: string;
-                        /**
-                         * A value in metres, or an explicit @parameter binding.
-                         */
-                        offset: number | string;
-                    };
-                };
-            };
-            params?: {
-                /**
-                 * The closed plan profile in order; the first point is not repeated. Coordinates may bind @parameters.
-                 */
-                profile?: Array<[
-                    number | string,
-                    number | string
-                ]>;
-                /**
-                 * How far the profile is pulled; optional when references.top determines it.
-                 */
-                height?: number | string;
-                /**
-                 * Metres above references.base, added to that reference's own offset; defaults to zero. It moves the whole prism and leaves the height alone.
-                 */
-                elevation?: number | string;
-                /**
-                 * Optional orthonormal drawing frame relative to references.base. Profile pairs follow xAxis/yAxis; height follows normal. Omit for the retained XZ/+Y convention.
-                 */
-                work_plane?: {
-                    origin: [
-                        number,
-                        number,
-                        number
-                    ];
-                    xAxis: [
-                        number,
-                        number,
-                        number
-                    ];
-                    yAxis: [
-                        number,
-                        number,
-                        number
-                    ];
-                    normal: [
-                        number,
-                        number,
-                        number
-                    ];
-                };
-                /**
-                 * Openings through an axis-aligned rectangular profile.
-                 */
-                rectangular_cutouts?: Array<{
-                    cutout_id: string;
-                    span0: number;
-                    span1: number;
-                    bottom: number;
-                    top: number;
-                }>;
-            };
-            name?: string | null;
-            label?: string | null;
-            note?: string | null;
-        } | {
-            component_id?: string;
-            producer?: 'loft';
-            type_ref?: string | null;
-            references?: {
-                base?: {
-                    /**
-                     * The existing Level@1 entity_id, not its role.
-                     */
-                    level: string;
-                } | {
-                    datum: string;
-                };
-            };
-            params?: {
-                /**
-                 * Ordered sections of [X, Y-up, Z] points relative to the base datum; coordinates may bind @parameters.
-                 */
-                profiles?: Array<Array<[
-                    number | string,
-                    number | string,
-                    number | string
-                ]>>;
-                /**
-                 * The same number of vertices in every section; do not repeat the first vertex.
-                 */
-                profile_size?: number;
-                /**
-                 * straight (default) connects sections with ruled faces; normal interpolates between the sections.
-                 */
-                loft_type?: 'straight' | 'normal';
-                /**
-                 * Polyline sections (default); interpolated section curves are not exposed by this authoring path.
-                 */
-                profile_basis?: 'polyline';
-                /**
-                 * True (default) caps both ends into one solid; false leaves both end sections open as a surface.
-                 */
-                cap_ends?: boolean;
-                closed_profile?: true;
-            };
-            name?: string | null;
-            label?: string | null;
-            note?: string | null;
-        } | {
-            component_id?: string;
-            producer?: 'planar-surface';
-            type_ref?: string | null;
-            references?: {
-                base?: {
-                    /**
-                     * The existing Level@1 entity_id, not its role.
-                     */
-                    level: string;
-                } | {
-                    datum: string;
-                    /**
-                     * A value in metres, or an explicit @parameter binding.
-                     */
-                    offset?: number | string;
-                } | {
-                    offset_from: {
-                        /**
-                         * The existing Level@1 entity_id, not its role.
-                         */
-                        level: string;
-                        /**
-                         * A value in metres, or an explicit @parameter binding.
-                         */
-                        offset: number | string;
-                    };
-                } | {
-                    datum: string;
-                } | {
-                    /**
-                     * A value in metres, or an explicit @parameter binding.
-                     */
-                    elevation: number | string;
-                };
-            };
-            params?: {
-                /**
-                 * One simple boundary in work_plane coordinates (XZ when omitted), repeating its first vertex at the end.
-                 */
-                profile?: Array<[
-                    number | string,
-                    number | string
-                ]>;
-                /**
-                 * Metres above references.base, added to that reference's own offset; defaults to zero.
-                 */
-                elevation?: number | string;
-                work_plane?: {
-                    origin: [
-                        number,
-                        number,
-                        number
-                    ];
-                    xAxis: [
-                        number,
-                        number,
-                        number
-                    ];
-                    yAxis: [
-                        number,
-                        number,
-                        number
-                    ];
-                    normal: [
-                        number,
-                        number,
-                        number
-                    ];
-                };
-            };
-            name?: string | null;
-            label?: string | null;
-            note?: string | null;
-        } | {
-            component_id?: string;
-            producer?: 'curve';
-            type_ref?: string | null;
-            references?: {
-                base?: {
-                    /**
-                     * The existing Level@1 entity_id, not its role.
-                     */
-                    level: string;
-                } | {
-                    datum: string;
-                    /**
-                     * A value in metres, or an explicit @parameter binding.
-                     */
-                    offset?: number | string;
-                } | {
-                    offset_from: {
-                        /**
-                         * The existing Level@1 entity_id, not its role.
-                         */
-                        level: string;
-                        /**
-                         * A value in metres, or an explicit @parameter binding.
-                         */
-                        offset: number | string;
-                    };
-                };
-            };
-            params?: {
-                /**
-                 * Ordered points in work_plane coordinates (XZ when omitted); no closing segment is added.
-                 */
-                profile?: Array<[
-                    number | string,
-                    number | string
-                ]>;
-                /**
-                 * A value in metres, or an explicit @parameter binding.
-                 */
-                elevation?: number | string;
-                work_plane?: {
-                    origin: [
-                        number,
-                        number,
-                        number
-                    ];
-                    xAxis: [
-                        number,
-                        number,
-                        number
-                    ];
-                    yAxis: [
-                        number,
-                        number,
-                        number
-                    ];
-                    normal: [
-                        number,
-                        number,
-                        number
-                    ];
-                };
             };
             name?: string | null;
             label?: string | null;
@@ -9228,11 +9293,14 @@ export type SemanticEditRequestDto = {
         basis_refs?: Array<string>;
         fields?: {
             /**
-             * One registered alias in local-id form, for example building, cover or support. Choose a fitting aliases entry from GET /api/semantics, not its role.* or condition.* id. Put the specific object description in intent.
+             * What this part of the design is for, in the architect's words.
              */
-            semantic_kind?: string;
             intent?: string;
             source_refs?: Array<string>;
+            /**
+             * Optional and deferred: omit it for new geometry whose meaning the project has not established. State it only when the architect says what the part is or the record already does; then use one registered alias in local-id form (GET /api/semantics), not a role.* or condition.* id. Adding it later upserts the same entity_id, keeping its identity and dependencies.
+             */
+            semantic_kind?: string;
         };
     } | {
         entity_id: string;
@@ -9240,6 +9308,295 @@ export type SemanticEditRequestDto = {
         parent_id?: string | null;
         basis_refs?: Array<string>;
         fields?: {
+            producer?: 'prism';
+            references?: {
+                base?: {
+                    /**
+                     * The existing Level@1 entity_id, not its role.
+                     */
+                    level: string;
+                } | {
+                    datum: string;
+                    /**
+                     * A value in metres, or an explicit @parameter binding.
+                     */
+                    offset?: number | string;
+                } | {
+                    offset_from: {
+                        /**
+                         * The existing Level@1 entity_id, not its role.
+                         */
+                        level: string;
+                        /**
+                         * A value in metres, or an explicit @parameter binding.
+                         */
+                        offset: number | string;
+                    };
+                } | {
+                    /**
+                     * A value in metres, or an explicit @parameter binding.
+                     */
+                    elevation: number | string;
+                };
+                top?: {
+                    /**
+                     * The existing Level@1 entity_id, not its role.
+                     */
+                    level: string;
+                } | {
+                    datum: string;
+                    /**
+                     * A value in metres, or an explicit @parameter binding.
+                     */
+                    offset?: number | string;
+                } | {
+                    offset_from: {
+                        /**
+                         * The existing Level@1 entity_id, not its role.
+                         */
+                        level: string;
+                        /**
+                         * A value in metres, or an explicit @parameter binding.
+                         */
+                        offset: number | string;
+                    };
+                };
+            };
+            params?: {
+                /**
+                 * The closed plan profile in order; the first point is not repeated. Coordinates may bind @parameters.
+                 */
+                profile?: Array<[
+                    number | string,
+                    number | string
+                ]>;
+                /**
+                 * How far the profile is pulled; optional when references.top determines it.
+                 */
+                height?: number | string;
+                /**
+                 * Metres above references.base, added to that reference's own offset; defaults to zero. It moves the whole prism and leaves the height alone.
+                 */
+                elevation?: number | string;
+                /**
+                 * Optional orthonormal drawing frame relative to references.base. Profile pairs follow xAxis/yAxis; height follows normal. Omit for the retained XZ/+Y convention.
+                 */
+                work_plane?: {
+                    origin: [
+                        number,
+                        number,
+                        number
+                    ];
+                    xAxis: [
+                        number,
+                        number,
+                        number
+                    ];
+                    yAxis: [
+                        number,
+                        number,
+                        number
+                    ];
+                    normal: [
+                        number,
+                        number,
+                        number
+                    ];
+                };
+                /**
+                 * Openings through an axis-aligned rectangular profile.
+                 */
+                rectangular_cutouts?: Array<{
+                    cutout_id: string;
+                    span0: number;
+                    span1: number;
+                    bottom: number;
+                    top: number;
+                }>;
+            };
+            name?: string | null;
+            label?: string | null;
+            note?: string | null;
+        } | {
+            producer?: 'planar-surface';
+            references?: {
+                base?: {
+                    /**
+                     * The existing Level@1 entity_id, not its role.
+                     */
+                    level: string;
+                } | {
+                    datum: string;
+                    /**
+                     * A value in metres, or an explicit @parameter binding.
+                     */
+                    offset?: number | string;
+                } | {
+                    offset_from: {
+                        /**
+                         * The existing Level@1 entity_id, not its role.
+                         */
+                        level: string;
+                        /**
+                         * A value in metres, or an explicit @parameter binding.
+                         */
+                        offset: number | string;
+                    };
+                } | {
+                    datum: string;
+                } | {
+                    /**
+                     * A value in metres, or an explicit @parameter binding.
+                     */
+                    elevation: number | string;
+                };
+            };
+            params?: {
+                /**
+                 * One simple boundary in work_plane coordinates (XZ when omitted), repeating its first vertex at the end.
+                 */
+                profile?: Array<[
+                    number | string,
+                    number | string
+                ]>;
+                /**
+                 * Metres above references.base, added to that reference's own offset; defaults to zero.
+                 */
+                elevation?: number | string;
+                work_plane?: {
+                    origin: [
+                        number,
+                        number,
+                        number
+                    ];
+                    xAxis: [
+                        number,
+                        number,
+                        number
+                    ];
+                    yAxis: [
+                        number,
+                        number,
+                        number
+                    ];
+                    normal: [
+                        number,
+                        number,
+                        number
+                    ];
+                };
+            };
+            name?: string | null;
+            label?: string | null;
+            note?: string | null;
+        } | {
+            producer?: 'curve';
+            references?: {
+                base?: {
+                    /**
+                     * The existing Level@1 entity_id, not its role.
+                     */
+                    level: string;
+                } | {
+                    datum: string;
+                    /**
+                     * A value in metres, or an explicit @parameter binding.
+                     */
+                    offset?: number | string;
+                } | {
+                    offset_from: {
+                        /**
+                         * The existing Level@1 entity_id, not its role.
+                         */
+                        level: string;
+                        /**
+                         * A value in metres, or an explicit @parameter binding.
+                         */
+                        offset: number | string;
+                    };
+                };
+            };
+            params?: {
+                /**
+                 * Ordered points in work_plane coordinates (XZ when omitted); no closing segment is added.
+                 */
+                profile?: Array<[
+                    number | string,
+                    number | string
+                ]>;
+                /**
+                 * A value in metres, or an explicit @parameter binding.
+                 */
+                elevation?: number | string;
+                work_plane?: {
+                    origin: [
+                        number,
+                        number,
+                        number
+                    ];
+                    xAxis: [
+                        number,
+                        number,
+                        number
+                    ];
+                    yAxis: [
+                        number,
+                        number,
+                        number
+                    ];
+                    normal: [
+                        number,
+                        number,
+                        number
+                    ];
+                };
+            };
+            name?: string | null;
+            label?: string | null;
+            note?: string | null;
+        } | {
+            producer?: 'loft';
+            references?: {
+                base?: {
+                    /**
+                     * The existing Level@1 entity_id, not its role.
+                     */
+                    level: string;
+                } | {
+                    datum: string;
+                };
+            };
+            params?: {
+                /**
+                 * Ordered sections of [X, Y-up, Z] points relative to the base datum; coordinates may bind @parameters.
+                 */
+                profiles?: Array<Array<[
+                    number | string,
+                    number | string,
+                    number | string
+                ]>>;
+                /**
+                 * The same number of vertices in every section; do not repeat the first vertex.
+                 */
+                profile_size?: number;
+                /**
+                 * straight (default) connects sections with ruled faces; normal interpolates between the sections.
+                 */
+                loft_type?: 'straight' | 'normal';
+                /**
+                 * Polyline sections (default); interpolated section curves are not exposed by this authoring path.
+                 */
+                profile_basis?: 'polyline';
+                /**
+                 * True (default) caps both ends into one solid; false leaves both end sections open as a surface.
+                 */
+                cap_ends?: boolean;
+                closed_profile?: true;
+            };
+            name?: string | null;
+            label?: string | null;
+            note?: string | null;
+        } | {
             producer?: 'wall';
             references?: {
                 base?: {
@@ -9473,295 +9830,6 @@ export type SemanticEditRequestDto = {
                     type_id?: string;
                     interface_ref?: string;
                 }>;
-            };
-            name?: string | null;
-            label?: string | null;
-            note?: string | null;
-        } | {
-            producer?: 'prism';
-            references?: {
-                base?: {
-                    /**
-                     * The existing Level@1 entity_id, not its role.
-                     */
-                    level: string;
-                } | {
-                    datum: string;
-                    /**
-                     * A value in metres, or an explicit @parameter binding.
-                     */
-                    offset?: number | string;
-                } | {
-                    offset_from: {
-                        /**
-                         * The existing Level@1 entity_id, not its role.
-                         */
-                        level: string;
-                        /**
-                         * A value in metres, or an explicit @parameter binding.
-                         */
-                        offset: number | string;
-                    };
-                } | {
-                    /**
-                     * A value in metres, or an explicit @parameter binding.
-                     */
-                    elevation: number | string;
-                };
-                top?: {
-                    /**
-                     * The existing Level@1 entity_id, not its role.
-                     */
-                    level: string;
-                } | {
-                    datum: string;
-                    /**
-                     * A value in metres, or an explicit @parameter binding.
-                     */
-                    offset?: number | string;
-                } | {
-                    offset_from: {
-                        /**
-                         * The existing Level@1 entity_id, not its role.
-                         */
-                        level: string;
-                        /**
-                         * A value in metres, or an explicit @parameter binding.
-                         */
-                        offset: number | string;
-                    };
-                };
-            };
-            params?: {
-                /**
-                 * The closed plan profile in order; the first point is not repeated. Coordinates may bind @parameters.
-                 */
-                profile?: Array<[
-                    number | string,
-                    number | string
-                ]>;
-                /**
-                 * How far the profile is pulled; optional when references.top determines it.
-                 */
-                height?: number | string;
-                /**
-                 * Metres above references.base, added to that reference's own offset; defaults to zero. It moves the whole prism and leaves the height alone.
-                 */
-                elevation?: number | string;
-                /**
-                 * Optional orthonormal drawing frame relative to references.base. Profile pairs follow xAxis/yAxis; height follows normal. Omit for the retained XZ/+Y convention.
-                 */
-                work_plane?: {
-                    origin: [
-                        number,
-                        number,
-                        number
-                    ];
-                    xAxis: [
-                        number,
-                        number,
-                        number
-                    ];
-                    yAxis: [
-                        number,
-                        number,
-                        number
-                    ];
-                    normal: [
-                        number,
-                        number,
-                        number
-                    ];
-                };
-                /**
-                 * Openings through an axis-aligned rectangular profile.
-                 */
-                rectangular_cutouts?: Array<{
-                    cutout_id: string;
-                    span0: number;
-                    span1: number;
-                    bottom: number;
-                    top: number;
-                }>;
-            };
-            name?: string | null;
-            label?: string | null;
-            note?: string | null;
-        } | {
-            producer?: 'loft';
-            references?: {
-                base?: {
-                    /**
-                     * The existing Level@1 entity_id, not its role.
-                     */
-                    level: string;
-                } | {
-                    datum: string;
-                };
-            };
-            params?: {
-                /**
-                 * Ordered sections of [X, Y-up, Z] points relative to the base datum; coordinates may bind @parameters.
-                 */
-                profiles?: Array<Array<[
-                    number | string,
-                    number | string,
-                    number | string
-                ]>>;
-                /**
-                 * The same number of vertices in every section; do not repeat the first vertex.
-                 */
-                profile_size?: number;
-                /**
-                 * straight (default) connects sections with ruled faces; normal interpolates between the sections.
-                 */
-                loft_type?: 'straight' | 'normal';
-                /**
-                 * Polyline sections (default); interpolated section curves are not exposed by this authoring path.
-                 */
-                profile_basis?: 'polyline';
-                /**
-                 * True (default) caps both ends into one solid; false leaves both end sections open as a surface.
-                 */
-                cap_ends?: boolean;
-                closed_profile?: true;
-            };
-            name?: string | null;
-            label?: string | null;
-            note?: string | null;
-        } | {
-            producer?: 'planar-surface';
-            references?: {
-                base?: {
-                    /**
-                     * The existing Level@1 entity_id, not its role.
-                     */
-                    level: string;
-                } | {
-                    datum: string;
-                    /**
-                     * A value in metres, or an explicit @parameter binding.
-                     */
-                    offset?: number | string;
-                } | {
-                    offset_from: {
-                        /**
-                         * The existing Level@1 entity_id, not its role.
-                         */
-                        level: string;
-                        /**
-                         * A value in metres, or an explicit @parameter binding.
-                         */
-                        offset: number | string;
-                    };
-                } | {
-                    datum: string;
-                } | {
-                    /**
-                     * A value in metres, or an explicit @parameter binding.
-                     */
-                    elevation: number | string;
-                };
-            };
-            params?: {
-                /**
-                 * One simple boundary in work_plane coordinates (XZ when omitted), repeating its first vertex at the end.
-                 */
-                profile?: Array<[
-                    number | string,
-                    number | string
-                ]>;
-                /**
-                 * Metres above references.base, added to that reference's own offset; defaults to zero.
-                 */
-                elevation?: number | string;
-                work_plane?: {
-                    origin: [
-                        number,
-                        number,
-                        number
-                    ];
-                    xAxis: [
-                        number,
-                        number,
-                        number
-                    ];
-                    yAxis: [
-                        number,
-                        number,
-                        number
-                    ];
-                    normal: [
-                        number,
-                        number,
-                        number
-                    ];
-                };
-            };
-            name?: string | null;
-            label?: string | null;
-            note?: string | null;
-        } | {
-            producer?: 'curve';
-            references?: {
-                base?: {
-                    /**
-                     * The existing Level@1 entity_id, not its role.
-                     */
-                    level: string;
-                } | {
-                    datum: string;
-                    /**
-                     * A value in metres, or an explicit @parameter binding.
-                     */
-                    offset?: number | string;
-                } | {
-                    offset_from: {
-                        /**
-                         * The existing Level@1 entity_id, not its role.
-                         */
-                        level: string;
-                        /**
-                         * A value in metres, or an explicit @parameter binding.
-                         */
-                        offset: number | string;
-                    };
-                };
-            };
-            params?: {
-                /**
-                 * Ordered points in work_plane coordinates (XZ when omitted); no closing segment is added.
-                 */
-                profile?: Array<[
-                    number | string,
-                    number | string
-                ]>;
-                /**
-                 * A value in metres, or an explicit @parameter binding.
-                 */
-                elevation?: number | string;
-                work_plane?: {
-                    origin: [
-                        number,
-                        number,
-                        number
-                    ];
-                    xAxis: [
-                        number,
-                        number,
-                        number
-                    ];
-                    yAxis: [
-                        number,
-                        number,
-                        number
-                    ];
-                    normal: [
-                        number,
-                        number,
-                        number
-                    ];
-                };
             };
             name?: string | null;
             label?: string | null;
@@ -9983,7 +10051,7 @@ export type SketchActionDto = {
     /**
      * Semantickind
      *
-     * what a new component is, in the record's own vocabulary; required only when componentId is new here
+     * optional: what a new component is, as a registered alias, when the architect has said so. Omit it for geometry whose meaning is not established; the component is created without semantics and can be enriched later under the same componentId
      */
     semanticKind?: string | null;
     /**
@@ -10138,7 +10206,7 @@ export type SketchPrismRequestDto = {
     /**
      * Semantickind
      *
-     * what a new component is, in the record's own vocabulary; required only when componentId is new here
+     * optional: what a new component is, as a registered alias, when the architect has said so. Omit it for geometry whose meaning is not established; the component is created without semantics and can be enriched later under the same componentId
      */
     semanticKind?: string | null;
     /**
@@ -17196,3 +17264,145 @@ export type ReadWorkingSourceApiWorkingSourceGetResponses = {
 };
 
 export type ReadWorkingSourceApiWorkingSourceGetResponse = ReadWorkingSourceApiWorkingSourceGetResponses[keyof ReadWorkingSourceApiWorkingSourceGetResponses];
+
+export type RequestProjectionApiProjectionsGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query: {
+        /**
+         * Runid
+         */
+        runId: string;
+        /**
+         * Statedigest
+         */
+        stateDigest: string;
+        /**
+         * Assetsha256
+         */
+        assetSha256: string;
+        /**
+         * Kind
+         */
+        kind?: string;
+        /**
+         * View
+         */
+        view?: string | null;
+        /**
+         * Size
+         */
+        size?: number | null;
+        /**
+         * Style
+         */
+        style?: string | null;
+    };
+    url: '/api/projections';
+};
+
+export type RequestProjectionApiProjectionsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RequestProjectionApiProjectionsGetError = RequestProjectionApiProjectionsGetErrors[keyof RequestProjectionApiProjectionsGetErrors];
+
+export type RequestProjectionApiProjectionsGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: ProjectionStatusDto;
+};
+
+export type RequestProjectionApiProjectionsGetResponse = RequestProjectionApiProjectionsGetResponses[keyof RequestProjectionApiProjectionsGetResponses];
+
+export type ReadProjectionBlobApiProjectionsBlobsSha256GetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path: {
+        /**
+         * Sha256
+         */
+        sha256: string;
+    };
+    query?: never;
+    url: '/api/projections/blobs/{sha256}';
+};
+
+export type ReadProjectionBlobApiProjectionsBlobsSha256GetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadProjectionBlobApiProjectionsBlobsSha256GetError = ReadProjectionBlobApiProjectionsBlobsSha256GetErrors[keyof ReadProjectionBlobApiProjectionsBlobsSha256GetErrors];
+
+export type ReadProjectionBlobApiProjectionsBlobsSha256GetResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
+export type ReadProjectionApiProjectionsKeyGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path: {
+        /**
+         * Key
+         */
+        key: string;
+    };
+    query?: never;
+    url: '/api/projections/{key}';
+};
+
+export type ReadProjectionApiProjectionsKeyGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadProjectionApiProjectionsKeyGetError = ReadProjectionApiProjectionsKeyGetErrors[keyof ReadProjectionApiProjectionsKeyGetErrors];
+
+export type ReadProjectionApiProjectionsKeyGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: ProjectionStatusDto;
+};
+
+export type ReadProjectionApiProjectionsKeyGetResponse = ReadProjectionApiProjectionsKeyGetResponses[keyof ReadProjectionApiProjectionsKeyGetResponses];

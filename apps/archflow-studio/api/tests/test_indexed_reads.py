@@ -59,7 +59,8 @@ class IndexedReadTests(DesignHistoryFixture):
         super().setUp()
         cache = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, cache, True)
-        self.index_dir = cache / "projects" / "runtime-test"
+        self.cache_dir = cache / "projects" / "runtime-test"
+        self.index_dir = self.cache_dir / "index"
         self.project_dir = self.root / PROJECT_ID
         retain_rhino_receipt(self.repository, self.repository.load_run(REFERENCE_RUN_ID),
                              stage_id="index-stage", file_name="model.3dm", payload_bytes=MODEL_BYTES)
@@ -68,7 +69,7 @@ class IndexedReadTests(DesignHistoryFixture):
         self.addCleanup(self.indexed.close)
 
     def app_with_index(self):
-        return create_app(StudioSettings(project_dir=self.project_dir, cad_export="off", index_dir=self.index_dir))
+        return create_app(StudioSettings(project_dir=self.project_dir, cad_export="off", cache_dir=self.cache_dir))
 
     def binding(self, app=None):
         binding = bound_project((app or self.indexed_app).state)
@@ -352,9 +353,9 @@ class IndexedReadTests(DesignHistoryFixture):
 
     def test_the_index_is_never_kept_inside_the_project(self) -> None:
         with self.assertRaises(SettingsError):
-            StudioSettings(project_dir=self.project_dir, index_dir=self.project_dir / "cache")
+            StudioSettings(project_dir=self.project_dir, cache_dir=self.project_dir / "cache")
         with self.assertRaises(SettingsError):
-            StudioSettings(project_dir=self.project_dir, index_dir=Path("relative"))
+            StudioSettings(project_dir=self.project_dir, cache_dir=Path("relative"))
 
     def test_an_unchanged_indexed_read_under_a_slow_disk_never_touches_the_project(self) -> None:
         binding = self.binding()

@@ -8,6 +8,7 @@ write to, a project nobody chose.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import hashlib
 from ipaddress import ip_address
 import os
 import math
@@ -39,9 +40,9 @@ BIND_ENV = "ARCHFLOW_STUDIO_BIND"
 TOKEN_ENV = "ARCHFLOW_STUDIO_TOKEN"
 ORIGINS_ENV = "ARCHFLOW_STUDIO_ORIGINS"
 MONITOR_DIR_ENV = "MONKEYMONITOR_DATA_DIR"
-# Where this process keeps the project's derived index (ADR-008 phase 1b):
-# the Hub names ``<cache>/projects/<runtime_id>``. Unset, no index is kept.
-INDEX_DIR_ENV = "ARCHFLOW_STUDIO_INDEX_DIR"
+# This project's directory in the Hub cache (<runtime root>/cache/projects/<runtime id>):
+# derived stores that can be deleted and rebuilt, never inside the project (ADR-008).
+CACHE_DIR_ENV = "ARCHFLOW_STUDIO_CACHE_DIR"
 RENDER_PROVIDER_ENV = "ARCHFLOW_STUDIO_RENDER_PROVIDER"
 RENDER_MODEL_ENV = "ARCHFLOW_STUDIO_RENDER_MODEL"
 RENDER_API_KEY_ENV = "ARCHFLOW_STUDIO_RENDER_API_KEY"
@@ -133,9 +134,9 @@ class StudioSettings:
     origins: tuple[str, ...] = ()
     # Optional engineering telemetry, outside the P036 project document.
     monitor_dir: Path | None = None
-    # The derived project index's cache directory, never inside the project;
-    # None keeps no index and every reader reads the project itself.
-    index_dir: Path | None = None
+    # The project's Hub cache directory. Unset (a runtime started by hand) uses
+    # a directory under the system temp root named by the project folder.
+    cache_dir: Path | None = None
     # How much of the project a sentence may be compiled against, in tokens.
     intent_context_budget_tokens: int = 16000
     # Process assembly, not a project authority field. Actor credentials belong
@@ -158,11 +159,11 @@ class StudioSettings:
         settings directly all pass through this one constructor.
         """
 
-        if self.index_dir is not None and (
-            not self.index_dir.is_absolute()
-            or self.index_dir.resolve(strict=False).is_relative_to(Path(self.project_dir).resolve(strict=False))
+        if self.cache_dir is not None and (
+            not self.cache_dir.is_absolute()
+            or self.cache_dir.resolve(strict=False).is_relative_to(Path(self.project_dir).resolve(strict=False))
         ):
-            raise SettingsError(f"{INDEX_DIR_ENV} must be an absolute directory outside the project.")
+            raise SettingsError(f"{CACHE_DIR_ENV} must be an absolute directory outside the project.")
         if self.render_provider not in ("off", "gemini"):
             raise SettingsError(f"{RENDER_PROVIDER_ENV} must be off or gemini.")
         if not math.isfinite(self.render_timeout_s) or not 1 <= self.render_timeout_s <= 300:
@@ -226,6 +227,25 @@ class StudioSettings:
                 "separated list of the origins a browser client is served "
                 "from. A remote API never guesses which sites may call it."
             )
+
+    @property
+    def project_cache_dir(self) -> Path:
+        """Where this project's derived stores live: the Hub's choice, else the temp root."""
+
+        if self.cache_dir is not None:
+            return self.cache_dir
+        folder = hashlib.sha256(str(self.project_dir.resolve()).encode("utf-8")).hexdigest()[:32]
+        return Path(tempfile.gettempdir()) / "archflow-studio-cache" / "projects" / folder
+
+    @property
+    def project_index_dir(self) -> Path | None:
+        """The derived project index (ADR-008 phase 1b): ``index`` in the Hub's cache directory.
+
+        Kept only when the Hub named that directory; a runtime started by hand
+        keeps no index and every reader reads the project itself.
+        """
+
+        return None if self.cache_dir is None else self.cache_dir / "index"
 
     @property
     def exports(self) -> bool:
@@ -315,7 +335,7 @@ class StudioSettings:
             sync_token=os.environ.get(SYNC_TOKEN_ENV, "").strip() or None,
             sync_project_id=os.environ.get(SYNC_PROJECT_ID_ENV, "").strip() or None,
             monitor_dir=Path(os.environ[MONITOR_DIR_ENV]) if os.environ.get(MONITOR_DIR_ENV, "").strip() else None,
-            index_dir=Path(os.environ[INDEX_DIR_ENV].strip()) if os.environ.get(INDEX_DIR_ENV, "").strip() else None,
+            cache_dir=Path(os.environ[CACHE_DIR_ENV]) if os.environ.get(CACHE_DIR_ENV, "").strip() else None,
             origins=tuple(
                 origin
                 for origin in (

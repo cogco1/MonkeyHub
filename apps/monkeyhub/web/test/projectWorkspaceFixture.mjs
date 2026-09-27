@@ -13,6 +13,11 @@ export async function createProjectWorkspaceFixture(runtimes, sessions) {
   // #285: projects whose runtime has a Design Tree, by project id: { stages, edits }, the
   // runs accepted as S0, S1, … in order, and the runs Current made after the last one.
   const designTrees = new Map();
+  // #363: the views a runtime answers conditionally, each tagged by the project's whole retained
+  // state, the path and the query, as transport/conditional.py tags them by the project's read token.
+  const conditional = new Set(["/api/design-history", "/api/worktrees", "/api/artifacts", "/api/documents",
+    "/api/working-source", "/api/board", "/api/render/jobs"]);
+  const notModified = [];
   const digest = (value) => createHash("sha256").update(value).digest("hex");
   const stateDigestOf = (projectId, runId) => digest(`state:${projectId}:${runId}`);
   const workingDraftDto = (projectId) => {
@@ -44,6 +49,13 @@ export async function createProjectWorkspaceFixture(runtimes, sessions) {
       publication: { projectId: id, revisionSha256: null, title: `Layout ${id}`, spec: { width: 1280, height: 720, template: "hero" }, pages: [], sources: [] } };
     projects.set(id, value); return value;
   }
+  // Everything a conditional view of this fixture is derived from.
+  const projectToken = (current) => {
+    const id = current.runtime.projectId;
+    // Model rows are made on first listing from the Stages and chat results named here, so they are not listed again.
+    return JSON.stringify([designTrees.get(id) ?? null, workingDrafts.get(id) ? workingDraftDto(id) : null, current.board, current.publication,
+      sessions.filter((row) => row.projectId === id).map((row) => row.messages.map((message) => message.candidateId ?? null))]);
+  };
   async function handle(route, url) {
     const match = url.pathname.match(/^\/api\/runtime\/projects\/([^/]+)\/studio(\/.*)$/);
     if (!match) return false;
@@ -54,7 +66,15 @@ export async function createProjectWorkspaceFixture(runtimes, sessions) {
     requests.push({ runtimeId: runtime.runtimeId, projectId, name, method, body, query: Object.fromEntries(url.searchParams) });
     if (body?.projectId) assert.equal(body.projectId, projectId, "workspace writes stay bound to their own project");
     if (method !== "GET" && method !== "HEAD") assert.match(route.request().headers()["idempotency-key"] ?? "", /^[0-9a-f-]{36}$/i, "workspace writes carry their own idempotency key");
-    const json = async (value) => { await route.fulfill({ json: value }); return true; };
+    const json = async (value) => {
+      if (method !== "GET" || !conditional.has(name)) { await route.fulfill({ json: value }); return true; }
+      const tag = `"${digest(JSON.stringify([projectToken(current), name, [...url.searchParams].sort()]))}"`;
+      if (route.request().headers()["if-none-match"] === tag) {
+        notModified.push({ projectId, name });
+        await route.fulfill({ status: 304, headers: { etag: tag, "cache-control": "no-cache" } }); return true;
+      }
+      await route.fulfill({ json: value, headers: { etag: tag, "cache-control": "no-cache" } }); return true;
+    };
     if (method === "GET") {
       if (name === "/api/protocol") return json({ protocol: "archflow/2", server: "fixture", serverVersion: "test", mode: "local",
         capabilities: [...(workingDrafts.has(projectId) ? ["working-draft"] : []), ...(designTrees.has(projectId) ? ["design-history", "working-source"] : [])] });
@@ -165,5 +185,5 @@ export async function createProjectWorkspaceFixture(runtimes, sessions) {
     }
     throw new Error(`Unexpected project request: ${method} ${projectId} ${name}`);
   }
-  return { handle, requests, projects, workingDrafts, designTrees, stateDigestOf };
+  return { handle, requests, notModified, projects, workingDrafts, designTrees, stateDigestOf };
 }

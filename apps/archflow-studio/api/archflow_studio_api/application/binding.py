@@ -1050,7 +1050,7 @@ def bound_project(state: State) -> ProjectBinding:
         binding = getattr(state, "binding", None)
         if binding is None:
             binding = ProjectBinding.open(state.settings)
-            index_dir = getattr(state.settings, "index_dir", None)
+            index_dir = getattr(state.settings, "project_index_dir", None)
             if index_dir is not None:
                 # Imported here: the projector reads through the artifacts
                 # module, which itself reads through this one.
