@@ -2159,12 +2159,21 @@ try {
   await diagnostics.uncheck();
   const englishStageLabel = await visibleWorkspace().locator(".stage").getAttribute("aria-label");
   await settingsPage("Display");
-  await page.locator("#theme").selectOption("dark");
+  await page.locator("#theme").selectOption("dark"); await settingsSaved();
+  // GH-381: a choice made while the previous one is still being saved is saved
+  // after it, even when it equals what was saved before that.
+  let releaseChinese; settingsWriteGate = new Promise((resolve) => { releaseChinese = resolve; });
+  const chineseWrite = page.waitForRequest((req) => req.method() === "PUT" && new URL(req.url()).pathname === "/api/settings/user");
   await page.locator("#language").selectOption("zh-CN");
+  await chineseWrite;
   assert.equal(await page.locator("html").getAttribute("lang"), "zh-CN");
   assert.notEqual(await visibleWorkspace().locator(".stage").getAttribute("aria-label"), englishStageLabel, "workspace language follows Hub context");
   assert.equal(await page.locator("html").getAttribute("data-theme"), "dark");
   await page.locator("#language").selectOption("en");
+  settingsWriteGate = null; releaseChinese();
+  await page.waitForFunction(() => document.querySelector("#settings-save-state")?.dataset.state !== "saving");
+  assert.equal(await page.locator("#settings-save-state").getAttribute("data-state"), "saved");
+  assert.equal(preferences.language, "en", "the last language chosen is the one the Hub keeps");
   await page.getByRole("dialog").getByRole("button", { name: "Close", exact: true }).click();
   await page.screenshot({ path: path.join(temporary, "dark.png"), fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 });
