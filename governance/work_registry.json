@@ -1,4 +1,22 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": []
+  "items": [
+    {
+      "id": "GH-384",
+      "status": "active",
+      "branch": "codex/384-flaky-uia-owned-window",
+      "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-384-flaky-uia-owned-window",
+      "base_ref": "75b581e4",
+      "contributor": "Claude (cloud session)",
+      "reviewer": null,
+      "handoff": null,
+      "modules": [
+        "hub.shell"
+      ],
+      "write_scope": [
+        "apps/monkeyhub/desktop/tests/test_runtime.py"
+      ],
+      "depends_on": []
+    }
+  ]
 }
