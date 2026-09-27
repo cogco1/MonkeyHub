@@ -850,6 +850,19 @@ $pattern.Current.Value | ConvertTo-Json -Compress
         self.native.track(shell.pid)
         return shell
 
+    def without_project(self, *runtimes):
+        """Settings that name no project, so no Hub starts project workers: a drain that waits
+        for a worker still starting on a loaded runner is not what these tests are about."""
+        from archflow_studio_api.settings import save_application_settings
+        from archflow_studio_api.transport.settings import ApplicationSettingsDto
+
+        for runtime in (self.runtime, *runtimes):
+            studio_port, monitor_port = free_ports(2)
+            save_application_settings(runtime, ApplicationSettingsDto(
+                cadExport="off", studioPort=studio_port, monitorPort=monitor_port,
+            ))
+        self.saved_settings = (self.runtime / "config/applications.json").read_bytes()
+
     def untouched_by_the_refused_launch(self, logs):
         self.assertEqual(set(self.runtime.glob("logs/desktop-*.log")), logs, "A refused launch opened a log")
         self.assertEqual(len(START.findall(self.log_text())), 1)
@@ -861,6 +874,7 @@ $pattern.Current.Value | ConvertTo-Json -Compress
     def test_repeated_launch_on_the_same_root_brings_the_open_window_forward(self):
         """A second launch on this runtime root opens no window and starts no Hub. It restores
         the open window, brings it to the front and says so; closing the notice ends it with 0."""
+        self.without_project()
         self.launch()
         self.ready()
         [(main, _)] = self.native.windows(self.shell.pid)
@@ -909,6 +923,7 @@ $pattern.Current.Value | ConvertTo-Json -Compress
         """The update helper starts a trial only after the previous desktop has exited. A trial
         that still finds its root in use fails after a short wait, with no notice and no
         activation, so the helper rolls back instead of waiting on a dialog."""
+        self.without_project()
         self.launch()
         self.ready()
         [(main, _)] = self.native.windows(self.shell.pid)
@@ -935,31 +950,30 @@ $pattern.Current.Value | ConvertTo-Json -Compress
     def test_an_explicit_other_runtime_root_runs_side_by_side(self):
         """The lock belongs to one runtime root: an explicit other root opens its own window
         and Hub next to the first, and both close normally."""
-        from archflow_studio_api.settings import save_application_settings
-        from archflow_studio_api.transport.settings import ApplicationSettingsDto
-
+        other = self.root / "other runtime"
+        self.without_project(other)
         self.launch()
         self.ready()
         first, first_hub, first_url = self.shell, self.hub_pid, self.url
         first_pids, first_ports = self.pids, self.ports
-        other = self.root / "other runtime"
-        studio_port, monitor_port = free_ports(2)
-        save_application_settings(other, ApplicationSettingsDto(
-            cadExport="off", studioPort=studio_port, monitorPort=monitor_port,
-        ))
-        self.shell = self.start(runtime=other)
-        self.log = wait_for(lambda: next(iter(other.glob("logs/desktop-*.log")), None),
-                            lambda: f"No desktop log for the other root; EXE exit={self.shell.poll()}")
-        self.ready()
-        self.assertNotEqual(self.hub_pid, first_hub)
-        self.assertEqual(request(first_url + "api/health")["processId"], first_hub)
-        for shell in (first, self.shell):
-            self.assertIsNone(self.native.notice(shell.pid))
-            self.assertEqual(len(self.native.windows(shell.pid)), 1)
-        for shell in (first, self.shell):
-            self.native.close_window(shell.pid)
-        for shell in (first, self.shell):
-            self.assertEqual(shell.wait(timeout=40), 0)
+        try:
+            self.shell = self.start(runtime=other)
+            self.log = wait_for(lambda: next(iter(other.glob("logs/desktop-*.log")), None),
+                                lambda: f"No desktop log for the other root; EXE exit={self.shell.poll()}")
+            self.ready()
+            self.assertNotEqual(self.hub_pid, first_hub)
+            self.assertEqual(request(first_url + "api/health")["processId"], first_hub)
+            for shell in (first, self.shell):
+                self.assertIsNone(self.native.notice(shell.pid))
+                self.assertEqual(len(self.native.windows(shell.pid)), 1)
+            for shell in (self.shell, first):
+                self.native.close_window(shell.pid)
+                self.assertEqual(shell.wait(timeout=40), 0)
+        except BaseException:
+            for path in sorted(other.glob("logs/*.log")):
+                print(f"\n{self.id()} — other root {path.name}\n"
+                      f"{path.read_text(encoding='utf-8', errors='replace')[-12000:]}", file=sys.stderr)
+            raise
         self.pids, self.ports = self.pids | first_pids, self.ports | first_ports
         self.drained()
 
