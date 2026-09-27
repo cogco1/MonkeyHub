@@ -53,7 +53,8 @@
             "tests/test_project_index.py",
             "tests/test_project_watch.py",
             "tools/projection_check.py",
-            "apps/monkeyhub/web/workspaces/src/api/generated/"
+            "apps/monkeyhub/web/workspaces/src/api/generated/",
+            "apps/archflow-studio/api/archflow_studio_api/application/synchronization.py"
           ],
           "depends_on": []
         }
