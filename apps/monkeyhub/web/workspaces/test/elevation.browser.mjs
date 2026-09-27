@@ -60,7 +60,7 @@ try {
     else vite.middlewares(request,response);
   });
   await new Promise(resolve=>http.listen(0,"127.0.0.1",resolve));
-  browser=await chromium.launch({headless:true,...(process.env.CHROMIUM_EXECUTABLE?{executablePath:process.env.CHROMIUM_EXECUTABLE}:{}),args:["--enable-unsafe-swiftshader","--no-sandbox"]});
+  browser=await chromium.launch({headless:true,...(process.env.CHROMIUM_EXECUTABLE?{executablePath:process.env.CHROMIUM_EXECUTABLE}:{channel:"chrome"}),args:["--enable-unsafe-swiftshader","--no-sandbox"]});
   page=await browser.newPage({viewport:{width:1280,height:850},locale:"en-US"});
   page.on("pageerror",error=>errors.push(error.message));page.setDefaultTimeout(12000);
   await page.goto(`http://127.0.0.1:${http.address().port}/elevation-test?lang=en`);
@@ -72,15 +72,23 @@ try {
   const set=async(name,value)=>{await field(name).fill(String(value));await field(name).press("Enter");};
   const state=()=>page.evaluate(()=>window.snapshot());
   const object=(snapshot,id)=>snapshot.objects.find(row=>row.id===id);
+  // window.select is not a DOM event, so React renders it on a later task; on a busy page (CI's software
+  // WebGL) the next fill could land in the previous mass's fields (#355). Wait until the panel is the chosen
+  // mass's: its fields hold that mass's elevations and it offers every mass but itself as a reference.
+  const choose=async id=>{await page.evaluate(id=>window.select(id),id);
+    await page.waitForFunction(id=>{const panel=document.querySelector(".elevation-panel"),facts=window.snapshot().objects.find(row=>row.id===id).elevation;
+      return !!panel&&!panel.querySelector(`option[value="element-top:${id}"]`)&&[["Base Z","base"],["Top Z","top"],["Height","height"]]
+        .every(([name,key])=>Number(panel.querySelector(`input[aria-label="${name}"]`)?.value)===Number(facts[key].toFixed(6)));},id)
+      .catch(error=>{throw new Error(`the elevation panel never showed ${id}: ${error.message}`);});};
   await page.getByLabel("Base reference",{exact:true}).selectOption("element-top:lower");
   assert.equal(object(await state(),"upper").spec.base,3);
-  await page.evaluate(()=>window.select("lower"));await set("Height",4.5);
+  await choose("lower");await set("Height",4.5);
   assert.equal(object(await state(),"upper").spec.base,4.5);
   assert.equal(object(await state(),"free").spec.base,5);
   await page.locator(".elevation-panel strong").click();await page.keyboard.press("Control+z");
   assert.equal(object(await state(),"lower").spec.height,3);
   await page.keyboard.press("Control+Shift+z");assert.equal(object(await state(),"lower").spec.height,4.5);
-  await page.evaluate(()=>window.select("upper"));await set("Base Z",5.5);
+  await choose("upper");await set("Base Z",5.5);
   assert.equal(object(await state(),"upper").elevation.baseReference.offset,1);
   await page.getByText("Reference elevations",{exact:true}).click();
   await page.getByLabel("Datum name",{exact:true}).fill("Roof ref");await page.getByLabel("Datum elevation",{exact:true}).fill("12");
@@ -96,7 +104,7 @@ try {
   await field("Top Z").focus();
   assert.equal(await page.evaluate(()=>window.readRuntime().elevationGuide.children[0].geometry.getAttribute("position").getZ(0)),13.5);
   await page.getByLabel("Base reference",{exact:true}).selectOption("");
-  await page.evaluate(()=>window.select("lower"));await set("Height",6);
+  await choose("lower");await set("Height",6);
   assert.equal(object(await state(),"upper").spec.base,5.5,"detached mass remains free");
   // Both appearances and a narrow layout retain accessible, reachable controls.
   for(const theme of ["light","dark"]){

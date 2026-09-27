@@ -10,13 +10,18 @@ no client has to guess which run a number belongs to.
 
 from __future__ import annotations
 
+from collections import OrderedDict
 from dataclasses import dataclass
 from functools import wraps
 from pathlib import Path, PurePosixPath
-from typing import Any, Mapping
+import threading
+import time
+from typing import Any, Callable, Mapping, TypeVar
+from uuid import uuid4
 
 from starlette.datastructures import State
 
+from archflow.project.layout import LayoutFingerprint, layout_fingerprint
 from archflow.project.location import open_located_project
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import (
@@ -38,6 +43,7 @@ from archflow.project.refs import (
 from archflow.project.repository import (
     FilesystemProjectRepository,
     ProjectRepositoryError,
+    write_serial,
 )
 from archflow.state.stage_workflow import HARNESS_WORKFLOW_IDS
 from archflow.state.design_portfolio import DesignBranch, DesignStage
@@ -70,6 +76,40 @@ STAGE_ENVELOPE_KINDS = (
 # answer for it. It names no run on disk, and the projection says so.
 STUDIO_RUN_ID = "studio-projection"
 
+# One identity per process. Nothing a process remembers survives its restart,
+# so a restarted worker must not answer "not modified" to a tag it never gave.
+READ_EPOCH = uuid4().hex
+# How long a stable fingerprint answers for the project before it is taken
+# again. Another process's write is seen within this; this one's at once.
+FINGERPRINT_TTL_S = 1.0
+# Answers remembered per binding, least recently used first out.
+MEMO_ENTRIES = 128
+
+_T = TypeVar("_T")
+_MISSING = object()
+
+
+@dataclass(frozen=True, slots=True)
+class ReadToken:
+    """What every answer derived from the project's files is derived under.
+
+    Two answers computed under equal tokens read the same files. ``serial``
+    moves with this process's own writes, ``fingerprint`` with anyone's, and
+    ``stable`` says the fingerprint is old enough to be trusted to move.
+    """
+
+    epoch: str
+    serial: int
+    fingerprint: str
+    stable: bool
+
+
+@dataclass(frozen=True, slots=True)
+class _Fingerprinted:
+    taken_at: float
+    serial: int
+    fingerprint: LayoutFingerprint
+
 
 @dataclass(frozen=True, slots=True)
 class ReferenceRun:
@@ -100,7 +140,11 @@ def record_kind(ref: ProjectRecordRef) -> str | None:
 
 
 class ProjectBinding:
-    """One opened P036 project. Read-only: it never writes and never issues."""
+    """One opened P036 project. Read-only: it never writes and never issues.
+
+    It remembers answers only in memory, under a ``ReadToken`` that moves
+    whenever what they were read from can have moved.
+    """
 
     def __init__(
         self,
@@ -120,6 +164,101 @@ class ProjectBinding:
         # modification time, so a file that changed is hashed again rather than
         # remembered wrongly.
         self.file_sha256_cache: dict[tuple[str, int, int], str] = {}
+        # Read tokens and the answers kept under them (ADR-008 phase 0a).
+        # ``clock`` is monotonic seconds; a test replaces it to expire the
+        # fingerprint without waiting.
+        self.clock: Callable[[], float] = time.monotonic
+        self._fingerprint_lock = threading.Lock()
+        self._fingerprinted: _Fingerprinted | None = None
+        self._memo_lock = threading.Lock()
+        self._memo: OrderedDict[tuple[ReadToken, tuple], Any] = OrderedDict()
+        self._memo_token: ReadToken | None = None
+
+    def read_token(self) -> ReadToken:
+        """The token an answer read from the project's files now is derived under.
+
+        The fingerprint is taken again when it is more than ``FINGERPRINT_TTL_S``
+        old, when it was not stable, or when this process wrote since; so this
+        process's writes change the token at once, anyone else's within the TTL.
+        """
+
+        root = self.repository.layout.root
+        # Before the fingerprint: a write racing the scan then moves the
+        # serial past the one this fingerprint is filed under.
+        serial = write_serial(root)
+        with self._fingerprint_lock:
+            now = self.clock()
+            taken = self._fingerprinted
+            if (taken is None or taken.serial != serial or not taken.fingerprint.stable
+                    or not 0 <= now - taken.taken_at < FINGERPRINT_TTL_S):
+                taken = _Fingerprinted(now, serial, layout_fingerprint(root))
+                self._fingerprinted = taken
+        return ReadToken(READ_EPOCH, serial, taken.fingerprint.digest, taken.fingerprint.stable)
+
+    def memo(self, key: tuple, compute: Callable[[], _T]) -> _T:
+        """``compute()``, remembered under the current token while it is stable.
+
+        ``compute`` runs outside every lock, and must be a pure reading of the
+        project's files: its answer is handed back again, the same object, to
+        whoever asks under the same token.
+        """
+
+        if self._settling():
+            # The fingerprint taken within the TTL was not stable: nothing read
+            # now would be kept, so it is not taken again for every call of a
+            # loop - at most once per TTL, like a stable one.
+            return compute()
+        token = self.read_token()
+        if not token.stable:
+            return compute()
+        found = self.memo_get(token, key, _MISSING)
+        if found is not _MISSING:
+            return found
+        value = compute()
+        self.memo_put(token, key, value)
+        return value
+
+    def memo_get(self, token: ReadToken, key: tuple, default: Any = None) -> Any:
+        """What ``memo_put`` kept under exactly this token and key, else ``default``."""
+
+        entry = (token, key)
+        with self._memo_lock:
+            if entry not in self._memo:
+                return default
+            self._memo.move_to_end(entry)
+            return self._memo[entry]
+
+    def memo_put(self, token: ReadToken, key: tuple, value: Any) -> None:
+        """Keep ``value`` under a stable token; an unstable one keeps nothing."""
+
+        if not token.stable:
+            return
+        entry = (token, key)
+        with self._memo_lock:
+            if token != self._memo_token:
+                # A token never comes back once the project moved on, so what
+                # was kept under another one is dropped rather than left to age
+                # out: a kept answer can be a whole design history.
+                self._memo.clear()
+                self._memo_token = token
+            self._memo[entry] = value
+            self._memo.move_to_end(entry)
+            while len(self._memo) > MEMO_ENTRIES:
+                self._memo.popitem(last=False)
+
+    def _settling(self) -> bool:
+        """Whether the fingerprint taken within the TTL was not yet stable.
+
+        Skipping the memo is never wrong, only slower: this may pass up a hit
+        for less than one TTL after the project settles.
+        """
+
+        taken = self._fingerprinted
+        return (
+            taken is not None
+            and not taken.fingerprint.stable
+            and 0 <= self.clock() - taken.taken_at < FINGERPRINT_TTL_S
+        )
 
     @classmethod
     def open(cls, settings: StudioSettings) -> ProjectBinding:

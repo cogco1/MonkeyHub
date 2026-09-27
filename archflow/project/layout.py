@@ -1,9 +1,16 @@
-"""Pure project path mapping with no directory creation or file writes."""
+"""Pure project path mapping with no directory creation or file writes.
+
+``layout_fingerprint`` is the one reader here: it states the project's shape
+from directory metadata alone, and it too creates, opens and writes nothing.
+"""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+import hashlib
+import os
 from pathlib import Path, PurePosixPath
+import time
 
 from archflow.project.refs import (
     ProjectArtifactRef,
@@ -160,3 +167,108 @@ class ProjectLayout:
         if ref.project_id != self.project_id:
             raise ValueError("reference belongs to another project")
         return self.resolve_relative(ref.relative_path)
+
+
+# The mutable pointer documents a project keeps at fixed names, the ones
+# ``ProjectLayout`` calls manifest, head, design_branches and working_draft.
+# Replacing one in place moves nothing in a directory listing, so the
+# fingerprint states their size and time itself.
+FINGERPRINT_POINTER_FILES = (
+    "project.json",
+    "HEAD",
+    "design/branches.json",
+    "design/working.json",
+)
+# Git's racy rule: a timestamp this close to the scan may be shared by a write
+# the scan did not see, because file-system clocks tick coarser than writes.
+FINGERPRINT_SETTLED_NS = 2_000_000_000
+
+
+@dataclass(frozen=True, slots=True)
+class LayoutFingerprint:
+    """What a project's directories and pointer files looked like at one scan.
+
+    ``digest`` changes when a directory appears, disappears or gains, loses
+    or renames an entry, and when a pointer file is replaced. ``stable`` is
+    true only when the newest time it saw is more than two seconds older than
+    the scan: before then an equal digest is not evidence of no change.
+    ``scanned_at_ns`` is wall-clock time taken when the scan began.
+    """
+
+    digest: str
+    newest_mtime_ns: int
+    scanned_at_ns: int
+    stable: bool
+
+
+def layout_fingerprint(root: Path | str) -> LayoutFingerprint:
+    """Fingerprint a project from metadata only: no file is opened or read.
+
+    Every directory under ``root``, the root included, contributes its
+    relative path and ``st_mtime_ns``; each pointer file its size and
+    ``st_mtime_ns``, or that it is missing. The digest is sha256 over the
+    sorted lines. A directory's own ``stat`` is used, never the copy of its
+    times in its parent's listing: Windows updates that copy lazily. Anything
+    that cannot be read is named in a line and makes the result unstable.
+    """
+
+    base = os.fspath(root)
+    scanned_at_ns = time.time_ns()
+    lines: list[str] = []
+    newest = 0
+    unreadable = False
+    pending = [("", base)]
+    while pending:
+        relative, path = pending.pop()
+        name = relative or "."
+        try:
+            mtime = os.stat(path).st_mtime_ns
+        except FileNotFoundError:
+            if relative:
+                # Removed during the scan; its parent's time says so.
+                continue
+            lines.append("d . missing")
+            unreadable = True
+            continue
+        except OSError as exc:
+            lines.append(f"d {name} unreadable {exc.errno}")
+            unreadable = True
+            continue
+        lines.append(f"d {name} {mtime}")
+        newest = max(newest, mtime)
+        try:
+            with os.scandir(path) as entries:
+                for entry in entries:
+                    try:
+                        directory = entry.is_dir(follow_symlinks=False) and not entry.is_junction()
+                    except OSError:
+                        directory = False
+                    if directory:
+                        pending.append(
+                            (f"{relative}/{entry.name}" if relative else entry.name, entry.path)
+                        )
+        except FileNotFoundError:
+            continue
+        except OSError as exc:
+            lines.append(f"l {name} unreadable {exc.errno}")
+            unreadable = True
+    for relative in FINGERPRINT_POINTER_FILES:
+        try:
+            stat = os.stat(os.path.join(base, *relative.split("/")))
+        except FileNotFoundError:
+            lines.append(f"f {relative} missing")
+            continue
+        except OSError as exc:
+            lines.append(f"f {relative} unreadable {exc.errno}")
+            unreadable = True
+            continue
+        lines.append(f"f {relative} {stat.st_size} {stat.st_mtime_ns}")
+        newest = max(newest, stat.st_mtime_ns)
+    lines.sort()
+    digest = hashlib.sha256("\n".join(lines).encode("utf-8", "surrogateescape")).hexdigest()
+    return LayoutFingerprint(
+        digest=digest,
+        newest_mtime_ns=newest,
+        scanned_at_ns=scanned_at_ns,
+        stable=not unreadable and scanned_at_ns - newest > FINGERPRINT_SETTLED_NS,
+    )

@@ -1,7 +1,29 @@
 .drawing-workspace { height: 100%; min-height: 0; display: flex; flex-direction: column; color: var(--ink); background: var(--ground); container: drawing / inline-size; }
-.drawing-header { flex: none; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--line); background: var(--panel); }
-.drawing-header h1 { margin: 0; font-size: var(--text-heading); font-weight: 600; }
-.drawing-header p { margin: 4px 0 0; color: var(--muted); font-size: var(--text-caption); }
+/* #337: the drawing's menus are words in the project bar (a bar of their own without one); its save and source states
+   are quiet words at the bar's right end, the first to be cut short so the project's position keeps its room. */
+.drawing-workspace > .surface-bar { position: relative; }
+/* The drawing on screen, chosen in place: a name longer than the title's room ends in an ellipsis. */
+.drawing-chooser { text-overflow: ellipsis; }
+/* A quiet word's room fits every word it may say in turn (data-room, one per line), so saving, checking or updating
+   never changes how the bar's menus wrap; the word it says sits at the room's right, against the project's position. */
+.drawing-quiet { display: inline-grid; grid-template-columns: minmax(0, max-content); flex: 0 1000 auto; min-width: 0; overflow: hidden; }
+.drawing-quiet > span, .drawing-quiet[data-room]::after { grid-area: 1 / 1; min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.drawing-quiet > span { justify-self: end; }
+.drawing-quiet[data-room]::after { content: attr(data-room); height: 0; visibility: hidden; white-space: pre; }
+/* On a phone, as the status line's end, the quiet words give their room to the menus; what asks is in the row. */
+@media (max-width: 640px) { .drawing-quiet { display: none; } }
+/* Draw another version: the version to draw, a model to import, and what a chosen version means. */
+.drawing-another__panel { display: grid; gap: 10px; }
+.drawing-another__panel .drawing-field, .drawing-another__panel .drawing-field__hint { margin: 0; }
+/* More: the drawing's less frequent commands, under the word's right edge. */
+.drawing-more__panel { display: grid; gap: 8px; }
+.drawing-more__panel > button { text-align: left; }
+.drawing-more__panel > .drawing-field__hint { margin: -2px 0 4px; }
+@media (min-width: 641px) { .drawing-more > .drawing-more__panel { left: auto; right: 0; width: min(300px, calc(100vw - 32px)); } }
+/* One row above the drawing, only while something asks for a person; each item keeps its frame. */
+.drawing-attention { flex: none; display: grid; gap: 8px; max-height: 45%; overflow-y: auto; padding: 8px 16px; border-bottom: 1px solid var(--line); background: var(--panel); font-size: var(--text-ui); }
+.drawing-held { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; padding: 8px 12px; border: 1px solid var(--line); border-left: 3px solid var(--violated); border-radius: var(--radius-sm); }
+.drawing-held > p { flex: 1 1 240px; margin: 0; line-height: 1.5; overflow-wrap: anywhere; }
 .drawing-body { flex: 1; display: flex; min-height: 0; min-width: 0; }
 .drawing-controls { display: flex; flex-direction: column; flex: 0 0 280px; min-width: 0; overflow: hidden; border-left: 1px solid var(--line); background: var(--panel); font-size: var(--text-ui); }
 .drawing-controls__fields { flex: 1; min-height: 0; overflow-y: auto; padding: 14px; }
@@ -9,47 +31,45 @@
 .drawing-controls fieldset { min-width: 0; padding: 12px 0; margin: 12px 0; border: 0; border-top: 1px solid var(--line); }
 .drawing-controls legend { padding: 0 6px 0 0; font-weight: 600; }
 .drawing-field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; min-width: 0; }
-.drawing-workspace input, .drawing-workspace select { min-width: 0; width: 100%; box-sizing: border-box; padding: 8px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--panel); color: var(--ink); font: inherit; min-height: 36px; }
-.drawing-workspace button { min-height: 36px; padding: 7px 10px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--panel-2); color: var(--ink); font: inherit; cursor: pointer; }
-.drawing-workspace button:hover:not(:disabled) { background: var(--surface-hover); }
-.drawing-workspace button:disabled, .drawing-workspace input:disabled { opacity: .5; cursor: default; }
-.drawing-workspace :is(input, select, button, summary):focus-visible, .drawing-preview__viewport:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.drawing-workspace summary { cursor: pointer; padding: 8px 0; }
-.drawing-context { flex: none; padding: 12px 16px; background: var(--panel); border-bottom: 1px solid var(--line); font-size: var(--text-ui); }
-.drawing-context__fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-.drawing-context .drawing-field { margin-bottom: 0; }
-.drawing-context__target { min-width: 0; }
+/* The drawing's own controls: in the canvas and its settings, the row above them and the menu panels in the bar. */
+:is(.drawing-body, .drawing-attention, .drawing-another__panel, .drawing-more__panel) :is(input, select) { min-width: 0; width: 100%; box-sizing: border-box; padding: 8px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--panel); color: var(--ink); font: inherit; min-height: 36px; }
+:is(.drawing-body, .drawing-attention, .drawing-another__panel, .drawing-more__panel) button { min-height: 36px; padding: 7px 10px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--panel-2); color: var(--ink); font: inherit; cursor: pointer; }
+:is(.drawing-body, .drawing-attention, .drawing-another__panel, .drawing-more__panel) button:hover:not(:disabled) { background: var(--surface-hover); }
+:is(.drawing-body, .drawing-attention, .drawing-another__panel, .drawing-more__panel) :is(button, input):disabled { opacity: .5; cursor: default; }
+:is(.drawing-body, .drawing-attention, .drawing-another__panel, .drawing-more__panel) :is(input, select, button, summary):focus-visible, .drawing-preview__viewport:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+:is(.drawing-body, .drawing-attention) summary { cursor: pointer; padding: 8px 0; }
 .drawing-field__hint { margin: 6px 0 0; color: var(--muted); font-size: var(--text-caption); line-height: 1.4; }
-.drawing-status { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius-sm); }
+/* The source's state in the row: kept or earlier drawings dashed, stale or broken ones marked at the left. */
+.drawing-attention > .drawing-status { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 12px; border: 1px solid var(--line); border-radius: var(--radius-sm); }
 .drawing-status__summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; min-width: 0; }
 .drawing-source { color: var(--muted); overflow-wrap: anywhere; }
 .drawing-source b { font-weight: 500; color: var(--ink); }
 .drawing-import-note { flex-basis: 100%; margin: 6px 0; padding-left: 8px; border-left: 2px solid var(--accent); color: var(--muted); font-size: var(--text-caption); line-height: 1.5; overflow-wrap: anywhere; }
 .drawing-import-note ul { margin: 4px 0 0; padding-left: 18px; }
-.drawing-status > button { flex: none; }
-.drawing-status[data-status="outdated"], .drawing-status[data-status="partially-broken"] { border-left: 3px solid var(--accent); }
-.drawing-status[data-follow="frozen"] { border-style: dashed; }
-.drawing-status[data-status="updating"] { border-left: 3px solid var(--line); }
-.drawing-another { margin-top: 6px; }
-.drawing-another > summary { cursor: pointer; color: var(--muted); font-size: var(--text-caption); }
-.drawing-another[open] > summary { margin-bottom: 6px; }
-.drawing-status strong { font-size: var(--text-ui); }
-.drawing-status p { flex-basis: 100%; margin: 0; color: var(--muted); font-size: var(--text-caption); line-height: 1.5; overflow-wrap: anywhere; }
+.drawing-attention > .drawing-status > button { flex: none; }
+.drawing-attention > .drawing-status:is([data-status="outdated"], [data-status="partially-broken"]) { border-left: 3px solid var(--accent); }
+.drawing-attention > .drawing-status[data-follow="frozen"] { border-style: dashed; }
+.drawing-attention > .drawing-status strong { font-size: var(--text-ui); }
+/* Its state word keeps the room of both what it says once read and "Checking source…", so a check moves nothing. */
+.drawing-status__state { display: inline-grid; }
+.drawing-status__state > span, .drawing-status__state::before, .drawing-status__state::after { grid-area: 1 / 1; }
+.drawing-status__state::before { content: attr(data-resting); visibility: hidden; }
+.drawing-status__state::after { content: attr(data-checking); visibility: hidden; }
+/* Its detail line keeps its room while the state is checked, so the drawing below does not jump when it arrives. */
+.drawing-attention > .drawing-status p { flex-basis: 100%; min-height: 1.5em; margin: 0; color: var(--muted); font-size: var(--text-caption); line-height: 1.5; overflow-wrap: anywhere; }
 .drawing-dimension { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
 .drawing-dimension > strong, .drawing-dimension > span { display: block; overflow-wrap: anywhere; margin-bottom: 7px; }
 .drawing-anchor-warning { border-left: 2px solid var(--accent); padding-left: 8px; }
 .drawing-main { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--viewport); }
 .drawing-canvas { flex: 1; min-height: 0; }
 .drawing-empty { height: 100%; display: grid; place-items: center; padding: 24px; box-sizing: border-box; color: var(--muted); text-align: center; }
-.drawing-preview { height: 100%; display: flex; flex-direction: column; min-height: 0; }
-.drawing-preview__tools { flex: none; display: flex; align-items: center; gap: 6px; padding: 8px; border-bottom: 1px solid var(--line); background: var(--panel); }
-.drawing-preview__tools span { font-size: var(--text-caption); color: var(--muted); white-space: nowrap; text-overflow: ellipsis; overflow: hidden; min-width: 0; }
-.drawing-preview__viewport { flex: 1; min-height: 180px; min-width: 0; overflow: auto; padding: 16px; box-sizing: border-box; }
+.drawing-preview { position: relative; height: 100%; display: flex; flex-direction: column; min-height: 0; }
+/* The drawing's one tool group floats over the bottom of the canvas; the paper fits above it. */
+.drawing-preview__tools { position: absolute; z-index: 2; bottom: 12px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 4px; padding: 4px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); box-shadow: var(--shadow); }
+.drawing-preview__viewport { flex: 1; min-height: 180px; min-width: 0; overflow: auto; padding: 16px 16px 72px; box-sizing: border-box; }
 .drawing-preview__paper { position: relative; margin: 0 auto; flex: none; background: white; box-shadow: 0 2px 8px #0002; }
 .drawing-actions { flex: none; border-top: 1px solid var(--line); padding: 12px 14px; }
 .drawing-actions > .btn--accent { width: 100%; background: var(--accent-soft); border-color: var(--accent); }
-.drawing-actions > .drawing-download { width: 100%; margin-top: 8px; }
-.drawing-save-state { min-height: 1.4em; margin: 0 0 4px; color: var(--muted); font-size: var(--text-caption); }
 .drawing-controls input:invalid { border-color: var(--violated); }
 .drawing-section { margin-top: 12px; border-top: 1px solid var(--line); }
 .drawing-section > summary { font-weight: 600; }
@@ -62,11 +82,10 @@
   .drawing-controls__fields { flex: none; overflow: visible; }
   .drawing-main { flex: none; }
   .drawing-canvas { flex: none; height: 340px; }
-  .drawing-workspace button, .drawing-workspace input, .drawing-workspace select { min-height: 44px; }
+  :is(.drawing-body, .drawing-attention) :is(button, input, select) { min-height: 44px; }
 }
 @container drawing (max-width: 520px) {
-  .drawing-context__fields { grid-template-columns: minmax(0, 1fr); }
-  .drawing-status { align-items: stretch; flex-direction: column; }
+  .drawing-attention > .drawing-status { align-items: stretch; flex-direction: column; }
 }
 
 .drawing-vector-base { display: block; width: 100%; height: 100%; }
@@ -88,12 +107,10 @@
 .drawing-object-hidden li > span { min-width: 0; overflow-wrap: anywhere; color: var(--muted); }
 .drawing-object-hidden li > button { flex: none; }
 /* A correction repeated across drawings, offered as the project recipe; saving and ignoring are the person's. */
-.drawing-offers { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
 .drawing-offer { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; padding: 10px 12px; border: 1px solid var(--accent); border-left-width: 3px; border-radius: var(--radius-sm); background: var(--accent-soft); }
 .drawing-offer > p { flex: 1 1 240px; min-width: 0; margin: 0; line-height: 1.5; overflow-wrap: anywhere; }
 .drawing-offer__actions { display: flex; flex: none; gap: 8px; }
 .drawing-offer__actions > .btn--accent { border-color: var(--accent); font-weight: 600; }
-.drawing-offer-note { margin: 0 0 12px; color: var(--muted); font-size: var(--text-caption); }
 .drawing-recipe { margin: 4px 0 12px; }
 .drawing-recipe > button { width: 100%; }
 .drawing-dressing-overlay { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: hidden; }

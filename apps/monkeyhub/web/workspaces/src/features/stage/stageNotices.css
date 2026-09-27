@@ -20,6 +20,13 @@
   gap: 6px;
 }
 
+/* #352: where no project bar holds Modeling's menus, the Stage shows its own bar, with Export
+   and More; that bar and the panels it drops stay above the canvas under it. */
+.stage > .surface-bar {
+  position: relative;
+  z-index: 8;
+}
+
 /* SS-5: Record carries its name beside the icon, so it never reads as reload.
    styles.css is scoped to .project-workspace and wins a specificity tie, so
    these selectors are one class stronger than the rules they adjust. */

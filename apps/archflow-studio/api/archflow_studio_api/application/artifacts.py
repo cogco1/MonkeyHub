@@ -432,7 +432,10 @@ def document_bytes(
 
     if not SHA256_HEX.fullmatch(asset_sha256):
         raise StudioError(422, "DOCUMENT_INVALID", "A source document is addressed by its SHA-256.")
-    document = next((row for row in list_documents(binding, run_id) if row.asset_sha256 == asset_sha256
+    # The registrations are remembered while the project is unchanged; the
+    # bytes themselves are read and verified again below on every call.
+    listed = binding.memo(("documents-listing", run_id), lambda: list_documents(binding, run_id))
+    document = next((row for row in listed if row.asset_sha256 == asset_sha256
                      and (revision_ref is None or row.revision_ref == revision_ref)
                      and (binding_ref is None or row.model_source_binding_ref == binding_ref)), None)
     if document is None:
@@ -1905,7 +1908,9 @@ def artifact_bytes(
             f"{sha256!r} is not an artifact digest: artifacts are addressed by "
             "the 64 lowercase hex characters of their sha256.",
         )
-    listing = list_artifacts(binding, run_id=run_id)
+    # Which receipt claims the digest is remembered while the project is
+    # unchanged; reading and hashing the claimed file is never skipped.
+    listing = binding.memo(("artifacts-listing", run_id), lambda: list_artifacts(binding, run_id=run_id))
     claiming = [item for item in listing.artifacts if item.sha256 == sha256]
     if not claiming:
         raise StudioError(

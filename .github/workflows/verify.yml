@@ -161,6 +161,27 @@ jobs:
         working-directory: apps/monkeyhub/web
         run: node workspaces/test/drawingCanvas.browser.mjs
 
+      # In-memory API fixtures, no project runtime (#355).
+      - name: Board note handoff browser regression
+        if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
+        working-directory: apps/monkeyhub/web
+        run: node workspaces/test/boardIntentHandoff.browser.mjs
+
+      - name: Intent source browser regression
+        if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
+        working-directory: apps/monkeyhub/web
+        run: node workspaces/test/intentViewSource.browser.mjs
+
+      - name: Editable model export browser regression
+        if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
+        working-directory: apps/monkeyhub/web
+        run: node workspaces/test/workModelExport.browser.mjs
+
+      - name: Elevation browser regression
+        if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
+        working-directory: apps/monkeyhub/web
+        run: node workspaces/test/elevation.browser.mjs
+
   studio:
     name: Studio first-run (${{ matrix.os }})
     strategy:

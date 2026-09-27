@@ -124,6 +124,69 @@ const ANNOTATION_COLOURS = [
  */
 const RECORD_FRAME = 16;
 
+/**
+ * #352: a menu's panel, in the bar or over the tools, closes when the pointer goes down or
+ * the focus moves somewhere outside it, and Esc closes it wherever the focus is, back on its
+ * menu. A control inside it that turns itself off while it works (Export while it runs) drops
+ * the focus to the page: the panel stays, and that Esc is the panel's, not the model's, so it
+ * clears nothing picked. The pointer is heard on the window's way down, where tracing paper's
+ * hold on the view (ModelToolButton) stops a click on the canvas from going any further.
+ */
+function useDismiss(open: boolean, element: RefObject<HTMLElement | null>, toggle: string, close: () => void) {
+  const closeRef = useRef(close);
+  closeRef.current = close;
+  useEffect(() => {
+    if (!open) return;
+    const outside = (event: Event) => {
+      if (event.target instanceof Node && !element.current?.contains(event.target)) closeRef.current();
+    };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      closeRef.current();
+      element.current?.querySelector<HTMLElement>(toggle)?.focus();
+    };
+    window.addEventListener("pointerdown", outside, true);
+    document.addEventListener("focusin", outside);
+    document.addEventListener("keydown", escape, true);
+    return () => {
+      window.removeEventListener("pointerdown", outside, true);
+      document.removeEventListener("focusin", outside);
+      document.removeEventListener("keydown", escape, true);
+    };
+  }, [open, element, toggle]);
+}
+
+/**
+ * #352: an open panel stays inside the surface that shows it, wherever its menu landed when
+ * the bar wrapped or the tools took two rows: it slides sideways; a panel dropping from the
+ * bar opens below the whole bar, so it covers none of the bar's other menus, and scrolls
+ * within the height left below it. `content` names what can change its size.
+ */
+function useInView(open: boolean, panel: RefObject<HTMLElement | null>, within: string, drops: boolean, content = "") {
+  useLayoutEffect(() => {
+    const element = panel.current, container = element?.parentElement?.closest(within);
+    if (!open || !element || !container) return;
+    const bar = drops ? element.closest(".surface-bar") : null;
+    const place = () => {
+      const bounds = container.getBoundingClientRect();
+      element.style.removeProperty("translate");
+      element.style.setProperty("--stage-menu-room", `${Math.max(0, Math.floor(bounds.width - 16))}px`);
+      const box = element.getBoundingClientRect();
+      const shift = Math.round(Math.max(bounds.left + 8 - box.left, Math.min(0, bounds.right - 8 - box.right)));
+      const drop = bar ? Math.max(0, Math.round(bar.getBoundingClientRect().bottom + 4 - box.top)) : 0;
+      if (shift || drop) element.style.translate = `${shift}px ${drop}px`;
+      if (drops) element.style.maxHeight = `${Math.max(120, Math.floor(bounds.bottom - box.top - drop - 8))}px`;
+    };
+    place();
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(place);
+    observer?.observe(container);
+    if (bar) observer?.observe(bar);
+    return () => observer?.disconnect();
+  }, [open, panel, within, drops, content]);
+}
+
 function sketchControls(state: SketchState) {
   return {
     tool: state.tool, phase: state.phase, typed: state.typed, axisLock: state.axisLock,
@@ -412,11 +475,31 @@ export function Stage({
   const documentRunId = documentView.runId ?? editingBaseRunId;
   const [eraser, setEraser] = useState(false);
   const [annotationToolsOpen, setAnnotationToolsOpen] = useState(false);
-  const [viewToolsOpen, setViewToolsOpen] = useState(false);
+  // #352: Export and More in the bar hold what the view tools' panel held; one opens at a time.
+  const [barMenu, setBarMenu] = useState<"export" | "more" | null>(null);
   const [parameterLocksOpen, setParameterLocksOpen] = useState(false);
-  const [lineToolsOpen, setLineToolsOpen] = useState(false);
+  // #352: the palette's own More: the less frequent drawing tools, tracing paper and the drawing plane.
+  const [moreToolsOpen, setMoreToolsOpen] = useState(false);
   const [versionsOpen, setVersionsOpen] = useState(false);
   const toolsElement = useRef<HTMLDivElement>(null);
+  const workspaceElement = useRef<HTMLDivElement>(null);
+  const exportMenuElement = useRef<HTMLSpanElement>(null);
+  const exportPanelElement = useRef<HTMLDivElement>(null);
+  const moreMenuElement = useRef<HTMLSpanElement>(null);
+  const morePanelElement = useRef<HTMLDivElement>(null);
+  const moreToolsElement = useRef<HTMLSpanElement>(null);
+  const moreToolsPanelElement = useRef<HTMLDivElement>(null);
+  const closeBarMenu = useCallback(() => setBarMenu(null), []);
+  const closeMoreTools = useCallback(() => setMoreToolsOpen(false), []);
+  useDismiss(barMenu === "export", exportMenuElement, '[aria-controls="stage-export-menu"]', closeBarMenu);
+  useDismiss(barMenu === "more", moreMenuElement, '[aria-controls="stage-more-menu"]', closeBarMenu);
+  useDismiss(moreToolsOpen, moreToolsElement, '[aria-controls="model-tools-more"]', closeMoreTools);
+  useInView(barMenu === "export", exportPanelElement, ".project-workspace, .stage", true,
+    `${workModel?.busy}:${workModel?.exported?.sha256}:${workModel?.error}:${workModel?.refusal}`);
+  useInView(barMenu === "more", morePanelElement, ".project-workspace, .stage", true);
+  useInView(moreToolsOpen, moreToolsPanelElement, ".stage-model, .stage", false);
+  // A menu left open does not come back open with the surface.
+  useEffect(() => { if (!active) { setBarMenu(null); setMoreToolsOpen(false); } }, [active]);
   // #302: Record never moves a tool. It sits beside the tools while their row has
   // room for it, else on a line of its own above them (stageNotices.css).
   const recordShown = Boolean(model?.sync && (model.sync.dirty || model.sync.busy || model.sync.error));
@@ -947,14 +1030,14 @@ export function Stage({
     return true;
   }, []);
   const chooseDrawingTool = useCallback((next: SketchTool | null) => {
-    if (next !== null && refuseLockedEdit()) { setLineToolsOpen(false); return; }
+    if (next !== null && refuseLockedEdit()) { setMoreToolsOpen(false); return; }
     sketchEpoch.current += 1;
-    setLineToolsOpen(false);
+    setMoreToolsOpen(false);
     stopPushPull();
     stopMove();
     stopRotate();
     stopScale();
-    setAnnotationToolsOpen(false); setViewToolsOpen(false); setVersionsOpen(false); setParameterLocksOpen(false);
+    setAnnotationToolsOpen(false); setBarMenu(null); setVersionsOpen(false); setParameterLocksOpen(false);
     onTool(null); setEraser(false); setMeasuring(false); stopMeasuring();
     model?.onTool?.("select");
     showSketch({ ...cancelledSketch(interaction.current.sketch), tool: next });
@@ -1246,6 +1329,12 @@ export function Stage({
       {developerMode && picked.status !== "resolved" && <span className="picked__meta">{picked.status}</span>}
     </span>
   );
+  // #352: the drawing plane sits in the tools' More; while it is not the ground (XY), the status
+  // line says which plane the next shape is drawn on.
+  const planeStatus = onSketch && workPlaneName !== "xy" && <span className="stage-plane" data-plane={workPlaneName}>
+    <span className="label">{t("stage.sketch.workPlane")}</span>
+    {t(({ xz: "stage.sketch.planeXZ", yz: "stage.sketch.planeYZ", face: "stage.sketch.planeFace" } as const)[workPlaneName])}
+  </span>;
   const sessionStatus = <>
     {modelAnnotations && <div className="stage-annotations-status" data-model-annotations-status={modelAnnotations.error ? "error" :
       !modelAnnotations.ready ? "loading" : modelAnnotations.saving || modelAnnotations.dirty ? "saving" : "saved"}>
@@ -1262,14 +1351,85 @@ export function Stage({
   </>;
   const toggleVersions = () => {
     if (!versionsOpen) onVersionsOpen?.();
-    setVersionsOpen((open) => !open); setAnnotationToolsOpen(false); setViewToolsOpen(false); setParameterLocksOpen(false);
+    setVersionsOpen((open) => !open); setAnnotationToolsOpen(false); setBarMenu(null); setParameterLocksOpen(false);
   };
+  // #352: Export and More take the place of the palette's view tools, one open at a time and,
+  // like those, beside neither tracing paper nor the parameter locks. Versions docked at the
+  // canvas's edge stays open beside them; only where it covers the canvas (Modeling narrower
+  // than 560 px, styles.css) does it give way, as it did when it was an overlay.
+  const toggleBarMenu = (menu: "export" | "more") => {
+    if (barMenu === menu) { setBarMenu(null); return; }
+    setBarMenu(menu);
+    setAnnotationToolsOpen(false); setParameterLocksOpen(false); setMoreToolsOpen(false);
+    if ((workspaceElement.current?.clientWidth ?? 0) <= 560) setVersionsOpen(false);
+  };
+  const workModelTitle = workModel && (workModel.refusal === "busy-elsewhere"
+    ? t("stage.tools.workModelBusyElsewhere")
+    : workModel.refusal === "several-seats"
+      ? t("stage.tools.workModelSeveralSeats")
+      : workModel.refusal === "not-an-export"
+        ? t("stage.tools.workModelNotAnExport")
+        : workModel.refusal === "nothing-loaded"
+          ? t("stage.tools.workModelNothingLoaded")
+          : t("stage.tools.workModelTitle", { fileName: workModel.source?.fileName ?? "" }));
+  // #352: Export, in the bar: the editable copy of the model on screen and, once made, its file.
+  const exportMenu = workModel && <span ref={exportMenuElement} className="stage-menu">
+    <MenuCommand aria-expanded={barMenu === "export"} aria-controls="stage-export-menu" onClick={() => toggleBarMenu("export")}>
+      {t("stage.menu.export")}</MenuCommand>
+    {barMenu === "export" && <div ref={exportPanelElement} id="stage-export-menu" className="stage-menu__panel" role="group" aria-label={t("stage.menu.export")}>
+      {/* The editable copy of what is on screen. It is made from that model's own exact STEP by the
+          Rhino on this machine, so it is offered only when the picture is one delivery, and the
+          title says which file - or why there is no single one to make. */}
+      <button type="button" data-work-model-export disabled={workModel.source === null || workModel.busy} title={workModelTitle ?? undefined}
+        onClick={workModel.onExport}>{workModel.busy ? t("stage.tools.workModelBusy") : t("stage.tools.workModel")}</button>
+      {workModel.refusal !== null && <p className="stage-menu__note">{workModelTitle}</p>}
+      {workModel.exported?.sha256 && <a data-work-model-save href={connection.url(`/api/artifacts/${workModel.exported.sha256}/bytes`)}
+        download={workModel.exported.fileName} title={t("stage.versions.saveTitle", { fileName: workModel.exported.fileName })}>
+        {t("stage.tools.workModelSave")}</a>}
+      {workModel.error && <p className="stage-menu__note" role="alert" data-work-model-error>{workModel.error}</p>}
+    </div>}
+  </span>;
+  // #352: More, in the bar: the view tools' commands that are not drawing. A camera view leaves
+  // the menu open for the next one, as Board's Fit does; the other commands act and close it,
+  // and the parameter locks open their own panel.
+  const fromMore = (act: () => void) => () => {
+    act();
+    setBarMenu(null);
+    moreMenuElement.current?.querySelector<HTMLElement>('[aria-controls="stage-more-menu"]')?.focus();
+  };
+  const moreMenu = <span ref={moreMenuElement} className="stage-menu">
+    <MenuCommand aria-expanded={barMenu === "more"} aria-controls="stage-more-menu" onClick={() => toggleBarMenu("more")}>
+      {t("stage.menu.more")}</MenuCommand>
+    {barMenu === "more" && <div ref={morePanelElement} id="stage-more-menu" className="stage-menu__panel" role="group" aria-label={t("stage.menu.more")}>
+      <div className="stage-menu__views">
+        {(["top", "front", "right", "iso", "perspective"] as const).map((view) => <button type="button" key={view}
+          onClick={() => viewportRef.current?.standardView(view)}>{t(`stage.view.${view}`)}</button>)}
+      </div>
+      <button type="button" disabled={!model?.hasSelection} onClick={() => viewportRef.current?.fitSelection()}>{t("stage.tools.fitSelected")}</button>
+      <span className="stage-menu__sep" aria-hidden="true" />
+      {/* One button, home: the reference run's exports when it left any, else the export the
+          stage actually opened on - named for what it brings back, disabled only when there is nothing. */}
+      <button type="button" disabled={home === null} onClick={fromMore(onShowHome)} title={home === null ? t("stage.tools.homeUnavailable")
+        : home.kind === "reference" ? t("stage.tools.referenceShow", { runId: home.runId }) : t("stage.tools.homeShow", { runId: home.runId })}>
+        {home?.kind === "fallback" ? t("stage.tools.home") : t("stage.tools.reference")}</button>
+      <button type="button" onClick={fromMore(onRequestFile)}>{t("stage.tools.open3dm")}</button>
+      <button type="button" disabled={loadedRunId === null || blend !== null || captureState === "busy"} onClick={fromMore(() => void onCapture())}
+        title={loadedRunId === null ? t("stage.tools.screenshotUnavailable") : blend !== null ? t("stage.tools.screenshotBlendUnavailable") : t("stage.tools.screenshotTitle")}>
+        {captureState === "busy" ? t("stage.tools.screenshotBusy") : t("stage.tools.screenshot")}</button>
+      <button type="button" onClick={fromMore(() => viewportRef.current?.clear())}>{t("stage.tools.clear")}</button>
+      {parameterLocks && <>
+        <span className="stage-menu__sep" aria-hidden="true" />
+        <button type="button" aria-expanded={parameterLocksOpen} onClick={() => { chooseDrawingTool(null); setParameterLocksOpen(true); }}>
+          {zh ? "参数锁" : "Parameter locks"}</button>
+      </>}
+    </div>}
+  </span>;
   return (
     <section className="stage" aria-label={t("stage.ariaLabel")}
       onPointerDownCapture={() => modelKeysRef.current?.onInteraction?.()}
       onKeyDownCapture={() => modelKeysRef.current?.onInteraction?.()}>
       {/* #337: Modeling's menus, in the project bar while Modeling is on screen: the model the next edit
-          starts from, Versions, the Design Tree, and the commands on the editing base. */}
+          starts from, Versions, the Design Tree, the commands on the editing base, then Export and More (#352). */}
       <SurfaceMenus label={t("stage.ariaLabel")} active={active}>
         {editingBaseRunId !== null && <><span className="stage-bar__model" title={editingLabel ?? undefined}>{editingLabel}</span><MenuSeparator /></>}
         <MenuCommand className="stage__versions-toggle" aria-expanded={versionsOpen} aria-controls="stage-versions-panel" onClick={toggleVersions}>
@@ -1284,6 +1444,8 @@ export function Stage({
         {explicitBase && <MenuCommand disabled={changingBase || baseActionBusy || loadingSha !== null || status === "loading"}
           onClick={onDefaultBase}>{t("stage.base.default")}</MenuCommand>}
         {!onReturnToBoard && picked && onOpenBoard && <MenuCommand onClick={onOpenBoard}>{t("workspace.monkeyboard")}</MenuCommand>}
+        {exportMenu}
+        {moreMenu}
       </SurfaceMenus>
       {onReturnToBoard && <div className="stage-mode-switch" role="group" aria-label={t("workspace.switcher")}>
         <button type="button" onClick={onReturnToBoard}>{t("workspace.monkeyboard")}</button>
@@ -1304,7 +1466,7 @@ export function Stage({
         </div>}
         {editingStatus}
       </div>}
-      <div className="stage-workspace">
+      <div ref={workspaceElement} className="stage-workspace">
       <div className={`stage-model${documentOpen ? " stage-model--hidden" : ""}`} inert={documentOpen} aria-hidden={documentOpen}
         /* Undo and redo are decided in one place - the keyboard effect above -
            so that one Ctrl+Z reaches exactly one owner. The ink's undo is still
@@ -1757,34 +1919,10 @@ export function Stage({
             <div className="model-tools__group" role="group" aria-label={zh ? "选择与绘制" : "Select and draw"}>
             <ModelToolButton icon="select" label={t("stage.sketch.select")} shortcut="Space" aria-pressed={sketch.tool === null && !measuring && !model?.directTool && !tool && !eraser}
               onClick={() => chooseDrawingTool(null)} />
-            {onSketch && <>
-              <div className="model-tools__line" onBlur={(event) => {
-                if (!event.currentTarget.contains(event.relatedTarget)) setLineToolsOpen(false);
-              }} onKeyDown={(event) => {
-                if (event.key === "Escape" && lineToolsOpen) { event.preventDefault(); event.stopPropagation(); setLineToolsOpen(false); }
-              }}>
-                <ModelToolButton icon="line" label={t("stage.sketch.line")} shortcut="L" aria-pressed={sketch.tool === "line"}
-                  onClick={() => chooseDrawingTool(sketch.tool === "line" ? null : "line")} />
-                <ModelToolButton icon="chevron" label={t("stage.sketch.lineTools")} aria-expanded={lineToolsOpen}
-                  aria-pressed={sketch.tool === "freehand" || sketch.tool === "polygon"} onClick={() => setLineToolsOpen(!lineToolsOpen)} />
-                {lineToolsOpen && <div className="model-tools__flyout" role="group" aria-label={t("stage.sketch.lineTools")}>
-                  {(["freehand", "polygon"] as const).map((kind) => <ModelToolButton key={kind} icon={kind}
-                    label={t(`stage.sketch.${kind}`)} aria-pressed={sketch.tool === kind}
-                    onClick={() => chooseDrawingTool(sketch.tool === kind ? null : kind)} />)}
-                </div>}
-              </div>
-              {(["arc", "rectangle", "circle"] as const).map((kind) => <ModelToolButton key={kind} icon={kind}
-                label={t(`stage.sketch.${kind}`)} shortcut={{ rectangle: "R", circle: "C", arc: "A" }[kind]}
-                aria-pressed={sketch.tool === kind}
-                onClick={() => chooseDrawingTool(sketch.tool === kind ? null : kind)} />)}
-              <select className="model-tools__plane" aria-label={t("stage.sketch.workPlane")} title={t("stage.sketch.workPlane")} value={workPlaneName} disabled={sketchBusy}
-                onChange={(event) => choosePlane(event.target.value as typeof workPlaneName)}>
-                <option value="xy">XY</option>
-                <option value="xz">XZ</option>
-                <option value="yz">YZ</option>
-                <option value="face" disabled={!model?.hasSelection}>{zh ? "选中面" : "Face"}</option>
-              </select>
-            </>}
+            {onSketch && (["line", "rectangle", "circle"] as const).map((kind) => <ModelToolButton key={kind} icon={kind}
+              label={t(`stage.sketch.${kind}`)} shortcut={{ line: "L", rectangle: "R", circle: "C" }[kind]}
+              aria-pressed={sketch.tool === kind}
+              onClick={() => chooseDrawingTool(sketch.tool === kind ? null : kind)} />)}
             </div>
             <div className="model-tools__group" role="group" aria-label={zh ? "修改模型" : "Edit model"}>
             {model?.onTool && (["pushPull", "move", "rotate", "scale", "copy"] as const).map((kind) => <ModelToolButton
@@ -1799,12 +1937,39 @@ export function Stage({
             <div className="model-tools__group" role="group" aria-label={zh ? "查看与批注" : "View and annotate"}>
             <ModelToolButton icon="measure" label={t("stage.measure.label")} shortcut="T" aria-pressed={measuring}
               onClick={() => measuring ? chooseDrawingTool(null) : chooseMeasure()} />
-            <ModelToolButton icon="annotate" label={t("stage.tools.annotate")} aria-expanded={annotationToolsOpen} aria-controls="annotation-tools"
-              onClick={() => { setAnnotationToolsOpen((open) => !open); setViewToolsOpen(false); setVersionsOpen(false); setParameterLocksOpen(false); }} />
             <ModelToolButton icon="fit" label={t("stage.tools.fit")} onClick={() => viewportRef.current?.fitView()} />
             <ModelToolButton icon="front" label={t("stage.tools.front")} onClick={() => viewportRef.current?.frontView()} />
-            <ModelToolButton icon="more" label={t("stage.tools.viewOptions")} aria-expanded={viewToolsOpen} aria-controls="view-tools"
-              onClick={() => { setViewToolsOpen((open) => !open); setAnnotationToolsOpen(false); setVersionsOpen(false); setParameterLocksOpen(false); }} />
+            {/* #352: the palette's own More, last on its row: the less frequent drawing tools, tracing
+                paper and the drawing plane. It says whether it is open; its look also shows while it
+                holds what is in use - one of its tools, tracing paper or a drawing plane other than XY. */}
+            <span ref={moreToolsElement} className="model-tools__more">
+              <ModelToolButton icon="more" label={t("stage.tools.more")} aria-expanded={moreToolsOpen} aria-controls="model-tools-more"
+                className={sketch.tool === "polygon" || sketch.tool === "arc" || sketch.tool === "freehand" || annotationToolsOpen || workPlaneName !== "xy"
+                  ? "model-tool-button--holds" : undefined}
+                onClick={() => setMoreToolsOpen((open) => !open)} />
+              {moreToolsOpen && <div ref={moreToolsPanelElement} id="model-tools-more" className="model-tools__flyout model-tools__flyout--more"
+                role="group" aria-label={t("stage.tools.more")}>
+                {onSketch && <>
+                  {(["polygon", "arc", "freehand"] as const).map((kind) => <ModelToolButton key={kind} icon={kind} showLabel
+                    label={t(`stage.sketch.${kind}`)} shortcut={kind === "arc" ? "A" : undefined} aria-pressed={sketch.tool === kind}
+                    onClick={() => chooseDrawingTool(sketch.tool === kind ? null : kind)} />)}
+                  <span className="model-tools__more-sep" aria-hidden="true" />
+                </>}
+                <ModelToolButton icon="annotate" showLabel label={t("stage.tools.annotate")} aria-expanded={annotationToolsOpen} aria-controls="annotation-tools"
+                  onClick={() => { setAnnotationToolsOpen((open) => !open); setBarMenu(null); setVersionsOpen(false); setParameterLocksOpen(false); setMoreToolsOpen(false); }} />
+                {onSketch && <span className="model-tools__more-sep" aria-hidden="true" />}
+                {onSketch && <label className="model-tools__more-plane">
+                  <span>{t("stage.sketch.workPlane")}</span>
+                  <select className="model-tools__plane" aria-label={t("stage.sketch.workPlane")} value={workPlaneName} disabled={sketchBusy}
+                    onChange={(event) => choosePlane(event.target.value as typeof workPlaneName)}>
+                    <option value="xy">XY</option>
+                    <option value="xz">XZ</option>
+                    <option value="yz">YZ</option>
+                    <option value="face" disabled={!model?.hasSelection}>{zh ? "选中面" : "Face"}</option>
+                  </select>
+                </label>}
+              </div>}
+            </span>
             </div>
             {/* SS-5: Record is a design act, not a save. It appears, named, only while
                 edits wait to be recorded or are being recorded; a Record error with
@@ -1853,99 +2018,6 @@ export function Stage({
               {tracingPaperReview.sent && <span className="quiet" role="status">{t("stage.tracingPaper.sent")}</span>}
               {tracingPaperReview.error && <span className="quiet" role="alert">{tracingPaperReview.error}</span>}
             </>}
-          </div>}
-          {viewToolsOpen && <div id="view-tools" className="viewtools viewtools--panel" role="group" aria-label={t("stage.tools.viewOptions")}>
-          {parameterLocks && <button type="button" aria-expanded={parameterLocksOpen}
-            onClick={() => { chooseDrawingTool(null); setParameterLocksOpen(true); }}>
-            {zh ? "参数锁" : "Parameter locks"}</button>}
-          <button type="button" disabled={!model?.hasSelection} onClick={() => viewportRef.current?.fitSelection()}>{t("stage.tools.fitSelected")}</button>
-          {(["top", "front", "right", "iso", "perspective"] as const).map((view) => <button type="button" key={view}
-            onClick={() => viewportRef.current?.standardView(view)}>{t(`stage.view.${view}`)}</button>)}
-          <span className="viewtools__sep" aria-hidden="true" />
-          {/* One button, home: the reference run's exports when it left
-              any, else the export the stage actually opened on — named for
-              what it brings back, disabled only when there is nothing. */}
-          <button
-            type="button"
-            disabled={home === null}
-            title={
-              home === null
-                ? t("stage.tools.homeUnavailable")
-                : home.kind === "reference"
-                  ? t("stage.tools.referenceShow", { runId: home.runId })
-                  : t("stage.tools.homeShow", { runId: home.runId })
-            }
-            onClick={onShowHome}
-          >
-            {home?.kind === "fallback"
-              ? t("stage.tools.home")
-              : t("stage.tools.reference")}
-          </button>
-          <button
-            type="button"
-            disabled={
-              loadedRunId === null ||
-              blend !== null ||
-              captureState === "busy"
-            }
-            title={
-              loadedRunId === null
-                ? t("stage.tools.screenshotUnavailable")
-                : blend !== null
-                  ? t("stage.tools.screenshotBlendUnavailable")
-                  : t("stage.tools.screenshotTitle")
-            }
-            onClick={() => void onCapture()}
-          >
-            {captureState === "busy"
-              ? t("stage.tools.screenshotBusy")
-              : t("stage.tools.screenshot")}
-          </button>
-          <button type="button" onClick={() => viewportRef.current?.clear()}>
-            {t("stage.tools.clear")}
-          </button>
-          <button type="button" onClick={onRequestFile}>
-            {t("stage.tools.open3dm")}
-          </button>
-          {/* The editable copy of what is on screen. It is made from that
-              model's own exact STEP by the Rhino on this machine, so it is
-              offered only when the picture is one delivery, and the title says
-              which file - or why there is no single one to make. */}
-          {workModel && (
-            <button
-              type="button"
-              data-work-model-export
-              disabled={workModel.source === null || workModel.busy}
-              title={
-                workModel.refusal === "busy-elsewhere"
-                  ? t("stage.tools.workModelBusyElsewhere")
-                  : workModel.refusal === "several-seats"
-                  ? t("stage.tools.workModelSeveralSeats")
-                  : workModel.refusal === "not-an-export"
-                    ? t("stage.tools.workModelNotAnExport")
-                    : workModel.refusal === "nothing-loaded"
-                      ? t("stage.tools.workModelNothingLoaded")
-                      : t("stage.tools.workModelTitle", { fileName: workModel.source?.fileName ?? "" })
-              }
-              onClick={workModel.onExport}
-            >
-              {workModel.busy ? t("stage.tools.workModelBusy") : t("stage.tools.workModel")}
-            </button>
-          )}
-          {workModel?.exported?.sha256 && (
-            <a
-              className="vcard__save"
-              data-work-model-save
-              href={connection.url(`/api/artifacts/${workModel.exported.sha256}/bytes`)}
-              download={workModel.exported.fileName}
-              title={t("stage.versions.saveTitle", { fileName: workModel.exported.fileName })}
-            >
-              {t("stage.tools.workModelSave")}
-            </a>
-          )}
-          {workModel?.error && (
-            <p className="quiet" role="alert" data-work-model-error>{workModel.error}</p>
-          )}
           </div>}
           {measuring && (
             <div className="sketch-entry" role="group" aria-label={t("stage.measure.label")}>
@@ -2056,8 +2128,8 @@ export function Stage({
             </div>
           )}
           {parameterLocksOpen && parameterLocks && <ParameterLocksPanel key={parameterLocks.contextKey} controls={parameterLocks}
-            onClose={() => { setParameterLocksOpen(false); setViewToolsOpen(true);
-              requestAnimationFrame(() => toolsElement.current?.querySelector<HTMLButtonElement>('[aria-controls="view-tools"]')?.focus()); }} />}
+            onClose={() => { setParameterLocksOpen(false); setBarMenu("more");
+              requestAnimationFrame(() => moreMenuElement.current?.querySelector<HTMLButtonElement>('[aria-controls="stage-more-menu"]')?.focus()); }} />}
           {model?.directTool && model.onApply && <ModelEditPanel key={model.directTool} tool={model.directTool}
             subject={model.subject} busy={model.busy ?? false} error={scaleError ?? rotateError ?? moveError ?? pushPullError ?? model.error ?? null}
             onApply={model.onApply} onClose={closeDirectTool}
@@ -2144,7 +2216,8 @@ export function Stage({
           : <div className="document-workspace document-empty">{t("document.noRun")}</div>}
       </div>}
       </div>
-      {/* #337 L5: what is picked, and which model the next edit starts from, as quiet words. */}
+      {/* #337 L5: what is picked, the drawing plane when it is not XY (#352), and which model the
+          next edit starts from, as quiet words. */}
       <StatusLine end={<>{quietBase}{developerMode && <button type="button" className="drawer-tab" onClick={() => onEvidence("honesty")}>
         {t("nav.evidence")}
         <span className="drawer-tab__count">
@@ -2155,7 +2228,7 @@ export function Stage({
         <span className="drawer-tab__count mono" title={t("stage.review.drawerTitle")}>
           {t("evidence.tabs.honesty")} {evidenceCounts.honesty} · {t("evidence.tabs.events")} {evidenceCounts.events}
         </span>
-      </button>}</>}>{!documentOpen && pickedStatus}</StatusLine>
+      </button>}</>}>{!documentOpen && pickedStatus}{!documentOpen && planeStatus}</StatusLine>
     </section>
   );
 }

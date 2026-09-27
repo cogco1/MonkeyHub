@@ -9,6 +9,20 @@ import { createServer } from "vite";
 // selects B. No production/test entry point or mocked API is installed.
 // Required: STUDIO_AB_URL (API origin), STUDIO_AB_PROJECT_ROOT (absolute path).
 // Optional: STUDIO_AB_SCREENSHOT (absolute output path outside both roots).
+//
+// Running it: copy the project to a disposable directory and start a Studio API
+// on it alone, on a free port that is not 5187, 5188, 60616 or 60617 (from the repository root):
+//   powershell -File scripts/dev/run-project-runtime.ps1 -ProjectDir <copy>\<projectId> -Port 8791
+// then, from apps/monkeyhub/web (PLAYWRIGHT_MODULE only when playwright is not installed here):
+//   $env:STUDIO_AB_URL = "http://127.0.0.1:8791"; $env:STUDIO_AB_PROJECT_ROOT = "<copy>\<projectId>"
+//   $env:PLAYWRIGHT_MODULE = "<node_modules>\playwright\index.mjs"; node workspaces/test/workingCopy.browser.mjs
+// The copy must hold the retained Exploration m-upper-cabinets (A and B, B selected), the
+// run and drawing named below with no linked model; only the owner's project holds them.
+// Stale on main (#355), checked against an isolated API on a project built from the API's
+// tests.support: a real runtime lists Versions in the Design Tree layout, whose Exploration
+// buttons carry neither "View …" nor aria-pressed; the editing choice is the runtime's working
+// draft since #225 (GH-220), not the browser's editingBases; and the page picker's value
+// is the drawing's own key when the Board opens it. It needs a rewrite before it can pass.
 const webRoot = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 const oldEditingRun = "rooms-ML-window-dimensions-shell-v02";
 const drawingSha = "527a4eac1748d1b8a491d877cf69e0464a82a8ab282a3029ca99698a66a645e2";

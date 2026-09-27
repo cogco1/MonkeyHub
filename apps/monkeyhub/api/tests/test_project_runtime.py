@@ -4,6 +4,7 @@ import base64
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from dataclasses import replace
+import json
 import os
 from pathlib import Path
 import signal
@@ -21,6 +22,7 @@ from test_monkeyhub_lifecycle import LocalHubCase, ROOT, project_fixture, wait_f
 from archflow.project.repository import FilesystemProjectRepository
 from archflow_studio_api.application.binding import ProjectBinding
 from archflow_studio_api.settings import StudioSettings
+from monkeyhub_api import runtime as runtime_module
 from monkeyhub_api.models import ChatSummary, HubError, HubFailure
 from monkeyhub_api.runtime import HttpResult, OperationManager, ProjectRuntime, ProjectRuntimeManager, _WorkCopyObservation
 from monkeyhub_api.workers import WorkerSnapshot
@@ -1144,6 +1146,169 @@ class WorkCopyObservationTests(unittest.TestCase):
             self.assertIsNone(self.read_at(2))
         self.assertIsNone(self.read_at(3.999))
         self.assertEqual(self.read_at(4), self.second)
+
+
+def _settle(root: Path) -> None:
+    """Age every time in a project, as if its last write were long ago."""
+
+    old = time.time_ns() - 60_000_000_000
+    for folder, _, names in os.walk(root):
+        for name in names:
+            os.utime(os.path.join(folder, name), ns=(old, old))
+    for folder, _, _ in os.walk(root, topdown=False):
+        os.utime(folder, ns=(old, old))
+
+
+class RuntimeCostTests(unittest.TestCase):
+    """What an unchanged project costs the Hub (#363): no reopen per request,
+    no idle history read, and a runtime snapshot measured in milliseconds."""
+
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory(prefix="hub-runtime-cost-")
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+        self.fixture = project_fixture()
+
+    def project(self, name="p0"):
+        repository, _ = self.fixture.make_project(self.root / name)
+        return repository
+
+    def manager(self, workers=(), sessions=()):
+        from monkeyhub_api.runtime import project_key
+
+        def worker_snapshots(*, project_dir=None):
+            # The supervisor's selection: launches naming this project directory.
+            return tuple(row for row in workers if project_dir is None
+                         or (row.project_dir is not None and project_key(row.project_dir) == project_key(project_dir)))
+
+        applications = SimpleNamespace(worker_snapshots=worker_snapshots, set_busy=lambda **_: None,
+                                       runtime_root=self.root / "hub")
+        chats = SimpleNamespace(list=lambda **kw: [row for row in sessions if row.archived == kw.get("archived", False)])
+        return ProjectRuntimeManager(applications, chats)
+
+    def runtime(self, manager, repository, name="runtime"):
+        path = repository.layout.root
+        binding = ProjectBinding.open(StudioSettings(project_dir=path, cad_export="off"))
+        runtime = ProjectRuntime(name, self.fixture.PROJECT_ID, str(path), OperationManager(self.fixture.PROJECT_ID), binding)
+        manager._projects[runtime.runtime_id] = runtime
+        return runtime
+
+    def test_get_verifies_the_project_again_only_when_its_binding_moves(self):
+        repository = self.project()
+        manager = self.manager()
+        self.addCleanup(manager.shutdown)
+        with patch("monkeyhub_api.runtime._project", wraps=runtime_module._project) as checks:
+            opened = manager.open(self.fixture.PROJECT_ID, str(repository.layout.root))
+            self.assertEqual(checks.call_count, 1)
+            for _ in range(5):
+                self.assertIs(manager.get(opened.runtime_id), opened)
+            self.assertEqual(checks.call_count, 1, "An unchanged project was opened again per request")
+
+            manifest = repository.layout.manifest
+            stamp = manifest.stat()
+            os.utime(manifest, ns=(stamp.st_atime_ns, stamp.st_mtime_ns + 1_000_000_000))
+            self.assertIs(manager.get(opened.runtime_id), opened)
+            self.assertEqual(checks.call_count, 2)
+            self.assertIs(manager.get(opened.runtime_id), opened)
+            self.assertEqual(checks.call_count, 2)
+
+            # A folder that now holds another project is refused as before.
+            other = json.loads(manifest.read_text(encoding="utf-8"))
+            other["project_id"] = "another-project"
+            manifest.write_text(json.dumps(other), encoding="utf-8")
+            with self.assertRaises(HubFailure) as refused:
+                manager.get(opened.runtime_id)
+            self.assertEqual(refused.exception.status, 422)
+            self.assertEqual(checks.call_count, 3)
+
+    def test_get_refuses_a_changed_binding_with_the_same_conflict(self):
+        repository = self.project()
+        manager = self.manager()
+        runtime = self.runtime(manager, repository)
+        runtime.binding_signature = runtime_module.binding_signature(runtime.project_dir)
+        with patch("monkeyhub_api.runtime._project", return_value=("another-project", runtime.project_dir)) as checks:
+            self.assertIs(manager.get(runtime.runtime_id), runtime)
+            checks.assert_not_called()
+            os.utime(repository.layout.manifest, ns=(1, 1))
+            with self.assertRaises(HubFailure) as refused:
+                manager.get(runtime.runtime_id)
+        self.assertEqual((refused.exception.status, refused.exception.error.code), (409, "PROJECT_MISMATCH"))
+
+    def test_idle_watcher_skips_the_history_read_of_an_unchanged_project(self):
+        repository = self.project()
+        manager = self.manager()
+        runtime = self.runtime(manager, repository)
+        _settle(repository.layout.root)
+        now = [0.0]
+        refreshes = []
+        script = []
+
+        def heartbeat(_timeout):
+            refreshes.append(refresh.call_count)
+            step = len(refreshes)
+            if step == 1:
+                now[0] = 30.0  # idle fallback due; nothing on disk moved
+            elif step == 2:
+                now[0] = 60.0
+                repository.create_run("external-run")  # a separate client writes
+                _settle(repository.layout.root)
+            elif step == 3:
+                now[0] = 90.0  # unchanged since that read
+            elif step == 4:
+                runtime.wake.set()  # a Hub mutation still refreshes at once
+            elif step == 5:
+                now[0] = 120.0  # the first idle pass after it reads and records
+            elif step == 6:
+                now[0] = 150.0
+            else:
+                manager._closing.set()
+            script.append(now[0])
+
+        with patch.object(manager, "refresh", wraps=manager.refresh) as refresh, \
+             patch.object(runtime.wake, "wait", side_effect=heartbeat), \
+             patch.object(manager, "_observe_work_copies", return_value=0), \
+             patch("monkeyhub_api.runtime.time.monotonic", side_effect=lambda: now[0]):
+            manager._watch(runtime)
+
+        # Refresh counts after each pass: first idle read, skipped, changed,
+        # skipped, woken, recorded again, skipped.
+        self.assertEqual(refreshes, [1, 1, 2, 2, 3, 4, 4])
+
+    def test_runtime_snapshot_of_five_projects_stays_in_milliseconds(self):
+        workers, sessions, repositories = [], [], []
+        for index in range(5):
+            repository = self.project(f"p{index}")
+            path = str(repository.layout.root)
+            workers.append(WorkerSnapshot(f"studio:{index}", "studio", self.fixture.PROJECT_ID, path,
+                                          f"instance-{index}", 4000 + index, "running", "ready", True,
+                                          f"http://127.0.0.1:{9100 + index}/", None))
+            for number in range(4):
+                sessions.append(ChatSummary(id=f"chat-{index}-{number}", projectId=self.fixture.PROJECT_ID,
+                                            projectDir=path, title=f"chat {number}", provider="codex",
+                                            createdAt="2026-09-26T00:00:00+00:00", updatedAt="2026-09-26T00:00:00+00:00",
+                                            archived=number == 3))
+            repositories.append(repository)
+        manager = self.manager(workers, sessions)
+        for index, repository in enumerate(repositories):
+            runtime = self.runtime(manager, repository, f"runtime-{index}")
+            runtime.retained = manager._read_retained(runtime)
+            for number in range(60):
+                admission, _ = runtime.operations.admit(str(uuid4()), "POST", "/api/proposals", str(number).encode(),
+                                                        retained=runtime.retained, source="studio", session_id=None)
+                runtime.operations.replied(admission, HttpResult(200 if number % 5 else 409, b"{}", {}))
+
+        snapshot = manager.snapshot()
+        self.assertEqual(len(snapshot.projects), 5)
+        self.assertEqual(sum(len(project.sessions) for project in snapshot.projects), 20)
+        self.assertTrue(all(len(project.workers) == 1 for project in snapshot.projects))
+        self.assertEqual([project.model_dump() for project in snapshot.projects],
+                         [manager.project_snapshot(runtime).model_dump() for runtime in manager._projects.values()])
+        timings = []
+        for _ in range(5):
+            started = time.perf_counter()
+            manager.snapshot()
+            timings.append(time.perf_counter() - started)
+        self.assertLess(min(timings), 0.2, f"GET /api/runtime took {min(timings) * 1000:.0f} ms at this size")
 
 
 if __name__ == "__main__":
