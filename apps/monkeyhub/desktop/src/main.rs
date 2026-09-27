@@ -326,6 +326,8 @@ fn supervise(
                                             &format!("Confirmed idle restart to {commit}"),
                                         );
                                         pending_update = Some(commit);
+                                        // #373: a later launch leaves this restart to open the new version.
+                                        monkeyhub_desktop::single_instance::restarting_for_update();
                                         shared.shutdown.store(true, Ordering::SeqCst);
                                     }
                                     Err(error) => {
@@ -474,7 +476,11 @@ fn run() -> Result<(), String> {
                     if close_shared.finished.load(Ordering::SeqCst) { close_app.exit(0); }
                 }
             });
-            monkeyhub_desktop::single_instance::attach(&window, setup_log.clone());
+            // #373: a later launch waits while this desktop closes, and otherwise brings it forward.
+            let closing = setup_shared.clone();
+            monkeyhub_desktop::single_instance::attach(&window, setup_log.clone(), move || {
+                closing.shutdown.load(Ordering::SeqCst)
+            });
             if setup_shared.trial {
                 let trial_shared = setup_shared.clone();
                 let trial_app = app.handle().clone();

@@ -325,10 +325,11 @@ class WindowsProcesses:
     def foreground(self):
         return self.api("GetForegroundWindow", [], wintypes.HWND)()
 
-    def may_hand_over_foreground(self):
-        """Whether a process started now may take the foreground at all. Only a process that
-        may take it itself can pass that on (ASFW_ANY); a busy desktop usually refuses."""
-        return bool(self.api("AllowSetForegroundWindow", [wintypes.DWORD], wintypes.BOOL)(0xFFFFFFFF))
+    def dpi_awareness(self, hwnd):
+        """0 when Windows stretches the window's bitmap at any scaling (blurry), 1 when it is
+        drawn at the system DPI, 2 when it is drawn at each monitor's DPI."""
+        context = self.api("GetWindowDpiAwarenessContext", [wintypes.HWND], ctypes.c_void_p)(hwnd)
+        return self.api("GetAwarenessFromDpiAwarenessContext", [ctypes.c_void_p], ctypes.c_int)(context)
 
 
 @unittest.skipUnless(os.name == "nt" and EXE, "Set MONKEYHUB_DESKTOP_EXE to run the real Windows EXE tests")
@@ -881,17 +882,6 @@ $pattern.Current.Value | ConvertTo-Json -Compress
         self.native.minimize(main)
         wait_for(lambda: self.native.minimized(main), "The open window did not minimize")
         logs = set(self.runtime.glob("logs/desktop-*.log"))
-        # Where no started process may take the foreground (someone is working on this
-        # desktop), Windows restores the window and flashes its taskbar button instead. The
-        # two front-window checks then report a skip; everything else is still checked.
-        foreground = self.native.may_hand_over_foreground()
-
-        def in_front(hwnd, check):
-            with self.subTest(check):
-                if not foreground:
-                    self.skipTest("no started process may take the foreground on this desktop")
-                wait_for(lambda: self.native.foreground() == hwnd, f"Not in front: {check}")
-
         started = time.monotonic()
         repeat = self.start()
         classes = set()
@@ -904,10 +894,31 @@ $pattern.Current.Value | ConvertTo-Json -Compress
         dialog, caption, text = wait_for(notice, "The repeated launch showed no notice", timeout=30)
         self.assertLess(time.monotonic() - started, 15, "The repeated launch was not quick")
         self.assertEqual(caption, "MonkeyHub")
-        self.assertIn("MonkeyHub 已在运行，已切换到打开的窗口。", text)
-        self.assertIn("MonkeyHub is already running; switched to its window.", text)
+        # The launch is per-monitor aware before its first window; Windows draws its message
+        # box at the system DPI, which is sharp at 125-150 % (an unaware one is stretched).
+        self.assertGreater(self.native.dpi_awareness(dialog), 0, "The notice is DPI-unaware")
         wait_for(lambda: not self.native.minimized(main), "The open window was not restored")
-        wait_for(lambda: "event=activate" in self.log_text(), lambda: f"The open desktop was not asked: {self.log_text()}")
+        answer = wait_for(lambda: re.search(
+            rf"event=relaunch requester={repeat.pid} answer=brought-forward minimized=true foreground=(true|false)",
+            self.log_text()), lambda: f"The open desktop was not asked: {self.log_text()}")
+        # The open desktop reports whether Windows gave its window the foreground; where it
+        # did not (someone is working on this desktop, or it takes no input), Windows flashes
+        # the taskbar button instead. The notice claims a switch only in the first case, and
+        # only then are the two front-window checks meaningful here.
+        foreground = answer.group(1) == "true"
+        if foreground:
+            self.assertIn("MonkeyHub 已在运行，已切换到打开的窗口。", text)
+            self.assertIn("MonkeyHub is already running; switched to its window.", text)
+        else:
+            self.assertIn("MonkeyHub 已在运行，请使用已打开的窗口。", text)
+            self.assertIn("MonkeyHub is already running; please use its open window.", text)
+
+        def in_front(hwnd, check):
+            with self.subTest(check):
+                if not foreground:
+                    self.skipTest("Windows kept the foreground elsewhere on this desktop")
+                wait_for(lambda: self.native.foreground() == hwnd, f"Not in front: {check}")
+
         in_front(dialog, "the notice above the window it raised")
         classes.update(name for _, name, _ in self.native.top_level(repeat.pid))
         self.native.dismiss(dialog)
@@ -941,10 +952,40 @@ $pattern.Current.Value | ConvertTo-Json -Compress
         self.assertNotEqual(trial.returncode, 0)
         self.assertFalse(classes & {"#32770", "Tauri Window"}, classes)
         self.assertTrue(self.native.minimized(main), "A refused update trial activated the open window")
-        self.assertNotIn("event=activate", self.log_text())
+        self.assertNotIn("event=relaunch", self.log_text())
         self.untouched_by_the_refused_launch(logs)
         self.native.close_window(self.shell.pid)
         self.assertEqual(self.shell.wait(timeout=40), 0)
+        self.drained()
+
+    def test_launch_while_the_open_desktop_closes_becomes_the_running_desktop(self):
+        """A launch while the open desktop is still draining shows no notice: it waits for that
+        desktop to exit, then starts as the running desktop with its own window and Hub."""
+        self.without_project()
+        self.launch()
+        self.ready()
+        first, first_pids, first_ports = self.shell, self.pids, self.ports
+        logs = set(self.runtime.glob("logs/desktop-*.log"))
+        with self.native.suspend(self.hub_pid):  # hold the first desktop in its drain
+            self.native.close_window(first.pid)
+            self.wait_state("stopping")
+            relaunch = self.start()
+            wait_for(lambda: f"event=relaunch requester={relaunch.pid} answer=closing" in self.log_text(),
+                     lambda: f"The closing desktop was not asked: {self.log_text()}")
+            time.sleep(1)  # it keeps waiting, quietly
+            self.assertIsNone(relaunch.poll(), "The launch gave up while the open desktop closed")
+            self.assertEqual([name for _, name, _ in self.native.top_level(relaunch.pid)
+                              if name in ("#32770", "Tauri Window")], [])
+            self.assertEqual(set(self.runtime.glob("logs/desktop-*.log")), logs)
+        self.assertEqual(first.wait(timeout=40), 0)
+        self.shell = relaunch
+        self.log = wait_for(lambda: next(iter(set(self.runtime.glob("logs/desktop-*.log")) - logs), None),
+                            lambda: f"The waiting launch did not start; exit={relaunch.poll()}")
+        self.ready()
+        self.assertIsNone(self.native.notice(relaunch.pid))
+        self.native.close_window(relaunch.pid)
+        self.assertEqual(relaunch.wait(timeout=40), 0)
+        self.pids, self.ports = self.pids | first_pids, self.ports | first_ports
         self.drained()
 
     def test_other_runtime_root_runs_side_by_side(self):
