@@ -287,12 +287,9 @@ def _honesty(
             "no Level@1 in the record: nothing here places an element in "
             "elevation"
         )
-    if not axes:
-        lines.append(
-            "no GridAxis@1 in the record: grid-axis references are unavailable; "
-            "explicit project-local points and sketch profiles can still place "
-            "elements in plan, with a declared base level"
-        )
+    # A grid is an optional reference system, not something a project lacks:
+    # without one nothing is said about it here. A request that names a grid
+    # role the record does not declare is refused by the record itself (#408).
     for axis in axes:
         if axis.const is None:
             lines.append(

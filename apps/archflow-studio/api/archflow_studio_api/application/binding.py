@@ -1026,8 +1026,9 @@ def initialize_modeling(binding: ProjectBinding) -> bool:
             Entity(
                 "model",
                 "Component@1",
+                # Unclassified: the only component a fresh project shows is
+                # not a template for classifying new parts (#408).
                 fields={
-                    "semantic_kind": "building",
                     "intent": "Root for candidate modeling",
                     "source_refs": [evidence],
                 },
