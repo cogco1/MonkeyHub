@@ -60,6 +60,8 @@ export interface SessionHandle extends SessionSnapshot {
    */
   reload(runId?: string | null, sourceStageRef?: string | null, branchId?: string, background?: boolean,
     alreadyReadProjection?: StateProjectionDto, persist?: boolean): Promise<Session | null>;
+  /** The refusal the latest reload published, readable as soon as that reload answers null. */
+  failure(): StudioApiError | null;
   /** Refresh version choices without re-projecting or selecting an editing base. */
   refreshWorkingCopies(): Promise<readonly WorkingCopyDto[] | null>;
   refreshWorkingDraft(): Promise<WorkingDraftDto | null>;
@@ -322,6 +324,7 @@ export function useSession(notice: (line: string) => void, capabilities: readonl
   const [controller] = useState(() => createSessionController(studio, connection.baseUrl, capabilities, persistEditingBase, expectedProjectId));
   const snapshot = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
   const { reload } = controller;
+  const failure = useCallback(() => controller.getSnapshot().baseError, [controller]);
   const noticeRef = useRef(notice);
   noticeRef.current = notice;
   const initialBaseRef = useRef(initialBase);
@@ -344,6 +347,7 @@ export function useSession(notice: (line: string) => void, capabilities: readonl
   return {
     ...snapshot,
     reload,
+    failure,
     refreshWorkingCopies: controller.refreshWorkingCopies,
     refreshWorkingDraft: controller.refreshWorkingDraft,
     saveSyncedBase: controller.saveSyncedBase,
