@@ -635,8 +635,12 @@ class ChatTests(unittest.TestCase):
         tools = {tool["name"]: tool for tool in _tools_of(chat)}
         modelling = tools["studio_request"]["description"]
         for contract in ("/api/proposals/sketch", "/api/capabilities", "sourceRunId",
-                         "keep", "against=<runId>", "never send the request again"):
+                         "keep", "against=<runId>", "never send the request again",
+                         "never guess a nearby id"):
             self.assertIn(contract, modelling)
+        # #408: a stated word goes straight to Studio; the agent is not sent to the alias table first.
+        self.assertIn("send their word as semanticKind", modelling)
+        self.assertNotIn("GET /api/semantics supplies", modelling)
         for provider in ("codex", "claude"):
             with self.subTest(provider=provider):
                 session = self.create(provider=provider)

@@ -533,6 +533,11 @@ class SpatialConstraintResponse:
         )
 
 
+# The spatial tree's token for a component whose meaning is not established yet.
+# It is not a semantic claim: gaining a specific kind from it is enrichment.
+NEUTRAL_SEMANTIC_KIND = "component"
+
+
 @dataclass(frozen=True, slots=True)
 class DesignComponent:
     """One stable semantic component and its current coarse geometry."""
@@ -1072,9 +1077,11 @@ def compile_component_transition(
     for component_id in sorted(set(before) & set(after)):
         old = before[component_id]
         new = after[component_id]
-        if (
-            old.parent_component_id != new.parent_component_id
-            or old.semantic_kind != new.semantic_kind
+        # Meaning accumulates: an unclassified component may gain a kind,
+        # but a stated kind is not silently exchanged for another (#408).
+        if old.parent_component_id != new.parent_component_id or (
+            old.semantic_kind != new.semantic_kind
+            and old.semantic_kind != NEUTRAL_SEMANTIC_KIND
         ):
             raise SpatialProposalError(
                 f"stable component identity changed meaning: {component_id}"
