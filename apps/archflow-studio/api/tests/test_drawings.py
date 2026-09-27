@@ -139,6 +139,21 @@ class DrawingTests(CandidateTestCase):
         self.assertGreater(up[2], 0)
         self.assertEqual(self.client.get("/api/documents", params={"runId": self.model["runId"]}).json()["documents"], [])
 
+    def test_a_drawn_view_reports_load_and_render_time_separately(self):
+        from archflow_studio_api.application.drawings import draw_model_view
+
+        binding = bound_project(self.app.state)
+        for view in ("axon", "front"):
+            with self.subTest(view=view):
+                drawn = draw_model_view(binding, model_source=ModelSource.from_dict(self.model), view=view, size_px=512)
+                self.assertGreater(drawn.load_s, 0)
+                self.assertGreater(drawn.render_s, 0)
+                self.assertLessEqual(max(drawn.width, drawn.height), 512)
+        tagged = draw_model_view(binding, model_source=ModelSource.from_dict(self.model), view="axon", size_px=256,
+                                 png_text={"archflow:recipe": "synthetic"})
+        with Image.open(BytesIO(tagged.png)) as image:
+            self.assertEqual(image.text, {"archflow:recipe": "synthetic"})
+
     def test_model_view_keeps_the_named_run_after_a_new_candidate_and_bounds_large_models(self):
         original = self.client.get("/api/drawings/model-view", params=self.model)
         self.assertEqual(original.status_code, 200, original.text)

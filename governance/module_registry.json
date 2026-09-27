@@ -4145,7 +4145,8 @@
         "registering section perspective revisions from a complete verified source model in the existing document list with the same source resolution, cache, monitoring and registration as elevations, keeping the drawing owner's refusal names",
         "direct native model drawing selection: registered external sourceAsset stays frozen and has no modelSource; state-bound composed 3DM uses its own geometry, never a partial paired STEP",
         "SKP upload through the local standalone SDK, retaining original SKP and derived 3DM face geometry in the same P036 registration; retries reuse the verified original content",
-        "the drawing correction projection (05-S2, application/drawing_corrections.py): each cut-plan revision paired with the registered revision its receipt names as previous, the pair's replacement_cause, a recipe_diff of the two view recipes by dotted path and a classify into compiler_defect, semantic_rule, recipe or local_override; and the project's recipe suggestions - a pen or hatch spacing changed the same way in representation-only revisions no agent asked for on at least two drawings no active recipe covers - each citing its exact revision pairs and the page a recipe decision would cite"
+        "the drawing correction projection (05-S2, application/drawing_corrections.py): each cut-plan revision paired with the registered revision its receipt names as previous, the pair's replacement_cause, a recipe_diff of the two view recipes by dotted path and a classify into compiler_defect, semantic_rule, recipe or local_override; and the project's recipe suggestions - a pen or hatch spacing changed the same way in representation-only revisions no agent asked for on at least two drawings no active recipe covers - each citing its exact revision pairs and the page a recipe decision would cite",
+        "the content-keyed projection cache (ADR-008 #367): key = sha256(model asset sha256, kind, recipe hash, renderer version, SALT); PNG blobs in <project cache dir>/projections/blobs named by their own sha256, written then renamed and self-describing through text chunks; one status row per key behind StatusStore (InMemoryStatusStore is the part-A stand-in for the index table); one low-priority render subprocess with timeout, memory cap, leases, bounded retries and a collector with a grace window"
       ],
       "does_not_own": [
         "producing the export or its receipt - adapters.cad_execution through runtime.project_runner",
@@ -4247,7 +4248,15 @@
         "recipe_diff",
         "classify",
         "recipe_suggestions",
-        "Correction"
+        "Correction",
+        "GET /api/projections",
+        "GET /api/projections/{key}",
+        "GET /api/projections/blobs/{sha256}",
+        "projection_key",
+        "projection_spec",
+        "ProjectionQueue",
+        "StatusStore",
+        "draw_model_view"
       ],
       "depends_on": [
         "adapters.cad_execution",
@@ -4324,7 +4333,8 @@
         "External imported drawings never invent design state or driving dimensions; exact source run/hash and representation edits survive restart. Missing SKP runtime and unsupported 3DM geometry are explicit errors.",
         "SKP sourceImport metadata exposes the original file name and source artifact plus conversion warnings through model upload/listing and drawing receipts; import loss is never hidden by a successful projection.",
         "A drawing correction is derived, never recorded (05 option A): GET /api/drawings/corrections reads the retained revisions and the active recipe decisions again on every call and writes nothing. A pair is only a revision and the one its receipt names, within one drawing; its class is a pure function of the recipe diff and the replacement cause, and a source rebuild is no correction. A suggestion is only offered: it counts representation-only recipe pairs no agent asked for, grouped by key and direction, needs two distinct drawings (D-05-1), skips a key an active recipe already gives that drawing, and becomes memory only by a person's recipe decision citing its page. V0 cleanup reports name no object, so no hide is classed a compiler defect.",
-        "one run's artifact rows and documents are kept per run under the stamps of its manifest, its records directory, every directory and file under its workspaces (artifacts) and each file its rows cite outside the run; the project's listing is the runs' rows in run order and then the committed-source step, whose per-run answer is kept under the stamps of the run, the design branches, its runner receipts and its source Stage; mutable row parts are copied for each caller, and artifact_bytes still reads and hashes the file on every call"
+        "one run's artifact rows and documents are kept per run under the stamps of its manifest, its records directory, every directory and file under its workspaces (artifacts) and each file its rows cite outside the run; the project's listing is the runs' rows in run order and then the committed-source step, whose per-run answer is kept under the stamps of the run, the design branches, its runner receipts and its source Stage; mutable row parts are copied for each caller, and artifact_bytes still reads and hashes the file on every call",
+        "A projection key names no run and no time; its blob is served immutable and never cited as evidence; deleting the cache directory only makes the next read draw again."
       ],
       "status": "canonical",
       "tests": [
@@ -4345,7 +4355,8 @@
         "apps/archflow-studio/api/tests/test_native_drawings.py",
         "apps/archflow-studio/api/tests/test_drawing_corrections.py",
         "apps/archflow-studio/api/tests/test_conditional_reads.py",
-        "apps/archflow-studio/api/tests/test_derivation_memo.py"
+        "apps/archflow-studio/api/tests/test_derivation_memo.py",
+        "apps/archflow-studio/api/tests/test_projections.py"
       ],
       "notes": "The viewer's only source of model bytes; digests are the identity, filenames are not.",
       "files": [
@@ -4359,7 +4370,10 @@
         "apps/archflow-studio/api/archflow_studio_api/application/drawing_dimensions.py",
         "apps/archflow-studio/api/archflow_studio_api/application/drawing_corrections.py",
         "apps/archflow-studio/api/archflow_studio_api/application/model_exports.py",
-        "apps/archflow-studio/api/archflow_studio_api/routes/model_exports.py"
+        "apps/archflow-studio/api/archflow_studio_api/routes/model_exports.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/projections.py",
+        "apps/archflow-studio/api/archflow_studio_api/routes/projections.py",
+        "apps/archflow-studio/api/archflow_studio_api/transport/projections.py"
       ]
     },
     {
