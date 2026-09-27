@@ -1,37 +1,4 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": [
-    {
-      "id": "GH-389",
-      "status": "active",
-      "branch": "codex/389-integration-packs",
-      "worktree": "C:\\Users\\asus\\.codex\\worktrees\\389-integration-packs\\ARCHFLOW_V4",
-      "base_ref": "7d0616b932866eb7c96b833c28bdafdf7a8e10da",
-      "contributor": "Codex",
-      "reviewer": null,
-      "handoff": null,
-      "modules": [
-        "adapters.cad_execution",
-        "hub.shell"
-      ],
-      "write_scope": [
-        "archflow/adapters/local_cad_discovery.py",
-        "archflow/adapters/cad_execution.py",
-        "archflow/adapters/blender_cad.py",
-        "archflow/adapters/blender_projection.py",
-        "archflow/adapters/integration_packs.py",
-        "apps/monkeyhub/api/monkeyhub_api/main.py",
-        "apps/monkeyhub/api/tests/test_integrations.py",
-        "apps/monkeyhub/web/src/api/generated/",
-        "tests/test_software_discovery.py",
-        "tests/test_integration_packs.py",
-        "tests/test_model_providers.py",
-        "governance/module_registry.json",
-        "docs/SYSTEM_MAP.md",
-        "docs/PROTOCOL.md",
-        "docs/INTEGRATION_PACKS.md"
-      ],
-      "depends_on": []
-    }
-  ]
+  "items": []
 }
