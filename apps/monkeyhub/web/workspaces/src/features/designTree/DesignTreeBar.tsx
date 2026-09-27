@@ -88,7 +88,7 @@ export function DesignTreeBar({ data, seen, open, viewing, onToggle, onBackToCur
   const head = tree?.nodes.get(CURRENT)?.runId ?? null;
   const shown = viewing && viewing.runId !== head ? viewing : null;
   const node = shown && data.canContinue ? viewedNode(tree, shown) : null;
-  // What the chip itself asked to continue, from this view: its refusal is read here; the side card reads its own.
+  // What the chip itself asked to continue, from this view: its refusal is read here; the inspector reads its own.
   const [asked, setAsked] = useState<{ view: DesignTreeView; node: string } | null>(null);
   const mine = node !== null && asked !== null && asked.view === shown && asked.node === node.id;
   const refused = mine && data.outcome?.kind === "refused" && data.outcome.node === node.id && data.outcome.error ? data.outcome.error : null;
