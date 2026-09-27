@@ -184,11 +184,13 @@ test("the shipped export control and versions panel answer for the model on scre
 
   await t.test("the embedded stage offers it in its own view tools, for the model being viewed", async () => {
     assert.deepEqual(errors, []);
-    // Embedded: the desktop page's versions toggle is not rendered here, so
-    // this control is not hiding behind it.
-    assert.equal(await page.locator("button.stage__versions-toggle").count(), 0);
+    // The Hub is the stage's only host since #168, so Versions is always offered
+    // (a bar menu opening a docked inspector since #345); this control is
+    // reached with Versions closed, not from behind it.
+    assert.equal(await page.locator("button.stage__versions-toggle").getAttribute("aria-expanded"), "false");
     await openViewTools();
     await button.waitFor({ state: "visible", timeout: 5_000 });
+    assert.equal(await page.locator("#stage-versions-panel").count(), 0);
     assert.equal(await button.isEnabled(), true);
     assert.equal((await controls()).source, step.sha256);
   });

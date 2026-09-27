@@ -3,6 +3,15 @@ import { pathToFileURL } from "node:url";
 
 // Read-only regression against an explicitly supplied real project URL.
 // No fixture upload, ink input, save, intent, or retained-state mutation occurs.
+//
+// Not runnable on main (#355): its subject went with the Studio page in #168
+// (GH-127). That page served the app beside its API and took `view=documents`
+// deep links, href source links and `.stage-mode-switch`; a Project Runtime now
+// serves no page, and the Hub opens a Board page in place with neither URL
+// parameters nor a new tab, so no DOCUMENT_LINK_URL can satisfy it.
+// boardDocumentOpen covers opening a Board page in place against its own
+// isolated Studio API. Rewriting this suite on that path, or retiring it, is
+// the owner's call.
 assert.ok(process.env.DOCUMENT_LINK_URL, "DOCUMENT_LINK_URL is required");
 const link = new URL(process.env.DOCUMENT_LINK_URL);
 assert.equal(link.searchParams.get("view"), "documents");
