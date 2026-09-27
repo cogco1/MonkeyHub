@@ -1,28 +1,4 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": [
-    {
-      "id": "GH-379",
-      "status": "active",
-      "branch": "codex/379-pipeline-speed",
-      "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-379-pipeline-speed",
-      "base_ref": "75b581e4",
-      "contributor": "Claude (cloud session)",
-      "reviewer": null,
-      "handoff": null,
-      "modules": [
-        "hub.shell"
-      ],
-      "write_scope": [
-        ".github/workflows/nightly.yml",
-        ".github/workflows/desktop.yml",
-        ".github/workflows/verify.yml",
-        "AGENTS.md",
-        "tests/test_installer_signed_release.py",
-        "apps/monkeyhub/api/tests/test_launch_hub.py",
-        "docs/testing/nightly-release.md"
-      ],
-      "depends_on": []
-    }
-  ]
+  "items": []
 }
