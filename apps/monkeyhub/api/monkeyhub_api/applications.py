@@ -209,6 +209,16 @@ class Applications:
             "ARCHFLOW_STUDIO_INTENT_PROVIDER": preferences.intent_provider or "deterministic",
             "MONKEYMONITOR_DATA_DIR": str(diagnostics),
         })
+        try:
+            project_id = ProjectManifest.from_dict(
+                json.loads((project / "project.json").read_text(encoding="utf-8-sig"))).project_id
+        except (OSError, ValueError, TypeError):
+            project_id = None
+        if project_id is not None:
+            # The project's derived index lives in the Hub cache, per runtime,
+            # never in the project folder (ADR-008 phase 1b).
+            runtime_id = str(uuid5(NAMESPACE_URL, f"{project_id}:{self._project_key(str(project))}"))
+            environ["ARCHFLOW_STUDIO_INDEX_DIR"] = str(self.runtime_root / "cache" / "projects" / runtime_id)
         if settings.reference_run:
             environ["ARCHFLOW_STUDIO_REFERENCE_RUN"] = settings.reference_run
         if preferences.intent_model:

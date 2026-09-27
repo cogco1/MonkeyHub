@@ -19,6 +19,12 @@ runs, prepares accepted canonical transitions, atomically compare-and-swaps
 pre-commit records after a crash. Producers receive its sink interfaces and
 an assigned `PersistenceDestination`; they never choose a path.
 
+`index/` keeps a derived SQLite index of one project (ADR-008 phase 1b) in a cache
+directory its caller names, never inside the project. One keeper thread, fed by the
+layout watch (`watch.py`) and the write observer, is its only writer. It is not
+project state: it can be deleted at any time and is rebuilt from the records, and a
+row is never evidence.
+
 `location.py` resolves existing projects under roots supplied explicitly by the
 caller. `FilesystemProjectRepository.initialize` creates a project at an explicit
 root. These paths do not change `project.json` identity or `HEAD` authority.

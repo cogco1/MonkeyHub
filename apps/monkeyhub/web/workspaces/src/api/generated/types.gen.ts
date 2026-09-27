@@ -4433,6 +4433,53 @@ export type ImpactLockDto = {
 };
 
 /**
+ * IndexRowsDto
+ *
+ * Rows of one table of the project index (ADR-008 phase 1b).
+ *
+ * The rows are derived from the project's P036 records and can be rebuilt
+ * from them at any time. A row or a key is never evidence: each row names
+ * the record it was read from (``uri``, ``receiptRef``, ``stageRef`` and the
+ * like), and that record is.
+ */
+export type IndexRowsDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Epoch
+     *
+     * changes whenever the index is rebuilt
+     */
+    epoch: string;
+    /**
+     * Revision
+     *
+     * moves once for every change the index committed
+     */
+    revision: number;
+    /**
+     * Table
+     */
+    table: string;
+    /**
+     * Rows
+     *
+     * each row's columns, its body as the projector stated it, and rev: the revision that last changed it
+     */
+    rows: Array<{
+        [key: string]: unknown;
+    }>;
+    /**
+     * Truncated
+     *
+     * more rows matched than the limit returned
+     */
+    truncated: boolean;
+};
+
+/**
  * InitializeDesignStageRequestDto
  */
 export type InitializeDesignStageRequestDto = {
@@ -12569,6 +12616,51 @@ export type ReadWorktreesApiWorktreesGetResponses = {
 };
 
 export type ReadWorktreesApiWorktreesGetResponse = ReadWorktreesApiWorktreesGetResponses[keyof ReadWorktreesApiWorktreesGetResponses];
+
+export type ReadIndexApiIndexTableGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path: {
+        /**
+         * Table
+         */
+        table: string;
+    };
+    query?: {
+        /**
+         * Limit
+         */
+        limit?: number;
+    };
+    url: '/api/index/{table}';
+};
+
+export type ReadIndexApiIndexTableGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadIndexApiIndexTableGetError = ReadIndexApiIndexTableGetErrors[keyof ReadIndexApiIndexTableGetErrors];
+
+export type ReadIndexApiIndexTableGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: IndexRowsDto;
+};
+
+export type ReadIndexApiIndexTableGetResponse = ReadIndexApiIndexTableGetResponses[keyof ReadIndexApiIndexTableGetResponses];
 
 export type ReadStateApiStateGetData = {
     body?: never;

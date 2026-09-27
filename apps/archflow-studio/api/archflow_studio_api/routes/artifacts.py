@@ -185,7 +185,7 @@ def read_documents(request: Request, run_id: str | None = Query(default=None, al
     binding = bound_project(request.app.state)
     return SourceDocumentListDto(
         project_id=binding.project_id, run_id=run_id,
-        documents=[document_dto(document) for document in list_documents(binding, run_id)],
+        documents=[document_dto(document) for document in list_documents(binding, run_id, indexed=True)],
     )
 
 
@@ -238,7 +238,7 @@ def create_document_work_copy(
 def read_artifacts(request: Request) -> ArtifactListDto:
     """List the exported models, each one still answered for by its receipt."""
 
-    return to_dto(list_artifacts(bound_project(request.app.state), include_candidate_sources=True))
+    return to_dto(list_artifacts(bound_project(request.app.state), include_candidate_sources=True, indexed=True))
 
 
 @router.post(

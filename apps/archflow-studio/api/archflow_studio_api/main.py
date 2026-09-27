@@ -166,8 +166,9 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     A candidate run writes P036 records; killing its thread mid-run would
     leave a run directory nobody can account for. Shutting the worker down and
     waiting is the difference between a service that stops and one that stops
-    cleanly. Closing the binding stops its layout watch, which holds the
-    project folder open.
+    cleanly. Closing the binding stops its project index's keeper - what it had
+    not applied yet, the next open reconciles from the project's layout - and
+    its layout watch, which holds the project folder open.
     """
 
     if app.state.settings.service_role != SHARED_PROJECT_ROLE:
@@ -184,8 +185,9 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     await run_in_threadpool(app.state.jobs.shutdown)
     binding = getattr(app.state, "binding", None)
     if binding is not None:
-        # Its layout watch holds a handle on the project folder: let go of it
-        # with the project, not whenever the process happens to exit.
+        # Its layout watch holds a handle on the project folder, and its index
+        # keeper the index file and its lock: let go of both with the project,
+        # not whenever the process happens to exit.
         await run_in_threadpool(binding.close)
 
 

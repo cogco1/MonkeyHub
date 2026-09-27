@@ -539,6 +539,49 @@
       "kind": "distribution_build",
       "owner": "tools.package_monkeyapps",
       "reason": "Writes a developer delta ZIP only to the explicit output outside both input bundles; inputs are read-only and only the bounded temporary ZIP is cleaned on failure."
+    },
+    {
+      "path": "archflow/project/index/store.py",
+      "function": "__init__",
+      "operations": [
+        "mkdir",
+        "open_write"
+      ],
+      "kind": "derived_cache",
+      "owner": "project.index",
+      "reason": "Creates the index directory and opens index.lock, the single-writer lease, inside the caller-supplied nonproject index directory (the Hub's cache/projects/<runtimeId>); the index is derived from P036, never inside the project folder, and can be deleted at any time."
+    },
+    {
+      "path": "archflow/project/index/store.py",
+      "function": "_quarantine",
+      "operations": [
+        "unlink",
+        "replace"
+      ],
+      "kind": "derived_cache",
+      "owner": "project.index",
+      "reason": "Moves an index file SQLite cannot read, with its journal, aside before it is rebuilt once, removing the copy an earlier failure left, inside the caller-supplied nonproject index directory (the Hub's cache/projects/<runtimeId>); the index is derived from P036, never inside the project folder, and can be deleted at any time."
+    },
+    {
+      "path": "archflow/project/index/store.py",
+      "function": "_rebuild",
+      "operations": [
+        "unlink"
+      ],
+      "kind": "derived_cache",
+      "owner": "project.index",
+      "reason": "Removes a stale partial build before the index is projected into a new file, inside the caller-supplied nonproject index directory (the Hub's cache/projects/<runtimeId>); the index is derived from P036, never inside the project folder, and can be deleted at any time."
+    },
+    {
+      "path": "archflow/project/index/store.py",
+      "function": "_swap",
+      "operations": [
+        "unlink",
+        "replace"
+      ],
+      "kind": "derived_cache",
+      "owner": "project.index",
+      "reason": "Removes the old file's journal and renames the newly built index into place once no reader has the old file open, inside the caller-supplied nonproject index directory (the Hub's cache/projects/<runtimeId>); the index is derived from P036, never inside the project folder, and can be deleted at any time."
     }
   ],
   "forbidden_layer_imports": [

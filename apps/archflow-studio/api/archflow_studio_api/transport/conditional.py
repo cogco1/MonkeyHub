@@ -1,4 +1,4 @@
-"""Conditional reads of the decision tree's derived views (ADR-008 phase 0a).
+"""Conditional reads of the decision tree's derived views (ADR-008 phases 0a, 1b).
 
 The tree's surfaces poll views that are re-derived from hundreds of retained
 records. A view read under an unchanged ``ReadToken`` is the same view, so
@@ -14,6 +14,14 @@ versions and on nothing else (GH-363 audit). Git's racy rule extends to the
 tag: a token that is not stable neither answers 304 nor is remembered, and the
 tag it gives is marked, so it can never match a later stable token that
 happens to carry the same digest.
+
+A view that reads the project index (``INDEXED_READS``) keeps no answer here
+once an index answers for the binding (ADR-008: no interim memo after a route
+reads the index): its tag also names the index's epoch and revision, and it is
+stable only when the index was projected under the token's own fingerprint and
+holds every write the token counts. Every other view keeps its memo. The
+token's epoch stays in every tag: the index's survives a restart, but the
+versions beside it and the process's other state do not.
 """
 
 from __future__ import annotations
@@ -26,6 +34,8 @@ from urllib.parse import parse_qsl
 from starlette.concurrency import run_in_threadpool
 from starlette.datastructures import State
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
+
+from archflow.project.index import IndexState
 
 from ..application.binding import ProjectBinding, ReadToken, bound_project
 
@@ -47,13 +57,19 @@ CONDITIONAL_READS: dict[str, tuple[str, ...]] = {
     "/api/render/jobs": ("render_jobs",),
 }
 
+# The listed views that read the project index once one answers.
+INDEXED_READS = frozenset({"/api/artifacts", "/api/documents"})
+
 NOT_CACHED = b"no-cache"
 
 
-def entity_tag(token: ReadToken, path: str, query: list[tuple[str, str]], versions: list[tuple[str, Any]]) -> str:
-    """The strong tag of one view: the token, the path, the query and the versions."""
+def entity_tag(token: ReadToken, path: str, query: list[tuple[str, str]], versions: list[tuple[str, Any]],
+               index: IndexState | None = None) -> str:
+    """The strong tag of one view: the token, the path, the query, the versions and the index it reads."""
 
     material = [token.epoch, token.serial, token.fingerprint, path, query, versions]
+    if index is not None:
+        material.append(["index", index.token.epoch, index.token.revision])
     if not token.stable:
         material.append("unstable")
     digest = hashlib.sha256(json.dumps(material, separators=(",", ":")).encode("utf-8")).hexdigest()
@@ -125,6 +141,10 @@ class ConditionalReads:
             return
         path = scope["path"]
         query = sorted(parse_qsl(scope.get("query_string", b"").decode("latin-1"), keep_blank_values=True))
+        index = binding.index_state() if path in INDEXED_READS else None
+        if index is not None:
+            await self._indexed(scope, receive, send, token, index, path, query, versions)
+            return
         tag = entity_tag(token, path, query, versions)
         key = ("conditional-read", tag)
         if token.stable:
@@ -154,6 +174,29 @@ class ConditionalReads:
                 if not message.get("more_body", False):
                     binding.memo_put(token, key, (200, b"".join(answered["chunks"]), answered["media_type"]))
                     answered["chunks"] = None
+            await send(message)
+
+        await self.app(scope, receive, tagged)
+
+    async def _indexed(self, scope: Scope, receive: Receive, send: Send, token: ReadToken, index: IndexState,
+                       path: str, query: list[tuple[str, str]], versions: list[tuple[str, Any]]) -> None:
+        """A view that reads the index: tagged with it, answered 304 when unchanged, never remembered here."""
+
+        if token.stable and not (index.digest == token.fingerprint and index.serial >= token.serial):
+            # The index has not applied what this token has seen: the answer
+            # may come from the runs or from rows about to move.
+            token = ReadToken(token.epoch, token.serial, token.fingerprint, False)
+        tag = entity_tag(token, path, query, versions, index)
+        if token.stable and _matches(_header(scope, b"if-none-match"), tag):
+            await _answer(send, 304, tag)
+            return
+
+        async def tagged(message: Message) -> None:
+            if message["type"] == "http.response.start" and message["status"] == 200:
+                headers = [(name, value) for name, value in message.get("headers", ())
+                           if name.lower() not in (b"etag", b"cache-control")]
+                message = {**message, "headers": [*headers, (b"etag", tag.encode("latin-1")),
+                                                   (b"cache-control", NOT_CACHED)]}
             await send(message)
 
         await self.app(scope, receive, tagged)

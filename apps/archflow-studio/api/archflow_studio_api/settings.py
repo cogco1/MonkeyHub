@@ -39,6 +39,9 @@ BIND_ENV = "ARCHFLOW_STUDIO_BIND"
 TOKEN_ENV = "ARCHFLOW_STUDIO_TOKEN"
 ORIGINS_ENV = "ARCHFLOW_STUDIO_ORIGINS"
 MONITOR_DIR_ENV = "MONKEYMONITOR_DATA_DIR"
+# Where this process keeps the project's derived index (ADR-008 phase 1b):
+# the Hub names ``<cache>/projects/<runtime_id>``. Unset, no index is kept.
+INDEX_DIR_ENV = "ARCHFLOW_STUDIO_INDEX_DIR"
 RENDER_PROVIDER_ENV = "ARCHFLOW_STUDIO_RENDER_PROVIDER"
 RENDER_MODEL_ENV = "ARCHFLOW_STUDIO_RENDER_MODEL"
 RENDER_API_KEY_ENV = "ARCHFLOW_STUDIO_RENDER_API_KEY"
@@ -130,6 +133,9 @@ class StudioSettings:
     origins: tuple[str, ...] = ()
     # Optional engineering telemetry, outside the P036 project document.
     monitor_dir: Path | None = None
+    # The derived project index's cache directory, never inside the project;
+    # None keeps no index and every reader reads the project itself.
+    index_dir: Path | None = None
     # How much of the project a sentence may be compiled against, in tokens.
     intent_context_budget_tokens: int = 16000
     # Process assembly, not a project authority field. Actor credentials belong
@@ -152,6 +158,11 @@ class StudioSettings:
         settings directly all pass through this one constructor.
         """
 
+        if self.index_dir is not None and (
+            not self.index_dir.is_absolute()
+            or self.index_dir.resolve(strict=False).is_relative_to(Path(self.project_dir).resolve(strict=False))
+        ):
+            raise SettingsError(f"{INDEX_DIR_ENV} must be an absolute directory outside the project.")
         if self.render_provider not in ("off", "gemini"):
             raise SettingsError(f"{RENDER_PROVIDER_ENV} must be off or gemini.")
         if not math.isfinite(self.render_timeout_s) or not 1 <= self.render_timeout_s <= 300:
@@ -304,6 +315,7 @@ class StudioSettings:
             sync_token=os.environ.get(SYNC_TOKEN_ENV, "").strip() or None,
             sync_project_id=os.environ.get(SYNC_PROJECT_ID_ENV, "").strip() or None,
             monitor_dir=Path(os.environ[MONITOR_DIR_ENV]) if os.environ.get(MONITOR_DIR_ENV, "").strip() else None,
+            index_dir=Path(os.environ[INDEX_DIR_ENV].strip()) if os.environ.get(INDEX_DIR_ENV, "").strip() else None,
             origins=tuple(
                 origin
                 for origin in (
