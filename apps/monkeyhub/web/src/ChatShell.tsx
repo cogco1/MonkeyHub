@@ -1786,7 +1786,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
       <div className="chat-browser__pages">{workspaceTabs.map((item) => {
         const visible = panel && item === selectedTab;
         if (item.id === "monkeymonitor") return <div className="chat-monitor-workspace" key={`${item.id}:${item.revision}`} hidden={!visible} inert={!visible}>
-          <ErrorBoundary label={t.monitor}><MonitorPage preferences={preferences} active={visible} initialProjectId={item.monitorProjectId} openRequest={item.monitorOpenRequest} /></ErrorBoundary>
+          <ErrorBoundary label={t.monitor}><MonitorPage preferences={preferences} active={visible} initialProjectId={item.monitorProjectId} openRequest={item.monitorOpenRequest} projects={projects} /></ErrorBoundary>
         </div>;
         if (item.runtimeId) return <div className="chat-project-workspace project-workspace" key={item.runtimeId} hidden={!visible} inert={!visible}>
           <ProjectRuntimeProvider baseUrl={`${window.location.origin}/api/runtime/projects/${item.runtimeId}/studio`}>

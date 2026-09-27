@@ -385,3 +385,18 @@ function acceptState(source: DesignTreeSource, head: WorkingHeadDto | null, node
 
 /** The trunk's identity: when it changes, the view is fitted again. */
 export const trunkKey = (tree: GrowthTree) => tree.trunk.join("|");
+
+/**
+ * What an option's status bar says (#353): its review checks as the admission
+ * retained them, or work still running. `blockedBy` names the checks that did
+ * not hold (the violation marker, #294 Q2); an option admitted by an earlier
+ * record rather than an admission carries no verdict at all.
+ */
+export type TreeCheck = "held" | "violated" | "unchecked" | "running";
+
+export function checkOf(node: TreeNode): TreeCheck | null {
+  if (node.kind === "pending") return "running";
+  if (node.kind !== "candidate") return null;
+  if (node.candidate!.blockedBy.length > 0) return "violated";
+  return node.candidate!.legacy ? "unchecked" : "held";
+}

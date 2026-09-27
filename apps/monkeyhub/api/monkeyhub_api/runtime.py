@@ -20,6 +20,7 @@ from urllib.parse import parse_qs, urlencode, urlsplit
 from urllib.request import ProxyHandler, Request, build_opener
 from uuid import UUID, uuid4, uuid5, NAMESPACE_URL
 
+from archflow.project.layout import LayoutFingerprint, layout_fingerprint
 from archflow.project.record_kinds import STUDIO_DOCUMENT_MODEL_SOURCE, STUDIO_SOURCE_DOCUMENT
 from archflow.project.repository import FilesystemProjectRepository, ProjectRepositoryError
 from archflow_studio_api.application.artifacts import (
@@ -65,6 +66,21 @@ _WORK_COPY_CHECK_S = _IDLE_RETAINED_REFRESH_S
 
 def project_key(path: str) -> str:
     return os.path.normcase(str(Path(path).resolve()))
+
+
+def binding_signature(project_dir: str) -> tuple[int, int, int, bool] | None:
+    """Two stats that move whenever the folder could stop being the project it was.
+
+    The identity, size and time of ``project.json``, and whether ``HEAD``
+    exists. ``None`` when the manifest cannot be stat'ed at all.
+    """
+
+    root = Path(project_dir)
+    try:
+        manifest = os.stat(root / "project.json")
+    except OSError:
+        return None
+    return manifest.st_size, manifest.st_mtime_ns, manifest.st_ino, (root / "HEAD").exists()
 
 
 def _dismissible(record: OperationRecord) -> bool:
@@ -418,7 +434,9 @@ class OperationManager:
         return admission.resolvable
 
     def _shown(self, record: OperationRecord, admission: _Admission | None = None, **update) -> OperationRecord:
-        shown = record.model_copy(update={**update, "acknowledgedAt": None}, deep=True)
+        # Every OperationRecord field is a scalar, so a shallow copy is already a
+        # detached one; a deep copy of each record was most of a snapshot (#363).
+        shown = record.model_copy(update={**update, "acknowledgedAt": None})
         if admission is not None:
             shown.recoverable = self._recoverable(admission)
         # A dismissal speaks only for the status it read: an operation that
@@ -542,6 +560,9 @@ class ProjectRuntime:
     # What the last successful derivation of ``work_copies`` was read from.
     work_copy_key: tuple | None = None
     next_working_cleanup: float = 0.0
+    # ``binding_signature`` when the binding was last verified. ``get`` checks
+    # the project again only once these two stats move (#363).
+    binding_signature: tuple | None = None
 
 
 class ProjectRuntimeManager:
@@ -564,6 +585,8 @@ class ProjectRuntimeManager:
             self._chat_changed.add(project_key(session.projectDir))
 
     def open(self, project_id: str, project_dir: str) -> ProjectRuntime:
+        # Taken before the check, so a change during it is seen by the next get().
+        signature = binding_signature(project_dir)
         actual_id, actual_dir = _project(project_dir)
         if actual_id != project_id:
             raise HubFailure(409, "PROJECT_MISMATCH", "The requested project identity does not match this folder.")
@@ -581,6 +604,7 @@ class ProjectRuntimeManager:
                     journal_path=self.applications.runtime_root / "runtime/operations" / f"{runtime_id}.json")
                 runtime = ProjectRuntime(runtime_id, actual_id, actual_dir, operations, binding)
                 self._projects[runtime_id] = runtime
+            runtime.binding_signature = signature
             if runtime.state == "closed":
                 runtime.state = "open"
             if runtime.thread is None or not runtime.thread.is_alive():
@@ -597,8 +621,14 @@ class ProjectRuntimeManager:
             raise HubFailure(404, "RUNTIME_NOT_FOUND", "Open the project's runtime first.")
         if project_id is not None and project_id != runtime.project_id:
             raise HubFailure(409, "PROJECT_MISMATCH", "This request names another project.")
-        if _project(runtime.project_dir) != (runtime.project_id, runtime.project_dir):
-            raise HubFailure(409, "PROJECT_MISMATCH", "The runtime's project binding changed.")
+        # Opening and verifying the project costs tens of milliseconds, and every
+        # proxied request comes through here. Two stats say whether it can have
+        # changed; only then is it checked again, with the same refusal.
+        signature = binding_signature(runtime.project_dir)
+        if signature is None or signature != runtime.binding_signature:
+            if _project(runtime.project_dir) != (runtime.project_id, runtime.project_dir):
+                raise HubFailure(409, "PROJECT_MISMATCH", "The runtime's project binding changed.")
+            runtime.binding_signature = signature
         return runtime
 
     def discover(self):
@@ -612,10 +642,30 @@ class ProjectRuntimeManager:
                 except (HubFailure, StudioError):
                     continue
 
-    def project_snapshot(self, runtime: ProjectRuntime) -> ProjectRuntimeDto:
-        sessions = [row for row in [*self.chats.list(), *self.chats.list(archived=True)]
-                    if row.projectId == runtime.project_id and project_key(row.projectDir) == project_key(runtime.project_dir)]
-        workers = [worker_dto(row) for row in self.applications.worker_snapshots(project_dir=runtime.project_dir)]
+    def project_snapshot(self, runtime: ProjectRuntime, *, chats: list | None = None,
+                         workers: tuple | None = None, keys: dict[str, str] | None = None) -> ProjectRuntimeDto:
+        """One project's status. ``snapshot`` passes the chats and workers it read
+        once for every project, and ``keys``, each path it has resolved already:
+        resolving a path is a file-system call, and it was most of a snapshot (#363).
+        """
+
+        keys = {} if keys is None else keys
+
+        def key_of(path: str) -> str:
+            if path not in keys:
+                keys[path] = project_key(path)
+            return keys[path]
+
+        key = key_of(runtime.project_dir)
+        if chats is None:
+            chats = [*self.chats.list(), *self.chats.list(archived=True)]
+        sessions = [row for row in chats if row.projectId == runtime.project_id and key_of(row.projectDir) == key]
+        if workers is None:
+            rows = self.applications.worker_snapshots(project_dir=runtime.project_dir)
+        else:
+            # The supervisor's own selection: a worker whose launch names this project.
+            rows = [row for row in workers if row.project_dir is not None and key_of(row.project_dir) == key]
+        workers = [worker_dto(row) for row in rows]
         with runtime.lock:
             # A refused work-copy edit is reported through the runtime's one
             # error surface, behind anything wrong with the project itself and
@@ -631,9 +681,14 @@ class ProjectRuntimeManager:
         with self._lock:
             runtimes = tuple(self._projects.values())
         buffered = self.events.replay()
+        # One read of the chats and of the workers, and one resolution of each
+        # path, answer every project; per project each was read again.
+        keys: dict[str, str] = {}
+        chats = [*self.chats.list(), *self.chats.list(archived=True)]
+        workers = self.applications.worker_snapshots()
         return HubRuntimeDto(serverId=self.server_id, sequence=buffered[-1]["seq"] if buffered else 0,
-            projects=[self.project_snapshot(runtime) for runtime in runtimes],
-            workers=[worker_dto(row) for row in self.applications.worker_snapshots()])
+            projects=[self.project_snapshot(runtime, chats=chats, workers=workers, keys=keys) for runtime in runtimes],
+            workers=[worker_dto(row) for row in workers])
 
     def _read_retained(self, runtime: ProjectRuntime, *, worker=None) -> dict:
         from archflow_studio_api.application.runtime import inspect_runtime
@@ -988,6 +1043,9 @@ class ProjectRuntimeManager:
     def _watch(self, runtime: ProjectRuntime):
         next_retained_read = next_work_copy_check = 0.0
         last_snapshot_inputs = last_retained = None
+        # The project's layout when the last refresh the idle timer alone asked
+        # for began; None after any other refresh, which records none.
+        idle_layout: LayoutFingerprint | None = None
         while not self._closing.is_set():
             force_read = runtime.wake.is_set()
             runtime.wake.clear()
@@ -996,16 +1054,29 @@ class ProjectRuntimeManager:
             drained = runtime.state == "closed" and not any(row.process_id is not None for row in workers)
             active = runtime.operations._has_active() or any(
                 row.get("status") in {"queued", "running"} for row in (runtime.retained or {}).get("jobs", []))
-            due = (drained or force_read or active or worker_states != runtime.last_workers
-                   or time.monotonic() >= next_retained_read)
+            prompted = drained or force_read or active or worker_states != runtime.last_workers
+            due = prompted or time.monotonic() >= next_retained_read
             try:
+                layout = None
+                if due and not prompted:
+                    # Only the idle fallback asks, and it asks only whether a
+                    # separate client changed the project. If nothing on disk
+                    # moved since the last such read - a stable, equal layout
+                    # fingerprint - the retained history is not read again.
+                    layout = layout_fingerprint(runtime.project_dir)
+                    if idle_layout is not None and idle_layout.stable and layout.digest == idle_layout.digest:
+                        due = False
+                        next_retained_read = time.monotonic() + _IDLE_RETAINED_REFRESH_S
                 if due:
                     # Keep liveness/session reads responsive without rebuilding
                     # unchanged retained history on every idle heartbeat. Hub
                     # mutations wake this observer; the fallback sees changes
                     # made through a separate Studio/project client.
+                    idle_layout = None
                     self.refresh(runtime, cold=drained)
                     next_retained_read = time.monotonic() + _IDLE_RETAINED_REFRESH_S
+                    # Taken before the read began, and kept only once it succeeded.
+                    idle_layout = layout
             except (HubFailure, StudioError, OSError, HTTPException, ValueError) as exc:
                 next_retained_read = time.monotonic() + _IDLE_RETAINED_REFRESH_S
                 with runtime.lock:

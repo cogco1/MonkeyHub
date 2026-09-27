@@ -49,7 +49,7 @@
   line-height: 1.5; white-space: normal; }
 
 .design-tree { position: relative; display: flex; flex-direction: column; height: 100%; min-height: 0; background: var(--ground); color: var(--ink);
-  font-family: var(--font-ui); font-size: var(--text-ui, 13px); }
+  font-family: var(--font-ui); font-size: var(--text-ui, 13px); container: design-tree / inline-size; --design-tree-inspector-width: min(360px, 42%); }
 .design-tree__notice { display: flex; align-items: center; gap: 10px; margin: 0; padding: 7px 14px; border-bottom: 1px solid var(--line); background: var(--accent-soft);
   color: var(--ink-2); font-size: var(--text-caption, 12px); }
 .design-tree__body { position: relative; display: flex; flex: 1; min-height: 0; overflow: hidden; }
@@ -64,35 +64,85 @@
 .design-tree__canvas .excalidraw .dropdown-menu-button,
 .design-tree__canvas .excalidraw--mobile .App-bottom-bar { display: none !important; }
 
-.design-tree-card { position: absolute; z-index: 6; top: 14px; right: 14px; display: flex; flex-direction: column; gap: 10px;
-  width: min(330px, calc(100% - 28px)); max-height: calc(100% - 28px); overflow-y: auto; box-sizing: border-box; padding: 12px 14px;
-  border: 1px solid var(--line); border-radius: 8px; background: var(--panel); box-shadow: var(--shadow); font-size: var(--text-ui, 13px); }
-.design-tree-card__head { display: flex; align-items: flex-start; gap: 10px; }
-.design-tree-card__tile { display: grid; flex: none; place-items: center; width: 40px; height: 40px; border: 1px solid var(--line); border-radius: 6px;
-  background: var(--viewport); color: var(--muted); font-size: 18px; font-weight: 650; }
-.design-tree-card__identity { display: grid; flex: 1; gap: 2px; min-width: 0; }
-.design-tree-card__identity > span { color: var(--muted); font-size: var(--text-caption, 12px); }
-.design-tree-card__identity > strong { font-weight: 650; overflow-wrap: anywhere; }
-.design-tree-card__close { flex: none; width: 28px; height: 28px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--muted); font-size: 18px; line-height: 1; cursor: pointer; }
-.design-tree-card__close:hover { border-color: var(--line); color: var(--ink); }
-.design-tree-card__summary { margin: 0; color: var(--ink-2); line-height: 1.55; }
-.design-tree-card__facts { display: grid; gap: 4px; margin: 0; font-size: var(--text-caption, 12px); }
-.design-tree-card__facts > div { display: grid; grid-template-columns: 96px 1fr; gap: 8px; }
-.design-tree-card__facts dt { color: var(--muted); }
-.design-tree-card__facts dd { margin: 0; overflow-wrap: anywhere; }
-.design-tree-card__actions { display: flex; flex-wrap: wrap; gap: 8px; }
-.design-tree-card__actions small { color: var(--muted); font-weight: 400; }
-.design-tree-card__note { margin: 0; color: var(--muted); font-size: var(--text-caption, 12px); line-height: 1.55; }
-.design-tree-card__accept { display: grid; gap: 8px; }
-.design-tree-card__confirm { display: grid; gap: 8px; padding: 10px; border: 1px solid var(--accent); border-radius: 7px; background: var(--accent-soft); }
-.design-tree-card__confirm p { margin: 0; line-height: 1.55; }
-.design-tree-card__refusal { margin: 0; color: var(--violated); font-size: var(--text-caption, 12px); overflow-wrap: anywhere; }
-.design-tree-card__warning { margin: 0; color: var(--unchecked); font-size: var(--text-caption, 12px); line-height: 1.55; }
-.design-tree-card__warning > span { font-weight: 700; margin-inline-end: 2px; }
-.design-tree-card__details { font-size: 11px; color: var(--muted); }
-.design-tree-card__details dl { display: grid; gap: 2px; margin: 6px 0 0; font-family: var(--font-mono); }
-.design-tree-card__details dl > div { display: grid; grid-template-columns: 90px 1fr; gap: 6px; }
-.design-tree-card__details dd { margin: 0; overflow-wrap: anywhere; }
+/* #353: one column per Stage, between the scene and the canvas's own controls. A column stands where the
+   scene puts it, (x + scrollX) * zoom, from the two properties the canvas keeps current; its header stays
+   at the top while the tree pans under it. The strip behind the headers takes its own clicks. */
+.design-tree__columns { position: absolute; inset: 0; z-index: 3; overflow: hidden; pointer-events: none; }
+.design-tree__strip { position: absolute; top: 0; right: 0; left: 0; height: 36px; background: var(--ground); pointer-events: auto; }
+.design-tree-column { position: absolute; top: 0; bottom: 0; overflow: hidden; container-type: inline-size;
+  left: calc((var(--column-x) + var(--tree-scroll-x, 0)) * var(--tree-zoom, 1) * 1px); width: calc(var(--column-width) * var(--tree-zoom, 1) * 1px); }
+.design-tree-column + .design-tree-column { border-left: 1px solid var(--line); }
+/* The header's words start over the column's first card; once the column's left edge has passed the canvas's,
+   they stay pinned at the canvas's left while any of the column is in view, and shrink with what is left of it. */
+.design-tree-column__head { display: flex; align-items: center; gap: 8px; height: 36px; box-sizing: border-box; overflow: hidden;
+  padding: 0 12px 0 max(10px, calc(var(--column-inset) * var(--tree-zoom, 1) * 1px),
+    calc(10px - (var(--column-x) + var(--tree-scroll-x, 0)) * var(--tree-zoom, 1) * 1px));
+  color: var(--muted); font-size: calc(13px * var(--font-scale, 1)); white-space: nowrap; }
+.design-tree-column__title { display: flex; flex: 0 1 auto; align-items: baseline; gap: 8px; min-width: 0; }
+.design-tree-column__id { flex: none; color: var(--ink); font-family: var(--font-tech); font-weight: 600; }
+.design-tree-column__name { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.design-tree-column__line { flex: 1 1 0; min-width: 12px; height: 1px; background: var(--rule-soft); }
+.design-tree-column__count { flex: none; color: var(--faint); font-family: var(--font-tech); font-size: var(--text-caption); font-variant-numeric: tabular-nums; }
+/* The trailing column works towards a Stage no one has accepted yet. */
+.design-tree-column[data-next] .design-tree-column__id { color: var(--muted); font-weight: 500; }
+.design-tree-column[data-next] .design-tree-column__line { background: none; border-top: 1px dashed var(--rule-soft); }
+@container (max-width: 110px) { .design-tree-column__line, .design-tree-column__count { display: none; } }
+@container (max-width: 56px) { .design-tree-column__name { display: none; } }
+
+/* L5: the status bars' colours and the earlier lines' dashes, as the canvas draws them, at the status line's right end. */
+.design-tree-legend { display: inline-flex; gap: 12px; }
+.design-tree-legend > span { display: inline-flex; align-items: center; gap: 5px; }
+.design-tree-legend > [data-check]::before { content: ""; flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--legend); }
+.design-tree-legend > [data-check="held"] { --legend: var(--held); }
+.design-tree-legend > [data-check="violated"] { --legend: var(--violated); }
+.design-tree-legend > [data-check="unchecked"] { --legend: var(--unchecked); }
+.design-tree-legend > [data-check="running"] { --legend: var(--processing); }
+.design-tree-legend > [data-check="set-aside"] { --legend: var(--rule-soft); }
+.design-tree-legend > [data-line="earlier"]::before { content: ""; flex: none; width: 14px; border-top: 1.5px dashed var(--rule); opacity: .7; }
+
+/* #353: the selected node's inspector, docked at the right edge like Modeling's versions: the canvas gives
+   it the room; where the tree is narrower than 560 px it covers the canvas instead. */
+.design-tree-inspector { position: relative; z-index: 7; display: grid; flex: none; grid-template-rows: auto minmax(0, 1fr);
+  width: var(--design-tree-inspector-width); min-height: 0; box-sizing: border-box; border-left: 1px solid var(--line); background: var(--panel);
+  font-size: var(--text-ui, 13px); }
+@container design-tree (max-width: 560px) {
+  .design-tree-inspector { position: absolute; top: 0; right: 0; bottom: 0; width: 100%; border-left: 0; }
+}
+/* Focus is moved here when the inspector covers the surface; the ring shows only for the keyboard. */
+.design-tree-inspector:focus { outline: none; }
+.design-tree-inspector:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.design-tree-inspector__head { display: flex; align-items: flex-start; gap: 10px; min-height: 44px; box-sizing: border-box; padding: 10px 10px 10px 16px;
+  border-bottom: 1px solid var(--line); }
+.design-tree-inspector__identity { display: grid; flex: 1; gap: 2px; min-width: 0; }
+.design-tree-inspector__identity > strong { font-weight: 650; overflow-wrap: anywhere; }
+.design-tree-inspector__identity > span { color: var(--faint); font-size: var(--text-caption, 12px); }
+.design-tree-inspector__close { flex: none; width: 28px; height: 28px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--muted);
+  font-size: 18px; line-height: 1; cursor: pointer; }
+.design-tree-inspector__close:hover { border-color: var(--line); color: var(--ink); }
+.design-tree-inspector__body { display: flex; flex-direction: column; gap: 12px; min-height: 0; padding: 14px 16px 18px; overflow-y: auto; }
+.design-tree-inspector__body > .model-thumbnail { display: flex; flex: none; width: 100%; height: 150px; border-radius: 4px; }
+.design-tree-inspector__summary { margin: 0; color: var(--ink-2); line-height: 1.55; }
+.design-tree-inspector__facts { display: grid; gap: 6px; margin: 0; font-size: var(--text-caption, 12px); }
+.design-tree-inspector__facts > div { display: grid; grid-template-columns: 88px minmax(0, 1fr); gap: 10px; }
+.design-tree-inspector__facts dt { color: var(--faint); }
+.design-tree-inspector__facts dd { margin: 0; overflow-wrap: anywhere; font-family: var(--font-tech); }
+/* The review checks that did not hold (#294 Q2), in the colour of the card's status bar. */
+.design-tree-inspector__warning { margin: 0; padding: 9px 12px; border-left: 2px solid var(--tone); border-radius: 4px;
+  background: color-mix(in srgb, var(--tone) 9%, transparent); color: var(--ink); font-size: var(--text-caption, 12px); line-height: 1.6; }
+.design-tree-inspector__warning[data-tone="violated"] { --tone: var(--violated); }
+.design-tree-inspector__warning[data-tone="unchecked"] { --tone: var(--unchecked); }
+.design-tree-inspector__warning > span { color: var(--tone); font-weight: 700; margin-inline-end: 2px; }
+.design-tree-inspector__actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.design-tree-inspector__actions small { color: var(--muted); font-weight: 400; }
+.design-tree-inspector__note { margin: 0; color: var(--muted); font-size: var(--text-caption, 12px); line-height: 1.55; }
+.design-tree-inspector__accept { display: grid; gap: 8px; }
+.design-tree-inspector__confirm { display: grid; gap: 8px; padding: 10px; border: 1px solid var(--accent); border-radius: 7px; background: var(--accent-soft); }
+.design-tree-inspector__confirm p { margin: 0; line-height: 1.55; }
+.design-tree-inspector__refusal { margin: 0; color: var(--violated); font-size: var(--text-caption, 12px); overflow-wrap: anywhere; }
+.design-tree-inspector__details { font-size: 11px; color: var(--muted); }
+.design-tree-inspector__details dl { display: grid; gap: 2px; margin: 6px 0 0; font-family: var(--font-mono); }
+.design-tree-inspector__details dl > div { display: grid; grid-template-columns: 90px 1fr; gap: 6px; }
+.design-tree-inspector__details dd { margin: 0; overflow-wrap: anywhere; }
 
 .design-tree-list { flex: 1; min-width: 0; overflow-y: auto; padding: 10px 14px 24px; }
 .design-tree-list__hint { margin: 0 0 8px; color: var(--muted); font-size: var(--text-caption, 12px); }

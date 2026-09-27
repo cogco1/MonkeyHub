@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import type { AppearancePreferences } from "../../../shared-web/src/appearance.js";
+import { MenuCommand, MenuSeparator, MenuTabs, StatusLine, SurfaceBar } from "../workspaces/src/features/chrome/SurfaceChrome";
 import type { createClient } from "./api/generated/client";
+import { useRowEndSeparators } from "./surfaceBarRows";
 import {
   getFabProfilesApiFabProfilesGet, prepareFabApiFabPreparePost, sendFabApiFabSendPost,
   type FabProfile, type FabPrepareResult, type FabSendResult,
@@ -11,9 +13,11 @@ type Props = {
   client: ReturnType<typeof createClient>;
   readResult: <T>(request: Promise<unknown>) => Promise<T>;
 };
+type View = "prepare" | "send";
 const copy = {
   "zh-CN": {
-    intro: "缩放与拆件，或发送已切片的打印任务。",
+    intro: "缩放与拆件，或发送已切片的打印任务。", views: "步骤", prepareTab: "准备分件", sendTab: "发送切片",
+    profiles: (count: number) => `已读取 ${count} 台打印机配置`,
     prepare: "准备打印分件", prepareHelp: "粘贴本机 STL / OBJ 文件的完整路径，并选择原模型单位。",
     source: "源模型文件", unit: "原模型单位", chooseUnit: "请选择单位", scale: "模型比例", printer: "目标打印机",
     output: "输出目录（新建或空目录）", advanced: "拆件余量", xy: "XY 每侧余量（mm）", z: "顶部留量（mm）",
@@ -27,7 +31,8 @@ const copy = {
     busyLeave: "正在处理文件，请等待操作完成。", bytes: "字节", settings: "显示设置",
   },
   en: {
-    intro: "Scale and split models, or upload a sliced print job.",
+    intro: "Scale and split models, or upload a sliced print job.", views: "Steps", prepareTab: "Prepare parts", sendTab: "Upload job",
+    profiles: (count: number) => `${count} printer ${count === 1 ? "profile" : "profiles"} loaded`,
     prepare: "Prepare print parts", prepareHelp: "Paste the full path of a local STL / OBJ file and choose its source units.",
     source: "Source model", unit: "Source units", chooseUnit: "Choose units", scale: "Model scale", printer: "Target printer",
     output: "Output directory (new or empty)", advanced: "Part clearances", xy: "Margin on each XY side (mm)", z: "Top clearance (mm)",
@@ -52,6 +57,7 @@ export function FabPage({ preferences, client, readResult }: Props) {
   const [profiles, setProfiles] = useState<Record<string, FabProfile> | null>(null);
   const [profileError, setProfileError] = useState<string | null>(null);
   const [profileAttempt, setProfileAttempt] = useState(0);
+  const [view, setView] = useState<View>("prepare");
   const [source, setSource] = useState("");
   const [unit, setUnit] = useState("");
   const [scale, setScale] = useState("1:1");
@@ -100,7 +106,9 @@ export function FabPage({ preferences, client, readResult }: Props) {
         inputUnit: unit as "mm" | "cm" | "m" | "in", scale: scale.trim(), xyMarginMm: Number(xy), zClearanceMm: Number(z),
       } })));
     } catch (cause) { setPrepareError(detailOf(cause)); }
-    finally { busyRef.current = false; setBusy(null); }
+    // The step is shown again as it ends, so its result or failure is seen; the other step's form is
+    // disabled while this runs, so nothing typed there is interrupted.
+    finally { busyRef.current = false; setBusy(null); setView("prepare"); }
   };
   const send = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -116,20 +124,29 @@ export function FabPage({ preferences, client, readResult }: Props) {
         remoteName: remote.trim() || null, timeout: Number(timeout), dryRun,
       } })));
     } catch (cause) { setSendError(detailOf(cause)); }
-    finally { busyRef.current = false; setBusy(null); }
+    finally { busyRef.current = false; setBusy(null); setView("send"); }
   };
   const openDisplaySettings = () => {
     // Fab is hosted in the Hub's tool iframe.  Ask that existing shell to open
     // its settings instead of navigating this frame into a second Hub shell.
     window.parent.postMessage({ type: "monkeyhub:open-settings", page: "display" }, window.location.origin);
   };
-  return <>
-    <header className="toolbar"><strong className="wordmark">MonkeyFab</strong><button className="btn fab-settings-link" type="button" onClick={openDisplaySettings}>{t.settings}</button></header>
-    <main className="hub fab-page"><div className="section-heading"><div><h1>MonkeyFab</h1><p className="help">{t.intro}</p></div></div>
-      {profileError ? <div className="error-message" role="alert"><p>{profileError}</p><button className="btn" type="button" onClick={() => setProfileAttempt((value) => value + 1)}>{t.retry}</button></div> : !profiles ? <p role="status">{t.loading}</p> : null}
+  const working = busy === "prepare" ? t.preparing : busy === "check" ? t.checking : busy === "send" ? t.sending : null;
+  const root = useRef<HTMLDivElement>(null);
+  useRowEndSeparators(root);
+  // #337: one bar (the two steps and Display settings as words, the file operation running at the right end),
+  // the step's form, and one status line for the printer profiles. The step not on screen keeps what was typed in it.
+  return <div className="fab-view" ref={root}>
+    <SurfaceBar label="MonkeyFab" end={working && <span role="status">{working}</span>}>
+      <MenuTabs label={t.views} value={view} onChange={(next) => setView(next)} options={[{ value: "prepare" as const, label: t.prepareTab }, { value: "send" as const, label: t.sendTab }]} />
+      <MenuSeparator />
+      <MenuCommand onClick={openDisplaySettings}>{t.settings}</MenuCommand>
+    </SurfaceBar>
+    <div className="fab-scroll"><main className="hub fab-page"><h1 className="sr-only">MonkeyFab</h1>
+      {profileError ? <div className="error-message" role="alert"><p>{profileError}</p><button className="btn" type="button" onClick={() => setProfileAttempt((value) => value + 1)}>{t.retry}</button></div> : null}
       <div className="fab-forms">
-        <form className="app-card fab-form" onSubmit={(event) => void prepare(event)} aria-busy={busy === "prepare"}>
-          <h2>{t.prepare}</h2><p className="help">{t.prepareHelp}</p>
+        <form className="app-card fab-form" onSubmit={(event) => void prepare(event)} aria-busy={busy === "prepare"} hidden={view !== "prepare"}>
+          <h2 className="sr-only">{t.prepare}</h2><p className="help">{t.prepareHelp}</p>
           <fieldset disabled={busy !== null || profiles === null}><label htmlFor="fab-source">{t.source}<input id="fab-source" required value={source} onChange={(event) => setSource(event.target.value)} placeholder="D:\models\building.stl" spellCheck={false} /></label>
             <div className="form-grid"><label htmlFor="fab-unit">{t.unit}<select id="fab-unit" required value={unit} onChange={(event) => setUnit(event.target.value)}><option value="" disabled>{t.chooseUnit}</option>{["mm", "cm", "m", "in"].map((value) => <option key={value} value={value}>{value}</option>)}</select></label><label htmlFor="fab-scale">{t.scale}<input id="fab-scale" required value={scale} onChange={(event) => setScale(event.target.value)} placeholder="1:100" /></label></div>
             <label htmlFor="fab-printer">{t.printer}<select id="fab-printer" required value={printer} onChange={(event) => setPrinter(event.target.value)}>{Object.entries(profiles ?? {}).map(([key, profile]) => <option key={key} value={key}>{profile.label}</option>)}</select></label>
@@ -141,8 +158,8 @@ export function FabPage({ preferences, client, readResult }: Props) {
           {prepareError ? <div className="error-message" role="alert"><strong>{t.failed}</strong><p>{prepareError}</p></div> : null}
           {prepared ? <div className="fab-result" role="status"><h3>{t.prepared}</h3><code>{prepared.outputDir}</code><pre>{prepared.stdout}</pre><p className="help">{t.next}</p></div> : null}
         </form>
-        <form className="app-card fab-form" onSubmit={(event) => void send(event)} aria-busy={busy === "send" || busy === "check"}>
-          <h2>{t.send}</h2><p className="help">{t.sendHelp}</p>
+        <form className="app-card fab-form" onSubmit={(event) => void send(event)} aria-busy={busy === "send" || busy === "check"} hidden={view !== "send"}>
+          <h2 className="sr-only">{t.send}</h2><p className="help">{t.sendHelp}</p>
           <fieldset disabled={busy !== null || profiles === null}><label htmlFor="fab-job">{t.job}<input id="fab-job" required value={job} onChange={(event) => setJob(event.target.value)} placeholder="D:\prints\building-h2s.gcode.3mf" spellCheck={false} /></label>
             <label htmlFor="fab-host">{t.host}<input id="fab-host" required value={host} onChange={(event) => setHost(event.target.value)} placeholder="192.168.1.50" spellCheck={false} autoComplete="off" /></label>
             <label htmlFor="fab-access">{t.access}<input id="fab-access" type="password" value={access} onChange={(event) => setAccess(event.target.value)} autoComplete="off" /></label><p className="help">{t.accessHelp}</p>
@@ -153,6 +170,11 @@ export function FabPage({ preferences, client, readResult }: Props) {
           {sent ? <div className="fab-result" role="status"><h3>{sent.status === "uploaded" ? t.sent : t.checked}</h3><dl><dt>{t.target}</dt><dd>{sent.host}{sent.remote_path}</dd><dt>{t.size}</dt><dd>{sent.bytes.toLocaleString()} {t.bytes}</dd><dt>{t.plates}</dt><dd>{sent.plates.join(", ")}</dd></dl></div> : null}
         </form>
       </div>
-    </main>
-  </>;
+    </main></div>
+    <StatusLine className="fab-status" end={<span title={t.intro}>{t.intro}</span>}>
+      <span role="status">MonkeyFab{profiles ? ` · ${t.profiles(Object.keys(profiles).length)}` : !profileError ? ` · ${t.loading}` : ""}
+        {/* A narrow window has no room for it at the bar's end. */}
+        {working && <span className="fab-status__state"> · {working}</span>}</span>
+    </StatusLine>
+  </div>;
 }

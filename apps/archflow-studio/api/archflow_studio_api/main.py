@@ -41,6 +41,7 @@ from .application.proposals import ProposalStore
 from .application.validation import ValidationStore
 from .protocol import SERVER_VERSION
 from .settings import BIND_ENV, PROJECT_DIR_ENV, REMOTE_MODE, SHARED_PROJECT_ROLE, StudioSettings
+from .transport.conditional import ConditionalReads
 from .transport.errors import StudioError
 
 DEFAULT_PORT = 8000
@@ -284,6 +285,9 @@ def create_app(settings: StudioSettings, *, render_adapter=None) -> FastAPI:
     app.add_exception_handler(RequestValidationError, _handle_validation_error)
     app.add_exception_handler(Exception, _handle_unexpected_error)
     app.include_router(routes.router)
+    # Added first, so it sits inside the token and CORS middlewares below: a
+    # request is authenticated before a remembered answer can be handed out.
+    app.add_middleware(ConditionalReads, state=app.state)
     if shared_project:
         original_openapi = app.openapi
 

@@ -51,6 +51,17 @@ class StudioEvents:
         self._buffer: deque[Mapping[str, Any]] = deque(maxlen=buffer_size)
         self._subscribers: set[queue.Queue[Mapping[str, Any]]] = set()
 
+    @property
+    def sequence(self) -> int:
+        """The ``seq`` of the newest event published, or 0 before the first.
+
+        It moves with every publication, so a reader can tell whether anything
+        this log records has happened since it last looked.
+        """
+
+        with self._lock:
+            return self._seq
+
     def publish(self, *, event: Mapping[str, Any]) -> None:
         """Stamp one event with its place in the order and hand it out.
 
