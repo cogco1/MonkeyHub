@@ -286,7 +286,7 @@ class StateRecordTests(unittest.TestCase):
         self.assertEqual(component_semantics(Entity("x", "Component@1", {"roles": ["role.access"], "conditions": ["condition.threshold"]})),
                          "role.access+condition.threshold")
         # What is stated must still be registered.
-        with self.assertRaisesRegex(StateRecordError, "not a registered role"):
+        with self.assertRaisesRegex(StateRecordError, "not a registered alias"):
             replace(generic, entities=(*generic.entities, Entity("guess", "Component@1", {"semantic_kind": "blob"})))
 
     def test_component_delete_removes_relations_and_can_remove_related_parameters_together(self) -> None:

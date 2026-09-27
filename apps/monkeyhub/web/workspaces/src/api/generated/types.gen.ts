@@ -9102,7 +9102,7 @@ export type SemanticEditRequestDto = {
                     } | {
                         axis_point: {
                             /**
-                             * The existing GridAxis@1 fields.role, not its entity_id.
+                             * Optional reference system: the role (not entity_id) of a GridAxis@1 the project already declares.
                              */
                             axis: string;
                             /**
@@ -9139,7 +9139,7 @@ export type SemanticEditRequestDto = {
                     } | {
                         axis_point: {
                             /**
-                             * The existing GridAxis@1 fields.role, not its entity_id.
+                             * Optional reference system: the role (not entity_id) of a GridAxis@1 the project already declares.
                              */
                             axis: string;
                             /**
@@ -9207,7 +9207,7 @@ export type SemanticEditRequestDto = {
                     } | {
                         axis_point: {
                             /**
-                             * The existing GridAxis@1 fields.role, not its entity_id.
+                             * Optional reference system: the role (not entity_id) of a GridAxis@1 the project already declares.
                              */
                             axis: string;
                             /**
@@ -9651,7 +9651,7 @@ export type SemanticEditRequestDto = {
                     } | {
                         axis_point: {
                             /**
-                             * The existing GridAxis@1 fields.role, not its entity_id.
+                             * Optional reference system: the role (not entity_id) of a GridAxis@1 the project already declares.
                              */
                             axis: string;
                             /**
@@ -9688,7 +9688,7 @@ export type SemanticEditRequestDto = {
                     } | {
                         axis_point: {
                             /**
-                             * The existing GridAxis@1 fields.role, not its entity_id.
+                             * Optional reference system: the role (not entity_id) of a GridAxis@1 the project already declares.
                              */
                             axis: string;
                             /**
@@ -9756,7 +9756,7 @@ export type SemanticEditRequestDto = {
                     } | {
                         axis_point: {
                             /**
-                             * The existing GridAxis@1 fields.role, not its entity_id.
+                             * Optional reference system: the role (not entity_id) of a GridAxis@1 the project already declares.
                              */
                             axis: string;
                             /**

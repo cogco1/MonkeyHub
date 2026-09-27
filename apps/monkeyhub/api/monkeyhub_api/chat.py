@@ -3527,7 +3527,7 @@ def _mcp(hub: str, chat_id: str | None, external: ChatPresentationBindRequest | 
         "Use semanticEdit or utterance, not both. Existing omitted fields/dependencies are retained; revise upstream controls for linked edits.",
         "Read studio_schema POST /api/proposals for the producers the running Studio offers, then with producer set to one of them for its authoring contract.",
         "Geometry binds parameters with '@key'; formulas belong in parameters[].expr with inputs, and value must match the expression.",
-        "When meaning is stated, GET /api/semantics supplies registered semantic_kind aliases; role.* and condition.* IDs are not those aliases.",
+        "When the user says what a part is, send their word as semanticKind: Studio maps a registered alias or keeps the word as the part's intent, never a refusal, so do not read /api/semantics first; never guess a nearby id, and role.* or condition.* IDs are not kinds.",
         "Keep early forms generic until their role is established; enrich them by upserting the same component id, never by recreating them.",
         "Existing object identity, hosted features and intended relationships matter when changing representation.",
         "",

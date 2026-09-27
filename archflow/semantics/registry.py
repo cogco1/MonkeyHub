@@ -8,7 +8,8 @@ Accepted forms for a component's ``semantic_kind``:
 - a registered compound phrase (the phrases existing records were authored with).
 
 Anything else resolves to ``None`` and the record refuses it, naming the nearest
-registered ids. New vocabulary is added to ``roles.py`` / ``conditions.py`` with a
+registered aliases. A Studio proposal instead keeps an unregistered word as the
+component's intent and leaves it unclassified (#408). New vocabulary is added to ``roles.py`` / ``conditions.py`` with a
 reason in the change that adds it; a compound phrase is added to
 ``COMPOUND_PHRASES`` only for records that already carry it.
 """
@@ -112,7 +113,7 @@ def resolve_semantic_kind(text: str) -> SemanticResolution | None:
 
 
 def suggest_semantic(text: str, limit: int = 3) -> tuple[str, ...]:
-    """The nearest registered ids, for the refusal message."""
+    """The nearest registered ids, for the refusal of a ``roles``/``conditions`` id."""
 
     candidates: dict[str, str] = {i: i for i in _KNOWN}
     candidates.update({alias: "+".join(ids) for alias, ids in _ALIASES.items()})
@@ -124,6 +125,24 @@ def suggest_semantic(text: str, limit: int = 3) -> tuple[str, ...]:
         if target not in out:
             out.append(target)
     return tuple(out)
+
+
+# A part of a building is never an axis: an axis is a reference that parts align to,
+# so a semantic_kind query is never answered with one (#408).
+_NOT_A_PART: frozenset[str] = frozenset({"condition.axis"})
+
+
+def suggest_semantic_kind(text: str, limit: int = 3) -> tuple[str, ...]:
+    """The nearest registered aliases or phrases a ``semantic_kind`` may name.
+
+    A ``semantic_kind`` is written as an alias or phrase, so it is answered in
+    that form, never with a ``role.*``/``condition.*`` id; only a close spelling
+    is offered, and never an axis concept.
+    """
+
+    words = [alias for alias, ids in _ALIASES.items() if not set(ids) & _NOT_A_PART]
+    words = list(dict.fromkeys(words + list(COMPOUND_PHRASES)))
+    return tuple(difflib.get_close_matches(str(text).strip().lower(), words, n=limit, cutoff=0.75))
 
 
 def registered_ids() -> tuple[str, ...]:

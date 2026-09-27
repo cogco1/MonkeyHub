@@ -309,9 +309,9 @@ The registered spatial conditions a component or connection may form, with meani
 
 ### semantics.registry — `archflow/semantics/registry.py`
 Resolve a semantic string (id, id+id, alias, or a registered compound phrase) to registered ids, or name the nearest ones.
-- owns: resolution of semantic text to registered ids (resolve_semantic_kind); nearest-id suggestions for refusals (suggest_semantic); the compound phrases existing records were authored with (COMPOUND_PHRASES)
+- owns: resolution of semantic text to registered ids (resolve_semantic_kind); nearest-id suggestions for refusals (suggest_semantic); nearest-alias suggestions for a semantic_kind refusal, never an id or an axis concept (suggest_semantic_kind); the compound phrases existing records were authored with (COMPOUND_PHRASES)
 - does not own: the vocabularies themselves - semantics.roles, semantics.conditions; refusing a record - state.record
-- api: `SemanticResolution`, `resolve_semantic_kind`, `suggest_semantic`, `registered_ids`, `COMPOUND_PHRASES`
+- api: `SemanticResolution`, `resolve_semantic_kind`, `suggest_semantic`, `suggest_semantic_kind`, `registered_ids`, `COMPOUND_PHRASES`
 - invariants: a string that resolves to nothing never enters canonical state; aliases resolve to ids and are never stored
 
 ### semantics.roles — `archflow/semantics/roles.py`
