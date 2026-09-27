@@ -411,7 +411,7 @@ class ArtifactTests(unittest.TestCase):
             response.headers["content-disposition"],
             "attachment; filename=\"model.3dm\"; filename*=UTF-8''model.3dm",
         )
-        self.assertEqual(response.headers["cache-control"], "no-store")
+        self.assertEqual(response.headers["cache-control"], "private, max-age=31536000, immutable")
 
     def test_a_name_no_header_can_spell_is_served_the_rfc_6266_way(self) -> None:
         # Header values go out as latin-1. This name cannot, so the response
@@ -592,7 +592,7 @@ class OcctArtifactTests(unittest.TestCase):
                 self.assertEqual(response.status_code, 200)
                 self.assertEqual(response.content, data)
                 self.assertIn(name, response.headers["content-disposition"])
-                self.assertEqual(response.headers["cache-control"], "no-store")
+                self.assertEqual(response.headers["cache-control"], "private, max-age=31536000, immutable")
 
     def test_a_corrupted_step_is_a_mismatch_while_the_preview_still_answers(self) -> None:
         step = self.workspaces / "cad-occt-stage" / f"occt-stage@{RHINO_PROGRAM_DIGEST[:12]}.step"

@@ -1943,7 +1943,8 @@
       ],
       "outputs": [
         "Path",
-        "RunLayout"
+        "RunLayout",
+        "LayoutFingerprint"
       ],
       "public_api": [
         "ProjectLayout",
@@ -1952,7 +1953,11 @@
         "PROGRAM_SHEET_PATH",
         "ProjectLayout.design_branches",
         "cad_workspace_path",
-        "ProjectLayout.working_draft"
+        "ProjectLayout.working_draft",
+        "layout_fingerprint",
+        "LayoutFingerprint",
+        "FINGERPRINT_POINTER_FILES",
+        "FINGERPRINT_SETTLED_NS"
       ],
       "depends_on": [
         "project.refs"
@@ -1963,17 +1968,21 @@
         "apps/archflow-studio/api/archflow_studio_api/application/projection.py",
         "apps/archflow-studio/api/archflow_studio_api/application/intent.py",
         "apps/archflow-studio/api/archflow_studio_api/adapters/seats.py",
-        "apps/archflow-studio/api/archflow_studio_api/transport/state.py"
+        "apps/archflow-studio/api/archflow_studio_api/transport/state.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/binding.py",
+        "apps/monkeyhub/api/monkeyhub_api/runtime.py"
       ],
       "invariants": [
         "never creates a directory and never writes",
         "a resolved path that escapes the project root raises",
-        "a ref belonging to another project is refused"
+        "a ref belonging to another project is refused",
+        "layout_fingerprint reads directory and pointer-file metadata only: it opens, reads and writes no file, and a result is stable only when its newest time is more than two seconds older than the scan"
       ],
       "status": "canonical",
       "tests": [
         "tests/test_project_inputs.py",
-        "tests/test_project_runner.py"
+        "tests/test_project_runner.py",
+        "tests/test_project_fingerprint.py"
       ],
       "notes": "A path table walked by every FilesystemProjectRepository test; only the two authored-input paths are asserted directly, in tests/test_project_inputs.py. RunLayout is returned by ProjectLayout.run but never imported by name."
     },
@@ -2499,7 +2508,9 @@
         "FilesystemProjectRepository.release_working_run",
         "FilesystemProjectRepository.prune_working_draft",
         "StaleWorkingDraft",
-        "FilesystemProjectRepository.working_draft_guard"
+        "FilesystemProjectRepository.working_draft_guard",
+        "write_serial",
+        "add_write_observer"
       ],
       "depends_on": [
         "project.digests",
@@ -2540,7 +2551,8 @@
         "candidate transfer installs immutable dependencies only and never accepts a Stage or changes published HEAD; pull checks the expected local branch mapping, preserves local runs and inputs, and refuses a different published HEAD",
         "Format planning refuses a source missing the existing advisory lock files rather than creating them; declared schema inventory is not a typed reference migration plan, and a supported legacy format 1 is upgradeable only through migrate_project_format into a new directory; the source is never written",
         "Working-draft cleanup never removes a run, input or shared object: an automatic candidate stays whether or not anything refers to it. It removes only local recovery snapshots that are neither the current localDraftRef nor updated within the last 24 hours, and one inconsistent snapshot refuses the whole expiry.",
-        "Source validation and reference writes share the same cross-process guard as cleanup; in-process and filesystem locks are acquired in project, HEAD, design order. Full project archives preserve working metadata and local recovery; candidate synchronization never replaces the local working position."
+        "Source validation and reference writes share the same cross-process guard as cleanup; in-process and filesystem locks are acquired in project, HEAD, design order. Full project archives preserve working metadata and local recovery; candidate synchronization never replaces the local working position.",
+        "every on-disk mutation this module makes is counted by write_serial for each registered root containing it and reported to that root's add_write_observer callbacks after it lands; an observer that raises is logged and never fails the write"
       ],
       "status": "canonical",
       "tests": [
@@ -2549,7 +2561,8 @@
         "tests/test_record_kinds.py",
         "tests/test_project_transfer.py",
         "tests/test_project_format_migration.py",
-        "tests/test_project_working_draft.py"
+        "tests/test_project_working_draft.py",
+        "tests/test_project_fingerprint.py"
       ],
       "notes": "1311 lines carrying the whole persistence concept, including Windows sharing-violation retries around the HEAD swap; PreparedTransition and RecoveryReport are returned but never imported by name."
     },
@@ -4142,7 +4155,8 @@
         "apps/monkeyhub/web/workspaces/test/externalModelImport.browser.mjs",
         "apps/archflow-studio/api/tests/test_section_perspective.py",
         "apps/archflow-studio/api/tests/test_native_drawings.py",
-        "apps/archflow-studio/api/tests/test_drawing_corrections.py"
+        "apps/archflow-studio/api/tests/test_drawing_corrections.py",
+        "apps/archflow-studio/api/tests/test_conditional_reads.py"
       ],
       "notes": "The viewer's only source of model bytes; digests are the identity, filenames are not.",
       "files": [
@@ -4374,7 +4388,11 @@
         "representation_status",
         "RepresentationStatus",
         "RepresentationReads",
-        "ReplacementCycle"
+        "ReplacementCycle",
+        "ReadToken",
+        "READ_EPOCH",
+        "ProjectBinding.read_token",
+        "ProjectBinding.memo"
       ],
       "depends_on": [
         "project.inputs",
@@ -4419,7 +4437,8 @@
         "all actionable projections retain exact record and runner binding; historical canonical bases require a verified committed Stage source",
         "main head Stage is the default when design history exists; a successful harness run alone never becomes a default committed Stage",
         "the Working Head is the architect's editing base, read from retained facts and never guessed from the newest file; a generated candidate is recorded and shown but never moves it, viewing history never moves it, and only the explicit working-draft selection (Continue, adopting the architect's own Sync, or the Hub Agent's Continue on the user's bound words through a Hub-managed Runtime) does; every selection onto a run is retained as an attributed design.continued event and admits no Candidate; a recorded continuation keeps its source position's branch",
-        "a page's representation status is derived on read and never stored; an explicit page replacement answers before what the page depicts; a missing or unverifiable page or input is unavailable and is never rebound; a person's keep (a drawing's follow: frozen, Publish's freeze) is frozen; each consumer keeps its own wire words"
+        "a page's representation status is derived on read and never stored; an explicit page replacement answers before what the page depicts; a missing or unverifiable page or input is unavailable and is never rebound; a person's keep (a drawing's follow: frozen, Publish's freeze) is frozen; each consumer keeps its own wire words",
+        "an answer is remembered only in memory and only under a stable ReadToken; this process's writes change the token at once, another process's once the fingerprint's one-second time to live has passed"
       ],
       "status": "canonical",
       "tests": [
@@ -4434,7 +4453,8 @@
         "apps/archflow-studio/api/tests/test_working_draft.py",
         "apps/archflow-studio/api/tests/test_working_source.py",
         "apps/archflow-studio/api/tests/test_attributed_continue.py",
-        "apps/archflow-studio/api/tests/test_representation_dependencies.py"
+        "apps/archflow-studio/api/tests/test_representation_dependencies.py",
+        "apps/archflow-studio/api/tests/test_conditional_reads.py"
       ],
       "notes": "Every other Studio concern reads the project through this one binding.",
       "files": [
@@ -5260,7 +5280,9 @@
         "LOCAL_ACTOR_ID",
         "ORIGIN_STUDIO",
         "ORIGIN_HUB",
-        "MonitoredCompiler.invoke_structured"
+        "MonitoredCompiler.invoke_structured",
+        "ConditionalReads",
+        "CONDITIONAL_READS"
       ],
       "depends_on": [
         "monkeymonitor",
@@ -5298,7 +5320,8 @@
         "Configuration comes only from the environment the launcher resolved (StudioSettings.from_env); the preference file is served over the settings routes and never consulted for the runtime's own behavior",
         "One process binds one project directory, keyed and supervised by MonkeyHub; in production it is reached only through the Hub's forwarding path, and it never grows a persistent user-settings file, a launcher, a tray or a UI of its own",
         "The Runtime parameter-lock proposal route uses the existing accept actor grant; local unauthenticated attribution identifies only the process boundary and does not prove a human caller",
-        "POST /api/admissions uses the existing accept grant on a local-role Runtime; a shared project service does not expose it"
+        "POST /api/admissions uses the existing accept grant on a local-role Runtime; a shared project service does not expose it",
+        "only the exact GET paths in CONDITIONAL_READS carry an ETag, answer If-None-Match with 304 and are answered from the binding's memo, and only for a 200 read under a stable token; every other method, path and status passes through unchanged"
       ],
       "status": "canonical",
       "tests": [
@@ -5308,7 +5331,8 @@
         "apps/archflow-studio/api/tests/test_protocol.py",
         "apps/archflow-studio/api/tests/test_monitoring.py",
         "apps/archflow-studio/api/tests/test_collaboration_auth.py",
-        "apps/archflow-studio/api/tests/test_study_model.py"
+        "apps/archflow-studio/api/tests/test_study_model.py",
+        "apps/archflow-studio/api/tests/test_conditional_reads.py"
       ],
       "notes": "Project Runtime contract: docs/PROJECT_RUNTIME.md. The module id and the package name are historical; the runtime is not a product, and #127 retires the Studio product name from the frontend. transport/* carries wire shapes, so a DTO change is a shell change. docs/PROTOCOL.md records protocol.py; apps/monkeyhub/web/workspaces/src/api/connection.ts is the client boundary. The runtime serves the settings routes MonkeyHub mounts; browser appearance, language catalogs and workspace composition belong to hub.shell; this process serves APIs only.",
       "files": [
@@ -5327,7 +5351,8 @@
         "apps/archflow-studio/api/archflow_studio_api/application/monitoring.py",
         "scripts/dev/run-project-runtime.ps1",
         "apps/archflow-studio/api/archflow_studio_api/application/authentication.py",
-        "apps/archflow-studio/api/archflow_studio_api/transport/synchronization.py"
+        "apps/archflow-studio/api/archflow_studio_api/transport/synchronization.py",
+        "apps/archflow-studio/api/archflow_studio_api/transport/conditional.py"
       ]
     },
     {
@@ -6985,7 +7010,8 @@
         "project.archive",
         "monkeycontrol",
         "studio.board",
-        "tools.package_monkeyapps"
+        "tools.package_monkeyapps",
+        "project.layout"
       ]
     },
     {

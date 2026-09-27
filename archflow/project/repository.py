@@ -5,13 +5,14 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import logging
 import os
 import re
 import shutil
 import threading
 import tempfile
 import time
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
@@ -301,6 +302,126 @@ class _CopiedClosure:
 _LOCK_INDEX_GUARD = threading.Lock()
 _PROJECT_LOCKS: dict[str, threading.RLock] = {}
 
+_LOG = logging.getLogger(__name__)
+
+
+@dataclass(slots=True)
+class _WrittenRoot:
+    """What this process has written below one project root, as a counter."""
+
+    serial: int = 0
+    observers: tuple[Callable[[Path], object], ...] = ()
+
+
+# Every project root this process has opened a repository on, or asked about,
+# keyed by its normalized resolved path. Process-wide because a root may be
+# opened by several repository objects; the serial belongs to the directory.
+_WRITTEN_ROOTS_GUARD = threading.Lock()
+_WRITTEN_ROOTS: dict[str, _WrittenRoot] = {}
+
+
+def _written_root_key(root: Path | str) -> str:
+    text = os.path.normcase(os.fspath(root))
+    with _WRITTEN_ROOTS_GUARD:
+        if text in _WRITTEN_ROOTS:
+            # Already a registered spelling: resolving again costs a syscall.
+            return text
+    return os.path.normcase(os.path.abspath(os.fspath(Path(root).resolve(strict=False))))
+
+
+def _written_root(root: Path | str) -> _WrittenRoot:
+    key = _written_root_key(root)
+    with _WRITTEN_ROOTS_GUARD:
+        return _WRITTEN_ROOTS.setdefault(key, _WrittenRoot())
+
+
+def write_serial(root: Path | str) -> int:
+    """How many writes this process has made below ``root`` since it started.
+
+    Counts only this process: another process's writes are visible to a
+    reader through ``archflow.project.layout.layout_fingerprint``, never here.
+    """
+
+    entry = _written_root(root)
+    with _WRITTEN_ROOTS_GUARD:
+        return entry.serial
+
+
+def add_write_observer(
+    root: Path | str, callback: Callable[[Path], object],
+) -> Callable[[], None]:
+    """Call ``callback(path)`` after every write this process makes below ``root``.
+
+    The callback runs on the writer's thread, after the write is on disk and
+    while the writer still holds its locks, so it must be quick and must not
+    write the project. One that raises is logged and never fails the write.
+    Returns the function that removes this registration again.
+    """
+
+    entry = _written_root(root)
+    with _WRITTEN_ROOTS_GUARD:
+        entry.observers = (*entry.observers, callback)
+
+    def remove() -> None:
+        with _WRITTEN_ROOTS_GUARD:
+            observers = list(entry.observers)
+            if callback in observers:
+                observers.remove(callback)
+            entry.observers = tuple(observers)
+
+    return remove
+
+
+def _note_write(path: Path | str) -> None:
+    """Count one completed on-disk mutation and tell its root's observers.
+
+    Every registered root containing ``path`` counts it. Called after each
+    successful write in this module, never before: a reader that sees the new
+    serial must also be able to see what was written.
+    """
+
+    location = os.path.normcase(os.path.abspath(os.fspath(path)))
+    notified: list[tuple[Callable[[Path], object], ...]] = []
+    with _WRITTEN_ROOTS_GUARD:
+        if not _WRITTEN_ROOTS:
+            return
+        current = location
+        while True:
+            entry = _WRITTEN_ROOTS.get(current)
+            if entry is not None:
+                entry.serial += 1
+                if entry.observers:
+                    notified.append(entry.observers)
+            parent = os.path.dirname(current)
+            if parent == current:
+                break
+            current = parent
+    if not notified:
+        return
+    written = Path(path)
+    for observers in notified:
+        for observer in observers:
+            try:
+                observer(written)
+            except Exception:  # noqa: BLE001 - an observer never fails a write
+                _LOG.exception("project write observer failed for %s", written)
+
+
+def _make_directory(path: Path) -> None:
+    """``mkdir -p`` that counts the write only when it created ``path``.
+
+    An existing directory is accepted exactly as ``exist_ok=True`` accepts it.
+    """
+
+    try:
+        path.mkdir(parents=True, exist_ok=False)
+    except OSError:
+        if not path.is_dir():
+            raise
+        return
+    _note_write(path)
+
+
 _HEAD_LOCK_TIMEOUT_SECONDS = 10.0
 _HEAD_LOCK_RETRY_SECONDS = 0.05
 
@@ -354,8 +475,13 @@ class _HeadFileLock:
         if self._depth:
             self._depth += 1
             return
-        self._path.parent.mkdir(parents=True, exist_ok=True)
+        _make_directory(self._path.parent)
+        # Opening an existing lock changes nothing on disk; creating one adds
+        # a directory entry, and that alone is counted as a write.
+        created = not self._path.exists()
         handle = self._path.open("a+b")
+        if created:
+            _note_write(self._path)
         deadline = time.monotonic() + _HEAD_LOCK_TIMEOUT_SECONDS
         try:
             while not self._try_acquire(handle):
@@ -487,7 +613,7 @@ def _read_shared_json(path: Path) -> dict[str, Any]:
 def _write_immutable(path: Path, data: bytes) -> None:
     """Install immutable content without ever replacing an existing target."""
 
-    path.parent.mkdir(parents=True, exist_ok=True)
+    _make_directory(path.parent)
     if path.exists():
         if _read_bytes(path) != data:
             raise ProjectIntegrityError(
@@ -510,10 +636,11 @@ def _write_immutable(path: Path, data: bytes) -> None:
                 )
     finally:
         temporary.unlink(missing_ok=True)
+    _note_write(path)
 
 
 def _replace_atomic(path: Path, data: bytes) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
+    _make_directory(path.parent)
     temporary = path.with_name(f".{path.name}.{uuid4().hex}.tmp")
     try:
         with temporary.open("xb") as handle:
@@ -532,6 +659,7 @@ def _replace_atomic(path: Path, data: bytes) -> None:
         # which matters more than flushing the rename's directory metadata.
     finally:
         temporary.unlink(missing_ok=True)
+    _note_write(path)
 
 
 def _version_from_dict(value: object, *, field: str) -> ProjectVersionRef:
@@ -1400,6 +1528,8 @@ class FilesystemProjectRepository:
         self._lock = _project_lock(layout.root)
         self._head_lock = _HeadFileLock(layout.root / "HEAD.lock")
         self._design_lock = _HeadFileLock(layout.design_branches.with_suffix(".lock"))
+        # Registered so every write below this root counts (``write_serial``).
+        _written_root(layout.root)
 
     @classmethod
     def initialize(
@@ -1445,7 +1575,7 @@ class FilesystemProjectRepository:
             for path, _ in authored_files:
                 if path.exists():
                     raise ProjectAlreadyExists(f"authored input already exists: {path}")
-            layout.root.mkdir(parents=True, exist_ok=True)
+            _make_directory(layout.root)
             for directory in (
                 layout.inputs,
                 layout.objects,
@@ -1454,7 +1584,7 @@ class FilesystemProjectRepository:
                 layout.runs,
                 layout.exports,
             ):
-                directory.mkdir(parents=True, exist_ok=True)
+                _make_directory(directory)
             _write_immutable(layout.manifest, _json_bytes(manifest.to_dict()))
             repository = cls(layout, manifest)
             snapshot = repository._put_internal_json(
@@ -1623,7 +1753,7 @@ class FilesystemProjectRepository:
                 run_layout.workspaces,
                 run_layout.recovery,
             ):
-                directory.mkdir(parents=True, exist_ok=True)
+                _make_directory(directory)
         return run
 
     def create_run_batch(
@@ -1701,13 +1831,14 @@ class FilesystemProjectRepository:
                         run_layout.workspaces,
                         run_layout.recovery,
                     ):
-                        directory.mkdir(parents=True, exist_ok=True)
+                        _make_directory(directory)
             except BaseException as exc:
                 cleanup_failures: list[str] = []
                 for created_root in reversed(created_roots):
                     try:
                         if created_root.exists():
                             shutil.rmtree(created_root)
+                            _note_write(created_root)
                     except OSError as cleanup_exc:  # pragma: no cover - OS fault
                         cleanup_failures.append(
                             f"{created_root}: {cleanup_exc}"
@@ -2021,6 +2152,7 @@ class FilesystemProjectRepository:
                     raise ProjectIntegrityError("recovery cleanup target escaped the project")
             for path in expired:
                 path.unlink(missing_ok=True)
+                _note_write(path)
             return tuple(path.relative_to(self.layout.root).as_posix() for path in expired)
 
     def read_design_branches(self) -> dict[str, dict[str, Any]]:
@@ -2856,7 +2988,7 @@ class FilesystemProjectRepository:
         with _project_lock(root), _HeadFileLock(root / "HEAD.lock"):
             require_resume_target()
             for directory in project_directories:
-                (root / directory).mkdir(parents=True, exist_ok=True)
+                _make_directory(root / directory)
             for path, data in files.items():
                 if path != "HEAD":
                     _write_immutable(root / path, data)
@@ -2929,7 +3061,7 @@ class FilesystemProjectRepository:
         # the migration's working set, not something to leave in the system
         # temporary directory, and a hard link in the target cannot cross a
         # volume boundary that staging silently introduced.
-        target_root.parent.mkdir(parents=True, exist_ok=True)
+        _make_directory(target_root.parent)
         try:
             with tempfile.TemporaryDirectory(
                 prefix=".archflow-migrate-", dir=target_root.parent,
@@ -2939,6 +3071,7 @@ class FilesystemProjectRepository:
                     source_root, staging, symlinks=False,
                     ignore=shutil.ignore_patterns("*.tmp"),
                 )
+                _note_write(staging)
                 if _read_bytes(source_root / "HEAD") != _read_bytes(staging / "HEAD"):
                     raise ProjectIntegrityError(
                         "MIGRATION_SOURCE_MOVED: the source published a new version "
@@ -2947,8 +3080,9 @@ class FilesystemProjectRepository:
                 source_head_sha256 = _sha256(_read_bytes(staging / "HEAD"))
                 legacy = cls.open(staging)
                 for lock in legacy.lock_paths():
-                    lock.parent.mkdir(parents=True, exist_ok=True)
+                    _make_directory(lock.parent)
                     lock.touch(exist_ok=True)
+                    _note_write(lock)
                 plan = plan_project_migration(staging)
                 # An undeclared identity is re-detected below, per record and
                 # per pointer; every other refusal is final here.
@@ -3142,8 +3276,10 @@ class FilesystemProjectRepository:
                             shutil.rmtree(item, ignore_errors=True)
                         else:
                             item.unlink(missing_ok=True)
+                        _note_write(item)
                 else:
                     shutil.rmtree(created, ignore_errors=True)
+                    _note_write(created)
             if isinstance(exc, ProjectRepositoryError):
                 raise
             if isinstance(exc, (OSError, ValueError, KeyError, TypeError)):
