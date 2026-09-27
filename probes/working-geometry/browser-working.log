@@ -1,0 +1,21 @@
+Failed to load resource: the server responded with a status of 404 (Not Found)
+FAIL Physical follows real OCCT Working Head and marks derived drawings stale; C:\Users\jiayu\AppData\Local\Temp\monkeyhub-render-browser-K3VN8Y
+[]
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+
+page.goto: net::ERR_HTTP_RESPONSE_CODE_FAILURE at http://127.0.0.1:53851/working
+Call log:
+  - navigating to "http://127.0.0.1:53851/working", waiting until "load"
+
+    at C:\Users\jiayu\OneDrive\文档\ChatGPT\Blender skill\projection-development\workspace\worktrees\codex-319-working-geometry\apps\monkeyhub\web\workspaces\test\renderWorkspace.browser.mjs:830:22
+    at async step (C:\Users\jiayu\OneDrive\文档\ChatGPT\Blender skill\projection-development\workspace\worktrees\codex-319-working-geometry\apps\monkeyhub\web\workspaces\test\renderWorkspace.browser.mjs:189:19)
+    at async file:///C:/Users/jiayu/OneDrive/%E6%96%87%E6%A1%A3/ChatGPT/Blender%20skill/projection-development/workspace/worktrees/codex-319-working-geometry/apps/monkeyhub/web/workspaces/test/renderWorkspace.browser.mjs:826:3 {
+  log: [
+    '  - navigating to "http://127.0.0.1:53851/working", waiting until "load"'
+  ],
+  name: 'Error'
+}
+
+Node.js v24.21.0

@@ -5,10 +5,10 @@
 
 Phase: GitHub Issues are the work items (#60); this registry records live source-edit coordination only. The remaining legacy P cards are blocked and claim no path; P115 is a frozen historical index. Real project acceptance and formal issue are explicit user actions.
 
-- active: GH-319
+- active: GH-319, GH-321
 - ready: none
 - blocked: P115, P105, P108, P110, P111, P113
-- next: continue active work: GH-319
+- next: continue active work: GH-319, GH-321
 
 ## Live work
 
@@ -21,3 +21,4 @@ Phase: GitHub Issues are the work items (#60); this registry records live source
 | P111 | blocked | Follow up the existing-project trial of delivered candidate continuation: the selected run remains the next edit's exact base and preserves the prior revision. Implementation and isolated verification are complete; The remaining user trial runs in the MonkeyHub Modeling workspace (the Studio page it named is retired) and waits for a new specific edit. This does not establish whole-assembly usability or correct architectural dependencies. | [P111](mapping/planning/P111-continuing-design-cycle.md) |
 | P113 | blocked | Make retained research evidence usable by one identified design or export consumer. First check existing Reading and source references; extend their existing owner if sufficient. The earlier ledger/import/export design is a proposal to revisit only if that consumer demonstrates a missing contract. | [P113](mapping/planning/P113-evidence-ledger.md) |
 | GH-319 | active | Penguin Phase 2: production conversion, associated drawings and one persisted Render Scene for Three.js/Cycles. | [GH-319](mapping/planning/GH-319-penguin-scene.md) |
+| GH-321 | active | Remove global Penguin presets; user-selected model regions and two-project persistence regression. EXTEND studio.render and hub.shell. Stacked on PR 330, preserving its baseline. | [GH-321](mapping/planning/GH-321-model-regions.md) |

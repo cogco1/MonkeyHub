@@ -58,3 +58,14 @@ The reviewer-accessible [report and bounded evidence](../../../probes/penguin-ph
 supersede the broad PASS wording of the preserved local Phase 2 report. Large
 project assets remain in the existing P036 project/output envelope. Original
 commit 8afa896f is retained; main e33fbf46 was merged without rewriting it.
+
+## Independent Working Head slice, 2026-09-27
+
+The limitations above describe the preserved Phase 2 baseline. The new
+[Working Head report](../../../probes/working-geometry/README.md) records the
+bounded follow-up on PR #372: without an explicit retained import selection,
+Physical and mesh drawings now reuse the existing LIVE source resolver. Real
+OCCT proposal/Continue changes invalidate old views, and ProjectWorkspace tracks
+the existing tree's model hash. Explicit imports remain pinned. This does not
+complete Modeling GUI parameter acceptance, bidirectional cameras, Board drawing
+association or safe appearance migration across changed geometry. Keep #319 open.

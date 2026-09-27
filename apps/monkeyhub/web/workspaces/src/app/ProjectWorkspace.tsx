@@ -230,7 +230,7 @@ export function ProjectWorkspace({ workspace, expectedProjectId, candidateRunId 
       {(renderVisited || workspace === "render") && <div data-project-surface="render" hidden={workspace !== "render"} inert={!active || workspace !== "render"}
         style={{ height: "100%", minHeight: 0, display: workspace === "render" ? "block" : "none" }}>
         <Suspense fallback={<LoadingOverlay mode="boot" status="Render" />}>
-          <Render readModelView={readRenderView} onModeling={() => onWorkspaceChange("arch")} projectId={boundProjectId.current!} active={active && workspace === "render"} refreshKey={refreshKey + attempt}
+          <Render readModelView={readRenderView} onModeling={() => onWorkspaceChange("arch")} projectId={boundProjectId.current!} active={active && workspace === "render"} refreshKey={`${refreshKey + attempt + headMoves}:${designTree.source?.workingSource.source?.assetSha256 ?? ""}`}
             onBoard={(source) => { setVisit(null); setBoardPage({ source, requestId: crypto.randomUUID() }); setBoardRefresh((value) => value + 1); onWorkspaceChange("board"); }} />
         </Suspense>
       </div>}

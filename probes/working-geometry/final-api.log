@@ -1,0 +1,25 @@
+warning: The `fitz` API is deprecated and will be removed in future. Use `import pymupdf` instead.
+test_explicit_penguin_import_stays_pinned_when_native_head_moves (tests.test_working_geometry.WorkingGeometryTests.test_explicit_penguin_import_stays_pinned_when_native_head_moves) ... ok
+test_native_parameter_revision_changes_scene_and_drawings_without_geometry_selection (tests.test_working_geometry.WorkingGeometryTests.test_native_parameter_revision_changes_scene_and_drawings_without_geometry_selection) ... ok
+test_geometry_change_marks_drawings_stale_and_recomputes_extent (tests.test_render_scene.RenderSceneTests.test_geometry_change_marks_drawings_stale_and_recomputes_extent) ... ok
+test_old_regions_and_invalid_camera_cannot_be_silently_rebound (tests.test_render_scene.RenderSceneTests.test_old_regions_and_invalid_camera_cannot_be_silently_rebound) ... ok
+test_one_scene_revision_conflict_and_cold_persistence (tests.test_render_scene.RenderSceneTests.test_one_scene_revision_conflict_and_cold_persistence) ... ok
+test_real_cycles_pins_scene_and_keeps_old_result_outdated_after_edit (tests.test_render_scene.RenderSceneTests.test_real_cycles_pins_scene_and_keeps_old_result_outdated_after_edit) ... skipped 'Requires an installed Blender for real host acceptance'
+test_retained_geometry_reports_missing_source_without_changing_selection (tests.test_render_scene.RenderSceneTests.test_retained_geometry_reports_missing_source_without_changing_selection) ... ok
+test_a_result_becomes_the_head_only_through_continue (tests.test_working_source.WorkingSourceTests.test_a_result_becomes_the_head_only_through_continue) ... ok
+test_an_accepted_stage_is_the_head_until_work_continues_from_it (tests.test_working_source.WorkingSourceTests.test_an_accepted_stage_is_the_head_until_work_continues_from_it) ... ok
+test_an_explicit_position_is_followed_and_accepting_it_marks_it_accepted (tests.test_working_source.WorkingSourceTests.test_an_explicit_position_is_followed_and_accepting_it_marks_it_accepted) ... ok
+test_an_unreadable_position_falls_back_to_the_branch_head_with_a_warning (tests.test_working_source.WorkingSourceTests.test_an_unreadable_position_falls_back_to_the_branch_head_with_a_warning) ... ok
+test_drawing_follows_the_complete_registered_model_without_a_step (tests.test_working_source.WorkingSourceTests.test_drawing_follows_the_complete_registered_model_without_a_step) ... ok
+test_frozen_policy_keeps_the_pin_and_reports_when_the_head_moved (tests.test_working_source.WorkingSourceTests.test_frozen_policy_keeps_the_pin_and_reports_when_the_head_moved) ... ok
+test_publication_sources_are_read_after_the_publication_lock_is_released (tests.test_working_source.WorkingSourceTests.test_publication_sources_are_read_after_the_publication_lock_is_released) ... ok
+test_resolution_writes_nothing (tests.test_working_source.WorkingSourceTests.test_resolution_writes_nothing) ... ok
+test_resolving_never_waits_for_a_project_writer (tests.test_working_source.WorkingSourceTests.test_resolving_never_waits_for_a_project_writer) ... ok
+test_the_reference_run_answers_before_any_stage_or_working_position (tests.test_working_source.WorkingSourceTests.test_the_reference_run_answers_before_any_stage_or_working_position) ... ok
+test_unknown_workspace_or_policy_is_refused (tests.test_working_source.WorkingSourceTests.test_unknown_workspace_or_policy_is_refused) ... ok
+test_work_continued_on_a_fork_stays_on_that_fork (tests.test_working_source.WorkingSourceTests.test_work_continued_on_a_fork_stays_on_that_fork) ... ok
+
+----------------------------------------------------------------------
+Ran 19 tests in 77.185s
+
+OK (skipped=1)

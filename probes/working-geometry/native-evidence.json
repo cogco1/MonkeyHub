@@ -1,0 +1,1910 @@
+{
+  "before": {
+    "projectId": "demo-project",
+    "runId": "run-001",
+    "assetSha256": "c2336e0e0ec2405a64e96ce4472df449fb4bee88772a716eebc9a916611a27ab",
+    "geometryRevision": "c2336e0e0ec2405a64e96ce4472df449fb4bee88772a716eebc9a916611a27ab",
+    "format": "3dm",
+    "label": "studio-candidate-seat-portico@fa6ea5b1d3ea.preview.3dm",
+    "kind": "working-head",
+    "modelSource": {
+      "runId": "run-001",
+      "stateDigest": "76af4e2ac8bfa5a6ac4ae891b9dfcfe57f6890f108a415cae556969d03a810b1",
+      "assetSha256": "c2336e0e0ec2405a64e96ce4472df449fb4bee88772a716eebc9a916611a27ab"
+    },
+    "workingRevision": null,
+    "warnings": []
+  },
+  "after": {
+    "projectId": "demo-project",
+    "runId": "studio-cand-20260927-154003-b1ad3650-f102",
+    "assetSha256": "a735a5bd97dabe6d52c0d4d014d72a35740d852f43081c2dd5b3cdf243bece74",
+    "geometryRevision": "a735a5bd97dabe6d52c0d4d014d72a35740d852f43081c2dd5b3cdf243bece74",
+    "format": "3dm",
+    "label": "studio-candidate-seat-portico@d3c54b2fc5f2.preview.3dm",
+    "kind": "working-head",
+    "modelSource": {
+      "runId": "studio-cand-20260927-154003-b1ad3650-f102",
+      "stateDigest": "6c79ec4ba0366405526d6834211e26acd7e4206349bb9406b596d68ba2f05ff3",
+      "assetSha256": "a735a5bd97dabe6d52c0d4d014d72a35740d852f43081c2dd5b3cdf243bece74"
+    },
+    "workingRevision": "abb50ac84250b93085d4611fcb6fd65911816ae664e443ac6b034b6f334a1552",
+    "warnings": []
+  },
+  "boundsBefore": [
+    [
+      0.0,
+      0.0,
+      0.0
+    ],
+    [
+      4.0,
+      2.0,
+      0.8999999761581421
+    ]
+  ],
+  "boundsAfter": [
+    [
+      0.0,
+      0.0,
+      0.0
+    ],
+    [
+      4.0,
+      2.0,
+      1.399999976158142
+    ]
+  ],
+  "oldDrawings": [
+    {
+      "document": {
+        "projectId": "demo-project",
+        "runId": "mesh-view-7723feaeb61fb01f9d62fb2e2c0708d0b24f0256",
+        "assetSha256": "ef68981a10e3ca3f3ec3f59575b00792f242554dd63591c090ac937200bcebd5",
+        "fileName": "isometric.png",
+        "mimeType": "image/png",
+        "sizeBytes": 122279,
+        "pageCount": 1,
+        "pages": [
+          {
+            "pageIndex": 0,
+            "width": 6514.0,
+            "height": 5264.0,
+            "rotation": 0
+          }
+        ],
+        "modelSource": null,
+        "modelSourceBindingRef": null,
+        "drawingId": "mesh-isometric",
+        "revisionRef": null,
+        "sourceStageRef": null,
+        "viewRecipe": {
+          "dimensions": [
+            {
+              "id": "overall-width",
+              "reference": {
+                "axis": 0,
+                "kind": "projected-extent"
+              },
+              "status": "resolved",
+              "valueMeters": 4.242640687119285
+            },
+            {
+              "id": "overall-height",
+              "reference": {
+                "axis": 1,
+                "kind": "projected-extent"
+              },
+              "status": "resolved",
+              "valueMeters": 3.1843366461513365
+            }
+          ],
+          "drawingRevision": "7723feaeb61fb01f9d62fb2e2c0708d0b24f0256d6bd4f92937b418f88f11c61",
+          "featureReferences": [],
+          "geometry": {
+            "assetSha256": "c2336e0e0ec2405a64e96ce4472df449fb4bee88772a716eebc9a916611a27ab",
+            "format": "3dm",
+            "geometryRevision": "c2336e0e0ec2405a64e96ce4472df449fb4bee88772a716eebc9a916611a27ab",
+            "kind": "working-head",
+            "label": "studio-candidate-seat-portico@fa6ea5b1d3ea.preview.3dm",
+            "modelSource": {
+              "assetSha256": "c2336e0e0ec2405a64e96ce4472df449fb4bee88772a716eebc9a916611a27ab",
+              "runId": "run-001",
+              "stateDigest": "76af4e2ac8bfa5a6ac4ae891b9dfcfe57f6890f108a415cae556969d03a810b1"
+            },
+            "projectId": "demo-project",
+            "runId": "run-001",
+            "warnings": [],
+            "workingRevision": null
+          },
+          "geometryRevision": "c2336e0e0ec2405a64e96ce4472df449fb4bee88772a716eebc9a916611a27ab",
+          "kind": "mesh-orthographic",
+          "right": [
+            0.7071067811865475,
+            -0.7071067811865475,
+            0
+          ],
+          "scale": 5,
+          "svg": {
+            "artifact_id": "drawing-svg",
+            "media_type": "image/svg+xml",
+            "project_id": "demo-project",
+            "relative_path": "runs/mesh-view-7723feaeb61fb01f9d62fb2e2c0708d0b24f0256/workspaces/drawing.svg",
+            "sha256": "3e027e5688e4a32f5b30fa4baa14bad7de8924b114b1dd6b119dd7c698914817"
+          },
+          "up": [
+            0.4082482904638631,
+            0.4082482904638631,
+            0.8164965809277261
+          ],
+          "view": "isometric"
+        },
+        "generatedAt": "2026-09-27T15:40:01.704564+00:00",
+        "replacesPages": [],
+        "previousRevisionRef": null,
+        "attribution": null,
+        "reason": null,
+        "sourceKind": null
+      },
+      "recipe": {
+        "dimensions": [
+          {
+            "id": "overall-width",
+            "reference": {
+              "axis": 0,
+              "kind": "projected-extent"
+            },
+            "status": "resolved",
+            "valueMeters": 4.242640687119285
+          },
+          {
+            "id": "overall-height",
+            "reference": {
+              "axis": 1,
+              "kind": "projected-extent"
+            },
+            "status": "resolved",
+            "valueMeters": 3.1843366461513365
+          }
+        ],
+        "drawingRevision": "7723feaeb61fb01f9d62fb2e2c0708d0b24f0256d6bd4f92937b418f88f11c61",
+        "featureReferences": [],
+        "geometry": {
+          "assetSha256": "c2336e0e0ec2405a64e96ce4472df449fb4bee88772a716eebc9a916611a27ab",
+          "format": "3dm",
+          "geometryRevision": "c2336e0e0ec2405a64e96ce4472df449fb4bee88772a716eebc9a916611a27ab",
+          "kind": "working-head",
+          "label": "studio-candidate-seat-portico@fa6ea5b1d3ea.preview.3dm",
+          "modelSource": {
+            "assetSha256": "c2336e0e0ec2405a64e96ce4472df449fb4bee88772a716eebc9a916611a27ab",
+            "runId": "run-001",
+            "stateDigest": "76af4e2ac8bfa5a6ac4ae891b9dfcfe57f6890f108a415cae556969d03a810b1"
+          },
+          "projectId": "demo-project",
+          "runId": "run-001",
+          "warnings": [],
+          "workingRevision": null
+        },
+        "geometryRevision": "c2336e0e0ec2405a64e96ce4472df449fb4bee88772a716eebc9a916611a27ab",
+        "kind": "mesh-orthographic",
+        "right": [
+          0.7071067811865475,
+          -0.7071067811865475,
+          0
+        ],
+        "scale": 5,
+        "svg": {
+          "artifact_id": "drawing-svg",
+          "media_type": "image/svg+xml",
+          "project_id": "demo-project",
+          "relative_path": "runs/mesh-view-7723feaeb61fb01f9d62fb2e2c0708d0b24f0256/workspaces/drawing.svg",
+          "sha256": "3e027e5688e4a32f5b30fa4baa14bad7de8924b114b1dd6b119dd7c698914817"
+        },
+        "up": [
+          0.4082482904638631,
+          0.4082482904638631,
+          0.8164965809277261
+        ],
+        "view": "isometric"
+      },
+      "status": "current",
+      "reason": null
+    },
+    {
+      "document": {
+        "projectId": "demo-project",
+        "runId": "mesh-view-e3d670cabc5bd546f53fee0ac28f33077f1dcd80",
+        "assetSha256": "64ad294fda742cae51af35c87278fed8d5e19d816612ade897470207630973a3",
+        "fileName": "top.png",
+        "mimeType": "image/png",
+        "sizeBytes": 33182,
+        "pageCount": 1,
+        "pages": [
+          {
+            "pageIndex": 0,
+            "width": 6142.0,
+            "height": 3780.0,
+            "rotation": 0
+          }
+        ],
+        "modelSource": null,
+        "modelSourceBindingRef": null,
+        "drawingId": "mesh-top",
+        "revisionRef": null,
+        "sourceStageRef": null,
+        "viewRecipe": {
+          "dimensions": [
+            {
+              "id": "overall-width",
+              "reference": {
+                "axis": 0,
+                "kind": "projected-extent"
+              },
+              "status": "resolved",
+              "valueMeters": 4.0
+            },
+            {
+              "id": "overall-height",
+              "reference": {
+                "axis": 1,
+                "kind": "projected-extent"
+              },
+              "status": "resolved",
+              "valueMeters": 2.0
+            }
+          ],
+          "drawingRevision": "e3d670cabc5bd546f53fee0ac28f33077f1dcd804d462c9dced21d2c04b20f2e",
+          "featureReferences": [],
+          "geometry": {
+            "assetSha256": "c2336e0e0ec2405a64e96ce4472df449fb4bee88772a716eebc9a916611a27ab",
+            "format": "3dm",
+            "geometryRevision": "c2336e0e0ec2405a64e96ce4472df449fb4bee88772a716eebc9a916611a27ab",
+            "kind": "working-head",
+            "label": "studio-candidate-seat-portico@fa6ea5b1d3ea.preview.3dm",
+            "modelSource": {
+              "assetSha256": "c2336e0e0ec2405a64e96ce4472df449fb4bee88772a716eebc9a916611a27ab",
+              "runId": "run-001",
+              "stateDigest": "76af4e2ac8bfa5a6ac4ae891b9dfcfe57f6890f108a415cae556969d03a810b1"
+            },
+            "projectId": "demo-project",
+            "runId": "run-001",
+            "warnings": [],
+            "workingRevision": null
+          },
+          "geometryRevision": "c2336e0e0ec2405a64e96ce4472df449fb4bee88772a716eebc9a916611a27ab",
+          "kind": "mesh-orthographic",
+          "right": [
+            1,
+            0,
+            0
+          ],
+          "scale": 5,
+          "svg": {
+            "artifact_id": "drawing-svg",
+            "media_type": "image/svg+xml",
+            "project_id": "demo-project",
+            "relative_path": "runs/mesh-view-e3d670cabc5bd546f53fee0ac28f33077f1dcd80/workspaces/drawing.svg",
+            "sha256": "ff31dd38f5455e41128a21b39513e1839902a1da25a75e36d162c8249a4d7c3c"
+          },
+          "up": [
+            0,
+            1,
+            0
+          ],
+          "view": "top"
+        },
+        "generatedAt": "2026-09-27T15:39:59.929914+00:00",
+        "replacesPages": [],
+        "previousRevisionRef": null,
+        "attribution": null,
+        "reason": null,
+        "sourceKind": null
+      },
+      "recipe": {
+        "dimensions": [
+          {
+            "id": "overall-width",
+            "reference": {
+              "axis": 0,
+              "kind": "projected-extent"
+            },
+            "status": "resolved",
+            "valueMeters": 4.0
+          },
+          {
+            "id": "overall-height",
+            "reference": {
+              "axis": 1,
+              "kind": "projected-extent"
+            },
+            "status": "resolved",
+            "valueMeters": 2.0
+          }
+        ],
+        "drawingRevision": "e3d670cabc5bd546f53fee0ac28f33077f1dcd804d462c9dced21d2c04b20f2e",
+        "featureReferences": [],
+        "geometry": {
+          "assetSha256": "c2336e0e0ec2405a64e96ce4472df449fb4bee88772a716eebc9a916611a27ab",
+          "format": "3dm",
+          "geometryRevision": "c2336e0e0ec2405a64e96ce4472df449fb4bee88772a716eebc9a916611a27ab",
+          "kind": "working-head",
+          "label": "studio-candidate-seat-portico@fa6ea5b1d3ea.preview.3dm",
+          "modelSource": {
+            "assetSha256": "c2336e0e0ec2405a64e96ce4472df449fb4bee88772a716eebc9a916611a27ab",
+            "runId": "run-001",
+            "stateDigest": "76af4e2ac8bfa5a6ac4ae891b9dfcfe57f6890f108a415cae556969d03a810b1"
+          },
+          "projectId": "demo-project",
+          "runId": "run-001",
+          "warnings": [],
+          "workingRevision": null
+        },
+        "geometryRevision": "c2336e0e0ec2405a64e96ce4472df449fb4bee88772a716eebc9a916611a27ab",
+        "kind": "mesh-orthographic",
+        "right": [
+          1,
+          0,
+          0
+        ],
+        "scale": 5,
+        "svg": {
+          "artifact_id": "drawing-svg",
+          "media_type": "image/svg+xml",
+          "project_id": "demo-project",
+          "relative_path": "runs/mesh-view-e3d670cabc5bd546f53fee0ac28f33077f1dcd80/workspaces/drawing.svg",
+          "sha256": "ff31dd38f5455e41128a21b39513e1839902a1da25a75e36d162c8249a4d7c3c"
+        },
+        "up": [
+          0,
+          1,
+          0
+        ],
+        "view": "top"
+      },
+      "status": "current",
+      "reason": null
+    },
+    {
+      "document": {
+        "projectId": "demo-project",
+        "runId": "mesh-view-69dd227b25ac80c9bc761d2fe85d08b237565a73",
+        "assetSha256": "deae8512cb3b887d0dd2b4853bed595c03ba672ab06a467b93bd4476f214180e",
+        "fileName": "side.png",
+        "mimeType": "image/png",
+        "sizeBytes": 11135,
+        "pageCount": 1,
+        "pages": [
+          {
+            "pageIndex": 0,
+            "width": 3071.0,
+            "height": 1772.0,
+            "rotation": 0
+          }
+        ],
+        "modelSource": null,
+        "modelSourceBindingRef": null,
+        "drawingId": "mesh-side",
+        "revisionRef": null,
+        "sourceStageRef": null,
+        "viewRecipe": {
+          "dimensions": [
+            {
+              "id": "overall-width",
+              "reference": {
+                "axis": 0,
+                "kind": "projected-extent"
+              },
+              "status": "resolved",
+              "valueMeters": 2.0
+            },
+            {
+              "id": "overall-height",
+              "reference": {
+                "axis": 1,
+                "kind": "projected-extent"
+              },
+              "status": "resolved",
+              "valueMeters": 0.8999999761581421
+            }
+          ],
+          "drawingRevision": "69dd227b25ac80c9bc761d2fe85d08b237565a73b26c3e15f2acdeb79d2a01fa",
+          "featureReferences": [],
+          "geometry": {
+            "assetSha256": "c2336e0e0ec2405a64e96ce4472df449fb4bee88772a716eebc9a916611a27ab",
+            "format": "3dm",
+            "geometryRevision": "c2336e0e0ec2405a64e96ce4472df449fb4bee88772a716eebc9a916611a27ab",
+            "kind": "working-head",
+            "label": "studio-candidate-seat-portico@fa6ea5b1d3ea.preview.3dm",
+            "modelSource": {
+              "assetSha256": "c2336e0e0ec2405a64e96ce4472df449fb4bee88772a716eebc9a916611a27ab",
+              "runId": "run-001",
+              "stateDigest": "76af4e2ac8bfa5a6ac4ae891b9dfcfe57f6890f108a415cae556969d03a810b1"
+            },
+            "projectId": "demo-project",
+            "runId": "run-001",
+            "warnings": [],
+            "workingRevision": null
+          },
+          "geometryRevision": "c2336e0e0ec2405a64e96ce4472df449fb4bee88772a716eebc9a916611a27ab",
+          "kind": "mesh-orthographic",
+          "right": [
+            0,
+            1,
+            0
+          ],
+          "scale": 5,
+          "svg": {
+            "artifact_id": "drawing-svg",
+            "media_type": "image/svg+xml",
+            "project_id": "demo-project",
+            "relative_path": "runs/mesh-view-69dd227b25ac80c9bc761d2fe85d08b237565a73/workspaces/drawing.svg",
+            "sha256": "924cda27bd6c4400b80ddd1726cfdee30acc415fd2872826690e9d76abc5c036"
+          },
+          "up": [
+            0,
+            0,
+            1
+          ],
+          "view": "side"
+        },
+        "generatedAt": "2026-09-27T15:39:58.866235+00:00",
+        "replacesPages": [],
+        "previousRevisionRef": null,
+        "attribution": null,
+        "reason": null,
+        "sourceKind": null
+      },
+      "recipe": {
+        "dimensions": [
+          {
+            "id": "overall-width",
+            "reference": {
+              "axis": 0,
+              "kind": "projected-extent"
+            },
+            "status": "resolved",
+            "valueMeters": 2.0
+          },
+          {
+            "id": "overall-height",
+            "reference": {
+              "axis": 1,
+              "kind": "projected-extent"
+            },
+            "status": "resolved",
+            "valueMeters": 0.8999999761581421
+          }
+        ],
+        "drawingRevision": "69dd227b25ac80c9bc761d2fe85d08b237565a73b26c3e15f2acdeb79d2a01fa",
+        "featureReferences": [],
+        "geometry": {
+          "assetSha256": "c2336e0e0ec2405a64e96ce4472df449fb4bee88772a716eebc9a916611a27ab",
+          "format": "3dm",
+          "geometryRevision": "c2336e0e0ec2405a64e96ce4472df449fb4bee88772a716eebc9a916611a27ab",
+          "kind": "working-head",
+          "label": "studio-candidate-seat-portico@fa6ea5b1d3ea.preview.3dm",
+          "modelSource": {
+            "assetSha256": "c2336e0e0ec2405a64e96ce4472df449fb4bee88772a716eebc9a916611a27ab",
+            "runId": "run-001",
+            "stateDigest": "76af4e2ac8bfa5a6ac4ae891b9dfcfe57f6890f108a415cae556969d03a810b1"
+          },
+          "projectId": "demo-project",
+          "runId": "run-001",
+          "warnings": [],
+          "workingRevision": null
+        },
+        "geometryRevision": "c2336e0e0ec2405a64e96ce4472df449fb4bee88772a716eebc9a916611a27ab",
+        "kind": "mesh-orthographic",
+        "right": [
+          0,
+          1,
+          0
+        ],
+        "scale": 5,
+        "svg": {
+          "artifact_id": "drawing-svg",
+          "media_type": "image/svg+xml",
+          "project_id": "demo-project",
+          "relative_path": "runs/mesh-view-69dd227b25ac80c9bc761d2fe85d08b237565a73/workspaces/drawing.svg",
+          "sha256": "924cda27bd6c4400b80ddd1726cfdee30acc415fd2872826690e9d76abc5c036"
+        },
+        "up": [
+          0,
+          0,
+          1
+        ],
+        "view": "side"
+      },
+      "status": "current",
+      "reason": null
+    },
+    {
+      "document": {
+        "projectId": "demo-project",
+        "runId": "mesh-view-b40b320788b5ff2b653fe92baec82936e85daf8a",
+        "assetSha256": "4c28dbd8b12e858538065e2da51031ddbde63a2b74268b53746a882c818419c9",
+        "fileName": "front.png",
+        "mimeType": "image/png",
+        "sizeBytes": 22556,
+        "pageCount": 1,
+        "pages": [
+          {
+            "pageIndex": 0,
+            "width": 6142.0,
+            "height": 2480.0,
+            "rotation": 0
+          }
+        ],
+        "modelSource": null,
+        "modelSourceBindingRef": null,
+        "drawingId": "mesh-front",
+        "revisionRef": null,
+        "sourceStageRef": null,
+        "viewRecipe": {
+          "dimensions": [
+            {
+              "id": "overall-width",
+              "reference": {
+                "axis": 0,
+                "kind": "projected-extent"
+              },
+              "status": "resolved",
+              "valueMeters": 4.0
+            },
+            {
+              "id": "overall-height",
+              "reference": {
+                "axis": 1,
+                "kind": "projected-extent"
+              },
+              "status": "resolved",
+              "valueMeters": 0.8999999761581421
+            }
+          ],
+          "drawingRevision": "b40b320788b5ff2b653fe92baec82936e85daf8ac48d78a295a8e32ac78cd6d0",
+          "featureReferences": [],
+          "geometry": {
+            "assetSha256": "c2336e0e0ec2405a64e96ce4472df449fb4bee88772a716eebc9a916611a27ab",
+            "format": "3dm",
+            "geometryRevision": "c2336e0e0ec2405a64e96ce4472df449fb4bee88772a716eebc9a916611a27ab",
+            "kind": "working-head",
+            "label": "studio-candidate-seat-portico@fa6ea5b1d3ea.preview.3dm",
+            "modelSource": {
+              "assetSha256": "c2336e0e0ec2405a64e96ce4472df449fb4bee88772a716eebc9a916611a27ab",
+              "runId": "run-001",
+              "stateDigest": "76af4e2ac8bfa5a6ac4ae891b9dfcfe57f6890f108a415cae556969d03a810b1"
+            },
+            "projectId": "demo-project",
+            "runId": "run-001",
+            "warnings": [],
+            "workingRevision": null
+          },
+          "geometryRevision": "c2336e0e0ec2405a64e96ce4472df449fb4bee88772a716eebc9a916611a27ab",
+          "kind": "mesh-orthographic",
+          "right": [
+            1,
+            0,
+            0
+          ],
+          "scale": 5,
+          "svg": {
+            "artifact_id": "drawing-svg",
+            "media_type": "image/svg+xml",
+            "project_id": "demo-project",
+            "relative_path": "runs/mesh-view-b40b320788b5ff2b653fe92baec82936e85daf8a/workspaces/drawing.svg",
+            "sha256": "1796791edc0ad781784d02f5dbb0ea252fd67c7e0f06c9ada5fa50dc9375c99d"
+          },
+          "up": [
+            0,
+            0,
+            1
+          ],
+          "view": "front"
+        },
+        "generatedAt": "2026-09-27T15:39:58.508233+00:00",
+        "replacesPages": [],
+        "previousRevisionRef": null,
+        "attribution": null,
+        "reason": null,
+        "sourceKind": null
+      },
+      "recipe": {
+        "dimensions": [
+          {
+            "id": "overall-width",
+            "reference": {
+              "axis": 0,
+              "kind": "projected-extent"
+            },
+            "status": "resolved",
+            "valueMeters": 4.0
+          },
+          {
+            "id": "overall-height",
+            "reference": {
+              "axis": 1,
+              "kind": "projected-extent"
+            },
+            "status": "resolved",
+            "valueMeters": 0.8999999761581421
+          }
+        ],
+        "drawingRevision": "b40b320788b5ff2b653fe92baec82936e85daf8ac48d78a295a8e32ac78cd6d0",
+        "featureReferences": [],
+        "geometry": {
+          "assetSha256": "c2336e0e0ec2405a64e96ce4472df449fb4bee88772a716eebc9a916611a27ab",
+          "format": "3dm",
+          "geometryRevision": "c2336e0e0ec2405a64e96ce4472df449fb4bee88772a716eebc9a916611a27ab",
+          "kind": "working-head",
+          "label": "studio-candidate-seat-portico@fa6ea5b1d3ea.preview.3dm",
+          "modelSource": {
+            "assetSha256": "c2336e0e0ec2405a64e96ce4472df449fb4bee88772a716eebc9a916611a27ab",
+            "runId": "run-001",
+            "stateDigest": "76af4e2ac8bfa5a6ac4ae891b9dfcfe57f6890f108a415cae556969d03a810b1"
+          },
+          "projectId": "demo-project",
+          "runId": "run-001",
+          "warnings": [],
+          "workingRevision": null
+        },
+        "geometryRevision": "c2336e0e0ec2405a64e96ce4472df449fb4bee88772a716eebc9a916611a27ab",
+        "kind": "mesh-orthographic",
+        "right": [
+          1,
+          0,
+          0
+        ],
+        "scale": 5,
+        "svg": {
+          "artifact_id": "drawing-svg",
+          "media_type": "image/svg+xml",
+          "project_id": "demo-project",
+          "relative_path": "runs/mesh-view-b40b320788b5ff2b653fe92baec82936e85daf8a/workspaces/drawing.svg",
+          "sha256": "1796791edc0ad781784d02f5dbb0ea252fd67c7e0f06c9ada5fa50dc9375c99d"
+        },
+        "up": [
+          0,
+          0,
+          1
+        ],
+        "view": "front"
+      },
+      "status": "current",
+      "reason": null
+    }
+  ],
+  "reopenedDrawings": [
+    {
+      "document": {
+        "projectId": "demo-project",
+        "runId": "mesh-view-7eac4ba7d5b4a7106d6742e5d1bd7d19ebaf06bb",
+        "assetSha256": "64de19e4bad0d42e6770b19157a9093767c758f2f5032e18349ae17fc53c2575",
+        "fileName": "isometric.png",
+        "mimeType": "image/png",
+        "sizeBytes": 126412,
+        "pageCount": 1,
+        "pages": [
+          {
+            "pageIndex": 0,
+            "width": 6514.0,
+            "height": 5747.0,
+            "rotation": 0
+          }
+        ],
+        "modelSource": null,
+        "modelSourceBindingRef": null,
+        "drawingId": "mesh-isometric",
+        "revisionRef": null,
+        "sourceStageRef": null,
+        "viewRecipe": {
+          "dimensions": [
+            {
+              "id": "overall-width",
+              "reference": {
+                "axis": 0,
+                "kind": "projected-extent"
+              },
+              "status": "resolved",
+              "valueMeters": 4.242640687119285
+            },
+            {
+              "id": "overall-height",
+              "reference": {
+                "axis": 1,
+                "kind": "projected-extent"
+              },
+              "status": "resolved",
+              "valueMeters": 3.5925849366151996
+            }
+          ],
+          "drawingRevision": "7eac4ba7d5b4a7106d6742e5d1bd7d19ebaf06bbe424f5dd31cd2015e18b7ff7",
+          "featureReferences": [],
+          "geometry": {
+            "assetSha256": "a735a5bd97dabe6d52c0d4d014d72a35740d852f43081c2dd5b3cdf243bece74",
+            "format": "3dm",
+            "geometryRevision": "a735a5bd97dabe6d52c0d4d014d72a35740d852f43081c2dd5b3cdf243bece74",
+            "kind": "working-head",
+            "label": "studio-candidate-seat-portico@d3c54b2fc5f2.preview.3dm",
+            "modelSource": {
+              "assetSha256": "a735a5bd97dabe6d52c0d4d014d72a35740d852f43081c2dd5b3cdf243bece74",
+              "runId": "studio-cand-20260927-154003-b1ad3650-f102",
+              "stateDigest": "6c79ec4ba0366405526d6834211e26acd7e4206349bb9406b596d68ba2f05ff3"
+            },
+            "projectId": "demo-project",
+            "runId": "studio-cand-20260927-154003-b1ad3650-f102",
+            "warnings": [],
+            "workingRevision": "abb50ac84250b93085d4611fcb6fd65911816ae664e443ac6b034b6f334a1552"
+          },
+          "geometryRevision": "a735a5bd97dabe6d52c0d4d014d72a35740d852f43081c2dd5b3cdf243bece74",
+          "kind": "mesh-orthographic",
+          "right": [
+            0.7071067811865475,
+            -0.7071067811865475,
+            0
+          ],
+          "scale": 5,
+          "svg": {
+            "artifact_id": "drawing-svg",
+            "media_type": "image/svg+xml",
+            "project_id": "demo-project",
+            "relative_path": "runs/mesh-view-7eac4ba7d5b4a7106d6742e5d1bd7d19ebaf06bb/workspaces/drawing.svg",
+            "sha256": "3bad9642012a747bb1d9c95b969f8788ebd51e1908e844e83c39c87173b354c1"
+          },
+          "up": [
+            0.4082482904638631,
+            0.4082482904638631,
+            0.8164965809277261
+          ],
+          "view": "isometric"
+        },
+        "generatedAt": "2026-09-27T15:40:11.702029+00:00",
+        "replacesPages": [],
+        "previousRevisionRef": null,
+        "attribution": null,
+        "reason": null,
+        "sourceKind": null
+      },
+      "recipe": {
+        "dimensions": [
+          {
+            "id": "overall-width",
+            "reference": {
+              "axis": 0,
+              "kind": "projected-extent"
+            },
+            "status": "resolved",
+            "valueMeters": 4.242640687119285
+          },
+          {
+            "id": "overall-height",
+            "reference": {
+              "axis": 1,
+              "kind": "projected-extent"
+            },
+            "status": "resolved",
+            "valueMeters": 3.5925849366151996
+          }
+        ],
+        "drawingRevision": "7eac4ba7d5b4a7106d6742e5d1bd7d19ebaf06bbe424f5dd31cd2015e18b7ff7",
+        "featureReferences": [],
+        "geometry": {
+          "assetSha256": "a735a5bd97dabe6d52c0d4d014d72a35740d852f43081c2dd5b3cdf243bece74",
+          "format": "3dm",
+          "geometryRevision": "a735a5bd97dabe6d52c0d4d014d72a35740d852f43081c2dd5b3cdf243bece74",
+          "kind": "working-head",
+          "label": "studio-candidate-seat-portico@d3c54b2fc5f2.preview.3dm",
+          "modelSource": {
+            "assetSha256": "a735a5bd97dabe6d52c0d4d014d72a35740d852f43081c2dd5b3cdf243bece74",
+            "runId": "studio-cand-20260927-154003-b1ad3650-f102",
+            "stateDigest": "6c79ec4ba0366405526d6834211e26acd7e4206349bb9406b596d68ba2f05ff3"
+          },
+          "projectId": "demo-project",
+          "runId": "studio-cand-20260927-154003-b1ad3650-f102",
+          "warnings": [],
+          "workingRevision": "abb50ac84250b93085d4611fcb6fd65911816ae664e443ac6b034b6f334a1552"
+        },
+        "geometryRevision": "a735a5bd97dabe6d52c0d4d014d72a35740d852f43081c2dd5b3cdf243bece74",
+        "kind": "mesh-orthographic",
+        "right": [
+          0.7071067811865475,
+          -0.7071067811865475,
+          0
+        ],
+        "scale": 5,
+        "svg": {
+          "artifact_id": "drawing-svg",
+          "media_type": "image/svg+xml",
+          "project_id": "demo-project",
+          "relative_path": "runs/mesh-view-7eac4ba7d5b4a7106d6742e5d1bd7d19ebaf06bb/workspaces/drawing.svg",
+          "sha256": "3bad9642012a747bb1d9c95b969f8788ebd51e1908e844e83c39c87173b354c1"
+        },
+        "up": [
+          0.4082482904638631,
+          0.4082482904638631,
+          0.8164965809277261
+        ],
+        "view": "isometric"
+      },
+      "status": "current",
+      "reason": null
+    },
+    {
+      "document": {
+        "projectId": "demo-project",
+        "runId": "mesh-view-10e096a2fc538d8ff8677b89e8728bb34f09ec75",
+        "assetSha256": "64ad294fda742cae51af35c87278fed8d5e19d816612ade897470207630973a3",
+        "fileName": "top.png",
+        "mimeType": "image/png",
+        "sizeBytes": 33182,
+        "pageCount": 1,
+        "pages": [
+          {
+            "pageIndex": 0,
+            "width": 6142.0,
+            "height": 3780.0,
+            "rotation": 0
+          }
+        ],
+        "modelSource": null,
+        "modelSourceBindingRef": null,
+        "drawingId": "mesh-top",
+        "revisionRef": null,
+        "sourceStageRef": null,
+        "viewRecipe": {
+          "dimensions": [
+            {
+              "id": "overall-width",
+              "reference": {
+                "axis": 0,
+                "kind": "projected-extent"
+              },
+              "status": "resolved",
+              "valueMeters": 4.0
+            },
+            {
+              "id": "overall-height",
+              "reference": {
+                "axis": 1,
+                "kind": "projected-extent"
+              },
+              "status": "resolved",
+              "valueMeters": 2.0
+            }
+          ],
+          "drawingRevision": "10e096a2fc538d8ff8677b89e8728bb34f09ec75c4051665ca3289ad0d2fe920",
+          "featureReferences": [],
+          "geometry": {
+            "assetSha256": "a735a5bd97dabe6d52c0d4d014d72a35740d852f43081c2dd5b3cdf243bece74",
+            "format": "3dm",
+            "geometryRevision": "a735a5bd97dabe6d52c0d4d014d72a35740d852f43081c2dd5b3cdf243bece74",
+            "kind": "working-head",
+            "label": "studio-candidate-seat-portico@d3c54b2fc5f2.preview.3dm",
+            "modelSource": {
+              "assetSha256": "a735a5bd97dabe6d52c0d4d014d72a35740d852f43081c2dd5b3cdf243bece74",
+              "runId": "studio-cand-20260927-154003-b1ad3650-f102",
+              "stateDigest": "6c79ec4ba0366405526d6834211e26acd7e4206349bb9406b596d68ba2f05ff3"
+            },
+            "projectId": "demo-project",
+            "runId": "studio-cand-20260927-154003-b1ad3650-f102",
+            "warnings": [],
+            "workingRevision": "abb50ac84250b93085d4611fcb6fd65911816ae664e443ac6b034b6f334a1552"
+          },
+          "geometryRevision": "a735a5bd97dabe6d52c0d4d014d72a35740d852f43081c2dd5b3cdf243bece74",
+          "kind": "mesh-orthographic",
+          "right": [
+            1,
+            0,
+            0
+          ],
+          "scale": 5,
+          "svg": {
+            "artifact_id": "drawing-svg",
+            "media_type": "image/svg+xml",
+            "project_id": "demo-project",
+            "relative_path": "runs/mesh-view-10e096a2fc538d8ff8677b89e8728bb34f09ec75/workspaces/drawing.svg",
+            "sha256": "ff31dd38f5455e41128a21b39513e1839902a1da25a75e36d162c8249a4d7c3c"
+          },
+          "up": [
+            0,
+            1,
+            0
+          ],
+          "view": "top"
+        },
+        "generatedAt": "2026-09-27T15:40:09.840827+00:00",
+        "replacesPages": [],
+        "previousRevisionRef": null,
+        "attribution": null,
+        "reason": null,
+        "sourceKind": null
+      },
+      "recipe": {
+        "dimensions": [
+          {
+            "id": "overall-width",
+            "reference": {
+              "axis": 0,
+              "kind": "projected-extent"
+            },
+            "status": "resolved",
+            "valueMeters": 4.0
+          },
+          {
+            "id": "overall-height",
+            "reference": {
+              "axis": 1,
+              "kind": "projected-extent"
+            },
+            "status": "resolved",
+            "valueMeters": 2.0
+          }
+        ],
+        "drawingRevision": "10e096a2fc538d8ff8677b89e8728bb34f09ec75c4051665ca3289ad0d2fe920",
+        "featureReferences": [],
+        "geometry": {
+          "assetSha256": "a735a5bd97dabe6d52c0d4d014d72a35740d852f43081c2dd5b3cdf243bece74",
+          "format": "3dm",
+          "geometryRevision": "a735a5bd97dabe6d52c0d4d014d72a35740d852f43081c2dd5b3cdf243bece74",
+          "kind": "working-head",
+          "label": "studio-candidate-seat-portico@d3c54b2fc5f2.preview.3dm",
+          "modelSource": {
+            "assetSha256": "a735a5bd97dabe6d52c0d4d014d72a35740d852f43081c2dd5b3cdf243bece74",
+            "runId": "studio-cand-20260927-154003-b1ad3650-f102",
+            "stateDigest": "6c79ec4ba0366405526d6834211e26acd7e4206349bb9406b596d68ba2f05ff3"
+          },
+          "projectId": "demo-project",
+          "runId": "studio-cand-20260927-154003-b1ad3650-f102",
+          "warnings": [],
+          "workingRevision": "abb50ac84250b93085d4611fcb6fd65911816ae664e443ac6b034b6f334a1552"
+        },
+        "geometryRevision": "a735a5bd97dabe6d52c0d4d014d72a35740d852f43081c2dd5b3cdf243bece74",
+        "kind": "mesh-orthographic",
+        "right": [
+          1,
+          0,
+          0
+        ],
+        "scale": 5,
+        "svg": {
+          "artifact_id": "drawing-svg",
+          "media_type": "image/svg+xml",
+          "project_id": "demo-project",
+          "relative_path": "runs/mesh-view-10e096a2fc538d8ff8677b89e8728bb34f09ec75/workspaces/drawing.svg",
+          "sha256": "ff31dd38f5455e41128a21b39513e1839902a1da25a75e36d162c8249a4d7c3c"
+        },
+        "up": [
+          0,
+          1,
+          0
+        ],
+        "view": "top"
+      },
+      "status": "current",
+      "reason": null
+    },
+    {
+      "document": {
+        "projectId": "demo-project",
+        "runId": "mesh-view-79af226180f0f89481702b522d8958410931a8df",
+        "assetSha256": "986d99151aa7c436b7a5293f95693d5473e13438cb1c03d16993c4c0d8855f8b",
+        "fileName": "side.png",
+        "mimeType": "image/png",
+        "sizeBytes": 14080,
+        "pageCount": 1,
+        "pages": [
+          {
+            "pageIndex": 0,
+            "width": 3071.0,
+            "height": 2362.0,
+            "rotation": 0
+          }
+        ],
+        "modelSource": null,
+        "modelSourceBindingRef": null,
+        "drawingId": "mesh-side",
+        "revisionRef": null,
+        "sourceStageRef": null,
+        "viewRecipe": {
+          "dimensions": [
+            {
+              "id": "overall-width",
+              "reference": {
+                "axis": 0,
+                "kind": "projected-extent"
+              },
+              "status": "resolved",
+              "valueMeters": 2.0
+            },
+            {
+              "id": "overall-height",
+              "reference": {
+                "axis": 1,
+                "kind": "projected-extent"
+              },
+              "status": "resolved",
+              "valueMeters": 1.399999976158142
+            }
+          ],
+          "drawingRevision": "79af226180f0f89481702b522d8958410931a8df9d4e6ef98d2b7b80924ae5d4",
+          "featureReferences": [],
+          "geometry": {
+            "assetSha256": "a735a5bd97dabe6d52c0d4d014d72a35740d852f43081c2dd5b3cdf243bece74",
+            "format": "3dm",
+            "geometryRevision": "a735a5bd97dabe6d52c0d4d014d72a35740d852f43081c2dd5b3cdf243bece74",
+            "kind": "working-head",
+            "label": "studio-candidate-seat-portico@d3c54b2fc5f2.preview.3dm",
+            "modelSource": {
+              "assetSha256": "a735a5bd97dabe6d52c0d4d014d72a35740d852f43081c2dd5b3cdf243bece74",
+              "runId": "studio-cand-20260927-154003-b1ad3650-f102",
+              "stateDigest": "6c79ec4ba0366405526d6834211e26acd7e4206349bb9406b596d68ba2f05ff3"
+            },
+            "projectId": "demo-project",
+            "runId": "studio-cand-20260927-154003-b1ad3650-f102",
+            "warnings": [],
+            "workingRevision": "abb50ac84250b93085d4611fcb6fd65911816ae664e443ac6b034b6f334a1552"
+          },
+          "geometryRevision": "a735a5bd97dabe6d52c0d4d014d72a35740d852f43081c2dd5b3cdf243bece74",
+          "kind": "mesh-orthographic",
+          "right": [
+            0,
+            1,
+            0
+          ],
+          "scale": 5,
+          "svg": {
+            "artifact_id": "drawing-svg",
+            "media_type": "image/svg+xml",
+            "project_id": "demo-project",
+            "relative_path": "runs/mesh-view-79af226180f0f89481702b522d8958410931a8df/workspaces/drawing.svg",
+            "sha256": "6dd3214d0bc51083cb76ad8bdff6ba635ad614a4696043b526b09db7920a3b8d"
+          },
+          "up": [
+            0,
+            0,
+            1
+          ],
+          "view": "side"
+        },
+        "generatedAt": "2026-09-27T15:40:08.798837+00:00",
+        "replacesPages": [],
+        "previousRevisionRef": null,
+        "attribution": null,
+        "reason": null,
+        "sourceKind": null
+      },
+      "recipe": {
+        "dimensions": [
+          {
+            "id": "overall-width",
+            "reference": {
+              "axis": 0,
+              "kind": "projected-extent"
+            },
+            "status": "resolved",
+            "valueMeters": 2.0
+          },
+          {
+            "id": "overall-height",
+            "reference": {
+              "axis": 1,
+              "kind": "projected-extent"
+            },
+            "status": "resolved",
+            "valueMeters": 1.399999976158142
+          }
+        ],
+        "drawingRevision": "79af226180f0f89481702b522d8958410931a8df9d4e6ef98d2b7b80924ae5d4",
+        "featureReferences": [],
+        "geometry": {
+          "assetSha256": "a735a5bd97dabe6d52c0d4d014d72a35740d852f43081c2dd5b3cdf243bece74",
+          "format": "3dm",
+          "geometryRevision": "a735a5bd97dabe6d52c0d4d014d72a35740d852f43081c2dd5b3cdf243bece74",
+          "kind": "working-head",
+          "label": "studio-candidate-seat-portico@d3c54b2fc5f2.preview.3dm",
+          "modelSource": {
+            "assetSha256": "a735a5bd97dabe6d52c0d4d014d72a35740d852f43081c2dd5b3cdf243bece74",
+            "runId": "studio-cand-20260927-154003-b1ad3650-f102",
+            "stateDigest": "6c79ec4ba0366405526d6834211e26acd7e4206349bb9406b596d68ba2f05ff3"
+          },
+          "projectId": "demo-project",
+          "runId": "studio-cand-20260927-154003-b1ad3650-f102",
+          "warnings": [],
+          "workingRevision": "abb50ac84250b93085d4611fcb6fd65911816ae664e443ac6b034b6f334a1552"
+        },
+        "geometryRevision": "a735a5bd97dabe6d52c0d4d014d72a35740d852f43081c2dd5b3cdf243bece74",
+        "kind": "mesh-orthographic",
+        "right": [
+          0,
+          1,
+          0
+        ],
+        "scale": 5,
+        "svg": {
+          "artifact_id": "drawing-svg",
+          "media_type": "image/svg+xml",
+          "project_id": "demo-project",
+          "relative_path": "runs/mesh-view-79af226180f0f89481702b522d8958410931a8df/workspaces/drawing.svg",
+          "sha256": "6dd3214d0bc51083cb76ad8bdff6ba635ad614a4696043b526b09db7920a3b8d"
+        },
+        "up": [
+          0,
+          0,
+          1
+        ],
+        "view": "side"
+      },
+      "status": "current",
+      "reason": null
+    },
+    {
+      "document": {
+        "projectId": "demo-project",
+        "runId": "mesh-view-3205ff4dcdbe4a8d6f7025e96fbb33282ce2d115",
+        "assetSha256": "dc6271846b0a8c0f887b7de26a8ddd29b0bcef0ce6b4225b132ca01b9c8ba14b",
+        "fileName": "front.png",
+        "mimeType": "image/png",
+        "sizeBytes": 27216,
+        "pageCount": 1,
+        "pages": [
+          {
+            "pageIndex": 0,
+            "width": 6142.0,
+            "height": 3071.0,
+            "rotation": 0
+          }
+        ],
+        "modelSource": null,
+        "modelSourceBindingRef": null,
+        "drawingId": "mesh-front",
+        "revisionRef": null,
+        "sourceStageRef": null,
+        "viewRecipe": {
+          "dimensions": [
+            {
+              "id": "overall-width",
+              "reference": {
+                "axis": 0,
+                "kind": "projected-extent"
+              },
+              "status": "resolved",
+              "valueMeters": 4.0
+            },
+            {
+              "id": "overall-height",
+              "reference": {
+                "axis": 1,
+                "kind": "projected-extent"
+              },
+              "status": "resolved",
+              "valueMeters": 1.399999976158142
+            }
+          ],
+          "drawingRevision": "3205ff4dcdbe4a8d6f7025e96fbb33282ce2d115cb3f6a9a94fff04308715033",
+          "featureReferences": [],
+          "geometry": {
+            "assetSha256": "a735a5bd97dabe6d52c0d4d014d72a35740d852f43081c2dd5b3cdf243bece74",
+            "format": "3dm",
+            "geometryRevision": "a735a5bd97dabe6d52c0d4d014d72a35740d852f43081c2dd5b3cdf243bece74",
+            "kind": "working-head",
+            "label": "studio-candidate-seat-portico@d3c54b2fc5f2.preview.3dm",
+            "modelSource": {
+              "assetSha256": "a735a5bd97dabe6d52c0d4d014d72a35740d852f43081c2dd5b3cdf243bece74",
+              "runId": "studio-cand-20260927-154003-b1ad3650-f102",
+              "stateDigest": "6c79ec4ba0366405526d6834211e26acd7e4206349bb9406b596d68ba2f05ff3"
+            },
+            "projectId": "demo-project",
+            "runId": "studio-cand-20260927-154003-b1ad3650-f102",
+            "warnings": [],
+            "workingRevision": "abb50ac84250b93085d4611fcb6fd65911816ae664e443ac6b034b6f334a1552"
+          },
+          "geometryRevision": "a735a5bd97dabe6d52c0d4d014d72a35740d852f43081c2dd5b3cdf243bece74",
+          "kind": "mesh-orthographic",
+          "right": [
+            1,
+            0,
+            0
+          ],
+          "scale": 5,
+          "svg": {
+            "artifact_id": "drawing-svg",
+            "media_type": "image/svg+xml",
+            "project_id": "demo-project",
+            "relative_path": "runs/mesh-view-3205ff4dcdbe4a8d6f7025e96fbb33282ce2d115/workspaces/drawing.svg",
+            "sha256": "7c84dff96645a6163cdf5f2b85e8cfc93f61786de6b3e5dffca19511245b8214"
+          },
+          "up": [
+            0,
+            0,
+            1
+          ],
+          "view": "front"
+        },
+        "generatedAt": "2026-09-27T15:40:08.402533+00:00",
+        "replacesPages": [],
+        "previousRevisionRef": null,
+        "attribution": null,
+        "reason": null,
+        "sourceKind": null
+      },
+      "recipe": {
+        "dimensions": [
+          {
+            "id": "overall-width",
+            "reference": {
+              "axis": 0,
+              "kind": "projected-extent"
+            },
+            "status": "resolved",
+            "valueMeters": 4.0
+          },
+          {
+            "id": "overall-height",
+            "reference": {
+              "axis": 1,
+              "kind": "projected-extent"
+            },
+            "status": "resolved",
+            "valueMeters": 1.399999976158142
+          }
+        ],
+        "drawingRevision": "3205ff4dcdbe4a8d6f7025e96fbb33282ce2d115cb3f6a9a94fff04308715033",
+        "featureReferences": [],
+        "geometry": {
+          "assetSha256": "a735a5bd97dabe6d52c0d4d014d72a35740d852f43081c2dd5b3cdf243bece74",
+          "format": "3dm",
+          "geometryRevision": "a735a5bd97dabe6d52c0d4d014d72a35740d852f43081c2dd5b3cdf243bece74",
+          "kind": "working-head",
+          "label": "studio-candidate-seat-portico@d3c54b2fc5f2.preview.3dm",
+          "modelSource": {
+            "assetSha256": "a735a5bd97dabe6d52c0d4d014d72a35740d852f43081c2dd5b3cdf243bece74",
+            "runId": "studio-cand-20260927-154003-b1ad3650-f102",
+            "stateDigest": "6c79ec4ba0366405526d6834211e26acd7e4206349bb9406b596d68ba2f05ff3"
+          },
+          "projectId": "demo-project",
+          "runId": "studio-cand-20260927-154003-b1ad3650-f102",
+          "warnings": [],
+          "workingRevision": "abb50ac84250b93085d4611fcb6fd65911816ae664e443ac6b034b6f334a1552"
+        },
+        "geometryRevision": "a735a5bd97dabe6d52c0d4d014d72a35740d852f43081c2dd5b3cdf243bece74",
+        "kind": "mesh-orthographic",
+        "right": [
+          1,
+          0,
+          0
+        ],
+        "scale": 5,
+        "svg": {
+          "artifact_id": "drawing-svg",
+          "media_type": "image/svg+xml",
+          "project_id": "demo-project",
+          "relative_path": "runs/mesh-view-3205ff4dcdbe4a8d6f7025e96fbb33282ce2d115/workspaces/drawing.svg",
+          "sha256": "7c84dff96645a6163cdf5f2b85e8cfc93f61786de6b3e5dffca19511245b8214"
+        },
+        "up": [
+          0,
+          0,
+          1
+        ],
+        "view": "front"
+      },
+      "status": "current",
+      "reason": null
+    },
+    {
+      "document": {
+        "projectId": "demo-project",
+        "runId": "mesh-view-7723feaeb61fb01f9d62fb2e2c0708d0b24f0256",
+        "assetSha256": "ef68981a10e3ca3f3ec3f59575b00792f242554dd63591c090ac937200bcebd5",
+        "fileName": "isometric.png",
+        "mimeType": "image/png",
+        "sizeBytes": 122279,
+        "pageCount": 1,
+        "pages": [
+          {
+            "pageIndex": 0,
+            "width": 6514.0,
+            "height": 5264.0,
+            "rotation": 0
+          }
+        ],
+        "modelSource": null,
+        "modelSourceBindingRef": null,
+        "drawingId": "mesh-isometric",
+        "revisionRef": null,
+        "sourceStageRef": null,
+        "viewRecipe": {
+          "dimensions": [
+            {
+              "id": "overall-width",
+              "reference": {
+                "axis": 0,
+                "kind": "projected-extent"
+              },
+              "status": "resolved",
+              "valueMeters": 4.242640687119285
+            },
+            {
+              "id": "overall-height",
+              "reference": {
+                "axis": 1,
+                "kind": "projected-extent"
+              },
+              "status": "resolved",
+              "valueMeters": 3.1843366461513365
+            }
+          ],
+          "drawingRevision": "7723feaeb61fb01f9d62fb2e2c0708d0b24f0256d6bd4f92937b418f88f11c61",
+          "featureReferences": [],
+          "geometry": {
+            "assetSha256": "c2336e0e0ec2405a64e96ce4472df449fb4bee88772a716eebc9a916611a27ab",
+            "format": "3dm",
+            "geometryRevision": "c2336e0e0ec2405a64e96ce4472df449fb4bee88772a716eebc9a916611a27ab",
+            "kind": "working-head",
+            "label": "studio-candidate-seat-portico@fa6ea5b1d3ea.preview.3dm",
+            "modelSource": {
+              "assetSha256": "c2336e0e0ec2405a64e96ce4472df449fb4bee88772a716eebc9a916611a27ab",
+              "runId": "run-001",
+              "stateDigest": "76af4e2ac8bfa5a6ac4ae891b9dfcfe57f6890f108a415cae556969d03a810b1"
+            },
+            "projectId": "demo-project",
+            "runId": "run-001",
+            "warnings": [],
+            "workingRevision": null
+          },
+          "geometryRevision": "c2336e0e0ec2405a64e96ce4472df449fb4bee88772a716eebc9a916611a27ab",
+          "kind": "mesh-orthographic",
+          "right": [
+            0.7071067811865475,
+            -0.7071067811865475,
+            0
+          ],
+          "scale": 5,
+          "svg": {
+            "artifact_id": "drawing-svg",
+            "media_type": "image/svg+xml",
+            "project_id": "demo-project",
+            "relative_path": "runs/mesh-view-7723feaeb61fb01f9d62fb2e2c0708d0b24f0256/workspaces/drawing.svg",
+            "sha256": "3e027e5688e4a32f5b30fa4baa14bad7de8924b114b1dd6b119dd7c698914817"
+          },
+          "up": [
+            0.4082482904638631,
+            0.4082482904638631,
+            0.8164965809277261
+          ],
+          "view": "isometric"
+        },
+        "generatedAt": "2026-09-27T15:40:01.704564+00:00",
+        "replacesPages": [],
+        "previousRevisionRef": null,
+        "attribution": null,
+        "reason": null,
+        "sourceKind": null
+      },
+      "recipe": {
+        "dimensions": [
+          {
+            "id": "overall-width",
+            "reference": {
+              "axis": 0,
+              "kind": "projected-extent"
+            },
+            "status": "resolved",
+            "valueMeters": 4.242640687119285
+          },
+          {
+            "id": "overall-height",
+            "reference": {
+              "axis": 1,
+              "kind": "projected-extent"
+            },
+            "status": "resolved",
+            "valueMeters": 3.1843366461513365
+          }
+        ],
+        "drawingRevision": "7723feaeb61fb01f9d62fb2e2c0708d0b24f0256d6bd4f92937b418f88f11c61",
+        "featureReferences": [],
+        "geometry": {
+          "assetSha256": "c2336e0e0ec2405a64e96ce4472df449fb4bee88772a716eebc9a916611a27ab",
+          "format": "3dm",
+          "geometryRevision": "c2336e0e0ec2405a64e96ce4472df449fb4bee88772a716eebc9a916611a27ab",
+          "kind": "working-head",
+          "label": "studio-candidate-seat-portico@fa6ea5b1d3ea.preview.3dm",
+          "modelSource": {
+            "assetSha256": "c2336e0e0ec2405a64e96ce4472df449fb4bee88772a716eebc9a916611a27ab",
+            "runId": "run-001",
+            "stateDigest": "76af4e2ac8bfa5a6ac4ae891b9dfcfe57f6890f108a415cae556969d03a810b1"
+          },
+          "projectId": "demo-project",
+          "runId": "run-001",
+          "warnings": [],
+          "workingRevision": null
+        },
+        "geometryRevision": "c2336e0e0ec2405a64e96ce4472df449fb4bee88772a716eebc9a916611a27ab",
+        "kind": "mesh-orthographic",
+        "right": [
+          0.7071067811865475,
+          -0.7071067811865475,
+          0
+        ],
+        "scale": 5,
+        "svg": {
+          "artifact_id": "drawing-svg",
+          "media_type": "image/svg+xml",
+          "project_id": "demo-project",
+          "relative_path": "runs/mesh-view-7723feaeb61fb01f9d62fb2e2c0708d0b24f0256/workspaces/drawing.svg",
+          "sha256": "3e027e5688e4a32f5b30fa4baa14bad7de8924b114b1dd6b119dd7c698914817"
+        },
+        "up": [
+          0.4082482904638631,
+          0.4082482904638631,
+          0.8164965809277261
+        ],
+        "view": "isometric"
+      },
+      "status": "outdated",
+      "reason": "Geometry changed. Regenerate this view and recompute its measurements."
+    },
+    {
+      "document": {
+        "projectId": "demo-project",
+        "runId": "mesh-view-e3d670cabc5bd546f53fee0ac28f33077f1dcd80",
+        "assetSha256": "64ad294fda742cae51af35c87278fed8d5e19d816612ade897470207630973a3",
+        "fileName": "top.png",
+        "mimeType": "image/png",
+        "sizeBytes": 33182,
+        "pageCount": 1,
+        "pages": [
+          {
+            "pageIndex": 0,
+            "width": 6142.0,
+            "height": 3780.0,
+            "rotation": 0
+          }
+        ],
+        "modelSource": null,
+        "modelSourceBindingRef": null,
+        "drawingId": "mesh-top",
+        "revisionRef": null,
+        "sourceStageRef": null,
+        "viewRecipe": {
+          "dimensions": [
+            {
+              "id": "overall-width",
+              "reference": {
+                "axis": 0,
+                "kind": "projected-extent"
+              },
+              "status": "resolved",
+              "valueMeters": 4.0
+            },
+            {
+              "id": "overall-height",
+              "reference": {
+                "axis": 1,
+                "kind": "projected-extent"
+              },
+              "status": "resolved",
+              "valueMeters": 2.0
+            }
+          ],
+          "drawingRevision": "e3d670cabc5bd546f53fee0ac28f33077f1dcd804d462c9dced21d2c04b20f2e",
+          "featureReferences": [],
+          "geometry": {
+            "assetSha256": "c2336e0e0ec2405a64e96ce4472df449fb4bee88772a716eebc9a916611a27ab",
+            "format": "3dm",
+            "geometryRevision": "c2336e0e0ec2405a64e96ce4472df449fb4bee88772a716eebc9a916611a27ab",
+            "kind": "working-head",
+            "label": "studio-candidate-seat-portico@fa6ea5b1d3ea.preview.3dm",
+            "modelSource": {
+              "assetSha256": "c2336e0e0ec2405a64e96ce4472df449fb4bee88772a716eebc9a916611a27ab",
+              "runId": "run-001",
+              "stateDigest": "76af4e2ac8bfa5a6ac4ae891b9dfcfe57f6890f108a415cae556969d03a810b1"
+            },
+            "projectId": "demo-project",
+            "runId": "run-001",
+            "warnings": [],
+            "workingRevision": null
+          },
+          "geometryRevision": "c2336e0e0ec2405a64e96ce4472df449fb4bee88772a716eebc9a916611a27ab",
+          "kind": "mesh-orthographic",
+          "right": [
+            1,
+            0,
+            0
+          ],
+          "scale": 5,
+          "svg": {
+            "artifact_id": "drawing-svg",
+            "media_type": "image/svg+xml",
+            "project_id": "demo-project",
+            "relative_path": "runs/mesh-view-e3d670cabc5bd546f53fee0ac28f33077f1dcd80/workspaces/drawing.svg",
+            "sha256": "ff31dd38f5455e41128a21b39513e1839902a1da25a75e36d162c8249a4d7c3c"
+          },
+          "up": [
+            0,
+            1,
+            0
+          ],
+          "view": "top"
+        },
+        "generatedAt": "2026-09-27T15:39:59.929914+00:00",
+        "replacesPages": [],
+        "previousRevisionRef": null,
+        "attribution": null,
+        "reason": null,
+        "sourceKind": null
+      },
+      "recipe": {
+        "dimensions": [
+          {
+            "id": "overall-width",
+            "reference": {
+              "axis": 0,
+              "kind": "projected-extent"
+            },
+            "status": "resolved",
+            "valueMeters": 4.0
+          },
+          {
+            "id": "overall-height",
+            "reference": {
+              "axis": 1,
+              "kind": "projected-extent"
+            },
+            "status": "resolved",
+            "valueMeters": 2.0
+          }
+        ],
+        "drawingRevision": "e3d670cabc5bd546f53fee0ac28f33077f1dcd804d462c9dced21d2c04b20f2e",
+        "featureReferences": [],
+        "geometry": {
+          "assetSha256": "c2336e0e0ec2405a64e96ce4472df449fb4bee88772a716eebc9a916611a27ab",
+          "format": "3dm",
+          "geometryRevision": "c2336e0e0ec2405a64e96ce4472df449fb4bee88772a716eebc9a916611a27ab",
+          "kind": "working-head",
+          "label": "studio-candidate-seat-portico@fa6ea5b1d3ea.preview.3dm",
+          "modelSource": {
+            "assetSha256": "c2336e0e0ec2405a64e96ce4472df449fb4bee88772a716eebc9a916611a27ab",
+            "runId": "run-001",
+            "stateDigest": "76af4e2ac8bfa5a6ac4ae891b9dfcfe57f6890f108a415cae556969d03a810b1"
+          },
+          "projectId": "demo-project",
+          "runId": "run-001",
+          "warnings": [],
+          "workingRevision": null
+        },
+        "geometryRevision": "c2336e0e0ec2405a64e96ce4472df449fb4bee88772a716eebc9a916611a27ab",
+        "kind": "mesh-orthographic",
+        "right": [
+          1,
+          0,
+          0
+        ],
+        "scale": 5,
+        "svg": {
+          "artifact_id": "drawing-svg",
+          "media_type": "image/svg+xml",
+          "project_id": "demo-project",
+          "relative_path": "runs/mesh-view-e3d670cabc5bd546f53fee0ac28f33077f1dcd80/workspaces/drawing.svg",
+          "sha256": "ff31dd38f5455e41128a21b39513e1839902a1da25a75e36d162c8249a4d7c3c"
+        },
+        "up": [
+          0,
+          1,
+          0
+        ],
+        "view": "top"
+      },
+      "status": "outdated",
+      "reason": "Geometry changed. Regenerate this view and recompute its measurements."
+    },
+    {
+      "document": {
+        "projectId": "demo-project",
+        "runId": "mesh-view-69dd227b25ac80c9bc761d2fe85d08b237565a73",
+        "assetSha256": "deae8512cb3b887d0dd2b4853bed595c03ba672ab06a467b93bd4476f214180e",
+        "fileName": "side.png",
+        "mimeType": "image/png",
+        "sizeBytes": 11135,
+        "pageCount": 1,
+        "pages": [
+          {
+            "pageIndex": 0,
+            "width": 3071.0,
+            "height": 1772.0,
+            "rotation": 0
+          }
+        ],
+        "modelSource": null,
+        "modelSourceBindingRef": null,
+        "drawingId": "mesh-side",
+        "revisionRef": null,
+        "sourceStageRef": null,
+        "viewRecipe": {
+          "dimensions": [
+            {
+              "id": "overall-width",
+              "reference": {
+                "axis": 0,
+                "kind": "projected-extent"
+              },
+              "status": "resolved",
+              "valueMeters": 2.0
+            },
+            {
+              "id": "overall-height",
+              "reference": {
+                "axis": 1,
+                "kind": "projected-extent"
+              },
+              "status": "resolved",
+              "valueMeters": 0.8999999761581421
+            }
+          ],
+          "drawingRevision": "69dd227b25ac80c9bc761d2fe85d08b237565a73b26c3e15f2acdeb79d2a01fa",
+          "featureReferences": [],
+          "geometry": {
+            "assetSha256": "c2336e0e0ec2405a64e96ce4472df449fb4bee88772a716eebc9a916611a27ab",
+            "format": "3dm",
+            "geometryRevision": "c2336e0e0ec2405a64e96ce4472df449fb4bee88772a716eebc9a916611a27ab",
+            "kind": "working-head",
+            "label": "studio-candidate-seat-portico@fa6ea5b1d3ea.preview.3dm",
+            "modelSource": {
+              "assetSha256": "c2336e0e0ec2405a64e96ce4472df449fb4bee88772a716eebc9a916611a27ab",
+              "runId": "run-001",
+              "stateDigest": "76af4e2ac8bfa5a6ac4ae891b9dfcfe57f6890f108a415cae556969d03a810b1"
+            },
+            "projectId": "demo-project",
+            "runId": "run-001",
+            "warnings": [],
+            "workingRevision": null
+          },
+          "geometryRevision": "c2336e0e0ec2405a64e96ce4472df449fb4bee88772a716eebc9a916611a27ab",
+          "kind": "mesh-orthographic",
+          "right": [
+            0,
+            1,
+            0
+          ],
+          "scale": 5,
+          "svg": {
+            "artifact_id": "drawing-svg",
+            "media_type": "image/svg+xml",
+            "project_id": "demo-project",
+            "relative_path": "runs/mesh-view-69dd227b25ac80c9bc761d2fe85d08b237565a73/workspaces/drawing.svg",
+            "sha256": "924cda27bd6c4400b80ddd1726cfdee30acc415fd2872826690e9d76abc5c036"
+          },
+          "up": [
+            0,
+            0,
+            1
+          ],
+          "view": "side"
+        },
+        "generatedAt": "2026-09-27T15:39:58.866235+00:00",
+        "replacesPages": [],
+        "previousRevisionRef": null,
+        "attribution": null,
+        "reason": null,
+        "sourceKind": null
+      },
+      "recipe": {
+        "dimensions": [
+          {
+            "id": "overall-width",
+            "reference": {
+              "axis": 0,
+              "kind": "projected-extent"
+            },
+            "status": "resolved",
+            "valueMeters": 2.0
+          },
+          {
+            "id": "overall-height",
+            "reference": {
+              "axis": 1,
+              "kind": "projected-extent"
+            },
+            "status": "resolved",
+            "valueMeters": 0.8999999761581421
+          }
+        ],
+        "drawingRevision": "69dd227b25ac80c9bc761d2fe85d08b237565a73b26c3e15f2acdeb79d2a01fa",
+        "featureReferences": [],
+        "geometry": {
+          "assetSha256": "c2336e0e0ec2405a64e96ce4472df449fb4bee88772a716eebc9a916611a27ab",
+          "format": "3dm",
+          "geometryRevision": "c2336e0e0ec2405a64e96ce4472df449fb4bee88772a716eebc9a916611a27ab",
+          "kind": "working-head",
+          "label": "studio-candidate-seat-portico@fa6ea5b1d3ea.preview.3dm",
+          "modelSource": {
+            "assetSha256": "c2336e0e0ec2405a64e96ce4472df449fb4bee88772a716eebc9a916611a27ab",
+            "runId": "run-001",
+            "stateDigest": "76af4e2ac8bfa5a6ac4ae891b9dfcfe57f6890f108a415cae556969d03a810b1"
+          },
+          "projectId": "demo-project",
+          "runId": "run-001",
+          "warnings": [],
+          "workingRevision": null
+        },
+        "geometryRevision": "c2336e0e0ec2405a64e96ce4472df449fb4bee88772a716eebc9a916611a27ab",
+        "kind": "mesh-orthographic",
+        "right": [
+          0,
+          1,
+          0
+        ],
+        "scale": 5,
+        "svg": {
+          "artifact_id": "drawing-svg",
+          "media_type": "image/svg+xml",
+          "project_id": "demo-project",
+          "relative_path": "runs/mesh-view-69dd227b25ac80c9bc761d2fe85d08b237565a73/workspaces/drawing.svg",
+          "sha256": "924cda27bd6c4400b80ddd1726cfdee30acc415fd2872826690e9d76abc5c036"
+        },
+        "up": [
+          0,
+          0,
+          1
+        ],
+        "view": "side"
+      },
+      "status": "outdated",
+      "reason": "Geometry changed. Regenerate this view and recompute its measurements."
+    },
+    {
+      "document": {
+        "projectId": "demo-project",
+        "runId": "mesh-view-b40b320788b5ff2b653fe92baec82936e85daf8a",
+        "assetSha256": "4c28dbd8b12e858538065e2da51031ddbde63a2b74268b53746a882c818419c9",
+        "fileName": "front.png",
+        "mimeType": "image/png",
+        "sizeBytes": 22556,
+        "pageCount": 1,
+        "pages": [
+          {
+            "pageIndex": 0,
+            "width": 6142.0,
+            "height": 2480.0,
+            "rotation": 0
+          }
+        ],
+        "modelSource": null,
+        "modelSourceBindingRef": null,
+        "drawingId": "mesh-front",
+        "revisionRef": null,
+        "sourceStageRef": null,
+        "viewRecipe": {
+          "dimensions": [
+            {
+              "id": "overall-width",
+              "reference": {
+                "axis": 0,
+                "kind": "projected-extent"
+              },
+              "status": "resolved",
+              "valueMeters": 4.0
+            },
+            {
+              "id": "overall-height",
+              "reference": {
+                "axis": 1,
+                "kind": "projected-extent"
+              },
+              "status": "resolved",
+              "valueMeters": 0.8999999761581421
+            }
+          ],
+          "drawingRevision": "b40b320788b5ff2b653fe92baec82936e85daf8ac48d78a295a8e32ac78cd6d0",
+          "featureReferences": [],
+          "geometry": {
+            "assetSha256": "c2336e0e0ec2405a64e96ce4472df449fb4bee88772a716eebc9a916611a27ab",
+            "format": "3dm",
+            "geometryRevision": "c2336e0e0ec2405a64e96ce4472df449fb4bee88772a716eebc9a916611a27ab",
+            "kind": "working-head",
+            "label": "studio-candidate-seat-portico@fa6ea5b1d3ea.preview.3dm",
+            "modelSource": {
+              "assetSha256": "c2336e0e0ec2405a64e96ce4472df449fb4bee88772a716eebc9a916611a27ab",
+              "runId": "run-001",
+              "stateDigest": "76af4e2ac8bfa5a6ac4ae891b9dfcfe57f6890f108a415cae556969d03a810b1"
+            },
+            "projectId": "demo-project",
+            "runId": "run-001",
+            "warnings": [],
+            "workingRevision": null
+          },
+          "geometryRevision": "c2336e0e0ec2405a64e96ce4472df449fb4bee88772a716eebc9a916611a27ab",
+          "kind": "mesh-orthographic",
+          "right": [
+            1,
+            0,
+            0
+          ],
+          "scale": 5,
+          "svg": {
+            "artifact_id": "drawing-svg",
+            "media_type": "image/svg+xml",
+            "project_id": "demo-project",
+            "relative_path": "runs/mesh-view-b40b320788b5ff2b653fe92baec82936e85daf8a/workspaces/drawing.svg",
+            "sha256": "1796791edc0ad781784d02f5dbb0ea252fd67c7e0f06c9ada5fa50dc9375c99d"
+          },
+          "up": [
+            0,
+            0,
+            1
+          ],
+          "view": "front"
+        },
+        "generatedAt": "2026-09-27T15:39:58.508233+00:00",
+        "replacesPages": [],
+        "previousRevisionRef": null,
+        "attribution": null,
+        "reason": null,
+        "sourceKind": null
+      },
+      "recipe": {
+        "dimensions": [
+          {
+            "id": "overall-width",
+            "reference": {
+              "axis": 0,
+              "kind": "projected-extent"
+            },
+            "status": "resolved",
+            "valueMeters": 4.0
+          },
+          {
+            "id": "overall-height",
+            "reference": {
+              "axis": 1,
+              "kind": "projected-extent"
+            },
+            "status": "resolved",
+            "valueMeters": 0.8999999761581421
+          }
+        ],
+        "drawingRevision": "b40b320788b5ff2b653fe92baec82936e85daf8ac48d78a295a8e32ac78cd6d0",
+        "featureReferences": [],
+        "geometry": {
+          "assetSha256": "c2336e0e0ec2405a64e96ce4472df449fb4bee88772a716eebc9a916611a27ab",
+          "format": "3dm",
+          "geometryRevision": "c2336e0e0ec2405a64e96ce4472df449fb4bee88772a716eebc9a916611a27ab",
+          "kind": "working-head",
+          "label": "studio-candidate-seat-portico@fa6ea5b1d3ea.preview.3dm",
+          "modelSource": {
+            "assetSha256": "c2336e0e0ec2405a64e96ce4472df449fb4bee88772a716eebc9a916611a27ab",
+            "runId": "run-001",
+            "stateDigest": "76af4e2ac8bfa5a6ac4ae891b9dfcfe57f6890f108a415cae556969d03a810b1"
+          },
+          "projectId": "demo-project",
+          "runId": "run-001",
+          "warnings": [],
+          "workingRevision": null
+        },
+        "geometryRevision": "c2336e0e0ec2405a64e96ce4472df449fb4bee88772a716eebc9a916611a27ab",
+        "kind": "mesh-orthographic",
+        "right": [
+          1,
+          0,
+          0
+        ],
+        "scale": 5,
+        "svg": {
+          "artifact_id": "drawing-svg",
+          "media_type": "image/svg+xml",
+          "project_id": "demo-project",
+          "relative_path": "runs/mesh-view-b40b320788b5ff2b653fe92baec82936e85daf8a/workspaces/drawing.svg",
+          "sha256": "1796791edc0ad781784d02f5dbb0ea252fd67c7e0f06c9ada5fa50dc9375c99d"
+        },
+        "up": [
+          0,
+          0,
+          1
+        ],
+        "view": "front"
+      },
+      "status": "outdated",
+      "reason": "Geometry changed. Regenerate this view and recompute its measurements."
+    }
+  ]
+}
