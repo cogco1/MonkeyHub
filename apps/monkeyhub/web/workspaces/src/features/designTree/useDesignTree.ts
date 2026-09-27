@@ -9,8 +9,8 @@
  * nothing here. Each act that changed the design confirms itself in a toast
  * beside the chip (FN-5); a refusal stays inline where it was asked for. The
  * facts are read again on a short interval while the workspace is on screen,
- * on focus, and after each action; a read that finds the project unchanged
- * keeps the tree it has.
+ * when it comes back on screen, on focus, and after each action; a read that
+ * finds the project unchanged keeps the tree it has.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { asStudioApiError, StudioApiError, type StudioClient } from "../../api/client";
@@ -229,9 +229,14 @@ export function useDesignTree({ studio, capabilities, projectId, active, refresh
     return () => controller.abort();
   }, [available, load, refreshKey, nudge]);
 
+  // Coming back to a surface that was paused reads the tree at once, as focus and a shown window do.
+  const wasActive = useRef(active);
   useEffect(() => {
+    const returned = active && !wasActive.current;
+    wasActive.current = active;
     if (!available || !active) return;
     const refresh = () => { if (!document.hidden && !busyRef.current) void load(); };
+    if (returned) refresh();
     const timer = window.setInterval(refresh, DESIGN_TREE_POLL_MS);
     window.addEventListener("focus", refresh);
     document.addEventListener("visibilitychange", refresh);

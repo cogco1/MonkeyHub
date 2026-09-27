@@ -507,26 +507,58 @@ interface NurbsFallbackFace {
 }
 
 /**
- * The app's one 3DM loader. Its worker fetches and instantiates rhino3dm.wasm
- * once and parses every model after; it is never disposed. The loader keeps
- * the materials and warnings of what it parses, so each parse starts them
- * afresh after the one before it has finished: two models never share a
- * material (a comparison tints its own) or each other's warnings.
+ * The app's one 3DM loader. rhino3dm.wasm is fetched once, and each of its
+ * workers instantiates it once and parses every model after; a single model
+ * reuses a worker, and a batch of models grows the pool up to 2–4 workers so
+ * they parse side by side. The loader keeps the materials and warnings of
+ * what it parses, so each batch starts them afresh after the one before it has
+ * finished: two batches never share a material (a comparison tints its own) or
+ * each other's warnings. A worker that fails as a whole (its wasm did not
+ * start, or it crashed) fails what it held, and so does a library that could
+ * not be fetched; the next parse then builds the loader again.
  */
+type LoaderWorker = Worker & { _callbacks: Record<number, { reject(reason: unknown): void }> };
+type LoaderInternals = { workerPool: LoaderWorker[]; _getWorker(cost: number): Promise<LoaderWorker> };
+const RHINO_WORKERS = Math.max(2, Math.min(4, (typeof navigator === "undefined" ? 0 : navigator.hardwareConcurrency) || 2));
 let sharedLoader: Rhino3dmLoader | null = null;
 let parsing: Promise<unknown> = Promise.resolve();
+function dropLoader(loader: Rhino3dmLoader) {
+  if (sharedLoader !== loader) return;
+  sharedLoader = null;
+  loader.dispose();
+}
+function build3dmLoader(): Rhino3dmLoader {
+  const loader = new Rhino3dmLoader();
+  loader.setLibraryPath("/rhino3dm/");
+  const internals = loader as unknown as LoaderInternals;
+  const getWorker = internals._getWorker.bind(loader);
+  internals._getWorker = (cost) => getWorker(cost).then((worker) => {
+    worker.onerror ??= (event) => {
+      event.preventDefault();
+      const failure = new Error(`rhino3dm could not parse: its worker failed${event.message ? ` (${event.message})` : ""}.`);
+      // Dropping the loader stops every worker, so every task still held fails now, not only this worker's.
+      for (const held of internals.workerPool) for (const task of Object.values(held._callbacks)) task.reject(failure);
+      dropLoader(loader);
+    };
+    return worker;
+  });
+  return loader;
+}
+/** The worker's own answer for a file it could not decode; anything else is the loader failing. */
+const decodeRefusal = (reason: unknown) => typeof reason === "object" && reason !== null && (reason as { type?: unknown }).type === "error";
 function parse3dm(buffers: readonly ArrayBuffer[]): Promise<PromiseSettledResult<Object3D>[]> {
-  const parsed = parsing.then(() => {
-    if (!sharedLoader) {
-      sharedLoader = new Rhino3dmLoader();
-      sharedLoader.setLibraryPath("/rhino3dm/");
-      sharedLoader.setWorkerLimit(1);
-    }
-    const loader = sharedLoader;
+  const parsed = parsing.then(async () => {
+    const loader = sharedLoader ??= build3dmLoader();
+    const pool = (loader as unknown as LoaderInternals).workerPool;
+    loader.setWorkerLimit(Math.max(1, pool.length, Math.min(RHINO_WORKERS, buffers.length)));
     Object.assign(loader, { materials: [], warnings: [] });
-    return Promise.allSettled(buffers.map((buffer) => new Promise<Object3D>((resolve, reject) => {
-      loader.parse(buffer, resolve, (error) => reject(error instanceof Error ? error : new Error(String(error))));
+    const settled = await Promise.allSettled(buffers.map((buffer) => new Promise<Object3D>((resolve, reject) => {
+      loader.parse(buffer, resolve, reject);
     })));
+    if (settled.some((result) => result.status === "rejected" && !decodeRefusal(result.reason))) dropLoader(loader);
+    return settled.map((result): PromiseSettledResult<Object3D> => result.status === "fulfilled" ? result : { status: "rejected",
+      reason: result.reason instanceof Error ? result.reason
+        : new Error(decodeRefusal(result.reason) ? String((result.reason as { error?: unknown }).error ?? "rhino3dm could not decode this file.") : String(result.reason)) });
   });
   parsing = parsed.catch(() => undefined);
   return parsed;
