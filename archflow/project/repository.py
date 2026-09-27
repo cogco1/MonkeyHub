@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import functools
 import hashlib
 import json
 import logging
@@ -31,6 +32,7 @@ else:  # pragma: no cover - exercised only on POSIX hosts
 from archflow.project.digests import project_state_sha256
 from archflow.project.layout import AUTHORED_RECORD_PATH, ProjectLayout
 from archflow.project.manifest import ProjectManifest, ProjectManifestError
+from archflow.project.memo import ContentMemo, settled
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import (
     DESIGN_STAGE,
@@ -372,16 +374,183 @@ def add_write_observer(
     return remove
 
 
+# ---- remembered reads (ADR-008 phase 1a)
+#
+# Process-wide memos stand between the readers below and the disk. None is a
+# source of truth: each answers what reading the files again would answer.
+#
+# A record is verified when its bytes hash to its ref's digest and parse as a
+# JSON object. ``_VERIFIED_RECORDS`` remembers that a record was, and
+# ``_RECORD_BYTES`` also keeps the bytes themselves, both keyed by the project
+# root, the record's path and that digest. The key names the content, so an
+# entry cannot go stale; it is used only while the file is still there with
+# the size and modification time it was read with, and only once that time was
+# settled when it was read (``archflow.project.memo``). Every ``load_json``
+# still parses a payload of its own for its caller.
+#
+# ``_LISTINGS`` keeps what was read out of a place that can change - a record
+# directory's listing, a run manifest, the design branches - under that
+# place's stat stamp, once the stamp is settled. A write this process makes
+# below a root forgets the kept places it can have changed at once
+# (``_forget_listings``); another process's write moves a stamp. The verified
+# records stay: their keys name their content.
+#
+# Methods marked ``_reads_fresh`` (``verify``) bypass all of them.
+RECORD_BYTES_MAX_SIZE = 64 * 1024 * 1024
+RECORD_BYTES_MAX_ENTRY = 4 * 1024 * 1024
+_RECORD_BYTES = ContentMemo(
+    "project.record-bytes",
+    max_entries=16_384,
+    max_size=RECORD_BYTES_MAX_SIZE,
+    max_entry_size=RECORD_BYTES_MAX_ENTRY,
+)
+_VERIFIED_RECORDS = ContentMemo("project.verified-records", max_entries=32_768)
+_LISTINGS = ContentMemo("project.listings", max_entries=8_192)
+_FRESH_READS = threading.local()
+
+
+def _reads_fresh(method):
+    """Run ``method`` reading every file itself, past every memo (it still fills them)."""
+
+    @functools.wraps(method)
+    def fresh(*args, **kwargs):
+        _FRESH_READS.depth = getattr(_FRESH_READS, "depth", 0) + 1
+        try:
+            return method(*args, **kwargs)
+        finally:
+            _FRESH_READS.depth -= 1
+
+    return fresh
+
+
+def _reading_fresh() -> bool:
+    return getattr(_FRESH_READS, "depth", 0) > 0
+
+
+def _stamp(path: Path) -> os.stat_result | None:
+    """The path's stat, or None when it cannot be taken; never raises."""
+
+    try:
+        return os.stat(path)
+    except OSError:
+        return None
+
+
+def _unchanged(path: Path, size: int, mtime_ns: int) -> bool:
+    stat = _stamp(path)
+    return stat is not None and stat.st_size == size and stat.st_mtime_ns == mtime_ns
+
+
+def _remembered_bytes(key: tuple) -> tuple[Path, bytes] | None:
+    """The kept verified bytes and resolved path, while that file is unchanged."""
+
+    if _reading_fresh():
+        return None
+    kept = _RECORD_BYTES.get(key)
+    if kept is None:
+        return None
+    path, size, mtime_ns, data = kept
+    if not _unchanged(path, size, mtime_ns):
+        _RECORD_BYTES.discard(key)
+        return None
+    return path, data
+
+
+def _verified(key: tuple) -> tuple[ProjectRecordRef | None, int] | None:
+    """A record verified before, as its listed ref (if kept) and size, while its file is unchanged."""
+
+    if _reading_fresh():
+        return None
+    kept = _VERIFIED_RECORDS.get(key)
+    if kept is None:
+        return None
+    path, size, mtime_ns, ref = kept
+    if not _unchanged(path, size, mtime_ns):
+        _VERIFIED_RECORDS.discard(key)
+        return None
+    return ref, size
+
+
+def _remember_verified(
+    key: tuple, ref: ProjectRecordRef | None, path: Path, read: _Stamped, *, keep_bytes: bool,
+) -> None:
+    """Remember a verified record under the stat it was read with, once that stat is settled.
+
+    ``keep_bytes`` keeps the bytes as well: ``load_json`` does, so its next
+    reader skips the disk; a listing that only verified them does not.
+    """
+
+    stat = read.stat
+    if stat is not None and stat.st_size == len(read.data) and settled(stat.st_mtime_ns, read.scanned_at_ns):
+        _VERIFIED_RECORDS.put(key, (path, stat.st_size, stat.st_mtime_ns, ref))
+        if keep_bytes:
+            _RECORD_BYTES.put(key, (path, stat.st_size, stat.st_mtime_ns, read.data), size=len(read.data))
+
+
+def _remembered_listing(key: tuple, stamp: object) -> Any:
+    """What ``_keep_listing`` kept under exactly this key and stamp, else None."""
+
+    if _reading_fresh():
+        return None
+    kept = _LISTINGS.get(key)
+    if kept is None or kept[0] != stamp:
+        return None
+    return kept[1]
+
+
+def _keep_listing(key: tuple, stamp: object, mtime_ns: int, scanned_at_ns: int, value: object) -> None:
+    """Keep ``value`` under a stamp that is settled at ``scanned_at_ns``; else nothing."""
+
+    if settled(mtime_ns, scanned_at_ns):
+        _LISTINGS.put(key, (stamp, value))
+
+
+def _listing_place(relative: str) -> str:
+    """A project-relative POSIX place, spelled as ``_note_write`` spells a written one."""
+
+    return os.path.normcase(relative.replace("/", os.sep))
+
+
+def _forget_listings(root: str, written: str) -> None:
+    """Forget what ``_LISTINGS`` keeps for ``root`` that a write at ``written`` can have changed.
+
+    Every key is ``(root, place, ...)``. A write changes the written place
+    itself, whatever lies below it (a directory made or removed) and the
+    listing of the directory that holds it; no other kept place moves.
+    """
+
+    relative = os.path.relpath(written, root)
+    if relative == os.curdir:
+        _LISTINGS.discard_where(lambda key: key[0] == root)
+        return
+    parent = os.path.dirname(relative)
+    below = relative + os.sep
+    _LISTINGS.discard_where(
+        lambda key: key[0] == root and (key[1] == relative or key[1] == parent or key[1].startswith(below))
+    )
+
+
+def _copy_branches(branches: Mapping[str, Mapping[str, Any]]) -> dict[str, dict[str, Any]]:
+    """A design-branch table nobody else holds: its rows and their refs copied."""
+
+    return {
+        branch_id: {field: dict(value) if isinstance(value, Mapping) else value for field, value in row.items()}
+        for branch_id, row in branches.items()
+    }
+
+
 def _note_write(path: Path | str) -> None:
     """Count one completed on-disk mutation and tell its root's observers.
 
-    Every registered root containing ``path`` counts it. Called after each
+    Every registered root containing ``path`` counts it and forgets what it
+    kept in ``_LISTINGS`` that the write can have changed. Called after each
     successful write in this module, never before: a reader that sees the new
     serial must also be able to see what was written.
     """
 
     location = os.path.normcase(os.path.abspath(os.fspath(path)))
     notified: list[tuple[Callable[[Path], object], ...]] = []
+    roots: list[str] = []
     with _WRITTEN_ROOTS_GUARD:
         if not _WRITTEN_ROOTS:
             return
@@ -390,12 +559,15 @@ def _note_write(path: Path | str) -> None:
             entry = _WRITTEN_ROOTS.get(current)
             if entry is not None:
                 entry.serial += 1
+                roots.append(current)
                 if entry.observers:
                     notified.append(entry.observers)
             parent = os.path.dirname(current)
             if parent == current:
                 break
             current = parent
+    for root in roots:
+        _forget_listings(root, location)
     if not notified:
         return
     written = Path(path)
@@ -549,6 +721,23 @@ def _read_bytes(path: Path) -> bytes:
         return path.read_bytes()
     except OSError as exc:
         raise ProjectIntegrityError(f"cannot read project record: {path.name}") from exc
+
+
+@dataclass(frozen=True, slots=True)
+class _Stamped:
+    """Bytes read from a file, the file's stat taken just before, and when."""
+
+    data: bytes
+    stat: os.stat_result | None
+    scanned_at_ns: int
+
+
+def _read_bytes_stamped(path: Path) -> _Stamped:
+    """``_read_bytes``, stamped. The stat comes first: bytes kept under it are never older than it."""
+
+    scanned_at_ns = time.time_ns()
+    stat = _stamp(path)
+    return _Stamped(_read_bytes(path), stat, scanned_at_ns)
 
 
 def _read_json(path: Path) -> dict[str, Any]:
@@ -1530,6 +1719,9 @@ class FilesystemProjectRepository:
         self._design_lock = _HeadFileLock(layout.design_branches.with_suffix(".lock"))
         # Registered so every write below this root counts (``write_serial``).
         _written_root(layout.root)
+        # The root's registered spelling: the first part of every key this
+        # repository keeps in the read memos, and what ``_note_write`` names.
+        self._root_key = _written_root_key(layout.root)
 
     @classmethod
     def initialize(
@@ -1853,7 +2045,7 @@ class FilesystemProjectRepository:
 
     def load_run(self, run_id: str) -> RunRef:
         require_identifier(run_id, "run_id")
-        payload = _read_json(self.layout.run(run_id).manifest)
+        payload = self._run_manifest(run_id)
         if set(payload) != {"schema", "project_id", "run_id", "base"}:
             raise ProjectIntegrityError("run manifest schema drifted")
         if (
@@ -1867,7 +2059,7 @@ class FilesystemProjectRepository:
             run_id=run_id,
             base=_version_from_dict(payload["base"], field="run base"),
         )
-        self._validate_run(run)
+        self._validate_run(run, payload)
         return run
 
     def put_json(
@@ -1984,11 +2176,61 @@ class FilesystemProjectRepository:
         )
 
     def load_json(self, ref: ProjectRecordRef) -> dict[str, Any]:
+        """The record's payload, verified against its digest; a fresh object per call.
+
+        Bytes already verified are taken from ``_RECORD_BYTES`` while the file
+        is unchanged; they are parsed again for every caller, so no caller can
+        change what another one reads.
+        """
+
+        path, data, payload = self._read_record(ref)
+        return _parse_json_document(data, path.name) if payload is None else payload
+
+    def require_json(self, ref: ProjectRecordRef) -> int:
+        """Check exactly what ``load_json`` checks, without a payload nobody reads.
+
+        Raises as ``load_json`` would; returns the record's size in bytes. A
+        record verified before whose file is unchanged is not read again.
+        """
+
+        self._require_record(ref)
+        verified = _verified((self._root_key, ref.relative_path, ref.sha256))
+        return len(self._read_record(ref)[1]) if verified is None else verified[1]
+
+    def record_stat(self, ref: ProjectRecordRef) -> os.stat_result:
+        """The stat, taken now, of the file ``load_json`` reads for ``ref``.
+
+        The path is resolved as ``load_json`` resolves it; a record verified
+        before stats the path it was resolved to then, instead of resolving
+        it again. Raises ``OSError`` when the file cannot be stat'ed.
+        """
+
+        self._require_record(ref)
+        kept = None if _reading_fresh() else _VERIFIED_RECORDS.get((self._root_key, ref.relative_path, ref.sha256))
+        return os.stat(self._record_path(ref) if kept is None else kept[0])
+
+    def _read_record(self, ref: ProjectRecordRef) -> tuple[Path, bytes, dict[str, Any] | None]:
+        """The record's resolved path and verified bytes, with their payload when they were just parsed.
+
+        Kept bytes (``_RECORD_BYTES``) are answered, unparsed, while their file
+        keeps the stat they were read with.
+        """
+
+        self._require_record(ref)
+        key = (self._root_key, ref.relative_path, ref.sha256)
+        kept = _remembered_bytes(key)
+        if kept is not None:
+            return kept[0], kept[1], None
         path = self._record_path(ref)
-        data = _read_bytes(path)
-        if _sha256(data) != ref.sha256:
+        read = _read_bytes_stamped(path)
+        if _sha256(read.data) != ref.sha256:
             raise ProjectIntegrityError(f"record digest mismatch: {ref.relative_path}")
-        return _parse_json_document(data, path.name)
+        payload = _parse_json_document(read.data, path.name)
+        # A listing hands the kept ref back as its own, so only a ref exactly
+        # like the ones it builds (``_record_ref``) is kept for it.
+        listed = ref if ref.media_type == "application/json" else None
+        _remember_verified(key, listed, path, read, keep_bytes=True)
+        return path, read.data, payload
 
     def _record_path(self, ref: ProjectRecordRef) -> Path:
         self._require_record(ref)
@@ -2156,15 +2398,31 @@ class FilesystemProjectRepository:
             return tuple(path.relative_to(self.layout.root).as_posix() for path in expired)
 
     def read_design_branches(self) -> dict[str, dict[str, Any]]:
-        """Read verified design references, including projects predating them."""
-        if not self.layout.design_branches.exists():
+        """Read verified design references, including projects predating them.
+
+        The verified table is kept under the stat stamp of ``branches.json``
+        (``_LISTINGS``); every caller gets its own copy to change.
+        """
+        path = self.layout.design_branches
+        scanned_at = time.time_ns()
+        stat = _stamp(path)
+        if stat is None and not path.exists():
             return {}
-        payload = _read_shared_json(self.layout.design_branches)
+        key = (self._root_key, _listing_place("design/branches.json"), "design-branches")
+        stamp = None if stat is None else (stat.st_size, stat.st_mtime_ns)
+        if stamp is not None:
+            kept = _remembered_listing(key, stamp)
+            if kept is not None:
+                return _copy_branches(kept)
+        payload = _read_shared_json(path)
         if set(payload) != {"schema", "project_id", "branches"} or payload["schema"] != "DesignBranches@1" or payload["project_id"] != self._manifest.project_id:
             raise ProjectIntegrityError("design branches belong to another project or schema")
         if not isinstance(payload["branches"], Mapping):
             raise ProjectIntegrityError("design branches must be a mapping")
-        return {branch_id: self._design_branch_payload(branch_id, value) for branch_id, value in payload["branches"].items()}
+        branches = {branch_id: self._design_branch_payload(branch_id, value) for branch_id, value in payload["branches"].items()}
+        if stat is not None:
+            _keep_listing(key, stamp, stat.st_mtime_ns, scanned_at, _copy_branches(branches))
+        return branches
 
     def compare_and_swap_design_branch(
         self,
@@ -2207,6 +2465,9 @@ class FilesystemProjectRepository:
 
         Kind selection uses the retained filename, not payload contents. Reads
         still accept historical kinds and verify every selected record's bytes.
+        The verified listing is kept under the directory's stat stamp
+        (``_LISTINGS``) and answers again while that stamp is unchanged; a
+        record's bytes are checked again whenever ``load_json`` reads them.
         """
 
         self._validate_run(run)
@@ -2219,17 +2480,27 @@ class FilesystemProjectRepository:
             PersistenceArea.CANONICAL,
         }:
             raise ValueError("use typed repository loaders for this internal area")
-        if not directory.exists():
+        # The directory's own stat stamps the listing: adding, removing or
+        # renaming a record moves it. Taken before the directory is read, so
+        # what is kept is never older than its stamp.
+        scanned_at = time.time_ns()
+        stat = _stamp(directory)
+        if stat is None and not directory.exists():
             return ()
+        relative_directory = directory.relative_to(self.layout.root).as_posix()
+        key = (self._root_key, _listing_place(relative_directory), "list_json", relative_directory, record_kind)
+        if stat is not None:
+            kept = _remembered_listing(key, stat.st_mtime_ns)
+            if kept is not None:
+                return kept
         refs = []
         pattern = "*.json" if record_kind is None else f"{record_kind}-*.json"
         for path in sorted(directory.glob(pattern)):
+            # ``glob`` joins each name onto ``directory``, so this is the
+            # record's project-relative path ``_record_ref`` would compute.
+            relative = f"{relative_directory}/{path.name}"
             if record_kind is None:
-                # The digest is the one these bytes have, so they are parsed
-                # as read instead of read again to be checked against it (#314).
-                data = _read_bytes(path)
-                ref = self._record_ref(path, _sha256(data), "application/json")
-                _parse_json_document(data, self._record_path(ref).name)
+                ref = self._listed_record(path, relative)
             else:
                 try:
                     kind, digest = parse_record_file_name(path.name)
@@ -2237,10 +2508,40 @@ class FilesystemProjectRepository:
                     raise ProjectIntegrityError(str(exc)) from exc
                 if kind != record_kind:
                     continue
-                ref = self._record_ref(path, digest, "application/json")
-                self.load_json(ref)
+                verified = _verified((self._root_key, relative, digest))
+                ref = None if verified is None else verified[0]
+                if ref is None:
+                    ref = self._record_ref(path, digest, "application/json")
+                    self.load_json(ref)
             refs.append(ref)
-        return tuple(refs)
+        listed = tuple(refs)
+        if stat is not None:
+            _keep_listing(key, stat.st_mtime_ns, stat.st_mtime_ns, scanned_at, listed)
+        return listed
+
+    def _listed_record(self, path: Path, relative: str) -> ProjectRecordRef:
+        """The ref of one listed record, its digest taken from its own bytes.
+
+        The digest is the one these bytes have, so they are parsed as read
+        instead of read again to be checked against it (#314). A record
+        verified before under the digest its name claims answers instead,
+        while its file is unchanged: its bytes hashed to that digest.
+        """
+
+        try:
+            claimed = parse_record_file_name(path.name)[1]
+        except ValueError:
+            claimed = None
+        if claimed is not None:
+            verified = _verified((self._root_key, relative, claimed))
+            if verified is not None:
+                return verified[0] or self._record_ref(path, claimed, "application/json")
+        read = _read_bytes_stamped(path)
+        ref = self._record_ref(path, _sha256(read.data), "application/json")
+        resolved = self._record_path(ref)
+        _parse_json_document(read.data, resolved.name)
+        _remember_verified((self._root_key, ref.relative_path, ref.sha256), ref, resolved, read, keep_bytes=False)
+        return ref
 
     def prepare_transition(
         self,
@@ -3394,6 +3695,7 @@ class FilesystemProjectRepository:
         for target, data in writes:
             _write_immutable(target, data)
 
+    @_reads_fresh
     def verify(self) -> RecoveryReport:
         self.load_manifest()
         head, snapshot, event = self._read_head_document()
@@ -3738,12 +4040,36 @@ class FilesystemProjectRepository:
         if durable:
             ref.require_digest()
 
-    def _validate_run(self, run: RunRef) -> None:
+    def _run_manifest(self, run_id: str) -> dict[str, Any]:
+        """One run's ``run.json`` payload, read again only when the file changed.
+
+        The payload may be the one ``_LISTINGS`` keeps: it is only read here,
+        never handed out or changed.
+        """
+
+        path = self.layout.run(run_id).manifest
+        key = (self._root_key, _listing_place(f"runs/{run_id}/run.json"), "run.json", run_id)
+        scanned_at = time.time_ns()
+        stat = _stamp(path)
+        stamp = None if stat is None else (stat.st_size, stat.st_mtime_ns)
+        if stamp is not None:
+            kept = _remembered_listing(key, stamp)
+            if kept is not None:
+                return kept
+        payload = _read_json(path)
+        if stat is not None:
+            _keep_listing(key, stamp, stat.st_mtime_ns, scanned_at, payload)
+        return payload
+
+    def _validate_run(self, run: RunRef, payload: Mapping[str, Any] | None = None) -> None:
+        """Require ``run`` to be exactly what its manifest says; ``payload`` is that manifest when just read."""
+
         if not isinstance(run, RunRef):
             raise TypeError("run must be a RunRef")
         if run.project_id != self._manifest.project_id:
             raise ValueError("run belongs to another project")
-        payload = _read_json(self.layout.run(run.run_id).manifest)
+        if payload is None:
+            payload = self._run_manifest(run.run_id)
         expected = {
             "schema": "ProjectRun@1",
             "project_id": run.project_id,
