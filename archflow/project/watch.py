@@ -578,6 +578,10 @@ class LayoutWatch:
         self._settle_at: float | None = None
         self._root_check_at = 0.0
         self._retry_at = 0.0
+        # Attempts to watch the root refused in a row, and passes failed in a
+        # row, so the log says each once rather than every second.
+        self._refusals = 0
+        self._failing = 0
         # What the watch has done, for tests and diagnostics: pass kinds and counts.
         self.passes: dict[str, int] = {"walk": 0, "poll": 0, "dirty": 0, "settle": 0}
         self.failures = 0
@@ -681,13 +685,17 @@ class LayoutWatch:
                     if self._stopping:
                         break
                     self.failures += 1
-                    _LOG.exception("layout watch of %s failed; walking the project instead", self.root)
+                    self._failing += 1
+                    # The first failure in a row is reported whole; repeats are
+                    # only counted, and each waits twice as long, up to a minute.
+                    _LOG.log(logging.ERROR if self._failing == 1 else logging.DEBUG,
+                             "layout watch of %s failed; walking the project instead", self.root, exc_info=True)
                     self._close_notifier()
                     self._full = True
                     self._retry_at = _monotonic() + RETRY_S
                     # Until a walk succeeds again, nothing may be kept under the last one.
                     self._publish_unsettled()
-                    self._signal.wait(POLL_S)
+                    self._signal.wait(min(POLL_S * 2 ** (self._failing - 1), 60.0))
         finally:
             if not self._stopping:
                 # Ended without being told to: nobody keeps it current any
@@ -779,6 +787,7 @@ class LayoutWatch:
                 tree.read_pointers()
         fingerprint, unreadable = tree.fingerprint(scanned_at_ns)
         self.passes[kind] += 1
+        self._failing = 0
         self._publish(fingerprint, serial, ticket if kind == "walk" else None)
         finished = _monotonic()
         if self._notifier is None:
@@ -872,21 +881,30 @@ class LayoutWatch:
         try:
             notifier = _Notifier(self.root, NOTIFY_BUFFER_BYTES)
         except OSError as exc:
-            self._retry_at = _monotonic() + RETRY_S
-            _LOG.info("layout watch of %s cannot open the root (%s); scanning every %s s", self.root, exc, POLL_S)
+            self._unwatchable(f"cannot open the root ({exc})")
             return False
         try:
             stat = os.stat(self.root)
             notifier.arm()
         except OSError as exc:
             notifier.close()
-            self._retry_at = _monotonic() + RETRY_S
-            _LOG.info("layout watch of %s cannot watch the root (%s); scanning every %s s", self.root, exc, POLL_S)
+            self._unwatchable(f"cannot watch the root ({exc})")
             return False
+        if self._refusals:
+            _LOG.info("layout watch of %s is watching the root again", self.root)
+        self._refusals = 0
         self._notifier = notifier
         self._identity = (stat.st_dev, stat.st_ino)
         self._root_check_at = _monotonic() + POLL_S
         return True
+
+    def _unwatchable(self, reason: str) -> None:
+        """The root would not be watched: scan until ``RETRY_S`` has passed, and say so once."""
+
+        self._retry_at = _monotonic() + RETRY_S
+        self._refusals += 1
+        _LOG.log(logging.INFO if self._refusals == 1 else logging.DEBUG,
+                 "layout watch of %s %s; scanning every %s s", self.root, reason, POLL_S)
 
     def _close_notifier(self) -> None:
         notifier, self._notifier = self._notifier, None
