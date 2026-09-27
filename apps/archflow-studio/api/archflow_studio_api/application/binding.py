@@ -16,13 +16,12 @@ from functools import wraps
 import os
 from pathlib import Path, PurePosixPath
 import threading
-import time
 from typing import Any, Callable, Mapping, TypeVar
 from uuid import uuid4
+import weakref
 
 from starlette.datastructures import State
 
-from archflow.project.layout import LayoutFingerprint, layout_fingerprint
 from archflow.project.location import open_located_project
 from archflow.project.memo import ContentMemo, PathStamps
 from archflow.project.ports import PersistenceArea, PersistenceDestination
@@ -47,6 +46,7 @@ from archflow.project.repository import (
     ProjectRepositoryError,
     write_serial,
 )
+from archflow.project.watch import LayoutLease, release_when_collected, watch_layout
 from archflow.state.stage_workflow import HARNESS_WORKFLOW_IDS
 from archflow.state.design_portfolio import DesignBranch, DesignStage
 from archflow.state.state_record import Entity, StateRecord, StateRecordError
@@ -81,9 +81,6 @@ STUDIO_RUN_ID = "studio-projection"
 # One identity per process. Nothing a process remembers survives its restart,
 # so a restarted worker must not answer "not modified" to a tag it never gave.
 READ_EPOCH = uuid4().hex
-# How long a stable fingerprint answers for the project before it is taken
-# again. Another process's write is seen within this; this one's at once.
-FINGERPRINT_TTL_S = 1.0
 # Answers remembered per binding, least recently used first out.
 MEMO_ENTRIES = 128
 
@@ -110,20 +107,14 @@ class ReadToken:
 
     Two answers computed under equal tokens read the same files. ``serial``
     moves with this process's own writes, ``fingerprint`` with anyone's, and
-    ``stable`` says the fingerprint is old enough to be trusted to move.
+    ``stable`` says the fingerprint is old enough to be trusted to move and
+    was taken after this process's last write.
     """
 
     epoch: str
     serial: int
     fingerprint: str
     stable: bool
-
-
-@dataclass(frozen=True, slots=True)
-class _Fingerprinted:
-    taken_at: float
-    serial: int
-    fingerprint: LayoutFingerprint
 
 
 @dataclass(frozen=True, slots=True)
@@ -180,39 +171,79 @@ class ProjectBinding:
         # remembered wrongly.
         self.file_sha256_cache: dict[tuple[str, int, int], str] = {}
         # Read tokens and the answers kept under them (ADR-008 phase 0a).
-        # ``clock`` is monotonic seconds; a test replaces it to expire the
-        # fingerprint without waiting.
-        self.clock: Callable[[], float] = time.monotonic
-        self._fingerprint_lock = threading.Lock()
-        self._fingerprinted: _Fingerprinted | None = None
         self._memo_lock = threading.Lock()
         self._memo: OrderedDict[tuple[ReadToken, tuple], Any] = OrderedDict()
         self._memo_token: ReadToken | None = None
+        # This binding's share of the project's layout watch, taken on the
+        # first read and given back by ``close`` (or once nobody holds the
+        # binding any more).
+        self._layout_lock = threading.Lock()
+        self._layout_lease: LayoutLease | None = None
+        self._layout_finalizer: weakref.finalize | None = None
 
-    def read_token(self) -> ReadToken:
+    def read_token(self, *, wait: bool = True) -> ReadToken | None:
         """The token an answer read from the project's files now is derived under.
 
-        The fingerprint is taken again when it is more than ``FINGERPRINT_TTL_S``
-        old or when this process wrote since; so this process's writes change
-        the token at once, anyone else's within the TTL. One that was not stable
-        is taken again at most once per TTL too, as ``memo`` already asks
-        (``_settling``): an unstable token is never answered 304 and keeps
-        nothing, so walking the project again for every request while it
-        settles would only make the first reads after a write slower (#365).
+        Read, never taken: the project's layout watch (``archflow.project.watch``)
+        keeps the fingerprint current on a thread of its own, and this reads
+        the latest one it published - no request ever walks the project. So
+        this process's writes change the token at once through ``serial``, and
+        a fingerprint published before the newest of them is not stable:
+        nothing is kept or answered 304 under it until the watch has seen that
+        write too. Anyone else's writes move ``fingerprint`` once the watch sees
+        them, within about a second.
+
+        Only the very first read waits, for the watch's first walk. With
+        ``wait=False`` that read answers None instead, and so does any read
+        before this binding has asked for the watch.
         """
 
-        root = self.repository.layout.root
-        # Before the fingerprint: a write racing the scan then moves the
-        # serial past the one this fingerprint is filed under.
-        serial = write_serial(root)
-        with self._fingerprint_lock:
-            now = self.clock()
-            taken = self._fingerprinted
-            if (taken is None or taken.serial != serial
-                    or not 0 <= now - taken.taken_at < FINGERPRINT_TTL_S):
-                taken = _Fingerprinted(now, serial, layout_fingerprint(root))
-                self._fingerprinted = taken
-        return ReadToken(READ_EPOCH, serial, taken.fingerprint.digest, taken.fingerprint.stable)
+        # Before the fingerprint: a write in between then leaves the serial
+        # past the one that fingerprint was taken under.
+        serial = write_serial(self.repository.layout.root)
+        lease = self._layout_lease
+        if lease is None:
+            if not wait:
+                return None
+            lease = self.layout_watch()
+        seen = lease.latest(wait=wait)
+        if seen is None:
+            return None
+        return ReadToken(
+            READ_EPOCH, serial, seen.fingerprint.digest, seen.fingerprint.stable and seen.serial == serial,
+        )
+
+    def layout_watch(self) -> LayoutLease:
+        """This binding's lease on the project's layout watch, taken on first use.
+
+        Every binding on one root shares that root's one watch. A test or a
+        tool that changed the project behind the watch's back can ``sync`` it.
+        """
+
+        lease = self._layout_lease
+        if lease is not None:
+            return lease
+        with self._layout_lock:
+            if self._layout_lease is None:
+                lease = watch_layout(self.repository.layout.root)
+                self._layout_finalizer = release_when_collected(self, lease)
+                self._layout_lease = lease
+            return self._layout_lease
+
+    def close(self) -> None:
+        """Give back this binding's share of the layout watch; the last one stops it.
+
+        The watch holds a handle on the project folder, so whoever is done
+        with the project closes its binding. Reading again watches again.
+        """
+
+        with self._layout_lock:
+            lease, self._layout_lease = self._layout_lease, None
+            finalizer, self._layout_finalizer = self._layout_finalizer, None
+        if finalizer is not None:
+            finalizer.detach()
+        if lease is not None:
+            lease.release()
 
     def memo(self, key: tuple, compute: Callable[[], _T]) -> _T:
         """``compute()``, remembered under the current token while it is stable.
@@ -222,11 +253,6 @@ class ProjectBinding:
         whoever asks under the same token.
         """
 
-        if self._settling():
-            # The fingerprint taken within the TTL was not stable: nothing read
-            # now would be kept, so it is not taken again for every call of a
-            # loop - at most once per TTL, like a stable one.
-            return compute()
         token = self.read_token()
         if not token.stable:
             return compute()
@@ -264,20 +290,6 @@ class ProjectBinding:
             self._memo.move_to_end(entry)
             while len(self._memo) > MEMO_ENTRIES:
                 self._memo.popitem(last=False)
-
-    def _settling(self) -> bool:
-        """Whether the fingerprint taken within the TTL was not yet stable.
-
-        Skipping the memo is never wrong, only slower: this may pass up a hit
-        for less than one TTL after the project settles.
-        """
-
-        taken = self._fingerprinted
-        return (
-            taken is not None
-            and not taken.fingerprint.stable
-            and 0 <= self.clock() - taken.taken_at < FINGERPRINT_TTL_S
-        )
 
     @classmethod
     def open(cls, settings: StudioSettings) -> ProjectBinding:
