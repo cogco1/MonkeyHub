@@ -69,11 +69,33 @@ PACKAGE_FILES = (
     "apps/monkeyfab/src/monkeyfab/__main__.py", "apps/monkeyfab/pyproject.toml",
 )
 SUPPORTED_HOSTS = (("PowerShell 7", "pwsh"), ("Windows PowerShell 5.1", "powershell"))
+# CI sets this where every prerequisite is installed: a missing one then fails
+# instead of skipping, so the signed release suite cannot go green degraded.
+REQUIRE_FULL_ENV = os.environ.get("ARCHFLOW_REQUIRE_FULL_ENV") == "1"
 
 
 def powershell_hosts() -> list[tuple[str, str]]:
     """The supported Windows hosts actually present, newest first."""
     return [(label, shutil.which(name)) for label, name in SUPPORTED_HOSTS if shutil.which(name)]
+
+
+def missing_prerequisites() -> list[str]:
+    """What this Windows machine lacks to run the signed release suite on every host."""
+    missing = [f"{label} ({name})" for label, name in SUPPORTED_HOSTS if not shutil.which(name)]
+    if x509 is None:
+        missing.append("the cryptography package, to make an ephemeral signing key")
+    return missing
+
+
+def require_full_environment(case: unittest.TestCase) -> None:
+    """Skip with the missing prerequisites, or fail when CI requires them."""
+    missing = missing_prerequisites()
+    if not missing:
+        return
+    reason = "signed release suite needs " + ", ".join(missing)
+    if REQUIRE_FULL_ENV:
+        case.fail(f"{reason}; ARCHFLOW_REQUIRE_FULL_ENV=1 forbids skipping")
+    case.skipTest(reason)
 
 
 def normalise(text: str) -> str:
@@ -93,13 +115,13 @@ def evidence_of(result: subprocess.CompletedProcess) -> dict:
 
 
 @unittest.skipUnless(sys.platform == "win32", "Windows installer behaviour")
-@unittest.skipIf(x509 is None, "cryptography is needed to make an ephemeral signing key")
-@unittest.skipUnless(powershell_hosts(), "no supported PowerShell host is available")
 class SignedInstallationTests(unittest.TestCase):
     """Drive the installer against a signed fixture and its failure modes."""
 
     @classmethod
     def setUpClass(cls) -> None:
+        if missing_prerequisites():
+            return  # setUp reports the missing prerequisites per test
         # One ephemeral 2048-bit key pair per class; it never leaves this process.
         cls.publisher = cls.make_signer("MonkeyHub release test publisher")
         cls.impostor = cls.make_signer("Someone else entirely")
@@ -138,6 +160,8 @@ class SignedInstallationTests(unittest.TestCase):
         return builder.sign(serialization.Encoding.DER, options)
 
     def setUp(self) -> None:
+        # Every case runs against both supported hosts or not at all.
+        require_full_environment(self)
         # A short path: install.ps1 refuses legacy Win32 path lengths on purpose.
         temporary = tempfile.TemporaryDirectory(prefix="mh-sig-")
         self.addCleanup(temporary.cleanup)
@@ -638,10 +662,10 @@ class InstallerSourceTests(unittest.TestCase):
         self.assertNotIn("CreateSelfSigned", text)
 
     def test_this_windows_machine_can_actually_run_the_signed_release_suite(self) -> None:
-        """A degraded environment must fail here rather than skip the suite green."""
+        """Under ARCHFLOW_REQUIRE_FULL_ENV=1 a degraded machine fails here, not skips green."""
         if sys.platform != "win32":
             self.skipTest("the installer is a Windows artifact")
-        self.assertIsNotNone(x509, "cryptography is required to exercise the verifier")
+        require_full_environment(self)
         self.assertEqual([label for label, _ in powershell_hosts()],
                          [label for label, _ in SUPPORTED_HOSTS])
 

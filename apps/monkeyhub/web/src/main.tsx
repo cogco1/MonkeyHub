@@ -345,11 +345,15 @@ function App() {
   }, [signInOpened, readSettings]);
   // The same requests the Save buttons made, now made by each edit.
   const appearanceSave = useAutosave(async () => {
-    if (userSettings === null || !appearanceDirty || renderProblem(renderDraft) || planProblem(chatDraft)) return;
+    if (userSettings === null || renderProblem(renderDraft) || planProblem(chatDraft)) return;
     const revision = appearanceEdits.current; setAppearanceIssue(null);
     try {
       const current = await responseData<UserSettingsDto>(getUserSettingsApiSettingsUserGet({ client: hubClient }));
-      const saved = await responseData<UserSettingsDto>(putUserSettingsApiSettingsUserPut({ client: hubClient, body: { ...current, ...preferences, ...chatDraft, ...renderDraft } }));
+      // GH-381: compare with what the Hub holds now. A choice made while an earlier
+      // save was in flight can equal the value rendered before that save, not the saved one.
+      const unchanged = JSON.stringify(resolveAppearance(current)) === JSON.stringify(preferences) &&
+        JSON.stringify(chatDefaults(current)) === JSON.stringify(chatDraft) && JSON.stringify(renderDefaults(current)) === JSON.stringify(renderDraft);
+      const saved = unchanged ? current : await responseData<UserSettingsDto>(putUserSettingsApiSettingsUserPut({ client: hubClient, body: { ...current, ...preferences, ...chatDraft, ...renderDraft } }));
       const resolved = resolveAppearance(saved); setUserSettings(saved); setSavedAppearance(resolved);
       const savedChat = chatDefaults(saved);
       setSavedChatDefaults(savedChat);
