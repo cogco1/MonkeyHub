@@ -376,6 +376,8 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
   const artifactsReadRef = useRef(0);
   const artifactsReadAbort = useRef<AbortController | null>(null);
   const artifactProjectRef = useRef<string | null>(null);
+  // The model list names no editing base, so opening asks for it once the project is known, beside the session's reads (#364).
+  const artifactsPrefetch = useRef<{ projectId: string; answer: Promise<ArtifactListDto> } | null>(null);
   const [artifactLoadingSha, setArtifactLoadingSha] = useState<string | null>(
     null,
   );
@@ -1109,11 +1111,13 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
     const projectId = artifactProjectRef.current;
     const isCurrent = () => request === artifactsReadRef.current && projectId === artifactProjectRef.current;
     if (!background) setArtifacts(loading);
+    const prefetched = !background && artifactsPrefetch.current?.projectId === projectId ? artifactsPrefetch.current.answer : null;
+    artifactsPrefetch.current = null;
     let lastError: StudioApiError | null = null;
     for (let attempt = 0; attempt < (background ? 3 : 1); attempt += 1) {
       if (!isCurrent()) return;
       try {
-        const answer = await studio.artifacts(controller.signal);
+        const answer = await (prefetched ?? studio.artifacts(controller.signal));
         if (!isCurrent()) return;
         if (answer.projectId !== projectId) throw new Error("The model list belongs to another project.");
         setArtifacts(ready(answer));
@@ -1143,6 +1147,13 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
     setArtifactLoadPhase(null);
   }, [project?.projectId]);
 
+  useEffect(() => {
+    if (session.status === "failed") { artifactsPrefetch.current = null; return; }
+    if (!binding || session.status === "ready" || artifactsPrefetch.current?.projectId === binding.projectId) return;
+    const answer = studio.artifacts();
+    answer.catch(() => undefined);
+    artifactsPrefetch.current = { projectId: binding.projectId, answer };
+  }, [binding?.projectId, session.status]);
   useEffect(() => {
     if (session.status === "ready") void loadArtifacts();
   }, [session.status, project?.projectId, loadArtifacts]);

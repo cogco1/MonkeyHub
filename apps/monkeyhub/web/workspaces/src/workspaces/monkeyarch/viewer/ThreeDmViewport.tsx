@@ -507,6 +507,32 @@ interface NurbsFallbackFace {
 }
 
 /**
+ * The app's one 3DM loader. Its worker fetches and instantiates rhino3dm.wasm
+ * once and parses every model after; it is never disposed. The loader keeps
+ * the materials and warnings of what it parses, so each parse starts them
+ * afresh after the one before it has finished: two models never share a
+ * material (a comparison tints its own) or each other's warnings.
+ */
+let sharedLoader: Rhino3dmLoader | null = null;
+let parsing: Promise<unknown> = Promise.resolve();
+function parse3dm(buffers: readonly ArrayBuffer[]): Promise<PromiseSettledResult<Object3D>[]> {
+  const parsed = parsing.then(() => {
+    if (!sharedLoader) {
+      sharedLoader = new Rhino3dmLoader();
+      sharedLoader.setLibraryPath("/rhino3dm/");
+      sharedLoader.setWorkerLimit(1);
+    }
+    const loader = sharedLoader;
+    Object.assign(loader, { materials: [], warnings: [] });
+    return Promise.allSettled(buffers.map((buffer) => new Promise<Object3D>((resolve, reject) => {
+      loader.parse(buffer, resolve, (error) => reject(error instanceof Error ? error : new Error(String(error))));
+    })));
+  });
+  parsing = parsed.catch(() => undefined);
+  return parsed;
+}
+
+/**
  * Read-only last resort for exact 3DM geometry saved without render meshes.
  * It is deliberately only called after the installed loader gave us a valid
  * but empty picture, so native meshes always retain their own materials and
@@ -1301,63 +1327,47 @@ export const ThreeDmViewport = forwardRef<
       const buffer = await file.arrayBuffer();
       if (!isCurrent()) return 0;
       const fallbackBuffer = buffer.slice(0);
-      const loader = new Rhino3dmLoader();
-      loader.setLibraryPath("/rhino3dm/");
-      loader.setWorkerLimit(Math.max(1, Math.min(4, navigator.hardwareConcurrency || 2)));
-      return new Promise<number>((resolve, reject) => {
-        loader.parse(
-          buffer,
-          (model) => {
-            if (!isCurrent()) {
-              loader.dispose();
-              disposeScene(model);
-              resolve(0);
-              return;
+      const [result] = await parse3dm([buffer]);
+      if (result.status === "rejected") throw result.reason;
+      const model = result.value;
+      if (!isCurrent()) {
+        disposeScene(model);
+        return 0;
+      }
+      let display = model;
+      try {
+        try {
+          if (meshCount(model) === 0) {
+            const fallback = await nurbsFallback(fallbackBuffer, model);
+            if (fallback !== null) {
+              display = fallback;
             }
-            let display = model;
-            void (async () => {
-              try {
-                if (meshCount(model) === 0) {
-                  const fallback = await nurbsFallback(fallbackBuffer, model);
-                  if (fallback !== null) {
-                    display = fallback;
-                  }
-                }
-              } catch {
-                // A display fallback may fail, but a valid 3DM parse remains a
-                // valid (if empty) comparison rather than a failed file load.
-              }
-              loader.dispose();
-              if (!isCurrent()) {
-                // The loaded model changed while this parsed: nothing to compare against any more.
-                disposeScene(display);
-                resolve(0);
-                return;
-              }
-              clearSecondary();
-              // The same preparation as the loaded model: what the file hid
-              // stays hidden on the 'after' side too.
-              prepareLoadedModel(display);
-              tintSecondary(display, new Color(accentColour()));
-              runtime.secondary = display;
-              runtime.scene.add(display);
-              const meshes = meshCount(display);
-              blend(0.5);
-              const warning = nurbsFallbackWarning(display);
-              if (warning !== null) reportStatus("ready", `Comparison: ${warning}`);
-              resolve(meshes);
-            })().catch((error) => {
-              loader.dispose();
-              disposeScene(display);
-              reject(error instanceof Error ? error : new Error(String(error)));
-            });
-          },
-          (error) => {
-            loader.dispose();
-            reject(error instanceof Error ? error : new Error(String(error)));
-          },
-        );
-      });
+          }
+        } catch {
+          // A display fallback may fail, but a valid 3DM parse remains a
+          // valid (if empty) comparison rather than a failed file load.
+        }
+        if (!isCurrent()) {
+          // The loaded model changed while this parsed: nothing to compare against any more.
+          disposeScene(display);
+          return 0;
+        }
+        clearSecondary();
+        // The same preparation as the loaded model: what the file hid
+        // stays hidden on the 'after' side too.
+        prepareLoadedModel(display);
+        tintSecondary(display, new Color(accentColour()));
+        runtime.secondary = display;
+        runtime.scene.add(display);
+        const meshes = meshCount(display);
+        blend(0.5);
+        const warning = nurbsFallbackWarning(display);
+        if (warning !== null) reportStatus("ready", `Comparison: ${warning}`);
+        return meshes;
+      } catch (error) {
+        disposeScene(display);
+        throw error instanceof Error ? error : new Error(String(error));
+      }
     },
     [blend, clearSecondary, reportStatus],
   );
@@ -1424,28 +1434,11 @@ export const ThreeDmViewport = forwardRef<
         return;
       }
       if (!isCurrent()) { cancelled(); return; }
-      // Rhino3dmLoader transfers each buffer to its own worker. Preserve a
+      // Rhino3dmLoader transfers each buffer to its worker. Preserve a
       // separate local copy only for the rare valid-but-meshless fallback.
       const fallbackBuffers = buffers.map((buffer) => buffer.slice(0));
 
-      const loader = new Rhino3dmLoader();
-      loader.setLibraryPath("/rhino3dm/");
-      loader.setWorkerLimit(
-        Math.max(1, Math.min(4, navigator.hardwareConcurrency || 2)),
-      );
-      const parsed = await Promise.allSettled(
-        buffers.map(
-          (buffer) =>
-            new Promise<Object3D>((resolve, reject) => {
-              loader.parse(buffer, resolve, (error) =>
-                reject(
-                  error instanceof Error ? error : new Error(String(error)),
-                ),
-              );
-            }),
-        ),
-      );
-      loader.dispose();
+      const parsed = await parse3dm(buffers);
       let models = parsed
         .filter(
           (result): result is PromiseFulfilledResult<Object3D> =>

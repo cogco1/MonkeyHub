@@ -98,7 +98,10 @@ export function createSessionController(studio: StudioClient, serverBaseUrl = ""
     publish({ ...snapshot, changingBase: background ? snapshot.changingBase : true, baseError: null });
     try {
       // The server may now bind a different project. Never send the old run before
-      // learning which project it would be read in.
+      // learning which project it would be read in. The saved position names no
+      // run to ask with, so it is read beside the binding and checked against it.
+      const draftRead = capabilities.includes("working-draft") ? studio.workingDraft() : null;
+      draftRead?.catch(() => undefined);
       project = await studio.project();
       if (currentRequest !== request) return null;
       if (boundProjectId !== undefined && project.projectId !== boundProjectId) {
@@ -108,7 +111,7 @@ export function createSessionController(studio: StudioClient, serverBaseUrl = ""
       boundProjectId ??= project.projectId;
       const sameProject = previous.status === "ready" && previous.value.project.projectId === project.projectId;
       publish({ ...snapshot, binding: project, session: sameProject ? previous : loading });
-      let workingDraft = capabilities.includes("working-draft") ? await studio.workingDraft() : null;
+      let workingDraft = draftRead ? await draftRead : null;
       if (currentRequest !== request) return null;
       if (workingDraft && workingDraft.projectId !== project.projectId) {
         throw new StudioApiError({ status: 0, code: "EDITING_PROJECT_CHANGED", detail: "The saved draft belongs to another project." });
