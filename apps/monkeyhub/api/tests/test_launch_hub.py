@@ -5,6 +5,7 @@ by name, stubs the launch window, and drives a private child. Windows PowerShell
 5.1 only; skipped elsewhere.
 """
 
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -26,6 +27,9 @@ POWERSHELL = shutil.which("powershell.exe") or str(
     / "System32" / "WindowsPowerShell" / "v1.0" / "powershell.exe"
 )
 LAUNCHER = ROOT / "apps/monkeyhub/launch-hub.ps1"
+# CI sets this where every prerequisite is installed: a missing one then fails
+# the test instead of skipping it, so the suite cannot go green degraded.
+REQUIRE_FULL_ENV = os.environ.get("ARCHFLOW_REQUIRE_FULL_ENV") == "1"
 
 
 @unittest.skipUnless(Path(POWERSHELL).exists(), "Windows launcher")
@@ -201,6 +205,12 @@ try {
         self.assertEqual(self.invoke(Action="revision")["Revision"], "a" * 40)
 
     def test_hub_launch_starts_and_stops_only_its_private_service(self) -> None:
+        # The launched Hub runs on this interpreter and imports PyMuPDF at startup.
+        if importlib.util.find_spec("fitz") is None:
+            reason = "the launched Hub needs PyMuPDF (fitz) in this Python"
+            if REQUIRE_FULL_ENV:
+                self.fail(f"{reason}; ARCHFLOW_REQUIRE_FULL_ENV=1 forbids skipping")
+            self.skipTest(reason)
         for name in ("hub dist",):
             directory = self.root / name
             directory.mkdir()

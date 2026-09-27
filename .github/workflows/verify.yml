@@ -66,7 +66,12 @@ jobs:
           -r apps/monkeyhub/api/requirements.txt
           httpx2 pytest
 
+      # This job installs every prerequisite its suites check for (PyMuPDF from
+      # the Studio requirements), so a missing one fails instead of skipping.
+      # Windows-only cases remain platform skips here.
       - name: Unit and integration tests
+        env:
+          ARCHFLOW_REQUIRE_FULL_ENV: "1"
         run: python -m unittest discover -s tests -t .
 
       - name: Fab geometry, CLI and upload boundaries
@@ -80,6 +85,7 @@ jobs:
       - name: Hub conversation and lifecycle tests
         env:
           PYTHONPATH: ${{ github.workspace }}
+          ARCHFLOW_REQUIRE_FULL_ENV: "1"
         run: python -m unittest discover -s apps/monkeyhub/api/tests
 
   web:
