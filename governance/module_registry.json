@@ -614,6 +614,61 @@
       "notes": "CREATE 2026-09-07 (A0 of docs/DRAWING_MODULE_ARCHITECTURE_PLAN.md): no owner serialised drawings; the PDF/DXF paper canvas in a teammate's worktree is a different output and stays out. Pillow renders the PNG (already installed with the Studio); no browser, image model or re-projection."
     },
     {
+      "module_id": "adapters.mesh_views",
+      "owner_path": "monkeydiagram/mesh_views.py",
+      "purpose": "Draw a fast look-only line view of named shapes from their triangles against a depth buffer: the model view's axonometric and the projection cache's thumbnails. Created because the exact hidden-line solve (adapters.cad_execution through runtime.drawing_elevation) grows too fast with object count for a view nobody retains, and no drawing owner rasterises meshes.",
+      "owns": [
+        "triangulating the named shapes at a caller-chosen chord error and naming the curve-only objects left out (triangulate)",
+        "feature edges of each object's welded mesh: creases over CREASE_DEGREES, open boundaries, non-manifold edges and view silhouettes",
+        "the scanline depth buffer at twice the output resolution and the edge visibility test against it, reduced to an anti-aliased greyscale PNG whose longer side is the requested size (mesh_line_view)",
+        "RENDERER_VERSION, which changes whenever the same input would draw different pixels",
+        "the caller-named PNG text chunks; no time or random id in the bytes"
+      ],
+      "does_not_own": [
+        "exact retained drawings, their receipts and the elevation frames - runtime.drawing_elevation",
+        "choosing the view frame or crop and verifying the source - studio.artifacts (application/drawings.py)",
+        "caching, keys and the render queue - studio.artifacts (application/projections.py)"
+      ],
+      "inputs": [
+        "StepEntry tuple and object ids",
+        "chord deflection",
+        "right/up frame, crop window and pixel size",
+        "optional PNG text chunks"
+      ],
+      "outputs": [
+        "ObjectMesh tuple and skipped object ids",
+        "MeshLineView (PNG bytes, size, triangle and edge counts)"
+      ],
+      "public_api": [
+        "triangulate",
+        "mesh_line_view",
+        "pixel_size",
+        "ObjectMesh",
+        "MeshLineView",
+        "MeshViewError",
+        "RENDERER_VERSION",
+        "CREASE_DEGREES"
+      ],
+      "depends_on": [
+        "adapters.cad_execution",
+        "archflow.adapters.occt_backend"
+      ],
+      "used_by": [
+        "apps/archflow-studio/api/archflow_studio_api/application/drawings.py",
+        "tests/test_mesh_views.py"
+      ],
+      "invariants": [
+        "the same shapes, frame and size give the same PNG bytes",
+        "an edge is drawn only where the depth buffer does not hold a nearer surface beyond one and a half supersampled pixels",
+        "nothing is written; a mesh view is never retained as a drawing or cited as evidence"
+      ],
+      "status": "canonical",
+      "tests": [
+        "tests/test_mesh_views.py"
+      ],
+      "notes": "numpy comes with the drawing requirements (shapely). GH-367 part A."
+    },
+    {
       "module_id": "adapters.three_dm_inspector",
       "owner_path": "archflow/adapters/three_dm_inspector.py",
       "purpose": "Read one .3dm file headlessly and return a deterministic, JSON-compatible summary of what is actually saved in it.",
@@ -4224,7 +4279,8 @@
         "archflow.adapters.model_formats",
         "archflow.adapters.model_providers",
         "archflow.adapters.sketchup_reader",
-        "project.memo"
+        "project.memo",
+        "adapters.mesh_views"
       ],
       "used_by": [
         "apps/archflow-studio/api/archflow_studio_api/application/candidate.py",

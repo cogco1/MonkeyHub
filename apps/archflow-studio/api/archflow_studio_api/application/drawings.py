@@ -14,6 +14,7 @@ from math import ceil, sqrt
 import os
 from pathlib import Path
 import threading
+from time import perf_counter
 from typing import Any
 from uuid import uuid4
 
@@ -26,8 +27,9 @@ from archflow.project.refs import ProjectArtifactRef, ProjectRecordRef, record_r
 from monkeydiagram.drawing_elevation import (
     SECTION_PERSPECTIVE_KIND, UNIT_METRES, DrawingElevationError, ElevationSource, NativeModelSource, ElevationView, SectionPerspectiveError,
     SectionPerspectiveView, freeze_model_axis_elevation, freeze_section_perspective,
-    project_model_axis_elevation, read_elevation_source,
+    project_model_axis_elevation, read_elevation_source, VerifiedElevationSource,
 )
+from monkeydiagram.mesh_views import MeshViewError, mesh_line_view, pixel_size, triangulate
 
 from .artifacts import (
     ModelSource, SourceDocument, _document_pages, _document_source_lock,
@@ -171,6 +173,74 @@ def _elevation_view(
 _MODEL_VIEWS: OrderedDict[tuple[Any, str], tuple[bytes, int, int]] = OrderedDict()
 _MODEL_VIEW_LIMIT = 32
 _model_views_lock = threading.Lock()
+#: The longest edge of a model view, in pixels.
+MODEL_VIEW_MAX_EDGE = 1024
+
+
+@dataclass(frozen=True, slots=True)
+class ModelViewDrawing:
+    """One drawn model view and where its time went: reading the source, then drawing it."""
+
+    png: bytes
+    width: int
+    height: int
+    load_s: float
+    render_s: float
+
+
+def draw_model_view(
+    binding: ProjectBinding, *, model_source: ModelSource, view: str, size_px: int = MODEL_VIEW_MAX_EDGE,
+    png_text: dict[str, str] | None = None,
+) -> ModelViewDrawing:
+    """Verify one exact retained model and draw one view of it; nothing is cached or written.
+
+    ``axon`` is drawn from the model's triangles against a depth buffer
+    (``monkeydiagram.mesh_views``); the orthographic elevations keep the exact
+    hidden-line solve. ``png_text`` becomes the axonometric PNG's text chunks.
+    """
+
+    started = perf_counter()
+    source, receipt = _complete_source(binding, model_source, None)
+    return _draw_view(binding, source, receipt, view, size_px=size_px, png_text=png_text, started=started)
+
+
+def _draw_view(binding, source, receipt, view, *, size_px, png_text, started) -> ModelViewDrawing:
+    from PIL import Image
+
+    try:
+        verified = read_elevation_source(binding.repository, source)
+        recipe = _elevation_view(receipt, view, hidden_lines=False, scale_denominator=1)
+        loaded = perf_counter()
+        if view == "axon":
+            drawn = mesh_line_view(
+                _axon_meshes(verified, recipe.crop_uv, size_px), right=recipe.right, up=recipe.up,
+                crop_uv=recipe.crop_uv, size_px=size_px, text=png_text,
+            )
+            return ModelViewDrawing(drawn.png, drawn.width, drawn.height, loaded - started, perf_counter() - loaded)
+        u0, v0, u1, v1 = recipe.crop_uv
+        mm_per_unit = {"meter": 1000, "millimeter": 1, "inch": 25.4, "foot": 304.8}[verified.length_unit]
+        # The existing PNG renderer uses 150 dpi. Choose its paper scale before
+        # rendering so even the intermediate image is bounded, not resized later.
+        scale = max(1, ceil(max(u1 - u0, v1 - v0) * mm_per_unit * 150 / (25.4 * (size_px - 1))))
+        recipe = replace(recipe, scale_denominator=scale, linear_deflection=0.1 / mm_per_unit)
+        projected = project_model_axis_elevation(
+            verified.entries, object_ids=verified.physical_object_ids, view=recipe, unit=verified.length_unit,
+        )
+    except (DrawingElevationError, MeshViewError) as exc:
+        raise StudioError(409, "DRAWING_SOURCE_INVALID", str(exc)) from exc
+    with Image.open(BytesIO(projected.png)) as image:
+        width, height = image.size
+    return ModelViewDrawing(projected.png, width, height, loaded - started, perf_counter() - loaded)
+
+
+def _axon_meshes(verified: VerifiedElevationSource, crop_uv, size_px: int):
+    # Half an output pixel of chord error: finer facets would not be seen.
+    # A curve-only object has no surface to hide or be hidden by; it is left out.
+    meshes, _ = triangulate(verified.entries, verified.physical_object_ids,
+                            linear_deflection=pixel_size(crop_uv, size_px) / 2)
+    if not meshes:
+        raise MeshViewError("the model has no surfaces to draw")
+    return meshes
 
 
 def model_view(binding: ProjectBinding, *, model_source: ModelSource, view: str) -> tuple[bytes, int, int]:
@@ -182,36 +252,20 @@ def model_view(binding: ProjectBinding, *, model_source: ModelSource, view: str)
     to, with the view name, so equal keys always draw equal lines.
     """
 
-    from PIL import Image
-
+    started = perf_counter()
     source, receipt = _complete_source(binding, model_source, None)
     key = (source, view)
     with _model_views_lock:
         if key in _MODEL_VIEWS:
             _MODEL_VIEWS.move_to_end(key)
             return _MODEL_VIEWS[key]
-    try:
-        verified = read_elevation_source(binding.repository, source)
-        recipe = _elevation_view(receipt, view, hidden_lines=False, scale_denominator=1)
-        u0, v0, u1, v1 = recipe.crop_uv
-        mm_per_unit = {"meter": 1000, "millimeter": 1, "inch": 25.4, "foot": 304.8}[verified.length_unit]
-        # The existing PNG renderer uses 150 dpi. Choose its paper scale before
-        # rendering so even the intermediate image is bounded, not resized later.
-        scale = max(1, ceil(max(u1 - u0, v1 - v0) * mm_per_unit * 150 / (25.4 * 1023)))
-        recipe = replace(recipe, scale_denominator=scale, linear_deflection=0.1 / mm_per_unit)
-        projected = project_model_axis_elevation(
-            verified.entries, object_ids=verified.physical_object_ids, view=recipe, unit=verified.length_unit,
-        )
-    except DrawingElevationError as exc:
-        raise StudioError(409, "DRAWING_SOURCE_INVALID", str(exc)) from exc
-    with Image.open(BytesIO(projected.png)) as image:
-        width, height = image.size
+    drawn = _draw_view(binding, source, receipt, view, size_px=MODEL_VIEW_MAX_EDGE, png_text=None, started=started)
     with _model_views_lock:
-        _MODEL_VIEWS[key] = (projected.png, width, height)
+        _MODEL_VIEWS[key] = (drawn.png, drawn.width, drawn.height)
         _MODEL_VIEWS.move_to_end(key)
         while len(_MODEL_VIEWS) > _MODEL_VIEW_LIMIT:
             _MODEL_VIEWS.popitem(last=False)
-    return projected.png, width, height
+    return drawn.png, drawn.width, drawn.height
 
 
 def _registered_drawing(
