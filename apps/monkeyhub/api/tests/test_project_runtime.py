@@ -1239,6 +1239,19 @@ class RuntimeCostTests(unittest.TestCase):
         manager = self.manager()
         runtime = self.runtime(manager, repository)
         _settle(repository.layout.root)
+        # The binding's layout watch sees the aged times itself within a
+        # moment; the test waits for it rather than for the moment.
+        runtime.binding.layout_watch().sync()
+        watched = runtime.binding.layout_watch().watch
+        tree = watched._tree
+        walked_by = []
+        visit_one = tree._visit_one
+
+        def visit(relative, force_list):
+            walked_by.append(threading.current_thread().name)
+            return visit_one(relative, force_list)
+
+        tree._visit_one = visit
         now = [0.0]
         refreshes = []
         script = []
@@ -1252,6 +1265,7 @@ class RuntimeCostTests(unittest.TestCase):
                 now[0] = 60.0
                 repository.create_run("external-run")  # a separate client writes
                 _settle(repository.layout.root)
+                runtime.binding.layout_watch().sync()
             elif step == 3:
                 now[0] = 90.0  # unchanged since that read
             elif step == 4:
@@ -1273,6 +1287,11 @@ class RuntimeCostTests(unittest.TestCase):
         # Refresh counts after each pass: first idle read, skipped, changed,
         # skipped, woken, recorded again, skipped.
         self.assertEqual(refreshes, [1, 1, 2, 2, 3, 4, 4])
+        # The idle check read the watch's token; only the watch walked.
+        self.assertTrue(walked_by)
+        self.assertEqual({name for name in walked_by if not name.startswith("layout-watch:")}, set())
+        # The observer let go of the project folder when it stopped.
+        self.assertFalse(watched.running)
 
     def test_runtime_snapshot_of_five_projects_stays_in_milliseconds(self):
         workers, sessions, repositories = [], [], []

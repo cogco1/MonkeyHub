@@ -1957,7 +1957,10 @@
         "layout_fingerprint",
         "LayoutFingerprint",
         "FINGERPRINT_POINTER_FILES",
-        "FINGERPRINT_SETTLED_NS"
+        "FINGERPRINT_SETTLED_NS",
+        "LayoutFingerprint.from_lines",
+        "is_layout_directory",
+        "pointer_file_lines"
       ],
       "depends_on": [
         "project.refs"
@@ -1969,20 +1972,22 @@
         "apps/archflow-studio/api/archflow_studio_api/application/intent.py",
         "apps/archflow-studio/api/archflow_studio_api/adapters/seats.py",
         "apps/archflow-studio/api/archflow_studio_api/transport/state.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/binding.py",
-        "apps/monkeyhub/api/monkeyhub_api/runtime.py"
+        "archflow/project/memo.py",
+        "archflow/project/watch.py"
       ],
       "invariants": [
         "never creates a directory and never writes",
         "a resolved path that escapes the project root raises",
         "a ref belonging to another project is refused",
-        "layout_fingerprint reads directory and pointer-file metadata only: it opens, reads and writes no file, and a result is stable only when its newest time is more than two seconds older than the scan"
+        "layout_fingerprint reads directory and pointer-file metadata only: it opens, reads and writes no file, and a result is stable only when its newest time is more than two seconds older than the scan; LayoutFingerprint.from_lines is the one place a scan's lines become a digest and a stability, and is_layout_directory the one traversal rule (no link, no junction), so the layout watch (project.watch) states the same fingerprint of the same tree",
+        "layout_fingerprint walks the whole project on every call; no request path calls it, and a reader asks the layout watch (project.watch) instead"
       ],
       "status": "canonical",
       "tests": [
         "tests/test_project_inputs.py",
         "tests/test_project_runner.py",
-        "tests/test_project_fingerprint.py"
+        "tests/test_project_fingerprint.py",
+        "tests/test_project_watch.py"
       ],
       "notes": "A path table walked by every FilesystemProjectRepository test; only the two authored-input paths are asserted directly, in tests/test_project_inputs.py. RunLayout is returned by ProjectLayout.run but never imported by name."
     },
@@ -2114,7 +2119,8 @@
         "archflow/project/repository.py",
         "apps/archflow-studio/api/archflow_studio_api/application/binding.py",
         "apps/archflow-studio/api/archflow_studio_api/application/artifacts.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/projection.py"
+        "apps/archflow-studio/api/archflow_studio_api/application/projection.py",
+        "archflow/project/watch.py"
       ],
       "invariants": [
         "a memo is never a source of truth: a kept value answers only what reading its files again would answer, and dropping any entry costs only that read",
@@ -2127,6 +2133,69 @@
         "tests/test_project_memo.py"
       ],
       "notes": "Created because four owners needed the same bounded LRU and stamping (#365); a cache is not added beside it as an ad-hoc dict."
+    },
+    {
+      "module_id": "project.watch",
+      "owner_path": "archflow/project/watch.py",
+      "purpose": "Keeps each project root's layout fingerprint current on one background thread per root and process, so a reader takes the latest fingerprint with one attribute read and no request ever walks the project (ADR-008, #363).",
+      "owns": [
+        "the one layout watch per project root and process: its thread, its leases and its stop",
+        "the Windows directory-change watch on a project root (ReadDirectoryChangesW through ctypes: one overlapped, recursive read on a handle that shares read, write and delete)",
+        "keeping a layout fingerprint current incrementally: which directories a notification, a write observed in this process or a lost batch makes it read again, the scan every POLL_S where no notification arrives, the settle pass and the safety-net walk"
+      ],
+      "does_not_own": [
+        "what a fingerprint states, its digest and its racy rule (project.layout)",
+        "the write serial and the write observers (project.repository)",
+        "what a reader keeps under a fingerprint, and when it may answer 304 (studio.binding)"
+      ],
+      "inputs": [
+        "project root path (any spelling, including a Win32 extended-length prefix)",
+        "file-system change notifications below the root",
+        "paths this process wrote below the root (add_write_observer)"
+      ],
+      "outputs": [
+        "WatchedLayout",
+        "LayoutLease"
+      ],
+      "public_api": [
+        "watch_layout",
+        "LayoutLease",
+        "LayoutLease.latest",
+        "LayoutLease.sync",
+        "LayoutLease.release",
+        "LayoutWatch",
+        "WatchedLayout",
+        "release_when_collected",
+        "running_watches",
+        "POLL_S",
+        "DEBOUNCE_S",
+        "SAFETY_S",
+        "RETRY_S",
+        "NOTIFY_BUFFER_BYTES"
+      ],
+      "depends_on": [
+        "project.layout",
+        "project.memo",
+        "project.repository"
+      ],
+      "used_by": [
+        "apps/archflow-studio/api/archflow_studio_api/application/binding.py"
+      ],
+      "invariants": [
+        "metadata only, like layout_fingerprint: it stats and lists directories and stats the pointer files; it opens, reads and writes no project file",
+        "one watch and at most one directory handle per project root (project_root_key) and process; the handle shares read, write and delete, so the root can be renamed, moved or deleted while watched, and it is closed when the root goes or is replaced, when the watch fails and when the last lease is released",
+        "what it publishes is layout_fingerprint of the same tree - the same lines, traversal and racy rule; a lost notification batch (0 bytes or ERROR_NOTIFY_ENUM_DIR), an unavailable or failed watch and every SAFETY_S cost one full walk; a notification alone never makes a fingerprint unstable",
+        "readers never walk: latest is one attribute read and only a first reader waits, for the first walk; every stat and listing runs on the watch's own thread",
+        "a WatchedLayout carries write_serial(root) read before its pass began, so a reader can tell a fingerprint taken before its own process's last write",
+        "a failure never leaves a stable fingerprint behind: it is published unstable until a walk succeeds; stopping cancels the pending read, waits for it and closes the handle before the thread ends"
+      ],
+      "status": "canonical",
+      "tests": [
+        "tests/test_project_watch.py",
+        "apps/archflow-studio/api/tests/test_conditional_reads.py",
+        "apps/archflow-studio/api/tests/test_derivation_memo.py"
+      ],
+      "notes": "Created because the 0a fingerprint walk sat on the request path (#363): on a busy disk it took 0.2-1.2 s once per TTL, and an unchanged 304 waited for it. The notification tests need Windows and skip elsewhere; the scanning tests run on every platform. Windows still refuses to rename a folder that contains a watched root while the watch holds its handle; the Hub and Studio close the watch with the project."
     },
     {
       "module_id": "project.ports",
@@ -2562,7 +2631,9 @@
         "write_serial",
         "add_write_observer",
         "FilesystemProjectRepository.require_json",
-        "FilesystemProjectRepository.record_stat"
+        "FilesystemProjectRepository.record_stat",
+        "project_root_key",
+        "project_path_key"
       ],
       "depends_on": [
         "project.digests",
@@ -2590,7 +2661,8 @@
         "tools/freeze_project_stage_workflow.py",
         "tools/issue_project.py",
         "monkeydiagram/drawing_elevation.py",
-        "tools/create_project.py"
+        "tools/create_project.py",
+        "archflow/project/watch.py"
       ],
       "invariants": [
         "an existing content path is never overwritten; new content is installed or the write fails",
@@ -2605,7 +2677,7 @@
         "Format planning refuses a source missing the existing advisory lock files rather than creating them; declared schema inventory is not a typed reference migration plan, and a supported legacy format 1 is upgradeable only through migrate_project_format into a new directory; the source is never written",
         "Working-draft cleanup never removes a run, input or shared object: an automatic candidate stays whether or not anything refers to it. It removes only local recovery snapshots that are neither the current localDraftRef nor updated within the last 24 hours, and one inconsistent snapshot refuses the whole expiry.",
         "Source validation and reference writes share the same cross-process guard as cleanup; in-process and filesystem locks are acquired in project, HEAD, design order. Full project archives preserve working metadata and local recovery; candidate synchronization never replaces the local working position.",
-        "every on-disk mutation this module makes is counted by write_serial for each registered root containing it and reported to that root's add_write_observer callbacks after it lands; an observer that raises is logged and never fails the write",
+        "every on-disk mutation this module makes is counted by write_serial for each registered root containing it and reported to that root's add_write_observer callbacks after it lands; an observer that raises is logged and never fails the write; roots are keyed by project_root_key (normalized case, absolute, resolved, without a Win32 extended-length prefix), so every spelling of one root shares its serial and observers",
         "load_json parses a payload of its own for every caller; kept verified bytes are used only while their file keeps the size and time it was read with, and only once that time was settled; a listing, a run manifest or the design branches are kept only under a settled stat stamp of the place they were read from, and a write this process makes forgets the kept places it can have changed (the written path, what lies below it and its directory's listing); verify reads every file itself"
       ],
       "status": "canonical",
@@ -2617,7 +2689,8 @@
         "tests/test_project_format_migration.py",
         "tests/test_project_working_draft.py",
         "tests/test_project_fingerprint.py",
-        "tests/test_project_memo.py"
+        "tests/test_project_memo.py",
+        "tests/test_project_watch.py"
       ],
       "notes": "1311 lines carrying the whole persistence concept, including Windows sharing-violation retries around the HEAD swap; PreparedTransition and RecoveryReport are returned but never imported by name."
     },
@@ -4453,7 +4526,9 @@
         "READ_EPOCH",
         "ProjectBinding.read_token",
         "ProjectBinding.memo",
-        "ProjectBinding.state_record"
+        "ProjectBinding.state_record",
+        "ProjectBinding.layout_watch",
+        "ProjectBinding.close"
       ],
       "depends_on": [
         "project.inputs",
@@ -4477,7 +4552,8 @@
         "contracts.canonical",
         "studio.artifacts",
         "studio.render",
-        "project.memo"
+        "project.memo",
+        "project.watch"
       ],
       "used_by": [
         "apps/archflow-studio/api/archflow_studio_api/application/projection.py",
@@ -4500,7 +4576,7 @@
         "main head Stage is the default when design history exists; a successful harness run alone never becomes a default committed Stage",
         "the Working Head is the architect's editing base, read from retained facts and never guessed from the newest file; a generated candidate is recorded and shown but never moves it, viewing history never moves it, and only the explicit working-draft selection (Continue, adopting the architect's own Sync, or the Hub Agent's Continue on the user's bound words through a Hub-managed Runtime) does; every selection onto a run is retained as an attributed design.continued event and admits no Candidate; a recorded continuation keeps its source position's branch",
         "a page's representation status is derived on read and never stored; an explicit page replacement answers before what the page depicts; a missing or unverifiable page or input is unavailable and is never rebound; a person's keep (a drawing's follow: frozen, Publish's freeze) is frozen; each consumer keeps its own wire words",
-        "an answer is remembered only in memory and only under a stable ReadToken; this process's writes change the token at once, another process's once the fingerprint's one-second time to live has passed",
+        "an answer is remembered only in memory and only under a stable ReadToken, which is read from the project's layout watch (project.watch) and never walked on a request: this process's writes change the token at once and leave it unstable until the watch has seen them, another process's once the watch sees them (about a second); closing the binding gives back its share of the watch",
         "a State Record is parsed once per content digest and shared by every binding in the process, and nobody changes it; state_record still checks the ref's file on every call. A design branch's Stage chain is kept by the head and fork refs that fix it, each Stage file still checked; each run's part of the reference-run survey is kept under the stamps of its manifest, records directory and the receipt and workflow files it read; a bound view's state digest is taken once per view"
       ],
       "status": "canonical",
@@ -5385,7 +5461,8 @@
         "One process binds one project directory, keyed and supervised by MonkeyHub; in production it is reached only through the Hub's forwarding path, and it never grows a persistent user-settings file, a launcher, a tray or a UI of its own",
         "The Runtime parameter-lock proposal route uses the existing accept actor grant; local unauthenticated attribution identifies only the process boundary and does not prove a human caller",
         "POST /api/admissions uses the existing accept grant on a local-role Runtime; a shared project service does not expose it",
-        "only the exact GET paths in CONDITIONAL_READS carry an ETag, answer If-None-Match with 304 and are answered from the binding's memo, and only for a 200 read under a stable token; every other method, path and status passes through unchanged"
+        "only the exact GET paths in CONDITIONAL_READS carry an ETag, answer If-None-Match with 304 and are answered from the binding's memo, and only for a 200 read under a stable token; every other method, path and status passes through unchanged",
+        "shutdown closes the bound project's binding after draining work, which stops its layout watch and lets go of the project folder"
       ],
       "status": "canonical",
       "tests": [
@@ -6916,7 +6993,8 @@
         "A new Render attempt gets a new requestId; status refresh and workspace/project switches never resend an uncertain paid call",
         "Automatic project selection, chat and first Render entry attach and verify the Runtime without seeding authored modeling inputs; explicit Arch entry initializes only when the modeling projection is not ready, including after Render-first navigation",
         "A project watcher derives which work copies exist again only when the runs, their document records or the files in their copy workspaces change, compared on a wake and every 30 s without reading other records; a read forwarded to Studio never wakes it (#314)",
-        "The Agent looks through visual_review only, never studio_request or studio_schema: one allowance per answered user message, its class fixed once a review is spent, more than two polish rounds only on the user's own words, a refusal spending nothing and an unanswered or failed call counted as spent"
+        "The Agent looks through visual_review only, never studio_request or studio_schema: one allowance per answered user message, its class fixed once a review is spent, more than two polish rounds only on the user's own words, a refusal spending nothing and an unanswered or failed call counted as spent",
+        "The idle project observer reads the retained history again only when the binding's read token (this process's write serial and the layout watch's fingerprint) moved or is not stable; asking walks nothing, and an observer that stops closes the binding, releasing the watch's handle on the project folder (#363)"
       ],
       "used_by": [
         "apps/monkeyhub/run.py",
