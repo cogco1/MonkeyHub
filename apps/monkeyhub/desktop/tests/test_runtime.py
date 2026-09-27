@@ -639,6 +639,9 @@ $pattern.Current.Value | ConvertTo-Json -Compress
                                 f"stderr={error.stderr!r}")
                 continue
             self.assertEqual(result.returncode, 0, "\n".join(attempts + [result.stdout + result.stderr]))
+            if attempts:
+                # A run the retry rescued: CI logs show how often the first client stalls.
+                print("Owned chat UI Automation needed a retry:\n" + "\n".join(attempts), file=sys.stderr, flush=True)
             return json.loads(result.stdout.strip())
         self.fail("Owned chat UI Automation timed out:\n" + "\n".join(attempts))
 
