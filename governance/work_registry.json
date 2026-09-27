@@ -1,4 +1,23 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": []
+  "items": [
+    {
+      "id": "GH-381",
+      "status": "active",
+      "branch": "codex/381-flaky-restore-chat",
+      "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-381-flaky-restore-chat",
+      "base_ref": "75b581e4",
+      "contributor": "Claude (cloud session)",
+      "reviewer": null,
+      "handoff": null,
+      "modules": [
+        "hub.shell"
+      ],
+      "write_scope": [
+        "apps/monkeyhub/web/test/chatShell.browser.mjs",
+        "apps/monkeyhub/web/src/ChatShell.tsx"
+      ],
+      "depends_on": []
+    }
+  ]
 }
