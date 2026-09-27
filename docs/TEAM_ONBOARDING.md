@@ -79,7 +79,7 @@ python tools/devctl.py work
 python tools/devctl.py module compiled-cad-execution
 ```
 
-上例查询 CAD 任务；按自己的任务更换模块，用 `work GH-<issue>/<lane>` 查看具体 lane。`work` 只列登记中的 lane 和不占路径的 legacy 卡；[P115](mapping/planning/P115-capability-consolidation.md) 是冻结的历史索引，不从中推导当前任务。用返回的精确 module id 再查契约与真实调用方，确认本 lane 的路径及当前重叠，再从记录的基线创建或复用自己的 worktree。字段、状态和交接方式见[协作流程](../CONTRIBUTING.md#登记与查看并行任务)。共享契约不够时，先让现有 owner 的上游 PR 合入 `main`，再更新依赖分支；不复制接口、不吸收另一人的 WIP，也不要求每天 rebase。
+上例查询 CAD 任务；按自己的任务更换模块，用 `work GH-<issue>/<lane>` 查看具体 lane。`work` 只列登记中的 GitHub Issue claim 与 lane；任务本身以 Issue 为准。用返回的精确 module id 再查契约与真实调用方，确认本 lane 的路径及当前重叠，再从记录的基线创建或复用自己的 worktree。字段、状态和交接方式见[协作流程](../CONTRIBUTING.md#登记与查看并行任务)。共享契约不够时，先让现有 owner 的上游 PR 合入 `main`，再更新依赖分支；不复制接口、不吸收另一人的 WIP，也不要求每天 rebase。
 
 ## 3. 先跑工具箱
 
@@ -258,7 +258,7 @@ python -m unittest tests.test_blender_cad tests.test_cad_backend_contract -v
 
 PR #18 已在 Blender 4.3.2 完成 15 项测试，包括真实保存/冷读、重启复用和候选修改；其公共 CAD、runner、record kinds 与 CLI 的另外 112 项检查通过。Rhino 独立执行按[真实宿主验收命令](../archflow/adapters/README.md#rhino-host-acceptance)显式启用，默认 skip 不算验收。#13 已于 2026-09-15 关闭：第二个账号从 fresh clone 在真实 Blender 4.3.0 上复跑通过（由 agent 执行），关闭时未要求真人交接。
 
-接手时先读 #13 与已合入的 #15、#17、#18，再运行 `python tools/devctl.py work` 确认有无登记中的 Blender lane；原 `P115/blender` lane 已关闭。用 `python -m unittest tests.test_devctl_work tests.test_archcheck_scopes -v` 可复跑三条独立模拟 lane、故意生产路径重叠与明确先后交接。测试演练不代替真人接手：新成员应在自己的 worktree 复现选定任务，将版本、结果和遇到的问题交给约定 reviewer。开发继续沿公共 CAD 契约；缺少共享契约时先提交上游 PR，再更新依赖分支，Blender lane 不修改 Hub/App Server 实现。
+接手时先读 #13 与已合入的 #15、#17、#18，再运行 `python tools/devctl.py work` 确认有无登记中的 Blender lane；原 Blender lane 已关闭。用 `python -m unittest tests.test_devctl_work tests.test_archcheck_scopes -v` 可复跑三条独立模拟 lane、故意生产路径重叠与明确先后交接。测试演练不代替真人接手：新成员应在自己的 worktree 复现选定任务，将版本、结果和遇到的问题交给约定 reviewer。开发继续沿公共 CAD 契约；缺少共享契约时先提交上游 PR，再更新依赖分支，Blender lane 不修改 Hub/App Server 实现。
 
 ## 6. 把这段发给她的 Agent
 
@@ -283,7 +283,7 @@ https://github.com/cogco1/ARCHFLOW_V4/blob/main/docs/TEAM_ONBOARDING.md
 
 ```text
 任务：接入复现 / 已约定的小修改
-Issue/lane：#<issue> / GH-<issue>/<lane>（续做 legacy 卡才写 P###）；仅接入复现可写不涉及修改
+Issue/lane：#<issue> / GH-<issue>/<lane>；仅接入复现可写不涉及修改
 源码：ArchFlow <SHA>；共享工具箱 <SHA>
 分支/检出/基线：<branch>；<worktree>；<base SHA>
 责任/审查/交接：<实际对象与顺序，未指定则明说>

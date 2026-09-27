@@ -112,7 +112,7 @@ MonkeyHub Usage 页   → monkeymonitor ← Project Runtime 元数据适配器
 | MonkeyMonitor 用量日志 | 显式指定的外部诊断目录内 `usage.jsonl`；不含提示词或项目内容，不成为 P036 资产或新的项目权威。详见 [运行与算法方案](../monkeymonitor/README.md)。 |
 | 软件 release | 准确 Git 提交对应的源码／构建包及发行说明；软件版本独立于协议版本、记录 schema 和项目 HEAD。 |
 
-工作卡跟踪活跃任务，架构方案解释边界与取舍；完成工作从 live registry 退出，结果保留在 Git。
+GitHub Issue 跟踪任务，work registry 只登记正在改源码的 claim，架构方案解释边界与取舍；完成的 claim 从 registry 删除，结果保留在 Issue、PR 与 Git。
 退役前核对真实调用、公开契约和保留数据。普通旧代码可由 Git 找回；私人原件和唯一临时材料先确认交接，
 不根据“零 import”自动删除，不要求每次修复另建归档台账。
 
