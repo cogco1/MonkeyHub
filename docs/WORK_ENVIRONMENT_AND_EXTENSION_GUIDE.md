@@ -93,11 +93,10 @@ SKP 使用本机 SketchUp C API 独立读取，不打开 SketchUp：原 SKP 与�
 | 当前需要 | 固定入口 | 接着读取什么 |
 | --- | --- | --- |
 | 了解 ArchFlow 做什么 | README 的概述与当前状态 | 涉及架构决定时才读 `docs/ARCHITECTURE.md` 的对应部分 |
-| 开始或接续一项工作 | 对应的 GitHub Issue，再运行 `python tools/devctl.py work` | Issue 记录需求、验收与讨论；`work` 列出登记中的 active／review lane（谁在改哪些路径）和不占路径的 legacy 卡。[P115](mapping/planning/P115-capability-consolidation.md) 是冻结的历史索引，不从中推导当前任务，也不回填进度 |
+| 开始或接续一项工作 | 对应的 GitHub Issue，再运行 `python tools/devctl.py work` | Issue 记录需求、验收与讨论；`work` 列出登记中的 `GH-<issue>`／`GH-<issue>/<lane>` claim：谁在改哪些路径、基线与交接 |
 | 按目标查已有操作 | `python tools/devctl.py capability <目标或能力-id>` | 读取匹配项的范围与入口；绑定项目内使用 `GET /api/capabilities?goal=...`，再描述具体来源和目标。首项为已有对象的数值修改；已支持和缺少的部分见返回的 `works`／`missing` |
 | 查建模、图纸、项目或应用的代码归属 | `python tools/devctl.py module <关键词>` | 用返回的精确 module id 再查契约；按 `--section`、`--offset` 补齐被省略的相关项 |
 | 修改已有实现 | owner 的 `source_paths`、`public_api`、`tests` | 目标实现及真实调用方；只有存在具体疑问时才在相关包中 `rg` |
-| 查看全部登记项 | `python tools/devctl.py status` | 每项一行；blocked 的 legacy 卡不占路径，卡片状态不代表能力可用性 |
 | 创建或复用源码 worktree | `python tools/workspace.py create --branch codex/<task>` | 从一次配置的开发根取得目录；已有任务继续使用其原检出，详见下方“开发目录只配置一次” |
 | 查看打包目录或构建候选包 | `python tools/package_monkeyapps.py --show-paths` | 共用开发根配置；确认来源后用 `--source-ref <ref>` 构建，仍需打包工具所需的 Node/npm |
 | 查共享工具箱 Skill | `hgs skills list <关键词> --path <toolbox-root>/skills` | `hgs skills show <id> --path <toolbox-root>/skills`，再按需读取示例或调用入口 |
@@ -287,14 +286,14 @@ python tools/package_monkeyapps.py --source-ref HEAD
 3. 目标实现与真实调用方；只在这些信息不能解答具体问题时扩大搜索。
 4. 只有需要理解旧合并决定时读 [`CANONICAL_SPINE.md`](CANONICAL_SPINE.md)。它是历史决策，
    其中迁移顺序不可重跑，历史统计不是实时状态；实时 owner 仍以 registry 和代码为准。
-5. [`DYNAMIC_MAP.md`](DYNAMIC_MAP.md)：尚未完成的工作卡，不是已交付能力清单。
+5. 当前任务只看对应的 GitHub Issue；谁在改哪些路径用 `python tools/devctl.py work` 查看。
 6. 涉及客户端时再读 [`PROTOCOL.md`](PROTOCOL.md) 与
    [`apps/archflow-studio/README.md`](../apps/archflow-studio/README.md)。
 
 先复用已有能力。模块 owner 表示软件职责，可以包含多个实现文件，不是个人或必须塞满的单个文件。
 新增独立领域能力可以有自己的目录或外部包，经已有接口接入；同一职责已有实现时不再复制第二套。
 归口、公开契约或列出的测试变化才更新 module registry，不逐个登记内部函数。
-工作卡只跟踪未完成任务；模块的 `canonical` 标签不表示项目 `HEAD` 或软件版本已经发布。
+work registry 只登记进行中的源码 claim；模块的 `canonical` 标签不表示项目 `HEAD` 或软件版本已经发布。
 
 ## 3. 项目目录：每个东西只有一个家
 
@@ -869,13 +868,14 @@ npm.cmd run build  # 包含 typecheck
 之后按真实改动选择检查：纯文档查命令、链接和 diff；内核改动跑 registry 所列的受影响测试与
 `archcheck`；API/DTO 改动检查相应路由与 `api:check`，Web 改动检查交互与 build。
 这套首次接入检查不覆盖所有功能，任务涉及其他模块时仍要补跑该模块相关检查。
-只有 registry 或语义表真的改变时，才用 `python tools/devctl.py render-map` 更新生成地图。
+只有 module registry 或语义表真的改变时，才用 `python tools/devctl.py render-map` 更新生成地图。
 
 ### 8.7 从一个小修改到审查与集成
 
 1. 先按第 2 节找到现有 owner，查看它的 inputs/outputs/public_api/invariants 和真实调用方。
    在对应的 GitHub Issue（没有就新开）或 PR 中约定问题、明确文件范围、接口是否改变、验收动作和审查人；
-   需要源码并发协调时才在 work registry 登记 `GH-<issue>` lane，不新建 P 卡。
+   要改 policy 共享或 unclaimed 范围以外的文件时，在 work registry 登记 `GH-<issue>` 或 `GH-<issue>/<lane>` claim，
+   CI 的 `archcheck --changed` 按它检查每次提交。
 2. 成员在自己的 clone 从约定基线建立短分支，如 `git switch -c codex/first-setup-fix`。
    首次源码修改选一个已经复现的小问题；与其他人重叠同一文件时先交接范围再编辑。
 3. 检查工作 diff，显式暂存自己的文件。例如只修改 README 时：
@@ -885,7 +885,7 @@ npm.cmd run build  # 包含 typecheck
    git add -- README.md
    git diff --cached --name-only
    git diff --cached
-   git commit -m "P000-governance: clarify first-run setup"
+   git commit -m "GH-<issue>: clarify first-run setup"
    ```
 
 4. 把分支/提交交给约定审查人；已获仓库写权限的成员按团队约定提交 PR。PR 写触发问题、修改后行为、

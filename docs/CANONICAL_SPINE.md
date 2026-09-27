@@ -3,8 +3,8 @@
 **Status:** historical consolidation decision, made 2026-09-03 with the repository owner.
 The record-driven production spine is now described in [ARCHITECTURE.md](ARCHITECTURE.md).
 The survey, verdicts and execution order below record the migration plan at that time;
-they are not instructions to rerun it. Current ownership and remaining work are in
-[SYSTEM_MAP.md](SYSTEM_MAP.md) and [DYNAMIC_MAP.md](DYNAMIC_MAP.md).
+they are not instructions to rerun it. Current ownership is in
+[SYSTEM_MAP.md](SYSTEM_MAP.md); remaining work is in the GitHub Issues.
 
 The repository grew five production spines, each with its own vocabulary for the same ideas
 (state, components, geometry emission, relations, levels, validation results, stage exit,

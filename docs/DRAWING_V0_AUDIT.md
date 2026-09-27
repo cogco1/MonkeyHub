@@ -178,7 +178,7 @@ Publish #66：跨 Drawing/Render/Board/文字/图片的页面组合、PPTX/PDF/r
 | 独立 Drawing 页面与准确来源交接 | `hub.shell` / 既有工作区：`apps/monkeyhub/web/src/ChatShell.tsx`；workspaces `app/ProjectWorkspace.tsx`、`app/App.tsx`、`features/stage/Stage.tsx`、`workspaces/monkeydiagram/DocumentCanvas.tsx`、`api/client.ts` 及受影响现有 types/routes | `workspaces/test/drawingStyles.browser.mjs`、`documentModelSource.browser.mjs`、`documentAnnotations.test.ts`、`boardDocumentOpen.browser.mjs`；新增 Drawing 打开/关闭、迟到响应、表示操作无 design 请求、独立导航 |
 | 改设计尺寸 | 复用现有 `POST /api/proposals`、candidate 和 Stage acceptance；除实际缺口外不改通用 proposal 引擎 | `apps/archflow-studio/api/tests/test_proposals.py`、`test_intents.py`：exact base、单位、参数更新、derived/locked/keep；新增从 Drawing 参数尺寸进入同一路径 |
 
-代码实施时只因 public API、owner 契约或列出的 tests 发生实际变化才更新 `governance/module_registry.json`；沿现有 P115 live card 记录相关剩余接受项，不新造治理机制。需要公开 API 时同步现有 DTO/client/OpenAPI/MCP 对应项；不改并行任务的 ContextPack/Study 公共基础。
+代码实施时只因 public API、owner 契约或列出的 tests 发生实际变化才更新 `governance/module_registry.json`；相关剩余验收记在对应的 GitHub Issue，不新造治理机制。需要公开 API 时同步现有 DTO/client/OpenAPI/MCP 对应项；不改并行任务的 ContextPack/Study 公共基础。
 
 首片新增回归应覆盖以下可观察行为：
 

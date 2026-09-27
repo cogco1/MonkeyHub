@@ -105,8 +105,8 @@ implemented behavior; remaining work and its acceptance are tracked in
 - **One application entry:** open MonkeyHub. For agent access and source work, follow the [Hub entry and bounded lookup sequence](docs/WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.md#0-monkeyhub-统一入口).
   It connects the source checkout, external project, capability registries and existing commands.
 - [Vision](docs/VISION.md) — long-term research, technology and product direction.
-- [Development map](docs/DYNAMIC_MAP.md) — source work currently registered for
-  coordination; requirements and acceptance live in the GitHub Issues.
+- [GitHub Issues](https://github.com/cogco1/MonkeyHub/issues) — current work with its requirements
+  and acceptance; `python tools/devctl.py work` shows who is editing which paths.
 - [System map](docs/SYSTEM_MAP.md) — current capability owners and public APIs.
 - [Architecture](docs/ARCHITECTURE.md) — implemented responsibilities, concrete
   gaps, and the next architectural revision to develop.

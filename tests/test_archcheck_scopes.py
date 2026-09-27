@@ -1,13 +1,19 @@
 """Write scopes are the boundary between people developing in parallel.
 
-Two checks live here. ``check_scopes`` reads the work registry and refuses two
-live cards that claim the same path, so nobody starts a day owning the same
-directory as somebody else. ``check_changed_scopes`` reads a branch and refuses
-a commit that wrote outside the scope of the card it names, so the boundary is
-enforced where it is actually crossed rather than only declared.
+Two checks live here. ``check_scopes`` reads the work registry, which since
+#358 holds only live GitHub Issue claims: it refuses entries that are not
+GH-native coordination and two live claims on the same path, so nobody starts
+a day owning the same directory as somebody else. ``check_changed_scopes``
+reads a branch and refuses a commit that wrote outside the scope of the claim
+it names, so the boundary is enforced where it is actually crossed rather than
+only declared.
 
-The second one needs real commits, so it builds a throwaway Git repository in a
-temporary directory; nothing here reads or writes this repository.
+The ``--changed`` cases in this file are commits made before #358, on the
+card-era registry: they keep the reading they were checked with. Current
+GitHub Issue claims and the retirement itself are in
+``test_archcheck_github_claims``. Those cases need real commits, so they build
+a throwaway Git repository in a temporary directory; nothing here reads or
+writes this repository.
 """
 from __future__ import annotations
 
@@ -22,11 +28,16 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from tools.archcheck import (
-    ArchitecturePolicyError, _index_tree, check_changed_scopes, check_imports,
-    check_registry, check_scopes, load_policy,
+    REGISTRY_SCHEMA, ArchitecturePolicyError, _index_tree, check_changed_scopes, check_imports,
+    check_registry, check_scopes, load_policy, validate_policy,
 )
 
 
+POLICY_PATH = "governance/architecture_policy.json"
+REGISTRY_PATH = "governance/work_registry.json"
+
+# The card-era registry (@2). The --changed history cases below are commits
+# made before #358 and keep this reading.
 SHARED = (
     "docs/mapping/",
     "governance/module_registry.json",
@@ -34,8 +45,6 @@ SHARED = (
     "tests/",
 )
 POLICY = {"shared_write_scope": list(SHARED)}
-POLICY_PATH = "governance/architecture_policy.json"
-REGISTRY_PATH = "governance/work_registry.json"
 
 
 def _registry(*items: dict[str, object]) -> dict[str, object]:
@@ -58,6 +67,44 @@ def _lane(lane_id: str, status: str, *scope: str, **changes: object) -> dict[str
 
 def _laned_card(*lanes: dict[str, object], scope: tuple[str, ...] = ("archflow/", "apps/", "monkeyarch/")) -> dict[str, object]:
     return {**_card("P115", "active", *scope), "lanes": list(lanes)}
+
+
+# The current registry: live GitHub Issue claims only.
+GH_SHARED = (
+    "governance/module_registry.json",
+    "governance/work_registry.json",
+    "tests/",
+    "docs/SYSTEM_MAP.md",
+)
+GH_POLICY = {"shared_write_scope": list(GH_SHARED)}
+
+
+def _gh_registry(*items: dict[str, object]) -> dict[str, object]:
+    return {"schema": REGISTRY_SCHEMA, "items": list(items)}
+
+
+def _claim_fields(name: str, status: object, scope: tuple[str, ...], changes: dict[str, object]) -> dict[str, object]:
+    return {
+        "status": status, "branch": f"codex/{name}", "worktree": f"C:/fixture-worktrees/{name}",
+        "base_ref": "main", "contributor": "fixture-contributor", "reviewer": None, "handoff": None,
+        "modules": ["tools.archcheck"], "write_scope": list(scope), "depends_on": [], **changes,
+    }
+
+
+def _claim(work_id: str, status: object, *scope: str, **changes: object) -> dict[str, object]:
+    """One Issue claimed directly, without named lanes."""
+
+    return {"id": work_id, **_claim_fields(work_id.lower(), status, scope, changes)}
+
+
+def _gh_lane(lane_id: str, status: object, *scope: str, **changes: object) -> dict[str, object]:
+    return {"id": lane_id, **_claim_fields(lane_id, status, scope, changes)}
+
+
+def _issue_lanes(*lanes: dict[str, object], work_id: str = "GH-115") -> dict[str, object]:
+    """One Issue claimed through named lanes; each lane is a claim of its own."""
+
+    return {"id": work_id, "lanes": list(lanes)}
 
 
 def _git(cwd: Path, *args: str) -> str:
@@ -123,159 +170,182 @@ class WorkflowBoundaryTests(unittest.TestCase):
                 self.assertTrue(any(f.code == "REGISTRY_DEPENDS_ON_DRIFT" for f in findings))
 
 
+class UnclaimedPolicyTests(unittest.TestCase):
+    def test_the_policy_states_what_a_commit_without_a_claim_may_write(self) -> None:
+        policy = load_policy(Path(__file__).resolve().parents[1] / POLICY_PATH)
+        without = {key: value for key, value in policy.items() if key != "unclaimed_write_scope"}
+        with self.assertRaisesRegex(ArchitecturePolicyError, "unclaimed_write_scope"):
+            validate_policy(without)
+
+
 class ScopeOverlapTests(unittest.TestCase):
-    def test_two_live_cards_claiming_the_same_directory_are_refused(self) -> None:
-        registry = _registry(
-            _card("P201", "active", "archflow/state/", "tests/"),
-            _card("P202", "ready", "archflow/state/", "docs/mapping/"),
+    def findings(self, *items: dict[str, object]) -> tuple[object, ...]:
+        return tuple(check_scopes(Path("."), GH_POLICY, _gh_registry(*items)))
+
+    def test_two_live_claims_on_the_same_directory_are_refused(self) -> None:
+        findings = self.findings(
+            _claim("GH-201", "active", "archflow/state/", "tests/"),
+            _claim("GH-202", "review", "archflow/state/", "docs/SYSTEM_MAP.md"),
         )
-        findings = tuple(check_scopes(Path("."), POLICY, registry))
         self.assertEqual(1, len(findings), findings)
         finding = findings[0]
         self.assertEqual("SCOPE_OVERLAP", finding.code)
         self.assertEqual("governance/work_registry.json", finding.path)
-        self.assertIn("P201", finding.message)
-        self.assertIn("P202", finding.message)
-        self.assertIn("archflow/state/", finding.message)
+        for text in ("GH-201", "GH-202", "archflow/state/"):
+            self.assertIn(text, finding.message)
 
-    def test_a_directory_containing_another_cards_file_is_an_overlap(self) -> None:
-        registry = _registry(
-            _card("P203", "ready", "apps/archflow-studio/"),
-            _card("P204", "ready", "apps/archflow-studio/api/settings.py"),
+    def test_a_directory_containing_another_claims_file_is_an_overlap(self) -> None:
+        findings = self.findings(
+            _claim("GH-203", "active", "apps/archflow-studio/"),
+            _claim("GH-204", "active", "apps/archflow-studio/api/settings.py"),
         )
-        findings = tuple(check_scopes(Path("."), POLICY, registry))
         self.assertEqual(["SCOPE_OVERLAP"], [item.code for item in findings])
         self.assertIn("apps/archflow-studio/api/settings.py", findings[0].message)
 
     def test_the_shared_ledgers_are_not_an_overlap(self) -> None:
-        registry = _registry(
-            _card("P205", "active", *SHARED, "archflow/state/"),
-            _card("P206", "ready", *SHARED, "archflow/runtime/"),
-        )
-        self.assertEqual((), tuple(check_scopes(Path("."), POLICY, registry)))
+        self.assertEqual((), self.findings(
+            _claim("GH-205", "active", *GH_SHARED, "archflow/state/"),
+            _claim("GH-206", "review", *GH_SHARED, "archflow/runtime/"),
+        ))
 
-    def test_a_card_nobody_is_working_on_does_not_collide(self) -> None:
-        registry = _registry(
-            _card("P207", "active", "archflow/state/"),
-            _card("P208", "blocked", "archflow/state/"),
-        )
-        self.assertEqual((), tuple(check_scopes(Path("."), POLICY, registry)))
+    def test_a_blocked_claim_does_not_collide(self) -> None:
+        self.assertEqual((), self.findings(
+            _claim("GH-207", "active", "archflow/state/"),
+            _claim("GH-208", "blocked", "archflow/state/", blocked_reason="Waiting for GH-207's contract"),
+        ))
 
     def test_no_registry_is_not_a_finding(self) -> None:
-        self.assertEqual((), tuple(check_scopes(Path("."), POLICY, None)))
+        self.assertEqual((), tuple(check_scopes(Path("."), GH_POLICY, None)))
+
+    def test_a_registry_with_every_claim_released_is_valid(self) -> None:
+        self.assertEqual((), self.findings())
 
 
 class LaneOverlapTests(unittest.TestCase):
-    def findings(self, *lanes: dict[str, object], cards: tuple[dict[str, object], ...] = ()) -> tuple[object, ...]:
-        return tuple(check_scopes(Path("."), POLICY, _registry(_laned_card(*lanes), *cards)))
+    def findings(self, *lanes: dict[str, object], claims: tuple[dict[str, object], ...] = ()) -> tuple[object, ...]:
+        return tuple(check_scopes(Path("."), GH_POLICY, _gh_registry(_issue_lanes(*lanes), *claims)))
 
-    def test_narrow_lanes_replace_the_broad_parent_claim(self) -> None:
+    def test_each_lane_claims_only_its_own_paths(self) -> None:
         findings = self.findings(
-            _lane("hub-runtime", "active", "apps/monkeyhub/api/", *SHARED),
-            _lane("cad-contract", "review", "archflow/adapters/cad_backend.py", *SHARED),
-            _lane("modeling", "active", "monkeyarch/capabilities/", *SHARED),
-            cards=(_card("P201", "active", "archflow/state/"),),
+            _gh_lane("hub-runtime", "active", "apps/monkeyhub/api/", *GH_SHARED),
+            _gh_lane("cad-contract", "review", "archflow/adapters/cad_backend.py", *GH_SHARED),
+            _gh_lane("modeling", "active", "monkeyarch/capabilities/", *GH_SHARED),
+            claims=(_claim("GH-201", "active", "archflow/state/"),),
         )
         self.assertEqual((), findings)
 
     def test_overlapping_active_and_review_lanes_name_the_paths_and_handoff(self) -> None:
         findings = self.findings(
-            _lane("hub-runtime", "active", "apps/monkeyhub/api/"),
-            _lane("hub-recovery", "review", "apps/monkeyhub/api/server.py"),
+            _gh_lane("hub-runtime", "active", "apps/monkeyhub/api/"),
+            _gh_lane("hub-recovery", "review", "apps/monkeyhub/api/server.py"),
         )
         self.assertEqual(["SCOPE_OVERLAP"], [item.code for item in findings])
-        for text in ("P115/hub-runtime", "P115/hub-recovery", "apps/monkeyhub/api/server.py", "handoff/order"):
+        for text in ("GH-115/hub-runtime", "GH-115/hub-recovery", "apps/monkeyhub/api/server.py", "handoff/order"):
             self.assertIn(text, findings[0].message)
 
-    def test_a_lane_still_collides_with_another_live_legacy_card(self) -> None:
+    def test_a_lane_collides_with_another_issues_direct_claim(self) -> None:
         findings = self.findings(
-            _lane("cad-contract", "active", "archflow/adapters/cad_backend.py"),
-            cards=(_card("P201", "ready", "archflow/adapters/"),),
+            _gh_lane("cad-contract", "active", "archflow/adapters/cad_backend.py"),
+            claims=(_claim("GH-201", "review", "archflow/adapters/"),),
         )
         self.assertEqual(["SCOPE_OVERLAP"], [item.code for item in findings])
-        self.assertIn("P115/cad-contract", findings[0].message)
-        self.assertIn("P201", findings[0].message)
+        self.assertIn("GH-115/cad-contract", findings[0].message)
+        self.assertIn("GH-201", findings[0].message)
 
     def test_shared_tests_and_generated_maps_do_not_require_handoff(self) -> None:
         self.assertEqual((), self.findings(
-            _lane("cad-contract", "active", "archflow/adapters/", *SHARED),
-            _lane("modeling", "review", "monkeyarch/capabilities/", *SHARED),
+            _gh_lane("cad-contract", "active", "archflow/adapters/", *GH_SHARED),
+            _gh_lane("modeling", "review", "monkeyarch/capabilities/", *GH_SHARED),
         ))
 
-    def test_planned_blocked_and_done_lanes_do_not_occupy_paths_or_checkouts(self) -> None:
-        for status in ("planned", "blocked", "done"):
-            with self.subTest(status=status):
-                first = _lane("cad-contract", "active", "archflow/adapters/")
-                second = _lane("blender", status, "archflow/adapters/",
-                               branch=first["branch"], worktree=first["worktree"],
-                               blocked_reason="Waiting for CAD contract merge")
-                self.assertEqual((), self.findings(first, second))
+    def test_a_blocked_lane_does_not_occupy_paths_or_checkouts(self) -> None:
+        first = _gh_lane("cad-contract", "active", "archflow/adapters/")
+        second = _gh_lane("blender", "blocked", "archflow/adapters/",
+                          branch=first["branch"], worktree=first["worktree"],
+                          blocked_reason="Waiting for CAD contract merge")
+        self.assertEqual((), self.findings(first, second))
 
     def test_live_lanes_cannot_start_while_a_declared_lane_dependency_remains(self) -> None:
         for status in ("active", "review"):
-            for prerequisite in ("planned", "active", "review", "blocked"):
+            for prerequisite in ("active", "review", "blocked"):
                 with self.subTest(status=status, prerequisite=prerequisite):
                     findings = self.findings(
-                        _lane("cad-contract", prerequisite, "archflow/adapters/cad_backend.py",
-                              blocked_reason="Waiting for review"),
-                        _lane("blender", status, "archflow/adapters/blender_backend.py",
-                              depends_on=["P115/cad-contract"]),
+                        _gh_lane("cad-contract", prerequisite, "archflow/adapters/cad_backend.py",
+                                 blocked_reason="Waiting for review"),
+                        _gh_lane("blender", status, "archflow/adapters/blender_backend.py",
+                                 depends_on=["GH-115/cad-contract"]),
                     )
                     self.assertEqual(["LANE_DEPENDENCY"], [item.code for item in findings])
-                    self.assertIn("P115/blender", findings[0].message)
-                    self.assertIn("P115/cad-contract", findings[0].message)
+                    self.assertIn("GH-115/blender", findings[0].message)
+                    self.assertIn("GH-115/cad-contract", findings[0].message)
 
-    def test_live_legacy_dependencies_block_a_lane_but_finished_dependencies_do_not(self) -> None:
-        for status in ("active", "ready", "blocked"):
+    def test_registered_claims_block_dependents_and_released_ones_do_not(self) -> None:
+        for status in ("active", "review", "blocked"):
             with self.subTest(status=status):
                 findings = self.findings(
-                    _lane("blender", "active", "archflow/adapters/blender_backend.py", depends_on=["P201"]),
-                    cards=(_card("P201", status, "apps/monkeyhub/api/"),),
+                    _gh_lane("blender", "active", "archflow/adapters/blender_backend.py", depends_on=["GH-201"]),
+                    claims=(_claim("GH-201", status, "apps/monkeyhub/api/", blocked_reason="Waiting for review"),),
                 )
                 self.assertEqual(["LANE_DEPENDENCY"], [item.code for item in findings])
         self.assertEqual((), self.findings(
-            _lane("cad-contract", "done", "archflow/adapters/cad_backend.py"),
-            _lane("blender", "active", "archflow/adapters/blender_backend.py",
-                  depends_on=["P115/cad-contract", "P999/removed-lane"]),
+            _gh_lane("blender", "active", "archflow/adapters/blender_backend.py",
+                     depends_on=["GH-115/released-lane", "GH-999"]),
         ))
 
-    def test_live_lanes_cannot_share_a_branch_or_worktree(self) -> None:
+    def test_a_direct_claim_waits_for_its_dependency_too(self) -> None:
+        findings = tuple(check_scopes(Path("."), GH_POLICY, _gh_registry(
+            _claim("GH-201", "active", "apps/monkeyhub/api/"),
+            _claim("GH-202", "active", "archflow/adapters/", depends_on=["GH-201"]),
+        )))
+        self.assertEqual(["LANE_DEPENDENCY"], [item.code for item in findings])
+        self.assertIn("GH-202", findings[0].message)
+        self.assertIn("GH-201", findings[0].message)
+
+    def test_live_claims_cannot_share_a_branch_or_worktree(self) -> None:
         for field in ("branch", "worktree"):
             with self.subTest(field=field):
-                first = _lane("cad-contract", "active", "archflow/adapters/")
-                findings = self.findings(first, _lane("hub-runtime", "review", "apps/monkeyhub/api/", **{field: first[field]}))
+                first = _gh_lane("cad-contract", "active", "archflow/adapters/")
+                findings = self.findings(first, _gh_lane("hub-runtime", "review", "apps/monkeyhub/api/", **{field: first[field]}))
                 self.assertEqual(["LANE_CHECKOUT"], [item.code for item in findings])
-                for text in ("P115/cad-contract", "P115/hub-runtime", field):
+                for text in ("GH-115/cad-contract", "GH-115/hub-runtime", field):
                     self.assertIn(text, findings[0].message)
         for path in (r"c:\users\developer\dev\repo", "C:/Users/developer/dev/other/../repo/"):
             with self.subTest(windows_path=path):
                 findings = self.findings(
-                    _lane("cad-contract", "active", "archflow/adapters/", worktree="C:/Users/developer/dev/repo"),
-                    _lane("hub-runtime", "review", "apps/monkeyhub/api/", worktree=path),
+                    _gh_lane("cad-contract", "active", "archflow/adapters/", worktree="C:/Users/developer/dev/repo"),
+                    claims=(_claim("GH-201", "review", "apps/monkeyhub/api/", worktree=path),),
                 )
                 self.assertEqual(["LANE_CHECKOUT"], [item.code for item in findings])
 
     def test_non_string_status_produces_diagnostics_instead_of_crashing(self) -> None:
         for status in ([], {}, None, 1):
             with self.subTest(status=status):
-                findings = self.findings(_lane("cad-contract", status, "archflow/adapters/"))
-                self.assertTrue(findings)
-                self.assertTrue(all(item.code == "LANE_METADATA" for item in findings))
-                self.assertTrue(any("status" in item.message for item in findings))
+                for findings in (
+                    self.findings(_gh_lane("cad-contract", status, "archflow/adapters/")),
+                    tuple(check_scopes(Path("."), GH_POLICY, _gh_registry(_claim("GH-201", status, "archflow/adapters/")))),
+                ):
+                    self.assertTrue(findings)
+                    self.assertTrue(all(item.code == "LANE_METADATA" for item in findings))
+                    self.assertTrue(any("status" in item.message for item in findings))
 
     def test_live_work_requires_a_discoverable_checkout_base_and_contributor(self) -> None:
         for status in ("active", "review"):
             for field in ("branch", "worktree", "base_ref", "contributor"):
                 with self.subTest(status=status, field=field):
-                    lane = _lane("cad-contract", status, "archflow/adapters/")
+                    lane = _gh_lane("cad-contract", status, "archflow/adapters/")
+                    direct = _claim("GH-201", status, "archflow/adapters/")
                     lane.pop(field)
-                    findings = self.findings(lane)
-                    self.assertTrue(any(item.code == "LANE_METADATA" and field in item.message for item in findings))
+                    direct.pop(field)
+                    for findings in (
+                        self.findings(lane),
+                        tuple(check_scopes(Path("."), GH_POLICY, _gh_registry(direct))),
+                    ):
+                        self.assertTrue(any(item.code == "LANE_METADATA" and field in item.message for item in findings))
 
     def test_blocked_work_requires_a_readable_reason(self) -> None:
         for reason in (None, "", "   ", []):
             with self.subTest(reason=reason):
-                findings = self.findings(_lane("blender", "blocked", "archflow/adapters/", blocked_reason=reason))
+                findings = self.findings(_gh_lane("blender", "blocked", "archflow/adapters/", blocked_reason=reason))
                 self.assertTrue(any(item.code == "LANE_METADATA" and "blocked_reason" in item.message for item in findings))
 
     def test_invalid_lane_paths_report_metadata_errors_without_crashing(self) -> None:
@@ -284,9 +354,84 @@ class LaneOverlapTests(unittest.TestCase):
             ["C:/outside/"], ["archflow\\state\\"], ["archflow/**"], ["archflow//state/"], ["./archflow/"],
         ):
             with self.subTest(scope=scope):
-                findings = self.findings(_lane("cad-contract", "active", write_scope=scope))
+                findings = self.findings(_gh_lane("cad-contract", "active", write_scope=scope))
                 self.assertTrue(findings)
                 self.assertTrue(all(item.code == "LANE_METADATA" for item in findings))
+
+
+class RegistryShapeTests(unittest.TestCase):
+    """The registry holds live GitHub Issue coordination and nothing else (#358)."""
+
+    def findings(self, registry: dict[str, object]) -> list[tuple[str, str]]:
+        return [(item.code, item.message) for item in check_scopes(Path("."), GH_POLICY, registry)]
+
+    def test_a_card_era_registry_names_the_schema_it_must_become(self) -> None:
+        findings = self.findings(_registry(_card("P115", "blocked")))
+        self.assertEqual(["WORK_ITEM"], [code for code, _ in findings])
+        self.assertIn(REGISTRY_SCHEMA, findings[0][1])
+
+    def test_only_github_issue_ids_are_work_items(self) -> None:
+        for work_id in ("P115", "P000-governance", "M012", "R003", "GH-0", "GH-060", "GH-5/ui", "gh-5", 358, None):
+            with self.subTest(work_id=work_id):
+                claim = {**_claim("GH-5", "blocked", blocked_reason="Waiting for review"), "id": work_id}
+                findings = self.findings(_gh_registry(claim))
+                self.assertEqual(["WORK_ITEM"], [code for code, _ in findings])
+                self.assertIn("GH-<issue>", findings[0][1])
+
+    def test_an_issue_is_registered_once(self) -> None:
+        claim = _claim("GH-5", "active", "apps/one.py")
+        again = {**claim, "branch": "codex/5-again", "worktree": "C:/fixture-worktrees/5-again", "write_scope": ["apps/two.py"]}
+        findings = self.findings(_gh_registry(claim, again))
+        self.assertEqual(["WORK_ITEM"], [code for code, _ in findings])
+        self.assertIn("GH-5", findings[0][1])
+
+    def test_card_era_fields_are_refused_on_claims_and_lanes(self) -> None:
+        for field, value in (
+            ("card", "docs/mapping/planning/GH-5-ui.md"), ("goal", "Repair the suites"),
+            ("acceptance", ["Suites pass"]), ("stream", "planning"),
+            ("issue", "https://github.com/cogco1/MonkeyHub/issues/5"), ("notes", ["2026-09-24: frozen"]),
+        ):
+            with self.subTest(field=field):
+                direct = self.findings(_gh_registry({**_claim("GH-5", "active", "apps/one.py"), field: value}))
+                grouped = self.findings(_gh_registry({**_issue_lanes(_gh_lane("ui", "active", "apps/one.py"), work_id="GH-5"), field: value}))
+                in_lane = self.findings(_gh_registry(_issue_lanes({**_gh_lane("ui", "active", "apps/one.py"), field: value}, work_id="GH-5")))
+                for findings, name in ((direct, "GH-5"), (grouped, "GH-5"), (in_lane, "GH-5/ui")):
+                    self.assertEqual(["WORK_ITEM"], [code for code, _ in findings])
+                    self.assertIn(name, findings[0][1])
+                    self.assertIn(field, findings[0][1])
+
+    def test_an_issue_claimed_through_lanes_has_no_claim_of_its_own(self) -> None:
+        for field, value in (("write_scope", ["apps/"]), ("status", "active"), ("branch", "codex/5")):
+            with self.subTest(field=field):
+                findings = self.findings(_gh_registry({**_issue_lanes(_gh_lane("ui", "active", "apps/one.py"), work_id="GH-5"), field: value}))
+                self.assertEqual(["WORK_ITEM"], [code for code, _ in findings])
+                self.assertIn(field, findings[0][1])
+
+    def test_backlog_statuses_are_retired(self) -> None:
+        for status in ("ready", "planned", "done"):
+            with self.subTest(status=status):
+                direct = self.findings(_gh_registry(_claim("GH-5", status, "apps/one.py")))
+                lane = self.findings(_gh_registry(_issue_lanes(_gh_lane("ui", status, "apps/one.py"), work_id="GH-5")))
+                for findings in (direct, lane):
+                    self.assertEqual(["LANE_METADATA"], [code for code, _ in findings])
+                    self.assertIn("status", findings[0][1])
+
+    def test_dependencies_name_issue_claims(self) -> None:
+        for dependency in ("P115/cad-contract", "P201", "GH-0", "cad-contract"):
+            with self.subTest(dependency=dependency):
+                findings = self.findings(_gh_registry(_claim("GH-5", "active", "apps/one.py", depends_on=[dependency])))
+                self.assertEqual(["LANE_METADATA"], [code for code, _ in findings])
+                self.assertIn("depends_on", findings[0][1])
+
+    def test_an_issue_whose_lanes_are_all_released_is_removed(self) -> None:
+        findings = self.findings(_gh_registry(_issue_lanes(work_id="GH-5")))
+        self.assertEqual(["LANE_METADATA"], [code for code, _ in findings])
+        self.assertIn("lanes", findings[0][1])
+
+    def test_the_registry_holds_schema_and_items_only(self) -> None:
+        findings = self.findings({**_gh_registry(), "phase": "GitHub Issues are the work items"})
+        self.assertEqual(["WORK_ITEM"], [code for code, _ in findings])
+        self.assertIn("phase", findings[0][1])
 
 
 class ChangedScopeTests(unittest.TestCase):
