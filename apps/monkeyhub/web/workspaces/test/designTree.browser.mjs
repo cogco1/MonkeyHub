@@ -6,12 +6,13 @@
  * DESIGN_TREE_SCREENSHOTS=<dir> writes review screenshots; --serve keeps the page open.
  */
 import assert from "node:assert/strict";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { createServer as createHttpServer } from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { deflateSync } from "node:zlib";
 import react from "@vitejs/plugin-react";
 import { createServer } from "vite";
 
@@ -28,6 +29,37 @@ let recorded = 0;
 const http = createHttpServer();
 let vite, browser, fixture, fixtureModule, runtimeId = null;
 const PROJECT = "riverside-library";
+// #406: the models with a retained preview. S2 and Current are the same model, so they share one image.
+const PREVIEWED = new Set(["run-massing-b", "run-massing-c", "run-s1-massing", "run-facade-c", "run-s2-layout"]);
+const previewReads = [], imageReads = [];
+const sha = (value) => createHash("sha256").update(value).digest("hex");
+/** A small opaque PNG: a sky over a block, tinted per model, so each card's image is its own. */
+function previewPng(run) {
+  const width = 160, height = 100, hue = parseInt(sha(run).slice(0, 2), 16);
+  const rows = [];
+  for (let y = 0; y < height; y += 1) {
+    const row = Buffer.alloc(1 + width * 3);
+    for (let x = 0; x < width; x += 1) {
+      const block = x > 40 && x < 120 && y > 30;
+      row.set(block ? [80 + (hue % 120), 90, 110 + (hue >> 2)] : [215, 228, 238 - (y >> 2)], 1 + x * 3);
+    }
+    rows.push(row);
+  }
+  const crc = (buffer) => {
+    let value = ~0;
+    for (const byte of buffer) { value ^= byte; for (let bit = 0; bit < 8; bit += 1) value = (value >>> 1) ^ (0xedb88320 & -(value & 1)); }
+    return (~value) >>> 0;
+  };
+  const chunk = (type, data) => {
+    const body = Buffer.concat([Buffer.from(type, "ascii"), data]);
+    const out = Buffer.alloc(body.length + 8);
+    out.writeUInt32BE(data.length, 0); body.copy(out, 4); out.writeUInt32BE(crc(body), body.length + 4);
+    return out;
+  };
+  const header = Buffer.alloc(13);
+  header.writeUInt32BE(width, 0); header.writeUInt32BE(height, 4); header.set([8, 2, 0, 0, 0], 8);
+  return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk("IHDR", header), chunk("IDAT", deflateSync(Buffer.concat(rows))), chunk("IEND", Buffer.alloc(0))]);
+}
 
 const page = (entry) => `<!doctype html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <style>html,body,#root{height:100%;margin:0}</style></head><body><div id="root"></div>
@@ -53,9 +85,26 @@ async function runtime(request, response, url, body) {
     }
     if (method === "GET" && name === "/api/worktrees") return json(fixture.worktrees());
     if (method === "GET" && /^\/api\/model-assets\/[0-9a-f]{64}\/preview$/.test(name)) {
+      const run = url.searchParams.get("runId");
+      previewReads.push(run);
+      if (PREVIEWED.has(run)) {
+        const assetSha256 = sha(`preview:${run}`), size = previewPng(run).length;
+        return json({ projectId: PROJECT, runId: run, assetSha256, fileName: `${run}-preview.png`, mimeType: "image/png", sizeBytes: size, pageCount: 1,
+          pages: [], modelSource: { runId: run, stateDigest: url.searchParams.get("stateDigest"), assetSha256: name.split("/")[3] }, revisionRef: null });
+      }
       response.writeHead(204);
       response.end();
       return;
+    }
+    const bytes = name.match(/^\/api\/documents\/([0-9a-f]{64})\/bytes$/);
+    if (method === "GET" && bytes) {
+      const run = [...PREVIEWED].find((candidate) => sha(`preview:${candidate}`) === bytes[1]);
+      if (run) {
+        imageReads.push(run);
+        response.writeHead(200, { "content-type": "image/png" });
+        response.end(previewPng(run));
+        return;
+      }
     }
     // The project's event stream, which other workspace code subscribes to; the fixture has no events to send.
     if (method === "GET" && name === "/api/events") {
@@ -435,7 +484,32 @@ try {
   await tab.evaluate(() => { document.documentElement.dataset.uiStyle = "classic"; });
   assert.equal((await follows("light, classic")).trunk, lightColours.trunk);
 
-  // Semantic zoom: far shows the trunk and counts; close adds summaries and status.
+  // Semantic zoom (#406): far shows dots, the trunk and counts; middle, text cards; close, summaries and status, and on the
+  // cards in view the retained preview of their model, each read once. Nothing is read at far or middle, or off screen.
+  const zoomShots = await mkdtemp(path.join(tmpdir(), "design-tree-zoom-"));
+  const shootLevel = async (name) => {
+    await tab.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    await surface.locator(".design-tree__canvas").screenshot({ path: path.join(zoomShots, `${name}.png`) });
+  };
+  if (await surface.locator(".design-tree-inspector").count()) {
+    await tab.keyboard.press("Escape");
+    await surface.locator(".design-tree-inspector").waitFor({ state: "detached" });
+  }
+  previewReads.length = 0;
+  imageReads.length = 0;
+  const images = async () => (await scene()).elements.filter((element) => element.type === "image");
+  const runOf = (id) => id === "current" ? fixture.state.head : id.startsWith("candidate:") ? id.slice("candidate:".length)
+    : fixture.state.stages.find((row) => `stage:${row.ref}` === id)?.run ?? null;
+  /** The nodes whose cards are in the canvas's view now. */
+  const inView = () => tab.evaluate(() => {
+    const api = window.__treeApi, state = api.getAppState(), zoom = state.zoom.value;
+    const left = -state.scrollX, top = -state.scrollY, right = left + state.width / zoom, bottom = top + state.height / zoom;
+    return api.getSceneElements().filter((element) => element.id.endsWith(":card") && element.x < right && element.x + element.width > left
+      && element.y < bottom && element.y + element.height > top).map((element) => element.customData.tree.node);
+  });
+  await shootLevel("mid");
+  assert.equal(await level(), "mid");
+  assert.deepEqual(await images(), [], "middle: text cards, no images");
   const box = await surface.locator(".design-tree__canvas").boundingBox();
   await tab.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   await tab.mouse.wheel(0, 320);
@@ -444,13 +518,91 @@ try {
   assert.ok(view.elements.some((element) => element.data?.role === "dot") && view.elements.some((element) => element.data?.role === "fork"), "far: dots and counts");
   assert.equal(view.elements.filter((element) => element.data?.role === "letter").length, 0, "far: no option cards");
   assert.ok(view.elements.some((element) => element.data?.role === "fork" && /5 options · 1 continued/.test(element.text ?? "")));
+  assert.deepEqual(await images(), [], "far: no images");
+  await shootLevel("far");
   await shoot(tab, "03-tree-far");
-  await tab.mouse.wheel(0, -760);
+  assert.deepEqual(previewReads, [], "nothing is read at the middle or far level");
+  // The hysteresis: back just over the far edge stays far, a little further is the middle level.
+  const zoomTo = (zoom) => tab.evaluate((value) => {
+    const api = window.__treeApi, state = api.getAppState();
+    const cx = state.width / (2 * state.zoom.value) - state.scrollX, cy = state.height / (2 * state.zoom.value) - state.scrollY;
+    api.updateScene({ appState: { zoom: { value }, scrollX: state.width / (2 * value) - cx, scrollY: state.height / (2 * value) - cy } });
+  }, zoom);
+  const settleFrames = () => tab.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  await zoomTo(0.5); await settleFrames();
+  assert.equal(await level(), "far", "50 % is still far after far");
+  await zoomTo(0.6);
+  await tab.waitForFunction(() => document.querySelector(".design-tree__canvas")?.dataset.level === "mid");
+  await zoomTo(1.25); await settleFrames();
+  assert.equal(await level(), "mid", "125 % is still the middle level coming from it");
+  assert.deepEqual(previewReads, [], "nothing is read below the close level");
+  // Close, centred on Massing B: the previewed cards in view get their images, and only they are read.
+  const centre = (id, zoom) => tab.evaluate(({ id: node, zoom: value }) => {
+    const api = window.__treeApi, state = api.getAppState();
+    const card = api.getSceneElements().find((element) => element.id === `${node}:card`);
+    api.updateScene({ appState: { zoom: { value }, scrollX: state.width / (2 * value) - (card.x + card.width / 2),
+      scrollY: (state.height + 36) / (2 * value) - (card.y + card.height / 2) } });
+  }, { id, zoom });
+  await centre("candidate:run-massing-b", 1.5);
   await tab.waitForFunction(() => document.querySelector(".design-tree__canvas")?.dataset.level === "close");
+  /** Every previewed card in view shows its image; an image read earlier may stay on a card the view has left. */
+  const expectImages = async () => {
+    const visible = await inView();
+    const wanted = visible.filter((id) => PREVIEWED.has(runOf(id))).sort();
+    await tab.waitForFunction((ids) => {
+      const drawn = new Set(window.__treeApi.getSceneElements().filter((element) => element.type === "image").map((element) => element.customData.tree.node));
+      return ids.every((id) => drawn.has(id));
+    }, wanted);
+    const drawn = (await images()).map((element) => element.data.node);
+    assert.ok(drawn.every((id) => PREVIEWED.has(runOf(id))), `images only where a preview was retained: ${drawn}`);
+    assert.equal(new Set(drawn).size, drawn.length, "one image per card");
+    return { visible, wanted, drawn };
+  };
+  let shown = await expectImages();
+  assert.ok(shown.wanted.includes("candidate:run-massing-b") && shown.wanted.length >= 2, `close: images on the cards in view: ${shown.wanted}`);
+  assert.deepEqual(shown.drawn.sort(), shown.wanted, "the first close view draws exactly its previewed cards");
+  const offScreen = [...PREVIEWED].filter((run) => !shown.visible.some((id) => runOf(id) === run));
+  assert.ok(offScreen.length > 0, "some previewed models are off screen");
+  assert.ok(previewReads.every((run) => shown.visible.some((id) => runOf(id) === run)), `only cards in view are read: ${previewReads}`);
+  assert.ok(offScreen.every((run) => !previewReads.includes(run) && !imageReads.includes(run)), "off-screen models are not read");
+  assert.ok(shown.visible.some((id) => id.startsWith("candidate:") && !PREVIEWED.has(runOf(id))), "a card in view has no preview");
   view = await scene();
-  assert.ok(view.elements.filter((element) => element.data?.role === "summary").length >= 3, "close: summaries");
+  assert.ok(view.elements.some((element) => element.data?.role === "summary"), "close: summaries on the cards without images");
   assert.ok(view.elements.some((element) => element.data?.role === "status"), "close: status");
+  assert.ok(await tab.evaluate(() => Object.keys(window.__treeApi.getFiles()).length > 0), "the images are the canvas's files");
+  await tab.waitForTimeout(500); // Excalidraw decodes a new file before it draws it.
+  await shootLevel("close");
   await shoot(tab, "04-tree-close");
+  // Along the trunk to Current: S2 and Current share one model, so one read gives both their image.
+  await centre("current", 1.5);
+  shown = await expectImages();
+  assert.ok(shown.wanted.includes("current"), `Current shows its model: ${shown.wanted}`);
+  await centre("candidate:run-massing-b", 1.5);
+  await expectImages();
+  await settleFrames();
+  const counts = (reads) => reads.reduce((all, run) => ({ ...all, [run]: (all[run] ?? 0) + 1 }), {});
+  assert.ok(Object.values(counts(previewReads)).every((count) => count === 1), `one read per preview: ${JSON.stringify(counts(previewReads))}`);
+  assert.ok(Object.values(counts(imageReads)).every((count) => count === 1), `one download per image: ${JSON.stringify(counts(imageReads))}`);
+  // A click on the image opens the card's inspector, as a click on its words does. (S1's, so no option counts as seen.)
+  const picture = (await images()).find((element) => element.data.node === S1);
+  const now = await scene();
+  await tab.mouse.click((picture.x + picture.width / 2 + now.scrollX) * now.zoom + now.offsetLeft, (picture.y + picture.height / 2 + now.scrollY) * now.zoom + now.offsetTop);
+  await surface.locator(`.design-tree-inspector[data-node="${S1}"]`).waitFor();
+  await tab.keyboard.press("Escape");
+  await surface.locator(".design-tree-inspector").waitFor({ state: "detached" });
+  // Out again: no images, and panning the middle level over previewed cards reads nothing more. (The inspector's own
+  // thumbnail may have read S1's preview; that read is its own, and it has finished.)
+  await tab.waitForTimeout(300);
+  const reads = previewReads.length;
+  await bar.getByRole("button", { name: "Fit", exact: true }).click();
+  await tab.waitForFunction(() => document.querySelector(".design-tree__canvas")?.dataset.level === "mid");
+  await tab.waitForFunction(() => !window.__treeApi.getSceneElements().some((element) => element.type === "image"));
+  await centre("candidate:run-facade-c", 1);
+  await settleFrames();
+  assert.equal(await level(), "mid");
+  assert.deepEqual(await images(), []);
+  assert.equal(previewReads.length, reads, "zoomed out, nothing more is read");
+  console.log(`design tree zoom levels: ${zoomShots} (far.png, mid.png, close.png)`);
   await bar.getByRole("button", { name: "Fit", exact: true }).click();
   await tab.waitForFunction(() => document.querySelector(".design-tree__canvas")?.dataset.level === "mid");
 
@@ -847,7 +999,7 @@ try {
   assert.deepEqual(unexpected, [], "the tree reads only what it declares");
   assert.deepEqual(external, [], "no external request");
   assert.deepEqual(errors.filter((message) => !/Failed to load resource: the server responded with a status of 404/.test(message)), []);
-  console.log(JSON.stringify({ passed: "chip → tree, trunk, twigs, planar, three zoom levels, inspector, review-open warning, View read-only, Continue re-roots via PUT /api/working-draft, its toast's Undo puts the previous Current back through the same PUT, Accept on Current only via POST accept with a toast and no Undo, a toast stays while hovered and then fades, no toast on refusal, the chip's viewing state continues from here, a rejected Current cannot be accepted, keyboard list, return to previous surface, zh copy, Hub rail entry and deep link",
+  console.log(JSON.stringify({ passed: "chip → tree, trunk, twigs, planar, three zoom levels with close-card previews read on demand, inspector, review-open warning, View read-only, Continue re-roots via PUT /api/working-draft, its toast's Undo puts the previous Current back through the same PUT, Accept on Current only via POST accept with a toast and no Undo, a toast stays while hovered and then fades, no toast on refusal, the chip's viewing state continues from here, a rejected Current cannot be accepted, keyboard list, return to previous surface, zh copy, Hub rail entry and deep link",
     writes: writes.map((row) => `${row.method} ${row.name}`) }));
 } catch (error) {
   console.error("FAILED:", error);
