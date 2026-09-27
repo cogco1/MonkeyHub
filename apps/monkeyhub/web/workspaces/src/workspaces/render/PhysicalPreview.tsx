@@ -10,6 +10,11 @@ export default function PhysicalPreview({ geometry, value, imageUrl, onCamera }:
   geometry: Geometry; value: PhysicalScene; imageUrl(ref: ImageRef): Promise<string>; onCamera(camera: Camera): void;
 }) {
   const host = useRef<HTMLDivElement>(null), changed = useRef(onCamera); changed.current = onCamera;
+  const cameraInput = useRef(value.camera); cameraInput.current = value.camera;
+  const applyCamera = useRef<((camera: Camera) => void) | null>(null);
+  // Camera edits use the live renderer. A cloned scene draft must not reload its
+  // meshes, lights and textures merely because the orbit target moved.
+  const sceneKey = JSON.stringify({ ...value, camera: undefined });
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     if (!host.current || geometry.source.geometryRevision !== value.geometryRevision) return;
@@ -55,16 +60,53 @@ export default function PhysicalPreview({ geometry, value, imageUrl, onCamera }:
       texture.updateMatrix();scene.background = texture;
     });
     if (value.environment.environmentMap) load(value.environment.environmentMap, texture => { texture.mapping = EquirectangularReflectionMapping;scene.environment = texture; });
-    const aspect = value.settings.width / value.settings.height, camera = value.camera.projection === "perspective"
+    const aspect = value.settings.width / value.settings.height; let camera = value.camera.projection === "perspective"
       ? new PerspectiveCamera(value.camera.fov, aspect, .001, 100000)
       : new OrthographicCamera(-value.camera.orthoScale*aspect/2, value.camera.orthoScale*aspect/2, value.camera.orthoScale/2, -value.camera.orthoScale/2, .001, 100000);
     camera.up.fromArray(value.camera.up);camera.position.fromArray(value.camera.position);camera.lookAt(new Vector3(...value.camera.target));
-    const controls = new OrbitControls(camera, renderer.domElement);controls.target.fromArray(value.camera.target);controls.update();
-    controls.addEventListener("end", () => { if (alive) changed.current({ ...value.camera, position: camera.position.toArray() as Camera["position"], target: controls.target.toArray() as Camera["target"], orthoScale: value.camera.orthoScale/camera.zoom }); });
+    let controls = new OrbitControls(camera, renderer.domElement);controls.target.fromArray(value.camera.target);controls.update();
+    let applying = false;
+    const updateCamera = (next: Camera) => {
+      applying = true;
+      try {
+        const orthographic = next.projection === "orthographic";
+        if (orthographic !== (camera instanceof OrthographicCamera)) {
+          camera = orthographic ? new OrthographicCamera() : new PerspectiveCamera();
+          controls.object = camera;
+        }
+        camera.near = .001; camera.far = 100000; camera.zoom = 1;
+        if (camera instanceof OrthographicCamera) {
+          camera.left = -next.orthoScale*aspect/2; camera.right = next.orthoScale*aspect/2;
+          camera.top = next.orthoScale/2; camera.bottom = -next.orthoScale/2;
+        } else { camera.aspect = aspect; camera.fov = next.fov; }
+        const upChanged = !camera.up.equals(new Vector3(...next.up));
+        camera.up.fromArray(next.up);
+        if (upChanged) {
+          controls.dispose(); controls = new OrbitControls(camera, renderer.domElement);
+          controls.addEventListener("change", publishCamera);
+        }
+        camera.position.fromArray(next.position);
+        controls.target.fromArray(next.target); camera.lookAt(controls.target);
+        camera.updateProjectionMatrix(); controls.update();
+      } finally { applying = false; }
+    };
+    applyCamera.current = updateCamera;
+    function publishCamera() {
+      if (!alive || applying) return;
+      const previous = cameraInput.current;
+      const next: Camera = { ...previous,
+        position: camera.position.toArray() as Camera["position"],
+        target: controls.target.toArray() as Camera["target"],
+        up: camera.up.toArray() as Camera["up"],
+        orthoScale: camera instanceof OrthographicCamera ? (camera.top-camera.bottom)/camera.zoom : previous.orthoScale };
+      if (JSON.stringify(next) !== JSON.stringify(previous)) changed.current(next);
+    }
+    controls.addEventListener("change", publishCamera);
     const resize = () => { const width = Math.max(120, container.clientWidth);renderer.setSize(width, width/aspect); };
     const observer = new ResizeObserver(resize);observer.observe(container);resize();
     renderer.setAnimationLoop(() => renderer.render(scene, camera));
-    return () => { alive = false; observer.disconnect();controls.dispose();renderer.setAnimationLoop(null);geometries.forEach(g => g.dispose());materials.forEach(m => m.dispose());textures.forEach(t => t.dispose());renderer.dispose();renderer.domElement.remove(); };
-  }, [geometry, value, imageUrl]);
+    return () => { alive = false; if (applyCamera.current === updateCamera) applyCamera.current = null; observer.disconnect();controls.dispose();renderer.setAnimationLoop(null);geometries.forEach(g => g.dispose());materials.forEach(m => m.dispose());textures.forEach(t => t.dispose());renderer.dispose();renderer.domElement.remove(); };
+  }, [geometry, sceneKey, imageUrl]);
+  useEffect(() => { applyCamera.current?.(value.camera); }, [value.camera, geometry, sceneKey]);
   return <div className="physical-preview"><div ref={host} />{error && <p role="alert">{error}</p>}</div>;
 }

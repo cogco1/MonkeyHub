@@ -1,0 +1,34 @@
+Failed to load resource: the server responded with a status of 404 (Not Found)
+FAIL Physical real geometry, camera gestures, reload and late scene reads preserve edits without AI replay; C:\Users\jiayu\AppData\Local\Temp\monkeyhub-render-browser-4N2qKV
+[]
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+
+AssertionError [ERR_ASSERTION]: camera publishes before pointer release: [{"label":"Camera position X","value":"27"},{"label":"Camera position Y","value":"-26"},{"label":"Camera position Z","value":"6.3999999999999995"},{"label":"Camera target X","value":"4.5"},{"label":"Camera target Y","value":"1"},{"label":"Camera target Z","value":"1"},{"label":"FOV","value":"35"},{"label":"Orthographic height","value":"11.700000000000001"}]
+warning: The `fitz` API is deprecated and will be removed in future. Use `import pymupdf` instead.
+
+
+warning: The `fitz` API is deprecated and will be removed in future. Use `import pymupdf` instead.
+
+
+warning: The `fitz` API is deprecated and will be removed in future. Use `import pymupdf` instead.
+
+
+warning: The `fitz` API is deprecated and will be removed in future. Use `import pymupdf` instead.
+
+
+    at until (file:///C:/Users/jiayu/OneDrive/%E6%96%87%E6%A1%A3/ChatGPT/Blender%20skill/projection-development/workspace/worktrees/codex-319-shared-camera/apps/monkeyhub/web/workspaces/test/renderWorkspace.browser.mjs:29:10)
+    at async drag (file:///C:/Users/jiayu/OneDrive/%E6%96%87%E6%A1%A3/ChatGPT/Blender%20skill/projection-development/workspace/worktrees/codex-319-shared-camera/apps/monkeyhub/web/workspaces/test/renderWorkspace.browser.mjs:699:7)
+    at async file:///C:/Users/jiayu/OneDrive/%E6%96%87%E6%A1%A3/ChatGPT/Blender%20skill/projection-development/workspace/worktrees/codex-319-shared-camera/apps/monkeyhub/web/workspaces/test/renderWorkspace.browser.mjs:704:5
+    at async step (file:///C:/Users/jiayu/OneDrive/%E6%96%87%E6%A1%A3/ChatGPT/Blender%20skill/projection-development/workspace/worktrees/codex-319-shared-camera/apps/monkeyhub/web/workspaces/test/renderWorkspace.browser.mjs:190:19)
+    at async file:///C:/Users/jiayu/OneDrive/%E6%96%87%E6%A1%A3/ChatGPT/Blender%20skill/projection-development/workspace/worktrees/codex-319-shared-camera/apps/monkeyhub/web/workspaces/test/renderWorkspace.browser.mjs:670:3 {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: undefined,
+  expected: undefined,
+  operator: 'fail',
+  diff: 'simple'
+}
+
+Node.js v24.21.0

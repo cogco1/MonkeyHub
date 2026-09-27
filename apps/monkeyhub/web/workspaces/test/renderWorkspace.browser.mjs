@@ -186,6 +186,7 @@ async function step(name, action) {
   if (process.argv.includes("--capture-only") && !name.startsWith("perspective and orthographic")) return;
   if (process.argv.includes("--regions-only") && !name.startsWith("Physical real geometry") && !name.startsWith("model-driven region")) return;
   if (process.argv.includes("--working-only") && !name.startsWith("Physical follows real OCCT")) return;
+  if (process.argv.includes("--physical-only") && !name.startsWith("Physical real geometry")) return;
   current = name; await action(); passed.push(name); console.log(`PASS ${name}`);
 }
 const fixture = `
@@ -689,11 +690,16 @@ try {
     const canvas = panel.locator('canvas');
     await canvas.scrollIntoViewIfNeeded();
     const rect = await canvas.boundingBox();
+    await canvas.evaluate(el=>el.dataset.continuity='original');
     async function drag(button, dx, dy) {
       await physicalPage.mouse.move(rect.x + rect.width/2, rect.y + rect.height/2);
+      const atStart = await camera();
       await physicalPage.mouse.down({button});
       await physicalPage.mouse.move(rect.x + rect.width/2 + dx, rect.y + rect.height/2 + dy, {steps: 8});
+      await until(camera, value=>JSON.stringify(value)!==JSON.stringify(atStart), 'camera publishes before pointer release');
+      assert.equal(await canvas.getAttribute('data-continuity'),'original','gesture retains WebGL canvas');
       await physicalPage.mouse.up({button});
+      assert.equal(await canvas.getAttribute('data-continuity'),'original','gesture end retains WebGL canvas');
     }
     await drag('left', 70, 25); const orbit = await camera(); assert.notDeepEqual(orbit, before, 'orbit updates camera');
     await drag('right', 35, 20); const pan = await camera(); assert.notDeepEqual(pan, orbit, 'pan updates target/position');
@@ -702,6 +708,7 @@ try {
     await panel.getByRole('combobox', {name: 'Projection', exact: true}).selectOption('orthographic');
     await panel.getByRole('spinbutton', {name: 'Orthographic height', exact: true}).fill('8');
     await panel.getByRole('spinbutton', {name: 'Camera target X', exact: true}).fill('0.25');
+    assert.equal(await canvas.getAttribute('data-continuity'),'original','projection and numeric camera edits retain WebGL canvas');
     const savedCamera = await camera();
     await panel.getByRole('button', {name: 'Save scene', exact: true}).click();
     await until(() => api('project-b', '/api/render/scene'), s => s.scene?.camera.target[0] === .25 && s.status === 'current', 'physical saved');
@@ -739,6 +746,21 @@ try {
       await regionPage.getByRole('button', {name:'Physical', exact:true}).click();
       await until(() => panel().getByRole('button', {name:'Reload saved scene', exact:true}).isEnabled(), Boolean, 'scene loaded');
     };
+    async function checkLiveCamera(label) {
+      const canvas=panel().locator('canvas');await canvas.scrollIntoViewIfNeeded();
+      await canvas.evaluate(el=>el.dataset.continuity='retained');
+      const values=()=>panel().locator('input[type="number"]').evaluateAll(es=>es.map(e=>e.value));
+      const before=await values(),box=await canvas.boundingBox();
+      await regionPage.mouse.move(box.x+box.width/2,box.y+box.height/2);
+      await regionPage.mouse.down();
+      await regionPage.mouse.move(box.x+box.width/2+60,box.y+box.height/2+25,{steps:8});
+      await until(values,x=>JSON.stringify(x)!==JSON.stringify(before),label+' camera updates while held');
+      assert.equal(await canvas.getAttribute('data-continuity'),'retained',label+' keeps renderer during drag');
+      await regionPage.mouse.up();
+      assert.equal(await canvas.getAttribute('data-continuity'),'retained',label+' keeps renderer after drag');
+      await panel().getByRole('button',{name:'Reload saved scene',exact:true}).click();
+      await until(()=>panel().getByRole('button',{name:'Reload saved scene',exact:true}).isEnabled(),Boolean,label+' restored');
+    }
     const sourceBytes = process.env.PENGUIN_TEST_GLB ? await readFile(process.env.PENGUIN_TEST_GLB)
       : Buffer.from(await (await fetch(origins['project-a']+'/fixture/plan-model')).arrayBuffer());
     await select('project-a');
@@ -753,6 +775,7 @@ try {
     await panel().getByRole('button',{name:'Reload saved scene',exact:true}).click();
     await until(()=>panel().locator('[data-region-id]').count(),n=>n===7,'retained sample restored');
     assert.equal(await panel().getByRole('button',{name:/Penguin|企鹅/}).count(),0);
+    await checkLiveCamera('Penguin/retained sample');
     const geometryA = await api('project-a','/api/render/geometry');
     await regionPage.screenshot({path:path.join(temporary,'regions-retained-sample.png'),fullPage:true});
     await select('project-b');
@@ -791,6 +814,7 @@ try {
     assert.equal(await panel().locator('[data-region-id]').count(),3);
     await panel().getByRole('button',{name:'Save scene',exact:true}).click();
     const savedB=await until(()=>api('project-b','/api/render/scene'),s=>s.scene.regions.length===3 && s.scene.regions[2].name==='External wall','architecture saved');
+    await checkLiveCamera('Architectural facade');
     assert.deepEqual(savedB.scene.regions.map(r=>r.mesh),[0,1,2]);
     assert.notEqual(savedB.sceneRevision,beforeB.sceneRevision);
     assert.equal(savedB.scene.geometryRevision,geometryB.source.geometryRevision);
