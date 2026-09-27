@@ -860,3 +860,5 @@ try {
   await new Promise((resolve) => http.close(resolve));
   await rm(cacheDir, { recursive: true, force: true });
 }
+// #364: Modeling's opening, and a model opened again without its bytes or a second rhino3dm, run in this CI step.
+if (!serveOnly && !process.exitCode) await import("./modelingOpen.browser.mjs");

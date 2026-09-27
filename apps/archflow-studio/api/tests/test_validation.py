@@ -220,10 +220,10 @@ class ValidationReceiptTests(ValidationTestCase):
         self.assertIn("does not declare authoritative_record_refs", validation["canonicalFacts"])
         self.assertIn(f"Candidate {accepted['candidateId']}", validation["canonicalFacts"])
         self.assertIn("declares 0 obligation(s)", validation["canonicalFacts"])
-        self.assertIn("P110", validation["canonicalFacts"])
+        self.assertIn("project conditions remain unchecked", validation["canonicalFacts"])
         self.assertEqual(validation["effectiveChecks"], ["artifact-present"])
         self.assertEqual(validation["validatorNote"], VALIDATOR_NOTE)
-        self.assertIn("P110", validation["validatorNote"])
+        self.assertIn("Project conditions remain unchecked", validation["validatorNote"])
         # Two of the three validators had nothing to check, and the wire does
         # not let a client read all three as evidence.
         self.assertNotEqual(
@@ -1246,8 +1246,8 @@ class VillaValidationTests(unittest.TestCase):
         self.assertEqual(validation["blockedBy"], [])
         # Both of the villa's seats compiled a program the studio could name.
         self.assertEqual(validation["honesty"], [])
-        self.assertIn("P110", validation["canonicalFacts"])
-        self.assertIn("P110", validation["validatorNote"])
+        self.assertIn("project conditions remain unchecked", validation["canonicalFacts"])
+        self.assertIn("Project conditions remain unchecked", validation["validatorNote"])
 
 
 if __name__ == "__main__":
