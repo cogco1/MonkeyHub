@@ -168,7 +168,8 @@
         "apps/archflow-studio/api/archflow_studio_api/application/binding.py",
         "apps/archflow-studio/api/archflow_studio_api/transport/conditional.py",
         "apps/monkeyhub/api/monkeyhub_api/runtime.py",
-        "apps/monkeyhub/api/tests/test_project_runtime.py"
+        "apps/monkeyhub/api/tests/test_project_runtime.py",
+        "apps/archflow-studio/api/archflow_studio_api/main.py"
       ],
       "card": "docs/mapping/planning/GH-363-fingerprint-watch.md",
       "acceptance": [
@@ -199,7 +200,8 @@
             "apps/archflow-studio/api/archflow_studio_api/application/binding.py",
             "apps/archflow-studio/api/archflow_studio_api/transport/conditional.py",
             "apps/monkeyhub/api/monkeyhub_api/runtime.py",
-            "apps/monkeyhub/api/tests/test_project_runtime.py"
+            "apps/monkeyhub/api/tests/test_project_runtime.py",
+            "apps/archflow-studio/api/archflow_studio_api/main.py"
           ],
           "depends_on": [],
           "status": "active",
