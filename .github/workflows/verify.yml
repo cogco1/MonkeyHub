@@ -243,3 +243,78 @@ jobs:
       - name: Typecheck and build
         working-directory: apps/monkeyhub/web
         run: npm run build
+
+  # ADR-008 acceptance without the owner's machine (GH-376): the base and this
+  # head read one invented project, before and after one review write, and must
+  # answer byte for byte alike.
+  projection:
+    name: Projection check (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    env:
+      PYTHONUTF8: "1"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            pyproject.toml
+            apps/archflow-studio/api/requirements.txt
+
+      # A pull request is compared with where it left its base branch; a push
+      # to main with the main it replaced.
+      - name: Check out the base
+        shell: bash
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            base="$(git merge-base HEAD "origin/$BASE_REF")"
+          else
+            base="$(git rev-parse HEAD^1)"
+          fi
+          echo "Base $base, candidate $(git rev-parse HEAD)"
+          git worktree add "$RUNNER_TEMP/base" "$base"
+
+      - name: Install API and test dependencies
+        run: python -m pip install -e ".[cad-inspection]" -r apps/archflow-studio/api/requirements.txt -r apps/monkeyhub/api/requirements.txt httpx2
+
+      - name: Generate the synthetic project
+        shell: bash
+        working-directory: apps/archflow-studio/api
+        run: >-
+          python -c "import os, pathlib;
+          from tests.synthetic_project import build_synthetic_project;
+          print(build_synthetic_project(pathlib.Path(os.environ['RUNNER_TEMP']) / 'projects'))"
+
+      - name: Projection parity, conditional reads and timings
+        shell: bash
+        run: >-
+          python tools/projection_check.py
+          --base "$RUNNER_TEMP/base"
+          --candidate "$GITHUB_WORKSPACE"
+          --project "$RUNNER_TEMP/projects/synthetic-bench"
+          --out "$RUNNER_TEMP/projection/result.json"
+          --summary "$RUNNER_TEMP/projection/summary.md"
+          --work "$RUNNER_TEMP/projection/work"
+
+      - name: Projection summary
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: |
+          if [ -f "$RUNNER_TEMP/projection/summary.md" ]; then
+            cat "$RUNNER_TEMP/projection/summary.md" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "The projection check wrote no summary; see the step log." >> "$GITHUB_STEP_SUMMARY"
+          fi
