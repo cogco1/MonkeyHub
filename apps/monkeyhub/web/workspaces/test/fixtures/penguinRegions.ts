@@ -18,4 +18,3 @@ export function penguinSuggestions(scene: PhysicalScene): Pick<PhysicalScene, "m
     region("pupil-left", "pupil", "ellipsoid", [-.136, -.016, .890], [.024, .017, .019]),
   ] };
 }
-
