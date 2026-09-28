@@ -22,8 +22,8 @@ step continuing from the candidate the previous one produced:
 7. ``uncut`` on the wall-realised ``mass`` shows ``block`` again, gives the
    niche's volume back, and makes ``block`` something the domain asks about.
 
-Every volume is measured by OCCT on the exact STEP the candidate delivered;
-visibility is read from its 3dm preview.
+Every volume and visibility is read by OCCT from the exact STEP the candidate
+delivered; the 3dm preview shows the same objects.
 """
 
 from __future__ import annotations
@@ -126,8 +126,8 @@ class ConstructionFirstAuthoringTestCase(HostedOpeningTestCase):
         return response.json()
 
     def delivered(self, run: str) -> tuple[dict[str, float | None], dict[str, bool]]:
-        """What a candidate delivered, read back from its own artifacts: each named solid's volume as OCCT
-        measures it in the exact STEP, and whether the 3dm preview shows each object."""
+        """What a candidate delivered, read back from its own artifacts: each named shape's volume as OCCT
+        measures it in the exact STEP, and whether the STEP shows it, which the 3dm preview must say too."""
 
         candidate = self.client.get(f"/api/candidates/{run}")
         self.assertEqual(candidate.status_code, 200, candidate.text)
@@ -136,9 +136,11 @@ class ConstructionFirstAuthoringTestCase(HostedOpeningTestCase):
         step, preview = (next(artifact for artifact in artifacts if artifact["format"] == kind) for kind in ("step", "3dm"))
         path = self.root / f"{run}.step"
         path.write_bytes(self.artifact_bytes(step))
-        volumes = {entry.name: occt_backend.measure_shape(entry.shape).volume
-                   for entry in occt_backend.read_step(path, length_unit=step["lengthUnit"])}
-        visible = {row["name"]: row["visible"] for row in inspect_three_dm_index(self.artifact_bytes(preview))["objects"]}
+        entries = occt_backend.read_step(path, length_unit=step["lengthUnit"])
+        volumes = {entry.name: occt_backend.measure_shape(entry.shape).volume for entry in entries}
+        visible = {entry.name: entry.visible for entry in entries}
+        shown = {row["name"]: row["visible"] for row in inspect_three_dm_index(self.artifact_bytes(preview))["objects"]}
+        self.assertEqual(shown, visible, "the preview shows what the exact STEP shows")
         return volumes, visible
 
     def artifact_bytes(self, artifact: dict) -> bytes:
@@ -203,7 +205,7 @@ class ConstructionFirstAuthoringTestCase(HostedOpeningTestCase):
         self.assertEqual(self.objects(run), {"obj-mass-body", "obj-block-body"})
         volumes, visible = self.delivered(run)
         self.assert_volume(volumes["obj-mass-body"], MASS_VOLUME - NICHE_VOLUME)
-        # The cutter keeps its object, kept in the model for inspection and hidden.
+        # The cutter keeps its object, kept for inspection and invisible: the STEP read alone shows the niche open.
         self.assertEqual(visible, {"obj-mass-body": True, "obj-block-body": False})
         rows = self.entities(run)
         self.assertEqual({identifier: (row["cuts"], row["cutBy"], row["hidden"]) for identifier, row in rows.items()},
@@ -266,8 +268,8 @@ class ConstructionFirstAuthoringTestCase(HostedOpeningTestCase):
         self.assertLessEqual(before, after)
         self.assertEqual(after - before, {name for name in after if "opening-1" in name})
         volumes, visible = self.delivered(run)
-        # Both the niche and the door's hole are cut from the same solid; what made them, the cutter and the
-        # hole's witness, stays hidden, and the door stands in its hole.
+        # Both the niche and the door's hole are cut from the same solid. What made them, the cutter and the
+        # hole's witness, is invisible, so the STEP read alone shows both open, with the door in its hole.
         self.assert_volume(volumes["obj-mass-body"], MASS_VOLUME - NICHE_VOLUME - DOOR_HOLE)
         self.assertEqual(visible, {"obj-mass-body": True, "obj-block-body": False, APERTURE: False,
                                    **dict.fromkeys(FRAME_AND_LEAF, True)})

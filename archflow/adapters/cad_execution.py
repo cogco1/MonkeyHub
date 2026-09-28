@@ -3523,6 +3523,8 @@ def execute_occt_export(
             shape=build.objects[object_id].shape,
             layer=semantics["objects"][object_id]["layer"],
             color=layer_colors.get(semantics["objects"][object_id]["layer"]),
+            # A hidden inspection witness is invisible in the exact STEP as in the preview.
+            visible=not build.objects[object_id].hidden,
         )
         for object_id in physical
     )

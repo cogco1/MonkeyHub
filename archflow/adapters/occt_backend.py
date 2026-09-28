@@ -1147,23 +1147,33 @@ def classify_program_point(shape, program_xyz: Sequence[float]) -> str:
 
 @dataclass(frozen=True)
 class StepObject:
-    """One named solid or surface to write: identity, layer and display colour."""
+    """One named solid or surface to write: identity, layer, display colour and visibility.
+
+    An object that is not ``visible`` (a cutter kept for inspection, an
+    aperture witness) is written with the STEP's own invisibility, so a
+    reader that opens only the STEP does not show it.
+    """
 
     object_id: str
     shape: Any
     layer: str
     color: tuple[int, int, int] | None = None
+    visible: bool = True
 
 
 @dataclass(frozen=True)
 class StepEntry:
-    """One named source shape; native mesh approximations are explicitly marked."""
+    """One named source shape; native mesh approximations are explicitly marked.
+
+    ``visible`` is false only where the file marks the shape invisible.
+    """
 
     name: str | None
     layers: tuple[str, ...]
     color: tuple[int, int, int] | None
     shape: Any
     geometry_quality: str = "exact"
+    visible: bool = True
 
 
 def _native_wire(occ, curve, object_id):
@@ -1529,8 +1539,9 @@ def write_step(path: Path, objects: Sequence[StepObject], *, length_unit: str) -
     """Write the objects as named, layered, coloured B-rep shapes in the program's unit.
 
     The name is the object id; the layer is the semantic layer path; the
-    colour is the layer colour.  ``archflow:*`` user text has no STEP home
-    and travels in the preview and the receipt instead.
+    colour is the layer colour.  An object that is not visible is written
+    with an INVISIBILITY of its styled items.  ``archflow:*`` user text has
+    no STEP home and travels in the preview and the receipt instead.
     """
 
     occ = _occt()
@@ -1559,6 +1570,8 @@ def write_step(path: Path, objects: Sequence[StepObject], *, length_unit: str) -
                     occ.Quantity.Quantity_Color(red, green, blue, occ.Quantity.Quantity_TOC_RGB),
                     occ.XCAFDoc.XCAFDoc_ColorSurf,
                 )
+            if not item.visible:
+                color_tool.SetVisibility(label, False)
         writer = occ.STEPCAFControl.STEPCAFControl_Writer()
         writer.SetNameMode(True)
         writer.SetLayerMode(True)
@@ -1570,7 +1583,7 @@ def write_step(path: Path, objects: Sequence[StepObject], *, length_unit: str) -
 
 
 def read_step(path: Path, *, length_unit: str) -> tuple[StepEntry, ...]:
-    """Cold-read a STEP file with a fresh reader: names, layers, colours, shapes.
+    """Cold-read a STEP file with a fresh reader: names, layers, colours, visibility, shapes.
 
     Independent of any in-memory shape: the reader sees only the bytes on
     disk, interpreted in the program's unit.
@@ -1603,12 +1616,13 @@ def read_step(path: Path, *, length_unit: str) -> tuple[StepEntry, ...]:
         shape = shape_tool.GetShape_s(label)
         layers = _layers_of(occ, layer_tool, label)
         rgb = _color_of(occ, color_tool, shape)
+        visible = bool(occ.XCAFDoc.XCAFDoc_ColorTool.IsVisible_s(label))
         if shape.ShapeType() in (occ.TopAbs.TopAbs_COMPOUND, occ.TopAbs.TopAbs_SHELL):
             # A compound (an array's copies) is written as one named shape,
-            # but the reader files its layer and colour on each solid, not
-            # on the compound's label.  The entry reports them only when
-            # every solid agrees; a mixed compound stays unlayered and is
-            # refused by the readback verification.
+            # but the reader files its layer, colour and invisibility on each
+            # solid, not on the compound's label.  The entry reports them only
+            # when every solid agrees; a mixed compound stays unlayered (the
+            # readback verification refuses it) and visible.
             # A bounded planar face is cold-read as a shell with attributes
             # on its face. Read that actual metadata, retaining the same
             # all-members-agree requirement as the solid array path.
@@ -1621,8 +1635,12 @@ def read_step(path: Path, *, length_unit: str) -> tuple[StepEntry, ...]:
                 per_member_color = {_color_of(occ, color_tool, member) for member in members}
                 if len(per_member_color) == 1:
                     rgb = per_member_color.pop()
+            if visible and members:
+                per_member_visible = {_visible_of(occ, shape_tool, member) for member in members}
+                if len(per_member_visible) == 1:
+                    visible = per_member_visible.pop()
         entries.append(
-            StepEntry(name=_label_name(occ, label), layers=layers, color=rgb, shape=shape)
+            StepEntry(name=_label_name(occ, label), layers=layers, color=rgb, shape=shape, visible=visible)
         )
     return tuple(entries)
 
@@ -1646,6 +1664,15 @@ def _color_of(occ: SimpleNamespace, color_tool, shape) -> tuple[int, int, int] |
         int(round(channel * 255.0))
         for channel in (color.Red(), color.Green(), color.Blue())
     )
+
+
+def _visible_of(occ: SimpleNamespace, shape_tool, shape) -> bool:
+    """Whether the label a shape is filed under is visible, found the way the colour tool finds a shape's colour."""
+
+    label = occ.TDF.TDF_Label()
+    if not shape_tool.Search(shape, label):
+        return True
+    return bool(occ.XCAFDoc.XCAFDoc_ColorTool.IsVisible_s(label))
 
 
 def _label_name(occ: SimpleNamespace, label) -> str | None:

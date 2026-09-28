@@ -1121,6 +1121,8 @@ class WallOpeningBooleanTests(unittest.TestCase):
                 receipt.expected_semantics["objects"]["obj-wall-south-aperture-window-south"]["user_text"]["archflow:inspection_witness"],
                 "hidden",
             )
+            # and so does the exact STEP: read alone, it shows the opening open
+            self.assertEqual({name: entry.visible for name, entry in entries.items()}, visibility)
 
 
 FRAME_ID = "obj-frame-wall-south-window-south"
@@ -2356,6 +2358,59 @@ class StepUnitInterleavingTests(unittest.TestCase):
         (meter_entry,) = outcomes["intruder"]
         _assert_bbox(self, occt_backend.measure_shape(meter_entry.shape), (0.0, 0.0, 0.0), METER_BOX, places=9)
         self._assert_inch_file()
+
+
+@NEEDS_OCCT
+class StepVisibilityTests(unittest.TestCase):
+    """#419: what the model keeps hidden (a cutter, an aperture witness) is invisible in the STEP as well.
+
+    Someone who opens only the STEP sees a niche or a door hole open, not
+    filled by the solid that made it; the shape itself is written and read
+    back whole.
+    """
+
+    def setUp(self) -> None:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.path = Path(tmp.name).resolve() / "visibility.step"
+
+    @staticmethod
+    def _box(x: float):
+        occ = occt_backend._occt()
+        return occ.BRepPrimAPI.BRepPrimAPI_MakeBox(occ.gp.gp_Pnt(x, 0.0, 0.0), occ.gp.gp_Pnt(x + 1.0, 2.0, 3.0)).Shape()
+
+    def _invisibilities(self) -> int:
+        return len(re.findall(r"= INVISIBILITY\(", self.path.read_text(encoding="latin-1")))
+
+    def test_a_hidden_object_is_written_invisible_and_reads_back_so_with_its_shape(self) -> None:
+        occt_backend.write_step(self.path, (
+            occt_backend.StepObject("mass", self._box(0.0), "archflow::mass", (10, 20, 30)),
+            occt_backend.StepObject("cutter", self._box(2.0), "archflow::cutter", (40, 50, 60), visible=False),
+        ), length_unit="meter")
+        self.assertEqual(self._invisibilities(), 1)
+        entries = _entries_by_name(self.path)
+        self.assertEqual({name: entry.visible for name, entry in entries.items()}, {"mass": True, "cutter": False})
+        cutter = entries["cutter"]
+        self.assertEqual((cutter.layers, cutter.color), (("archflow::cutter",), (40, 50, 60)))
+        measure = occt_backend.measure_shape(cutter.shape)
+        self.assertEqual((measure.valid, measure.solid_count, measure.closed), (True, 1, True))
+        self.assertAlmostEqual(measure.volume, 6.0, places=9)
+        _assert_bbox(self, measure, (2.0, 0.0, 0.0), (3.0, 2.0, 3.0), places=9)
+
+    def test_a_hidden_compound_reads_back_invisible_from_its_members(self) -> None:
+        occ = occt_backend._occt()
+        builder, compound = occ.BRep.BRep_Builder(), occ.TopoDS.TopoDS_Compound()
+        builder.MakeCompound(compound)
+        for x in (0.0, 2.0):
+            builder.Add(compound, self._box(x))
+        occt_backend.write_step(self.path, (occt_backend.StepObject("copies", compound, "archflow::copies",
+                                                                    visible=False),), length_unit="meter")
+        self.assertEqual(self._invisibilities(), 1)
+        (entry,) = occt_backend.read_step(self.path, length_unit="meter")
+        self.assertEqual((entry.name, entry.visible, entry.layers), ("copies", False, ("archflow::copies",)))
+        measure = occt_backend.measure_shape(entry.shape)
+        self.assertEqual((measure.valid, measure.solid_count), (True, 2))
+        self.assertAlmostEqual(measure.volume, 12.0, places=9)
 
 
 @NEEDS_OCCT
