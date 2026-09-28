@@ -31,7 +31,7 @@ from archflow_studio_api.settings import StudioSettings
 root, project, port=Path(sys.argv[1]),sys.argv[2],int(sys.argv[3])
 fresh=not (root/project/'project.json').exists()
 repository=FilesystemProjectRepository.initialize(root/project,project_id=project,initial_state={'project_id':project,'version':0}) if fresh else FilesystemProjectRepository.open(root/project)
-app=create_app(StudioSettings(project_dir=root/project,cad_export='off'))
+app=create_app(StudioSettings(project_dir=root/project,cad_export='off',cache_dir=root/('cache-'+project)))
 image=Image.new('RGB',(1000,600),'white');draw=ImageDraw.Draw(image)
 draw.rectangle((80,100,920,490),outline='#384150',width=5)
 for x in (340,660):draw.line((x,100,x,490),fill='#384150',width=4)
@@ -39,7 +39,7 @@ draw.rectangle((110,130,240,220),outline='#777777',width=2)
 draw.text((90,50),'SYNTHETIC PLAN / '+project,fill='black')
 out=BytesIO();image.save(out,format='PNG')
 if fresh:
- with TestClient(app) as client:
+ with TestClient(create_app(StudioSettings(project_dir=root/project,cad_export='off'))) as client:
   document=client.post('/api/documents',json={'projectId':project,'fileName':'Room plan.png','mimeType':'image/png','contentBase64':base64.b64encode(out.getvalue()).decode()}).json()
   print(document,flush=True)
   draw.rectangle((440,280,600,400),fill='#e2b676')
