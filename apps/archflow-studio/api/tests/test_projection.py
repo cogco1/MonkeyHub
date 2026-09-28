@@ -917,7 +917,11 @@ class BoundElementTests(unittest.TestCase):
         payload = _bound_payload()
         base = next(item for item in payload["entities"] if item["entity_id"] == "portico-base")
         base["fields"]["params"]["elevation"] = 0.5
-        client, state = self._project(payload)
+        client, default = self._project(payload)
+        # Agents read state constantly: the default answer carries no authored copies (#404 review).
+        self.assertTrue(all("params" not in row and "references" not in row for row in default["elements"]))
+        state = client.get("/api/state", params={"authored": "true"}).json()
+        self.assertEqual({**state, "elements": None}, {**default, "elements": None}, "only the rows gain fields")
         elements = {item["elementId"]: item for item in state["elements"]}
         cornice, base_row = elements["portico-cornice"], elements["portico-base"]
         self.assertEqual(cornice["numericFields"]["height"], 2.4)

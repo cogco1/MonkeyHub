@@ -48,6 +48,13 @@ def read_state(
             "The run must exist in the bound project."
         ),
     ),
+    authored: bool = Query(
+        default=False,
+        description=(
+            "Also answer each element's authored params and references, the objects "
+            "a semanticEdit replaces whole. Read them this way before editing an element."
+        ),
+    ),
 ) -> StateProjectionDto:
     """Ask the kernel; shape the answer. No design question is decided here.
 
@@ -63,7 +70,7 @@ def read_state(
     # The catalog stands on the bound view; a record the kernel refused to
     # view has no tree to catalogue, and the honesty line already says so.
     catalog = None if projection.state is None else catalog_of(binding, projection)
-    return to_dto(projection, catalog)
+    return to_dto(projection, catalog, authored=authored)
 
 
 @router.get(

@@ -138,14 +138,15 @@ class ElementDto(BaseModel):
         "Read-only: the lowest and highest world +Y in metres, by the producer's own datum and height rules, "
         "for prism, planar-surface, curve, wall and loft; null for other producers or unreadable inputs."))
     # What a semantic edit replaces (#404 F4): copying the resolved values
-    # above wrote bindings as numbers and counted the elevation twice.
-    params: dict[str, Any] = Field(default_factory=dict, description=(
-        "fields.params exactly as authored: '@key' bindings kept, positions relative to the base reference. "
-        "A semanticEdit that supplies params replaces this whole object: start from this one and change "
-        "only what you mean to, never from numericFields or drawnShape."))
-    references: dict[str, Any] = Field(default_factory=dict, description=(
-        "fields.references exactly as authored (base, top, line, ...); a supplied references object "
-        "replaces this whole object too."))
+    # above wrote bindings as numbers and counted the elevation twice. Only
+    # ``?authored=true`` answers them, so the default read stays as small as it was.
+    params: dict[str, Any] | None = Field(default=None, exclude_if=lambda value: value is None, description=(
+        "Only with ?authored=true: fields.params exactly as authored, '@key' bindings kept, positions "
+        "relative to the base reference. A semanticEdit that supplies params replaces this whole object: "
+        "start from this one and change only what you mean to, never from numericFields or drawnShape."))
+    references: dict[str, Any] | None = Field(default=None, exclude_if=lambda value: value is None, description=(
+        "Only with ?authored=true: fields.references exactly as authored (base, top, line, ...); a supplied "
+        "references object replaces this whole object too."))
 
 
 class ParameterDto(BaseModel):
@@ -433,13 +434,16 @@ def _drawn_shapes(projection: StateProjection) -> dict[str, tuple[
     return shapes
 
 
-def to_dto(projection: StateProjection, catalog: Catalog | None = None) -> StateProjectionDto:
-    """Shape one projection for the wire; every value is already the kernel's."""
+def to_dto(projection: StateProjection, catalog: Catalog | None = None, *, authored: bool = False) -> StateProjectionDto:
+    """Shape one projection for the wire; every value is already the kernel's.
+
+    ``authored`` adds each element's authored params and references (#404 F4).
+    """
 
     record = projection.record
     authored_components = {entity.entity_id: entity for entity in record.entities_of("Component@1")}
     drawn_shapes = _drawn_shapes(projection)
-    authored = {entity.entity_id: entity.fields for entity in record.entities_of("Element@1")}
+    fields = {entity.entity_id: entity.fields for entity in record.entities_of("Element@1")}
     return StateProjectionDto(
         project_id=projection.project_id,
         published=project_version_dto(projection.head),
@@ -499,8 +503,8 @@ def to_dto(projection: StateProjection, catalog: Catalog | None = None) -> State
                 drawn_shape_reason=drawn_shapes[element.element_id][1],
                 elevation=drawn_shapes[element.element_id][2],
                 vertical_extent=drawn_shapes[element.element_id][3],
-                params=dict(authored[element.element_id].get("params") or {}),
-                references=dict(authored[element.element_id].get("references") or {}),
+                params=dict(fields[element.element_id].get("params") or {}) if authored else None,
+                references=dict(fields[element.element_id].get("references") or {}) if authored else None,
             )
             for element in projection.elements
         ],
