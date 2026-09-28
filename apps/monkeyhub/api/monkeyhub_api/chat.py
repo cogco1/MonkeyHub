@@ -3317,29 +3317,37 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
                 task = document["components"]["schemas"]["AdmissionTaskDto"]["properties"]
                 task["kind"] = {**task["kind"], "enum": ["hub-chat"]}
         producer = arguments.get("producer")
+        if producer is not None and (method != "POST" or parsed.path != "/api/proposals" or not isinstance(producer, str)):
+            raise HubFailure(422, "CHAT_TOOL_INVALID", "producer selects the input schema of POST /api/proposals.")
+        entity = document.get("components", {}).get("schemas", {}).get("SemanticEditRequestDto", {}).get("properties", {}).get("entities", {}).get("items", {})
+        offered: dict[str, str] = {}
+        for variant in entity.get("anyOf", []):
+            for item in variant.get("properties", {}).get("fields", {}).get("anyOf", ()):
+                for offer in item.get("properties", {}).get("producer", {}).get("enum", []):
+                    # One line of the producer's own description, in contract order.
+                    offered.setdefault(offer, str(item.get("description", "")).split(". ")[0].rstrip("."))
+        if method == "POST" and parsed.path == "/api/proposals" and producer is None and offered:
+            # The union of every producer's contract is far larger than one tool
+            # answer; this question is which producer to ask about.
+            return {"path": template, "method": method,
+                    "producers": [{"producer": offer, "summary": summary} for offer, summary in offered.items()],
+                    "next": "Ask again with producer set to one of these for its authoring contract."}
         if producer is not None:
-            if method != "POST" or parsed.path != "/api/proposals" or not isinstance(producer, str):
-                raise HubFailure(422, "CHAT_TOOL_INVALID", "producer selects the input schema of POST /api/proposals.")
-            entity = document.get("components", {}).get("schemas", {}).get("SemanticEditRequestDto", {}).get("properties", {}).get("entities", {}).get("items", {})
-            available = set()
             matched = False
             for variant in entity.get("anyOf", []):
                 fields = variant.get("properties", {}).get("fields", {})
                 alternatives = fields.get("anyOf")
                 if alternatives is None:
                     continue
-                for item in alternatives:
-                    available.update(item.get("properties", {}).get("producer", {}).get("enum", []))
                 selected = [item for item in alternatives
                             if producer in item.get("properties", {}).get("producer", {}).get("enum", [])]
                 if selected:
                     matched = True
                     fields["anyOf"] = selected
             if not matched:
-                raise HubFailure(422, "CHAT_TOOL_UNAVAILABLE", f"No authoring schema for {producer!r}; available producers: {sorted(available)}")
-            # This query asks for one author's inputs. The response, including
-            # the same edit payload again, is available through the ordinary
-            # unfiltered schema query and need not accompany this request.
+                raise HubFailure(422, "CHAT_TOOL_UNAVAILABLE", f"No authoring schema for {producer!r}; available producers: {sorted(offered)}")
+            # This query asks for one author's inputs; the response arrives
+            # with the request itself.
             operation = {key: value for key, value in operation.items() if key != "responses"}
         schemas, pending = {}, [operation]
         while pending:
@@ -3525,7 +3533,7 @@ def _mcp(hub: str, chat_id: str | None, external: ChatPresentationBindRequest | 
                     "required": ["method", "path"], "additionalProperties": False}
     schema_input = {**input_schema, "properties": {
         **input_schema["properties"],
-        "producer": {"type": "string", "description": "For POST /api/proposals authoring, name one producer the running Studio advertises to read only its request contract, excluding unrelated geometry and response schemas. The unfiltered POST /api/proposals schema lists the available producers, most general first; an unknown name is answered with that list."},
+        "producer": {"type": "string", "description": "For POST /api/proposals authoring, name one producer the running Studio advertises to read only its request contract, excluding unrelated geometry and response schemas. Without it, POST /api/proposals answers the index of available producers, most general first; an unknown name is answered with that list."},
     }}
     request_schema = {
         "type": "object", "properties": {
@@ -3624,7 +3632,7 @@ def _mcp(hub: str, chat_id: str | None, external: ChatPresentationBindRequest | 
         "keep is a list of protected refs, e.g. ['entity:portico-base']. Use the actual target and source, not a guessed field.",
         "For linked dimensions, use POST /api/proposals with {stateDigest, semanticEdit: {summary, parameters: [...], entities: [...]}}.",
         "Use semanticEdit or utterance, not both. Existing omitted fields/dependencies are retained; revise upstream controls for linked edits.",
-        "Read studio_schema POST /api/proposals for the producers the running Studio offers, then with producer set to one of them for its authoring contract.",
+        "studio_schema POST /api/proposals answers the index of producers the running Studio offers; with producer set to one, its authoring contract.",
         "Geometry binds parameters with '@key'; formulas belong in parameters[].expr with inputs, and value must match the expression.",
         "When the user says what a part is, send their word as semanticKind: Studio maps a registered alias or keeps the word as the part's intent, never a refusal, so do not read /api/semantics first; never guess a nearby id, and role.* or condition.* IDs are not kinds.",
         "Keep early forms generic until their role is established; enrich them by upserting the same component id, never by recreating them.",
