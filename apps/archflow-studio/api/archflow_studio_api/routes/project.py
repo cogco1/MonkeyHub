@@ -23,9 +23,10 @@ def prepare_modeling(request: Request, body: ModelingInitializeRequestDto) -> Mo
     """Prepare an empty project for its first sketch or massing candidate.
 
     Existing projects keep their model inputs. After this action read GET
-    /api/state and /api/state/frame, then use the existing proposal/candidate
-    routes. Without a real source run omit sourceRunId; studio-projection is
-    a transient projection identifier, not a retained candidate.
+    /api/construction/model (or /api/state) and /api/state/frame, then use
+    the existing proposal/candidate routes. Without a real source run omit
+    sourceRunId; studio-projection is a transient projection identifier, not
+    a retained candidate.
     """
 
     binding = resolve_project(request.app.state, body.project_id)

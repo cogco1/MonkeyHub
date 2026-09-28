@@ -642,8 +642,8 @@ class PendingIntentStore:
                 f"the pending clarification was opened against state "
                 f"{pending.state_digest} and the project is at {state_digest}. "
                 "It is void: an answer given about the old state is not "
-                "applied to the new one. Read /api/state and say the request "
-                "again.",
+                "applied to the new one. Read GET /api/construction/model "
+                "(or /api/state) and say the request again.",
             )
         return pending
 

@@ -206,18 +206,21 @@ class GeometryFirstAuthoringTests(unittest.TestCase):
         self.assertEqual(record.entity("wall-a").fields["intent"], "wall", "the user's word is kept")
         self.assertEqual(record.entity("wall-a-body").fields["params"]["openings"][0]["width"], 1.2)
 
-    def test_an_unregistered_word_does_not_refuse_a_sketch_and_a_registered_one_is_kept(self) -> None:
+    def test_a_sketch_carries_no_meaning_and_facets_add_it_afterward(self) -> None:
+        """#419: a sketch has no semanticKind at all; meaning arrives with POST /api/proposals/facets."""
+
         base = {"parentComponentId": "model", "baseLevel": "ground", "height": 3}
-        unregistered = self.created(self.client.post("/api/proposals/sketch", json={
-            "stateDigest": self.state()["stateDigest"], "componentId": "block", "elementId": "block-body",
-            "profile": SQUARE, "semanticKind": "墙体", **base}))
-        block = next(e for e in unregistered["change"]["edits"]["entities"] if e["entity_id"] == "block")
-        self.assertEqual(block["fields"], {"intent": "墙体"})
-        registered = self.created(self.client.post("/api/proposals/sketch", json={
+        made = self.created(self.client.post("/api/proposals/sketch", json={
             "stateDigest": self.state()["stateDigest"], "componentId": "cover", "elementId": "cover-body",
-            "profile": SQUARE, "semanticKind": "roof", **base}))
-        cover = next(e for e in registered["change"]["edits"]["entities"] if e["entity_id"] == "cover")
-        self.assertEqual(cover["fields"]["semantic_kind"], "roof")
+            "profile": SQUARE, **base}))
+        cover = next(e for e in made["change"]["edits"]["entities"] if e["entity_id"] == "cover")
+        self.assertEqual(cover["fields"], {"intent": "cover"}, "a sketch states no meaning, only its own id as intent")
+        run = self.candidate(made)
+        faceted = self.created(self.client.post("/api/proposals/facets", json={
+            "stateDigest": self.state(run)["stateDigest"], "sourceRunId": run,
+            "targets": [{"id": "cover", "set": {"architectural.role": "roof"}}]}))
+        roofed = next(e for e in faceted["change"]["edits"]["entities"] if e["entity_id"] == "cover")
+        self.assertEqual(roofed["fields"]["facets"], {"architectural.role": "roof"})
 
     def test_a_form_whose_component_and_element_share_an_id_is_refused_by_name(self) -> None:
         """#413: geometry first makes a component per form; one id for both was refused without naming it."""

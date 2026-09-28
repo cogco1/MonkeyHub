@@ -203,8 +203,9 @@ def create_sketch_proposal(
             409,
             "STALE_BASE",
             f"the drawing names state {body.state_digest}, but "
-            f"{projection.project_id} is at {projection.state_digest}. Read "
-            "/api/state again and send the action against the state that answers now.",
+            f"{projection.project_id} is at {projection.state_digest}. Read GET "
+            "/api/construction/model (or /api/state) again and send the action "
+            "against the state that answers now.",
         )
     if isinstance(body, DocumentTracingRequestDto):
         ref = body.tracing
@@ -216,7 +217,7 @@ def create_sketch_proposal(
         try:
             actions = [(SketchActionDto(
                 component_id=body.component_id, parent_component_id=body.parent_component_id,
-                semantic_kind=body.semantic_kind, element_id=row["elementId"], profile=row["profile"],
+                element_id=row["elementId"], profile=row["profile"],
                 closed=row["closed"], height=body.height if row["closed"] else 0,
                 base_level=body.base_level, base_datum=body.base_datum, summary=body.summary,
             ), row["sourceDocumentTrace"]) for row in rows]
@@ -284,7 +285,6 @@ def _sketch_proposal(binding: ProjectBinding, projection: StateProjection,
             base=body.base_reference(),
             plane=body.plane.model_dump(by_alias=True) if body.plane is not None else None,
             parent_component_id=body.parent_component_id,
-            semantic_kind=body.semantic_kind,
             summary=body.summary,
             keep_refs=keep,
             source_document_trace=source_document_trace,
@@ -298,7 +298,8 @@ def _direct_proposal(request: Request, body: TransformElementRequestDto | PushPu
     binding, base, projection, previous, body = _proposal_source(request, body)
     if body.state_digest != projection.state_digest:
         raise StudioError(409, "STALE_BASE", f"the modeling action names state {body.state_digest}, "
-                          f"but the selected source is {projection.state_digest}. Read /api/state again.")
+                          f"but the selected source is {projection.state_digest}. Read GET "
+                          "/api/construction/model (or /api/state) again.")
     if kind == "compress-above":
         proposal = proposal_from(compress_above_proposal(
             projection, component_id=body.component_id, element_ids=body.element_ids or (),
@@ -334,7 +335,8 @@ def create_elevation_proposal(request: Request, body: ElevationEditRequestDto) -
 
     binding, base, projection, previous, body = _proposal_source(request, body)
     if body.state_digest != projection.state_digest:
-        raise StudioError(409, "STALE_BASE", "The elevation action no longer matches its source. Read /api/state again.")
+        raise StudioError(409, "STALE_BASE", "The elevation action no longer matches its source. Read GET "
+                          "/api/construction/model (or /api/state) again.")
     proposal = proposal_from(elevation_proposal(
         projection, action=body.action, element_id=body.element_id, value=body.value,
         reference=None if body.reference is None else body.reference.model_dump(),
@@ -369,8 +371,9 @@ def create_delete_proposal(
             409,
             "STALE_BASE",
             f"the delete names state {body.state_digest}, but "
-            f"{projection.project_id} is at {projection.state_digest}. Read "
-            "/api/state again and send it against the state that answers now.",
+            f"{projection.project_id} is at {projection.state_digest}. Read GET "
+            "/api/construction/model (or /api/state) again and send it "
+            "against the state that answers now.",
         )
     proposal = proposal_from(
         delete_element_proposal(

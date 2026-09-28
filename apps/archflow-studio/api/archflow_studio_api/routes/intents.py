@@ -260,8 +260,9 @@ def read_intent_context(request: Request, body: ContextPackRequestDto) -> Contex
             409,
             "STALE_BASE",
             f"the request names state {body.state_digest}, but "
-            f"{binding.project_id} is at {projection.state_digest}. Read "
-            "/api/state again and ask against the state that answers now.",
+            f"{binding.project_id} is at {projection.state_digest}. Read GET "
+            "/api/construction/model (or /api/state) again and ask against "
+            "the state that answers now.",
         )
     declared = {entity.entity_id for entity in projection.record.entities_of("Component@1")}
     if body.target_component_id is not None and body.target_component_id not in declared:
@@ -376,8 +377,9 @@ def compile_intent(request: Request, body: IntentRequestDto) -> IntentDto:
             409,
             "STALE_BASE",
             f"the request names state {body.state_digest}, but "
-            f"{binding.project_id} is at {projection.state_digest}. Read "
-            "/api/state again and ask against the state that answers now.",
+            f"{binding.project_id} is at {projection.state_digest}. Read GET "
+            "/api/construction/model (or /api/state) again and ask against "
+            "the state that answers now.",
         )
     if projection.reference_state_exact:
         body = body.model_copy(update={"source_run_id": projection.run.run_id})

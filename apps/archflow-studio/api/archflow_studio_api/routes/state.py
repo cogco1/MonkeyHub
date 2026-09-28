@@ -138,8 +138,9 @@ def read_closure(request: Request, body: ClosureRequestDto) -> ClosureDto:
             409,
             "STALE_BASE",
             f"the request names state {body.state_digest}, but "
-            f"{binding.project_id} is at {projection.state_digest}. Read "
-            "/api/state again and ask against the state that answers now.",
+            f"{binding.project_id} is at {projection.state_digest}. Read GET "
+            "/api/construction/model (or /api/state) again and ask against "
+            "the state that answers now.",
         )
     return closure_dto(
         closure_of_refs(projection.record, tuple(body.changed_refs))
