@@ -5609,6 +5609,71 @@ export type ModelViewDto = {
 };
 
 /**
+ * ModelingBaseDto
+ *
+ * ``POST /api/project/modeling?base=true``: the prepared action plus the base a first proposal writes against.
+ *
+ * The same default state ``GET /api/state`` would answer right after, cut to
+ * what a first sketch needs, so preparing and reading are one request.
+ */
+export type ModelingBaseDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Initialized
+     *
+     * Initial modeling inputs were installed; no geometry, run or issued version was created.
+     */
+    initialized: boolean;
+    /**
+     * Statedigest
+     *
+     * The default state's stateDigest; send it as the first proposal's stateDigest. Null when the kernel refused to view the record (read GET /api/state for why).
+     */
+    stateDigest: string | null;
+    /**
+     * Sourcestageref
+     *
+     * Send it unchanged on writes when not null.
+     */
+    sourceStageRef: string | null;
+    /**
+     * Levels
+     *
+     * Levels a baseLevel can name, elevations in metres.
+     */
+    levels: Array<ModelingLevelDto>;
+    /**
+     * Components
+     *
+     * Existing components; a new component names one as parentComponentId. Null when the component tree could not be resolved.
+     */
+    components: Array<ModelingComponentDto> | null;
+    /**
+     * Elementcount
+     *
+     * Elements already in the default state; 0 for a project with no model yet. Before editing existing elements, read GET /api/state?authored=true.
+     */
+    elementCount: number;
+};
+
+/**
+ * ModelingComponentDto
+ */
+export type ModelingComponentDto = {
+    /**
+     * Componentid
+     */
+    componentId: string;
+    /**
+     * Parentcomponentid
+     */
+    parentComponentId: string | null;
+};
+
+/**
  * ModelingInitializeDto
  */
 export type ModelingInitializeDto = {
@@ -5632,6 +5697,20 @@ export type ModelingInitializeRequestDto = {
      * Projectid
      */
     projectId: string;
+};
+
+/**
+ * ModelingLevelDto
+ */
+export type ModelingLevelDto = {
+    /**
+     * Levelid
+     */
+    levelId: string;
+    /**
+     * Elevation
+     */
+    elevation: number;
 };
 
 /**
@@ -12808,7 +12887,14 @@ export type PrepareModelingApiProjectModelingPostData = {
         'x-monkey-parent'?: string | null;
     };
     path?: never;
-    query?: never;
+    query?: {
+        /**
+         * Base
+         *
+         * Also answer the default base this leaves (stateDigest, sourceStageRef, levels, components, elementCount) as ModelingBaseDto, so a first proposal needs no GET /api/state before it.
+         */
+        base?: boolean;
+    };
     url: '/api/project/modeling';
 };
 
@@ -12823,9 +12909,11 @@ export type PrepareModelingApiProjectModelingPostError = PrepareModelingApiProje
 
 export type PrepareModelingApiProjectModelingPostResponses = {
     /**
+     * Response Prepare Modeling Api Project Modeling Post
+     *
      * Successful Response
      */
-    200: ModelingInitializeDto;
+    200: ModelingBaseDto | ModelingInitializeDto;
 };
 
 export type PrepareModelingApiProjectModelingPostResponse = PrepareModelingApiProjectModelingPostResponses[keyof PrepareModelingApiProjectModelingPostResponses];

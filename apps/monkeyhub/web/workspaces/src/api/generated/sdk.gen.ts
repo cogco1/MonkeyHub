@@ -68,10 +68,12 @@ export const readProjectByIdApiProjectsProjectIdGet = <ThrowOnError extends bool
  *
  * Prepare an empty project for its first sketch or massing candidate.
  *
- * Existing projects keep their model inputs. After this action read GET
- * /api/state and /api/state/frame, then use the existing proposal/candidate
- * routes. Without a real source run omit sourceRunId; studio-projection is
- * a transient projection identifier, not a retained candidate.
+ * Existing projects keep their model inputs. With ``base=true`` the answer
+ * also names the default state it leaves, enough to send a first proposal
+ * without reading GET /api/state again; without it, read GET /api/state and
+ * /api/state/frame next. Without a real source run omit sourceRunId;
+ * studio-projection is a transient projection identifier, not a retained
+ * candidate.
  */
 export const prepareModelingApiProjectModelingPost = <ThrowOnError extends boolean = false>(options: Options<PrepareModelingApiProjectModelingPostData, ThrowOnError>): RequestResult<PrepareModelingApiProjectModelingPostResponses, PrepareModelingApiProjectModelingPostErrors, ThrowOnError> => (options.client ?? client).post<PrepareModelingApiProjectModelingPostResponses, PrepareModelingApiProjectModelingPostErrors, ThrowOnError>({
     url: '/api/project/modeling',
