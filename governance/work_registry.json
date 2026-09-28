@@ -34,7 +34,8 @@
             "apps/monkeyhub/web/workspaces/src/api/",
             "apps/monkeyhub/web/workspaces/src/app/App.tsx",
             "apps/monkeyhub/web/workspaces/test/",
-            "docs/adr/ADR-008-one-tree-many-projections.md"
+            "docs/adr/ADR-008-one-tree-many-projections.md",
+            "apps/monkeyhub/web/test/projectWorkspaceFixture.mjs"
           ],
           "depends_on": []
         }
