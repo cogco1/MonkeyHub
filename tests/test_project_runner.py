@@ -21,10 +21,13 @@ from monkeyarch.capabilities.declaration import DeclarationQuadrant
 from monkeyarch.capabilities.discipline_seats import SeatSpec
 from monkeyarch.capabilities.geometry_proposal import GeometryProposalProviderIdentity, load_compiled_geometry_program
 from archflow.state.stage_workflow import CompositeStageClosureReceipt, StageClosureStatus
-from archflow.project.repository import FilesystemProjectRepository
+from archflow.project.containers import published
+from archflow.project.issue import RunNotComplete, issue_run
+from archflow.project.repository import FilesystemProjectRepository, undeclared_version_identities
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import (
     PROJECT_STAGE_WORKFLOW,
+    RUNNER_RUN_RECEIPT,
     STAGE_CLOSURE,
     STAGE_EXIT_BINDING,
     STAGE_RUN_ENVELOPE,
@@ -60,6 +63,7 @@ from archflow.state.stage_workflow import (
     ProjectStage,
     ProjectStageWorkflow,
     StageExitBinding,
+    StageRunEnvelope,
     open_stage_run_envelope,
 )
 from archflow.project.inputs import load_authored_record
@@ -1155,6 +1159,112 @@ class GeometryOnlyRecordRunTests(unittest.TestCase):
                         record=self.record, seats=_seats(DesignPhase.CANDIDATE_COORDINATION), options=self.options)
         names = [path.name for path in self.repository.layout.run("run-1").records.glob("*.json")]
         self.assertFalse(any(name.startswith(("state-record-", "runner-run-failure-")) for name in names), names)
+
+
+class GeometryOnlyIssueTests(unittest.TestCase):
+    """A run whose record declares no massing is issued as the binding it executed (#402).
+
+    It retains no developed state; the issue publishes its authored record
+    and, in the developed state's place, the stage envelope that binds exactly
+    that ``StateRecordBinding``. A massing run is issued as it always was.
+    """
+
+    def setUp(self) -> None:
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name) / "demo"
+
+    def _opened_and_run(self, record: StateRecord) -> tuple[str, dict]:
+        _, workflow_ref = _ladder_project(self.root, (DesignPhase.DESIGN_DEVELOPMENT,), workflow_id="demo-one-stage", record=record)
+        opened = open_stage_run(project_root=self.root, workflow_uri=workflow_ref, stage_index=0, run_id="stage-0-001")
+        receipt = _run_opened_stage(self.root, workflow_ref, opened)
+        self.assertEqual(receipt["closure_status"], "SATISFIED", receipt["seat_results"])
+        return workflow_ref, receipt
+
+    def test_a_geometry_only_run_is_issued_as_its_record_binding_and_reads_back(self) -> None:
+        workflow_ref, receipt = self._opened_and_run(_geometry_only(_record()))
+        self.assertIsNone(receipt["design_state_ref"])                                        # no developed state was made up
+
+        issued = issue_run(FilesystemProjectRepository.open(self.root), run_id="stage-0-001", decided_by="architect-a")
+
+        self.assertEqual((issued.issue, issued.previous), (1, 0))
+        reopened = FilesystemProjectRepository.open(self.root)
+        self.assertEqual(reopened.read_head().require_digest(), issued.state_sha256)
+        self.assertEqual(published(reopened).note, "issue 1")
+        self.assertEqual(reopened.load_current_state(), {
+            "schema": "CanonicalProjectState@1",
+            "authoritative_record_refs": [receipt["state_record_ref"]],
+            "derived_record_refs": sorted((receipt["stage_envelope_ref"], receipt["closure_ref"])),
+            "phase": "stage-0-production",
+        })
+        # Exactly identifiable: the published record, bound in the published envelope's phase,
+        # is the binding the run executed, and it states no massing.
+        record = StateRecord.from_dict(reopened.load_json(record_ref_from_uri(receipt["state_record_ref"], "demo")))
+        envelope = StageRunEnvelope.from_dict(reopened.load_json(record_ref_from_uri(receipt["stage_envelope_ref"], "demo")))
+        self.assertEqual(record.digest, receipt["state_record_digest"])
+        self.assertEqual(RecordBinding(record, envelope.phase).state_digest, receipt["design_state_digest"])
+        self.assertEqual(envelope.state_digest, receipt["design_state_digest"])
+        self.assertFalse([e for e in record.entities if e.schema in ("MassingLevel@1", "Volume@1", "Space@1")])
+        # The issued version is the base the next run opens and runs against.
+        again = open_stage_run(project_root=self.root, workflow_uri=workflow_ref, stage_index=0, run_id="stage-0-002")
+        self.assertEqual(reopened.load_run("stage-0-002").base.version, 1)
+        self.assertEqual(_run_opened_stage(self.root, workflow_ref, again)["closure_status"], "SATISFIED")
+
+    def test_a_massing_run_issues_exactly_as_before(self) -> None:
+        _, receipt = self._opened_and_run(_record())
+        self.assertIsNotNone(receipt["design_state_ref"])
+
+        issue_run(FilesystemProjectRepository.open(self.root), run_id="stage-0-001", decided_by="architect-a")
+
+        self.assertEqual(FilesystemProjectRepository.open(self.root).load_current_state(), {
+            "schema": "CanonicalProjectState@1",
+            "authoritative_record_refs": [receipt["state_record_ref"]],
+            "derived_record_refs": sorted((receipt["design_state_ref"], receipt["closure_ref"])),
+            "phase": "stage-0-production",
+        })
+
+    def test_a_stage_opened_before_402_is_issued_on_the_digest_its_envelope_retained(self) -> None:
+        repository = FilesystemProjectRepository.initialize(self.root, project_id="demo", initial_state={"schema": "TestState@1"})
+        run = repository.create_run("run-1")
+        options, record = _options(), _geometry_only(_record())
+        legacy = legacy_state_digest(record.bound_to(run), run=run, phase=DesignPhase.DESIGN_DEVELOPMENT, portfolio_id=options.portfolio_id,
+                                     branch_id=options.branch_id, selection_decision_ref=options.selection_decision_ref)
+        guard = _stage_guard(repository, run, record, options, required_checks=(), state=SimpleNamespace(state_digest=legacy))
+        receipt = run_project(repository, run=run, stage_guard=guard, record=record, seats=_seats(DesignPhase.DESIGN_DEVELOPMENT), options=options)
+        self.assertEqual(receipt["design_state_digest"], legacy)
+
+        self.assertEqual(issue_run(repository, run_id="run-1", decided_by="architect-a").issue, 1)
+        self.assertIn(receipt["stage_envelope_ref"], repository.load_current_state()["derived_record_refs"])
+
+    def test_a_receipt_naming_another_binding_is_not_issued(self) -> None:
+        _, receipt = self._opened_and_run(_geometry_only(_record()))
+        repository = FilesystemProjectRepository.open(self.root)
+        run = repository.load_run("stage-0-001")
+        path = record_ref_from_uri(receipt["receipt_ref"], "demo")
+        target = repository.layout.resolve_relative(path.relative_path)
+        forged = {**json.loads(target.read_text(encoding="utf-8")), "design_state_digest": "0" * 64}
+        target.unlink()
+        repository.put_json(run=run, destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=run.run_id),
+                            record_kind=RUNNER_RUN_RECEIPT, payload=forged)
+        with self.assertRaisesRegex(RunNotComplete, "design_state_digest its stage envelope and exit binding do not bind"):
+            issue_run(repository, run_id="stage-0-001", decided_by="architect-a")
+        self.assertEqual(repository.read_head().version, 0)
+
+    def test_the_binding_a_geometry_only_run_retains_declares_its_base(self) -> None:
+        """#54: the binding in a geometry-only run's round requests and receipts names its base where its owner declares it.
+
+        (The geometry-program records this run retains are the same as a massing run's, whatever they declare.)
+        """
+
+        self._opened_and_run(_geometry_only(_record()))
+        repository = FilesystemProjectRepository.open(self.root)
+        run = repository.load_run("stage-0-001")
+        payloads = [repository.load_json(ref) for ref in repository.list_json(
+            run=run, destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=run.run_id))]
+        self.assertIn("StateRecordBinding@1", json.dumps(payloads))
+        for payload in payloads:
+            undeclared = [row.json_pointer for row in undeclared_version_identities(payload, {run.base.require_digest(): run.base.version})]
+            self.assertFalse([pointer for pointer in undeclared if "state_record" in pointer], (payload.get("schema"), undeclared))
 
 
 class ZoneRelationTests(unittest.TestCase):

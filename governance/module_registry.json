@@ -1925,6 +1925,7 @@
         "the conditions of an issue: the run's base is the published version, its stage closed SATISFIED with an exit binding naming that closure, and its seats all executed",
         "the typed refusals an issue can end in (IssueError, StaleBase, NoSatisfiedClosure, RunNotComplete)",
         "building the replacement CanonicalProjectState@1 from what the run retained: the authored record as authoritative, the developed state and the closure as derived, the closed stage as the phase",
+        "issuing a run whose record declares no complete massing as the StateRecordBinding it executed: the stage envelope that binds exactly that binding stands where a developed state would, and nothing spatial is computed for it (#402)",
         "minting the PromotionDecision@1 receipt prepare_transition demands, with the closure as its candidate_ref",
         "IssueReceipt: the issue made, the one it replaced, and the records it stood on"
       ],
@@ -1958,6 +1959,7 @@
         "project.refs",
         "project.repository",
         "state.stage_workflow",
+        "state.record",
         "project.version_refs"
       ],
       "used_by": [
@@ -1973,7 +1975,8 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_issue_project.py"
+        "tests/test_issue_project.py",
+        "tests/test_project_runner.py"
       ],
       "notes": "Wave B / W8. Before this module nothing on the spine called prepare_transition or compare_and_swap; every project stood at issue 0."
     },
