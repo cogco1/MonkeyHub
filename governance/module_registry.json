@@ -837,6 +837,7 @@
       "inputs": [
         "SeatSpec",
         "DevelopedDesignState",
+        "RecordBinding",
         "SpatialOptionProposal",
         "InterfaceDatum",
         "SemanticBinding",
@@ -858,6 +859,7 @@
         "DeclaredEngagement",
         "owned_subtree",
         "ancestors",
+        "design_tree",
         "compile_handover",
         "project_seat_context",
         "check_seat_datums",
@@ -879,6 +881,7 @@
         "project.refs",
         "state.developed_design",
         "state.geometry_program",
+        "state.record",
         "state.spatial",
         "state.stage_workflow"
       ],
@@ -1935,6 +1938,7 @@
         "the conditions of an issue: the run's base is the published version, its stage closed SATISFIED with an exit binding naming that closure, and its seats all executed",
         "the typed refusals an issue can end in (IssueError, StaleBase, NoSatisfiedClosure, RunNotComplete)",
         "building the replacement CanonicalProjectState@1 from what the run retained: the authored record as authoritative, the developed state and the closure as derived, the closed stage as the phase",
+        "issuing a run whose record declares no complete massing as the StateRecordBinding it executed: the stage envelope that binds exactly that binding stands where a developed state would, and nothing spatial is computed for it (#402)",
         "minting the PromotionDecision@1 receipt prepare_transition demands, with the closure as its candidate_ref",
         "IssueReceipt: the issue made, the one it replaced, and the records it stood on"
       ],
@@ -1968,6 +1972,7 @@
         "project.refs",
         "project.repository",
         "state.stage_workflow",
+        "state.record",
         "project.version_refs"
       ],
       "used_by": [
@@ -1983,7 +1988,8 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_issue_project.py"
+        "tests/test_issue_project.py",
+        "tests/test_project_runner.py"
       ],
       "notes": "Wave B / W8. Before this module nothing on the spine called prepare_transition or compare_and_swap; every project stood at issue 0."
     },
@@ -3939,6 +3945,8 @@
         "CHECK_KINDS: the check_kind vocabulary a validator may name, one line of meaning each, and the field each kind takes; solid_nonpenetration requires explicit distinct final object_pairs and zero linear tolerance, and may check distinct outputs of the same host entity without a self-dependency",
         "the component tree, published levels and published grids read out of the record (design_components_of, project_levels_of, project_grids_of)",
         "the schematic pack and the bootstrap from a record to the developed-design projection (SchematicPack, schematic_proposal, bootstrap_developed_state, developed_design_view)",
+        "what executing a record binds to (developed_design_view): the developed-design state of a record that declares complete massing, else the record bound as itself (RecordBinding) with no level, volume, zone, program node or assumption supplied for it (#402)",
+        "recognizing the binding digest a run, operator or program sheet retained before #402 for a record without complete massing (legacy_state_digest, StateRecord.cites_state, RecordBinding.retained_as); it is read back as written and never binds new work",
         "refusing unregistered semantics on Component@1 and dangling relationship_refs on Connection@1; a Component@1 with no semantic_kind, roles or conditions is valid geometry whose meaning is not yet established, and component_semantics reports it as absent",
         "the one reading of a Volume@1 box in the kernel's voxel lattice - x and z plan, y up, inclusive cells (volume_boxes_of); the schematic pack read out of the record (schematic_pack_of), which developed_design_view and the massing metrics both use",
         "the closed StateRecord edit vocabulary and its one successor function: set_scalar, replace_massing, apply_program, reindex and edit_components (StateRecordEditKind, StateRecordOperator, apply_state_record_operator)",
@@ -3974,6 +3982,7 @@
         "ProjectLevels",
         "ProjectGrids",
         "DevelopedDesignState",
+        "RecordBinding",
         "DependencyEdge tuple",
         "StateRecordOperator",
         "deterministic successor StateRecord"
@@ -3995,6 +4004,9 @@
         "design_components_of",
         "component_semantics",
         "developed_design_view",
+        "RecordBinding",
+        "legacy_state_digest",
+        "StateRecord.cites_state",
         "project_grids_of",
         "project_levels_of",
         "schematic_proposal",
