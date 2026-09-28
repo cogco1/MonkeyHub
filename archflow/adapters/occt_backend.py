@@ -157,12 +157,14 @@ _UNIT_TO_RHINO3DM: Mapping[str, str] = {
 #: a difference it cannot realize that way.
 DIFFERENCE_STRATEGIES = ("auto", "boolean", "profile_with_holes")
 _PLAN_TOLERANCE = 1e-7
-#: The required gap (metres) between a void and the outline and between
-#: voids (#419 IMPORTANT 2). Coarser than ``_PLAN_TOLERANCE``, which bounds
-#: coplanarity, reach and vector displacement: at tolerance-scale clearance a
-#: boolean cut can merge or shift faces where the profile keeps them apart,
-#: so a gap closer than this falls back to a cut under ``auto`` and is
-#: refused under ``profile_with_holes``.
+#: The required gap, in the program's length unit (``cad_point`` applies no
+#: scale; a millimetre or foot program keeps this value in millimetres or
+#: feet), between a void and the outline and between voids (#419
+#: IMPORTANT 2). Coarser than ``_PLAN_TOLERANCE``, which bounds coplanarity,
+#: reach and vector displacement: at tolerance-scale clearance a boolean cut
+#: can merge or shift faces where the profile keeps them apart, so a gap
+#: closer than this falls back to a cut under ``auto`` and is refused under
+#: ``profile_with_holes``.
 _PLAN_CLEARANCE = 1e-5
 
 
@@ -228,6 +230,15 @@ def _edges(flat):
     return list(zip(flat, flat[1:] + flat[:1]))
 
 
+def _point_segment_gap(point, a, b):
+    """The distance from ``point`` to segment ``ab`` in the plane."""
+
+    dx, dy = b[0] - a[0], b[1] - a[1]
+    span = dx * dx + dy * dy
+    t = 0.0 if span == 0.0 else max(0.0, min(1.0, ((point[0] - a[0]) * dx + (point[1] - a[1]) * dy) / span))
+    return math.hypot(point[0] - a[0] - t * dx, point[1] - a[1] - t * dy)
+
+
 def _segment_gap(p, q, a, b):
     """The distance between segments pq and ab in the plane; zero when they cross or touch."""
 
@@ -238,13 +249,10 @@ def _segment_gap(p, q, a, b):
     if 0.0 not in (d1, d2, d3, d4) and (d1 > 0) != (d2 > 0) and (d3 > 0) != (d4 > 0):
         return 0.0
 
-    def to_segment(u, v, w):
-        dx, dy = w[0] - v[0], w[1] - v[1]
-        span = dx * dx + dy * dy
-        t = 0.0 if span == 0.0 else max(0.0, min(1.0, ((u[0] - v[0]) * dx + (u[1] - v[1]) * dy) / span))
-        return math.hypot(u[0] - v[0] - t * dx, u[1] - v[1] - t * dy)
-
-    return min(to_segment(p, a, b), to_segment(q, a, b), to_segment(a, p, q), to_segment(b, p, q))
+    return min(
+        _point_segment_gap(p, a, b), _point_segment_gap(q, a, b),
+        _point_segment_gap(a, p, q), _point_segment_gap(b, p, q),
+    )
 
 
 def _inside(point, flat):
@@ -263,11 +271,26 @@ def _apart(first, second):
 
 
 def _simple(flat):
+    """No two non-adjacent edges, and no vertex against an edge it does not touch, are closer than the plan clearance.
+
+    A triangle has no non-adjacent edge pair (every edge shares a vertex
+    with every other), so the first test alone never holds a triangular
+    void to clearance; the second test does, and also catches a sliver in
+    any larger polygon, by checking every vertex against every edge it is
+    not an endpoint of.
+    """
+
     edges = _edges(flat)
     count = len(edges)
-    return all(
+    if not all(
         _segment_gap(*edges[i], *edges[j]) > _PLAN_CLEARANCE
         for i in range(count) for j in range(i + 2, count) if not (i == 0 and j == count - 1)
+    ):
+        return False
+    return all(
+        _point_segment_gap(flat[vertex], *edges[edge]) > _PLAN_CLEARANCE
+        for vertex in range(count) for edge in range(count)
+        if vertex != edge and vertex != (edge + 1) % count
     )
 
 
@@ -318,9 +341,9 @@ def _difference_plan(operation, operations, producers):
             return None, f"the void {void_id} is not extruded along the base"
         # Vertex-independent (#419 CRITICAL 1): how far the void's walls
         # would drift from the base's own extrusion across the base's
-        # thickness, in absolute metres - never in how far the void's
-        # profile plane sits from the base, which the old angle-only test
-        # left unbounded.
+        # thickness, in the program's length unit (an absolute displacement,
+        # not a fraction of it) - never in how far the void's profile plane
+        # sits from the base, which the old angle-only test left unbounded.
         scaled = tuple((rise / v_n) * component for component in void_vector)
         if _length(_sub(scaled, vector)) > _PLAN_TOLERANCE:
             return None, f"the void {void_id} is not extruded along the base"
@@ -338,10 +361,8 @@ def _difference_plan(operation, operations, producers):
     flat_outer = _in_plane(outer, origin, normal)
     flat_holes = [_in_plane(hole, origin, normal) for hole in holes]
     for index, flat in enumerate(flat_holes):
-        if abs(_signed_area(flat)) <= _PLAN_TOLERANCE:
-            return None, "a void profile has no area across the base"
         if not _simple(flat):
-            return None, "a void profile crosses itself"
+            return None, "a void profile crosses itself or is thinner than the clearance"
         if not _apart(flat, flat_outer) or not all(_inside(point, flat_outer) for point in flat):
             return None, "a void does not lie strictly inside the base profile"
         for other in flat_holes[:index]:

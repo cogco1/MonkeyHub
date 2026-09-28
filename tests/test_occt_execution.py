@@ -1802,6 +1802,46 @@ class DifferenceLoweringTests(unittest.TestCase):
         self.assertEqual(dict(built["profile_with_holes"].lowering), {"slab": "profile_with_holes"})
         self.assertAlmostEqual(self._symmetric_volume(shapes["boolean"], shapes["profile_with_holes"]), 0.0, places=9)
 
+    def test_a_triangular_sliver_void_does_not_lower(self) -> None:
+        # #419 IMPORTANT (predates round 1, same class as IMPORTANT 2): a
+        # triangle has no non-adjacent edge pair, so the edge-to-edge gap
+        # check alone never holds it to the plan clearance; a 20 m base with
+        # its apex a hair above the base line passed unchecked. The old
+        # boolean cut, on the same razor-thin sliver, can even split into
+        # two solids where the profile always gives one - a real disagreement
+        # the plan must refuse rather than paper over. Only the plan's own
+        # refusal is asserted: the forced cut of a sliver this thin is a
+        # separate, pre-existing OCCT kernel behaviour, not something this
+        # fix changes or need certify.
+        big = [[0.0, 0.0, 0.0], [40.0, 0.0, 0.0], [40.0, 0.0, 40.0], [0.0, 0.0, 40.0]]
+        base = _prism("big-body", big, [0.0, 0.3, 0.0])
+        h = 2e-7
+        sliver = _prism("void", [[10.0, -0.1, 10.0], [30.0, -0.1, 10.0], [20.0, -0.1, 10.0 + h]], [0.0, 0.5, 0.0])
+        program = _program_of(base, sliver, _difference("big", base, sliver))
+        self.assertEqual(dict(occt_backend.build_program_shapes(program).lowering), {})
+
+    def test_a_real_tiny_hole_still_lowers(self) -> None:
+        # #419 regression for the fix's own no-area check: a genuine 0.2 mm
+        # x 0.2 mm through hole has area 4e-8 (m^2) - the old area-vs-length
+        # comparison (abs(_signed_area(flat)) <= _PLAN_TOLERANCE, with
+        # _PLAN_TOLERANCE 1e-7) wrongly refused it as having "no area".
+        # Removed in favour of the clearance-based sliver check (a square
+        # this size is not thin: each vertex sits 0.2 mm from the edges it
+        # does not touch, comfortably over _PLAN_CLEARANCE), so a real tiny
+        # hole still lowers and matches the cut.
+        side = 0.0002  # 0.2 mm
+        cx, cz = 2.0, 2.0
+        tiny_hole = [
+            [cx - side / 2, -0.1, cz - side / 2], [cx + side / 2, -0.1, cz - side / 2],
+            [cx + side / 2, -0.1, cz + side / 2], [cx - side / 2, -0.1, cz + side / 2],
+        ]
+        slab = _prism("slab-body", L_SLAB, [0.0, 0.3, 0.0])
+        void = _prism("void", tiny_hole, [0.0, 0.5, 0.0])
+        program = _program_of(slab, void, _difference("slab", slab, void))
+        built, shapes = self._both(program, "slab-object")
+        self.assertEqual(dict(built["profile_with_holes"].lowering), {"slab": "profile_with_holes"})
+        self.assertAlmostEqual(self._symmetric_volume(shapes["boolean"], shapes["profile_with_holes"]), 0.0, places=9)
+
 
 @NEEDS_OCCT
 class OcctOperationObservationTests(unittest.TestCase):
