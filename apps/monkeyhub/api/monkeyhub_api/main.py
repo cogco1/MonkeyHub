@@ -28,6 +28,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
 from starlette.requests import Request
 import uvicorn
+from archflow.adapters.integration_packs import IntegrationPackManager
 
 from archflow_studio_api.routes.settings import router as preferences_router
 from archflow_studio_api.settings import (
@@ -203,6 +204,7 @@ def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> Fas
     app.state.chats = chats
     app.state.runtimes = runtimes
     app.state.updates = updates
+    app.state.integrations = IntegrationPackManager()
     app.state.studio_event_sockets = set()
     # Desktop automation costs two PowerShell hosts, so it is composed on first
     # use rather than started with the Hub, and there is only ever one.
@@ -297,6 +299,11 @@ def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> Fas
     @app.get("/api/health", response_model=HubHealth)
     def health() -> HubHealth:
         return HubHealth(processId=os.getpid(), parentProcessId=os.getppid(), managedInstanceId=settings.managed_instance_id, sourceRevision=applications.source_revision)
+
+    @app.get("/api/integrations", response_model=dict)
+    def integration_status(rescan: bool = False) -> dict:
+        """Local diagnostic snapshot; rescan is bounded and never qualifies a host."""
+        return app.state.integrations.status(rescan=rescan)
 
     @app.get("/api/updates/status", response_model=UpdateStatus)
     def update_status() -> UpdateStatus:
