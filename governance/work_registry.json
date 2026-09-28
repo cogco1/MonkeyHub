@@ -1,4 +1,40 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": []
+  "items": [
+    {
+      "id": "GH-405",
+      "status": "active",
+      "blocked_reason": null,
+      "branch": "codex/405-agent-execution",
+      "worktree": "C:/Users/asus/.codex/worktrees/agent-action-discovery/ARCHFLOW_V4",
+      "base_ref": "ff45deaf580e1c56c1714c15fe9cfa7a45a2c8df",
+      "contributor": "Codex",
+      "modules": [
+        "hub.shell",
+        "studio.intent",
+        "capabilities.element_producers"
+      ],
+      "write_scope": [
+        "apps/monkeyhub/api/monkeyhub_api/chat.py",
+        "apps/monkeyhub/api/tests/test_chat.py",
+        "apps/monkeyhub/api/tests/test_chat_presentation.py",
+        "apps/monkeyhub/web/workspaces/src/api/generated/",
+        "apps/archflow-studio/api/archflow_studio_api/application/visual_reviews.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/visual_observation.py",
+        "apps/archflow-studio/api/archflow_studio_api/transport/intent.py",
+        "apps/archflow-studio/api/archflow_studio_api/routes/intents.py",
+        "apps/archflow-studio/api/tests/test_visual_reviews.py",
+        "apps/archflow-studio/api/tests/test_visual_observation.py",
+        "monkeyarch/capabilities/element_producers.py",
+        "tests/test_element_producers.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/intent.py",
+        "apps/archflow-studio/api/archflow_studio_api/transport/proposal.py",
+        "apps/archflow-studio/api/archflow_studio_api/routes/proposals.py",
+        "apps/archflow-studio/api/tests/test_sketch.py",
+        "docs/PROTOCOL.md",
+        "docs/WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.md"
+      ],
+      "depends_on": []
+    }
+  ]
 }
