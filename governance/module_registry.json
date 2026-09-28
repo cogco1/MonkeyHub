@@ -6761,6 +6761,7 @@
       ],
       "public_api": [
         "ConstructionProposal",
+        "CompiledScript",
         "ConstructionRefused",
         "EnrichmentRequired",
         "MODEL_ROOT",
