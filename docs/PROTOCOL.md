@@ -1256,6 +1256,44 @@ The adapter alone can read an explicitly selected
 local attachment path and convert it to the existing bounded upload. Provider summaries,
 public commentary and document views confer no design acceptance or Board write authority.
 
+### Conversational suggestions
+
+`chat_present` and `POST /api/chat/sessions/{id}/presentation` accept an optional
+`suggestion` on assistant messages. It contains `title`, `outcome`, `capability`
+(`available` or `needs-development`), `rationale`, optional `tools` and
+`deliverables`, `timeEstimate`, `costEstimate`, and the plain-text `prompt` the
+user may choose to send. An estimate has nullable `value` and `basis`; a stated
+value requires a nonblank basis. Missing estimates remain unknown. Capability
+and estimates are the Agent's source-backed assessment, not an execution result,
+price quote or permission grant. The Agent queries existing capabilities and
+schemas before proposing tools; no toolbox installer or new execution path is added.
+
+The card is retained with the assistant message in ChatStore, bound to its
+existing source turn and presentation revision. Card-only messages are valid.
+The existing snapshot rules also cover card contents: an identical retry is
+idempotent, and different contents at the same revision conflict. Native and
+external conversations can both display cards; external conversations remain
+display-only.
+
+Choosing a card posts only `projectId` and
+`suggestionSelection: {messageId, revision}` to the existing
+`POST /api/chat/sessions/{id}/messages`. The server resolves the prompt from the
+retained card and stores the selection on a new user message before starting
+the ordinary native-provider turn. It rejects simultaneous replacement text,
+attachments or context, wrong projects, unfinished or superseded cards, old
+turns, repeat choices, non-idle or archived chats, and external conversations.
+The transcript retains a choice across restart; loading it never replays work.
+The next Agent turn still uses the existing project tools, exact-base checks
+and permissions. Selecting an assessment of a missing capability does not
+install software, authorize spending or issue a project version.
+
+The UI exposes one primary action, a draft-only adjustment and a local skip.
+Adjustment preserves unsent text and attachments and requires an ordinary Send;
+skip does not start a turn. Details include the request to be sent and estimate
+bases. Simple, explicit requests continue directly without a mandatory card.
+The right-hand Design tree and lower-left global Usage remain the primary
+destinations; their duplicate project-info and Help entries are removed.
+
 ### Conversation attention
 
 Chat summaries (`GET /api/chat/sessions`, and `GET /api/chat/sessions/{id}`) carry

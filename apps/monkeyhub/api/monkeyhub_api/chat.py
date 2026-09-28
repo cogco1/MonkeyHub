@@ -62,7 +62,7 @@ from . import credentials
 from .models import (
     ChatAttachment, ChatAttention, ChatCreateRequest, ChatDesignContext, ChatDetail, ChatMessage, ChatPostRequest, ChatProject,
     ChatDocument, ChatDocumentRef, ChatPresentationBindRequest, ChatPresentationBinding, ChatPresentationRequest,
-    ChatPermission, ChatPermissionOption, ChatPermissionRequest,
+    ChatPermission, ChatPermissionOption, ChatPermissionRequest, ChatSuggestion,
     ChatProjectRequest, ChatProvider, ChatSummary, ChatUsageSource, ChatWorkspace, HubError, HubFailure,
 )
 from .chat_trace import HubTurnObserver
@@ -70,6 +70,16 @@ from monkeymonitor.store import UsageLog
 
 _trace_headers = ContextVar("hub_tool_trace_headers", default={})
 _IMAGE_MIMES = {"image/png", "image/jpeg", "image/webp", "image/gif"}
+_SUGGESTION_INSTRUCTIONS = (
+    "Before recommending work, inspect the actually connected capabilities and their exact schemas; consult relevant evidence when needed. "
+    "Do a simple, clear, already requested task directly. When there is a real choice, an inferred but unrequested next step, "
+    "substantial time or cost, or a missing capability, publish one structured suggestion through chat_present instead of executing it. "
+    "State its goal/outcome, deliverables, actual tools, capability available or needs-development, and why it fits. "
+    "Leave timeEstimate and costEstimate unknown unless you can state a concrete basis; never invent estimates. "
+    "For missing capabilities offer an assessment, not a promise that implementation exists. "
+    "The suggestion prompt continues this same agent conversation when the user selects it; it is not a script or URL executor "
+    "and does not authorize plugin installation or bypass existing permissions or exact-source checks. "
+)
 
 
 def _verify_image(data: bytes, mime_type: str) -> None:
@@ -1248,12 +1258,24 @@ class ChatStore:
                 raise HubFailure(422, "CHAT_PRESENTATION_INVALID", "Only an external source can start a turn with a complete user message.")
             if request.kind == "progress" and (request.attachments or request.documents):
                 raise HubFailure(422, "CHAT_PRESENTATION_INVALID", "Progress is transient text; publish media as an assistant result.")
-            if not request.content.strip() and not request.attachments and not request.documents:
+            if not request.content.strip() and not request.attachments and not request.documents and request.suggestion is None:
                 raise HubFailure(422, "CHAT_MESSAGE_EMPTY", "Provide text or a result attachment/document.")
             progress_key = f"external:{request.messageId}"
             previous = (self._progress_rows.get(session_id, {}).get(progress_key) if request.kind == "progress" else
                         next((row for row in session.messages if row.id == request.messageId), None))
             content = _redact(request.content, _claude_env())
+            # Every nested card string crosses the same public/persistent
+            # boundary as message text, including the continuation prompt.
+            def redact_card(value):
+                if isinstance(value, str):
+                    return _redact(value, _claude_env())
+                if isinstance(value, list):
+                    return [redact_card(item) for item in value]
+                if isinstance(value, dict):
+                    return {key: redact_card(item) for key, item in value.items()}
+                return value
+            suggestion = (ChatSuggestion.model_validate(redact_card(request.suggestion.model_dump()))
+                          if request.suggestion is not None else None)
             if request.kind == "progress":
                 content = content.strip()[-2400:]
             if previous:
@@ -1271,7 +1293,8 @@ class ChatStore:
                         ChatDocumentRef.model_validate(ref.model_dump(include=set(ChatDocumentRef.model_fields))).model_dump()
                         for ref in previous.documents]
                     settled_stream = request.status == "streaming" and previous.status != "streaming" and session.status != "running"
-                    if previous.content == content and (previous.status == request.status or settled_stream) and same_files and same_refs:
+                    if (previous.content == content and previous.suggestion == suggestion
+                            and (previous.status == request.status or settled_stream) and same_files and same_refs):
                         return self.get(session_id)
                     raise HubFailure(409, "CHAT_PRESENTATION_CONFLICT", "A revision identifies one exact message snapshot.")
                 if previous.status != "streaming" or request.kind == "user":
@@ -1318,6 +1341,7 @@ class ChatStore:
             message = ChatMessage(id=request.messageId, role=request.kind, content=content,
                                   createdAt=previous.createdAt if previous else _now(), status=request.status,
                                   sourceTurnId=request.turnId, presentationRevision=request.revision,
+                                  suggestion=suggestion,
                                   attachments=attachments, documents=documents)
             if previous:
                 session.messages[session.messages.index(previous)] = message
@@ -1398,6 +1422,25 @@ class ChatStore:
                 raise HubFailure(409, "CHAT_ARCHIVED", "Restore this archived chat before sending another message.")
             if request.projectId != session.projectId or _project(session.projectDir) != (session.projectId, session.projectDir):
                 raise HubFailure(409, "CHAT_PROJECT_MISMATCH", "This message belongs to a different project.")
+            if request.suggestionSelection is not None:
+                selection = request.suggestionSelection
+                if any(row.role == "user" and row.suggestionSelection == selection for row in session.messages):
+                    raise HubFailure(409, "CHAT_SUGGESTION_CONSUMED", "This suggestion has already been selected.")
+                if session.status == "running" or session_id in self._running:
+                    raise HubFailure(409, "CHAT_RUNNING", "Wait for this reply to finish before choosing a suggestion.")
+                if session.status != "idle":
+                    raise HubFailure(409, "CHAT_SUGGESTION_EXPIRED", "Suggestions can only continue an idle conversation.")
+                card = next((row for row in session.messages if row.id == selection.messageId), None)
+                user = next((row for row in reversed(session.messages) if row.role == "user"), None)
+                turn = (user.sourceTurnId or user.id) if user else None
+                latest = next((row for row in reversed(session.messages)
+                               if row.role == "assistant" and row.suggestion is not None and row.sourceTurnId == turn), None)
+                if (card is None or card.role != "assistant" or card.suggestion is None or card.status != "complete"
+                        or card.presentationRevision != selection.revision or card.sourceTurnId != turn or card != latest):
+                    raise HubFailure(409, "CHAT_SUGGESTION_EXPIRED", "Choose the latest completed suggestion for the current user turn.")
+                # Only a retained prompt enters the ordinary post/start path.
+                # Context remains native continuation, with no client source override.
+                request = request.model_copy(update={"content": card.suggestion.prompt})
             if session_id in self._running:
                 return self._interject(session_id, request)
             provider = next(row for row in self.providers() if row.id == session.provider)
@@ -1422,6 +1465,7 @@ class ChatStore:
                 session.title = (content.splitlines()[0] if content else attachments[0][0].name)[:80]
             session.messages.append(ChatMessage(id=str(uuid4()), role="user", content=content, createdAt=_now(),
                                                 contextMode="continue" if request.contextMode == "stage" else request.contextMode,
+                                                suggestionSelection=request.suggestionSelection,
                                                 attachments=[attachment for attachment, _ in attachments]))
             session.status, session.error, session.updatedAt = "running", None, _now()
             self._save(session, tuple(attachments))
@@ -2048,7 +2092,8 @@ class ChatStore:
                         if session.provider != "codex" else ""
                     ) +
                     "Do not switch Hub configuration, open a different project, or guess a service URL. "
-                    "If a required domain action is unavailable, say what cannot be done.\n\n"
+                    "If a required domain action is unavailable, say what cannot be done. "
+                    + _SUGGESTION_INSTRUCTIONS + "\n\n"
                     + content
                 )
             if running.attachments:
@@ -3616,11 +3661,12 @@ _PRESENTATION_DOCUMENTS = (
 )
 _NATIVE_PRESENTATION_INSTRUCTIONS = (
     "This is the current MonkeyHub conversation: normal text and progress already stream automatically. "
-    "Use chat_present to show selected media with kind=assistant, or public commentary with kind=progress. "
+    "Use chat_present to show selected media or one suggestion card with kind=assistant (its content may be empty), "
+    "or public commentary with kind=progress. "
     "Hub binds status=streaming and completes the presentation when this native turn finishes. "
     "Supply a fresh UUID messageId; the current user turn is bound automatically. Do not republish the user's message. "
-    "To update media, reuse messageId with a strictly increasing revision and retain the full content and attachments. "
-    "No call here starts another model. " + _PRESENTATION_DOCUMENTS
+    "To update media or a card, reuse messageId with a strictly increasing revision and retain the full content, "
+    "attachments and suggestion. No call here starts another model. " + _PRESENTATION_DOCUMENTS + " " + _SUGGESTION_INSTRUCTIONS
 )
 _PRESENTATION_INSTRUCTIONS = (
     "This connection displays results in the bound MonkeyHub conversation. Call presentation_bind once if available. "
@@ -3632,14 +3678,15 @@ _PRESENTATION_INSTRUCTIONS = (
     "Keep the source host response concise with the Hub URL. This does not suppress mandatory host output. "
     "No call here starts another model. On disconnect or refusal, report it in the source host; reconnect with presentation_bind, "
     "then replay only the same presentation snapshot, never a design mutation. "
-    + _PRESENTATION_DOCUMENTS
+    "Only kind=assistant can carry a suggestion; its content may be empty. Keep the same messageId and increment revision for a changed card. "
+    + _PRESENTATION_DOCUMENTS + " " + _SUGGESTION_INSTRUCTIONS
 )
 
 
 def _present_tool(hub: str, chat_id: str, arguments: dict, token: str):
     session = _request_json(hub, f"/api/chat/sessions/{_identifier(chat_id)}")
     body = dict(arguments)
-    if set(body) - {"turnId", "messageId", "revision", "kind", "content", "status", "attachments", "documents"}:
+    if set(body) - {"turnId", "messageId", "revision", "kind", "content", "status", "attachments", "documents", "suggestion"}:
         raise HubFailure(422, "CHAT_PRESENTATION_INVALID", "Use only the documented presentation fields; this connection fixes its destination.")
     if not session.get("sourceSessionId"):
         # Native completion belongs to the CLI turn. A media card must remain
