@@ -8,9 +8,11 @@ never be reached.
 Work is bounded, not only counted: every node evaluated is a step, every walk
 over a sequence costs steps by its length, a wall-clock deadline is checked with
 each step, every list or tuple the script creates is measured with its nested
-elements (per value and in total), sequences are compared or searched only when
-flat, and profile checks draw on a budget of edge pairs. No single step can do
-unbounded work, and no message repeats a script value at length.
+elements (per value and in total), ``+=`` extends a list in place as Python does
+and counts only what it adds (to that list and to every list or tuple holding
+it), sequences are compared or searched only when flat, and profile checks draw
+on a budget of edge pairs. No single step can do unbounded work, and no message
+repeats a script value at length.
 
 Verbs are bound from ``vocabulary.VERBS`` - the table an agent reads - and
 implemented by ``Session``, which keeps the script's shapes, the existing
@@ -317,6 +319,9 @@ class Session:
         self.deadline = time.monotonic() + LIMITS["seconds"]
         self.created_total = 0
         self.sizes: dict[int, tuple[object, int, int, bool]] = {}  # id -> (value, elements, nesting, holds shapes)
+        # Which lists and tuples hold a list (or a tuple that holds one), and how many times: what += must re-measure.
+        self.kids: dict[int, dict[int, int]] = {}  # a list's or tuple's id -> {id of what it holds: times}
+        self.holders: dict[int, dict[int, int]] = {}  # the reverse: id -> {id of a list or tuple holding it: times}
         self.pairs = 0
         self.profiles: dict[tuple, Profile] = {}
         self.hosts_by_cutter: dict[Shape, dict[Shape, None]] = {}
@@ -337,7 +342,8 @@ class Session:
         self.tick(elements // _WALK)
 
     def measure(self, value: object) -> tuple[int, int, bool]:
-        """(elements with nested ones, nesting depth, whether it holds shapes) of a list or tuple."""
+        """(elements with nested ones, nesting depth, whether it holds shapes) of a list or tuple; recorded the first
+        time it is measured, with the lists it holds (kept current by ``grow``)."""
 
         if not isinstance(value, (list, tuple)):
             return 0, 0, isinstance(value, Shape)
@@ -345,14 +351,25 @@ class Session:
         if known is not None and known[0] is value:
             return known[1], known[2], known[3]
         size, depth, shapes = len(value), 1, False
+        kids: dict[int, int] = {}
         for item in value:
             if isinstance(item, Shape):
                 shapes = True
             elif isinstance(item, (list, tuple)):
                 inner, nested, held = self.measure(item)
                 size, depth, shapes = size + inner, max(depth, nested + 1), shapes or held
-        self.sizes[id(value)] = (value, size, depth, shapes)
+                if self.can_grow(item):
+                    kids[id(item)] = kids.get(id(item), 0) + 1
+        self.remember(value, size, depth, shapes, kids)
         return size, depth, shapes
+
+    def can_grow(self, value: object) -> bool:
+        """Whether ``value``'s size can still change: a list, or a tuple that holds one."""
+
+        return isinstance(value, list) or (isinstance(value, tuple) and id(value) in self.kids)
+
+    def kids_of(self, value: object) -> dict[int, int]:
+        return self.kids.get(id(value), {})
 
     def admit(self, size: int, depth: int) -> None:
         """A new list or tuple of ``size`` elements (nested ones included) and ``depth`` levels, if within bounds."""
@@ -361,15 +378,92 @@ class Session:
             raise ShapeError("a list or tuple may hold at most 10 000 elements, nested ones included")
         if depth > MAX_NESTING:
             raise ShapeError(f"lists and tuples may nest at most {MAX_NESTING} levels")
-        self.created_total += size
+        self.count_created(size)
+
+    def count_created(self, elements: int) -> None:
+        self.created_total += elements
         if self.created_total > MAX_CREATED:
             raise ShapeError("the script creates more than 200 000 list and tuple elements; "
-                             "build long lists once, with a comprehension")
-        self.charge(size)
+                             "build a long list once with a comprehension, or grow it with +=")
+        self.charge(elements)
 
-    def remember(self, value: object, size: int, depth: int, shapes: bool) -> object:
+    def remember(self, value: object, size: int, depth: int, shapes: bool, kids: dict[int, int] | None = None) -> object:
+        """Record a new list or tuple; ``kids`` are the lists (and list-holding tuples) it holds, by id and times."""
+
+        known = self.sizes.get(id(value))
+        if known is not None and known[0] is value:
+            return value  # the same tuple back (t + (), t * 1): already recorded
         self.sizes[id(value)] = (value, size, depth, shapes)
+        if kids:
+            self.kids[id(value)] = kids
+            for kid, times in kids.items():
+                holders = self.holders.setdefault(kid, {})
+                holders[id(value)] = holders.get(id(value), 0) + times
         return value
+
+    def grow(self, target: list, addition: list | tuple) -> None:
+        """``target += addition`` on a list: extended in place, as Python does, counting only what it gains.
+
+        Every list or tuple that holds ``target`` (directly or not) gains the same elements, as many times as it
+        holds ``target``, so each of them is checked and re-measured too.
+        """
+
+        added, depth, shapes = self.measure(addition)
+        own = self.measure(target)[1]
+        new_kids = dict(self.kids_of(addition))
+        order, times, below = self._lineage(target)
+        if any(kid in times for kid in new_kids):
+            raise ShapeError("+= cannot put a list inside itself")
+        nesting = max(own, depth)
+        for key in order:
+            _, size, levels, _ = self.sizes[key]
+            if size + times[key] * added > MAX_ELEMENTS:
+                if key == id(target):
+                    raise ShapeError("a list or tuple may hold at most 10 000 elements, nested ones included")
+                raise ShapeError("a list or tuple that holds this list would then hold more than 10 000 elements, "
+                                 "nested ones included")
+            if max(levels, below[key] + nesting) > MAX_NESTING:
+                raise ShapeError(f"lists and tuples may nest at most {MAX_NESTING} levels")
+        self.count_created(added)
+        target.extend(addition)
+        for key in order:
+            value, size, levels, held = self.sizes[key]
+            self.sizes[key] = (value, size + times[key] * added, max(levels, below[key] + nesting), held or shapes)
+        if new_kids:
+            mine = self.kids.setdefault(id(target), {})
+            for kid, count in new_kids.items():
+                mine[kid] = mine.get(kid, 0) + count
+                holders = self.holders.setdefault(kid, {})
+                holders[id(target)] = holders.get(id(target), 0) + count
+
+    def _lineage(self, target: list) -> tuple[list[int], dict[int, int], dict[int, int]]:
+        """``target`` and every list or tuple holding it, directly or not, each before what holds it; with how many
+        times each holds ``target`` and how many levels below it ``target`` is at most."""
+
+        start = id(target)
+        finished: list[int] = []
+        seen = {start}
+        stack = [(start, iter(self.holders.get(start, ())))]
+        visited = 0
+        while stack:
+            key, above = stack[-1]
+            holder = next(above, None)
+            if holder is None:
+                stack.pop()
+                finished.append(key)
+                continue
+            visited += 1
+            if holder not in seen:
+                seen.add(holder)
+                stack.append((holder, iter(self.holders.get(holder, ()))))
+        self.tick(visited // 10)
+        order = finished[::-1]  # topological: each after everything it holds on the way down to target
+        times, below = {start: 1}, {start: 0}
+        for key in order:
+            for holder, count in self.holders.get(key, {}).items():
+                times[holder] = times.get(holder, 0) + count * times[key]
+                below[holder] = max(below.get(holder, 0), below[key] + 1)
+        return order, times, below
 
     def created(self, value: object) -> object:
         if isinstance(value, (list, tuple)):
@@ -1080,7 +1174,12 @@ class Interpreter:
                 self.assign(target, value, frame, naming=True)
         elif isinstance(node, ast.AugAssign):
             current = self.lookup(node.target.id, frame, node.target)  # type: ignore[attr-defined]
-            value = self.binary(node.op, current, self.evaluate(node.value, frame), node)
+            operand = self.evaluate(node.value, frame)
+            if isinstance(node.op, ast.Add) and isinstance(current, list) and isinstance(operand, (list, tuple)):
+                self.guarded(node, lambda: self.session.grow(current, operand))  # in place, as Python extends a list
+                value = current
+            else:
+                value = self.binary(node.op, current, operand, node)
             self.assign(node.target, value, frame, naming=True)
         elif isinstance(node, ast.For):
             self.loop(node, frame)
@@ -1215,14 +1314,20 @@ class Interpreter:
         if symbol == "+" and type(left) is type(right) and isinstance(left, (list, tuple)):
             (ls, ld, lh), (rs, rd, rh) = session.measure(left), session.measure(right)
             self.guarded(node, lambda: session.admit(ls + rs, max(ld, rd)))
-            return session.remember(left + right, ls + rs, max(ld, rd), lh or rh)
+            kids = dict(session.kids_of(left))
+            for kid, times in session.kids_of(right).items():
+                kids[kid] = kids.get(kid, 0) + times
+            return session.remember(left + right, ls + rs, max(ld, rd), lh or rh, kids)
         if symbol == "*":
             sequence, count = (left, right) if isinstance(left, (list, tuple)) else (right, left)
             if isinstance(sequence, (list, tuple)) and isinstance(count, int) and not isinstance(count, bool):
                 size, depth, shapes = session.measure(sequence)
+                if count <= 0:  # an empty list or tuple: nothing nested, nothing held
+                    size, depth, shapes = 0, 1, False
                 total = size * max(count, 0)
                 self.guarded(node, lambda: session.admit(total, depth))
-                return session.remember(sequence * count, total, depth, shapes)
+                kids = {kid: times * count for kid, times in session.kids_of(sequence).items()} if count > 0 else {}
+                return session.remember(sequence * count, total, depth, shapes, kids)
         if symbol == "%" and isinstance(left, str):
             raise self.error(node, "formatting text with % is not part of the construction language; join text with +")
         raise self.error(node, f"{symbol} does not apply to {describe(left)} and {describe(right)}")
@@ -1327,15 +1432,12 @@ class Interpreter:
     def comprehension(self, node: ast.ListComp, frame: _Frame) -> list:
         scope = _Frame({}, frame, False)
         result: list = []
-        counted = {"size": 0, "depth": 1, "shapes": False}
+        counted = {"size": 0}
 
         def walk(index: int) -> None:
             if index == len(node.generators):
                 item = self.evaluate(node.elt, scope)
-                size, depth, shapes = self.session.measure(item)
-                counted["size"] += 1 + size
-                counted["depth"] = max(counted["depth"], depth + 1)
-                counted["shapes"] = counted["shapes"] or shapes
+                counted["size"] += 1 + self.session.measure(item)[0]
                 if counted["size"] > MAX_ELEMENTS:
                     raise self.error(node, "a list or tuple may hold at most 10 000 elements, nested ones included")
                 result.append(item)
@@ -1351,8 +1453,8 @@ class Interpreter:
                     walk(index + 1)
 
         walk(0)
-        self.guarded(node, lambda: self.session.admit(counted["size"], counted["depth"]))
-        return self.session.remember(result, counted["size"], counted["depth"], counted["shapes"])  # type: ignore[return-value]
+        # Measured whole at the end: a function called for a later item may have grown (+=) an earlier one.
+        return self.guarded(node, lambda: self.session.created(result))
 
     # ---- calls
     def call(self, node: ast.Call, frame: _Frame) -> Any:

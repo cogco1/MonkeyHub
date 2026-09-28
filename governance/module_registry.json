@@ -7917,6 +7917,7 @@
         "A get() edit rewrites only its element's params and references; an existing component is never re-emitted.",
         "geometry_view never raises; bounds it cannot predict are None.",
         "No single step does unbounded work; no refusal repeats a script value at length.",
+        "xs += [...] extends the list xs in place, as Python does, and counts only what it adds, for xs and for every list or tuple holding it.",
         "A new shape that redefines existing geometry keeps what that geometry cuts until the script uncuts it.",
         "An automatic id never takes an id the project already has."
       ],

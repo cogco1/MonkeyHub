@@ -222,7 +222,7 @@ def vocabulary() -> dict[str, Any]:
             "summary": "A small Python subset, interpreted and never executed.",
             "allowed": [
                 "numbers, text, lists, tuples, True, False and None",
-                "=, += and tuple unpacking",
+                "=, += and tuple unpacking; xs += [...] extends the list xs in place, the way to grow a long list",
                 "for ... in over range, lists, enumerate and zip",
                 "if / elif / else",
                 "def with positional and keyword parameters, defaults and return",

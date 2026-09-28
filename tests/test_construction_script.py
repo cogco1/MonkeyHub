@@ -255,6 +255,63 @@ class LimitTests(ConstructionTestCase):
         self.assertEqual(self.log("x = " + "+".join(["1"] * 80) + "\nprint(x)"), ["80"])
 
 
+class GrowingListTests(ConstructionTestCase):
+    """``xs += [...]`` extends the list xs in place and counts only what it adds; ``+`` makes and counts a new list."""
+
+    PATH = "\n".join([
+        "pts = []",
+        "for i in range(512):",
+        "    pts += [(i * 0.1, 1, sin(i * 0.1))]",
+        "p = path(pts)",
+    ])
+
+    def test_a_512_point_path_grown_with_plus_equals_compiles(self) -> None:
+        body = next(row for row in run(self.PATH).entities if row["entity_id"] == "p-body")
+        self.assertEqual(len(body["fields"]["params"]["profile"]), 512)
+        error = self.refused(self.PATH.replace("pts += [", "pts = pts + ["))  # a whole new list every time
+        self.assertEqual(error.line, 3)
+        self.assertIn("200 000", error.message)
+
+    def test_a_loop_that_grows_one_list_past_its_limit_is_refused_at_its_line(self) -> None:
+        error = self.refused("xs = []\nfor i in range(1000):\n    xs += [0] * 20")
+        self.assertEqual((error.line, error.source_line), (3, "xs += [0] * 20"))
+        self.assertIn("10 000 elements", error.message)
+
+    def test_plus_equals_extends_the_same_list_the_way_python_does(self) -> None:
+        script = "\n".join([
+            "a = [1]",
+            "b = a",
+            "a += (2, 3)",
+            "rows = [[], []]",
+            "for row in rows:",
+            "    row += [0]",
+            "t = (1, 2)",
+            "u = t",
+            "t += (3,)",
+            "def add(xs, x):",
+            "    xs += [x]",
+            "add(a, 4)",
+            "print(a, b, rows, t, u)",
+        ])
+        self.assertEqual(self.log(script), ["[1, 2, 3, 4] [1, 2, 3, 4] [[0], [0]] (1, 2, 3) (1, 2)"])
+
+    def test_a_list_grown_inside_others_counts_for_each_of_them(self) -> None:
+        cases = [
+            ("xs = []\nouter = [xs] * 5000\nxs += [0]\nxs += [0]", 4, "would then hold more than 10 000 elements"),
+            ("xs = [1]\nxs += [xs]", 2, "inside itself"),
+            ("xs = []\nt = (xs,)\nxs += [t]", 3, "inside itself"),
+            ("x = []\nroot = x\nfor i in range(200):\n    y = []\n    x += [y]\n    x = y", 5, "100 levels"),
+            # collected while empty, grown while the comprehension runs: measured again when it ends
+            ("xs = []\ndef grown(i):\n    if i == 1:\n        xs += [0] * 6000\n    return xs\n"
+             "ys = [grown(i) for i in range(2)]", 6, "10 000 elements"),
+        ]
+        for script, line, words in cases:
+            with self.subTest(script=script):
+                error = self.refused(script)
+                self.assertEqual(error.line, line, error.message)
+                self.assertIn(words, error.message)
+
+
 RING = "pts = [(cos(2 * pi * i / 256) * (1 + 0.001 * (i % 2)), sin(2 * pi * i / 256)) for i in range(256)]\n"
 COMB = "pts = [(i, (i % 2) * 0.5) for i in range(254)] + [(253, -5)]\n"
 HOSTILE = {
@@ -282,6 +339,10 @@ HOSTILE = {
     "doubling text": "s = 'ab'\nfor i in range(40):\n    s = s + s",
     "a list nested a thousand deep": "a = 0\nfor i in range(999):\n    a = [a]\nprint(a)",
     "many lists in a loop": "for i in range(1000):\n    x = [0] * 5000",
+    # a list grown in place (+=) while other lists hold it
+    "growing a list held thousands of times": "a = []\nb = [a] * 5000\nfor i in range(1000):\n    a += [0] * 10",
+    "growing a list with a new holder every time": "xs = []\nfor i in range(1000):\n    keep = [xs]\n    xs += [0]",
+    "growing a chain in place": "x = []\nroot = x\nfor i in range(1000):\n    y = []\n    x += [y]\n    x = y",
     "a nested comprehension": "x = [0 for a in range(1000) for b in range(1000) for c in range(1000)]",
     # verbs whose one call walks a lot
     "cutting with a long list, five times": "\n".join([
