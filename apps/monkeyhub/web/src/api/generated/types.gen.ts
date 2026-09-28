@@ -444,6 +444,8 @@ export type ChatMessage = {
      * Presentationrevision
      */
     presentationRevision?: number | null;
+    suggestion?: ChatSuggestion | null;
+    suggestionSelection?: ChatSuggestionSelection | null;
     /**
      * Contextmode
      */
@@ -545,6 +547,7 @@ export type ChatPostRequest = {
      * Contextmode
      */
     contextMode?: 'continue' | 'project' | 'stage';
+    suggestionSelection?: ChatSuggestionSelection | null;
 };
 
 /**
@@ -643,6 +646,7 @@ export type ChatPresentationRequest = {
      * Documents
      */
     documents?: Array<ChatDocumentRef>;
+    suggestion?: ChatSuggestion | null;
 };
 
 /**
@@ -747,6 +751,70 @@ export type ChatStudyEvidence = {
      * Ledgerref
      */
     ledgerRef: string;
+};
+
+/**
+ * ChatSuggestion
+ */
+export type ChatSuggestion = {
+    /**
+     * Title
+     */
+    title: string;
+    /**
+     * Outcome
+     */
+    outcome: string;
+    /**
+     * Capability
+     */
+    capability: 'available' | 'needs-development';
+    /**
+     * Rationale
+     */
+    rationale: string;
+    /**
+     * Tools
+     */
+    tools?: Array<string>;
+    /**
+     * Deliverables
+     */
+    deliverables?: Array<string>;
+    timeEstimate?: ChatSuggestionEstimate;
+    costEstimate?: ChatSuggestionEstimate;
+    /**
+     * Prompt
+     */
+    prompt: string;
+};
+
+/**
+ * ChatSuggestionEstimate
+ */
+export type ChatSuggestionEstimate = {
+    /**
+     * Value
+     */
+    value?: string | null;
+    /**
+     * Basis
+     */
+    basis?: string | null;
+};
+
+/**
+ * ChatSuggestionSelection
+ */
+export type ChatSuggestionSelection = {
+    /**
+     * Messageid
+     */
+    messageId: string;
+    /**
+     * Revision
+     */
+    revision: number;
 };
 
 /**

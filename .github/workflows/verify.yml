@@ -353,11 +353,18 @@ jobs:
       - name: Install API and test dependencies
         run: python -m pip install -e ".[cad-inspection]" -r apps/archflow-studio/api/requirements.txt -r apps/monkeyhub/api/requirements.txt httpx2
 
-      - name: Generate the synthetic project
+      # The base code builds the project: the check promises that an existing
+      # project reads the same, and a candidate that deliberately changes what
+      # new runs record (GH-429, #402) writes data the base cannot read.
+      - name: Generate the synthetic project with the base
         shell: bash
-        working-directory: apps/archflow-studio/api
+        working-directory: ${{ runner.temp }}/base/apps/archflow-studio/api
+        env:
+          PYTHONPATH: ${{ runner.temp }}/base${{ runner.os == 'Windows' && ';' || ':' }}${{ runner.temp }}/base/apps/archflow-studio/api
         run: >-
-          python -c "import os, pathlib;
+          python -c "import os, pathlib, archflow, archflow_studio_api;
+          base = pathlib.Path(os.environ['RUNNER_TEMP'], 'base').resolve();
+          assert all(pathlib.Path(m.__file__).resolve().is_relative_to(base) for m in (archflow, archflow_studio_api)), 'the base code must build the project';
           from tests.synthetic_project import build_synthetic_project;
           print(build_synthetic_project(pathlib.Path(os.environ['RUNNER_TEMP']) / 'projects'))"
 
