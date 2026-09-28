@@ -152,7 +152,7 @@ In both refused cases, every vertex of the host survives the cut, so the bounds 
 
 **Authoring (`PROD.producer_signatures`).**
 - `prism`, `loft` and `wall` accept `references.voids`, a list of unique element ids.
-- Description: "Elements whose solids are removed from this one. Each keeps its identity and stays in the model hidden; remove it from this list and it is delivered again. Neither element needs to be classified."
+- Description: "Elements whose solids are removed from this one. Each keeps its identity and stays in the model hidden; remove it from this list and it shows again. Neither element needs to be classified."
 - Constraints stated with it:
   - a void is a `prism` without `rectangular_cutouts`, or a capped `loft`;
   - a void has no voids of its own;

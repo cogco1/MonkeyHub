@@ -102,7 +102,7 @@ def producer_signatures() -> dict[str, dict[str, Any]]:
     opening_elevation = {"anyOf": [elevation["anyOf"][0], elevation["anyOf"][2]]}
     voids = {"type": "array", "items": identifier, "minItems": 1, "description": (
         "Elements whose solids are removed from this one. Each keeps its own identity and stays in the model "
-        "hidden; remove it from this list and it is delivered again. Neither element needs to be classified. "
+        "hidden; remove it from this list and it shows again. Neither element needs to be classified. "
         "A void is a prism without rectangular_cutouts or a capped loft, has no voids of its own, and nothing "
         "stands on its top.")}
     opening = obj({
@@ -1891,7 +1891,7 @@ def with_void_hosts(rows: tuple[ElementRow, ...]) -> tuple[ElementRow, ...]:
 
     Being named is what makes an element a void: its solid is removed from
     each host and kept in the model hidden under its own id. Nothing on the
-    element itself says so, and removing the name delivers it again. Refused
+    element itself says so, and removing the name shows it again. Refused
     by name: a missing void, one that is not a prism or a capped loft making
     one solid, one with voids of its own, a host that cannot be cut, and
     anything standing on a void's top.
