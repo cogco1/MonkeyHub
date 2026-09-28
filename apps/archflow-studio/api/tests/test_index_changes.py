@@ -148,6 +148,19 @@ class IndexChangesTests(DesignHistoryFixture):
         self.assertGreaterEqual(answer["to"], int(written))
         return {entity["id"] for entity in answer["upserts"]} | set(answer["deletes"])
 
+    def test_every_review_moves_the_run_the_tree_reads(self) -> None:
+        """Reviews and admissions after the first are kept in their run's review area; each one is news for the tree."""
+        candidate_id = self.initialize()["candidateId"]
+
+        def review(action: str, reason: str | None = None):
+            return self.indexed.post("/api/candidate-reviews", json={
+                "projectId": PROJECT_ID, "subjectKind": "candidate", "subjectRef": candidate_id,
+                "action": action, "reason": reason})
+
+        self.assertEqual(review("reject", "first").status_code, 201)  # creates the reviews run
+        for action, reason in (("archive", None), ("restore", None), ("endorse", "develop this")):
+            self.assertIn("run:studio-candidate-reviews", self.moved_by(lambda: review(action, reason)), action)
+
     def test_board_scene_saves_move_only_what_the_board_keeps_aside(self) -> None:
         """Each Board autosave adds a scene record to the Board's run; the run itself, as the tree reads it, stays."""
         latest = None

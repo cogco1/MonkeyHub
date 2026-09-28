@@ -35,6 +35,7 @@ from archflow.project.index import (
     manifest_stamp,
     path_area,
 )
+from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import STUDIO_BOARD_SCENE, STUDIO_DOCUMENT_ANNOTATIONS, STUDIO_MODEL_ANNOTATIONS
 from archflow.project.refs import ProjectRecordRef, record_ref_from_uri
 from archflow.project.repository import ProjectRepositoryError
@@ -109,6 +110,10 @@ class StudioProjector:
             body["run_unreadable"] = True
         try:
             rows = [RecordRow(ref.uri, record_kind(ref), ref.sha256) for ref in binding.record_refs(run_id)]
+            # Admissions and candidate reviews after the one that created their run
+            # are kept in its review area, and each changes what the tree shows.
+            rows += [RecordRow(ref.uri, record_kind(ref), ref.sha256) for ref in binding.repository.list_json(
+                run=binding.load_run(run_id), destination=PersistenceDestination(PersistenceArea.RUN_REVIEW, run_id=run_id))]
             records = tuple(row for row in rows if row.kind not in ASIDE_KINDS)
             aside = tuple(row for row in rows if row.kind in ASIDE_KINDS)
         except _UNREADABLE:
