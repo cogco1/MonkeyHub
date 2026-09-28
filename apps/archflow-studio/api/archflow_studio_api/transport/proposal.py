@@ -139,7 +139,8 @@ class SketchActionDto(BaseModel):
     element_id: str = Field(
         alias="elementId",
         min_length=1,
-        description="the Element@1 this action authors; an existing id edits that element",
+        description="the Element@1 this action authors; an existing id edits that element. "
+                    "It must differ from componentId: a component and its element are two entities with their own ids",
     )
     profile: list[tuple[float, float]] = Field(
         min_length=2,
@@ -181,6 +182,9 @@ class SketchActionDto(BaseModel):
         # element's top. Both, or neither, is a request nobody can execute.
         if (self.base_level is None) == (self.base_datum is None):
             raise ValueError("state exactly one of baseLevel or baseDatum")
+        if self.component_id == self.element_id:
+            raise ValueError(f"componentId and elementId are both {self.element_id!r}; "
+                             "a new form's component and element need different ids")
         if self.closed and len(self.profile) < 3:
             raise ValueError("a closed profile needs at least three points")
         if not self.closed and self.height != 0:
@@ -417,8 +421,11 @@ class DeleteElementRequestDto(BaseModel):
 def _semantic_edit_schema(schema: dict[str, Any]) -> None:
     """Reuse the compiler's producer contracts for direct, partial upserts."""
 
+    from monkeyarch.capabilities.element_producers import producer_signatures
+
     from ..application.intent_agent import response_schema
 
+    signatures = producer_signatures()
     edit = response_schema(strict=False)["properties"]["semanticEdit"]["anyOf"][1]
     edit["required"] = ["summary"]
     for name, identity in (("entities", "entity_id"), ("parameters", "key"), ("relations", "relation_id")):
@@ -435,6 +442,10 @@ def _semantic_edit_schema(schema: dict[str, Any]) -> None:
                 )
                 for field_variant in fields.get("anyOf", [fields]):
                     field_variant["required"] = []
+                    # Each producer says what it makes, so a reader can choose
+                    # one before asking for its whole contract.
+                    for producer in field_variant.get("properties", {}).get("producer", {}).get("enum", ()):
+                        field_variant["description"] = signatures[producer]["description"]
     schema.update(edit)
 
 
