@@ -99,11 +99,15 @@ decision tree comes from two derived stores. Either store can be deleted at any 
 
 **Phase 2 as built (#366, 2026-09-28):**
 - The cursor is `(epoch, revision)`, both the index's. A client keeps entities: `run:<id>` (a run's own body,
-  candidate, artifacts, documents and record count), `tree` (the tree's body and stages), `working` (the working
-  position a head is read from: `current`, `runs`, `active`, without the local recovery it names) and
-  `area:<name>` (the layout lines of every other area: HEAD, the working draft's file, the manifest, each
-  top-level directory without rows). Modeling saves its local recovery 250 ms after each edit; that save moves
-  `area:working` and the recovery run, never `working`, so a surface that shows the head can tell the two apart.
+  candidate, artifacts, documents and record count), `aside:<id>` (how many records a run keeps beside what it
+  shows: Board scene revisions, page and model annotations, one per save; the projector names their kinds),
+  `tree` (the tree's body and stages), `working` (the working position a head is read from: `current`, `active`
+  and the digest of the retained runs' rows, without the local recovery it names) and `area:<name>` (the layout
+  lines of every other area: HEAD, the working draft's file, the manifest, each top-level directory without
+  rows). Modeling saves its local recovery 250 ms after each edit; that save moves `area:working` alone (the
+  recovery run only when it is first made), never `working`, so a surface that shows the head can tell the two
+  apart. A Board scene saved 700 ms after a change and a page's annotations saved per stroke move `aside:<id>`
+  alone, never `run:<id>`.
   An area moves the revision when one of its lines changed or this process wrote there, so a Continue or a saved
   draft reaches clients although it projects nothing; a line only read again (racy) moves nothing.
 - The `change` table is the bounded change log: per entity, the revision that last changed or deleted it, kept for
@@ -124,9 +128,9 @@ decision tree comes from two derived stores. Either store can be deleted at any 
   they were numbered on: a restarted worker numbers from 1 again, and clients know an event by `<stream>:<seq>`.
   When the attachment may have missed something - the first one to a worker, or a `stream.reset` - it also sends
   an `index` frame without a revision: read again. A reattachment that resumes sends none, and a stream that ends
-  at once is attached again after a delay doubling from 0.5 s to 30 s. The Hub keeps each project's last 200
-  Studio events and opens every page's stream with them after its snapshot, so an event panel opens with a
-  replay as it did on its own stream. Frames the Hub relays are never dropped against the snapshot's sequence:
+  at once is attached again after 0.5 s, then after a delay doubling to 30 s. The Hub keeps each project's last
+  200 Studio events and opens every page's stream with them after its snapshot, marked `replay`, so an event
+  panel opens with a replay as it did on its own stream and no surface takes them for news. Frames the Hub relays are never dropped against the snapshot's sequence:
   the snapshot does not hold them. A Hub page therefore holds one event stream, whatever it shows; the per-page
   proxy of the worker stream (`/api/runtime/projects/{id}/studio/api/events`) is retired and answers 404.
 - Each open project has one client store (`workspaces/src/api/projectStore.ts`) at the ChatShell level, shared by
@@ -140,11 +144,12 @@ decision tree comes from two derived stores. Either store can be deleted at any 
 - The Design Tree, Board and Render read their views again when the store moves, not on a timer; a view without
   a content hash is kept under the revision it was read at (`ProjectStore.derive`), so showing a surface again on
   an unchanged project asks for nothing. The store keeps when each entity last moved (`moved`), and a surface
-  follows only what it shows (`movedAt`): the Design Tree follows `tree`, `working`, `area:head` and every run but
-  the local recovery, so twenty edits in Modeling read it no more (it read it twenty times, each a Worktree Graph,
-  working source and design history). Its reads never overlap: one runs and whatever asks meanwhile is one more
+  follows only what it shows (`movedAt`): the Design Tree follows `tree`, `working`, `area:head` and every
+  `run:<id>`, never `aside:<id>` or another area, so twenty edits in Modeling, twenty Board saves or twenty strokes
+  on a drawing page read it no more (each read is a Worktree Graph, working source and design history). Its reads never overlap: one runs and whatever asks meanwhile is one more
   after it. A job's lifecycle event (`*.queued|waiting|running|succeeded|failed`) reads its running work, which
-  the runtime holds in memory and no commit announces. Modeling reads the Working Head again only when
+  the runtime holds in memory and no commit announces; a tree off screen (a hidden project tab stays mounted)
+  reads it once when shown again, and a replayed event not at all. Modeling reads the Working Head again only when
   `working`, `tree` or `area:head` moves. Render reads its attempts again 1, 2, 4, 8 and 16 s after a submit whose
   answer was lost; outside the Hub it and the tree read on focus. Model bytes and previews stay content-addressed. The
   store is not persisted (no IndexedDB): a snapshot of a local index costs a few milliseconds.

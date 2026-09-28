@@ -64,8 +64,8 @@ _DOCUMENT_RECORD_KINDS = (STUDIO_SOURCE_DOCUMENT, STUDIO_DOCUMENT_MODEL_SOURCE)
 # How often an unwoken watcher compares that key; a wake compares it at once.
 _WORK_COPY_CHECK_S = _IDLE_RETAINED_REFRESH_S
 # How long the Hub waits before it attaches to a worker's event stream again
-# after that stream ended or was refused: doubled after each attachment that
-# carried nothing, up to the cap, and back to the first after one that did.
+# after that stream ended or was refused: this first, then doubled for each
+# further attachment that carried nothing, up to the cap; back to this after one that did.
 _WORKER_EVENTS_RETRY_S = 0.5
 _WORKER_EVENTS_RETRY_MAX_S = 30.0
 # How many of each project's Studio events the Hub keeps to open a new page's panel with.
@@ -588,8 +588,10 @@ class _WorkerEvents:
     hint is never the data and never required: clients also read on their own
     stream's snapshot and on focus.
 
-    A stream that ends or is refused is attached again after a delay that
-    doubles while attachments carry nothing (up to ``_WORKER_EVENTS_RETRY_MAX_S``).
+    A stream that ends or is refused is attached again after
+    ``_WORKER_EVENTS_RETRY_S`` (0.5 s), then after a delay that doubles while
+    attachments carry nothing (1, 2, 4 s ... up to ``_WORKER_EVENTS_RETRY_MAX_S``);
+    an attachment that carried an event starts the delays from 0.5 s again.
     """
 
     def __init__(self, manager: "ProjectRuntimeManager", runtime_id: str, url: str) -> None:
@@ -645,8 +647,10 @@ class _WorkerEvents:
             finally:
                 self._socket = None
                 connection.close()
-            delay = _WORKER_EVENTS_RETRY_S if self._received else min(delay * 2, _WORKER_EVENTS_RETRY_MAX_S)
+            if self._received:
+                delay = _WORKER_EVENTS_RETRY_S
             self._stopped.wait(delay)
+            delay = min(delay * 2, _WORKER_EVENTS_RETRY_MAX_S)
 
     def _read(self, response) -> None:
         event, data, event_id = "", [], None

@@ -260,6 +260,7 @@ class _ScriptedStudioStream(BaseHTTPRequestHandler):
 
     def do_GET(self):
         self.server.attaches.append(self.headers.get("Last-Event-ID", ""))
+        self.server.times.append(time.monotonic())
         frames = self.server.script.pop(0) if self.server.script else []
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream")
@@ -282,7 +283,7 @@ class WorkerEventsTests(unittest.TestCase):
 
     def follow(self, script):
         server = ThreadingHTTPServer(("127.0.0.1", 0), _ScriptedStudioStream)
-        server.script, server.attaches = list(script), []
+        server.script, server.attaches, server.times = list(script), [], []
         threading.Thread(target=server.serve_forever, daemon=True).start()
         self.addCleanup(server.server_close)
         self.addCleanup(server.shutdown)
@@ -306,12 +307,15 @@ class WorkerEventsTests(unittest.TestCase):
         self.assertEqual([call.args for call in manager.index_hint.call_args_list], [("runtime-a", None), ("runtime-a", None)])
 
     def test_a_stream_that_ends_at_once_is_attached_again_ever_later_and_hints_once(self):
-        with mock.patch("monkeyhub_api.runtime._WORKER_EVENTS_RETRY_S", 0.05):
+        with mock.patch("monkeyhub_api.runtime._WORKER_EVENTS_RETRY_S", 0.2):
             server, manager = self.follow([])
-            time.sleep(1.2)
-        # 0.1, 0.2, 0.4, 0.8 s apart: a fixed 50 ms retry would have attached about 24 times.
-        self.assertLessEqual(len(server.attaches), 5, server.attaches)
-        self.assertGreaterEqual(len(server.attaches), 3, server.attaches)
+            time.sleep(1.0)
+        # Attached at 0, 0.2 and 0.6 s: the first wait is the first delay, then it doubles
+        # (a fixed 0.2 s retry would have attached 5 times).
+        self.assertEqual(len(server.attaches), 3, server.attaches)
+        gaps = [later - earlier for earlier, later in zip(server.times, server.times[1:])]
+        self.assertTrue(0.18 <= gaps[0] < 0.35, gaps)
+        self.assertTrue(0.38 <= gaps[1] < 0.7, gaps)
         self.assertEqual(manager.index_hint.call_count, 1, "only the first attachment may have missed something")
 
 

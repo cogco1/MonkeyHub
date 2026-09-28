@@ -2217,7 +2217,7 @@
         "IndexStamp and manifest_stamp: schema version, projector version, project id and the digest of project.json; a different stamp rebuilds under a new epoch",
         "the row values a projector returns (RunRows, TreeRows, RecordRow, ArtifactRow, DocumentRow, CandidateRow, StageRow) and the Projector protocol",
         "line_places, place_area and path_area: which part of a project a layout line or a written path belongs to",
-        "the bounded change log (#366): the change table (per entity - run:<id>, tree, working, area:<name> - the revision that last changed or deleted it, kept for CHANGE_LOG_REVISIONS revisions above meta.floor), IndexSnapshot.changes (the entities changed and ids deleted since a revision, or None below the floor or ahead) and IndexSnapshot.entities (the whole snapshot a client keeps)",
+        "the bounded change log (#366): the change table (per entity - run:<id>, aside:<id>, tree, working, area:<name> - the revision that last changed or deleted it, kept for CHANGE_LOG_REVISIONS revisions above meta.floor), IndexSnapshot.changes (the entities changed and ids deleted since a revision, or None below the floor or ahead) and IndexSnapshot.entities (the whole snapshot a client keeps)",
         "IndexCommit and add_commit_listener: the keeper announces each commit that moved the revision, and its first load, to the listeners registered for the project's root (a hint, never data)"
       ],
       "does_not_own": [
@@ -2307,7 +2307,7 @@
         "one projector fills the rows for a rebuild and for every change, outside the write transaction; a commit that changed a row moves the revision exactly once, and an apply that found nothing to do commits nothing",
         "a keeper never outlives its binding: closing the binding, or collecting one nobody closed, stops the keeper and gives up index.lock",
         "a kept file reopened after a restart is reused as it is when every layout line matches and none was racy when written; otherwise only the places that moved are projected again; a racy place is projected again once it settles",
-        "every committed change to a run's rows, the tree, the working position (Projector.project_working: the working draft without its local recovery ref, its own entity so an autosave moves only area:working) or another area (HEAD, the working draft's file, any top-level directory without rows) moves the revision once and is logged; a since below the log's floor or ahead of the index answers nothing, so the caller sends a whole snapshot; a rebuild starts a new epoch with an empty log; a commit listener only publishes and never reads or writes the project"
+        "every committed change to a run's rows (the records it keeps aside, RunRows.aside, are an entity of their own, aside:<id>, so saving one never moves run:<id>), the tree, the working position (Projector.project_working: the working draft without its local recovery ref, its own entity so an autosave moves only area:working) or another area (HEAD, the working draft's file, any top-level directory without rows) moves the revision once and is logged; a since below the log's floor or ahead of the index answers nothing, so the caller sends a whole snapshot; a rebuild starts a new epoch with an empty log; a commit listener only publishes and never reads or writes the project"
       ],
       "status": "canonical",
       "tests": [
