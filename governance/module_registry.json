@@ -6787,7 +6787,8 @@
       ],
       "tests": [
         "apps/archflow-studio/api/tests/test_construction_routes.py",
-        "apps/archflow-studio/api/tests/test_hosted_opening.py"
+        "apps/archflow-studio/api/tests/test_hosted_opening.py",
+        "apps/archflow-studio/api/tests/test_construction_first_authoring.py"
       ],
       "reason": "GH-419: the agent authors geometry with one construction script and the runtime chooses producers; meaning and the capabilities it unlocks arrive later as facets on the same identity."
     },
