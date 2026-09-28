@@ -3261,6 +3261,41 @@
       "notes": ""
     },
     {
+      "module_id": "semantics.facets",
+      "owner_path": "archflow/semantics/facets.py",
+      "purpose": "The registered L3 facets a component may carry once its meaning is established: namespaced key/value pairs, each key either a closed set of values or free text.",
+      "owns": [
+        "the facet vocabulary (architectural.role, architectural.enclosure, structural.role, material.name, fabrication.method), which keys are free text, and the free-text length bounds"
+      ],
+      "does_not_own": [
+        "roles - semantics.roles",
+        "conditions - semantics.conditions",
+        "refusing a record's facets - state.record"
+      ],
+      "inputs": [],
+      "outputs": [],
+      "public_api": [
+        "FACETS",
+        "FACET_KEYS",
+        "FREE_TEXT_MIN",
+        "FREE_TEXT_MAX",
+        "allowed_facet_values",
+        "suggest_facet_key"
+      ],
+      "depends_on": [],
+      "used_by": [
+        "archflow/state/state_record.py"
+      ],
+      "invariants": [
+        "a facet is not an entity type and not a role or a condition (ADR-006); an enumerated key accepts only its closed set of values, a free-text key accepts 1-120 characters"
+      ],
+      "status": "canonical",
+      "tests": [
+        "tests/test_facets.py"
+      ],
+      "notes": "Facets live on Component@1.fields.facets (spec docs/2026-09-28-construction-api.md §3.4); GH-419 Task C2."
+    },
+    {
       "module_id": "semantics.registry",
       "owner_path": "archflow/semantics/registry.py",
       "purpose": "Resolve a semantic string (id, id+id, alias, or a registered compound phrase) to registered ids, or name the nearest ones.",
@@ -4031,6 +4066,7 @@
         "bootstrap_developed_state",
         "design_components_of",
         "component_semantics",
+        "component_facets",
         "developed_design_view",
         "RecordBinding",
         "legacy_state_digest",
@@ -4058,6 +4094,7 @@
         "project.refs",
         "relations.contracts",
         "semantics.conditions",
+        "semantics.facets",
         "semantics.registry",
         "semantics.roles",
         "state.design_portfolio",
@@ -4099,7 +4136,8 @@
         "a wall type supplies producer parameters and references, not a second instance store; changing a type or a bound parameter propagates to its instances",
         "Lock changes alter only existing Parameter.lock_authority; exact bases and ordinary value/dependency protections remain enforced, new downstream bindings are allowed, and only an explicit unlock permits detaching existing locked bindings",
         "a record is a value: its readings (digest, state_digest, dependency_edges, resolve_element_bindings, per-entity parameter bindings, design_components_of per source and developed_design_view per argument tuple) are taken once per instance and kept on it; dataclasses.replace starts a new instance with nothing kept, and resolve_element_bindings hands each caller rows of its own",
-        "an element named in another element's references.voids is upstream of it: changing the void invalidates the host"
+        "an element named in another element's references.voids is upstream of it: changing the void invalidates the host",
+        "facets on a component are its only L3 meaning a capability may read; changing them changes no element, object, datum or dependency"
       ],
       "status": "canonical",
       "tests": [
