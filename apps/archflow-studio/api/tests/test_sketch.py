@@ -73,6 +73,46 @@ class SketchTestCase(unittest.TestCase):
             proposal["proposalId"],
         )
 
+    def test_either_spelling_of_a_closed_profile_is_stored_as_one(self) -> None:
+        # #404 F8: normalized when written, so the same shape has one content identity.
+        from archflow.contracts.canonical import canonical_json
+
+        closed = [*SQUARE, SQUARE[0]]
+
+        from archflow_studio_api.application.binding import bound_project
+        from archflow_studio_api.application.intent import sketch_prism_proposal
+        from archflow_studio_api.application.projection import project_state
+
+        def sketched(profile, height):
+            # The sketch route's request refuses the repeat; its producer call takes either.
+            with self.client:
+                projection = project_state(bound_project(self.client.app.state), REFERENCE_RUN_ID)
+            proposal = sketch_prism_proposal(projection, component_id="portico", element_id="portico-porch",
+                                             profile=profile, height=height, base={"level": "level-ground"})
+            [entity] = proposal["semantic_edit"]["edits"]["entities"]
+            return entity["fields"]
+
+        def authored(producer, profile):
+            response = self.client.post("/api/proposals", json={
+                "stateDigest": self.state_digest, "semanticEdit": {"summary": "one porch", "entities": [{
+                    "entity_id": "portico-porch", "schema": "Element@1", "parent_id": "portico", "fields": {
+                        "component_id": "portico", "producer": producer,
+                        "references": {"base": {"level": "level-ground"}},
+                        "params": {"profile": profile, **({"height": 2.4} if producer == "prism" else {})},
+                    }}], "parameters": [], "relations": []},
+            })
+            self.assertEqual(response.status_code, 201, response.text)
+            [entity] = response.json()["change"]["edits"]["entities"]
+            return entity["fields"]
+
+        for producer, height, stored in (("prism", 2.4, SQUARE), ("planar-surface", 0, closed)):
+            with self.subTest(producer=producer):
+                sent = [sketched(SQUARE, height), sketched(closed, height), authored(producer, SQUARE), authored(producer, closed)]
+                self.assertEqual(sent[0]["params"]["profile"], stored)
+                self.assertEqual({canonical_json(fields) for fields in sent[:2]}, {canonical_json(sent[0])})
+                self.assertEqual({canonical_json(fields) for fields in sent[2:]}, {canonical_json(sent[2])})
+                self.assertEqual(sent[2]["params"], sent[0]["params"])
+
     def test_the_same_element_id_changes_the_outline_and_the_height(self) -> None:
         first = self.draw()[1]
         self.assertEqual(first["change"]["changes"][0]["action"], "add")
@@ -991,6 +1031,15 @@ class PlanarCompressionProposalTestCase(unittest.TestCase):
                     "producer": "planar-surface", "params": fields.pop("params"),
                 }})
                 fields["type_ref"] = "face-type"
+        if variant == "roof":
+            # #404 item 8: a level above the threshold and a surface bound to it that no edit moves.
+            entities.append({"entity_id": "level-roof", "schema": "Level@1",
+                             "fields": {"role": "roof", "elevation": 6.0}, "basis_refs": ["evidence:roof"]})
+            entities.append({"entity_id": "roof-deck", "schema": "Element@1", "parent_id": "portico", "fields": {
+                "component_id": "portico", "producer": "planar-surface", "references": {"base": {"level": "level-roof"}},
+                "params": {"profile": [[0, 0], [2, 0], [2, 1], [0, 1], [0, 0]], "work_plane": {
+                    "origin": [0, 0, 0], "xAxis": [1, 0, 0], "yAxis": [0, 0, 1], "normal": [0, 1, 0]}},
+            }})
         if variant == "related":
             relations = [{"relation_id": "faces-meet", "kind": "interface", "subject": "upper-face",
                           "object": "crossing-face", "propagation": "revalidate"}]
@@ -1045,6 +1094,27 @@ class PlanarCompressionProposalTestCase(unittest.TestCase):
         self.assertEqual(self.proposed_record(source), original)
         self.assertEqual(set((self.root / PROJECT_ID / "runs").iterdir()), runs)
         self.assertEqual(self.repository.read_head().version, head)
+
+    def test_the_summary_names_levels_above_the_threshold_only_when_there_are_any(self):
+        # #404 item 8: a level is not compressed, so what stands on it rises against the compressed work.
+        plain = self.compress(self.source())
+        self.assertEqual(plain.status_code, 201, plain.text)
+        self.assertEqual(plain.json()["change"]["summary"],
+                         "Compress 2 surfaces above 2.0 by 0.5; keep the lower portion fixed")
+        roof_source = self.source("roof")
+        roof = self.compress(roof_source)
+        self.assertEqual(roof.status_code, 201, roof.text)
+        self.assertEqual(
+            roof.json()["change"]["summary"],
+            "Compress 2 surfaces above 2.0 by 0.5; keep the lower portion fixed. Levels above 2.0 m (level-roof) "
+            "stay where they are; elements bound to them (roof-deck) keep their level, so they now sit 2.0 m "
+            "higher against the compressed work.",
+        )
+        self.assertEqual(roof.json()["utterance"], "Compress 2 surfaces above 2.0 by 0.5; keep the lower portion fixed")
+        before = {e.entity_id: e for e in self.proposed_record(roof_source).entities}
+        after = {e.entity_id: e for e in self.proposed_record(roof.json()).entities}
+        self.assertEqual(after["roof-deck"], before["roof-deck"])
+        self.assertEqual(after["level-roof"], before["level-roof"])
 
     def test_nonplanar_bound_related_and_kept_batches_leave_no_executable_prefix(self):
         runs = set((self.root / PROJECT_ID / "runs").iterdir())

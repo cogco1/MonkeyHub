@@ -274,7 +274,8 @@ def sketch_prism_proposal(
     if height < 0:
         plane = dict(plane or {"origin": [0, 0, 0], "xAxis": [1, 0, 0], "yAxis": [0, 0, 1], "normal": [0, 1, 0]})
         plane["normal"] = [-float(c) for c in plane["normal"]]
-    params = {"profile": points + [points[0]] if closed and height == 0 else points,
+    # component_edit_proposal stores a closed profile in its producer's spelling (#404 F8).
+    params = {"profile": points,
               **({"height": abs(float(height))} if height != 0 else {}),
               **({"work_plane": dict(plane)} if plane is not None else {})}
     components = {entity.entity_id for entity in projection.record.entities_of("Component@1")}
@@ -311,9 +312,10 @@ def sketch_prism_proposal(
         },
     }
     existing = {entity.entity_id for entity in projection.record.entities}
+    vertices = len(points) - (1 if len(points) > 1 and points[0] == points[-1] else 0)
     said = summary or (
         f"{'change' if element_id in existing else 'draw'} {element_id}: "
-        + (f"{len(points)}-point open curve" if not closed else f"{len(points)}-point profile pulled to {height:g}")
+        + (f"{len(points)}-point open curve" if not closed else f"{vertices}-point profile pulled to {height:g}")
     )
     return component_edit_proposal(
         projection,
@@ -489,11 +491,56 @@ def compress_above_proposal(projection: StateProjection, *, threshold: float, fa
     if not updates:
         raise StudioError(422, "DIRECT_EDIT_NO_CHANGE", "The selected surfaces do not change at this threshold and factor.")
     said = f"Compress {len(updates)} surfaces above {threshold} by {factor}; keep the lower portion fixed"
+    left = _levels_left_above(record, rows, context, threshold=threshold, factor=factor,
+                              moved={update["entity_id"] for update in updates})
     return component_edit_proposal(projection, {
-        "summary": said, "entities": updates, "parameters": [], "relations": [],
+        "summary": f"{said}. {left}" if left else said, "entities": updates, "parameters": [], "relations": [],
         "removeEntityIds": [], "removeParameterKeys": [], "removeRelationIds": [],
         "protected": [], "kept": list(keep_refs),
     }, utterance=said, component_id=component_id, keep_refs=keep_refs)
+
+
+def _levels_left_above(record, rows, context, *, threshold: float, factor: float, moved: set[str]) -> str:
+    """What compress-above leaves where it is: the levels above the threshold (#404 item 8).
+
+    A level is a datum, not a surface, so it is not compressed. An element bound
+    to it that the edit does not move keeps that level, and so stands higher
+    against the compressed work than it did: at a level's height the work now
+    lies ``(elevation - threshold) * (1 - factor)`` lower. Empty when no level
+    lies above the threshold.
+    """
+
+    from monkeyarch.capabilities.reference_resolver import parse_reference, resolve_elevation
+    from archflow.state.state_record import project_levels_of
+
+    above = [level for level in project_levels_of(record).levels if level.elevation > threshold + 1e-9]
+    if not above:
+        return ""
+    ids = {level.level_id for level in above}
+
+    def level_of(row) -> str | None:
+        base = row.references.get("base")
+        if isinstance(base, Mapping) and "datum" in base:
+            return str(base["datum"])
+        try:
+            return resolve_elevation(parse_reference(base), context.references)[0]
+        except (TypeError, ValueError, KeyError):
+            return None
+
+    bound: dict[str, list[str]] = {}
+    for row in rows:
+        level_id = level_of(row)
+        if level_id in ids and row.element_id not in moved:
+            bound.setdefault(level_id, []).append(row.element_id)
+    said = f"Levels above {_shown(threshold)} m ({_listed([level.level_id for level in above])}) stay where they are"
+    if not bound:
+        return said + "."
+    rises = [(level.level_id, (level.elevation - threshold) * (1 - factor)) for level in above if level.level_id in bound]
+    risen = (f"{_shown(round(rises[0][1], 6))} m" if len(rises) == 1 else
+             ", ".join(f"{_shown(round(rise, 6))} m ({level_id})" for level_id, rise in rises))
+    elements = _listed(sorted(element for level_id in bound for element in bound[level_id]))
+    return (f"{said}; elements bound to them ({elements}) keep their level, so they now sit "
+            f"{risen} higher against the compressed work.")
 
 
 def delete_element_proposal(
@@ -651,6 +698,7 @@ def component_edit_proposal(
         record = projection.record
         existing = {entity.entity_id: entity for entity in record.entities}
         edit_entities, unclassified = _unregistered_kinds_as_intent(edit["entities"], existing)
+        edit_entities = [_canonical_profile(payload, existing) for payload in edit_entities]
         if unclassified:
             summary = summary.strip() + " (" + "; ".join(unclassified) + ")"
         entities = []
@@ -818,6 +866,26 @@ def component_edit_proposal(
             },
         },
     }
+
+
+def _canonical_profile(payload: object, existing: Mapping[str, Entity]) -> object:
+    """An entity edit whose sent params hold a closed profile in its producer's one spelling.
+
+    Normalized when written, so one shape has one content identity whichever
+    spelling was sent (#404 F8); the producer still reads retained rows either way.
+    """
+
+    from monkeyarch.capabilities.element_producers import canonical_params
+
+    fields = payload.get("fields") if isinstance(payload, Mapping) else None
+    if not isinstance(fields, Mapping) or not isinstance(fields.get("params"), Mapping):
+        return payload
+    previous = existing.get(payload.get("entity_id"))
+    producer = fields.get("producer", previous.fields.get("producer") if previous is not None else None)
+    params = canonical_params(producer, fields["params"])
+    if params == fields["params"]:
+        return payload
+    return {**payload, "fields": {**fields, "params": params}}
 
 
 def _unregistered_kinds_as_intent(

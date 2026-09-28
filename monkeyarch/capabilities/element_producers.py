@@ -395,6 +395,23 @@ def _canonical(row: ElementRow) -> ElementRow:
     return row
 
 
+def canonical_params(producer: object, params: object) -> object:
+    """A producer's params with its closed profile in the one spelling it stores (#404 F8).
+
+    The write path calls this so the same shape has one content identity,
+    whichever spelling was sent. Anything this cannot read, including a loft
+    whose sections are ambiguous, is returned as it came: the producer's own
+    validation names the problem.
+    """
+
+    if not isinstance(producer, str) or not isinstance(params, Mapping):
+        return params
+    try:
+        return dict(_canonical(ElementRow("canonical", "canonical", producer, {}, params)).params)
+    except (ElementProducerError, KeyError, TypeError, ValueError):
+        return params
+
+
 def _loft_sections(row: ElementRow) -> list[list]:
     """A loft's sections without a repeated first point, each of ``profile_size`` vertices.
 
