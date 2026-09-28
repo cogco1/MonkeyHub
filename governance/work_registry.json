@@ -1,4 +1,24 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": []
+  "items": [
+    {
+      "id": "GH-432",
+      "status": "active",
+      "branch": "codex/chat-action-cards",
+      "worktree": "C:\\Users\\asus\\.codex\\worktrees\\drawing-rule-memory\\ARCHFLOW_V4",
+      "base_ref": "3fc09a68d14417e7799e594ca1e26e61b9d97155",
+      "contributor": "Codex",
+      "reviewer": null,
+      "handoff": null,
+      "modules": [
+        "hub.shell"
+      ],
+      "write_scope": [
+        "apps/archflow-studio/api/tests/synthetic_project.py",
+        "apps/archflow-studio/api/tests/test_synthetic_project.py",
+        "docs/testing/projection-check.md"
+      ],
+      "depends_on": []
+    }
+  ]
 }
