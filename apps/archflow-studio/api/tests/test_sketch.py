@@ -361,6 +361,33 @@ class SketchContinuationTestCase(unittest.TestCase):
         self.assertNotIn(first, unknown.json()["detail"])
         self.assertIn("/api/state", unknown.json()["detail"])
 
+    def test_the_questions_asked_of_a_sent_state_name_its_run_too(self) -> None:
+        # #404 review of 13f8b7b7: a closure, a pick, an intent, a massing option and a
+        # context read also check the state they are sent, and "Read /api/state again"
+        # sent the agent back to the default source from each of them.
+        first = self.draw(run=None, elementId="block-a", profile=SQUARE, height=3.0,
+                          baseLevel="level-ground")
+        sent = self.digest_of(first)
+        checked = self.client.get("/api/state").json()["referenceRun"]["runId"]
+        for path, body in (
+            ("/api/state/closure", {"changedRefs": ["entity:block-a"]}),
+            ("/api/pick/resolve", {"userStrings": {}}),
+            ("/api/intents", {"targetComponentId": "portico", "elementId": "block-a", "utterance": "set height to 2"}),
+            ("/api/options", {"transform": "add_floor"}),
+            # The context read names its source exactly; the one named is what was checked.
+            ("/api/intents/context", {"projectId": PROJECT_ID, "sourceRunId": checked,
+                                      "utterance": "Continue the massing"}),
+        ):
+            with self.subTest(path=path):
+                refused = self.client.post(path, json={"stateDigest": sent, **body})
+                self.assertEqual(refused.status_code, 409, refused.text)
+                self.assertEqual(refused.json()["code"], "STALE_BASE")
+                detail = refused.json()["detail"]
+                self.assertIn(f"/api/state?run={first}", detail, "the run whose state was sent is named")
+                self.assertIn(f'sourceRunId "{first}"', detail)
+                self.assertIn(checked, detail, "the source it was checked against is named")
+                self.assertNotIn("/api/state again", detail)
+
     def test_going_back_to_an_earlier_run_and_carrying_on_from_it(self) -> None:
         first = self.draw(run=None, elementId="block-a", profile=SQUARE, height=3.0,
                           baseLevel="level-ground")

@@ -411,7 +411,8 @@ the same point. A direct action's proposal summary states its vector and which w
 (up or down, or horizontal along plan x or z) before anything runs.
 
 A modeling write whose `stateDigest` is not the selected source's is refused
-`409 STALE_BASE`. The detail names the source it was checked against (the project's default
+`409 STALE_BASE`, as are `POST /api/intents`, `/api/intents/context`, `/api/state/closure`,
+`/api/pick/resolve` and `/api/options`. The detail names the source it was checked against (the project's default
 source when no `sourceRunId` was sent) and, reading the newest 200 runs, the run whose
 receipt carries the sent state and the `sourceRunId` to send; otherwise it says no run it
 read has that state.

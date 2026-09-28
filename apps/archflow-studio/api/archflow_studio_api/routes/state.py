@@ -18,7 +18,6 @@ from ..application.catalog import catalog_of
 from ..application.frame import closure_of_refs, frame_of
 from ..application.options import record_massing
 from ..application.projection import project_state
-from ..transport.errors import StudioError
 from ..transport.options import VolumesDto, volumes_dto
 from ..transport.state import (
     ClosureDto,
@@ -29,6 +28,7 @@ from ..transport.state import (
     frame_dto,
     to_dto,
 )
+from .proposals import _stale_base
 
 router = APIRouter(tags=["state"])
 
@@ -141,13 +141,7 @@ def read_closure(request: Request, body: ClosureRequestDto) -> ClosureDto:
     binding = bound_project(request.app.state)
     projection = project_state(binding, run_id=body.source_run_id)
     if body.state_digest != projection.state_digest:
-        raise StudioError(
-            409,
-            "STALE_BASE",
-            f"the request names state {body.state_digest}, but "
-            f"{binding.project_id} is at {projection.state_digest}. Read "
-            "/api/state again and ask against the state that answers now.",
-        )
+        raise _stale_base(binding, projection, body.state_digest, "the closure question", body.source_run_id)
     return closure_dto(
         closure_of_refs(projection.record, tuple(body.changed_refs))
     )
