@@ -129,10 +129,11 @@ let settings = { projectDir: "D:\\fixture\\A", referenceRun: null, cadExport: "o
 let preferences = { language: "en", theme: "light", fontScale: 1 };
 // GH-302: settings save themselves; a test holds one write to see what waits for it.
 let settingsWriteGate = null;
-const projects = [
+const initialProjects = () => [
   { projectId: "A", projectDir: "D:\\fixture\\A", name: "Project A", chatCount: 0, version: 3, stage: "S2" },
   { projectId: "B", projectDir: "D:\\fixture\\B", name: "Project B", chatCount: 0, version: 0, stage: null },
 ];
+const projects = initialProjects();
 // What the archive layer always leaves out, in its own words; the Hub carries
 // this list through untouched, so the dialogs must show all five lines.
 const archiveOmissions = [
@@ -840,6 +841,15 @@ async function idleMinute() {
 }
 /** GH-432: retained structured suggestions in the real built UI, with synthetic local APIs. */
 async function suggestionCards() {
+  // The full walk's no-project scenario removes these catalog entries. Reuse fresh
+  // seeds without clearing retained runtimes, project records or earlier sessions.
+  for (const project of initialProjects()) {
+    if (!projects.some((row) => row.projectId === project.projectId)) projects.push(project);
+  }
+  // The preceding scenario can leave a restored Monitor panel over narrow chat.
+  // Only this synthetic browser's saved layout is reset; conversation data stays.
+  if (page.url().startsWith(origin)) await page.evaluate(() => localStorage.removeItem("monkeyhub.chat-view.v1"));
+  const createdSessions = [];
   const postWrites = () => writes.filter(([method, pathname]) => method === "POST" && pathname.endsWith("/messages"));
   const user = (id) => ({ id, role: "user", status: "complete", content: "Help me choose the next drawing task.", createdAt: "2026-09-28T12:00:00Z" });
   const suggestion = (id, turn, overrides = {}) => ({ id, role: "assistant", status: "complete", content: "",
@@ -855,6 +865,7 @@ async function suggestionCards() {
       provider: "codex", model: "fixture-model-a", status: "idle", archived: false,
       createdAt: "2026-09-28T12:00:00Z", updatedAt: "2026-09-28T12:00:01Z", messages, ...overrides };
     sessions.unshift(session);
+    createdSessions.push(session);
     return session;
   };
   const visit = async (session) => {
@@ -1052,6 +1063,10 @@ async function suggestionCards() {
   await page.waitForFunction(() => document.querySelector('.monitor-scope [aria-pressed="true"]')?.textContent === "Project A");
   await page.locator(".chat-usage").click();
   await page.waitForFunction(() => document.querySelector('.monitor-scope [aria-pressed="true"]')?.textContent === "All");
+  // The running/permission cases are done. Stop only this walk's synthetic turns
+  // so the following idle-minute check does not measure their active polling.
+  for (const session of createdSessions) if (session.status === "running") session.status = "interrupted";
+  emitRuntime();
   console.log(JSON.stringify({ suggestions: "passed", selectionPosts: 2, languages: ["en", "zh-CN"], widths: [1440, 375] }));
 }
 try {
