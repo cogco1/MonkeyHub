@@ -1,4 +1,36 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": []
+  "items": [
+    {
+      "id": "GH-432",
+      "status": "active",
+      "branch": "codex/chat-action-cards",
+      "worktree": "C:\\Users\\asus\\.codex\\worktrees\\drawing-rule-memory\\ARCHFLOW_V4",
+      "base_ref": "3fc09a68d14417e7799e594ca1e26e61b9d97155",
+      "contributor": "Codex",
+      "reviewer": null,
+      "handoff": null,
+      "modules": [
+        "hub.shell"
+      ],
+      "write_scope": [
+        "apps/monkeyhub/api/monkeyhub_api/models.py",
+        "apps/monkeyhub/api/monkeyhub_api/chat.py",
+        "apps/monkeyhub/api/tests/test_chat_presentation.py",
+        "apps/monkeyhub/api/tests/test_chat_suggestions.py",
+        "apps/monkeyhub/web/src/ChatShell.tsx",
+        "apps/monkeyhub/web/src/ChatShell.css",
+        "apps/monkeyhub/web/src/ChatSuggestionCard.tsx",
+        "apps/monkeyhub/web/src/ChatSuggestionCard.css",
+        "apps/monkeyhub/web/src/chatProcess.ts",
+        "apps/monkeyhub/web/src/api/",
+        "apps/monkeyhub/web/test/chatShell.browser.mjs",
+        "apps/monkeyhub/web/test/chatProcess.test.ts",
+        "governance/module_registry.json",
+        "docs/PROTOCOL.md",
+        "docs/WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.md"
+      ],
+      "depends_on": []
+    }
+  ]
 }
