@@ -733,8 +733,8 @@
         "monkeyarch/runtime/project_runner.py",
         "tests/test_three_dm_inspector.py",
         "tests/test_cad_execution.py",
-        "tests/test_pantheon_progress_snapshot.py",
-        "tests/test_parthenon_stage4_reconstruction.py"
+        "tests/test_occt_execution.py",
+        "archflow/project/version_ref_owners.py"
       ],
       "invariants": [
         "read-only: rhino3dm is imported lazily, one immutable byte snapshot is read, and no Rhino process is started",
@@ -1565,8 +1565,8 @@
         "archflow/state/operational_state.py",
         "archflow/state/stage_workflow.py",
         "archflow/relations/contracts.py",
-        "archflow/validation/contracts.py",
-        "archflow/evidence/claims.py",
+        "archflow/state/decision_operator.py",
+        "archflow/state/developed_design.py",
         "monkeyarch/runtime/project_runner.py",
         "archflow/ports/model.py"
       ],
@@ -1631,9 +1631,9 @@
       ],
       "used_by": [
         "archflow/relations/contracts.py",
-        "archflow/validation/contracts.py",
-        "archflow/evidence/claims.py",
-        "archflow/evidence/applicability.py"
+        "archflow/state/operational_state.py",
+        "archflow/state/geometry_program.py",
+        "monkeyarch/capabilities/wall_solver.py"
       ],
       "invariants": [
         "a tuple field must already be sorted and unique; the validator never sorts on the caller's behalf",
@@ -2101,8 +2101,7 @@
       ],
       "used_by": [
         "apps/archflow-studio/api/archflow_studio_api/application/binding.py",
-        "tests/integration/test_component_family_realization.py",
-        "tests/integration/test_multi_building_experiments.py"
+        "tests/test_project_location.py"
       ],
       "invariants": [
         "never creates directories and never writes state",
@@ -2571,7 +2570,7 @@
       "used_by": [
         "apps/archflow-studio/api/archflow_studio_api/application/binding.py",
         "apps/archflow-studio/api/archflow_studio_api/application/validation.py",
-        "archflow/contracts/branch.py",
+        "archflow/project/manifest.py",
         "archflow/contracts/fields.py",
         "archflow/project/containers.py",
         "archflow/project/layout.py",
@@ -3860,9 +3859,9 @@
         "archflow/state/state_record.py",
         "archflow/state/spatial.py",
         "archflow/state/developed_design.py",
-        "archflow/state/design_maturity.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/projection.py",
         "archflow/state/design_portfolio.py",
-        "archflow/state/site_context.py",
+        "tests/test_operational_markov_compiler.py",
         "archflow/state/stage_workflow.py",
         "archflow/state/decision_operator.py",
         "archflow/state/geometry_program.py",
@@ -5570,7 +5569,7 @@
         "GET /api/health and GET /api/protocol",
         "local-only GET/PUT user preferences at APPDATA/MonkeyArch/settings.json with shared HTTP/file validation and atomic replacement, served for MonkeyHub, which owns the settings authority and injects the resolved values into the runtime's launch environment",
         "Optional MonitoredCompiler host adapter: MONKEYMONITOR_DATA_DIR enables metadata-only recording of intent and structured Study model outcomes without changing its result or retrying a call",
-        "Managed stdin stop/EOF and additive process, parent process, launch instance and actual source revision health identity; optional prebuilt Studio web hosting",
+        "Managed stdin stop/EOF and additive process, parent process, launch instance and actual source revision health identity",
         "ApplicationSettingsDto and atomic local application configuration in the caller-selected Hub runtime root, separate from shared user preferences",
         "Reading the positive application-text intent context budget from ARCHFLOW_STUDIO_CONTEXT_BUDGET_TOKENS; preserving per-attempt provider usage and request-output outcomes through the existing optional Monitor adapter",
         "operator-configured actor authentication with explicit project read/propose/accept/release grants; shared-project service role excludes local computation; Runtime upstream settings contain no project authority",
