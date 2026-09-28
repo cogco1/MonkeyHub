@@ -1677,11 +1677,18 @@ class ChatTests(unittest.TestCase):
         document = {
             "paths": {"/api/proposals": {"post": {
                 "summary": "Author an edit", "requestBody": {"$ref": "#/components/schemas/ProposalRequestDto"},
-                "responses": {"201": {"$ref": "#/components/schemas/ProposalDto"}}}}},
+                "responses": {"201": {"description": "Created",
+                                      "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ProposalDto"}}}},
+                              "422": {"description": "Refused"}}}},
+                      "/api/construction/model": {"get": {
+                "summary": "Read the model",
+                "responses": {"200": {"description": "The model",
+                                      "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ModelDto"}}}}}}}},
             "components": {"schemas": {
                 "ProposalRequestDto": {"properties": {"semanticEdit": {"$ref": "#/components/schemas/SemanticEditRequestDto"}}},
                 "SemanticEditRequestDto": {"properties": {"parameters": {"type": "array"}}},
                 "ProposalDto": {"description": "The complete response"},
+                "ModelDto": {"description": "What a read answers"},
             }},
         }
         tools = {tool["name"]: tool for tool in _tools_of(chat)}
@@ -1693,9 +1700,14 @@ class ChatTests(unittest.TestCase):
                 patch.object(chat, "_request_json", side_effect=lambda *a, **k: json.loads(json.dumps(document))):
             answer = chat.call_tool(self.store.hub_url, session.id, "studio_schema", {
                 "method": "POST", "path": "/api/proposals"})
+            read = chat.call_tool(self.store.hub_url, session.id, "studio_schema", {
+                "method": "GET", "path": "/api/construction/model"})
         self.assertEqual(set(answer), {"path", "method", "operation", "components"})
-        self.assertEqual(set(answer["components"]["schemas"]),
-                         {"ProposalRequestDto", "SemanticEditRequestDto", "ProposalDto"})
+        # A write answers its request and status codes; its answer arrives when it is sent.
+        self.assertEqual(set(answer["components"]["schemas"]), {"ProposalRequestDto", "SemanticEditRequestDto"})
+        self.assertEqual(answer["operation"]["responses"], {"201": {"description": "Created"}, "422": {"description": "Refused"}})
+        # A read answers what it reads.
+        self.assertEqual(set(read["components"]["schemas"]), {"ModelDto"})
         # A retired option is refused by name, before any runtime is resolved or
         # any request made, rather than ignored as if it had taken effect.
         with patch.object(chat, "_bound_studio") as studio, patch.object(chat, "_request_json") as request:

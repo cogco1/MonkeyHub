@@ -3568,6 +3568,13 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
             if method == "POST":
                 task = document["components"]["schemas"]["AdmissionTaskDto"]["properties"]
                 task["kind"] = {**task["kind"], "enum": ["hub-chat"]}
+        if method != "GET" and isinstance(operation.get("responses"), dict):
+            # A write's answer comes back when it is sent, so its schema is the request and
+            # the status codes; the response schemas were most of what an agent read before
+            # writing (#419 benchmark: 16 kB of 16 kB for the construction route).
+            operation = {**operation, "responses": {
+                code: {"description": answer.get("description", "")} if isinstance(answer, dict) else {}
+                for code, answer in operation.get("responses", {}).items()}}
         schemas, pending = {}, [operation]
         while pending:
             value = pending.pop()
@@ -3971,7 +3978,8 @@ def _mcp(hub: str, chat_id: str | None, external: ChatPresentationBindRequest | 
                            if key not in {"projectId", "sourceSessionId"}},
             "required": ["turnId", "messageId", "kind"] if external else ["messageId", "kind"],
         }},
-        {"name": "studio_schema", "description": "Read the exact request/response schema of an allowed Studio action: give its method/path. "
+        {"name": "studio_schema", "description": "Read the exact schema of an allowed Studio action: give its method/path. A write answers "
+         "its request schema and status codes (its answer arrives when you send it); a read answers its response schema. "
          "Use it to discover inputs, clarify a field or correct a request. Paths may contain template segments, "
          "such as /api/proposals/{id}/candidate. Omit path to discover current chat actions; optional pathPrefix "
          "(such as /api/drawings) narrows the list. Omit method to include both reads and writes; follow next when paged. "
