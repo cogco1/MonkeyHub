@@ -2107,6 +2107,12 @@ class ChatTests(unittest.TestCase):
             chat.call_tool(self.store.hub_url, session.id, "studio_request", {"method": "DELETE", "path": "/api/project"})
         self.assertEqual(refused.exception.error.code, "CHAT_TOOL_UNAVAILABLE")
         self.assertEqual(state["starts"], 0, "the allow-list is checked before the Studio is resolved")
+        # An allowed method on a path the chat may not use is explained from a
+        # Studio that is already running, never by opening one (#405).
+        with patch.object(chat, "_request_json", side_effect=request), self.assertRaises(HubFailure) as refused:
+            chat.call_tool(self.store.hub_url, session.id, "studio_request", {"method": "GET", "path": "/api/not-exposed"})
+        self.assertEqual(refused.exception.error.code, "CHAT_TOOL_UNAVAILABLE")
+        self.assertEqual((state["opens"], state["starts"]), (0, 0))
 
     def test_a_runtime_attached_to_another_project_is_refused(self):
         session = self.create()
