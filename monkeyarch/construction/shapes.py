@@ -27,6 +27,7 @@ from types import SimpleNamespace
 from typing import Any, Callable, Iterable
 
 from archflow.adapters.cad_program import expected_object_bounds
+from archflow.state.derivation import DerivationError, substitute
 from archflow.state.geometry_program import (
     GeometryParameter,
     GeometryParameterKind,
@@ -835,30 +836,15 @@ def anchor_elevation(anchor: Anchor, world: World) -> float:
 
 
 def top_value(shape: Shape, world: World) -> float:
-    """The elevation of a solid's top, as the runtime will publish it.
+    """The elevation of a solid's top, as the runtime will publish it, worked out through the script's model
+    (``World.resolve``) and kept in ``world.tops`` until the script next changes a shape."""
 
-    Each shape's top is worked out once and kept in ``world.tops`` until the script next changes a shape; a
-    stack of drawn solids is followed down iteratively, however tall it is.
-    """
+    return world.resolve(shape)
 
-    tops = world.tops
-    chain: list[Drawn] = []
-    node: Any = shape
-    while node not in tops:
-        if not isinstance(node, Drawn):
-            tops[node] = node.top(world)
-            break
-        if not node.upward:
-            raise ShapeError(f"{node.label()} has no top to stand on")
-        chain.append(node)
-        if node.anchor.kind == "level":  # type: ignore[union-attr]
-            break
-        node = node.anchor.target  # type: ignore[union-attr]
-    for item in reversed(chain):  # each above what it stands on
-        anchor = item.anchor
-        below = world.levels[anchor.target] if anchor.kind == "level" else tops[anchor.target]  # type: ignore[union-attr]
-        tops[item] = below + _offset_value(anchor, world) + height_value(item.height, world)  # type: ignore[arg-type]
-    return tops[shape]
+
+def _top_datum(element_id: str, value: float) -> InterfaceDatum:
+    return InterfaceDatum.create(datum_id=f"{element_id}-top", kind=InterfaceDatumKind.LEVEL,
+                                 published_by="construction", value=round(value, 9), unit=LengthUnit.METER)
 
 
 def _bound(value: object) -> bool:
@@ -960,6 +946,19 @@ class RowShape(Shape):
 
     def anchors(self) -> list[Anchor]:
         return [self.base_anchor] if self.base_anchor is not None else []
+
+    def supports(self) -> list[Any]:
+        """What its top is worked out from: the shape its base was set on, then the elements whose tops its
+        references still read (their ids)."""
+
+        references = dict(self.resolved_references)
+        found: list[Any] = []
+        if self.base_anchor is not None:
+            references.pop("base", None)
+            if self.base_anchor.kind == "top":
+                found.append(self.base_anchor.target)
+        found.extend(sorted(datum_targets(references)))
+        return found
 
     def clone(self, seq: int, line: int) -> RowShape:
         twin = RowShape(seq, line, element_id=None, component_id=None, geometry_id=None, producer=self.producer,
@@ -1136,11 +1135,7 @@ class RowShape(Shape):
     def bounds(self, world: World) -> Box:
         """Produced by its own producer in the record's context: the definition, before cuts."""
 
-        rows, base, produced = world.production()
-        context = ProductionContext(
-            references=ReferenceContext(grids=base.references.grids, levels=base.references.levels,
-                                        hosts=dict(base.references.hosts)),
-            published=dict(base.published), frame_id=base.frame_id)
+        context = world.context_for(self.resolved_references)
         params, references = copy.deepcopy(self.resolved_params), copy.deepcopy(self.resolved_references)
         if self.base_anchor is not None:
             anchor = self.base_anchor
@@ -1156,9 +1151,7 @@ class RowShape(Shape):
                 extra += world.parameter_value(anchor.param)
             rebase(self.producer, params, references, reference, extra or None)
         for target in sorted(datum_targets(references)):  # every top it reads, as the script now has it
-            context.published[f"{target}-top"] = InterfaceDatum.create(
-                datum_id=f"{target}-top", kind=InterfaceDatumKind.LEVEL, published_by="construction",
-                value=round(world.top_of(target), 9), unit=LengthUnit.METER)
+            context.published[f"{target}-top"] = _top_datum(target, world.top_of(target))
         name = self.element_id if self.existing else "construction-copy"
         try:
             row = ElementRow(name, self.component_id or "construction-copy", self.producer, references, params)
@@ -1171,22 +1164,14 @@ class RowShape(Shape):
         return box
 
     def top(self, world: World) -> float:
-        """Its top as the runtime will publish it: the record's value while neither the row nor anything it stands
-        on has been changed or redefined by the script; else produced again where it now stands."""
+        """Its top as the runtime will publish it: produced where it now stands, on the tops as the script has them."""
 
-        if (self.existing and not self.geometry_changed and self.base_anchor is None
-                and not world.supports_touched(self.element_id)):  # type: ignore[arg-type]
-            published = world.published_top(self.element_id)  # type: ignore[arg-type]
-            if published is not None:
-                return published
         return self.bounds(world)[1][1]
 
     def can_carry(self, world: World) -> bool:
-        """Whether its top publishes a level another shape can stand on: the record says so, or its definition does."""
+        """Whether its top is a level another shape can stand on: a solid extruded upward from a plan profile
+        without panel cutouts - what publishes a top the runtime keeps."""
 
-        unchanged = self.existing and not self.geometry_changed and self.base_anchor is None
-        if unchanged and world.published_top(self.element_id) is not None:  # type: ignore[arg-type]
-            return True
         drawing = self.resolved_params.get("work_plane")
         horizontal = drawing is None or (list(drawing.get("normal", ())) == [0.0, 1.0, 0.0]
                                          and float(drawing["xAxis"][1]) == 0 and float(drawing["yAxis"][1]) == 0)
@@ -1253,22 +1238,23 @@ def datum_targets(value: object) -> set[str]:
     return found
 
 
-def _needed(rows, wanted: Iterable[str]) -> set[str]:
-    """The elements to produce for ``wanted``: them, what they name as voids and what they stand on, directly or not."""
+def mentioned_elements(value: object, known: Any) -> set[str]:
+    """Every element a reference value names, directly or through a published ``<id>-top`` datum - what
+    production orders a row after (``known`` holds the element ids there are)."""
 
-    by_id = {row.element_id: row for row in rows}
-    needed: set[str] = set()
-    pending = [element_id for element_id in wanted if element_id in by_id]
-    while pending:
-        element_id = pending.pop()
-        if element_id in needed:
-            continue
-        needed.add(element_id)
-        references = by_id[element_id].references
-        voids = references.get("voids")
-        pending.extend(void for void in (voids if isinstance(voids, (list, tuple)) else ()) if isinstance(void, str))
-        pending.extend(datum_targets(references))
-    return needed
+    found: set[str] = set()
+    if isinstance(value, str):
+        if value in known:
+            found.add(value)
+        elif value.endswith("-top") and value[:-4] in known:
+            found.add(value[:-4])
+    elif isinstance(value, dict):
+        for item in value.values():
+            found |= mentioned_elements(item, known)
+    elif isinstance(value, (list, tuple)):
+        for item in value:
+            found |= mentioned_elements(item, known)
+    return found
 
 
 class World:
@@ -1304,49 +1290,124 @@ class World:
             self.stands_on[element.entity_id] = targets
             for target in targets:
                 self.top_users.setdefault(target, []).append(element.entity_id)
+        self._evaluated: Any = None
         self._values: dict[str, float] | None = None
         self._resolved: dict[str, dict] | None = None
+        self._references: tuple | None = None
+        self._rows: tuple | None = None
+        self._rows_by_id: dict[str, ElementRow] | None = None
         self._production: tuple | None = None
         self._downstream: dict[str, set[str]] | None = None
-        self.tops: dict[Any, float] = {}  # shape -> the elevation of its top; cleared whenever the script edits a shape
-        # The script's model, when a script runs: the current top of an element it changed or redefined (None for
-        # any other), and whether it changed or redefined an element. Without a script, the record is the model.
-        self.current_top: Callable[[str], float | None] | None = None
-        self.touched: Callable[[str], bool] | None = None
-        self.resolving: set[str] = set()  # the elements whose top is being worked out: one met twice is a cycle
+        self.tops: dict[Any, float] = {}  # shape or element id -> the elevation of its top; cleared by every edit
+        # The script's model, when a script runs: the shape that now stands for an element (the new shape that
+        # redefines it, or the row the script reached; None for any other) and what walking the supports costs.
+        # Without a script, the record is the model.
+        self.current_shape: Callable[[str], Shape | None] | None = None
+        self.spend: Callable[[int], None] | None = None
 
-    def supports_touched(self, element_id: str) -> bool:
-        """Whether the script changed or redefined anything the record says this element stands on, directly or not."""
-
-        if self.touched is None:
-            return False
-        pending, seen = list(self.stands_on.get(element_id, ())), set()
-        while pending:
-            target = pending.pop()
-            if target in seen:
-                continue
-            seen.add(target)
-            if self.touched(target):
-                return True
-            pending.extend(self.stands_on.get(target, ()))
-        return False
-
+    # ---- tops, through the script's model
     def top_of(self, element_id: str) -> float:
-        """The elevation of an element's top as the script now has it: its current version when the script changed
-        or redefined it, else the top the record publishes; a top that leads back to itself is a cycle."""
+        """The elevation of an element's top as the script now has it (see ``resolve``)."""
 
-        if element_id in self.resolving:
-            raise ShapeError(f"{short(self.geometry_id(element_id))} would stand on its own top")
-        self.resolving.add(element_id)
+        return self.resolve(element_id)
+
+    def resolve(self, root: Any) -> float:
+        """The top of a shape, or of an element by id, as the script now has it.
+
+        Worked out with an explicit stack, so a stack of supports of any depth costs steps, never recursion: each
+        node after the supports it reads - a drawn shape's anchor target; a row's base shape and the elements whose
+        tops its references read; for an element, the shape that now stands for it, else the elements the record
+        says it stands on - and each once, kept in ``tops`` until the script next changes a shape. An element the
+        script never reached is produced again, alone, on the tops so worked out: never the whole project. A
+        support met again on the way down is a cycle.
+        """
+
+        tops = self.tops
+        if root in tops:
+            return tops[root]
+        stack: list[Any] = [root]
+        opened: dict[Any, None] = {}  # the nodes whose supports are above them on the stack
+        walked = 0  # nodes worked out from values at hand: one step per hundred, as any walk
+        while stack:
+            node = stack[-1]
+            if node in tops:
+                stack.pop()
+                continue
+            if node in opened:  # every support is worked out: its own turn
+                del opened[node]
+                pending: list[Any] = []
+            else:
+                pending = [support for support in self._supports_of(node) if support not in tops]
+            if pending:
+                opened[node] = None
+                for support in pending:
+                    if support in opened:
+                        raise ShapeError(f"{self._label(support)} would stand on its own top")
+                    stack.append(support)
+                continue
+            tops[node], produced = self._top_value_of(node)
+            stack.pop()
+            if produced and self.spend is not None:
+                self.spend(1)  # a row produced again: a step of its own
+            else:
+                walked += 1
+        if self.spend is not None:
+            self.spend(walked // 100)
+        return tops[root]
+
+    def _label(self, node: Any) -> str:
+        return short(self.geometry_id(node)) if isinstance(node, str) else node.label()
+
+    def _supports_of(self, node: Any) -> list[Any]:
+        if isinstance(node, str):
+            shape = self.current_shape(node) if self.current_shape is not None else None
+            return [shape] if shape is not None else sorted(self.stands_on.get(node, ()))
+        if isinstance(node, Drawn):
+            if not node.upward:
+                raise ShapeError(f"{node.label()} has no top to stand on")
+            anchor = node.anchor
+            return [anchor.target] if anchor.kind == "top" else []  # type: ignore[union-attr]
+        return node.supports()
+
+    def _top_value_of(self, node: Any) -> tuple[float, bool]:
+        """A node's top once its supports are in ``tops``, and whether a row was produced for it."""
+
+        if isinstance(node, str):
+            shape = self.current_shape(node) if self.current_shape is not None else None
+            if shape is not None:
+                return self.tops[shape], False
+            return self._reproduced_top(node), True
+        if isinstance(node, Drawn):
+            anchor = node.anchor
+            below = self.levels[anchor.target] if anchor.kind == "level" else self.tops[anchor.target]  # type: ignore[union-attr]
+            return below + _offset_value(anchor, self) + height_value(node.height, self), False  # type: ignore[arg-type]
+        return node.top(self), True
+
+    def _reproduced_top(self, element_id: str) -> float:
+        """An element's top, its row produced alone on the tops worked out so far for what it stands on."""
+
+        row = self.row_of(element_id)
+        if row is None:
+            raise ShapeError(f"the top of {short(self.geometry_id(element_id))} cannot be computed from the project")
+        context = self.context_for(row.references)
+        for target in self.stands_on.get(element_id, ()):
+            context.published[f"{target}-top"] = _top_datum(target, self.tops[target])
         try:
-            value = self.current_top(element_id) if self.current_top is not None else None
-            if value is None:
-                value = self.published_top(element_id)
-            if value is None:
-                raise ShapeError(f"the top of {short(self.geometry_id(element_id))} cannot be computed from the project")
-            return value
-        finally:
-            self.resolving.discard(element_id)
+            produce_rows((row,), context)
+        except _PRODUCTION_ERRORS as exc:
+            raise ShapeError(f"the top of {short(self.geometry_id(element_id))} cannot be computed from the project") from exc
+        datum = context.published.get(f"{element_id}-top")
+        if datum is None:
+            raise ShapeError(f"the top of {short(self.geometry_id(element_id))} cannot be computed from the project")
+        return float(json.loads(datum.value_json))
+
+    def context_for(self, references: Mapping[str, Any]) -> ProductionContext:
+        """The context one row is produced in for its top or bounds: a fresh one over the project's grids and
+        levels (the tops it reads are set by the caller), or the whole record's when the row is placed on other
+        elements (host lines), which only their production provides."""
+
+        placed_on = mentioned_elements(references, self.voids_of) - datum_targets(references)
+        return self.produced_context() if placed_on else self.base_context()
 
     def downstream(self, entity_id: str) -> set[str]:
         """The entities whose references depend on an entity: the record's dependency edges, read once."""
@@ -1371,13 +1432,44 @@ class World:
         component = self.component_of(element_id)
         return component if len(self.elements_of.get(component, [])) == 1 else element_id
 
-    def parameter_value(self, key: str) -> float:
-        if self._values is None:
+    def evaluated(self) -> Any:
+        """The project's parameters evaluated once."""
+
+        if self._evaluated is None:
             try:
-                self._values = evaluate_parameters(self.record).as_mapping()
+                self._evaluated = evaluate_parameters(self.record)
             except StateRecordError as exc:
                 raise ShapeError("the project's parameters cannot be evaluated") from exc
+        return self._evaluated
+
+    def parameter_value(self, key: str) -> float:
+        if self._values is None:
+            self._values = self.evaluated().as_mapping()
         return float(self._values[key])
+
+    def element_row(self, element_id: str, fields: Mapping[str, Any]) -> ElementRow:
+        """A producer row from an element's fields as the record keeps them: its type's defaults merged, its
+        ``"@key"`` bindings resolved - for this element alone, never the whole project."""
+
+        merged = dict(fields)
+        type_ref = merged.get("type_ref")
+        if type_ref is not None:
+            declared = self.entities.get(str(type_ref).removeprefix("entity:"))
+            if declared is None or declared.schema != "Type@1":
+                raise ShapeError(f"{short(element_id)} names a type this project does not have")
+            for name in ("params", "references"):
+                if name in declared.fields or name in merged:
+                    merged[name] = {**(declared.fields.get(name) or {}), **(merged.get(name) or {})}
+        params, references = dict(merged.get("params") or {}), dict(merged.get("references") or {})
+        if _bound(params) or _bound(references):
+            try:
+                params, references = substitute(params, self.evaluated()), substitute(references, self.evaluated())
+            except DerivationError as exc:
+                raise ShapeError(f"{short(element_id)} binds a parameter this project does not have") from exc
+        entity = self.entities.get(element_id)
+        component = merged.get("component_id") or (entity.parent_id if entity is not None else None)
+        return ElementRow(element_id, str(component), str(merged.get("producer")), references, params,  # type: ignore[arg-type]
+                          tuple(entity.basis_refs) if entity is not None else ())
 
     def resolved(self, element_id: str) -> dict:
         if self._resolved is None:
@@ -1410,14 +1502,10 @@ class World:
         component = self.component_of(element_id)
         return element_id, component, self.geometry_id(element_id)
 
-    def production(self, wanted: Iterable[str] | None = None) -> tuple[tuple, ProductionContext, dict]:
-        """The record's rows produced once, row by row: what fails is left out, never raised.
+    def base_context(self) -> ProductionContext:
+        """A fresh production context over the project's grids and levels (read once), nothing published yet."""
 
-        With ``wanted``, only those elements are produced, with what they name as voids and what they stand on,
-        directly or not (the first call decides; the production is kept).
-        """
-
-        if self._production is None:
+        if self._references is None:
             grids = levels = None
             try:
                 grids = project_grids_of(self.record)
@@ -1427,16 +1515,33 @@ class World:
                 levels = project_levels_of(self.record) if self.levels else None
             except _PRODUCTION_ERRORS:
                 pass
-            context = ProductionContext(references=ReferenceContext(grids=grids, levels=levels), published={})
+            self._references = (grids, levels)
+        grids, levels = self._references
+        return ProductionContext(references=ReferenceContext(grids=grids, levels=levels), published={})
+
+    def rows(self) -> tuple:
+        """The record's rows as the producers read them, in production order; none when they cannot be read."""
+
+        if self._rows is None:
             try:
-                rows = element_rows_of(self.record)
+                self._rows = element_rows_of(self.record)
             except _PRODUCTION_ERRORS:
-                rows = ()
+                self._rows = ()
+        return self._rows
+
+    def row_of(self, element_id: str) -> ElementRow | None:
+        if self._rows_by_id is None:
+            self._rows_by_id = {row.element_id: row for row in self.rows()}
+        return self._rows_by_id.get(element_id)
+
+    def production(self) -> tuple[tuple, ProductionContext, dict]:
+        """The record's rows produced once, row by row: what fails is left out, never raised."""
+
+        if self._production is None:
+            context = self.base_context()
+            rows = self.rows()
             produced = {}
-            needed = None if wanted is None else _needed(rows, wanted)
             for row in rows:
-                if needed is not None and row.element_id not in needed:
-                    continue
                 try:
                     produced[row.element_id] = produce_rows((row,), context)[0]
                 except _PRODUCTION_ERRORS:
@@ -1444,6 +1549,11 @@ class World:
             self._production = (rows, context, produced)
         return self._production
 
-    def published_top(self, element_id: str) -> float | None:
-        datum = self.production()[1].published.get(f"{element_id}-top")
-        return None if datum is None else float(json.loads(datum.value_json))
+    def produced_context(self) -> ProductionContext:
+        """A copy of the record's produced context: its published datums and host lines, to produce one row in."""
+
+        _, base, _ = self.production()
+        return ProductionContext(
+            references=ReferenceContext(grids=base.references.grids, levels=base.references.levels,
+                                        hosts=dict(base.references.hosts)),
+            published=dict(base.published), frame_id=base.frame_id)

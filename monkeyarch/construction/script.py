@@ -76,7 +76,6 @@ from monkeyarch.construction.shapes import (
     short,
     shown,
     side,
-    top_value,
 )
 from monkeyarch.construction.vocabulary import BUILTINS, LIMITS, MATH, REQUIRED, VERBS, Verb, verb
 
@@ -373,7 +372,7 @@ class Session:
 
     def __init__(self, record: StateRecord, source: str = "") -> None:
         self.world = World(record)
-        self.world.current_top, self.world.touched = self.current_top, self.touched
+        self.world.current_shape, self.world.spend = self.current_shape, self.tick
         self.source = source
         self.statement: ast.stmt | None = None  # the statement running now: what makes a new shape
         self.callers: list[ast.stmt | None] = []  # the statements whose calls the running statement is inside
@@ -570,9 +569,16 @@ class Session:
         shape.made_by = (key, self.occurrences.get(key, 0))
         self.occurrences[key] = shape.made_by[1] + 1
         self.shapes.append(shape)
-        self.naming_epoch += 1
+        self.renamed()
         self._reindex(shape)
         return shape
+
+    def renamed(self) -> None:
+        """What names a shape changed: the naming is worked out again, and so is every top, since a new shape or a
+        new name may now stand for existing geometry."""
+
+        self.naming_epoch += 1
+        self.world.tops.clear()
 
     def statement_key(self) -> str:
         """The text a new shape's id is hashed from: the chain of statements running now - the module-level one,
@@ -602,25 +608,15 @@ class Session:
             return None
         return self.naming().unique(element_id[:-len(ELEMENT_SUFFIX)])
 
-    def touched(self, element_id: str) -> bool:
-        """Whether the script changed, moved, deleted or redefined the element."""
-
-        row = self.rows.get(element_id)
-        if row is not None and (row.geometry_changed or row.base_anchor is not None or row.deleted_line is not None):
-            return True
-        return self.redefines(element_id) is not None
-
-    def current_top(self, element_id: str) -> float | None:
-        """The top of the element as the script now has it: of the shape that redefines it, else of the row it
-        reached; None for an element the script never touched, whose top the record publishes."""
+    def current_shape(self, element_id: str) -> Shape | None:
+        """The shape that now stands for the element: the new shape that redefines it, else the row the script
+        reached; None for an element the script never reached, which the record describes."""
 
         shape: Shape | None = self.redefines(element_id)
-        if shape is None:
-            row = self.rows.get(element_id)
-            if row is None or row.deleted_line is not None:
-                return None
-            shape = row
-        return top_value(shape, self.world)
+        if shape is not None:
+            return shape
+        row = self.rows.get(element_id)
+        return row if row is not None and row.deleted_line is None else None
 
     def note_assignment(self, name: str, value: object) -> None:
         """A module-level assignment: the variable a new shape was last assigned to names it."""
@@ -629,14 +625,14 @@ class Session:
         if isinstance(value, Shape):
             if value.is_new:
                 value.direct = (name, self.order, self.line)
-                self.naming_epoch += 1
+                self.renamed()
             return
         if isinstance(value, (list, tuple)):
             size, _, shapes = self.measure(value)
             if not shapes:
                 return
             self.charge(size)
-            self.naming_epoch += 1
+            self.renamed()
             for item in _flatten(value):
                 if isinstance(item, Shape) and item.is_new:
                     item.listed = (name, self.order, self.line)
@@ -1037,7 +1033,7 @@ class Session:
                     host.void_events.append(("cut", cutter, self.line))
             if host not in cutter.cut_into:
                 cutter.cut_into[host] = None
-                self.naming_epoch += 1  # an unnamed cutter is named after its first host
+                self.renamed()  # an unnamed cutter is named after its first host
         return self.changed(host, extent=False)
 
     def verb_uncut(self, a: dict, given: frozenset) -> Shape:
@@ -1106,7 +1102,7 @@ class Session:
         if identifier.endswith("-body"):
             raise ShapeError(f"{identifier} ends with -body, which is kept for a shape's geometry; choose another id")
         shape.explicit = (identifier, self.line)
-        self.naming_epoch += 1
+        self.renamed()
         return shape
 
     def verb_get(self, a: dict, given: frozenset) -> Shape:
@@ -1158,13 +1154,12 @@ class Session:
                 listed = short(", ".join(dependents), 80)
                 raise ShapeError(f"{listed} still depend on {shape.label()}; change them first")
         shape.deleted_line = self.line
-        self.naming_epoch += 1
+        self.renamed()  # what stood on it, if anything, is measured anew
         if shape.is_new:
             self.points -= shape.point_count  # type: ignore[attr-defined]
         for cutter in list(shape.voids):
             self._unlink_cut(shape, cutter)
         self._reindex(shape)
-        self.world.tops.clear()  # what stood on it, if anything, is measured anew
         return None
 
 

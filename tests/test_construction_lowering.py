@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import time
 import unittest
 from types import SimpleNamespace
 
@@ -931,6 +932,11 @@ class SupportChangeTests(ConstructionTestCase):
         self.assertEqual(view["b"]["bounds"], [[2.0, 5.0, 1.0], [3.0, 6.0, 2.0]])
         self.assertEqual(report["b"]["bounds"], view["b"]["bounds"])
         self.assertEqual(result.log, ("((2.0, 5.0, 1.0), (3.0, 6.0, 2.0))",))
+        # A top measured before the redefinition is measured anew after it: naming a shape changes the model too.
+        again = _compile("print(bounds(get('b')))\na = extrude(rect(0, 0, 4, 3), 5)\nprint(bounds(get('b')))\n"
+                         "name(extrude(rect(0, 0, 4, 3), 7), 'a')\ndelete(a)\nprint(bounds(get('b')))", record)
+        self.assertEqual(again.log, ("((1.0, 3.0, 1.0), (2.0, 4.0, 2.0))", "((1.0, 5.0, 1.0), (2.0, 6.0, 2.0))",
+                                     "((1.0, 7.0, 1.0), (2.0, 8.0, 2.0))"))
 
     def test_a_new_shape_on_a_carried_top_is_reported_where_it_is_produced(self) -> None:
         record = self.stacked()
@@ -962,6 +968,48 @@ class SupportChangeTests(ConstructionTestCase):
         result = _compile("move(get('pair-b'), dx=1)", multi)
         self.assertEqual(result.report[0]["bounds"], [[3.0, 0.0, 0.0], [4.0, 2.0, 1.0]])  # the part, not the pair
 
+    def chained(self) -> StateRecord:
+        record = _record()
+        return _apply(record, _compile("\n".join([
+            "a = extrude(rect(0, 0, 4, 3), 3)", "b = extrude(rect(1, 1, 2, 1), 1, at=top(a))",
+            "c = extrude(rect(1, 1, 1, 1), 1, at=top(b))"]), record))
+
+    def test_bounds_follow_a_chain_through_elements_the_script_never_reached(self) -> None:
+        """Round 5: c stands on b on a; the script touches a only, and reads c (or stands on it)."""
+
+        record = self.chained()
+        cases = {
+            "set_height(get('a'), 5)\nprint(bounds(get('c')))": ("c", [[1.0, 6.0, 1.0], [2.0, 7.0, 2.0]]),
+            "move(get('a'), dy=1)\nprint(bounds(get('c')))": ("c", [[1.0, 5.0, 1.0], [2.0, 6.0, 2.0]]),
+            "a = extrude(rect(0, 0, 4, 3), 5)\nprint(bounds(get('c')))": ("c", [[1.0, 6.0, 1.0], [2.0, 7.0, 2.0]]),
+            "set_height(get('a'), 5)\nk = extrude(rect(1, 1, 1, 1), 1, at=top(get('c')))\nprint(bounds(k))":
+                ("k", [[1.0, 7.0, 1.0], [2.0, 8.0, 2.0]]),
+            "set_height(get('a'), 5)\nk = extrude(rect(1, 1, 1, 1), 1, at=top(get('c')) + 1)\nprint(bounds(k))":
+                ("k", [[1.0, 8.0, 1.0], [2.0, 9.0, 2.0]]),
+        }
+        for script, (measured, expected) in cases.items():
+            with self.subTest(script=script):
+                result = _compile(script, record)
+                view = _view(_apply(record, result))
+                self.assertEqual(view[measured]["bounds"], expected)
+                self.assertEqual(result.log, (str((tuple(expected[0]), tuple(expected[1]))),))
+                for row in result.report:
+                    self.assertEqual(row["bounds"], view[row["id"]]["bounds"], row["id"])
+
+    def test_a_deep_stack_of_supports_is_measured_without_recursion(self) -> None:
+        """Round 5: 250 links, the bottom changed, the top measured - with every link loaded, and with none."""
+
+        record = _record()
+        stacked = _apply(record, _compile("b = extrude(rect(0, 0, 1, 1), 1)\nfor i in range(249):\n"
+                                          "    b = extrude(rect(0, 0, 1, 1), 1, at=top(b))", record))
+        loaded = "\n".join(f"get('b-{index}')" for index in range(2, 250))
+        for script in ("set_height(get('b-1'), 2)\nprint(bounds(get('b-250')))",
+                       loaded + "\nset_height(get('b-1'), 2)\nprint(bounds(get('b-250')))"):
+            with self.subTest(loaded=script.count("get(") > 2):
+                result = _compile(script, stacked)
+                self.assertEqual(result.log, ("((0.0, 250.0, 0.0), (1.0, 251.0, 1.0))",))
+                self.assertEqual(_view(_apply(stacked, result))["b-250"]["bounds"], [[0.0, 250.0, 0.0], [1.0, 251.0, 1.0]])
+
     def test_a_shape_measured_while_it_would_stand_on_its_own_top_is_refused(self) -> None:
         record = self.stacked()
         for script in ("a = extrude(rect(0, 0, 4, 3), 3, at=top(get('b')))\nprint(bounds(a))",
@@ -970,6 +1018,53 @@ class SupportChangeTests(ConstructionTestCase):
                 error = self.refused(script, record)
                 self.assertEqual(error.line, 2)
                 self.assertIn("own top", error.message)
+
+
+class ReportScaleTests(ConstructionTestCase):
+    """Round 5: the report is produced for the shapes the script leaves and what they mention, never the project."""
+
+    def test_a_one_line_script_on_a_large_project_reports_in_bounded_time(self) -> None:
+        entities = []
+        for index in range(3000):
+            x, z = (index % 60) * 2.0, (index // 60) * 2.0
+            entities.append(Entity(f"box-{index}", "Component@1", {"intent": f"box-{index}"}, parent_id="model"))
+            entities.append(Entity(f"box-{index}-body", "Element@1", {
+                "component_id": f"box-{index}", "producer": "prism", "references": {"base": {"level": "ground"}},
+                "params": {"profile": [[x, z], [x + 1, z], [x + 1, z + 1], [x, z + 1]], "height": 3.0}},
+                parent_id=f"box-{index}"))
+        record = _record(*entities)
+        started = time.perf_counter()
+        result = _compile("extrude(rect(-50, -50, 1, 1), 1)\nk = extrude(rect(0, 0, 1, 1), 1, at=top(get('box-0')))",
+                          record)
+        elapsed = time.perf_counter() - started
+        self.assertLess(elapsed, 0.5, f"{elapsed:.2f}s for two shapes on 3 000 boxes")
+        report = {row["id"]: row["bounds"] for row in result.report}
+        self.assertEqual(report["k"], [[0.0, 3.0, 0.0], [1.0, 4.0, 1.0]])  # box-0's top: produced with k, not the project
+        self.assertEqual(sorted(report.values()), sorted([[[-50.0, 0.0, -50.0], [-49.0, 1.0, -49.0]], report["k"]]))
+
+    def test_the_report_follows_every_element_a_row_mentions(self) -> None:
+        """A row placed on another element's line (a host, not a top) is produced with that element for its bounds."""
+
+        record = _record(
+            Entity("block-1", "Component@1", {"intent": "block-1"}, parent_id="model"),
+            Entity("block-1-line", "Element@1", {
+                "component_id": "block-1", "producer": "wall", "params": {"thickness": 0.3, "height": 3.0},
+                "references": {"base": {"level": "ground"},
+                               "line": {"from": {"point": [0.0, 0.0]}, "to": {"point": [4.0, 0.0]}}}},
+                parent_id="block-1"),
+            Entity("block-2", "Component@1", {"intent": "block-2"}, parent_id="model"),
+            Entity("block-2-line", "Element@1", {
+                "component_id": "block-2", "producer": "wall", "params": {"thickness": 0.3, "height": 3.0},
+                "references": {"base": {"level": "ground"},
+                               "line": {"from": {"host": {"element": "block-1-line", "along": 4.0}},
+                                        "to": {"point": [4.0, 3.0]}}}},
+                parent_id="block-2"),
+        )
+        result = _compile("set_height(get('block-2'), 4)", record)
+        view = _view(_apply(record, result))
+        self.assertIsNotNone(view["block-2"]["bounds"])
+        self.assertEqual(result.report[0]["bounds"], view["block-2"]["bounds"])
+        self.assertEqual(result.report[0]["bounds"][1][1], 4.0)
 
 
 class RecessTests(ConstructionTestCase):

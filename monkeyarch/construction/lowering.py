@@ -17,9 +17,10 @@ Before any row is written, the relations the result leaves - what cuts what,
 what stands on what - are checked where the script touched them, including
 against geometry of the record the script never reached, and refused at the
 script line in construction words. Lowering runs under the script's deadline.
-The report's bounds are read from the successor record: the rows applied the
-way the Studio edit path applies them, then viewed, so the report states what
-the runtime will produce.
+The report's bounds are what the model view will predict for the rows the
+script leaves: the record's rows overlaid with the script's, produced for the
+reported elements and every element they mention (supports, cutters, hosts) -
+never the whole project, which is neither applied nor validated here.
 
 ``geometry_view`` is the other direction: what a record's geometry is, per
 component, in the same words (form, bounds, cuts) and without producers.
@@ -32,12 +33,12 @@ from dataclasses import dataclass, field, replace
 from types import MappingProxyType
 from typing import Any, Mapping
 
-from archflow.state.state_record import (
-    Entity,
-    StateRecord,
-    StateRecordError,
-    apply_state_record_operator,
-    compile_component_edit,
+from archflow.state.state_record import StateRecord
+from monkeyarch.capabilities.element_producers import (
+    ElementProducerError,
+    produce_rows,
+    production_order,
+    with_void_hosts,
 )
 from monkeyarch.construction.identity import ELEMENT_SUFFIX, Naming, identify, identity_of
 from monkeyarch.construction.script import (
@@ -50,6 +51,7 @@ from monkeyarch.construction.script import (
     run_script,
 )
 from monkeyarch.construction.shapes import (
+    _PRODUCTION_ERRORS,
     EDITABLE_PRODUCERS,
     Box,
     Drawn,
@@ -61,6 +63,7 @@ from monkeyarch.construction.shapes import (
     clean,
     datum_targets,
     lower_anchor,
+    mentioned_elements,
     object_bounds,
     path_frame,
     short,
@@ -69,7 +72,6 @@ from monkeyarch.construction.shapes import (
 )
 
 _DOWNWARD = {"origin": [0.0, 0.0, 0.0], "xAxis": [1.0, 0.0, 0.0], "yAxis": [0.0, 0.0, 1.0], "normal": [0.0, -1.0, 0.0]}
-_RECORD_REFUSALS = (StateRecordError, ValueError, KeyError, TypeError)
 
 
 @dataclass(frozen=True)
@@ -398,30 +400,62 @@ class _Lowering:
         if not within_reach(box):
             raise self.error(shape.line, f"{shape.label()} reaches beyond 100 000 m from the project origin")
 
-    def successor_boxes(self, entities: list[dict], removed: list[str]) -> dict[str, Box | None] | None:
-        """The bounds of every element of the record the rows leave, as the model view predicts them.
+    def report_boxes(self, entities: list[dict], removed: list[str]) -> dict[str, Box | None] | None:
+        """The bounds of the reported elements as the model view will predict them for the rows the script leaves.
 
-        The rows are applied the way the Studio edit path applies them - fields merged over the existing entity,
-        ``compile_component_edit``, ``apply_state_record_operator`` - so the report states what the runtime will
-        produce, cuts included. None when the record refuses the rows: the edit path then says why.
+        The rows are the record's overlaid with the script's (fields merged over the existing entity, as the edit
+        path merges them); produced, in production order, are the reported elements and every element they
+        mention, directly or not - what they stand on, cut and are placed on - never the whole project, which is
+        neither applied nor validated here (the edit path does that once the proposal is placed). None when the
+        rows cannot be produced together; the edit path then says why.
         """
 
-        existing = self.world.entities
-        merged = []
-        for row in entities:
-            previous = existing.get(row["entity_id"])
-            value = dict(row)
-            if previous is not None:
-                value = {**previous.to_dict(), **value, "fields": {**previous.fields, **row["fields"]}}
-            merged.append(Entity.from_dict(value))
+        world = self.world
+        gone = set(removed)
+        script = {row["entity_id"]: row["fields"] for row in entities if row["schema"] == "Element@1"}
+        known = (set(world.voids_of) - gone) | set(script)
+        fields_by_id: dict[str, dict | None] = {}
+
+        def fields_of(element_id: str) -> dict | None:
+            if element_id not in fields_by_id:
+                entity = world.entities.get(element_id)
+                kept = entity is not None and entity.schema == "Element@1" and element_id not in gone
+                base = dict(entity.fields) if kept else None  # type: ignore[union-attr]
+                fields = {**(base or {}), **script[element_id]} if element_id in script else base
+                if fields is not None and not fields.get("component_id") and entity is not None:
+                    fields["component_id"] = entity.parent_id
+                fields_by_id[element_id] = fields
+            return fields_by_id[element_id]
+
+        needed: dict[str, None] = {}
+        pending = list(script)
+        while pending:
+            element_id = pending.pop()
+            if element_id in needed:
+                continue
+            fields = fields_of(element_id)
+            if fields is None:
+                continue
+            needed[element_id] = None
+            mentioned = mentioned_elements(fields.get("references"), known)
+            openings = (fields.get("params") or {}).get("openings")
+            for opening in openings if isinstance(openings, (list, tuple)) else ():
+                if isinstance(opening, dict):
+                    mentioned |= mentioned_elements(opening.get("at"), known)
+            pending.extend(mentioned - needed.keys())
         try:
-            operator = compile_component_edit(self.world.record, entities=tuple(merged),
-                                              remove_entity_ids=tuple(sorted(set(removed))))
-            successor = apply_state_record_operator(self.world.record, operator)
-        except _RECORD_REFUSALS:
+            rows = tuple(world.element_row(element_id, fields_by_id[element_id]) for element_id in needed)  # type: ignore[arg-type]
+            ordered = production_order(with_void_hosts(rows))
+        except (ShapeError, ElementProducerError, ValueError, KeyError, TypeError):
             return None
-        wanted = [row["entity_id"] for row in entities if row["schema"] == "Element@1"]
-        return _element_boxes(World(successor), wanted)
+        context = world.base_context()
+        produced = {}
+        for row in ordered:
+            try:
+                produced[row.element_id] = produce_rows((row,), context)[0]
+            except _PRODUCTION_ERRORS:
+                continue
+        return _boxes_of(ordered, context, produced)
 
     def lower(self) -> ConstructionResult:
         self.check_relations()
@@ -498,7 +532,7 @@ class _Lowering:
                 uncut.append(identifier)  # type: ignore[arg-type]
         if measured:
             self.clock(measured[0][0]["line"])
-            boxes = self.successor_boxes(entities, removed)
+            boxes = self.report_boxes(entities, removed)
             for row, element_id in measured:
                 row["bounds"] = _box_list(boxes.get(element_id)) if boxes is not None else None
             self.clock(measured[0][0]["line"])
@@ -540,12 +574,16 @@ def _form(world: World, element_id: str) -> str:
     return {"planar-surface": "face", "curve": "path"}.get(str(producer), "other")
 
 
-def _element_boxes(world: World, wanted: list[str] | None = None) -> dict[str, Box | None]:
-    """The predicted bounds of every element the record produces (with ``wanted``, of those elements only, their
-    cuts and supports produced with them), each element's cuts applied; ``None`` where the prediction fails, and no
-    entry for an element that does not produce."""
+def _element_boxes(world: World) -> dict[str, Box | None]:
+    """The predicted bounds of every element the record produces, each element's cuts applied."""
 
-    rows, context, produced = world.production(wanted)
+    return _boxes_of(*world.production())
+
+
+def _boxes_of(rows, context, produced: dict) -> dict[str, Box | None]:
+    """The predicted bounds of the produced elements, each element's cuts applied; ``None`` where the prediction
+    fails, and no entry for an element that did not produce."""
+
     voids_of = {row.element_id: tuple(row.references.get("voids") or ()) for row in rows}
     element_bounds: dict[str, Box | None] = {}
     for element_id, element in produced.items():

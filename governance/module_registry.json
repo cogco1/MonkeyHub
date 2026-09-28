@@ -7865,7 +7865,7 @@
         "cuts authored as the host element's references.voids, kept when a new shape redefines existing geometry",
         "the construction geometry view: per component form, bounds, cuts, cutBy and hidden, without producers",
         "pre-checking the cut and support relations a script leaves, including against record geometry it never reached, before any row is written",
-        "the script's model for every top a shape reads: a row the script changed or a shape it redefined is the current version of that geometry, and the report's bounds come from the successor record the rows leave"
+        "the script's model for every top a shape reads: a row the script changed or a shape it redefined is the current version of that geometry, an element standing on them is measured again, and the report's bounds are produced for the rows the script leaves and what they mention, never the whole project"
       ],
       "does_not_own": [
         "producing geometry from rows (capabilities.element_producers)",
@@ -7903,6 +7903,7 @@
         "monkeyarch.construction.shapes",
         "monkeyarch.construction.vocabulary",
         "project.refs",
+        "state.derivation",
         "state.geometry_program",
         "state.record"
       ],
@@ -7924,8 +7925,8 @@
         "An unnamed shape's id is hashed from the chain of statements that made it (whitespace ignored) and how many shapes that chain made before it, so re-running a script updates the same shapes and the same helper called from two statements makes two; such an id that names anything but construction-made geometry is refused.",
         "What the record cuts and carries is checked against the model the script leaves, at the line that made it wrong.",
         "Lowering runs under the script's deadline, and the shapes a script leaves hold at most 100 000 points.",
-        "Every top a shape reads during the script resolves through the script's model: the current version of what the script changed or redefined, else what the record publishes; a top that leads back to itself is refused.",
-        "The report's bounds are those of the successor record (the rows applied the way the Studio edit path applies them, then viewed), so the report states what the runtime will produce, cuts included."
+        "Every top a shape reads during the script resolves through the script's model, with an explicit stack: the current version of what the script changed or redefined, an element whose supports were touched produced again, else what the record publishes; a top that leads back to itself is refused.",
+        "The report's bounds are what the model view will predict for the rows the script leaves: the record's rows overlaid with the script's, produced for the reported elements and every element they mention (supports, cutters, hosts) - never the whole project, which is neither applied nor validated for the report."
       ],
       "status": "canonical",
       "tests": [
