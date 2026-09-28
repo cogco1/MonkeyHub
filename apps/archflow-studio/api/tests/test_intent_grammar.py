@@ -207,8 +207,9 @@ BLOCKED: tuple[tuple[str | None, str, tuple[str, ...]], ...] = (
     ),
     (
         None,
-        "set module to 1500 mm",
-        ("module", "mm", "m"),
+        # A length unit is restated (#404 F17); one that is not a length is still asked about.
+        "set module to 1500 deg",
+        ("module", "deg", "m"),
     ),
     (
         None,

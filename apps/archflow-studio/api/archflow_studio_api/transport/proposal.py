@@ -81,14 +81,21 @@ def working_copy_dto(item: WorkingCopy) -> WorkingCopyDto:
                           selected_option_id=item.selected_option_id, revision_sha256=item.revision_sha256)
 
 
+# The modeling frame every write vector is stated in (#404 F3). Readback boxes
+# (candidate objects, compare) are the Z-up CAD frame: [x, z, y] of this one.
+MODELING_FRAME = ("[x, y, z] in metres in the building-local modeling frame: +y is up and "
+                  "x, z lie in plan (plan points are [x, z]). Candidate and compare boxes are "
+                  "Z-up CAD [x, z, y]; swap their last two coordinates before comparing.")
+
+
 class SketchPlaneDto(BaseModel):
     """An explicit orthonormal drawing plane in building-local Y-up coordinates."""
 
     model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
-    origin: tuple[float, float, float]
-    x_axis: tuple[float, float, float] = Field(alias="xAxis")
-    y_axis: tuple[float, float, float] = Field(alias="yAxis")
-    normal: tuple[float, float, float]
+    origin: tuple[float, float, float] = Field(description="Relative to the resolved base datum; " + MODELING_FRAME)
+    x_axis: tuple[float, float, float] = Field(alias="xAxis", description="Unit vector along which profile x runs; " + MODELING_FRAME)
+    y_axis: tuple[float, float, float] = Field(alias="yAxis", description="Unit vector along which profile y runs; " + MODELING_FRAME)
+    normal: tuple[float, float, float] = Field(description="Unit vector positive height follows; [0, 1, 0] pulls up. " + MODELING_FRAME)
 
     @model_validator(mode="after")
     def orthonormal_frame(self) -> "SketchPlaneDto":
@@ -300,11 +307,15 @@ class TransformElementRequestDto(BaseModel):
         description="compress-above: fixed world +Y elevation in project length units; every point at or below stays fixed.")
     factor: float | None = Field(default=None, gt=0, le=1, allow_inf_nan=False,
         description="compress-above: multiply height above threshold by this factor. Only planar-surfaces remaining planar are supported.")
-    translation: tuple[float, float, float] | None = None
-    axis: tuple[float, float, float] | None = None
-    angle_degrees: float = Field(alias="angleDegrees", default=0)
-    scale: tuple[float, float, float] | None = None
-    origin: tuple[float, float, float] | None = None
+    translation: tuple[float, float, float] | None = Field(default=None, description=
+        "move/copy offset; [0, 0.5, 0] raises 0.5 m and [0, 0, 0.5] moves 0.5 m in plan. " + MODELING_FRAME)
+    axis: tuple[float, float, float] | None = Field(default=None, description=
+        "rotate: the axis direction; [0, 1, 0] turns in plan about a vertical axis. " + MODELING_FRAME)
+    angle_degrees: float = Field(alias="angleDegrees", default=0, description="rotate: degrees about axis, right-handed.")
+    scale: tuple[float, float, float] | None = Field(default=None, description=
+        "scale: factors along x, y (vertical) and z of the modeling frame; negative mirrors.")
+    origin: tuple[float, float, float] | None = Field(default=None, description=
+        "rotate/scale: the fixed point, in project coordinates. " + MODELING_FRAME)
     copy_element_id: str | None = Field(alias="copyElementId", default=None, min_length=1)
     keep: list[str] = Field(default_factory=list)
     project_id: str | None = Field(alias="projectId", default=None, min_length=1)
@@ -349,8 +360,10 @@ class PushPullRequestDto(BaseModel):
     )
     state_digest: str = Field(alias="stateDigest", pattern=STATE_DIGEST_PATTERN)
     element_id: str = Field(alias="elementId", min_length=1)
-    distance: float
-    normal: tuple[float, float, float] | None = None
+    distance: float = Field(description="Metres the selected end face moves along its normal; negative pulls it back.")
+    normal: tuple[float, float, float] | None = Field(default=None, description=
+        "The face that moves, by its outward normal: omit for the end face the extrusion points to (the top of an "
+        "upward prism); a normal across the extrusion picks a prism's side face. " + MODELING_FRAME)
     keep: list[str] = Field(default_factory=list)
     project_id: str | None = Field(alias="projectId", default=None, min_length=1)
     source_run_id: str | None = Field(alias="sourceRunId", default=None, min_length=1)
@@ -685,8 +698,9 @@ class ProposalDto(BaseModel):
 
     proposal_id: str = Field(alias="proposalId")
     status: Literal["proposed", "conflict"] = Field(
-        description="conflict means the change reaches something the "
-        "utterance asked to keep; it is still a proposal, never an execution",
+        description="conflict means the change reaches something it was asked "
+        "to keep (keep, or a keep clause in the words); it is still a proposal, "
+        "never an execution",
     )
     base_state_digest: str = Field(
         alias="baseStateDigest",
