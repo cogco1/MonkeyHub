@@ -1978,7 +1978,7 @@ export type ConstructionEntityDto = {
     /**
      * Capabilities
      *
-     * what its facets allow
+     * what its facets allow, where its geometry can take it
      */
     capabilities: Array<ConstructionCapabilityDto>;
     /**

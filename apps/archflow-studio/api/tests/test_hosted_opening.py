@@ -242,6 +242,26 @@ class HostedOpeningRefusalTestCase(HostedOpeningTestCase):
                 self.assertEqual(body["code"], code, body)
                 self.assertIn(said, body["detail"])
 
+    def test_the_model_lists_the_capability_only_where_the_route_takes_the_host(self) -> None:
+        # The wall meaning alone does not make a host: a cutter and a geometry id of several parts carry the
+        # facet, yet the route refuses them, so the model view offers them no hosted-opening either.
+        from archflow_studio_api.application.binding import bound_project
+        from archflow_studio_api.application.construction import construction_model
+        from archflow_studio_api.application.projection import project_proposed_record, project_state
+
+        chain = self.construct(BLOCK + "\ncutter = extrude(rect(1, -0.1, 1, 0.5), 1)\ncut(block, cutter)")
+        faceted = self.facets([{"id": identifier, "set": {"architectural.role": "wall"}}
+                               for identifier in ("block", "cutter", "portico")], **self.after(chain))
+        base = project_state(bound_project(self.client.app.state))
+        rows = {row["id"]: row for row in construction_model(project_proposed_record(base, self.successor(faceted)))["entities"]}
+        self.assertEqual([capability["id"] for capability in rows["block"]["capabilities"]], ["hosted-opening"])
+        self.assertEqual(rows["block"]["alongLine"], ALONG_LINE)
+        for refused in ("cutter", "portico"):
+            with self.subTest(host=refused):
+                self.assertEqual(rows[refused]["facets"], {"architectural.role": "wall"})
+                self.assertEqual((rows[refused]["capabilities"], rows[refused]["alongLine"]), ([], None))
+                self.assertEqual(self.open(refused, expect=422, **self.after(faceted))["code"], "HOST_INVALID")
+
     def test_a_family_an_interface_or_an_opening_the_host_cannot_take_is_refused(self) -> None:
         chain = self.walled()
         for body, code, said in (

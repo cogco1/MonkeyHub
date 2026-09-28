@@ -427,7 +427,7 @@ def hosted_opening_proposal(
     answers ``OPENING_INVALID`` in construction words.
     """
 
-    element = _opening_host(projection.record, host)
+    element = _OpeningHosts(projection.record).element(host)
     fields = dict(element.fields)
     if fields.get("producer") != "wall":
         try:
@@ -483,20 +483,23 @@ def construction_model(projection: StateProjection) -> dict[str, Any]:
 
     ``entities`` is one row per component with geometry (``geometry_view``:
     id, form, bounds, cuts, cutBy, hidden, and parts, ``None`` unless it has
-    several) plus its ``facets``, the ``capabilities`` they unlock, the
-    ``openings`` a component of one element hosts, and the ``alongLine`` a
-    door's or window's ``along`` is measured on, when it can take one.
-    ``levels`` and ``parameters`` are what ``level(id)`` and ``param(key)`` can name.
+    several) plus its ``facets``, the ``capabilities`` they unlock where the
+    capability's route takes the component (``hosted-opening`` not on a
+    cutter or a geometry id of several parts), the ``openings`` a component of
+    one element hosts, and the ``alongLine`` a door's or window's ``along`` is
+    measured on, when it can take one. ``levels`` and ``parameters`` are what
+    ``level(id)`` and ``param(key)`` can name.
     """
 
     record = projection.record
     components = {entity.entity_id: entity for entity in record.entities_of("Component@1")}
-    parts_of = _parts_by_component(record)
+    opening_hosts = _OpeningHosts(record)
     entities = []
     for row in geometry_view(record):
         facets = component_facets(components[row["id"]])
-        capabilities = capabilities_of(facets)
-        parts = parts_of.get(row["id"], [])
+        capabilities = [capability for capability in capabilities_of(facets)
+                        if capability["id"] != _HOSTED_OPENING or opening_hosts.takes(row["id"])]
+        parts = opening_hosts.parts.get(row["id"], [])
         element = parts[0] if len(parts) == 1 else None
         hosts = element is not None and any(capability["id"] == _HOSTED_OPENING for capability in capabilities)
         entities.append({**row, "parts": row.get("parts"), "facets": facets, "capabilities": capabilities,
@@ -616,40 +619,64 @@ def _parts_by_component(record: StateRecord) -> dict[str, list[Entity]]:
     return parts
 
 
-def _opening_host(record: StateRecord, host: str) -> Entity:
-    """The one element a door or window goes into, once ``host``'s facets unlock ``hosted-opening``.
+class _OpeningHosts:
+    """The checks ``hosted-opening`` makes of a host, over one record read once.
 
-    Refused by name: an id the record lacks (404 ``ENTITY_UNKNOWN``), anything
-    but a component of one element (422 ``HOST_INVALID``), a component without
-    the facet (409 ``ENRICHMENT_REQUIRED``) and a shape that cuts another (422
-    ``HOST_INVALID``): a cutter is kept hidden inside what it cuts, so an
-    opening in it would open nothing.
+    The route takes its host's element from ``element``; the model view lists
+    the capability only where ``takes`` says the route would, so the two never
+    disagree about what can host a door or window.
     """
 
-    entity = next((item for item in record.entities if item.entity_id == host), None)
-    if entity is None:
-        raise StudioError(404, "ENTITY_UNKNOWN", f"{host} is not in this project; GET /api/construction/model lists its ids")
-    if entity.schema != "Component@1":
-        owner = entity.fields.get("component_id") or entity.parent_id if entity.schema == "Element@1" else None
-        raise StudioError(422, "HOST_INVALID",
-                          f"{host} is {entity.schema}; a door or window is asked of a geometry id (a component)"
-                          + (f", here {owner}" if owner else ""))
-    parts = _parts_by_component(record).get(host, [])
-    if len(parts) != 1:
-        raise StudioError(422, "HOST_INVALID", f"{host} has " + (
-            "no geometry" if not parts else "several parts (" + ", ".join(part.entity_id for part in parts) + ")")
-            + "; a door or window goes into geometry of one part")
-    facet, value, _ = next(item for item in _UNLOCKED if item[2]["id"] == _HOSTED_OPENING)
-    if component_facets(entity).get(facet) != value:
-        raise EnrichmentRequired(host, facet, value, f"{host} needs {facet} = {value} before it can host a door or "
-                                                     "window; add it with POST /api/proposals/facets")
-    [element] = parts
-    cut = sorted({str(other.fields.get("component_id") or other.parent_id) for other in record.entities_of("Element@1")
-                  if element.entity_id in _voids_named(other)})
-    if cut:
-        raise StudioError(422, "HOST_INVALID", f"{host} cuts {', '.join(cut)}; a door or window goes into geometry "
-                                               "that is delivered, so uncut it first")
-    return element
+    def __init__(self, record: StateRecord) -> None:
+        self.entities = {entity.entity_id: entity for entity in record.entities}
+        self.parts = _parts_by_component(record)
+        self.cut_by: dict[str, set[str]] = {}  # element -> the components whose elements it cuts
+        for other in record.entities_of("Element@1"):
+            for void in _voids_named(other):
+                self.cut_by.setdefault(void, set()).add(str(other.fields.get("component_id") or other.parent_id))
+
+    def element(self, host: str) -> Entity:
+        """The one element a door or window goes into, once ``host``'s facets unlock ``hosted-opening``.
+
+        Refused by name: an id the record lacks (404 ``ENTITY_UNKNOWN``), anything
+        but a component of one element (422 ``HOST_INVALID``), a component without
+        the facet (409 ``ENRICHMENT_REQUIRED``) and a shape that cuts another (422
+        ``HOST_INVALID``): a cutter is kept hidden inside what it cuts, so an
+        opening in it would open nothing.
+        """
+
+        entity = self.entities.get(host)
+        if entity is None:
+            raise StudioError(404, "ENTITY_UNKNOWN", f"{host} is not in this project; GET /api/construction/model lists its ids")
+        if entity.schema != "Component@1":
+            owner = entity.fields.get("component_id") or entity.parent_id if entity.schema == "Element@1" else None
+            raise StudioError(422, "HOST_INVALID",
+                              f"{host} is {entity.schema}; a door or window is asked of a geometry id (a component)"
+                              + (f", here {owner}" if owner else ""))
+        parts = self.parts.get(host, [])
+        if len(parts) != 1:
+            raise StudioError(422, "HOST_INVALID", f"{host} has " + (
+                "no geometry" if not parts else "several parts (" + ", ".join(part.entity_id for part in parts) + ")")
+                + "; a door or window goes into geometry of one part")
+        facet, value, _ = next(item for item in _UNLOCKED if item[2]["id"] == _HOSTED_OPENING)
+        if component_facets(entity).get(facet) != value:
+            raise EnrichmentRequired(host, facet, value, f"{host} needs {facet} = {value} before it can host a door "
+                                                         "or window; add it with POST /api/proposals/facets")
+        [element] = parts
+        cut = sorted(self.cut_by.get(element.entity_id, ()))
+        if cut:
+            raise StudioError(422, "HOST_INVALID", f"{host} cuts {', '.join(cut)}; a door or window goes into "
+                                                   "geometry that is delivered, so uncut it first")
+        return element
+
+    def takes(self, host: str) -> bool:
+        """Whether the route would take ``host``: ``element`` finds its element rather than refusing."""
+
+        try:
+            self.element(host)
+        except StudioError:
+            return False
+        return True
 
 
 def _declared_interfaces(record: StateRecord) -> list[str]:

@@ -298,7 +298,8 @@ class ConstructionEntityDto(BaseModel):
     parts: list[str] | None = Field(description="its part ids when it has several, which get() reaches one by one; "
                                                 "null for one")
     facets: dict[str, str] = Field(description="the meaning given to it so far; empty until someone says")
-    capabilities: list[ConstructionCapabilityDto] = Field(description="what its facets allow")
+    capabilities: list[ConstructionCapabilityDto] = Field(description="what its facets allow, where its geometry "
+                                                                      "can take it")
     openings: list[ConstructionOpeningDto] = Field(description="the doors and windows it hosts, when it is one part")
     along_line: ConstructionLineDto | None = Field(
         alias="alongLine",
