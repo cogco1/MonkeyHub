@@ -363,8 +363,8 @@ work registry 只登记进行中的源码 claim；模块的 `canonical` 标签�
 | 跨项目汇报或一次性给人看的汇总包 | 操作方显式指定的项目外分发目录；必须带来源 project/run/ref 清单 | 分发副本，不是项目状态；当前没有受管 `output_root` |
 | 可重建下载、编译缓存 | 外部 `cache/` | 可删除 |
 | 一次性诊断缓冲 | 外部 `temp/` 或测试临时目录 | 可删除且不得作为证据 |
-| Studio 进程日志 | `apps/archflow-studio/.runtime/`（git ignored） | 本机诊断，不是项目证据 |
-| Web 同步和构建产物 | `apps/monkeyhub/web/workspaces/.generated/`、`dist/` | 可重建 |
+| 项目运行时进程日志 | Hub 运行根目录下的 `logs/studio-<instance-id>.log`（由 Hub 启动子进程时写入） | 本机诊断，不是项目证据 |
+| Web 同步和构建产物 | `apps/monkeyhub/web/.generated/`（同步资源）、`apps/monkeyhub/web/dist/`（构建产物），均 git ignored | 可重建 |
 
 **旧规则的分层修正。**
 早期工作区的 `GENERATION_RECORD_SPEC.md`（不在本仓库内）第八节原本把“预览模型、截图、审查包”统一

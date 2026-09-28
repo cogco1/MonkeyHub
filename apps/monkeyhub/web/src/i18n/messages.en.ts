@@ -38,7 +38,7 @@ export const messagesEn = {
   "tasks.archive": "Archive",
   "tasks.restore": "Restore",
   "tasks.archived": "Archived tasks",
-  "tasks.otherProjects": "Other saved projects are available when their Studio server is connected.",
+  "tasks.otherProjects": "Open another saved project in MonkeyHub to see its records.",
   "tasks.localHistory": "History stays in this browser. Each task has its own conversation and editing base; all use the provider shown above.",
   "tasks.storageError": "History could not be saved. This page keeps it only until reload.",
   "tasks.status.idle": "Ready to start",
@@ -347,12 +347,12 @@ export const messagesEn = {
   "conversation.ariaLabel": "Conversation",
   "conversation.title": "Conversation",
   "conversation.scope": "this tab · not version history",
-  "conversation.who.studio": "Studio",
-  "conversation.who.proposed": "Studio · proposed change",
-  "conversation.who.needsYou": "Studio · needs you",
-  "conversation.who.candidate": "Studio · candidate",
-  "conversation.who.verdict": "Studio · review readiness",
-  "conversation.who.compare": "Studio · before / after",
+  "conversation.who.studio": "MonkeyArch",
+  "conversation.who.proposed": "MonkeyArch · proposed change",
+  "conversation.who.needsYou": "MonkeyArch · needs you",
+  "conversation.who.candidate": "MonkeyArch · candidate",
+  "conversation.who.verdict": "MonkeyArch · review readiness",
+  "conversation.who.compare": "MonkeyArch · before / after",
 
   "candidate.title": "Candidate",
   "candidate.waitingFor": "waiting for",
@@ -464,7 +464,7 @@ export const messagesEn = {
   "refusal.title": "The server refused",
 
   "reading.deterministic":
-    "the studio is typing your sentence against the record",
+    "the project runtime is typing your sentence against the record",
   "reading.agent": "{provider} is reading your sentence against the record",
   "reading.default": "your sentence is being read against the record",
   "reading.for": "for",
@@ -495,7 +495,7 @@ export const messagesEn = {
   "verdict.protected": "Protected",
   "verdict.nothingProtected": "nothing was named to keep",
   "verdict.protectionExplanation":
-    "the studio never runs a change past a protection you named (a proposal that reaches one is refused before it runs); whether the relations on them held is not something this review-readiness result reports",
+    "the project runtime never runs a change past a protection you named (a proposal that reaches one is refused before it runs); whether the relations on them held is not something this review-readiness result reports",
   "verdict.unresolved": "Unresolved",
   "verdict.nothingUnresolved":
     "nothing — no clause refused, no finding, nothing confessed",
@@ -533,7 +533,7 @@ export const messagesEn = {
   "composer.hint.agent":
     "Describe what to change and what to keep. You can also point to the location in the model.",
   "composer.hint.exactPrefix":
-    "No agent is wired here: the studio types four exact forms —",
+    "No agent is wired here: the project runtime types four exact forms —",
   "composer.hint.exactOptional": "with an optional",
   "composer.hint.exactSuffix":
     "— and answers anything else with a question. Marks on the model go with the sentence.",
