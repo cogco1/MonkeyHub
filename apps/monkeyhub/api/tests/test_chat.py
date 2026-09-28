@@ -1458,10 +1458,10 @@ class ChatTests(unittest.TestCase):
             self.assertEqual(selected, [variants[1]])
             self.assertEqual(schema["properties"]["parameters"], {"type": "array"})
             self.assertNotIn("ProposalDto", answer["components"]["schemas"])
-            full = chat.call_tool(self.store.hub_url, session.id, "studio_schema", {
+            index = chat.call_tool(self.store.hub_url, session.id, "studio_schema", {
                 "method": "POST", "path": "/api/proposals"})
-            self.assertIn("ProposalDto", full["components"]["schemas"])
-            self.assertEqual(full["components"]["schemas"]["SemanticEditRequestDto"], document["components"]["schemas"]["SemanticEditRequestDto"])
+            self.assertEqual([row["producer"] for row in index["producers"]], ["prism", "loft"])
+            self.assertNotIn("components", index)
             with self.assertRaises(HubFailure) as unavailable:
                 chat.call_tool(self.store.hub_url, session.id, "studio_schema", {
                     "method": "POST", "path": "/api/proposals", "producer": "missing"})
@@ -1516,6 +1516,61 @@ class ChatTests(unittest.TestCase):
             component = next(variant["properties"]["fields"] for variant in fields["anyOf"]
                              if variant["properties"]["schema"]["enum"] == ["Component@1"])
             self.assertNotIn("semantic_kind", component.get("required", ()))
+
+    def test_the_producer_index_is_compact_and_read_from_the_running_studio(self):
+        """#413: the unfiltered answer was 67,550 characters, over the CLI's tool-output limit."""
+
+        from archflow_studio_api.main import create_app as studio_app
+        from archflow_studio_api.settings import StudioSettings
+
+        project = self.root / "producer-index"
+        FilesystemProjectRepository.initialize(project, project_id="producer-index",
+                                               initial_state={"project_id": "producer-index", "version": 0})
+        with TestClient(studio_app(StudioSettings(project_dir=project, cad_export="off"))) as client:
+            document = client.get("/openapi.json").json()
+        entity = document["components"]["schemas"]["SemanticEditRequestDto"]["properties"]["entities"]["items"]
+        element = next(variant["properties"]["fields"]["anyOf"] for variant in entity["anyOf"]
+                       if variant["properties"]["schema"]["enum"] == ["Element@1"])
+        contract = [item["properties"]["producer"]["enum"][0] for item in element]
+        session = self.create()
+        served = [document]
+        with patch.object(chat, "_bound_studio", return_value=("http://127.0.0.1:8791", session.model_dump())), \
+                patch.object(chat, "_request_json", side_effect=lambda *a, **k: json.loads(json.dumps(served[0]))):
+            index = chat.call_tool(self.store.hub_url, session.id, "studio_schema", {
+                "method": "POST", "path": "/api/proposals"})
+            self.assertLess(len(json.dumps(index)), 3000)
+            self.assertEqual([row["producer"] for row in index["producers"]], contract)
+            self.assertEqual(contract[0], "prism", "most general first, as the contract orders them")
+            for row, item in zip(index["producers"], element):
+                self.assertTrue(row["summary"])
+                self.assertTrue(item["description"].startswith(row["summary"]), "the producer's own description")
+            full = chat.call_tool(self.store.hub_url, session.id, "studio_schema", {
+                "method": "POST", "path": "/api/proposals", "producer": "wall"})
+            self.assertIn("SemanticEditRequestDto", full["components"]["schemas"])
+            self.assertGreater(len(json.dumps(full)), len(json.dumps(index)))
+            # No list of its own: a Studio offering another producer is answered with it.
+            changed = json.loads(json.dumps(document))
+            variants = changed["components"]["schemas"]["SemanticEditRequestDto"]["properties"]["entities"]["items"]["anyOf"]
+            for variant in variants:
+                alternatives = variant["properties"]["fields"].get("anyOf")
+                if alternatives is not None:
+                    alternatives[:] = [item for item in alternatives if item["properties"]["producer"]["enum"] != ["loft"]]
+                    alternatives.append({"description": "A trial producer. More text.",
+                                         "properties": {"producer": {"enum": ["trial"]}}})
+            served[0] = changed
+            index = chat.call_tool(self.store.hub_url, session.id, "studio_schema", {
+                "method": "POST", "path": "/api/proposals"})
+            self.assertEqual([row["producer"] for row in index["producers"]],
+                             [name for name in contract if name != "loft"] + ["trial"])
+            self.assertEqual(index["producers"][-1]["summary"], "A trial producer")
+
+    def test_the_agent_guide_does_not_grow(self):
+        """#413 moved the producer answer into studio_schema without adding guide lines."""
+
+        modelling = next(tool for tool in _tools_of(chat) if tool["name"] == "studio_request")["description"]
+        self.assertLessEqual(len(modelling.splitlines()), 106)
+        self.assertLessEqual(len(modelling), 15972)
+        self.assertIn("studio_schema POST /api/proposals answers the index of producers", modelling)
 
     def test_existing_controls_and_candidate_continuation_are_discoverable(self):
         """One short pointer, and the bound path behind it — not a second hand-written contract."""
@@ -1771,13 +1826,156 @@ class ChatTests(unittest.TestCase):
             if path.startswith("/api/apps?"):
                 sent.append({"method": method, "path": path, "body": body})
                 return [{"appId": "monkeyarch", "state": "stopped", "url": None, "processId": None}]
+            if path == "/api/runtime/projects/open":
+                # The Hub's own refusal to prepare the project travels as itself.
+                raise HubFailure(409, "PROJECT_RUNTIME_REFUSED", "The Hub could not open this project.")
             return request(base, path, method, body, timeout)
 
         with self.assertRaises(HubFailure) as refused:
             self._run_with_wait(refuse, session)
-        self.assertEqual(refused.exception.error.code, "CHAT_STUDIO_UNAVAILABLE")
+        self.assertEqual(refused.exception.error.code, "PROJECT_RUNTIME_REFUSED")
         self.assertEqual([row for row in sent if row["method"] == "POST"], [],
                          "nothing may be posted until every binding check has passed")
+
+    def _preparing_hub(self, session, *, worker=None, attached_id=None, starts_after=1, opened_delay=0.0):
+        """A stand-in Hub whose project Studio is not running until it is prepared.
+
+        It answers the Hub routes the web client's ensureProject uses, counts
+        each open and start, and lets the Studio run only after a start and
+        ``starts_after`` status reads (``None``: never).
+        """
+
+        state = {"opens": 0, "starts": 0, "reads": 0, "running": False}
+        runtime_id = str(uuid5(NAMESPACE_URL, f"{session.projectId}:{os.path.normcase(str(Path(session.projectDir).resolve()))}"))
+        guard = threading.Lock()
+
+        def request(base, path, method="GET", body=None, timeout=None, *, headers=None):
+            if timeout is not None:
+                self.assertGreater(timeout, 0)
+            if path == f"/api/chat/sessions/{session.id}":
+                return session.model_dump()
+            if path == "/api/runtime/projects/open":
+                self.assertEqual((base, method), (self.store.hub_url, "POST"))
+                self.assertEqual(body, {"projectDir": session.projectDir, "projectId": session.projectId})
+                time.sleep(opened_delay)
+                with guard:
+                    state["opens"] += 1
+                return {"runtimeId": runtime_id, "projectId": attached_id or session.projectId,
+                        "projectDir": session.projectDir, "workers": []}
+            if path == "/api/runtime":
+                studio = worker or {"serviceId": "studio", "state": "stopped", "healthy": False, "processId": None}
+                return {"serverId": "hub", "sequence": 1, "workers": [], "projects": [{
+                    "runtimeId": runtime_id, "projectId": attached_id or session.projectId,
+                    "projectDir": session.projectDir, "workers": [studio]}]}
+            if path.startswith("/api/apps/monkeyrender/start?"):
+                self.assertEqual(parse_qs(urlsplit(path).query)["projectDir"], [session.projectDir])
+                with guard:
+                    state["starts"] += 1
+                return {"appId": "monkeyrender", "state": "starting", "url": None}
+            if path.startswith("/api/apps?"):
+                self.assertEqual(parse_qs(urlsplit(path).query)["projectDir"], [session.projectDir])
+                with guard:
+                    if state["starts"]:
+                        state["reads"] += 1
+                        state["running"] = starts_after is not None and state["reads"] >= starts_after
+                    running = state["running"]
+                if not running:
+                    return [{"appId": "monkeyarch", "state": "stopped", "url": None, "processId": None},
+                            {"appId": "monkeyrender", "state": "starting" if state["starts"] else "stopped", "url": None}]
+                return [{"appId": "monkeyarch", "state": "running", "url": "http://127.0.0.1:8790/?view=arch",
+                         "apiUrl": "http://127.0.0.1:8791/", "processId": 123},
+                        {"appId": "monkeyrender", "state": "running", "url": "http://127.0.0.1:8790/?view=render"}]
+            if path == "/api/health":
+                return {"processId": 123, "sourceRevision": "same-revision"}
+            if path == "/api/project":
+                return {"projectId": session.projectId, "projectDir": session.projectDir}
+            if path == "/api/state":
+                self.assertEqual(base, "http://127.0.0.1:8791")
+                return {"stateDigest": "a" * 64}
+            raise AssertionError(f"unexpected call: {method} {path}")
+
+        return request, state
+
+    def test_a_design_tool_prepares_the_project_runtime_itself(self):
+        """#414: no page has to be opened before an agent's first design call."""
+
+        session = self.create()
+        session.status = "running"
+        request, state = self._preparing_hub(session, starts_after=2)
+        with patch.object(chat, "_request_json", side_effect=request), patch.object(chat, "_PREPARE_POLL_S", 0.01):
+            answer = chat.call_tool(self.store.hub_url, session.id, "studio_request", {"method": "GET", "path": "/api/state"})
+        self.assertEqual(answer, {"stateDigest": "a" * 64})
+        self.assertEqual((state["opens"], state["starts"]), (1, 1))
+        description = next(tool for tool in _tools_of(chat) if tool["name"] == "studio_request")["description"]
+        self.assertIn("prepare the project's runtime themselves", description)
+
+    def test_a_worker_that_needs_recovery_is_refused_with_its_own_error(self):
+        session = self.create()
+        session.status = "running"
+        crashed = {"serviceId": "studio", "state": "crashed", "healthy": False, "processId": 77,
+                   "error": {"code": "WORKER_EXITED", "detail": "The project service exited with code 3."}}
+        request, state = self._preparing_hub(session, worker=crashed)
+        with patch.object(chat, "_request_json", side_effect=request), self.assertRaises(HubFailure) as refused:
+            chat.call_tool(self.store.hub_url, session.id, "studio_request", {"method": "GET", "path": "/api/state"})
+        self.assertEqual(refused.exception.error.code, "WORKER_EXITED")
+        # The Hub's own words first, then what the agent can do about it: tell the user.
+        self.assertTrue(refused.exception.error.detail.startswith("The project service exited with code 3. "))
+        self.assertIn("tell the user", refused.exception.error.detail)
+        self.assertEqual(state["starts"], 0, "recovery stays an explicit act; nothing is started")
+
+    def test_a_request_the_chat_may_not_make_never_prepares_a_runtime(self):
+        session = self.create()
+        session.status = "running"
+        request, state = self._preparing_hub(session)
+        with patch.object(chat, "_request_json", side_effect=request), self.assertRaises(HubFailure) as refused:
+            chat.call_tool(self.store.hub_url, session.id, "studio_request", {"method": "DELETE", "path": "/api/project"})
+        self.assertEqual(refused.exception.error.code, "CHAT_TOOL_UNAVAILABLE")
+        self.assertEqual(state["starts"], 0, "the allow-list is checked before the Studio is resolved")
+
+    def test_a_runtime_attached_to_another_project_is_refused(self):
+        session = self.create()
+        session.status = "running"
+        request, state = self._preparing_hub(session, attached_id="other-project")
+        with patch.object(chat, "_request_json", side_effect=request), self.assertRaises(HubFailure) as refused:
+            chat.call_tool(self.store.hub_url, session.id, "studio_request", {"method": "GET", "path": "/api/state"})
+        self.assertEqual(refused.exception.error.code, "CHAT_PROJECT_MISMATCH")
+        self.assertEqual(state["starts"], 0)
+
+    def test_a_preparation_that_does_not_finish_in_time_is_refused_clearly(self):
+        session = self.create()
+        session.status = "running"
+        request, state = self._preparing_hub(session, starts_after=None)
+        began = time.monotonic()
+        with patch.object(chat, "_request_json", side_effect=request), patch.object(chat, "_PREPARE_POLL_S", 0.05), \
+                self.assertRaises(HubFailure) as refused:
+            chat._bound_studio(self.store.hub_url, session.id, timeout=0.6)
+        self.assertLess(time.monotonic() - began, 3)
+        self.assertEqual(refused.exception.error.code, "CHAT_STUDIO_UNAVAILABLE")
+        self.assertIn("did not become ready in time", refused.exception.error.detail)
+        self.assertEqual(state["starts"], 1)
+
+    def test_concurrent_design_calls_prepare_the_project_once(self):
+        session = self.create()
+        session.status = "running"
+        request, state = self._preparing_hub(session, starts_after=2, opened_delay=0.2)
+        answers, failures = [], []
+
+        def call():
+            try:
+                answers.append(chat.call_tool(self.store.hub_url, session.id, "studio_request",
+                                              {"method": "GET", "path": "/api/state"}))
+            except BaseException as exc:  # noqa: BLE001 - reported below
+                failures.append(exc)
+
+        with patch.object(chat, "_request_json", side_effect=request), patch.object(chat, "_PREPARE_POLL_S", 0.01):
+            threads = [threading.Thread(target=call) for _ in range(2)]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join(10)
+        self.assertEqual(failures, [])
+        self.assertEqual(len(answers), 2)
+        self.assertEqual((state["opens"], state["starts"]), (1, 1))
 
     def test_the_independent_reads_of_one_call_really_overlap(self):
         """Not "a pool exists": each group is held until all of it has arrived."""

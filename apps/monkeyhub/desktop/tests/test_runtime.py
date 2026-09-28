@@ -426,8 +426,21 @@ class DesktopRuntimeTests(unittest.TestCase):
             self.user_file.write_bytes(b"User data must survive reinstall and reopen.\n")
 
     def project_bytes(self):
-        return {str(path.relative_to(self.project)): path.read_bytes()
-                for path in self.project.rglob("*") if path.is_file()}
+        # ``*.lock`` files (``HEAD.lock``, ``design/branches.lock``) are the
+        # repository's cross-process write locks, not project content: the
+        # repository refuses to transfer them. They stay empty, and while the
+        # running Hub or Studio holds one, Windows byte-range locking
+        # (``msvcrt.locking``) makes it unreadable from any other handle (#397).
+        snapshot = {}
+        for path in self.project.rglob("*"):
+            relative = path.relative_to(self.project)
+            if not path.is_file() or any(part.endswith(".lock") for part in relative.parts):
+                continue
+            try:
+                snapshot[str(relative)] = path.read_bytes()
+            except OSError as error:
+                self.fail(f"Cannot read project file {relative}: {error!r}")
+        return snapshot
 
     def cleanup_temporary(self, temporary):
         self.assertTrue(all(shell.poll() is not None for shell in self.shells), "Own EXE still running")
