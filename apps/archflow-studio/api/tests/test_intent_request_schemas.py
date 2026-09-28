@@ -236,7 +236,8 @@ class IntentRequestSchemaTests(unittest.TestCase):
             self.assertAlmostEqual(parse_utterance(result["utterance"]).number, expected)
 
     def test_unknown_unit_allows_bare_numbers_but_asks_for_explicit_units(self):
-        record = _record(producer="prism")
+        # A producer that declares no unit for this field (#404 F17 declares the advertised ones).
+        record = _record(producer="retained-legacy")
         context = _context(record)
         self.assertIsNone(action_preflight(context, record))
         result = action_answer(_answer(_action(value=1.25)), context, record)
@@ -244,6 +245,14 @@ class IntentRequestSchemaTests(unittest.TestCase):
         result = action_answer(_answer(_action(value=1200, unit="mm")), context, record)
         self.assertEqual(result["status"], "question")
         self.assertIsNone(result["utterance"])
+
+    def test_a_producer_declared_unit_converts_an_explicit_length(self):
+        # #404 F17: the prism producer declares its height in metres, so 1200 mm is 1.2.
+        record = _record(producer="prism")
+        context = _context(record)
+        result = action_answer(_answer(_action(value=1200, unit="mm")), context, record)
+        self.assertEqual(result["status"], "compiled")
+        self.assertEqual(parse_utterance(result["utterance"]).number, 1.2)
 
     def test_bound_scalar_uses_declared_parameter_units_without_unbinding(self):
         record = _record(bound=True, parameter_unit="mm")
