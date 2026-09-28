@@ -1,6 +1,6 @@
 """Supervise owned local service processes; never retry their domain operations."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import json
 import os
 from pathlib import Path
@@ -8,7 +8,7 @@ import socket
 import subprocess
 import threading
 import time
-from typing import Literal
+from typing import Callable, Literal
 from urllib.error import URLError
 from urllib.request import ProxyHandler, build_opener
 from uuid import uuid4
@@ -17,6 +17,16 @@ from .models import HubError, HubFailure
 
 
 WorkerState = Literal["starting", "ready", "busy", "stopping", "stopped", "crashed", "recovering", "unavailable"]
+# How often ``_watch`` asks a launch for its health (#435). An exit never waits
+# for a probe: a thread blocked on the process ends the wait at once. Probes
+# find a service that is alive but no longer answering, or answering as
+# someone else, so a verified worker that is idle is asked less often; one that
+# is starting, busy or has just missed a probe is asked as before.
+_STARTING_PROBE_S = 0.1
+_ACTIVE_PROBE_S = 1.0
+_STABLE_PROBE_S = 5.0
+# How long a verified service may miss probes before it is ``unavailable``.
+_UNAVAILABLE_AFTER_S = 5.0
 
 
 def project_key(project_dir: str | None) -> str:
@@ -65,6 +75,8 @@ class _Child:
     error: HubError | None = None
     service_pid: int | None = None
     busy: bool = False
+    # Ends the watcher's wait between probes: set on exit and on a busy change.
+    signal: threading.Event = field(default_factory=threading.Event)
 
     @property
     def port(self) -> int:
@@ -76,6 +88,18 @@ class WorkerSupervisor:
         self._children: dict[str, _Child] = {}
         self._lock = threading.RLock()
         self._closing = False
+        self._listeners: list[Callable[[], None]] = []
+
+    def add_listener(self, listener: Callable[[], None]) -> None:
+        """Call ``listener`` after a watcher changed a launch's state; never under the lock."""
+        with self._lock:
+            self._listeners.append(listener)
+
+    def _changed(self) -> None:
+        with self._lock:
+            listeners = tuple(self._listeners)
+        for listener in listeners:
+            listener()
 
     def snapshots(self, *, project_dir: str | None = None) -> tuple[WorkerSnapshot, ...]:
         with self._lock:
@@ -139,6 +163,7 @@ class WorkerSupervisor:
                 raise HubFailure(503, "START_FAILED", f"The application could not start. See {log_path}.") from exc
             child = _Child(launch, process, instance_id, log_path, state="recovering" if recovering else "starting")
             self._children[launch.worker_id] = child
+            threading.Thread(target=self._await_exit, args=(child,), daemon=True).start()
             threading.Thread(target=self._watch, args=(child,), daemon=True).start()
             return self._snapshot(child)
 
@@ -161,6 +186,9 @@ class WorkerSupervisor:
             child = self._children.get(worker_id)
             if child is not None:
                 self._observe_exit(child)
+                if child.busy != busy:
+                    # Work started or ended: probe on that cadence from now.
+                    child.signal.set()
                 child.busy = busy
                 if child.healthy:
                     child.state = "busy" if busy else "ready"
@@ -188,6 +216,18 @@ class WorkerSupervisor:
         child.state = "crashed"
         return False
 
+    @staticmethod
+    def _await_exit(child: _Child) -> None:
+        """Block on the process, not on a timer, so an exit ends the watcher's wait at once."""
+        try:
+            child.process.wait()
+        finally:
+            child.signal.set()
+
+    @staticmethod
+    def _shown_state(child: _Child) -> tuple:
+        return child.state, child.healthy, child.error, child.service_pid, child.desired_state
+
     def _watch(self, child: _Child) -> None:
         deadline = time.monotonic() + 30
         unavailable_since = None
@@ -195,6 +235,7 @@ class WorkerSupervisor:
         while child.process.poll() is None:
             with self._lock:
                 check = child.desired_state == "running"
+                before = self._shown_state(child)
             if check:
                 try:
                     with opener.open(f"http://127.0.0.1:{child.port}/api/health", timeout=1) as response:
@@ -239,15 +280,27 @@ class WorkerSupervisor:
                                 # losing its verified launch or usable page.
                                 if unavailable_since is None:
                                     unavailable_since = time.monotonic()
-                                if time.monotonic() - unavailable_since >= 5:
+                                if time.monotonic() - unavailable_since >= _UNAVAILABLE_AFTER_S:
                                     child.healthy = False
                                     child.state = "unavailable"
                                     child.error = HubError(code="SERVICE_UNAVAILABLE", detail="The owned service is not answering its health and project binding checks.")
                             elif time.monotonic() >= deadline:
                                 self._reject(child, "START_TIMEOUT", f"The application did not become ready. See {child.log_path}.")
-            time.sleep(0.1 if child.service_pid is None else 1)
+            with self._lock:
+                changed = self._shown_state(child) != before
+                if child.service_pid is None:
+                    interval = _STARTING_PROBE_S
+                elif child.busy or unavailable_since is not None or not child.healthy:
+                    interval = _ACTIVE_PROBE_S
+                else:
+                    interval = _STABLE_PROBE_S
+            if changed:
+                self._changed()
+            child.signal.wait(interval)
+            child.signal.clear()
         with self._lock:
             self._observe_exit(child)
+        self._changed()
 
     def _reject(self, child: _Child, code: str, detail: str) -> None:
         child.healthy = False

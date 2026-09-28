@@ -5793,6 +5793,71 @@ export type ModelViewDto = {
 };
 
 /**
+ * ModelingBaseDto
+ *
+ * ``POST /api/project/modeling?base=true``: the prepared action plus the base a first proposal writes against.
+ *
+ * The same default state ``GET /api/state`` would answer right after, cut to
+ * what a first sketch needs, so preparing and reading are one request.
+ */
+export type ModelingBaseDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Initialized
+     *
+     * Initial modeling inputs were installed; no geometry, run or issued version was created.
+     */
+    initialized: boolean;
+    /**
+     * Statedigest
+     *
+     * The default state's stateDigest; send it as the first proposal's stateDigest. Null when the kernel refused to view the record (read GET /api/state for why).
+     */
+    stateDigest: string | null;
+    /**
+     * Sourcestageref
+     *
+     * Send it unchanged on writes when not null.
+     */
+    sourceStageRef: string | null;
+    /**
+     * Levels
+     *
+     * Levels a baseLevel can name, elevations in metres.
+     */
+    levels: Array<ModelingLevelDto>;
+    /**
+     * Components
+     *
+     * Existing components; a new component names one as parentComponentId. Null when the component tree could not be resolved.
+     */
+    components: Array<ModelingComponentDto> | null;
+    /**
+     * Elementcount
+     *
+     * Elements already in the default state; 0 for a project with no model yet. Before editing existing elements, read GET /api/state?authored=true.
+     */
+    elementCount: number;
+};
+
+/**
+ * ModelingComponentDto
+ */
+export type ModelingComponentDto = {
+    /**
+     * Componentid
+     */
+    componentId: string;
+    /**
+     * Parentcomponentid
+     */
+    parentComponentId: string | null;
+};
+
+/**
  * ModelingInitializeDto
  */
 export type ModelingInitializeDto = {
@@ -5816,6 +5881,20 @@ export type ModelingInitializeRequestDto = {
      * Projectid
      */
     projectId: string;
+};
+
+/**
+ * ModelingLevelDto
+ */
+export type ModelingLevelDto = {
+    /**
+     * Levelid
+     */
+    levelId: string;
+    /**
+     * Elevation
+     */
+    elevation: number;
 };
 
 /**
@@ -9117,7 +9196,7 @@ export type SemanticEditRequestDto = {
             };
             params?: {
                 /**
-                 * The closed plan profile in order; the first point is not repeated. Coordinates may bind @parameters.
+                 * The plan profile as a closed boundary in order; repeating its first point at the end is optional. Coordinates may bind @parameters.
                  */
                 profile?: Array<[
                     number | string,
@@ -9208,7 +9287,7 @@ export type SemanticEditRequestDto = {
             };
             params?: {
                 /**
-                 * One simple boundary in work_plane coordinates (XZ when omitted), repeating its first vertex at the end.
+                 * One simple closed boundary in work_plane coordinates (XZ when omitted), in order; repeating its first point at the end is optional.
                  */
                 profile?: Array<[
                     number | string,
@@ -9335,7 +9414,7 @@ export type SemanticEditRequestDto = {
                     number | string
                 ]>>;
                 /**
-                 * The same number of vertices in every section; do not repeat the first vertex.
+                 * The number of distinct vertices in every section, not counting a repeated first point.
                  */
                 profile_size?: number;
                 /**
@@ -9474,6 +9553,9 @@ export type SemanticEditRequestDto = {
                      * The existing wall face label, when the record names one.
                      */
                     face?: string;
+                    /**
+                     * Optional plan [X, Z] direction towards the side the thickness goes; pointing to the right of from→to puts the thickness on the right. The line stays the same face either way.
+                     */
                     inward?: [
                         number,
                         number
@@ -9486,7 +9568,7 @@ export type SemanticEditRequestDto = {
                  */
                 height?: number | string;
                 /**
-                 * Positive wall thickness towards the line's inward normal.
+                 * Positive wall thickness. The line is one face of the wall; seen from above, the thickness lies to the left of the line walked from its from point to its to point, unless references.line.inward says otherwise.
                  */
                 thickness?: number | string;
                 openings?: Array<{
@@ -9674,7 +9756,7 @@ export type SemanticEditRequestDto = {
             };
             params?: {
                 /**
-                 * The closed plan profile in order; the first point is not repeated. Coordinates may bind @parameters.
+                 * The plan profile as a closed boundary in order; repeating its first point at the end is optional. Coordinates may bind @parameters.
                  */
                 profile?: Array<[
                     number | string,
@@ -9763,7 +9845,7 @@ export type SemanticEditRequestDto = {
             };
             params?: {
                 /**
-                 * One simple boundary in work_plane coordinates (XZ when omitted), repeating its first vertex at the end.
+                 * One simple closed boundary in work_plane coordinates (XZ when omitted), in order; repeating its first point at the end is optional.
                  */
                 profile?: Array<[
                     number | string,
@@ -9886,7 +9968,7 @@ export type SemanticEditRequestDto = {
                     number | string
                 ]>>;
                 /**
-                 * The same number of vertices in every section; do not repeat the first vertex.
+                 * The number of distinct vertices in every section, not counting a repeated first point.
                  */
                 profile_size?: number;
                 /**
@@ -10023,6 +10105,9 @@ export type SemanticEditRequestDto = {
                      * The existing wall face label, when the record names one.
                      */
                     face?: string;
+                    /**
+                     * Optional plan [X, Z] direction towards the side the thickness goes; pointing to the right of from→to puts the thickness on the right. The line stays the same face either way.
+                     */
                     inward?: [
                         number,
                         number
@@ -10035,7 +10120,7 @@ export type SemanticEditRequestDto = {
                  */
                 height?: number | string;
                 /**
-                 * Positive wall thickness towards the line's inward normal.
+                 * Positive wall thickness. The line is one face of the wall; seen from above, the thickness lies to the left of the line walked from its from point to its to point, unless references.line.inward says otherwise.
                  */
                 thickness?: number | string;
                 openings?: Array<{
@@ -13035,7 +13120,14 @@ export type PrepareModelingApiProjectModelingPostData = {
         'x-monkey-parent'?: string | null;
     };
     path?: never;
-    query?: never;
+    query?: {
+        /**
+         * Base
+         *
+         * Also answer the default base this leaves (stateDigest, sourceStageRef, levels, components, elementCount) as ModelingBaseDto, so a first proposal needs no GET /api/state before it.
+         */
+        base?: boolean;
+    };
     url: '/api/project/modeling';
 };
 
@@ -13050,9 +13142,11 @@ export type PrepareModelingApiProjectModelingPostError = PrepareModelingApiProje
 
 export type PrepareModelingApiProjectModelingPostResponses = {
     /**
+     * Response Prepare Modeling Api Project Modeling Post
+     *
      * Successful Response
      */
-    200: ModelingInitializeDto;
+    200: ModelingBaseDto | ModelingInitializeDto;
 };
 
 export type PrepareModelingApiProjectModelingPostResponse = PrepareModelingApiProjectModelingPostResponses[keyof PrepareModelingApiProjectModelingPostResponses];

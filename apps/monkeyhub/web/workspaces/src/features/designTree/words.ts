@@ -53,6 +53,8 @@ export function refusalWords(t: TFunction, language: Language, error: StudioApiE
 
 /** The actor id an explicit act in the Studio carries when nobody signed in. */
 const LOCAL_ACTOR = "studio:explicit-user-action";
+/** The origin an admission carries when the Hub Agent closed a chat task on the user's words. */
+const HUB_AGENT = "hub-agent";
 /** A label that already names its option, such as "A Courtyard gate": it gets no second letter. */
 const OWN_LETTER = /^[A-Za-z]\s/;
 
@@ -83,9 +85,11 @@ export function treeWords(t: TFunction, tree: GrowthTree | null) {
     return base ? t("designTree.study.from", { base: title(base) }) : t("designTree.study.unnamed");
   };
   const actor = (value: string | null) => !value ? null : value === LOCAL_ACTOR ? t("designTree.actor.you") : value;
-  // An admission recorded afterwards, when a person reviewed earlier work, says so.
+  // An admission recorded afterwards, when a person reviewed earlier work, says so; one the Hub Agent
+  // made on the user's words in chat is the Agent's act, not "you" (#404 F6). The retained actor is unchanged.
   const admitter = (candidate: NonNullable<TreeNode["candidate"]>) => candidate.admittedOrigin === "retroactive"
-    ? t("designTree.actor.retroactive") : actor(candidate.admittedBy);
+    ? t("designTree.actor.retroactive") : candidate.admittedOrigin === HUB_AGENT ? t("designTree.actor.hubAgent")
+      : actor(candidate.admittedBy);
   const currentAt = (): string => {
     const current = byId(CURRENT);
     const anchor = byId(current?.parent ?? null);
