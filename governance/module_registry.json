@@ -8111,7 +8111,7 @@
       "purpose": "L4: the honest entry gate a technical domain calls before it runs - read only the semantics it needs, and answer an explicit enrichment request for what is missing instead of guessing it from shape, producer or name.",
       "owns": [
         "DomainNeeds and the DOMAINS registry: each domain's architectural.role read set and the facet keys it needs once it reads",
-        "readiness: sorting every Component@1 that owns an Element@1 into read, a request for a missing architectural.role, a request for missing needed facets, or neither, per domain",
+        "readiness: sorting every Component@1 that owns an Element@1 other than a hidden cutter into read, a request for a missing architectural.role, a request for missing needed facets, or neither, per domain",
         "describe: one domain's own reads/needs/known_facets with no record in hand",
         "DomainUnknown, naming the domains that are registered"
       ],
@@ -8149,6 +8149,7 @@
       "invariants": [
         "never infers architectural.role, structural.role, architectural.enclosure or material.name from geometry, producer or names (D-419-0)",
         "a Component@1 with no owned Element@1 is neither read nor asked about",
+        "a Component@1 whose every Element@1 another element names in references.voids (a hidden cutter, a construction helper) is neither read nor asked about; once uncut it is considered again",
         "a role outside a domain's read set is neither read nor asked about",
         "reads and requests are both sorted by id; the missing keys within a request are sorted"
       ],

@@ -17,9 +17,10 @@ step continuing from the candidate the previous one produced:
    wall in place: same delivered object, the door's frame and leaf added, the
    niche still cut.
 6. Stage D: the structure domain asks for the facets it needs
-   (``GET /api/domains/structure/readiness``) and reads ``mass`` once it has them.
-7. ``uncut`` on the wall-realised ``mass`` delivers ``block`` again and gives
-   the niche's volume back.
+   (``GET /api/domains/structure/readiness``) and reads ``mass`` once it has
+   them; it never asks what the hidden cutter is.
+7. ``uncut`` on the wall-realised ``mass`` shows ``block`` again, gives the
+   niche's volume back, and makes ``block`` something the domain asks about.
 
 Every volume is measured by OCCT on the exact STEP the candidate delivered;
 visibility is read from its 3dm preview.
@@ -79,6 +80,7 @@ ALONG, WIDTH, SILL, HEAD = 3.3, 0.9, 0.0, 2.1
 DOOR_HOLE = WIDTH * (HEAD - SILL) * 0.3
 FRAME_AND_LEAF = {"obj-door-frame-mass-body-opening-1-left", "obj-door-frame-mass-body-opening-1-right",
                   "obj-door-frame-mass-body-opening-1-top", "obj-door-leaf-mass-body-opening-1-0"}
+APERTURE = "obj-mass-body-aperture-opening-1"  # the door hole's inspection witness, kept hidden like a cutter
 HOSTED_OPENING = [{"id": "hosted-opening", "route": "POST /api/proposals/hosted-opening", "needs": {}}]
 
 
@@ -264,10 +266,11 @@ class ConstructionFirstAuthoringTestCase(HostedOpeningTestCase):
         self.assertLessEqual(before, after)
         self.assertEqual(after - before, {name for name in after if "opening-1" in name})
         volumes, visible = self.delivered(run)
-        # Both the niche and the door's hole are cut from the same solid; the cutter stays hidden.
+        # Both the niche and the door's hole are cut from the same solid; what made them, the cutter and the
+        # hole's witness, stays hidden, and the door stands in its hole.
         self.assert_volume(volumes["obj-mass-body"], MASS_VOLUME - NICHE_VOLUME - DOOR_HOLE)
-        self.assertFalse(visible["obj-block-body"])
-        self.assertTrue(all(visible[name] for name in FRAME_AND_LEAF | {"obj-mass-body"}), visible)
+        self.assertEqual(visible, {"obj-mass-body": True, "obj-block-body": False, APERTURE: False,
+                                   **dict.fromkeys(FRAME_AND_LEAF, True)})
 
         rows = self.entities(run)
         self.assertEqual({identifier: (row["cuts"], row["cutBy"], row["hidden"]) for identifier, row in rows.items()},
@@ -281,12 +284,9 @@ class ConstructionFirstAuthoringTestCase(HostedOpeningTestCase):
         """6. Stage D: the structure domain asks what it needs, and reads mass once mass says it."""
 
         asked = self.readiness(door)
+        # Only mass is asked about: block, hidden in it as a cutter, is a construction helper, not something to name.
         self.assertEqual((asked["status"], asked["reads"]), ("enrichment_required", []))
-        # A domain reads every component that has geometry and guesses nothing, so it also asks what block
-        # is: a cutter hidden in mass is geometry with no role yet.
         self.assertEqual(asked["requests"], [
-            {"id": "block", "missing": ["architectural.role"],
-             "reason": "no architectural.role: the structure domain cannot tell whether block carries load"},
             {"id": "mass", "missing": ["material.name", "structural.role"],
              "reason": "structure reads wall and needs material.name and structural.role to evaluate it"},
         ])
@@ -294,19 +294,12 @@ class ConstructionFirstAuthoringTestCase(HostedOpeningTestCase):
         enriched = self.facets([{"id": "mass", "set": {"structural.role": "load_bearing", "material.name": "brick"}}],
                                sourceRunId=door)
         run = self.run_candidate(enriched["proposalId"])
-        answered = self.readiness(run)
-        self.assertEqual((answered["status"], answered["reads"]), ("enrichment_required", ["mass"]))
-        self.assertEqual([request["id"] for request in answered["requests"]], ["block"], "mass is asked nothing more")
-
-        # The niche's cutter is said to be an opening, which structure does not read.
-        named = self.facets([{"id": "block", "set": {"architectural.role": "opening"}}], sourceRunId=run)
-        run = self.run_candidate(named["proposalId"])
         ready = self.readiness(run)
         self.assertEqual((ready["status"], ready["reads"], ready["requests"]), ("ready", ["mass"], []))
         return run
 
     def uncut_the_niche(self, ready: str, door_volume: float) -> None:
-        """7. uncut on the wall-realised mass: block is delivered again and mass gets the niche's volume back."""
+        """7. uncut on the wall-realised mass: block shows again and mass gets the niche's volume back."""
 
         proposal = self.construct(UNCUT, sourceRunId=ready)
         self.assertEqual([(row["id"], row["status"], row["cuts"]) for row in proposal["construction"]["report"]],
@@ -314,12 +307,20 @@ class ConstructionFirstAuthoringTestCase(HostedOpeningTestCase):
         run = self.run_candidate(proposal["proposalId"])
         volumes, visible = self.delivered(run)
         self.assert_volume(volumes["obj-mass-body"], door_volume + NICHE_VOLUME)
-        self.assertTrue(visible["obj-block-body"], "block is delivered again")
-        self.assertLessEqual(FRAME_AND_LEAF, self.objects(run), "the door stays")
+        # block shows again; the door stays in its hole.
+        self.assertEqual(visible, {"obj-mass-body": True, "obj-block-body": True, APERTURE: False,
+                                   **dict.fromkeys(FRAME_AND_LEAF, True)})
         rows = self.entities(run)
         self.assertEqual({identifier: (row["cuts"], row["cutBy"], row["hidden"]) for identifier, row in rows.items()},
                          {"mass": ([], [], False), "block": ([], [], False)})
         self.assertEqual([opening["id"] for opening in rows["mass"]["openings"]], ["opening-1"])
+        # Uncut, block is ordinary geometry again, so the structure domain asks what it is.
+        asked = self.readiness(run)
+        self.assertEqual((asked["status"], asked["reads"]), ("enrichment_required", ["mass"]))
+        self.assertEqual(asked["requests"], [{
+            "id": "block", "missing": ["architectural.role"],
+            "reason": "no architectural.role: the structure domain cannot tell whether block carries load",
+        }])
 
 
 if __name__ == "__main__":

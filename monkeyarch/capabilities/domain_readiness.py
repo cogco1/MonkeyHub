@@ -13,7 +13,12 @@ about this entity to evaluate it, and if not, what is missing and why".
 it looks at) and its needs (the facet keys it requires once it does look).
 ``readiness`` walks every ``Component@1`` that owns at least one
 ``Element@1`` — a component with no element is not geometry yet, and a
-domain has nothing to evaluate on it — and sorts each into one of three
+domain has nothing to evaluate on it — except a construction helper: a
+component whose every element another element currently names in
+``references.voids`` is a hidden cutter, whose cut is part of its host's
+form, and asking what it is would force meaning onto a helper (#419).
+Once uncut it is ordinary geometry and is considered again. ``readiness``
+sorts each component it considers into one of three
 outcomes: its role is outside the domain's read set (not read, no request);
 it carries no ``architectural.role`` at all (a request naming that, because
 a domain reading shape alone cannot even tell whether the entity is its
@@ -97,7 +102,9 @@ def readiness(record: StateRecord, domain: str) -> dict[str, Any]:
 
     Every ``Component@1`` that owns at least one ``Element@1`` is considered;
     one with no element at all is not geometry yet and is neither read nor
-    asked about. Each considered component becomes exactly one of: read (its
+    asked about, and neither is one whose every element another element
+    names in ``references.voids`` (a hidden cutter, considered again once
+    uncut). Each considered component becomes exactly one of: read (its
     role is in the domain's set and every needed facet is present); a request
     naming ``architectural.role`` (no role at all — the domain cannot tell
     whether it is even its business); a request naming the missing facet keys
@@ -108,7 +115,7 @@ def readiness(record: StateRecord, domain: str) -> dict[str, Any]:
     """
 
     spec = _spec(domain)
-    owners = _components_with_elements(record)
+    owners = _considered_components(record)
     reads: list[str] = []
     requests: list[dict[str, Any]] = []
 
@@ -157,21 +164,36 @@ def _spec(domain: str) -> DomainNeeds:
         raise DomainUnknown(domain) from None
 
 
-def _components_with_elements(record: StateRecord) -> frozenset[str]:
-    """Every ``Component@1`` id that owns at least one ``Element@1``.
+def _considered_components(record: StateRecord) -> frozenset[str]:
+    """Every ``Component@1`` id that owns at least one ``Element@1`` other than a hidden cutter.
 
     An element's owner is its ``fields.component_id`` when it states one,
     else its ``parent_id`` — the same fallback ``element_rows_of`` and the
     Studio's own component-id resolution use, so a domain and the geometry
-    compiler agree on what an element belongs to.
+    compiler agree on what an element belongs to. A cutter is an element
+    another element names in ``references.voids`` now; a component with
+    an ordinary element beside its cutters is still considered.
     """
 
+    cutters = _cutters(record)
     owners: set[str] = set()
     for element in record.entities_of("Element@1"):
         owner = element.fields.get("component_id") or element.parent_id
-        if isinstance(owner, str) and owner:
+        if isinstance(owner, str) and owner and element.entity_id not in cutters:
             owners.add(owner)
     return frozenset(owners)
+
+
+def _cutters(record: StateRecord) -> frozenset[str]:
+    """The elements another element names in ``references.voids``: kept in the model hidden while they cut."""
+
+    cutters: set[str] = set()
+    for element in record.entities_of("Element@1"):
+        references = element.fields.get("references")
+        voids = references.get("voids") if isinstance(references, Mapping) else None
+        if isinstance(voids, (list, tuple)):
+            cutters.update(void for void in voids if isinstance(void, str) and void != element.entity_id)
+    return frozenset(cutters)
 
 
 def _known_facets(keys: Iterable[str]) -> dict[str, Any]:

@@ -168,6 +168,52 @@ class RoleOutsideReadSetTests(unittest.TestCase):
         self.assertEqual(envelope["requests"], [])
 
 
+_LOAD_BEARING_WALL = {"architectural.role": "wall", "structural.role": "load_bearing", "material.name": "brick"}
+
+
+def _host(component_id: str, facets: dict[str, str], *, cuts: tuple[str, ...]) -> tuple[Entity, ...]:
+    """A faceted component whose one element names ``cuts`` in ``references.voids`` (none: it cuts nothing)."""
+
+    component, element = _component(component_id, facets)
+    references = {"voids": list(cuts)} if cuts else {}
+    return component, Entity(element.entity_id, element.schema, {**element.fields, "references": references},
+                             parent_id=component_id)
+
+
+class HiddenCutterTests(unittest.TestCase):
+    """A component whose every element cuts another is a construction helper, not something to classify (#419).
+
+    What it removes is part of its host's form; asked about, the architect
+    would have to give a helper meaning. Uncut, it is ordinary geometry again.
+    """
+
+    def test_a_hidden_cutter_is_neither_asked_about_nor_read(self) -> None:
+        for facets in (None, {"architectural.role": "column", "structural.role": "load_bearing", "material.name": "steel"}):
+            with self.subTest(facets=facets):
+                record = _record(_host("mass", _LOAD_BEARING_WALL, cuts=("block-body",)), _component("block", facets))
+                result = readiness(record, "structure")
+                self.assertEqual((result["status"], result["reads"], result["requests"]), ("ready", ["mass"], []))
+
+    def test_the_same_component_uncut_is_asked_about_again(self) -> None:
+        record = _record(_host("mass", _LOAD_BEARING_WALL, cuts=()), _component("block"))
+        result = readiness(record, "structure")
+        self.assertEqual((result["status"], result["reads"]), ("enrichment_required", ["mass"]))
+        self.assertEqual(result["requests"], [{
+            "id": "block", "missing": ["architectural.role"],
+            "reason": "no architectural.role: the structure domain cannot tell whether block carries load",
+        }])
+
+    def test_a_component_with_an_ordinary_element_beside_its_cutter_is_still_considered(self) -> None:
+        pair = (Entity("pair", "Component@1", {"intent": "pair"}),
+                *(Entity(element_id, "Element@1", {"component_id": "pair", "producer": "prism"}, parent_id="pair")
+                  for element_id in ("pair-cutter", "pair-body")))
+        record = _record(_host("mass", _LOAD_BEARING_WALL, cuts=("pair-cutter",)), pair)
+        result = readiness(record, "structure")
+        self.assertEqual(result["reads"], ["mass"])
+        self.assertEqual([(request["id"], request["missing"]) for request in result["requests"]],
+                         [("pair", ["architectural.role"])])
+
+
 class OrderingTests(unittest.TestCase):
     """``reads`` and ``requests`` both come back sorted by id, not in record order."""
 

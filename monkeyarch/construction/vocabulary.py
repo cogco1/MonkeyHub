@@ -149,7 +149,7 @@ VERBS: tuple[Verb, ...] = (
          "cutter keeps its id and stays in the model hidden. A cutter cannot have cutters of its own, a "
          "host cannot be a cutter, and nothing may stand on a cutter's top."),
     Verb("uncut", (Param("host"), Param("cutters", rest=True)), "host",
-         "Stop removing the cutters from the host - all of them when none is given; they are delivered again."),
+         "Stop removing the cutters from the host - all of them when none is given; they show again."),
     Verb("level", _p("id"), "anchor",
          "A project level, for at; add a number or param(key) to offset it."),
     Verb("top", _p("obj"), "anchor",
