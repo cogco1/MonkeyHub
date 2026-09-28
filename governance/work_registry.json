@@ -23,7 +23,10 @@
             "apps/archflow-studio/api/archflow_studio_api/routes/intents.py",
             "apps/archflow-studio/api/archflow_studio_api/transport/decisions.py",
             "apps/archflow-studio/api/archflow_studio_api/transport/intent.py",
-            "apps/monkeyhub/web/workspaces/src/api/generated/"
+            "apps/monkeyhub/web/workspaces/src/api/generated/",
+            "apps/monkeyhub/api/monkeyhub_api/chat.py",
+            "apps/monkeyhub/api/tests/test_chat_feedback.py",
+            "apps/monkeyhub/api/tests/test_chat.py"
           ],
           "depends_on": []
         }
