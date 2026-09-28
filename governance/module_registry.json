@@ -551,7 +551,9 @@
         "coordinates pass through as the program states them; the translator performs no frame conversion",
         "every physical object is named and carries its archflow:* identity strings",
         "an object carries its operation's statements as archflow:* user strings (wedge: low/high/axis/sense, where wedge_sense is the world-anchored rise direction +x|-x|+z|-z in the kernel plan; shell: thickness/kind); the value is written verbatim, geometry is never measured or recomputed to make one, and a statement naming a reserved identity key (component, object_ref, producer_op and the rest) fails CadTranslationError",
-        "planar_surface preserves its explicitly closed profile and datum elevation with AddPlanarSrf, without extrusion or capping; analytic bounds retain the zero-thickness plane"
+        "planar_surface preserves its explicitly closed profile and datum elevation with AddPlanarSrf, without extrusion or capping; analytic bounds retain the zero-thickness plane",
+        "a difference keeps its base's predicted bounds when every base vertex survives outside every void's box, for any base whose points are its own vertices",
+        "a void whose box does not overlap its base's box is refused by name: it removes nothing"
       ],
       "status": "canonical",
       "tests": [

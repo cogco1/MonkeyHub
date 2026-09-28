@@ -1053,6 +1053,7 @@ def expected_object_bounds(program) -> dict[str, dict]:
     points: dict[str, list] = {}
     counts: dict[str, int] = {}
     boxes: set[str] = set()   # objects known to be axis-aligned boxes
+    actual: set[str] = set()  # objects whose points lie on the object itself (vertices), not on its box
     for op_id in program.operation_order:
         operation = operations[op_id]
         kind = operation.kind.value
@@ -1066,6 +1067,7 @@ def expected_object_bounds(program) -> dict[str, dict]:
                 continue
             points[out] = lift_to_base_level(params["points"], params, op_id)
             counts[out] = 1
+            actual.add(out)
         elif kind == "solid":
             o, s = params["origin"], params["size"]
             points[out] = [
@@ -1076,9 +1078,11 @@ def expected_object_bounds(program) -> dict[str, dict]:
             ]
             counts[out] = 1
             boxes.add(out)
+            actual.add(out)
         elif kind == "planar_surface":
             points[out] = lift_to_base_level(params["profile"], params, op_id)
             counts[out] = 1
+            actual.add(out)
         elif kind == "extrusion":
             profile = lift_to_base_level(params["profile"], params, op_id)
             vector = params["vector"]
@@ -1089,6 +1093,7 @@ def expected_object_bounds(program) -> dict[str, dict]:
             counts[out] = 1
             if _is_axis_aligned_box(profile, vector):
                 boxes.add(out)
+            actual.add(out)
         elif kind == "revolve":
             a0, a1, r0, r1 = _revolve_parameters(params, op_id)
             axis = [float(a1[i]) - float(a0[i]) for i in range(3)]
@@ -1122,9 +1127,11 @@ def expected_object_bounds(program) -> dict[str, dict]:
                 for p in lift_to_base_level(params["profiles"], params, op_id)
             ]
             counts[out] = 1
+            actual.add(out)
         elif kind == "boolean_union":
             points[out] = [p for i in ins for p in points[i]]
             counts[out] = 1
+            if all(i in actual for i in ins): actual.add(out)
         elif kind == "boolean_difference":
             base = sorted(ins)[int(params.get("base_index", 0))]
             base_min, base_max = _point_bounds(points[base])
@@ -1132,50 +1139,53 @@ def expected_object_bounds(program) -> dict[str, dict]:
                 cutter: _point_bounds(points[cutter])
                 for cutter in ins if cutter != base
             }
-            if base in boxes:
-                # A surviving corner must be strictly outside every cutter's
-                # closed bounds. Check cutters together: separate cuts may
-                # jointly remove a face that either cut alone would preserve.
-                retained = [
-                    point for point in points[base]
-                    if all(any(point[axis] < lo[axis] or point[axis] > hi[axis]
-                               for axis in range(3))
-                           for lo, hi in cutters.values())
-                ]
-                # Keep all plan corners as well as the six current extrema:
-                # radial_array later rotates this projection about vertical.
-                # A wall-end door with a header satisfies both conditions.
-                plan_corners = {(point[0], point[2]) for point in retained}
-                if (not retained
-                        or _point_bounds(retained) != (base_min, base_max)
-                        or any((point[0], point[2]) not in plan_corners
-                               for point in points[base])):
+            for cutter, (cutter_min, cutter_max) in cutters.items():
+                if any(cutter_max[axis] <= base_min[axis] or cutter_min[axis] >= base_max[axis]
+                       for axis in range(3)):
                     raise CadTranslationError(
-                        "boolean difference bounds are not analytically "
-                        f"determined for {op_id}: cutters can alter a base extremum "
-                        "or its vertical-axis rotation"
+                        f"boolean difference {op_id}: void {cutter} removes nothing from {base}; "
+                        "their bounds do not overlap"
                     )
+            # A base point strictly outside every void's closed bounds survives
+            # the cut. Check voids together: separate cuts may jointly remove a
+            # face that either cut alone would preserve.
+            retained = [
+                point for point in points[base]
+                if all(any(point[axis] < lo[axis] or point[axis] > hi[axis]
+                           for axis in range(3))
+                       for lo, hi in cutters.values())
+            ]
+            # Keep all plan positions as well as the six current extrema:
+            # radial_array later rotates this projection about vertical.
+            # A wall-end door with a header satisfies both conditions.
+            plan_positions = {(point[0], point[2]) for point in retained}
+            keeps_every_extreme = (
+                bool(retained)
+                and _point_bounds(retained) == (base_min, base_max)
+                and all((point[0], point[2]) in plan_positions for point in points[base])
+            )
+            if base in actual and keeps_every_extreme:
+                pass
+            elif base in boxes:
+                raise CadTranslationError(
+                    "boolean difference bounds are not analytically "
+                    f"determined for {op_id}: cutters can alter a base extremum "
+                    "or its vertical-axis rotation"
+                )
             else:
-                # Other shapes can hold an extremum at a single point.
+                # Other shapes can hold an extremum at a single point: accept only
+                # voids strictly inside the base's box.
                 for cutter, (cutter_min, cutter_max) in cutters.items():
-                    disjoint = any(
-                        cutter_max[axis] < base_min[axis]
-                        or cutter_min[axis] > base_max[axis]
-                        for axis in range(3)
-                    )
-                    strictly_internal = all(
-                        base_min[axis] < cutter_min[axis]
-                        and cutter_max[axis] < base_max[axis]
-                        for axis in range(3)
-                    )
-                    if not disjoint and not strictly_internal:
+                    if not all(base_min[axis] < cutter_min[axis] and cutter_max[axis] < base_max[axis]
+                               for axis in range(3)):
                         raise CadTranslationError(
                             "boolean difference bounds are not analytically "
-                            f"determined for {op_id}: cutter {cutter} can alter "
-                            "a base extremum"
+                            f"determined for {op_id}: void {cutter} can alter a base extremum of {base}"
                         )
             points[out] = list(points[base])
             counts[out] = 1
+            if base in actual and len(retained) == len(points[base]):
+                actual.add(out)
         elif kind == "boolean_intersection":
             lo = [max(min(c[axis] for c in points[i]) for i in ins)
                   for axis in range(3)]
@@ -1194,6 +1204,7 @@ def expected_object_bounds(program) -> dict[str, dict]:
                 for p in points[ins[0]]
             ]
             counts[out] = count * counts[ins[0]]
+            if ins[0] in actual: actual.add(out)
         elif kind == "radial_array":
             count = int(params["count"])
             center = params["center"]
@@ -1205,9 +1216,11 @@ def expected_object_bounds(program) -> dict[str, dict]:
                 for p in points[ins[0]]
             ]
             counts[out] = count * counts[ins[0]]
+            if ins[0] in actual: actual.add(out)
         elif kind == "transform":
             points[out] = list(points[ins[0]])
             counts[out] = counts[ins[0]]
+            if ins[0] in actual: actual.add(out)
     delivered = set(delivered_object_ids(proposal))
     bounds: dict[str, dict] = {}
     for object_id, pts in points.items():
