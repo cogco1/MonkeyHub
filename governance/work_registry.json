@@ -1,4 +1,32 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": []
+  "items": [
+    {
+      "id": "GH-458",
+      "lanes": [
+        {
+          "id": "worker-exit",
+          "status": "active",
+          "branch": "codex/458-worker-exit",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-458-worker-exit",
+          "base_ref": "2a34db00",
+          "contributor": "Claude",
+          "reviewer": "Claude root task",
+          "handoff": "cloud session; master integrates",
+          "modules": [
+            "hub.shell",
+            "studio.shell"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/api/monkeyhub_api/workers.py",
+            "apps/monkeyhub/api/tests/test_project_runtime.py",
+            "apps/monkeyhub/api/tests/test_workers.py",
+            "apps/monkeyhub/run.py",
+            "apps/archflow-studio/api/archflow_studio_api/application/projections.py"
+          ],
+          "depends_on": []
+        }
+      ]
+    }
+  ]
 }
