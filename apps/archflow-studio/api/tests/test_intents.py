@@ -1184,9 +1184,9 @@ class ContextPackTests(IntentTestCase):
         self.assertEqual(body["utterance"], "set height to 0.3")
         height = next(row for row in payload["target"]["editable"] if row["field"] == "height")
         self.assertEqual(height["value"], 0.3)
-        # The capability's own reading of the unit, including where it declares
-        # none: a prism's height has none, and none is invented here.
-        self.assertIsNone(height["unit"])
+        # The capability's own reading of the unit: the prism producer declares
+        # its height in metres (#404 F17); nothing beyond that is invented here.
+        self.assertEqual(height["unit"], "m")
         self.assertTrue(any("values this element has now" in line for line in payload["honesty"]))
 
     def test_the_benchmark_words_keep_their_design_reading_and_preservation_context(self) -> None:

@@ -409,13 +409,15 @@ class ModelContextTests(unittest.TestCase):
         self.assertNotIn("source_ref", text)
         self.assertIn({"interval": [0.1, 0.3], "unit": "m"}, [fact["requiredClearance"] for fact in public["designFacts"] if "requiredClearance" in fact])
 
-    def test_units_come_from_bindings_or_the_declared_wall_contract(self):
+    def test_units_come_from_bindings_or_the_declared_producer_contract(self):
         context = self.context()
         row = next(item for item in context.sheet["elements"] if item["elementId"] == "window-23")
         self.assertEqual(control_unit(context, row, "width"), "m")
-        self.assertIsNone(control_unit(context, row, "height"))
+        # The same declared unit the capability catalog states (#404 F17).
+        self.assertEqual(control_unit(context, row, "height"), "m")
         self.assertEqual(control_unit(context, {"producer": "wall"}, "height"), "m")
         self.assertIsNone(control_unit(context, {"producer": "wall"}, "count"))
+        self.assertIsNone(control_unit(context, {"producer": "retained-legacy"}, "height"), "an undeclared unit is not guessed")
         other = replace(context, sheet={**context.sheet, "parameters": [{"key": "window-width", "unit": "mm"}]})
         self.assertEqual(control_unit(other, {**row, "producer": "wall"}, "width"), "mm")
 

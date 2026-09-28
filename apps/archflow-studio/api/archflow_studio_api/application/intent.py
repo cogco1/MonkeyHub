@@ -1064,15 +1064,16 @@ class DeterministicIntentProvider:
         key: str,
         parsed: ParsedIntent,
     ) -> _Target:
-        """One scalar of ``fields["params"]``, which the record holds unit-less.
+        """One scalar of ``fields["params"]``, in the unit its producer declares.
 
-        A unit word here is a question, exactly as it is on a parameter whose
-        unit the utterance disagrees with. The record states these numbers
-        bare — ``height`` is metres because the producer reads metres, and
-        nothing in the record says so — and ``set height to 2200 mm`` against
-        a field holding ``0.6`` would propose two thousand two hundred metres.
-        This seam converts nothing, so it asks rather than dropping the word
-        that was the whole difference.
+        The record states these numbers bare; the advertised producer declares
+        their unit (``parameter_unit``: a prism's ``height`` is metres). A unit
+        word that is not that unit is a question, exactly as it is on a
+        parameter whose unit the utterance disagrees with: ``set height to
+        2200 mm`` against a field holding ``0.6`` would propose two thousand
+        two hundred metres. This seam converts nothing, so it asks rather
+        than dropping the word that was the whole difference; a field whose
+        producer declares no unit takes no unit word at all.
         """
 
         if key not in element.numeric_fields:
@@ -1104,7 +1105,19 @@ class DeterministicIntentProvider:
                     )
                 ),
             )
-        if parsed.unit is not None:
+        from monkeyarch.capabilities.element_producers import parameter_unit
+
+        declared = parameter_unit(element.producer, key)
+        if parsed.unit is not None and declared is not None and parsed.unit != declared:
+            raise BlockedNeedsHuman(
+                "the utterance's unit is not the element field's",
+                question=(
+                    f"{key} on {element.element_id} is declared in {declared}, and the "
+                    f"utterance says {parsed.unit}; this seam converts nothing. "
+                    f"What is the value in {declared}?"
+                ),
+            )
+        if parsed.unit is not None and declared is None:
             raise BlockedNeedsHuman(
                 "the element field is a unit-less number",
                 question=(
@@ -1119,10 +1132,10 @@ class DeterministicIntentProvider:
             binding_key=f"params.{key}",
             decision_type=ELEMENT_PARAM_CHANGE,
             old=element.numeric_fields[key],
-            # Null because the record declares none, never because one was
-            # said and discarded: an utterance that carried a unit was
+            # The producer's declared unit, or null when it declares none;
+            # never one that was said and discarded: a different unit was
             # refused above.
-            unit=None,
+            unit=declared,
             element_id=element.element_id,
         )
 

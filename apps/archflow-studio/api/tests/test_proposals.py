@@ -163,7 +163,7 @@ class ElementFieldProposalTests(ProposalTestCase):
         )
         # The old value is the record's, not the client's.
         self.assertEqual(
-            payload["change"], {"kind": "set_scalar", "old": 0.6, "new": 2.2, "unit": None}
+            payload["change"], {"kind": "set_scalar", "old": 0.6, "new": 2.2, "unit": "m"}
         )
         self.assertEqual(payload["utterance"], "set height to 2.2")
         self.assertEqual(payload["persistence"], PERSISTENCE)
@@ -202,10 +202,10 @@ class ElementFieldProposalTests(ProposalTestCase):
         self.assertEqual(operator.discharge_obligation_ids, ())
 
     def test_a_unit_on_an_element_field_is_a_question(self) -> None:
-        """An element param is a bare number; a unit word cannot be dropped.
+        """A unit word that is not the field's declared unit cannot be dropped.
 
-        ``set height to 2200 mm`` against a field the record holds in metres
-        would propose 2200 into it. The seam converts nothing, so it asks
+        ``set height to 2200 mm`` against a field the prism producer reads in
+        metres would propose 2200 into it. The seam converts nothing, so it asks
         instead — the same refusal a parameter gets when the utterance's unit
         is not the record's.
         """
@@ -215,14 +215,22 @@ class ElementFieldProposalTests(ProposalTestCase):
         )
 
         self.assertEqual(
-            payload["detail"], "the element field is a unit-less number"
+            payload["detail"], "the utterance's unit is not the element field's"
         )
         self.assertEqual(
             payload["question"],
-            "height on portico-base is a bare number in the record and this "
-            "seam converts nothing; what is the value in the record's own "
-            "units?",
+            "height on portico-base is declared in m, and the utterance says mm; "
+            "this seam converts nothing. What is the value in m?",
         )
+
+    def test_the_declared_unit_on_an_element_field_proposes(self) -> None:
+        # #404 F17: the capability names the field's unit, so saying it is not a question.
+        payload = self.accepted(
+            "set height to 2.2 m", elementId="portico-base"
+        )
+
+        self.assertEqual(payload["change"]["new"], 2.2)
+        self.assertEqual(payload["change"]["unit"], "m")
 
     def test_a_bare_number_on_an_element_field_still_proposes(self) -> None:
         payload = self.accepted(
@@ -230,7 +238,7 @@ class ElementFieldProposalTests(ProposalTestCase):
         )
 
         self.assertEqual(payload["change"]["new"], 2.2)
-        self.assertIsNone(payload["change"]["unit"])
+        self.assertEqual(payload["change"]["unit"], "m")
 
     def test_a_percentage_change_is_computed_from_the_records_value(
         self,
@@ -625,7 +633,7 @@ class ZeroValueTests(ProposalTestCase):
             "set height to 2.2", elementId="portico-base"
         )
 
-        self.assertEqual(payload["change"], {"kind": "set_scalar", "old": 0, "new": 2.2, "unit": None})
+        self.assertEqual(payload["change"], {"kind": "set_scalar", "old": 0, "new": 2.2, "unit": "m"})
 
 
 class ProposalStoreTests(ProposalTestCase):

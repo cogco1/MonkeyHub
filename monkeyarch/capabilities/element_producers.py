@@ -341,6 +341,23 @@ def _check_signature_value(value: Any, schema: Mapping[str, Any], field_name: st
         raise ElementProducerError(f"{field_name}: value is below {schema['minimum']}")
 
 
+# The unit each advertised numeric parameter is authored in (#404 F17): every
+# length these producers read is metres (``_M``, and the signatures' "a value in
+# metres"); counts, flags and choices carry none.
+_PARAMETER_UNITS: dict[str, dict[str, str]] = {
+    "prism": {"height": "m", "elevation": "m"},
+    "planar-surface": {"elevation": "m"},
+    "curve": {"elevation": "m"},
+    "wall": {"height": "m", "thickness": "m"},
+}
+
+
+def parameter_unit(producer: str, key: str) -> str | None:
+    """The unit an advertised producer declares for one numeric parameter, or None when it declares none."""
+
+    return _PARAMETER_UNITS.get(producer, {}).get(key)
+
+
 def validate_element_contract(record, element_ids: tuple[str, ...]) -> None:
     """Check a semantic edit against the advertised producer and its real solver.
 
