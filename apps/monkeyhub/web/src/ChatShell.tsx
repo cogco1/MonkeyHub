@@ -683,7 +683,10 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
           item.operations?.some((operation) => ["queued", "planning", "validated", "executing", "committing"].includes(operation.status)))
         ? "busy" : null;
   const archived = chat?.id === chatId && chat.archived;
-  const external = chat?.id === chatId && Boolean(chat.sourceSessionId);
+  // The chat's own detail once read; until then its row in the list, so a chat the list already
+  // names external never offers a composer, not even while it opens (#438).
+  const shownChat = chat?.id === chatId ? chat : sessions.find((row) => row.id === chatId);
+  const external = Boolean(shownChat?.sourceSessionId);
   const visibleSessions = sessions.filter((session) => Boolean(session.archived) === archivedView);
   // An existing conversation keeps the connection it was created with; only a
   // new one takes the saved default.

@@ -3125,11 +3125,15 @@ try {
   await page.goto(`${origin}/?chatId=${externalSession.id}`);
   await page.locator(".chat-header h1").filter({ hasText: "Exterior review" }).waitFor();
   await page.locator(".chat-external-notice").waitFor();
-  await page.evaluate(() => {
-    const look = () => { if (document.getElementById("chat-input")) window.composerSeen = true; };
+  await page.evaluate((title) => {
+    // Whenever the external conversation is the one selected, no composer may be on the page.
+    const look = () => {
+      const selected = document.querySelector('.chat-thread[aria-current="page"]');
+      if (selected?.title === title && document.getElementById("chat-input")) window.composerSeen = true;
+    };
     window.composerSeen = false; look();
-    new MutationObserver(look).observe(document.body, { childList: true, subtree: true });
-  });
+    new MutationObserver(look).observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["aria-current"] });
+  }, externalSession.title);
   const conversationRead = (response) => new URL(response.url()).pathname === `/api/chat/sessions/${externalSession.id}`;
   let settingsArrived = false;
   const settingsRead = page.waitForResponse((response) => (settingsArrived ||= new URL(response.url()).pathname === "/api/settings/apps"));
@@ -3141,6 +3145,13 @@ try {
   emitRuntime(); await readAfterEvent;
   await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
   assert.equal(await page.evaluate(() => window.composerSeen), false, "an external conversation never shows a composer while it is read again");
+  // Opening it from the list shows none either, not even before its own read returns.
+  await page.locator(".chat-new").getByText("New chat", { exact: true }).click();
+  await page.locator("#chat-input").waitFor();
+  await page.locator(".chat-thread").filter({ hasText: externalSession.title }).click();
+  await page.locator(".chat-header h1").filter({ hasText: externalSession.title }).waitFor();
+  await page.locator(".chat-external-notice").waitFor();
+  assert.equal(await page.evaluate(() => window.composerSeen), false, "opening an external conversation from the list never shows a composer");
   await page.goto(`${origin}/?chatId=${externalSession.id}`);
   await page.locator(".chat-header h1").filter({ hasText: "Exterior review" }).waitFor();
   await page.locator(".chat-external-notice").getByText("External conversation", { exact: true }).waitFor();
