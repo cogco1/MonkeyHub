@@ -1,4 +1,42 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": []
+  "items": [
+    {
+      "id": "GH-413",
+      "lanes": [
+        {
+          "id": "contract-trim",
+          "status": "active",
+          "branch": "codex/413-agent-contract-trim",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-413-agent-contract-trim",
+          "base_ref": "1bea11da",
+          "contributor": "Claude",
+          "reviewer": "Claude root task",
+          "handoff": "cloud session; master integrates",
+          "modules": [
+            "hub.shell",
+            "state.record",
+            "semantics.registry",
+            "studio.intent"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/api/monkeyhub_api/chat.py",
+            "apps/monkeyhub/api/tests/test_chat.py",
+            "archflow/state/state_record.py",
+            "archflow/state/program_sheet.py",
+            "archflow/semantics/registry.py",
+            "tests/test_state_record.py",
+            "tests/test_program_sheet.py",
+            "tests/test_semantics.py",
+            "apps/archflow-studio/api/archflow_studio_api/application/intent.py",
+            "apps/archflow-studio/api/archflow_studio_api/application/proposals.py",
+            "apps/archflow-studio/api/archflow_studio_api/transport/proposal.py",
+            "apps/archflow-studio/api/tests/",
+            "apps/monkeyhub/web/workspaces/src/api/generated/"
+          ],
+          "depends_on": []
+        }
+      ]
+    }
+  ]
 }
