@@ -309,7 +309,7 @@ export type AgentReadingDto = {
     /**
      * Compiledutterance
      *
-     * the sentence in the grammar the agent produced; for the deterministic provider it is the request itself
+     * the sentence in the grammar the agent produced, or the summary of the change its construction answer proposes; for the deterministic provider it is the request itself
      */
     compiledUtterance: string;
     /**
@@ -2453,7 +2453,7 @@ export type ConstructionRequestDto = {
     /**
      * Keep
      *
-     * entity: or parameter: refs this change must not disturb
+     * entity: or parameter: refs this change must not disturb; entity:<geometry id> keeps every part of it
      */
     keep?: Array<string>;
     /**
@@ -4914,7 +4914,7 @@ export type FacetsRequestDto = {
     /**
      * Keep
      *
-     * entity: or parameter: refs this change must not disturb
+     * entity: or parameter: refs this change must not disturb; entity:<geometry id> keeps every part of it
      */
     keep?: Array<string>;
     /**
@@ -5212,7 +5212,7 @@ export type HostedOpeningRequestDto = {
     /**
      * Keep
      *
-     * entity: or parameter: refs this change must not disturb
+     * entity: or parameter: refs this change must not disturb; entity:<geometry id> keeps every part of it
      */
     keep?: Array<string>;
     /**
@@ -5553,6 +5553,10 @@ export type IntentDto = {
      * how the request was resolved: the target the proposal was made against, what was rejected on the way, and a null continuationToken, because a compiled request has nothing left to ask
      */
     pendingIntent: PendingIntentDto;
+    /**
+     * what the agent's construction script reported: one row per shape it left or removed, and what it printed; null when the answer carried no script
+     */
+    construction?: ConstructionOutcomeDto | null;
 };
 
 /**
