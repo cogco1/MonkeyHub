@@ -2602,6 +2602,89 @@ def _together(calls: Mapping[str, tuple], timeout: float, *, allow_partial: bool
     return dict(ordered)
 
 
+# One preparation per project at a time in this process. A call that finds a
+# preparation under way waits for it and then reads the result, instead of
+# opening or starting the project a second time.
+_PREPARING = threading.Lock()
+_PREPARATIONS: dict[str, threading.Lock] = {}
+_PREPARE_POLL_S = 0.5
+
+
+def _studio_row(apps) -> dict:
+    return next((row for row in apps if row.get("appId") == "monkeyarch"), {})
+
+
+def _studio_running(row: Mapping) -> bool:
+    return row.get("state") == "running" and bool(row.get("apiUrl")) and bool(row.get("processId"))
+
+
+def _prepare_studio(hub: str, session: Mapping, budget: float) -> dict:
+    """Open the bound project's runtime and start its Studio, as the Hub page does.
+
+    These are the Hub's own steps (open, read the attachment, start the service,
+    wait until it runs), taken only for the chat's bound project, and all of
+    them share one ``budget`` of seconds. A worker that needs recovery is
+    refused with its own error and nothing is started: recovery stays an
+    explicit act. Returns the running Studio's row for the checks that follow.
+    """
+
+    ends = time.monotonic() + budget
+
+    def left() -> float:
+        return ends - time.monotonic()
+
+    def unready() -> HubFailure:
+        return HubFailure(503, "CHAT_STUDIO_UNAVAILABLE",
+                          "The project runtime did not become ready in time. Retry, or open MonkeyArch to see why.")
+
+    def ask(*call, **options):
+        if left() <= 0:
+            raise unready()
+        try:
+            return _request_json(*call, **options, timeout=left())
+        except OSError as exc:  # a timeout or a Hub that stopped answering
+            raise unready() from exc
+
+    query = urlencode({"projectDir": session["projectDir"]})
+    with _PREPARING:
+        held = _PREPARATIONS.setdefault(os.path.normcase(session["projectDir"]), threading.Lock())
+    if not held.acquire(timeout=max(0.0, left())):
+        raise unready()
+    try:
+        studio = _studio_row(ask(hub, f"/api/apps?{query}"))
+        if _studio_running(studio):
+            return studio
+        opened = ask(hub, "/api/runtime/projects/open", "POST",
+                     {"projectDir": session["projectDir"], "projectId": session["projectId"]})
+        attached = next((row for row in ask(hub, "/api/runtime").get("projects", [])
+                         if row.get("runtimeId") == opened.get("runtimeId")), None)
+        if attached is None or session["projectId"] != attached.get("projectId") or opened.get("projectId") != session["projectId"]:
+            raise HubFailure(409, "CHAT_PROJECT_MISMATCH", "The project runtime is attached to a different project.")
+        worker = next((row for row in attached.get("workers", []) if row.get("serviceId") == "studio"), {})
+        if worker.get("state") == "crashed" or (worker.get("state") == "unavailable" and worker.get("processId")):
+            error = worker.get("error") or {}
+            raise HubFailure(409, error.get("code") or "WORKER_NEEDS_RECOVERY",
+                             error.get("detail") or "The project service exited. Recover it to read saved results.")
+        if not worker.get("healthy"):
+            status = ask(hub, f"/api/apps/monkeyrender/start?{query}", "POST", {})
+            while status.get("state") != "running" or not status.get("url"):
+                if status.get("state") in {"error", "unavailable"}:
+                    error = status.get("error") or {}
+                    raise HubFailure(503, error.get("code") or "CHAT_STUDIO_UNAVAILABLE",
+                                     error.get("detail") or f"The project service is {status.get('state')}.")
+                if left() <= _PREPARE_POLL_S:
+                    raise unready()
+                time.sleep(_PREPARE_POLL_S)
+                status = next((row for row in ask(hub, f"/api/apps?{query}") if row.get("appId") == "monkeyrender"), {})
+        while not _studio_running(studio := _studio_row(ask(hub, f"/api/apps?{query}"))):
+            if left() <= _PREPARE_POLL_S:
+                raise unready()
+            time.sleep(_PREPARE_POLL_S)
+        return studio
+    finally:
+        held.release()
+
+
 def _bound_studio(hub: str, chat_id: str | None, timeout: float = 180, *, project_id: str | None = None,
                   project_dir: str | None = None, deadline: float | None = None) -> tuple[str, dict]:
     """Resolve the chat's own Studio, then verify its process and project before use.
@@ -2635,8 +2718,12 @@ def _bound_studio(hub: str, chat_id: str | None, timeout: float = 180, *, projec
         "apps": (hub, "/api/apps?" + urlencode({"projectDir": session["projectDir"]})),
         "hub_health": (hub, "/api/health"),
     }, left())
-    studio = next((row for row in first["apps"] if row.get("appId") == "monkeyarch"), {})
-    if studio.get("state") != "running" or not studio.get("apiUrl") or not studio.get("processId"):
+    studio = _studio_row(first["apps"])
+    if not _studio_running(studio) and chat_id is not None:
+        # A design tool prepares its own project rather than asking someone to
+        # open a page; the checks below then apply to what it prepared.
+        studio = _prepare_studio(hub, session, left())
+    if not _studio_running(studio):
         raise HubFailure(409, "CHAT_STUDIO_UNAVAILABLE", "Open MonkeyArch for this project before using a design tool.")
     base = _url(studio["apiUrl"])
     second = _together({
@@ -3500,6 +3587,7 @@ def _mcp(hub: str, chat_id: str | None, external: ChatPresentationBindRequest | 
     modelling = chr(10).join([
         "Use the bound project's Studio API. Lengths are metres; plan points are [x, z], with Y up.",
         "Read studio_schema for action details or producer inputs as needed.",
+        "Design tools prepare the project's runtime themselves; nobody needs to open a page first.",
         "",
         "CURRENT STATE: GET /api/state and GET /api/state/frame provide stateDigest, components/elements and levels.",
         "To continue a retained candidate, read these with ?run=<candidateId> and send sourceRunId on writes.",
