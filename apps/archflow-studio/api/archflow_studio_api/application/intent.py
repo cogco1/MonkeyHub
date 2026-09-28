@@ -367,6 +367,49 @@ def _direct_element_fields(record, entity, row, changed):
     return {**entity.fields, "producer": changed.producer, "params": params}
 
 
+def _decimal(value: float) -> str:
+    return format(float(value), ".9g")
+
+
+def _vector(values: Sequence[float]) -> str:
+    return "[" + ", ".join(_decimal(value) for value in values) + "]"
+
+
+def _frame_words(vector: Sequence[float]) -> str:
+    """A modeling-frame vector in words (#404 F3): +y is up, x and z lie in plan.
+
+    Readback boxes are Z-up CAD coordinates, so a caller that reads one and
+    writes the other can send a horizontal move meaning a vertical one. The
+    proposal says which way the vector goes before anything runs.
+    """
+
+    x, y, z = (float(value) for value in vector)
+    words = [f"{_decimal(abs(y))} m {'up' if y > 0 else 'down'}"] if y else []
+    plan = [f"{_decimal(abs(value))} m along plan {'+' if value > 0 else '-'}{axis}"
+            for axis, value in (("x", x), ("z", z)) if value]
+    if plan:
+        words.append("horizontal, " + " and ".join(plan))
+    return "; ".join(words) or "no movement"
+
+
+def _action_words(kind: str, action: Mapping[str, Any]) -> str:
+    """What a direct action does, stated in the modeling frame (+y up)."""
+
+    if kind in {"move", "copy"} and action.get("translation") is not None:
+        return f" by {_vector(action['translation'])} m (+y up): {_frame_words(action['translation'])}"
+    if kind == "rotate" and action.get("axis") is not None:
+        return f" {_decimal(action.get('angle_degrees') or 0)} degrees about axis {_vector(action['axis'])} (+y up)"
+    if kind == "scale" and action.get("scale") is not None:
+        return f" by factors {_vector(action['scale'])} along x, y (vertical), z"
+    if kind == "push_pull":
+        distance = float(action.get("distance") or 0)
+        normal = action.get("normal")
+        if normal is None:
+            return f" by {_decimal(distance)} m along its face normal"
+        return f" by {_decimal(distance)} m along {_vector(normal)} (+y up): {_frame_words([c * distance for c in normal])}"
+    return ""
+
+
 def direct_element_proposal(projection: StateProjection, *, element_id: str, kind: str,
                             copy_element_id: str | None = None, keep_refs: Sequence[str] = (),
                             **action: Any) -> Mapping[str, Any]:
@@ -398,7 +441,7 @@ def direct_element_proposal(projection: StateProjection, *, element_id: str, kin
                    "basis_refs": list(entity.basis_refs), "fields": fields}
     except (TypeError, ValueError, KeyError) as exc:
         raise StudioError(422, "DIRECT_EDIT_UNSUPPORTED", str(exc)) from exc
-    said = f"{kind.replace('_', '/')} {element_id}" + (f" as {target_id}" if kind == "copy" else "")
+    said = f"{kind.replace('_', '/')} {element_id}" + (f" as {target_id}" if kind == "copy" else "") + _action_words(kind, action)
     return component_edit_proposal(projection, {
         "summary": said, "entities": [updated], "parameters": [], "relations": [],
         "removeEntityIds": [], "removeParameterKeys": [], "removeRelationIds": [],
@@ -839,6 +882,9 @@ class _Target:
     old: int | float
     unit: str | None
     element_id: str | None
+    # A ``set`` number restated in ``unit`` when the utterance said another
+    # length unit (#404 F17); None when the number was said in this unit.
+    number: int | float | None = None
 
 
 class DeterministicIntentProvider:
@@ -920,8 +966,9 @@ class DeterministicIntentProvider:
             "STALE_BASE",
             f"the proposal names state {state_digest}, but "
             f"{self.projection.project_id} is at "
-            f"{self.projection.state_digest}. Read /api/state again and "
-            "propose against the state that answers now.",
+            f"{self.projection.state_digest}. Read GET /api/state?run=<runId> for the run "
+            "you are changing and send its stateDigest with sourceRunId; without "
+            "sourceRunId the project's default source answers.",
         )
 
     def _component(self, component_id: str | None) -> str:
@@ -1021,15 +1068,14 @@ class DeterministicIntentProvider:
         key: str,
         parsed: ParsedIntent,
     ) -> _Target:
-        """One scalar of ``fields["params"]``, which the record holds unit-less.
+        """One scalar of ``fields["params"]``, in the unit its producer declares.
 
-        A unit word here is a question, exactly as it is on a parameter whose
-        unit the utterance disagrees with. The record states these numbers
-        bare — ``height`` is metres because the producer reads metres, and
-        nothing in the record says so — and ``set height to 2200 mm`` against
-        a field holding ``0.6`` would propose two thousand two hundred metres.
-        This seam converts nothing, so it asks rather than dropping the word
-        that was the whole difference.
+        The record states these numbers bare; the advertised producer declares
+        their unit (``parameter_unit``: a prism's ``height`` is metres). A unit
+        word is never dropped: ``set height to 2200 mm`` against a field held
+        in metres proposes 2.2, restated exactly (``_stated_in``), as a
+        parameter's is. What cannot be restated is asked about: a unit that is
+        not a length, or any unit on a field whose producer declares none.
         """
 
         if key not in element.numeric_fields:
@@ -1061,26 +1107,21 @@ class DeterministicIntentProvider:
                     )
                 ),
             )
-        if parsed.unit is not None:
-            raise BlockedNeedsHuman(
-                "the element field is a unit-less number",
-                question=(
-                    f"{key} on {element.element_id} is a bare number in the "
-                    "record and this seam converts nothing; what is the value "
-                    "in the record's own units?"
-                ),
-            )
+        from monkeyarch.capabilities.element_producers import parameter_unit
+
+        declared = parameter_unit(element.producer, key)
+        number = self._stated_in(parsed, declared, f"{key} on {element.element_id}")
         return _Target(
             ref=f"entity:{element.element_id}",
             key=key,
             binding_key=f"params.{key}",
             decision_type=ELEMENT_PARAM_CHANGE,
             old=element.numeric_fields[key],
-            # Null because the record declares none, never because one was
-            # said and discarded: an utterance that carried a unit was
-            # refused above.
-            unit=None,
+            # The producer's declared unit, or null when it declares none;
+            # a unit that was said is restated in it, never discarded.
+            unit=declared,
             element_id=element.element_id,
+            number=number,
         )
 
     def _unknown_element_field(
@@ -1130,7 +1171,7 @@ class DeterministicIntentProvider:
             )
         self._require_source(parameter)
         self._require_unlocked(parameter)
-        self._require_unit(parameter, parsed.unit)
+        number = self._stated_in(parsed, parameter.unit or None, f"parameter {parameter.key}")
         return _Target(
             ref=parameter.ref,
             key=parameter.key,
@@ -1139,6 +1180,7 @@ class DeterministicIntentProvider:
             old=parameter.value,
             unit=parameter.unit or None,
             element_id=None,
+            number=number,
         )
 
     def _require_source(self, parameter: Parameter) -> None:
@@ -1207,19 +1249,40 @@ class DeterministicIntentProvider:
                 ),
             )
 
-    def _require_unit(self, parameter: Parameter, unit: str | None) -> None:
-        """A unit that disagrees with the record's is a question, not a conversion."""
+    def _stated_in(self, parsed: ParsedIntent, declared: str | None, subject: str) -> int | float | None:
+        """The ``set`` number restated in the declared unit, or a question naming the unit expected.
 
-        if unit is None or not parameter.unit or unit == parameter.unit:
-            return
-        raise BlockedNeedsHuman(
-            "the utterance's unit is not the parameter's",
-            question=(
-                f"parameter {parameter.key} is declared in {parameter.unit}, "
-                f"and the utterance says {unit}; this seam converts nothing. "
-                f"What is the value in {parameter.unit}?"
-            ),
-        )
+        Units are the adapter's to normalize, not a question for the person
+        (AGENTS.md; #404 F17): a length said in any length unit is restated
+        exactly through the one table the intent-request path also reads. A
+        bare number is already in the declared unit. What cannot be restated —
+        a unit on a number that declares none, or a unit that is not a length
+        for one that is — is asked about, never guessed or dropped.
+        """
+
+        from .intent_requests import in_unit
+
+        if parsed.unit is None:
+            return None
+        if declared is None:
+            raise BlockedNeedsHuman(
+                "the field declares no unit",
+                question=(
+                    f"{subject} declares no unit, so {_shown(parsed.number)} {parsed.unit} "
+                    "cannot be restated in it; what is the bare number the record should hold, "
+                    "with no unit word?"
+                ),
+            )
+        number = in_unit(parsed.number, parsed.unit, declared)
+        if number is None:
+            raise BlockedNeedsHuman(
+                "the utterance's unit is not the field's",
+                question=(
+                    f"{subject} is declared in {declared}, and {parsed.unit} cannot be "
+                    f"restated in {declared}; what is the value in {declared}?"
+                ),
+            )
+        return number
 
     # ---- the numbers
 
@@ -1227,7 +1290,7 @@ class DeterministicIntentProvider:
         """What the field would become; the record's own value is the base."""
 
         if parsed.operation == SET:
-            return parsed.number
+            return parsed.number if target.number is None else target.number
         if target.old == 0:
             raise BlockedNeedsHuman(
                 "a percentage of zero is zero",

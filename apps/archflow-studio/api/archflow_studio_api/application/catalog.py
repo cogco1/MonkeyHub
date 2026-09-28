@@ -36,6 +36,7 @@ from types import MappingProxyType
 from typing import Mapping, Sequence
 
 from archflow.state.state_record import StateRecord
+from monkeyarch.capabilities.element_producers import parameter_unit
 
 from ..transport.errors import StudioError
 from .binding import ProjectBinding
@@ -233,6 +234,7 @@ def build_catalog(
     record = projection.record
     validators = _validators_by_element(record)
     pins = references_of(record)
+    units = {parameter.key: parameter.unit or None for parameter in projection.parameters}
     elements = tuple(
         CatalogElement(
             element_id=row.element_id,
@@ -243,6 +245,9 @@ def build_catalog(
                     element_id=row.element_id,
                     key=key,
                     value=value,
+                    # A bound field is in its parameter's unit; a literal in its producer's.
+                    unit=(units.get(row.bindings[key]) if key in row.bindings
+                          else parameter_unit(row.producer, key)),
                     validator_refs=validators.get(row.element_id, ()),
                     pinned_to=pins.get(row.element_id, {}).get(PINNED_BY.get(key, "")),
                 )
@@ -303,6 +308,7 @@ def _capability(
     element_id: str,
     key: str,
     value: int | float,
+    unit: str | None,
     validator_refs: tuple[str, ...],
     pinned_to: str | None,
 ) -> Capability:
@@ -320,7 +326,7 @@ def _capability(
         key=key,
         value=value,
         value_type="integer" if isinstance(value, int) else "number",
-        unit=None,
+        unit=unit,
         bounds=None,
         source=AUTHORED if pinned_to is None else f"{DERIVED_FROM}{pinned_to}",
         confidence=1.0,

@@ -759,7 +759,8 @@ export const proposeStudyApiStudiesProposePost = <ThrowOnError extends boolean =
  * Resolve the pick against the state this project answers with now.
  *
  * The projection is taken the same way ``/api/state`` takes it, so the digest
- * a pick is checked against is the digest the client was just given.
+ * a pick is checked against is the digest the client was just given. A pick
+ * made on another state is refused naming the run that holds it (#404 F5).
  */
 export const resolveApiPickResolvePost = <ThrowOnError extends boolean = false>(options: Options<ResolveApiPickResolvePostData, ThrowOnError>): RequestResult<ResolveApiPickResolvePostResponses, ResolveApiPickResolvePostErrors, ThrowOnError> => (options.client ?? client).post<ResolveApiPickResolvePostResponses, ResolveApiPickResolvePostErrors, ThrowOnError>({
     url: '/api/pick/resolve',

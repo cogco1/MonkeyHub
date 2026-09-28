@@ -133,6 +133,14 @@ class CapabilityIndexTestCase(unittest.TestCase):
         self.assertEqual(fields[("portico-base", "height")]["utterance"], "set height to 0.6")
         self.assertTrue(all(row["status"] == "editable" for row in body["target"]["editable"]))
 
+    def test_describe_states_the_unit_each_producer_declares(self) -> None:
+        # #404 F17: every length the prism producer reads is metres, yet each field's
+        # unit came back null, so an agent could not tell 3 from 3000.
+        body = self.client.get(f"/api/capabilities/{CAPABILITY}",
+                               params={"target": "portico", "elementId": "portico-base"}).json()
+        fields = {row["field"]: row for row in body["target"]["editable"]}
+        self.assertEqual(fields["height"]["unit"], "m")
+
     def test_describe_hands_back_the_exact_base_and_the_next_request(self) -> None:
         state = self.client.get("/api/state").json()
         body = self.client.get(
@@ -551,7 +559,11 @@ class CapabilityRunTestCase(unittest.TestCase):
         )
         self.assertEqual(refused.status_code, 409, refused.text)
         self.assertEqual(refused.json()["code"], "PROPOSAL_NOT_RUNNABLE")
-        self.assertIn("keep", refused.json()["detail"])
+        detail = refused.json()["detail"]
+        self.assertIn("keep", detail)
+        self.assertIn("entity:small-house-main", detail, "the kept ref the change reaches is named")
+        # #404 F17: the refs came from the request's keep list; no utterance asked to keep them.
+        self.assertNotIn("utterance", detail)
         self.assertEqual(self.runs(), before, "a refused change leaves no run behind")
 
     def test_a_stale_base_runs_nothing(self) -> None:

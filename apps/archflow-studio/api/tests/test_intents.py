@@ -186,6 +186,40 @@ class DeterministicPassThroughTests(IntentTestCase):
         self.assertEqual(self.client.get(f"/api/proposals/{proposal_id}").status_code, 200)
 
 
+class ProviderLengthTests(IntentTestCase):
+    """#404 review: a model's stated length reaches the record exactly through POST /api/intents.
+
+    A real provider compiler, with only its SDK faked, answers one numeric
+    action; ``action_answer`` restates it in the prism's declared metres. With
+    float factors 2300 mm reached the record as 2.3000000000000003.
+    """
+
+    def compiler(self, value: float, unit: str):
+        from types import SimpleNamespace
+        from unittest.mock import patch
+
+        from archflow_studio_api.application import intent_agent
+
+        answer = {"status": "compiled", "why": "Apply the stated height.", "question": None, "contextRefs": [],
+                  "actions": [{"op": "set_parameter", "field": "height", "value": value, "unit": unit}]}
+        response = SimpleNamespace(content=[SimpleNamespace(type="text", text=json.dumps(answer))],
+                                   model="unit-test-model", usage={"input_tokens": 10, "output_tokens": 5})
+        sdk = SimpleNamespace(Anthropic=lambda **kwargs: SimpleNamespace(
+            messages=SimpleNamespace(create=lambda **request: response)))
+        with patch.object(intent_agent, "_anthropic_sdk", return_value=(sdk, "unit-test-sdk")):
+            return intent_agent.AnthropicCompiler(model="unit-test-model")
+
+    def test_a_stated_length_reaches_the_record_exactly(self) -> None:
+        for value, unit, expected in ((2300, "mm", 2.3), (700, "mm", 0.7), (350, "mm", 0.35), (35, "cm", 0.35)):
+            with self.subTest(value=value, unit=unit):
+                self.app.state.intent_compiler = self.compiler(value, unit)
+                # Names the element and its field (the scalar tier), but is neither grammar nor a shortcut form.
+                status, payload = self.ask(f"portico-base height {value} {unit}", elementId="portico-base")
+                self.assertEqual(status, 201, payload)
+                self.assertEqual(payload["proposal"]["change"]["new"], expected)
+                self.assertEqual(payload["proposal"]["change"]["unit"], "m")
+
+
 class ScriptedAgentTests(IntentTestCase):
     def test_an_unfamiliar_natural_name_can_be_resolved_by_one_agent_call(self) -> None:
         compiler = scripted(
@@ -1184,9 +1218,9 @@ class ContextPackTests(IntentTestCase):
         self.assertEqual(body["utterance"], "set height to 0.3")
         height = next(row for row in payload["target"]["editable"] if row["field"] == "height")
         self.assertEqual(height["value"], 0.3)
-        # The capability's own reading of the unit, including where it declares
-        # none: a prism's height has none, and none is invented here.
-        self.assertIsNone(height["unit"])
+        # The capability's own reading of the unit: the prism producer declares
+        # its height in metres (#404 F17); nothing beyond that is invented here.
+        self.assertEqual(height["unit"], "m")
         self.assertTrue(any("values this element has now" in line for line in payload["honesty"]))
 
     def test_the_benchmark_words_keep_their_design_reading_and_preservation_context(self) -> None:
