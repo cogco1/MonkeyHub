@@ -966,8 +966,9 @@ class DeterministicIntentProvider:
             "STALE_BASE",
             f"the proposal names state {state_digest}, but "
             f"{self.projection.project_id} is at "
-            f"{self.projection.state_digest}. Read /api/state again and "
-            "propose against the state that answers now.",
+            f"{self.projection.state_digest}. Read GET /api/state?run=<runId> for the run "
+            "you are changing and send its stateDigest with sourceRunId; without "
+            "sourceRunId the project's default source answers.",
         )
 
     def _component(self, component_id: str | None) -> str:

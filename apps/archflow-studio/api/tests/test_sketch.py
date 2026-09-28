@@ -331,6 +331,29 @@ class SketchContinuationTestCase(unittest.TestCase):
                 self.assertIn(f"/api/state?run={first}", detail, "the run whose state was sent is named")
                 self.assertIn(f'sourceRunId "{first}"', detail)
                 self.assertIn(checked, detail, "the source it was checked against is named")
+        # The utterance, capability-run and parameter-lock paths answer the same way (#404 review).
+        for path, body in (
+            ("/api/proposals", {"targetComponentId": "portico", "elementId": "block-a", "utterance": "set height to 2"}),
+            ("/api/capabilities/candidate.modify_existing/run",
+             {"targetComponentId": "portico", "elementId": "block-a", "utterance": "set height to 2"}),
+            ("/api/proposals/parameter-locks", {"parameterKeys": ["module"], "action": "lock"}),
+        ):
+            with self.subTest(path=path):
+                refused = self.client.post(path, json={"stateDigest": sent, **body})
+                self.assertEqual(refused.status_code, 409, refused.text)
+                self.assertEqual(refused.json()["code"], "STALE_BASE")
+                self.assertIn(f'sourceRunId "{first}"', refused.json()["detail"])
+        # A chain continued with another state names that state's run and the chain's own base.
+        started = self.client.post("/api/proposals", json={
+            "stateDigest": self.digest_of(None), "targetComponentId": "portico", "elementId": "portico-base",
+            "utterance": "set height to 0.7"})
+        self.assertEqual(started.status_code, 201, started.text)
+        refused = self.client.post("/api/proposals/transform", json={
+            "stateDigest": sent, "sourceProposalId": started.json()["proposalId"],
+            "elementId": "portico-base", "kind": "move", "translation": [1, 0, 0]})
+        self.assertEqual(refused.status_code, 409, refused.text)
+        self.assertIn(f'sourceRunId "{first}"', refused.json()["detail"])
+        self.assertIn(started.json()["baseStateDigest"], refused.json()["detail"])
         # A state no retained run has names no run at all.
         unknown = self.client.post("/api/proposals/transform", json={
             "stateDigest": "0" * 64, "elementId": "block-a", "kind": "move", "translation": [1, 0, 0]})

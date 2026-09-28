@@ -166,7 +166,11 @@ def _proposal_source(request: Request, body):
         return binding, base, base, previous, body
     if (body.state_digest != base.state_digest or previous.base_state_digest != base.state_digest
             or previous.record_digest != base.record_digest):
-        raise StudioError(409, "STALE_BASE", "The proposal chain no longer matches its original exact project state.")
+        stale = _stale_base(binding, base, body.state_digest, "the proposal chain continuation", body.source_run_id)
+        moved = previous.base_state_digest != base.state_digest or previous.record_digest != base.record_digest
+        raise StudioError(409, "STALE_BASE", stale.detail + (
+            f" A continuation sends its chain's own baseStateDigest {previous.base_state_digest}"
+            + (", and that source has moved since: start a new chain from its current state." if moved else ".")))
     record = apply_state_record_operator(base.record, operator_of(previous, base.record))
     projection = project_proposed_record(base, record)
     return binding, base, projection, previous, body.model_copy(update={"state_digest": projection.state_digest})
@@ -190,9 +194,11 @@ def create_proposal(
     """Propose one change against the exact state the client was given."""
 
     binding, base, projection, previous, body = _proposal_source(request, body)
+    if body.state_digest != projection.state_digest:
+        # The utterance path (and the capability run through it) answers as every other write does.
+        raise _stale_base(binding, projection, body.state_digest,
+                          "the semantic edit" if body.semantic_edit is not None else "the proposal", body.source_run_id)
     if body.semantic_edit is not None:
-        if body.state_digest != projection.state_digest:
-            raise _stale_base(binding, projection, body.state_digest, "the semantic edit", body.source_run_id)
         proposal = proposal_from(component_edit_proposal(
             projection, body.semantic_edit.model_dump(by_alias=True),
             utterance=body.semantic_edit.summary, component_id=body.target_component_id,
@@ -224,7 +230,7 @@ def create_parameter_locks_proposal(request: Request, body: ParameterLocksReques
     projection = project_state(binding, run_id=body.source_run_id, source_stage_ref=body.source_stage_ref)
     require_actionable(projection)
     if body.state_digest != projection.state_digest:
-        raise StudioError(409, "STALE_BASE", "The parameter lock action no longer matches its exact source state.")
+        raise _stale_base(binding, projection, body.state_digest, "the parameter lock action", body.source_run_id)
     proposal = proposal_from(parameter_locks_proposal(
         projection, parameter_keys=tuple(body.parameter_keys),
         lock_authority=request_attribution(request).actor_id if body.action == "lock" else None,
