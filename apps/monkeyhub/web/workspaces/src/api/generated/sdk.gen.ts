@@ -1398,8 +1398,9 @@ export const readWorkingSourceApiWorkingSourceGet = <ThrowOnError extends boolea
  *
  * The status of one exact model's projection; a miss queues it and answers pending.
  *
- * A miss or a due retry first verifies this exact source (409 when it cannot
- * be drawn), so one stale request never leaves an error for other runs.
+ * The source is checked on every request, done or not (409 when it names no
+ * retained model), so a stale request is refused and never leaves a row
+ * for other runs, nor reads another run's.
  */
 export const requestProjectionApiProjectionsGet = <ThrowOnError extends boolean = false>(options: Options<RequestProjectionApiProjectionsGetData, ThrowOnError>): RequestResult<RequestProjectionApiProjectionsGetResponses, RequestProjectionApiProjectionsGetErrors, ThrowOnError> => (options.client ?? client).get<RequestProjectionApiProjectionsGetResponses, RequestProjectionApiProjectionsGetErrors, ThrowOnError>({ url: '/api/projections', ...options });
 
@@ -1407,12 +1408,16 @@ export const requestProjectionApiProjectionsGet = <ThrowOnError extends boolean 
  * Read Projection Blob
  *
  * Content-addressed PNG bytes, cached by the browser for good.
+ *
+ * A miss that a done row names (the cache directory was cleared) queues that
+ * row's drawing again: the client shows the placeholder until the store hears
+ * it is done.
  */
 export const readProjectionBlobApiProjectionsBlobsSha256Get = <ThrowOnError extends boolean = false>(options: Options<ReadProjectionBlobApiProjectionsBlobsSha256GetData, ThrowOnError>): RequestResult<ReadProjectionBlobApiProjectionsBlobsSha256GetResponses, ReadProjectionBlobApiProjectionsBlobsSha256GetErrors, ThrowOnError> => (options.client ?? client).get<ReadProjectionBlobApiProjectionsBlobsSha256GetResponses, ReadProjectionBlobApiProjectionsBlobsSha256GetErrors, ThrowOnError>({ url: '/api/projections/blobs/{sha256}', ...options });
 
 /**
  * Read Projection
  *
- * A known key's status; a done row whose blob vanished is queued again.
+ * A known key's status; a done row whose blob vanished, or a due retry, is queued again once its source checks.
  */
 export const readProjectionApiProjectionsKeyGet = <ThrowOnError extends boolean = false>(options: Options<ReadProjectionApiProjectionsKeyGetData, ThrowOnError>): RequestResult<ReadProjectionApiProjectionsKeyGetResponses, ReadProjectionApiProjectionsKeyGetErrors, ThrowOnError> => (options.client ?? client).get<ReadProjectionApiProjectionsKeyGetResponses, ReadProjectionApiProjectionsKeyGetErrors, ThrowOnError>({ url: '/api/projections/{key}', ...options });

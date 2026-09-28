@@ -164,6 +164,8 @@ const PAD = { left: 16, right: 10, top: 6 };
 const MARK = { inset: 14, top: 5, size: 14 };
 /** Where a close card shows its preview: beside an option's bar, and at Current's top right. */
 const PICTURE = { option: 80, current: 88, gap: 8 };
+/** The pixels a card's image is drawn at: about twice its largest slot (#409), so it stays sharp up close and small in memory. */
+export const PREVIEW_PIXELS = { width: 2 * PICTURE.current, height: 2 * 62 };
 
 export function buildTreeScene(tree: GrowthTree, layout: GrowthLayout, options: SceneOptions): TreeScene {
   const { level, words, fontFamily } = options;

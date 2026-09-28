@@ -7,6 +7,7 @@ binds no project; the request needing it discovers a wrong project root.
 from __future__ import annotations
 
 import argparse
+import logging
 from contextlib import asynccontextmanager
 import os
 from pathlib import Path
@@ -212,6 +213,48 @@ def _publish_commits(settings: StudioSettings, events: StudioEvents):
     return removal[0]
 
 
+_LOG = logging.getLogger(__name__)
+
+
+def _project_commits(settings: StudioSettings, state):
+    """After each commit of this project's index, queue the design tree's thumbnails that are not drawn (#367).
+
+    The listener returns at once: it only wakes the projection worker, which
+    reads the index itself. The first commit opens the queue (on a thread of
+    its own), so a new state's thumbnail is drawn with nobody asking for it.
+    A commit of the projection queue's own (``projections``) queues nothing.
+    """
+
+    sink = weakref.ref(state)
+    removal: list = []
+    opening = threading.Lock()
+
+    def open_queue(target) -> None:
+        try:
+            projection_routes.projections_of(target).start()  # its first pass is this commit's
+        except Exception:  # noqa: BLE001 - no index, or shutting down: the next request tries again
+            _LOG.debug("the projection queue did not open on an index commit", exc_info=True)
+        finally:
+            opening.release()
+
+    def listen(commit: IndexCommit) -> None:
+        target = sink()
+        if target is None:
+            for remove in removal:
+                remove()
+            return
+        if commit.domains <= {"projections"}:
+            return
+        projections = getattr(target, "projections", None)
+        if projections is not None:
+            projections.committed()
+        elif getattr(target, "binding", None) is not None and opening.acquire(blocking=False):
+            threading.Thread(target=open_queue, args=(target,), daemon=True, name="projection-open").start()
+
+    removal.append(add_commit_listener(Path(settings.project_dir).resolve(strict=False), listen))
+    return removal[0]
+
+
 def _authorization(scope: Scope) -> str:
     """The request's ``Authorization`` header, decoded, or the empty string."""
 
@@ -223,7 +266,10 @@ def _authorization(scope: Scope) -> str:
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
-    """Prepare native drawing libraries; on shutdown drain accepted work and close the binding.
+    """Prepare native drawing libraries and follow index commits; on shutdown drain accepted work and close the binding.
+
+    From startup on, every commit of the project index queues the design
+    tree's thumbnails that are not drawn yet (``_project_commits``).
 
     A candidate run writes P036 records; killing its thread mid-run would
     leave a run directory nobody can account for. Shutting the worker down and
@@ -239,12 +285,15 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         from monkeydiagram.documentation.styles import initialize_drawing_runtime
 
         initialize_drawing_runtime()
+        app.state.stop_projection_commits = _project_commits(app.state.settings, app.state)
 
     yield
     app.state.stop_index_events()
     app.state.jobs.stop_accepting()
     app.state.render_jobs.stop_accepting()
+    app.state.stop_projection_commits()
     with app.state.projections_lock:
+        app.state.projections_closed = True
         projections, app.state.projections = app.state.projections, None
     if projections is not None:
         await run_in_threadpool(projections.shutdown)
@@ -328,6 +377,8 @@ def create_app(settings: StudioSettings, *, render_adapter=None) -> FastAPI:
     app.state.events = StudioEvents()
     # The project index's commits reach clients as ``index.committed`` on the same stream.
     app.state.stop_index_events = _publish_commits(settings, app.state.events)
+    # And, once the application has started, they queue the design tree's thumbnails (#367).
+    app.state.stop_projection_commits = lambda: None
     app.state.jobs = JobRegistry(app.state.events, max_workers=settings.workers, monitor=app.state.monitor)
     if shared_project:
         app.state.jobs.stop_accepting()

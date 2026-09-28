@@ -8,23 +8,27 @@
  * The Stage columns' headers and rules are the page's own words over the
  * canvas (#353): they stay at its top while the tree pans under them, and
  * follow the view through two custom properties rather than a render.
- * Close cards show their models' retained previews (#406): only the cards in
- * view at the close level read theirs, and an image is added to Excalidraw's
- * files once, with the first scene that draws it.
+ * Close cards show their models' server thumbnails (#406, #367): the store
+ * names each model's thumbnail blob, so the cards in view at the close level
+ * read theirs with no status request; a model without one is asked for once,
+ * and its card keeps its words until the store hears the drawing is done. An
+ * image is drawn at about twice its cell (#409), shared with every other
+ * thumbnail of the page, and added to Excalidraw's files once, with the first
+ * scene that draws it. Images arriving together rebuild the scene once a frame.
  */
 import { useEffect, useMemo, useReducer, useRef, useState, type CSSProperties } from "react";
 import { CaptureUpdateAction, convertToExcalidrawElements, FONT_FAMILY } from "@excalidraw/excalidraw";
 import type { AppState, BinaryFileData, ExcalidrawImperativeAPI, ExcalidrawInitialDataState, UIOptions } from "@excalidraw/excalidraw/types";
-import { useStudio } from "../../api/ProjectRuntimeContext";
+import { useProjectStore, useProjectStoreInstance, useStudio } from "../../api/ProjectRuntimeContext";
 import type { ModelSourceDto } from "../../api/generated";
-import { MODEL_PREVIEW_RETAINED, previewSourceKey, readModelPreview } from "../artifacts/useRetainedModelPreview";
+import { askThumbnail, canvasThumbnail, thumbnailBlobs, thumbnailsMoved, type CanvasThumbnail } from "../artifacts/modelThumbnails";
 import { CANVAS_APP_STATE, PROJECT_CANVAS_CLASS, ProjectCanvas, useScenePointer, useWheelZoom, type ZoomRange } from "../canvas/ProjectCanvas";
 import { topmostAt } from "../canvas/sceneHit";
 import { layoutGrowthTree, type Box } from "./layout";
 import { CURRENT, trunkKey, type GrowthTree } from "./model";
 import type { DesignTreeSource } from "./contract";
 import { createPreviewLoader, nodeModelSource, nodesWantingPreviews, type PreviewLoader } from "./previews";
-import { buildTreeScene, LIGHT_TREE_PALETTE, type SceneHit, type ScenePreview, type TreePalette, type ZoomLevel } from "./scene";
+import { buildTreeScene, LIGHT_TREE_PALETTE, PREVIEW_PIXELS, type SceneHit, type TreePalette, type ZoomLevel } from "./scene";
 import type { TreeWords } from "./words";
 
 const TREE_ZOOM: ZoomRange = { min: 0.05, max: 4 };
@@ -107,27 +111,6 @@ export function textScaleFor(zoom: number, level: ZoomLevel): number {
   return Math.min(24, 2 ** (Math.round(2 * Math.log2(1 / Math.max(zoom, 0.01))) / 2));
 }
 
-/** A read preview, ready for Excalidraw's files. */
-interface TreePreviewImage extends ScenePreview {
-  readonly dataURL: string;
-  readonly mimeType: string;
-}
-
-/** The image as a data URL and its size, or null when the browser cannot read it. */
-async function previewImage(id: string, file: File): Promise<TreePreviewImage | null> {
-  const dataURL = await new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result));
-    reader.onerror = () => reject(reader.error);
-    reader.readAsDataURL(file);
-  });
-  const image = new Image();
-  image.src = dataURL;
-  await image.decode();
-  if (!image.naturalWidth || !image.naturalHeight) return null;
-  return { fileId: `tree-preview-${id}`, dataURL, mimeType: file.type || "image/png", width: image.naturalWidth, height: image.naturalHeight };
-}
-
 export default function DesignTreeCanvas({ tree, source = null, words, selected, fitRequest, centerOn = null, title, onSelect, onAccept, onLevel }: {
   tree: GrowthTree;
   /** What the tree was built from: it names each node's model, whose preview a close card shows. */
@@ -153,61 +136,82 @@ export default function DesignTreeCanvas({ tree, source = null, words, selected,
   const level = useRef<ZoomLevel>("mid");
   const palette = useTreePalette();
 
-  // Each node's model, by the preview key its image is read and kept under.
+  // Each node's model, and the blob of its thumbnail: the store's, or a done answer to this canvas's own ask.
   const models = useMemo(() => {
-    const byNode = new Map<string, string>(), byKey = new Map<string, ModelSourceDto>();
+    const byNode = new Map<string, ModelSourceDto>();
     for (const node of tree.nodes.values()) {
       const model = nodeModelSource(source, node);
-      if (!model) continue;
-      const key = previewSourceKey(model);
-      byNode.set(node.id, key);
-      byKey.set(key, model);
+      if (model) byNode.set(node.id, model);
     }
-    return { byNode, byKey };
+    return byNode;
   }, [tree, source]);
   const modelsNow = useRef(models);
   modelsNow.current = models;
   const studio = useStudio();
-  const [previewsRead, previewRead] = useReducer((count: number) => count + 1, 0);
-  const [loader, setLoader] = useState<PreviewLoader<TreePreviewImage> | null>(null);
+  const store = useProjectStoreInstance();
+  const thumbnailsAt = useProjectStore(thumbnailsMoved);
+  // A done answer is kept until its blob cannot be read (the server lost it and draws it again).
+  const [answered, answer] = useReducer((known: ReadonlyMap<string, string>,
+    action: { readonly asset: string; readonly blob: string } | { readonly lost: string }) => {
+    if ("lost" in action) {
+      if (![...known.values()].includes(action.lost)) return known;
+      return new Map([...known].filter(([, blob]) => blob !== action.lost));
+    }
+    return known.get(action.asset) === action.blob ? known : new Map(known).set(action.asset, action.blob);
+  }, new Map<string, string>());
+  const blobs = useMemo(() => {
+    const held = thumbnailBlobs(store.getSnapshot());
+    const byNode = new Map<string, string>();
+    for (const [node, model] of models) {
+      const blob = held.get(model.assetSha256) ?? answered.get(model.assetSha256);
+      if (blob) byNode.set(node, blob);
+    }
+    return byNode;
+  }, [models, store, thumbnailsAt, answered]);
+  const blobsNow = useRef(blobs);
+  blobsNow.current = blobs;
+  // Images arrive one by one: the scene is rebuilt at most once a frame for them, and not at all while no card
+  // draws images (an image read at close that lands after zooming out waits for the next close scene).
+  const [imagesRead, imageRead] = useReducer((count: number) => count + 1, 0);
+  const imageFrame = useRef(0);
+  const [loader, setLoader] = useState<PreviewLoader<CanvasThumbnail> | null>(null);
   useEffect(() => {
-    const created = createPreviewLoader<TreePreviewImage>(async (key) => {
-      const model = modelsNow.current.byKey.get(key);
-      const preview = model ? await readModelPreview(studio, model) : null;
-      return preview ? previewImage(preview.id, preview.file) : null;
-    }, { limit: 3, onChange: previewRead });
-    setLoader(created);
-    return () => created.dispose();
-  }, [studio]);
-  useEffect(() => {
-    if (!loader) return;
-    const retained = (event: Event) => {
-      const retainedFor = (event as CustomEvent<{ studio: unknown; key: string }>).detail;
-      if (retainedFor?.studio === studio) loader.refresh(retainedFor.key);
+    const arrived = () => {
+      if (level.current !== "close" || imageFrame.current) return;
+      imageFrame.current = requestAnimationFrame(() => { imageFrame.current = 0; imageRead(); });
     };
-    window.addEventListener(MODEL_PREVIEW_RETAINED, retained);
-    return () => window.removeEventListener(MODEL_PREVIEW_RETAINED, retained);
-  }, [studio, loader]);
-  /** Asks for the previews of the cards in view at the close level, and for nothing otherwise. */
+    const created = createPreviewLoader<CanvasThumbnail>((blob) => canvasThumbnail(studio, blob, PREVIEW_PIXELS.width,
+      PREVIEW_PIXELS.height).then((image) => { if (!image) answer({ lost: blob }); return image; }),
+    { limit: 3, onChange: arrived });
+    setLoader(created);
+    return () => { created.dispose(); cancelAnimationFrame(imageFrame.current); imageFrame.current = 0; };
+  }, [studio]);
+  /** Reads the thumbnails of the cards in view at the close level, asks for those not drawn yet, and nothing otherwise. */
   const wantPreviews = () => {
     const state = canvas.current?.getAppState();
     const nodes = state ? nodesWantingPreviews(drawn.current, { scrollX: state.scrollX, scrollY: state.scrollY, zoom: state.zoom.value,
       width: state.width, height: state.height }, level.current) : [];
-    loader?.want(nodes.flatMap((node) => modelsNow.current.byNode.get(node) ?? []));
+    const wanted: string[] = [];
+    for (const node of nodes) {
+      const blob = blobsNow.current.get(node), model = modelsNow.current.get(node);
+      if (blob) wanted.push(blob);
+      else if (model) void askThumbnail(studio, model).then((done) => { if (done) answer({ asset: model.assetSha256, blob: done }); });
+    }
+    loader?.want(wanted);
   };
 
   const scene = useMemo(() => {
-    const previews = new Map<string, TreePreviewImage>();
+    const previews = new Map<string, CanvasThumbnail>();
     if (loader && detail.level === "close") {
-      for (const [node, key] of models.byNode) {
-        const image = loader.get(key);
+      for (const [node, blob] of blobs) {
+        const image = loader.get(blob);
         if (image) previews.set(node, image);
       }
     }
     const built = buildTreeScene(tree, layout, { ...detail, selected, fontFamily: FONT_FAMILY.Helvetica, words: words.scene, palette, previews });
     return { elements: convertToExcalidrawElements(built.skeletons, { regenerateIds: false }), hits: built.hits, ground: palette.ground,
       files: [...previews.values()] };
-  }, [tree, layout, detail, selected, words, palette, models, loader, previewsRead]);
+  }, [tree, layout, detail, selected, words, palette, blobs, loader, imagesRead]);
   const hits = useRef<SceneHit[]>(scene.hits);
   const [initialData] = useState<ExcalidrawInitialDataState>(() => ({ elements: scene.elements,
     appState: { ...CANVAS_APP_STATE, viewBackgroundColor: scene.ground } }));
@@ -237,7 +241,9 @@ export default function DesignTreeCanvas({ tree, source = null, words, selected,
 
   const drawn = useRef(layout);
   drawn.current = layout;
-  useEffect(() => { if (ready) wantPreviews(); }, [ready, layout, models, loader, width]);
+  // A projection landed: a card whose image could not be read (its blob was being drawn again) reads it again.
+  useEffect(() => { loader?.retry(); }, [loader, thumbnailsAt]);
+  useEffect(() => { if (ready) wantPreviews(); }, [ready, layout, blobs, loader, width]);
   const zoomFor = (box: Box, width: number, height: number, maxZoom: number) => Math.max(TREE_ZOOM.min,
     Math.min(maxZoom, (width - PAD * 2) / Math.max(1, box.width), (height - PAD * 2 - HEADER) / Math.max(1, box.height)));
   /** The box in view, centred; or, for the whole tree, hung from the headers as it grows downwards. */

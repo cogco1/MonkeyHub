@@ -156,6 +156,11 @@ export async function createProjectWorkspaceFixture(runtimes, sessions, { onInde
         return json({ projectId, artifacts, skippedRuns: [] });
       }
       if (name === "/api/state/frame") return json({ levels: [], axes: [], honesty: [] });
+      // #367: the Design Tree asks the projection cache for a model's thumbnail; this fixture
+      // draws none, so every model stays pending and its card keeps the placeholder.
+      if (name === "/api/projections") return json({ key: digest(`projection:${projectId}:${url.search}`), status: "pending",
+        kind: "model-axon", recipe: {}, renderer: "fixture", inputSha256: digest(url.search), source: null, blobSha256: null,
+        blobUrl: null, attempts: 0, error: null, loadMs: null, renderMs: null });
       if (name === "/api/documents") return json({ projectId, runId: null, documents: [] });
       if (name === "/api/render/capabilities") return json({ providers: [] });
       if (name === "/api/render/jobs") return json({ projectId, jobs: [] });

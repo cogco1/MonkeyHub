@@ -7253,7 +7253,10 @@ export type ProjectionStatusDto = {
      * Inputsha256
      */
     inputSha256: string;
-    source: ModelSourceDto;
+    /**
+     * The requester's own source, checked for this request; absent when the key alone was asked for.
+     */
+    source?: ModelSourceDto | null;
     /**
      * Blobsha256
      */

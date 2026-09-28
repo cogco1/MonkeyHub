@@ -707,24 +707,138 @@ test("the preview loader reads each key once, a few at a time, only while it is 
   loader.want(["broken"]);
   await settle();
   assert.equal(loader.get("broken"), null);
-  // A retained preview is read again; the old image stays until the new one arrives.
-  loader.want(["a"]);
-  loader.refresh("a");
-  await settle();
-  assert.equal(calls.filter((key) => key === "a").length, 2);
-  assert.equal(loader.get("a"), "image-a");
-  pending.get("a")!("image-a2");
-  await settle();
-  assert.equal(loader.get("a"), "image-a2");
   // Nothing wanted, nothing read; a disposed loader reads nothing more.
   const before = calls.length;
   loader.want([]);
-  loader.refresh("b");
   await settle();
   assert.equal(calls.length, before);
   loader.dispose();
   loader.want(["x"]);
   await settle();
   assert.equal(calls.length, before);
-  assert.ok(changes >= 4);
+  assert.ok(changes >= 3);
+});
+
+test("a failed read is read again when its key comes back, after a while, or when a projection lands", async (t) => {
+  const api = await harness(t);
+  const calls: string[] = [];
+  let clock = 1000, answer: string | null = null;
+  const loader = api.createPreviewLoader<string>(async (key) => { calls.push(key); return answer; },
+    { retryMs: 30_000, now: () => clock, onChange: () => undefined });
+  const settle = async () => { for (let turn = 0; turn < 4; turn += 1) await new Promise((resolve) => setTimeout(resolve, 0)); };
+  loader.want(["lost"]);
+  await settle();
+  assert.equal(loader.get("lost"), null, "the blob could not be read: no image");
+  loader.want(["lost"]);
+  await settle();
+  assert.deepEqual(calls, ["lost"], "still wanted: not read again at once");
+  // The store dropped the model's blob while it is drawn again, then names it again.
+  loader.want([]);
+  loader.want(["lost"]);
+  await settle();
+  assert.deepEqual(calls, ["lost", "lost"], "wanted again after it left: read again");
+  clock += 29_999;
+  loader.want(["lost"]);
+  await settle();
+  assert.equal(calls.length, 2);
+  clock += 1;
+  loader.want(["lost"]);
+  await settle();
+  assert.equal(calls.length, 3, "still wanted: read again after the retry interval");
+  answer = "image";
+  loader.retry();
+  await settle();
+  assert.equal(calls.length, 4, "a projection landed: read again at once");
+  assert.equal(loader.get("lost"), "image");
+  loader.retry();
+  loader.want(["lost"]);
+  await settle();
+  assert.equal(calls.length, 4, "an image read is never read again");
+  loader.dispose();
+});
+
+test("the preview loader keeps a bounded number of images, never one the view shows", async (t) => {
+  const api = await harness(t);
+  const calls: string[] = [];
+  const loader = api.createPreviewLoader<string>(async (key) => { calls.push(key); return `image-${key}`; },
+    { limit: 4, keep: 2, onChange: () => undefined });
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+  loader.want(["a", "b", "c"]);
+  for (let turn = 0; turn < 4; turn += 1) await settle();
+  assert.deepEqual(["a", "b", "c"].map((key) => loader.get(key)), ["image-a", "image-b", "image-c"], "all three are shown");
+  loader.want(["d"]);
+  for (let turn = 0; turn < 4; turn += 1) await settle();
+  assert.equal(["a", "b", "c", "d"].filter((key) => loader.get(key) !== undefined).length, 2, "two kept");
+  assert.equal(loader.get("d"), "image-d");
+  assert.equal(loader.get("c"), "image-c", "the most recently shown of the rest stays");
+  loader.want(["a"]);
+  for (let turn = 0; turn < 4; turn += 1) await settle();
+  assert.deepEqual(calls, ["a", "b", "c", "d", "a"], "an image let go is read again when shown again");
+  loader.dispose();
+});
+
+test("a model's thumbnail is the store's newest done projection, and a model without one is asked for once", async (t) => {
+  const vite = await createServer({ root: fileURLToPath(new URL("..", import.meta.url)), configFile: false,
+    logLevel: "silent", server: { middlewareMode: true, watch: null } });
+  t.after(() => vite.close());
+  const thumbnails = await vite.ssrLoadModule("/src/features/artifacts/modelThumbnails.ts") as
+    typeof import("../src/features/artifacts/modelThumbnails.ts");
+  const asset = "a".repeat(64);
+  const entity = (key: string, rev: number, blob: string, size = 256) => [`projections:${key}`, { id: `projections:${key}`,
+    domain: "projections", rev, body: { key, inputSha256: asset, kind: "model-line-view",
+      recipe: { view: "axon", size, style: "lines" }, renderer: `r${rev}`, blobSha256: blob } }] as const;
+  const state = (entries: readonly (readonly [string, unknown])[]) => ({ status: "ready", epoch: "e", revision: 9,
+    byId: new Map(entries), domains: { projections: 9 }, moved: new Map() }) as never;
+  const held = state([entity("old", 3, "1".repeat(64)), entity("new", 7, "2".repeat(64)), entity("big", 8, "3".repeat(64), 1024),
+    ["run:r", { id: "run:r", domain: "run", rev: 1, body: {} }]]);
+  assert.equal(thumbnails.thumbnailBlobs(held).get(asset), "2".repeat(64), "the newer renderer's picture, at the tree's size");
+  assert.equal(thumbnails.thumbnailBlobs(held), thumbnails.thumbnailBlobs(held), "worked out once per store state");
+  assert.equal(thumbnails.thumbnailsMoved(held), "e:9");
+  const asked: unknown[] = [];
+  let answer: { status: string; blobSha256?: string | null } = { status: "pending" };
+  const studio = { projection: async (source: unknown, size: number) => { asked.push([source, size]); return answer; },
+    projectionBlob: async () => new Blob() } as never;
+  const source = { runId: "r", stateDigest: "b".repeat(64), assetSha256: asset };
+  assert.equal(await thumbnails.askThumbnail(studio, source, 1000), null, "pending: the placeholder shows");
+  assert.equal(await thumbnails.askThumbnail(studio, source, 2000), null);
+  assert.deepEqual(asked, [[source, 256]], "asked once while the answer stands");
+  answer = { status: "done", blobSha256: "4".repeat(64) };
+  assert.equal(await thumbnails.askThumbnail(studio, source, 1000 + 31_000), "4".repeat(64), "asked again once it is old");
+  assert.equal(await thumbnails.askThumbnail(studio, source, 10_000_000), "4".repeat(64));
+  assert.equal(asked.length, 2, "a done answer stands for good");
+  // The blob could not be read (the server draws it again): the answer that named it is forgotten.
+  thumbnails.forgetThumbnailBlob(studio, "4".repeat(64));
+  answer = { status: "pending" };
+  assert.equal(await thumbnails.askThumbnail(studio, source, 10_000_001), null);
+  assert.equal(asked.length, 3, "asked again");
+});
+
+test("a refused or failed ask is kept, and waits longer each time it fails again", async (t) => {
+  const vite = await createServer({ root: fileURLToPath(new URL("..", import.meta.url)), configFile: false,
+    logLevel: "silent", server: { middlewareMode: true, watch: null } });
+  t.after(() => vite.close());
+  const thumbnails = await vite.ssrLoadModule("/src/features/artifacts/modelThumbnails.ts") as
+    typeof import("../src/features/artifacts/modelThumbnails.ts");
+  let asks = 0, fail = true;
+  const studio = { projection: async () => { asks += 1; if (fail) throw new Error("409 MODEL_SOURCE_MISMATCH"); return { status: "pending" }; },
+    projectionBlob: async () => new Blob() } as never;
+  const source = { runId: "r", stateDigest: "b".repeat(64), assetSha256: "a".repeat(64) };
+  const wait = thumbnails.ASK_AGAIN_MS;
+  let now = 1000;
+  assert.equal(await thumbnails.askThumbnail(studio, source, now), null);
+  for (let scroll = 1; scroll < 50; scroll += 1) await thumbnails.askThumbnail(studio, source, now + scroll * 10);
+  assert.equal(asks, 1, "every scroll and commit meanwhile is answered by the kept failure");
+  await thumbnails.askThumbnail(studio, source, now + wait - 1);
+  assert.equal(asks, 1, "never sooner than the pending wait");
+  now += wait;
+  await thumbnails.askThumbnail(studio, source, now);
+  assert.equal(asks, 2);
+  await thumbnails.askThumbnail(studio, source, now + wait);
+  assert.equal(asks, 2, "a second failure in a row waits twice as long");
+  now += 2 * wait;
+  fail = false;
+  await thumbnails.askThumbnail(studio, source, now);
+  assert.equal(asks, 3);
+  await thumbnails.askThumbnail(studio, source, now + wait);
+  assert.equal(asks, 4, "an answer ends the backoff: pending waits the usual time");
 });
