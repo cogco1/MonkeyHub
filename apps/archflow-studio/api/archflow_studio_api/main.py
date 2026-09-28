@@ -28,6 +28,7 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 import uvicorn
 
 from . import routes
+from .routes import projections as projection_routes
 from .application.authentication import ActorAuthorizationMiddleware, read_actor_credentials, request_action
 from .application.clarification import PendingIntentStore
 from .application.episodes import EpisodeStore
@@ -166,8 +167,9 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     A candidate run writes P036 records; killing its thread mid-run would
     leave a run directory nobody can account for. Shutting the worker down and
     waiting is the difference between a service that stops and one that stops
-    cleanly. Closing the binding stops its layout watch, which holds the
-    project folder open.
+    cleanly. Closing the binding stops its project index's keeper - what it had
+    not applied yet, the next open reconciles from the project's layout - and
+    its layout watch, which holds the project folder open.
     """
 
     if app.state.settings.service_role != SHARED_PROJECT_ROLE:
@@ -180,12 +182,17 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     yield
     app.state.jobs.stop_accepting()
     app.state.render_jobs.stop_accepting()
+    with app.state.projections_lock:
+        projections, app.state.projections = app.state.projections, None
+    if projections is not None:
+        await run_in_threadpool(projections.shutdown)
     await run_in_threadpool(app.state.render_jobs.shutdown)
     await run_in_threadpool(app.state.jobs.shutdown)
     binding = getattr(app.state, "binding", None)
     if binding is not None:
-        # Its layout watch holds a handle on the project folder: let go of it
-        # with the project, not whenever the process happens to exit.
+        # Its layout watch holds a handle on the project folder, and its index
+        # keeper the index file and its lock: let go of both with the project,
+        # not whenever the process happens to exit.
         await run_in_threadpool(binding.close)
 
 
@@ -243,6 +250,11 @@ def create_app(settings: StudioSettings, *, render_adapter=None) -> FastAPI:
     app.state.render_jobs = RenderJobRecords(None if shared_project else render_adapter, monitor=app.state.monitor)
     if shared_project:
         app.state.render_jobs.stop_accepting()
+    # The projection queue (ADR-008): content-keyed pictures of retained models
+    # in the project's Hub cache, drawn by one background worker. Opened with
+    # the binding on the first projection request; never for a shared project.
+    app.state.projections = None
+    app.state.projections_lock = threading.Lock()
     # Proposals live in this process and nowhere else. The store is created
     # here so that fact is visible at the top of the application rather than
     # accumulating quietly at the bottom of a route.
@@ -291,6 +303,8 @@ def create_app(settings: StudioSettings, *, render_adapter=None) -> FastAPI:
     app.add_exception_handler(RequestValidationError, _handle_validation_error)
     app.add_exception_handler(Exception, _handle_unexpected_error)
     app.include_router(routes.router)
+    if not shared_project:
+        app.include_router(projection_routes.router, prefix=_API_PREFIX)
     # Added first, so it sits inside the token and CORS middlewares below: a
     # request is authenticated before a remembered answer can be handed out.
     app.add_middleware(ConditionalReads, state=app.state)

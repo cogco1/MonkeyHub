@@ -466,6 +466,43 @@ def _projected_phase(
     )
 
 
+def require_readable(projection: StateProjection) -> None:
+    """Require the run's own exact retained state, whatever canonical base it stood on.
+
+    A read of what one run recorded (a picture of its model) needs the run's
+    verified State Record and a receipt digest that matches it; it does not
+    need that run to stand on current HEAD, because nothing new is built on
+    it. Anything that creates design work asks ``require_actionable``.
+    """
+
+    if projection.reference.source == "none":
+        return
+    _require_exact_state(projection)
+    _require_receipt_match(projection)
+
+
+def _require_exact_state(projection: StateProjection) -> None:
+    if not projection.reference_state_exact:
+        raise StudioError(
+            409,
+            "REFERENCE_STATE_NOT_EXACT",
+            projection.reference_state_error
+            or "the reference run has no verified retained State Record",
+        )
+
+
+def _require_receipt_match(projection: StateProjection) -> None:
+    if projection.matches_reference_receipt is not True:
+        raise StudioError(
+            409,
+            "REFERENCE_STATE_MISMATCH",
+            f"reference run {projection.reference.run.run_id!r} does not carry "
+            "a design_state_digest matching its verified State Record. It "
+            "remains available for inspection but cannot base a proposal or "
+            "candidate.",
+        )
+
+
 def require_actionable(projection: StateProjection) -> None:
     """Require the exact current reference before creating design work.
 
@@ -476,13 +513,7 @@ def require_actionable(projection: StateProjection) -> None:
 
     if projection.reference.source == "none":
         return
-    if not projection.reference_state_exact:
-        raise StudioError(
-            409,
-            "REFERENCE_STATE_NOT_EXACT",
-            projection.reference_state_error
-            or "the reference run has no verified retained State Record",
-        )
+    _require_exact_state(projection)
     if projection.reference.run.base != projection.head and projection.source_stage_ref is None:
         raise StudioError(
             409,
@@ -493,15 +524,7 @@ def require_actionable(projection: StateProjection) -> None:
             "for inspection; choose or create a run on current HEAD before "
             "proposing or running a candidate.",
         )
-    if projection.matches_reference_receipt is not True:
-        raise StudioError(
-            409,
-            "REFERENCE_STATE_MISMATCH",
-            f"reference run {projection.reference.run.run_id!r} does not carry "
-            "a design_state_digest matching its verified State Record. It "
-            "remains available for inspection but cannot base a proposal or "
-            "candidate.",
-        )
+    _require_receipt_match(projection)
 
 
 def _record_invalid(

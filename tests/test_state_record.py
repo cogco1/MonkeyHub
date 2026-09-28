@@ -32,6 +32,7 @@ from archflow.state.state_record import (
     compile_component_edit,
     compile_parameter_locks,
     combine_component_changes,
+    component_semantics,
     developed_design_view,
     parameter_bindings_of,
     resolve_element_bindings,
@@ -266,6 +267,27 @@ class StateRecordTests(unittest.TestCase):
             target_ref="parameter:opening_width", key="opening_width", value=2,
         )
         self.assertEqual(apply_state_record_operator(continued, scalar).parameter("opening_height").value, 4)
+
+    def test_a_component_may_exist_before_its_meaning_and_keeps_its_identity_when_named(self) -> None:
+        # Geometry first (#400): absence is "not yet established", and no alias stands in for it.
+        record = replace(_record(), base=ProjectVersionRef("demo", 0, "0" * 64))
+        generic = apply_state_record_operator(record, compile_component_edit(
+            record, entities=(Entity("mass", "Component@1", {"intent": "an early mass"}, parent_id="building"),)))
+        mass = generic.entity("mass")
+        self.assertNotIn("semantic_kind", mass.fields)
+        self.assertIsNone(component_semantics(mass))
+        self.assertEqual(StateRecord.from_dict(generic.to_dict()).entity("mass"), mass)
+        named = apply_state_record_operator(generic, compile_component_edit(
+            generic, entities=(Entity("mass", "Component@1", {"intent": "an early mass", "semantic_kind": "enclosure"},
+                                      parent_id="building"),)))
+        self.assertEqual(component_semantics(named.entity("mass")), "enclosure")
+        self.assertEqual(named.entity("mass").parent_id, "building")
+        self.assertEqual([e.entity_id for e in named.entities], [e.entity_id for e in generic.entities])
+        self.assertEqual(component_semantics(Entity("x", "Component@1", {"roles": ["role.access"], "conditions": ["condition.threshold"]})),
+                         "role.access+condition.threshold")
+        # What is stated must still be registered.
+        with self.assertRaisesRegex(StateRecordError, "not a registered alias"):
+            replace(generic, entities=(*generic.entities, Entity("guess", "Component@1", {"semantic_kind": "blob"})))
 
     def test_component_delete_removes_relations_and_can_remove_related_parameters_together(self) -> None:
         record = replace(_record(), base=ProjectVersionRef("demo", 0, "0" * 64))

@@ -63,9 +63,9 @@ class ElementProducerError(ValueError):
 
 
 def producer_signatures() -> dict[str, dict[str, Any]]:
-    """The semantic authoring contracts the Studio can query and execute.
+    """The authoring contracts the Studio can query and execute.
 
-    Walls with hosted apertures, prisms, lofts, curves and bounded planar surfaces expose their
+    Prisms, bounded planar surfaces, curves, lofts and walls with hosted apertures expose their
     authored parameters here. Other existing producers remain executable;
     they are not advertised as semantic creation tools until their authored
     parameter contract is exposed here.
@@ -79,7 +79,7 @@ def producer_signatures() -> dict[str, dict[str, Any]]:
     scalar = {"anyOf": [{"type": "number"}, {"type": "string", "pattern": r"^@[A-Za-z0-9_.:-]+$"}],
               "description": "A value in metres, or an explicit @parameter binding."}
     identifier = {"type": "string", "minLength": 1}
-    grid_role = {**identifier, "description": "The existing GridAxis@1 fields.role, not its entity_id."}
+    grid_role = {**identifier, "description": "Optional reference system: the role (not entity_id) of a GridAxis@1 the project already declares."}
     level_id = {**identifier, "description": "The existing Level@1 entity_id, not its role."}
     plan = {"anyOf": [
         obj({"point": {"type": "array", "items": scalar, "minItems": 2, "maxItems": 2,
@@ -173,13 +173,11 @@ def producer_signatures() -> dict[str, dict[str, Any]]:
             "Only a horizontal upward extrusion publishes a horizontal top datum; tilted planes cannot claim one.",
         ],
     }
-    # The wall stays first: it is the signature the model schema's first
-    # element variant has always been, and order here is not a contract.
-    return {"wall": {
+    signatures = {"wall": {
         "producer": "wall",
         "label": "墙体与宿主开口",
         "description": (
-            "A straight wall placed by explicit project-local points, existing grids or host references. Its hosted opening may be "
+            "A straight wall placed by explicit project-local points; existing grids or hosts are optional reference systems. Its hosted opening may be "
             "rectangular or semicircular. No opening type means an empty passage, with no frame or leaf. "
             "Types supply reusable defaults; instance params and references override named defaults. "
             "References and dimensions must come from the project or an explicit design proposal. "
@@ -285,6 +283,13 @@ def producer_signatures() -> dict[str, dict[str, Any]]:
             "A curve creates no face, thickness, support relation or top datum.",
         ],
     }}
+    # Agents read this table in order, so it runs from the lowest sufficient
+    # expression to the specialized realization: early modeling starts with a
+    # profile, a face or a path, and a wall is chosen when its meaning is
+    # established (#400). No caller may depend on this order. A producer not
+    # yet ranked here follows the ranked ones instead of being dropped.
+    ranked = ("prism", "planar-surface", "curve", "loft", "wall")
+    return {name: signatures[name] for name in (*ranked, *sorted(set(signatures) - set(ranked)))}
 
 
 def _check_signature_value(value: Any, schema: Mapping[str, Any], field_name: str) -> None:

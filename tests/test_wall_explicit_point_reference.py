@@ -8,7 +8,7 @@ from monkeyarch.capabilities.reference_resolver import ProjectPoint, ReferenceCo
 from archflow.state.geometry_program import ProjectLevel, ProjectLevels
 
 
-class GridFreeWallTests(unittest.TestCase):
+class WallExplicitPointReferenceTests(unittest.TestCase):
     def context(self):
         levels = ProjectLevels(project_id="demo", published_by="seat-model", levels=(ProjectLevel("ground", "ground", 0, ("input:fixture",)),))
         return ProductionContext(references=ReferenceContext(grids=None, levels=levels), published={})

@@ -153,12 +153,17 @@ def response_schema(*, strict: bool = True) -> dict[str, Any]:
     entity_variants.append(object_of({
         "entity_id": text, "schema": {"type": "string", "enum": ["Component@1"]},
         "parent_id": nullable_text, "basis_refs": strings,
-        "fields": object_of({"semantic_kind": {
-            "type": "string",
-            "description": "One registered alias in local-id form, for example building, cover or support. "
-                           "Choose a fitting aliases entry from GET /api/semantics, not its role.* or condition.* id. "
-                           "Put the specific object description in intent.",
-        }, "intent": text, "source_refs": strings}),
+        "fields": object_of({
+            "intent": {"type": "string", "description": "What this part of the design is for, in the architect's words."},
+            "source_refs": strings,
+            "semantic_kind": {
+                "type": "string",
+                "description": "Optional and deferred: omit it for new geometry whose meaning the project has not established. "
+                               "State it only when the architect says what the part is or the record already does; then use one "
+                               "registered alias in local-id form (GET /api/semantics), not a role.* or condition.* id. "
+                               "Adding it later upserts the same entity_id, keeping its identity and dependencies.",
+            },
+        }, ["intent"]),
     }))
     entity_variants.append(object_of({
         "entity_id": text, "schema": {"type": "string", "enum": ["Type@1"]},
@@ -249,7 +254,9 @@ SYSTEM_PROMPT = """You compile an architect's request into typed architectural d
 
 You are given a RECORD SHEET containing the current components, elements, parameter bindings, reference frame, named relationships, project types, design readings, and the available producer signatures. Use this one design state. Existing references must name it or another item declared in the same edit. New elements may have new meaningful ids. Only the producer signatures on the sheet define supported element parameters and references. Never emit a GeometryProgram, CAD command, profile/loft vertex array, deferred restoration payload, or a replay recipe.
 
-Reference names follow the existing resolver: axis_point.axis and grid references use GridAxis@1 fields.role, never the GridAxis entity_id. Level references use the Level@1 entity_id. Read these exact names from frame; do not substitute an entity id for a grid role.
+Reference names follow the existing resolver: explicit points need no grid; grids are an optional reference system, and when the record declares one, axis_point.axis and grid references use GridAxis@1 fields.role, never the GridAxis entity_id. Level references use the Level@1 entity_id. Read these exact names from frame; do not substitute an entity id for a grid role.
+
+Geometry comes first and meaning accumulates. The sheet's producer signatures run from the most general to the most specialized; use the lowest sufficient one for ordinary forms, and a specialized producer such as wall only when the architect asks for it or the record already establishes that meaning. A new Component@1 needs an intent, not a semantic_kind: omit semantic_kind unless the architect states what the part is. Never require a GridAxis or a semantic classification before modeling ordinary geometry, and never infer one from a shape. Enriching a component later upserts the same entity_id.
 
 For adding, removing, or changing components, their parameter bindings, openings or relationships, answer status "compiled" with semanticEdit and utterance null. semanticEdit contains only named Entity, Parameter and Relation edits and explicit removal lists. Reuse the project's Type definitions through type_ref, its authored parameters through @key, and its references. Explain the proposed building change briefly in summary. Give human-readable retained conditions in kept and bind them to actual entity:/parameter: refs in protected. Update or remove relationships together with the elements they refer to. Do not add a new dependency table; those references and relationships are the dependency declaration. Never invent source evidence. Cite the sheet's basis refs or studio:intent for a new decision requested here. A Reading is evidence/context, not a command: its assumptions stay assumptions.
 
@@ -390,6 +397,7 @@ def record_sheet(projection: StateProjection, selection: Selection) -> dict[str,
 
     from monkeyarch.capabilities.element_producers import producer_signatures
     from archflow.semantics.registry import registered_ids
+    from archflow.state.state_record import component_semantics
 
     signatures = producer_signatures()
     authored = {entity.entity_id: entity for entity in projection.record.entities}
@@ -397,11 +405,12 @@ def record_sheet(projection: StateProjection, selection: Selection) -> dict[str,
     # The kernel's tree when it built; the record's own component entities
     # when it did not — the same ids either way, and never a name from anywhere
     # else.
+    # semanticKind is null for a component whose meaning is not established yet.
     if projection.components is not None:
         components = [
             {
                 "componentId": component.component_id,
-                "semanticKind": component.semantic_kind,
+                "semanticKind": component_semantics(authored[component.component_id]),
                 "intent": component.intent,
             }
             for component in projection.components
@@ -410,7 +419,7 @@ def record_sheet(projection: StateProjection, selection: Selection) -> dict[str,
         components = [
             {
                 "componentId": entity.entity_id,
-                "semanticKind": entity.fields.get("semantic_kind"),
+                "semanticKind": component_semantics(entity),
                 "intent": entity.fields.get("intent"),
             }
             for entity in projection.record.entities_of("Component@1")

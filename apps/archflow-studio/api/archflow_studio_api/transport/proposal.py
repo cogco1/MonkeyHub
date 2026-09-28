@@ -132,8 +132,9 @@ class SketchActionDto(BaseModel):
         alias="semanticKind",
         default=None,
         min_length=1,
-        description="what a new component is, in the record's own vocabulary; required only when "
-                    "componentId is new here",
+        description="optional: what a new component is, as a registered alias, when the architect has said so. "
+                    "Omit it for geometry whose meaning is not established; the component is created without "
+                    "semantics and can be enriched later under the same componentId",
     )
     element_id: str = Field(
         alias="elementId",
@@ -259,7 +260,10 @@ class DocumentTracingRequestDto(BaseModel):
     tracing: DocumentTracingSourceDto
     component_id: str = Field(alias="componentId", min_length=1)
     parent_component_id: str | None = Field(alias="parentComponentId", default=None, min_length=1)
-    semantic_kind: str | None = Field(alias="semanticKind", default=None, min_length=1)
+    semantic_kind: str | None = Field(
+        alias="semanticKind", default=None, min_length=1,
+        description="optional: what a new component is, when stated; omit it for geometry whose meaning is not established",
+    )
     base_level: str | None = Field(alias="baseLevel", default=None, min_length=1)
     base_datum: str | None = Field(alias="baseDatum", default=None, min_length=1)
     height: float = Field(ge=0, allow_inf_nan=False,

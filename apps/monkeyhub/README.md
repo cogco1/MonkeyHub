@@ -137,6 +137,8 @@ and open its returned URL. A local, session-bound capability stays inside the ad
 not printed to the agent or saved in the transcript. Hub restart requires rebinding, not
 replaying design operations. An interrupted external turn resumes on explicit rebind; an
 explicitly stopped turn remains closed.
+A design tool prepares the bound project's runtime itself (opening it and starting its Studio
+through the Hub) and refuses only with the Hub's own reason, so no page needs to be opened first.
 
 The tool instructions make Hub the default result destination for subsequent turns. Each
 turn begins with `chat_present` kind `user`, fresh UUID `turnId` and `messageId`, then public

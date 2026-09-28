@@ -39,7 +39,7 @@ from archflow.state.derivation import (
 from archflow.state.operational_state import DependencyEdge, DependencyEffect, DesignObligation
 from archflow.relations.contracts import ArchitecturalRelationKind
 from archflow.semantics.conditions import CONDITION_IDS
-from archflow.semantics.registry import resolve_semantic_kind, suggest_semantic
+from archflow.semantics.registry import resolve_semantic_kind, suggest_semantic, suggest_semantic_kind
 from archflow.semantics.roles import ROLE_IDS
 from archflow.state.design_portfolio import BranchRevisionRef
 from archflow.state.developed_design import DevelopedDesignState, DevelopmentCoordinationStatus, SelectedSchematicInput
@@ -468,15 +468,16 @@ class StateRecord:
                     raise StateRecordError(f"connection {connection.entity_id}: relationship_ref {ref!r} names no declared relation")
         for component in self.entities_of("Component@1"):
             kind = component.fields.get("semantic_kind")
-            roles, conditions = component.fields.get("roles", ()), component.fields.get("conditions", ())
-            if kind is None and not (roles or conditions):
-                raise StateRecordError(f"component {component.entity_id}: names no semantics (roles/conditions ids, or a semantic_kind that resolves)")
+            # A component may exist before its meaning is known: no semantic_kind
+            # and no roles/conditions is "not yet established", not invalid (#400).
+            # What *is* stated must still resolve to registered ids.
             if kind is not None:
                 if not isinstance(kind, str) or not kind or kind != kind.strip() or "+" in kind or "." in kind:
                     raise StateRecordError(f"component {component.entity_id}: semantic_kind must be one registered alias or phrase in local-id form; ids go in roles/conditions")
                 if resolve_semantic_kind(kind) is None:
-                    near = ", ".join(suggest_semantic(kind)) or "none close"
-                    raise StateRecordError(f"component {component.entity_id}: semantic_kind {kind!r} is not a registered role, condition or alias; nearest: {near}")
+                    # Answered in the form semantic_kind is written in, never with an id (#408).
+                    near = ", ".join(suggest_semantic_kind(kind)) or "none close; leave semantic_kind out and keep the word in intent"
+                    raise StateRecordError(f"component {component.entity_id}: semantic_kind {kind!r} is not a registered alias or phrase; nearest: {near}")
             for field_name, allowed in (("roles", ROLE_IDS), ("conditions", CONDITION_IDS)):
                 for item in component.fields.get(field_name, ()):
                     if item not in allowed:
@@ -680,6 +681,22 @@ def _entity_references(fields: Mapping[str, Any]) -> tuple[tuple[str, str, str],
     return tuple(out)
 
 
+def component_semantics(entity: Entity) -> str | None:
+    """What a ``Component@1`` has been said to be, or None while nothing is established.
+
+    The stated ``semantic_kind`` when there is one, else its registered
+    roles/conditions ids joined with ``+`` (the form the registry resolves).
+    Absence is the answer for a component authored as geometry first; no
+    alias stands in for it.
+    """
+
+    kind = entity.fields.get("semantic_kind")
+    if isinstance(kind, str) and kind:
+        return kind
+    ids = [*entity.fields.get("roles", ()), *entity.fields.get("conditions", ())]
+    return "+".join(ids) if ids else None
+
+
 def design_components_of(record: StateRecord, *, source_ref: str | None = None) -> tuple:
     """The record's ``Component@1`` entities as the semantic component tree.
 
@@ -716,7 +733,7 @@ def _kept_reading(record: StateRecord, name: str, key: Any, compute: Callable[[]
 
 
 def _design_components(record: StateRecord, source_ref: str | None) -> tuple:
-    from archflow.state.spatial import ComponentMaturity, DesignComponent
+    from archflow.state.spatial import NEUTRAL_SEMANTIC_KIND, ComponentMaturity, DesignComponent
 
     out = []
     for e in record.entities_of("Component@1"):
@@ -728,8 +745,12 @@ def _design_components(record: StateRecord, source_ref: str | None) -> tuple:
         refs = tuple(sorted({*(fields.get("source_refs") or ()), *((source_ref,) if source_ref else ()), *record.evidence_refs}))
         if not refs:
             raise StateRecordError(f"component {e.entity_id} has no source: give the entity source_refs, or the record evidence")
+        # The spatial tree needs a local-id token in every node. A component
+        # with no established semantics gets NEUTRAL_SEMANTIC_KIND; that token
+        # is not a semantic claim, and readers that report meaning ask
+        # ``component_semantics`` of the record instead.
         out.append(DesignComponent(
-            component_id=e.entity_id, parent_component_id=e.parent_id, semantic_kind=str(fields.get("semantic_kind") or "-".join(i.split(".", 1)[1].replace("_", "-") for i in (*fields.get("roles", ()), *fields.get("conditions", ()))) or "component"),
+            component_id=e.entity_id, parent_component_id=e.parent_id, semantic_kind=str(fields.get("semantic_kind") or "-".join(i.split(".", 1)[1].replace("_", "-") for i in (*fields.get("roles", ()), *fields.get("conditions", ()))) or NEUTRAL_SEMANTIC_KIND),
             intent=str(fields.get("intent", e.entity_id)), maturity=ComponentMaturity(str(fields.get("maturity", "schematic"))),
             revision=int(fields.get("revision", 1)), volume_ids=tuple(fields.get("volume_ids", ())),
             unresolved_child_roles=tuple(fields.get("unresolved_child_roles", ())), source_refs=refs))
