@@ -206,6 +206,40 @@ class WhyTests(CompareTestCase):
         self.assertEqual(payload["whySource"], "proposal")
         self.assertEqual(payload["changed"], 1)
 
+    def test_a_chain_says_why_for_every_step_in_order(self) -> None:
+        # #404 F17: a candidate made from a continued proposal answered only
+        # with its last step's sentence, as if the earlier steps never happened.
+        steps = []
+        for element, sentence in (("portico-base", "set height to 0.8"), ("portico-cornice", "set height to 0.4")):
+            response = self.client.post("/api/proposals", json={
+                "stateDigest": self.state_digest, "targetComponentId": "portico", "elementId": element,
+                "utterance": sentence, **({"sourceProposalId": steps[-1]} if steps else {}),
+            })
+            self.assertEqual(response.status_code, 201, response.text)
+            steps.append(response.json()["proposalId"])
+        self.write_run("run-before", {"s": [obj("obj-a", "portico", "a", SHA_A, box(0, 0, 0, 1, 1, 1))]})
+        self.write_run("cand-chain", {"s": [obj("obj-a", "portico", "a", SHA_B, box(0, 0, 0, 1, 1, 1.2))]})
+        self.app.state.jobs.submit(candidate_id="cand-chain", proposal_id=steps[-1], work=lambda: None)
+        status, payload = self.compare("cand-chain", "run-before")
+        self.assertEqual(status, 200, payload)
+        self.assertEqual(payload["why"], "set height to 0.8; set height to 0.4")
+        self.assertEqual(payload["whySource"], "proposal")
+
+    def test_a_summarized_sketch_batch_is_one_step(self) -> None:
+        square = [[0.0, 0.0], [3.0, 0.0], [3.0, 2.0], [0.0, 2.0]]
+        response = self.client.post("/api/proposals/sketch", json={
+            "stateDigest": self.state_digest, "summary": "Two porch blocks",
+            "sketches": [{"componentId": "portico", "elementId": element, "profile": square, "height": 1.0,
+                          "baseLevel": "level-ground"} for element in ("porch-a", "porch-b")],
+        })
+        self.assertEqual(response.status_code, 201, response.text)
+        self.write_run("run-before", {"s": [obj("obj-a", "portico", "a", SHA_A, box(0, 0, 0, 1, 1, 1))]})
+        self.write_run("cand-batch", {"s": [obj("obj-a", "portico", "a", SHA_B, box(0, 0, 0, 1, 1, 1.2))]})
+        self.app.state.jobs.submit(candidate_id="cand-batch", proposal_id=response.json()["proposalId"], work=lambda: None)
+        status, payload = self.compare("cand-batch", "run-before")
+        self.assertEqual(status, 200, payload)
+        self.assertEqual(payload["why"], "Two porch blocks")
+
 
 class NothingToCompareTests(CompareTestCase):
     def test_a_run_that_does_not_exist_is_named(self) -> None:

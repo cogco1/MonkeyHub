@@ -180,9 +180,11 @@ class CandidateObjectDto(BaseModel):
     seat_id: str = Field(alias="seatId")
     component_id: str | None = Field(alias="componentId")
     producer_op: str | None = Field(alias="producerOp")
-    bbox: BoxDto | None = Field(description="retained inspected bounds; null when no box was recorded")
+    bbox: BoxDto | None = Field(description="retained inspected bounds in the export's Z-up CAD frame: "
+                                "[x, z, y] of the modeling frame writes use, whose +y is up; null when no box was recorded")
     length_unit: str | None = Field(alias="lengthUnit", description="the matching export's length unit; null when unknown")
-    up_axis: str | None = Field(alias="upAxis", description="the matching export's CAD up axis, before viewer conversion; null when unknown")
+    up_axis: str | None = Field(alias="upAxis", description="the matching export's CAD up axis, before viewer conversion; "
+                                "Z-up means bbox height is its third coordinate, which writes state as y; null when unknown")
 
 
 class CandidateDto(BaseModel):

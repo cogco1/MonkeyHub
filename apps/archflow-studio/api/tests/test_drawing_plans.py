@@ -353,6 +353,24 @@ class CutPlanTests(CandidateTestCase):
         live = self.status(document)
         self.assertEqual((live["status"], live["dimensions"][0]["label"]), ("outdated", "1200 mm"))
 
+    def test_a_driven_width_restates_the_drawing_unit_exactly(self):
+        # #404 review of 13f8b7b7: with float factors, 700 typed on a millimetre drawing
+        # drove a metre parameter to 0.7000000000000001. The drive now uses the one converter.
+        document = self.generate()
+        measured = drawing_plans.plan_status
+
+        def in_millimetres(*args, **kwargs):
+            return {**measured(*args, **kwargs), "lengthUnit": "millimeter"}
+
+        with patch.object(drawing_plans, "plan_status", side_effect=in_millimetres):
+            proposal = self.client.post("/api/drawings/plans/dimension-proposal", json={
+                "projectId": PROJECT_ID, "runId": document["runId"], "assetSha256": document["assetSha256"],
+                "revisionRef": document["revisionRef"], "dimensionId": "door-width", "value": 700,
+                "targetModelSource": self.model, "targetStageRef": self.stage["stageRef"]})
+        self.assertEqual(proposal.status_code, 201, proposal.text)
+        driven, = proposal.json()["change"]["edits"]["parameters"]
+        self.assertEqual((driven["key"], driven["value"]), ("passage_width", 0.7))
+
     def test_invalid_inputs_fail_before_drawing_and_choices_are_semantic(self):
         choices = self.client.get("/api/drawings/plans/dimensions", params={
             "sourceRunId": self.model["runId"], "stateDigest": self.model["stateDigest"],

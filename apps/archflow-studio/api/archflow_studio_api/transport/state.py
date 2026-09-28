@@ -13,6 +13,7 @@ from typing import Any, Literal, Mapping
 from pydantic import BaseModel, ConfigDict, Field
 
 from archflow.state.state_record import component_semantics, parameter_bindings_of
+from monkeyarch.capabilities.element_producers import element_vertical_extent
 
 from ..application.catalog import Catalog
 from ..application.frame import ClosureAnswer, RecordFrame
@@ -69,7 +70,12 @@ class ComponentNodeDto(BaseModel):
 
 
 class DrawnShapeDto(BaseModel):
-    """A recorded face/prism for local preview, in building-world Y-up metres."""
+    """A recorded face/prism for local preview, in building-world Y-up metres.
+
+    Resolved, not authored: bindings are evaluated and the base datum, the
+    reference offset and the elevation are already in the work plane. It is
+    never a template for ``fields.params``; ``ElementDto.params`` is.
+    """
 
     model_config = ConfigDict(populate_by_name=True, frozen=True, allow_inf_nan=False)
 
@@ -93,6 +99,15 @@ class ElementElevationDto(BaseModel):
     top_reference: ElevationReferenceDto | None = Field(alias="topReference")
 
 
+class VerticalExtentDto(BaseModel):
+    """Where an element stands: its lowest and highest world +Y, in metres (#404 F14)."""
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True, allow_inf_nan=False)
+
+    base: float
+    top: float
+
+
 class LevelDto(BaseModel):
     model_config = ConfigDict(populate_by_name=True, frozen=True, allow_inf_nan=False)
 
@@ -111,10 +126,27 @@ class ElementDto(BaseModel):
     producer: str
     # Authored producer params keep the type they were written with; a count
     # that was authored as 4 must not come back as 4.0.
-    numeric_fields: dict[str, int | float] = Field(alias="numericFields")
+    numeric_fields: dict[str, int | float] = Field(alias="numericFields", description=(
+        "The scalars the producer reads, resolved: literals as authored, '@key' bindings evaluated. "
+        "Read-only facts; edit through params."))
     drawn_shape: DrawnShapeDto | None = Field(alias="drawnShape", default=None)
     drawn_shape_reason: str | None = Field(alias="drawnShapeReason", default=None)
-    elevation: ElementElevationDto | None = None
+    elevation: ElementElevationDto | None = Field(default=None, description=(
+        "The editable elevation controls of a horizontal drawn prism or face; null for other elements. "
+        "Where any element stands is verticalExtent."))
+    vertical_extent: VerticalExtentDto | None = Field(alias="verticalExtent", default=None, description=(
+        "Read-only: the lowest and highest world +Y in metres, by the producer's own datum and height rules, "
+        "for prism, planar-surface, curve, wall and loft; null for other producers or unreadable inputs."))
+    # What a semantic edit replaces (#404 F4): copying the resolved values
+    # above wrote bindings as numbers and counted the elevation twice. Only
+    # ``?authored=true`` answers them, so the default read stays as small as it was.
+    params: dict[str, Any] | None = Field(default=None, exclude_if=lambda value: value is None, description=(
+        "Only with ?authored=true: fields.params exactly as authored, '@key' bindings kept, positions "
+        "relative to the base reference. A semanticEdit that supplies params replaces this whole object: "
+        "start from this one and change only what you mean to, never from numericFields or drawnShape."))
+    references: dict[str, Any] | None = Field(default=None, exclude_if=lambda value: value is None, description=(
+        "Only with ?authored=true: fields.references exactly as authored (base, top, line, ...); a supplied "
+        "references object replaces this whole object too."))
 
 
 class ParameterDto(BaseModel):
@@ -347,21 +379,34 @@ def catalog_dto(catalog: Catalog) -> CatalogDto:
     )
 
 
-def _drawn_shapes(projection: StateProjection) -> dict[str, tuple[DrawnShapeDto | None, str | None, ElementElevationDto | None]]:
-    """Read drawing inputs through the existing in-memory producer datum graph."""
+def _vertical_extent(row, context) -> VerticalExtentDto | None:
+    """Where the element stands by its producer's own rules; None when it states none."""
+
+    try:
+        base, top = element_vertical_extent(row, context)
+    except (KeyError, TypeError, ValueError):
+        return None
+    return VerticalExtentDto(base=base, top=top)
+
+
+def _drawn_shapes(projection: StateProjection) -> dict[str, tuple[
+        DrawnShapeDto | None, str | None, ElementElevationDto | None, VerticalExtentDto | None]]:
+    """Read drawing inputs and vertical extents through the existing in-memory producer datum graph."""
 
     record = projection.record
     elements = record.entities_of("Element@1")
     try:
         rows, context, placements = drawing_context(record)
     except (KeyError, TypeError, ValueError) as exc:
-        return {entity.entity_id: (None, f"Drawing inputs are unavailable: {exc}", None) for entity in elements}
+        return {entity.entity_id: (None, f"Drawing inputs are unavailable: {exc}", None, None) for entity in elements}
     shapes = {}
     for entity in elements:
         row = rows[entity.entity_id]
         producer = row.producer
+        # Every placement above has published its top, so any base it names reads here.
+        extent = _vertical_extent(row, context)
         if producer not in {"prism", "planar-surface"}:
-            shapes[entity.entity_id] = (None, f"Direct push/pull supports drawn faces and prisms, not {producer}.", None)
+            shapes[entity.entity_id] = (None, f"Direct push/pull supports drawn faces and prisms, not {producer}.", None, extent)
             continue
         try:
             placement = placements[entity.entity_id]
@@ -383,18 +428,22 @@ def _drawn_shapes(projection: StateProjection) -> dict[str, tuple[DrawnShapeDto 
                     base_reference=elevation_reference(row.references["base"], placement["base"], context),
                     top_reference=elevation_reference(row.references.get("top"), placement["top"], context),
                 )
-            shapes[entity.entity_id] = (shape, None, elevation)
+            shapes[entity.entity_id] = (shape, None, elevation, extent)
         except (KeyError, TypeError, ValueError) as exc:
-            shapes[entity.entity_id] = (None, f"Drawing inputs are unavailable: {exc}", None)
+            shapes[entity.entity_id] = (None, f"Drawing inputs are unavailable: {exc}", None, extent)
     return shapes
 
 
-def to_dto(projection: StateProjection, catalog: Catalog | None = None) -> StateProjectionDto:
-    """Shape one projection for the wire; every value is already the kernel's."""
+def to_dto(projection: StateProjection, catalog: Catalog | None = None, *, authored: bool = False) -> StateProjectionDto:
+    """Shape one projection for the wire; every value is already the kernel's.
+
+    ``authored`` adds each element's authored params and references (#404 F4).
+    """
 
     record = projection.record
     authored_components = {entity.entity_id: entity for entity in record.entities_of("Component@1")}
     drawn_shapes = _drawn_shapes(projection)
+    fields = {entity.entity_id: entity.fields for entity in record.entities_of("Element@1")}
     return StateProjectionDto(
         project_id=projection.project_id,
         published=project_version_dto(projection.head),
@@ -453,6 +502,9 @@ def to_dto(projection: StateProjection, catalog: Catalog | None = None) -> State
                 drawn_shape=drawn_shapes[element.element_id][0],
                 drawn_shape_reason=drawn_shapes[element.element_id][1],
                 elevation=drawn_shapes[element.element_id][2],
+                vertical_extent=drawn_shapes[element.element_id][3],
+                params=dict(fields[element.element_id].get("params") or {}) if authored else None,
+                references=dict(fields[element.element_id].get("references") or {}) if authored else None,
             )
             for element in projection.elements
         ],

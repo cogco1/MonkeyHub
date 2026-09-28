@@ -964,7 +964,9 @@
         "producer_signatures",
         "validate_element_contract",
         "edit_drawn_element",
-        "drawn_element_placement"
+        "drawn_element_placement",
+        "element_vertical_extent",
+        "parameter_unit"
       ],
       "depends_on": [
         "monkeyarch.capabilities.opening_solver",

@@ -163,7 +163,7 @@ class ElementFieldProposalTests(ProposalTestCase):
         )
         # The old value is the record's, not the client's.
         self.assertEqual(
-            payload["change"], {"kind": "set_scalar", "old": 0.6, "new": 2.2, "unit": None}
+            payload["change"], {"kind": "set_scalar", "old": 0.6, "new": 2.2, "unit": "m"}
         )
         self.assertEqual(payload["utterance"], "set height to 2.2")
         self.assertEqual(payload["persistence"], PERSISTENCE)
@@ -201,28 +201,53 @@ class ElementFieldProposalTests(ProposalTestCase):
         self.assertEqual(operator.add_facts, ())
         self.assertEqual(operator.discharge_obligation_ids, ())
 
-    def test_a_unit_on_an_element_field_is_a_question(self) -> None:
-        """An element param is a bare number; a unit word cannot be dropped.
+    def test_a_length_unit_on_an_element_field_converts_to_its_declared_unit(self) -> None:
+        """A unit word is normalized, never dropped (#404 F17; AGENTS.md: adapters own units).
 
-        ``set height to 2200 mm`` against a field the record holds in metres
-        would propose 2200 into it. The seam converts nothing, so it asks
-        instead — the same refusal a parameter gets when the utterance's unit
-        is not the record's.
+        ``set height to 2200 mm`` against a field the prism producer reads in
+        metres proposes 2.2, exactly: 700 mm is 0.7, not 0.7000000000000001.
         """
 
-        payload = self.blocked(
-            "set height to 2200 mm", elementId="portico-base"
+        for said, expected in (("2200 mm", 2.2), ("1100 mm", 1.1), ("5 mm", 0.005), ("700 mm", 0.7),
+                               ("12.5 cm", 0.125), ("10 ft", 3.048), ("12 in", 0.3048)):
+            with self.subTest(said=said):
+                payload = self.accepted(f"set height to {said}", elementId="portico-base")
+                self.assertEqual((payload["change"]["new"], payload["change"]["unit"]), (expected, "m"))
+
+    def test_a_declared_unit_is_read_in_any_spelling_or_case(self) -> None:
+        for said in ("2.2 metres", "2.2 M", "2200 Millimeters"):
+            with self.subTest(said=said):
+                payload = self.accepted(f"set height to {said}", elementId="portico-base")
+                self.assertEqual((payload["change"]["new"], payload["change"]["unit"]), (2.2, "m"))
+
+    def test_a_unit_that_is_not_a_length_is_a_question_naming_the_declared_one(self) -> None:
+        payload = self.blocked("set height to 90 deg", elementId="portico-base")
+
+        self.assertIn("deg", payload["question"])
+        self.assertIn("in m", payload["question"])
+
+    def test_a_unit_on_a_field_that_declares_none_is_a_question(self) -> None:
+        payload = json.loads(json.dumps(RECORD_PAYLOAD))
+        cornice = next(item for item in payload["entities"] if item["entity_id"] == "portico-cornice")
+        cornice["fields"]["producer"] = "retained-legacy"
+        write_runner_record(self.repository, payload)
+        retain_runner_receipt(self.repository, self.repository.load_run(REFERENCE_RUN_ID),
+                              design_state_digest=runner_state_digest(self.repository, REFERENCE_RUN_ID, payload),
+                              record_payload=payload)
+        self.state_digest = self.client.get("/api/state").json()["stateDigest"]
+        payload = self.blocked("set height to 300 mm", elementId="portico-cornice")
+
+        self.assertIn("no unit", payload["question"])
+        self.assertIn("mm", payload["question"])
+
+    def test_the_declared_unit_on_an_element_field_proposes(self) -> None:
+        # #404 F17: the capability names the field's unit, so saying it is not a question.
+        payload = self.accepted(
+            "set height to 2.2 m", elementId="portico-base"
         )
 
-        self.assertEqual(
-            payload["detail"], "the element field is a unit-less number"
-        )
-        self.assertEqual(
-            payload["question"],
-            "height on portico-base is a bare number in the record and this "
-            "seam converts nothing; what is the value in the record's own "
-            "units?",
-        )
+        self.assertEqual(payload["change"]["new"], 2.2)
+        self.assertEqual(payload["change"]["unit"], "m")
 
     def test_a_bare_number_on_an_element_field_still_proposes(self) -> None:
         payload = self.accepted(
@@ -230,7 +255,7 @@ class ElementFieldProposalTests(ProposalTestCase):
         )
 
         self.assertEqual(payload["change"]["new"], 2.2)
-        self.assertIsNone(payload["change"]["unit"])
+        self.assertEqual(payload["change"]["unit"], "m")
 
     def test_a_percentage_change_is_computed_from_the_records_value(
         self,
@@ -302,11 +327,17 @@ class ParameterProposalTests(ProposalTestCase):
 
         self.assertEqual(payload["change"]["unit"], "m")
 
-    def test_a_unit_the_parameter_does_not_use_is_a_question(self) -> None:
-        payload = self.blocked("set module to 1500 mm")
+    def test_a_length_unit_converts_into_the_parameters_unit(self) -> None:
+        # #404 F17: the parameter path normalizes too; 1500 mm on a parameter in m is 1.5.
+        payload = self.accepted("set module to 1500 mm")
 
-        self.assertIn("mm", payload["question"])
+        self.assertEqual(payload["change"], {"kind": "set_scalar", "old": 1.2, "new": 1.5, "unit": "m"})
+
+    def test_a_unit_that_is_not_a_length_is_a_question_naming_the_parameters_unit(self) -> None:
+        payload = self.blocked("set module to 3 deg")
+
         self.assertIn("module", payload["question"])
+        self.assertIn("in m", payload["question"])
 
 
 class DerivedParameterTests(ProposalTestCase):
@@ -625,7 +656,7 @@ class ZeroValueTests(ProposalTestCase):
             "set height to 2.2", elementId="portico-base"
         )
 
-        self.assertEqual(payload["change"], {"kind": "set_scalar", "old": 0, "new": 2.2, "unit": None})
+        self.assertEqual(payload["change"], {"kind": "set_scalar", "old": 0, "new": 2.2, "unit": "m"})
 
 
 class ProposalStoreTests(ProposalTestCase):
@@ -685,6 +716,22 @@ class ProposalOnlyTests(ProposalTestCase):
         self.assertEqual(self._project_files(), before)
         # Not vacuously true: the fixture project really has files to disturb.
         self.assertGreater(len(before), 0)
+
+
+class ChainedProposalTargetTests(ProposalTestCase):
+    def test_a_continued_proposal_names_the_step_it_just_took(self):
+        # #404 F17: the chain answered with its first step's target, so a caller
+        # that continued it could not see what its own request had just changed.
+        first = self.accepted("set height to 0.8", elementId="portico-base")
+        self.assertEqual(first["target"]["elementId"], "portico-base")
+        second = self.accepted("set height to 0.4", elementId="portico-cornice",
+                               sourceProposalId=first["proposalId"])
+        self.assertEqual((second["target"]["elementId"], second["target"]["ref"], second["target"]["key"]),
+                         ("portico-cornice", "entity:portico-cornice", "height"))
+        # The chain itself still carries both changes on the first base.
+        changed = {row["entityId"] for row in second["change"]["changes"]}
+        self.assertTrue({"portico-base", "portico-cornice"} <= changed, changed)
+        self.assertEqual(second["baseStateDigest"], self.state_digest)
 
 
 class DirectSemanticProposalTests(ProposalTestCase):
