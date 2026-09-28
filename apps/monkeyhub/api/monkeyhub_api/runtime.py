@@ -50,6 +50,16 @@ _ACTIVE = {"queued", "planning", "validated", "executing", "committing"}
 # them only when the Hub has no way to recover it; otherwise it stays until it is.
 _ACKNOWLEDGEABLE = {"failed", "stale"}
 _IDLE_RETAINED_REFRESH_S = 30
+# How long the project observer waits between passes (#435). A pass while
+# anything is in motion - an operation or job, a worker between states, a
+# closing runtime, an observed work copy - follows it every second. Otherwise
+# nothing it compares changes without a wake: the supervisor, the chat store
+# and an attaching client end the wait at once, and a Hub mutation asks for a
+# full read. The idle wait only bounds what a missed wake could delay.
+_ACTIVE_HEARTBEAT_S = 1
+_IDLE_HEARTBEAT_S = 5
+# Worker states that stay put until the supervisor says otherwise.
+_SETTLED_WORKER_STATES = {"ready", "stopped", "crashed", "unavailable"}
 _WORKING_CLEANUP_INTERVAL_S = 15 * 60
 # A sample must remain unchanged for this interval before bytes are read.
 # File timestamps alone cannot measure that wait: producers can preserve them.
@@ -567,6 +577,32 @@ class _WorkCopyObservation:
     failure: HubError | None = None
 
 
+class _Wake(threading.Event):
+    """The project observer's one wait.
+
+    ``set`` asks the next pass for a full retained read, as a Hub mutation or
+    an open does. ``nudge`` only ends the wait, so the next pass compares its
+    small status values now without reading the project again.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._read = False
+
+    def set(self) -> None:
+        self._read = True
+        super().set()
+
+    def nudge(self) -> None:
+        super().set()
+
+    def take(self) -> bool:
+        """End this wake; whether a full read was asked since the last take."""
+        super().clear()
+        read, self._read = self._read, False
+        return read
+
+
 @dataclass
 class ProjectRuntime:
     runtime_id: str
@@ -580,7 +616,7 @@ class ProjectRuntime:
     error: HubError | None = None
     lock: threading.RLock = field(default_factory=threading.RLock)
     refresh_lock: threading.RLock = field(default_factory=threading.RLock)
-    wake: threading.Event = field(default_factory=threading.Event)
+    wake: _Wake = field(default_factory=_Wake)
     thread: threading.Thread | None = None
     last_workers: tuple = ()
     last_snapshot: dict | None = None
@@ -726,12 +762,34 @@ class ProjectRuntimeManager:
         self._lock = threading.RLock()
         self._projects: dict[str, ProjectRuntime] = {}
         self._closing = threading.Event()
-        self._clients = 0
+        self._client_count = 0
         self._chat_changed = set()
         # One attachment per project to its worker's event stream (#366).
         self._worker_events: dict[str, _WorkerEvents] = {}
         # Each project's latest Studio events, which open a new page's event panel (#366).
         self._studio_replay: dict[str, deque] = {}
+        # A supervisor that owns real workers says when one changed, so an idle
+        # observer reports a crash at once instead of on its next pass (#435).
+        supervisor = getattr(applications, "supervisor", None)
+        if supervisor is not None:
+            supervisor.add_listener(self._nudge)
+
+    @property
+    def _clients(self) -> int:
+        return self._client_count
+
+    @_clients.setter
+    def _clients(self, value: int) -> None:
+        # Every project's status carries the attached client count.
+        self._client_count = value
+        self._nudge()
+
+    def _nudge(self) -> None:
+        """End every observer's wait for a look at its status values, without a read."""
+        with self._lock:
+            runtimes = tuple(self._projects.values())
+        for runtime in runtimes:
+            runtime.wake.nudge()
 
     def emit(self, kind: str, runtime_id: str | None = None):
         self.events.publish(event={"kind": kind, "runtimeId": runtime_id})
@@ -788,6 +846,7 @@ class ProjectRuntimeManager:
         # Called under ChatStore's lock: no lock inversion, IO or project open.
         with self._lock:
             self._chat_changed.add(project_key(session.projectDir))
+        self._nudge()
 
     def open(self, project_id: str, project_dir: str) -> ProjectRuntime:
         # Taken before the check, so a change during it is seen by the next get().
@@ -1258,12 +1317,11 @@ class ProjectRuntimeManager:
     def _watch_project(self, runtime: ProjectRuntime):
         next_retained_read = next_work_copy_check = 0.0
         last_snapshot_inputs = last_retained = None
-        # The project's read token when the last refresh the idle timer alone
-        # asked for began; None after any other refresh, which records none.
-        idle_token: ReadToken | None = None
+        # The project's read token when the last successful refresh began;
+        # None when the watch had published none yet.
+        last_token: ReadToken | None = None
         while not self._closing.is_set():
-            force_read = runtime.wake.is_set()
-            runtime.wake.clear()
+            force_read = runtime.wake.take()
             workers = self.applications.worker_snapshots(project_dir=runtime.project_dir)
             self._follow_worker(runtime, workers)
             worker_states = tuple((row.instance_id, row.state, row.healthy) for row in workers)
@@ -1282,7 +1340,7 @@ class ProjectRuntimeManager:
                     # binding's layout watch keeps that token current on its
                     # own thread, so asking walks nothing (#363).
                     token = runtime.binding.read_token()
-                    if idle_token is not None and idle_token.stable and token == idle_token:
+                    if last_token is not None and last_token.stable and token == last_token:
                         due = False
                         next_retained_read = time.monotonic() + _IDLE_RETAINED_REFRESH_S
                 if due:
@@ -1290,11 +1348,18 @@ class ProjectRuntimeManager:
                     # unchanged retained history on every idle heartbeat. Hub
                     # mutations wake this observer; the fallback sees changes
                     # made through a separate Studio/project client.
-                    idle_token = None
+                    last_token = None
+                    if token is None:
+                        # Every read records the token it began under, so the
+                        # first idle fallback after an open or a wake is skipped
+                        # too when nothing moved since. Not waited for: before
+                        # the watch's first walk there is none, and the next
+                        # idle fallback reads as it always did (#435).
+                        token = runtime.binding.read_token(wait=False)
                     self.refresh(runtime, cold=drained)
                     next_retained_read = time.monotonic() + _IDLE_RETAINED_REFRESH_S
                     # Taken before the read began, and kept only once it succeeded.
-                    idle_token = token
+                    last_token = token
             except (HubFailure, StudioError, OSError, HTTPException, ValueError) as exc:
                 next_retained_read = time.monotonic() + _IDLE_RETAINED_REFRESH_S
                 with runtime.lock:
@@ -1358,7 +1423,9 @@ class ProjectRuntimeManager:
                         self.emit("projection/updated" if snapshot["projection"] == "ready" else "projection/invalidated", runtime.runtime_id)
             if drained:
                 break
-            runtime.wake.wait(1)
+            settled = (not active and not runtime.work_copies and runtime.state == "open"
+                       and all(row.state in _SETTLED_WORKER_STATES for row in workers))
+            runtime.wake.wait(_IDLE_HEARTBEAT_S if settled else _ACTIVE_HEARTBEAT_S)
 
     def service(self, runtime: ProjectRuntime):
         self.get(runtime.runtime_id)
