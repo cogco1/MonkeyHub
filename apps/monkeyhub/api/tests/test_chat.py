@@ -1814,7 +1814,10 @@ class ChatTests(unittest.TestCase):
                        "POST /api/capabilities/{capabilityId}/run", "awaitSeconds: 60",
                        "keep is a list", "never send the request again",
                        "GET /api/state?run=<candidateId>", "original baseStateDigest",
-                       "Multiple observation and revision cycles"):
+                       "Multiple observation and revision cycles",
+                       # #404 F4: authored params/references are opt-in, and an
+                       # edit that sends them replaces them whole.
+                       "GET /api/state?authored=true"):
             self.assertIn(stated, description, stated)
         for restriction in ("Never generate an intermediate", "READ ONCE", "do not read the index",
                             "yield_time_ms", "functions.wait"):

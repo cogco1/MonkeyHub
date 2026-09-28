@@ -392,9 +392,11 @@ A null base reference means absolute placement; a null top reference means heigh
 the top. State `levels[]` projects each retained Level's `levelId`, `name` and `elevation`.
 References are spatial datums and do not classify a mass as a storey, wall or slab.
 
-Every element row also carries `params` and `references` exactly as authored: `"@key"`
-bindings kept, positions relative to the base reference. These are the objects a
-`semanticEdit` entity replaces whole when it supplies them; `numericFields` and `drawnShape`
+`GET /api/state?authored=true` also answers each element row's `params` and `references`
+exactly as authored: `"@key"` bindings kept, positions relative to the base reference. They
+are opt-in, so the default response does not grow; without the flag the row has neither key.
+These are the objects a `semanticEdit` entity replaces whole when it supplies them, so an
+edit to an existing element starts from them; `numericFields` and `drawnShape`
 are resolved values (bindings evaluated, datum and elevation applied) and are never a
 template for them. `verticalExtent: {base, top}` is the element's lowest and highest world
 +Y in metres, from its producer's own datum and height rules and without producing geometry,
