@@ -5,6 +5,7 @@ its limits and its print log. Geometry lowering is pinned in test_construction_l
 """
 from __future__ import annotations
 
+import time
 import unittest
 
 from archflow.project.refs import ProjectVersionRef
@@ -254,6 +255,137 @@ class LimitTests(ConstructionTestCase):
         self.assertEqual(self.log("x = " + "+".join(["1"] * 80) + "\nprint(x)"), ["80"])
 
 
+RING = "pts = [(cos(2 * pi * i / 256) * (1 + 0.001 * (i % 2)), sin(2 * pi * i / 256)) for i in range(256)]\n"
+COMB = "pts = [(i, (i % 2) * 0.5) for i in range(254)] + [(253, -5)]\n"
+HOSTILE = {
+    # one step that would walk a huge range
+    "in a huge range": "print(0.5 in range(10 ** 18))",
+    "text in a range": "print('a' in range(10000000))",
+    "max of a huge range": "print(max(range(10 ** 18)))",
+    "min of a huge range": "print(min(range(10 ** 18)))",
+    "sum of a long range": "print(sum(range(10000000)))",
+    "a huge list of a range": "x = list(range(10 ** 18))",
+    # numbers whose one operation is huge
+    "round to a huge negative digit": "x = round(1, -10000000)",
+    "round a float likewise": "print(round(1.0, -1000000000))",
+    "a tower of powers": "x = 10 ** 10 ** 10",
+    # lists that share one list many times
+    "a list of a long list, many times": "a = [0] * 10000\nb = [a] * 10000",
+    "a list of a list, a thousand times": "a = [0] * 1000\nb = [a] * 1000",
+    "== over shared lists": "a = [0] * 10000\nc = [0] * 10000\nprint([a] * 10000 == [c] * 10000)",
+    "== over three levels": "a = [0] * 10000\nc = [0] * 10000\nA = [[a] * 1000] * 1000\n"
+                            "C = [[c] * 1000] * 1000\nprint(A == C)",
+    "print a shared list": "print([[0] * 10000] * 1000)",
+    "a message about a shared list": "level([[0] * 10000] * 1000)",
+    "a message about a shared list, again": "circle(0, 0, 1, [[0] * 10000] * 1000)",
+    "doubling a list": "s = [0]\nfor i in range(40):\n    s = s + s",
+    "doubling text": "s = 'ab'\nfor i in range(40):\n    s = s + s",
+    "a list nested a thousand deep": "a = 0\nfor i in range(999):\n    a = [a]\nprint(a)",
+    "many lists in a loop": "for i in range(1000):\n    x = [0] * 5000",
+    "a nested comprehension": "x = [0 for a in range(1000) for b in range(1000) for c in range(1000)]",
+    # verbs whose one call walks a lot
+    "cutting with a long list, five times": "\n".join([
+        "m = extrude(rect(0, 0, 400, 1), 3)",
+        "cs = [extrude(rect(i + 0.1, 0.2, 0.5, 0.5), 1) for i in range(298)]",
+        "cut(m, cs)",
+        "big = cs * 33",
+        "for k in range(5):",
+        "    cut(m, big)",
+    ]),
+    "a loft through ten thousand sections": "\n".join([
+        "s = section(circle(0, 0, 1, 128), 0)",
+        "t = section(circle(0, 0, 1, 128), 1)",
+        "L = [s, t] * 5000",
+        "for i in range(3):",
+        "    loft(L)",
+    ]),
+    "the same large polygon six thousand times": COMB.replace("[(253, -5)]", "[(253, -5), (0, -5)]")
+                                                 + "for i in range(6000):\n    polygon(pts)",
+    "a new large polygon every time": COMB + "for i in range(1000):\n    polygon(pts + [(0, -5 - i * 0.001)])",
+    "a large offset every time": RING + "p = polygon(pts)\nfor i in range(100):\n    q = offset(p, 0.0001 * (i + 1))",
+    "a large polygon a hundred times": RING + "for i in range(100):\n    p = polygon(pts)",
+    "recursion": "def f(n):\n    return f(n + 1)\nf(0)",
+    # one call on a large shape
+    "moving a large loft many times": "s = [section(circle(0, 0, 1, 128), i * 0.1) for i in range(64)]\n"
+                                      "l = loft(s)\nfor i in range(1000):\n    move(l, dx=0.001)",
+    "measuring a large loft many times": "s = [section(circle(0, 0, 1, 128), i * 0.1) for i in range(64)]\n"
+                                         "l = loft(s)\nfor i in range(1000):\n    b = bounds(l)",
+    "copying a large loft": "s = [section(circle(0, 0, 1, 128), i * 0.1) for i in range(64)]\n"
+                            "l = loft(s)\nrow = array(l, 300, dx=3)",
+    "a tall stack": "b = extrude(rect(0, 0, 1, 1), 1)\nfor i in range(298):\n"
+                    "    b = extrude(rect(0, 0, 1, 1), 1, at=top(b))\nprint(bounds(b))",
+}
+
+
+class BoundedWorkTests(ConstructionTestCase):
+    def test_no_script_can_make_one_step_do_unbounded_work(self) -> None:
+        for title, script in HOSTILE.items():
+            with self.subTest(title):
+                started = time.perf_counter()
+                try:
+                    result = run(script)
+                    outcome = f"completed with {len(result.log)} printed lines"
+                except ConstructionError as exc:
+                    outcome = exc.message
+                    self.assertEqual(layer_rule_violations(exc.message), ())
+                    self.assertLessEqual(len(exc.message), 250, exc.message)
+                elapsed = time.perf_counter() - started
+                self.assertLess(elapsed, 2.0, f"{title}: {outcome} after {elapsed:.2f} s")
+
+    def test_the_bounds_are_refused_by_name_at_their_line(self) -> None:
+        cases = [
+            ("x = 1\ny = range(10001)", 2, "10 000 numbers"),
+            ("x = 1\ny = round(2.5, 13)", 2, "-12 to 12"),
+            ("x = [0] * 10000\ny = [x, 1]", 2, "10 000 elements"),
+            ("for i in range(100):\n    x = [0] * 5000", 2, "200 000"),
+            ("a = [[1], [2]]\nprint(a == a)", 2, "flat lists"),
+            ("a = [(0, 0), (1, 0)]\nprint((0, 0) in a)", 2, "flat lists"),
+            ("s = section(rect(0, 0, 1, 1), 0)\nl = loft([s] * 65)", 2, "64 sections"),
+            (COMB + "for i in range(40):\n    polygon(pts + [(0, -5 - i * 0.001)])", 3, "1 000 000 pairs"),
+        ]
+        for script, line, words in cases:
+            with self.subTest(script=script[:60]):
+                error = self.refused(script)
+                self.assertEqual(error.line, line, error.message)
+                self.assertIn(words, error.message)
+
+    def test_refusals_never_repeat_a_script_value_at_length(self) -> None:
+        for script in ("level([[0] * 100] * 90)", "circle(0, 0, 1, [[0] * 100] * 90)",
+                       "get('" + "a" * 5000 + "')", "b" * 5000 + " = extrude(rect(0, 0, 1, 1), 1)",
+                       "name(extrude(rect(0, 0, 1, 1), 1), '" + "c" * 5000 + "')", "print(" + "d" * 5000 + ")"):
+            with self.subTest(script=script[:40]):
+                self.assertLessEqual(len(self.refused(script).message), 250)
+        self.assertLessEqual(max(len(line) for line in self.log("print([[0] * 100] * 90)")), 2003)
+
+    def test_a_wall_clock_deadline_is_checked_with_every_step(self) -> None:
+        from monkeyarch.construction import script as interpreter
+
+        original = interpreter.LIMITS["seconds"]
+        interpreter.LIMITS["seconds"] = 0
+        try:
+            error = self.refused("x = 1\ny = 2")
+        finally:
+            interpreter.LIMITS["seconds"] = original
+        self.assertIn("longer than 5 s", error.message)
+
+
+class CallChainTests(ConstructionTestCase):
+    def test_a_refusal_inside_a_function_names_the_calls(self) -> None:
+        error = self.refused("def block(width):\n    return rect(0, 0, width, 1)\nx = 1\np = block(0)")
+        self.assertEqual(error.line, 2)
+        self.assertTrue(error.message.endswith("(called from line 4)"), error.message)
+        error = self.refused("\n".join(["def inner(w):", "    return rect(0, 0, w, 1)",
+                                        "def outer(w):", "    return inner(w)", "p = outer(0)"]))
+        self.assertEqual(error.line, 2)
+        self.assertTrue(error.message.endswith("(called from line 4, from line 5)"), error.message)
+
+    def test_a_recursion_too_deep_for_the_interpreter_names_a_line(self) -> None:
+        script = "def f(n):\n    return 0 if n == 0 else " + "1 + (" * 90 + "f(n - 1)" + ")" * 90 + "\nx = f(15)"
+        error = self.refused(script)
+        self.assertIsNotNone(error.line)
+        self.assertIn("too deeply", error.message)
+
+
 class PrintLogTests(ConstructionTestCase):
     def test_print_appends_one_line_per_call_in_order(self) -> None:
         result = run("for i in range(3):\n    print('step', i)\nprint()")
@@ -273,8 +405,16 @@ class VocabularyContractTests(ConstructionTestCase):
         for verb in contract["verbs"]:
             self.assertEqual(set(verb), {"name", "signature", "returns", "description"})
             self.assertTrue(verb["signature"].startswith(verb["name"] + "("), verb)
-        self.assertEqual(contract["limits"], {"characters": 20000, "steps": 20000, "loopIterations": 1000,
-                                              "callDepth": 16, "geometryResults": 300})
+        self.assertEqual(contract["limits"], {
+            "characters": 20000, "steps": 20000, "seconds": 5, "loopIterations": 1000, "callDepth": 16,
+            "nesting": 100, "geometryResults": 300, "rangeItems": 10000, "listElements": 10000,
+            "createdElements": 200000, "textCharacters": 10000, "printLines": 1000, "roundDigits": 12,
+            "profilePoints": 256, "profileEdgePairs": 1000000, "pathPoints": 512, "loftSections": 64,
+            "cuttersPerShape": 300, "idLength": 90, "coordinateRange": 100000, "minimumLength": 0.000001})
+        side = next(item for item in contract["verbs"] if item["name"] == "side")
+        self.assertIn("opposite", side["description"])
+        self.assertIn("name what you will edit later", contract["conventions"]["identity"])
+        self.assertIn("keeps what it cuts", contract["conventions"]["identity"])
 
     def test_the_layer_rule_is_the_controllers_token_list(self) -> None:
         self.assertEqual(LAYER_RULE_TOKENS, ("prism", "planar-surface", "column-array", "producer", "semantickind",

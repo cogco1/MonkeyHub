@@ -7855,15 +7855,16 @@
       "owner_path": "monkeyarch/construction/__init__.py",
       "purpose": "The agent-facing way to author geometry (#419, L1): one bounded construction script, interpreted and never executed, over a small generic vocabulary; what it leaves is lowered to Component@1/Element@1 rows, where producers are chosen, and a record reads back in the same construction terms.",
       "owns": [
-        "the construction language: an ast allow-list interpreter with character, step, loop, call-depth and geometry-result limits that refuses at a line with ConstructionError (CONSTRUCTION_INVALID)",
+        "the construction language: an ast allow-list interpreter whose work is bounded - characters, steps (walking a sequence or a shape's points costs steps), a wall-clock deadline, loop iterations, call depth, nesting, elements per list and per script, flat-only comparisons, a profile edge-pair budget and geometry results - refusing at a line with ConstructionError (CONSTRUCTION_INVALID)",
         "the construction vocabulary ConstructionVocabulary@1: verbs, signatures, conventions, limits and one example, the single table the interpreter binds its verbs from",
         "the layer rule over L1 text (LAYER_RULE_TOKENS, case-insensitive substrings): no realisation name, classification field or backend word",
         "construction values: plan and plane profiles, drawing planes, level and top anchors, parameter bindings, loft sections, and transforms baked into a shape's definition",
         "construction identity: name(), module-level variables, <host>-cut-<n> and shape-<n>; <id>-body elements; reuse only of construction-made components",
         "lowering construction results to Component@1/Element@1 rows, the one place a producer is chosen for script-authored geometry",
         "script edits of existing geometry in place, rewriting only its element's params and references",
-        "cuts authored as the host element's references.voids",
-        "the construction geometry view: per component form, bounds, cuts, cutBy and hidden, without producers"
+        "cuts authored as the host element's references.voids, kept when a new shape redefines existing geometry",
+        "the construction geometry view: per component form, bounds, cuts, cutBy and hidden, without producers",
+        "pre-checking the cut and support relations a script leaves, including against record geometry it never reached, before any row is written"
       ],
       "does_not_own": [
         "producing geometry from rows (capabilities.element_producers)",
@@ -7914,7 +7915,10 @@
         "Running a script again with the same names updates the same geometry and emits no new Component@1.",
         "An id that already names anything but construction-made geometry is refused by name, never overwritten.",
         "A get() edit rewrites only its element's params and references; an existing component is never re-emitted.",
-        "geometry_view never raises; bounds it cannot predict are None."
+        "geometry_view never raises; bounds it cannot predict are None.",
+        "No single step does unbounded work; no refusal repeats a script value at length.",
+        "A new shape that redefines existing geometry keeps what that geometry cuts until the script uncuts it.",
+        "An automatic id never takes an id the project already has."
       ],
       "status": "canonical",
       "tests": [

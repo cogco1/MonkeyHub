@@ -16,8 +16,29 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-LIMITS: dict[str, int] = {"characters": 20_000, "steps": 20_000, "loopIterations": 1_000, "callDepth": 16,
-                          "geometryResults": 300}
+LIMITS: dict[str, Any] = {
+    "characters": 20_000,  # script length
+    "steps": 20_000,  # nodes evaluated; walking a sequence costs one more per 100 elements
+    "seconds": 5,  # wall clock
+    "loopIterations": 1_000,  # per loop and per comprehension generator
+    "callDepth": 16,
+    "nesting": 100,  # levels of the script's own nesting, and of nested lists and tuples
+    "geometryResults": 300,  # shapes a script makes, copies included
+    "rangeItems": 10_000,  # numbers one range() gives
+    "listElements": 10_000,  # elements of one list or tuple, nested ones included
+    "createdElements": 200_000,  # elements of all lists and tuples a script creates
+    "textCharacters": 10_000,  # characters of one text value
+    "printLines": 1_000,
+    "roundDigits": 12,  # round(x, n) takes -12 <= n <= 12
+    "profilePoints": 256,
+    "profileEdgePairs": 1_000_000,  # edge pairs checked for crossings, per script
+    "pathPoints": 512,
+    "loftSections": 64,
+    "cuttersPerShape": 300,
+    "idLength": 90,
+    "coordinateRange": 100_000,  # metres from the origin, every coordinate
+    "minimumLength": 0.000001,  # metres, every length, width, depth, radius and height
+}
 
 
 class _Required:
@@ -84,7 +105,8 @@ VERBS: tuple[Verb, ...] = (
     Verb("front", _p(z=0), "plane",
          "The vertical plane at depth z: draws in (x, y) and extrudes along +z."),
     Verb("side", _p(x=0), "plane",
-         "The vertical plane at x: draws in (z, y) and extrudes along +x."),
+         "The vertical plane at x: draws in (z, y) and extrudes along +x - the opposite of "
+         "plane((x, 0, 0), (0, 0, 1), (0, 1, 0)), whose normal x_axis cross y_axis points along -x."),
     Verb("extrude", _p("profile", "height", at=0, plane=None), "solid",
          "Push-pull a profile into a solid. In plan it rises from at by height; a negative height goes down. "
          "On a plane it goes along the plane's normal (a negative height goes the other way); the plane's "
@@ -126,7 +148,7 @@ VERBS: tuple[Verb, ...] = (
          "cutter keeps its id and stays in the model hidden. A cutter cannot have cutters of its own, a "
          "host cannot be a cutter, and nothing may stand on a cutter's top."),
     Verb("uncut", (Param("host"), Param("cutters", rest=True)), "host",
-         "Stop removing the cutters from the host; they are delivered again."),
+         "Stop removing the cutters from the host - all of them when none is given; they are delivered again."),
     Verb("level", _p("id"), "anchor",
          "A project level, for at; add a number or param(key) to offset it."),
     Verb("top", _p("obj"), "anchor",
@@ -182,13 +204,19 @@ def vocabulary() -> dict[str, Any]:
                          "else the module-level variable it was last assigned to, with _ becoming - (a variable "
                          "that holds the shape itself wins over a list that contains it; several shapes under one "
                          "variable are numbered <variable>-1, <variable>-2, ... in creation order); else "
-                         "<host>-cut-<n> for a cutter made inside cut(); else shape-<n>. Running a script again "
-                         "with the same names updates the same shapes. A new shape given the id of existing "
-                         "geometry redefines it, cuts included; get(id) edits existing geometry in place. An id "
-                         "that already names something else in the project is refused."),
+                         "<host>-cut-<n> for a cutter made inside cut(); else shape-<n>. An automatic id never "
+                         "takes one the project already has, so an unnamed shape never updates existing "
+                         "geometry: name what you will edit later. Running a script again with the same names "
+                         "updates the same shapes. A new shape given the id of existing geometry redefines it and "
+                         "keeps what it cuts (uncut(host) with no cutters removes them all); get(id) edits "
+                         "existing geometry in place. An id that already names something else in the project is "
+                         "refused."),
+            "reach": ("Every coordinate stays within 100 000 m of the origin and every length, width, depth, "
+                      "radius and height is at least 0.000001 m. A project without a level has nothing to "
+                      "measure heights from: add a level first."),
             "handles": "Every verb returns a handle or a value; handles are opaque and print as <solid id>.",
             "errors": ("A refused script saves nothing: the answer names the line, the column, the source line "
-                       "and one sentence."),
+                       "and one sentence; inside a function it adds the lines it was called from."),
         },
         "language": {
             "summary": "A small Python subset, interpreted and never executed.",
@@ -201,6 +229,7 @@ def vocabulary() -> dict[str, Any]:
                 "break, continue and pass",
                 "list comprehensions",
                 "arithmetic and comparisons; text joins with +",
+                "==, != and in compare numbers, text and flat lists (lists of lists item by item)",
             ],
             "notAllowed": [
                 "import", "attribute access (a.b)", "names starting with __", "while", "with", "try", "lambda",

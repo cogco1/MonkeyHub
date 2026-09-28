@@ -9,9 +9,11 @@ in place; nothing else of the row is touched. Bounds of a drawn shape are
 analytic from its definition; bounds of existing geometry come from its
 producer, read through ``World``, the record's facts.
 
-Nothing here names an id: ids are decided once the script has run (lowering).
-A refusal is a ``ShapeError`` with one plain sentence; the interpreter adds the
-line it happened at.
+Every coordinate stays finite and within ``MAX_COORDINATE`` metres of the
+origin, and every length is at least ``MIN_LENGTH``. Nothing here names an id:
+ids are decided once the script has run (lowering). A refusal is a
+``ShapeError`` with one plain sentence of bounded length; the interpreter adds
+the line it happened at.
 """
 from __future__ import annotations
 
@@ -46,21 +48,26 @@ from monkeyarch.capabilities.element_producers import (
     produce_rows,
 )
 from monkeyarch.capabilities.reference_resolver import ReferenceContext
+from monkeyarch.construction.vocabulary import LIMITS
 
 EDITABLE_PRODUCERS = frozenset({"prism", "planar-surface", "curve", "loft", "wall"})
-MAX_PROFILE_POINTS = 256
-MAX_PATH_POINTS = 512
+MAX_PROFILE_POINTS = LIMITS["profilePoints"]
+MAX_PATH_POINTS = LIMITS["pathPoints"]
+MAX_COORDINATE = float(LIMITS["coordinateRange"])
+MIN_LENGTH = float(LIMITS["minimumLength"])
+NO_LEVEL = "this project has no level to measure heights from; add a level first"
 _EPS = 1e-12
 _PRODUCTION_ERRORS = (ElementProducerError, StateRecordError, ValueError, KeyError, TypeError, IndexError,
                       ArithmeticError)
 Box = tuple[tuple[float, float, float], tuple[float, float, float]]
+Spend = Callable[[int], None]
 
 
 class ShapeError(ValueError):
     """A refusal about a value or a shape; the interpreter adds the line it happened at."""
 
 
-# ---------------------------------------------------------------- numbers and points
+# ---------------------------------------------------------------- numbers, points and bounded text
 def is_number(value: object) -> bool:
     return isinstance(value, (int, float)) and not isinstance(value, bool)
 
@@ -76,6 +83,24 @@ def number(value: object, what: str) -> float:
     return result
 
 
+def coordinate(value: object, what: str) -> float:
+    """A position or displacement in metres, within ``MAX_COORDINATE`` of the origin."""
+
+    result = number(value, what)
+    if abs(result) > MAX_COORDINATE:
+        raise ShapeError(f"{what} is {result:.6g} m; coordinates stay within 100 000 m of the origin")
+    return result
+
+
+def length(value: object, what: str) -> float:
+    """A signed length: at least ``MIN_LENGTH`` and at most ``MAX_COORDINATE`` in size."""
+
+    result = coordinate(value, what)
+    if abs(result) < MIN_LENGTH:
+        raise ShapeError(f"{what} is {result:.3g} m; a length is at least 0.000001 m")
+    return result
+
+
 def clean(value: float) -> float:
     """A coordinate as the record keeps it: rounded to a nanometre, never -0.0."""
 
@@ -83,20 +108,43 @@ def clean(value: float) -> float:
     return 0.0 if result == 0 else result
 
 
+def short(text: str, limit: int = 60) -> str:
+    """Text from a script, cut to a length a message can carry."""
+
+    return text if len(text) <= limit else text[:limit - 3] + "..."
+
+
+def shown(value: object) -> str:
+    """A script value inside a message: short text quoted, a number as written, anything else by its kind."""
+
+    if isinstance(value, str):
+        return repr(short(value))
+    if is_number(value):
+        return short(repr(value), 30)
+    return describe(value)
+
+
 def point2(value: object, what: str) -> tuple[float, float]:
     if not isinstance(value, (list, tuple)) or len(value) != 2:
         raise ShapeError(f"{what} takes points (x, z), not {describe(value)}")
-    return number(value[0], f"{what} x"), number(value[1], f"{what} z")
+    return coordinate(value[0], f"{what} x"), coordinate(value[1], f"{what} z")
 
 
 def point3(value: object, what: str) -> tuple[float, float, float]:
     if not isinstance(value, (list, tuple)) or len(value) != 3:
         raise ShapeError(f"{what} takes points (x, y, z), not {describe(value)}")
-    return number(value[0], f"{what} x"), number(value[1], f"{what} y"), number(value[2], f"{what} z")
+    return (coordinate(value[0], f"{what} x"), coordinate(value[1], f"{what} y"),
+            coordinate(value[2], f"{what} z"))
+
+
+def vector3(value: object, what: str) -> tuple[float, float, float]:
+    if not isinstance(value, (list, tuple)) or len(value) != 3:
+        raise ShapeError(f"{what} takes a direction (x, y, z), not {describe(value)}")
+    return number(value[0], what), number(value[1], what), number(value[2], what)
 
 
 def describe(value: object) -> str:
-    """What a value is, in the words of the language."""
+    """What a value is, in the words of the language, in a few words."""
 
     if value is True or value is False or value is None:
         return str(value)
@@ -115,6 +163,47 @@ def describe(value: object) -> str:
     return "a function"
 
 
+class _Full(Exception):
+    pass
+
+
+def render(values: Iterable[object], limit: int) -> str:
+    """What ``print`` shows: values as Python writes them, stopped after ``limit`` characters."""
+
+    parts: list[str] = []
+    used = [0]
+
+    def put(text: str) -> None:
+        parts.append(text)
+        used[0] += len(text)
+        if used[0] > limit:
+            raise _Full
+
+    def walk(value: object, top: bool) -> None:
+        if isinstance(value, str):
+            put(value[:limit + 1] if top else repr(value[:limit + 1]))
+        elif isinstance(value, (list, tuple)):
+            put("[" if isinstance(value, list) else "(")
+            for index, item in enumerate(value):
+                if index:
+                    put(", ")
+                walk(item, False)
+            if isinstance(value, tuple) and len(value) == 1:
+                put(",")
+            put("]" if isinstance(value, list) else ")")
+        else:
+            put(repr(value))
+
+    try:
+        for index, value in enumerate(values):
+            if index:
+                put(" ")
+            walk(value, True)
+    except _Full:
+        return "".join(parts)[:limit] + "..."
+    return "".join(parts)
+
+
 def _box(points: Iterable[tuple[float, float, float]]) -> Box:
     points = list(points)
     low = tuple(clean(min(p[i] for p in points)) for i in range(3))
@@ -127,6 +216,10 @@ def union(boxes: Iterable[Box]) -> Box | None:
     if not boxes:
         return None
     return _box([corner for box in boxes for corner in box])
+
+
+def within_reach(box: Box) -> bool:
+    return all(abs(c) <= MAX_COORDINATE for corner in box for c in corner)
 
 
 # ---------------------------------------------------------------- profiles
@@ -165,58 +258,70 @@ def _touch(p1, p2, p3, p4) -> bool:
                for d, a, b, c in ((d1, p3, p4, p1), (d2, p3, p4, p2), (d3, p1, p2, p3), (d4, p1, p2, p4)))
 
 
+def edge_pairs(count: int) -> int:
+    """How many edge pairs ``crosses_itself`` examines for a polygon of ``count`` points."""
+
+    return max(0, count * (count - 3) // 2)
+
+
 def crosses_itself(points) -> bool:
     """True when two edges of the closed polygon meet anywhere but at their shared corner."""
 
     count = len(points)
     edges = [(points[i], points[(i + 1) % count]) for i in range(count)]
+    boxes = [(min(a[0], b[0]) - _EPS, max(a[0], b[0]) + _EPS, min(a[1], b[1]) - _EPS, max(a[1], b[1]) + _EPS)
+             for a, b in edges]
     for i, (a, b) in enumerate(edges):
         c = edges[(i + 1) % count][1]
         if abs(_orientation(a, b, c)) <= _EPS and (b[0] - a[0]) * (c[0] - b[0]) + (b[1] - a[1]) * (c[1] - b[1]) < 0:
             return True  # the outline turns straight back on itself
+        low_x, high_x, low_z, high_z = boxes[i]
         for j in range(i + 2, count):
             if i == 0 and j == count - 1:
+                continue
+            other = boxes[j]
+            if other[0] > high_x or other[1] < low_x or other[2] > high_z or other[3] < low_z:
                 continue
             if _touch(a, b, *edges[j]):
                 return True
     return False
 
 
-def polygon(points: object, what: str = "polygon()") -> Profile:
+def profile_points(points: object, what: str) -> list[tuple[float, float]]:
+    """The checked (x, z) points of a polygon, before its shape is checked."""
+
     if not isinstance(points, (list, tuple)):
         raise ShapeError(f"{what} takes a list of points (x, z), not {describe(points)}")
-    checked = [point2(point, what) for point in points]
-    if len(checked) > MAX_PROFILE_POINTS:
+    if len(points) > MAX_PROFILE_POINTS:
         raise ShapeError(f"{what} takes at most {MAX_PROFILE_POINTS} points")
+    return [point2(point, what) for point in points]
+
+
+def closed_profile(checked: list[tuple[float, float]], what: str, spend: Spend) -> Profile:
+    """A profile from checked points: at least three, no repeat, edges of some length, an area, no crossing."""
+
     if len(checked) >= 2 and checked[0] == checked[-1]:
         raise ShapeError("a closed profile does not repeat its first point")
     if len(checked) < 3:
         raise ShapeError(f"{what} needs at least three points")
-    for a, b in zip(checked, checked[1:]):
+    for a, b in zip(checked, checked[1:] + checked[:1]):
         if a == b:
             raise ShapeError(f"{what} repeats the point ({a[0]!r}, {a[1]!r})")
+        if math.dist(a, b) < MIN_LENGTH:
+            raise ShapeError(f"{what} has an edge shorter than 0.000001 m")
     if abs(signed_area(checked)) <= _EPS:
         raise ShapeError(f"{what} makes a profile with no area")
+    spend(edge_pairs(len(checked)))
     if crosses_itself(checked):
         raise ShapeError(f"{what} makes a profile that crosses itself")
     return Profile(tuple(checked))
 
 
-def as_profile(value: object, what: str) -> Profile:
-    """A profile, or a list of points read as ``polygon(points)``."""
-
-    if isinstance(value, Profile):
-        return value
-    if isinstance(value, (list, tuple)):
-        return polygon(value, what)
-    raise ShapeError(f"{what} needs a profile from rect, polygon, circle or offset, not {describe(value)}")
-
-
 def rect(x: object, z: object, width: object, depth: object) -> Profile:
-    x0, z0 = number(x, "rect() x"), number(z, "rect() z")
-    w, d = number(width, "rect() width"), number(depth, "rect() depth")
-    if w == 0 or d == 0:
-        raise ShapeError("rect() needs a width and a depth other than zero")
+    x0, z0 = coordinate(x, "rect() x"), coordinate(z, "rect() z")
+    w, d = length(width, "rect() width"), length(depth, "rect() depth")
+    for corner in (x0 + w, z0 + d):
+        coordinate(corner, "rect() corner")
     return Profile(((x0, z0), (x0 + w, z0), (x0 + w, z0 + d), (x0, z0 + d)))
 
 
@@ -224,11 +329,14 @@ _QUARTERS = ((1.0, 0.0), (0.0, 1.0), (-1.0, 0.0), (0.0, -1.0))
 
 
 def circle(x: object, z: object, radius: object, segments: object) -> Profile:
-    cx, cz, r = number(x, "circle() x"), number(z, "circle() z"), number(radius, "circle() radius")
+    cx, cz = coordinate(x, "circle() x"), coordinate(z, "circle() z")
+    r = length(radius, "circle() radius")
     if r <= 0:
         raise ShapeError("circle() needs a positive radius")
     if isinstance(segments, bool) or not isinstance(segments, int) or not 8 <= segments <= 128:
-        raise ShapeError(f"circle() segments must be a whole number from 8 to 128, not {segments!r}")
+        raise ShapeError(f"circle() segments must be a whole number from 8 to 128, not {shown(segments)}")
+    for extreme in (cx - r, cx + r, cz - r, cz + r):
+        coordinate(extreme, "circle() extent")
     points = []
     for index in range(segments):
         if (4 * index) % segments == 0:
@@ -240,18 +348,19 @@ def circle(x: object, z: object, radius: object, segments: object) -> Profile:
     return Profile(tuple(points))
 
 
-def offset(profile: object, distance: object) -> Profile:
-    shape = as_profile(profile, "offset()")
-    d = number(distance, "offset() distance")
-    what = f"offset({distance!r})"
+def offset(shape: Profile, distance: object, spend: Spend) -> Profile:
+    """The mitred offset; refused when it collapses: an edge turns round, the area flips or does not shrink inward."""
+
+    d = coordinate(distance, "offset() distance")
+    what = f"offset({shown(distance)})"
     points = shape.points
     count, area = len(points), signed_area(shape.points)
     sense = 1.0 if area > 0 else -1.0
     normals = []
     for i in range(count):
         (x1, z1), (x2, z2) = points[i], points[(i + 1) % count]
-        length = math.hypot(x2 - x1, z2 - z1)
-        normals.append((sense * (z2 - z1) / length, -sense * (x2 - x1) / length))
+        size = math.hypot(x2 - x1, z2 - z1)
+        normals.append((sense * (z2 - z1) / size, -sense * (x2 - x1) / size))
     result = []
     for i in range(count):
         (ax, az), (bx, bz), (px, pz) = normals[i - 1], normals[i], points[i]
@@ -263,19 +372,29 @@ def offset(profile: object, distance: object) -> Profile:
             continue
         c1, c2 = ax * px + az * pz + d, bx * px + bz * pz + d
         result.append(((c1 * bz - az * c2) / det, (ax * c2 - c1 * bx) / det))
+    for i in range(count):
+        (ox, oz), (nx, nz) = points[i], points[(i + 1) % count]
+        (rx, rz), (sx, sz) = result[i], result[(i + 1) % count]
+        if (nx - ox) * (sx - rx) + (nz - oz) * (sz - rz) <= 0 or math.dist(result[i], result[(i + 1) % count]) < MIN_LENGTH:
+            raise ShapeError(f"{what} collapses this profile")
     new_area = signed_area(result)
-    if (abs(new_area) <= 1e-9 or new_area * area < 0 or crosses_itself(result)
-            or any(math.dist(a, b) <= 1e-9 for a, b in zip(result, result[1:] + result[:1]))):
+    if new_area * area <= 0 or (d < 0 and abs(new_area) >= abs(area)):
+        raise ShapeError(f"{what} collapses this profile")
+    for x, z in result:
+        coordinate(x, f"{what} x")
+        coordinate(z, f"{what} z")
+    spend(edge_pairs(count))
+    if crosses_itself(result):
         raise ShapeError(f"{what} collapses this profile")
     return Profile(tuple(result))
 
 
 # ---------------------------------------------------------------- planes
 def _unit(vector: tuple[float, float, float], what: str) -> tuple[float, float, float]:
-    length = math.sqrt(sum(c * c for c in vector))
-    if length <= 1e-12:
+    size = math.sqrt(sum(c * c for c in vector))
+    if size <= 1e-12:
         raise ShapeError(f"{what} must not be zero")
-    return tuple(c / length for c in vector)  # type: ignore[return-value]
+    return tuple(c / size for c in vector)  # type: ignore[return-value]
 
 
 def _cross(a, b) -> tuple[float, float, float]:
@@ -300,19 +419,19 @@ class Plane:
 
 def plane(origin: object, x_axis: object, y_axis: object) -> Plane:
     o = point3(origin, "plane() origin")
-    x = _unit(point3(x_axis, "plane() x_axis"), "plane() x_axis")
-    y = _unit(point3(y_axis, "plane() y_axis"), "plane() y_axis")
+    x = _unit(vector3(x_axis, "plane() x_axis"), "plane() x_axis")
+    y = _unit(vector3(y_axis, "plane() y_axis"), "plane() y_axis")
     if abs(sum(a * b for a, b in zip(x, y))) > 1e-9:
         raise ShapeError("plane() needs an x_axis and a y_axis that are perpendicular")
     return Plane(o, x, y, _cross(x, y))
 
 
 def front(z: object) -> Plane:
-    return Plane((0.0, 0.0, number(z, "front() z")), (1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0))
+    return Plane((0.0, 0.0, coordinate(z, "front() z")), (1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0))
 
 
 def side(x: object) -> Plane:
-    return Plane((number(x, "side() x"), 0.0, 0.0), (0.0, 0.0, 1.0), (0.0, 1.0, 0.0), (1.0, 0.0, 0.0))
+    return Plane((coordinate(x, "side() x"), 0.0, 0.0), (0.0, 0.0, 1.0), (0.0, 1.0, 0.0), (1.0, 0.0, 0.0))
 
 
 def _minus(p, q) -> tuple[float, float, float]:
@@ -362,36 +481,38 @@ def binding_refusal(binding: ParamRef) -> ShapeError:
 
 @dataclass(frozen=True, eq=False)
 class Anchor:
-    """Where a shape stands: a project level, the top of a solid, or (with no level) an absolute elevation.
+    """Where a shape stands: a project level or the top of a solid, ``offset`` metres above it.
 
-    ``offset`` is metres above it; ``param`` a parameter key added instead of a number.
+    ``param`` is a parameter key added instead of a number.
     """
 
-    kind: str  # "level" | "top" | "absolute"
-    target: Any  # a level id, a Shape, or None
+    kind: str  # "level" | "top"
+    target: Any  # a level id, or a Shape
     offset: float = 0.0
     param: str | None = None
+
+    def base_of(self, other: Anchor) -> bool:
+        """Whether both measure from the same level or the same solid's top."""
+
+        return self.kind == other.kind and (self.target == other.target if self.kind == "level"
+                                            else self.target is other.target)
 
     def shifted(self, amount: float) -> Anchor:
         if amount == 0:
             return self
         if self.param is not None:
             raise ShapeError(f"this base is bound to param('{self.param}'); it takes a parameter or a number, not both")
-        return replace(self, offset=self.offset + amount)
+        return replace(self, offset=coordinate(self.offset + amount, "the offset of a base"))
 
     def with_param(self, key: str) -> Anchor:
         if self.param is not None:
             raise ShapeError("a base takes one parameter")
         if self.offset != 0:
             raise ShapeError(f"a base takes a parameter or a number, not both: param('{key}') and {self.offset!r}")
-        if self.kind == "absolute":
-            raise ShapeError(f"param('{key}') as a base needs a project level; the project has none")
         return replace(self, param=key)
 
     def __repr__(self) -> str:
-        if self.kind == "absolute":
-            return f"<elevation {self.offset!r}>"
-        where = f"level {self.target}" if self.kind == "level" else f"top of {self.target.label()}"
+        where = f"level {short(str(self.target))}" if self.kind == "level" else f"top of {self.target.label()}"
         extra = f" + param('{self.param}')" if self.param else (f" + {self.offset!r}" if self.offset else "")
         return f"<{where}{extra}>"
 
@@ -400,9 +521,9 @@ def combine(operator: str, left: object, right: object) -> Anchor:
     """``anchor + number``, ``number + anchor``, ``anchor - number`` and ``anchor + param(key)``; nothing else."""
 
     if isinstance(left, Anchor) and operator in ("+", "-") and is_number(right):
-        return left.shifted(number(right, "an anchor offset") * (1 if operator == "+" else -1))
+        return left.shifted(coordinate(right, "an anchor offset") * (1 if operator == "+" else -1))
     if isinstance(right, Anchor) and operator == "+" and is_number(left):
-        return right.shifted(number(left, "an anchor offset"))
+        return right.shifted(coordinate(left, "an anchor offset"))
     if isinstance(left, Anchor) and operator == "+" and isinstance(right, ParamRef):
         return left.with_param(right.key)
     if isinstance(right, Anchor) and operator == "+" and isinstance(left, ParamRef):
@@ -483,7 +604,12 @@ class PlanMap:
 
 # ---------------------------------------------------------------- shapes
 class Shape:
-    """A geometry handle. Its id is decided after the script has run, from how the script named it."""
+    """A geometry handle. Its id is decided after the script has run, from how the script named it.
+
+    ``voids`` are its cutters as the script knows them (handles, or element ids of the record);
+    ``void_events`` replay this script's cuts on a new shape over what an existing id it redefines
+    already cuts (``cut``, ``uncut`` of one cutter, ``clear`` for all).
+    """
 
     word = "shape"
 
@@ -494,8 +620,9 @@ class Shape:
         self.explicit: tuple[str, int] | None = None  # name(obj, id) and its line
         self.direct: tuple[str, int, int] | None = None  # last module variable holding it: (name, order, line)
         self.listed: tuple[str, int, int] | None = None  # last module list or tuple holding it
-        self.cut_into: list[Shape] = []  # hosts it was cut into, in order (an unnamed cutter is named after the first)
-        self.voids: list[Any] = []  # its cutters: handles, or element ids of the record
+        self.cut_into: dict[Shape, None] = {}  # hosts it was cut into, in order (an unnamed cutter is named after the first)
+        self.voids: dict[Any, None] = {}
+        self.void_events: list[tuple[str, Any, int]] = []
         self.deleted_line: int | None = None
 
     @property
@@ -504,9 +631,9 @@ class Shape:
 
     def label(self) -> str:
         if self.explicit is not None:
-            return self.explicit[0]
+            return short(self.explicit[0])
         chosen = self.direct or self.listed
-        return chosen[0] if chosen is not None else f"from line {self.created_line}"
+        return short(chosen[0]) if chosen is not None else f"from line {self.created_line}"
 
     def touched(self, line: int) -> None:
         self.line = line
@@ -551,8 +678,18 @@ class Drawn(Shape):
         return "other" if self.word == "surface" else self.word
 
     @property
+    def size(self) -> int:
+        """How many points its definition holds: what a transform or a measurement walks."""
+
+        if self.kind == "loft":
+            return sum(len(section.profile.points) for section in self.sections)
+        return len(self.points) if self.kind == "path" else len(self.profile.points)  # type: ignore[union-attr]
+
+    @property
     def is_solid(self) -> bool:
         return self.kind == "extrude" or (self.kind == "loft" and self.cap)
+
+    can_cut = is_solid
 
     @property
     def upward(self) -> bool:
@@ -561,15 +698,17 @@ class Drawn(Shape):
         return (self.kind == "extrude" and self.plane is None
                 and (isinstance(self.height, ParamRef) or float(self.height) > 0))  # type: ignore[arg-type]
 
+    def can_carry(self, world: World) -> bool:
+        return self.upward
+
     def anchors(self) -> list[Anchor]:
         if self.kind == "loft":
             return [section.anchor for section in self.sections]
         return [self.anchor] if self.anchor is not None else []
 
     def clone(self, seq: int, line: int) -> Drawn:
-        twin = Drawn(seq, line, self.kind, profile=self.profile, height=self.height, anchor=self.anchor,
+        return Drawn(seq, line, self.kind, profile=self.profile, height=self.height, anchor=self.anchor,
                      plane=self.plane, points=self.points, sections=self.sections, cap=self.cap)
-        return twin
 
     def apply(self, change: PlanMap) -> None:
         if self.kind in ("extrude", "face"):
@@ -607,6 +746,40 @@ class Drawn(Shape):
                         for section in sections]
         self.sections = tuple(sections)
 
+    def check_extent(self) -> None:
+        """Every coordinate within reach, every length long enough, after an edit."""
+
+        what = f"{self.label()}"
+        if self.kind in ("extrude", "face"):
+            if self.plane is None:
+                plan = list(self.profile.points)  # type: ignore[union-attr]
+                coordinate(self.anchor.offset, f"the base offset of {what}")  # type: ignore[union-attr]
+            else:
+                plan = [(p[0], p[2]) for p in (self.plane.point(u, v) for u, v in self.profile.points)]  # type: ignore[union-attr]
+                for p in (self.plane.point(u, v) for u, v in self.profile.points):  # type: ignore[union-attr]
+                    coordinate(p[1], f"a point of {what}")
+            for x, z in plan:
+                coordinate(x, f"a point of {what}")
+                coordinate(z, f"a point of {what}")
+            points = self.profile.points  # type: ignore[union-attr]
+            if any(math.dist(a, b) < MIN_LENGTH for a, b in zip(points, points[1:] + points[:1])):
+                raise ShapeError(f"{what} would have an edge shorter than 0.000001 m")
+            if self.kind == "extrude" and not isinstance(self.height, ParamRef):
+                length(self.height, f"the height of {what}")
+        elif self.kind == "path":
+            for point in self.points:
+                point3(point, f"a point of {what}")
+            if any(math.dist(a, b) < MIN_LENGTH for a, b in zip(self.points, self.points[1:])):
+                raise ShapeError(f"{what} would have a segment shorter than 0.000001 m")
+        else:
+            for section in self.sections:
+                coordinate(section.anchor.offset, f"a section height of {what}")
+                for point in section.profile.points:
+                    point2(point, f"a point of {what}")
+                points = section.profile.points
+                if any(math.dist(a, b) < MIN_LENGTH for a, b in zip(points, points[1:] + points[:1])):
+                    raise ShapeError(f"{what} would have an edge shorter than 0.000001 m")
+
     def bounds(self, world: World) -> Box:
         if self.kind in ("extrude", "face"):
             if self.plane is None:
@@ -633,27 +806,32 @@ def _scaled_height(height: float | ParamRef | None, factor: float, label: str) -
 
 
 def anchor_elevation(anchor: Anchor, world: World) -> float:
-    """The world elevation an anchor stands for, from the record's stated values and the script's shapes."""
+    """The world elevation an anchor stands for, from the record's stated values and the script's shapes.
 
-    if anchor.kind == "level":
-        value = world.levels[anchor.target]
-    elif anchor.kind == "absolute":
-        value = 0.0
-    else:
-        value = top_value(anchor.target, world)
-    value += anchor.offset
-    if anchor.param is not None:
-        value += world.parameter_value(anchor.param)
-    return value
+    A stack of drawn solids is followed down iteratively, however tall it is.
+    """
+
+    value = 0.0
+    while True:
+        value += anchor.offset
+        if anchor.param is not None:
+            value += world.parameter_value(anchor.param)
+        if anchor.kind == "level":
+            return value + world.levels[anchor.target]
+        target = anchor.target
+        if not isinstance(target, Drawn):
+            return value + target.top(world)
+        if not target.upward:
+            raise ShapeError(f"{target.label()} has no top to stand on")
+        value += height_value(target.height, world)  # type: ignore[arg-type]
+        anchor = target.anchor  # type: ignore[assignment]
 
 
 def top_value(shape: Shape, world: World) -> float:
     """The elevation of a solid's top, as the runtime will publish it."""
 
     if isinstance(shape, Drawn):
-        if not shape.upward:
-            raise ShapeError(f"{shape.label()} has no top to stand on")
-        return anchor_elevation(shape.anchor, world) + height_value(shape.height, world)  # type: ignore[arg-type]
+        return anchor_elevation(Anchor("top", shape), world)
     return shape.top(world)  # type: ignore[attr-defined]
 
 
@@ -667,6 +845,19 @@ def _bound(value: object) -> bool:
     if isinstance(value, (list, tuple)):
         return any(_bound(item) for item in value)
     return False
+
+
+def _numbers_in(value: object):
+    """Every number a row value holds, for the reach check."""
+
+    if is_number(value):
+        yield float(value)  # type: ignore[arg-type]
+    elif isinstance(value, dict):
+        for item in value.values():
+            yield from _numbers_in(item)
+    elif isinstance(value, (list, tuple)):
+        for item in value:
+            yield from _numbers_in(item)
 
 
 class RowShape(Shape):
@@ -693,19 +884,20 @@ class RowShape(Shape):
         self.references: dict = copy.deepcopy(dict(authored.get("references") or {}))
         self.resolved_params: dict = copy.deepcopy(dict(resolved.get("params") or {}))
         self.resolved_references: dict = copy.deepcopy(dict(resolved.get("references") or {}))
-        self.voids = list(self.references.pop("voids", ()) or ())
+        self.voids = dict.fromkeys(self.references.pop("voids", ()) or ())
         self.resolved_references.pop("voids", None)
         self.original_voids = tuple(sorted(self.voids))
         self.extra = dict(extra or {})
         self.base_anchor: Anchor | None = None
         self.geometry_changed = False
+        self.size = sum(1 for _ in _numbers_in(self.params)) + sum(1 for _ in _numbers_in(self.references))
 
     @property
     def is_new(self) -> bool:
         return not self.existing
 
     def label(self) -> str:
-        return self.geometry_id if self.existing else super().label()  # type: ignore[return-value]
+        return short(self.geometry_id) if self.existing else super().label()  # type: ignore[arg-type]
 
     @property
     def word(self) -> str:  # type: ignore[override]
@@ -752,7 +944,7 @@ class RowShape(Shape):
         return params[key]
 
     def apply(self, change: PlanMap) -> None:
-        verb = {"move": "move", "rotate": "rotate", "mirror": "mirror", "scale": "scale"}[change.kind]
+        verb = change.kind
         self._refuse_reshaping(verb)
         if self.producer == "wall":
             self._apply_to_line(change, verb)
@@ -863,7 +1055,7 @@ class RowShape(Shape):
             raise ShapeError(f"{self.label()} takes its height from a level or another solid's top; "
                              "pushpull cannot keep that")
         height = float(self._authored(self.params, "height"))
-        if height + distance <= 0:
+        if height + distance < MIN_LENGTH:
             raise ShapeError(f"pushpull({distance!r}) would leave {self.label()} with no height")
         self.params["height"] = self.resolved_params["height"] = clean(height + distance)
         self.geometry_changed = True
@@ -872,10 +1064,8 @@ class RowShape(Shape):
         if "top" in self.references:
             raise ShapeError(f"{self.label()} takes its height from a level or another solid's top; "
                              "set_base cannot keep that")
-        if self.producer == "wall" and (anchor.offset or anchor.param or anchor.kind == "absolute"):
+        if self.producer == "wall" and (anchor.offset or anchor.param):
             raise ShapeError(f"{self.label()} stands on a level or on a solid's top without an offset")
-        if self.producer in ("loft", "curve") and anchor.kind == "absolute":
-            raise ShapeError(f"{self.label()} needs a project level to stand on; the project has none")
         if self.producer == "loft":
             if anchor.param is not None:
                 raise ShapeError(f"a loft solid's base cannot be bound to param('{anchor.param}')")
@@ -883,17 +1073,25 @@ class RowShape(Shape):
         self.base_anchor = anchor
         self.geometry_changed = True
 
+    def check_extent(self) -> None:
+        """Every number this row's placement states stays within reach after an edit."""
+
+        for value in (*_numbers_in(self.params), *_numbers_in(self.references.get("line"))):
+            coordinate(value, f"a value of {self.label()}")
+        height = self.params.get("height")
+        if is_number(height) and float(height) < MIN_LENGTH:
+            raise ShapeError(f"the height of {self.label()} would be shorter than 0.000001 m")
+        if self.base_anchor is not None:
+            coordinate(self.base_anchor.offset, f"the base offset of {self.label()}")
+
     # ---- lowering and bounds
     def lowered(self, element_id_of: Callable[[Shape], str]) -> tuple[dict, dict]:
-        """The authored params and references this handle now states, cuts and base included."""
+        """The authored params and references this handle now states, its base included (cuts are set by lowering)."""
 
         params, references = copy.deepcopy(self.params), copy.deepcopy(self.references)
         if self.base_anchor is not None:
             base, elevation = lower_anchor(self.base_anchor, element_id_of)
             rebase(self.producer, params, references, base, elevation)
-        voids = sorted({element_id_of(v) if isinstance(v, Shape) else v for v in self.voids})
-        if voids:
-            references["voids"] = voids
         return params, references
 
     def bounds(self, world: World) -> Box:
@@ -909,14 +1107,12 @@ class RowShape(Shape):
             anchor = self.base_anchor
             if anchor.kind == "level":
                 reference: dict = {"level": anchor.target}
-            elif anchor.kind == "absolute":
-                reference = {"elevation": anchor.offset}
             else:
                 reference = {"datum": "construction-anchor"}
                 context.published["construction-anchor"] = InterfaceDatum.create(
                     datum_id="construction-anchor", kind=InterfaceDatumKind.LEVEL, published_by="construction",
                     value=round(top_value(anchor.target, world), 9), unit=LengthUnit.METER)
-            extra = anchor.offset if anchor.kind != "absolute" else 0.0
+            extra = anchor.offset
             if anchor.param is not None:
                 extra += world.parameter_value(anchor.param)
             rebase(self.producer, params, references, reference, extra or None)
@@ -953,8 +1149,6 @@ class RowShape(Shape):
 def lower_anchor(anchor: Anchor, element_id_of: Callable[[Shape], str]) -> tuple[dict, float | str | None]:
     """The base reference and the elevation parameter an anchor lowers to."""
 
-    if anchor.kind == "absolute":
-        return {"elevation": clean(anchor.offset)}, None
     base = {"level": anchor.target} if anchor.kind == "level" else {"datum": f"{element_id_of(anchor.target)}-top"}
     if anchor.param is not None:
         return base, f"@{anchor.param}"
@@ -996,7 +1190,7 @@ def object_bounds(operations, bindings, context: ProductionContext) -> dict[str,
 
 
 # ---------------------------------------------------------------- the record's facts
-def _datum_targets(value: object) -> set[str]:
+def datum_targets(value: object) -> set[str]:
     """Element ids whose published top a reference value stands on (``{"datum": "<element>-top"}``)."""
 
     found: set[str] = set()
@@ -1005,15 +1199,15 @@ def _datum_targets(value: object) -> set[str]:
         if isinstance(datum, str) and datum.endswith("-top"):
             found.add(datum[:-4])
         for item in value.values():
-            found |= _datum_targets(item)
+            found |= datum_targets(item)
     elif isinstance(value, (list, tuple)):
         for item in value:
-            found |= _datum_targets(item)
+            found |= datum_targets(item)
     return found
 
 
 class World:
-    """What one record says that a script reads: levels, parameters, editable elements and their production."""
+    """What one record says that a script reads: levels, parameters, editable elements, relations, production."""
 
     def __init__(self, record: StateRecord) -> None:
         self.record = record
@@ -1027,25 +1221,51 @@ class World:
         self.default_level: tuple[str, float] | None = (pick[1], pick[0]) if pick is not None else None
         self.parameter_keys = frozenset(parameter.key for parameter in record.parameters)
         self.elements_of: dict[str, list[str]] = {}
-        self.void_hosts: dict[str, list[str]] = {}
-        self.top_users: dict[str, list[str]] = {}
+        self.voids_of: dict[str, tuple[str, ...]] = {}  # element -> the elements it names as voids
+        self.void_hosts: dict[str, list[str]] = {}  # element -> the elements that name it as a void
+        self.stands_on: dict[str, set[str]] = {}  # element -> the elements whose tops it stands on
+        self.top_users: dict[str, list[str]] = {}  # element -> the elements standing on its top
         for element in record.entities_of("Element@1"):
             component = element.fields.get("component_id") or element.parent_id
             self.elements_of.setdefault(str(component), []).append(element.entity_id)
             references = element.fields.get("references")
             references = references if isinstance(references, dict) else {}
             voids = references.get("voids")
-            for void in voids if isinstance(voids, (list, tuple)) else ():
-                self.void_hosts.setdefault(str(void), []).append(element.entity_id)
-            for target in _datum_targets(references):
+            voids = tuple(str(void) for void in voids) if isinstance(voids, (list, tuple)) else ()
+            self.voids_of[element.entity_id] = voids
+            for void in voids:
+                self.void_hosts.setdefault(void, []).append(element.entity_id)
+            targets = datum_targets(references)
+            self.stands_on[element.entity_id] = targets
+            for target in targets:
                 self.top_users.setdefault(target, []).append(element.entity_id)
         self._values: dict[str, float] | None = None
         self._resolved: dict[str, dict] | None = None
         self._production: tuple | None = None
+        self._downstream: dict[str, set[str]] | None = None
+
+    def downstream(self, entity_id: str) -> set[str]:
+        """The entities whose references depend on an entity: the record's dependency edges, read once."""
+
+        if self._downstream is None:
+            self._downstream = {}
+            for edge in self.record.dependency_edges():
+                if edge.upstream_ref.startswith("entity:") and edge.downstream_ref.startswith("entity:"):
+                    self._downstream.setdefault(edge.upstream_ref.removeprefix("entity:"), set()).add(
+                        edge.downstream_ref.removeprefix("entity:"))
+        return self._downstream.get(entity_id, set())
 
     def component_of(self, element_id: str) -> str:
         element = self.entities[element_id]
         return str(element.fields.get("component_id") or element.parent_id)
+
+    def geometry_id(self, element_id: str) -> str:
+        """The id the model view lists for an element: its component's, unless the component has several parts."""
+
+        if element_id not in self.entities:
+            return element_id
+        component = self.component_of(element_id)
+        return component if len(self.elements_of.get(component, [])) == 1 else element_id
 
     def parameter_value(self, key: str) -> float:
         if self._values is None:
@@ -1068,23 +1288,23 @@ class World:
 
         entity = self.entities.get(identifier)
         if entity is None:
-            raise ShapeError(f"{identifier} is not in this project")
+            raise ShapeError(f"{short(identifier)} is not in this project")
         if entity.schema == "Component@1":
             parts = self.elements_of.get(identifier, [])
             if not parts:
-                raise ShapeError(f"{identifier} has no geometry to edit")
+                raise ShapeError(f"{short(identifier)} has no geometry to edit")
             if len(parts) > 1:
-                raise ShapeError(f"{identifier} has several parts ({', '.join(parts)}); get() one of them by its id")
+                listed = short(", ".join(parts), 80)
+                raise ShapeError(f"{short(identifier)} has several parts ({listed}); get() one of them by its id")
             element_id = parts[0]
         elif entity.schema == "Element@1":
             element_id = identifier
         else:
-            raise ShapeError(f"{identifier} is {entity.schema} in this project, not geometry")
+            raise ShapeError(f"{short(identifier)} is {entity.schema} in this project, not geometry")
         if self.resolved(element_id).get("producer") not in EDITABLE_PRODUCERS:
-            raise ShapeError(f"{element_id} is not editable by a construction script")
+            raise ShapeError(f"{short(element_id)} is not editable by a construction script")
         component = self.component_of(element_id)
-        geometry_id = component if len(self.elements_of.get(component, [])) == 1 else element_id
-        return element_id, component, geometry_id
+        return element_id, component, self.geometry_id(element_id)
 
     def production(self) -> tuple[tuple, ProductionContext, dict]:
         """The record's rows produced once, row by row: what fails is left out, never raised."""

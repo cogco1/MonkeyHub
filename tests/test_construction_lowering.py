@@ -2,7 +2,8 @@
 
 The record is what ``initialize_modeling`` seeds (a modelling root ``model`` and a level
 ``ground`` at zero). Every lowered result is applied the way the semantic-edit path applies
-it (existing fields merged), checked by ``validate_element_contract`` and produced.
+it (existing fields merged), checked by ``validate_element_contract`` and produced. Ids are
+neutral (``mass``, ``block``, ``cutter``): nothing here says what the geometry is.
 """
 from __future__ import annotations
 
@@ -43,29 +44,20 @@ PARAMETERS = (
     Parameter("h", 3.0, "m", epistemic_status="declared", source_ref=EVIDENCE),
     Parameter("sill", 0.9, "m", epistemic_status="declared", source_ref=EVIDENCE),
 )
+ROOT = Entity("model", "Component@1", {"intent": "Root for candidate modeling", "source_refs": [EVIDENCE]})
 
 
-def _record(*extra: Entity, parameters: tuple[Parameter, ...] = ()) -> StateRecord:
+def _level(entity_id: str, elevation: float, role: str | None = None) -> Entity:
+    return Entity(entity_id, "Level@1", {"role": role or entity_id, "elevation": elevation}, basis_refs=(EVIDENCE,))
+
+
+def _record(*extra: Entity, parameters: tuple[Parameter, ...] = (), ground: float | None = 0.0) -> StateRecord:
+    levels = (_level("ground", ground),) if ground is not None else ()
     return StateRecord(
-        project_id="demo", run_id="authored",
-        entities=(
-            Entity("model", "Component@1", {"intent": "Root for candidate modeling", "source_refs": [EVIDENCE]}),
-            Entity("ground", "Level@1", {"role": "ground", "elevation": 0.0}, basis_refs=(EVIDENCE,)),
-            *extra,
-        ),
+        project_id="demo", run_id="authored", entities=(ROOT, *levels, *extra),
         parameters=parameters, evidence_refs=(EVIDENCE,), option={"option_id": "modeling"},
         base=ProjectVersionRef("demo", 0, "0" * 64),
     )
-
-
-def _raised_record() -> StateRecord:
-    """The same seed with the ground level at 1 m: numbers and planes are measured from the project's zero."""
-
-    record = _record()
-    ground = Entity("ground", "Level@1", {"role": "ground", "elevation": 1.0}, basis_refs=(EVIDENCE,))
-    return StateRecord(project_id=record.project_id, run_id=record.run_id,
-                       entities=tuple(ground if e.entity_id == "ground" else e for e in record.entities),
-                       evidence_refs=record.evidence_refs, option=record.option, base=record.base)
 
 
 def _compile(script: str, record: StateRecord | None = None):
@@ -114,6 +106,7 @@ LOOP = "\n".join([
     "    w = extrude(rect(1 + 2.8 * i, -0.2, 1.2, 0.6), 1.5, at=0.9)",
     "    cut(mass, w)",
 ])
+CUTTERS = ["w-1-body", "w-2-body", "w-3-body", "w-4-body"]
 
 
 class ConstructionTestCase(unittest.TestCase):
@@ -122,6 +115,17 @@ class ConstructionTestCase(unittest.TestCase):
             _compile(script, record)
         self.assertEqual(layer_rule_violations(caught.exception.message), (), caught.exception.message)
         return caught.exception
+
+    def refusals(self, cases, record: StateRecord | None = None) -> None:
+        for script, line, words in cases:
+            with self.subTest(script=script):
+                error = self.refused(script, record)
+                self.assertEqual(error.line, line, error.message)
+                self.assertIn(words, error.message)
+
+    def cut_record(self) -> StateRecord:
+        record = _record()
+        return _apply(record, _compile(LOOP, record))
 
 
 class ExtrusionLoweringTests(ConstructionTestCase):
@@ -166,24 +170,24 @@ class ExtrusionLoweringTests(ConstructionTestCase):
 
     def test_a_negative_height_goes_down_like_a_drawn_sketch(self) -> None:
         record = _record()
-        result = _compile("pit = extrude(rect(0, 0, 2, 2), -1.5)", record)
-        self.assertEqual(_elements(result)["pit-body"]["fields"]["params"], {
+        result = _compile("block = extrude(rect(0, 0, 2, 2), -1.5)", record)
+        self.assertEqual(_elements(result)["block-body"]["fields"]["params"], {
             "profile": [[0.0, 0.0], [2.0, 0.0], [2.0, 2.0], [0.0, 2.0]], "height": 1.5,
             "work_plane": {"origin": [0.0, 0.0, 0.0], "xAxis": [1.0, 0.0, 0.0], "yAxis": [0.0, 0.0, 1.0],
                            "normal": [0.0, -1.0, 0.0]}})
         self.assertEqual(result.report[0]["bounds"], [[0.0, -1.5, 0.0], [2.0, 0.0, 2.0]])
-        self.assertEqual(_view(_apply(record, result))["pit"]["bounds"], [[0.0, -1.5, 0.0], [2.0, 0.0, 2.0]])
+        self.assertEqual(_view(_apply(record, result))["block"]["bounds"], [[0.0, -1.5, 0.0], [2.0, 0.0, 2.0]])
 
     def test_a_profile_drawn_on_a_plane_extrudes_along_its_normal(self) -> None:
         record = _record()
         result = _compile("\n".join([
-            "panel = extrude(rect(0, 0, 2, 3), 0.5, plane=front(z=1))",
-            "flank = extrude(rect(0, 0, 2, 3), 0.5, plane=side(x=1))",
-            "tilted = extrude(rect(0, 0, 1, 1), 0.2, plane=plane((5, 1, 0), (1, 0, 0), (0, 1, 1)))",
+            "block_1 = extrude(rect(0, 0, 2, 3), 0.5, plane=front(z=1))",
+            "block_2 = extrude(rect(0, 0, 2, 3), 0.5, plane=side(x=1))",
+            "block_3 = extrude(rect(0, 0, 1, 1), 0.2, plane=plane((5, 1, 0), (1, 0, 0), (0, 1, 1)))",
         ]), record)
-        panel = _elements(result)["panel-body"]["fields"]
-        self.assertEqual(panel["references"], {"base": {"level": "ground"}})
-        self.assertEqual(panel["params"], {
+        first = _elements(result)["block-1-body"]["fields"]
+        self.assertEqual(first["references"], {"base": {"level": "ground"}})
+        self.assertEqual(first["params"], {
             "profile": [[0.0, 0.0], [2.0, 0.0], [2.0, 3.0], [0.0, 3.0]], "height": 0.5,
             "work_plane": {"origin": [0.0, 0.0, 1.0], "xAxis": [1.0, 0.0, 0.0], "yAxis": [0.0, 1.0, 0.0],
                            "normal": [0.0, 0.0, 1.0]}})
@@ -195,17 +199,17 @@ class ExtrusionLoweringTests(ConstructionTestCase):
             far = [tuple(c + v for c, v in zip(point, params["vector"])) for point in base]
             return {tuple(round(c, 6) for c in point) for point in base + far}
 
-        self.assertEqual(corners("panel-body"), {(x, y, z) for x in (0.0, 2.0) for y in (0.0, 3.0) for z in (1.0, 1.5)})
-        self.assertEqual(corners("flank-body"), {(x, y, z) for x in (1.0, 1.5) for y in (0.0, 3.0) for z in (0.0, 2.0)})
+        self.assertEqual(corners("block-1-body"), {(x, y, z) for x in (0.0, 2.0) for y in (0.0, 3.0) for z in (1.0, 1.5)})
+        self.assertEqual(corners("block-2-body"), {(x, y, z) for x in (1.0, 1.5) for y in (0.0, 3.0) for z in (0.0, 2.0)})
         s = math.sqrt(0.5)
         tilted = {(5.0 + u, round(1.0 + v * s - n * s, 6), round(v * s + n * s, 6))
                   for u in (0.0, 1.0) for v in (0.0, 1.0) for n in (0.0, 0.2)}
-        self.assertEqual(corners("tilted-body"), {tuple(round(c, 6) for c in point) for point in tilted})
+        self.assertEqual(corners("block-3-body"), {tuple(round(c, 6) for c in point) for point in tilted})
         report = {row["id"]: row for row in result.report}
-        self.assertEqual(report["flank"]["bounds"], [[1.0, 0.0, 0.0], [1.5, 3.0, 2.0]])
+        self.assertEqual(report["block-2"]["bounds"], [[1.0, 0.0, 0.0], [1.5, 3.0, 2.0]])
 
     def test_numbers_and_planes_are_measured_from_the_project_zero(self) -> None:
-        record = _raised_record()
+        record = _record(ground=1.0)
         result = _compile("p = extrude(rect(0, 0, 1, 1), 1, plane=front(z=0))\nb = extrude(rect(2, 0, 1, 1), 1, at=2)",
                           record)
         elements = _elements(result)
@@ -227,38 +231,70 @@ class ExtrusionLoweringTests(ConstructionTestCase):
         self.assertEqual(result.log, ("((0.0, 0.9, 0.0), (1.0, 3.9, 1.0))",))
         _apply(record, result)
 
+    def test_a_project_without_a_level_has_nothing_to_measure_from(self) -> None:
+        record = _record(ground=None)
+        self.refusals([
+            ("x = 1\nb = extrude(rect(0, 0, 1, 1), 1)", 2, "add a level first"),
+            ("x = 1\nb = extrude(rect(0, 0, 1, 1), 1, at=2)", 2, "add a level first"),
+            ("x = 1\nb = extrude(rect(0, 0, 1, 1), 1, plane=front())", 2, "add a level first"),
+            ("x = 1\nf = face(rect(0, 0, 1, 1))", 2, "add a level first"),
+            ("x = 1\np = path([(0, 0, 0), (1, 0, 0)])", 2, "add a level first"),
+            ("x = 1\ns = section(rect(0, 0, 1, 1), 0)", 2, "add a level first"),
+        ], record)
+
 
 class OtherFormsLoweringTests(ConstructionTestCase):
     def test_face_path_and_loft_lower_to_rows_that_produce(self) -> None:
         record = _record()
         result = _compile("\n".join([
-            "plate = face(rect(0, 0, 4, 3), at=0.5)",
-            "edge = path([(0, 1, 0), (4, 1, 0), (4, 1, 3)])",
-            "ramp = path([(0, 0, 0), (4, 1, 0)])",
-            "spire = loft([section(rect(0, 0, 2, 2), 0), section(rect(0.5, 0.5, 1, 1), 3)])",
-            "sheet = loft([section(rect(0, 5, 2, 2), 0), section(rect(0, 5, 2, 2), 1)], cap=False)",
+            "face_1 = face(rect(0, 0, 4, 3), at=0.5)",
+            "path_1 = path([(0, 1, 0), (4, 1, 0), (4, 1, 3)])",
+            "path_2 = path([(0, 0, 0), (4, 1, 0)])",
+            "loft_1 = loft([section(rect(0, 0, 2, 2), 0), section(rect(0.5, 0.5, 1, 1), 3)])",
+            "loft_2 = loft([section(rect(0, 5, 2, 2), 0), section(rect(0, 5, 2, 2), 1)], cap=False)",
         ]), record)
         elements = _elements(result)
-        self.assertEqual(elements["plate-body"]["fields"], {
-            "component_id": "plate", "producer": "planar-surface", "references": {"base": {"level": "ground"}},
+        self.assertEqual(elements["face-1-body"]["fields"], {
+            "component_id": "face-1", "producer": "planar-surface", "references": {"base": {"level": "ground"}},
             "params": {"profile": [[0.0, 0.0], [4.0, 0.0], [4.0, 3.0], [0.0, 3.0], [0.0, 0.0]], "elevation": 0.5}})
-        self.assertEqual(elements["edge-body"]["fields"], {
-            "component_id": "edge", "producer": "curve", "references": {"base": {"level": "ground"}},
+        self.assertEqual(elements["path-1-body"]["fields"], {
+            "component_id": "path-1", "producer": "curve", "references": {"base": {"level": "ground"}},
             "params": {"profile": [[0.0, 0.0], [4.0, 0.0], [4.0, 3.0]], "elevation": 1.0}})
-        self.assertEqual(elements["ramp-body"]["fields"]["producer"], "curve")
-        self.assertIn("work_plane", elements["ramp-body"]["fields"]["params"])
-        self.assertEqual(elements["spire-body"]["fields"], {
-            "component_id": "spire", "producer": "loft", "references": {"base": {"level": "ground"}},
+        self.assertEqual(elements["path-2-body"]["fields"]["producer"], "curve")
+        self.assertIn("work_plane", elements["path-2-body"]["fields"]["params"])
+        self.assertEqual(elements["loft-1-body"]["fields"], {
+            "component_id": "loft-1", "producer": "loft", "references": {"base": {"level": "ground"}},
             "params": {"profiles": [[[0.0, 0.0, 0.0], [2.0, 0.0, 0.0], [2.0, 0.0, 2.0], [0.0, 0.0, 2.0]],
                                     [[0.5, 3.0, 0.5], [1.5, 3.0, 0.5], [1.5, 3.0, 1.5], [0.5, 3.0, 1.5]]],
                        "profile_size": 4, "cap_ends": True}})
-        self.assertIs(elements["sheet-body"]["fields"]["params"]["cap_ends"], False)
+        self.assertIs(elements["loft-2-body"]["fields"]["params"]["cap_ends"], False)
         view = _view(_apply(record, result))
         self.assertEqual({key: row["form"] for key, row in view.items()},
-                         {"plate": "face", "edge": "path", "ramp": "path", "spire": "solid", "sheet": "other"})
-        self.assertEqual(view["plate"]["bounds"], [[0.0, 0.5, 0.0], [4.0, 0.5, 3.0]])
-        self.assertEqual(view["ramp"]["bounds"], [[0.0, 0.0, 0.0], [4.0, 1.0, 0.0]])
-        self.assertEqual(view["spire"]["bounds"], [[0.0, 0.0, 0.0], [2.0, 3.0, 2.0]])
+                         {"face-1": "face", "path-1": "path", "path-2": "path", "loft-1": "solid", "loft-2": "other"})
+        self.assertEqual(view["face-1"]["bounds"], [[0.0, 0.5, 0.0], [4.0, 0.5, 3.0]])
+        self.assertEqual(view["path-2"]["bounds"], [[0.0, 0.0, 0.0], [4.0, 1.0, 0.0]])
+        self.assertEqual(view["loft-1"]["bounds"], [[0.0, 0.0, 0.0], [2.0, 3.0, 2.0]])
+
+    def test_loft_sections_on_one_level_are_one_base(self) -> None:
+        record = _record(_level("upper", 3.0))
+        result = _compile("\n".join([
+            "p = rect(0, 0, 2, 2)",
+            "q = rect(0.5, 0.5, 1, 1)",
+            "loft_1 = loft([section(p, level('upper')), section(q, level('upper') + 3)])",
+            "loft_2 = loft([section(p, 0), section(q, level('ground') + 3)])",
+        ]), record)
+        elements = _elements(result)
+        for element_id, level in (("loft-1-body", "upper"), ("loft-2-body", "ground")):
+            fields = elements[element_id]["fields"]
+            self.assertEqual(fields["references"], {"base": {"level": level}})
+            self.assertEqual([section[0][1] for section in fields["params"]["profiles"]], [0.0, 3.0])
+        view = _view(_apply(record, result))
+        self.assertEqual(view["loft-1"]["bounds"], [[0.0, 3.0, 0.0], [2.0, 6.0, 2.0]])
+        self.assertEqual(view["loft-2"]["bounds"], [[0.0, 0.0, 0.0], [2.0, 3.0, 2.0]])
+        error = self.refused("x = 1\nl = loft([section(rect(0, 0, 1, 1), level('upper')), section(rect(0, 0, 1, 1), 5)])",
+                             record)
+        self.assertEqual(error.line, 2)
+        self.assertIn("same level", error.message)
 
     def test_a_path_that_leaves_its_plane_is_refused(self) -> None:
         error = self.refused("x = 1\np = path([(0, 0, 0), (1, 0, 0), (1, 1, 0), (1, 1, 1)])")
@@ -266,30 +302,49 @@ class OtherFormsLoweringTests(ConstructionTestCase):
         self.assertIn("one plane", error.message)
 
     def test_profiles_are_checked_where_they_are_made(self) -> None:
-        cases = [
-            ("p = polygon([(0, 0), (1, 0), (1, 1), (0, 0)])", "a closed profile does not repeat its first point"),
-            ("p = polygon([(0, 0), (1, 0), (1, 0), (0, 1)])", "repeat"),
-            ("p = polygon([(0, 0), (1, 0), (2, 0)])", "area"),
-            ("p = polygon([(0, 0), (2, 2), (2, 0), (0, 1)])", "crosses itself"),
-            ("p = circle(0, 0, 1, segments=4)", "8"),
-            ("p = offset(rect(0, 0, 1, 1), -0.5)", "offset(-0.5) collapses this profile"),
-        ]
-        for script, words in cases:
-            with self.subTest(script=script):
-                error = self.refused("x = 1\n" + script)
-                self.assertEqual(error.line, 2)
-                self.assertIn(words, error.message)
+        self.refusals([
+            ("x = 1\np = polygon([(0, 0), (1, 0), (1, 1), (0, 0)])", 2, "a closed profile does not repeat its first point"),
+            ("x = 1\np = polygon([(0, 0), (1, 0), (1, 0), (0, 1)])", 2, "repeat"),
+            ("x = 1\np = polygon([(0, 0), (1, 0), (2, 0)])", 2, "area"),
+            ("x = 1\np = polygon([(0, 0), (2, 2), (2, 0), (0, 1)])", 2, "crosses itself"),
+            ("x = 1\np = circle(0, 0, 1, segments=4)", 2, "8"),
+        ])
+
+    def test_an_offset_that_collapses_the_profile_is_refused(self) -> None:
+        self.refusals([
+            ("x = 1\np = offset(rect(0, 0, 1, 1), -0.5)", 2, "offset(-0.5) collapses this profile"),
+            ("x = 1\np = offset(rect(0, 0, 1, 1), -0.6)", 2, "offset(-0.6) collapses this profile"),
+            ("x = 1\np = offset(rect(0, 0, 1, 1), -1)", 2, "offset(-1) collapses this profile"),
+            ("x = 1\np = offset(rect(0, 0, 1, 1), -2)", 2, "offset(-2) collapses this profile"),
+            ("x = 1\np = offset(rect(0, 0, 4, 1), -3)", 2, "offset(-3) collapses this profile"),
+            ("x = 1\np = offset(polygon([(0, 0), (4, 0), (2, 3)]), -1.2)", 2, "offset(-1.2) collapses this profile"),
+        ])
 
     def test_circle_and_offset_make_profiles(self) -> None:
         result = _compile("\n".join([
-            "disc = extrude(circle(0, 0, 1, segments=8), 1)",
-            "rim = extrude(offset(rect(0, 0, 2, 2), 0.5), 1)",
-            "print(bounds(rim))",
+            "block_1 = extrude(circle(0, 0, 1, segments=8), 1)",
+            "block_2 = extrude(offset(rect(0, 0, 2, 2), 0.5), 1)",
+            "block_3 = extrude(offset(rect(0, 0, 2, 2), -0.5), 1)",
+            "print(bounds(block_2), bounds(block_3))",
         ]))
-        profile = _elements(result)["disc-body"]["fields"]["params"]["profile"]
+        profile = _elements(result)["block-1-body"]["fields"]["params"]["profile"]
         self.assertEqual(profile[0], [1.0, 0.0])
         self.assertEqual(profile[2], [0.0, 1.0])  # counter-clockwise: +x turns toward +z
-        self.assertEqual(result.log, ("((-0.5, 0.0, -0.5), (2.5, 1.0, 2.5))",))
+        self.assertEqual(result.log, ("((-0.5, 0.0, -0.5), (2.5, 1.0, 2.5)) ((0.5, 0.0, 0.5), (1.5, 1.0, 1.5))",))
+
+
+class ReachTests(ConstructionTestCase):
+    def test_coordinates_stay_within_reach_and_lengths_have_a_size(self) -> None:
+        self.refusals([
+            ("x = 1\np = rect(1e308, 0, 1e308, 1)", 2, "100 000 m"),
+            ("x = 1\nb = extrude(rect(0, 0, 1, 1), 1, at=1e308)", 2, "100 000 m"),
+            ("b = extrude(rect(0, 0, 1, 1), 1)\nfor i in range(3):\n    move(b, dx=60000)", 3, "100 000 m"),
+            ("b = extrude(rect(0, 0, 1, 1), 1)\nmove(b, dx=1e308)", 2, "100 000 m"),
+            ("x = 1\nb = extrude(rect(0, 0, 1, 1), 1e-10)", 2, "0.000001 m"),
+            ("x = 1\np = rect(0, 0, 1e-10, 1)", 2, "0.000001 m"),
+            ("b = extrude(rect(0, 0, 1, 1), 1)\nscale(b, 1e-9)", 2, "0.000001 m"),
+            ("x = 1\nc = circle(0, 0, 1e-9)", 2, "0.000001 m"),
+        ])
 
 
 class TransformTests(ConstructionTestCase):
@@ -318,17 +373,17 @@ class TransformTests(ConstructionTestCase):
     def test_copy_and_array_make_new_shapes_without_the_cuts(self) -> None:
         record = _record()
         result = _compile("\n".join([
-            "post = extrude(rect(0, 0, 0.5, 0.5), 3)",
-            "cut(post, extrude(rect(0.1, 0.1, 0.3, 0.3), 1, at=1))",
-            "row = array(post, 3, dx=2)",
-            "twin = copy(post, dz=4)",
+            "block = extrude(rect(0, 0, 0.5, 0.5), 3)",
+            "cut(block, extrude(rect(0.1, 0.1, 0.3, 0.3), 1, at=1))",
+            "row = array(block, 3, dx=2)",
+            "copy_1 = copy(block, dz=4)",
         ]), record)
         elements = _elements(result)
-        self.assertEqual(sorted(elements), ["post-body", "post-cut-1-body", "row-1-body", "row-2-body", "twin-body"])
-        self.assertEqual(elements["post-body"]["fields"]["references"]["voids"], ["post-cut-1-body"])
+        self.assertEqual(sorted(elements), ["block-body", "block-cut-1-body", "copy-1-body", "row-1-body", "row-2-body"])
+        self.assertEqual(elements["block-body"]["fields"]["references"]["voids"], ["block-cut-1-body"])
         self.assertEqual(elements["row-2-body"]["fields"]["params"]["profile"][0], [4.0, 0.0])
         self.assertEqual(elements["row-1-body"]["fields"]["references"], {"base": {"level": "ground"}})
-        self.assertEqual(elements["twin-body"]["fields"]["params"]["profile"][0], [0.0, 4.0])
+        self.assertEqual(elements["copy-1-body"]["fields"]["params"]["profile"][0], [0.0, 4.0])
         _apply(record, result)
 
     def test_a_parametric_offset_cannot_be_moved_vertically(self) -> None:
@@ -343,7 +398,7 @@ class IdentityTests(ConstructionTestCase):
         result = _compile(LOOP, record)
         self.assertEqual([row["id"] for row in result.report], ["mass", "w-1", "w-2", "w-3", "w-4"])
         host = _elements(result)["mass-body"]["fields"]
-        self.assertEqual(host["references"]["voids"], ["w-1-body", "w-2-body", "w-3-body", "w-4-body"])
+        self.assertEqual(host["references"]["voids"], CUTTERS)
         self.assertEqual(result.report[0]["cuts"], ["w-1", "w-2", "w-3", "w-4"])
         self.assertEqual(result.report[0]["line"], 4)
         self.assertEqual(result.summary, "construction: create mass, w-1..4; cut mass")
@@ -369,18 +424,36 @@ class IdentityTests(ConstructionTestCase):
         self.assertEqual(_elements(second), _elements(first))
         self.assertEqual(_apply(successor, second).entities, successor.entities)
 
+    def test_a_script_that_cuts_existing_geometry_runs_again(self) -> None:
+        record = _record()
+        massed = _apply(record, _compile("mass = extrude(rect(0, 0, 12, 8), 3)", record))
+        script = "\n".join(["m = get('mass')", "for i in range(4):",
+                            "    w = extrude(rect(1 + 2.8 * i, -0.2, 1.2, 0.6), 1.5, at=0.9)", "    cut(m, w)"])
+        first = _compile(script, massed)
+        successor = _apply(massed, first)
+        second = _compile(script, successor)
+        self.assertEqual([row["schema"] for row in second.entities], ["Element@1"] * 4)
+        self.assertEqual({row["status"] for row in second.report}, {"updated"})
+        self.assertEqual(_apply(successor, second).entities, successor.entities)
+
     def test_ids_come_from_names_then_variables_then_cuts_then_order(self) -> None:
         result = _compile("\n".join([
-            "base = extrude(rect(0, 0, 10, 10), 2)",
-            "Upper_Part = extrude(rect(1, 1, 2, 2), 1, at=top(base))",
-            "name(extrude(rect(5, 5, 1, 1), 1), 'spot')",
+            "mass = extrude(rect(0, 0, 10, 10), 2)",
+            "Upper_Block = extrude(rect(1, 1, 2, 2), 1, at=top(mass))",
+            "name(extrude(rect(5, 5, 1, 1), 1), 'named-1')",
             "extrude(rect(8, 8, 1, 1), 1)",
-            "cut(base, extrude(rect(3, 3, 1, 1), 1))",
+            "cut(mass, extrude(rect(3, 3, 1, 1), 1, at=0.5))",
             "extrude(rect(8, 0, 1, 1), 1)",
             "stack = [extrude(rect(i, 12, 0.5, 0.5), 1) for i in range(2)]",
         ]))
         self.assertEqual([row["id"] for row in result.report],
-                         ["base", "upper-part", "spot", "shape-1", "base-cut-1", "shape-2", "stack-1", "stack-2"])
+                         ["mass", "upper-block", "named-1", "shape-1", "mass-cut-1", "shape-2", "stack-1", "stack-2"])
+
+    def test_an_unnamed_shape_never_updates_existing_geometry(self) -> None:
+        record = _record()
+        first = _apply(record, _compile("extrude(rect(0, 0, 1, 1), 1)", record))
+        second = _compile("extrude(rect(10, 10, 5, 5), 7)", first)
+        self.assertEqual([(row["id"], row["status"]) for row in second.report], [("shape-2", "created")])
 
     def test_a_name_already_used_in_the_project_is_refused(self) -> None:
         error = self.refused("a = extrude(rect(0, 0, 1, 1), 1)\nname(a, 'ground')")
@@ -393,6 +466,28 @@ class IdentityTests(ConstructionTestCase):
         self.assertEqual(error.line, 3)
         self.assertIn("model is already Component@1", error.message)
 
+    def test_a_name_used_by_other_geometry_is_refused(self) -> None:
+        record = _record(
+            Entity("pair", "Component@1", {"intent": "pair"}, parent_id="model"),
+            Entity("pair-a", "Element@1", {"component_id": "pair", "producer": "prism",
+                                           "references": {"base": {"level": "ground"}},
+                                           "params": {"profile": [[0, 0], [1, 0], [1, 1], [0, 1]], "height": 1}}),
+            Entity("pair-b", "Element@1", {"component_id": "pair", "producer": "prism",
+                                           "references": {"base": {"level": "ground"}},
+                                           "params": {"profile": [[2, 0], [3, 0], [3, 1], [2, 1]], "height": 2}}),
+            Entity("single", "Component@1", {"intent": "single"}, parent_id="model"),
+            Entity("single-line", "Element@1", {"component_id": "single", "producer": "prism",
+                                                "references": {"base": {"level": "ground"}},
+                                                "params": {"profile": [[5, 0], [6, 0], [6, 1], [5, 1]], "height": 1}}),
+        )
+        self.refusals([
+            ("x = 1\npair = extrude(rect(0, 0, 1, 1), 1)", 2, "pair is already Component@1"),
+            ("x = 1\na = name(extrude(rect(0, 0, 1, 1), 1), 'pair-a')", 2, "pair-a is already Element@1"),
+            ("x = 1\nsingle = extrude(rect(0, 0, 1, 1), 1)", 2, "single is already Component@1"),
+            ("x = 1\nsingle_line = extrude(rect(0, 0, 1, 1), 1)", 2, "single-line is already Element@1"),
+            ("x = 1\na = name(extrude(rect(0, 0, 1, 1), 1), 'ground-body')", 2, "-body"),
+        ], record)
+
     def test_two_shapes_with_one_id_are_refused_at_the_second(self) -> None:
         error = self.refused("a = extrude(rect(0, 0, 1, 1), 1)\nb = extrude(rect(2, 0, 1, 1), 1)\nname(b, 'a')")
         self.assertEqual(error.line, 3)
@@ -402,6 +497,81 @@ class IdentityTests(ConstructionTestCase):
         self.assertEqual(error.line, 2)
         self.assertIn("name(", error.message)
         self.assertEqual(self.refused("a = name(extrude(rect(0, 0, 1, 1), 1), 'mass-body')").line, 1)
+
+
+class RedefinitionTests(ConstructionTestCase):
+    def test_redefining_a_cut_shape_keeps_its_cuts(self) -> None:
+        record = self.cut_record()
+        result = _compile("mass = extrude(rect(0, 0, 12, 8), 4)", record)
+        self.assertEqual(_elements(result)["mass-body"]["fields"]["references"],
+                         {"base": {"level": "ground"}, "voids": CUTTERS})
+        self.assertEqual(result.report[0]["cuts"], ["w-1", "w-2", "w-3", "w-4"])
+        self.assertEqual(result.summary, "construction: update mass")
+        view = _view(_apply(record, result))
+        self.assertEqual((view["mass"]["cuts"], view["w-1"]["hidden"]), (["w-1", "w-2", "w-3", "w-4"], True))
+
+    def test_uncut_removes_one_or_every_cutter(self) -> None:
+        record = self.cut_record()
+        one = _compile("mass = extrude(rect(0, 0, 12, 8), 4)\nuncut(mass, get('w-2'))", record)
+        self.assertEqual(_elements(one)["mass-body"]["fields"]["references"]["voids"],
+                         ["w-1-body", "w-3-body", "w-4-body"])
+        self.assertEqual(one.summary, "construction: update mass; uncut mass")
+        every = _compile("mass = extrude(rect(0, 0, 12, 8), 4)\nuncut(mass)", record)
+        self.assertEqual(_elements(every)["mass-body"]["fields"]["references"], {"base": {"level": "ground"}})
+        existing = _compile("uncut(get('mass'))", record)
+        self.assertEqual(existing.entities[0]["fields"]["references"], {"base": {"level": "ground"}})
+        self.assertEqual(_view(_apply(record, existing))["w-1"]["hidden"], False)
+        self.refusals([("mass = extrude(rect(0, 0, 12, 8), 4)\nc = extrude(rect(20, 0, 1, 1), 1)\nuncut(mass, c)",
+                        3, "c does not cut mass")], record)
+
+    def test_a_cut_shape_stays_a_solid_and_cannot_cut(self) -> None:
+        self.refusals([
+            ("x = 1\nmass = face(rect(0, 0, 12, 8))", 2, "mass has cuts; it must stay a solid"),
+            ("x = 1\nmass = path([(0, 0, 0), (1, 0, 0)])", 2, "mass has cuts; it must stay a solid"),
+            ("mass = extrude(rect(0, 0, 12, 8), 4)\nother = extrude(rect(-5, -5, 30, 30), 5)\ncut(other, mass)",
+             3, "mass has cutters of its own"),
+        ], self.cut_record())
+
+    def test_a_host_can_hold_three_hundred_cutters(self) -> None:
+        record = _record()
+        many = _apply(record, _compile("\n".join([
+            "mass = extrude(rect(0, 0, 400, 2), 3)",
+            "cs = [extrude(rect(i + 0.1, 0.5, 0.5, 0.5), 1, at=1) for i in range(250)]",
+            "cut(mass, cs)",
+        ]), record))
+        self.refusals([("m = get('mass')\nmore = [extrude(rect(i + 0.3, 0.5, 0.2, 0.2), 1, at=1) for i in range(60)]\n"
+                        "cut(m, more)", 3, "300 cutters"),
+                       ("mass = extrude(rect(0, 0, 400, 2), 3)\n"
+                        "more = [extrude(rect(i + 0.3, 0.5, 0.2, 0.2), 1, at=1) for i in range(60)]\ncut(mass, more)",
+                        3, "300 cutters")], many)
+
+
+class RecordRelationTests(ConstructionTestCase):
+    def stacked(self) -> StateRecord:
+        record = _record()
+        return _apply(record, _compile("a = extrude(rect(0, 0, 4, 3), 3)\nb = extrude(rect(1, 1, 1, 1), 1, at=top(a))",
+                                       record))
+
+    def test_a_cutter_of_the_record_stays_a_solid_without_cutters(self) -> None:
+        self.refusals([
+            ("x = 1\nw_1 = face(rect(1, -0.2, 1.2, 0.6))", 2, "w-1 cuts mass; it must stay a solid"),
+            ("w_1 = extrude(rect(1, -0.2, 1.2, 0.6), 1.5, at=0.9)\nc = extrude(rect(1.2, -0.1, 0.2, 0.2), 0.2, at=1)\n"
+             "cut(w_1, c)", 3, "w-1 has cutters of its own and cannot cut mass"),
+            ("x = 1\nb = extrude(rect(1, 0, 1, 1), 1, at=top(get('w-1')))", 2, "cutter"),
+        ], self.cut_record())
+
+    def test_what_carries_another_shape_stays_a_solid_extruded_upward(self) -> None:
+        self.refusals([
+            ("x = 1\na = extrude(rect(0, 0, 4, 3), -3)", 2, "b stands on the top of a; a must stay a solid extruded upward"),
+            ("x = 1\na = face(rect(0, 0, 4, 3))", 2, "b stands on the top of a"),
+            ("x = 1\nc = extrude(rect(0, 0, 9, 9), 5)\ncut(c, get('a'))", 3, "stands on the top of a"),
+        ], self.stacked())
+
+    def test_a_shape_never_stands_on_its_own_top_through_the_record(self) -> None:
+        self.refusals([
+            ("x = 1\nset_base(get('a'), top(get('b')))", 2, "a would stand on its own top"),
+            ("x = 1\na = extrude(rect(0, 0, 4, 3), 3, at=top(get('b')))", 2, "a would stand on its own top"),
+        ], self.stacked())
 
 
 class ExistingGeometryTests(ConstructionTestCase):
@@ -425,14 +595,47 @@ class ExistingGeometryTests(ConstructionTestCase):
 
     def test_existing_geometry_can_be_cut_by_new_geometry(self) -> None:
         record = self._massed()
-        result = _compile("m = get('mass')\nhole = extrude(rect(1, -0.1, 1, 0.5), 1, at=1)\ncut(m, hole)", record)
+        result = _compile("m = get('mass')\ncutter = extrude(rect(1, -0.1, 1, 0.5), 1, at=1)\ncut(m, cutter)", record)
         self.assertEqual(_elements(result)["mass-body"]["fields"]["references"],
-                         {"base": {"level": "ground"}, "voids": ["hole-body"]})
+                         {"base": {"level": "ground"}, "voids": ["cutter-body"]})
         successor = _apply(record, result)
-        self.assertEqual(_view(successor)["hole"]["cutBy"], ["mass"])
-        uncut = _compile("uncut(get('mass'), get('hole'))", successor)
+        self.assertEqual(_view(successor)["cutter"]["cutBy"], ["mass"])
+        uncut = _compile("uncut(get('mass'), get('cutter'))", successor)
         self.assertEqual(uncut.entities[0]["fields"]["references"], {"base": {"level": "ground"}})
         self.assertEqual(uncut.summary, "construction: uncut mass")
+
+    def test_a_copy_and_a_new_base_of_existing_geometry_are_lowered_and_produce(self) -> None:
+        record = self._massed()
+        result = _compile("\n".join([
+            "copy_1 = copy(get('mass'), dx=10)",
+            "block = extrude(rect(20, 0, 5, 5), 2)",
+            "set_base(get('mass'), top(block))",
+            "print(bounds(get('mass')))",
+        ]), record)
+        elements = _elements(result)
+        self.assertEqual(elements["copy-1-body"]["fields"], {
+            "component_id": "copy-1", "producer": "prism", "references": {"base": {"level": "ground"}},
+            "params": {"profile": [[10.0, 0.0], [14.0, 0.0], [14.0, 3.0], [10.0, 3.0]], "height": 3.0}})
+        self.assertEqual(elements["mass-body"]["fields"]["references"], {"base": {"datum": "block-body-top"}})
+        self.assertEqual(result.log, ("((0.0, 2.0, 0.0), (4.0, 5.0, 3.0))",))
+        self.assertEqual(_view(_apply(record, result))["mass"]["bounds"], [[0.0, 2.0, 0.0], [4.0, 5.0, 3.0]])
+
+    def test_edits_of_existing_geometry_refuse_at_their_line(self) -> None:
+        record = self._massed()
+        cut = _apply(record, _compile("cutter = extrude(rect(1, -0.1, 1, 0.5), 1, at=1)\ncut(get('mass'), cutter)", record))
+        error = self.refused("x = 1\ndelete(get('cutter'))", cut)
+        self.assertEqual(error.line, 2)
+        self.assertIn("still cuts mass", error.message)
+        bound = _record(Entity("block-2", "Component@1", {"intent": "block-2"}, parent_id="model"),
+                        Entity("block-2-body", "Element@1", {"component_id": "block-2", "producer": "prism",
+                                                             "references": {"base": {"level": "ground"}},
+                                                             "params": {"profile": [[0, 0], ["@h", 0], ["@h", 1], [0, 1]],
+                                                                        "height": 1}}, parent_id="block-2"),
+                        parameters=PARAMETERS)
+        error = self.refused("b = get('block-2')\nmove(b, dx=1)", bound)
+        self.assertEqual(error.line, 2)
+        self.assertIn("bound to project parameters", error.message)
+        self.assertEqual(_compile("print(bounds(get('block-2')))", bound).log, ("((0.0, 0.0, 0.0), (3.0, 1.0, 1.0))",))
 
     def test_delete_removes_the_component_and_its_element(self) -> None:
         record = self._massed()
@@ -453,39 +656,6 @@ class ExistingGeometryTests(ConstructionTestCase):
                 error = self.refused("x = 1\n" + script, self._massed())
                 self.assertEqual(error.line, 2)
                 self.assertIn(words, error.message)
-
-    def test_a_copy_and_a_new_base_of_existing_geometry_are_lowered_and_produce(self) -> None:
-        record = self._massed()
-        result = _compile("\n".join([
-            "twin = copy(get('mass'), dx=10)",
-            "base = extrude(rect(20, 0, 5, 5), 2)",
-            "set_base(get('mass'), top(base))",
-            "print(bounds(get('mass')))",
-        ]), record)
-        elements = _elements(result)
-        self.assertEqual(elements["twin-body"]["fields"], {
-            "component_id": "twin", "producer": "prism", "references": {"base": {"level": "ground"}},
-            "params": {"profile": [[10.0, 0.0], [14.0, 0.0], [14.0, 3.0], [10.0, 3.0]], "height": 3.0}})
-        self.assertEqual(elements["mass-body"]["fields"]["references"], {"base": {"datum": "base-body-top"}})
-        self.assertEqual(result.log, ("((0.0, 2.0, 0.0), (4.0, 5.0, 3.0))",))
-        self.assertEqual(_view(_apply(record, result))["mass"]["bounds"], [[0.0, 2.0, 0.0], [4.0, 5.0, 3.0]])
-
-    def test_edits_of_existing_geometry_refuse_at_their_line(self) -> None:
-        record = self._massed()
-        cut = _apply(record, _compile("hole = extrude(rect(1, -0.1, 1, 0.5), 1, at=1)\ncut(get('mass'), hole)", record))
-        error = self.refused("x = 1\ndelete(get('hole'))", cut)
-        self.assertEqual(error.line, 2)
-        self.assertIn("still cuts mass", error.message)
-        bound = _record(Entity("bar", "Component@1", {"intent": "bar"}, parent_id="model"),
-                        Entity("bar-body", "Element@1", {"component_id": "bar", "producer": "prism",
-                                                         "references": {"base": {"level": "ground"}},
-                                                         "params": {"profile": [[0, 0], ["@h", 0], ["@h", 1], [0, 1]],
-                                                                    "height": 1}}, parent_id="bar"),
-                        parameters=PARAMETERS)
-        error = self.refused("b = get('bar')\nmove(b, dx=1)", bound)
-        self.assertEqual(error.line, 2)
-        self.assertIn("bound to project parameters", error.message)
-        self.assertEqual(_compile("print(bounds(get('bar')))", bound).log, ("((0.0, 0.0, 0.0), (3.0, 1.0, 1.0))",))
 
     def test_a_line_placed_block_moves_rotates_and_mirrors_by_its_points(self) -> None:
         block = (Entity("block-1", "Component@1", {"intent": "block-1"}, parent_id="model"),
@@ -529,7 +699,7 @@ class ExistingGeometryTests(ConstructionTestCase):
 class CutRefusalTests(ConstructionTestCase):
     def test_cut_refusals_name_their_line(self) -> None:
         solid = "extrude(rect({x}, 0, 1, 1), 1)"
-        cases = [
+        self.refusals([
             ("f = face(rect(0, 0, 1, 1))\nc = " + solid.format(x=0) + "\ncut(f, c)", 3, "solid"),
             ("m = " + solid.format(x=0) + "\np = path([(0, 0, 0), (1, 0, 0)])\ncut(m, p)", 3, "solid"),
             ("m = " + solid.format(x=0) + "\nc = " + solid.format(x=2) + "\nd = " + solid.format(x=4)
@@ -544,17 +714,12 @@ class CutRefusalTests(ConstructionTestCase):
             ("m = " + solid.format(x=0) + "\nc = " + solid.format(x=2) + "\nuncut(m, c)", 3, "does not cut"),
             ("m = " + solid.format(x=0) + "\nc = " + solid.format(x=2) + "\nt = top(c)\ncut(m, c)"
              + "\nb = extrude(rect(0, 0, 1, 1), 1, at=t)", 5, "cutter"),
-        ]
-        for script, line, words in cases:
-            with self.subTest(script=script):
-                error = self.refused(script)
-                self.assertEqual(error.line, line)
-                self.assertIn(words, error.message)
+        ])
 
 
 class AnchorRefusalTests(ConstructionTestCase):
     def test_anchor_refusals_name_their_line(self) -> None:
-        cases = [
+        self.refusals([
             ("f = face(rect(0, 0, 1, 1))\nb = extrude(rect(0, 0, 1, 1), 1, at=top(f))", 2, "top()"),
             ("p = extrude(rect(0, 0, 1, 1), -1)\nb = extrude(rect(0, 0, 1, 1), 1, at=top(p))", 2, "top()"),
             ("x = 1\nb = extrude(rect(0, 0, 1, 1), 1, at=1, plane=front())", 2, "plane"),
@@ -569,12 +734,7 @@ class AnchorRefusalTests(ConstructionTestCase):
             ("x = 1\nb = rect('a', 0, 1, 1)", 2, "number"),
             ("x = 1\ns = loft([section(rect(0, 0, 1, 1), 0), section(rect(0, 0, 1, 1), level('ground') + param('h'))])",
              2, "param('h')"),
-        ]
-        for script, line, words in cases:
-            with self.subTest(script=script):
-                error = self.refused(script, _record(parameters=PARAMETERS))
-                self.assertEqual(error.line, line)
-                self.assertIn(words, error.message)
+        ], _record(parameters=PARAMETERS))
 
 
 class VocabularyTests(ConstructionTestCase):
@@ -596,7 +756,7 @@ class GeometryViewTests(ConstructionTestCase):
     def test_the_view_lists_forms_bounds_and_cuts(self) -> None:
         record = _record()
         self.assertEqual(geometry_view(record), ())
-        view = _view(_apply(record, _compile(LOOP, record)))
+        view = _view(self.cut_record())
         self.assertEqual(view["mass"], {"id": "mass", "form": "solid", "bounds": [[0.0, 0.0, 0.0], [12.0, 3.0, 8.0]],
                                         "cuts": ["w-1", "w-2", "w-3", "w-4"], "cutBy": [], "hidden": False})
         self.assertEqual(view["w-1"], {"id": "w-1", "form": "solid", "bounds": [[1.0, 0.9, -0.2], [2.2, 2.4, 0.4]],
