@@ -141,7 +141,9 @@ def suggest_semantic_kind(text: str, limit: int = 3) -> tuple[str, ...]:
     """
 
     words = [alias for alias, ids in _ALIASES.items() if not set(ids) & _NOT_A_PART]
-    words = list(dict.fromkeys(words + list(COMPOUND_PHRASES)))
+    words += [phrase for phrase, (roles, conditions) in COMPOUND_PHRASES.items()
+              if not set(roles + conditions) & _NOT_A_PART]
+    words = list(dict.fromkeys(words))
     return tuple(difflib.get_close_matches(str(text).strip().lower(), words, n=limit, cutoff=0.75))
 
 
