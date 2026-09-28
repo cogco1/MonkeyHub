@@ -100,6 +100,12 @@ def _state_digest(state: DevelopedDesignState | RecordBinding) -> str:
     return digest
 
 
+# What reading a record's drawing inputs may raise, a producer's refusal and a
+# malformed row alike (ElementProducerError and StateRecordError are
+# ValueErrors): the set construction reads a record with.
+DRAWING_INPUT_ERRORS: tuple[type[Exception], ...] = (KeyError, TypeError, ValueError, IndexError, ArithmeticError)
+
+
 def drawing_context(record):
     """Resolve the producer-owned datum graph without CAD or project writes."""
 
@@ -113,14 +119,14 @@ def drawing_context(record):
             # controls: the datum is the producer's own, in production order.
             try:
                 produce_rows((row,), context)
-            except (KeyError, TypeError, ValueError):
+            except DRAWING_INPUT_ERRORS:
                 pass
             continue
         if row.producer not in {"prism", "planar-surface"}:
             continue
         try:
             placements[row.element_id] = drawn_element_placement(row, context)
-        except (KeyError, TypeError, ValueError) as exc:
+        except DRAWING_INPUT_ERRORS as exc:
             placements[row.element_id] = str(exc)
     return {row.element_id: row for row in rows}, context, placements
 

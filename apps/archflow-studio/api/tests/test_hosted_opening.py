@@ -338,3 +338,45 @@ class DeclaredInterfaceTestCase(HostedOpeningTestCase):
         self.assertEqual(job["status"], "succeeded", job)
         [assembly] = delivered_assemblies(self, self.client, self.repository, job["candidateId"])
         self.assertEqual(assembly["interface_refs"], [INTERFACE])
+
+
+# The demo record with one wall row the record accepts but no producer can read: its inward has one component.
+MALFORMED_WALL_RECORD: dict[str, object] = {
+    **{key: value for key, value in RECORD_PAYLOAD.items() if key != "entities"},
+    "entities": [
+        *RECORD_PAYLOAD["entities"],  # type: ignore[misc]
+        {"entity_id": "screen-body", "schema": "Element@1", "parent_id": "portico", "fields": {
+            "component_id": "portico", "producer": "wall",
+            "references": {"base": {"level": "level-ground"},
+                           "line": {"from": {"point": [0, 3]}, "to": {"point": [4, 3]}, "inward": [1]}},
+            "params": {"thickness": 0.2, "height": 2.5}}, "basis_refs": [EVIDENCE]},
+    ],
+}
+
+
+class MalformedWallTestCase(unittest.TestCase):
+    """A wall row no producer can read does not break reading the state: it just has no drawing controls."""
+
+    def setUp(self) -> None:
+        self.root = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.root, True)
+        self.repository = make_empty_project(self.root)
+        write_runner_record(self.repository, MALFORMED_WALL_RECORD)
+        self.client = TestClient(create_app(StudioSettings(cad_export="off", project_dir=self.root / PROJECT_ID)))
+        self.addCleanup(self.client.close)
+
+    def test_the_state_and_the_elevation_route_still_answer(self) -> None:
+        response = self.client.get("/api/state")
+        self.assertEqual(response.status_code, 200, response.text)
+        state = response.json()
+        elements = {element["elementId"]: element for element in state["elements"]}
+        self.assertIsNone(elements["screen-body"]["drawnShape"])
+        self.assertEqual(elements["screen-body"]["drawnShapeReason"],
+                         "Direct push/pull supports drawn faces and prisms, not wall.")
+        self.assertIsNotNone(elements["portico-base"]["drawnShape"], elements["portico-base"])
+        for body in ({"elementId": "screen-body", "action": "set-height", "value": 1},
+                     {"levelId": "level-upper", "action": "set-datum", "value": 3}):
+            with self.subTest(action=body["action"]):
+                refused = self.client.post("/api/proposals/elevation", json={"stateDigest": state["stateDigest"], **body})
+                self.assertEqual(refused.status_code, 422, refused.text)
+                self.assertEqual(refused.json()["code"], "ELEVATION_EDIT_INVALID")

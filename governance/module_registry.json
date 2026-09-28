@@ -1129,13 +1129,14 @@
         "datum-seated lofts accept an optional base_offset in metres, matching the existing extrusion and revolve seat-height contract",
         "the authoring contract states relations and results, not operation idioms: a host_cut member may be any region derived from its host or consumed together with it",
         "an operation may state no semantic binding when all of its outputs are construction",
-        "an assembly's interface_refs are only the relations the record's connections declare; an assembly that names none cites none"
+        "an assembly's interface_refs are only the relations the record's connections declare, and it may name none: the provider contract offers the declared refs with minItems 0 and says to leave it empty when none is declared"
       ],
       "status": "canonical",
       "tests": [
         "tests/test_production_policy.py",
         "tests/test_element_producers.py",
-        "tests/test_wall_realization.py"
+        "tests/test_wall_realization.py",
+        "tests/test_geometry_authoring_contract.py"
       ],
       "notes": "The runner drives it with an inline RecordedProposalProvider for replay; a live provider enters through studio.intent, which signs its call with the same ports.model receipt."
     },
@@ -4901,7 +4902,8 @@
         "a page's representation status is derived on read and never stored; an explicit page replacement answers before what the page depicts; a missing or unverifiable page or input is unavailable and is never rebound; a person's keep (a drawing's follow: frozen, Publish's freeze) is frozen; each consumer keeps its own wire words",
         "an answer is remembered only in memory and only under a stable ReadToken, which is read from the project's layout watch (project.watch) and never walked on a request: this process's writes change the token at once and leave it unstable until the watch has seen them, another process's once the watch sees them (about a second); closing the binding gives back its share of the watch",
         "a State Record is parsed once per content digest and shared by every binding in the process, and nobody changes it; state_record still checks the ref's file on every call. A design branch's Stage chain is kept by the head and fork refs that fix it, each Stage file still checked; each run's part of the reference-run survey is kept under the stamps of its manifest, records directory and the receipt and workflow files it read; a bound view's state digest is taken once per view",
-        "the drawing context publishes every wall's <id>-top from the producer itself, in production order, so a drawn shape standing on a wall keeps its drawing controls"
+        "the drawing context publishes every wall's <id>-top from the producer itself, in production order, so a drawn shape standing on a wall keeps its drawing controls",
+        "a row no producer can read leaves its element without drawing controls and never fails a state read: the drawing context and the state read catch what reading drawing inputs may raise (DRAWING_INPUT_ERRORS, the set construction reads a record with)"
       ],
       "status": "canonical",
       "tests": [
@@ -5497,7 +5499,8 @@
         "admissions are read only from the fixed studio-admissions run, never by enumerating runs; a run is in at most one live record as a result or a superseded attempt; an identical retry returns the retained record and any other claim on a claimed run, or rejecting or superseding a committed Stage's run, is ADMISSION_CONFLICT",
         "the admission gate is Stage acceptance's own preflight (C1 replay, C2 completed and not executing, C3 review readiness against the exact base, C5 one complete model) plus C4 object readback and C7 supersession; if any result fails nothing is retained and every failing clause is named",
         "a person (ui or retroactive) may admit a result that is not review-ready as a comparison option, retaining the failing clauses as its marker; an Agent (hub-chat) admission is review-ready, needs the Hub-managed boundary and a bound message, and rejects only on the user's bound words; Stage acceptance still requires review readiness and refuses a run with a live rejection",
-        "admission accepts no Stage, advances no branch, moves no Working Head and writes no working position; a Runtime connected to a shared project refuses admissions until they synchronize"
+        "admission accepts no Stage, advances no branch, moves no Working Head and writes no working position; a Runtime connected to a shared project refuses admissions until they synchronize",
+        "an elevation edit on a record whose rows cannot be read answers 422 ELEVATION_EDIT_INVALID, never a 500"
       ],
       "status": "canonical",
       "tests": [

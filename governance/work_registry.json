@@ -64,6 +64,7 @@
             "apps/archflow-studio/api/archflow_studio_api/application/clarification.py",
             "apps/archflow-studio/api/archflow_studio_api/application/construction.py",
             "apps/archflow-studio/api/archflow_studio_api/application/projection.py",
+            "apps/archflow-studio/api/archflow_studio_api/application/elevation.py",
             "apps/archflow-studio/api/archflow_studio_api/application/domains.py",
             "apps/archflow-studio/api/archflow_studio_api/routes/construction.py",
             "apps/archflow-studio/api/archflow_studio_api/routes/domains.py",
