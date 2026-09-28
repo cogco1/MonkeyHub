@@ -10057,7 +10057,7 @@ export type SketchActionDto = {
     /**
      * Elementid
      *
-     * the Element@1 this action authors; an existing id edits that element
+     * the Element@1 this action authors; an existing id edits that element. It must differ from componentId: a component and its element are two entities with their own ids
      */
     elementId: string;
     /**
@@ -10212,7 +10212,7 @@ export type SketchPrismRequestDto = {
     /**
      * Elementid
      *
-     * the Element@1 this action authors; an existing id edits that element
+     * the Element@1 this action authors; an existing id edits that element. It must differ from componentId: a component and its element are two entities with their own ids
      */
     elementId: string;
     /**
