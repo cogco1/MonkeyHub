@@ -1005,6 +1005,7 @@ export const messagesEn = {
   "designTree.fact.updated": "Updated",
   "designTree.actor.you": "You",
   "designTree.actor.retroactive": "You (retroactive review)",
+  "designTree.actor.hubAgent": "Agent (on your words in chat)",
   "designTree.action.view": "View",
   "designTree.action.continue": "Continue from here",
   "designTree.action.endorse": "Endorse direction",

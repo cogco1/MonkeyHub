@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass
-from typing import Any, Mapping
+from typing import Any, Mapping, Sequence
 
 from archflow.project.record_kinds import RUNNER_RUN_RECEIPT, SEAT_3DM_INSPECTION
 from archflow.project.refs import ProjectRecordRef
@@ -143,15 +143,34 @@ def shapes_of(binding: ProjectBinding, run_id: str) -> tuple[Shape, ...]:
     return tuple(shapes)
 
 
+# A Manual Sync chain can hold many steps; the card's why names the first and
+# the last and counts the rest (#404 item 13). The proposal keeps every step.
+WHY_STEPS_SHOWN = 3
+
+
+def why_of(steps: Sequence[str]) -> str:
+    """Every step of a short chain, in order; a longer one's first and last and how many between."""
+
+    if len(steps) <= WHY_STEPS_SHOWN:
+        return "; ".join(steps)
+    return f"{steps[0]}; … and {len(steps) - 2} more …; {steps[-1]}"
+
+
 def compare_runs(
     binding: ProjectBinding,
     *,
     candidate_id: str,
     against: str,
-    why: str | None,
+    why: str | Sequence[str] | None,
     why_source: str,
 ) -> Comparison:
-    """The candidate's objects against another run's, joined by name."""
+    """The candidate's objects against another run's, joined by name.
+
+    ``why`` is the sentence, or the chain's steps in order, which ``why_of`` bounds.
+    """
+
+    if why is not None and not isinstance(why, str):
+        why = why_of(tuple(why))
 
     after = {shape.name: shape for shape in shapes_of(binding, candidate_id)}
     before = {shape.name: shape for shape in shapes_of(binding, against)}
