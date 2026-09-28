@@ -7859,12 +7859,13 @@
         "the construction vocabulary ConstructionVocabulary@1: verbs, signatures, conventions, limits and one example, the single table the interpreter binds its verbs from",
         "the layer rule over L1 text (LAYER_RULE_TOKENS, case-insensitive substrings): no realisation name, classification field or backend word",
         "construction values: plan and plane profiles, drawing planes, level and top anchors, parameter bindings, loft sections, and transforms baked into a shape's definition",
-        "construction identity: name(), module-level variables, then <host>-cut-<6 hex> and shape-<6 hex> hashed from the statement that made the shape; <id>-body elements; reuse only of construction-made components",
+        "construction identity: name(), module-level variables, then <host>-cut-<12 hex> and shape-<12 hex> hashed from the chain of statements that made the shape (the module-level statement, the statements it called, down to the one that made it); <id>-body elements; reuse only of construction-made components; the session reads the same ids while the script runs, so a new shape given the id of existing geometry is its current version",
         "lowering construction results to Component@1/Element@1 rows, the one place a producer is chosen for script-authored geometry",
         "script edits of existing geometry in place, rewriting only its element's params and references",
         "cuts authored as the host element's references.voids, kept when a new shape redefines existing geometry",
         "the construction geometry view: per component form, bounds, cuts, cutBy and hidden, without producers",
-        "pre-checking the cut and support relations a script leaves, including against record geometry it never reached, before any row is written"
+        "pre-checking the cut and support relations a script leaves, including against record geometry it never reached, before any row is written",
+        "the script's model for every top a shape reads: a row the script changed or a shape it redefined is the current version of that geometry, and the report's bounds come from the successor record the rows leave"
       ],
       "does_not_own": [
         "producing geometry from rows (capabilities.element_producers)",
@@ -7896,6 +7897,7 @@
         "adapters.cad_program",
         "capabilities.element_producers",
         "capabilities.reference_resolver",
+        "monkeyarch.construction.identity",
         "monkeyarch.construction.lowering",
         "monkeyarch.construction.script",
         "monkeyarch.construction.shapes",
@@ -7913,15 +7915,17 @@
         "A refused script saves nothing and names its line, column and source line in one sentence.",
         "Producers are chosen in lowering and nowhere else; no producer name reaches the vocabulary or a refusal.",
         "Running a script again with the same names updates the same geometry and emits no new Component@1.",
-        "An id that already names anything but construction-made geometry is refused by name, never overwritten.",
+        "An id that already names anything but construction-made geometry is refused by name, never overwritten; geometry realized with support for openings is changed only with get(), never redefined.",
         "A get() edit rewrites only its element's params and references; an existing component is never re-emitted.",
         "geometry_view never raises; bounds it cannot predict are None.",
         "No single step does unbounded work; no refusal repeats a script value at length.",
         "xs += [...] extends the list xs in place, as Python does, and counts only what it adds, for xs and for every list or tuple holding it.",
         "A new shape that redefines existing geometry keeps what that geometry cuts until the script uncuts it.",
-        "An unnamed shape's id is hashed from the statement that made it (whitespace ignored) and how many shapes that statement made before it, so re-running a script updates the same shapes; such an id that names anything but construction-made geometry is refused.",
+        "An unnamed shape's id is hashed from the chain of statements that made it (whitespace ignored) and how many shapes that chain made before it, so re-running a script updates the same shapes and the same helper called from two statements makes two; such an id that names anything but construction-made geometry is refused.",
         "What the record cuts and carries is checked against the model the script leaves, at the line that made it wrong.",
-        "Lowering runs under the script's deadline, and the shapes a script leaves hold at most 100 000 points."
+        "Lowering runs under the script's deadline, and the shapes a script leaves hold at most 100 000 points.",
+        "Every top a shape reads during the script resolves through the script's model: the current version of what the script changed or redefined, else what the record publishes; a top that leads back to itself is refused.",
+        "The report's bounds are those of the successor record (the rows applied the way the Studio edit path applies them, then viewed), so the report states what the runtime will produce, cuts included."
       ],
       "status": "canonical",
       "tests": [
@@ -7933,6 +7937,7 @@
         "monkeyarch/construction/__init__.py",
         "monkeyarch/construction/script.py",
         "monkeyarch/construction/shapes.py",
+        "monkeyarch/construction/identity.py",
         "monkeyarch/construction/lowering.py",
         "monkeyarch/construction/vocabulary.py"
       ]

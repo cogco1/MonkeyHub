@@ -7,7 +7,9 @@ baked into that definition. Existing geometry reached with ``get()``
 (``RowShape``) keeps its element's own parameters and references and edits them
 in place; nothing else of the row is touched. Bounds of a drawn shape are
 analytic from its definition; bounds of existing geometry come from its
-producer, read through ``World``, the record's facts.
+producer, read through ``World``, the record's facts. Every top a shape reads
+resolves through the script's model (``World.top_of``): the current version of
+what the script changed or redefined, else what the record publishes.
 
 Every coordinate stays finite and within ``MAX_COORDINATE`` metres of the
 origin, and every length is at least ``MIN_LENGTH``. Nothing here names an id:
@@ -1153,6 +1155,10 @@ class RowShape(Shape):
             if anchor.param is not None:
                 extra += world.parameter_value(anchor.param)
             rebase(self.producer, params, references, reference, extra or None)
+        for target in sorted(datum_targets(references)):  # every top it reads, as the script now has it
+            context.published[f"{target}-top"] = InterfaceDatum.create(
+                datum_id=f"{target}-top", kind=InterfaceDatumKind.LEVEL, published_by="construction",
+                value=round(world.top_of(target), 9), unit=LengthUnit.METER)
         name = self.element_id if self.existing else "construction-copy"
         try:
             row = ElementRow(name, self.component_id or "construction-copy", self.producer, references, params)
@@ -1165,7 +1171,11 @@ class RowShape(Shape):
         return box
 
     def top(self, world: World) -> float:
-        if self.existing and not self.geometry_changed and self.base_anchor is None:
+        """Its top as the runtime will publish it: the record's value while neither the row nor anything it stands
+        on has been changed or redefined by the script; else produced again where it now stands."""
+
+        if (self.existing and not self.geometry_changed and self.base_anchor is None
+                and not world.supports_touched(self.element_id)):  # type: ignore[arg-type]
             published = world.published_top(self.element_id)  # type: ignore[arg-type]
             if published is not None:
                 return published
@@ -1243,6 +1253,24 @@ def datum_targets(value: object) -> set[str]:
     return found
 
 
+def _needed(rows, wanted: Iterable[str]) -> set[str]:
+    """The elements to produce for ``wanted``: them, what they name as voids and what they stand on, directly or not."""
+
+    by_id = {row.element_id: row for row in rows}
+    needed: set[str] = set()
+    pending = [element_id for element_id in wanted if element_id in by_id]
+    while pending:
+        element_id = pending.pop()
+        if element_id in needed:
+            continue
+        needed.add(element_id)
+        references = by_id[element_id].references
+        voids = references.get("voids")
+        pending.extend(void for void in (voids if isinstance(voids, (list, tuple)) else ()) if isinstance(void, str))
+        pending.extend(datum_targets(references))
+    return needed
+
+
 class World:
     """What one record says that a script reads: levels, parameters, editable elements, relations, production."""
 
@@ -1281,6 +1309,44 @@ class World:
         self._production: tuple | None = None
         self._downstream: dict[str, set[str]] | None = None
         self.tops: dict[Any, float] = {}  # shape -> the elevation of its top; cleared whenever the script edits a shape
+        # The script's model, when a script runs: the current top of an element it changed or redefined (None for
+        # any other), and whether it changed or redefined an element. Without a script, the record is the model.
+        self.current_top: Callable[[str], float | None] | None = None
+        self.touched: Callable[[str], bool] | None = None
+        self.resolving: set[str] = set()  # the elements whose top is being worked out: one met twice is a cycle
+
+    def supports_touched(self, element_id: str) -> bool:
+        """Whether the script changed or redefined anything the record says this element stands on, directly or not."""
+
+        if self.touched is None:
+            return False
+        pending, seen = list(self.stands_on.get(element_id, ())), set()
+        while pending:
+            target = pending.pop()
+            if target in seen:
+                continue
+            seen.add(target)
+            if self.touched(target):
+                return True
+            pending.extend(self.stands_on.get(target, ()))
+        return False
+
+    def top_of(self, element_id: str) -> float:
+        """The elevation of an element's top as the script now has it: its current version when the script changed
+        or redefined it, else the top the record publishes; a top that leads back to itself is a cycle."""
+
+        if element_id in self.resolving:
+            raise ShapeError(f"{short(self.geometry_id(element_id))} would stand on its own top")
+        self.resolving.add(element_id)
+        try:
+            value = self.current_top(element_id) if self.current_top is not None else None
+            if value is None:
+                value = self.published_top(element_id)
+            if value is None:
+                raise ShapeError(f"the top of {short(self.geometry_id(element_id))} cannot be computed from the project")
+            return value
+        finally:
+            self.resolving.discard(element_id)
 
     def downstream(self, entity_id: str) -> set[str]:
         """The entities whose references depend on an entity: the record's dependency edges, read once."""
@@ -1344,8 +1410,12 @@ class World:
         component = self.component_of(element_id)
         return element_id, component, self.geometry_id(element_id)
 
-    def production(self) -> tuple[tuple, ProductionContext, dict]:
-        """The record's rows produced once, row by row: what fails is left out, never raised."""
+    def production(self, wanted: Iterable[str] | None = None) -> tuple[tuple, ProductionContext, dict]:
+        """The record's rows produced once, row by row: what fails is left out, never raised.
+
+        With ``wanted``, only those elements are produced, with what they name as voids and what they stand on,
+        directly or not (the first call decides; the production is kept).
+        """
 
         if self._production is None:
             grids = levels = None
@@ -1363,7 +1433,10 @@ class World:
             except _PRODUCTION_ERRORS:
                 rows = ()
             produced = {}
+            needed = None if wanted is None else _needed(rows, wanted)
             for row in rows:
+                if needed is not None and row.element_id not in needed:
+                    continue
                 try:
                     produced[row.element_id] = produce_rows((row,), context)[0]
                 except _PRODUCTION_ERRORS:

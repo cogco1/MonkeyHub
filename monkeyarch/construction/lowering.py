@@ -1,11 +1,11 @@
 """A construction script lowered to design-state rows (#419, L1 -> L2).
 
-The script's surviving shapes get their ids here (``name()``, then module
-variables, then ``<host>-cut-<6 hex>`` for an unnamed cutter and
-``shape-<6 hex>`` for any other unnamed shape, the digits hashed from the
-statement that made it, so that running a script again updates the same
-shapes), and each becomes one ``Component@1 <id>`` with one
-``Element@1 <id>-body``.
+The script's surviving shapes get their final ids here (the rules are
+``identity``: ``name()``, then module variables, then ``<host>-cut-<12 hex>``
+for an unnamed cutter and ``shape-<12 hex>`` for any other unnamed shape, the
+digits hashed from the chain of statements that made it, so that running a
+script again updates the same shapes), and each becomes one ``Component@1
+<id>`` with one ``Element@1 <id>-body``.
 Producers are chosen here and nowhere else: a plan extrusion is a prism, a
 face a planar surface, a path a curve, a loft a loft. A ``get()`` handle
 rewrites only its element's ``params`` and ``references``; ``delete`` removes
@@ -17,20 +17,29 @@ Before any row is written, the relations the result leaves - what cuts what,
 what stands on what - are checked where the script touched them, including
 against geometry of the record the script never reached, and refused at the
 script line in construction words. Lowering runs under the script's deadline.
+The report's bounds are read from the successor record: the rows applied the
+way the Studio edit path applies them, then viewed, so the report states what
+the runtime will produce.
 
 ``geometry_view`` is the other direction: what a record's geometry is, per
 component, in the same words (form, bounds, cuts) and without producers.
 """
 from __future__ import annotations
 
-import hashlib
 import re
 import time
 from dataclasses import dataclass, field, replace
 from types import MappingProxyType
 from typing import Any, Mapping
 
-from archflow.state.state_record import StateRecord
+from archflow.state.state_record import (
+    Entity,
+    StateRecord,
+    StateRecordError,
+    apply_state_record_operator,
+    compile_component_edit,
+)
+from monkeyarch.construction.identity import ELEMENT_SUFFIX, Naming, identify, identity_of
 from monkeyarch.construction.script import (
     MAX_CUTTERS,
     MAX_ID,
@@ -59,9 +68,8 @@ from monkeyarch.construction.shapes import (
     within_reach,
 )
 
-ELEMENT_SUFFIX = "-body"
-_VARIABLE_ID = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
 _DOWNWARD = {"origin": [0.0, 0.0, 0.0], "xAxis": [1.0, 0.0, 0.0], "yAxis": [0.0, 0.0, 1.0], "normal": [0.0, -1.0, 0.0]}
+_RECORD_REFUSALS = (StateRecordError, ValueError, KeyError, TypeError)
 
 
 @dataclass(frozen=True)
@@ -105,7 +113,8 @@ class _Lowering:
         self.world = session.world
         self.lines = lines
         self.root = root
-        self.ids: dict[Shape, tuple[str, int]] = {}
+        self.naming = Naming()
+        self.ids = self.naming.ids
         self.survivors = [shape for shape in session.shapes if shape.deleted_line is None]
         self._voids: dict[Shape, list[str]] = {}
         self._labels: dict[str, str] = {}
@@ -120,56 +129,18 @@ class _Lowering:
             raise self.error(line, TIME_OUT)
 
     # ---- identity
-    @staticmethod
-    def hashed(prefix: str, shape: Shape, claimed: dict) -> str:
-        """``prefix`` and six hex digits of the sha1 of the statement that made ``shape`` and how many shapes that
-        statement made before it, so the same script gives the same ids; should two shapes of one script share
-        the six digits, the later keeps more of them."""
-
-        key, index = shape.made_by if shape.made_by is not None else ("", shape.seq)
-        digest = hashlib.sha1(f"{key}\n{index}".encode("utf-8")).hexdigest()
-        identifier = prefix + digest[:6]
-        for width in (8, 10, 12, 16, 40):
-            if identifier not in claimed:
-                break
-            identifier = prefix + digest[:width]
-        return identifier
-
     def assign_ids(self) -> None:
-        claimed: dict[str, list[Shape]] = {}
-
-        def give(shape: Shape, identifier: str, line: int) -> None:
-            self.ids[shape] = (identifier, line)
-            claimed.setdefault(identifier, []).append(shape)
+        """The final ids by the rules of ``identity``, refused where a shape cannot be named."""
 
         for shape in self.survivors:
-            if shape.explicit is not None:
-                give(shape, *shape.explicit)
-        groups: dict[str, list[Shape]] = {}
-        for shape in self.survivors:
-            chosen = shape.direct or shape.listed
-            if shape not in self.ids and chosen is not None:
-                groups.setdefault(chosen[0], []).append(shape)
-        for variable, members in groups.items():
-            base = variable.replace("_", "-").lower()
-            if not _VARIABLE_ID.fullmatch(base):
-                line = (members[0].direct or members[0].listed)[2]  # type: ignore[index]
-                raise self.error(line, f"the variable {short(variable)} cannot name a shape; give it an id with "
-                                       f"name(obj, \"...\")")
-            for index, member in enumerate(members, start=1):
-                line = (member.direct or member.listed)[2]  # type: ignore[index]
-                give(member, base if len(members) == 1 else f"{base}-{index}", line)
-        cutters = {shape: None for shape in self.survivors if shape not in self.ids
-                   and any(host.deleted_line is None for host in shape.cut_into)}
-        for shape in self.survivors:  # other unnamed shapes first: a cutter is named after its host
-            if shape not in self.ids and shape not in cutters:
-                self.clock(shape.line)
-                give(shape, self.hashed("shape-", shape, claimed), shape.created_line)
-        for shape in cutters:
             self.clock(shape.line)
-            host = next(host for host in shape.cut_into if host.deleted_line is None)
-            give(shape, self.hashed(f"{self.identity(host)}-cut-", shape, claimed), shape.created_line)
-        for identifier, members in claimed.items():
+        self.naming = identify(self.survivors)
+        self.ids = self.naming.ids
+        if self.naming.unspellable is not None:
+            variable, line = self.naming.unspellable
+            raise self.error(line, f"the variable {short(variable)} cannot name a shape; give it an id with "
+                                   f"name(obj, \"...\")")
+        for identifier, members in self.naming.claimed.items():
             if len(members) > 1:
                 second = sorted(members, key=lambda shape: shape.seq)[1]
                 raise self.error(self.ids[second][1], f"two shapes would both be called {identifier}; give one of "
@@ -178,9 +149,7 @@ class _Lowering:
         self._labels = {identifier + ELEMENT_SUFFIX: identifier for identifier, _ in self.ids.values()}
 
     def identity(self, shape: Shape) -> str:
-        if isinstance(shape, RowShape) and shape.existing:
-            return shape.geometry_id  # type: ignore[return-value]
-        return self.ids[shape][0]
+        return identity_of(shape, self.naming)
 
     def element_id_of(self, shape: Shape) -> str:
         if isinstance(shape, RowShape) and shape.existing:
@@ -213,6 +182,11 @@ class _Lowering:
                 raise self.error(line, f"{identifier} is also reached with get() in this script; name the new "
                                        "shape differently")
             if self.reusable(identifier):
+                if self.world.entities[identifier + ELEMENT_SUFFIX].fields.get("producer") == "wall":
+                    # Re-realized with support for doors and windows: a new definition would make it a plain
+                    # solid again and drop its openings; get() keeps the realization.
+                    raise self.error(line, f"{identifier} is realized with support for openings; change it with "
+                                           "get(), or delete it and draw it again: a new definition would drop them")
                 continue
             for taken in (identifier, identifier + ELEMENT_SUFFIX):
                 entity = self.world.entities.get(taken)
@@ -414,14 +388,40 @@ class _Lowering:
                   "profile_size": len(shape.sections[0].profile.points), "cap_ends": shape.cap}
         return "loft", params, {"base": base}
 
-    def bounds(self, shape: Shape) -> list[list[float]] | None:
+    def within_reach(self, shape: Shape) -> None:
+        """A shape whose definition reaches beyond the world is refused at its line."""
+
         try:
             box = shape.bounds(self.world)  # type: ignore[attr-defined]
         except ShapeError:
-            return None
+            return
         if not within_reach(box):
             raise self.error(shape.line, f"{shape.label()} reaches beyond 100 000 m from the project origin")
-        return _box_list(box)
+
+    def successor_boxes(self, entities: list[dict], removed: list[str]) -> dict[str, Box | None] | None:
+        """The bounds of every element of the record the rows leave, as the model view predicts them.
+
+        The rows are applied the way the Studio edit path applies them - fields merged over the existing entity,
+        ``compile_component_edit``, ``apply_state_record_operator`` - so the report states what the runtime will
+        produce, cuts included. None when the record refuses the rows: the edit path then says why.
+        """
+
+        existing = self.world.entities
+        merged = []
+        for row in entities:
+            previous = existing.get(row["entity_id"])
+            value = dict(row)
+            if previous is not None:
+                value = {**previous.to_dict(), **value, "fields": {**previous.fields, **row["fields"]}}
+            merged.append(Entity.from_dict(value))
+        try:
+            operator = compile_component_edit(self.world.record, entities=tuple(merged),
+                                              remove_entity_ids=tuple(sorted(set(removed))))
+            successor = apply_state_record_operator(self.world.record, operator)
+        except _RECORD_REFUSALS:
+            return None
+        wanted = [row["entity_id"] for row in entities if row["schema"] == "Element@1"]
+        return _element_boxes(World(successor), wanted)
 
     def lower(self) -> ConstructionResult:
         self.check_relations()
@@ -430,6 +430,7 @@ class _Lowering:
         removed: list[str] = []
         line_of: dict[str, int] = {}
         created, updated, deleted, cut, uncut = [], [], [], [], []
+        measured: list[tuple[dict, str]] = []  # report rows whose bounds the successor states, by element id
         for shape in self.survivors:
             self.clock(shape.line)
             identifier, _ = self.ids[shape]
@@ -450,9 +451,10 @@ class _Lowering:
             entities.append({"entity_id": element_id, "schema": "Element@1", "parent_id": identifier,
                              "fields": {"component_id": identifier, "producer": producer, **extra,
                                         "references": references, "params": params}})
+            self.within_reach(shape)
             report.append({"id": identifier, "form": shape.form, "status": "updated" if reuse else "created",  # type: ignore[attr-defined]
-                           "bounds": self.bounds(shape), "cuts": sorted(self.label_of(v) for v in voids),
-                           "line": shape.line})
+                           "bounds": None, "cuts": sorted(self.label_of(v) for v in voids), "line": shape.line})
+            measured.append((report[-1], element_id))
             line_of[identifier] = line_of[element_id] = shape.line
             (updated if reuse else created).append(identifier)
             inherited = set(self.world.voids_of.get(element_id, ())) if reuse else set()
@@ -483,8 +485,10 @@ class _Lowering:
                 fields["references"] = references
             entities.append({"entity_id": element_id, "schema": "Element@1", "parent_id": row.parent_id,
                              "fields": fields})
-            report.append({"id": identifier, "form": row.form, "status": "updated", "bounds": self.bounds(row),
+            self.within_reach(row)
+            report.append({"id": identifier, "form": row.form, "status": "updated", "bounds": None,
                            "cuts": sorted(self.label_of(v) for v in now), "line": row.line})
+            measured.append((report[-1], element_id))
             line_of[identifier] = line_of[element_id] = row.line  # type: ignore[index]
             if row.geometry_changed:
                 updated.append(identifier)  # type: ignore[arg-type]
@@ -492,6 +496,12 @@ class _Lowering:
                 cut.append(identifier)  # type: ignore[arg-type]
             if set(row.original_voids) - set(now):
                 uncut.append(identifier)  # type: ignore[arg-type]
+        if measured:
+            self.clock(measured[0][0]["line"])
+            boxes = self.successor_boxes(entities, removed)
+            for row, element_id in measured:
+                row["bounds"] = _box_list(boxes.get(element_id)) if boxes is not None else None
+            self.clock(measured[0][0]["line"])
         parts = [f"{verb} {_compact(ids)}" for verb, ids in (("create", created), ("update", updated),
                                                              ("delete", deleted), ("cut", cut), ("uncut", uncut)) if ids]
         return ConstructionResult(
@@ -530,14 +540,12 @@ def _form(world: World, element_id: str) -> str:
     return {"planar-surface": "face", "curve": "path"}.get(str(producer), "other")
 
 
-def geometry_view(record: StateRecord) -> tuple[dict, ...]:
-    """Per component with geometry: its form, bounds, cuts (what it removes), cutBy (what removes it) and whether
-    it is hidden (named as a cutter). A component with several elements lists them as ``parts``. Bounds that
-    cannot be predicted are ``None``; the view never raises.
-    """
+def _element_boxes(world: World, wanted: list[str] | None = None) -> dict[str, Box | None]:
+    """The predicted bounds of every element the record produces (with ``wanted``, of those elements only, their
+    cuts and supports produced with them), each element's cuts applied; ``None`` where the prediction fails, and no
+    entry for an element that does not produce."""
 
-    world = World(record)
-    rows, context, produced = world.production()
+    rows, context, produced = world.production(wanted)
     voids_of = {row.element_id: tuple(row.references.get("voids") or ()) for row in rows}
     element_bounds: dict[str, Box | None] = {}
     for element_id, element in produced.items():
@@ -552,6 +560,17 @@ def geometry_view(record: StateRecord) -> tuple[dict, ...]:
             element_bounds[element_id] = union(box for object_id, box in boxes.items() if object_id in own)
         except (ValueError, KeyError, TypeError, IndexError, ArithmeticError):
             element_bounds[element_id] = None
+    return element_bounds
+
+
+def geometry_view(record: StateRecord) -> tuple[dict, ...]:
+    """Per component with geometry: its form, bounds, cuts (what it removes), cutBy (what removes it) and whether
+    it is hidden (named as a cutter). A component with several elements lists them as ``parts``. Bounds that
+    cannot be predicted are ``None``; the view never raises.
+    """
+
+    world = World(record)
+    element_bounds = _element_boxes(world)
     view = []
     for component in record.entities_of("Component@1"):
         parts = world.elements_of.get(component.entity_id)

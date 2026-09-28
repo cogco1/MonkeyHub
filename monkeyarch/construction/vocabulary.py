@@ -158,7 +158,8 @@ VERBS: tuple[Verb, ...] = (
          "A project parameter, used directly as a height or added to an anchor as an at offset. It is a "
          "binding, not a number: arithmetic on it is refused."),
     Verb("bounds", _p("obj"), "((xmin, ymin, zmin), (xmax, ymax, zmax))",
-         "The shape's bounds from its definition, before cuts."),
+         "The shape's bounds from its definition, before cuts, where it stands now: a top it stands on is read "
+         "as this script has changed or redefined it."),
     Verb("name", _p("obj", "id"), "obj",
          "Give a new shape its id."),
     Verb("get", _p("id"), "shape",
@@ -205,20 +206,30 @@ def vocabulary() -> dict[str, Any]:
                          "else the module-level variable it was last assigned to, with _ becoming - (a variable "
                          "that holds the shape itself wins over a list that contains it; several shapes under one "
                          "variable are numbered <variable>-1, <variable>-2, ... in creation order); else "
-                         "<host>-cut-<6 hex digits> for an unnamed cutter; else shape-<6 hex digits>. The digits "
-                         "come from the statement that made the shape (its text, whitespace ignored) and how many "
-                         "shapes that statement made before it, so running the same script again updates the same "
-                         "shapes, named or not, while an unnamed shape whose statement changes gets a new id: name "
-                         "what you will edit later. A new shape given the id of existing geometry redefines it and "
-                         "keeps what it cuts (uncut(host) with no cutters removes them all); get(id) edits "
-                         "existing geometry in place. An id that already names something else in the project is "
-                         "refused."),
+                         "<host>-cut-<12 hex digits> for an unnamed cutter; else shape-<12 hex digits>. The digits "
+                         "come from the statements that made the shape - the module-level statement, then each "
+                         "statement it called, down to the one that made it (their text, whitespace ignored) - and "
+                         "how many shapes that chain of statements made before it, so running the same script "
+                         "again updates the same shapes, named or not, and the same helper called from two "
+                         "statements makes two shapes. An unnamed shape whose statement changes gets a new id and "
+                         "the old shape stays: name what you will edit later, and name cutters you may change "
+                         "later, since an edited unnamed cutter is a new cutter while the old one keeps cutting "
+                         "its host until uncut(host) clears the host's cutters. A new shape given the id of "
+                         "existing geometry redefines it and keeps what it cuts (uncut(host) with no cutters "
+                         "removes them all); get(id) edits existing geometry in place, and is the only way to "
+                         "change geometry realized with support for openings (doors and windows): a new definition "
+                         "under its id is refused, since it would drop them. An id that already names something "
+                         "else in the project is refused."),
             "reach": ("Every coordinate stays within 100 000 m of the origin and every length, width, depth, "
                       "radius and height is at least 0.000001 m. A project without a level has nothing to "
                       "measure heights from: add a level first."),
             "handles": "Every verb returns a handle or a value; handles are opaque and print as <solid id>.",
             "errors": ("A refused script saves nothing: the answer names the line, the column, the source line "
-                       "and one sentence; inside a function it adds the lines it was called from."),
+                       "and one sentence; inside a function it adds the lines it was called from. What the "
+                       "result would leave wrong in the project - a cutter with cutters of its own, something "
+                       "standing on a cutter's top, a shape standing on its own top, deleted geometry that "
+                       "something still cuts or stands on - is refused after the whole script has run, at the "
+                       "line that made it so."),
         },
         "language": {
             "summary": "A small Python subset, interpreted and never executed.",

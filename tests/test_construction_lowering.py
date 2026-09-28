@@ -101,11 +101,12 @@ def _elements(result) -> dict:
     return {row["entity_id"]: row for row in result.entities if row["schema"] == "Element@1"}
 
 
-def _hashed(prefix: str, statement: str, index: int = 0) -> str:
-    """An unnamed shape's id as the vocabulary states it: six hex digits of the sha1 of its statement's tokens, one
-    space apart, and of how many shapes that statement made before it."""
+def _hashed(prefix: str, *statements: str, index: int = 0) -> str:
+    """An unnamed shape's id as the vocabulary states it: twelve hex digits of the sha1 of the statements that made
+    it (each as its tokens one space apart; the module-level statement first, then each statement it called, down to
+    the one that made the shape) and of how many shapes that chain of statements made before it."""
 
-    return prefix + hashlib.sha1(f"{statement}\n{index}".encode("utf-8")).hexdigest()[:6]
+    return prefix + hashlib.sha1(("\x00".join(statements) + f"\n{index}").encode("utf-8")).hexdigest()[:12]
 
 
 LOOP = "\n".join([
@@ -478,9 +479,43 @@ class IdentityTests(ConstructionTestCase):
             _hashed("mass-cut-", "cut ( mass , extrude ( rect ( 3 , 3 , 1 , 1 ) , 1 , at = 0.5 ) )"),
             _hashed("shape-", "extrude ( rect ( 8 , 0 , 1 , 1 ) , 1 )"),
             "stack-1", "stack-2",
-            _hashed("shape-", "extrude ( rect ( i , 20 , 0.5 , 0.5 ) , 1 )", 0),
-            _hashed("shape-", "extrude ( rect ( i , 20 , 0.5 , 0.5 ) , 1 )", 1),
+            _hashed("shape-", "extrude ( rect ( i , 20 , 0.5 , 0.5 ) , 1 )", index=0),
+            _hashed("shape-", "extrude ( rect ( i , 20 , 0.5 , 0.5 ) , 1 )", index=1),
         ])
+
+    def test_hashed_ids_have_twelve_digits_that_tell_statements_apart(self) -> None:
+        first = _compile("extrude(rect(2862, 0, 1, 1), 1)")
+        second = _compile("extrude(rect(4861, 0, 1, 1), 1)")
+        one, two = first.report[0]["id"], second.report[0]["id"]
+        self.assertNotEqual(one, two)  # six digits made these two the same shape
+        for identifier in (one, two):
+            self.assertRegex(identifier, r"^shape-[0-9a-f]{12}$")
+        self.assertEqual(one, _hashed("shape-", "extrude ( rect ( 2862 , 0 , 1 , 1 ) , 1 )"))
+        cut = _compile("m = extrude(rect(0, 0, 4, 4), 1)\ncut(m, extrude(rect(1, 1, 1, 1), 1, at=0.5))")
+        self.assertRegex(cut.report[1]["id"], r"^m-cut-[0-9a-f]{12}$")
+
+    def test_a_shape_made_in_a_helper_is_keyed_by_the_statements_that_called_it(self) -> None:
+        helper = "def box(x):\n    return extrude(rect(x, 0, 1, 1), 1)\n"
+        inner = "return extrude ( rect ( x , 0 , 1 , 1 ) , 1 )"
+        one, two = _compile(helper + "box(2)"), _compile(helper + "box(5)")
+        self.assertNotEqual(one.report[0]["id"], two.report[0]["id"])  # two scripts, two shapes
+        self.assertEqual(one.report[0]["id"], _hashed("shape-", "box ( 2 )", inner))
+        both = _compile(helper + "box(2)\nbox(5)")
+        self.assertEqual([row["id"] for row in both.report], [one.report[0]["id"], two.report[0]["id"]])
+        looped = _compile(helper + "for i in range(2):\n    box(i)")
+        self.assertEqual([row["id"] for row in looped.report],
+                         [_hashed("shape-", "box ( i )", inner, index=index) for index in range(2)])
+        nested = _compile(helper + "def pair(x):\n    return [box(x), box(x + 1)]\npair(7)")
+        self.assertEqual([row["id"] for row in nested.report],
+                         [_hashed("shape-", "pair ( 7 )", "return [ box ( x ) , box ( x + 1 ) ]", inner, index=index)
+                          for index in range(2)])
+        record = _record()
+        script = helper + "box(2)\nbox(5)"
+        successor = _apply(record, _compile(script, record))
+        again = _compile(script, successor)
+        self.assertEqual([(row["id"], row["status"]) for row in again.report],
+                         [(row["id"], "updated") for row in both.report])
+        self.assertEqual([row["schema"] for row in again.entities], ["Element@1"] * 2)
 
     def test_an_unnamed_shape_keeps_its_id_while_its_statement_stays(self) -> None:
         record = _record()
@@ -506,7 +541,7 @@ class IdentityTests(ConstructionTestCase):
         ids = [row["id"] for row in first.report]
         self.assertEqual(ids[:2], ["m", _hashed("shape-", "extrude ( rect ( 20 , 0 , 1 , 1 ) , 1 )")])
         self.assertEqual(ids[2:], [_hashed("m-cut-", "cut ( m , extrude ( rect ( 1 + 3 * i , - 0.1 , 1 , 0.5 ) , 1 , "
-                                                     "at = 1 ) )", index) for index in range(3)])
+                                                     "at = 1 ) )", index=index) for index in range(3)])
         self.assertEqual({row["status"] for row in first.report}, {"created"})
         successor = _apply(record, first)
         for _ in range(2):
@@ -777,6 +812,33 @@ class ExistingGeometryTests(ConstructionTestCase):
         error = self.refused("b = get('block-1')\nc = copy(b, dx=1)", record)
         self.assertEqual(error.line, 2)
 
+    def test_geometry_realized_with_openings_support_is_changed_only_with_get(self) -> None:
+        """A block re-realized with support for doors and windows keeps its element id; a new definition under its
+        id would turn it back into a plain solid and drop its openings, so it is refused at the line."""
+
+        opening = {"opening_id": "window-1", "kind": "window", "along": 0.8, "width": 1.2, "sill": 0.9, "head": 2.1}
+        for openings in ([opening], None):
+            params = {"thickness": 0.3, "height": 3.0}
+            if openings is not None:
+                params["openings"] = openings
+            record = _record(
+                Entity("block-1", "Component@1", {"intent": "block-1"}, parent_id="model"),
+                Entity("block-1-body", "Element@1", {
+                    "component_id": "block-1", "producer": "wall", "params": params,
+                    "references": {"base": {"level": "ground"},
+                                   "line": {"from": {"point": [0.0, 0.0]}, "to": {"point": [4.0, 0.0]}}}},
+                    parent_id="block-1"))
+            with self.subTest(openings=openings):
+                self.refusals([
+                    ("x = 1\nblock_1 = extrude(rect(0, 0, 4, 0.3), 3)", 2, "block-1 is realized with support for openings"),
+                    ("b = extrude(rect(0, 0, 4, 0.3), 3)\nx = 1\nname(b, 'block-1')", 3, "change it with get()"),
+                ], record)
+                result = _compile("b = get('block-1')\nmove(b, dx=1)\nset_height(b, 4)", record)
+                self.assertEqual(result.entities[0]["entity_id"], "block-1-body")
+                self.assertNotIn("producer", result.entities[0]["fields"])
+                self.assertEqual(result.entities[0]["fields"]["params"].get("openings"), openings)
+                self.assertEqual(result.entities[0]["fields"]["params"]["height"], 4.0)
+
     def test_a_block_on_the_project_grid_is_not_moved_by_a_script(self) -> None:
         record = _record(
             Entity("axis-a", "GridAxis@1", {"role": "A", "origin": [0.0, 0.0, 0.0], "direction": [1.0, 0.0, 0.0]}),
@@ -834,12 +896,152 @@ class AnchorRefusalTests(ConstructionTestCase):
         ], _record(parameters=PARAMETERS))
 
 
+class SupportChangeTests(ConstructionTestCase):
+    """#419 round 4: a top the script reads resolves through the script's model, and the report states what the
+    successor record produces."""
+
+    def stacked(self) -> StateRecord:
+        record = _record()
+        return _apply(record, _compile("a = extrude(rect(0, 0, 4, 3), 3)\nb = extrude(rect(1, 1, 1, 1), 1, at=top(a))",
+                                       record))
+
+    def test_bounds_follow_a_support_the_script_changed(self) -> None:
+        record = self.stacked()
+        cases = {
+            "set_height(get('a'), 5)\nprint(bounds(get('b')))": [[1.0, 5.0, 1.0], [2.0, 6.0, 2.0]],
+            "move(get('a'), dy=2)\nprint(bounds(get('b')))": [[1.0, 5.0, 1.0], [2.0, 6.0, 2.0]],
+            "c = extrude(rect(10, 10, 1, 1), 10)\nset_base(get('a'), top(c))\nprint(bounds(get('b')))":
+                [[1.0, 13.0, 1.0], [2.0, 14.0, 2.0]],
+            "b = get('b')\nset_height(get('a'), 5)\nprint(bounds(b))": [[1.0, 5.0, 1.0], [2.0, 6.0, 2.0]],
+        }
+        for script, expected in cases.items():
+            with self.subTest(script=script):
+                result = _compile(script, record)
+                view = _view(_apply(record, result))
+                self.assertEqual(view["b"]["bounds"], expected)
+                self.assertEqual(result.log, (str((tuple(expected[0]), tuple(expected[1]))),))
+                for row in result.report:
+                    self.assertEqual(row["bounds"], view[row["id"]]["bounds"], row["id"])
+
+    def test_bounds_follow_a_support_the_script_redefined(self) -> None:
+        record = self.stacked()
+        result = _compile("a = extrude(rect(0, 0, 4, 3), 5)\nmove(get('b'), dx=1)\nprint(bounds(get('b')))", record)
+        view = _view(_apply(record, result))
+        report = {row["id"]: row for row in result.report}
+        self.assertEqual(view["b"]["bounds"], [[2.0, 5.0, 1.0], [3.0, 6.0, 2.0]])
+        self.assertEqual(report["b"]["bounds"], view["b"]["bounds"])
+        self.assertEqual(result.log, ("((2.0, 5.0, 1.0), (3.0, 6.0, 2.0))",))
+
+    def test_a_new_shape_on_a_carried_top_is_reported_where_it_is_produced(self) -> None:
+        record = self.stacked()
+        for support in ("set_height(get('a'), 5)", "a = extrude(rect(0, 0, 4, 3), 5)"):
+            with self.subTest(support=support):
+                result = _compile(support + "\nk = extrude(rect(1, 1, 1, 1), 1, at=top(get('b')))\nprint(bounds(k))",
+                                  record)
+                view = _view(_apply(record, result))
+                report = {row["id"]: row for row in result.report}
+                self.assertEqual(view["k"]["bounds"], [[1.0, 6.0, 1.0], [2.0, 7.0, 2.0]])
+                self.assertEqual(report["k"]["bounds"], view["k"]["bounds"])
+                self.assertEqual(result.log, ("((1.0, 6.0, 1.0), (2.0, 7.0, 2.0))",))
+
+    def test_the_report_states_what_the_successor_produces(self) -> None:
+        record = _record()
+        result = _compile(LOOP + "\nblock = extrude(rect(2, 2, 2, 2), 1, at=top(mass))\nprint(bounds(mass))", record)
+        view = _view(_apply(record, result))
+        self.assertEqual([row["bounds"] for row in result.report], [view[row["id"]]["bounds"] for row in result.report])
+        self.assertEqual(view["block"]["bounds"], [[2.0, 3.0, 2.0], [4.0, 4.0, 4.0]])
+        multi = _record(
+            Entity("pair", "Component@1", {"intent": "pair"}, parent_id="model"),
+            Entity("pair-a", "Element@1", {"component_id": "pair", "producer": "prism",
+                                           "references": {"base": {"level": "ground"}},
+                                           "params": {"profile": [[0, 0], [1, 0], [1, 1], [0, 1]], "height": 1}}),
+            Entity("pair-b", "Element@1", {"component_id": "pair", "producer": "prism",
+                                           "references": {"base": {"level": "ground"}},
+                                           "params": {"profile": [[2, 0], [3, 0], [3, 1], [2, 1]], "height": 2}}),
+        )
+        result = _compile("move(get('pair-b'), dx=1)", multi)
+        self.assertEqual(result.report[0]["bounds"], [[3.0, 0.0, 0.0], [4.0, 2.0, 1.0]])  # the part, not the pair
+
+    def test_a_shape_measured_while_it_would_stand_on_its_own_top_is_refused(self) -> None:
+        record = self.stacked()
+        for script in ("a = extrude(rect(0, 0, 4, 3), 3, at=top(get('b')))\nprint(bounds(a))",
+                       "a = extrude(rect(0, 0, 4, 3), 3, at=top(get('b')))\nprint(bounds(get('b')))"):
+            with self.subTest(script=script):
+                error = self.refused(script, record)
+                self.assertEqual(error.line, 2)
+                self.assertIn("own top", error.message)
+
+
+class RecessTests(ConstructionTestCase):
+    """#419 round 4: a cutter may read its host's top; the host names it only as an object to consume."""
+
+    RECESS = "\n".join(["mass = extrude(rect(0, 0, 4, 4), 1)",
+                        "recess = extrude(rect(1, 1, 2, 2), 0.5, at=top(mass) - 0.2)", "cut(mass, recess)"])
+    REBASED = "\n".join(["mass = extrude(rect(0, 0, 4, 4), 1)", "k = extrude(rect(1, 1, 2, 2), 0.5)", "cut(mass, k)",
+                         "set_base(k, top(mass) - 0.2)"])
+    STACKED = "\n".join(["mass = extrude(rect(0, 0, 4, 4), 1)", "s = extrude(rect(0, 0, 1, 1), 1, at=top(mass))",
+                         "c = extrude(rect(2, 2, 0.5, 0.5), 3, at=top(s) - 2.5)", "cut(mass, c)"])
+
+    def volumes(self, record: StateRecord, result) -> dict[str, float] | None:
+        """The successor applied and checked, its program compiled as the runner does, then built with OCCT."""
+
+        from archflow.adapters import occt_backend
+        from tests.test_occt_execution import _compile as compile_program
+
+        successor = _apply(record, result)
+        program = compile_program(successor)
+        if not occt_backend.occt_available():  # pragma: no cover - the OCCT build is the evidence when it is installed
+            return None
+        build = occt_backend.build_program_shapes(program)
+        return {object_id: occt_backend.measure_shape(build.objects[object_id].shape).volume
+                for object_id in build.physical_object_ids}
+
+    def test_a_cutter_standing_on_its_host_is_produced_and_removed(self) -> None:
+        record = _record()
+        for script, host, removed in ((self.RECESS, "mass", 2 * 2 * 0.2), (self.REBASED, "mass", 2 * 2 * 0.2),
+                                      (self.STACKED, "mass", 0.5 * 0.5 * 1.0)):
+            with self.subTest(script=script):
+                result = _compile(script, record)
+                cutter = result.report[0]["cuts"][0]
+                self.assertEqual(_elements(result)[f"{cutter}-body"]["fields"]["references"]["base"]["datum"][-4:], "-top")
+                volumes = self.volumes(record, result)
+                if volumes is not None:
+                    self.assertAlmostEqual(volumes[f"obj-{host}-body"], 16.0 - removed, places=6)
+                    self.assertIn(f"obj-{cutter}-body", volumes)  # the cutter stays in the model, hidden
+                view = _view(_apply(record, result))
+                self.assertEqual(view[cutter]["hidden"], True)
+
+    def test_existing_geometry_standing_on_its_host_can_cut_it(self) -> None:
+        record = _record()
+        record = _apply(record, _compile("a = extrude(rect(0, 0, 4, 3), 3)\nb = extrude(rect(1, 1, 1, 1), 1, at=top(a) - 0.5)",
+                                         record))
+        result = _compile("cut(get('a'), get('b'))", record)
+        self.assertEqual(result.summary, "construction: cut a")
+        volumes = self.volumes(record, result)
+        if volumes is not None:
+            self.assertAlmostEqual(volumes["obj-a-body"], 36.0 - 0.5, places=6)
+            self.assertAlmostEqual(volumes["obj-b-body"], 1.0, places=6)
+
+    def test_a_true_support_cycle_is_still_refused_at_its_line(self) -> None:
+        self.refusals([
+            ("a = extrude(rect(0, 0, 1, 1), 1)\nb = extrude(rect(0, 0, 1, 1), 1, at=top(a))\nset_base(a, top(b))", 3,
+             "a would stand on its own top"),
+            ("a = extrude(rect(0, 0, 1, 1), 1)\nb = extrude(rect(0, 0, 1, 1), 1, at=top(a))\ncut(a, b)\n"
+             "set_base(a, top(b))", 4, "nothing can stand on a cutter's top"),
+        ])
+
+
 class VocabularyTests(ConstructionTestCase):
     def test_the_vocabulary_passes_the_layer_rule_and_its_example_builds(self) -> None:
         contract = vocabulary()
         self.assertEqual(layer_rule_violations(json.dumps(contract)), ())
         for key in ("conventions", "language", "limits", "verbs", "example"):
             self.assertIn(key, contract)
+        identity, errors = contract["conventions"]["identity"], contract["conventions"]["errors"]
+        self.assertIn("12 hex digits", identity)
+        self.assertIn("name cutters", identity)
+        self.assertIn("uncut(host)", identity)
+        self.assertIn("after the whole script", errors)
         record = _record()
         result = _compile(contract["example"], record)
         self.assertIn("top(", contract["example"])

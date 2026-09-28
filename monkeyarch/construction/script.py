@@ -16,10 +16,14 @@ unbounded work, and no message repeats a script value at length.
 
 Verbs are bound from ``vocabulary.VERBS`` - the table an agent reads - and
 implemented by ``Session``, which keeps the script's shapes (each with the
-statement that made it, which its id is hashed from if it has no name), the
-existing geometry it reached, what cuts what and what stands on what as far as
-the script knows it (the record's own relations are checked when lowering), and
-the ``print`` log. What a verb refuses it refuses with one sentence; the
+chain of statements that made it - the module-level statement, the statements
+it called, down to the one that made the shape - which its id is hashed from if
+it has no name), the existing geometry it reached, what cuts what and what
+stands on what as far as the script knows it (the record's own relations are
+checked when lowering), and the ``print`` log. The session is also the script's
+model for every top a shape reads: a row the script changed, or a new shape
+whose id (as the script now names it) is that of existing geometry, is the
+current version of that geometry. What a verb refuses it refuses with one sentence; the
 interpreter adds the line, the column and the source line
 (``ConstructionError``), and the lines a function was called from.
 """
@@ -35,6 +39,7 @@ from typing import Any, Callable
 
 from archflow.project.refs import require_identifier
 from archflow.state.state_record import StateRecord
+from monkeyarch.construction.identity import ELEMENT_SUFFIX, Naming, identify
 from monkeyarch.construction.shapes import (
     MAX_PATH_POINTS,
     MIN_LENGTH,
@@ -71,6 +76,7 @@ from monkeyarch.construction.shapes import (
     short,
     shown,
     side,
+    top_value,
 )
 from monkeyarch.construction.vocabulary import BUILTINS, LIMITS, MATH, REQUIRED, VERBS, Verb, verb
 
@@ -367,10 +373,14 @@ class Session:
 
     def __init__(self, record: StateRecord, source: str = "") -> None:
         self.world = World(record)
+        self.world.current_top, self.world.touched = self.current_top, self.touched
         self.source = source
         self.statement: ast.stmt | None = None  # the statement running now: what makes a new shape
+        self.callers: list[ast.stmt | None] = []  # the statements whose calls the running statement is inside
         self._keys: dict[ast.stmt, str] = {}
-        self.occurrences: dict[str, int] = {}  # statement key -> shapes it has made so far
+        self.occurrences: dict[str, int] = {}  # statement chain key -> shapes it has made so far
+        self.naming_epoch = 0  # bumped whenever what names a shape changes; the naming is worked out per epoch
+        self._naming: tuple[int, Naming] | None = None
         self.points = 0  # points of the script's shapes still alive
         self.shapes: list[Shape] = []  # new shapes, in creation order
         self.rows: dict[str, RowShape] = {}  # existing geometry loaded by element id, reached or as context
@@ -560,19 +570,57 @@ class Session:
         shape.made_by = (key, self.occurrences.get(key, 0))
         self.occurrences[key] = shape.made_by[1] + 1
         self.shapes.append(shape)
+        self.naming_epoch += 1
         self._reindex(shape)
         return shape
 
     def statement_key(self) -> str:
-        """The running statement's text as a new shape's id is hashed from (see ``_statement_key``)."""
+        """The text a new shape's id is hashed from: the chain of statements running now - the module-level one,
+        then each statement it called, down to the running one - each as ``_statement_key`` reads it."""
 
-        node = self.statement
-        if node is None:
-            return ""
+        return "\x00".join(self._key(node) for node in (*self.callers, self.statement) if node is not None)
+
+    def _key(self, node: ast.stmt) -> str:
         key = self._keys.get(node)
         if key is None:
             key = self._keys[node] = _statement_key(self.source, node)
         return key
+
+    # ---- the script's model: what it names, and the current version of what it changed or redefined
+    def naming(self) -> Naming:
+        """The ids the shapes have as the script now names them (lowering gives the final, checked ones)."""
+
+        if self._naming is None or self._naming[0] != self.naming_epoch:
+            self._naming = (self.naming_epoch, identify(self.shapes))
+        return self._naming[1]
+
+    def redefines(self, element_id: str) -> Shape | None:
+        """The new shape whose id, as the script now names it, is that of the existing element: the current
+        version of that geometry."""
+
+        if not element_id.endswith(ELEMENT_SUFFIX):
+            return None
+        return self.naming().unique(element_id[:-len(ELEMENT_SUFFIX)])
+
+    def touched(self, element_id: str) -> bool:
+        """Whether the script changed, moved, deleted or redefined the element."""
+
+        row = self.rows.get(element_id)
+        if row is not None and (row.geometry_changed or row.base_anchor is not None or row.deleted_line is not None):
+            return True
+        return self.redefines(element_id) is not None
+
+    def current_top(self, element_id: str) -> float | None:
+        """The top of the element as the script now has it: of the shape that redefines it, else of the row it
+        reached; None for an element the script never touched, whose top the record publishes."""
+
+        shape: Shape | None = self.redefines(element_id)
+        if shape is None:
+            row = self.rows.get(element_id)
+            if row is None or row.deleted_line is not None:
+                return None
+            shape = row
+        return top_value(shape, self.world)
 
     def note_assignment(self, name: str, value: object) -> None:
         """A module-level assignment: the variable a new shape was last assigned to names it."""
@@ -581,12 +629,14 @@ class Session:
         if isinstance(value, Shape):
             if value.is_new:
                 value.direct = (name, self.order, self.line)
+                self.naming_epoch += 1
             return
         if isinstance(value, (list, tuple)):
             size, _, shapes = self.measure(value)
             if not shapes:
                 return
             self.charge(size)
+            self.naming_epoch += 1
             for item in _flatten(value):
                 if isinstance(item, Shape) and item.is_new:
                     item.listed = (name, self.order, self.line)
@@ -985,7 +1035,9 @@ class Session:
                 self._link_cut(host, cutter)
                 if host.is_new:
                     host.void_events.append(("cut", cutter, self.line))
-            cutter.cut_into.setdefault(host, None)
+            if host not in cutter.cut_into:
+                cutter.cut_into[host] = None
+                self.naming_epoch += 1  # an unnamed cutter is named after its first host
         return self.changed(host, extent=False)
 
     def verb_uncut(self, a: dict, given: frozenset) -> Shape:
@@ -1054,6 +1106,7 @@ class Session:
         if identifier.endswith("-body"):
             raise ShapeError(f"{identifier} ends with -body, which is kept for a shape's geometry; choose another id")
         shape.explicit = (identifier, self.line)
+        self.naming_epoch += 1
         return shape
 
     def verb_get(self, a: dict, given: frozenset) -> Shape:
@@ -1105,11 +1158,13 @@ class Session:
                 listed = short(", ".join(dependents), 80)
                 raise ShapeError(f"{listed} still depend on {shape.label()}; change them first")
         shape.deleted_line = self.line
+        self.naming_epoch += 1
         if shape.is_new:
             self.points -= shape.point_count  # type: ignore[attr-defined]
         for cutter in list(shape.voids):
             self._unlink_cut(shape, cutter)
         self._reindex(shape)
+        self.world.tops.clear()  # what stood on it, if anything, is measured anew
         return None
 
 
@@ -1567,6 +1622,7 @@ class Interpreter:
             raise self.error(node, "calls nest deeper than 16")
         self.depth += 1
         line, statement = self.session.line, self.session.statement
+        self.session.callers.append(statement)  # what the body makes is keyed by the statement that called it too
         try:
             self.block(function.body, _Frame(bound, self.module, False))
         except _Return as result:
@@ -1576,6 +1632,7 @@ class Interpreter:
             raise
         finally:
             self.depth -= 1
+            self.session.callers.pop()
             self.session.line, self.session.statement = line, statement
         return None
 
