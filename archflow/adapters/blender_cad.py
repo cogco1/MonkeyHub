@@ -9,11 +9,11 @@ from __future__ import annotations
 import json
 import math
 import os
-import shutil
 import subprocess
 from pathlib import Path
 
 import archflow.adapters.cad_execution as cad
+from archflow.adapters.local_cad_discovery import resolve_blender_executable
 from archflow.adapters.blender_worker import READBACK_PREFIX, UNIT_SETTINGS
 from archflow.adapters.cad_program import (
     CadTranslationError, _params, _rgb, expected_object_bounds,
@@ -266,7 +266,7 @@ class BlenderBackend:
             if path.exists():
                 raise cad.CadExecutionError(f"Blender refuses to overwrite {path.name}")
         selected = request.backend_options.get("blender_executable")
-        executable = shutil.which(str(selected)) if selected is not None else shutil.which("blender")
+        executable = resolve_blender_executable(selected)
         if executable is None:
             raise cad.CadExecutionError("Blender executable is unavailable; set backend_options['blender_executable']")
         if request.source is not None:
