@@ -1958,7 +1958,7 @@ export type ConstructionEntityDto = {
     /**
      * Hidden
      *
-     * true while it cuts something: kept in the model, not delivered
+     * true while it cuts something: kept in the model, hidden
      */
     hidden: boolean;
     /**

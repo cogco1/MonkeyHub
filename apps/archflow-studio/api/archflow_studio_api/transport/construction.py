@@ -294,7 +294,7 @@ class ConstructionEntityDto(BaseModel):
     bounds: Bounds | None = Field(description=_BOUNDS + "; null when they cannot be predicted")
     cuts: list[str] = Field(description="the ids this geometry removes from itself")
     cut_by: list[str] = Field(alias="cutBy", description="the ids this geometry is removed from")
-    hidden: bool = Field(description="true while it cuts something: kept in the model, not delivered")
+    hidden: bool = Field(description="true while it cuts something: kept in the model, hidden")
     parts: list[str] | None = Field(description="its part ids when it has several, which get() reaches one by one; "
                                                 "null for one")
     facets: dict[str, str] = Field(description="the meaning given to it so far; empty until someone says")
