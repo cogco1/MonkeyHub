@@ -131,8 +131,8 @@ try {
     assert.equal(await page.locator(".stage-pushpull svg line").count(),1);
     for (const distance of [.6,-.4,.3]) {
       const to = await page.evaluate(point=>window.projectPoint(point),c.point.map((x,i)=>x+distance*c.normal[i]));
-      const box = page.viewportSize();
-      assert.ok(to[0]>20 && to[0]<box.width-20 && to[1]>20 && to[1]<box.height-130,
+      // Hit-test rather than bound page coordinates: the Stage bar sits above the canvas since #345.
+      assert.ok(await page.evaluate(([x,y])=>document.elementFromPoint(x,y)?.closest(".stage-pushpull") !== null,to),
         `The synthetic pointer target must stay inside the unobstructed viewport: ${to}`);
       await page.mouse.move(...to,{steps:5});
       await page.waitForFunction(expected=>Math.abs(Number(document.querySelector('.model-edit-panel input').value)-expected)<.015,distance);
@@ -174,9 +174,11 @@ try {
   await reset(); await setView(false,[12,-15,10]);
   // Clear the viewport pick through a real empty-space click before selecting
   // the object without a face, as an object-tree selection would do. Since #345
-  // the Stage bar sits above the canvas, so aim inside the canvas itself.
-  const empty = await page.evaluate(()=>{ const r = document.querySelector("canvas").getBoundingClientRect(); return [r.left+24,r.top+24]; });
-  assert.equal(await page.evaluate(([x,y])=>document.elementFromPoint(x,y)?.tagName,empty),"CANVAS","the empty-space click must reach the viewport");
+  // the Stage bar sits above the canvas, so aim inside the viewport's own canvas;
+  // the annotation canvases share its rect but never clear a pick.
+  const empty = await page.evaluate(()=>{ const r = document.querySelector(".viewport-canvas").getBoundingClientRect(); return [r.left+24,r.top+24]; });
+  assert.ok(await page.evaluate(([x,y])=>document.elementFromPoint(x,y) === document.querySelector(".viewport-canvas"),empty),
+    "the empty-space click must reach the viewport's own canvas");
   await page.mouse.click(...empty);
   assert.equal(await page.evaluate(()=>window.viewport.current.workPlaneFromSelection()),null);
   await page.evaluate(()=>window.selectWithoutFace());
