@@ -1092,7 +1092,6 @@ class ChatTests(unittest.TestCase):
         self.assertIn("Judge a spatial or formal result with visual_review", call["prompt"])
         self.assertIn("check a deterministic edit by readback without looking", call["prompt"])
         self.assertIn("delivers exact images for you to inspect", call["prompt"])
-        self.assertIn("completed MODEL REVISION loop", call["prompt"])
         self.assertIn("do not query or create a model admission for an unchanged source", call["prompt"])
 
     def _studio_tool_path(self, base, path, method, headers, session):

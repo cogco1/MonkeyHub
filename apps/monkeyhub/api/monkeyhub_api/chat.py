@@ -2015,7 +2015,7 @@ class ChatStore:
                     "delivers exact images for you to inspect within a small allowance for each user message; only explicit "
                     "delivery=observation uses the separately configured structured provider and returns finding ids; check a "
                     "deterministic edit by readback without looking, and ask the user about a finding marked escalate "
-                    "rather than spending another review on it. Close each completed MODEL REVISION loop with one admission that lists the "
+                    "rather than spending another review on it. Close each completed loop with one admission that lists the "
                     "attempts each result superseded, such as a redone first try; for a request for several alternatives, "
                     "declare its Study with an id and label from the request and admit each finished alternative. Never "
                     "admit intermediate runs. Drawing-only work finishes with its registered documents and exact pages: "
