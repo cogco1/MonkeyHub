@@ -937,7 +937,9 @@
         "one datum-bound polyline curve producer for authored lines, sampled freehand and segmented arcs; no face, thickness, top datum or support relation is inferred",
         "straight-wall authoring accepts explicit project-local point references through the existing resolver and retains @parameter binding and hosted opening relations",
         "Absolute numeric prism/face base references and read-only placement of drawn elements through their existing datum dependencies; free placement publishes its own fixed base instead of binding an editable Level.",
-        "the voids relation: with_void_hosts annotates every ElementRow with the hosts naming it (voided_by); a void keeps obj-<id>, retained hidden, with no top datum or support relation; a host emits <id>-body and the difference that keeps obj-<id>"
+        "the voids relation: with_void_hosts annotates every ElementRow with the hosts naming it (voided_by); a void keeps obj-<id>, retained hidden, with no top datum or support relation; a host emits <id>-body and the difference that keeps obj-<id>",
+        "realising a block as a wall in place (wall_fields_from_block, #419 Stage C): a rectangular prism standing on a level or datum becomes the wall producer's fields under the same element id; the line runs the way the longest side runs (the first of equal ones), on that side when the block lies right of it, else on the opposite long face, so along starts beside the side's first corner whichever way the outline winds and doors and windows are set out from the line's face; corners rounded to the nanometre still make a rectangle; a tilted plane, panel cutouts, an outline that is not a rectangle or is bound to parameters, and a block lifted off its base are refused with the reason",
+        "where a wall's along is measured on a line of two stated points (wall_along_line): the same turn produce_wall makes when inward lies left of the line"
       ],
       "does_not_own": [
         "turning a reference into a plan coordinate or an elevation datum - capabilities.reference_resolver",
@@ -973,7 +975,9 @@
         "validate_element_contract",
         "edit_drawn_element",
         "drawn_element_placement",
-        "with_void_hosts"
+        "with_void_hosts",
+        "wall_fields_from_block",
+        "wall_along_line"
       ],
       "depends_on": [
         "monkeyarch.capabilities.opening_solver",
@@ -992,7 +996,8 @@
       "used_by": [
         "monkeyarch/runtime/project_runner.py",
         "tests/test_element_producers.py",
-        "tests/test_cad_patch.py"
+        "tests/test_cad_patch.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/construction.py"
       ],
       "invariants": [
         "no producer computes a plan coordinate itself; every position goes through resolve_plan",
@@ -1009,7 +1014,9 @@
         "a planar-surface produces no top datum or support relation; its single outer boundary must be simple and explicitly closed; holes, thickness and extra fields are refused",
         "a prism elevation defaults to zero for retained inputs; without a top reference elevation moves the whole extrusion while height leaves its bottom fixed; with a top reference both declared height and derived height account for elevation",
         "an element acts as a void only because a host names it in references.voids; nothing on the element states it and no classification is required",
-        "a host's delivered object is obj-<id> with or without voids"
+        "a host's delivered object is obj-<id> with or without voids",
+        "a wall publishes <id>-top as a horizontal prism does: its base datum plus its height, published by obj-<id>",
+        "a block realised as a wall keeps its element id, obj-<id>, its bounds and <id>-top; its base, height or top, voids and every other field are kept, and the fields given are not changed"
       ],
       "status": "canonical",
       "tests": [
@@ -1019,7 +1026,8 @@
         "tests/test_project_runner.py",
         "tests/test_prism_cutouts.py",
         "tests/test_occt_execution.py",
-        "tests/test_wall_explicit_point_reference.py"
+        "tests/test_wall_explicit_point_reference.py",
+        "tests/test_wall_realization.py"
       ],
       "notes": "The single geometry-emission owner on the spine; monument vocabulary (solids of revolution, boolean chains, classical-order members) would be added here rather than beside it."
     },
@@ -1120,12 +1128,15 @@
         "the function contract checks parameters by kind and statements by shape; an operation that declares nothing decodes and re-encodes to the same bytes it always did",
         "datum-seated lofts accept an optional base_offset in metres, matching the existing extrusion and revolve seat-height contract",
         "the authoring contract states relations and results, not operation idioms: a host_cut member may be any region derived from its host or consumed together with it",
-        "an operation may state no semantic binding when all of its outputs are construction"
+        "an operation may state no semantic binding when all of its outputs are construction",
+        "an assembly's interface_refs are only the relations the record's connections declare, and it may name none: the provider contract offers the declared refs with minItems 0 and says to leave it empty when none is declared"
       ],
       "status": "canonical",
       "tests": [
         "tests/test_production_policy.py",
-        "tests/test_element_producers.py"
+        "tests/test_element_producers.py",
+        "tests/test_wall_realization.py",
+        "tests/test_geometry_authoring_contract.py"
       ],
       "notes": "The runner drives it with an inline RecordedProposalProvider for replay; a live provider enters through studio.intent, which signs its call with the same ports.model receipt."
     },
@@ -1186,13 +1197,15 @@
         "every member is placed relative to the void the wall granted",
         "a void whose opening id has no type fails OpeningSolverError rather than being left empty",
         "member operation ids are scoped by the hosting wall: an opening id is unique inside its wall, not inside the building, and a wall id already prefixing the opening id is not doubled",
-        "rectangular window and door types cannot silently fill a non-rectangular hosted aperture"
+        "rectangular window and door types cannot silently fill a non-rectangular hosted aperture",
+        "an opening that names no interface_ref carries no interface: the solver never states a spatial relation it was not given (#419 R17)"
       ],
       "status": "canonical",
       "tests": [
         "tests/test_element_producers.py",
         "tests/test_opening_solver.py",
-        "tests/test_occt_execution.py"
+        "tests/test_occt_execution.py",
+        "tests/test_wall_realization.py"
       ],
       "notes": "P092 filler side; P099 gives the arrayed placement so N identical openings share one member definition."
     },
@@ -3803,7 +3816,8 @@
         "a datum id namespace is unique across levels and grid axes (verify_project_datums)",
         "a proposal names the design-state digest it was produced from",
         "never writes the filesystem",
-        "an operation may name no semantic binding; allowing it changes no retained serialization"
+        "an operation may name no semantic binding; allowing it changes no retained serialization",
+        "a hosted assembly may cite no interface; one that cites any serializes exactly as before"
       ],
       "status": "canonical",
       "tests": [
@@ -3811,7 +3825,8 @@
         "tests/test_geometry_compiler.py",
         "tests/test_geometry_program.py",
         "tests/test_interface_datums.py",
-        "tests/test_occt_execution.py"
+        "tests/test_occt_execution.py",
+        "tests/test_wall_realization.py"
       ],
       "notes": "Defines its own digest_value/require_sha256 instead of using contracts.canonical, a second digest implementation on the spine; at 1564 lines it is the largest contract module."
     },
@@ -4886,7 +4901,9 @@
         "the Working Head is the architect's editing base, read from retained facts and never guessed from the newest file; a generated candidate is recorded and shown but never moves it, viewing history never moves it, and only the explicit working-draft selection (Continue, adopting the architect's own Sync, or the Hub Agent's Continue on the user's bound words through a Hub-managed Runtime) does; every selection onto a run is retained as an attributed design.continued event and admits no Candidate; a recorded continuation keeps its source position's branch",
         "a page's representation status is derived on read and never stored; an explicit page replacement answers before what the page depicts; a missing or unverifiable page or input is unavailable and is never rebound; a person's keep (a drawing's follow: frozen, Publish's freeze) is frozen; each consumer keeps its own wire words",
         "an answer is remembered only in memory and only under a stable ReadToken, which is read from the project's layout watch (project.watch) and never walked on a request: this process's writes change the token at once and leave it unstable until the watch has seen them, another process's once the watch sees them (about a second); closing the binding gives back its share of the watch",
-        "a State Record is parsed once per content digest and shared by every binding in the process, and nobody changes it; state_record still checks the ref's file on every call. A design branch's Stage chain is kept by the head and fork refs that fix it, each Stage file still checked; each run's part of the reference-run survey is kept under the stamps of its manifest, records directory and the receipt and workflow files it read; a bound view's state digest is taken once per view"
+        "a State Record is parsed once per content digest and shared by every binding in the process, and nobody changes it; state_record still checks the ref's file on every call. A design branch's Stage chain is kept by the head and fork refs that fix it, each Stage file still checked; each run's part of the reference-run survey is kept under the stamps of its manifest, records directory and the receipt and workflow files it read; a bound view's state digest is taken once per view",
+        "the drawing context publishes every wall's <id>-top from the producer itself, in production order, so a drawn shape standing on a wall keeps its drawing controls",
+        "a row no producer can read leaves its element without drawing controls and never fails a state read: the drawing context and the state read catch what reading drawing inputs may raise (DRAWING_INPUT_ERRORS, the set construction reads a record with)"
       ],
       "status": "canonical",
       "tests": [
@@ -4905,7 +4922,8 @@
         "apps/archflow-studio/api/tests/test_conditional_reads.py",
         "apps/archflow-studio/api/tests/test_derivation_memo.py",
         "apps/archflow-studio/api/tests/test_indexed_reads.py",
-        "apps/archflow-studio/api/tests/test_index_changes.py"
+        "apps/archflow-studio/api/tests/test_index_changes.py",
+        "apps/archflow-studio/api/tests/test_hosted_opening.py"
       ],
       "notes": "Every other Studio concern reads the project through this one binding.",
       "files": [
@@ -5481,7 +5499,8 @@
         "admissions are read only from the fixed studio-admissions run, never by enumerating runs; a run is in at most one live record as a result or a superseded attempt; an identical retry returns the retained record and any other claim on a claimed run, or rejecting or superseding a committed Stage's run, is ADMISSION_CONFLICT",
         "the admission gate is Stage acceptance's own preflight (C1 replay, C2 completed and not executing, C3 review readiness against the exact base, C5 one complete model) plus C4 object readback and C7 supersession; if any result fails nothing is retained and every failing clause is named",
         "a person (ui or retroactive) may admit a result that is not review-ready as a comparison option, retaining the failing clauses as its marker; an Agent (hub-chat) admission is review-ready, needs the Hub-managed boundary and a bound message, and rejects only on the user's bound words; Stage acceptance still requires review readiness and refuses a run with a live rejection",
-        "admission accepts no Stage, advances no branch, moves no Working Head and writes no working position; a Runtime connected to a shared project refuses admissions until they synchronize"
+        "admission accepts no Stage, advances no branch, moves no Working Head and writes no working position; a Runtime connected to a shared project refuses admissions until they synchronize",
+        "an elevation edit on a record whose rows cannot be read answers 422 ELEVATION_EDIT_INVALID, never a 500"
       ],
       "status": "canonical",
       "tests": [
@@ -6679,33 +6698,39 @@
     {
       "module_id": "studio.construction",
       "owner_path": "apps/archflow-studio/api/archflow_studio_api/application/construction.py",
-      "purpose": "Serve the construction contract (#419, spec 3.2-3.5): one construction script becomes one Studio proposal, facets add meaning to existing geometry, and the model reads back in construction terms with the capabilities its facets unlock.",
+      "purpose": "Serve the construction contract (#419, spec 3.2-3.5): one construction script becomes one Studio proposal, facets add meaning to existing geometry, the model reads back in construction terms with the capabilities its facets unlock, and the first of them, hosted-opening, puts a door or window on geometry that means a wall.",
       "owns": [
-        "POST /api/proposals/construction, POST /api/proposals/facets, GET /api/construction and GET /api/construction/model",
+        "POST /api/proposals/construction, POST /api/proposals/facets, POST /api/proposals/hosted-opening, GET /api/construction and GET /api/construction/model",
         "the modelling root new script geometry goes under: model when a seat builds it, else the first component a seat builds",
         "a refused script as 422 CONSTRUCTION_INVALID with line, column and source line, including the record's refusal of the rows a script produced, answered at the script line that made the shape it names and in construction words",
         "facet upserts on Component@1 through the component edit path, with stripped non-blank text and unknown or non-component targets refused",
-        "the construction model view: geometry rows with facets and the capabilities facets unlock (hosted-opening for architectural.role = wall)"
+        "the construction model view: geometry rows with facets and the capabilities facets unlock (hosted-opening for architectural.role = wall)",
+        "the hosted-opening capability (Stage C): a door or window on a component of one element whose facets unlock it (architectural.role = wall), else 409 ENRICHMENT_REQUIRED naming the facet to add; a block realised as a wall in place first, else 422 HOST_NOT_WALL_SHAPED with the reason; ids opening-<n> skipping opening and type ids in use; a family as the type <opening>-type, checked by constructing it (FAMILY_INVALID); an optional interfaceRef that must be a relationship ref the record's connections declare (INTERFACE_UNKNOWN names them); the record's refusal as OPENING_INVALID in construction words",
+        "the model view's openings per component of one element and its alongLine, where a door's or window's along is measured"
       ],
       "does_not_own": [
         "the construction language, its lowering and the geometry view (construction.script)",
         "the facet vocabulary and its record validation (semantics.facets, state.record)",
         "typing a component edit, proposal chaining and the stale-base check (studio.intent)",
         "running a proposal as a candidate (studio.candidate)",
-        "the hosted-opening capability itself (GH-419 Task C4)"
+        "realising a block as a wall and where along is measured (capabilities.element_producers); door and window families and their members (capabilities.opening_solver)"
       ],
       "public_api": [
         "ConstructionProposal",
         "ConstructionRefused",
+        "EnrichmentRequired",
         "MODEL_ROOT",
         "capabilities_of",
         "construction_model",
         "construction_proposal",
         "facets_proposal",
+        "hosted_opening_proposal",
         "in_construction_words",
         "modelling_root"
       ],
       "depends_on": [
+        "capabilities.element_producers",
+        "capabilities.opening_solver",
         "monkeyarch.construction",
         "monkeyarch.construction.vocabulary",
         "semantics.facets",
@@ -6716,7 +6741,9 @@
         "the construction compiler chooses how each shape is realised; no route or DTO here names a producer, and the agent-facing text keeps the layer rule",
         "a refusal answers the script line that caused it, or passes through unchanged when it names no shape of the script",
         "a facet edit upserts only the named components; every element, object, datum and dependency edge stays byte-identical",
-        "a capability is listed on an entity only when its facets unlock it"
+        "a capability is listed on an entity only when its facets unlock it",
+        "a door or window is proposed only on a component whose facets unlock hosted-opening; the host keeps its element id, its delivered object and its published top, so what stands on it keeps standing",
+        "every hosted-opening refusal says what to do: the facet to add, the reason the shape cannot take one as drawn, or the family's or the record's own sentence"
       ],
       "status": "provisional",
       "files": [
@@ -6725,7 +6752,8 @@
         "apps/archflow-studio/api/archflow_studio_api/transport/construction.py"
       ],
       "tests": [
-        "apps/archflow-studio/api/tests/test_construction_routes.py"
+        "apps/archflow-studio/api/tests/test_construction_routes.py",
+        "apps/archflow-studio/api/tests/test_hosted_opening.py"
       ],
       "reason": "GH-419: the agent authors geometry with one construction script and the runtime chooses producers; meaning and the capabilities it unlocks arrive later as facets on the same identity."
     },
@@ -7961,7 +7989,8 @@
         "cuts authored as the host element's references.voids, kept when a new shape redefines existing geometry",
         "the construction geometry view: per component form, bounds, cuts, cutBy and hidden, without producers",
         "pre-checking the cut and support relations a script leaves, including against record geometry it never reached, before any row is written",
-        "the script's model for every top a shape reads: a row the script changed or a shape it redefined is the current version of that geometry, an element standing on them is measured again, and the report's bounds are produced for the rows the script leaves and what they mention, never the whole project"
+        "the script's model for every top a shape reads: a row the script changed or a shape it redefined is the current version of that geometry, an element standing on them is measured again, and the report's bounds are produced for the rows the script leaves and what they mention, never the whole project",
+        "the bounds of produced operations read in dependency order, whatever order a producer gives them in"
       ],
       "does_not_own": [
         "producing geometry from rows (capabilities.element_producers)",
@@ -8022,12 +8051,14 @@
         "What the record cuts and carries is checked against the model the script leaves, at the line that made it wrong.",
         "Lowering runs under the script's deadline, and the shapes a script leaves hold at most 100 000 points.",
         "Every top a shape reads during the script resolves through the script's model, with an explicit stack: the current version of what the script changed or redefined, an element whose supports were touched produced again, else what the record publishes; a top that leads back to itself is refused.",
-        "The report's bounds are what the model view will predict for the rows the script leaves: the record's rows overlaid with the script's, produced for the reported elements and every element they mention (supports, cutters, hosts) - never the whole project, which is neither applied nor validated for the report."
+        "The report's bounds are what the model view will predict for the rows the script leaves: the record's rows overlaid with the script's, produced for the reported elements and every element they mention (supports, cutters, hosts) - never the whole project, which is neither applied nor validated for the report.",
+        "top() of existing geometry stands on what publishes a horizontal top: a prism drawn in plan or any wall, moved or not; a cutter's top carries nothing"
       ],
       "status": "canonical",
       "tests": [
         "tests/test_construction_script.py",
-        "tests/test_construction_lowering.py"
+        "tests/test_construction_lowering.py",
+        "tests/test_wall_realization.py"
       ],
       "notes": "Spec docs/2026-09-28-construction-api.md section 3.1. The interpreter's verbs and the vocabulary are one table (script.IMPLEMENTED_VERBS is checked against vocabulary.VERBS at import).",
       "files": [

@@ -800,7 +800,9 @@ class HostedAssembly:
             raise GeometryProgramError(
                 "host object must remain distinct from assembly members"
             )
-        _refs(self.interface_refs, "assembly interface_refs")
+        # An opening that names no interface carries none (#419): the refs
+        # an assembly cites are relations the record states, never a default.
+        _refs(self.interface_refs, "assembly interface_refs", allow_empty=True)
         _ids(self.semantic_binding_ids, "assembly semantic_binding_ids")
         if not isinstance(self.maturity, DetailMaturity):
             raise TypeError("maturity must be DetailMaturity")

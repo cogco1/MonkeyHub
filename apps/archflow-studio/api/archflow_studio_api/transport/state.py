@@ -16,7 +16,7 @@ from archflow.state.state_record import component_semantics, parameter_bindings_
 
 from ..application.catalog import Catalog
 from ..application.frame import ClosureAnswer, RecordFrame
-from ..application.projection import StateProjection, drawing_context, elevation_reference
+from ..application.projection import DRAWING_INPUT_ERRORS, StateProjection, drawing_context, elevation_reference
 from .project import (
     ProjectVersionDto,
     ReferenceRunDto,
@@ -354,7 +354,7 @@ def _drawn_shapes(projection: StateProjection) -> dict[str, tuple[DrawnShapeDto 
     elements = record.entities_of("Element@1")
     try:
         rows, context, placements = drawing_context(record)
-    except (KeyError, TypeError, ValueError) as exc:
+    except DRAWING_INPUT_ERRORS as exc:
         return {entity.entity_id: (None, f"Drawing inputs are unavailable: {exc}", None) for entity in elements}
     shapes = {}
     for entity in elements:
@@ -384,7 +384,7 @@ def _drawn_shapes(projection: StateProjection) -> dict[str, tuple[DrawnShapeDto 
                     top_reference=elevation_reference(row.references.get("top"), placement["top"], context),
                 )
             shapes[entity.entity_id] = (shape, None, elevation)
-        except (KeyError, TypeError, ValueError) as exc:
+        except DRAWING_INPUT_ERRORS as exc:
             shapes[entity.entity_id] = (None, f"Drawing inputs are unavailable: {exc}", None)
     return shapes
 

@@ -3,10 +3,12 @@
 ``GET /api/construction`` is the language, ``GET /api/construction/model`` the
 model in the same words, ``POST /api/proposals/construction`` one script as one
 proposal and ``POST /api/proposals/facets`` meaning added to existing geometry.
-Both proposals are ordinary ones: made against one exact state, continued with
-``sourceProposalId`` and run by the candidate route that already exists, with
-the base, chaining and stale checks of the drawing routes (reused from
-``routes/proposals.py``, never copied).
+``POST /api/proposals/hosted-opening`` is the capability that meaning unlocks
+(Stage C, spec §3.5): a door or a window on geometry whose facets say
+``architectural.role = wall``. Every proposal is an ordinary one: made against
+one exact state, continued with ``sourceProposalId`` and run by the candidate
+route that already exists, with the base, chaining and stale checks of the
+drawing routes (reused from ``routes/proposals.py``, never copied).
 """
 
 from __future__ import annotations
@@ -19,7 +21,12 @@ from starlette.requests import Request
 from monkeyarch.construction import vocabulary
 
 from ..application.binding import bound_project
-from ..application.construction import construction_model, construction_proposal, facets_proposal
+from ..application.construction import (
+    construction_model,
+    construction_proposal,
+    facets_proposal,
+    hosted_opening_proposal,
+)
 from ..application.projection import StateProjection, project_state
 from ..application.proposals import Proposal
 from ..transport.construction import (
@@ -29,7 +36,9 @@ from ..transport.construction import (
     ConstructionRefusalDto,
     ConstructionRequestDto,
     ConstructionVocabularyDto,
+    EnrichmentRequiredDto,
     FacetsRequestDto,
+    HostedOpeningRequestDto,
     construction_model_dto,
 )
 from ..transport.errors import StudioError
@@ -42,6 +51,13 @@ _SCRIPT_REFUSED = {422: {"model": ConstructionRefusalDto,
                          "description": "Refused; a refused script (CONSTRUCTION_INVALID) names its line"}}
 _FACETS_REFUSED = {422: {"model": ConstructionRefusalDto,
                          "description": "Refused with a code and one sentence (FACETS_INVALID, FACETS_TARGET_INVALID)"}}
+_OPENING_REFUSED = {
+    409: {"model": EnrichmentRequiredDto,
+          "description": "ENRICHMENT_REQUIRED names the facet to add first; STALE_BASE a request made against another state"},
+    422: {"model": ConstructionRefusalDto,
+          "description": "Refused with a code and one sentence: HOST_INVALID; a block that cannot take one as it is "
+                         "drawn, with the reason; FAMILY_INVALID; INTERFACE_UNKNOWN; OPENING_INVALID"},
+}
 
 
 @router.get("/construction", response_model=ConstructionVocabularyDto, response_model_by_alias=True)
@@ -104,6 +120,27 @@ def create_facets_proposal(request: Request, body: FacetsRequestDto) -> Proposal
     return _remember(request, proposal, base, previous, body)
 
 
+@router.post("/proposals/hosted-opening", response_model=ProposalDto, response_model_by_alias=True, status_code=201,
+             responses=_OPENING_REFUSED)
+def create_hosted_opening_proposal(request: Request, body: HostedOpeningRequestDto) -> ProposalDto:
+    """A door or a window on geometry whose meaning is architectural.role = wall, as one proposal.
+
+    The model view lists hosted-opening among an entity's capabilities once its facets say so; asked of
+    anything else, the answer is 409 ENRICHMENT_REQUIRED naming the facet to add. The geometry keeps its id,
+    its delivered object and whatever stands on it; a block that cannot take one as it is drawn (not a
+    rectangle, lifted off its base) is refused with the reason. along is measured on the model view's alongLine.
+    """
+
+    binding, base, projection, previous, body = _proposal_source(request, body)
+    _require_state(body.state_digest, projection, "opening")
+    proposal = hosted_opening_proposal(
+        projection, body.host, kind=body.kind, along=body.along, width=body.width, sill=body.sill, head=body.head,
+        shape=body.shape, spring_height=body.spring_height, family=body.family, interface_ref=body.interface_ref,
+        summary=body.summary, keep_refs=tuple(body.keep),
+    )
+    return _remember(request, proposal, base, previous, body)
+
+
 def _require_state(state_digest: str, projection: StateProjection, what: str) -> None:
     """Made against one exact state, like every other proposal."""
 
@@ -116,7 +153,7 @@ def _require_state(state_digest: str, projection: StateProjection, what: str) ->
 
 
 def _remember(request: Request, proposal: Proposal, base: StateProjection, previous: Proposal | None,
-              body: ConstructionRequestDto | FacetsRequestDto) -> ProposalDto:
+              body: ConstructionRequestDto | FacetsRequestDto | HostedOpeningRequestDto) -> ProposalDto:
     """Place the proposal on its exact source, as the drawing routes do, then keep or continue it."""
 
     proposal = replace(proposal,

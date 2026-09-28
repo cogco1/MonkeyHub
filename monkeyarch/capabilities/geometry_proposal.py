@@ -825,7 +825,7 @@ def _authoring_output_contract(
                     "canonicalized lexicographically by role."
                 ),
             ),
-            "interface_refs": _array_contract(interface_ref, minimum=1, unique=True),
+            "interface_refs": _array_contract(interface_ref, minimum=0, unique=True),
             "semantic_binding_ids": _array_contract(identifier, minimum=1, unique=True),
             "maturity": {
                 "type": "string",
@@ -2483,7 +2483,7 @@ def _request_payload(
             "Every component_id in required_geometry_component_ids changed in the exact semantic predecessor transition and must retain a dedicated semantic binding with at least one realized object; omitting it cannot satisfy repair or lifecycle compilation.",
             "When predecessor_revision_contract.predecessor_program_digest is non-null, copy expected_digest only from its exact object_revision_tokens when revising a retained object, and acknowledge every changed retained semantic binding through the producing operation responds_to_binding_ids; never guess a predecessor digest.",
             "Include the current spatial option record URI in every new or changed semantic binding evidence_refs. An exact unchanged binding copied from available_predecessor_program may retain its predecessor evidence because predecessor_program_digest supplies the immutable lineage proof.",
-            "Every assembly interface_refs value must be selected exactly from available_interface_refs.refs and match available_interface_refs.pattern.",
+            "Every assembly interface_refs value must be selected exactly from available_interface_refs.refs and match available_interface_refs.pattern: name only connections the record declares; leave it empty when none is declared.",
             "When a supplied semantic component requires a hosted assembly, represent its semantic identity and geometry together through semantic_binding_ids and typed assembly members.",
             "For every hosted assembly include all roles named by required_output_contract.required_assembly_roles[kind]; missing or duplicate roles are invalid.",
             *(
