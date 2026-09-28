@@ -35,6 +35,7 @@ from pydantic import ValidationError
 from starlette.datastructures import State
 from starlette.requests import Request
 
+from archflow.project.repository import ProjectRepositoryError
 from archflow.state.state_record import apply_state_record_operator
 
 from ..application import episodes
@@ -83,6 +84,61 @@ from ..transport.proposal import (
 )
 
 router = APIRouter(tags=["proposals"])
+
+# How many runs a stale refusal reads, newest first, for the one whose state was sent.
+_STALE_SCAN_RUNS = 200
+
+
+def _run_with_state(binding: ProjectBinding, digest: str) -> tuple[str | None, int, int]:
+    """The run whose newest receipt carries ``digest``, and how many runs were read of how many.
+
+    Only a refusal asks, so only the error path pays: runs are read newest first
+    by their directory's time, and the reading stops at the first match or after
+    ``_STALE_SCAN_RUNS``. A run that cannot be read is passed over, not an error.
+    """
+
+    runs = binding.repository.layout.runs
+    dated: list[tuple[float, str]] = []
+    for run_id in binding.run_ids():
+        try:
+            dated.append(((runs / run_id).stat().st_mtime, run_id))
+        except OSError:
+            continue
+    dated.sort(reverse=True)
+    read = dated[:_STALE_SCAN_RUNS]
+    for _mtime, run_id in read:
+        try:
+            newest = binding.newest_runner_receipt(run_id)
+        except (StudioError, ProjectRepositoryError, ValueError, OSError):
+            continue
+        if newest is not None and newest[1].get("design_state_digest") == digest:
+            return run_id, len(read), len(dated)
+    return None, len(read), len(dated)
+
+
+def _stale_base(binding: ProjectBinding, projection: StateProjection, sent: str, action: str,
+                source_run_id: str | None) -> StudioError:
+    """``STALE_BASE`` naming the source that was checked and, when a run holds it, the state that was sent (#404 F5).
+
+    Without ``sourceRunId`` a write is checked against the project's default
+    source, which never holds a candidate the caller made. "Read /api/state
+    again" alone led back to that default; the refusal names the run to send.
+    """
+
+    if source_run_id is not None:
+        checked = f"run {source_run_id}"
+    elif projection.reference.source == "none":
+        checked = "the project's authored base (no sourceRunId was sent)"
+    else:
+        checked = f"the project's default source, run {projection.run.run_id} (no sourceRunId was sent)"
+    detail = f"{action} names state {sent}, but {checked} is at {projection.state_digest}."
+    owner, read, total = _run_with_state(binding, sent)
+    if owner is not None:
+        return StudioError(409, "STALE_BASE", detail + f" That state is run {owner}'s: read GET /api/state?run={owner} "
+                           f'and send sourceRunId "{owner}" with its stateDigest.')
+    searched = "No retained run" if read == total else f"None of the newest {read} of {total} runs"
+    return StudioError(409, "STALE_BASE", detail + f" {searched} has that state: read GET /api/state?run=<runId> "
+                       "for the run you are changing and send its stateDigest with sourceRunId.")
 
 
 def _proposal_source(request: Request, body):
@@ -136,7 +192,7 @@ def create_proposal(
     binding, base, projection, previous, body = _proposal_source(request, body)
     if body.semantic_edit is not None:
         if body.state_digest != projection.state_digest:
-            raise StudioError(409, "STALE_BASE", f"the semantic edit names state {body.state_digest}, but the selected source is {projection.state_digest}.")
+            raise _stale_base(binding, projection, body.state_digest, "the semantic edit", body.source_run_id)
         proposal = proposal_from(component_edit_proposal(
             projection, body.semantic_edit.model_dump(by_alias=True),
             utterance=body.semantic_edit.summary, component_id=body.target_component_id,
@@ -199,13 +255,7 @@ def create_sketch_proposal(
     binding, base, projection, previous, body = _proposal_source(request, body)
     if body.state_digest != projection.state_digest:
         # Drawn against one exact state, like every other proposal here.
-        raise StudioError(
-            409,
-            "STALE_BASE",
-            f"the drawing names state {body.state_digest}, but "
-            f"{projection.project_id} is at {projection.state_digest}. Read "
-            "/api/state again and send the action against the state that answers now.",
-        )
+        raise _stale_base(binding, projection, body.state_digest, "the drawing", body.source_run_id)
     if isinstance(body, DocumentTracingRequestDto):
         ref = body.tracing
         rows = read_document_tracing(binding, DocumentAnnotationRef(
@@ -297,8 +347,7 @@ def _direct_proposal(request: Request, body: TransformElementRequestDto | PushPu
                      kind: str, **action) -> ProposalDto:
     binding, base, projection, previous, body = _proposal_source(request, body)
     if body.state_digest != projection.state_digest:
-        raise StudioError(409, "STALE_BASE", f"the modeling action names state {body.state_digest}, "
-                          f"but the selected source is {projection.state_digest}. Read /api/state again.")
+        raise _stale_base(binding, projection, body.state_digest, "the modeling action", body.source_run_id)
     if kind == "compress-above":
         proposal = proposal_from(compress_above_proposal(
             projection, component_id=body.component_id, element_ids=body.element_ids or (),
@@ -334,7 +383,7 @@ def create_elevation_proposal(request: Request, body: ElevationEditRequestDto) -
 
     binding, base, projection, previous, body = _proposal_source(request, body)
     if body.state_digest != projection.state_digest:
-        raise StudioError(409, "STALE_BASE", "The elevation action no longer matches its source. Read /api/state again.")
+        raise _stale_base(binding, projection, body.state_digest, "the elevation action", body.source_run_id)
     proposal = proposal_from(elevation_proposal(
         projection, action=body.action, element_id=body.element_id, value=body.value,
         reference=None if body.reference is None else body.reference.model_dump(),
@@ -365,13 +414,7 @@ def create_delete_proposal(
 
     binding, base, projection, previous, body = _proposal_source(request, body)
     if body.state_digest != projection.state_digest:
-        raise StudioError(
-            409,
-            "STALE_BASE",
-            f"the delete names state {body.state_digest}, but "
-            f"{projection.project_id} is at {projection.state_digest}. Read "
-            "/api/state again and send it against the state that answers now.",
-        )
+        raise _stale_base(binding, projection, body.state_digest, "the delete", body.source_run_id)
     proposal = proposal_from(
         delete_element_proposal(
             projection,

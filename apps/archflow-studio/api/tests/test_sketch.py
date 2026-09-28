@@ -291,6 +291,33 @@ class SketchContinuationTestCase(unittest.TestCase):
         # Nothing here published anything: the project's own version stands.
         self.assertEqual(self.repository.read_head().version, self.head)
 
+    def test_a_stale_base_names_the_run_whose_state_was_sent(self) -> None:
+        # #404 F5: an agent read GET /api/state?run=<candidate>, then wrote without
+        # sourceRunId. Answering "read /api/state again" led back to the project's
+        # default source, which never holds the agent's own candidate.
+        first = self.draw(run=None, elementId="block-a", profile=SQUARE, height=3.0,
+                          baseLevel="level-ground")
+        sent = self.digest_of(first)
+        checked = self.client.get("/api/state").json()["referenceRun"]["runId"]
+        self.assertNotEqual(checked, first, "the candidate is not the default source")
+        for route, action in (("transform", {"kind": "move", "translation": [1, 0, 0]}),
+                              ("elevation", {"action": "set-base", "value": 0.5})):
+            with self.subTest(route=route):
+                refused = self.client.post(f"/api/proposals/{route}",
+                                           json={"stateDigest": sent, "elementId": "block-a", **action})
+                self.assertEqual(refused.status_code, 409, refused.text)
+                self.assertEqual(refused.json()["code"], "STALE_BASE")
+                detail = refused.json()["detail"]
+                self.assertIn(f"/api/state?run={first}", detail, "the run whose state was sent is named")
+                self.assertIn(f'sourceRunId "{first}"', detail)
+                self.assertIn(checked, detail, "the source it was checked against is named")
+        # A state no retained run has names no run at all.
+        unknown = self.client.post("/api/proposals/transform", json={
+            "stateDigest": "0" * 64, "elementId": "block-a", "kind": "move", "translation": [1, 0, 0]})
+        self.assertEqual(unknown.status_code, 409, unknown.text)
+        self.assertNotIn(first, unknown.json()["detail"])
+        self.assertIn("/api/state", unknown.json()["detail"])
+
     def test_going_back_to_an_earlier_run_and_carrying_on_from_it(self) -> None:
         first = self.draw(run=None, elementId="block-a", profile=SQUARE, height=3.0,
                           baseLevel="level-ground")
