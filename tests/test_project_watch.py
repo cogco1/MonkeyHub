@@ -288,6 +288,67 @@ class LeaseTests(_WatchCase):
         self.assertTrue(lease.released)
 
 
+class ListenerTests(_WatchCase):
+    """``add_listener``: what the project index keeper (#365) hears of every publication."""
+
+    def listen(self, lease: watch.LayoutLease) -> list[watch.LayoutSighting]:
+        heard: list[watch.LayoutSighting] = []
+        self.addCleanup(lease.add_listener(heard.append))
+        return heard
+
+    def test_a_late_listener_is_told_the_last_publication_at_once(self) -> None:
+        lease = self.lease()
+        heard = self.listen(lease)
+
+        self.assertTrue(until(lambda: heard))
+        self.assertEqual(heard[0].layout, lease.latest())
+        self.assertEqual(heard[0].layout.fingerprint.digest, layout_fingerprint(self.root).digest)
+        self.assertEqual(heard[0].scanned_at_ns, heard[0].layout.fingerprint.scanned_at_ns)
+
+    def test_its_lines_are_the_fingerprint_s_and_name_what_moved(self) -> None:
+        lease = self.lease()
+        heard = self.listen(lease)
+        self.assertTrue(until(lambda: heard))
+        before = set(heard[-1].lines)
+        (self.records / "external").mkdir()
+        seen = lease.sync()
+        self.assertTrue(until(lambda: heard[-1].layout.generation >= seen.generation))
+
+        after = heard[-1]
+        self.assertEqual(after.layout.fingerprint.digest, layout_fingerprint(self.root).digest)
+        moved = {line.rsplit(" ", 1)[0] for line in before ^ set(after.lines)}
+        self.assertEqual(moved, {"d runs/run-001/records", "d runs/run-001/records/external"})
+
+    def test_a_write_here_names_the_directories_it_asked_to_read_again(self) -> None:
+        with mock.patch.object(watch, "POLL_S", 60.0):
+            lease = self.lease()
+            heard = self.listen(lease)
+            self.assertTrue(until(lambda: heard))
+            self.repository.put_json(
+                run=self.run, destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id="run-001"),
+                record_kind=STATE_RECORD, payload={"record": 1},
+            )
+            self.assertTrue(until(lambda: any(sighting.reread for sighting in heard)))
+        reread = set().union(*(sighting.reread for sighting in heard))
+        self.assertIn("runs/run-001/records", reread)
+
+    def test_a_listener_that_raises_does_not_stop_the_watch_and_can_be_removed(self) -> None:
+        lease = self.lease()
+
+        def broken(sighting: watch.LayoutSighting) -> None:
+            raise RuntimeError("listener failed")
+
+        remove = lease.add_listener(broken)
+        heard = self.listen(lease)
+        with self.assertLogs("archflow.project.watch", level="ERROR"):
+            self.assertTrue(until(lambda: heard))
+            lease.sync()
+        remove()
+        (self.records / "later").mkdir()
+        self.assertAgrees(lease, timeout=watch.POLL_S * 3 + 2)
+        self.assertTrue(lease.watch.running)
+
+
 @unittest.skipUnless(WINDOWS, "ReadDirectoryChangesW is Windows-only")
 class NotifiedWatchTests(_WatchCase):
     notify = True

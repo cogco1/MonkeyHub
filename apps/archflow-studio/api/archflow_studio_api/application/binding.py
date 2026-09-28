@@ -13,6 +13,7 @@ from __future__ import annotations
 from collections import OrderedDict
 from dataclasses import dataclass
 from functools import wraps
+import logging
 import os
 from pathlib import Path, PurePosixPath
 import threading
@@ -22,6 +23,7 @@ import weakref
 
 from starlette.datastructures import State
 
+from archflow.project.index import IndexKeeper, IndexState, ProjectIndex
 from archflow.project.location import open_located_project
 from archflow.project.memo import ContentMemo, PathStamps
 from archflow.project.ports import PersistenceArea, PersistenceDestination
@@ -83,6 +85,10 @@ STUDIO_RUN_ID = "studio-projection"
 READ_EPOCH = uuid4().hex
 # Answers remembered per binding, least recently used first out.
 MEMO_ENTRIES = 128
+# How long a read waits for a loaded project index to apply this process's
+# own writes before it reads the runs itself (ADR-008 phase 1b). Waiting is
+# not work: the index's own thread projects, never the request's.
+INDEX_CATCH_UP_S = 1.0
 
 # Parsed State Records by content digest, shared by every binding in the
 # process (ADR-008 phase 1a; ``ProjectBinding.state_record``). Sized by the
@@ -99,6 +105,9 @@ _SURVEY_UNREADABLE = (StudioError, ProjectRepositoryError, ValueError, OSError)
 
 _T = TypeVar("_T")
 _MISSING = object()
+_LOG = logging.getLogger(__name__)
+# ``bound_project``: one binding, and one index attached to it, per state.
+_BINDING_LOCK = threading.Lock()
 
 
 @dataclass(frozen=True, slots=True)
@@ -148,8 +157,10 @@ def record_kind(ref: ProjectRecordRef) -> str | None:
 class ProjectBinding:
     """One opened P036 project. Read-only: it never writes and never issues.
 
-    It remembers answers only in memory, under a ``ReadToken`` that moves
-    whenever what they were read from can have moved.
+    It remembers answers in memory, under a ``ReadToken`` that moves
+    whenever what they were read from can have moved, and may read what the
+    project index (``use_index``) keeps. The index is derived and outside the
+    project, and its own thread writes it; this binding only reads it.
     """
 
     def __init__(
@@ -180,6 +191,10 @@ class ProjectBinding:
         self._layout_lock = threading.Lock()
         self._layout_lease: LayoutLease | None = None
         self._layout_finalizer: weakref.finalize | None = None
+        # The project index's keeper, when one is in use (ADR-008 phase 1b),
+        # stopped by ``close`` or once nobody holds the binding any more.
+        self._index_keeper: IndexKeeper | None = None
+        self._index_finalizer: weakref.finalize | None = None
 
     def read_token(self, *, wait: bool = True) -> ReadToken | None:
         """The token an answer read from the project's files now is derived under.
@@ -230,13 +245,76 @@ class ProjectBinding:
                 self._layout_lease = lease
             return self._layout_lease
 
-    def close(self) -> None:
-        """Give back this binding's share of the layout watch; the last one stops it.
+    def use_index(self, index: ProjectIndex) -> IndexKeeper:
+        """Keep ``index`` current on a thread of its own and read from it once it is loaded.
 
-        The watch holds a handle on the project folder, so whoever is done
-        with the project closes its binding. Reading again watches again.
+        The keeper holds its own share of the layout watch and this process's
+        write observer; it loads (reconciles or rebuilds) the file and applies
+        every change in the background. Until it has loaded, and whenever it
+        fails, every reader reads the project itself: opening the project
+        never waits for the index.
+
+        The keeper must not outlive the binding: ``close`` stops it, and so
+        does collecting a binding nobody closed. Its projector therefore holds
+        the binding weakly (``StudioProjector``).
         """
 
+        with self._layout_lock:
+            if self._index_keeper is not None:
+                raise RuntimeError("this binding already has a project index")
+            keeper = IndexKeeper(index, watch_layout(self.repository.layout.root), name=self.project_id)
+            self._index_keeper = keeper
+            self._index_finalizer = weakref.finalize(self, keeper.stop, wait=False)
+        keeper.start()
+        return keeper
+
+    def await_index(self, timeout: float | None = None) -> IndexKeeper | None:
+        """Wait for the index's first load to end; its keeper, or None when no index answers."""
+
+        keeper = self._index_keeper
+        if keeper is None or keeper.wait_loaded(timeout) is None:
+            return None
+        return keeper
+
+    def index_state(self) -> IndexState | None:
+        """The index's last commit, or None when no index answers: one attribute read."""
+
+        keeper = self._index_keeper
+        return None if keeper is None else keeper.state
+
+    def index_status(self) -> str | None:
+        """What the index is doing (``IndexKeeper.status``), or None when this binding keeps none."""
+
+        keeper = self._index_keeper
+        return None if keeper is None else keeper.status
+
+    def index_reader(self, *, wait: float = INDEX_CATCH_UP_S) -> ProjectIndex | None:
+        """The index when it holds every write this process made, else None: read the runs instead.
+
+        A loaded index that is behind this process's newest write is waited
+        for, up to ``wait`` seconds; one still loading is not.
+        """
+
+        keeper = self._index_keeper
+        if keeper is None or keeper.wait_readable(wait) is None:
+            return None
+        return keeper.index
+
+    def close(self) -> None:
+        """Stop the index's keeper and give back this binding's share of the layout watch.
+
+        The watch holds a handle on the project folder, so whoever is done
+        with the project closes its binding. Reading again watches again; the
+        index is not kept again until ``use_index`` is called again.
+        """
+
+        with self._layout_lock:
+            keeper, self._index_keeper = self._index_keeper, None
+            index_finalizer, self._index_finalizer = self._index_finalizer, None
+        if index_finalizer is not None:
+            index_finalizer.detach()
+        if keeper is not None:
+            keeper.stop()
         with self._layout_lock:
             lease, self._layout_lease = self._layout_lease, None
             finalizer, self._layout_finalizer = self._layout_finalizer, None
@@ -964,10 +1042,41 @@ def bound_project(state: State) -> ProjectBinding:
     """
 
     binding = getattr(state, "binding", None)
-    if binding is None:
-        binding = ProjectBinding.open(state.settings)
-        state.binding = binding
+    if binding is not None:
+        return binding
+    # Two first requests must not open two bindings, each with an index of its
+    # own: the one that lost ``index.lock`` could be the one kept.
+    with _BINDING_LOCK:
+        binding = getattr(state, "binding", None)
+        if binding is None:
+            binding = ProjectBinding.open(state.settings)
+            index_dir = getattr(state.settings, "project_index_dir", None)
+            if index_dir is not None:
+                # Imported here: the projector reads through the artifacts
+                # module, which itself reads through this one.
+                from .index import attach_project_index
+
+                try:
+                    attach_project_index(binding, index_dir)
+                except Exception:  # noqa: BLE001 - the index is derived; P036 still answers
+                    _LOG.exception("project index of %s could not be attached", binding.project_id)
+            state.binding = binding
     return binding
+
+
+def release_bound_project(state: State) -> None:
+    """Close the process's binding, if any, so that the next request opens the project again.
+
+    For whoever changed the project under it wholesale (a shared-project
+    pull). Closing stops the index's keeper and gives up ``index.lock`` before
+    the next binding can be opened, so that one keeps the index again.
+    """
+
+    with _BINDING_LOCK:
+        binding = getattr(state, "binding", None)
+        state.binding = None
+        if binding is not None:
+            binding.close()
 
 
 def initialize_modeling(binding: ProjectBinding) -> bool:

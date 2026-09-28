@@ -19,7 +19,7 @@ from archflow.project.repository import (
     StaleDesignBranch, StaleProjectHead,
 )
 
-from .binding import bound_project
+from .binding import bound_project, release_bound_project
 from ..protocol import PROTOCOL_MAJOR
 from ..transport.errors import StudioError
 from ..transport.synchronization import ProjectTransferDto, SynchronizationDto
@@ -122,7 +122,9 @@ def pull_shared_project(state: State, *, client: SharedProjectClient | None = No
             FilesystemProjectRepository.bootstrap_transfer(settings.project_dir, transfer, expected_project_id=client.project_id)
     except ProjectRepositoryError as exc:
         raise transfer_error(exc) from exc
-    state.binding = None
+    # The pull changed the project under the binding: close it (and its
+    # index's keeper, which holds ``index.lock``) so the next request binds again.
+    release_bound_project(state)
     return SynchronizationDto(projectId=client.project_id, filesTransferred=len(contents), bytesTransferred=transferred_bytes)
 
 

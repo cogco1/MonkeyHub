@@ -159,6 +159,11 @@ class StudioSettings:
         settings directly all pass through this one constructor.
         """
 
+        if self.cache_dir is not None and (
+            not self.cache_dir.is_absolute()
+            or self.cache_dir.resolve(strict=False).is_relative_to(Path(self.project_dir).resolve(strict=False))
+        ):
+            raise SettingsError(f"{CACHE_DIR_ENV} must be an absolute directory outside the project.")
         if self.render_provider not in ("off", "gemini"):
             raise SettingsError(f"{RENDER_PROVIDER_ENV} must be off or gemini.")
         if not math.isfinite(self.render_timeout_s) or not 1 <= self.render_timeout_s <= 300:
@@ -231,6 +236,16 @@ class StudioSettings:
             return self.cache_dir
         folder = hashlib.sha256(str(self.project_dir.resolve()).encode("utf-8")).hexdigest()[:32]
         return Path(tempfile.gettempdir()) / "archflow-studio-cache" / "projects" / folder
+
+    @property
+    def project_index_dir(self) -> Path | None:
+        """The derived project index (ADR-008 phase 1b): ``index`` in the Hub's cache directory.
+
+        Kept only when the Hub named that directory; a runtime started by hand
+        keeps no index and every reader reads the project itself.
+        """
+
+        return None if self.cache_dir is None else self.cache_dir / "index"
 
     @property
     def exports(self) -> bool:
