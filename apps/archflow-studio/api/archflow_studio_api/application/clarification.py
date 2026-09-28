@@ -1130,12 +1130,11 @@ def _draft(
 
 _INCREASE_WORDS = ("提高", "升高", "加高", "抬高", "增高", "加大", "增加", "raise", "increase", "taller", "higher", "up by", "longer", "wider", "thicker")
 _DECREASE_WORDS = ("降低", "减低", "压低", "缩短", "减小", "减少", "lower", "decrease", "shorter", "reduce", "down by", "thinner", "narrower")
-_UNIT_TO_M = {"mm": 0.001, "毫米": 0.001, "cm": 0.01, "厘米": 0.01, "m": 1.0, "米": 1.0}
 _ABSOLUTE_MARKER = re.compile(r"\b(?:set|change|adjust|make)\b|改成|改为|设置为|设为|调整为", re.I)
 
 
-def _metric_delta(utterance: str, element_id: str, key: str) -> float | None:
-    """The complete retained delta forms, without accepting a second clause."""
+def _metric_delta(utterance: str, element_id: str, key: str) -> tuple[int, str, str] | None:
+    """The complete retained delta forms, without accepting a second clause: sign, number, unit."""
 
     spoken = re.sub(re.escape(element_id), "", utterance, flags=re.I)
     if set(_named(spoken, _PROPERTIES_BY_WORD)) - {key}:
@@ -1163,13 +1162,36 @@ def _metric_delta(utterance: str, element_id: str, key: str) -> float | None:
     match = next((matched for pattern in patterns if (matched := re.fullmatch(pattern, utterance.strip(), re.I))), None)
     if match is None:
         return None
-    sign = 1.0 if match["direction"].lower() in (*_INCREASE_WORDS, "up") else -1.0
-    value = float(match["number"]) * _UNIT_TO_M[match["unit"].lower()]
-    return sign * value if math.isfinite(value) else None
+    sign = 1 if match["direction"].lower() in (*_INCREASE_WORDS, "up") else -1
+    return sign, match["number"], match["unit"]
+
+
+def _control_context(element, key: str, record):
+    """The one-row context the record's own preflight and unit reading take."""
+
+    from .intent_context import IntentContext
+
+    row = {"elementId": element.element_id, "componentId": element.component_id, "producer": element.producer,
+           "parameterBindings": element.bindings, "numericFields": element.numeric_fields}
+    context = IntentContext("scalar", {"elements": [row], "parameters": [item.to_dict() for item in record.parameters]},
+                            target_ids=(element.element_id,), producer_ids=(element.producer,), editable_fields=(key,))
+    return context, row
+
+
+def _decimal_text(value: Decimal) -> str:
+    """A grammar number: no exponent, no trailing zeros."""
+
+    number = format(value, "f")
+    return number.rstrip("0").rstrip(".") if "." in number else number
 
 
 def _absolute_sentence_for(utterance: str, *, resolution: Resolution, projection: StateProjection) -> str | None:
-    """Read one complete metric wall assignment after exact target resolution."""
+    """Read one complete metric assignment after exact target resolution.
+
+    Any element whose field declares its unit (its producer's, or its bound
+    parameter's) qualifies; the length is restated in that unit by the one
+    converter the scalar seam and the intent path also use (#404 F17).
+    """
 
     if resolution.outcome != COMPILED or resolution.selection is None:
         return None
@@ -1179,7 +1201,7 @@ def _absolute_sentence_for(utterance: str, *, resolution: Resolution, projection
             or selection.element_id != element_id or selection.gestures or selection.document_visuals):
         return None
     element = next((row for row in projection.elements if row.element_id == element_id), None)
-    if (element is None or element.producer != "wall" or key not in element.numeric_fields
+    if (element is None or key not in element.numeric_fields
             or selection.component_id != element.component_id):
         return None
     # Full matches deliberately exclude keep clauses, negation, alternatives,
@@ -1198,17 +1220,15 @@ def _absolute_sentence_for(utterance: str, *, resolution: Resolution, projection
     record = getattr(projection, "record", None)
     if record is None:
         return None
-    from .intent_context import IntentContext, control_unit
-    from .intent_requests import action_preflight
-    row = {"elementId": element_id, "componentId": element.component_id, "producer": element.producer,
-           "parameterBindings": element.bindings, "numericFields": element.numeric_fields}
-    context = IntentContext("scalar", {"elements": [row], "parameters": [item.to_dict() for item in record.parameters]},
-                            target_ids=(element_id,), producer_ids=(element.producer,), editable_fields=(key,))
+    from .intent_context import control_unit
+    from .intent_requests import action_preflight, in_unit_exact
+    context, row = _control_context(element, key, record)
     # The same record-based preflight governs both model actions and this
     # shortcut, including derived consumers, type defaults and nested refs.
     if action_preflight(context, record) is not None:
         return None
-    if control_unit(context, row, key) != "m":
+    declared = control_unit(context, row, key)
+    if declared is None:
         return None
     binding = element.bindings.get(key)
     if binding is not None:
@@ -1220,19 +1240,18 @@ def _absolute_sentence_for(utterance: str, *, resolution: Resolution, projection
     # small dimension into zero and no scientific notation outside the grammar.
     with localcontext() as context:
         context.prec = max(len(match["number"]), 28) + 8
-        value = Decimal(match["number"]) * Decimal(str(_UNIT_TO_M[match["unit"].lower()]))
-        if not math.isfinite(float(value)) or value <= 0:
+        value = in_unit_exact(match["number"], match["unit"], declared)
+        if value is None or not math.isfinite(float(value)) or value <= 0:
             return None
-        number = format(value, "f")
-    if "." in number:
-        number = number.rstrip("0").rstrip(".")
+        number = _decimal_text(value)
     return f"set {'parameter:' + binding if binding is not None else key} to {number}"
 
 
 def grammar_sentence_for(utterance: str, *, resolution: Resolution, projection: StateProjection) -> str | None:
-    """Keep exact grammar, translate closed wall assignments, or read the existing delta forms.
+    """Keep exact grammar, translate closed metric assignments, or read the existing delta forms.
 
-    Absolute assignments require one resolved control with verified metre units.
+    Both need one resolved control whose unit is declared; a unit on a number
+    that declares none is not assumed to be metres (#404 F17).
     The retained delta path reads "提高 0.1m" on 9.798 as ``set height to 9.898``.
     """
 
@@ -1253,10 +1272,23 @@ def grammar_sentence_for(utterance: str, *, resolution: Resolution, projection: 
         return None
     old = element.numeric_fields[key]
     delta = _metric_delta(utterance, element_id, key)
-    if delta is None:
+    record = getattr(projection, "record", None)
+    if delta is None or record is None:
         return None
-    new = round(float(old) + delta, 6)
-    return f"set {key} to {new}"
+    from .intent_context import control_unit
+    from .intent_requests import in_unit_exact
+    context, row = _control_context(element, key, record)
+    declared = control_unit(context, row, key)
+    if declared is None:
+        return None
+    sign, number, unit = delta
+    with localcontext() as exact:
+        exact.prec = max(len(number), 28) + 8
+        change = in_unit_exact(number, unit, declared)
+        if change is None:
+            return None
+        new = Decimal(str(old)) + sign * change
+    return f"set {key} to {_decimal_text(new)}"
 
 
 def _editable_by_catalog(projection: StateProjection, component_id: str, catalog: object | None):

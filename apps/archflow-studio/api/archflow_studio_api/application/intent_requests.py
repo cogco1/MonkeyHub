@@ -329,23 +329,40 @@ _LENGTH_UNITS = {"mm": Decimal("0.001"), "cm": Decimal("0.01"), "m": Decimal("1"
 _UNIT_ALIASES = {"meter": "m", "meters": "m", "metre": "m", "metres": "m",
                  "millimeter": "mm", "millimeters": "mm", "millimetre": "mm", "millimetres": "mm",
                  "centimeter": "cm", "centimeters": "cm", "centimetre": "cm", "centimetres": "cm",
-                 "inch": "in", "inches": "in", "foot": "ft", "feet": "ft"}
+                 "inch": "in", "inches": "in", "foot": "ft", "feet": "ft",
+                 "毫米": "mm", "厘米": "cm", "米": "m"}
+
+
+def _canonical_unit(unit: str) -> str:
+    name = unit.strip().lower()
+    return _UNIT_ALIASES.get(name, name)
+
+
+def in_unit_exact(value: str | int | float | Decimal, unit: str, declared: str) -> Decimal | None:
+    """``value`` (as written) said in ``unit``, restated exactly in ``declared``; None when it cannot be.
+
+    The one converter (#404 F17): the same unit, however spelled, passes
+    through; two length units convert through ``_LENGTH_UNITS``; anything else
+    is None, for the caller to ask about rather than guess.
+    """
+
+    number = value if isinstance(value, Decimal) else Decimal(str(value))
+    source, target = _canonical_unit(unit), _canonical_unit(declared)
+    if source == target:
+        return number
+    if source not in _LENGTH_UNITS or target not in _LENGTH_UNITS:
+        return None
+    return number * _LENGTH_UNITS[source] / _LENGTH_UNITS[target]
 
 
 def in_unit(value: int | float, unit: str, declared: str) -> int | float | None:
-    """``value`` said in ``unit``, restated in the ``declared`` unit; None when it cannot be.
+    """``in_unit_exact`` for a number: the same unit returns ``value`` unchanged, a whole result comes back whole."""
 
-    The same unit, however spelled, passes through unchanged. Two length units
-    convert exactly through ``_LENGTH_UNITS``; anything else is None, for the
-    caller to ask about rather than guess. A whole result comes back whole.
-    """
-
-    source, target = (_UNIT_ALIASES.get(name.strip().lower(), name.strip().lower()) for name in (unit, declared))
-    if source == target:
+    if _canonical_unit(unit) == _canonical_unit(declared):
         return value
-    if source not in _LENGTH_UNITS or target not in _LENGTH_UNITS:
+    result = in_unit_exact(value, unit, declared)
+    if result is None:
         return None
-    result = Decimal(str(value)) * _LENGTH_UNITS[source] / _LENGTH_UNITS[target]
     return int(result) if result == result.to_integral_value() else float(result)
 
 

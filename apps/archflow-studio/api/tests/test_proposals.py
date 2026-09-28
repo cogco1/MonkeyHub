@@ -214,6 +214,12 @@ class ElementFieldProposalTests(ProposalTestCase):
                 payload = self.accepted(f"set height to {said}", elementId="portico-base")
                 self.assertEqual((payload["change"]["new"], payload["change"]["unit"]), (expected, "m"))
 
+    def test_a_declared_unit_is_read_in_any_spelling_or_case(self) -> None:
+        for said in ("2.2 metres", "2.2 M", "2200 Millimeters"):
+            with self.subTest(said=said):
+                payload = self.accepted(f"set height to {said}", elementId="portico-base")
+                self.assertEqual((payload["change"]["new"], payload["change"]["unit"]), (2.2, "m"))
+
     def test_a_unit_that_is_not_a_length_is_a_question_naming_the_declared_one(self) -> None:
         payload = self.blocked("set height to 90 deg", elementId="portico-base")
 

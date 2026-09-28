@@ -610,6 +610,39 @@ class ExplicitMetricWallAssignments(PorticoTestCase):
                 self.assertNotEqual(status, 201, payload)
                 self.assertEqual([call["message"] for call in compiler.calls], [message])
 
+    def test_any_producer_with_a_declared_unit_takes_the_shortcut_exactly(self):
+        # #404 review: the shortcut read walls only, with its own float table. It now
+        # reads the field's declared unit and restates the length through the one converter.
+        payload = deepcopy(self.wall_payload)
+        payload["entities"][-1] = {
+            "entity_id": "block-07", "schema": "Element@1", "parent_id": "portico",
+            "fields": {"component_id": "portico", "producer": "prism",
+                       "params": {"profile": [[0, 0], [4, 0], [4, 2], [0, 2]], "height": 3.0},
+                       "references": {"base": {"level": "level-ground"}}},
+        }
+        self.use_payload(payload)
+        compiler = scripted(status="question", question="The shortcut should handle this request.")
+        self.app.state.intent_compiler = compiler
+        for message, expected in (("set block-07 height to 2300 mm", 2.3), ("把block-07的高度改成700毫米", 0.7),
+                                  ("change block-07 height to 35 cm", 0.35)):
+            with self.subTest(message=message):
+                status, answer = self.say(message, targetComponentId="portico", elementId="block-07")
+                self.assertEqual(status, 201, answer)
+                self.assertEqual(answer["proposal"]["change"]["new"], expected)
+        self.assertEqual(compiler.calls, [])
+
+    def test_a_delta_on_a_field_that_declares_no_unit_reaches_the_agent(self):
+        # The seam asks about a unit on a number that declares none; the delta shortcut no longer assumes metres.
+        payload = deepcopy(self.wall_payload)
+        payload["entities"][-1]["fields"]["producer"] = "retained-legacy"
+        self.use_payload(payload)
+        compiler = scripted(status="question", question="Which unit does this field use?")
+        self.app.state.intent_compiler = compiler
+        message = "把wall-07的高度提高100毫米"
+        status, answer = self.say(message, targetComponentId="portico", elementId="wall-07")
+        self.assertNotEqual(status, 201, answer)
+        self.assertEqual([call["message"] for call in compiler.calls], [message])
+
     def test_exclusive_declared_metre_parameter_is_edited_without_replacing_its_binding(self):
         payload = deepcopy(self.wall_payload)
         payload["entities"][-1]["fields"]["params"]["height"] = "@wall-height"
@@ -624,8 +657,8 @@ class ExplicitMetricWallAssignments(PorticoTestCase):
         self.assertEqual(compiler.calls, [])
         self.assertEqual(self.projection().record.entity("wall-07").fields["params"]["height"], "@wall-height")
 
-    def test_unknown_producer_and_bound_units_do_not_gain_an_implicit_conversion(self):
-        for producer, unit in (("prism", None), ("wall", "mm"), ("wall", ""), ("wall", "deg")):
+    def test_undeclared_and_non_length_units_do_not_gain_an_implicit_conversion(self):
+        for producer, unit in (("retained-legacy", None), ("wall", ""), ("wall", "deg")):
             with self.subTest(producer=producer, unit=unit):
                 payload = deepcopy(self.wall_payload)
                 payload["entities"][-1]["fields"]["producer"] = producer
@@ -639,6 +672,20 @@ class ExplicitMetricWallAssignments(PorticoTestCase):
                 status, answer = self.say(message, targetComponentId="portico", elementId="wall-07")
                 self.assertNotEqual(status, 201, answer)
                 self.assertEqual([call["message"] for call in compiler.calls], [message])
+
+    def test_a_bound_parameter_declared_in_mm_takes_a_metre_length_restated(self):
+        # #404 F17 (master's ruling): the parameter path restates lengths too; 3.2 m is 3200 mm.
+        payload = deepcopy(self.wall_payload)
+        payload["entities"][-1]["fields"]["params"]["height"] = "@wall-height"
+        payload["parameters"] = [Parameter("wall-height", 3000, "mm", epistemic_status="declared").to_dict()]
+        self.use_payload(payload)
+        compiler = scripted(status="question", question="The shortcut should handle this request.")
+        self.app.state.intent_compiler = compiler
+        status, answer = self.say("set this wall height to 3.2 m", targetComponentId="portico", elementId="wall-07")
+        self.assertEqual(status, 201, answer)
+        self.assertEqual(answer["agent"]["compiledUtterance"], "set parameter:wall-height to 3200")
+        self.assertEqual((answer["proposal"]["change"]["new"], answer["proposal"]["change"]["unit"]), (3200, "mm"))
+        self.assertEqual(compiler.calls, [])
 
     def test_unresolved_controls_and_shared_derived_or_locked_bindings_are_not_shortcuts(self):
         projection = self.projection()
