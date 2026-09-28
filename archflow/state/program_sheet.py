@@ -45,8 +45,7 @@ from typing import Any, Iterable, Mapping, Sequence
 
 from archflow.relations.contracts import ArchitecturalRelationKind
 from archflow.project.refs import require_identifier
-from archflow.semantics.registry import resolve_semantic_kind, suggest_semantic_kind
-from archflow.semantics.roles import ROLE_IDS
+from archflow.semantics.registry import registered_ids, resolve_semantic_kind, suggest_semantic_kind
 from archflow.state.state_record import (
     Entity,
     Relation,
@@ -748,7 +747,8 @@ def _function(value: object, space_id: str) -> None:
         # semantic_kind: close registered spellings, never condition ids; a
         # misspelt role id is answered with the role id it is close to.
         near = (*suggest_semantic_kind(value),
-                *difflib.get_close_matches(value.strip().lower(), sorted(ROLE_IDS), n=3, cutoff=0.75))
+                *difflib.get_close_matches(value.strip().lower(), [i for i in registered_ids() if i.startswith("role.")],
+                                          n=3, cutoff=0.75))
         raise ProgramSheetError(
             f"space {space_id}: function {value!r} is not a registered role "
             f"or alias; nearest: {', '.join(dict.fromkeys(near)) or 'none close'}"
