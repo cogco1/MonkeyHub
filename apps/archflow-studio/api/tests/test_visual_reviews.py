@@ -30,11 +30,12 @@ from archflow_studio_api.application.visual_observation import (
 from archflow_studio_api.application.visual_reviews import PAGE_MAX_EDGE, review_sources
 from archflow_studio_api.main import create_app
 from archflow_studio_api.settings import StudioSettings
+from archflow_studio_api.transport.errors import StudioError
 
 from .support import PROJECT_ID
 from .test_candidate import CandidateTestCase
 from .test_documents import two_page_pdf
-from .test_visual_observation import CountingProvider
+from .test_visual_observation import CountingProvider, png
 
 
 PAGE_ANSWER = {
@@ -121,15 +122,132 @@ class PageReviewTests(unittest.TestCase):
             self.app.state.intent_compiler = compiler
         return self.client.post("/api/visual-reviews", json=self.review_body(**overrides))
 
-    def exported_page(self, page_index: int = 0) -> bytes:
+    def exported_page(self, page_index: int = 0, *, source: dict | None = None) -> bytes:
         """The page export owner's own answer for this page, read through its own route."""
 
         response = self.client.post("/api/board/export", json={
             "projectId": PROJECT_ID, "format": "png", "zip": False, "maxEdge": PAGE_MAX_EDGE,
-            "pages": [{**{key: value for key, value in self.page.items() if key != "kind"}, "pageIndex": page_index}],
+            "pages": [{**{key: value for key, value in (source or self.page).items() if key != "kind"},
+                       "pageIndex": page_index}],
         })
         self.assertEqual(response.status_code, 200, response.text)
         return response.content
+
+    def second_document_page(self) -> dict:
+        response = self.client.post("/api/documents", json={
+            "projectId": PROJECT_ID, "fileName": "another-drawing.png", "mimeType": "image/png",
+            "contentBase64": base64.b64encode(png(shade=80)).decode("ascii"),
+        })
+        self.assertEqual(response.status_code, 201, response.text)
+        document = response.json()
+        return {"kind": "page", "runId": document["runId"], "assetSha256": document["assetSha256"],
+                "revisionRef": document["revisionRef"], "pageIndex": 0}
+
+    def test_same_page_number_in_two_documents_delivers_both_exact_owner_frames_without_a_provider(self):
+        second = self.second_document_page()
+        expected = [self.exported_page(), self.exported_page(source=second)]
+        before = files(self.root)
+        with patch("archflow_studio_api.routes.intents.visual_provider",
+                   side_effect=AssertionError("the connected caller will observe these images")):
+            response = self.review(delivery="frames", sourceRefs=[self.page, second])
+        self.assertEqual(response.status_code, 200, response.text)
+        result = response.json()
+        self.assertEqual(result["delivery"], "frames")
+        self.assertIsNone(result["observation"], "delivery must not invent findings")
+        self.assertIsNone(result["usage"], "there was no provider call")
+        self.assertEqual([f["sourceRef"] for f in result["frames"]], [self.page, second])
+        self.assertEqual([f["viewRef"] for f in result["frames"]], ["source-1-page-0", "source-2-page-0"])
+        self.assertEqual([base64.b64decode(f["data"], validate=True) for f in result["frames"]], expected)
+        self.assertEqual([f["frameSha256"] for f in result["frames"]],
+                         [hashlib.sha256(data).hexdigest() for data in expected])
+        self.assertTrue(all(f["mimeType"] == "image/png" and max(f["width"], f["height"]) <= PAGE_MAX_EDGE
+                            for f in result["frames"]))
+        self.assertEqual(result["budgetState"], {**FRESH, "used": 1, "lastFindingIds": []})
+        self.assertEqual(files(self.root), before, "evidence delivery writes nothing to the project")
+
+    def test_structured_review_maps_same_numbered_pages_without_losing_evidence_regions(self):
+        second = self.second_document_page()
+        expected = [self.exported_page(), self.exported_page(source=second)]
+        views = ["source-1-page-0", "source-2-page-0"]
+        answer = {**PAGE_ANSWER, "observations": [{**PAGE_ANSWER["observations"][0],
+            "evidence_region": {**PAGE_ANSWER["observations"][0]["evidence_region"], "view_ref": views[1]}}]}
+        with codex_transport(answer) as (compiler, calls):
+            response = self.review(compiler, sourceRefs=[self.page, second])
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(calls[0]["images"], expected)
+        observation = response.json()["observation"]
+        self.assertEqual(observation["sourceRefs"], [self.page, second])
+        self.assertEqual(observation["viewRefs"], views)
+        self.assertEqual(observation["observations"][0]["evidenceRegion"]["viewRef"], views[1])
+
+    def test_frame_delivery_keeps_the_old_single_page_recipe_and_cannot_invent_repair_findings(self):
+        response = self.review(delivery="frames")
+        self.assertEqual(response.status_code, 200, response.text)
+        result = response.json()
+        self.assertEqual(result["frames"][0]["viewRef"], "page-0")
+        self.assertEqual(result["frames"][0]["sourceRef"], self.page)
+        spent = result["budgetState"]
+        with patch("archflow_studio_api.application.visual_reviews.export_board_pages",
+                   side_effect=AssertionError("an unwarranted second look renders nothing")):
+            for reason, addressed, code in (("first_bundle", [], "VISUAL_REVIEW_OUT_OF_ORDER"),
+                                           ("after_repair", [], "VISUAL_REVIEW_NOT_WARRANTED"),
+                                           ("after_repair", ["f1"], "VISUAL_REVIEW_NOT_WARRANTED")):
+                with self.subTest(reason=reason, addressed=addressed):
+                    refused = self.review(delivery="frames", reason=reason, budgetState=spent,
+                                          addressedFindingIds=addressed)
+                    self.assertEqual(refused.status_code, 409, refused.text)
+                    self.assertEqual(refused.json()["code"], code)
+                    self.assertEqual(refused.json()["budgetState"], spent)
+
+    def test_frame_delivery_refuses_the_allowance_before_rendering_and_preserves_it(self):
+        cases = (({**FRESH, "used": 2}, "VISUAL_BUDGET_EXHAUSTED"),
+                 ({"taskClass": "deterministic_edit", "allowed": 0, "used": 0}, "VISUAL_REVIEW_NOT_WARRANTED"))
+        with patch("archflow_studio_api.application.visual_reviews.export_board_pages",
+                   side_effect=AssertionError("a refused review renders nothing")):
+            for state, code in cases:
+                with self.subTest(code=code):
+                    response = self.review(delivery="frames", budgetState=state)
+                    self.assertEqual(response.status_code, 409, response.text)
+                    self.assertEqual(response.json()["code"], code)
+                    self.assertEqual(response.json()["budgetState"], {**state, "lastFindingIds": []})
+
+    def test_frame_delivery_refuses_stale_revisions_and_cross_project_sources(self):
+        second = self.second_document_page()
+        for bad in ({**second, "assetSha256": "0" * 64}, {**second, "revisionRef": "project://P/runs/r/records/x.json"}):
+            with self.subTest(source=bad):
+                response = self.review(delivery="frames", sourceRefs=[self.page, bad])
+                self.assertEqual(response.status_code, 409, response.text)
+                self.assertEqual(response.json()["code"], "VISUAL_SOURCE_MISMATCH")
+                self.assertEqual(response.json()["sourceRef"], bad)
+                self.assertEqual(response.json()["budgetState"], {**FRESH, "lastFindingIds": []})
+                self.assertNotIn("frames", response.json(), "do not deliver a partial bundle")
+        response = self.review(delivery="frames", projectId="another-project")
+        self.assertEqual(response.status_code, 403, response.text)
+        self.assertEqual(response.json()["code"], "PROJECT_MISMATCH")
+
+    def test_frame_delivery_still_refuses_duplicates_invented_recipes_and_oversized_frames(self):
+        second = self.second_document_page()
+        for overrides in (dict(sourceRefs=[self.page, self.page]),
+                          dict(sourceRefs=[self.page, second], viewRecipe=["page-1"])):
+            with self.subTest(overrides=overrides):
+                response = self.review(delivery="frames", **overrides)
+                self.assertEqual(response.status_code, 422, response.text)
+        with patch("archflow_studio_api.application.visual_reviews.export_board_pages") as export:
+            export.return_value.content = png(width=2049)
+            response = self.review(delivery="frames")
+        self.assertEqual(response.status_code, 422, response.text)
+        self.assertEqual(response.json()["code"], "VISUAL_REVIEW_INVALID")
+        self.assertEqual(response.json()["budgetState"], {**FRESH, "lastFindingIds": []})
+        self.assertNotIn("frames", response.json())
+
+    def test_a_failed_page_renderer_returns_the_unspent_allowance_without_any_frames(self):
+        with patch("archflow_studio_api.application.visual_reviews.export_board_pages",
+                   side_effect=StudioError(502, "PAGE_RENDER_FAILED", "The page renderer failed.")):
+            response = self.review(delivery="frames")
+        self.assertEqual(response.status_code, 502, response.text)
+        self.assertEqual(response.json()["code"], "PAGE_RENDER_FAILED")
+        self.assertEqual(response.json()["budgetState"], {**FRESH, "lastFindingIds": []})
+        self.assertNotIn("frames", response.json())
 
     def test_a_page_review_sends_the_page_exports_own_pixels_and_hands_back_the_allowance(self):
         expected = self.exported_page()
@@ -366,6 +484,22 @@ class ModelReviewTests(CandidateTestCase):
         self.assertEqual((span.project_id, span.run_id), (PROJECT_ID, self.model["runId"]))
         self.assertEqual(span.details["comparison_refs"],
                          [f"frame:{view}:{hashlib.sha256(png).hexdigest()}" for view, png in zip(views, expected)])
+
+    def test_model_frame_delivery_uses_the_same_exact_projection_without_a_configured_provider(self):
+        views = ["front", "axon"]
+        expected = [self.owner_view(view) for view in views]
+        before = files(self.repository.layout.root)
+        with patch("archflow_studio_api.routes.intents.visual_provider",
+                   side_effect=AssertionError("frames use the current caller, not another provider")):
+            response = self.review(self.model, views, delivery="frames")
+        self.assertEqual(response.status_code, 200, response.text)
+        result = response.json()
+        self.assertEqual([frame["viewRef"] for frame in result["frames"]], views)
+        self.assertEqual([frame["sourceRef"] for frame in result["frames"]], [{"kind": "model", **self.model}] * 2)
+        self.assertEqual([base64.b64decode(frame["data"], validate=True) for frame in result["frames"]], expected)
+        self.assertEqual(result["budgetState"], {**FRESH, "used": 1, "lastFindingIds": []})
+        self.assertIsNone(result["observation"])
+        self.assertEqual(files(self.repository.layout.root), before)
 
     def test_a_stale_state_digest_is_refused_before_projection_and_provider(self):
         stale = {

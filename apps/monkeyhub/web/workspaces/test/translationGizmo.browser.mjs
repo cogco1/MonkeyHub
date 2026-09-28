@@ -102,7 +102,7 @@ try {
     else vite.middlewares(request,response);
   });
   await new Promise(resolve=>http.listen(0,"127.0.0.1",resolve));
-  browser = await chromium.launch({headless:true, ...(process.env.CHROMIUM_EXECUTABLE ? {executablePath:process.env.CHROMIUM_EXECUTABLE} : {}), args:["--enable-unsafe-swiftshader","--no-sandbox"]});
+  browser = await chromium.launch({headless:true, ...(process.env.CHROMIUM_EXECUTABLE ? {executablePath:process.env.CHROMIUM_EXECUTABLE} : {channel:"chrome"}), args:["--enable-unsafe-swiftshader","--no-sandbox"]});
   page = await browser.newPage({viewport:{width:1280,height:850},locale:"en-US"});
   page.on("pageerror",error=>errors.push(error.message)); page.setDefaultTimeout(12000);
   await page.goto(`http://127.0.0.1:${http.address().port}/gizmo-test?lang=en`);

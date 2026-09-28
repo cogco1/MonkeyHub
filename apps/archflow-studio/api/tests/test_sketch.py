@@ -864,5 +864,185 @@ class ProposalCheckpointTestCase(unittest.TestCase):
         self.assertEqual(self.bounds(job["candidateId"], "obj-chain-a"), ([0, 0, 0], [3, 2, 2]))
 
 
+class PlanarCompressionProposalTestCase(unittest.TestCase):
+    setUp = SketchTestCase.setUp
+
+    def source(self, variant=None):
+        component = {"entity_id": "compression-study", "schema": "Component@1", "parent_id": "portico",
+                     "fields": {"semantic_kind": "building", "intent": "compression-study"}}
+        faces = []
+        for name, origin_y, profile in (
+            ("lower-face", 0, [[0, 0], [2, 0], [2, 1], [0, 1], [0, 0]]),
+            ("upper-face", 3, [[0, 0], [2, 0], [2, 1], [0, 1], [0, 0]]),
+            ("crossing-face", 0, [[0, 0], [4, 4], [0, 4], [0, 0]]),
+        ):
+            faces.append({"entity_id": name, "schema": "Element@1", "parent_id": "compression-study", "fields": {
+                "component_id": "compression-study", "producer": "planar-surface", "references": {"base": {"level": "level-ground"}},
+                "params": {"profile": profile, "work_plane": {"origin": [0, origin_y, 0], "xAxis": [1, 0, 0],
+                                                             "yAxis": [0, 1, 0], "normal": [0, 0, 1]}},
+            }})
+        entities, parameters, relations = [component, *faces], [], []
+        if variant == "tilted":
+            faces[-1]["fields"]["params"]["work_plane"].update(yAxis=[0, 0.6, 0.8], normal=[0, -0.8, 0.6])
+        if variant in {"bound", "bound-type"}:
+            faces[-1]["fields"]["params"]["profile"][1][1] = "@face-height"
+            faces[-1]["fields"]["params"]["profile"][2][1] = "@face-height"
+            parameters = [{"key": "face-height", "value": 4, "unit": "m"}]
+            if variant == "bound-type":
+                fields = faces[-1]["fields"]
+                entities.append({"entity_id": "face-type", "schema": "Type@1", "fields": {
+                    "producer": "planar-surface", "params": fields.pop("params"),
+                }})
+                fields["type_ref"] = "face-type"
+        if variant == "related":
+            relations = [{"relation_id": "faces-meet", "kind": "interface", "subject": "upper-face",
+                          "object": "crossing-face", "propagation": "revalidate"}]
+        response = self.client.post("/api/proposals", json={
+            "stateDigest": self.state_digest, "sourceRunId": REFERENCE_RUN_ID,
+            "semanticEdit": {"summary": "Three surfaces for a bounded compression study", "entities": entities,
+                             "parameters": parameters, "relations": relations},
+        })
+        self.assertEqual(response.status_code, 201, response.text)
+        return response.json()
+
+    def compress(self, source, **overrides):
+        return self.client.post("/api/proposals/transform", json={
+            "stateDigest": source["baseStateDigest"], "sourceProposalId": source["proposalId"],
+            "kind": "compress-above", "componentId": "compression-study", "threshold": 2, "factor": 0.5,
+            **overrides,
+        })
+
+    def proposed_record(self, proposal):
+        from archflow.state.state_record import apply_state_record_operator
+        from archflow_studio_api.application.binding import bound_project
+        from archflow_studio_api.application.projection import project_state
+        from archflow_studio_api.application.proposals import operator_of
+
+        base = project_state(bound_project(self.client.app.state), proposal["sourceRunId"]).record
+        retained = self.client.app.state.proposals.get(proposal["proposalId"])
+        return apply_state_record_operator(base, operator_of(retained, base))
+
+    def test_component_compression_and_explicit_selection_keep_one_unexecuted_exact_base(self):
+        source = self.source()
+        original = self.proposed_record(source)
+        runs = set((self.root / PROJECT_ID / "runs").iterdir())
+        head = self.repository.read_head().version
+        response = self.compress(source, keep=["entity:lower-face", "entity:portico-base"])
+        self.assertEqual(response.status_code, 201, response.text)
+        proposal = response.json()
+        self.assertEqual((proposal["baseStateDigest"], proposal["sourceRunId"]), (self.state_digest, REFERENCE_RUN_ID))
+        changed = self.proposed_record(proposal)
+        old_by_id = {e.entity_id: e for e in original.entities}
+        changed_by_id = {e.entity_id: e for e in changed.entities}
+        self.assertEqual({e.entity_id for e in changed.entities if e != old_by_id[e.entity_id]}, {"upper-face", "crossing-face"})
+        self.assertEqual(changed.parameters, original.parameters)
+        self.assertEqual(changed.relations, original.relations)
+        for name in ("upper-face", "crossing-face"):
+            self.assertEqual(changed_by_id[name].fields["references"], old_by_id[name].fields["references"])
+        followup = self.compress(proposal, componentId=None, elementIds=["upper-face"])
+        self.assertEqual(followup.status_code, 201, followup.text)
+        followup_by_id = {e.entity_id: e for e in self.proposed_record(followup.json()).entities}
+        self.assertEqual(followup_by_id["crossing-face"], changed_by_id["crossing-face"])
+        self.assertEqual(followup.json()["baseStateDigest"], self.state_digest)
+        self.assertIn("entity:lower-face", followup.json()["protected"])
+        self.assertEqual(self.proposed_record(source), original)
+        self.assertEqual(set((self.root / PROJECT_ID / "runs").iterdir()), runs)
+        self.assertEqual(self.repository.read_head().version, head)
+
+    def test_nonplanar_bound_related_and_kept_batches_leave_no_executable_prefix(self):
+        runs = set((self.root / PROJECT_ID / "runs").iterdir())
+        head = self.repository.read_head().version
+        for variant, expected, words in (("tilted", 422, "crossing-face"), ("bound", 422, "parameter-bound"),
+                                         ("bound-type", 422, "parameter-bound"), ("related", 409, "faces-meet"),
+                                         (None, 409, "protected")):
+            with self.subTest(variant=variant):
+                source = self.source(variant)
+                previous = self.client.app.state.proposals.for_state(self.state_digest)
+                original = self.proposed_record(source)
+                response = self.compress(source, **({"keep": ["entity:upper-face"]} if variant is None else {}))
+                self.assertEqual(response.status_code, expected, response.text)
+                self.assertIn(words, response.json()["detail"])
+                self.assertEqual(self.client.app.state.proposals.for_state(self.state_digest), previous)
+                self.assertEqual(self.proposed_record(source), original)
+        self.assertEqual(set((self.root / PROJECT_ID / "runs").iterdir()), runs)
+        self.assertEqual(self.repository.read_head().version, head)
+
+    def test_stale_wrong_source_and_malformed_or_unsupported_selections_are_atomic(self):
+        source = self.source()
+        previous = self.client.app.state.proposals.for_state(self.state_digest)
+        for payload, status, code in (
+            ({"stateDigest": "0" * 64}, 409, "STALE_BASE"),
+            ({"projectId": "other-project"}, 403, "PROJECT_MISMATCH"),
+            ({"sourceRunId": "other-run"}, 409, "PROPOSAL_SOURCE_MISMATCH"),
+            ({"componentId": "missing"}, 404, "ELEMENT_UNKNOWN"),
+            ({"componentId": None, "elementIds": ["missing"]}, 404, "ELEMENT_UNKNOWN"),
+            ({"componentId": "portico"}, 422, "DIRECT_EDIT_UNSUPPORTED"),
+            ({"componentId": None, "elementIds": ["lower-face"]}, 422, "DIRECT_EDIT_NO_CHANGE"),
+            ({"elementIds": ["upper-face"]}, 422, "REQUEST_INVALID"),
+            ({"componentId": None, "elementIds": ["upper-face", "upper-face"]}, 422, "REQUEST_INVALID"),
+            ({"componentId": None, "elementIds": []}, 422, "REQUEST_INVALID"),
+            ({"elementId": "upper-face"}, 422, "REQUEST_INVALID"),
+            ({"factor": 0}, 422, "REQUEST_INVALID"),
+            ({"factor": 1.1}, 422, "REQUEST_INVALID"),
+            ({"translation": [0, 1, 0]}, 422, "REQUEST_INVALID"),
+        ):
+            with self.subTest(payload=payload):
+                response = self.compress(source, **payload)
+                self.assertEqual(response.status_code, status, response.text)
+                self.assertEqual(response.json()["code"], code, response.text)
+                self.assertEqual(self.client.app.state.proposals.for_state(self.state_digest), previous)
+
+
+class PlanarCompressionCandidateTestCase(unittest.TestCase):
+    source = PlanarCompressionProposalTestCase.source
+    run_candidate = SketchNewComponentTestCase.run_candidate
+    bounds = SketchDirectGeometryTestCase.bounds
+    record = SketchDirectGeometryTestCase.record
+
+    def setUp(self):
+        SketchNewComponentTestCase.setUp(self)
+        self.state_digest = self.digest()
+
+    digest = SketchNewComponentTestCase.digest
+
+    def test_one_component_proposal_runs_once_and_survives_restart_without_accepting(self):
+        seed = self.source()
+        original_run = self.run_candidate(seed["proposalId"])["candidateId"]
+        original = self.record(original_run)
+        runs = set((self.project / "runs").iterdir())
+        head = self.repository.read_head().version
+        response = self.client.post("/api/proposals/transform", json={
+            "sourceRunId": original_run, "stateDigest": self.digest(original_run), "kind": "compress-above",
+            "componentId": "compression-study", "threshold": 2, "factor": 0.5,
+            "keep": ["entity:lower-face", "entity:portico-base"],
+        })
+        self.assertEqual(response.status_code, 201, response.text)
+        proposal = response.json()
+        self.assertEqual(len(proposal["change"]["edits"]["entities"]), 2)
+        job = self.run_candidate(proposal["proposalId"])
+        self.assertEqual(job["status"], "succeeded", job)
+        compressed = job["candidateId"]
+        self.assertEqual(len(set((self.project / "runs").iterdir()) - runs), 1)
+        self.assertEqual(self.bounds(compressed, "obj-crossing-face"), ([0, 0, 0], [4, 0, 3]))
+        self.assertEqual(self.bounds(compressed, "obj-upper-face"), ([0, 0, 2.5], [2, 0, 3]))
+        saved = self.record(compressed)
+        original_by_id = {entity.entity_id: entity for entity in original.entities}
+        for entity in saved.entities:
+            if entity.entity_id not in {"upper-face", "crossing-face"}:
+                self.assertEqual(entity, original_by_id[entity.entity_id])
+        self.client.close()
+        self.client = TestClient(create_app(StudioSettings(cad_export="occt", project_dir=self.project)))
+        self.addCleanup(self.client.close)
+        self.assertEqual(self.record(compressed), saved)
+        self.assertEqual(self.record(original_run), original)
+        self.assertEqual(self.repository.read_head().version, head)
+        # A later request can continue the retained compressed candidate using the same API.
+        continued = self.client.post("/api/proposals/transform", json={
+            "sourceRunId": compressed, "stateDigest": self.digest(compressed), "kind": "compress-above",
+            "elementIds": ["upper-face"], "threshold": 2, "factor": 0.5,
+        })
+        self.assertEqual(continued.status_code, 201, continued.text)
+
+
 if __name__ == "__main__":
     unittest.main()

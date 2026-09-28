@@ -131,10 +131,11 @@ let settings = { projectDir: "D:\\fixture\\A", referenceRun: null, cadExport: "o
 let preferences = { language: "en", theme: "light", fontScale: 1 };
 // GH-302: settings save themselves; a test holds one write to see what waits for it.
 let settingsWriteGate = null;
-const projects = [
+const initialProjects = () => [
   { projectId: "A", projectDir: "D:\\fixture\\A", name: "Project A", chatCount: 0, version: 3, stage: "S2" },
   { projectId: "B", projectDir: "D:\\fixture\\B", name: "Project B", chatCount: 0, version: 0, stage: null },
 ];
+const projects = initialProjects();
 // What the archive layer always leaves out, in its own words; the Hub carries
 // this list through untouched, so the dialogs must show all five lines.
 const archiveOmissions = [
@@ -485,6 +486,29 @@ const hubApi = async (route) => {
       assert.equal(data().projectId, session.projectId);
       assert.equal(appsFor(session.projectDir).find((item) => item.appId === "monkeyarch").state, "running");
       if (session.projectDir === chatMessageFailureFor) return json({ code: "CHAT_SEND_FAILED", detail: "Fixture upload failed. Try again." }, 503);
+      if (data().suggestionSelection) {
+        // GH-432: the fixture admits a retained selection, not a browser-authored prompt.
+        // This exercises the built UI contract; provider execution is tested by the API suite.
+        const selection = data().suggestionSelection;
+        assert.deepEqual(Object.keys(data()).sort(), ["projectId", "suggestionSelection"]);
+        const card = session.messages.find((message) => message.id === selection.messageId);
+        const lastUser = session.messages.findLast((message) => message.role === "user");
+        const latest = session.messages.findLast((message) => message.suggestion && message.sourceTurnId === lastUser?.id);
+        if (session.status !== "idle" || session.sourceSessionId || !card?.suggestion
+          || card.status !== "complete" || card.sourceTurnId !== lastUser?.id
+          || latest?.id !== card.id || card.presentationRevision !== selection.revision
+          || session.messages.some((message) => message.suggestionSelection?.messageId === card.id
+            && message.suggestionSelection.revision === selection.revision)) {
+          return json({ code: "CHAT_SUGGESTION_STALE", detail: "This suggestion is no longer actionable." }, 409);
+        }
+        // Admission consumes the selection before a delayed response can be clicked again.
+        session.messages.push({ id: `u-${session.id}-${session.messages.length}`, role: "user", status: "complete",
+          content: card.suggestion.prompt, suggestionSelection: { ...selection }, attachments: [],
+          contextMode: "continue", createdAt: new Date().toISOString() });
+        session.status = "running";
+        await chatMessageResponseGate;
+        return json(session, 202);
+      }
       if (session.status === "running") {
         // #301: what the API does with a message sent while a turn runs.
         assert.equal(data().attachments, undefined, "an interjection carries no files");
@@ -908,8 +932,240 @@ async function idleMinute() {
     assert.equal(opened.live, 1);
   } finally { await idle.close(); }
 }
+/** GH-432: retained structured suggestions in the real built UI, with synthetic local APIs. */
+async function suggestionCards() {
+  // The full walk's no-project scenario removes these catalog entries. Reuse fresh
+  // seeds without clearing retained runtimes, project records or earlier sessions.
+  for (const project of initialProjects()) {
+    if (!projects.some((row) => row.projectId === project.projectId)) projects.push(project);
+  }
+  // The preceding scenario can leave a restored Monitor panel over narrow chat.
+  // Only this synthetic browser's saved layout is reset; conversation data stays.
+  if (page.url().startsWith(origin)) await page.evaluate(() => localStorage.removeItem("monkeyhub.chat-view.v1"));
+  const createdSessions = [];
+  const postWrites = () => writes.filter(([method, pathname]) => method === "POST" && pathname.endsWith("/messages"));
+  const user = (id) => ({ id, role: "user", status: "complete", content: "Help me choose the next drawing task.", createdAt: "2026-09-28T12:00:00Z" });
+  const suggestion = (id, turn, overrides = {}) => ({ id, role: "assistant", status: "complete", content: "",
+    sourceTurnId: turn, presentationRevision: 1, createdAt: "2026-09-28T12:00:01Z",
+    suggestion: { title: id, outcome: "A readable section from the current model", capability: "available",
+      rationale: "Use the existing source-bound drawing tools.", tools: ["MonkeyDiagram"], deliverables: ["Editable SVG", "Review PDF"],
+      timeEstimate: { value: null, basis: null }, costEstimate: { value: null, basis: null },
+      prompt: "Prepare a section from the current model and retain its editable source.", ...overrides } });
+  const makeSession = (id, messages, overrides = {}) => {
+    const projectId = overrides.projectId ?? "A";
+    const project = projects.find((item) => item.projectId === projectId);
+    const session = { id: `suggestions-${id}`, projectId, projectDir: project.projectDir, title: `Suggestions ${id}`,
+      provider: "codex", model: "fixture-model-a", status: "idle", archived: false,
+      createdAt: "2026-09-28T12:00:00Z", updatedAt: "2026-09-28T12:00:01Z", messages, ...overrides };
+    sessions.unshift(session);
+    createdSessions.push(session);
+    return session;
+  };
+  const visit = async (session) => {
+    await page.goto(`${origin}/?chatId=${session.id}`);
+    await page.locator(".chat-header h1").filter({ hasText: session.title }).waitFor();
+    await urlParamIs("chatId", session.id, "the card opens its retained conversation");
+  };
+  const cardFor = (title) => page.locator(".chat-suggestion").filter({ hasText: title });
+  const action = (card, name = "accept") => card.locator(`[data-suggestion-action="${name}"]`);
+  const blocked = async (card, reason) => {
+    await card.waitFor();
+    assert.equal(await action(card).isDisabled(), true, reason);
+    // A disabled recommendation must explain itself in visible text, not just a title tooltip.
+    const explanation = await action(card).getAttribute("aria-describedby");
+    if (explanation) {
+      for (const id of explanation.split(/\s+/)) assert.equal(await page.locator(`[id="${id}"]`).isVisible(), true, reason);
+    }
+    const status = card.locator(".chat-suggestion__status");
+    assert.equal(await status.isVisible(), true, reason);
+    assert.ok((await status.innerText()).trim().length > 0, reason);
+  };
+
+  preferences = { ...preferences, language: "en", theme: "light", fontScale: 1 };
+  await page.setViewportSize({ width: 1440, height: 960 });
+  const available = suggestion("Retained drawing recommendation", "suggestion-user");
+  const sessionA = makeSession("A", [user("suggestion-user"), available]);
+  const before = postWrites().length;
+  await visit(sessionA);
+  const card = cardFor(available.suggestion.title);
+  await card.waitFor();
+  await contextReady();
+  assert.equal(await action(card).isEnabled(), true, "structured data renders even with empty assistant content");
+  assert.equal(await card.locator('[data-suggestion-action="accept"]').count(), 1, "one recommended execution action per card");
+  assert.match(await card.innerText(), /assess|unknown|not.*estimat|to be estimated/i, "unknown effort and cost remain unknown");
+  const details = card.locator("details");
+  assert.ok(await details.count() > 0, "rationale and method are progressively disclosed");
+  assert.equal(await details.first().getAttribute("open"), null);
+  await details.first().locator("summary").click();
+  await card.getByText(available.suggestion.rationale, { exact: true }).waitFor();
+  for (const text of [...available.suggestion.tools, ...available.suggestion.deliverables]) assert.ok((await card.innerText()).includes(text));
+  await details.first().locator("summary").click();
+  assert.equal(postWrites().length, before, "reading a recommendation does not execute it");
+
+  // Adjust keeps an unfinished draft and its attachments, and never sends for the architect.
+  const composer = page.locator("#chat-input");
+  await composer.fill("Keep my existing notes.");
+  await addAttachments([{ name: "suggestion-notes.txt", mimeType: "text/plain", buffer: Buffer.from("Retained local draft attachment") }]);
+  await action(card, "adjust").click();
+  assert.ok((await composer.inputValue()).startsWith("Keep my existing notes."));
+  assert.ok((await composer.inputValue()).includes(available.suggestion.prompt));
+  assert.equal(await page.locator(".chat-composer .chat-attachments li").count(), 1);
+  assert.equal(await composer.evaluate((node) => node === document.activeElement), true);
+  assert.equal(postWrites().length, before);
+
+  // Two synchronous clicks challenge the submit guard before a network response arrives.
+  let releaseSelection;
+  chatMessageResponseGate = new Promise((resolve) => { releaseSelection = resolve; });
+  const selectionRequest = page.waitForRequest((request) => new URL(request.url()).pathname === `/api/chat/sessions/${sessionA.id}/messages`);
+  await action(card).evaluate((button) => { button.click(); button.click(); });
+  await selectionRequest;
+  assert.equal(await action(card).isDisabled(), true);
+  releaseSelection(); chatMessageResponseGate = Promise.resolve();
+  await page.getByRole("button", { name: "Stop", exact: true }).waitFor();
+  assert.equal(postWrites().length, before + 1, "rapid double selection sends exactly once");
+  const selectionWrite = postWrites().at(-1);
+  assert.deepEqual(selectionWrite.slice(0, 3), ["POST", `/api/chat/sessions/${sessionA.id}/messages`,
+    { projectId: "A", suggestionSelection: { messageId: available.id, revision: 1 } }]);
+  assert.ok((await composer.inputValue()).startsWith("Keep my existing notes."), "choosing a suggestion does not send or erase the separate draft");
+  assert.equal(await page.locator(".chat-composer .chat-attachments li").count(), 1);
+  assert.equal(sessionA.messages.at(-1).content, available.suggestion.prompt, "the fixture resolves the prompt from the retained card");
+  assert.deepEqual(sessionA.messages.at(-1).suggestionSelection, { messageId: available.id, revision: 1 });
+  sessionA.status = "idle";
+  await page.reload();
+  await blocked(cardFor(available.suggestion.title), "a consumed card stays disabled after refresh");
+  assert.equal(postWrites().length, before + 1, "refresh only reads the consumed selection");
+
+  // Switching projects before choosing a card cannot send to the previously selected project.
+  const choiceB = suggestion("Project B recommendation", "suggestion-B-user");
+  const sessionB = makeSession("B", [user("suggestion-B-user"), choiceB], { projectId: "B" });
+  emitRuntime();
+  await page.getByRole("button", { name: "Project B", exact: true }).first().click();
+  await cardFor(choiceB.suggestion.title).waitFor();
+  await contextReady();
+  await action(cardFor(choiceB.suggestion.title)).click();
+  await page.getByRole("button", { name: "Stop", exact: true }).waitFor();
+  assert.deepEqual(postWrites().at(-1).slice(0, 3), ["POST", `/api/chat/sessions/${sessionB.id}/messages`,
+    { projectId: "B", suggestionSelection: { messageId: choiceB.id, revision: 1 } }]);
+  sessionB.status = "idle";
+
+  const old = suggestion("Earlier turn recommendation", "old-user");
+  const replaced = suggestion("Superseded recommendation", "latest-user");
+  const current = { ...suggestion("Current recommendation", "latest-user"), presentationRevision: 2 };
+  const revisionSession = makeSession("revisions", [user("old-user"), old, user("latest-user"), replaced, current]);
+  await visit(revisionSession);
+  await blocked(cardFor(old.suggestion.title), "an older request cannot be executed");
+  await blocked(cardFor(replaced.suggestion.title), "only the latest recommendation of the same request can execute");
+  assert.equal(await action(cardFor(current.suggestion.title)).isEnabled(), true);
+  assert.equal(await page.locator('.chat-suggestion [data-suggestion-action="accept"]:enabled').count(), 1,
+    "the current request has at most one executable recommendation");
+  const beforeDismiss = postWrites().length;
+  await action(cardFor(current.suggestion.title), "dismiss").click();
+  const remainingAccept = action(cardFor(current.suggestion.title));
+  assert.ok(!await remainingAccept.count() || !await remainingAccept.isVisible() || await remainingAccept.isDisabled(), "dismiss hides or disables this card's action");
+  assert.equal(postWrites().length, beforeDismiss, "dismiss is local and starts no task");
+
+  for (const [name, sessionOverrides, messageOverrides] of [
+    ["running", { status: "running" }, {}],
+    ["interrupted", { status: "interrupted" }, {}],
+    ["failed", { status: "failed" }, {}],
+    ["archived", { archived: true }, {}],
+    ["external", { sourceSessionId: "external-suggestion-source" }, {}],
+    ["incomplete", {}, { status: "streaming" }],
+  ]) {
+    const record = { ...suggestion(`Blocked ${name} recommendation`, `${name}-user`), ...messageOverrides };
+    const blockedSession = makeSession(name, [user(`${name}-user`), record], sessionOverrides);
+    await visit(blockedSession);
+    await blocked(cardFor(record.suggestion.title), `${name} recommendations remain readable but cannot execute`);
+  }
+  assert.equal(postWrites().length, beforeDismiss, "blocked recommendations never send");
+
+  // Both languages and narrow screens keep estimates qualified and their bases folded.
+  for (const language of ["en", "zh-CN"]) {
+    const theme = language === "en" ? "light" : "dark";
+    preferences = { ...preferences, language, theme };
+    await page.setViewportSize({ width: 1440, height: 960 });
+    const estimated = suggestion(`Estimated recommendation ${language}`, `estimated-user-${language}`, {
+      capability: "needs-development", timeEstimate: { value: "15–30 min", basis: "Comparable synthetic drawing tasks only." },
+      costEstimate: { value: "$0.20–0.40", basis: "Illustrative token rate; excludes software licenses." },
+    });
+    const estimatesSession = makeSession(`estimates-${language}`, [user(`estimated-user-${language}`), estimated]);
+    await visit(estimatesSession);
+    const estimateCard = cardFor(estimated.suggestion.title);
+    await estimateCard.waitFor();
+    // The mobile sidebar is an intentional overlay; close it through its real control.
+    const hideProjects = page.getByRole("button", { name: language === "en" ? "Hide projects" : "收起项目栏", exact: true }).first();
+    if (await hideProjects.isVisible()) await hideProjects.click();
+    assert.match(await estimateCard.innerText(), language === "en" ? /estimat/i : /估算/);
+    assert.match(await estimateCard.innerText(), language === "en" ? /New capability to assess/i : /需要评估新能力/);
+    for (const estimate of [estimated.suggestion.timeEstimate, estimated.suggestion.costEstimate]) {
+      assert.ok((await estimateCard.innerText()).includes(estimate.value));
+      assert.equal(await estimateCard.getByText(estimate.basis).isVisible(), false, "estimate basis starts folded");
+    }
+    for (const width of [1440, 375]) {
+      await page.setViewportSize({ width, height: 960 });
+      const overflow = await estimateCard.evaluate((node) => ({
+        card: node.scrollWidth > node.clientWidth + 1,
+        page: document.documentElement.scrollWidth > window.innerWidth + 1,
+      }));
+      assert.deepEqual(overflow, { card: false, page: false }, `${language} suggestions fit at ${width}px`);
+      await estimateCard.screenshot({ path: path.join(temporary, `suggestion-${language}-${theme}-${width}.png`) });
+    }
+    for (const disclosure of await estimateCard.locator("details").all()) {
+      if (!await disclosure.getAttribute("open")) await disclosure.locator(":scope > summary").click();
+    }
+    for (const estimate of [estimated.suggestion.timeEstimate, estimated.suggestion.costEstimate]) await estimateCard.getByText(estimate.basis).waitFor();
+  }
+
+  preferences = { ...preferences, language: "en", theme: "light" };
+  await page.setViewportSize({ width: 1440, height: 960 });
+  const normal = makeSession("ordinary", [user("ordinary-user"),
+    { id: "ordinary-tool", role: "tool", status: "complete", candidateId: "cand-A-1",
+      createdAt: "2026-09-28T12:00:01Z",
+      content: "studio_request · GET /api/jobs/job-1 · completed\ncandidateId: cand-A-1\nstatus: succeeded" },
+    { id: "ordinary-result", role: "assistant", status: "complete", createdAt: "2026-09-28T12:00:02Z", content: "The requested drawing is ready." }]);
+  await visit(normal);
+  await page.getByText("The requested drawing is ready.", { exact: true }).waitFor();
+  assert.equal(await page.locator(".chat-suggestion").count(), 0, "an explicit completed task needs no confirmation card");
+  await page.locator('.chat-study[data-candidates="cand-A-1"]').waitFor();
+  const permissionSession = makeSession("permission", [user("permission-user"),
+    suggestion("Permission-time recommendation", "permission-user"),
+    { id: "suggestion-permission", role: "tool", status: "streaming", content: "A protected action awaits permission.",
+      createdAt: "2026-09-28T12:00:02Z",
+      permission: { id: "suggestion-permission-request", title: "Allow this protected action?", options: [{ optionId: "allow", name: "Allow once", kind: "allow_once" }] } },
+  ], { status: "running" });
+  await visit(permissionSession);
+  await blocked(cardFor("Permission-time recommendation"), "suggestions do not replace runtime permission");
+  await page.getByRole("group", { name: "Allow this protected action?", exact: true }).getByRole("button", { name: "Allow once", exact: true }).click();
+  await page.getByRole("group", { name: "Allow this protected action?", exact: true }).waitFor({ state: "detached" });
+  assert.equal(postWrites().length, beforeDismiss, "a permission choice does not accept a suggestion");
+
+  // The two removed duplicate entries leave their primary navigation and global/project scopes intact.
+  await visit(normal);
+  await page.getByRole("menuitem", { name: "Help", exact: true }).click();
+  assert.equal(await page.getByRole("menuitem", { name: "Usage and task records", exact: true }).count(), 0);
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "This project: Project A", exact: true }).click();
+  const projectCard = page.locator(".chat-project-card");
+  await projectCard.waitFor();
+  assert.equal(await projectCard.getByRole("button", { name: "Open in Design tree", exact: true }).count(), 0);
+  await projectCard.getByText("Version 3", { exact: true }).waitFor();
+  await page.keyboard.press("Escape");
+  assert.equal(await page.getByRole("button", { name: "Design tree", exact: true }).count(), 1);
+  await page.getByRole("button", { name: "Usage", exact: true }).click();
+  await page.locator(".monitor-page:visible").waitFor();
+  await page.waitForFunction(() => document.querySelector('.monitor-scope [aria-pressed="true"]')?.textContent === "Project A");
+  await page.locator(".chat-usage").click();
+  await page.waitForFunction(() => document.querySelector('.monitor-scope [aria-pressed="true"]')?.textContent === "All");
+  // The running/permission cases are done. Stop only this walk's synthetic turns
+  // so the following idle-minute check does not measure their active polling.
+  for (const session of createdSessions) if (session.status === "running") session.status = "interrupted";
+  emitRuntime();
+  console.log(JSON.stringify({ suggestions: "passed", selectionPosts: 2, languages: ["en", "zh-CN"], widths: [1440, 375] }));
+}
 try {
-  if (process.env.MONKEYHUB_UI_FOCUS === "accessibility") {
+  if (process.env.MONKEYHUB_UI_FOCUS === "suggestions") {
+    await suggestionCards();
+  } else if (process.env.MONKEYHUB_UI_FOCUS === "accessibility") {
     const cdp = await page.context().newCDPSession(page);
     const accessible = async (role, name) => {
       const { nodes } = await cdp.send("Accessibility.getFullAXTree");
@@ -1337,10 +1593,13 @@ try {
   await otherProject.press("ArrowUp");
   await scopeIs("Project A");
   await page.getByRole("menuitem", { name: "Help", exact: true }).click();
-  await page.getByRole("menuitem", { name: "Usage and task records", exact: true }).click();
+  assert.equal(await page.getByRole("menuitem", { name: "Usage and task records", exact: true }).count(), 0,
+    "Help does not duplicate the global Usage entry");
+  await page.keyboard.press("Escape");
+  await page.locator(".chat-usage").click();
   await waitMonitor();
   await scopeIs("All");
-  assert.equal(await scopeNow(), "All", "the global Help menu opens all projects");
+  assert.equal(await scopeNow(), "All", "the retained sidebar entry opens all projects");
   await otherProject.selectOption("A");
   // A hidden mounted Monitor must not poll or take top-level navigation back.
   await page.getByRole("button", { name: "Hide tools" }).click();
@@ -1803,10 +2062,12 @@ try {
   await card.getByText("Modeling follows the current project").waitFor();
   assert.equal(await card.getByText("cand-A-1").count(), 0, "candidate ids stay internal to the Worktree Graph");
   assert.equal(await card.getByRole("button", { name: /Accept|Issue|Endorse/ }).count(), 0);
-  // #302: the card's work lines retired behind one link to the Design Tree, the one history entry.
+  // #432: project information keeps recovery; history uses the main Design Tree entry.
   assert.equal(await card.getByText(/Finished result|can be combined/).count(), 0, "no second list of work beside the Design Tree");
-  await card.getByRole("button", { name: "Open in Design tree", exact: true }).click();
+  assert.equal(await card.getByRole("button", { name: "Open in Design tree", exact: true }).count(), 0);
+  await page.keyboard.press("Escape");
   await card.waitFor({ state: "detached" });
+  await page.getByRole("button", { name: "Design tree", exact: true }).click();
   await visibleWorkspace().locator('[data-project-surface="tree"]:not([hidden])').waitFor();
   assert.equal(await page.getByRole("button", { name: "Design tree", exact: true }).getAttribute("aria-pressed"), "true");
   await page.getByRole("button", { name: "Modeling", exact: true }).click();
@@ -3638,6 +3899,7 @@ try {
   await page.keyboard.press("Escape");
   await page.getByRole("dialog").waitFor({ state: "hidden" });
   updateStatus = { ...updateStatus, state: "idle", prepared: null, canApply: false, error: null };
+  if (!process.env.MONKEYHUB_UI_FOCUS) await suggestionCards();
   await idleMinute();
   }
   assert.deepEqual(errors, []);

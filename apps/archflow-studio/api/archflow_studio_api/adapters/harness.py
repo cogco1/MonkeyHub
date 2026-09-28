@@ -27,6 +27,7 @@ from archflow.project.repository import FilesystemProjectRepository
 from monkeyarch.runtime.project_runner import StageExecutionGuard
 from archflow.state.stage_workflow import DesignPhase
 from archflow.state.developed_design import DevelopedDesignState
+from archflow.state.state_record import RecordBinding
 from archflow.state.operational_state import DesignObligation
 from archflow.state.stage_workflow import (
     ProjectStage,
@@ -56,11 +57,15 @@ HARNESS_STATEMENT = "studio-candidate-harness (not a project stage advance)"
 def harness_guard(
     repository: FilesystemProjectRepository,
     run: RunRef,
-    state: DevelopedDesignState,
+    state: DevelopedDesignState | RecordBinding,
     *,
     model_source_ref: str | None = None,
 ) -> StageExecutionGuard:
     """Retain the harness workflow and envelope, and guard the run with them.
+
+    ``state`` is what ``developed_design_view`` binds the run's record to: the
+    developed state of a record that declares massing, else its
+    ``RecordBinding`` (#402). Only its ``state_digest`` enters the envelope.
 
     Both records are written into this run's own record area before the runner
     is called, because the guard checks that the payloads it was handed are

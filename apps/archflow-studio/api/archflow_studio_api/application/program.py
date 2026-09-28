@@ -127,7 +127,9 @@ def read_program(
     claimed_record = sheet.get("record_digest")
     if (
         projection.state_digest is None
-        or claimed_state != projection.record.state_digest
+        # a sheet saved before #402 cites the retired digest of this same
+        # record; it is recognized exactly, not rewritten (``cites_state``)
+        or not projection.record.cites_state(claimed_state)
         or claimed_record != projection.record_digest
     ):
         current = dict(derived)

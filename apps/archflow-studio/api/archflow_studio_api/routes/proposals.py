@@ -46,6 +46,7 @@ from ..application.intent import (
     DeterministicIntentProvider,
     buildable_components,
     component_edit_proposal,
+    compress_above_proposal,
     parameter_locks_proposal,
     merge_keep,
     direct_element_proposal,
@@ -298,8 +299,13 @@ def _direct_proposal(request: Request, body: TransformElementRequestDto | PushPu
     if body.state_digest != projection.state_digest:
         raise StudioError(409, "STALE_BASE", f"the modeling action names state {body.state_digest}, "
                           f"but the selected source is {projection.state_digest}. Read /api/state again.")
-    proposal = proposal_from(direct_element_proposal(
-        projection, element_id=body.element_id, kind=kind, keep_refs=tuple(body.keep), **action))
+    if kind == "compress-above":
+        proposal = proposal_from(compress_above_proposal(
+            projection, component_id=body.component_id, element_ids=body.element_ids or (),
+            threshold=body.threshold, factor=body.factor, keep_refs=tuple(body.keep)))
+    else:
+        proposal = proposal_from(direct_element_proposal(
+            projection, element_id=body.element_id, kind=kind, keep_refs=tuple(body.keep), **action))
     proposal = replace(proposal,
                        source_run_id=projection.run.run_id if projection.reference_state_exact else body.source_run_id,
                        source_stage_ref=projection.source_stage_ref)
@@ -308,7 +314,7 @@ def _direct_proposal(request: Request, body: TransformElementRequestDto | PushPu
 
 @router.post("/proposals/transform", response_model=ProposalDto, response_model_by_alias=True, status_code=201)
 def create_transform_proposal(request: Request, body: TransformElementRequestDto) -> ProposalDto:
-    """Move, rotate, scale or copy one recorded drawing as a reversible candidate proposal."""
+    """Transform one element, or compress selected planar-surfaces above a fixed height in one proposal."""
 
     return _direct_proposal(request, body, body.kind, translation=body.translation, axis=body.axis,
                             angle_degrees=body.angle_degrees, scale=body.scale, origin=body.origin,

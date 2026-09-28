@@ -823,7 +823,7 @@ export const createSketchProposalApiProposalsSketchPost = <ThrowOnError extends 
 /**
  * Create Transform Proposal
  *
- * Move, rotate, scale or copy one recorded drawing as a reversible candidate proposal.
+ * Transform one element, or compress selected planar-surfaces above a fixed height in one proposal.
  */
 export const createTransformProposalApiProposalsTransformPost = <ThrowOnError extends boolean = false>(options: Options<CreateTransformProposalApiProposalsTransformPostData, ThrowOnError>): RequestResult<CreateTransformProposalApiProposalsTransformPostResponses, CreateTransformProposalApiProposalsTransformPostErrors, ThrowOnError> => (options.client ?? client).post<CreateTransformProposalApiProposalsTransformPostResponses, CreateTransformProposalApiProposalsTransformPostErrors, ThrowOnError>({
     url: '/api/proposals/transform',
@@ -996,8 +996,9 @@ export const compileIntentApiIntentsPost = <ThrowOnError extends boolean = false
  * the model-view projection in each view of the recipe; a registered page is
  * rasterized by the page export. Each owner verifies its exact source before
  * it draws, so a stale or foreign source is refused before the provider is
- * called. The loop's allowance travels with the request and comes back
- * updated: this route keeps no loop state and writes nothing to the project.
+ * called or frames are delivered to the caller. The loop's allowance travels
+ * with the request and comes back updated: this route keeps no loop state and
+ * writes nothing to the project.
  */
 export const reviewVisualSourcesApiVisualReviewsPost = <ThrowOnError extends boolean = false>(options: Options<ReviewVisualSourcesApiVisualReviewsPostData, ThrowOnError>): RequestResult<ReviewVisualSourcesApiVisualReviewsPostResponses, ReviewVisualSourcesApiVisualReviewsPostErrors, ThrowOnError> => (options.client ?? client).post<ReviewVisualSourcesApiVisualReviewsPostResponses, ReviewVisualSourcesApiVisualReviewsPostErrors, ThrowOnError>({
     url: '/api/visual-reviews',

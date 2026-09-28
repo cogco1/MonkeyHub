@@ -733,8 +733,8 @@
         "monkeyarch/runtime/project_runner.py",
         "tests/test_three_dm_inspector.py",
         "tests/test_cad_execution.py",
-        "tests/test_pantheon_progress_snapshot.py",
-        "tests/test_parthenon_stage4_reconstruction.py"
+        "tests/test_occt_execution.py",
+        "archflow/project/version_ref_owners.py"
       ],
       "invariants": [
         "read-only: rhino3dm is imported lazily, one immutable byte snapshot is read, and no Rhino process is started",
@@ -837,6 +837,7 @@
       "inputs": [
         "SeatSpec",
         "DevelopedDesignState",
+        "RecordBinding",
         "SpatialOptionProposal",
         "InterfaceDatum",
         "SemanticBinding",
@@ -858,6 +859,7 @@
         "DeclaredEngagement",
         "owned_subtree",
         "ancestors",
+        "design_tree",
         "compile_handover",
         "project_seat_context",
         "check_seat_datums",
@@ -879,6 +881,7 @@
         "project.refs",
         "state.developed_design",
         "state.geometry_program",
+        "state.record",
         "state.spatial",
         "state.stage_workflow"
       ],
@@ -923,7 +926,7 @@
         "prism semantic authoring: parameter-bound profile coordinates, height and independently editable elevation above the resolved base; a named top constrains the actual elevated bottom plus height",
         "loft semantic authoring: corresponding polyline sections with parameter-bound coordinates form one normal or straight loft, capped or open; unsupported section bases and inconsistent vertex counts refuse before execution",
         "planar-surface: one explicitly closed profile at its referenced base plus the declared elevation parameter; an explicit orthonormal work_plane supports drawing on horizontal, vertical or selected planar faces without inferred thickness",
-        "editing drawn prism and planar-surface rows through their existing parameters: signed push/pull, translation, rotation, scale and copy; loft section controls support translation, rotation, copy and scale while retaining type, identity and datum binding; normal lofts refuse nonuniform scaling because refitting is not an equivalent transform, and loft push/pull is unsupported; dependent and parameter-bound changes retain the existing intent guards",
+        "editing drawn prism and planar-surface rows through their existing parameters: signed push/pull, translation, rotation, scale and copy; planar-surface compress_above fixes world +Y points at or below a threshold, scales the rest and inserts crossing-edge intersections, refusing nonplanar results and inherited or direct parameter bindings; loft section controls support translation, rotation, copy and scale while retaining type, identity and datum binding; normal lofts refuse nonuniform scaling because refitting is not an equivalent transform, and loft push/pull is unsupported; dependent and parameter-bound changes retain the existing intent guards",
         "one datum-bound polyline curve producer for authored lines, sampled freehand and segmented arcs; no face, thickness, top datum or support relation is inferred",
         "straight-wall authoring accepts explicit project-local point references through the existing resolver and retains @parameter binding and hosted opening relations",
         "Absolute numeric prism/face base references and read-only placement of drawn elements through their existing datum dependencies; free placement publishes its own fixed base instead of binding an editable Level."
@@ -1565,8 +1568,8 @@
         "archflow/state/operational_state.py",
         "archflow/state/stage_workflow.py",
         "archflow/relations/contracts.py",
-        "archflow/validation/contracts.py",
-        "archflow/evidence/claims.py",
+        "archflow/state/decision_operator.py",
+        "archflow/state/developed_design.py",
         "monkeyarch/runtime/project_runner.py",
         "archflow/ports/model.py"
       ],
@@ -1631,9 +1634,9 @@
       ],
       "used_by": [
         "archflow/relations/contracts.py",
-        "archflow/validation/contracts.py",
-        "archflow/evidence/claims.py",
-        "archflow/evidence/applicability.py"
+        "archflow/state/operational_state.py",
+        "archflow/state/geometry_program.py",
+        "monkeyarch/capabilities/wall_solver.py"
       ],
       "invariants": [
         "a tuple field must already be sorted and unique; the validator never sorts on the caller's behalf",
@@ -1935,6 +1938,7 @@
         "the conditions of an issue: the run's base is the published version, its stage closed SATISFIED with an exit binding naming that closure, and its seats all executed",
         "the typed refusals an issue can end in (IssueError, StaleBase, NoSatisfiedClosure, RunNotComplete)",
         "building the replacement CanonicalProjectState@1 from what the run retained: the authored record as authoritative, the developed state and the closure as derived, the closed stage as the phase",
+        "issuing a run whose record declares no complete massing as the StateRecordBinding it executed: the stage envelope that binds exactly that binding stands where a developed state would, and nothing spatial is computed for it (#402)",
         "minting the PromotionDecision@1 receipt prepare_transition demands, with the closure as its candidate_ref",
         "IssueReceipt: the issue made, the one it replaced, and the records it stood on"
       ],
@@ -1968,6 +1972,7 @@
         "project.refs",
         "project.repository",
         "state.stage_workflow",
+        "state.record",
         "project.version_refs"
       ],
       "used_by": [
@@ -1983,7 +1988,8 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_issue_project.py"
+        "tests/test_issue_project.py",
+        "tests/test_project_runner.py"
       ],
       "notes": "Wave B / W8. Before this module nothing on the spine called prepare_transition or compare_and_swap; every project stood at issue 0."
     },
@@ -2101,8 +2107,7 @@
       ],
       "used_by": [
         "apps/archflow-studio/api/archflow_studio_api/application/binding.py",
-        "tests/integration/test_component_family_realization.py",
-        "tests/integration/test_multi_building_experiments.py"
+        "tests/test_project_location.py"
       ],
       "invariants": [
         "never creates directories and never writes state",
@@ -2584,7 +2589,7 @@
       "used_by": [
         "apps/archflow-studio/api/archflow_studio_api/application/binding.py",
         "apps/archflow-studio/api/archflow_studio_api/application/validation.py",
-        "archflow/contracts/branch.py",
+        "archflow/project/manifest.py",
         "archflow/contracts/fields.py",
         "archflow/project/containers.py",
         "archflow/project/layout.py",
@@ -3873,9 +3878,9 @@
         "archflow/state/state_record.py",
         "archflow/state/spatial.py",
         "archflow/state/developed_design.py",
-        "archflow/state/design_maturity.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/projection.py",
         "archflow/state/design_portfolio.py",
-        "archflow/state/site_context.py",
+        "tests/test_operational_markov_compiler.py",
         "archflow/state/stage_workflow.py",
         "archflow/state/decision_operator.py",
         "archflow/state/geometry_program.py",
@@ -3953,6 +3958,8 @@
         "CHECK_KINDS: the check_kind vocabulary a validator may name, one line of meaning each, and the field each kind takes; solid_nonpenetration requires explicit distinct final object_pairs and zero linear tolerance, and may check distinct outputs of the same host entity without a self-dependency",
         "the component tree, published levels and published grids read out of the record (design_components_of, project_levels_of, project_grids_of)",
         "the schematic pack and the bootstrap from a record to the developed-design projection (SchematicPack, schematic_proposal, bootstrap_developed_state, developed_design_view)",
+        "what executing a record binds to (developed_design_view): the developed-design state of a record that declares complete massing, else the record bound as itself (RecordBinding) with no level, volume, zone, program node or assumption supplied for it (#402)",
+        "recognizing the binding digest a run, operator or program sheet retained before #402 for a record without complete massing (legacy_state_digest, StateRecord.cites_state, RecordBinding.retained_as); it is read back as written and never binds new work",
         "refusing unregistered semantics on Component@1 and dangling relationship_refs on Connection@1; a Component@1 with no semantic_kind, roles or conditions is valid geometry whose meaning is not yet established, and component_semantics reports it as absent",
         "the one reading of a Volume@1 box in the kernel's voxel lattice - x and z plan, y up, inclusive cells (volume_boxes_of); the schematic pack read out of the record (schematic_pack_of), which developed_design_view and the massing metrics both use",
         "the closed StateRecord edit vocabulary and its one successor function: set_scalar, replace_massing, apply_program, reindex and edit_components (StateRecordEditKind, StateRecordOperator, apply_state_record_operator)",
@@ -3988,6 +3995,7 @@
         "ProjectLevels",
         "ProjectGrids",
         "DevelopedDesignState",
+        "RecordBinding",
         "DependencyEdge tuple",
         "StateRecordOperator",
         "deterministic successor StateRecord"
@@ -4009,6 +4017,9 @@
         "design_components_of",
         "component_semantics",
         "developed_design_view",
+        "RecordBinding",
+        "legacy_state_digest",
+        "StateRecord.cites_state",
         "project_grids_of",
         "project_levels_of",
         "schematic_proposal",
@@ -5073,7 +5084,7 @@
         "Preparing a read-only ContextPack@1 from an explicit exact source and selected component/element, reusing the existing context compiler, preflight and capability description before a native agent starts",
         "performing a registered capability by assembling its request and calling the existing proposal and candidate routes; it holds no capability state, grants no authority those routes do not, and accepts or issues nothing",
         "the deterministic removal of one picked element: the typed edit_components removal at one exact base, refusing with the named dependents when something stands on it, and never a model call or a cascade into objects nobody picked",
-        "compiling finished profiles and direct drawn-element edits into the existing exact-base typed component proposal and candidate path, without accepting or issuing the resulting design; explicitly selected calibrated saved document paths use this same sketch route and retain exact sourceDocumentTrace fields on stable editable elements",
+        "compiling finished profiles and direct drawn-element edits into the existing exact-base typed component proposal and candidate path, including one atomic compress-above proposal over an exact component or explicit element selection; refusing the entire batch on unsupported rows, bindings or dependencies and DIRECT_EDIT_NO_CHANGE when nothing changes; no acceptance or issue; explicitly selected calibrated saved document paths use this same sketch route and retain exact sourceDocumentTrace fields on stable editable elements",
         "Disposable browser modeling drafts and action undo/redo on the exact viewed source; explicit Sync combines their frozen actions through existing typed proposal continuation and one candidate submission",
         "the acceptance evidence of a committed Stage: one AuditEvent@1 written into the accepted run's review area after the branch-head CAS succeeds, binding the request boundary's actor and origin to the exact base Stage, candidate and result, and the read that returns it with the Stage",
         "Contextual upright-prism Base/Top/Height edits and simple Level reference creation through typed component proposals; explicit level or mass-top binding, absolute free placement, local propagation preview and existing Sync/undo history.",
@@ -5085,7 +5096,7 @@
         "the project recipe as a scoped decision (correction capture, option A): a person's confirmed require decision in the drawing domain whose typedBinding kind recipe holds closed paper-space graphics values, and project_recipe, the one per-key read of it a new drawing takes between its own previous revision and the code default",
         "a recipe travelling between projects (#252): recipe_export, the one DrawingRecipeExport@1 form of an active recipe decision (values, target, hold, decision id, revision sha256 and its own canonical sha256; nothing else of the project), read_recipe_export, its closed and digest-checked reading, and import_recipe, which retains one as a person's soft_preference for the whole project citing the export's sha256; tools/export_drawing_recipe.py is its command line; the Runtime exports a selected revision, inspects a file without writes and imports on explicit confirmation through the same functions",
         "Composing explicitly selected exact Study evidence revisions into ContextPack separately from design facts and applicable decisions; no implicit Study scan, acceptance or project write.",
-        "the source-bound, read-only visual observation channel (GH-303): VisualReviewRequest over exact model or registered-page sources, EvidenceFrame values taken from the model-view and page-export owners' own answers, the strict VisualObservation answer and its validation, the VisualObservationProvider seam with the configured Studio model transport as its implementation, the Harness review allowance VisualReviewBudget, and POST /api/visual-reviews, which has those owners render the frames in-process from the exact sources a caller names",
+        "the source-bound, read-only visual observation channel (GH-303): VisualReviewRequest over exact model or registered-page sources, EvidenceFrame values taken from the model-view and page-export owners, the strict VisualObservation answer and provider seam, and the Harness allowance; POST /api/visual-reviews defaults to structured observation and also delivers exact rendered frames to the caller without another provider or fabricated findings; different documents may share a page index while exact sources and generated frame names stay distinct",
         "candidate admission: one CandidateAdmission@1 per closed loop (a task, one worktree of it, or one person's act) in the fixed explicit studio-admissions P036 run, written only through the completion gate Stage acceptance shares, with the boundary's actor, the stated task, Study and bound message, each result's outcome, pinned model, receipt and superseded attempts",
         "the Candidate Pool read for the Design Tree: admitted Candidates and their Studies from admission records and from legacy facts that already prove admission (a committed Stage's run, a retained Exploration's non-base option, an accepted episode's produced run), with lineage-derived continuedFrom and acceptedStageRef and Working Head membership",
         "the attributable, revisioned rejection, archival/restoration and endorsement of an exact retained Candidate or Stage; this changes no design position"
@@ -5119,7 +5130,7 @@
         "Optional decisionContext on POST /api/intents/context: the domain this turn is about, and for a drawing or copy turn its own representation evidence",
         "A DrawingRecipeExport@1 document, the importing person's confirmed words and sourceKind, and the boundary's attribution (tools/export_drawing_recipe.py import --confirm)",
         "VisualReviewRequest with exact SourceRef values, criteria, preserve conditions and the Harness allowance, and owner-produced EvidenceFrame PNGs (model-view answers, registered page exports)",
-        "POST /api/visual-reviews: projectId, domain, 1-4 exact sourceRefs, viewRecipe, task, criteria, preserve, priorObservations, up to 8 knownFacts, the review reason with any addressedFindingIds, and the caller-held budgetState (taskClass, allowed, used, lastFindingIds); no field carries pixels",
+        "POST /api/visual-reviews: projectId, domain, delivery (observation by default, or frames), 1-4 distinct exact sourceRefs, viewRecipe, task, criteria, preserve, priorObservations, up to 8 knownFacts, reason with any addressedFindingIds, and caller-held budgetState (taskClass, allowed, used, lastFindingIds); no request field carries pixels",
         "an admission request: task kind and opaque ids, an optional Study (id, label, exact base run), an optional bound chat message and the user's words, and each result's outcome, superseded attempts, label, summary and reason"
       ],
       "outputs": [
@@ -5138,7 +5149,7 @@
         "the project recipe layer for one drawing's Stage: one RecipeValue per paper-space key with the decision and revision it came from",
         "a DrawingRecipeExport@1 file of one active recipe decision (tools/export_drawing_recipe.py export), and in the importing project one retained soft_preference recipe decision whose source is {kind: recipe-export, exportSha256}",
         "VisualObservation bound to the frames actually sent, with ObservationUsage and a visual_observation MonkeyMonitor span over the provider's model_request row",
-        "the visual-review answer: observation, usage and the loop's next budgetState; 409 VISUAL_SOURCE_MISMATCH (with sourceRef), VISUAL_BUDGET_EXHAUSTED, VISUAL_REVIEW_NOT_WARRANTED, VISUAL_REVIEW_OUT_OF_ORDER or VISUAL_PROVIDER_UNAVAILABLE before any provider call, and 502 VISUAL_PROVIDER_FAILED with the spent budgetState and usage",
+        "the visual-review answer: observation, provider usage and next budgetState by default, or delivery=frames with verified PNG data/source/view/digest/dimensions, null observation/usage and next budgetState; existing source/budget/order refusals spend nothing before delivery/provider invocation; VISUAL_PROVIDER_UNAVAILABLE applies only to observation, and VISUAL_PROVIDER_FAILED carries spent budgetState and usage",
         "retained CandidateAdmission@1 records and their DTOs",
         "candidates[] and studies[] on the design history read",
         "CandidateReview"
@@ -5238,6 +5249,7 @@
         "POST /api/proposals/transform",
         "POST /api/proposals/push-pull",
         "direct_element_proposal",
+        "compress_above_proposal",
         "operator_of",
         "continue_proposal",
         "read_acceptance",
@@ -5280,6 +5292,7 @@
         "model_view_frame",
         "page_frame",
         "observe_frames",
+        "deliver_frames",
         "POST /api/visual-reviews",
         "review_sources",
         "visual_provider",
@@ -5400,7 +5413,7 @@
         "the Harness allowance gives a deterministic edit no visual review, a spatial or formal task one review plus at most one follow-up after a repair that names a finding of the last review, and only an explicit polish request 1-4 reviews; a refusal spends nothing and an admitted review stays spent when the call fails",
         "a visual observation writes nothing and carries no State, Stage or Candidate authority and no provider reasoning; its findings point only at the request's own criterion and preserve refs",
         "the visual-review route accepts no pixels: every frame is its projection owner's own in-process answer for a named exact source, and a source the owner does not retain exactly answers VISUAL_SOURCE_MISMATCH before any provider call",
-        "the visual-review route keeps no loop state: the caller carries budgetState, whose allowance must be the policy's own for its task class; a refusal returns it unchanged and a failed provider call returns it with the review spent",
+        "the visual-review route keeps no loop state: the caller carries the policy allowance; source and rendering refusals before delivery or provider invocation leave it unchanged; successful frames delivery spends one review with no lastFindingIds and cannot justify after_repair; a failed structured-provider call stays spent",
         "a Candidate is made only by a retained CandidateAdmission@1 or read from a legacy fact that already proves admission; a finished run, a recovery or saved row, a chat candidate id, a pin or the newest file never makes one, and nothing is written for a legacy fact",
         "admissions are read only from the fixed studio-admissions run, never by enumerating runs; a run is in at most one live record as a result or a superseded attempt; an identical retry returns the retained record and any other claim on a claimed run, or rejecting or superseding a committed Stage's run, is ADMISSION_CONFLICT",
         "the admission gate is Stage acceptance's own preflight (C1 replay, C2 completed and not executing, C3 review readiness against the exact base, C5 one complete model) plus C4 object readback and C7 supersession; if any result fails nothing is retained and every failing clause is named",
@@ -5585,7 +5598,7 @@
         "GET /api/health and GET /api/protocol",
         "local-only GET/PUT user preferences at APPDATA/MonkeyArch/settings.json with shared HTTP/file validation and atomic replacement, served for MonkeyHub, which owns the settings authority and injects the resolved values into the runtime's launch environment",
         "Optional MonitoredCompiler host adapter: MONKEYMONITOR_DATA_DIR enables metadata-only recording of intent and structured Study model outcomes without changing its result or retrying a call",
-        "Managed stdin stop/EOF and additive process, parent process, launch instance and actual source revision health identity; optional prebuilt Studio web hosting",
+        "Managed stdin stop/EOF and additive process, parent process, launch instance and actual source revision health identity",
         "ApplicationSettingsDto and atomic local application configuration in the caller-selected Hub runtime root, separate from shared user preferences",
         "Reading the positive application-text intent context budget from ARCHFLOW_STUDIO_CONTEXT_BUDGET_TOKENS; preserving per-attempt provider usage and request-output outcomes through the existing optional Monitor adapter",
         "operator-configured actor authentication with explicit project read/propose/accept/release grants; shared-project service role excludes local computation; Runtime upstream settings contain no project authority",
@@ -7060,9 +7073,9 @@
         "The built-in Fab page invokes the installed independent MonkeyFab CLI for profiles, preparation and upload; no separate long-running Fab service",
         "Loopback origin boundary, app start serialization, actual source/instance/process health verification, owned stdin shutdown and application logs under the explicit nonproject runtime root",
         "Hub CLI, the browser-mode Windows launcher (launch-hub.ps1: launch window, port lock, health-verified owned child, tray, logs) and the desktop window; both production entries start only the Hub",
-        "Persistent Codex ACP sessions through the upstream SDK and adapter, retained Codex/Claude CLI sessions, explicit permission decisions, and a bounded stdio adapter to the actually bound existing Studio APIs; Coding Plan reuses the installed Claude-compatible endpoint configuration",
+        "Persistent Codex ACP sessions through the upstream SDK and adapter, retained Codex/Claude CLI sessions, explicit permission decisions, and a bounded stdio adapter to the actually bound existing Studio APIs; Coding Plan reuses the installed Claude-compatible endpoint configuration; Claude-compatible chats receive an explicit nonproject runtime/chats/<session>/scratch directory through --add-dir for temporary computations, while retained design results use the project APIs",
         "The Hub's attention layer (#300, src/notifications): one polite stack of at most three notices when a chat that is not on screen waits on a permission, finishes or fails, read from ChatSummary.attention and status transitions between chat-list readings; while the window is hidden, one OS notification per moment and a count in the window title",
-        "the bounded completion option of the design request tool: one final proposal checkpoint or one complete numeric capability change is posted once, followed only by reads of its job, candidate objects and comparison when a retained before-run exists; proposal replies omit duplicate submitted edits and bound large changes/direct lists with explicit total/omitted counts and a full GET path, while keeping conflicts, locks, keep conditions and coverage limitations complete; schema queries may select one producer's actual request contract while the full OpenAPI view remains available",
+        "the bounded completion option of the design request tool: one final proposal checkpoint or one complete numeric capability change is posted once, followed only by reads of its job, candidate objects and comparison when a retained before-run exists; proposal replies omit duplicate submitted edits and bound large changes/direct lists with explicit total/omitted counts and a full GET path, while keeping conflicts, locks, keep conditions and coverage limitations complete; studio_schema without path discovers paged actions from the bound Runtime OpenAPI intersected with the chat allow-list, optionally narrowed by method/pathPrefix; exact schema queries may select one producer's actual request contract while the full OpenAPI view remains available",
         "same-origin project preparation starts or reuses the selected project's shared Studio, waits for readiness, and verifies the exact source, service and project before initial modeling preparation; Monitor is prepared during Hub startup, with independent Fab and Monitor status without rebinding Studio",
         "ProjectRuntimeManager, WorkerSupervisor and OperationManager: exact project/path attachment, worker health and desired state, durable request identity admission under the explicit nonproject runtime root, read-only admissionSequence projected from that existing journal for cold-start preview ordering, retained-result reconciliation, whether an interrupted operation can still be recovered, explicit worker recovery without mutation replay, and one runtime snapshot/SSE surface",
         "Project-scoped Studio API forwarding for Hub workspaces and chat, with request-scoped idempotency keys independent of diagnostic correlation; browser refresh reattaches to retained/runtime state and never restarts a crashed worker implicitly",
@@ -7185,12 +7198,12 @@
         "ProjectRuntimeProvider / useStudio / useConnection: project-bound client and protocol identity",
         "ProjectWorkspace: Arch/Board/Design tree navigation, exact Board page visit and candidate preview without editing-base change; Drawing mounts explicit recipe export, file inspection and confirmed import via RecipeTransfer",
         "studio_request POST /api/board/export: one registered clean-source page as a native MCP PNG image; studio_schema exposes the existing export request",
-        "visual_review: the Agent's one bounded look through POST /api/visual-reviews; Hub fills projectId and budgetState, holds one allowance per answered user message and returns findings, preserve findings marked escalate, never images",
+        "visual_review: the Agent's bounded look through POST /api/visual-reviews; Hub fills projectId and the per-user-message allowance; native delivery defaults to frames, validates exact source/digest/PNG/dimensions and returns native images to the current model with no findings; explicit observation delivery retains configured-provider findings and marks preserve findings escalate",
         "studio_request POST /api/drawings/plans (dressingOperations place and edit entourage; marked sourceKind agent unless the request names a kind) with the reads GET /api/drawings/plans/vector, GET /api/drawings/plans/dimensions and POST /api/drawings/plans/status",
         "POST /api/chat/presentation/bind",
         "POST /api/chat/sessions/{id}/presentation",
         "GET /api/chat/sessions/{id}/documents/{messageId}/{index}",
-        "presentation_bind and chat_present: local MCP binding and result presentation without provider invocation",
+        "presentation_bind and chat_present: local MCP binding and result presentation without provider invocation; native chat_present exposes progress/assistant with streaming status only (older complete requests normalize to streaming), completed by CLI turn end; external presentation retains user/progress/assistant and caller-controlled status",
         "studio_request /api/decisions: GET latest/history, POST current-user avoid/keep feedback and POST feedback-only revoke through existing Runtime authorization; studio_schema derives the narrowed inputs from Runtime OpenAPI",
         "studio_request POST /api/admissions (hub-chat, message-bound) and PUT /api/working-draft (a Continue on the user's bound words), with GET /api/admissions, /api/working-source and /api/working-draft/revision; studio_schema hides the bound fields",
         "GET /api/updates/status",
@@ -7203,6 +7216,7 @@
         "PUT /api/updates/settings",
         "GET /api/chat/sessions/{session_id}/attachments/{attachment_id}/model-source",
         "GET /api/integrations",
+        "ChatSuggestion via chat_present / ChatPresentationRequest; ChatPostRequest.suggestionSelection resolves one retained card into the existing native user-turn admission",
         "workspaces/src/api/projectStore.ts: ProjectStore and projectStores, one ref-counted client store per open project fed by the Hub's one stream (#366), with each entity's last move (moved, movedAt) and each project's kept Studio events known by <stream>:<seq>; useProjectStore / useProjectRevision / useProjectMoved / useProjectStoreInstance / useRuntimeKey"
       ],
       "invariants": [
@@ -7216,7 +7230,7 @@
         "Printer access codes are request-local environment values, never command arguments, saved settings or error response payloads; file upload does not start printing",
         "CLI tools resolve the chat's project-specific Studio and verify process and project identity; retained design changes use existing Studio/P036 APIs, and stopping one project never interrupts another",
         "No new provider gateway or credential store; native CLI configuration owns authentication and provider routing",
-        "Chat attachment bytes stay under runtime/chats/<session>/attachments, outside the project; transcripts retain metadata only. Native images use provider image blocks or CLI image inputs; the existing MCP connection reads only the bound chat's attachments, with bounded text or binary chunks and single-page PDF text. No sandbox or filesystem permissions are widened, and later turns do not resend earlier attachment bytes",
+        "Chat attachment bytes stay under runtime/chats/<session>/attachments, outside the project; transcripts retain metadata only. Native images use provider image blocks or CLI image inputs; the existing MCP connection reads only the bound chat's attachments, with bounded text or binary chunks and single-page PDF text. Attachment delivery itself does not widen sandbox or filesystem permissions, and later turns do not resend earlier attachment bytes",
         "A request is sent once. Waiting for its result only reads: a wait that runs out, a read that fails and a job that failed all answer with the identifiers and the reads that find them, and none of them sends the request again",
         "What is reported is what was read: a run whose candidate or comparison could not be read is never presented as a read-back candidate, and relation counts travel as the run stated them",
         "Runtime records and the admission journal are observations, not another project repository; completed candidate and Stage outcomes require existing retained proof, and a prepared unreachable Stage never proves a commit",
@@ -7240,8 +7254,9 @@
         "A new Render attempt gets a new requestId; status refresh and workspace/project switches never resend an uncertain paid call",
         "Automatic project selection, chat and first Render entry attach and verify the Runtime without seeding authored modeling inputs; explicit Arch entry initializes only when the modeling projection is not ready, including after Render-first navigation",
         "A project watcher derives which work copies exist again only when the runs, their document records or the files in their copy workspaces change, compared on a wake and every 30 s without reading other records; a read forwarded to Studio never wakes it (#314)",
-        "The Agent looks through visual_review only, never studio_request or studio_schema: one allowance per answered user message, its class fixed once a review is spent, more than two polish rounds only on the user's own words, a refusal spending nothing and an unanswered or failed call counted as spent",
-        "The idle project observer reads the retained history again only when the binding's read token (this process's write serial and the layout watch's fingerprint) moved or is not stable; asking walks nothing, and an observer that stops closes the binding, releasing the watch's handle on the project folder (#363)"
+        "The Agent looks through visual_review only, never studio_request or studio_schema: one allowance per answered user message, its class fixed once spent, more than two polish rounds only on the user's words; answered frames-rendering failures spend nothing, successful frame delivery supplies no finding ids for after_repair, and unanswered calls or failed structured-provider calls remain spent",
+        "The idle project observer reads the retained history again only when the binding's read token (this process's write serial and the layout watch's fingerprint) moved or is not stable; asking walks nothing, and an observer that stops closes the binding, releasing the watch's handle on the project folder (#363)",
+        "Suggestion cards remain source-turn/revision-bound ChatStore messages. Selecting the latest completed card records its reference before the ordinary provider turn; stale, repeated, cross-project, non-idle, archived and external selections cannot execute. Estimates without a basis stay unknown; a suggestion grants no tool, installation, spending or project-issue authority."
       ],
       "used_by": [
         "apps/monkeyhub/run.py",
@@ -7331,7 +7346,9 @@
         "apps/monkeyhub/web/workspaces/src/features/designTree/DesignTreeDetails.tsx",
         "apps/monkeyhub/web/workspaces/src/features/designTree/DesignTreeList.tsx",
         "apps/monkeyhub/web/workspaces/src/features/designTree/designTree.css",
-        "apps/monkeyhub/web/workspaces/src/features/designTree/fixture.ts"
+        "apps/monkeyhub/web/workspaces/src/features/designTree/fixture.ts",
+        "apps/monkeyhub/web/src/ChatSuggestionCard.tsx",
+        "apps/monkeyhub/web/src/ChatSuggestionCard.css"
       ],
       "tests": [
         "apps/monkeyhub/api/tests/test_monkeyhub_lifecycle.py",
@@ -7382,6 +7399,7 @@
         "apps/monkeyhub/web/workspaces/test/errorBoundary.browser.mjs",
         "apps/monkeyhub/web/test/catalogs.test.ts",
         "apps/monkeyhub/api/tests/test_integrations.py",
+        "apps/monkeyhub/api/tests/test_chat_suggestions.py",
         "apps/monkeyhub/web/workspaces/test/projectStore.test.ts"
       ],
       "depends_on": [

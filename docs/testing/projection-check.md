@@ -10,6 +10,13 @@ every push to `main` (issue #376).
 
 It runs on one invented project and compares a **base** code root with a **candidate** code root.
 
+In CI the **base** code builds that project (`build_synthetic_project` from the base checkout, with the base
+first on `PYTHONPATH`; the step refuses to run if `archflow` or `archflow_studio_api` loads from anywhere else).
+The promise is about existing projects: whatever the base wrote, the candidate must answer the same. A candidate
+that deliberately changes what new runs record (#402 binds a record without massing by a new digest) writes data
+the base cannot read, so building the project with the candidate would fail such a change for the wrong reason
+(GH-429). A change to the generator itself is still covered by `test_synthetic_project.py` in `verify`.
+
 1. The project is copied once into a scratch directory under its own folder name, and its file times are
    moved back so the project counts as settled. The project you pass is never written.
 2. **Base, fresh process.** The base reads each route and records the status, a sha256 of the body and the time taken.
@@ -52,10 +59,12 @@ content is invented. At 30 runs the project holds:
 - six document runs with two sketch pages each, a board, and an adopted working draft;
 - 494 JSON files, 457 of them retained records.
 
-Ids, names and bytes are fixed. The API stamps reviews, admissions and Stages with the wall clock, and those
-times reach the digests of the records that cite them. Two generations therefore have the same structure but
-different bytes: the same runs, record kinds and counts, and Stage chain. For this reason the job generates the
-project once and every step reads a copy of it. `test_synthetic_project.py` asserts that structure.
+Ids, names and bytes are fixed, and so is what the product would take from the machine. The Studio stamps
+reviews, admissions, Stages and the working draft with the wall clock and random event ids, and the runner
+records how long each round took. While the scenario plays, those modules read a clock that starts at a fixed
+instant, ids from a seeded generator and a timer that advances a fixed step per reading. Two generations are
+therefore identical byte for byte, which `test_synthetic_project.py` asserts. The job still generates the
+project once, and every step reads a copy of it.
 
 ## Run it
 

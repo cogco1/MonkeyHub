@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import base64
 import binascii
+from hashlib import sha256
 from concurrent.futures import Future, InvalidStateError
 from contextlib import contextmanager, suppress
 from contextvars import ContextVar, copy_context
@@ -33,7 +34,7 @@ import threading
 import time
 from typing import Literal, Mapping
 from urllib.error import HTTPError, URLError
-from urllib.parse import parse_qs, urlencode, urlsplit
+from urllib.parse import parse_qs, quote, urlencode, urlsplit
 from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
 from uuid import UUID, uuid4
 
@@ -61,7 +62,7 @@ from . import credentials
 from .models import (
     ChatAttachment, ChatAttention, ChatCreateRequest, ChatDesignContext, ChatDetail, ChatMessage, ChatPostRequest, ChatProject,
     ChatDocument, ChatDocumentRef, ChatPresentationBindRequest, ChatPresentationBinding, ChatPresentationRequest,
-    ChatPermission, ChatPermissionOption, ChatPermissionRequest,
+    ChatPermission, ChatPermissionOption, ChatPermissionRequest, ChatSuggestion,
     ChatProjectRequest, ChatProvider, ChatSummary, ChatUsageSource, ChatWorkspace, HubError, HubFailure,
 )
 from .chat_trace import HubTurnObserver
@@ -69,6 +70,16 @@ from monkeymonitor.store import UsageLog
 
 _trace_headers = ContextVar("hub_tool_trace_headers", default={})
 _IMAGE_MIMES = {"image/png", "image/jpeg", "image/webp", "image/gif"}
+_SUGGESTION_INSTRUCTIONS = (
+    "Before recommending work, inspect the actually connected capabilities and their exact schemas; consult relevant evidence when needed. "
+    "Do a simple, clear, already requested task directly. When there is a real choice, an inferred but unrequested next step, "
+    "substantial time or cost, or a missing capability, publish one structured suggestion through chat_present instead of executing it. "
+    "State its goal/outcome, deliverables, actual tools, capability available or needs-development, and why it fits. "
+    "Leave timeEstimate and costEstimate unknown unless you can state a concrete basis; never invent estimates. "
+    "For missing capabilities offer an assessment, not a promise that implementation exists. "
+    "The suggestion prompt continues this same agent conversation when the user selects it; it is not a script or URL executor "
+    "and does not authorize plugin installation or bypass existing permissions or exact-source checks. "
+)
 
 
 def _verify_image(data: bytes, mime_type: str) -> None:
@@ -846,6 +857,9 @@ class ChatStore:
             suffix = ".bin"
         return self.root / _identifier(session_id) / "attachments" / (_identifier(attachment.id) + suffix)
 
+    def _scratch_path(self, session_id: str) -> Path:
+        return self.root / _identifier(session_id) / "scratch"
+
     def attachment(self, session_id: str, attachment_id: str) -> tuple[ChatAttachment, Path]:
         with self._lock:
             session = self._session(session_id)
@@ -900,6 +914,8 @@ class ChatStore:
 
     def _save(self, session: _SavedChat, attachments: tuple[tuple[ChatAttachment, bytes], ...] = ()) -> None:
         self.root.mkdir(parents=True, exist_ok=True)
+        if session.provider != "codex":
+            self._scratch_path(session.id).mkdir(parents=True, exist_ok=True)
         path = self.root / f"{session.id}.json"
         temporary = path.with_suffix(".tmp")
         written = []
@@ -1242,12 +1258,24 @@ class ChatStore:
                 raise HubFailure(422, "CHAT_PRESENTATION_INVALID", "Only an external source can start a turn with a complete user message.")
             if request.kind == "progress" and (request.attachments or request.documents):
                 raise HubFailure(422, "CHAT_PRESENTATION_INVALID", "Progress is transient text; publish media as an assistant result.")
-            if not request.content.strip() and not request.attachments and not request.documents:
+            if not request.content.strip() and not request.attachments and not request.documents and request.suggestion is None:
                 raise HubFailure(422, "CHAT_MESSAGE_EMPTY", "Provide text or a result attachment/document.")
             progress_key = f"external:{request.messageId}"
             previous = (self._progress_rows.get(session_id, {}).get(progress_key) if request.kind == "progress" else
                         next((row for row in session.messages if row.id == request.messageId), None))
             content = _redact(request.content, _claude_env())
+            # Every nested card string crosses the same public/persistent
+            # boundary as message text, including the continuation prompt.
+            def redact_card(value):
+                if isinstance(value, str):
+                    return _redact(value, _claude_env())
+                if isinstance(value, list):
+                    return [redact_card(item) for item in value]
+                if isinstance(value, dict):
+                    return {key: redact_card(item) for key, item in value.items()}
+                return value
+            suggestion = (ChatSuggestion.model_validate(redact_card(request.suggestion.model_dump()))
+                          if request.suggestion is not None else None)
             if request.kind == "progress":
                 content = content.strip()[-2400:]
             if previous:
@@ -1265,7 +1293,8 @@ class ChatStore:
                         ChatDocumentRef.model_validate(ref.model_dump(include=set(ChatDocumentRef.model_fields))).model_dump()
                         for ref in previous.documents]
                     settled_stream = request.status == "streaming" and previous.status != "streaming" and session.status != "running"
-                    if previous.content == content and (previous.status == request.status or settled_stream) and same_files and same_refs:
+                    if (previous.content == content and previous.suggestion == suggestion
+                            and (previous.status == request.status or settled_stream) and same_files and same_refs):
                         return self.get(session_id)
                     raise HubFailure(409, "CHAT_PRESENTATION_CONFLICT", "A revision identifies one exact message snapshot.")
                 if previous.status != "streaming" or request.kind == "user":
@@ -1312,6 +1341,7 @@ class ChatStore:
             message = ChatMessage(id=request.messageId, role=request.kind, content=content,
                                   createdAt=previous.createdAt if previous else _now(), status=request.status,
                                   sourceTurnId=request.turnId, presentationRevision=request.revision,
+                                  suggestion=suggestion,
                                   attachments=attachments, documents=documents)
             if previous:
                 session.messages[session.messages.index(previous)] = message
@@ -1392,6 +1422,25 @@ class ChatStore:
                 raise HubFailure(409, "CHAT_ARCHIVED", "Restore this archived chat before sending another message.")
             if request.projectId != session.projectId or _project(session.projectDir) != (session.projectId, session.projectDir):
                 raise HubFailure(409, "CHAT_PROJECT_MISMATCH", "This message belongs to a different project.")
+            if request.suggestionSelection is not None:
+                selection = request.suggestionSelection
+                if any(row.role == "user" and row.suggestionSelection == selection for row in session.messages):
+                    raise HubFailure(409, "CHAT_SUGGESTION_CONSUMED", "This suggestion has already been selected.")
+                if session.status == "running" or session_id in self._running:
+                    raise HubFailure(409, "CHAT_RUNNING", "Wait for this reply to finish before choosing a suggestion.")
+                if session.status != "idle":
+                    raise HubFailure(409, "CHAT_SUGGESTION_EXPIRED", "Suggestions can only continue an idle conversation.")
+                card = next((row for row in session.messages if row.id == selection.messageId), None)
+                user = next((row for row in reversed(session.messages) if row.role == "user"), None)
+                turn = (user.sourceTurnId or user.id) if user else None
+                latest = next((row for row in reversed(session.messages)
+                               if row.role == "assistant" and row.suggestion is not None and row.sourceTurnId == turn), None)
+                if (card is None or card.role != "assistant" or card.suggestion is None or card.status != "complete"
+                        or card.presentationRevision != selection.revision or card.sourceTurnId != turn or card != latest):
+                    raise HubFailure(409, "CHAT_SUGGESTION_EXPIRED", "Choose the latest completed suggestion for the current user turn.")
+                # Only a retained prompt enters the ordinary post/start path.
+                # Context remains native continuation, with no client source override.
+                request = request.model_copy(update={"content": card.suggestion.prompt})
             if session_id in self._running:
                 return self._interject(session_id, request)
             provider = next(row for row in self.providers() if row.id == session.provider)
@@ -1416,6 +1465,7 @@ class ChatStore:
                 session.title = (content.splitlines()[0] if content else attachments[0][0].name)[:80]
             session.messages.append(ChatMessage(id=str(uuid4()), role="user", content=content, createdAt=_now(),
                                                 contextMode="continue" if request.contextMode == "stage" else request.contextMode,
+                                                suggestionSelection=request.suggestionSelection,
                                                 attachments=[attachment for attachment, _ in attachments]))
             session.status, session.error, session.updatedAt = "running", None, _now()
             self._save(session, tuple(attachments))
@@ -1727,6 +1777,7 @@ class ChatStore:
                     command += ["--image", str(path)]
             command.append("-")
         else:
+            scratch = self._scratch_path(session.id)
             command = [*commands[kind], "-p", "--output-format", "stream-json", "--verbose",
                        "--include-partial-messages", "--permission-mode", "dontAsk", "--permission-prompts", "none",
                        # Two different questions, and both have to be answered.
@@ -1737,6 +1788,7 @@ class ChatStore:
                        # plus this adapter's own tools and nothing else.
                        "--tools", "default", "--allowedTools", ",".join(_claude_approved(self.runtime_root)),
                        *(("--add-dir", session.projectDir) if workdir != session.projectDir else ()),
+                       "--add-dir", str(scratch),
                        "--strict-mcp-config", "--mcp-config", json.dumps({"mcpServers": {"monkeyhub": mcp}})]
             command += ["--resume", session.nativeSessionId] if session.nativeSessionId else ["--session-id", session.cliStartId or session.id]
             # Every turn reads stream-json from stdin, so a message sent while
@@ -2004,12 +2056,14 @@ class ChatStore:
                     "generate and inspect a candidate when the next design decision depends on its result, then revise as needed. "
                     "Check the actual result against the user's spatial intent before reporting completion; distinguish "
                     "geometry readback from visual inspection. Judge a spatial or formal result with visual_review, which "
-                    "answers findings rather than images within a small allowance for each user message; check a "
+                    "delivers exact images for you to inspect within a small allowance for each user message; only explicit "
+                    "delivery=observation uses the separately configured structured provider and returns finding ids; check a "
                     "deterministic edit by readback without looking, and ask the user about a finding marked escalate "
                     "rather than spending another review on it. Close each completed loop with one admission that lists the "
                     "attempts each result superseded, such as a redone first try; for a request for several alternatives, "
                     "declare its Study with an id and label from the request and admit each finished alternative. Never "
-                    "admit intermediate runs. Reject a result, or continue from one, only when the user's own words say so; "
+                    "admit intermediate runs. Drawing-only work finishes with its registered documents and exact pages: "
+                    "do not query or create a model admission for an unchanged source. Reject a result, or continue from one, only when the user's own words say so; "
                     "the chat binds them to that message. Choose suitable modeling methods and reasonable reversible "
                     "defaults, stating material assumptions. Ask when a design choice needs the user's judgment. "
                     "Use the connected monkeyhub tools for project queries and changes: studio_request lists entry points "
@@ -2030,8 +2084,16 @@ class ChatStore:
                         "This Hub runs from an installed bundle rather than a source checkout, so there is no code "
                         "here for you to change; say so instead of describing an edit you cannot make. "
                     ) +
+                    (
+                        f"Use this chat's writable scratch directory at {self._scratch_path(session.id)} for "
+                        "temporary calculation scripts and derived working files; Write, Edit and Bash are available "
+                        "there. Use this directory rather than the CLI's protected .claude directory. Scratch files "
+                        "are not project records; save design results through the connected tools and P036. "
+                        if session.provider != "codex" else ""
+                    ) +
                     "Do not switch Hub configuration, open a different project, or guess a service URL. "
-                    "If a required domain action is unavailable, say what cannot be done.\n\n"
+                    "If a required domain action is unavailable, say what cannot be done. "
+                    + _SUGGESTION_INSTRUCTIONS + "\n\n"
                     + content
                 )
             if running.attachments:
@@ -2464,6 +2526,73 @@ _PAGE_IMAGE_MAX_EDGE = 2048
 _PAGE_IMAGE_MAX_BYTES = 4 * 1024 * 1024
 
 
+def _schema_allowed(method: str, path: str) -> bool:
+    """Apply the execution allow-list to a schema template, never to a write."""
+    pattern = {"GET": _READ, "POST": _POST, "PUT": _WRITE}.get(method)
+    return pattern is not None and any(
+        pattern.fullmatch(re.sub(r"\{[^}/]+\}", sample, path))
+        for sample in ("id", "0" * 64)
+    )
+
+
+def _available_actions(document: dict) -> list[dict]:
+    """A view of this Runtime and this chat's transport, not another registry."""
+    return [
+        {"method": method.upper(), "path": path,
+         "summary": str(operation.get("summary") or operation.get("operationId") or "")[:180]}
+        for path, operations in sorted(document.get("paths", {}).items())
+        for method, operation in sorted(operations.items())
+        if isinstance(operation, dict) and _schema_allowed(method.upper(), path)
+    ]
+
+
+def _discover_actions(base: str, arguments: dict) -> dict:
+    if set(arguments) - {"method", "path", "pathPrefix", "offset", "limit"}:
+        raise HubFailure(422, "CHAT_TOOL_INVALID", "Action discovery takes optional method, pathPrefix, offset and limit; omit path.")
+    method = arguments.get("method")
+    prefix = arguments.get("pathPrefix", "/api/")
+    offset, limit = arguments.get("offset", 0), arguments.get("limit", 30)
+    if (method is not None and (not isinstance(method, str) or method.upper() not in {"GET", "POST", "PUT"})
+            or not isinstance(prefix, str) or not re.fullmatch(r"/api(?:/[A-Za-z0-9_.{}-]*)*/?", prefix)
+            or type(offset) is not int or offset < 0 or type(limit) is not int or not 1 <= limit <= 50):
+        raise HubFailure(422, "CHAT_TOOL_INVALID", "Use method GET/POST/PUT, pathPrefix under /api, offset >= 0 and limit 1..50.")
+    rows = [row for row in _available_actions(_request_json(base, "/openapi.json"))
+            if row["path"].startswith(prefix) and (method is None or row["method"] == method.upper())]
+    result = {"actions": rows[offset:offset + limit], "total": len(rows), "offset": offset, "limit": limit,
+              "note": "Current Runtime actions exposed to this chat. Choose method/path for studio_schema to read inputs; "
+                      "studio_request executes. Project state, input validation and action-specific authority still apply."}
+    if offset + limit < len(rows):
+        result["next"] = {"tool": "studio_schema", "arguments": {**arguments, "offset": offset + limit, "limit": limit}}
+    return result
+
+
+def _action_refusal(base: str | None, method: str, path: str) -> HubFailure:
+    """Explain a refused path without choosing or executing a replacement.
+
+    ``base`` is a Studio that is already running, or None: a refusal never
+    starts a runtime just to explain itself.
+    """
+    discovery = "Use studio_schema with no path to list current chat actions, then select an exact method/path."
+    try:
+        if base is None:
+            raise HubFailure(409, "CHAT_STUDIO_UNAVAILABLE", "No running Studio.")
+        document = _request_json(base, "/openapi.json")
+    except (HubFailure, OSError, ValueError):
+        return HubFailure(422, "CHAT_TOOL_UNAVAILABLE",
+                          f"This path is not exposed to the chat; the Runtime action list could not be read. {discovery}")
+    exists = any(method.lower() in operations and re.fullmatch(re.sub(r"\{[^}]+\}", r"[^/]+", route), path)
+                 for route, operations in document.get("paths", {}).items())
+    if exists:
+        return HubFailure(422, "CHAT_TOOL_UNAVAILABLE", f"{method} {path} exists in the Runtime but is not exposed to chat. {discovery}")
+    domain = "/".join(path.split("/")[:3]) + "/"
+    related = [f"{row['method']} {row['path']}" for row in _available_actions(document)
+               if row["method"] == method and row["path"].startswith(domain)][:6]
+    suggestions = " Related available actions: " + "; ".join(related) + "." if related else ""
+    return HubFailure(422, "CHAT_ACTION_UNKNOWN",
+                      f"The current Runtime has no {method} {path}; this is an unknown action, not a permission denial."
+                      f"{suggestions} {discovery} Nothing was executed.")
+
+
 class _NoRedirect(HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         raise HubFailure(409, "CHAT_SERVICE_CHANGED", "The bound service redirected the request.")
@@ -2489,7 +2618,9 @@ def _request_json(base: str, path: str, method: str = "GET", body=None, timeout:
         # rather than made with a small amount of time granted to it here.
         raise TimeoutError(f"no time left to call {method} {path}")
     data = None if body is None else json.dumps(body, ensure_ascii=False).encode("utf-8")
-    request = Request(_url(base) + path, data=data, method=method, headers={
+    # Preserve existing escapes and delimiters, while allowing a natural-language
+    # capability query to contain Unicode without failing in urllib's ASCII URL.
+    request = Request(_url(base) + quote(path, safe="/%?=&:+,;@!$'()*~-._"), data=data, method=method, headers={
         "Content-Type": "application/json", **_trace_headers.get(), **(headers or {}),
     })
     try:
@@ -2694,12 +2825,14 @@ def _prepare_studio(hub: str, session: Mapping, budget: float) -> dict:
 
 
 def _bound_studio(hub: str, chat_id: str | None, timeout: float = 180, *, project_id: str | None = None,
-                  project_dir: str | None = None, deadline: float | None = None) -> tuple[str, dict]:
+                  project_dir: str | None = None, deadline: float | None = None,
+                  prepare: bool = True) -> tuple[str, dict]:
     """Resolve the chat's own Studio, then verify its process and project before use.
 
     With a ``deadline`` these checks share what is left of one budget instead of
     each starting ``timeout`` again; without one they keep the per-check limit
-    the tool callers already have.
+    the tool callers already have. ``prepare=False`` only finds a Studio that is
+    already running and starts nothing.
     """
 
     def left() -> float:
@@ -2727,7 +2860,7 @@ def _bound_studio(hub: str, chat_id: str | None, timeout: float = 180, *, projec
         "hub_health": (hub, "/api/health"),
     }, left())
     studio = _studio_row(first["apps"])
-    if not _studio_running(studio) and chat_id is not None:
+    if not _studio_running(studio) and chat_id is not None and prepare:
         # A design tool prepares its own project rather than asking someone to
         # open a page; the checks below then apply to what it prepared.
         studio = _prepare_studio(hub, session, left())
@@ -3109,7 +3242,7 @@ def _feedback_body(hub: str, base: str, chat_id: str, session: dict, path: str, 
 # answers, kept in this adapter while that is the message it answers. The
 # stdio loop answers one call at a time, so nothing else touches it meanwhile.
 _VISUAL_REVIEW_FIELDS = {"domain", "sourceRefs", "viewRecipe", "task", "criteria", "preserve",
-                         "priorObservations", "knownFacts", "reason", "addressedFindingIds"}
+                         "priorObservations", "knownFacts", "reason", "addressedFindingIds", "delivery"}
 # The runtime's allowance for each class the Agent can declare. The route
 # refuses any other number, so these can only ever agree with it.
 _VISUAL_ALLOWED = {"deterministic_edit": 0, "spatial_formal": 2}
@@ -3164,8 +3297,9 @@ def _visual_allowance(chat_id: str, message: dict, declared, rounds) -> dict:
 def _visual_review(hub: str, chat_id: str, arguments: dict) -> dict:
     """One bounded look through the bound Studio, under the answered message's allowance.
 
-    The runtime renders every frame from the exact sources named, answers
-    findings rather than images and writes nothing. Hub supplies the project
+    The runtime renders every frame from the exact sources named and writes
+    nothing. By default the current agent sees these images; an explicit
+    observation delivery uses the configured structured provider. Hub supplies the project
     and the allowance and keeps what the answer says of it: a refusal spends
     nothing, and a call the provider may have answered is spent. A finding
     that touches a preserve condition is marked escalate: it is a question for
@@ -3178,6 +3312,7 @@ def _visual_review(hub: str, chat_id: str, arguments: dict) -> dict:
     message = _user_message(chat_id, session, "A visual review")
     held = _visual_allowance(chat_id, message, arguments.get("taskClass"), arguments.get("polishRounds"))
     body = {key: value for key, value in arguments.items() if key in _VISUAL_REVIEW_FIELDS}
+    body.setdefault("delivery", "frames")
     body.update(projectId=session["projectId"], budgetState=dict(held))
 
     def spent(detail: str) -> str:
@@ -3187,10 +3322,11 @@ def _visual_review(hub: str, chat_id: str, arguments: dict) -> dict:
     try:
         answer = _request_json(base, "/api/visual-reviews", "POST", body, timeout=_VISUAL_REVIEW_WAIT_S)
     except HubFailure as refused:
-        # The route refuses before its provider call with a 4xx; a 5xx means
-        # the call was made, or may have been.
+        # Frames have no provider side effect: an HTTP refusal, including a
+        # renderer failure, delivered no review. A structured provider may
+        # already have been called when it returns 5xx.
         detail = refused.error.detail
-        detail = spent(detail) if refused.status >= 500 else f"{detail} {_allowance_note(held)}"
+        detail = spent(detail) if body["delivery"] == "observation" and refused.status >= 500 else f"{detail} {_allowance_note(held)}"
         raise HubFailure(refused.status, refused.error.code, detail) from refused
     except URLError:
         raise  # It never reached the Studio: nothing was spent.
@@ -3199,8 +3335,42 @@ def _visual_review(hub: str, chat_id: str, arguments: dict) -> dict:
             f"The Studio did not answer this review ({_reason(lost)}), so it counts as spent.")) from lost
     observation = answer.get("observation") if isinstance(answer, dict) else None
     state = answer.get("budgetState") if isinstance(answer, dict) else None
-    if (not isinstance(observation, dict) or not isinstance(state, dict) or type(state.get("used")) is not int
+    if (not isinstance(state, dict) or type(state.get("used")) is not int
+            or state["used"] != held["used"] + 1 or state["used"] > held["allowed"]
             or (state.get("taskClass"), state.get("allowed")) != (held["taskClass"], held["allowed"])):
+        raise HubFailure(502, "CHAT_TOOL_FAILED", spent("The Studio answered this review outside its contract."))
+    if body["delivery"] == "frames":
+        frames = answer.get("frames")
+        try:
+            if (answer.get("delivery") != "frames" or observation is not None or answer.get("usage") is not None
+                    or state.get("lastFindingIds") != [] or not isinstance(frames, list) or not 1 <= len(frames) <= 4):
+                raise ValueError("invalid frame delivery")
+            seen = set()
+            for frame in frames:
+                if (not isinstance(frame, dict) or frame.get("sourceRef") not in body.get("sourceRefs", [])
+                        or not isinstance(frame.get("viewRef"), str) or frame["viewRef"] in seen
+                        or frame.get("mimeType") != "image/png" or not isinstance(frame.get("data"), str)
+                        or len(frame["data"]) > 4 * ((_PAGE_IMAGE_MAX_BYTES + 2) // 3)):
+                    raise ValueError("invalid frame source or payload")
+                seen.add(frame["viewRef"])
+                data = base64.b64decode(frame["data"], validate=True)
+                if sha256(data).hexdigest() != frame.get("frameSha256"):
+                    raise ValueError("frame digest mismatch")
+                response = BytesIO(data)
+                response.headers = {"Content-Type": "image/png"}
+                picture = _page_image(response)
+                if (picture["width"], picture["height"]) != (frame.get("width"), frame.get("height")):
+                    raise ValueError("frame dimensions mismatch")
+            if any(source not in [frame["sourceRef"] for frame in frames] for source in body["sourceRefs"]):
+                raise ValueError("missing source frame")
+        except (ValueError, TypeError, KeyError, HubFailure) as invalid:
+            raise HubFailure(502, "CHAT_TOOL_FAILED", spent("The Studio answered invalid review frames.")) from invalid
+        held.update(used=state["used"], lastFindingIds=[])
+        return {"delivery": "frames", "frames": frames, "observation": None, "usage": None,
+                "note": "Inspect the images against the requested criteria. Delivery alone is not an observation or acceptance. "
+                        "No structured finding ids exist for an after_repair review.",
+                "allowance": {key: held[key] for key in ("taskClass", "allowed", "used")}}
+    if not isinstance(observation, dict):
         raise HubFailure(502, "CHAT_TOOL_FAILED", spent("The Studio answered this review outside its contract."))
     held.update(used=state["used"], lastFindingIds=list(state.get("lastFindingIds") or ()))
     findings = [{**row, "escalate": any(str(ref).startswith("preserve:") for ref in row.get("targetRefs") or ())}
@@ -3270,14 +3440,24 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
             body.pop("accessCode", None)
             return _request_json(hub, path, "POST", body)
         raise HubFailure(422, "CHAT_TOOL_UNAVAILABLE", "The chat can list Fab profiles and validate a prepared job; uploads remain explicit in MonkeyFab.")
+    if name == "studio_schema" and not path:
+        return _discover_actions(_bound_studio(hub, chat_id)[0], arguments)
+    if any(key in arguments for key in ("pathPrefix", "offset", "limit")):
+        raise HubFailure(422, "CHAT_TOOL_INVALID", "pathPrefix, offset and limit belong to studio_schema action discovery; omit path.")
     # Asking what a documented action takes is not calling it. The path is
     # checked against the same allow-list either way, with a schema question's
     # `{id}` segments standing for the id they name, so the templates this
     # tool's own description lists can actually be read. It is checked before
     # the Studio is resolved, so a refused request never starts a runtime.
-    checked = re.sub(r"\{[^}/]+\}", "id", parsed.path) if name == "studio_schema" else parsed.path
-    if parsed.scheme or parsed.netloc or parsed.fragment or method not in allowed or not allowed[method].fullmatch(checked):
+    if parsed.scheme or parsed.netloc or parsed.fragment or method not in allowed:
         raise HubFailure(422, "CHAT_TOOL_UNAVAILABLE", "This action is not exposed to the chat.")
+    permitted = _schema_allowed(method, parsed.path) if name == "studio_schema" else allowed[method].fullmatch(parsed.path)
+    if not permitted:
+        try:
+            running = _bound_studio(hub, chat_id, prepare=False)[0]
+        except (HubFailure, OSError, ValueError):
+            running = None
+        raise _action_refusal(running, method, parsed.path)
     base, session = _bound_studio(hub, chat_id)
     query = parse_qs(parsed.query, keep_blank_values=True)
     if any(query[key] != [session["projectId"]] for key in ("projectId", "project_id") if key in query):
@@ -3287,7 +3467,7 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
         template = next((route for route in document["paths"] if re.fullmatch(re.sub(r"\{[^}]+\}", r"[^/]+", route), parsed.path)), None)
         operation = document["paths"].get(template, {}).get(method.lower())
         if operation is None:
-            raise HubFailure(422, "CHAT_TOOL_UNAVAILABLE", "The running Studio has no matching action.")
+            raise HubFailure(422, "CHAT_ACTION_UNSUPPORTED", "The running Runtime has no matching action. Use studio_schema with no path to list this version's available actions.")
         if method == "POST" and parsed.path == "/api/exports":
             reference = operation["requestBody"]["content"]["application/json"]["schema"]["$ref"]
             schema = document["components"]["schemas"][reference.rsplit("/", 1)[-1]]
@@ -3439,6 +3619,12 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
         if started.get("status") == "succeeded" and started.get("downloadPath") == parsed.path + "/bytes":
             started = started | {"downloadUrl": base + started["downloadPath"]}
     if wait is None:
+        if method == "GET" and parsed.path == "/api/capabilities" and isinstance(started, dict):
+            started = {**started, "actionDiscovery": {
+                "tool": "studio_schema", "arguments": {},
+                "note": "These registered workflows are not the complete action list. studio_schema without path lists "
+                        "the actual Runtime actions exposed to this chat; optional pathPrefix narrows the list.",
+            }}
         if method == "POST" and parsed.path in {
             "/api/proposals", "/api/proposals/sketch", "/api/proposals/transform",
             "/api/proposals/push-pull", "/api/proposals/delete", "/api/proposals/elevation",
@@ -3469,6 +3655,19 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
     return _finish(base, started, comparison, time.monotonic() + wait)
 
 
+_PRESENTATION_DOCUMENTS = (
+    "Project drawings belong to existing project document APIs; reference runId/assetSha256/revisionRef/pageIndex exactly. "
+    "A display reference does not mean a Board write succeeded."
+)
+_NATIVE_PRESENTATION_INSTRUCTIONS = (
+    "This is the current MonkeyHub conversation: normal text and progress already stream automatically. "
+    "Use chat_present to show selected media or one suggestion card with kind=assistant (its content may be empty), "
+    "or public commentary with kind=progress. "
+    "Hub binds status=streaming and completes the presentation when this native turn finishes. "
+    "Supply a fresh UUID messageId; the current user turn is bound automatically. Do not republish the user's message. "
+    "To update media or a card, reuse messageId with a strictly increasing revision and retain the full content, "
+    "attachments and suggestion. No call here starts another model. " + _PRESENTATION_DOCUMENTS + " " + _SUGGESTION_INSTRUCTIONS
+)
 _PRESENTATION_INSTRUCTIONS = (
     "This connection displays results in the bound MonkeyHub conversation. Call presentation_bind once if available. "
     "For each external user request, call chat_present with kind=user and fresh UUID turnId/messageId; "
@@ -3479,21 +3678,24 @@ _PRESENTATION_INSTRUCTIONS = (
     "Keep the source host response concise with the Hub URL. This does not suppress mandatory host output. "
     "No call here starts another model. On disconnect or refusal, report it in the source host; reconnect with presentation_bind, "
     "then replay only the same presentation snapshot, never a design mutation. "
-    "For Hub-native conversations, normal answers already stream automatically; use chat_present for media with status=streaming. "
-    "Project drawings belong to existing project document APIs; reference runId/assetSha256/revisionRef/pageIndex exactly. "
-    "A display reference does not mean a Board write succeeded."
+    "Only kind=assistant can carry a suggestion; its content may be empty. Keep the same messageId and increment revision for a changed card. "
+    + _PRESENTATION_DOCUMENTS + " " + _SUGGESTION_INSTRUCTIONS
 )
 
 
 def _present_tool(hub: str, chat_id: str, arguments: dict, token: str):
     session = _request_json(hub, f"/api/chat/sessions/{_identifier(chat_id)}")
     body = dict(arguments)
-    if set(body) - {"turnId", "messageId", "revision", "kind", "content", "status", "attachments", "documents"}:
+    if set(body) - {"turnId", "messageId", "revision", "kind", "content", "status", "attachments", "documents", "suggestion"}:
         raise HubFailure(422, "CHAT_PRESENTATION_INVALID", "Use only the documented presentation fields; this connection fixes its destination.")
-    if not session.get("sourceSessionId") and "turnId" not in body:
-        user = next((row for row in reversed(session.get("messages", [])) if row["role"] == "user"), None)
-        if user:
-            body["turnId"] = user["id"]
+    if not session.get("sourceSessionId"):
+        # Native completion belongs to the CLI turn. A media card must remain
+        # revisable until that turn settles all its streaming messages.
+        body["status"] = "streaming"
+        if "turnId" not in body:
+            user = next((row for row in reversed(session.get("messages", [])) if row["role"] == "user"), None)
+            if user:
+                body["turnId"] = user["id"]
     uploads = []
     for item in body.get("attachments", []):
         item = dict(item)
@@ -3531,8 +3733,11 @@ def _mcp(hub: str, chat_id: str | None, external: ChatPresentationBindRequest | 
     # that happened.
     input_schema = {"type": "object", "properties": dict(request_fields),
                     "required": ["method", "path"], "additionalProperties": False}
-    schema_input = {**input_schema, "properties": {
+    schema_input = {**input_schema, "required": [], "properties": {
         **input_schema["properties"],
+        "pathPrefix": {"type": "string", "description": "Discover actions below this API prefix (for example /api/drawings); omit path. Omit method to include reads AND writes."},
+        "offset": {"type": "integer", "minimum": 0, "description": "Action discovery page offset; omit path."},
+        "limit": {"type": "integer", "minimum": 1, "maximum": 50, "description": "Action discovery page size, default 30; omit path."},
         "producer": {"type": "string", "description": "For POST /api/proposals authoring, name one producer the running Studio advertises to read only its request contract, excluding unrelated geometry and response schemas. Without it, POST /api/proposals answers the index of available producers, most general first; an unknown name is answered with that list."},
     }}
     request_schema = {
@@ -3553,6 +3758,8 @@ def _mcp(hub: str, chat_id: str | None, external: ChatPresentationBindRequest | 
     # The review's own fields as the runtime route names them. projectId and
     # budgetState are Hub's to fill, so they are not offered at all.
     review_schema = {"type": "object", "properties": {
+        "delivery": {"type": "string", "enum": ["frames", "observation"], "default": "frames",
+                     "description": "frames returns exact images for you to inspect. observation uses the Runtime's separately configured structured visual provider."},
         "taskClass": {"type": "string", "enum": ["spatial_formal", "polish", "deterministic_edit"]},
         "polishRounds": {"type": "integer", "minimum": 1, "maximum": 4,
                          "description": "Only for polish: its rounds; above 2 only when the user asked to keep refining."},
@@ -3582,8 +3789,9 @@ def _mcp(hub: str, chat_id: str | None, external: ChatPresentationBindRequest | 
     }, "required": ["taskClass", "reason", "domain", "sourceRefs", "viewRecipe", "task", "criteria"],
         "additionalProperties": False}
     reviewing = chr(10).join([
-        "Look once at exact project sources and get findings back, never images: the bound Studio renders every frame itself",
-        "and one provider call reports what is visible about your criteria. Use it for a spatial or formal task (massing,",
+        "Look once at exact project sources: by default delivery=frames returns native images with source metadata for YOU to inspect.",
+        "The bound Runtime renders every frame; delivery alone supplies no findings or acceptance. Report only what you actually see.",
+        "Optional delivery=observation uses the separately configured structured provider and returns findings. Use a review for a spatial or formal task (massing,",
         "proportion, relations, composition, a sheet's hierarchy) after a meaningful batch. A deterministic edit (a value, a",
         "dimension, a count) is checked by readback, not looked at. When the user asks to see a view, read",
         "GET /api/drawings/model-view through studio_request instead.",
@@ -3592,10 +3800,11 @@ def _mcp(hub: str, chat_id: str | None, external: ChatPresentationBindRequest | 
         "only when the user's words in this message ask to keep refining, such as 继续优化 or 打磨). deterministic_edit allows none.",
         "Hub holds the allowance of the user message you are answering, fixes its class once a review is spent, and starts a",
         "new one with the user's next message.",
+        "Frames delivery creates no structured finding ids: after_repair is unavailable after it; never invent finding ids to get another look.",
         "A modeling review names one model {kind: 'model', runId, stateDigest, assetSha256}, the result's non-null modelSource",
         "unchanged, with viewRecipe from front, back, left, right, top, axon. Board, drawing and render reviews name registered",
         "pages {kind: 'page', runId, assetSha256, revisionRef, pageIndex} exactly as GET /api/documents lists them, with",
-        "viewRecipe page-<pageIndex> of each. criteria [{criterionId, text}] say what to inspect, preserve what must not be",
+        "viewRecipe page-<pageIndex> of each (deduplicate repeated page numbers); different documents may each have page 0 and receive unique frame names. criteria [{criterionId, text}] say what to inspect, preserve what must not be",
         "disturbed, and knownFacts are exact readback values (levels, clear sizes) the observer should not ask about again.",
         "A finding marked escalate touches a preserve condition: ask the user about it instead of repairing and reviewing again.",
         "Refusals spend nothing: VISUAL_BUDGET_EXHAUSTED, VISUAL_REVIEW_NOT_WARRANTED, VISUAL_REVIEW_OUT_OF_ORDER,",
@@ -3605,7 +3814,6 @@ def _mcp(hub: str, chat_id: str | None, external: ChatPresentationBindRequest | 
     # contracts remain discoverable on demand; the agent chooses observation points.
     modelling = chr(10).join([
         "Use the bound project's Studio API. Lengths are metres; plan points are [x, z], with Y up.",
-        "Read studio_schema for action details or producer inputs as needed.",
         "Design tools prepare the project's runtime themselves; nobody needs to open a page first.",
         "",
         "CURRENT STATE: GET /api/state and GET /api/state/frame provide stateDigest, components/elements and levels.",
@@ -3624,7 +3832,7 @@ def _mcp(hub: str, chat_id: str | None, external: ChatPresentationBindRequest | 
         "Use a specialized producer such as wall only when the user asks for it or the meaning is already established.",
         "Never ask for a GridAxis or a semanticKind for ordinary geometry; project-local points and levels are enough, and meaning can be added later to the same component.",
         "",
-        "EDIT: POST /api/proposals/transform, /api/proposals/push-pull, /api/proposals/elevation or /api/proposals/delete.",
+        "EDIT: POST /api/proposals/transform, /api/proposals/push-pull, /api/proposals/elevation or /api/proposals/delete; lower planar surfaces above a height with one transform kind=compress-above, not hand-computed polygons.",
         "Read each action's schema for its fields; tool errors identify unsupported operations. Choose methods that preserve design meaning.",
         "For an existing numeric control, GET /api/capabilities/candidate.modify_existing?target=<componentId>&elementId=<the element>&run=<candidateId>",
         "returns its current values, units and a ready request; edit that body and POST /api/capabilities/{capabilityId}/run.",
@@ -3657,7 +3865,7 @@ def _mcp(hub: str, chat_id: str | None, external: ChatPresentationBindRequest | 
         "For invalid input, use the named schema to correct it. For stale state/conflicts, refresh the exact source and reconcile the change while preserving keep conditions.",
         "A refused request made no model. Distinguish unsupported operations from correctable inputs; report unresolved limits without inventing success.",
         "",
-        "ADMIT: when a task's loop is complete, POST /api/admissions once: {task: {kind: 'hub-chat'}, study: {id, label, baseRunId}",
+        "ADMIT: when a model revision loop is complete, POST /api/admissions once: {task: {kind: 'hub-chat'}, study: {id, label, baseRunId}",
         "(id an ASCII slug) for several alternatives built from one run, results: [{runId, outcome: 'admitted', supersedes: [attempt runIds it replaced], label}]}.",
         "outcome 'rejected' only where the user's words reject that result; add feedbackQuote with their exact passage.",
         "The chat fills messageSource and rawLanguage; never supply them. A refusal names each failing clause per run; an identical",
@@ -3680,7 +3888,7 @@ def _mcp(hub: str, chat_id: str | None, external: ChatPresentationBindRequest | 
         "Carry applicable supported design keep refs into the existing edit's keep field and check the execution result. Preserve the actual relation or parameter asked for, not an entire unrelated object. Keep existing parameter locks; unsupported relation protection or hatch controls require explicit defer, not invented enforcement.",
         "Use each decision once for its relevant effect: preserve/filter for supported hard constraints, a generation preference for soft wording, or defer for unsupported effects. Inspect the next artifact and name any remaining gap; a context entry alone proves no behavior changed.",
         "PUT /api/board, /api/document-annotations. Use their schemas for exact inputs.",
-        "DRAWINGS: POST /api/drawings/elevations automatically registers results in MonkeyDiagram's documents list.",
+        "DRAWINGS: POST /api/drawings/elevations automatically registers results in MonkeyDiagram's documents list; drawing-only work admits nothing.",
         "SECTION PERSPECTIVE (剖透视): POST /api/drawings/section-perspectives cuts the exact model with a section plane, removes the side the eye is on,",
         "and draws the kept side in true perspective: the cut filled (poché) and true to scale at 1:scaleDenominator, farther geometry smaller,",
         "lines perpendicular to the cut converging at the eye's point on it. Minimal body: {projectId, sourceStageRef or modelSource,",
@@ -3702,7 +3910,7 @@ def _mcp(hub: str, chat_id: str | None, external: ChatPresentationBindRequest | 
         "the dimensions a plan can place. Drawing revisions never move the design. GET /api/drawings/corrections?projectId=[&drawingId=] reads how",
         "revisions changed and which repeated corrections the architect may save as a project recipe; only the architect can save one.",
         "SEE A VIEW: when the user asks to see a view, GET /api/drawings/model-view?runId=<id>&stateDigest=<digest>&assetSha256=<3dm sha256>&view=front returns an MCP image",
-        "with exact source metadata. To judge a spatial or formal result, call visual_review instead: it answers findings, not images.",
+        "with exact source metadata.",
         "Read modelSource from the awaited result's artifacts or the candidate's 3dm artifact. Views: front/back/left/right/top/axon (axon is isometric). This is a read-only line projection from complete retained STEP; unsupported sources refuse rather than show a proxy.",
         "GET /api/drawings/styles and POST /api/drawings/sheets compose a sheet from exact modelSource, styleId and scaleDenominator.",
         "Top is an orthographic projection, not a cut plan. GET /api/documents?runId=<runId> reads that run's drawings.",
@@ -3711,14 +3919,19 @@ def _mcp(hub: str, chat_id: str | None, external: ChatPresentationBindRequest | 
         "Board arranges document references; generated drawings are saved by their drawing API.",
         "Stage acceptance, formal issue and printer upload are separate from this tool's reversible design actions.",
     ])
+    presentation_instructions = _PRESENTATION_INSTRUCTIONS if external else _NATIVE_PRESENTATION_INSTRUCTIONS
     tools = [
-        {"name": "chat_present", "description": _PRESENTATION_INSTRUCTIONS, "inputSchema": {
+        {"name": "chat_present", "description": presentation_instructions, "inputSchema": {
             **ChatPresentationRequest.model_json_schema(),
-            "properties": {key: value for key, value in ChatPresentationRequest.model_json_schema()["properties"].items()
+            "properties": {key: ({**value, "enum": ["progress", "assistant"]} if key == "kind" and not external else
+                                 {**value, "enum": ["streaming"], "default": "streaming"} if key == "status" and not external else value)
+                           for key, value in ChatPresentationRequest.model_json_schema()["properties"].items()
                            if key not in {"projectId", "sourceSessionId"}},
             "required": ["turnId", "messageId", "kind"] if external else ["messageId", "kind"],
         }},
-        {"name": "studio_schema", "description": "Read the exact request/response schema of an allowed Studio action. "
+        {"name": "studio_schema", "description": "Discover current chat actions by omitting path; optional pathPrefix (such as /api/drawings) narrows the list. "
+         "Omit method to include both reads and writes; follow next when paged. The list comes from the bound Runtime and chat allow-list. "
+         "With an exact method/path, read the request/response schema of that allowed Studio action. "
          "Use it to discover inputs, clarify a field or correct a request. Paths may contain template segments, "
          "such as /api/proposals/{id}/candidate. For semantic authoring, supply producer to select its request inputs.", "inputSchema": schema_input},
         {"name": "studio_request", "description": modelling, "inputSchema": request_schema},
@@ -3758,7 +3971,7 @@ def _mcp(hub: str, chat_id: str | None, external: ChatPresentationBindRequest | 
             method, params = request.get("method"), request.get("params", {})
             if method == "initialize":
                 result = {"protocolVersion": params.get("protocolVersion", "2024-11-05"), "capabilities": {"tools": {}},
-                          "serverInfo": {"name": "monkeyhub", "version": "0.1.0"}, "instructions": _PRESENTATION_INSTRUCTIONS}
+                          "serverInfo": {"name": "monkeyhub", "version": "0.1.0"}, "instructions": presentation_instructions}
             elif method == "tools/list":
                 result = {"tools": tools}
             elif method == "tools/call":
@@ -3782,7 +3995,16 @@ def _mcp(hub: str, chat_id: str | None, external: ChatPresentationBindRequest | 
                                   and (str(arguments.get("method", "GET")).upper(),
                                        urlsplit(arguments.get("path", "")).path) in {
                                            ("GET", "/api/drawings/model-view"), ("POST", "/api/board/export")})
-                    if image_read:
+                    if name == "visual_review" and value.get("delivery") == "frames":
+                        metadata = {key: item for key, item in value.items() if key != "frames"}
+                        content = [{"type": "text", "text": _redact(json.dumps(metadata, ensure_ascii=False))}]
+                        for frame in value["frames"]:
+                            content.extend([
+                                {"type": "text", "text": _redact(json.dumps({key: item for key, item in frame.items() if key != "data"}, ensure_ascii=False))},
+                                {"type": "image", "mimeType": frame["mimeType"], "data": frame["data"]},
+                            ])
+                        result = {"content": content}
+                    elif image_read:
                         metadata = {key: item for key, item in value.items() if key != "data"}
                         result = {"content": [
                             {"type": "text", "text": _redact(json.dumps(metadata, ensure_ascii=False))},
