@@ -25,7 +25,13 @@
             "apps/archflow-studio/api/tests/",
             "tests/",
             "governance/module_registry.json",
-            "docs/SYSTEM_MAP.md"
+            "docs/SYSTEM_MAP.md",
+            "archflow/project/issue.py",
+            "archflow/project/version_ref_owners.py",
+            "apps/archflow-studio/api/archflow_studio_api/routes/program.py",
+            "apps/archflow-studio/api/archflow_studio_api/adapters/harness.py",
+            "tools/verify_state_record.py",
+            "tools/open_stage_run.py"
           ],
           "depends_on": []
         }
