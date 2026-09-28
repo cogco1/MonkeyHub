@@ -188,8 +188,8 @@ decision tree comes from two derived stores. Either store can be deleted at any 
 - The Design Tree, its list and the inspector share one thumbnail cache per page (`modelThumbnails`): each blob is
   downloaded and decoded once, at most 48 decoded images are kept (least recently used out), and the canvas draws
   a copy at about twice its cell. Images arriving together rebuild the canvas scene at most once a frame, and not at
-  all below the close level. #326's viewport screenshots stay P036 documents for the Board; the tree no longer looks
-  them up.
+  all below the close level. #326's viewport screenshots stay P036 documents for the Board, and the versions strip,
+  candidate cards and chat study previews still show them (`ModelThumbnail`); the tree no longer looks them up.
 - Measured on the synthetic candidate fixture (one small model): the tree's thumbnail is done 1.8 s after the
   project is opened with a cold render process (load 0.86 s, render 0.12 s); a second size of the same model loads in
   0 ms and renders in 18-61 ms. Opening the tree in the Hub makes no status request for a drawn thumbnail and one blob

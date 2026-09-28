@@ -305,8 +305,16 @@ class StatusTable:
     Raises ``IndexUnavailable`` when the index is closed.
     """
 
-    def __init__(self, index: ProjectIndex) -> None:
-        self.index = index
+    def __init__(self, index: ProjectIndex | None) -> None:
+        self._index = index
+
+    @property
+    def index(self) -> ProjectIndex:
+        if self._index is None:
+            from archflow.project.index import IndexUnavailable
+
+            raise IndexUnavailable("this runtime keeps no project index")
+        return self._index
 
     def get(self, key: str) -> ProjectionStatus | None:
         return _status(self.index.projection(key))
@@ -889,8 +897,21 @@ def tree_model_sources(index: ProjectIndex) -> list[tuple[int, ModelSource]]:
     return [(priority, source) for priority, source in order if not (source in seen or seen.add(source))]
 
 
-def projection_queue(binding) -> ProjectionQueue:
-    """The runtime's queue: its rows in the project index, its blobs in the project's cache, drawn in a subprocess.
+def projection_queue(settings, index: ProjectIndex | None = None, *,
+                     check: Callable[[ProjectionSpec], None] | None = None) -> ProjectionQueue:
+    """The runtime's queue: its blobs in the project's cache directory, its rows in ``index``, drawn in a subprocess.
+
+    ``index`` is the project index the binding keeps (``open_projections``);
+    without one the table refuses every call with ``IndexUnavailable``.
+    """
+
+    return ProjectionQueue(
+        settings.project_cache_dir / "projections", lambda: SubprocessRenderer(settings.project_dir),
+        StatusTable(index), check=check, tree_sources=None if index is None else (lambda: tree_model_sources(index)))
+
+
+def open_projections(binding) -> ProjectionQueue:
+    """The queue of ``binding``'s project, once its index has loaded; every request checks its source.
 
     Raises ``IndexUnavailable`` when the runtime keeps no index, or it has not loaded within ``INDEX_WAIT_S``.
     """
@@ -901,12 +922,8 @@ def projection_queue(binding) -> ProjectionQueue:
     keeper = binding.await_index(INDEX_WAIT_S)
     if keeper is None:
         raise IndexUnavailable(f"project index: {binding.index_status() or 'this process keeps none'}")
-    index = keeper.index
-    settings = binding.settings
-    return ProjectionQueue(
-        settings.project_cache_dir / "projections", lambda: SubprocessRenderer(settings.project_dir),
-        StatusTable(index), check=lambda spec: check_model_view_source(binding, spec.source, spec.recipe["view"]),
-        tree_sources=lambda: tree_model_sources(index))
+    return projection_queue(binding.settings, keeper.index,
+                            check=lambda spec: check_model_view_source(binding, spec.source, spec.recipe["view"]))
 
 
 # ---------------------------------------------------------------- the render process

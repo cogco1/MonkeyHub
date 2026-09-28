@@ -3,10 +3,23 @@ import { useStudio } from "../../api/ProjectRuntimeContext";
 import type { StudioClient } from "../../api/client";
 import type { ModelSourceDto } from "../../api/generated";
 
-/** A viewport screenshot of this model was retained (the chat's study previews follow it); the Design Tree does not. */
+/** A viewport screenshot of this model was retained (the versions strip, candidate cards and chat follow it; the Design Tree does not). */
 export const MODEL_PREVIEW_RETAINED = "monkeyhub:model-preview-retained";
 export const previewSourceKey = (source: ModelSourceDto | null | undefined) => source
   ? JSON.stringify([source.runId, source.stateDigest, source.assetSha256]) : "";
+
+/**
+ * The retained viewport screenshot of exactly this model (#326), or null when none was retained: what
+ * `ModelThumbnail` shows on the versions strip, candidate cards and chat. The Design Tree shows the projection
+ * cache's drawings instead (`modelThumbnails`, #367). `id` names the image's content.
+ */
+export async function readModelPreview(studio: Pick<StudioClient, "modelPreview" | "documentFile">,
+  source: ModelSourceDto): Promise<{ id: string; file: File } | null> {
+  const document = await studio.modelPreview(source);
+  if (!document || previewSourceKey(document.modelSource) !== previewSourceKey(source)) return null;
+  const file = await studio.documentFile(document.runId, document.assetSha256, document.fileName, document.revisionRef);
+  return { id: document.assetSha256, file };
+}
 
 /** Only pixels captured while this exact, unchanged model is still on screen. */
 export async function retainModelPreview(studio: Pick<StudioClient, "modelPreview" | "capture">,
@@ -30,7 +43,7 @@ const retainedOf = (studio: object) => {
 /**
  * Retains a viewport screenshot of the loaded model as a P036 document (#326), for the Board and other uses.
  * Runs after the viewport is ready, never on the candidate execution chain. The Design Tree and the thumbnails
- * show the projection cache's drawings instead (`modelThumbnails`, #367): nothing is looked up here for them.
+ * shows the projection cache's drawings instead (`modelThumbnails`, #367) and looks nothing up here.
  */
 export function useRetainedModelPreview(source: ModelSourceDto | null, ready: boolean,
   capture: () => Promise<Blob | null>, current: () => ModelSourceDto | null) {

@@ -13,7 +13,7 @@ import { useT } from "../../i18n/useT";
 import { CURRENT, type GrowthTree, type TreeNode } from "./model";
 import { DESIGN_TREE_UNSYNCED, useRecordAndContinue, type DesignTreeData } from "./useDesignTree";
 import { refusalWords, whenText, type TreeWords } from "./words";
-import { ModelThumbnail } from "../artifacts/ModelThumbnail";
+import { ProjectionThumbnail } from "../artifacts/ModelThumbnail";
 import { nodeModelSource } from "./previews";
 
 export function DesignTreeDetails({ tree, node, words, data, confirmAccept, onConfirmAccept, onClose, onView, onRecordEdits = null }: {
@@ -115,7 +115,7 @@ export function DesignTreeDetails({ tree, node, words, data, confirmAccept, onCo
       <button type="button" className="design-tree-inspector__close" aria-label={t("designTree.action.close")} onClick={onClose}>×</button>
     </div>
     <div className="design-tree-inspector__body">
-      {(node.kind === "stage" || node.kind === "candidate" || node.kind === "current") && <ModelThumbnail source={source} />}
+      {(node.kind === "stage" || node.kind === "candidate" || node.kind === "current") && <ProjectionThumbnail source={source} />}
       {node.kind !== "pending" && node.summary && <p className="design-tree-inspector__summary">{node.summary}</p>}
       {(node.candidate?.blockedBy.length ?? 0) > 0 && <p className="design-tree-inspector__warning" data-tone="violated" role="note">
         <span aria-hidden="true">!</span> {t("designTree.review.note", { count: node.candidate!.blockedBy.length })}</p>}

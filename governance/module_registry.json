@@ -4428,6 +4428,7 @@
         "projection_key",
         "projection_spec",
         "ProjectionQueue",
+        "open_projections",
         "tree_model_sources",
         "StatusTable",
         "draw_model_view",

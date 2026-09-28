@@ -10,7 +10,7 @@ from archflow.project.index import IndexUnavailable
 from ..application.artifacts import ModelSource
 from ..application.binding import bound_project
 from ..application.projections import (
-    MODEL_LINES, PNG_MEDIA_TYPE, ProjectionError, ProjectionQueue, projection_queue, projection_spec,
+    MODEL_LINES, PNG_MEDIA_TYPE, ProjectionError, ProjectionQueue, open_projections, projection_spec,
 )
 from ..transport.errors import StudioError
 from ..transport.projections import ProjectionStatusDto, projection_status_dto
@@ -34,7 +34,7 @@ def projections_of(state) -> ProjectionQueue:
         if getattr(state, "projections_closed", False):
             raise IndexUnavailable("the projection queue has stopped")
         if state.projections is None:
-            state.projections = projection_queue(binding)
+            state.projections = open_projections(binding)
         return state.projections
 
 
