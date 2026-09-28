@@ -685,8 +685,9 @@ class ProposalDto(BaseModel):
 
     proposal_id: str = Field(alias="proposalId")
     status: Literal["proposed", "conflict"] = Field(
-        description="conflict means the change reaches something the "
-        "utterance asked to keep; it is still a proposal, never an execution",
+        description="conflict means the change reaches something it was asked "
+        "to keep (keep, or a keep clause in the words); it is still a proposal, "
+        "never an execution",
     )
     base_state_digest: str = Field(
         alias="baseStateDigest",

@@ -82,10 +82,10 @@ def start_candidate(
         raise StudioError(
             409,
             "PROPOSAL_NOT_RUNNABLE",
-            f"proposal {proposal_id} conflicts with what the utterance asked "
-            f"to keep ({', '.join(proposal.impact.conflicts)}). Resolve the "
-            "conflict and propose again; the studio never runs a change past "
-            "a protection the user named.",
+            f"proposal {proposal_id} would change what it was asked to keep "
+            f"({', '.join(proposal.impact.conflicts)}). Nothing ran: take those "
+            "refs out of keep, or propose a change that does not reach them; "
+            "the studio never runs a change past a protection that was named.",
         )
     binding = bound_project(state)
     projection = project_state(binding, run_id=proposal.source_run_id, source_stage_ref=proposal.source_stage_ref)

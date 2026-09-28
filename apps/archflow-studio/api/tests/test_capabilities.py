@@ -551,7 +551,11 @@ class CapabilityRunTestCase(unittest.TestCase):
         )
         self.assertEqual(refused.status_code, 409, refused.text)
         self.assertEqual(refused.json()["code"], "PROPOSAL_NOT_RUNNABLE")
-        self.assertIn("keep", refused.json()["detail"])
+        detail = refused.json()["detail"]
+        self.assertIn("keep", detail)
+        self.assertIn("entity:small-house-main", detail, "the kept ref the change reaches is named")
+        # #404 F17: the refs came from the request's keep list; no utterance asked to keep them.
+        self.assertNotIn("utterance", detail)
         self.assertEqual(self.runs(), before, "a refused change leaves no run behind")
 
     def test_a_stale_base_runs_nothing(self) -> None:
