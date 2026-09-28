@@ -19,8 +19,12 @@ against geometry of the record the script never reached, and refused at the
 script line in construction words. Lowering runs under the script's deadline.
 The report's bounds are what the model view will predict for the rows the
 script leaves: the record's rows overlaid with the script's, produced for the
-reported elements and every element they mention (supports, cutters, hosts) -
-never the whole project, which is neither applied nor validated here.
+reported elements, the hosts that cut them and every element they mention
+(supports, cutters, hosts) - never the whole project, which is neither applied
+nor validated here. A cut whose result those predicted bounds cannot follow
+would fail when the candidate is exported, so where the script made, changed,
+cut or uncut its host or one of its cutters it is refused at the line of the
+cut that made it.
 
 ``geometry_view`` is the other direction: what a record's geometry is, per
 component, in the same words (form, bounds, cuts) and without producers.
@@ -33,6 +37,7 @@ from dataclasses import dataclass, field, replace
 from types import MappingProxyType
 from typing import Any, Mapping
 
+from archflow.adapters.cad_program import DifferenceBoundsError
 from archflow.state.state_record import StateRecord
 from monkeyarch.capabilities.element_producers import (
     ElementProducerError,
@@ -120,6 +125,8 @@ class _Lowering:
         self.survivors = [shape for shape in session.shapes if shape.deleted_line is None]
         self._voids: dict[Shape, list[str]] = {}
         self._labels: dict[str, str] = {}
+        # Element id -> the shape the script made, changed, cut or uncut there (``check_relations``).
+        self.touched: dict[str, Shape] = {}
 
     def error(self, line: int | None, message: str) -> ConstructionError:
         return _statement_error(self.lines, line, message)
@@ -267,6 +274,7 @@ class _Lowering:
             else:
                 stands[element_id] = datum_targets(shape.lowered(self.element_id_of)[1])  # type: ignore[attr-defined]
             touched[element_id] = shape
+        self.touched = touched
 
         def refuse(element_id: str, message: str) -> ConstructionError:
             return self.error(touched[element_id].line, message)
@@ -399,14 +407,16 @@ class _Lowering:
         if not within_reach(box):
             raise self.error(shape.line, f"{shape.label()} reaches beyond 100 000 m from the project origin")
 
-    def report_boxes(self, entities: list[dict], removed: list[str]) -> dict[str, Box | None] | None:
-        """The bounds of the reported elements as the model view will predict them for the rows the script leaves.
+    def production(self, entities: list[dict], removed: list[str]) -> tuple[tuple, Any, dict] | None:
+        """The rows the script leaves, produced as the model view will predict them: (the rows in production order,
+        the context they were produced in, what each produced).
 
         The rows are the record's overlaid with the script's (fields merged over the existing entity, as the edit
-        path merges them); produced, in production order, are the reported elements and every element they
-        mention, directly or not - what they stand on, cut and are placed on - never the whole project, which is
-        neither applied nor validated here (the edit path does that once the proposal is placed). None when the
-        rows cannot be produced together; the edit path then says why.
+        path merges them); produced, in production order, are the script's elements, the hosts that cut them (a
+        changed cutter changes its host's cut) and every element they mention, directly or not - what they stand
+        on, cut and are placed on - never the whole project, which is neither applied nor validated here (the edit
+        path does that once the proposal is placed). None when the rows cannot be produced together; the edit
+        path then says why.
         """
 
         world = self.world
@@ -426,8 +436,11 @@ class _Lowering:
                 fields_by_id[element_id] = fields
             return fields_by_id[element_id]
 
+        seeds = dict.fromkeys(script)
+        for element_id in script:
+            seeds.update(dict.fromkeys(host for host in world.void_hosts.get(element_id, ()) if host not in gone))
         needed: dict[str, None] = {}
-        pending = list(script)
+        pending = list(seeds)
         while pending:
             element_id = pending.pop()
             if element_id in needed:
@@ -454,7 +467,99 @@ class _Lowering:
                 produced[row.element_id] = produce_rows((row,), context)[0]
             except _PRODUCTION_ERRORS:
                 continue
-        return _boxes_of(ordered, context, produced)
+        return ordered, context, produced
+
+    # ---- cuts the predicted bounds cannot follow
+    def check_cuts(self, rows: tuple, context: Any, produced: dict, refused: set[str]) -> None:
+        """Refuse a cut whose result the predicted bounds cannot follow, where the script reached it.
+
+        ``refused`` are the hosts whose cut the prediction refused. One is the script's to fix when the script
+        made, changed, cut or uncut it or one of its cutters; it is refused at the line of the cut that made the
+        refused relation (else the line that changed one of them), naming the cutters the prediction refuses:
+        each one it refuses alone, else those it refuses only together. A host the script never reached keeps
+        its unknown bounds, as the model view has them; so does one refused for a reason that is no cut's.
+        """
+
+        row_of = {row.element_id: row for row in rows}
+        found: list[tuple[int, str]] = []
+        for host in sorted(refused):
+            voids = tuple(sorted(row_of[host].references.get("voids") or ()))
+            involved = [self.touched[element_id].line for element_id in (host, *voids) if element_id in self.touched]
+            if not involved or not voids or any(void not in produced for void in voids):
+                continue
+            self.clock(min(involved))
+            culprits = self.refused_cutters(row_of[host], voids, context, produced, min(involved))
+            if culprits is not None:
+                found.append(self.cut_refusal(host, voids, *culprits))
+        if found:
+            raise self.error(*min(found))
+
+    def refused_cutters(self, row: Any, voids: tuple[str, ...], context: Any, produced: dict,
+                        line: int) -> tuple[tuple[str, ...], bool, bool] | None:
+        """(the cutters the prediction refuses to take out of ``row``'s host, whether only together, whether they
+        miss it): each cutter it refuses alone, missers first, else all of them. None when it refuses the host
+        without its cutters as well, or the host cannot be produced so, which is no cut's doing."""
+
+        def refusal(kept: tuple[str, ...]) -> DifferenceBoundsError | None:
+            self.clock(line)
+            references = {key: value for key, value in row.references.items() if key != "voids"}
+            if kept:
+                references["voids"] = list(kept)
+            element = produce_rows((replace(row, references=references),), context)[0]
+            try:
+                object_bounds((*(op for void in kept for op in produced[void].operations), *element.operations),
+                              (*(item for void in kept for item in produced[void].bindings), *element.bindings),
+                              context)
+            except DifferenceBoundsError as exc:
+                return exc
+            return None
+
+        try:
+            if refusal(()) is not None:
+                return None
+            alone = {void: found for void in voids if (found := refusal((void,))) is not None}
+        except ConstructionError:
+            raise  # the deadline
+        except _PRODUCTION_ERRORS:
+            return None
+        if not alone:
+            return voids, True, False
+        missing = tuple(void for void, found in alone.items() if found.disjoint)
+        return missing or tuple(alone), False, bool(missing)
+
+    def cut_refusal(self, host: str, voids: tuple[str, ...], culprits: tuple[str, ...], together: bool,
+                    missing: bool) -> tuple[int, str]:
+        """The line and the sentence of one refused cut, in the ids the agent knows.
+
+        The line is the ``cut()`` in this script that made a refused relation - the one that joined the last
+        cutter for cutters refused only together, else the first - or, when no cut here made one, the first line
+        that changed a refused cutter or the host, else another of its cutters.
+        """
+
+        shape = self.touched.get(host)
+        cut_at = {} if shape is None else {self.void_key(cutter): line for cutter, line in shape.cut_lines.items()}
+
+        def changed(*element_ids: str) -> int:
+            """The first line that changed one of these, else one of the host's other cutters (one of them did)."""
+
+            lines = [self.touched[element_id].line for element_id in element_ids if element_id in self.touched]
+            return min(lines) if lines else min(self.touched[void].line for void in voids if void in self.touched)
+
+        target = self.label_of(host)
+        if together:
+            made = [cut_at[cutter] for cutter in culprits if cutter in cut_at]
+            line = max(made) if made else changed(*culprits, host)
+            named = [self.label_of(cutter) for cutter in culprits]
+            subject = (" and ".join(named) if len(named) == 2 else short(_compact(named), 120)) + " together"
+            them = "them"
+        else:
+            line, first = min((cut_at.get(cutter) or changed(cutter, host), cutter) for cutter in culprits)
+            subject = them = self.label_of(first)
+            if missing:
+                return line, (f"{subject} does not reach {target}, so the cut would remove nothing; move {subject} "
+                              f"onto {target}, or uncut it")
+        return line, (f"{subject} would cut away a whole corner or side of {target}, which a cut cannot do yet; keep "
+                      f"{them} within the outer extent of {target} for now, or reshape {target} itself")
 
     def lower(self) -> ConstructionResult:
         self.check_relations()
@@ -531,7 +636,11 @@ class _Lowering:
                 uncut.append(identifier)  # type: ignore[arg-type]
         if measured:
             self.clock(measured[0][0]["line"])
-            boxes = self.report_boxes(entities, removed)
+            production = self.production(entities, removed)
+            refused: set[str] = set()
+            boxes = None if production is None else _boxes_of(*production, refused=refused)
+            if refused:
+                self.check_cuts(*production, refused)  # type: ignore[misc]
             for row, element_id in measured:
                 row["bounds"] = _box_list(boxes.get(element_id)) if boxes is not None else None
             self.clock(measured[0][0]["line"])
@@ -579,9 +688,10 @@ def _element_boxes(world: World) -> dict[str, Box | None]:
     return _boxes_of(*world.production())
 
 
-def _boxes_of(rows, context, produced: dict) -> dict[str, Box | None]:
+def _boxes_of(rows, context, produced: dict, refused: set[str] | None = None) -> dict[str, Box | None]:
     """The predicted bounds of the produced elements, each element's cuts applied; ``None`` where the prediction
-    fails, and no entry for an element that did not produce."""
+    fails, and no entry for an element that did not produce. ``refused``, when given, gains every element whose
+    cut the prediction refused (``DifferenceBoundsError``)."""
 
     voids_of = {row.element_id: tuple(row.references.get("voids") or ()) for row in rows}
     element_bounds: dict[str, Box | None] = {}
@@ -595,8 +705,10 @@ def _boxes_of(rows, context, produced: dict) -> dict[str, Box | None]:
         try:
             boxes = object_bounds(tuple(operations), tuple(bindings), context)
             element_bounds[element_id] = union(box for object_id, box in boxes.items() if object_id in own)
-        except (ValueError, KeyError, TypeError, IndexError, ArithmeticError):
+        except (ValueError, KeyError, TypeError, IndexError, ArithmeticError) as exc:
             element_bounds[element_id] = None
+            if refused is not None and isinstance(exc, DifferenceBoundsError):
+                refused.add(element_id)
     return element_bounds
 
 

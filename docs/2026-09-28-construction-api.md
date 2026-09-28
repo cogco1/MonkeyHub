@@ -253,6 +253,14 @@ Results: §7, filled from the retained outputs.
   once to place it; that cost grows with the project (about 0.8 s at 3 000 boxes).
 - Editing an unnamed cutter's statement makes a new cutter while the old one keeps cutting the
   redefined host; name the cutters you will change, or `uncut(host)` first. The vocabulary says so.
+- A cut the bounds that certify an export cannot follow yet (a cutter that takes away a whole corner
+  or side of its host, alone or with its other cutters, or one that misses its host) is refused at the
+  line of the `cut` that made it, naming both ids, when the script made, changed, cut or uncut the
+  host or one of its cutters: keep the cutter within the host's outer extent, or reshape the host
+  itself. A notch or recess that leaves every corner of the host standing is accepted. Such a cut
+  already in the record, where the script reaches neither the host nor its cutters, only leaves that
+  host's bounds unknown (`null`), as the model view has them. Kernel-measured certification would
+  lift this.
 - The 5 s deadline is wall-clock time, so the heaviest valid scripts pass or fail with machine load.
 
 ## 7. Benchmark results

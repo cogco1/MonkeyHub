@@ -1137,6 +1137,104 @@ class RecessTests(ConstructionTestCase):
         ])
 
 
+def _block(identifier: str, profile: list, height: float, *, elevation: float = 0.0, voids: tuple = ()) -> tuple:
+    """A block of the record as a script leaves one: its component and its ``-body`` element."""
+
+    references: dict = {"base": {"level": "ground"}}
+    if voids:
+        references["voids"] = list(voids)
+    params: dict = {"profile": profile, "height": height}
+    if elevation:
+        params["elevation"] = elevation
+    return (Entity(identifier, "Component@1", {"intent": identifier}, parent_id="model"),
+            Entity(identifier + ELEMENT_SUFFIX, "Element@1", {"component_id": identifier, "producer": "prism",
+                                                              "references": references, "params": params},
+                   parent_id=identifier))
+
+
+class CutExtentTests(ConstructionTestCase):
+    """#419 final round: a cut whose result the bounds that certify an export cannot follow is refused at the line
+    of the cut that made it, while the script is still the agent's to fix; the candidate never fails for it later."""
+
+    MASS = "mass = extrude(rect(0, 0, 4, 4), 3)"
+    CORNER = "notch = extrude(rect(-1, -1, 2, 2), 5, at=-1)"
+    SQUARE = [[0, 0], [4, 0], [4, 4], [0, 4]]
+
+    def test_a_corner_notch_is_refused_at_the_line_of_its_cut(self) -> None:
+        for script, line in (
+            ("\n".join([self.MASS, self.CORNER, "cut(mass, notch)"]), 3),
+            # The cut made the relation; what later reshapes the host does not move the refusal off it.
+            ("\n".join([self.MASS, self.CORNER, "cut(mass, notch)", "set_height(mass, 4)"]), 3),
+            ("\n".join([self.MASS, "notch = extrude(rect(1, 1, 1, 1), 1)", "cut(mass, notch)",
+                        "move(notch, dx=-1.5, dz=-1.5)", "set_height(notch, 5)"]), 3),
+        ):
+            with self.subTest(script=script):
+                error = self.refused(script)
+                self.assertEqual((error.line, error.source_line), (line, "cut(mass, notch)"), error.message)
+                self.assertIn("notch would cut away a whole corner or side of mass, which a cut cannot do yet",
+                              error.message)
+                self.assertIn("keep notch within the outer extent of mass", error.message)
+
+    def test_a_notch_that_leaves_every_vertex_is_accepted_with_its_bounds(self) -> None:
+        record = _record()
+        result = _compile("\n".join([self.MASS, "notch = extrude(rect(1, -1, 2, 2), 5, at=-1)", "cut(mass, notch)"]),
+                          record)
+        report = {row["id"]: row for row in result.report}
+        self.assertEqual(report["mass"]["bounds"], [[0.0, 0.0, 0.0], [4.0, 3.0, 4.0]])
+        self.assertEqual(report["mass"]["cuts"], ["notch"])
+        self.assertEqual(_view(_apply(record, result))["mass"]["bounds"], report["mass"]["bounds"])
+
+    def test_the_cutter_the_bounds_refuse_is_named_among_the_others(self) -> None:
+        # Four cutters in a loop; only the first takes a whole corner, and it is the one named.
+        script = "\n".join(["mass = extrude(rect(0, 0, 12, 8), 3)", "for i in range(4):",
+                            "    w = extrude(rect(-0.5 + 3 * i, -0.2, 1.2, 0.6), 4, at=-0.5)", "    cut(mass, w)"])
+        error = self.refused(script)
+        self.assertEqual((error.line, error.source_line), (4, "cut(mass, w)"))
+        self.assertIn("w-1 would cut away a whole corner or side of mass", error.message)
+        for other in ("w-2", "w-3", "w-4"):
+            self.assertNotIn(other, error.message)
+
+    def test_cutters_refused_only_together_are_named_together_at_the_cut_that_joined_them(self) -> None:
+        # Each takes one end of the same corner edge: either alone leaves it, both together take it away.
+        error = self.refused("\n".join([self.MASS, "a = extrude(rect(-1, -1, 2, 2), 2, at=-1)",
+                                        "b = extrude(rect(-1, -1, 2, 2), 2, at=2)", "cut(mass, a)", "cut(mass, b)"]))
+        self.assertEqual((error.line, error.source_line), (5, "cut(mass, b)"))
+        self.assertIn("a and b together would cut away a whole corner or side of mass", error.message)
+
+    def test_a_cutter_that_misses_its_host_is_refused_at_its_cut(self) -> None:
+        error = self.refused("\n".join([self.MASS, "away = extrude(rect(10, 10, 1, 1), 1)", "cut(mass, away)"]))
+        self.assertEqual((error.line, error.source_line), (3, "cut(mass, away)"))
+        self.assertIn("away does not reach mass, so the cut would remove nothing", error.message)
+
+    def test_existing_geometry_is_refused_where_the_script_changed_it(self) -> None:
+        record = _record(*_block("mass", self.SQUARE, 3.0), *_block("c", [[1, 1], [2, 1], [2, 2], [1, 2]], 1.0))
+        record = _apply(record, _compile("cut(get('mass'), get('c'))", record))
+        cases = (
+            # A new cutter cut into existing geometry: the cut's line.
+            ("x = 1\n" + self.CORNER + "\ncut(get('mass'), notch)", 3, "notch", "cut(get('mass'), notch)"),
+            # An existing cutter moved onto a corner: no cut here made the relation, so the line that moved it.
+            ("x = 1\nmove(get('c'), dx=-1.5, dz=-1.5)\nset_height(get('c'), 5)", 3, "c", "set_height(get('c'), 5)"),
+        )
+        for script, line, cutter, source in cases:
+            with self.subTest(script=script):
+                error = self.refused(script, record)
+                self.assertEqual((error.line, error.source_line), (line, source), error.message)
+                self.assertIn(f"{cutter} would cut away a whole corner or side of mass", error.message)
+
+    def test_a_refusal_among_geometry_the_script_never_reached_keeps_its_bounds_unknown(self) -> None:
+        record = _record(*_block("mass", self.SQUARE, 3.0, voids=("notch-body",)),
+                         *_block("notch", [[-1, -1], [1, -1], [1, 1], [-1, 1]], 5.0, elevation=-1.0))
+        self.assertIsNone(_view(record)["mass"]["bounds"])
+        result = _compile("block = extrude(rect(1, 1, 1, 1), 1, at=top(get('mass')))", record)
+        self.assertEqual(result.report[0]["bounds"], [[1.0, 3.0, 1.0], [2.0, 4.0, 2.0]])
+        # Changing the host or its cutter makes the refusal the script's, at the line that changed it.
+        for script in ("x = 1\nset_height(get('mass'), 3.5)", "x = 1\nset_height(get('notch'), 6)"):
+            with self.subTest(script=script):
+                error = self.refused(script, record)
+                self.assertEqual(error.line, 2, error.message)
+                self.assertIn("notch would cut away a whole corner or side of mass", error.message)
+
+
 class VocabularyTests(ConstructionTestCase):
     def test_the_vocabulary_passes_the_layer_rule_and_its_example_builds(self) -> None:
         contract = vocabulary()

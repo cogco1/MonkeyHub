@@ -142,6 +142,18 @@ class CadTranslationError(ValueError):
     """The program contains a construct the translator cannot express."""
 
 
+class DifferenceBoundsError(CadTranslationError):
+    """A ``boolean_difference`` whose bounds ``expected_object_bounds`` cannot determine analytically.
+
+    ``disjoint`` is true when a void's bounds miss the base's, so the difference
+    would remove nothing; otherwise the voids can alter an extremum of the base.
+    """
+
+    def __init__(self, message: str, *, disjoint: bool) -> None:
+        super().__init__(message)
+        self.disjoint = disjoint
+
+
 @dataclass(frozen=True, slots=True)
 class CadTranslation:
     script: str
@@ -1142,9 +1154,10 @@ def expected_object_bounds(program) -> dict[str, dict]:
             for cutter, (cutter_min, cutter_max) in cutters.items():
                 if any(cutter_max[axis] <= base_min[axis] or cutter_min[axis] >= base_max[axis]
                        for axis in range(3)):
-                    raise CadTranslationError(
+                    raise DifferenceBoundsError(
                         f"boolean difference {op_id}: void {cutter} removes nothing from {base}; "
-                        "their bounds do not overlap"
+                        "their bounds do not overlap",
+                        disjoint=True,
                     )
             # A base point strictly outside every void's closed bounds survives
             # the cut. Check voids together: separate cuts may jointly remove a
@@ -1167,10 +1180,11 @@ def expected_object_bounds(program) -> dict[str, dict]:
             if base in actual and keeps_every_extreme:
                 pass
             elif base in boxes:
-                raise CadTranslationError(
+                raise DifferenceBoundsError(
                     "boolean difference bounds are not analytically "
                     f"determined for {op_id}: cutters can alter a base extremum "
-                    "or its vertical-axis rotation"
+                    "or its vertical-axis rotation",
+                    disjoint=False,
                 )
             else:
                 # Other shapes can hold an extremum at a single point: accept only
@@ -1178,9 +1192,10 @@ def expected_object_bounds(program) -> dict[str, dict]:
                 for cutter, (cutter_min, cutter_max) in cutters.items():
                     if not all(base_min[axis] < cutter_min[axis] and cutter_max[axis] < base_max[axis]
                                for axis in range(3)):
-                        raise CadTranslationError(
+                        raise DifferenceBoundsError(
                             "boolean difference bounds are not analytically "
-                            f"determined for {op_id}: void {cutter} can alter a base extremum of {base}"
+                            f"determined for {op_id}: void {cutter} can alter a base extremum of {base}",
+                            disjoint=False,
                         )
             points[out] = list(points[base])
             counts[out] = 1

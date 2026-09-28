@@ -265,6 +265,13 @@ class ConstructionRefusalTestCase(ConstructionTestCase):
         self.assert_refused_at(body, 3, "cut(mass)")
         self.assertIn("cutter", body["message"])
 
+    def test_a_cut_an_export_could_not_certify_is_refused_at_its_line_before_any_candidate(self) -> None:
+        # A corner notch passes every relation check; the bounds that certify an export cannot follow it.
+        body = self.construct("mass = extrude(rect(0, 0, 6, 4), 3)\nnotch = extrude(rect(-1, -1, 2, 2), 5, at=-1)\n"
+                              "cut(mass, notch)", expect=422)
+        self.assert_refused_at(body, 3, "cut(mass, notch)")
+        self.assertIn("notch would cut away a whole corner or side of mass", body["message"])
+
     def test_a_refusal_from_the_record_is_answered_at_the_script_line_in_construction_words(self) -> None:
         # The record already has a solid standing on the top of ``lower``. A
         # script that turns ``lower`` into a cutter never reaches ``upper``, so

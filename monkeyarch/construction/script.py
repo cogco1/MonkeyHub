@@ -679,6 +679,7 @@ class Session:
 
     def _unlink_cut(self, host: Shape, cutter: Any) -> None:
         host.voids.pop(cutter, None)
+        host.cut_lines.pop(cutter, None)
         if isinstance(cutter, Shape):
             self.hosts_by_cutter.get(cutter, {}).pop(host, None)
 
@@ -1029,6 +1030,7 @@ class Session:
                 if len(host.voids) >= MAX_CUTTERS:
                     raise ShapeError(f"a shape can be cut by at most {MAX_CUTTERS} cutters")
                 self._link_cut(host, cutter)
+                host.cut_lines[cutter] = self.line
                 if host.is_new:
                     host.void_events.append(("cut", cutter, self.line))
             if host not in cutter.cut_into:

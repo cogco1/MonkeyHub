@@ -532,6 +532,7 @@
         "lift_to_base_level",
         "CadTranslation",
         "CadTranslationError",
+        "DifferenceBoundsError",
         "translate_step_import_to_rhino_python",
         "ROOT_LAYER"
       ],
@@ -555,7 +556,8 @@
         "an object carries its operation's statements as archflow:* user strings (wedge: low/high/axis/sense, where wedge_sense is the world-anchored rise direction +x|-x|+z|-z in the kernel plan; shell: thickness/kind); the value is written verbatim, geometry is never measured or recomputed to make one, and a statement naming a reserved identity key (component, object_ref, producer_op and the rest) fails CadTranslationError",
         "planar_surface preserves its explicitly closed profile and datum elevation with AddPlanarSrf, without extrusion or capping; analytic bounds retain the zero-thickness plane",
         "a difference keeps its base's predicted bounds when every base vertex survives outside every void's box, for any base whose points are its own vertices",
-        "a void whose box does not overlap its base's box is refused by name: it removes nothing"
+        "a void whose box does not overlap its base's box is refused by name: it removes nothing",
+        "a boolean_difference whose bounds cannot be determined analytically fails DifferenceBoundsError, a CadTranslationError that says whether a void misses its base"
       ],
       "status": "canonical",
       "tests": [
@@ -8099,7 +8101,8 @@
         "Lowering runs under the script's deadline, and the shapes a script leaves hold at most 100 000 points.",
         "Every top a shape reads during the script resolves through the script's model, with an explicit stack: the current version of what the script changed or redefined, an element whose supports were touched produced again, else what the record publishes; a top that leads back to itself is refused.",
         "The report's bounds are what the model view will predict for the rows the script leaves: the record's rows overlaid with the script's, produced for the reported elements and every element they mention (supports, cutters, hosts) - never the whole project, which is neither applied nor validated for the report.",
-        "top() of existing geometry stands on what publishes a horizontal top: a prism drawn in plan or any wall, moved or not; a cutter's top carries nothing"
+        "top() of existing geometry stands on what publishes a horizontal top: a prism drawn in plan or any wall, moved or not; a cutter's top carries nothing",
+        "A cut the predicted export bounds cannot follow (it misses its host, or takes away a whole corner or side of it, alone or with its host's other cutters) is refused at the line of the cut that made it, naming the cutters the prediction refuses, when the script made, changed, cut or uncut the host or one of its cutters; among geometry the script never reached it only leaves the bounds unknown."
       ],
       "status": "canonical",
       "tests": [

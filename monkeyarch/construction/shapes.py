@@ -619,7 +619,8 @@ class Shape:
 
     ``voids`` are its cutters as the script knows them (handles, or element ids of the record);
     ``void_events`` replay this script's cuts on a new shape over what an existing id it redefines
-    already cuts (``cut``, ``uncut`` of one cutter, ``clear`` for all).
+    already cuts (``cut``, ``uncut`` of one cutter, ``clear`` for all). ``cut_lines`` is the line of
+    the ``cut()`` in this script that made each cut it has now, new shape or existing geometry.
     """
 
     word = "shape"
@@ -634,6 +635,7 @@ class Shape:
         self.cut_into: dict[Shape, None] = {}  # hosts it was cut into, in order (an unnamed cutter is named after the first)
         self.voids: dict[Any, None] = {}
         self.void_events: list[tuple[str, Any, int]] = []
+        self.cut_lines: dict[Any, int] = {}
         self.deleted_line: int | None = None
         self.made_by: tuple[str, int] | None = None  # (the text of the statement that made it, how many it made before)
 

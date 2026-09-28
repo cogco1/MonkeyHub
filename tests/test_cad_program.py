@@ -9,6 +9,7 @@ from unittest.mock import patch
 
 from archflow.adapters.cad_program import (
     CadTranslationError,
+    DifferenceBoundsError,
     expected_object_bounds,
     expected_object_semantics,
     translate_to_rhino_python,
@@ -501,8 +502,10 @@ class ExpectedBoundsTest(unittest.TestCase):
         with self.assertRaisesRegex(
             CadTranslationError,
             "can alter a base extremum",
-        ):
+        ) as caught:
             expected_object_bounds(build)
+        self.assertIsInstance(caught.exception, DifferenceBoundsError)
+        self.assertFalse(caught.exception.disjoint)
 
     def test_a_notch_that_leaves_every_vertex_keeps_the_bounds(self):
         # The apex edge is notched in its middle; both apex vertices survive, so +Z does.
@@ -545,8 +548,11 @@ class ExpectedBoundsTest(unittest.TestCase):
         base = op("base", "solid", ["base-object"], origin=[0.0, 0.0, 0.0], size=[10.0, 10.0, 10.0])
         away = op("away", "solid", ["away-object"], origin=[20.0, 0.0, 0.0], size=[2.0, 2.0, 2.0])
         cut = op("cut", "boolean_difference", ["cut-object"], ["away-object", "base-object"], base_index=1)
-        with self.assertRaisesRegex(CadTranslationError, "void away-object removes nothing from base-object"):
+        with self.assertRaisesRegex(CadTranslationError, "void away-object removes nothing from base-object") as caught:
             expected_object_bounds(program(base, away, cut))
+        # Typed, so a caller can say why in its own words without reading the sentence.
+        self.assertIsInstance(caught.exception, DifferenceBoundsError)
+        self.assertTrue(caught.exception.disjoint)
 
     def test_wall_end_door_keeps_bounds_with_a_header_after_rotation(self):
         # A door reaches the floor and wall end, while the header keeps
@@ -616,8 +622,10 @@ class ExpectedBoundsTest(unittest.TestCase):
                        count=1, center=[0.0, 0.0, 0.0], angle_step_degrees=0.0,
                        start_angle_degrees=45.0),
                 )
-                with self.assertRaisesRegex(CadTranslationError, "can alter a base extremum"):
+                with self.assertRaisesRegex(CadTranslationError, "can alter a base extremum") as caught:
                     expected_object_bounds(build)
+                self.assertIsInstance(caught.exception, DifferenceBoundsError)
+                self.assertFalse(caught.exception.disjoint)
 
     def test_bounds_cover_exactly_the_physical_set(self):
         build = program(

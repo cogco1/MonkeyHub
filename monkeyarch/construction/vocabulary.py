@@ -228,8 +228,9 @@ def vocabulary() -> dict[str, Any]:
                        "and one sentence; inside a function it adds the lines it was called from. What the "
                        "result would leave wrong in the project - a cutter with cutters of its own, something "
                        "standing on a cutter's top, a shape standing on its own top, deleted geometry that "
-                       "something still cuts or stands on - is refused after the whole script has run, at the "
-                       "line that made it so."),
+                       "something still cuts or stands on, a cut that misses its host or would take away a whole "
+                       "corner or side of it - is refused after the whole script has run, at the line that made "
+                       "it so."),
         },
         "language": {
             "summary": "A small Python subset, interpreted and never executed.",
