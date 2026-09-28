@@ -1,27 +1,4 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": [
-    {
-      "id": "GH-397",
-      "lanes": [
-        {
-          "id": "project-bytes",
-          "status": "active",
-          "branch": "codex/397-desktop-project-bytes",
-          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-397-desktop-project-bytes",
-          "base_ref": "1bea11da",
-          "contributor": "Claude",
-          "reviewer": "Claude root task",
-          "handoff": "cloud session; master integrates",
-          "modules": [
-            "hub.shell"
-          ],
-          "write_scope": [
-            "apps/monkeyhub/desktop/tests/"
-          ],
-          "depends_on": []
-        }
-      ]
-    }
-  ]
+  "items": []
 }
