@@ -592,6 +592,18 @@ const addAttachments = async (files) => {
   await page.getByRole("menuitem", { name: "Add attachments", exact: true }).click();
   await (await chooser).setFiles(files);
 };
+/**
+ * #411: the address bar follows the selected surface from an effect after render, so a
+ * DOM condition can hold before the URL does. Wait for the URL itself; a wrong one still fails.
+ */
+const urlParamIs = async (name, expected, message) => {
+  try {
+    await page.waitForFunction(([key, value]) => new URLSearchParams(location.search).get(key) === value, [name, expected], { timeout: 5000 });
+  } catch (error) {
+    assert.equal(new URL(page.url()).searchParams.get(name), expected, message);
+    throw error;
+  }
+};
 const contextReady = () => page.waitForFunction(() => document.querySelector(".chat-composer")?.dataset.context === "ready");
 const waitWorkspace = async (kind = "arch") => {
   await visibleWorkspace().locator(`[data-project-surface="${kind}"]:not([hidden])`).waitFor();
@@ -1425,7 +1437,7 @@ try {
   await study.getByRole("button", { name: "View", exact: true }).click();
   await visibleWorkspace().locator('[data-project-surface="tree"]:not([hidden])').waitFor();
   assert.equal(await page.getByRole("button", { name: "Design tree", exact: true }).getAttribute("aria-pressed"), "true");
-  assert.equal(new URL(page.url()).searchParams.get("view"), "tree");
+  await urlParamIs("view", "tree");
   await viewCandidate("cand-A-1");
   const originalPanelWidth = Number(await page.locator('.chat-resizer').getAttribute('aria-valuenow'));
   await page.setViewportSize({ width: 1920, height: 960 });
@@ -1494,7 +1506,7 @@ try {
     await waitWorkspace(kind);
     if (kind === "board") assert.equal(await visibleWorkspace().getByLabel("Board title", { exact: true }).inputValue(), "Board A retained");
     if (kind === "drawing") {
-      assert.equal(new URL(page.url()).searchParams.get("view"), "drawing");
+      await urlParamIs("view", "drawing");
       assert.equal(await visibleWorkspace().locator('[data-project-surface="arch"]').isVisible(), false);
       assert.equal(await visibleWorkspace().locator('[data-project-surface="board"]').isVisible(), false);
     }
@@ -1517,7 +1529,7 @@ try {
     assert.equal(await drawingTool.getAttribute("aria-pressed"), "true");
     assert.equal(await surface.getAttribute("aria-pressed"), "false");
     assert.equal(await drawingTool.getAttribute("title"), `Close Drawings and return to ${label}`);
-    assert.equal(new URL(page.url()).searchParams.get("runtimeId"), runtimeA, "Drawing stays on this project's runtime");
+    await urlParamIs("runtimeId", runtimeA, "Drawing stays on this project's runtime");
     assert.equal(await page.locator(".chat-header__project").innerText(), "Project A");
     assert.equal(await visibleWorkspace().evaluate((element) => element.switchMarker), "retained",
       "Drawing is the same mounted project workspace, not a new project context");
@@ -1533,8 +1545,8 @@ try {
     await waitWorkspace(kind);
     assert.equal(await surface.getAttribute("aria-pressed"), "true", `leaving Drawing returns to ${label}`);
     assert.equal(await drawingTool.getAttribute("aria-pressed"), "false");
-    assert.equal(new URL(page.url()).searchParams.get("view"), kind);
-    assert.equal(new URL(page.url()).searchParams.get("runtimeId"), runtimeA);
+    await urlParamIs("view", kind);
+    await urlParamIs("runtimeId", runtimeA);
     if (kind === "board") assert.equal(await visibleWorkspace().getByLabel("Board title", { exact: true }).inputValue(), "Board A retained");
   }
   assert.deepEqual(await editingBase(), baseBeforeDrawing, "visiting Drawing leaves the editing base and the viewed model as they were");
@@ -1876,7 +1888,7 @@ try {
   await boardModes.getByRole("radio", { name: "Layout", exact: true }).click();
   const layoutTitle = visibleWorkspace().getByLabel("Publication title", { exact: true });
   await layoutTitle.waitFor();
-  assert.equal(new URL(page.url()).searchParams.get("view"), "publish");
+  await urlParamIs("view", "publish");
   assert.equal(await page.getByRole("button", { name: "Board", exact: true }).getAttribute("aria-pressed"), "true", "Board stays pressed in Layout");
   assert.equal(await boardModes.getByRole("radio", { name: "Layout", exact: true }).getAttribute("aria-checked"), "true");
   await layoutTitle.fill("Layout B draft");
@@ -2556,7 +2568,7 @@ try {
   await waitWorkspace();
   await page.getByRole("button", { name: "Fabrication", exact: true }).click();
   await page.waitForFunction(() => document.querySelector("iframe:not([hidden])")?.src.includes("view=fab"));
-  assert.equal(new URL(page.url()).searchParams.has("runtimeId"), false);
+  await urlParamIs("runtimeId", null);
   await page.reload();
   await page.waitForFunction(() => document.querySelector("iframe:not([hidden])")?.src.includes("view=fab"));
   assert.equal(await page.locator('.chat-project[data-selected="true"] .chat-project__name').innerText(), "Project B");
@@ -2593,7 +2605,7 @@ try {
   await contextReady();
   assert.equal(await visibleWorkspace().locator(".stage canvas").count(), 0, "Board-first context uses the same session without opening Arch");
   assert.equal(await page.getByRole("button", { name: "Board", exact: true }).getAttribute("aria-pressed"), "true");
-  assert.equal(new URL(page.url()).searchParams.get("view"), "board");
+  await urlParamIs("view", "board");
 
   // archive export and restore dialogs show the summary — a whole project
   // leaves and comes back as one file, and each dialog states what that file
