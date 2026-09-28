@@ -26,7 +26,8 @@
             "governance/module_registry.json",
             "pyproject.toml",
             "apps/monkeyhub/api/tests/",
-            "tests/"
+            "tests/",
+            "CONTRIBUTING.md"
           ],
           "depends_on": []
         }
