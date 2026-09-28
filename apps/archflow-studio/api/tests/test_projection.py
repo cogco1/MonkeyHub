@@ -870,6 +870,32 @@ class BoundElementTests(unittest.TestCase):
         self.assertEqual(state.status_code, 200, state.text)
         return client, state.json()
 
+    def test_rows_carry_the_params_and_references_a_semantic_edit_replaces(self) -> None:
+        # #404 F4: numericFields and drawnShape are resolved values. An agent that
+        # copied them into semanticEdit's params wrote a bound height as a number
+        # and counted the elevation twice (the work plane already includes it).
+        payload = _bound_payload()
+        base = next(item for item in payload["entities"] if item["entity_id"] == "portico-base")
+        base["fields"]["params"]["elevation"] = 0.5
+        client, state = self._project(payload)
+        elements = {item["elementId"]: item for item in state["elements"]}
+        cornice, base_row = elements["portico-cornice"], elements["portico-base"]
+        self.assertEqual(cornice["numericFields"]["height"], 2.4)
+        self.assertEqual(cornice["params"], {"profile": [[0, 0], [4, 0], [4, 2], [0, 2]], "height": "@bay"})
+        self.assertEqual(cornice["references"], {"base": {"datum": "portico-base-top"}})
+        self.assertEqual(base_row["drawnShape"]["workPlane"]["origin"], [0, 0.5, 0], "resolved: elevation included")
+        self.assertEqual(base_row["params"], {"profile": [[0, 0], [4, 0], [4, 2], [0, 2]], "height": 0.6, "elevation": 0.5})
+        self.assertEqual(base_row["references"], {"base": {"level": "level-ground"}})
+        # Sending the authored params back with one change keeps everything else as it was.
+        response = client.post("/api/proposals", json={
+            "stateDigest": state["stateDigest"],
+            "semanticEdit": {"summary": "Taller base, same position.", "entities": [{
+                "entity_id": "portico-base", "fields": {"params": {**base_row["params"], "height": 0.9}}}]},
+        })
+        self.assertEqual(response.status_code, 201, response.text)
+        [edited] = response.json()["change"]["edits"]["entities"]
+        self.assertEqual(edited["fields"]["params"], {"profile": [[0, 0], [4, 0], [4, 2], [0, 2]], "height": 0.9, "elevation": 0.5})
+
     def test_a_bound_field_shows_the_kernels_evaluated_value(self) -> None:
         client, payload = self._project(_bound_payload())
         elements = {item["elementId"]: item for item in payload["elements"]}

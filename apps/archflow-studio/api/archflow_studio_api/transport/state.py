@@ -69,7 +69,12 @@ class ComponentNodeDto(BaseModel):
 
 
 class DrawnShapeDto(BaseModel):
-    """A recorded face/prism for local preview, in building-world Y-up metres."""
+    """A recorded face/prism for local preview, in building-world Y-up metres.
+
+    Resolved, not authored: bindings are evaluated and the base datum, the
+    reference offset and the elevation are already in the work plane. It is
+    never a template for ``fields.params``; ``ElementDto.params`` is.
+    """
 
     model_config = ConfigDict(populate_by_name=True, frozen=True, allow_inf_nan=False)
 
@@ -111,10 +116,21 @@ class ElementDto(BaseModel):
     producer: str
     # Authored producer params keep the type they were written with; a count
     # that was authored as 4 must not come back as 4.0.
-    numeric_fields: dict[str, int | float] = Field(alias="numericFields")
+    numeric_fields: dict[str, int | float] = Field(alias="numericFields", description=(
+        "The scalars the producer reads, resolved: literals as authored, '@key' bindings evaluated. "
+        "Read-only facts; edit through params."))
     drawn_shape: DrawnShapeDto | None = Field(alias="drawnShape", default=None)
     drawn_shape_reason: str | None = Field(alias="drawnShapeReason", default=None)
     elevation: ElementElevationDto | None = None
+    # What a semantic edit replaces (#404 F4): copying the resolved values
+    # above wrote bindings as numbers and counted the elevation twice.
+    params: dict[str, Any] = Field(default_factory=dict, description=(
+        "fields.params exactly as authored: '@key' bindings kept, positions relative to the base reference. "
+        "A semanticEdit that supplies params replaces this whole object: start from this one and change "
+        "only what you mean to, never from numericFields or drawnShape."))
+    references: dict[str, Any] = Field(default_factory=dict, description=(
+        "fields.references exactly as authored (base, top, line, ...); a supplied references object "
+        "replaces this whole object too."))
 
 
 class ParameterDto(BaseModel):
@@ -395,6 +411,7 @@ def to_dto(projection: StateProjection, catalog: Catalog | None = None) -> State
     record = projection.record
     authored_components = {entity.entity_id: entity for entity in record.entities_of("Component@1")}
     drawn_shapes = _drawn_shapes(projection)
+    authored = {entity.entity_id: entity.fields for entity in record.entities_of("Element@1")}
     return StateProjectionDto(
         project_id=projection.project_id,
         published=project_version_dto(projection.head),
@@ -453,6 +470,8 @@ def to_dto(projection: StateProjection, catalog: Catalog | None = None) -> State
                 drawn_shape=drawn_shapes[element.element_id][0],
                 drawn_shape_reason=drawn_shapes[element.element_id][1],
                 elevation=drawn_shapes[element.element_id][2],
+                params=dict(authored[element.element_id].get("params") or {}),
+                references=dict(authored[element.element_id].get("references") or {}),
             )
             for element in projection.elements
         ],
