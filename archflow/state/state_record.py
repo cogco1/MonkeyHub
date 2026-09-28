@@ -669,6 +669,11 @@ def _entity_references(fields: Mapping[str, Any]) -> tuple[tuple[str, str, str],
                 target = target.removeprefix("entity:")
             out.append((key, "entity", target))
 
+    voids = fields.get("references", {}).get("voids")
+    if isinstance(voids, (list, tuple)):
+        # An element named as a void carves its host, so the host follows it (#419).
+        out.extend(("voids", "entity", target) for target in voids if isinstance(target, str))
+
     def walk(key: str, value: object) -> None:
         if not isinstance(value, Mapping):
             return

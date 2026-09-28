@@ -4073,7 +4073,8 @@
         "semantic edits check protected closure before and after the edit; a deleted entity releases its incident relationships, while remaining dangling references are refused",
         "a wall type supplies producer parameters and references, not a second instance store; changing a type or a bound parameter propagates to its instances",
         "Lock changes alter only existing Parameter.lock_authority; exact bases and ordinary value/dependency protections remain enforced, new downstream bindings are allowed, and only an explicit unlock permits detaching existing locked bindings",
-        "a record is a value: its readings (digest, state_digest, dependency_edges, resolve_element_bindings, per-entity parameter bindings, design_components_of per source and developed_design_view per argument tuple) are taken once per instance and kept on it; dataclasses.replace starts a new instance with nothing kept, and resolve_element_bindings hands each caller rows of its own"
+        "a record is a value: its readings (digest, state_digest, dependency_edges, resolve_element_bindings, per-entity parameter bindings, design_components_of per source and developed_design_view per argument tuple) are taken once per instance and kept on it; dataclasses.replace starts a new instance with nothing kept, and resolve_element_bindings hands each caller rows of its own",
+        "an element named in another element's references.voids is upstream of it: changing the void invalidates the host"
       ],
       "status": "canonical",
       "tests": [
