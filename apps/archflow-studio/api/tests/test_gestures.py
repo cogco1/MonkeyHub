@@ -248,8 +248,9 @@ class RemoveAndUnresolvedTests(GestureTestCase):
         self.assertEqual(
             payload["gestures"],
             [
-                "remove mark on portico-cornice (portico) · the grammar has no "
-                "form that removes; ask before proposing"
+                # #419 C7 round 1: what the prompt says too - a script may delete it.
+                "remove mark on portico-cornice (portico) · it may become a script "
+                "that deletes the marked geometry; ask first when the target is unclear"
             ],
         )
         self.assertEqual(payload["proposal"]["protected"], [])

@@ -5167,7 +5167,7 @@
       "owns": [
         "the intent grammar: four exact utterance forms (set, set to, increase by %, decrease by %) plus one optional keep clause",
         "the IntentProvider seam that resolves an utterance to one numeric target in the record and builds its DecisionOperator",
-        "the agent seam that compiles free text into a scalar sentence or typed component edit (deterministic, codex subprocess, Anthropic Messages), or returns a design question or unsupported capability; the record sheet an agent may see",
+        "the agent seam that compiles free text into a scalar sentence or a construction answer (a construction script, facets, parameters) (deterministic, codex subprocess, Anthropic Messages), or returns a design question or unsupported capability; the record sheet an agent may see, in construction terms (#419: for a design request the construction vocabulary and the model by geometry id with facets and the capabilities they unlock; numeric controls by geometry id; backend prose in construction words; no realisation name, record row or classification but facets)",
         "the receipt of a Studio model call: the request it was bound to, the provider's version and fingerprint, and how the call ended",
         "resolving a picked object to a component and element from its archflow:* user strings, and saying when it is unbound, unknown or stale",
         "reading circle / arrow / keep / remove and freehand / line / ruler / arc annotations into facts the record can vouch for, retaining their screen control points, colour, line width, manual ruler label and recorded view as annotation context without granting geometry or execution authority",
@@ -5181,8 +5181,8 @@
         "the in-process episode store, and the flush that writes judgements made before a run into the next run made against the same state; a judgement is retained only into a run that happened, an episode that met no run says so and is lost on restart; the payload states facts only (ADR-004)",
         "the scope step: which elements a change is agreed to reach - the element, the stack that seats on it (support relations and base references, intersected with the record's closure), or everything on its datum; asked (SCOPE_UNRESOLVED) only when a stack exists and the request did not say, never for an explicitly picked element",
         "the derived-control answer: a capability a reference pins is named with its source (CONTROL_IS_DERIVED) and never compiled - the source's own editable controls when it is an element, the terminal authored-control answer when it is a level",
-        "compiling an Agent semantic component edit from the queried producer signatures and the current record into the existing typed StateRecordOperator; POST /api/proposals accepts either scalar utterance or direct semanticEdit with no second model, supports partial parameter/entity upserts and preserves exact-base proposal continuation",
-        "showing the Agent project types, source readings, parameter bindings and named relationships as context; advertising Reading@1 note, exact subject refs and source ref for retained design conditions through the existing semantic proposal; no geometry program or deferred replay payload is accepted as semantic authoring",
+        "turning the in-app Agent's construction answer into one proposal through studio.construction (design_proposal: a script with its parameters or parameters alone, then facets folded onto the same base) and a modified semantic proposal into its revision on top of it; POST /api/proposals accepts either scalar utterance or direct semanticEdit with no second model, supports partial parameter/entity upserts and preserves exact-base proposal continuation",
+        "showing the in-app Agent source readings, parameter bindings and named relationships as context beside the construction model; advertising Reading@1 note, exact subject refs and source ref for retained design conditions through the existing semantic proposal; no geometry program or deferred replay payload is accepted as semantic authoring",
         "retaining complete 2D page stroke and plain-text revisions and page comments through P036 against exact source-file content, named run and page; reading exact submitted revisions into source context beside existing 3D gesture facts",
         "retaining submitted document words and their exact annotation references before intent resolution, and carrying that retained context with scalar or semantic proposals and modifications",
         "refusing unknown or mismatched document model sources before a model call; retaining resolved sourceRunId and the exact document association in comments and proposals, including clarification continuations",
@@ -5453,7 +5453,10 @@
         "studio.board",
         "studio.study",
         "adapters.drawing_svg",
-        "archflow.adapters.occt_backend"
+        "archflow.adapters.occt_backend",
+        "monkeyarch.construction",
+        "monkeyarch.construction.vocabulary",
+        "semantics.facets"
       ],
       "used_by": [
         "apps/archflow-studio/api/archflow_studio_api/application/candidate.py",
@@ -5468,8 +5471,8 @@
         "apps/archflow-studio/api/archflow_studio_api/application/drawing_plans.py"
       ],
       "invariants": [
-        "an utterance is parsed, never interpreted; scalar edits use the four forms; component edits use the typed Entity, Parameter and Relation payload",
-        "a compiled scalar answer parses as the grammar and a component edit satisfies the existing typed contract; invalid agent scalar output is INTENT_AGENT_FAILED rather than a request for the architect to repair fields or grammar",
+        "an utterance is parsed, never interpreted; scalar edits use the four forms; the in-app Agent changes geometry only with a construction script, meaning only with facets and controls with parameters or one scalar sentence, and the construction owner chooses every realisation; direct component edits (POST /api/proposals semanticEdit) use the typed Entity, Parameter and Relation payload",
+        "a compiled scalar answer parses as the grammar and a construction answer compiles through the construction contract (a refused script answers 422 CONSTRUCTION_INVALID with its line, column and source line); an answer outside the closed answer schema, a keep ref the record does not declare, or a scalar sentence aimed at an id the record does not declare, is INTENT_AGENT_FAILED rather than a request for the architect to repair fields or grammar; a scalar sentence aimed at a geometry id with several parts is a question naming them",
         "a clarification chain advances or terminates: a round that leaves the target, the missing slots and the candidates where they were is answered UNSUPPORTED, never asked again",
         "a pending intent is bound to a stateDigest; one opened against a state the project has left is void and answers STALE_CLARIFICATION",
         "one intent ends in exactly one of four outcomes, and only COMPILED is a proposal",
@@ -5501,7 +5504,7 @@
         "candidate generation and option selection never commit a Stage; explicit acceptance verifies retained replay, model and validation before exact branch-head CAS",
         "ordinary Stage acceptance never issues canonical HEAD; repeat acceptance returns the same committed Stage",
         "explicit proposal endorsement retains only that choice and does not supersede alternatives or other explorations sharing its base",
-        "A scoped request retains the complete validation closure privately; numeric and explicitly local design requests send only relevant state, dependencies, affected hosts and applicable keep constraints. Global or unresolved design requests retain full context. Server adaptation preserves untouched data and refuses unrelated, shared, derived or locked-control changes; at most two exact-reference supplements grant no additional write scope",
+        "A scoped request retains the complete validation closure privately; numeric and explicitly local design requests send only relevant state, dependencies, affected hosts and applicable keep constraints. Global or unresolved design requests retain full context. Server adaptation preserves untouched data and refuses unrelated, shared, derived or locked-control changes; a local answer's script and facets may change only its targets, checked while the answer is read (outside them is a malformed-answer receipt naming the geometry ids the agent saw); at most two exact-reference supplements grant no additional write scope",
         "Before every provider attempt, the application text estimate must fit the configured context budget or return unsupported without a model invocation. This estimate excludes provider framing and image tokens and is not billed usage",
         "A context supplement names one to sixteen existing references and makes progress; at most three provider calls are made and reading another target never grants a write",
         "Provider counters are kept per actual attempt; preflight text estimates exclude provider framing and image token costs, are labelled estimates, and never populate billed token counters",
@@ -6740,7 +6743,8 @@
         "facet upserts on Component@1 through the component edit path, with stripped non-blank text and unknown or non-component targets refused",
         "the construction model view: geometry rows with facets and the capabilities facets unlock (hosted-opening for architectural.role = wall)",
         "the hosted-opening capability (Stage C): a door or window on a component of one element whose facets unlock it (architectural.role = wall), else 409 ENRICHMENT_REQUIRED naming the facet to add; a block realised as a wall in place first, else 422 HOST_NOT_WALL_SHAPED with the reason; ids opening-<n> skipping opening and type ids in use; a family as the type <opening>-type, checked by constructing it (FAMILY_INVALID); an optional interfaceRef that must be a relationship ref the record's connections declare (INTERFACE_UNKNOWN names them); the record's refusal as OPENING_INVALID in construction words",
-        "the model view's openings per component of one element and its alongLine, where a door's or window's along is measured"
+        "the model view's openings per component of one element and its alongLine, where a door's or window's along is measured",
+        "one proposal from the in-app Agent's construction answer (design_proposal): a script with its parameters or parameters alone, then facets on what that leaves, folded onto the same exact base"
       ],
       "does_not_own": [
         "the construction language, its lowering and the geometry view (construction.script)",
@@ -6757,10 +6761,13 @@
         "capabilities_of",
         "construction_model",
         "construction_proposal",
+        "design_proposal",
         "facets_proposal",
         "hosted_opening_proposal",
         "in_construction_words",
-        "modelling_root"
+        "kept_refs",
+        "modelling_root",
+        "script_result"
       ],
       "depends_on": [
         "capabilities.element_producers",
@@ -6775,6 +6782,9 @@
         "the construction compiler chooses how each shape is realised; no route or DTO here names a producer, and the agent-facing text keeps the layer rule",
         "a refusal answers the script line that caused it, or passes through unchanged when it names no shape of the script",
         "a facet edit upserts only the named components; every element, object, datum and dependency edge stays byte-identical",
+        "an agent's answer is one proposal: its script, parameters and facets are read on the design the earlier parts would make, and what it keeps is judged on the whole of it, a keep it reaches making a reviewable conflict",
+        "a kept geometry id keeps its own parts and its child components' parts, never a shape a script placed under it (made_by_construction), on the construction, facets and hosted-opening routes as in the in-app answer",
+        "a script's proposal is about the first geometry it makes, changes or removes, by line, else the modelling root; the modelling root is model when a seat builds it, else the first component a seat builds that is not a shape a script made",
         "a capability is listed on an entity only when its facets unlock it",
         "a door or window is proposed only on a component whose facets unlock hosted-opening; the host keeps its element id, its delivered object and its published top, so what stands on it keeps standing",
         "every hosted-opening refusal says what to do: the facet to add, the reason the shape cannot take one as drawn, or the family's or the record's own sentence"
@@ -8018,7 +8028,7 @@
         "the construction vocabulary ConstructionVocabulary@1: verbs, signatures, conventions, limits and one example, the single table the interpreter binds its verbs from",
         "the layer rule over L1 text (LAYER_RULE_TOKENS, case-insensitive substrings): no realisation name, classification field or backend word",
         "construction values: plan and plane profiles, drawing planes, level and top anchors, parameter bindings, loft sections, and transforms baked into a shape's definition",
-        "construction identity: name(), module-level variables, then <host>-cut-<12 hex> and shape-<12 hex> hashed from the chain of statements that made the shape (the module-level statement, the statements it called, down to the one that made it); <id>-body elements; reuse only of construction-made components; the session reads the same ids while the script runs, so a new shape given the id of existing geometry is its current version",
+        "construction identity: name(), module-level variables, then <host>-cut-<12 hex> and shape-<12 hex> hashed from the chain of statements that made the shape (the module-level statement, the statements it called, down to the one that made it); <id>-body elements; reuse only of construction-made components (made_by_construction, the one test of what a script made); the session reads the same ids while the script runs, so a new shape given the id of existing geometry is its current version",
         "lowering construction results to Component@1/Element@1 rows, the one place a producer is chosen for script-authored geometry",
         "script edits of existing geometry in place, rewriting only its element's params and references",
         "cuts authored as the host element's references.voids, kept when a new shape redefines existing geometry",
@@ -8050,6 +8060,7 @@
         "vocabulary",
         "geometry_view",
         "ELEMENT_SUFFIX",
+        "made_by_construction",
         "layer_rule_violations",
         "LAYER_RULE_TOKENS"
       ],

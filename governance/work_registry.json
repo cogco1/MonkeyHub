@@ -86,7 +86,10 @@
             "apps/archflow-studio/api/archflow_studio_api/routes/candidates.py",
             "apps/archflow-studio/api/archflow_studio_api/routes/options.py",
             "apps/archflow-studio/api/archflow_studio_api/routes/state.py",
-            "apps/archflow-studio/api/archflow_studio_api/routes/project.py"
+            "apps/archflow-studio/api/archflow_studio_api/routes/project.py",
+            "apps/archflow-studio/api/archflow_studio_api/application/intent_requests.py",
+            "apps/archflow-studio/api/archflow_studio_api/application/gestures.py",
+            "apps/archflow-studio/api/archflow_studio_api/application/proposals.py"
           ],
           "depends_on": []
         }

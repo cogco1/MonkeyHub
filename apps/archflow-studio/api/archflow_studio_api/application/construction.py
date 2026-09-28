@@ -16,11 +16,17 @@ it hosts. ``hosted_opening_proposal`` is the first capability that meaning
 unlocks (Stage C, spec §3.5): a door or a window on a component whose facets
 say ``architectural.role = wall``; a block is realised as a wall in place under
 the same element id, so it keeps its delivered object and its published top.
+``design_proposal`` makes one proposal of the in-app agent's answer: a script
+with its parameters, or parameters alone, then facets on what that leaves,
+with what the answer keeps judged on the whole of it. ``kept_refs`` is what a
+keep protects: a geometry id keeps its parts, never a shape a script placed
+under it.
 """
 
 from __future__ import annotations
 
 import dataclasses
+from dataclasses import replace
 import math
 import re
 from typing import Any, Mapping, NamedTuple, Sequence
@@ -29,14 +35,16 @@ from archflow.semantics.facets import FACET_KEYS, suggest_facet_key
 from archflow.state.state_record import Entity, StateRecord, apply_state_record_operator, component_facets
 from monkeyarch.capabilities.element_producers import ElementProducerError, wall_along_line, wall_fields_from_block
 from monkeyarch.capabilities.opening_solver import DoorType, WindowType
-from monkeyarch.construction import ConstructionError, ConstructionResult, compile_construction_script, geometry_view
+from monkeyarch.construction import (
+    ConstructionError, ConstructionResult, compile_construction_script, geometry_view, made_by_construction,
+)
 
 from ..adapters.seats import SeatsError, load_seat_pack, seats_of
 from ..transport.errors import StudioError
 from .binding import ProjectBinding
 from .intent import buildable_components, component_edit_proposal
-from .projection import StateProjection
-from .proposals import Proposal, proposal_from
+from .projection import StateProjection, project_proposed_record
+from .proposals import Proposal, continue_proposal, operator_of, proposal_from
 
 # The component a fresh project models under (binding.py writes it with its seat).
 MODEL_ROOT = "model"
@@ -110,10 +118,14 @@ class ConstructionRefused(StudioError):
 
 
 class ConstructionProposal(NamedTuple):
-    """A script's proposal, and what the script reported (its shapes, and what it printed)."""
+    """A script's proposal, and what the script reported (its shapes, and what it printed).
+
+    ``result`` is ``None`` for a proposal no script made (``design_proposal``
+    with facets or parameters alone).
+    """
 
     proposal: Proposal
-    result: ConstructionResult
+    result: ConstructionResult | None
 
 
 class EnrichmentRequired(StudioError):
@@ -138,9 +150,11 @@ class EnrichmentRequired(StudioError):
 def modelling_root(binding: ProjectBinding, projection: StateProjection) -> str:
     """Where new geometry goes: ``model`` when a seat builds it, else the first component a seat builds.
 
-    New geometry under a component no seat builds would be carried by the
-    record and built by nobody, so a project whose seats build nothing is
-    refused here, before anything runs.
+    A shape a script made (``made_by_construction``) is geometry, not where
+    other geometry goes, so it is passed over while another buildable
+    component remains. New geometry under a component no seat builds would
+    be carried by the record and built by nobody, so a project whose seats
+    build nothing is refused here, before anything runs.
     """
 
     try:
@@ -155,7 +169,10 @@ def modelling_root(binding: ProjectBinding, projection: StateProjection) -> str:
             f"no seat builds any of {components}, so new geometry would be built by nobody: have the project's "
             "seat pack own one of them. Nothing was run.",
         )
-    return MODEL_ROOT if MODEL_ROOT in buildable else buildable[0]
+    parts = _parts_by_component(projection.record)
+    containers = [identifier for identifier in buildable if not made_by_construction(
+        identifier, [element.entity_id for element in parts.get(identifier, ())])]
+    return MODEL_ROOT if MODEL_ROOT in buildable else (containers or buildable)[0]
 
 
 def construction_proposal(
@@ -172,20 +189,14 @@ def construction_proposal(
     ``parameters`` (the record's parameter shape) are added or changed with the
     script, and the script is read against a record that already has them, so
     ``param(key)`` binds a parameter the same request introduces. The proposal
-    is not remembered and carries no source run; the caller places it.
+    is about the first geometry the script makes, changes or removes, by line,
+    else the modelling root. It is not remembered and carries no source run;
+    the caller places it.
     """
 
     root = modelling_root(binding, projection)
-    record = projection.record
-    named = "parameters: " + ", ".join(dict.fromkeys(str(parameter.get("key")) for parameter in parameters))
-    if parameters:
-        staged = component_edit_proposal(projection, _edit(summary or named, parameters=parameters),
-                                         utterance=summary or named)
-        record = apply_state_record_operator(record, staged["state_record_operator"])
-    try:
-        result = compile_construction_script(script, record, root_component_id=root)
-    except ConstructionError as exc:
-        raise ConstructionRefused(exc) from exc
+    named = _parameters_named(parameters)
+    result = script_result(projection, script, root=root, parameters=parameters, summary=summary)
     shaped = bool(result.entities or result.remove_entity_ids)
     if not shaped and not parameters:
         raise ConstructionRefused(ConstructionError(
@@ -196,13 +207,128 @@ def construction_proposal(
     edit = _edit(said, entities=result.entities, parameters=parameters,
                  remove_entity_ids=result.remove_entity_ids, kept=keep_refs)
     try:
-        proposal = proposal_from(component_edit_proposal(projection, edit, utterance=said, keep_refs=keep_refs))
+        proposal = proposal_from(component_edit_proposal(
+            projection, edit, utterance=said, component_id=_first_geometry(projection.record, result) or root,
+            keep_refs=keep_refs,
+        ))
     except StudioError as exc:
         refused = _refused_at_line(exc, result, script)
         if refused is None:
             raise
         raise refused from exc
     return ConstructionProposal(proposal, result)
+
+
+def script_result(
+    projection: StateProjection,
+    script: str,
+    *,
+    root: str,
+    parameters: Sequence[Mapping[str, Any]] = (),
+    summary: str | None = None,
+) -> ConstructionResult:
+    """``script`` compiled against ``projection``'s record under ``root``, the ``parameters`` staged first.
+
+    What the script makes, changes and removes, as rows, before any proposal
+    exists: ``param(key)`` binds a parameter the same request introduces. A
+    refused script raises ``ConstructionRefused`` with its line, and parameters
+    the record refuses raise the component edit's own refusal.
+    """
+
+    record = projection.record
+    if parameters:
+        said = summary or _parameters_named(parameters)
+        staged = component_edit_proposal(projection, _edit(said, parameters=parameters), utterance=said)
+        record = apply_state_record_operator(record, staged["state_record_operator"])
+    try:
+        return compile_construction_script(script, record, root_component_id=root)
+    except ConstructionError as exc:
+        raise ConstructionRefused(exc) from exc
+
+
+def kept_refs(record: StateRecord, refs: Sequence[str]) -> tuple[str, ...]:
+    """What keeping ``refs`` protects: each ref, and for a geometry id its parts and its child components'.
+
+    The record protects what a change reaches, and a geometry id's form
+    changes in its parts, never in its own row: a keep naming only the
+    geometry id would let every part of it change. A shape a script made is
+    its own geometry wherever it is parented (``made_by_construction``;
+    lowering places them all under the modelling root), so a keep on the
+    component above it never reaches it. A part id and a parameter ref are
+    kept as they are; a ref the record does not declare is left for the
+    record to refuse.
+    """
+
+    parts = _parts_by_component(record)
+    children: dict[str, list[str]] = {}
+    for component in record.entities_of("Component@1"):
+        own = [element.entity_id for element in parts.get(component.entity_id, ())]
+        if component.parent_id and not made_by_construction(component.entity_id, own):
+            children.setdefault(component.parent_id, []).append(component.entity_id)
+    kept = list(refs)
+    seen: set[str] = set()
+    pending = [ref.removeprefix("entity:") for ref in refs if ref.startswith("entity:")]
+    while pending:
+        identifier = pending.pop(0)
+        if identifier in seen:
+            continue
+        seen.add(identifier)
+        kept.extend(f"entity:{element.entity_id}" for element in parts.get(identifier, ()))
+        kept.extend(f"entity:{child}" for child in children.get(identifier, ()))
+        pending.extend(children.get(identifier, ()))
+    return tuple(dict.fromkeys(kept))
+
+
+def design_proposal(
+    binding: ProjectBinding,
+    projection: StateProjection,
+    *,
+    script: str | None = None,
+    parameters: Sequence[Mapping[str, Any]] = (),
+    facets: Sequence[Mapping[str, Any]] = (),
+    summary: str | None = None,
+    keep_refs: Sequence[str] = (),
+    component_id: str | None = None,
+) -> ConstructionProposal:
+    """An agent's construction answer as one proposal against ``projection``.
+
+    A script goes through ``construction_proposal`` with its parameters, and
+    parameters without a script are a parameters-only component edit about
+    ``component_id``, the geometry the request is about. Facets come last, so
+    they may name geometry the same script makes: they are read against the
+    design the first part would make (``facets_proposal``) and folded onto the
+    same exact base (``continue_proposal``), so everything they do not name
+    stays as that part left it. ``keep_refs`` are judged on the whole answer
+    on that base: a part that reaches one makes the proposal a reviewable
+    ``conflict`` naming it, as a script alone would. ``result`` is the
+    script's report, ``None`` without a script.
+    """
+
+    # With facets the parts are made without the keep, which is judged once, on the whole answer.
+    keep = () if facets else keep_refs
+    made: ConstructionProposal | None = None
+    if script is not None:
+        made = construction_proposal(binding, projection, script, parameters=parameters, summary=summary,
+                                     keep_refs=keep)
+    elif parameters:
+        said = summary or _parameters_named(parameters)
+        made = ConstructionProposal(proposal_from(component_edit_proposal(
+            projection, _edit(said, parameters=parameters, kept=keep), utterance=said, component_id=component_id,
+            keep_refs=keep,
+        )), None)
+    if not facets:
+        if made is None:
+            raise StudioError(422, "CONSTRUCTION_INVALID",
+                              "the answer carries no script, parameters or facets, so there is nothing to propose")
+        return made
+    if made is None:
+        return ConstructionProposal(facets_proposal(projection, facets, summary=summary, keep_refs=keep_refs), None)
+    successor = apply_state_record_operator(projection.record, operator_of(made.proposal, projection.record))
+    faceted = facets_proposal(project_proposed_record(projection, successor), facets, summary=summary)
+    said = summary or "; ".join(str((proposal.semantic_edit or {}).get("summary") or proposal.utterance)
+                                for proposal in (made.proposal, faceted))
+    return ConstructionProposal(continue_proposal(projection, made.proposal, replace(faceted, utterance=said),
+                                                  keep_refs=keep_refs), made.result)
 
 
 def in_construction_words(message: str) -> str:
@@ -419,6 +545,29 @@ def construction_model(projection: StateProjection) -> dict[str, Any]:
                        for parameter in record.parameters],
         "entities": entities,
     }
+
+
+def _first_geometry(record: StateRecord, result: ConstructionResult) -> str | None:
+    """The component of the first shape the script made, changed or removed, by line; ``None`` for none.
+
+    A part of a geometry id with several is named by the component it
+    belongs to, since a proposal is about a component.
+    """
+
+    first = min(result.report, key=lambda row: row["line"], default=None)
+    if first is None:
+        return None
+    identifier = str(first["id"])
+    entity = next((item for item in record.entities if item.entity_id == identifier), None)
+    if entity is not None and entity.schema == "Element@1":
+        return str(entity.fields.get("component_id") or entity.parent_id)
+    return identifier
+
+
+def _parameters_named(parameters: Sequence[Mapping[str, Any]]) -> str:
+    """What a change of these parameters says when nothing else names it."""
+
+    return "parameters: " + ", ".join(dict.fromkeys(str(parameter.get("key")) for parameter in parameters))
 
 
 def _edit(summary: str, *, entities: Sequence[Mapping[str, Any]] = (), parameters: Sequence[Mapping[str, Any]] = (),

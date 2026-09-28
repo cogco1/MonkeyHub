@@ -780,7 +780,16 @@ def component_edit_proposal(
     changed_components = {
         entity.fields.get("component_id") or entity.parent_id for entity in changed_elements
     }
-    if component_id not in components or (changed_components and component_id not in changed_components):
+    # A proposal may also be about what it takes away: a component it removes,
+    # or one it removes a part of.
+    removed_components = {entity.entity_id for entity in record.entities_of("Component@1")} - components
+    reached = changed_components | removed_components | {
+        existing[identifier].fields.get("component_id") or existing[identifier].parent_id
+        for identifier in removed["remove_entity_ids"]
+        if identifier in existing and existing[identifier].schema == "Element@1"
+    }
+    if (component_id not in components | removed_components
+            or (changed_components and component_id not in reached)):
         component_id = next((
             str(entity.fields.get("component_id") or entity.parent_id)
             for entity in changed_elements

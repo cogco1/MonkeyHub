@@ -26,6 +26,7 @@ from ..application.construction import (
     construction_proposal,
     facets_proposal,
     hosted_opening_proposal,
+    kept_refs,
 )
 from ..application.projection import StateProjection, project_state
 from ..application.proposals import Proposal
@@ -100,7 +101,7 @@ def create_construction_proposal(request: Request, body: ConstructionRequestDto)
     made = construction_proposal(
         binding, projection, body.script,
         parameters=[parameter.model_dump(exclude_unset=True) for parameter in body.parameters],
-        summary=body.summary, keep_refs=tuple(body.keep),
+        summary=body.summary, keep_refs=kept_refs(projection.record, body.keep),
     )
     proposal = _remember(request, made.proposal, base, previous, body)
     return ConstructionProposalDto(**dict(proposal), construction=ConstructionOutcomeDto(
@@ -116,7 +117,7 @@ def create_facets_proposal(request: Request, body: FacetsRequestDto) -> Proposal
     binding, base, projection, previous, body = _proposal_source(request, body)
     _require_state(binding, body, projection, "facet change")
     proposal = facets_proposal(projection, [target.model_dump() for target in body.targets],
-                               summary=body.summary, keep_refs=tuple(body.keep))
+                               summary=body.summary, keep_refs=kept_refs(projection.record, body.keep))
     return _remember(request, proposal, base, previous, body)
 
 
@@ -136,7 +137,7 @@ def create_hosted_opening_proposal(request: Request, body: HostedOpeningRequestD
     proposal = hosted_opening_proposal(
         projection, body.host, kind=body.kind, along=body.along, width=body.width, sill=body.sill, head=body.head,
         shape=body.shape, spring_height=body.spring_height, family=body.family, interface_ref=body.interface_ref,
-        summary=body.summary, keep_refs=tuple(body.keep),
+        summary=body.summary, keep_refs=kept_refs(projection.record, body.keep),
     )
     return _remember(request, proposal, base, previous, body)
 

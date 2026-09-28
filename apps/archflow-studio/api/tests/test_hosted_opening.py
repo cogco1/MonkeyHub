@@ -196,6 +196,13 @@ class HostedOpeningChainTestCase(HostedOpeningTestCase):
                          ["opening-3-type", "opening-4-type"])
         self.assertEqual(door["utterance"], "hosted opening: door opening-4 in block")
 
+    def test_keeping_the_host_keeps_its_geometry(self) -> None:
+        # #419 C7 round 2: keep entity:<geometry id> protects its parts on this route too.
+        chain = self.walled()
+        body = self.open("block", expect=409, keep=["entity:block"], **self.after(chain))
+        self.assertEqual(body["code"], "PROPOSAL_CHAIN_CONFLICT")
+        self.assertIn("entity:block-body", body["detail"])
+
     def test_an_arched_passage_takes_its_spring_height(self) -> None:
         chain = self.walled()
         arched = self.open("block", along=3.0, width=1.2, head=2.4, shape="semicircular_arch", springHeight=1.8,

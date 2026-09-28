@@ -16,7 +16,7 @@ it exists at all is that ``POST /api/proposals`` must be able to answer a later
 from __future__ import annotations
 
 from dataclasses import MISSING, dataclass, fields, replace
-from typing import TYPE_CHECKING, Any, Mapping
+from typing import TYPE_CHECKING, Any, Mapping, Sequence
 
 from archflow.state.decision_operator import DecisionOperator
 from archflow.state.state_record import (
@@ -113,13 +113,19 @@ def operator_of(proposal: Proposal, record: StateRecord) -> StateRecordOperator:
 
 
 def continue_proposal(
-    base: "StateProjection", previous: Proposal, proposal: Proposal,
+    base: "StateProjection", previous: Proposal, proposal: Proposal, *, keep_refs: Sequence[str] = (),
 ) -> Proposal:
     """Fold another checked edit into one proposal on the first exact base.
 
     The store still contains only ordinary, immutable proposal values. The
     intermediate record is calculated here and discarded; only the existing
-    candidate endpoint can create a run or export geometry.
+    candidate endpoint can create a run or export geometry. It is what the
+    earlier edit would make: that edit's own keep refs are judged on the
+    folded proposal, so an earlier keep conflict stays a reviewable
+    ``conflict`` there, never an error here. ``keep_refs`` are kept on the
+    first base for the folded change as a whole, as they would be for one
+    edit. A next edit that cannot be applied answers 409
+    ``PROPOSAL_CHAIN_CONFLICT`` with the reason.
     """
 
     from .intent import component_edit_proposal
@@ -131,8 +137,8 @@ def continue_proposal(
             or (proposal.state_record_operator is not None
                 and proposal.state_record_operator.kind is StateRecordEditKind.SET_PARAMETER_LOCKS)):
         raise StudioError(409, "LOCK_PROPOSAL_REQUIRES_CANDIDATE", "Run the parameter lock proposal as a candidate, then continue from its exact retained state.")
-    prior_record = apply_state_record_operator(base.record, prior_operator)
     try:
+        prior_record = apply_state_record_operator(base.record, replace(prior_operator, protected=()))
         # Earlier keep conditions apply to the state in which they were made,
         # including a form first drawn during this chain.
         successor = apply_state_record_operator(
@@ -167,15 +173,16 @@ def continue_proposal(
     # true on the first base belong on the final operator replayed there.
     earlier_changes = set(previous.impact.direct) | set(previous.impact.propagated)
     root_protected = set(prior_operator.protected) | (set(proposal.protected) - earlier_changes)
-    protected = tuple(sorted(set(previous.protected) | set(proposal.protected)))
     kept = list(dict.fromkeys(
         list((previous.semantic_edit or {}).get("kept", ()))
         + list((proposal.semantic_edit or {}).get("kept", ()))
+        + list(keep_refs)
     ))
     edit.update(summary=proposal.utterance, protected=sorted(root_protected), kept=kept)
     combined = proposal_from(component_edit_proposal(
-        base, edit, utterance=proposal.utterance, component_id=proposal.component_id,
+        base, edit, utterance=proposal.utterance, component_id=proposal.component_id, keep_refs=keep_refs,
     ))
+    protected = tuple(sorted(set(previous.protected) | set(proposal.protected) | set(combined.protected)))
     return replace(
         combined, source_run_id=previous.source_run_id,
         source_stage_ref=previous.source_stage_ref, model_source=previous.model_source,

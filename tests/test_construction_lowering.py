@@ -594,6 +594,17 @@ class IdentityTests(ConstructionTestCase):
             ("x = 1\na = name(extrude(rect(0, 0, 1, 1), 1), 'ground-body')", 2, "-body"),
         ], record)
 
+    def test_construction_made_geometry_is_a_component_whose_one_element_is_its_body(self) -> None:
+        # The one test of what a script made (#419 C7 round 2): lowering reuses such a component, and a keep
+        # on the component a shape is placed under does not reach it.
+        from monkeyarch.construction import made_by_construction
+
+        self.assertTrue(made_by_construction("mass", ["mass" + ELEMENT_SUFFIX]))
+        for component, elements in (("pair", ["pair-a", "pair-b"]), ("single", ["single-line"]), ("model", []),
+                                    ("model", None), ("mass", ["mass-body", "mass-body-2"])):
+            with self.subTest(component=component, elements=elements):
+                self.assertFalse(made_by_construction(component, elements))
+
     def test_two_shapes_with_one_id_are_refused_at_the_second(self) -> None:
         error = self.refused("a = extrude(rect(0, 0, 1, 1), 1)\nb = extrude(rect(2, 0, 1, 1), 1)\nname(b, 'a')")
         self.assertEqual(error.line, 3)
