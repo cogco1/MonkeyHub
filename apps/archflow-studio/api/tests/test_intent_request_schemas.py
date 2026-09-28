@@ -253,6 +253,21 @@ class IntentRequestSchemaTests(unittest.TestCase):
         result = action_answer(_answer(_action(value=1200, unit="mm")), context, record)
         self.assertEqual(result["status"], "compiled")
         self.assertEqual(parse_utterance(result["utterance"]).number, 1.2)
+        # Exact, as the scalar seam is: float factors made 700 mm 0.7000000000000001.
+        result = action_answer(_answer(_action(value=700, unit="mm")), context, record)
+        self.assertEqual(parse_utterance(result["utterance"]).number, 0.7)
+
+    def test_lengths_convert_exactly_into_the_declared_unit(self):
+        # #404 F17: one table serves the scalar seam and this path, with no float drift.
+        from archflow_studio_api.application.intent_requests import in_unit
+        for value, unit, declared, expected in (
+                (1100, "mm", "m", 1.1), (2200, "mm", "m", 2.2), (5, "mm", "m", 0.005), (12.5, "cm", "m", 0.125),
+                (700, "mm", "m", 0.7), (10, "ft", "m", 3.048), (12, "in", "m", 0.3048), (1.2, "m", "mm", 1200),
+                (3, "Metres", "m", 3), (90, "deg", "deg", 90)):
+            with self.subTest(value=value, unit=unit, declared=declared):
+                self.assertEqual(in_unit(value, unit, declared), expected)
+        self.assertIsNone(in_unit(90, "deg", "m"), "not a length: nothing to convert")
+        self.assertIsNone(in_unit(3, "mm", "deg"))
 
     def test_bound_scalar_uses_declared_parameter_units_without_unbinding(self):
         record = _record(bound=True, parameter_unit="mm")

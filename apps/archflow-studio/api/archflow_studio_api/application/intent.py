@@ -882,6 +882,9 @@ class _Target:
     old: int | float
     unit: str | None
     element_id: str | None
+    # A ``set`` number restated in ``unit`` when the utterance said another
+    # length unit (#404 F17); None when the number was said in this unit.
+    number: int | float | None = None
 
 
 class DeterministicIntentProvider:
@@ -1068,12 +1071,10 @@ class DeterministicIntentProvider:
 
         The record states these numbers bare; the advertised producer declares
         their unit (``parameter_unit``: a prism's ``height`` is metres). A unit
-        word that is not that unit is a question, exactly as it is on a
-        parameter whose unit the utterance disagrees with: ``set height to
-        2200 mm`` against a field holding ``0.6`` would propose two thousand
-        two hundred metres. This seam converts nothing, so it asks rather
-        than dropping the word that was the whole difference; a field whose
-        producer declares no unit takes no unit word at all.
+        word is never dropped: ``set height to 2200 mm`` against a field held
+        in metres proposes 2.2, restated exactly (``_stated_in``), as a
+        parameter's is. What cannot be restated is asked about: a unit that is
+        not a length, or any unit on a field whose producer declares none.
         """
 
         if key not in element.numeric_fields:
@@ -1108,24 +1109,7 @@ class DeterministicIntentProvider:
         from monkeyarch.capabilities.element_producers import parameter_unit
 
         declared = parameter_unit(element.producer, key)
-        if parsed.unit is not None and declared is not None and parsed.unit != declared:
-            raise BlockedNeedsHuman(
-                "the utterance's unit is not the element field's",
-                question=(
-                    f"{key} on {element.element_id} is declared in {declared}, and the "
-                    f"utterance says {parsed.unit}; this seam converts nothing. "
-                    f"What is the value in {declared}?"
-                ),
-            )
-        if parsed.unit is not None and declared is None:
-            raise BlockedNeedsHuman(
-                "the element field is a unit-less number",
-                question=(
-                    f"{key} on {element.element_id} is a bare number in the "
-                    "record and this seam converts nothing; what is the value "
-                    "in the record's own units?"
-                ),
-            )
+        number = self._stated_in(parsed, declared, f"{key} on {element.element_id}")
         return _Target(
             ref=f"entity:{element.element_id}",
             key=key,
@@ -1133,10 +1117,10 @@ class DeterministicIntentProvider:
             decision_type=ELEMENT_PARAM_CHANGE,
             old=element.numeric_fields[key],
             # The producer's declared unit, or null when it declares none;
-            # never one that was said and discarded: a different unit was
-            # refused above.
+            # a unit that was said is restated in it, never discarded.
             unit=declared,
             element_id=element.element_id,
+            number=number,
         )
 
     def _unknown_element_field(
@@ -1186,7 +1170,7 @@ class DeterministicIntentProvider:
             )
         self._require_source(parameter)
         self._require_unlocked(parameter)
-        self._require_unit(parameter, parsed.unit)
+        number = self._stated_in(parsed, parameter.unit or None, f"parameter {parameter.key}")
         return _Target(
             ref=parameter.ref,
             key=parameter.key,
@@ -1195,6 +1179,7 @@ class DeterministicIntentProvider:
             old=parameter.value,
             unit=parameter.unit or None,
             element_id=None,
+            number=number,
         )
 
     def _require_source(self, parameter: Parameter) -> None:
@@ -1263,19 +1248,40 @@ class DeterministicIntentProvider:
                 ),
             )
 
-    def _require_unit(self, parameter: Parameter, unit: str | None) -> None:
-        """A unit that disagrees with the record's is a question, not a conversion."""
+    def _stated_in(self, parsed: ParsedIntent, declared: str | None, subject: str) -> int | float | None:
+        """The ``set`` number restated in the declared unit, or a question naming the unit expected.
 
-        if unit is None or not parameter.unit or unit == parameter.unit:
-            return
-        raise BlockedNeedsHuman(
-            "the utterance's unit is not the parameter's",
-            question=(
-                f"parameter {parameter.key} is declared in {parameter.unit}, "
-                f"and the utterance says {unit}; this seam converts nothing. "
-                f"What is the value in {parameter.unit}?"
-            ),
-        )
+        Units are the adapter's to normalize, not a question for the person
+        (AGENTS.md; #404 F17): a length said in any length unit is restated
+        exactly through the one table the intent-request path also reads. A
+        bare number is already in the declared unit. What cannot be restated —
+        a unit on a number that declares none, or a unit that is not a length
+        for one that is — is asked about, never guessed or dropped.
+        """
+
+        from .intent_requests import in_unit
+
+        if parsed.unit is None:
+            return None
+        if declared is None:
+            raise BlockedNeedsHuman(
+                "the field declares no unit",
+                question=(
+                    f"{subject} declares no unit, so {_shown(parsed.number)} {parsed.unit} "
+                    "cannot be restated in it; what is the bare number the record should hold, "
+                    "with no unit word?"
+                ),
+            )
+        number = in_unit(parsed.number, parsed.unit, declared)
+        if number is None:
+            raise BlockedNeedsHuman(
+                "the utterance's unit is not the field's",
+                question=(
+                    f"{subject} is declared in {declared}, and {parsed.unit} cannot be "
+                    f"restated in {declared}; what is the value in {declared}?"
+                ),
+            )
+        return number
 
     # ---- the numbers
 
@@ -1283,7 +1289,7 @@ class DeterministicIntentProvider:
         """What the field would become; the record's own value is the base."""
 
         if parsed.operation == SET:
-            return parsed.number
+            return parsed.number if target.number is None else target.number
         if target.old == 0:
             raise BlockedNeedsHuman(
                 "a percentage of zero is zero",

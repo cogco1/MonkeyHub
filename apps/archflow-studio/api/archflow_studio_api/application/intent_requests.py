@@ -321,11 +321,32 @@ def action_preflight(context: IntentContext, record: StateRecord) -> dict[str, A
     return None
 
 
-_LENGTH_UNITS = {"mm": 0.001, "cm": 0.01, "m": 1.0, "in": 0.0254, "ft": 0.3048}
+# Metres per unit, as exact decimals: a length restated in another unit never
+# drifts (float factors made 700 mm 0.7000000000000001). The one table both the
+# scalar seam and this path read (#404 F17).
+_LENGTH_UNITS = {"mm": Decimal("0.001"), "cm": Decimal("0.01"), "m": Decimal("1"),
+                 "in": Decimal("0.0254"), "ft": Decimal("0.3048")}
 _UNIT_ALIASES = {"meter": "m", "meters": "m", "metre": "m", "metres": "m",
                  "millimeter": "mm", "millimeters": "mm", "millimetre": "mm", "millimetres": "mm",
                  "centimeter": "cm", "centimeters": "cm", "centimetre": "cm", "centimetres": "cm",
                  "inch": "in", "inches": "in", "foot": "ft", "feet": "ft"}
+
+
+def in_unit(value: int | float, unit: str, declared: str) -> int | float | None:
+    """``value`` said in ``unit``, restated in the ``declared`` unit; None when it cannot be.
+
+    The same unit, however spelled, passes through unchanged. Two length units
+    convert exactly through ``_LENGTH_UNITS``; anything else is None, for the
+    caller to ask about rather than guess. A whole result comes back whole.
+    """
+
+    source, target = (_UNIT_ALIASES.get(name.strip().lower(), name.strip().lower()) for name in (unit, declared))
+    if source == target:
+        return value
+    if source not in _LENGTH_UNITS or target not in _LENGTH_UNITS:
+        return None
+    result = Decimal(str(value)) * _LENGTH_UNITS[source] / _LENGTH_UNITS[target]
+    return int(result) if result == result.to_integral_value() else float(result)
 
 
 def _action_value(action: Mapping[str, Any], old: float, declared_unit: str | None) -> float | None:
@@ -338,13 +359,8 @@ def _action_value(action: Mapping[str, Any], old: float, declared_unit: str | No
     else:
         if declared_unit is None:
             return None
-        declared = declared_unit.strip().lower()
-        declared = _UNIT_ALIASES.get(declared, declared)
-        if unit == declared:
-            result = value
-        elif unit in _LENGTH_UNITS and declared in _LENGTH_UNITS:
-            result = value * _LENGTH_UNITS[unit] / _LENGTH_UNITS[declared]
-        else:
+        result = in_unit(value, unit, declared_unit)
+        if result is None:
             return None
     if not _finite(result):
         raise ValueError("the action result must be finite")

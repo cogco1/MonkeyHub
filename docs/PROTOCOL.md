@@ -561,8 +561,11 @@ saying to move it. Neither reaches the agent.
 **A control states its unit.** Each catalog capability, and so each
 `candidate.modify_existing` field, carries `unit`: a bound field its parameter's unit, a
 literal the unit its advertised producer declares (`m` for every length those producers
-read), `null` where none is declared. The scalar grammar accepts that unit word and asks
-about any other; it converts nothing. A keep conflict names the kept refs the change
+read), `null` where none is declared. The scalar grammar and the intent-request path read
+one exact table: a length said in any length unit (`mm`, `cm`, `m`, `in`, `ft`) is restated
+in the declared unit (`set height to 2200 mm` proposes 2.2 in m), and a bare number is taken in
+the declared unit. They ask, naming the unit expected, about a unit on a number that declares
+none and about a unit that is not a length. A keep conflict names the kept refs the change
 would reach, whether they came from `keep` or from a keep clause in the words.
 
 **The continuation is the whole of the continuity.** A client that answers sends back
