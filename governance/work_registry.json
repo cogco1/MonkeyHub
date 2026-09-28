@@ -1,4 +1,29 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": []
+  "items": [
+    {
+      "id": "GH-439",
+      "lanes": [
+        {
+          "id": "issue-hardening",
+          "status": "active",
+          "branch": "codex/439-issue-hardening",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-439-issue-hardening",
+          "base_ref": "de125c87260964c9b63d76d46900c46a6ea06303",
+          "contributor": "Claude",
+          "reviewer": "Claude root task",
+          "handoff": "local session; master reviews and integrates",
+          "modules": [
+            "project.issue",
+            "runtime.project_runner"
+          ],
+          "write_scope": [
+            "archflow/project/issue.py",
+            "monkeyarch/runtime/project_runner.py"
+          ],
+          "depends_on": []
+        }
+      ]
+    }
+  ]
 }
