@@ -500,7 +500,7 @@ def _watch_managed_stdin(server: uvicorn.Server, jobs: JobRegistry, stream: Text
     server.should_exit = True
 
 
-class _ManagedServer(uvicorn.Server):
+def _stop_streams_on_signal(server: uvicorn.Server, state) -> None:
     """A signalled stop also ends the event streams, as the owner's ``stop`` does.
 
     An open ``/api/events`` stream ends once jobs stop accepting, and uvicorn
@@ -508,18 +508,15 @@ class _ManagedServer(uvicorn.Server):
     worker told to exit while its Hub followed its events never exited.
     """
 
-    def __init__(self, config: uvicorn.Config, state) -> None:
-        super().__init__(config)
-        self._state = state
+    handle_exit = server.handle_exit
 
-    def handle_exit(self, sig, frame) -> None:
+    def stop(sig, frame) -> None:
         # Off the signal handler: stopping takes the registries' locks.
-        threading.Thread(target=self._stop_accepting, name="studio-signalled-stop", daemon=True).start()
-        super().handle_exit(sig, frame)
+        threading.Thread(target=lambda: (state.jobs.stop_accepting(), state.render_jobs.stop_accepting()),
+                         name="studio-signalled-stop", daemon=True).start()
+        handle_exit(sig, frame)
 
-    def _stop_accepting(self) -> None:
-        self._state.jobs.stop_accepting()
-        self._state.render_jobs.stop_accepting()
+    server.handle_exit = stop
 
 
 def _prepare_first_reads(app: FastAPI) -> None:
@@ -592,7 +589,8 @@ def main(argv: list[str] | None = None) -> None:
         from monkeydiagram.documentation.styles import initialize_drawing_runtime
 
         initialize_drawing_runtime()
-    server = _ManagedServer(uvicorn.Config(app, host=settings.bind_host, port=args.port), app.state)
+    server = uvicorn.Server(uvicorn.Config(app, host=settings.bind_host, port=args.port))
+    _stop_streams_on_signal(server, app.state)
     threading.Thread(
         target=_watch_managed_stdin, args=(server, app.state.jobs, sys.stdin, app.state.render_jobs),
         name="studio-owner-input", daemon=True,
