@@ -23,6 +23,7 @@ from fastapi.testclient import TestClient
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.repository import FilesystemProjectRepository
 from archflow.state.state_record import StateRecord, component_semantics
+from archflow_studio_api.application.intent import _unregistered_kinds_as_intent
 from archflow_studio_api.application.intent_agent import response_schema
 from archflow_studio_api.main import create_app
 from archflow_studio_api.settings import StudioSettings
@@ -217,6 +218,62 @@ class GeometryFirstAuthoringTests(unittest.TestCase):
             "profile": SQUARE, "semanticKind": "roof", **base}))
         cover = next(e for e in registered["change"]["edits"]["entities"] if e["entity_id"] == "cover")
         self.assertEqual(cover["fields"]["semantic_kind"], "roof")
+
+    def test_a_form_whose_component_and_element_share_an_id_is_refused_by_name(self) -> None:
+        """#413: geometry first makes a component per form; one id for both was refused without naming it."""
+
+        response = self.client.post("/api/proposals/sketch", json={
+            "stateDigest": self.state()["stateDigest"], "componentId": "twin", "elementId": "twin",
+            "parentComponentId": "model", "baseLevel": "ground", "height": 3, "profile": SQUARE})
+        self.assertEqual(response.status_code, 422, response.text)
+        self.assertIn("componentId and elementId are both 'twin'", response.text)
+        self.assertIn("need different ids", response.text)
+        schemas = self.client.get("/openapi.json").json()["components"]["schemas"]
+        for name in ("SketchPrismRequestDto", "SketchActionDto"):
+            self.assertIn("must differ from componentId", schemas[name]["properties"]["elementId"]["description"])
+
+    def test_a_misspelt_kind_joins_the_stated_intent_and_survives_a_continued_proposal(self) -> None:
+        """#413: the note said "keeps 'w' as its intent" while the word lived only in the summary."""
+
+        digest = self.state()["stateDigest"]
+        named = self.created(self.client.post("/api/proposals", json={
+            "stateDigest": digest, "semanticEdit": {
+                "summary": "The architect calls the block a rooof",
+                "entities": [{"entity_id": "block", "schema": "Component@1", "parent_id": "model",
+                              "fields": {"intent": "the north block", "semantic_kind": "rooof"}}]}}))
+        block = next(e for e in named["change"]["edits"]["entities"] if e["entity_id"] == "block")
+        self.assertEqual(block["fields"]["intent"], "the north block; rooof")
+        self.assertNotIn("semantic_kind", block["fields"])
+        summary = named["change"]["summary"]
+        self.assertNotIn("keeps 'rooof' as its intent", summary)
+        self.assertIn("block adds 'rooof' to its intent", summary)
+        self.assertIn("registered spellings close to it: roof", summary)
+        self.assertNotIn("role.", summary)
+        self.assertNotIn("condition.", summary)
+        continued = self.created(self.client.post("/api/proposals/sketch", json={
+            "stateDigest": digest, "sourceProposalId": named["proposalId"], "componentId": "block",
+            "elementId": "block-body", "profile": SQUARE, "baseLevel": "ground", "height": 3}))
+        self.assertNotIn("rooof", continued["change"]["summary"])
+        block = next(e for e in continued["change"]["edits"]["entities"] if e["entity_id"] == "block")
+        self.assertEqual(block["fields"]["intent"], "the north block; rooof", "the word outlives the summary")
+        record = self.retained(self.candidate(continued))
+        self.assertEqual(record.entity("block").fields["intent"], "the north block; rooof")
+        self.assertIsNone(component_semantics(record.entity("block")))
+
+    def test_a_stated_intent_already_says_the_word_only_as_a_word(self) -> None:
+        """#413: "a drywall partition" does not already say "wall"; 外墙 does say 墙."""
+
+        rows, notes = _unregistered_kinds_as_intent([
+            {"entity_id": "partition", "schema": "Component@1",
+             "fields": {"intent": "a drywall partition", "semantic_kind": "wall"}},
+            {"entity_id": "front", "schema": "Component@1", "fields": {"intent": "南立面外墙", "semantic_kind": "墙"}},
+            {"entity_id": "side", "schema": "Component@1", "fields": {"intent": "the east wall", "semantic_kind": "Wall"}},
+        ], {})
+        self.assertEqual([row["fields"]["intent"] for row in rows],
+                         ["a drywall partition; wall", "南立面外墙", "the east wall"])
+        self.assertIn("partition adds 'wall' to its intent", notes[0])
+        self.assertIn("front's intent already says '墙'", notes[1])
+        self.assertIn("side's intent already says 'Wall'", notes[2])
 
     def test_naming_a_generic_component_later_keeps_its_identity(self) -> None:
         run = self.sketch_generic_forms()

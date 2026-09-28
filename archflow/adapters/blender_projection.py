@@ -7,12 +7,12 @@ from __future__ import annotations
 
 import json
 import math
-import shutil
 import subprocess
 from dataclasses import dataclass
 
 import archflow.adapters.cad_execution as cad
 import archflow.adapters.occt_backend as occt_backend
+from archflow.adapters.local_cad_discovery import resolve_blender_executable
 from archflow.adapters.blender_cad import _run_worker, _near, _face_loops
 from archflow.adapters.blender_worker import READBACK_PREFIX, UNIT_SETTINGS
 from archflow.adapters.cad_backend import CadExecutionRequest, CadExecutionResult, OcctBackend
@@ -154,7 +154,7 @@ an explicit failed receipt, preserving logs and never claiming partial artifacts
                "blender_version": None, "readback": None, "failures": []}
     stage = "launch"
     try:
-        executable = shutil.which(str(blender_executable))
+        executable = resolve_blender_executable(blender_executable)
         if not executable:
             raise cad.CadExecutionError("Blender executable unavailable")
         paths["plan"].write_text(canonical_json(plan), encoding="utf-8")

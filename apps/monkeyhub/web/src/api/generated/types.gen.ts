@@ -2158,6 +2158,40 @@ export type HealthApiHealthGetResponses = {
 
 export type HealthApiHealthGetResponse = HealthApiHealthGetResponses[keyof HealthApiHealthGetResponses];
 
+export type IntegrationStatusApiIntegrationsGetData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Rescan
+         */
+        rescan?: boolean;
+    };
+    url: '/api/integrations';
+};
+
+export type IntegrationStatusApiIntegrationsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type IntegrationStatusApiIntegrationsGetError = IntegrationStatusApiIntegrationsGetErrors[keyof IntegrationStatusApiIntegrationsGetErrors];
+
+export type IntegrationStatusApiIntegrationsGetResponses = {
+    /**
+     * Response Integration Status Api Integrations Get
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type IntegrationStatusApiIntegrationsGetResponse = IntegrationStatusApiIntegrationsGetResponses[keyof IntegrationStatusApiIntegrationsGetResponses];
+
 export type UpdateStatusApiUpdatesStatusGetData = {
     body?: never;
     path?: never;

@@ -408,6 +408,20 @@ class StateRecordTests(unittest.TestCase):
             with self.subTest(field=field_name), self.assertRaisesRegex(StateRecordError, "exact base is stale"):
                 apply_state_record_operator(record, replace(operator, **{field_name: "f" * 64}))
 
+    def test_an_id_clash_names_the_ids_and_what_carries_them(self) -> None:
+        """#413: a new form's component and element given one id were refused without naming it."""
+
+        record = self._bound_record()
+        component = Entity("twin", "Component@1", {"intent": "a new form"}, parent_id="portico-west")
+        element = replace(record.entity("columns-west"), entity_id="twin", fields={**record.entity("columns-west").fields, "component_id": "twin"})
+        for attempt in (lambda: apply_state_record_operator(record, compile_component_edit(record, entities=(component, element))),
+                        lambda: replace(record, entities=record.entities + (component, element))):
+            with self.assertRaises(StateRecordError) as raised:
+                attempt()
+            message = str(raised.exception)
+            self.assertIn("'twin' is used by Component@1 and Element@1", message)
+            self.assertIn("a component and its element need different ids", message)
+
     def test_component_edit_refuses_empty_unknown_ambiguous_and_wrong_schema_edits(self) -> None:
         record = self._bound_record()
         with self.assertRaisesRegex(StateRecordError, "at least one edit"):
@@ -417,7 +431,7 @@ class StateRecordTests(unittest.TestCase):
                 apply_state_record_operator(record, compile_component_edit(record, **{remove_field: ("missing",)}))
         with self.assertRaisesRegex(StateRecordError, "both edits and removes"):
             apply_state_record_operator(record, compile_component_edit(record, entities=(record.entity("columns-west"),), remove_entity_ids=("columns-west",)))
-        with self.assertRaisesRegex(StateRecordError, "ids must be unique"):
+        with self.assertRaisesRegex(StateRecordError, "ids must be unique: 'source' appears 2 times"):
             apply_state_record_operator(record, compile_component_edit(record, parameters=(record.parameter("source"), record.parameter("source"))))
         with self.assertRaisesRegex(StateRecordError, "cannot change schema"):
             apply_state_record_operator(record, compile_component_edit(record, entities=(Entity("columns-west", "Type@1", {}),)))

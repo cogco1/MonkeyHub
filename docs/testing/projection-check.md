@@ -52,10 +52,12 @@ content is invented. At 30 runs the project holds:
 - six document runs with two sketch pages each, a board, and an adopted working draft;
 - 494 JSON files, 457 of them retained records.
 
-Ids, names and bytes are fixed. The API stamps reviews, admissions and Stages with the wall clock, and those
-times reach the digests of the records that cite them. Two generations therefore have the same structure but
-different bytes: the same runs, record kinds and counts, and Stage chain. For this reason the job generates the
-project once and every step reads a copy of it. `test_synthetic_project.py` asserts that structure.
+Ids, names and bytes are fixed, and so is what the product would take from the machine. The Studio stamps
+reviews, admissions, Stages and the working draft with the wall clock and random event ids, and the runner
+records how long each round took. While the scenario plays, those modules read a clock that starts at a fixed
+instant, ids from a seeded generator and a timer that advances a fixed step per reading. Two generations are
+therefore identical byte for byte, which `test_synthetic_project.py` asserts. The job still generates the
+project once, and every step reads a copy of it.
 
 ## Run it
 
