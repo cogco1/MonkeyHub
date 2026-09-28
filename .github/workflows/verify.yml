@@ -250,6 +250,39 @@ jobs:
           if not result.wasSuccessful() or result.skipped or ran_windows_only < 20:
               sys.exit(1)
 
+      # Windows refuses to rename a file that is still open, so a corrupt index
+      # whose connection leaked could never be quarantined there (GH-418). Both
+      # index suites must run in full: a skip or a short count fails the step.
+      - name: Project index on Windows
+        if: runner.os == 'Windows'
+        shell: python
+        run: &index-suite |
+          import os, sys, unittest
+          name = os.environ["INDEX_SUITE"]
+          suite = unittest.defaultTestLoader.discover("tests", pattern=name, top_level_dir=".")
+          def ids(s):
+              return [i for t in s for i in ids(t)] if isinstance(s, unittest.TestSuite) else [s.id()]
+          # Count before running: the runner releases each test once it has run.
+          expected = len(ids(suite))
+          result = unittest.TextTestRunner(verbosity=2).run(suite)
+          failed = len(result.failures) + len(result.errors)
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+              summary.write(f"### {name} on Windows\n\n")
+              summary.write(f"run {result.testsRun} of {expected}, "
+                            f"skipped {len(result.skipped)}, failed {failed}\n\n")
+          if not result.wasSuccessful() or result.skipped or not 0 < expected <= result.testsRun:
+              sys.exit(1)
+        env:
+          INDEX_SUITE: test_project_index.py
+
+      - name: Studio indexed reads on Windows
+        if: runner.os == 'Windows'
+        working-directory: apps/archflow-studio/api
+        shell: python
+        run: *index-suite
+        env:
+          INDEX_SUITE: test_indexed_reads.py
+
       - name: API binding, protocol and candidate checks
         working-directory: apps/archflow-studio/api
         run: python -m unittest tests.test_health tests.test_protocol tests.test_candidate
