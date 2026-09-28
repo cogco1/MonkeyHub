@@ -112,6 +112,14 @@ async function runtime(request, response, url, body) {
       response.write(": fixture\n\n");
       return;
     }
+    // #366: the project's index, which the Hub's project store reads when the Hub's stream opens: the fixture's
+    // revision is its cursor. This fixture's changes come with no index event; the page reads them on focus.
+    if (method === "GET" && name === "/api/index") {
+      const revision = fixture.state.revision, since = url.searchParams.get("since");
+      const current = url.searchParams.get("epoch") === "fixture" && Number(since) === revision;
+      return json({ projectId: PROJECT, epoch: "fixture", revision, reset: !current, from: current ? revision : null, to: revision,
+        upserts: current ? [] : [{ id: "area:working", domain: "area", rev: revision, body: { area: "working", lines: [] } }], deletes: [] });
+    }
     if (method === "GET" && name === "/api/working-draft") return json(fixture.workingDraft());
     // What Modeling's Record edits and continue does to the working draft here: its edits become recorded.
     if (method === "POST" && name === "/api/fixture/record") { recorded += 1; fixture.state.localDraft = null; return json({}); }

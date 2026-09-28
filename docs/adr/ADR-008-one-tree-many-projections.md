@@ -15,7 +15,7 @@ decision tree comes from two derived stores. Either store can be deleted at any 
    - A background queue produces the outputs when a state is committed, not when someone first opens the state.
    - A projection someone has to keep, such as an issued drawing, is still retained through P036.
 3. **Change notification.**
-   - Clients hear about changes from one event, `index.committed {revision, domains}`.
+   - Clients hear about changes from one event, `index.committed {epoch, revision, domains}`.
    - They then read a snapshot, or the changes `since=<revision>`, under an ETag.
    - Content-addressed bytes are served `immutable`, and each open project has one client store shared by every surface.
 
@@ -86,7 +86,8 @@ decision tree comes from two derived stores. Either store can be deleted at any 
 - `place` keeps every layout line. A reopen diffs the lines and projects again only the runs (or the tree) whose
   lines moved or were racy when written; a run that cites another place (a registered model's blob, a drawing
   revision's receipt, the design branches for a candidate) is projected again when that place moves. HEAD and the
-  working draft are cited by no row: saving a draft or issuing a version projects nothing.
+  working draft are cited by no row: saving a draft or issuing a version projects nothing (since #366 it still
+  moves the revision; see phase 2).
 - The revision moves once per commit that changed a row.
 - `/api/artifacts`, `/api/documents` and the byte routes' lookups read the index; they keep no whole-page memo once an
   index answers, and their tag adds the index's epoch and revision to the process's token. It is stable only when the
@@ -95,4 +96,42 @@ decision tree comes from two derived stores. Either store can be deleted at any 
   working source and the board keep their phase-0a memo until they read the index.
 - Known limit: a file rewritten in place without a directory entry changing is seen only where a notification
   (Windows) or this process's write names it. Byte routes still re-hash what they serve.
-- Deleted rows keep no tombstones yet; `since=<revision>` diffs belong to phase 2.
+
+**Phase 2 as built (#366, 2026-09-28):**
+- The cursor is `(epoch, revision)`, both the index's. A client keeps entities: `run:<id>` (a run's own body,
+  candidate, artifacts, documents and record count), `tree` (the tree's body and stages) and `area:<name>` (the
+  layout lines of every other area: HEAD, the working draft, the manifest, each top-level directory without rows).
+  An area moves the revision when one of its lines changed or this process wrote there, so a Continue or a saved
+  draft reaches clients although it projects nothing; a line only read again (racy) moves nothing.
+- The `change` table is the bounded change log: per entity, the revision that last changed or deleted it, kept for
+  the last 512 revisions above `meta.floor`. A rebuild starts a new epoch with an empty log (floor 1).
+- `GET /api/index?since=R&epoch=E`: the same epoch at the current revision answers empty (`from == to`); a revision
+  the log still holds answers `{from, to, upserts, deletes}`; another epoch, a revision ahead of the index or below
+  the floor, or no `since` answers `{reset: true}` and every entity. Tagged `"epoch:revision"`; the server keeps no
+  state per client. It never answers from a partial read: a refused snapshot is `INDEX_UNAVAILABLE` (503).
+- The keeper announces each commit that moved the revision, and its first load (`domains: [reset]`), to the
+  listeners registered for the project (`add_commit_listener`); the Studio publishes it on its event stream as
+  `index.committed`. Nothing depends on receiving it.
+- The Studio's own stream keeps its job events. A frame's id is now `<stream>:<seq>`, the stream naming the
+  process: a resume point from another process (a worker restart) or older than the 200-event buffer answers
+  `stream.reset` and the whole buffer instead of silently skipping. The index revision never depends on `seq`.
+- A write's answer carries `X-Monkey-Index: <epoch>:<revision>` once the index holds it (the Hub forwards it).
+- The Hub attaches once to each open project's worker stream and relays `index.committed` on
+  `/api/runtime/events` as an `index` frame, and the job events as `studio` frames. Each attachment - the first,
+  after a worker restart, after a `stream.reset` - also sends an `index` frame without a revision: read again.
+  A Hub page therefore holds one event stream, whatever it shows.
+- Each open project has one client store (`workspaces/src/api/projectStore.ts`) at the ChatShell level, shared by
+  its surfaces and released by count: `{epoch, revision, byId}`, one request in flight, `wanted = max(wanted,
+  hint.revision)`, a delta applied only onto its `from`, answers that are not newer dropped, another epoch reset.
+  It pulls on every open of the Hub stream (reconnects included) and on window focus, and only after the stream
+  first opened. A surface that wrote waits for the store to reach the write's revision before it ends "in
+  progress". Surfaces read it through `useSyncExternalStore` selectors, notified at most once a frame.
+- The Design Tree, Board and Render read their views again when the store's revision moves, not on a timer; a
+  view without a content hash is kept under the revision it was read at (`ProjectStore.derive`), so showing a
+  surface again on an unchanged project asks for nothing. Model bytes and previews stay content-addressed. The
+  store is not persisted (no IndexedDB): a snapshot of a local index costs a few milliseconds.
+- Periodic requests left when idle are the Hub's own: the chat attention read (30 s while no turn runs), the
+  application list (60 s) and the software-update status (60 s); the Monitor page polls only while it is open.
+- Known limit: surfaces still read their existing views after a move; they do not yet render from the store's
+  rows. A process without an index (no cache directory) sends no hints, so its surfaces refresh only on explicit
+  reloads and their own writes.

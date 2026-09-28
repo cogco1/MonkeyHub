@@ -32,7 +32,7 @@ import {
   asStudioApiError,
   type StudioApiError,
 } from "../api/client";
-import { useStudio } from "../api/ProjectRuntimeContext";
+import { useProjectRevision, useStudio } from "../api/ProjectRuntimeContext";
 import type { PageSource } from "../workspaces/monkeyboard/boardScene";
 import type { ServerIdentity } from "../api/connection";
 import type {
@@ -1585,14 +1585,21 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
     localEdits: () => localEditingRef.current || Boolean(workingDraft?.localDraft) || [...localModels.current.values()].some(unsynced),
     viewed: () => sourceLabel === LOCAL_SOURCE_LABEL ? LOCAL_SOURCE_LABEL : loadedArtifactsRef.current[0]?.runId ?? null,
   };
+  // What the last completed head read was made at: the project's store (#366), the base and the
+  // explicit refreshes. Coming back on screen with none of them moved reads nothing again.
+  const storeRevision = useProjectRevision();
+  const followReadAt = useRef<string | null>(null);
   useEffect(() => {
     if (!followsHead || !active || session.status !== "ready" || followBusy) return;
+    const at = JSON.stringify([storeRevision, editingRunId, versionRefreshRequest, refreshKey]);
+    if (storeRevision !== null && followReadAt.current === at) return;
     const read = ++followRead.current;
     const controller = new AbortController();
     const projectId = session.value.project.projectId;
     const localEdits = localEditingRef.current || Boolean(session.value.workingDraft?.localDraft) ||
       [...localModels.current.values()].some(unsynced);
     void studio.workingSource("modeling", controller.signal).then(async (source) => {
+      if (read === followRead.current) followReadAt.current = at;
       if (read !== followRead.current || source.projectId !== projectId || !source.head) return;
       const head = headOf(source);
       if (followStep({ baseRunId: editingRunId, head, busy: autoShowRef.current !== null, localEdits }) !== "follow" || head === null) return;
@@ -1604,7 +1611,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
       if (viewerFollows(viewed, editingRunId)) setHeadFollow({ runId: head.runId, viewRequest: modelLoadRequest.current });
     }).catch(() => { /* The current base stays usable; the next event reads the head again. */ });
     return () => controller.abort();
-  }, [followsHead, active, session.status, followBusy, editingRunId, versionRefreshRequest, refreshKey, studio, reload, pushNotice, t, sourceLabel]);
+  }, [followsHead, active, session.status, followBusy, editingRunId, versionRefreshRequest, refreshKey, studio, reload, pushNotice, t, sourceLabel, storeRevision]);
   useEffect(() => {
     // Show the head once the base and its listed model describe it, unless the
     // person loaded or started editing something since the follow was decided.

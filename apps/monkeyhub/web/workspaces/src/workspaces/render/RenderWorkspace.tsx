@@ -1,7 +1,7 @@
 import ModelPreview from "./ModelPreview";
 import { renderViewImage, type RenderView } from "../monkeyarch/viewer/renderView";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
-import { useStudio } from "../../api/ProjectRuntimeContext";
+import { useProjectRevision, useStudio } from "../../api/ProjectRuntimeContext";
 import { asStudioApiError } from "../../api/client";
 import type { RenderCapabilityDto, RenderJobDto, SourceDocumentDto } from "../../api/generated";
 import { usePreferences } from "../../features/settings/preferences";
@@ -37,8 +37,9 @@ export default function RenderWorkspace({ projectId, active, refreshKey, onBoard
   const sourceDocument = source ? findSource(images, source) : undefined;
   const hasPending = jobs.some((job) => job.status === "queued" || job.status === "running");
 
+  const readAgain = useRef(false);
   const refresh = useCallback(async () => {
-    if (reading.current) return;
+    if (reading.current) { readAgain.current = true; return; }
     reading.current = true;
     const epoch = readEpoch.current;
     setLoading(true);
@@ -56,17 +57,23 @@ export default function RenderWorkspace({ projectId, active, refreshKey, onBoard
         uncertainRef.current = null; setUncertain(null); setSubmitError(null);
       }
     } catch (cause) { if (alive.current) setError(asStudioApiError(cause).detail); }
-    finally { reading.current = false; if (alive.current) setLoading(false); }
+    finally {
+      reading.current = false; if (alive.current) setLoading(false);
+      if (readAgain.current && alive.current) { readAgain.current = false; void refresh(); }
+    }
   }, [studio, projectId]);
+  // Read when first shown, on an explicit refresh, and when the project's store moves (#366):
+  // a render attempt records each of its states, so a running one is followed without a timer,
+  // and coming back to an unchanged project reads nothing.
+  const revision = useProjectRevision();
+  const readAt = useRef<{ revision: string | null; refreshKey: number } | null>(null);
   useEffect(() => {
     if (!active) return;
+    const last = readAt.current;
+    if (last && last.refreshKey === refreshKey && revision !== null && last.revision === revision) return;
+    readAt.current = { revision, refreshKey };
     void refresh();
-  }, [active, refreshKey, refresh]);
-  useEffect(() => {
-    if (!active || (!hasPending && !uncertain)) return;
-    const timer = window.setInterval(() => void refresh(), 2500);
-    return () => window.clearInterval(timer);
-  }, [active, hasPending, uncertain, refresh]);
+  }, [active, refreshKey, refresh, revision]);
 
   const upload = async (files: FileList | null, target: "source" | "reference") => {
     if (!files?.length || uploadingRef.current) return;

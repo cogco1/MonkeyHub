@@ -8,12 +8,15 @@
  * `POST /api/candidates/{id}/accept`, on the Working Head only. View changes
  * nothing here. Each act that changed the design confirms itself in a toast
  * beside the chip (FN-5); a refusal stays inline where it was asked for. The
- * facts are read again on a short interval while the workspace is on screen,
- * when it comes back on screen, on focus, and after each action; a read that
- * finds the project unchanged keeps the tree it has.
+ * facts are read again when the project's store moves (#366: its index
+ * committed, whoever wrote), when the workspace comes back on screen after it
+ * moved, and after each action once the store holds that action's write. A
+ * read is kept in the store under the revision it was read at, so showing the
+ * tree again on an unchanged project asks for nothing; nothing reads on a timer.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { asStudioApiError, StudioApiError, type StudioClient } from "../../api/client";
+import { useProjectRevision, useProjectStoreInstance } from "../../api/ProjectRuntimeContext";
 import type { DesignHistoryDto, WorkingDraftDto, WorkingDraftSelectionDto, WorktreeGraphDto } from "../../api/generated";
 import type { DesignTreeSource } from "./contract";
 import { continueRequest, continueUndo, DESIGN_TREE_UNDO_MOVED, DESIGN_TREE_UNSYNCED, undoRequest, type ContinueUndo,
@@ -21,9 +24,6 @@ import { continueRequest, continueUndo, DESIGN_TREE_UNDO_MOVED, DESIGN_TREE_UNSY
 import { buildGrowthTree, type GrowthTree, type TreeNode } from "./model";
 
 export { DESIGN_TREE_UNDO_MOVED, DESIGN_TREE_UNSYNCED } from "./continueUndo";
-
-/** How often an open project re-reads its tree while it is on screen; an unchanged project answers in one request. */
-export const DESIGN_TREE_POLL_MS = 15_000;
 
 export type DesignTreeAction = { readonly kind: "continue" | "review"; readonly node: string } | { readonly kind: "accept" } | { readonly kind: "undo" };
 
@@ -207,45 +207,62 @@ export function useDesignTree({ studio, capabilities, projectId, active, refresh
   const toastIds = useRef(0);
   const shownToast = useRef<DesignTreeToast | null>(null);
   shownToast.current = toast;
+  const store = useProjectStoreInstance();
+  const revision = useProjectRevision();
 
-  const load = useCallback(async (signal?: AbortSignal) => {
+  /**
+   * Read the tree, or take the read already made at the store's revision.
+   * `fresh` reads again whatever the store says (an explicit refresh); so
+   * does every read while the store has none (outside the Hub).
+   */
+  const load = useCallback(async (fresh = false) => {
     if (!available || !projectId) return;
     const read = ++reads.current;
+    const at = store.current();
+    const key = fresh || at.epoch === null ? `read:${read}` : `${at.epoch}:${at.revision}`;
     try {
-      const next = await readDesignTreeSource(studio, projectId, signal, sourceRef.current);
-      if (read !== reads.current || signal?.aborted) return;
+      const next = await store.derive(`design-tree:${projectId}`, key,
+        () => readDesignTreeSource(studio, projectId, undefined, sourceRef.current));
+      if (read !== reads.current) return;
       setSource(next); setError(null); setStatus("ready");
     } catch (cause) {
-      if (read !== reads.current || signal?.aborted) return;
+      if (read !== reads.current) return;
       setError(asStudioApiError(cause));
       setStatus((previous) => previous === "ready" ? previous : "failed");
     }
-  }, [available, projectId, studio]);
+  }, [available, projectId, studio, store]);
 
+  /** After a write: done once the store holds it, then the tree read at that revision (again, if the store did not move). */
+  const reload = useCallback(async (before: { epoch: string | null; revision: number }) => {
+    await store.caughtUp();
+    const now = store.current();
+    await load(now.epoch === before.epoch && now.revision === before.revision);
+  }, [load, store]);
+
+  // The first read, an explicit refresh, a move of the store, or coming back on screen after one.
+  // A read already made at this revision is taken as it is: nothing is asked for.
+  const asked = useRef({ refreshKey, nudge });
   useEffect(() => {
     if (!available) return;
-    const controller = new AbortController();
-    void load(controller.signal);
-    return () => controller.abort();
-  }, [available, load, refreshKey, nudge]);
+    const fresh = asked.current.refreshKey !== refreshKey || asked.current.nudge !== nudge;
+    asked.current = { refreshKey, nudge };
+    if (!active && !fresh && sourceRef.current !== null) return;
+    if (busyRef.current && !fresh) return;
+    void load(fresh);
+  }, [available, active, load, refreshKey, nudge, revision]);
 
-  // Coming back to a surface that was paused reads the tree at once, as focus and a shown window do.
-  const wasActive = useRef(active);
+  // Outside the Hub no store moves (no stream relays the index): the tree is read again when the
+  // window is focused or shown, as the Hub's store is. Never on a timer.
   useEffect(() => {
-    const returned = active && !wasActive.current;
-    wasActive.current = active;
-    if (!available || !active) return;
+    if (!available || !active || revision !== null) return;
     const refresh = () => { if (!document.hidden && !busyRef.current) void load(); };
-    if (returned) refresh();
-    const timer = window.setInterval(refresh, DESIGN_TREE_POLL_MS);
     window.addEventListener("focus", refresh);
     document.addEventListener("visibilitychange", refresh);
     return () => {
-      window.clearInterval(timer);
       window.removeEventListener("focus", refresh);
       document.removeEventListener("visibilitychange", refresh);
     };
-  }, [available, active, load]);
+  }, [available, active, load, revision]);
 
   const tree = useMemo(() => source ? buildGrowthTree(source, showProcessed) : null, [source, showProcessed]);
 
@@ -257,12 +274,13 @@ export function useDesignTree({ studio, capabilities, projectId, active, refresh
     // A new act replaces the last one's outcome, toast and Undo; an Undo answers in its own toast.
     if (action.kind !== "undo") { setOutcome(null); setToast(null); undoable.current = null; }
     try {
+      const before = store.current();
       const done = await write();
       setOutcome(done.outcome);
       undoable.current = done.undo;
       setToast({ ...done.toast, id: ++toastIds.current } as DesignTreeToast);
       headMoved.current();
-      await load();
+      await reload(before);
       return true;
     } catch (cause) {
       const error = asStudioApiError(cause);
@@ -277,7 +295,7 @@ export function useDesignTree({ studio, capabilities, projectId, active, refresh
       busyRef.current = false;
       setBusy(null);
     }
-  }, [load]);
+  }, [reload, store]);
 
   const continueFrom = useCallback((nodeId: string) => {
     const node = tree?.nodes.get(nodeId);
@@ -307,16 +325,17 @@ export function useDesignTree({ studio, capabilities, projectId, active, refresh
     if (!canReview || !projectId || !node || (node.kind !== "candidate" && node.kind !== "stage") || busyRef.current) return false;
     busyRef.current = true; setBusy({ kind: "review", node: nodeId }); setOutcome(null);
     try {
+      const before = store.current();
       const judgement = await studio.reviewCandidate({ projectId, subjectKind: node.kind,
         subjectRef: node.kind === "candidate" ? node.candidate!.candidateId : node.stage!.ref,
         action, reason: reason?.trim() || null });
-      await load();
+      await reload(before);
       if (action === "restore" && judgement.disposition === "unreviewed") setShowProcessed(false);
       return true;
     } catch (cause) {
       setOutcome({ kind: "refused", node: nodeId, error: asStudioApiError(cause) }); return false;
     } finally { busyRef.current = false; setBusy(null); }
-  }, [canReview, load, projectId, studio, tree]);
+  }, [canReview, projectId, reload, store, studio, tree]);
 
   const undo = useCallback(() => {
     const last = undoable.current;

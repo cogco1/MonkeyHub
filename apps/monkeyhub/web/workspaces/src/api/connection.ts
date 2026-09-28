@@ -79,13 +79,23 @@ export class ServerConnection {
   readonly client: Client;
   private readonly token: string | null;
   private identity: ServerIdentity | null = null;
+  /**
+   * Told the index revision a write committed at (`X-Monkey-Index: <epoch>:<revision>`),
+   * so the project's store can be waited for before the write counts as done (#366).
+   */
+  onIndexWrite: ((epoch: string, revision: number) => void) | null = null;
 
   constructor(baseUrl: string, token: string | null = null) {
     this.baseUrl = readBaseUrl(baseUrl);
     this.token = token;
     this.client = createClient({
       baseUrl: this.baseUrl,
-      fetch: operationFetch,
+      fetch: async (input: RequestInfo | URL, init?: RequestInit) => {
+        const response = await operationFetch(input, init);
+        const written = /^(.+):(\d+)$/.exec(response.headers.get("X-Monkey-Index") ?? "");
+        if (written) this.onIndexWrite?.(written[1], Number(written[2]));
+        return response;
+      },
       ...(token === null ? {} : { headers: { Authorization: `Bearer ${token}` } }),
     });
   }

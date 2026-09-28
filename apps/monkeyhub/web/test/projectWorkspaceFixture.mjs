@@ -4,7 +4,7 @@ import rhino3dm from "rhino3dm";
 
 // Fixtures for the actual Hub-mounted workspace components. The API boundary,
 // project identity and model bytes are real shapes; no substitute page is used.
-export async function createProjectWorkspaceFixture(runtimes, sessions) {
+export async function createProjectWorkspaceFixture(runtimes, sessions, { onIndex = () => {} } = {}) {
   const rhino = await rhino3dm(), projects = new Map(), requests = [];
   // Projects whose runtime keeps a working draft (autosave), by project id:
   // { revisionSha256, current, localDraft, writes, hold, failure }. A test may set
@@ -18,6 +18,38 @@ export async function createProjectWorkspaceFixture(runtimes, sessions) {
   const conditional = new Set(["/api/design-history", "/api/worktrees", "/api/artifacts", "/api/documents",
     "/api/working-source", "/api/board", "/api/render/jobs"]);
   const notModified = [];
+  // Projects whose runtime reports its event stream (the Studio's "events" capability), by project id.
+  const studioEvents = new Set();
+  // #366: each project's index, as the runtime's keeper keeps it: an epoch, and a revision that moves
+  // once whenever what the project's views are derived from changed. `onIndex` hears each commit,
+  // as the Hub relays it on its stream; a test that changed a project behind the runtime's back
+  // calls `commit` for it, as the runtime's layout watch would.
+  const indexes = new Map();
+  const indexOf = (current) => {
+    const id = current.runtime.projectId, token = projectToken(current);
+    let index = indexes.get(id);
+    if (!index) { index = { epoch: `epoch-${id}-1`, revision: 1, token }; indexes.set(id, index); return { index, moved: false }; }
+    if (index.token === token) return { index, moved: false };
+    index.revision += 1; index.token = token;
+    return { index, moved: true };
+  };
+  const commit = (projectId) => {
+    const current = projects.get(projectId);
+    if (!current) return null;
+    const { index, moved } = indexOf(current);
+    if (moved) onIndex(current.runtime, { epoch: index.epoch, revision: index.revision, domains: ["area"] });
+    return index;
+  };
+  // A rebuilt index (a new epoch), as a worker restart that found its file unusable leaves it.
+  const rebuild = (projectId) => {
+    const index = indexes.get(projectId);
+    if (!index) return null;
+    const next = Number(index.epoch.split("-").at(-1)) + 1;
+    Object.assign(index, { epoch: `epoch-${projectId}-${next}`, revision: 1, token: projectToken(projects.get(projectId)) });
+    return index;
+  };
+  const indexEntities = (current, index) => [{ id: "area:project", domain: "area", rev: index.revision,
+    body: { area: "project", lines: [digest(index.token)] } }];
   const digest = (value) => createHash("sha256").update(value).digest("hex");
   const stateDigestOf = (projectId, runId) => digest(`state:${projectId}:${runId}`);
   const workingDraftDto = (projectId) => {
@@ -67,7 +99,14 @@ export async function createProjectWorkspaceFixture(runtimes, sessions) {
     if (body?.projectId) assert.equal(body.projectId, projectId, "workspace writes stay bound to their own project");
     if (method !== "GET" && method !== "HEAD") assert.match(route.request().headers()["idempotency-key"] ?? "", /^[0-9a-f-]{36}$/i, "workspace writes carry their own idempotency key");
     const json = async (value) => {
-      if (method !== "GET" || !conditional.has(name)) { await route.fulfill({ json: value }); return true; }
+      if (method !== "GET") {
+        // A write names the index revision that holds it, and the index announces the commit.
+        const { index, moved } = indexOf(current);
+        await route.fulfill({ json: value, headers: { "x-monkey-index": `${index.epoch}:${index.revision}` } });
+        if (moved) onIndex(runtime, { epoch: index.epoch, revision: index.revision, domains: ["area"] });
+        return true;
+      }
+      if (!conditional.has(name)) { await route.fulfill({ json: value }); return true; }
       const tag = `"${digest(JSON.stringify([projectToken(current), name, [...url.searchParams].sort()]))}"`;
       if (route.request().headers()["if-none-match"] === tag) {
         notModified.push({ projectId, name });
@@ -76,8 +115,20 @@ export async function createProjectWorkspaceFixture(runtimes, sessions) {
       await route.fulfill({ json: value, headers: { etag: tag, "cache-control": "no-cache" } }); return true;
     };
     if (method === "GET") {
+      if (name === "/api/index") {
+        const { index, moved } = indexOf(current);
+        if (moved) onIndex(runtime, { epoch: index.epoch, revision: index.revision, domains: ["area"] });
+        const since = url.searchParams.has("since") ? Number(url.searchParams.get("since")) : null;
+        const delta = since !== null && url.searchParams.get("epoch") === index.epoch && since <= index.revision;
+        const entities = indexEntities(current, index);
+        await route.fulfill({ headers: { etag: `"${index.epoch}:${index.revision}"`, "cache-control": "no-cache" },
+          json: { projectId, epoch: index.epoch, revision: index.revision, reset: !delta, from: delta ? since : null, to: index.revision,
+            upserts: delta && since === index.revision ? [] : entities, deletes: [] } });
+        return true;
+      }
       if (name === "/api/protocol") return json({ protocol: "archflow/2", server: "fixture", serverVersion: "test", mode: "local",
-        capabilities: [...(workingDrafts.has(projectId) ? ["working-draft"] : []), ...(designTrees.has(projectId) ? ["design-history", "working-source"] : [])] });
+        capabilities: [...(workingDrafts.has(projectId) ? ["working-draft"] : []), ...(designTrees.has(projectId) ? ["design-history", "working-source"] : []),
+          ...(studioEvents.has(projectId) ? ["events"] : [])] });
       if (name === "/api/working-draft" && workingDrafts.has(projectId)) return json(workingDraftDto(projectId));
       if (name === "/api/project") return json({ projectId, projectDir: runtime.projectDir, published: current.published,
         referenceRun: { runId: current.home, baseVersion: 0, baseSha256: current.published.stateSha256 }, intentProvider: "codex", intentModel: "fixture" });
@@ -185,5 +236,5 @@ export async function createProjectWorkspaceFixture(runtimes, sessions) {
     }
     throw new Error(`Unexpected project request: ${method} ${projectId} ${name}`);
   }
-  return { handle, requests, notModified, projects, workingDrafts, designTrees, stateDigestOf };
+  return { handle, requests, notModified, projects, workingDrafts, designTrees, studioEvents, stateDigestOf, indexes, commit, rebuild };
 }

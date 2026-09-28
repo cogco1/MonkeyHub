@@ -4437,6 +4437,87 @@ export type ImpactLockDto = {
 };
 
 /**
+ * IndexChangesDto
+ *
+ * ``GET /api/index``: a whole snapshot of the index, or the changes since a revision (#366).
+ *
+ * With ``since`` and ``epoch`` naming this index's epoch and a revision the
+ * change log still holds, the answer holds only what changed after it:
+ * ``from`` is that revision, ``to`` the current one, ``upserts`` every entity
+ * changed since (as it is now) and ``deletes`` the ids removed since. Equal
+ * ``from`` and ``to`` means nothing changed. Otherwise - no ``since``,
+ * another epoch (a rebuild), a revision ahead of the index or older than the
+ * log - ``reset`` is true and ``upserts`` is every entity: replace what you
+ * kept. Tagged ``"<epoch>:<revision>"``.
+ */
+export type IndexChangesDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Epoch
+     */
+    epoch: string;
+    /**
+     * Revision
+     */
+    revision: number;
+    /**
+     * Reset
+     */
+    reset: boolean;
+    /**
+     * From
+     */
+    from?: number | null;
+    /**
+     * To
+     */
+    to: number;
+    /**
+     * Upserts
+     */
+    upserts: Array<IndexEntityDto>;
+    /**
+     * Deletes
+     */
+    deletes: Array<string>;
+};
+
+/**
+ * IndexEntityDto
+ *
+ * One entity a client keeps of the index: a run, the tree, or another area of the project.
+ *
+ * ``id`` is ``run:<runId>``, ``tree`` or ``area:<name>``; ``domain`` is the
+ * part before the colon; ``rev`` the revision that last changed it. Like a
+ * row, an entity is never evidence: its body names the records it was read from.
+ */
+export type IndexEntityDto = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Domain
+     *
+     * run | tree | area
+     */
+    domain: string;
+    /**
+     * Rev
+     */
+    rev: number;
+    /**
+     * Body
+     */
+    body: {
+        [key: string]: unknown;
+    };
+};
+
+/**
  * IndexRowsDto
  *
  * Rows of one table of the project index (ADR-008 phase 1b).
@@ -12684,6 +12765,58 @@ export type ReadWorktreesApiWorktreesGetResponses = {
 };
 
 export type ReadWorktreesApiWorktreesGetResponse = ReadWorktreesApiWorktreesGetResponses[keyof ReadWorktreesApiWorktreesGetResponses];
+
+export type ReadIndexChangesApiIndexGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * If-None-Match
+         */
+        'If-None-Match'?: string | null;
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Since
+         *
+         * the revision the client holds
+         */
+        since?: number | null;
+        /**
+         * Epoch
+         *
+         * the epoch that revision belongs to
+         */
+        epoch?: string | null;
+    };
+    url: '/api/index';
+};
+
+export type ReadIndexChangesApiIndexGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadIndexChangesApiIndexGetError = ReadIndexChangesApiIndexGetErrors[keyof ReadIndexChangesApiIndexGetErrors];
+
+export type ReadIndexChangesApiIndexGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: IndexChangesDto;
+};
+
+export type ReadIndexChangesApiIndexGetResponse = ReadIndexChangesApiIndexGetResponses[keyof ReadIndexChangesApiIndexGetResponses];
 
 export type ReadIndexApiIndexTableGetData = {
     body?: never;

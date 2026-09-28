@@ -33,11 +33,18 @@
  * This is a live view of a process, not a transcript and not version history:
  * it is bounded, it is dropped on reload, and nothing here is a record of what
  * the project is.
+ *
+ * Inside the Hub the panel opens no stream of its own (#366): the Hub already
+ * follows the project's stream and relays its events on the one stream the
+ * page holds (`projectStores.onStudioEvent`). There the numbering has holes
+ * by design - the project index's own announcements are not relayed as
+ * lines - so the panel names no gaps.
  */
 
 import { useEffect, useRef, useState } from "react";
 
-import { useConnection } from "../../api/ProjectRuntimeContext";
+import { useConnection, useRuntimeKey } from "../../api/ProjectRuntimeContext";
+import { projectStores } from "../../api/projectStore";
 import type { StudioEventDto } from "../../api/generated";
 import { BilingualText } from "../../i18n/BilingualText";
 import type { MessageKey } from "../../../../src/i18n/messages.en";
@@ -90,6 +97,7 @@ export function useStudioEvents(
   onEvent?: (event: StudioEventDto) => void,
 ): readonly StreamLine[] {
   const connection = useConnection();
+  const runtimeKey = useRuntimeKey();
   const [lines, setLines] = useState<readonly StreamLine[]>([]);
   const onEventRef = useRef(onEvent);
   onEventRef.current = onEvent;
@@ -111,7 +119,7 @@ export function useStudioEvents(
 
   useEffect(() => {
     if (!enabled) return;
-    const source = new EventSource(connection.url("/api/events"));
+    const relayed = runtimeKey !== null;
 
     const push = (line: StreamLine) => {
       setLines((current) => [...current, line].slice(-KEEP));
@@ -159,7 +167,7 @@ export function useStudioEvents(
       if (seenSeqRef.current.has(event.seq)) return;
       remember(event.seq);
       const previous = lastSeqRef.current;
-      if (previous !== null && event.seq > previous + 1) {
+      if (!relayed && previous !== null && event.seq > previous + 1) {
         const missing = event.seq - previous - 1;
         note(
           missing === 1 ? "evidence.events.gapOne" : "evidence.events.gapMany",
@@ -181,6 +189,17 @@ export function useStudioEvents(
       onEventRef.current?.(event);
     };
 
+    if (relayed) {
+      connectionRef.current += 1;
+      seenSeqRef.current = new Set();
+      lastSeqRef.current = null;
+      return projectStores.onStudioEvent(runtimeKey, (event) => {
+        if (typeof event.type === "string" && EVENT_TYPES.includes(event.type)) {
+          receive(new MessageEvent("message", { data: JSON.stringify(event) }));
+        }
+      });
+    }
+    const source = new EventSource(connection.url("/api/events"));
     for (const type of EVENT_TYPES) {
       source.addEventListener(type, receive as EventListener);
     }
@@ -213,7 +232,7 @@ export function useStudioEvents(
       }
       source.close();
     };
-  }, [enabled, connection]);
+  }, [enabled, connection, runtimeKey]);
 
   return lines;
 }
