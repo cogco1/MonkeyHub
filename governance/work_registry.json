@@ -81,7 +81,9 @@
             "apps/archflow-studio/api/archflow_studio_api/application/frame.py",
             "apps/archflow-studio/api/archflow_studio_api/application/pick.py",
             "apps/archflow-studio/api/archflow_studio_api/routes/candidates.py",
-            "apps/archflow-studio/api/archflow_studio_api/routes/options.py"
+            "apps/archflow-studio/api/archflow_studio_api/routes/options.py",
+            "apps/archflow-studio/api/archflow_studio_api/routes/state.py",
+            "apps/archflow-studio/api/archflow_studio_api/routes/project.py"
           ],
           "depends_on": []
         }
