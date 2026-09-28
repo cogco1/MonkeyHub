@@ -93,7 +93,7 @@ try {
     else vite.middlewares(request,response);
   });
   await new Promise(resolve=>http.listen(0,"127.0.0.1",resolve));
-  browser = await chromium.launch({headless:true, ...(process.env.CHROMIUM_EXECUTABLE ? {executablePath:process.env.CHROMIUM_EXECUTABLE} : {}), args:["--enable-unsafe-swiftshader","--no-sandbox"]});
+  browser = await chromium.launch({headless:true, ...(process.env.CHROMIUM_EXECUTABLE ? {executablePath:process.env.CHROMIUM_EXECUTABLE} : {channel:"chrome"}), args:["--enable-unsafe-swiftshader","--no-sandbox"]});
   page = await browser.newPage({viewport:{width:1280,height:850},locale:"en-US"});
   page.on("pageerror",error=>errors.push(error.message)); page.setDefaultTimeout(12000);
   await page.goto(`http://127.0.0.1:${http.address().port}/normal-test?lang=en`);
@@ -131,8 +131,8 @@ try {
     assert.equal(await page.locator(".stage-pushpull svg line").count(),1);
     for (const distance of [.6,-.4,.3]) {
       const to = await page.evaluate(point=>window.projectPoint(point),c.point.map((x,i)=>x+distance*c.normal[i]));
-      const box = page.viewportSize();
-      assert.ok(to[0]>20 && to[0]<box.width-20 && to[1]>20 && to[1]<box.height-130,
+      // Hit-test rather than bound page coordinates: the Stage bar sits above the canvas since #345.
+      assert.ok(await page.evaluate(([x,y])=>document.elementFromPoint(x,y)?.closest(".stage-pushpull") !== null,to),
         `The synthetic pointer target must stay inside the unobstructed viewport: ${to}`);
       await page.mouse.move(...to,{steps:5});
       await page.waitForFunction(expected=>Math.abs(Number(document.querySelector('.model-edit-panel input').value)-expected)<.015,distance);
@@ -173,8 +173,13 @@ try {
   console.log("PASS all seven cancellation paths leave no typed action");
   await reset(); await setView(false,[12,-15,10]);
   // Clear the viewport pick through a real empty-space click before selecting
-  // the object without a face, as an object-tree selection would do.
-  await page.mouse.click(24,24);
+  // the object without a face, as an object-tree selection would do. Since #345
+  // the Stage bar sits above the canvas, so aim inside the viewport's own canvas;
+  // the annotation canvases share its rect but never clear a pick.
+  const empty = await page.evaluate(()=>{ const r = document.querySelector(".viewport-canvas").getBoundingClientRect(); return [r.left+24,r.top+24]; });
+  assert.ok(await page.evaluate(([x,y])=>document.elementFromPoint(x,y) === document.querySelector(".viewport-canvas"),empty),
+    "the empty-space click must reach the viewport's own canvas");
+  await page.mouse.click(...empty);
   assert.equal(await page.evaluate(()=>window.viewport.current.workPlaneFromSelection()),null);
   await page.evaluate(()=>window.selectWithoutFace());
   await page.waitForFunction(()=>window.selection === "source");

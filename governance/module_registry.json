@@ -2223,7 +2223,9 @@
         "IndexKeeper: the index's only writer, a thread per index fed by the layout watch's sightings (project.watch add_listener) and this process's write observer; its IndexState, and whether the rows hold every write this process made (readable)",
         "IndexStamp and manifest_stamp: schema version, projector version, project id and the digest of project.json; a different stamp rebuilds under a new epoch",
         "the row values a projector returns (RunRows, TreeRows, RecordRow, ArtifactRow, DocumentRow, CandidateRow, StageRow) and the Projector protocol",
-        "line_places, place_area and path_area: which part of a project a layout line or a written path belongs to"
+        "line_places, place_area and path_area: which part of a project a layout line or a written path belongs to",
+        "the bounded change log (#366): the change table (per entity - run:<id>, aside:<id>, tree, working, area:<name> - the revision that last changed or deleted it, kept for CHANGE_LOG_REVISIONS revisions above meta.floor), IndexSnapshot.changes (the entities changed and ids deleted since a revision, or None below the floor or ahead) and IndexSnapshot.entities (the whole snapshot a client keeps)",
+        "IndexCommit and add_commit_listener: the keeper announces each commit that moved the revision, and its first load, to the listeners registered for the project's root (a hint, never data)"
       ],
       "does_not_own": [
         "what a row holds, and how it is derived (the projector: studio.binding's StudioProjector)",
@@ -2241,7 +2243,9 @@
       "outputs": [
         "IndexToken (epoch, revision)",
         "IndexState",
-        "IndexSnapshot rows with their decoded body and rev"
+        "IndexSnapshot rows with their decoded body and rev",
+        "IndexCommit (token and moved domains: run, tree, working, area; reset after a rebuild or first load)",
+        "change entities {id, domain, rev, body}"
       ],
       "public_api": [
         "ProjectIndex",
@@ -2279,7 +2283,14 @@
         "path_area",
         "QUERYABLE",
         "INDEX_FILE",
-        "SCHEMA_VERSION"
+        "SCHEMA_VERSION",
+        "IndexSnapshot.changes",
+        "IndexSnapshot.entities",
+        "IndexSnapshot.floor",
+        "IndexCommit",
+        "add_commit_listener",
+        "entity_area",
+        "CHANGE_LOG_REVISIONS"
       ],
       "depends_on": [
         "project.layout",
@@ -2302,12 +2313,14 @@
         "a file SQLite cannot read is moved aside with its journal (only the latest such copy is kept), rebuilt once and a warning logged; a failed rebuild makes the index unavailable and never blocks opening the project",
         "one projector fills the rows for a rebuild and for every change, outside the write transaction; a commit that changed a row moves the revision exactly once, and an apply that found nothing to do commits nothing",
         "a keeper never outlives its binding: closing the binding, or collecting one nobody closed, stops the keeper and gives up index.lock",
-        "a kept file reopened after a restart is reused as it is when every layout line matches and none was racy when written; otherwise only the places that moved are projected again; a racy place is projected again once it settles"
+        "a kept file reopened after a restart is reused as it is when every layout line matches and none was racy when written; otherwise only the places that moved are projected again; a racy place is projected again once it settles",
+        "every committed change to a run's rows (the records it keeps aside, RunRows.aside, are an entity of their own, aside:<id>, so saving one never moves run:<id>), the tree, the working position (Projector.project_working: the working draft without its local recovery ref, its own entity so an autosave moves only area:working) or another area (HEAD, the working draft's file, any top-level directory without rows) moves the revision once and is logged; a since below the log's floor or ahead of the index answers nothing, so the caller sends a whole snapshot; a rebuild starts a new epoch with an empty log; a commit listener only publishes and never reads or writes the project"
       ],
       "status": "canonical",
       "tests": [
         "tests/test_project_index.py",
-        "apps/archflow-studio/api/tests/test_indexed_reads.py"
+        "apps/archflow-studio/api/tests/test_indexed_reads.py",
+        "apps/archflow-studio/api/tests/test_index_changes.py"
       ],
       "notes": "Created because no owner held a persistent derived store (ADR-008 phase 1b, #365). It hears of changes only through project.watch and the repository write observer; it never walks the project itself.",
       "files": [
@@ -4642,7 +4655,7 @@
         "The current project working position (moved only by an explicit selection, never by recording a generated candidate), the automatic recovery listing of every unlabelled generated candidate however old, independent explicit saved versions and exact-source local command recovery through the P036 working-draft port; readback never executes a recovered request; every selection onto a run retains who made it as an AuditEvent@1 design.continued beside that run, ids only (actor, origin, previous head run, target run, chat message ids), and a selection whose event cannot be retained is undone.",
         "Resolving the Working Head for ordinary work: the readable retained working position, else the main line's accepted head, else the reference run, and each workspace's compatible exact source under a LIVE or FROZEN policy; resolving writes nothing; a live rejection of the working position is reported as a warning and never moves it",
         "The representation-status projection (#223): for one exact registered page, current, outdated, frozen or unavailable, the exact retained refs it was made from and its newest registered replacement, derived on every read by asking the page's owner (a cut plan's read set through plan_status, an AI render's retained request through Render's freshness, a page bound to one model state through model_is_current, a page bound to nothing through its replacements alone); it writes nothing and stores no status or dependency edge: the project-level dependency is this projection, not a second state",
-        "the Studio projector of the project index (StudioProjector): each run's records, artifacts, documents and candidate source and the committed stages, read through the same readers the routes use; attaching the index in StudioSettings.project_index_dir (the index subdirectory of the Hub's project cache directory) to the one binding, kept current by its keeper; which listing reads the index (only when it holds every write this process made) and the read-only agent query route GET /api/index/{table}"
+        "the Studio projector of the project index (StudioProjector): each run's records, artifacts, documents and candidate source and the committed stages, read through the same readers the routes use; attaching the index in StudioSettings.project_index_dir (the index subdirectory of the Hub's project cache directory) to the one binding, kept current by its keeper; which listing reads the index (only when it holds every write this process made) and the read-only agent query route GET /api/index/{table}; the client stores' catch-up route GET /api/index?since=&epoch= (#366): empty when current, the changes while the change log reaches back, otherwise a reset snapshot, tagged \"<epoch>:<revision>\""
       ],
       "does_not_own": [
         "issuing a project version, and direct project file writes: the ProjectBinding object stays read-only, initial authored-input preparation and configured sync use project.repository ports; runtime.project_runner is the writer of a modeling run and project.issue the only issuer. A configured pull advances this Runtime's local design branch, and it does so entirely through project.repository's transfer and branch compare-and-swap ports; this owner writes no project file itself and moves no canonical HEAD",
@@ -4757,6 +4770,7 @@
         "ProjectBinding.index_reader",
         "ProjectBinding.index_status",
         "release_bound_project",
+        "GET /api/index",
         "GET /api/index/{table}",
         "IndexRowsDto",
         "attach_project_index",
@@ -4829,7 +4843,8 @@
         "apps/archflow-studio/api/tests/test_representation_dependencies.py",
         "apps/archflow-studio/api/tests/test_conditional_reads.py",
         "apps/archflow-studio/api/tests/test_derivation_memo.py",
-        "apps/archflow-studio/api/tests/test_indexed_reads.py"
+        "apps/archflow-studio/api/tests/test_indexed_reads.py",
+        "apps/archflow-studio/api/tests/test_index_changes.py"
       ],
       "notes": "Every other Studio concern reads the project through this one binding.",
       "files": [
@@ -4864,7 +4879,7 @@
         "the studio candidate harness workflow and stage, explicitly not a project stage advance",
         "turning the authored seat pack project.inputs read onto SeatSpec and refusing an empty pack; inheriting exact retained source seat definitions for continuation, and projecting explicit Component removals into only the new run ownership without rewriting authored inputs",
         "the worker pool and queue: closure-based conflicts, the exclusive Rhino export lane, and per-job lifecycle state",
-        "the bounded in-process event log, its replay and its live subscribers",
+        "the bounded in-process event log, its replay and its live subscribers; each process's stream id, resume points <stream>:<seq>, and stream.reset (restart or overflow) for a resume point it cannot honour (#366); index.committed frames carrying the project index's commits",
         "CandidateRun: seat outcomes, relation totals as three counts and two flags, artifacts, and honesty lines; candidate reads also expose the retained inspected object bounds and their declared units/frame, with explicit unavailable readback",
         "one arrangement for every kind of candidate: compile or receive a StateRecordOperator, replay it against the worker's exact base, then run the successor (run_operator over _run_successor); a proposal's optional source_run_id follows its explicitly selected retained record through queue and worker, while None preserves the default reference policy",
         "executing a semantic component proposal through the same run_operator path as scalar and massing proposals",
@@ -5664,7 +5679,8 @@
         "ORIGIN_HUB",
         "MonitoredCompiler.invoke_structured",
         "ConditionalReads",
-        "CONDITIONAL_READS"
+        "CONDITIONAL_READS",
+        "IndexRevisionHeader: X-Monkey-Index <epoch>:<revision> on a successful write once the project index holds it (#366)"
       ],
       "depends_on": [
         "monkeymonitor",
@@ -7162,7 +7178,7 @@
         "Applications.worker_snapshots",
         "Applications.recover",
         "GET /api/runtime",
-        "GET /api/runtime/events",
+        "GET /api/runtime/events (runtime frames, plus each open project's worker index hints as index frames and Studio events as studio frames naming the worker stream that numbered them, relayed from one Hub attachment per worker and opened with each project's last 200 Studio events, #366; the per-page proxy of the worker's /api/events is retired and answers 404)",
         "POST /api/runtime/projects/open",
         "GET /api/runtime/projects/{runtime_id}",
         "POST /api/runtime/projects/{runtime_id}/recover",
@@ -7202,7 +7218,8 @@
         "PUT /api/updates/settings",
         "GET /api/chat/sessions/{session_id}/attachments/{attachment_id}/model-source",
         "GET /api/integrations",
-        "ChatSuggestion via chat_present / ChatPresentationRequest; ChatPostRequest.suggestionSelection resolves one retained card into the existing native user-turn admission"
+        "ChatSuggestion via chat_present / ChatPresentationRequest; ChatPostRequest.suggestionSelection resolves one retained card into the existing native user-turn admission",
+        "workspaces/src/api/projectStore.ts: ProjectStore and projectStores, one ref-counted client store per open project fed by the Hub's one stream (#366), with each entity's last move (moved, movedAt) and each project's kept Studio events known by <stream>:<seq>; useProjectStore / useProjectRevision / useProjectMoved / useProjectStoreInstance / useRuntimeKey"
       ],
       "invariants": [
         "Hub construction never fabricates a Studio project or relaxes StudioSettings.project_dir",
@@ -7384,7 +7401,8 @@
         "apps/monkeyhub/web/workspaces/test/errorBoundary.browser.mjs",
         "apps/monkeyhub/web/test/catalogs.test.ts",
         "apps/monkeyhub/api/tests/test_integrations.py",
-        "apps/monkeyhub/api/tests/test_chat_suggestions.py"
+        "apps/monkeyhub/api/tests/test_chat_suggestions.py",
+        "apps/monkeyhub/web/workspaces/test/projectStore.test.ts"
       ],
       "depends_on": [
         "project.repository",

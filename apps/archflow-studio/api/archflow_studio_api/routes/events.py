@@ -1,11 +1,17 @@
 """``GET /api/events``: what this process is doing, as it does it.
 
 The stream opens with a replay of what the sink still remembers and then
-carries live events on the same connection. A client that reconnects sends the
-last ``seq`` it saw as ``Last-Event-ID`` and is given what it missed instead of
-the whole buffer again — and a resume point that cannot be read as a sequence
-replays everything rather than silently skipping ahead, because guessing wrong
-in that direction hides events.
+carries live events on the same connection. Each frame's id is
+``<stream>:<seq>``: this process's stream and its place in it. A client that
+reconnects sends the last one it saw as ``Last-Event-ID`` and is given what it
+missed instead of the whole buffer again. A resume point this process cannot
+honour - another process's (a restart), one without a stream, or one older
+than the buffer (an overflow) - is answered with a ``stream.reset`` frame and
+the whole buffer, never by silently skipping ahead: the client learns it may
+have missed events and must read again (#366).
+
+It also carries ``index.committed``: the project index moved (a hint only;
+``GET /api/index?since=`` is how a client catches up).
 
 The generator polls its own queue instead of blocking on it: a blocked ``get``
 would hold the connection open long after the client had gone, and the run this
@@ -40,6 +46,7 @@ from ..application.binding import bound_project
 from ..transport.errors import StudioError
 from ..transport.events import ClientTimingDto, ModelLoadTimingDto, MonitorWriteDto, StudioEventDto
 from ..transport.events import to_dto as event_dto
+from ..transport.index import IndexEventDto
 
 router = APIRouter(tags=["events"])
 
@@ -138,9 +145,14 @@ async def stream_events(
 
     events = request.app.state.events
     sent = 0
-    with events.subscribe(after=_after(last_event_id)) as (replay, inbox):
+    after, reset = events.resume(last_event_id)
+    with events.subscribe(after=after) as (replay, inbox):
+        if reset is not None:
+            # No id: it resumes nothing, and the replay after it carries the ids.
+            yield ServerSentEvent(raw_data=IndexEventDto(seq=0, at="", type="stream.reset", reason=reset)
+                                  .model_dump_json(by_alias=True, exclude_none=True), event="stream.reset")
         for event in replay:
-            yield _frame(event)
+            yield _frame(event, events.stream)
             sent += 1
             if sent == limit:
                 return
@@ -155,35 +167,21 @@ async def stream_events(
                     return
                 await asyncio.sleep(POLL_SECONDS)
                 continue
-            yield _frame(event)
+            yield _frame(event, events.stream)
             sent += 1
             if sent == limit:
                 return
 
 
-def _frame(event: Mapping[str, Any]) -> ServerSentEvent:
+def _frame(event: Mapping[str, Any], stream: str) -> ServerSentEvent:
     """One event as an SSE frame: its type, its body, and its resume point."""
 
     # Serialized here rather than through the response model because the frame
     # carries the id: the aliases are the wire's, and they are applied once.
-    return ServerSentEvent(
-        raw_data=event_dto(event).model_dump_json(by_alias=True),
-        event=event["type"],
-        id=str(event["seq"]),
-    )
-
-
-def _after(last_event_id: str | None) -> int | None:
-    """The sequence a client says it already has, or None if it said nothing.
-
-    An unreadable value is treated as nothing rather than as zero-or-worse: a
-    client whose header was mangled should see the buffer again, not have the
-    server decide on its behalf which events it can do without.
-    """
-
-    if last_event_id is None:
-        return None
-    try:
-        return int(last_event_id)
-    except ValueError:
-        return None
+    if event["type"] == "index.committed":
+        body = IndexEventDto(seq=event["seq"], at=event["at"], type=event["type"], epoch=event["epoch"],
+                             revision=event["revision"], domains=list(event["domains"]))
+        data = body.model_dump_json(by_alias=True, exclude_none=True)
+    else:
+        data = event_dto(event).model_dump_json(by_alias=True)
+    return ServerSentEvent(raw_data=data, event=event["type"], id=f"{stream}:{event['seq']}")

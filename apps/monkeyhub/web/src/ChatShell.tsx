@@ -6,6 +6,7 @@ import type { WorktreeGraphDto } from "../workspaces/src/api/generated";
 import { projectStatus } from "./worktreeGraph";
 import type { AppStatus, ChatArchiveRequest, ChatCreateRequest, ChatDetail, ChatMessage, ChatPostRequest, ChatProject, ChatProvider, ChatSummary, ChatWorkspace, HubError, HubRuntimeDto, OperationRecord, ProjectArchiveExportRequest, ProjectArchiveRestoreRequest, ProjectArchiveRestoreResult, ProjectArchiveSummary, ProjectRuntimeDto, RuntimeEvent, UpdateStatus } from "./api/generated";
 import { ProjectRuntimeProvider, useStudio } from "../workspaces/src/api/ProjectRuntimeContext";
+import { projectStores, relayHubStream } from "../workspaces/src/api/projectStore";
 import type { ModelSourceDto } from "../workspaces/src/api/generated";
 import { ModelThumbnail } from "../workspaces/src/features/artifacts/ModelThumbnail";
 import { MODEL_PREVIEW_RETAINED, previewSourceKey } from "../workspaces/src/features/artifacts/useRetainedModelPreview";
@@ -779,16 +780,19 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
   useEffect(() => {
     void refresh();
     let connected = false;
-    let stream: EventSource, reconnectTimer: number | undefined;
+    let stream: EventSource, reconnectTimer: number | undefined, relay = () => {};
     const connect = () => {
       reconnectTimer = undefined;
       stream = new EventSource("/api/runtime/events");
+      // The project stores follow this one stream (#366): every open, reconnects included, has each of
+      // them read what the stream may have carried meanwhile, and a project's own events reach its store.
+      relay = relayHubStream(stream);
       stream.onopen = () => { connected = true; setEventsConnected(true); void refresh(); };
       stream.onerror = () => {
         connected = false; setEventsConnected(false);
         // A 503 can close EventSource permanently; transport errors use its
         // built-in retry. Both reconnect paths only read current state.
-        if (stream.readyState === EventSource.CLOSED && reconnectTimer === undefined) reconnectTimer = window.setTimeout(connect, 1500);
+        if (stream.readyState === EventSource.CLOSED && reconnectTimer === undefined) { relay(); reconnectTimer = window.setTimeout(connect, 1500); }
       };
       stream.addEventListener("runtime", (message) => {
         try {
@@ -800,10 +804,12 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
       });
     };
     connect();
+    const focused = () => projectStores.pullAll();
+    window.addEventListener("focus", focused);
     const timer = window.setInterval(() => { if (!connected && !document.hidden) void refresh(); }, 5000);
     const visible = () => { if (!document.hidden) void refresh(); };
     document.addEventListener("visibilitychange", visible);
-    return () => { stream.close(); window.clearTimeout(reconnectTimer); window.clearInterval(timer); document.removeEventListener("visibilitychange", visible); };
+    return () => { relay(); stream.close(); projectStores.detached(); window.clearTimeout(reconnectTimer); window.clearInterval(timer); document.removeEventListener("visibilitychange", visible); window.removeEventListener("focus", focused); };
   }, [refresh, receiveRuntime]);
   useEffect(() => {
     if (!providers.some((item) => item.modelCatalog === "checking")) return;
@@ -1720,7 +1726,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
             {turn.results.length > 0 && (() => {
               const options = resultCandidates(turn);
               return <div className="chat-study" data-candidates={options.join(" ")}>
-                {projectRuntime ? <ProjectRuntimeProvider key={projectRuntime.runtimeId} baseUrl={`${window.location.origin}/api/runtime/projects/${projectRuntime.runtimeId}/studio`}>
+                {projectRuntime ? <ProjectRuntimeProvider key={projectRuntime.runtimeId} runtimeId={projectRuntime.runtimeId} baseUrl={`${window.location.origin}/api/runtime/projects/${projectRuntime.runtimeId}/studio`}>
                   <StudyThumbnails candidates={options} />
                 </ProjectRuntimeProvider> : <Icon name="tree" />}
                 <span className="chat-study__text">{t.studyReady(options.length)}</span>
@@ -1823,7 +1829,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
           <ErrorBoundary label={t.monitor}><MonitorPage preferences={preferences} active={visible} initialProjectId={item.monitorProjectId} openRequest={item.monitorOpenRequest} projects={projects} /></ErrorBoundary>
         </div>;
         if (item.runtimeId) return <div className="chat-project-workspace project-workspace" key={item.runtimeId} hidden={!visible} inert={!visible}>
-          <ProjectRuntimeProvider baseUrl={`${window.location.origin}/api/runtime/projects/${item.runtimeId}/studio`}>
+          <ProjectRuntimeProvider runtimeId={item.runtimeId} baseUrl={`${window.location.origin}/api/runtime/projects/${item.runtimeId}/studio`}>
             <ErrorBoundary label={t.tools}><Suspense fallback={<SurfaceSkeleton surface={item.id} name={t[labelOf(item.id)]} step={s.stepPage} />}>
               <ProjectWorkspace workspace={item.id === "monkeyboard" ? "board" : item.id === "publish" ? "publish" : item.id === "drawing" ? "drawing" : item.id === "monkeyrender" ? "render" : item.id === "tree" ? "tree" : "arch"} active={visible}
                 expectedProjectId={item.projectId} candidateRunId={item.candidate} candidateFollowsHead={item.followHead} treeFocus={item.focus ?? null}

@@ -6,6 +6,8 @@
  * model downloads no bytes, and rhino3dm's wasm is fetched and instantiated once for the app.
  * MODELING_OPEN_WEB_ROOT=<workspaces dir> measures another checkout with this same walk;
  * MODELING_OPEN_LATENCY_MS sets the latency (default 200). Timings are synthetic.
+ * #366 leaves the opening as it was (5 rounds, the model at about 1.5 s at 200 ms a request): the
+ * opening never waits for the project store, and without the Hub's stream open the store reads nothing.
  */
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
@@ -108,6 +110,7 @@ try {
     openingRequests: opening.map((row) => row.name + row.query), bytes: reopened, wasmFetches: wasm.length, workers, workersAfterTwo };
   console.log(JSON.stringify(result));
   assert.deepEqual(errors, []);
+  assert.deepEqual(log.filter((row) => row.name === "/api/index"), [], "no Hub stream is open: the project store reads nothing yet");
   assert.deepEqual(reopened, ["m-s1", "m-s0"], "opening the same model a second time downloads no bytes");
   assert.equal(wasm.length, 1, "rhino3dm.wasm is fetched once for the app");
   assert.equal(workers.filter((url) => url.startsWith("blob:")).length, 1, "one rhino3dm worker parses every model");

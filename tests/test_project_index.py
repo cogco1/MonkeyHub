@@ -38,7 +38,7 @@ from archflow.project.index import (
 )
 from archflow.project.layout import FINGERPRINT_SETTLED_NS, layout_fingerprint
 from archflow.project.ports import PersistenceArea, PersistenceDestination
-from archflow.project.record_kinds import STATE_RECORD
+from archflow.project.record_kinds import STATE_RECORD, STUDIO_BOARD_SCENE
 from archflow.project.repository import FilesystemProjectRepository
 from archflow.project.watch import _Tree, watch_layout
 
@@ -83,8 +83,11 @@ class RecordingProjector:
         self.version = version
         self.projected: list[str] = []
         self.trees = 0
+        self.workings = 0
         self.threads: set[str] = set()
         self.delay = 0.0
+        # The record kinds this projector keeps aside (``RunRows.aside``).
+        self.aside_kinds: frozenset[str] = frozenset()
 
     def run_ids(self) -> tuple[str, ...]:
         runs = self.repository.layout.runs
@@ -102,8 +105,15 @@ class RecordingProjector:
             return RunRows(run_id, {"unreadable": True})
         if self.delay:
             time.sleep(self.delay)
-        return RunRows(run_id, {"records": len(refs)},
-                       tuple(RecordRow(ref.uri, ref.record_kind, ref.sha256) for ref in refs))
+        rows = [RecordRow(ref.uri, ref.record_kind, ref.sha256) for ref in refs]
+        shown = tuple(row for row in rows if row.kind not in self.aside_kinds)
+        return RunRows(run_id, {"records": len(shown)}, shown,
+                       aside=tuple(row for row in rows if row.kind in self.aside_kinds))
+
+    def project_working(self):
+        self.workings += 1
+        value, _ = self.repository.read_working_draft()
+        return {key: value[key] for key in ("current", "runs", "active")}
 
     def project_tree(self) -> TreeRows:
         self.trees += 1
@@ -125,11 +135,11 @@ class _IndexCase(unittest.TestCase):
         self.repository.create_run("run-001")
         self.put("run-001", {"record": 1})
 
-    def put(self, run_id: str, payload: dict) -> Path:
+    def put(self, run_id: str, payload: dict, kind: str = STATE_RECORD) -> Path:
         ref = self.repository.put_json(
             run=self.repository.load_run(run_id),
             destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=run_id),
-            record_kind=STATE_RECORD, payload=payload,
+            record_kind=kind, payload=payload,
         )
         return self.repository.layout.resolve_record(ref)
 
@@ -161,7 +171,7 @@ class RebuildTests(_IndexCase):
         self.assertEqual(projector.projected, ["run-001"])
         self.assertEqual(self.records(index, "run-001"), 1)
         meta = index.meta()
-        self.assertEqual((meta["project_id"], meta["schema_version"]), (PROJECT_ID, "2"))
+        self.assertEqual((meta["project_id"], meta["schema_version"]), (PROJECT_ID, "5"))
         self.assertNotIn(os.fspath(self.root), repr(meta), "no machine path is kept as identity")
 
     def test_a_different_projector_version_rebuilds_under_a_new_epoch(self) -> None:
@@ -304,7 +314,7 @@ class RestartTests(_IndexCase):
         self.assertEqual(projector.projected, ["run-001"])
 
 
-class ApplyTests(_IndexCase):
+class _AppliedCase(_IndexCase):
     def setUp(self) -> None:
         super().setUp()
         settle(self.root)
@@ -316,6 +326,8 @@ class ApplyTests(_IndexCase):
     def sync(self):
         return self.index_.apply(*sight(self.root))
 
+
+class ApplyTests(_AppliedCase):
     def test_nothing_changed_commits_nothing(self) -> None:
         token = self.sync()
         self.assertEqual(self.sync(), token)
@@ -365,12 +377,37 @@ class ApplyTests(_IndexCase):
         self.assertEqual(self.projector.trees, self.trees + 1)
         self.assertEqual(self.projector.projected, [])
 
-    def test_a_saved_draft_or_head_projects_nothing(self) -> None:
+    def test_a_saved_draft_or_head_projects_nothing_and_moves_the_revision_once(self) -> None:
         token = self.index_.apply(None, 0, areas={"working", "head", "area:design"})
 
         self.assertEqual(self.projector.trees, self.trees)
         self.assertEqual(self.projector.projected, [])
-        self.assertEqual(token.revision, 1)
+        self.assertEqual(token.revision, 2, "a client following the revision learns the draft moved")
+        with self.index_.snapshot() as snapshot:
+            upserts, deletes = snapshot.changes(1)
+        self.assertEqual([entity["id"] for entity in upserts], ["area:head", "area:working"])
+        self.assertEqual(deletes, ["area:design"], "an area with no directory left is gone")
+        self.assertEqual(self.index_.last_commit.domains, frozenset({"area"}))
+
+    def test_a_rewritten_working_pointer_moves_the_position_only_when_it_moved(self) -> None:
+        self.repository.create_run("run-002")
+        self.sync()
+        value, revision = self.repository.read_working_draft()
+        written = self.repository.compare_and_swap_working_draft(expected_revision=revision, value=value)
+        rewritten = self.index_.apply(None, 0, areas={"working"})
+        with self.index_.snapshot() as snapshot:
+            self.assertEqual([entity["id"] for entity in snapshot.changes(rewritten.revision - 1)[0]], ["area:working"],
+                             "the same position written again moves the pointer file only")
+        self.repository.protect_working_run("run-002", "run-001")
+        moved = self.index_.apply(None, 0, areas={"working"})
+        with self.index_.snapshot() as snapshot:
+            upserts, _ = snapshot.changes(rewritten.revision)
+        self.assertEqual(moved.revision, rewritten.revision + 1)
+        moved_ids = {entity["id"]: entity for entity in upserts}
+        self.assertEqual(set(moved_ids), {"area:working", "working"})
+        self.assertEqual(moved_ids["working"]["body"]["active"], {"run-002": ["run-001"]})
+        self.assertEqual(self.index_.last_commit.domains, frozenset({"area", "working"}))
+        self.assertTrue(written)
 
     def test_the_query_refuses_what_it_does_not_list(self) -> None:
         with self.assertRaisesRegex(ValueError, "no table"):
@@ -378,6 +415,117 @@ class ApplyTests(_IndexCase):
         with self.assertRaisesRegex(ValueError, "filtered by"):
             self.index_.query("record", {"body": "x"})
         self.assertEqual(len(self.index_.query("record", limit=0)), 0)
+
+
+class ChangeLogTests(_AppliedCase):
+    """``since=<revision>`` answers (#366): the entities changed after it, or nothing past the log."""
+
+    def changes(self, since: int):
+        with self.index_.snapshot() as snapshot:
+            return snapshot.changes(since)
+
+    def test_the_current_revision_has_no_changes(self) -> None:
+        self.assertEqual(self.changes(self.index_.token.revision), ([], []))
+
+    def test_a_changed_run_is_one_upsert_with_its_rows(self) -> None:
+        self.put("run-001", {"record": 2})
+        token = self.sync()
+
+        upserts, deletes = self.changes(1)
+        self.assertEqual([entity["id"] for entity in upserts], ["run:run-001"])
+        self.assertEqual(upserts[0]["rev"], token.revision)
+        self.assertEqual(upserts[0]["body"]["records"], 2)
+        self.assertEqual(deletes, [])
+        self.assertEqual(self.changes(token.revision), ([], []))
+        self.assertEqual(self.index_.last_commit.domains, frozenset({"run"}))
+
+    def test_records_kept_aside_move_their_own_entity_and_not_the_run(self) -> None:
+        """A Board scene or a page's annotations saved into a run: ``aside:<id>`` moves, ``run:<id>`` does not."""
+        self.projector.aside_kinds = frozenset({STUDIO_BOARD_SCENE})
+        self.put("run-001", {"scene": 1}, kind=STUDIO_BOARD_SCENE)
+        first = self.sync()
+        self.assertEqual([entity["id"] for entity in self.changes(1)[0]], ["aside:run-001"])
+        with self.index_.snapshot() as snapshot:
+            run = snapshot.entities(["run:run-001"])[0]
+        self.assertEqual(run["body"]["records"], 1, "a run counts what it shows")
+
+        for number in range(2, 5):
+            before = self.sync().revision
+            self.put("run-001", {"scene": number}, kind=STUDIO_BOARD_SCENE)
+            token = self.sync()
+            upserts, deletes = self.changes(before)
+            self.assertEqual([entity["id"] for entity in upserts], ["aside:run-001"])
+            self.assertEqual(upserts[0], {"id": "aside:run-001", "domain": "aside", "rev": token.revision,
+                                          "body": {"runId": "run-001", "records": number}})
+            self.assertEqual(deletes, [])
+            self.assertEqual(self.index_.last_commit.domains, frozenset({"aside"}))
+        with self.index_.snapshot() as snapshot:
+            kept = next(entity for entity in snapshot.entities() if entity["id"] == "run:run-001")
+        self.assertEqual(kept, run, "the run reads as it did, at the revision that last moved it")
+        self.assertLessEqual(kept["rev"], first.revision)
+        self.assertEqual(self.records(self.index_, "run-001"), 5, "aside records are still records")
+
+        # A change to what the run shows moves the run, and keeps the aside entity where it was.
+        aside_rev = token.revision
+        self.put("run-001", {"record": 2})
+        moved = self.sync()
+        upserts, _ = self.changes(aside_rev)
+        self.assertEqual([entity["id"] for entity in upserts], ["run:run-001"])
+        self.assertEqual(upserts[0]["rev"], moved.revision)
+        with self.index_.snapshot() as snapshot:
+            self.assertEqual(snapshot.entities(["aside:run-001"])[0]["rev"], aside_rev)
+
+        shutil.rmtree(self.root / "runs" / "run-001")
+        self.sync()
+        self.assertEqual(self.changes(moved.revision)[1], ["aside:run-001", "run:run-001"])
+
+    def test_a_removed_run_is_a_delete(self) -> None:
+        self.repository.create_run("run-002")
+        created = self.sync()
+        shutil.rmtree(self.root / "runs" / "run-002")
+        self.sync()
+
+        upserts, deletes = self.changes(created.revision)
+        self.assertEqual(deletes, ["run:run-002"])
+        self.assertNotIn("run:run-002", [entity["id"] for entity in upserts])
+        # From before it existed, the run's creation and removal leave only the delete.
+        self.assertEqual(self.changes(1)[1], ["run:run-002"])
+
+    def test_a_revision_ahead_of_the_index_or_below_the_floor_answers_nothing(self) -> None:
+        self.assertIsNone(self.changes(self.index_.token.revision + 1))
+        with mock.patch("archflow.project.index.store.CHANGE_LOG_REVISIONS", 2):
+            for number in range(2, 6):
+                self.put("run-001", {"record": number})
+                self.sync()
+        revision = self.index_.token.revision
+        self.assertEqual(revision, 5)
+        with self.index_.snapshot() as snapshot:
+            self.assertEqual(snapshot.floor, revision - 2)
+        self.assertIsNone(self.changes(revision - 3), "older than the log: a whole snapshot instead")
+        self.assertEqual([entity["id"] for entity in self.changes(revision - 2)[0]], ["run:run-001"])
+
+    def test_a_rebuild_starts_a_new_epoch_with_an_empty_log(self) -> None:
+        self.put("run-001", {"record": 2})
+        before = self.sync()
+        rebuilt = self.index_.rebuild(*sight(self.root))
+
+        self.assertNotEqual(rebuilt.epoch, before.epoch)
+        self.assertEqual(rebuilt.revision, 1)
+        self.assertEqual(self.changes(1), ([], []))
+        self.assertIsNone(self.changes(before.revision))
+        self.assertEqual(self.index_.last_commit.domains, frozenset({"reset"}))
+
+    def test_a_snapshot_holds_every_run_the_tree_and_each_other_area(self) -> None:
+        with self.index_.snapshot() as snapshot:
+            entities = {entity["id"]: entity for entity in snapshot.entities()}
+        self.assertIn("run:run-001", entities)
+        self.assertEqual(entities["run:run-001"]["body"]["records"], 1)
+        self.assertEqual(entities["tree"]["domain"], "tree")
+        areas = {entity_id for entity_id, entity in entities.items() if entity["domain"] == "area"}
+        self.assertIn("area:manifest", areas)
+        self.assertIn("area:head", areas)
+        self.assertFalse(any(entity_id.startswith("area:run") for entity_id in areas),
+                         "a run's places are its rows, not an area")
 
 
 class PlaceTests(unittest.TestCase):
@@ -425,6 +573,19 @@ class KeeperTests(_IndexCase):
         self.assertIsNotNone(state)
         self.assertEqual(self.records(keeper.index, "run-002"), 1)
         self.assertEqual(projector.threads, {"project-index:test"}, "only the keeper's thread projects")
+
+    def test_each_commit_is_announced_to_the_project_s_listeners(self) -> None:
+        heard: list = []
+        remove = keeper_module.add_commit_listener(self.root, heard.append)
+        self.addCleanup(remove)
+        keeper, _ = self.keeper()
+        self.assertTrue(wait_until(lambda: len(heard) == 1))
+        self.assertEqual(heard[0].domains, frozenset({"reset"}), "the first load says read everything")
+        self.put("run-001", {"record": 2})
+        self.assertTrue(wait_until(lambda: len(heard) == 2))
+        self.assertEqual(heard[1].token, keeper.state.token)
+        self.assertEqual(heard[1].token.revision, heard[0].token.revision + 1)
+        self.assertEqual(heard[1].domains, frozenset({"run"}))
 
     def test_another_process_write_is_applied_once_the_watch_sees_it(self) -> None:
         keeper, _ = self.keeper()

@@ -16,6 +16,7 @@ import subprocess
 import sys
 import threading
 from typing import AsyncIterator, TextIO
+import weakref
 
 from fastapi import Depends, FastAPI, Header, Request
 from fastapi.exceptions import RequestValidationError
@@ -26,6 +27,8 @@ from starlette.requests import Request
 from starlette.concurrency import run_in_threadpool
 from starlette.types import ASGIApp, Receive, Scope, Send
 import uvicorn
+
+from archflow.project.index import IndexCommit, add_commit_listener
 
 from . import routes
 from .routes import projections as projection_routes
@@ -151,6 +154,64 @@ class BearerTokenMiddleware:
         return secrets.compare_digest(header[len(_BEARER):].strip(), self.token)
 
 
+class IndexRevisionHeader:
+    """A write's answer names the index revision that holds it: ``X-Monkey-Index: <epoch>:<revision>`` (#366).
+
+    A client store that has not reached that revision yet reads the changes
+    before it calls the write done. The header waits briefly for the index to
+    apply the write (``ProjectBinding.index_reader``) and is left out whenever
+    no index answers: the client then has nothing to wait for. Reads, refused
+    writes and the event routes pass through untouched.
+    """
+
+    def __init__(self, app: ASGIApp, *, state) -> None:
+        self.app = app
+        self.state = state
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if (scope["type"] != "http" or scope.get("method") in ("GET", "HEAD", "OPTIONS")
+                or not scope.get("path", "").startswith(_API_PREFIX) or scope.get("path", "").startswith("/api/events")):
+            await self.app(scope, receive, send)
+            return
+
+        async def stamped(message) -> None:
+            if message["type"] == "http.response.start" and message["status"] < 400:
+                written = await run_in_threadpool(self._written)
+                if written is not None:
+                    message = {**message, "headers": [*message.get("headers", ()),
+                                                       (b"x-monkey-index", written.encode("latin-1"))]}
+            await send(message)
+
+        await self.app(scope, receive, stamped)
+
+    def _written(self) -> str | None:
+        binding = getattr(self.state, "binding", None)
+        if binding is None or binding.index_reader() is None:
+            return None
+        state = binding.index_state()
+        return None if state is None else f"{state.token.epoch}:{state.token.revision}"
+
+
+def _publish_commits(settings: StudioSettings, events: StudioEvents):
+    """Put each commit of this project's index on the event stream as ``index.committed``: a hint, no rows."""
+
+    sink = weakref.ref(events)
+    removal: list = []
+
+    def publish(commit: IndexCommit) -> None:
+        target = sink()
+        if target is None:
+            # The application is gone without its lifespan having ended (a test, a schema dump).
+            for remove in removal:
+                remove()
+            return
+        target.publish(event={"type": "index.committed", "epoch": commit.token.epoch,
+                              "revision": commit.token.revision, "domains": sorted(commit.domains)})
+
+    removal.append(add_commit_listener(Path(settings.project_dir).resolve(strict=False), publish))
+    return removal[0]
+
+
 def _authorization(scope: Scope) -> str:
     """The request's ``Authorization`` header, decoded, or the empty string."""
 
@@ -180,6 +241,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         initialize_drawing_runtime()
 
     yield
+    app.state.stop_index_events()
     app.state.jobs.stop_accepting()
     app.state.render_jobs.stop_accepting()
     with app.state.projections_lock:
@@ -264,6 +326,8 @@ def create_app(settings: StudioSettings, *, render_adapter=None) -> FastAPI:
     # here for the same reason as the store: what this process holds in memory,
     # and therefore loses on restart, is stated at the top of the application.
     app.state.events = StudioEvents()
+    # The project index's commits reach clients as ``index.committed`` on the same stream.
+    app.state.stop_index_events = _publish_commits(settings, app.state.events)
     app.state.jobs = JobRegistry(app.state.events, max_workers=settings.workers, monitor=app.state.monitor)
     if shared_project:
         app.state.jobs.stop_accepting()
@@ -308,6 +372,7 @@ def create_app(settings: StudioSettings, *, render_adapter=None) -> FastAPI:
     # Added first, so it sits inside the token and CORS middlewares below: a
     # request is authenticated before a remembered answer can be handed out.
     app.add_middleware(ConditionalReads, state=app.state)
+    app.add_middleware(IndexRevisionHeader, state=app.state)
     if shared_project:
         original_openapi = app.openapi
 

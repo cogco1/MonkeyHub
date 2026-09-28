@@ -96,8 +96,8 @@ class SseTestCase(unittest.TestCase):
         self.assertEqual(queued["data"]["jobId"], "job-a")
         self.assertEqual(queued["data"]["candidateId"], "cand-a")
         self.assertEqual(queued["data"]["seq"], 1)
-        # The id is the resume point, and it is the sequence.
-        self.assertEqual(queued["id"], "1")
+        # The id is the resume point: this process's stream and the sequence.
+        self.assertEqual(queued["id"], f"{self.app.state.events.stream}:1")
         self.assertEqual(succeeded["event"], "candidate.succeeded")
         self.assertEqual(succeeded["data"]["seq"], 2)
         self.assertEqual(succeeded["data"]["wallTimeS"], 0.25)
@@ -191,7 +191,7 @@ class SseTestCase(unittest.TestCase):
             "GET",
             "/api/events",
             params={"limit": 1},
-            headers={"Last-Event-ID": "2"},
+            headers={"Last-Event-ID": f"{self.app.state.events.stream}:2"},
             timeout=READ_TIMEOUT,
         ) as response:
             resumed = list(frames(response.read().decode("utf-8")))
@@ -200,8 +200,8 @@ class SseTestCase(unittest.TestCase):
         self.assertEqual(resumed[0]["data"]["seq"], 3)
         self.assertEqual(resumed[0]["event"], "candidate.succeeded")
 
-    def test_unreadable_last_event_id_replays_the_whole_buffer(self) -> None:
-        """A malformed resume point is not a reason to hide the buffer."""
+    def test_unreadable_last_event_id_says_reset_and_replays_the_whole_buffer(self) -> None:
+        """A malformed resume point is not a reason to hide the buffer, nor to pretend it resumed."""
 
         self.publish("candidate.queued", job_id="job-a")
         self.publish("candidate.running", job_id="job-a")
@@ -215,7 +215,43 @@ class SseTestCase(unittest.TestCase):
         ) as response:
             replayed = list(frames(response.read().decode("utf-8")))
 
-        self.assertEqual([item["data"]["seq"] for item in replayed], [1, 2])
+        self.assertEqual(replayed[0]["event"], "stream.reset")
+        self.assertEqual(replayed[0]["data"]["reason"], "restart")
+        self.assertNotIn("id", replayed[0], "a reset resumes nothing")
+        self.assertEqual([item["data"]["seq"] for item in replayed[1:]], [1, 2])
+
+    def resumed(self, last_event_id: str, limit: int) -> list[dict[str, Any]]:
+        with self.client.stream("GET", "/api/events", params={"limit": limit},
+                                headers={"Last-Event-ID": last_event_id}, timeout=READ_TIMEOUT) as response:
+            return list(frames(response.read().decode("utf-8")))
+
+    def test_a_resume_point_of_another_process_says_restart(self) -> None:
+        """A restarted worker numbers from 1 again: an old point must not skip its events (#366)."""
+
+        self.publish("candidate.queued", job_id="job-a")
+        replayed = self.resumed("0123456789abcdef0123456789abcdef:7", 1)
+
+        self.assertEqual((replayed[0]["event"], replayed[0]["data"]["reason"]), ("stream.reset", "restart"))
+        self.assertEqual(replayed[1]["data"]["seq"], 1)
+
+    def test_a_resume_point_older_than_the_buffer_says_overflow(self) -> None:
+        events = self.app.state.events
+        for index in range(205):
+            self.publish("candidate.queued", job_id=f"job-{index}")
+        replayed = self.resumed(f"{events.stream}:2", 1)
+
+        self.assertEqual((replayed[0]["event"], replayed[0]["data"]["reason"]), ("stream.reset", "overflow"))
+        self.assertEqual(replayed[1]["data"]["seq"], 6, "the whole buffer, from its oldest event")
+        # The newest point still resumes quietly.
+        self.assertEqual(self.resumed(f"{events.stream}:204", 1)[0]["data"]["seq"], 205)
+
+    def test_an_index_commit_is_a_hint_with_its_epoch_revision_and_domains(self) -> None:
+        self.publish("index.committed", epoch="e1", revision=4, domains=["run"])
+
+        (frame,) = self.read(limit=1)
+        self.assertEqual(frame["event"], "index.committed")
+        self.assertEqual(frame["data"], {"seq": 1, "at": frame["data"]["at"], "type": "index.committed",
+                                         "epoch": "e1", "revision": 4, "domains": ["run"]})
 
 
 if __name__ == "__main__":

@@ -31,6 +31,15 @@ export async function retainModelPreview(studio: Pick<StudioClient, "modelPrevie
   return true;
 }
 
+// The models each runtime already holds a preview of. A preview is of exact model content, so once
+// one is known retained it stays retained: coming back to the model asks nothing again (#366).
+const retainedPreviews = new WeakMap<object, Set<string>>();
+const retainedOf = (studio: object) => {
+  let keys = retainedPreviews.get(studio);
+  if (!keys) { keys = new Set(); retainedPreviews.set(studio, keys); }
+  return keys;
+};
+
 /** Runs after the viewport is ready, never on the candidate execution chain. */
 export function useRetainedModelPreview(source: ModelSourceDto | null, ready: boolean,
   capture: () => Promise<Blob | null>, current: () => ModelSourceDto | null) {
@@ -39,11 +48,20 @@ export function useRetainedModelPreview(source: ModelSourceDto | null, ready: bo
   latest.current = { capture, current, ready };
   const key = previewSourceKey(source);
   useEffect(() => {
-    if (!ready || !source) return;
+    if (!ready || !source || retainedOf(studio).has(key)) return;
     let live = true;
     const timer = window.setTimeout(() => {
       const isCurrent = () => live && latest.current.ready && previewSourceKey(latest.current.current()) === key;
-      void retainModelPreview(studio, source, () => latest.current.capture(), isCurrent).then((saved) => {
+      const known = {
+        modelPreview: async (asked: ModelSourceDto) => {
+          const document = await studio.modelPreview(asked);
+          if (document) retainedOf(studio).add(key);
+          return document;
+        },
+        capture: studio.capture.bind(studio),
+      };
+      void retainModelPreview(known, source, () => latest.current.capture(), isCurrent).then((saved) => {
+        if (saved) retainedOf(studio).add(key);
         if (saved) window.dispatchEvent(new CustomEvent(MODEL_PREVIEW_RETAINED, { detail: { studio, key } }));
       }).catch(() => { /* A preview failure never interrupts modeling or candidate completion. */ });
     }, 250);

@@ -80,7 +80,9 @@ try {
     else vite.middlewares(request, response);
   });
   await new Promise(resolve => http.listen(0, "127.0.0.1", resolve));
-  browser = await chromium.launch({ headless: true, args: ["--enable-unsafe-swiftshader"] });
+  browser = await chromium.launch({ headless: true,
+    ...(process.env.CHROMIUM_EXECUTABLE ? { executablePath: process.env.CHROMIUM_EXECUTABLE } : { channel: "chrome" }),
+    args: ["--enable-unsafe-swiftshader"] });
   const page = await browser.newPage({ viewport: { width: 1200, height: 800 } });
   page.on("pageerror", error => errors.push(error.message));
   page.setDefaultTimeout(15000);
