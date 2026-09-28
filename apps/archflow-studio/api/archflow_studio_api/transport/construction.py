@@ -10,10 +10,11 @@ ordinary proposal, plus what the script itself reported.
 
 from __future__ import annotations
 
-from typing import Any, Mapping
+from typing import Any, Literal, Mapping
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from archflow.state.state_record import _EPISTEMIC
 from monkeyarch.construction.vocabulary import LIMITS
 
 from ..application.projection import StateProjection
@@ -48,21 +49,33 @@ class _SourceFields(BaseModel):
                                    description="the project the client believes it is working on")
 
 
+# The statuses the record accepts for a parameter, read from where it checks them.
+EpistemicStatus = Literal[tuple(sorted(_EPISTEMIC))]  # type: ignore[valid-type]
+
+
 class ConstructionParameterDto(BaseModel):
     """One project parameter to add or change, in the record's own parameter shape.
 
-    Omitted fields keep the existing value; a new parameter needs a value and a unit.
+    A new key needs value and unit. For a key the project already has, a field
+    left out keeps what the project says; value, unit, inputs and
+    epistemic_status are never null.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    key: str = Field(min_length=1)
-    value: int | float | None = None
-    unit: str | None = None
-    expr: str | None = None
-    inputs: list[str] | None = None
-    epistemic_status: str | None = None
-    source_ref: str | None = None
+    key: str = Field(min_length=1, description="the parameter's key; a script reads it with param(key)")
+    value: int | float = Field(default=None, description="its number, in unit; required for a new key")
+    unit: str = Field(default=None, min_length=1, description="its unit, such as m; required for a new key")
+    expr: str | None = Field(
+        default=None,
+        description="an expression over other parameter keys that derives the value, such as 2 * module; "
+                    "null removes an existing one",
+    )
+    inputs: list[str] = Field(default=None, description="the parameter keys expr reads")
+    epistemic_status: EpistemicStatus = Field(
+        default=None, description="how the value is known; a new key left without one is derived",
+    )
+    source_ref: str | None = Field(default=None, description="where the value comes from, such as a brief or a drawing")
 
 
 class ConstructionRequestDto(_SourceFields):

@@ -2092,35 +2092,51 @@ export type ConstructionOutcomeDto = {
  *
  * One project parameter to add or change, in the record's own parameter shape.
  *
- * Omitted fields keep the existing value; a new parameter needs a value and a unit.
+ * A new key needs value and unit. For a key the project already has, a field
+ * left out keeps what the project says; value, unit, inputs and
+ * epistemic_status are never null.
  */
 export type ConstructionParameterDto = {
     /**
      * Key
+     *
+     * the parameter's key; a script reads it with param(key)
      */
     key: string;
     /**
      * Value
+     *
+     * its number, in unit; required for a new key
      */
-    value?: number | number | null;
+    value?: number | number;
     /**
      * Unit
+     *
+     * its unit, such as m; required for a new key
      */
-    unit?: string | null;
+    unit?: string;
     /**
      * Expr
+     *
+     * an expression over other parameter keys that derives the value, such as 2 * module; null removes an existing one
      */
     expr?: string | null;
     /**
      * Inputs
+     *
+     * the parameter keys expr reads
      */
-    inputs?: Array<string> | null;
+    inputs?: Array<string>;
     /**
      * Epistemic Status
+     *
+     * how the value is known; a new key left without one is derived
      */
-    epistemic_status?: string | null;
+    epistemic_status?: 'declared' | 'derived' | 'disputed' | 'hypothesis' | 'observed' | 'unknown';
     /**
      * Source Ref
+     *
+     * where the value comes from, such as a brief or a drawing
      */
     source_ref?: string | null;
 };
@@ -15265,6 +15281,96 @@ export type ReviseDecisionApiDecisionsDecisionIdRevisionsPostResponses = {
 };
 
 export type ReviseDecisionApiDecisionsDecisionIdRevisionsPostResponse = ReviseDecisionApiDecisionsDecisionIdRevisionsPostResponses[keyof ReviseDecisionApiDecisionsDecisionIdRevisionsPostResponses];
+
+export type ReadDomainsApiDomainsGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/domains';
+};
+
+export type ReadDomainsApiDomainsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadDomainsApiDomainsGetError = ReadDomainsApiDomainsGetErrors[keyof ReadDomainsApiDomainsGetErrors];
+
+export type ReadDomainsApiDomainsGetResponses = {
+    /**
+     * Response Read Domains Api Domains Get
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type ReadDomainsApiDomainsGetResponse = ReadDomainsApiDomainsGetResponses[keyof ReadDomainsApiDomainsGetResponses];
+
+export type ReadDomainReadinessApiDomainsDomainReadinessGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path: {
+        /**
+         * Domain
+         */
+        domain: string;
+    };
+    query?: {
+        /**
+         * Run
+         *
+         * Answer against this retained run instead of the project's default projection.
+         */
+        run?: string | null;
+    };
+    url: '/api/domains/{domain}/readiness';
+};
+
+export type ReadDomainReadinessApiDomainsDomainReadinessGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadDomainReadinessApiDomainsDomainReadinessGetError = ReadDomainReadinessApiDomainsDomainReadinessGetErrors[keyof ReadDomainReadinessApiDomainsDomainReadinessGetErrors];
+
+export type ReadDomainReadinessApiDomainsDomainReadinessGetResponses = {
+    /**
+     * Response Read Domain Readiness Api Domains  Domain  Readiness Get
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type ReadDomainReadinessApiDomainsDomainReadinessGetResponse = ReadDomainReadinessApiDomainsDomainReadinessGetResponses[keyof ReadDomainReadinessApiDomainsDomainReadinessGetResponses];
 
 export type CreatePlanApiDrawingsPlansPostData = {
     body: PlanRequestDto;

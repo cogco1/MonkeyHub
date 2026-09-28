@@ -312,20 +312,34 @@ class ConstructionRefusalTestCase(ConstructionTestCase):
                 refused(error)
             self.assertIs(raised.exception, error, "a refusal that names no shape of the script is not a script line")
 
-    def test_runtime_realisation_names_become_construction_words(self) -> None:
+    def test_runtime_sentences_come_back_in_construction_words_only(self) -> None:
         from archflow_studio_api.application.construction import in_construction_words
+        from monkeyarch.construction.vocabulary import LAYER_RULE_TOKENS
 
-        self.assertEqual(in_construction_words("mass-body: only a prism, a capped loft or a wall can host voids"),
-                         "mass-body: only a solid, a capped loft solid or a wall-realized solid can host voids")
         for runtime, words in (
+            # The runtime's host rule, said whole.
+            ("mass-body: only a prism, a capped loft or a wall can host voids",
+             "mass-body: only a solid or a capped loft solid can have cutters"),
             ("sheet-body: planar-surface profile must explicitly close at its first point",
              "sheet-body: face profile must explicitly close at its first point"),
             ("trace-body: curve requires 2 to 512 points", "trace-body: path requires 2 to 512 points"),
             ("an absolute base belongs to a drawn face or prism", "an absolute base belongs to a drawn face or solid"),
+            ("mass-body: cutter-body cannot act as a void; only a prism without rectangular_cutouts or a capped loft "
+             "removes one solid", "mass-body: cutter-body cannot act as a void; only a solid without "
+             "rectangular_cutouts or a capped loft solid removes one solid"),
+            ("mass-body: a wall stands on a level, not on an offset",
+             "mass-body: a solid with doors or windows stands on a level, not on an offset"),
+            ("prisms, lofts and walls", "solids, loft solids and solids with doors or windows"),
+            ("mass-body: unknown producer 'x'", "mass-body: unknown realisation 'x'"),
         ):
             with self.subTest(runtime=runtime):
                 self.assertEqual(in_construction_words(runtime), words)
                 self.assertEqual(layer_rule_violations(in_construction_words(runtime)), ())
+        # Whatever layer-rule word a runtime sentence uses, none comes back.
+        for token in LAYER_RULE_TOKENS:
+            for sentence in (f"mass-body: the {token} is refused", f"mass-body: {token.upper()}S refuse it"):
+                with self.subTest(sentence=sentence):
+                    self.assertEqual(layer_rule_violations(in_construction_words(sentence)), ())
         # Ids are the script's own words and are never rewritten, whatever they contain.
         self.assertEqual(in_construction_words("prism-1-body: height 'prism' is not a number; see wall-a"),
                          "prism-1-body: height 'solid' is not a number; see wall-a")
@@ -415,10 +429,42 @@ class ConstructionParametersTestCase(ConstructionTestCase):
         [row] = proposal["construction"]["report"]
         self.assertEqual(row["bounds"], [[0, 0, 0], [4, 3.2, 4]])
 
+    def test_parameters_sent_with_a_script_that_leaves_no_shape_are_the_change(self) -> None:
+        proposal = self.construct('print("no shapes")', parameters=[
+            {"key": "block_height", "value": 3.2, "unit": "m", "epistemic_status": "declared"},
+            {"key": "block_depth", "value": 4, "unit": "m", "epistemic_status": "declared"},
+        ])
+        self.assertEqual(proposal["utterance"], "parameters: block_height, block_depth")
+        self.assertEqual(proposal["change"]["summary"], proposal["utterance"])
+        self.assertEqual((proposal["construction"]["report"], proposal["construction"]["log"]), ([], ["no shapes"]))
+        self.assertEqual(sorted(row["key"] for row in proposal["change"]["edits"]["parameters"]),
+                         ["block_depth", "block_height"])
+        self.assertEqual(proposal["change"]["edits"]["entities"], [])
+
     def test_a_parameter_the_record_refuses_is_not_a_script_line(self) -> None:
         body = self.construct('mass = extrude(rect(0, 0, 4, 4), 3)', parameters=[{"key": "block_height"}],
                               expect=422)
         self.assertEqual(body["code"], "SEMANTIC_EDIT_INVALID")
+
+    def test_the_parameter_shape_says_what_each_field_is_and_which_statuses_the_record_takes(self) -> None:
+        from archflow.state.state_record import _EPISTEMIC
+
+        schema = self.client.get("/openapi.json").json()["components"]["schemas"]["ConstructionParameterDto"]
+        self.assertIn("A new key needs value and unit", schema["description"])
+        for name, field in schema["properties"].items():
+            with self.subTest(field=name):
+                self.assertTrue(field.get("description"), name)
+                self.assertEqual(layer_rule_violations(field["description"]), ())
+        self.assertEqual(sorted(schema["properties"]["epistemic_status"]["enum"]), sorted(_EPISTEMIC))
+        for parameter in ({"key": "block_height", "value": 3, "unit": "m", "epistemic_status": "guessed"},
+                          {"key": "block_height", "value": None, "unit": "m"},
+                          {"key": "block_height", "value": 3, "unit": None}):
+            with self.subTest(parameter=parameter):
+                response = self.client.post("/api/proposals/construction", json={
+                    "stateDigest": self.digest(), "script": 'mass = extrude(rect(0, 0, 4, 4), 3)',
+                    "parameters": [parameter]})
+                self.assertEqual(response.status_code, 422, response.text)
+                self.assertEqual(response.json()["code"], "REQUEST_INVALID")
 
 
 class ConstructionVocabularyTestCase(ConstructionTestCase):
@@ -544,6 +590,31 @@ class FacetsProposalTestCase(ConstructionTestCase):
         self.assertEqual([entity.to_dict() for entity in before.entities if entity.entity_id != "portico"],
                          [entity.to_dict() for entity in after.entities if entity.entity_id != "portico"])
         self.assertEqual(before.dependency_edges(), after.dependency_edges())
+
+    def test_a_facet_edit_that_changes_nothing_proposes_nothing(self) -> None:
+        # Taking off a facet a component does not have.
+        body = self.facets([{"id": "portico", "remove": ["material.name"]}], expect=422)
+        self.assertEqual(body["code"], "FACETS_INVALID")
+        self.assertIn("portico", body["detail"])
+        self.assertIn("nothing to propose", body["detail"])
+        first = self.facets([{"id": "portico", "set": {"material.name": "brick"}}])
+        held = self.client.app.state.proposals.for_state(first["baseStateDigest"])
+        for targets in ([{"id": "portico", "set": {"material.name": " brick "}}],  # the value it already has
+                        [{"id": "portico", "remove": ["architectural.role"]}],
+                        [{"id": "portico", "set": {"material.name": "brick"}},
+                         {"id": "building", "remove": ["material.name"]}]):
+            with self.subTest(targets=targets):
+                body = self.facets(targets, expect=422, stateDigest=first["baseStateDigest"],
+                                   sourceProposalId=first["proposalId"])
+                self.assertEqual(body["code"], "FACETS_INVALID")
+                self.assertIn("nothing to propose", body["detail"])
+        self.assertEqual(self.client.app.state.proposals.for_state(first["baseStateDigest"]), held)
+        # One change among targets that change nothing is still a proposal of that change.
+        mixed = self.facets([{"id": "portico", "set": {"material.name": "brick"}},
+                             {"id": "building", "set": {"material.name": "stone"}}],
+                            stateDigest=first["baseStateDigest"], sourceProposalId=first["proposalId"])
+        after = {entity.entity_id: entity for entity in self.successor(mixed).entities}
+        self.assertEqual(component_facets(after["building"]), {"material.name": "stone"})
 
     def test_facets_continue_a_script_proposal_before_anything_runs(self) -> None:
         made = self.construct("mass = extrude(rect(0, 0, 6, 4), 3)")

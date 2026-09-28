@@ -41,17 +41,30 @@ _UNLOCKED: tuple[tuple[str, str, Mapping[str, Any]], ...] = (
      {"id": "hosted-opening", "route": "POST /api/proposals/hosted-opening", "needs": {}}),
 )
 
-# Realisation names a runtime sentence may use, and the construction words an
-# agent reads instead. An id is never rewritten: a name directly beside a
-# hyphen or a word character is part of something else.
+# Runtime sentences an agent reads whole in construction words, then the words
+# of the layer rule (``LAYER_RULE_TOKENS``) a runtime sentence may still use:
+# realisation names first, then the rest, so no token of the rule remains. An
+# id is never rewritten: a word directly beside a hyphen or a word character is
+# part of something else.
+_CONSTRUCTION_SENTENCES: tuple[tuple[str, str], ...] = (
+    ("only a prism, a capped loft or a wall can host voids", "only a solid or a capped loft solid can have cutters"),
+)
 _CONSTRUCTION_WORDS = tuple(
-    (re.compile(rf"(?<![\w-]){re.escape(name)}(s?)(?![\w-])", re.IGNORECASE), words + r"\1")
-    for name, words in (
-        ("planar-surface", "face"),
-        ("prism", "solid"),
-        ("curve", "path"),
-        ("loft", "loft solid"),
-        ("wall", "wall-realized solid"),
+    (re.compile(rf"(?<![\w-]){re.escape(name)}(s?)(?![\w-])", re.IGNORECASE), one, several)
+    for name, one, several in (
+        ("planar-surface", "face", "faces"),
+        ("prism", "solid", "solids"),
+        ("curve", "path", "paths"),
+        ("loft", "loft solid", "loft solids"),
+        ("wall", "solid with doors or windows", "solids with doors or windows"),
+        ("column-array", "column row", "column rows"),
+        ("producer", "realisation", "realisations"),
+        ("semantic_kind", "kind", "kinds"),
+        ("semantickind", "kind", "kinds"),
+        ("boolean", "cut", "cuts"),
+        ("aperture", "opening", "openings"),
+        ("topology", "shape", "shapes"),
+        ("occt", "kernel", "kernels"),
     )
 )
 
@@ -133,19 +146,22 @@ def construction_proposal(
 
     root = modelling_root(binding, projection)
     record = projection.record
+    named = "parameters: " + ", ".join(dict.fromkeys(str(parameter.get("key")) for parameter in parameters))
     if parameters:
-        staged = component_edit_proposal(projection, _edit(summary or "parameters", parameters=parameters),
-                                         utterance=summary or "parameters")
+        staged = component_edit_proposal(projection, _edit(summary or named, parameters=parameters),
+                                         utterance=summary or named)
         record = apply_state_record_operator(record, staged["state_record_operator"])
     try:
         result = compile_construction_script(script, record, root_component_id=root)
     except ConstructionError as exc:
         raise ConstructionRefused(exc) from exc
-    if not result.entities and not result.remove_entity_ids and not parameters:
+    shaped = bool(result.entities or result.remove_entity_ids)
+    if not shaped and not parameters:
         raise ConstructionRefused(ConstructionError(
             "the script makes, changes and removes no shape, so there is nothing to propose; "
             "GET /api/construction/model reads the shapes there are"))
-    said = summary or result.summary
+    # Parameters sent with a script that leaves no shape are the change, and say so.
+    said = summary or (result.summary if shaped else named)
     edit = _edit(said, entities=result.entities, parameters=parameters,
                  remove_entity_ids=result.remove_entity_ids, kept=keep_refs)
     try:
@@ -159,10 +175,22 @@ def construction_proposal(
 
 
 def in_construction_words(message: str) -> str:
-    """A runtime sentence with the runtime's realisation names said in construction words."""
+    """A runtime sentence in construction words: no realisation name or other layer-rule word remains.
 
-    for pattern, words in _CONSTRUCTION_WORDS:
-        message = pattern.sub(words, message)
+    Ids stay as they are, so an id an agent chose with such a word in it is the
+    only way one can still appear.
+    """
+
+    said: list[str] = []
+    for runtime, words in _CONSTRUCTION_SENTENCES:
+        if runtime in message:
+            # Held aside while words are translated: a sentence said in construction words is final.
+            said.append(words)
+            message = message.replace(runtime, f"\0{len(said) - 1}\0")
+    for pattern, one, several in _CONSTRUCTION_WORDS:
+        message = pattern.sub(lambda found: several if found.group(1) else one, message)
+    for index, words in enumerate(said):
+        message = message.replace(f"\0{index}\0", words)
     return message
 
 
@@ -181,6 +209,7 @@ def facets_proposal(
     blank. A map emptied by removals is written as ``{}``: the component-edit
     path merges an upsert's fields over the existing ones by key, so a field
     left out would come back; a component that never had facets gains none.
+    An edit that would leave every target as it is proposes nothing and is refused.
     """
 
     existing = {entity.entity_id: entity for entity in projection.record.entities}
@@ -216,6 +245,9 @@ def facets_proposal(
                                                   + [f"-{key}" for key in removed]))
     if not rows:
         raise _facets_invalid("name at least one target")
+    if all(row["fields"] == existing[row["entity_id"]].fields for row in rows):
+        raise _facets_invalid(f"the facets of {', '.join(row['entity_id'] for row in rows)} already say that, "
+                              "so there is nothing to propose")
     summary = summary or "facets: " + "; ".join(said)
     try:
         return proposal_from(component_edit_proposal(
