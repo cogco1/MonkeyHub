@@ -24,7 +24,9 @@
           "write_scope": [
             "apps/archflow-studio/api/archflow_studio_api/routes/proposals.py",
             "apps/archflow-studio/api/archflow_studio_api/routes/candidates.py",
+            "apps/archflow-studio/api/archflow_studio_api/routes/state.py",
             "apps/archflow-studio/api/archflow_studio_api/application/proposals.py",
+            "apps/archflow-studio/api/archflow_studio_api/application/clarification.py",
             "apps/archflow-studio/api/archflow_studio_api/application/intent.py",
             "apps/archflow-studio/api/archflow_studio_api/application/intent_context.py",
             "apps/archflow-studio/api/archflow_studio_api/application/intent_requests.py",
