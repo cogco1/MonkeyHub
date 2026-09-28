@@ -248,7 +248,8 @@
         "section perspective lines and cut regions from the same B-reps: the kept side of an arbitrary plane in exact perspective with the section plane as picture plane (project_occt_section_perspective)",
         "Bounded 3DM/GLB mesh format adapters and conversion readback; runtime-qualified conversion-provider selection; provider execution remains separate from the standalone SKP reader, with no project writes.",
         "native 3DM drawing-shape decoding (planar BRep, linear extrusion, supported curves and meshes), with block transforms, visibility, units and explicit faceted/mesh approximation quality; unsupported geometry is refused",
-        "independent local SketchUp C API reading of visible face geometry into meters/Z-up meshes; nested instances, transformations, holes and visibility, without launching a desktop host"
+        "independent local SketchUp C API reading of visible face geometry into meters/Z-up meshes; nested instances, transformations, holes and visibility, without launching a desktop host",
+        "Transport-neutral integration pack manifests, installed-component and per-capability qualification views over existing adapters; one bounded local software discovery registry for Rhino, Blender, SketchUp and retained AutoCAD discovery."
       ],
       "does_not_own": [
         "translating the program into a script - adapters.cad_program",
@@ -269,7 +270,8 @@
         "named StepEntry shapes, explicit object selection, drawing origin/right/up and linear deflection in the shape's length unit",
         "CadExecutionRequest with explicit artifact stem, material/layer maps, observer, optional verified source and backend option mapping; no repository handle",
         "Successful OCCT CadExecutionResult with its exact CadExecutionRequest, Blender executable and BlenderPresentation",
-        "for a section perspective, the eye on the removed side and an optional depth behind the plane"
+        "for a section perspective, the eye on the removed side and an optional depth behind the plane",
+        "Explicit local pack/component installations and caller-authorized bound CAD or source-read qualification requests; default components are bundled adapter code, not detected applications."
       ],
       "outputs": [
         "RhinoCadExportPlan",
@@ -281,7 +283,8 @@
         "CadExecutionResult: backend id, exact binding, status, named verified artifacts, stable object/semantic coverage, failures and unchanged backend-specific receipt payload",
         "BlenderExecutionReceipt@1: a native .blend mesh artifact and independent saved object/bounds/volume/unit/semantic/exact-binding readback; the common result has no 3dm inspection",
         "BlenderProjectionReceipt@1: exact source binding and STEP hash, Blender version, resolved camera/light/material settings, cold readback, blend/PNG hashes and failure logs",
-        "OcctSectionPerspective: visible and section polylines and cut regions in the section plane's frame, its principal point and focus, and the drawn, cut and removed object ids; no writes"
+        "OcctSectionPerspective: visible and section polylines and cut regions in the section plane's frame, its principal point and focus, and the drawn, cut and removed object ids; no writes",
+        "MonkeyIntegrationPack@1 manifests and path-redacted software/component/capability/workflow snapshots; explicit qualification returns the original adapter result."
       ],
       "public_api": [
         "prepare_rhino_three_dm_export",
@@ -334,7 +337,12 @@
         "project_occt_section_perspective",
         "OcctSectionPerspective",
         "read_three_dm",
-        "read_skp"
+        "read_skp",
+        "SoftwareDiscoveryRegistry.discover",
+        "resolve_blender_executable",
+        "IntegrationPack",
+        "PackInstallation",
+        "IntegrationPackManager"
       ],
       "depends_on": [
         "adapters.cad_patch",
@@ -356,7 +364,8 @@
         "project.record_kinds",
         "archflow.adapters.cad_backend",
         "project.version_refs",
-        "archflow.adapters.blender_projection"
+        "archflow.adapters.blender_projection",
+        "archflow.adapters.local_cad_discovery"
       ],
       "used_by": [
         "monkeyarch/runtime/project_runner.py",
@@ -391,7 +400,8 @@
         "composed-model replacement retains the source GUID for each rebuilt logical object; newly added objects cannot reuse any source GUID, including retired ones; saved readback verifies the expected identity",
         "a section perspective cuts every selected shape exactly with an oriented box on the kept side and solves visibility once with a perspective projector whose picture plane is the section plane, the shapes located in the eye's camera frame (HLRBRep's perspective misjudges back faces and silhouettes under a non-identity projector frame); the plane's sections map through the same camera move and projector",
         "Imported meshes and saved render meshes retain their faceted/approximation quality; no native reader creates a STEP or an OCCT execution receipt. SKP originals remain with the application owner; the reader does not write project data.",
-        "SKP-derived mesh object IDs follow persistent instance paths and tag IDs within the same model; names and geometry changes do not mint new object identities. Unsupported or missing persistent IDs are refused."
+        "SKP-derived mesh object IDs follow persistent instance paths and tag IDs within the same model; names and geometry changes do not mint new object identities. Unsupported or missing persistent IDs are refused.",
+        "Discovery/status never launches software, loads vendor libraries, queries a network/license or writes project data. Detected software, installed components and verified capabilities remain separate; qualification never grants project authority. CAD_BACKEND_REGISTRY remains the only compiled execution registry."
       ],
       "status": "canonical",
       "tests": [
@@ -405,7 +415,9 @@
         "tests/model_export_glb_reader.mjs",
         "tests/test_model_providers.py",
         "tests/test_occt_native_models.py",
-        "tests/test_sketchup_reader.py"
+        "tests/test_sketchup_reader.py",
+        "tests/test_software_discovery.py",
+        "tests/test_integration_packs.py"
       ],
       "notes": "P115 #13: Phase 0 contract merged in PR15 and Phase 1 lanes in PR17. Blender extends the same registration and request/result protocol; its runner-written receipt uses the existing P036 kind table. No runner dispatch, compiler, State, Stage or Hub/App Server mechanism is added.",
       "files": [
@@ -418,7 +430,8 @@
         "archflow/adapters/model_formats.py",
         "archflow/adapters/model_providers.py",
         "archflow/adapters/local_cad_discovery.py",
-        "archflow/adapters/sketchup_reader.py"
+        "archflow/adapters/sketchup_reader.py",
+        "archflow/adapters/integration_packs.py"
       ]
     },
     {
@@ -7064,7 +7077,8 @@
         "Nonsecret Render preferences through existing Hub settings; only MONKEYHUB_RENDER_API_KEY is mapped to the configured Gemini Runtime, never exposed over HTTP",
         "Modeling-to-Render preview borrows the mounted project scene and camera; explicit capture freezes an exact retained model view as the AI source. Local edits, loading and blended/unbound views cannot claim a saved model source.",
         "The project Design Tree (状态树) surface and its Stage chip: a planar growth tree of Stages, admitted Candidates and Studies (the #294 design-history contract), the Working Head and running work; View is read-only, Continue uses the working-draft route and Accept as next Stage the existing accept route, on Current only",
-        "The shared project canvas host (features/canvas): Excalidraw mount defaults, the local font path, theme mapping, wheel zoom and scene-point click hit testing, used by MonkeyBoard and the Design Tree"
+        "The shared project canvas host (features/canvas): Excalidraw mount defaults, the local font path, theme mapping, wheel zoom and scene-point click hit testing, used by MonkeyBoard and the Design Tree",
+        "Hub-local integration diagnostic snapshot and explicit bounded rescan; qualification and bridge execution stay with the existing adapter owner."
       ],
       "does_not_own": [
         "Building project state, geometry, drawing algorithms, model gateways, provider credentials or project creation",
@@ -7171,7 +7185,8 @@
         "POST /api/updates/rollback",
         "POST /api/updates/check",
         "PUT /api/updates/settings",
-        "GET /api/chat/sessions/{session_id}/attachments/{attachment_id}/model-source"
+        "GET /api/chat/sessions/{session_id}/attachments/{attachment_id}/model-source",
+        "GET /api/integrations"
       ],
       "invariants": [
         "Hub construction never fabricates a Studio project or relaxes StudioSettings.project_dir",
@@ -7348,7 +7363,8 @@
         "apps/monkeyhub/api/tests/test_chat_admission.py",
         "apps/archflow-studio/api/tests/test_agent_drawing_dressing.py",
         "apps/monkeyhub/web/workspaces/test/errorBoundary.browser.mjs",
-        "apps/monkeyhub/web/test/catalogs.test.ts"
+        "apps/monkeyhub/web/test/catalogs.test.ts",
+        "apps/monkeyhub/api/tests/test_integrations.py"
       ],
       "depends_on": [
         "project.repository",
@@ -7367,7 +7383,9 @@
         "monkeycontrol",
         "studio.board",
         "tools.package_monkeyapps",
-        "project.layout"
+        "project.layout",
+        "adapters.cad_execution",
+        "archflow.adapters.integration_packs"
       ]
     },
     {
