@@ -391,10 +391,18 @@ def offset(shape: Profile, distance: object, spend: Spend) -> Profile:
 
 # ---------------------------------------------------------------- planes
 def _unit(vector: tuple[float, float, float], what: str) -> tuple[float, float, float]:
-    size = math.sqrt(sum(c * c for c in vector))
-    if size <= 1e-12:
+    """A unit vector along ``vector``, its length taken without overflow; a non-finite or zero one is refused."""
+
+    largest = max(abs(c) for c in vector)
+    if not math.isfinite(largest):
+        raise ShapeError(f"{what} must be a finite direction")
+    if largest == 0:
         raise ShapeError(f"{what} must not be zero")
-    return tuple(c / size for c in vector)  # type: ignore[return-value]
+    scaled = tuple(c / largest for c in vector)
+    size = math.sqrt(sum(c * c for c in scaled))  # between 1 and sqrt(3)
+    if size * largest <= 1e-12:
+        raise ShapeError(f"{what} must not be zero")
+    return tuple(c / size for c in scaled)  # type: ignore[return-value]
 
 
 def _cross(a, b) -> tuple[float, float, float]:
@@ -624,6 +632,7 @@ class Shape:
         self.voids: dict[Any, None] = {}
         self.void_events: list[tuple[str, Any, int]] = []
         self.deleted_line: int | None = None
+        self.made_by: tuple[str, int] | None = None  # (the text of the statement that made it, how many it made before)
 
     @property
     def is_new(self) -> bool:
@@ -684,6 +693,12 @@ class Drawn(Shape):
         if self.kind == "loft":
             return sum(len(section.profile.points) for section in self.sections)
         return len(self.points) if self.kind == "path" else len(self.profile.points)  # type: ignore[union-attr]
+
+    @property
+    def point_count(self) -> int:
+        """Its points for the script's total: every point of its profile, sections or path."""
+
+        return self.size
 
     @property
     def is_solid(self) -> bool:
@@ -793,8 +808,8 @@ class Drawn(Shape):
             return _box(base + [tuple(p[i] + h * normal[i] for i in range(3)) for p in base])  # type: ignore[misc]
         if self.kind == "path":
             return _box(self.points)
-        return _box((x, anchor_elevation(section.anchor, world), z)
-                    for section in self.sections for x, z in section.profile.points)
+        elevations = [anchor_elevation(section.anchor, world) for section in self.sections]  # once per section
+        return _box((x, y, z) for section, y in zip(self.sections, elevations) for x, z in section.profile.points)
 
 
 def _scaled_height(height: float | ParamRef | None, factor: float, label: str) -> float | ParamRef:
@@ -805,34 +820,43 @@ def _scaled_height(height: float | ParamRef | None, factor: float, label: str) -
     return float(height) * factor  # type: ignore[arg-type]
 
 
+def _offset_value(anchor: Anchor, world: World) -> float:
+    return anchor.offset + (world.parameter_value(anchor.param) if anchor.param is not None else 0.0)
+
+
 def anchor_elevation(anchor: Anchor, world: World) -> float:
-    """The world elevation an anchor stands for, from the record's stated values and the script's shapes.
+    """The world elevation an anchor stands for, from the record's stated values and the script's shapes."""
 
-    A stack of drawn solids is followed down iteratively, however tall it is.
-    """
-
-    value = 0.0
-    while True:
-        value += anchor.offset
-        if anchor.param is not None:
-            value += world.parameter_value(anchor.param)
-        if anchor.kind == "level":
-            return value + world.levels[anchor.target]
-        target = anchor.target
-        if not isinstance(target, Drawn):
-            return value + target.top(world)
-        if not target.upward:
-            raise ShapeError(f"{target.label()} has no top to stand on")
-        value += height_value(target.height, world)  # type: ignore[arg-type]
-        anchor = target.anchor  # type: ignore[assignment]
+    if anchor.kind == "level":
+        return world.levels[anchor.target] + _offset_value(anchor, world)
+    return top_value(anchor.target, world) + _offset_value(anchor, world)
 
 
 def top_value(shape: Shape, world: World) -> float:
-    """The elevation of a solid's top, as the runtime will publish it."""
+    """The elevation of a solid's top, as the runtime will publish it.
 
-    if isinstance(shape, Drawn):
-        return anchor_elevation(Anchor("top", shape), world)
-    return shape.top(world)  # type: ignore[attr-defined]
+    Each shape's top is worked out once and kept in ``world.tops`` until the script next changes a shape; a
+    stack of drawn solids is followed down iteratively, however tall it is.
+    """
+
+    tops = world.tops
+    chain: list[Drawn] = []
+    node: Any = shape
+    while node not in tops:
+        if not isinstance(node, Drawn):
+            tops[node] = node.top(world)
+            break
+        if not node.upward:
+            raise ShapeError(f"{node.label()} has no top to stand on")
+        chain.append(node)
+        if node.anchor.kind == "level":  # type: ignore[union-attr]
+            break
+        node = node.anchor.target  # type: ignore[union-attr]
+    for item in reversed(chain):  # each above what it stands on
+        anchor = item.anchor
+        below = world.levels[anchor.target] if anchor.kind == "level" else tops[anchor.target]  # type: ignore[union-attr]
+        tops[item] = below + _offset_value(anchor, world) + height_value(item.height, world)  # type: ignore[arg-type]
+    return tops[shape]
 
 
 def _bound(value: object) -> bool:
@@ -845,6 +869,18 @@ def _bound(value: object) -> bool:
     if isinstance(value, (list, tuple)):
         return any(_bound(item) for item in value)
     return False
+
+
+def _points_in(value: object) -> int:
+    """How many points a row value holds: its lists of numbers (a profile's points, a line's ends, a plane's axes)."""
+
+    if isinstance(value, dict):
+        return sum(_points_in(item) for item in value.values())
+    if isinstance(value, (list, tuple)):
+        if value and all(is_number(item) or (isinstance(item, str) and item.startswith("@")) for item in value):
+            return 1  # a point, its coordinates numbers or "@key" bindings
+        return sum(_points_in(item) for item in value)
+    return 0
 
 
 def _numbers_in(value: object):
@@ -891,6 +927,7 @@ class RowShape(Shape):
         self.base_anchor: Anchor | None = None
         self.geometry_changed = False
         self.size = sum(1 for _ in _numbers_in(self.params)) + sum(1 for _ in _numbers_in(self.references))
+        self.point_count = _points_in(self.params) + _points_in(self.references)
 
     @property
     def is_new(self) -> bool:
@@ -1243,6 +1280,7 @@ class World:
         self._resolved: dict[str, dict] | None = None
         self._production: tuple | None = None
         self._downstream: dict[str, set[str]] | None = None
+        self.tops: dict[Any, float] = {}  # shape -> the elevation of its top; cleared whenever the script edits a shape
 
     def downstream(self, entity_id: str) -> set[str]:
         """The entities whose references depend on an entity: the record's dependency edges, read once."""

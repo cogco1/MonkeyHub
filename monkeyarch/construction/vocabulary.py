@@ -33,6 +33,7 @@ LIMITS: dict[str, Any] = {
     "profilePoints": 256,
     "profileEdgePairs": 1_000_000,  # edge pairs checked for crossings, per script
     "pathPoints": 512,
+    "totalPoints": 100_000,  # every point of every profile, section and path of the shapes a script leaves
     "loftSections": 64,
     "cuttersPerShape": 300,
     "idLength": 90,
@@ -204,10 +205,11 @@ def vocabulary() -> dict[str, Any]:
                          "else the module-level variable it was last assigned to, with _ becoming - (a variable "
                          "that holds the shape itself wins over a list that contains it; several shapes under one "
                          "variable are numbered <variable>-1, <variable>-2, ... in creation order); else "
-                         "<host>-cut-<n> for a cutter made inside cut(); else shape-<n>. An automatic id never "
-                         "takes one the project already has, so an unnamed shape never updates existing "
-                         "geometry: name what you will edit later. Running a script again with the same names "
-                         "updates the same shapes. A new shape given the id of existing geometry redefines it and "
+                         "<host>-cut-<6 hex digits> for an unnamed cutter; else shape-<6 hex digits>. The digits "
+                         "come from the statement that made the shape (its text, whitespace ignored) and how many "
+                         "shapes that statement made before it, so running the same script again updates the same "
+                         "shapes, named or not, while an unnamed shape whose statement changes gets a new id: name "
+                         "what you will edit later. A new shape given the id of existing geometry redefines it and "
                          "keeps what it cuts (uncut(host) with no cutters removes them all); get(id) edits "
                          "existing geometry in place. An id that already names something else in the project is "
                          "refused."),
@@ -229,7 +231,8 @@ def vocabulary() -> dict[str, Any]:
                 "break, continue and pass",
                 "list comprehensions",
                 "arithmetic and comparisons; text joins with +",
-                "==, != and in compare numbers, text and flat lists (lists of lists item by item)",
+                "==, != and in compare numbers, text, lists and tuples, nested ones included; min, max and sum take "
+                "numbers",
             ],
             "notAllowed": [
                 "import", "attribute access (a.b)", "names starting with __", "while", "with", "try", "lambda",

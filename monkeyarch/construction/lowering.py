@@ -1,9 +1,11 @@
 """A construction script lowered to design-state rows (#419, L1 -> L2).
 
 The script's surviving shapes get their ids here (``name()``, then module
-variables, then ``<host>-cut-<n>`` for a cutter made inside ``cut()``, then
-``shape-<n>``; an automatic id never takes one the project already has), and
-each becomes one ``Component@1 <id>`` with one ``Element@1 <id>-body``.
+variables, then ``<host>-cut-<6 hex>`` for an unnamed cutter and
+``shape-<6 hex>`` for any other unnamed shape, the digits hashed from the
+statement that made it, so that running a script again updates the same
+shapes), and each becomes one ``Component@1 <id>`` with one
+``Element@1 <id>-body``.
 Producers are chosen here and nowhere else: a plan extrusion is a prism, a
 face a planar surface, a path a curve, a loft a loft. A ``get()`` handle
 rewrites only its element's ``params`` and ``references``; ``delete`` removes
@@ -14,14 +16,16 @@ existing geometry keeps what that geometry cut, unless the script uncuts it.
 Before any row is written, the relations the result leaves - what cuts what,
 what stands on what - are checked where the script touched them, including
 against geometry of the record the script never reached, and refused at the
-script line in construction words.
+script line in construction words. Lowering runs under the script's deadline.
 
 ``geometry_view`` is the other direction: what a record's geometry is, per
 component, in the same words (form, bounds, cuts) and without producers.
 """
 from __future__ import annotations
 
+import hashlib
 import re
+import time
 from dataclasses import dataclass, field, replace
 from types import MappingProxyType
 from typing import Any, Mapping
@@ -30,6 +34,7 @@ from archflow.state.state_record import StateRecord
 from monkeyarch.construction.script import (
     MAX_CUTTERS,
     MAX_ID,
+    TIME_OUT,
     ConstructionError,
     Session,
     _statement_error,
@@ -108,12 +113,27 @@ class _Lowering:
     def error(self, line: int | None, message: str) -> ConstructionError:
         return _statement_error(self.lines, line, message)
 
-    # ---- identity
-    def taken(self, identifier: str, claimed: dict) -> bool:
-        """An automatic id never takes one this script claimed or the project already has."""
+    def clock(self, line: int | None) -> None:
+        """Lowering stays under the script's deadline: the clock is read for every shape it lowers."""
 
-        return (identifier in claimed or identifier in self.world.entities
-                or identifier + ELEMENT_SUFFIX in self.world.entities)
+        if time.monotonic() >= self.session.deadline:
+            raise self.error(line, TIME_OUT)
+
+    # ---- identity
+    @staticmethod
+    def hashed(prefix: str, shape: Shape, claimed: dict) -> str:
+        """``prefix`` and six hex digits of the sha1 of the statement that made ``shape`` and how many shapes that
+        statement made before it, so the same script gives the same ids; should two shapes of one script share
+        the six digits, the later keeps more of them."""
+
+        key, index = shape.made_by if shape.made_by is not None else ("", shape.seq)
+        digest = hashlib.sha1(f"{key}\n{index}".encode("utf-8")).hexdigest()
+        identifier = prefix + digest[:6]
+        for width in (8, 10, 12, 16, 40):
+            if identifier not in claimed:
+                break
+            identifier = prefix + digest[:width]
+        return identifier
 
     def assign_ids(self) -> None:
         claimed: dict[str, list[Shape]] = {}
@@ -139,25 +159,16 @@ class _Lowering:
             for index, member in enumerate(members, start=1):
                 line = (member.direct or member.listed)[2]  # type: ignore[index]
                 give(member, base if len(members) == 1 else f"{base}-{index}", line)
-        cutters = [shape for shape in self.survivors if shape not in self.ids
-                   and any(host.deleted_line is None for host in shape.cut_into)]
-        counter = 0
-        for shape in self.survivors:
-            if shape in self.ids or shape in cutters:
-                continue
-            counter += 1
-            while self.taken(f"shape-{counter}", claimed):
-                counter += 1
-            give(shape, f"shape-{counter}", shape.created_line)
-        per_host: dict[str, int] = {}
+        cutters = {shape: None for shape in self.survivors if shape not in self.ids
+                   and any(host.deleted_line is None for host in shape.cut_into)}
+        for shape in self.survivors:  # other unnamed shapes first: a cutter is named after its host
+            if shape not in self.ids and shape not in cutters:
+                self.clock(shape.line)
+                give(shape, self.hashed("shape-", shape, claimed), shape.created_line)
         for shape in cutters:
+            self.clock(shape.line)
             host = next(host for host in shape.cut_into if host.deleted_line is None)
-            host_id = self.identity(host)
-            number = per_host.get(host_id, 0) + 1
-            while self.taken(f"{host_id}-cut-{number}", claimed):
-                number += 1
-            per_host[host_id] = number
-            give(shape, f"{host_id}-cut-{number}", shape.created_line)
+            give(shape, self.hashed(f"{self.identity(host)}-cut-", shape, claimed), shape.created_line)
         for identifier, members in claimed.items():
             if len(members) > 1:
                 second = sorted(members, key=lambda shape: shape.seq)[1]
@@ -259,16 +270,20 @@ class _Lowering:
         voids = {element_id: set(cutters) for element_id, cutters in world.voids_of.items()}
         stands = {element_id: set(targets) for element_id, targets in world.stands_on.items()}
         touched: dict[str, Shape] = {}
+        gone: dict[str, int] = {}  # geometry of the record the script deleted -> the line that deleted it
         for element_id, row in self.session.rows.items():
+            self.clock(row.line)
             if row.deleted_line is not None:
                 voids.pop(element_id, None)
                 stands.pop(element_id, None)
+                gone[element_id] = row.deleted_line
                 continue
             voids[element_id] = set(self.final_voids(row))
             stands[element_id] = datum_targets(row.lowered(self.element_id_of)[1])
             if row.geometry_changed or tuple(sorted(voids[element_id])) != row.original_voids:
                 touched[element_id] = row
         for shape in self.survivors:
+            self.clock(shape.line)
             element_id = self.element_id_of(shape)
             voids[element_id] = set(self.final_voids(shape))
             if isinstance(shape, Drawn):
@@ -285,6 +300,14 @@ class _Lowering:
             return next((element_id for element_id in element_ids if element_id in touched), None)
 
         name = self.label_of
+        # What the script deleted is neither cut by nor carrying anything in the final model: refused at the
+        # first delete that leaves it so.
+        orphaned = [(gone[cutter], f"{name(cutter)} still cuts {name(host)}; uncut it first")
+                    for host in sorted(voids) for cutter in sorted(voids[host] & gone.keys())]
+        orphaned += [(gone[target], f"{name(user)} stands on the top of {name(target)}; delete or move it first")
+                     for user in sorted(stands) for target in sorted(stands[user] & gone.keys())]
+        if orphaned:
+            raise self.error(*min(orphaned, key=lambda item: item[0]))
         users_of: dict[str, list[str]] = {}
         for user, targets in stands.items():
             for target in targets:
@@ -297,16 +320,16 @@ class _Lowering:
                 raise refuse(host, f"{name(host)} has cuts; it must stay a solid")
             for cutter in sorted(cutters):
                 involved = first_touched(host, cutter)  # the cut, where the script made it; else the cutter
-                if involved is None:
-                    continue
-                if cutter in touched and not touched[cutter].can_cut:  # type: ignore[attr-defined]
-                    raise refuse(cutter, f"{name(cutter)} cuts {name(host)}; it must stay a solid")
-                if voids.get(cutter):
-                    raise refuse(involved, f"{name(cutter)} has cutters of its own and cannot cut {name(host)}")
+                if involved is not None:
+                    if cutter in touched and not touched[cutter].can_cut:  # type: ignore[attr-defined]
+                        raise refuse(cutter, f"{name(cutter)} cuts {name(host)}; it must stay a solid")
+                    if voids.get(cutter):
+                        raise refuse(involved, f"{name(cutter)} has cutters of its own and cannot cut {name(host)}")
                 for user in sorted(users_of.get(cutter, ())):
-                    raise refuse(first_touched(user, host, cutter) or involved,
-                                 f"{name(user)} stands on the top of {name(cutter)}, which cuts {name(host)}; "
-                                 "a cutter carries nothing")
+                    culprit = first_touched(user, host, cutter)  # the shape that now stands on a cutter's top
+                    if culprit is not None:
+                        raise refuse(culprit, f"{name(user)} stands on the top of {name(cutter)}, which cuts "
+                                              f"{name(host)}; a cutter carries nothing")
         for target in sorted(users_of):
             if target in touched and not touched[target].can_carry(world):  # type: ignore[attr-defined]
                 raise refuse(target, f"{name(sorted(users_of[target])[0])} stands on the top of {name(target)}; "
@@ -408,6 +431,7 @@ class _Lowering:
         line_of: dict[str, int] = {}
         created, updated, deleted, cut, uncut = [], [], [], [], []
         for shape in self.survivors:
+            self.clock(shape.line)
             identifier, _ = self.ids[shape]
             element_id = identifier + ELEMENT_SUFFIX
             reuse = self.reusable(identifier)
@@ -437,6 +461,7 @@ class _Lowering:
             if inherited - set(voids):
                 uncut.append(identifier)
         for element_id, row in self.session.rows.items():
+            self.clock(row.line)
             identifier = row.geometry_id
             if row.deleted_line is not None:
                 removed.extend([element_id] + ([row.component_id] if row.owns_component else []))  # type: ignore[list-item]

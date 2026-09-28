@@ -10,22 +10,26 @@ over a sequence costs steps by its length, a wall-clock deadline is checked with
 each step, every list or tuple the script creates is measured with its nested
 elements (per value and in total), ``+=`` extends a list in place as Python does
 and counts only what it adds (to that list and to every list or tuple holding
-it), sequences are compared or searched only when flat, and profile checks draw
-on a budget of edge pairs. No single step can do unbounded work, and no message
-repeats a script value at length.
+it), a comparison costs what it may walk, profile checks draw on a budget of
+edge pairs, and the shapes hold 100 000 points at most. No single step can do
+unbounded work, and no message repeats a script value at length.
 
 Verbs are bound from ``vocabulary.VERBS`` - the table an agent reads - and
-implemented by ``Session``, which keeps the script's shapes, the existing
-geometry it reached, what cuts what and what stands on what, and the ``print``
-log. What a verb refuses it refuses with one sentence; the interpreter adds the
-line, the column and the source line (``ConstructionError``), and the lines a
-function was called from.
+implemented by ``Session``, which keeps the script's shapes (each with the
+statement that made it, which its id is hashed from if it has no name), the
+existing geometry it reached, what cuts what and what stands on what as far as
+the script knows it (the record's own relations are checked when lowering), and
+the ``print`` log. What a verb refuses it refuses with one sentence; the
+interpreter adds the line, the column and the source line
+(``ConstructionError``), and the lines a function was called from.
 """
 from __future__ import annotations
 
 import ast
+import io
 import math
 import time
+import tokenize
 from itertools import groupby
 from typing import Any, Callable
 
@@ -81,6 +85,8 @@ MAX_PAIRS = LIMITS["profileEdgePairs"]
 MAX_CUTTERS = LIMITS["cuttersPerShape"]
 MAX_SECTIONS = LIMITS["loftSections"]
 MAX_ROUND_DIGITS = LIMITS["roundDigits"]
+MAX_POINTS = LIMITS["totalPoints"]
+TIME_OUT = "the script ran longer than 5 s; split it"
 _WALK = 100  # elements walked per extra step
 
 
@@ -290,6 +296,60 @@ def parse(script: object) -> tuple[ast.Module, list[str]]:
 
 
 # ---------------------------------------------------------------- the session: shapes, reached geometry, log
+_UNKEYED = frozenset({tokenize.NL, tokenize.NEWLINE, tokenize.COMMENT, tokenize.INDENT, tokenize.DEDENT,
+                      tokenize.ENDMARKER})
+
+
+def _statement_key(source: str, node: ast.stmt) -> str:
+    """A statement's text as the ids of the shapes it makes are hashed from: its tokens one space apart, so
+    whitespace, line breaks and comments do not matter. A for or if statement is keyed by its header only."""
+
+    def text(part: ast.AST) -> str:
+        try:
+            found = ast.get_source_segment(source, part)
+        except (IndexError, ValueError):  # a statement from other text than ``source``
+            found = None
+        return found or ast.unparse(part)
+
+    if isinstance(node, ast.For):
+        written = f"for {text(node.target)} in {text(node.iter)}"
+    elif isinstance(node, ast.If):
+        written = f"if {text(node.test)}"
+    elif isinstance(node, ast.FunctionDef):
+        written = f"def {node.name}"
+    else:
+        written = text(node)
+    try:
+        return " ".join(token.string for token in tokenize.generate_tokens(io.StringIO(written).readline)
+                        if token.type not in _UNKEYED)
+    except (tokenize.TokenError, SyntaxError):
+        return " ".join(written.split())
+
+
+def _weight(value: object) -> int:
+    """What comparing ``value`` with == or in can cost, in elements: one per value, nested ones included, and more
+    for long text and for profiles and sections, which compare point by point. An anchor or a binding inside is
+    refused as it is on its own."""
+
+    total, pending = 0, [value]
+    while pending:
+        item = pending.pop()
+        total += 1
+        if isinstance(item, (list, tuple)):
+            pending.extend(item)
+        elif isinstance(item, str):
+            total += len(item) // _WALK
+        elif isinstance(item, (Profile, Section)):
+            total += 3 * len((item if isinstance(item, Profile) else item.profile).points)
+        elif isinstance(item, Plane):
+            total += 12
+        elif isinstance(item, ParamRef):
+            raise binding_refusal(item)
+        elif isinstance(item, Anchor):
+            raise ShapeError("an anchor cannot be compared; bounds() gives numbers")
+    return total
+
+
 def _flatten(value: object) -> list:
     if isinstance(value, (list, tuple)):
         return [item for element in value for item in _flatten(element)]
@@ -305,8 +365,13 @@ def _range_length(start: int, stop: int, step: int) -> int:
 class Session:
     """What one script run holds: its shapes, the existing geometry it reached, relations, work done, the log."""
 
-    def __init__(self, record: StateRecord) -> None:
+    def __init__(self, record: StateRecord, source: str = "") -> None:
         self.world = World(record)
+        self.source = source
+        self.statement: ast.stmt | None = None  # the statement running now: what makes a new shape
+        self._keys: dict[ast.stmt, str] = {}
+        self.occurrences: dict[str, int] = {}  # statement key -> shapes it has made so far
+        self.points = 0  # points of the script's shapes still alive
         self.shapes: list[Shape] = []  # new shapes, in creation order
         self.rows: dict[str, RowShape] = {}  # existing geometry loaded by element id, reached or as context
         self.explicit: set[str] = set()  # element ids the script reached with get()
@@ -334,7 +399,7 @@ class Session:
         if self.steps > LIMITS["steps"]:
             raise ShapeError("the script takes more than 20 000 evaluation steps")
         if time.monotonic() >= self.deadline:
-            raise ShapeError("the script ran longer than 5 s; split it")
+            raise ShapeError(TIME_OUT)
 
     def charge(self, elements: int) -> None:
         """Walking a sequence costs steps by its length."""
@@ -487,9 +552,27 @@ class Session:
         self.results += 1
         if self.results > LIMITS["geometryResults"]:
             raise ShapeError("the script makes more than 300 geometry results")
+        self.points += shape.point_count  # type: ignore[attr-defined]
+        if self.points > MAX_POINTS:
+            raise ShapeError("the script's shapes would have more than 100 000 points in all; use fewer or simpler "
+                             "profiles, sections and paths")
+        key = self.statement_key()
+        shape.made_by = (key, self.occurrences.get(key, 0))
+        self.occurrences[key] = shape.made_by[1] + 1
         self.shapes.append(shape)
         self._reindex(shape)
         return shape
+
+    def statement_key(self) -> str:
+        """The running statement's text as a new shape's id is hashed from (see ``_statement_key``)."""
+
+        node = self.statement
+        if node is None:
+            return ""
+        key = self._keys.get(node)
+        if key is None:
+            key = self._keys[node] = _statement_key(self.source, node)
+        return key
 
     def note_assignment(self, name: str, value: object) -> None:
         """A module-level assignment: the variable a new shape was last assigned to names it."""
@@ -524,10 +607,8 @@ class Session:
         if extent:
             shape.check_extent()  # type: ignore[attr-defined]
         shape.touched(self.line)
+        self.world.tops.clear()  # a top may have moved: work the tops out again when next asked
         return shape
-
-    def world_label(self, element_id: str) -> str:
-        return short(self.world.geometry_id(element_id))
 
     def profile(self, value: object, what: str) -> Profile:
         """A profile, or a list of points read as ``polygon(points)``: checked once per distinct outline."""
@@ -567,27 +648,20 @@ class Session:
         self.stand_targets[shape] = targets
 
     def hosts_of(self, target: Shape) -> list[str]:
-        """What ``target`` currently cuts."""
+        """What ``target`` cuts as this script knows it: the script's own cuts and those of the geometry it reached.
 
-        found = [host.label() for host in self.hosts_by_cutter.get(target, {}) if host.deleted_line is None]
-        if isinstance(target, RowShape) and target.existing:
-            for host in self.world.void_hosts.get(target.element_id, ()):  # type: ignore[arg-type]
-                if host not in self.rows:
-                    found.append(self.world_label(host))
-        return found
+        What the record's other geometry cuts may still change - a new shape that redefines a host replays its
+        cuts only when lowering - so those cuts are checked there, against the final model.
+        """
+
+        return [host.label() for host in self.hosts_by_cutter.get(target, {}) if host.deleted_line is None]
 
     def standing_on(self, target: Shape) -> list[str]:
-        """What currently stands on ``target``'s top."""
+        """What stands on ``target``'s top as this script knows it; the record's own supports are checked when
+        lowering, against the final model."""
 
-        found = [shape.label() for shape in self.carried.get(target, {})
-                 if shape is not target and shape.deleted_line is None]
-        if isinstance(target, RowShape) and target.existing:
-            for user in self.world.top_users.get(target.element_id, ()):  # type: ignore[arg-type]
-                row = self.rows.get(user)
-                if row is not None and (row.deleted_line is not None or row.base_anchor is not None):
-                    continue
-                found.append(self.world_label(user))
-        return found
+        return [shape.label() for shape in self.carried.get(target, {})
+                if shape is not target and shape.deleted_line is None]
 
     def _record_dependents(self, shape: RowShape) -> list[str]:
         ids = {shape.element_id} | ({shape.component_id} if shape.owns_component else set())
@@ -757,7 +831,7 @@ class Session:
                 raise ShapeError("all loft sections are measured from the same level or the same top")
         if not isinstance(a["cap"], bool):
             raise ShapeError(f"loft() cap must be True or False, not {describe(a['cap'])}")
-        self.charge(len(sections) * len(sections[0].profile.points))
+        self.tick(len(sections) * len(sections[0].profile.points) // 10)  # per point, as a copy is
         return self._drawn(Drawn(self._next(), self.line, "loft", sections=tuple(sections), cap=a["cap"]))
 
     # ---- transforms
@@ -1031,6 +1105,8 @@ class Session:
                 listed = short(", ".join(dependents), 80)
                 raise ShapeError(f"{listed} still depend on {shape.label()}; change them first")
         shape.deleted_line = self.line
+        if shape.is_new:
+            self.points -= shape.point_count  # type: ignore[attr-defined]
         for cutter in list(shape.voids):
             self._unlink_cut(shape, cutter)
         self._reindex(shape)
@@ -1166,6 +1242,7 @@ class Interpreter:
     def execute(self, node: ast.stmt, frame: _Frame) -> None:
         self.step(node)
         self.session.line = node.lineno
+        self.session.statement = node
         if isinstance(node, ast.Expr):
             self.evaluate(node.value, frame)
         elif isinstance(node, ast.Assign):
@@ -1366,23 +1443,16 @@ class Interpreter:
             raise self.error(node, f"{symbol} does not apply to {describe(value)}")
         return self.checked(-value if isinstance(node.op, ast.USub) else +value, node)
 
-    def flat(self, value: Any, node: ast.AST, what: str) -> None:
-        """Only numbers, text and flat sequences are compared or searched; walking one costs steps."""
-
-        if isinstance(value, (list, tuple)):
-            if self.session.measure(value)[1] > 1:
-                raise self.error(node, f"{what} compares numbers, text and flat lists; compare their items one by one")
-            self.guarded(node, lambda: self.session.charge(len(value)))
-
     def compare(self, operator: ast.cmpop, left: Any, right: Any, node: ast.AST) -> bool:
         for value in (left, right):
             if isinstance(value, ParamRef):
                 raise self.error(node, str(binding_refusal(value)))
             if isinstance(value, Anchor) and not isinstance(operator, (ast.Is, ast.IsNot)):
                 raise self.error(node, "an anchor cannot be compared; bounds() gives numbers")
+        session = self.session
         if isinstance(operator, (ast.Eq, ast.NotEq)):
-            self.flat(left, node, "==")
-            self.flat(right, node, "==")
+            # Nested lists and tuples compare item by item, as in Python; the comparison costs what it may walk.
+            self.guarded(node, lambda: session.charge(_weight(left) + _weight(right)))
             return (left == right) == isinstance(operator, ast.Eq)
         if isinstance(operator, ast.Is):
             return left is right
@@ -1391,10 +1461,10 @@ class Interpreter:
         if isinstance(operator, (ast.In, ast.NotIn)):
             if not isinstance(right, (list, tuple, range, str)) or (isinstance(right, str) and not isinstance(left, str)):
                 raise self.error(node, f"cannot look for {describe(left)} in {describe(right)}")
-            self.flat(left, node, "in")
-            self.flat(right, node, "in")
             if isinstance(right, range):
-                self.guarded(node, lambda: self.session.charge(len(right)))
+                self.guarded(node, lambda: session.charge(_weight(left) + len(right)))
+            elif isinstance(right, (list, tuple)):
+                self.guarded(node, lambda: session.charge(_weight(left) * len(right) + _weight(right)))
             return (left in right) == isinstance(operator, ast.In)
         if not ((is_number(left) and is_number(right)) or (isinstance(left, str) and isinstance(right, str))):
             raise self.error(node, f"cannot compare {describe(left)} with {describe(right)}")
@@ -1496,7 +1566,7 @@ class Interpreter:
         if self.depth >= LIMITS["callDepth"]:
             raise self.error(node, "calls nest deeper than 16")
         self.depth += 1
-        line = self.session.line
+        line, statement = self.session.line, self.session.statement
         try:
             self.block(function.body, _Frame(bound, self.module, False))
         except _Return as result:
@@ -1506,7 +1576,7 @@ class Interpreter:
             raise
         finally:
             self.depth -= 1
-            self.session.line = line
+            self.session.line, self.session.statement = line, statement
         return None
 
     def builtin(self, name: str, args: list, keywords: dict, node: ast.AST) -> Any:
@@ -1642,7 +1712,7 @@ def run_script(script: object, record: StateRecord) -> tuple[Session, list[str]]
     """Parse, check and interpret a script against a record: the session it leaves and its lines, or a refusal."""
 
     tree, lines = parse(script)
-    session = Session(record)
+    session = Session(record, source=script)  # type: ignore[arg-type]
     try:
         Interpreter(lines, session).run(tree)
     except ConstructionError as exc:

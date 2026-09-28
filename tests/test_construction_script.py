@@ -97,6 +97,20 @@ class EvaluationTests(ConstructionTestCase):
         ])
         self.assertEqual(self.log(script), ["3 100"])
 
+    def test_nested_lists_and_tuples_compare_as_in_python(self) -> None:
+        script = "\n".join([
+            "pts = [(0, 0), (1, 0), (1, 1)]",
+            "a = extrude(rect(0, 0, 1, 1), 1)",
+            "b = copy(a)",
+            "print((1, 0) in pts, (2, 0) in pts, pts == [(0, 0), (1, 0), (1, 1)], [[1], [2]] != [[1], [3]])",
+            "print(bounds(a) == bounds(b), bounds(a) == bounds(move(b, dx=1)))",
+        ])
+        self.assertEqual(self.log(script), ["True False True True", "True False"])
+        error = self.refused("a = extrude(rect(0, 0, 1, 1), 1)\nprint([top(a)] == [top(a)])")
+        self.assertEqual(error.line, 2)
+        self.assertIn("an anchor cannot be compared", error.message)
+        self.assertEqual(self.refused("x = 1\nprint(min([[1], [2]]))").line, 2)  # min, max and sum take numbers
+
     def test_print_shows_handles_by_their_names_in_order(self) -> None:
         script = "mass = extrude(rect(0, 0, 4, 3), 3)\nprint('mass is', mass)\nprint(bounds(mass))"
         self.assertEqual(self.log(script), ["mass is <solid mass>", "((0.0, 0.0, 0.0), (4.0, 3.0, 3.0))"])
@@ -314,6 +328,10 @@ class GrowingListTests(ConstructionTestCase):
 
 RING = "pts = [(cos(2 * pi * i / 256) * (1 + 0.001 * (i % 2)), sin(2 * pi * i / 256)) for i in range(256)]\n"
 COMB = "pts = [(i, (i % 2) * 0.5) for i in range(254)] + [(253, -5)]\n"
+CIRCLE = "pts = [(cos(2 * pi * i / 256), sin(2 * pi * i / 256)) for i in range(256)]\np = polygon(pts)\n"
+STACK = "b = extrude(rect(0, 0, 1, 1), 1)\nfor i in range({height}):\n    b = extrude(rect(0, 0, 1, 1), 1, at=top(b))\n"
+PROFILES_COMPARED = ("c1 = circle(0, 0, 1, 128)\nc2 = circle(0, 0, 1, 128)\nA = [c1] * 10000\nB = [c2] * 10000\n"
+                     "x = A == B")
 HOSTILE = {
     # one step that would walk a huge range
     "in a huge range": "print(0.5 in range(10 ** 18))",
@@ -375,6 +393,16 @@ HOSTILE = {
                             "l = loft(s)\nrow = array(l, 300, dx=3)",
     "a tall stack": "b = extrude(rect(0, 0, 1, 1), 1)\nfor i in range(298):\n"
                     "    b = extrude(rect(0, 0, 1, 1), 1, at=top(b))\nprint(bounds(b))",
+    # lowering: every shape is lowered under the same deadline, and the shapes hold 100 000 points at most
+    "ninety large lofts": CIRCLE + "s = section(p, 0)\nt = section(p, 1)\nL = [s, t] * 32\nfor i in range(90):\n"
+                                   "    loft(L)",
+    "eighty large lofts on a tall stack": CIRCLE + STACK.format(height=200)
+    + "s = section(p, top(b))\nt = section(p, top(b) + 1)\nL = [s, t] * 32\nfor i in range(80):\n    loft(L)",
+    "one large loft on a taller stack, measured": CIRCLE + STACK.format(height=296)
+    + "s = section(p, top(b))\nt = section(p, top(b) + 1)\nl = loft([s, t] * 32)\nx = bounds(l)",
+    "a tall stack measured two thousand times": STACK.format(height=298)
+    + "for i in range(1000):\n    x = bounds(b)\nfor i in range(1000):\n    x = bounds(b)",
+    "equal profiles compared many times": PROFILES_COMPARED.replace("x = A == B", "for i in range(1000):\n    x = A == B"),
 }
 
 
@@ -399,8 +427,9 @@ class BoundedWorkTests(ConstructionTestCase):
             ("x = 1\ny = round(2.5, 13)", 2, "-12 to 12"),
             ("x = [0] * 10000\ny = [x, 1]", 2, "10 000 elements"),
             ("for i in range(100):\n    x = [0] * 5000", 2, "200 000"),
-            ("a = [[1], [2]]\nprint(a == a)", 2, "flat lists"),
-            ("a = [(0, 0), (1, 0)]\nprint((0, 0) in a)", 2, "flat lists"),
+            (PROFILES_COMPARED, 5, "20 000 evaluation steps"),  # each profile compares point by point
+            ("s = section(circle(0, 0, 1, 128), 0)\nt = section(circle(0, 0, 1, 128), 1)\nL = [s, t] * 32\n"
+             "for i in range(20):\n    loft(L)", 5, "100 000 points"),
             ("s = section(rect(0, 0, 1, 1), 0)\nl = loft([s] * 65)", 2, "64 sections"),
             (COMB + "for i in range(40):\n    polygon(pts + [(0, -5 - i * 0.001)])", 3, "1 000 000 pairs"),
         ]
@@ -428,6 +457,20 @@ class BoundedWorkTests(ConstructionTestCase):
         finally:
             interpreter.LIMITS["seconds"] = original
         self.assertIn("longer than 5 s", error.message)
+
+    def test_lowering_runs_under_the_same_deadline(self) -> None:
+        from monkeyarch.construction.lowering import _Lowering
+        from monkeyarch.construction.script import run_script
+
+        session, lines = run_script("x = 1\na = extrude(rect(0, 0, 1, 1), 1)\nb = extrude(rect(2, 0, 1, 1), 1)",
+                                    _record())
+        session.deadline = time.monotonic() - 1  # the script used its time up; lowering must not go on
+        lowering = _Lowering(session, lines, "model")
+        with self.assertRaises(ConstructionError) as caught:
+            lowering.assign_ids()
+            lowering.lower()
+        self.assertEqual((caught.exception.line, caught.exception.message),
+                         (2, "the script ran longer than 5 s; split it"))
 
 
 class CallChainTests(ConstructionTestCase):
@@ -470,7 +513,8 @@ class VocabularyContractTests(ConstructionTestCase):
             "characters": 20000, "steps": 20000, "seconds": 5, "loopIterations": 1000, "callDepth": 16,
             "nesting": 100, "geometryResults": 300, "rangeItems": 10000, "listElements": 10000,
             "createdElements": 200000, "textCharacters": 10000, "printLines": 1000, "roundDigits": 12,
-            "profilePoints": 256, "profileEdgePairs": 1000000, "pathPoints": 512, "loftSections": 64,
+            "profilePoints": 256, "profileEdgePairs": 1000000, "pathPoints": 512, "totalPoints": 100000,
+            "loftSections": 64,
             "cuttersPerShape": 300, "idLength": 90, "coordinateRange": 100000, "minimumLength": 0.000001})
         side = next(item for item in contract["verbs"] if item["name"] == "side")
         self.assertIn("opposite", side["description"])

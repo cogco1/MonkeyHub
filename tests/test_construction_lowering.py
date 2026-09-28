@@ -7,6 +7,7 @@ neutral (``mass``, ``block``, ``cutter``): nothing here says what the geometry i
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import unittest
@@ -98,6 +99,13 @@ def _view(record: StateRecord) -> dict:
 
 def _elements(result) -> dict:
     return {row["entity_id"]: row for row in result.entities if row["schema"] == "Element@1"}
+
+
+def _hashed(prefix: str, statement: str, index: int = 0) -> str:
+    """An unnamed shape's id as the vocabulary states it: six hex digits of the sha1 of its statement's tokens, one
+    space apart, and of how many shapes that statement made before it."""
+
+    return prefix + hashlib.sha1(f"{statement}\n{index}".encode("utf-8")).hexdigest()[:6]
 
 
 LOOP = "\n".join([
@@ -207,6 +215,20 @@ class ExtrusionLoweringTests(ConstructionTestCase):
         self.assertEqual(corners("block-3-body"), {tuple(round(c, 6) for c in point) for point in tilted})
         report = {row["id"]: row for row in result.report}
         self.assertEqual(report["block-2"]["bounds"], [[1.0, 0.0, 0.0], [1.5, 3.0, 2.0]])
+
+    def test_a_plane_axis_is_any_finite_direction_that_is_not_zero(self) -> None:
+        record = _record()
+        result = _compile("block = extrude(rect(0, 0, 1, 1), 0.5, plane=plane((0, 0, 0), (1e200, 0, 0), (0, 1e-3, 0)))",
+                          record)
+        drawing = _elements(result)["block-body"]["fields"]["params"]["work_plane"]
+        self.assertEqual((drawing["xAxis"], drawing["yAxis"], drawing["normal"]),
+                         ([1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]))
+        _operations(_apply(record, result))
+        self.refusals([
+            ("x = 1\np = plane((0, 0, 0), (0, 0, 0), (0, 1, 0))", 2, "x_axis must not be zero"),
+            ("x = 1\np = plane((0, 0, 0), (1, 0, 0), (0, 1e-300, 0))", 2, "y_axis must not be zero"),
+            ("x = 1\np = plane((0, 0, 0), (1e400, 0, 0), (0, 1, 0))", 2, "finite"),
+        ])
 
     def test_numbers_and_planes_are_measured_from_the_project_zero(self) -> None:
         record = _record(ground=1.0)
@@ -379,8 +401,10 @@ class TransformTests(ConstructionTestCase):
             "copy_1 = copy(block, dz=4)",
         ]), record)
         elements = _elements(result)
-        self.assertEqual(sorted(elements), ["block-body", "block-cut-1-body", "copy-1-body", "row-1-body", "row-2-body"])
-        self.assertEqual(elements["block-body"]["fields"]["references"]["voids"], ["block-cut-1-body"])
+        cutter = _hashed("block-cut-", "cut ( block , extrude ( rect ( 0.1 , 0.1 , 0.3 , 0.3 ) , 1 , at = 1 ) )")
+        self.assertEqual(sorted(elements), sorted(["block-body", f"{cutter}-body", "copy-1-body", "row-1-body",
+                                                   "row-2-body"]))
+        self.assertEqual(elements["block-body"]["fields"]["references"]["voids"], [f"{cutter}-body"])
         self.assertEqual(elements["row-2-body"]["fields"]["params"]["profile"][0], [4.0, 0.0])
         self.assertEqual(elements["row-1-body"]["fields"]["references"], {"base": {"level": "ground"}})
         self.assertEqual(elements["copy-1-body"]["fields"]["params"]["profile"][0], [0.0, 4.0])
@@ -436,7 +460,7 @@ class IdentityTests(ConstructionTestCase):
         self.assertEqual({row["status"] for row in second.report}, {"updated"})
         self.assertEqual(_apply(successor, second).entities, successor.entities)
 
-    def test_ids_come_from_names_then_variables_then_cuts_then_order(self) -> None:
+    def test_ids_come_from_names_then_variables_then_their_statements(self) -> None:
         result = _compile("\n".join([
             "mass = extrude(rect(0, 0, 10, 10), 2)",
             "Upper_Block = extrude(rect(1, 1, 2, 2), 1, at=top(mass))",
@@ -445,15 +469,61 @@ class IdentityTests(ConstructionTestCase):
             "cut(mass, extrude(rect(3, 3, 1, 1), 1, at=0.5))",
             "extrude(rect(8, 0, 1, 1), 1)",
             "stack = [extrude(rect(i, 12, 0.5, 0.5), 1) for i in range(2)]",
+            "for i in range(2):",
+            "    extrude(rect(i, 20, 0.5, 0.5), 1)",
         ]))
-        self.assertEqual([row["id"] for row in result.report],
-                         ["mass", "upper-block", "named-1", "shape-1", "mass-cut-1", "shape-2", "stack-1", "stack-2"])
+        self.assertEqual([row["id"] for row in result.report], [
+            "mass", "upper-block", "named-1",
+            _hashed("shape-", "extrude ( rect ( 8 , 8 , 1 , 1 ) , 1 )"),
+            _hashed("mass-cut-", "cut ( mass , extrude ( rect ( 3 , 3 , 1 , 1 ) , 1 , at = 0.5 ) )"),
+            _hashed("shape-", "extrude ( rect ( 8 , 0 , 1 , 1 ) , 1 )"),
+            "stack-1", "stack-2",
+            _hashed("shape-", "extrude ( rect ( i , 20 , 0.5 , 0.5 ) , 1 )", 0),
+            _hashed("shape-", "extrude ( rect ( i , 20 , 0.5 , 0.5 ) , 1 )", 1),
+        ])
 
-    def test_an_unnamed_shape_never_updates_existing_geometry(self) -> None:
+    def test_an_unnamed_shape_keeps_its_id_while_its_statement_stays(self) -> None:
         record = _record()
-        first = _apply(record, _compile("extrude(rect(0, 0, 1, 1), 1)", record))
-        second = _compile("extrude(rect(10, 10, 5, 5), 7)", first)
-        self.assertEqual([(row["id"], row["status"]) for row in second.report], [("shape-2", "created")])
+        first = _compile("extrude(rect(0, 0, 1, 1), 1)", record)
+        one = _hashed("shape-", "extrude ( rect ( 0 , 0 , 1 , 1 ) , 1 )")
+        self.assertEqual([(row["id"], row["status"]) for row in first.report], [(one, "created")])
+        successor = _apply(record, first)
+        again = _compile("x = 0\nextrude( rect(0,0,1,1),\n    1 )  # the same statement, written differently", successor)
+        self.assertEqual([(row["id"], row["status"]) for row in again.report], [(one, "updated")])
+        other = _compile("extrude(rect(10, 10, 5, 5), 7)", successor)
+        self.assertEqual([(row["id"], row["status"]) for row in other.report],
+                         [(_hashed("shape-", "extrude ( rect ( 10 , 10 , 5 , 5 ) , 7 )"), "created")])
+
+    def test_running_a_script_with_unnamed_shapes_three_times_updates_the_same_ids(self) -> None:
+        script = "\n".join([
+            "m = extrude(rect(0, 0, 10, 4), 3)",
+            "extrude(rect(20, 0, 1, 1), 1)",
+            "for i in range(3):",
+            "    cut(m, extrude(rect(1 + 3 * i, -0.1, 1, 0.5), 1, at=1))",
+        ])
+        record = _record()
+        first = _compile(script, record)
+        ids = [row["id"] for row in first.report]
+        self.assertEqual(ids[:2], ["m", _hashed("shape-", "extrude ( rect ( 20 , 0 , 1 , 1 ) , 1 )")])
+        self.assertEqual(ids[2:], [_hashed("m-cut-", "cut ( m , extrude ( rect ( 1 + 3 * i , - 0.1 , 1 , 0.5 ) , 1 , "
+                                                     "at = 1 ) )", index) for index in range(3)])
+        self.assertEqual({row["status"] for row in first.report}, {"created"})
+        successor = _apply(record, first)
+        for _ in range(2):
+            rerun = _compile(script, successor)
+            self.assertEqual([row["id"] for row in rerun.report], ids)
+            self.assertEqual({row["status"] for row in rerun.report}, {"updated"})
+            self.assertEqual([row["schema"] for row in rerun.entities], ["Element@1"] * 5)
+            following = _apply(successor, rerun)
+            self.assertEqual(following.entities, successor.entities)
+            successor = following
+
+    def test_an_unnamed_shape_whose_id_names_something_else_is_refused(self) -> None:
+        taken = _hashed("shape-", "extrude ( rect ( 0 , 0 , 1 , 1 ) , 1 )")
+        error = self.refused("x = 1\nextrude(rect(0, 0, 1, 1), 1)", _record(_level(taken, 5.0)))
+        self.assertEqual(error.line, 2)
+        self.assertEqual(error.message, f"{taken} is already Level@1 in this project; name the new shape differently "
+                                        "or get() it")
 
     def test_a_name_already_used_in_the_project_is_refused(self) -> None:
         error = self.refused("a = extrude(rect(0, 0, 1, 1), 1)\nname(a, 'ground')")
@@ -572,6 +642,33 @@ class RecordRelationTests(ConstructionTestCase):
             ("x = 1\nset_base(get('a'), top(get('b')))", 2, "a would stand on its own top"),
             ("x = 1\na = extrude(rect(0, 0, 4, 3), 3, at=top(get('b')))", 2, "a would stand on its own top"),
         ], self.stacked())
+
+    def test_the_record_relations_are_checked_as_the_script_leaves_them(self) -> None:
+        record = self.cut_record()
+        redefined = "mass = extrude(rect(0, 0, 12, 8), 3)\n"
+        freed = {  # mass, redefined, no longer cuts w-1: w-1 is free geometry again
+            "delete a former cutter": redefined + "uncut(mass)\ndelete(get('w-1'))",
+            "stand on a former cutter": redefined + "uncut(mass, get('w-1'))\n"
+                                                    "k = extrude(rect(1, 0, 1, 1), 1, at=top(get('w-1')))",
+            "cut into a former cutter": redefined + "uncut(mass)\nd = extrude(rect(1.1, -0.3, 0.2, 0.2), 1, at=1)\n"
+                                                    "cut(get('w-1'), d)",
+        }
+        for title, script in freed.items():
+            with self.subTest(title):
+                successor = _apply(record, _compile(script, record))
+                self.assertEqual(_view(successor)["mass"]["cuts"], [] if "uncut(mass)\n" in script else
+                                 ["w-2", "w-3", "w-4"])
+        self.refusals([  # mass, in the record or redefined, still cuts w-1
+            ("x = 1\ndelete(get('w-1'))", 2, "w-1 still cuts mass; uncut it first"),
+            (redefined + "x = 1\ndelete(get('w-1'))", 3, "w-1 still cuts mass; uncut it first"),
+            (redefined + "k = extrude(rect(1, 0, 1, 1), 1, at=top(get('w-1')))", 2,
+             "k stands on the top of w-1, which cuts mass; a cutter carries nothing"),
+            ("d = extrude(rect(1.1, -0.3, 0.2, 0.2), 1, at=1)\ncut(get('w-1'), d)", 2,
+             "w-1 has cutters of its own and cannot cut mass"),
+        ], record)
+        stacked = self.stacked()
+        _apply(stacked, _compile("b = extrude(rect(1, 1, 1, 1), 1)\ndelete(get('a'))", stacked))  # b stands elsewhere
+        self.refusals([("x = 1\ndelete(get('a'))", 2, "b stands on the top of a; delete or move it first")], stacked)
 
 
 class ExistingGeometryTests(ConstructionTestCase):
