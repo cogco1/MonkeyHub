@@ -2598,6 +2598,12 @@ class _NoRedirect(HTTPRedirectHandler):
         raise HubFailure(409, "CHAT_SERVICE_CHANGED", "The bound service redirected the request.")
 
 
+# One opener for every call to a bound service (#363): building one makes an
+# HTTPS handler whose default context reads the system certificate store,
+# about 20 ms of CPU per call on Windows. ``_url`` lets only http through.
+_SERVICE_OPENER = build_opener(ProxyHandler({}), _NoRedirect())
+
+
 def _url(value: str) -> str:
     url = urlsplit(value)
     if url.scheme != "http" or url.hostname not in {"127.0.0.1", "localhost"} or url.username or url.password or url.query or url.fragment:
@@ -2624,7 +2630,7 @@ def _request_json(base: str, path: str, method: str = "GET", body=None, timeout:
         "Content-Type": "application/json", **_trace_headers.get(), **(headers or {}),
     })
     try:
-        with build_opener(ProxyHandler({}), _NoRedirect()).open(request, timeout=timeout) as response:
+        with _SERVICE_OPENER.open(request, timeout=timeout) as response:
             if png:
                 return _page_image(response)
             return json.load(response)

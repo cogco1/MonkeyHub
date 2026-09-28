@@ -1344,8 +1344,8 @@ class ChatTests(unittest.TestCase):
             seen.append(request.full_url)
             return io.BytesIO(b'{"capabilities": []}')
 
-        with patch.object(chat, "build_opener") as opener:
-            opener.return_value.open.side_effect = open_request
+        with patch.object(chat, "_SERVICE_OPENER") as opener:
+            opener.open.side_effect = open_request
             for path in paths:
                 self.assertEqual(chat._request_json("http://127.0.0.1:8791", path), {"capabilities": []})
         self.assertEqual(seen, ["http://127.0.0.1:8791" + paths[1]] * 2)
@@ -3089,10 +3089,10 @@ class ChatTests(unittest.TestCase):
             "name": "studio_request", "arguments": arg}} for index, arg in enumerate((arguments, missing), 1)]
         writer = Stream()
         with patch.object(chat, "_request_json", side_effect=request), \
-             patch.object(chat, "build_opener") as opener, \
+             patch.object(chat, "_SERVICE_OPENER") as opener, \
              patch.object(chat.sys, "stdin", Stream("\n".join(json.dumps(line) for line in lines) + "\n")), \
              patch.object(chat.sys, "stdout", writer):
-            opener.return_value.open.side_effect = open_request
+            opener.open.side_effect = open_request
             schema = chat.call_tool(self.store.hub_url, session.id, "studio_schema",
                                     {"method": "POST", "path": "/api/board/export"})
             self.assertIn("maxEdge", schema["components"]["schemas"]["BoardExportRequestDto"]["properties"])
@@ -3155,10 +3155,10 @@ class ChatTests(unittest.TestCase):
             ("image/png", oversized.getvalue(), "CHAT_IMAGE_INVALID"),
             ("image/png", b"x" * (4 * 1024 * 1024 + 1), "CHAT_IMAGE_TOO_LARGE"),
         ):
-            with self.subTest(mime=mime, code=code), patch.object(chat, "build_opener") as opener:
+            with self.subTest(mime=mime, code=code), patch.object(chat, "_SERVICE_OPENER") as opener:
                 response = io.BytesIO(data)
                 response.headers = {"Content-Type": mime}
-                opener.return_value.open.return_value = response
+                opener.open.return_value = response
                 with self.assertRaises(HubFailure) as failure:
                     chat._request_json("http://127.0.0.1:8791", "/api/board/export", "POST", {}, png=True)
                 self.assertEqual(failure.exception.error.code, code)
@@ -3227,7 +3227,7 @@ class ChatTests(unittest.TestCase):
             return stream
 
         self.enterContext(patch.object(chat, "_request_json", side_effect=request))
-        self.enterContext(patch.object(chat, "build_opener")).return_value.open.side_effect = open_request
+        self.enterContext(patch.object(chat, "_SERVICE_OPENER")).open.side_effect = open_request
         self.enterContext(patch("archflow_studio_api.routes.intents.visual_provider", return_value=Provider()))
         return session, page, sent
 
