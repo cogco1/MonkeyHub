@@ -7185,7 +7185,8 @@
         "POST /api/updates/check",
         "PUT /api/updates/settings",
         "GET /api/chat/sessions/{session_id}/attachments/{attachment_id}/model-source",
-        "GET /api/integrations"
+        "GET /api/integrations",
+        "ChatSuggestion via chat_present / ChatPresentationRequest; ChatPostRequest.suggestionSelection resolves one retained card into the existing native user-turn admission"
       ],
       "invariants": [
         "Hub construction never fabricates a Studio project or relaxes StudioSettings.project_dir",
@@ -7223,7 +7224,8 @@
         "Automatic project selection, chat and first Render entry attach and verify the Runtime without seeding authored modeling inputs; explicit Arch entry initializes only when the modeling projection is not ready, including after Render-first navigation",
         "A project watcher derives which work copies exist again only when the runs, their document records or the files in their copy workspaces change, compared on a wake and every 30 s without reading other records; a read forwarded to Studio never wakes it (#314)",
         "The Agent looks through visual_review only, never studio_request or studio_schema: one allowance per answered user message, its class fixed once a review is spent, more than two polish rounds only on the user's own words, a refusal spending nothing and an unanswered or failed call counted as spent",
-        "The idle project observer reads the retained history again only when the binding's read token (this process's write serial and the layout watch's fingerprint) moved or is not stable; asking walks nothing, and an observer that stops closes the binding, releasing the watch's handle on the project folder (#363)"
+        "The idle project observer reads the retained history again only when the binding's read token (this process's write serial and the layout watch's fingerprint) moved or is not stable; asking walks nothing, and an observer that stops closes the binding, releasing the watch's handle on the project folder (#363)",
+        "Suggestion cards remain source-turn/revision-bound ChatStore messages. Selecting the latest completed card records its reference before the ordinary provider turn; stale, repeated, cross-project, non-idle, archived and external selections cannot execute. Estimates without a basis stay unknown; a suggestion grants no tool, installation, spending or project-issue authority."
       ],
       "used_by": [
         "apps/monkeyhub/run.py",
@@ -7313,7 +7315,9 @@
         "apps/monkeyhub/web/workspaces/src/features/designTree/DesignTreeDetails.tsx",
         "apps/monkeyhub/web/workspaces/src/features/designTree/DesignTreeList.tsx",
         "apps/monkeyhub/web/workspaces/src/features/designTree/designTree.css",
-        "apps/monkeyhub/web/workspaces/src/features/designTree/fixture.ts"
+        "apps/monkeyhub/web/workspaces/src/features/designTree/fixture.ts",
+        "apps/monkeyhub/web/src/ChatSuggestionCard.tsx",
+        "apps/monkeyhub/web/src/ChatSuggestionCard.css"
       ],
       "tests": [
         "apps/monkeyhub/api/tests/test_monkeyhub_lifecycle.py",
@@ -7363,7 +7367,8 @@
         "apps/archflow-studio/api/tests/test_agent_drawing_dressing.py",
         "apps/monkeyhub/web/workspaces/test/errorBoundary.browser.mjs",
         "apps/monkeyhub/web/test/catalogs.test.ts",
-        "apps/monkeyhub/api/tests/test_integrations.py"
+        "apps/monkeyhub/api/tests/test_integrations.py",
+        "apps/monkeyhub/api/tests/test_chat_suggestions.py"
       ],
       "depends_on": [
         "project.repository",

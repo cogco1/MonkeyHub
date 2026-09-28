@@ -12,6 +12,7 @@ import { MODEL_PREVIEW_RETAINED, previewSourceKey } from "../workspaces/src/feat
 import type { WorkspaceDesignContext, WorkspacePosition } from "../workspaces/src/app/ProjectWorkspace";
 import { MonitorPage } from "./MonitorPage";
 import { ChatMarkdown, ChatMessageFiles, type ChatDocument } from "./ChatMessageContent";
+import { ChatSuggestionCard } from "./ChatSuggestionCard";
 import type { PageSource } from "../workspaces/src/workspaces/monkeyboard/boardScene";
 const ProjectWorkspace = lazy(() => import("../workspaces/src/app/ProjectWorkspace").then((module) => ({ default: module.ProjectWorkspace })));
 import { presentFailure } from "./chatError";
@@ -52,7 +53,7 @@ const menuWords = {
     sidebar: "侧栏", tools: "工具面板", theme: "主题", system: "跟随系统", dark: "深色", light: "浅色",
     uiStyle: "界面风格", classic: "经典", quiet: "静默仪表", titleblock: "图签", night: "夜航",
     size: "字号", compact: "紧凑", normal: "标准", large: "大",
-    update: "检查更新…", usage: "用量与任务记录",
+    update: "检查更新…",
   },
   en: {
     menus: "Menus", back: "Back to the previous conversation", forward: "Forward to the next conversation",
@@ -62,7 +63,7 @@ const menuWords = {
     sidebar: "Sidebar", tools: "Tools panel", theme: "Theme", system: "Match system", dark: "Dark", light: "Light",
     uiStyle: "Interface style", classic: "Classic", quiet: "Quiet instrument", titleblock: "Title block", night: "Night flight",
     size: "Text size", compact: "Compact", normal: "Standard", large: "Large",
-    update: "Check for updates…", usage: "Usage and task records",
+    update: "Check for updates…",
   },
 } as const;
 // followHead: the tab was restored on a cold start, not opened to inspect that exact
@@ -583,6 +584,8 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
   const [customModel, setCustomModel] = useState<string | null>(null);
   const [modelBusy, setModelBusy] = useState(false);
   const [permissionBusy, setPermissionBusy] = useState<string | null>(null);
+  const [suggestionBusy, setSuggestionBusy] = useState<string | null>(null);
+  const [suggestionError, setSuggestionError] = useState<{ chatId: string; messageId: string; error: HubError } | null>(null);
   const [dialogError, setDialogError] = useState<HubError | null>(null);
   // One archive at a time: the path each dialog was given, and what the Hub
   // answered about the file it actually wrote or read back.
@@ -1143,6 +1146,34 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
     } catch (cause) { setError(asFailure(cause)); void refresh(); }
     finally { actionLock.current = false; setBusy(false); setSending(null); }
   };
+  // A choice is a new user turn in this conversation, resolved against the retained
+  // card by the server. Unsent text, attachments and workspace context stay in the draft.
+  const acceptSuggestion = async (message: ChatMessage) => {
+    if (!chat || chat.id !== chatId || !message.suggestion || message.presentationRevision == null
+        || actionLock.current || busy || chat.status !== "idle" || archived || external || chat.projectDir !== projectDir) return;
+    const current = chat, target = current.projectDir;
+    actionLock.current = true; setBusy(true); setSuggestionBusy(message.id); setSuggestionError(null);
+    try {
+      await ensureProject(target, current.projectId);
+      const body: ChatPostRequest = { projectId: current.projectId,
+        suggestionSelection: { messageId: message.id, revision: message.presentationRevision } };
+      const posted = await request<ChatDetail>(`/api/chat/sessions/${encodeURIComponent(current.id)}/messages`, body);
+      if (selection.current.chatId === current.id && selection.current.projectDir === target) {
+        setChat(posted); followLatest.current = true; setLatest({ away: false, unseen: 0 });
+        requestAnimationFrame(() => toLatest());
+      }
+      await refresh();
+    } catch (cause) {
+      setSuggestionError({ chatId: current.id, messageId: message.id, error: asFailure(cause) });
+      void refresh();
+    } finally { actionLock.current = false; setBusy(false); setSuggestionBusy(null); }
+  };
+  const adjustSuggestion = (message: ChatMessage) => {
+    if (!message.suggestion || !chat || chat.id !== chatId || actionLock.current || busy || chat.status !== "idle" || archived || external) return;
+    const prompt = message.suggestion.prompt;
+    setDrafts((value) => ({ ...value, [draftKey]: value[draftKey]?.trim() ? `${value[draftKey]}\n\n${prompt}` : prompt }));
+    input.current?.focus();
+  };
   /** #285: dismiss one failed or stale operation's notice; the Hub keeps that with the operation, past restarts. */
   const dismissOperation = async (operation: OperationRow) => {
     if (!projectRuntime || dismissing) return;
@@ -1460,6 +1491,10 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
     {message.role === "user" && message.contextMode === "stage" && <p className="chat-muted">{t.contextStageMessage}: {message.confirmedStageLabel}</p>}
     {message.role === "user" && message.interjection && <p className="chat-muted" data-interjection={message.interjection}>{t.interjected} · {{ pending: t.interjectionPending, delivered: t.interjectionDelivered, restarted: t.interjectionRestarted, undelivered: t.interjectionUndelivered }[message.interjection]}</p>}
     <ChatMarkdown text={message.content} />
+    {message.role === "assistant" && message.suggestion && <ChatSuggestionCard key={`${chat!.id}:${message.id}:${message.presentationRevision}`}
+      message={message} chat={chat!} language={preferences.language} busy={busy || Boolean(toolBusy)} sending={suggestionBusy === message.id}
+      error={suggestionError?.chatId === chat!.id && suggestionError.messageId === message.id ? suggestionError.error : null}
+      onAccept={() => void acceptSuggestion(message)} onAdjust={() => adjustSuggestion(message)} />}
     <ChatMessageFiles sessionId={chat!.id} messageId={message.id} attachments={message.attachments} documents={message.documents} labels={t}
       documentBusy={busy || Boolean(toolBusy)} onOpenDocument={project && project.projectId === chat!.projectId ? (document: ChatDocument) => {
         // Capture the project before preparation; changing chats while it
@@ -1541,7 +1576,6 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
     ] },
     { id: "help", label: mw.help, items: [
       { kind: "command", id: "update", label: mw.update, onSelect: openSoftwareUpdate },
-      { kind: "command", id: "usage", label: mw.usage, onSelect: () => void openTool("monkeymonitor", { projectId: "" }) },
     ] },
   ];
   return <div className="chat-shell" data-sidebar={sidebar} data-panel={panel} style={{ "--browser-width": `${panelWidth}px` } as CSSProperties}>
@@ -1865,10 +1899,6 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
             {status.unreadable > 0 && <li data-state="stale" title={graph?.warnings.join("\n")}>{t.workUnreadable(status.unreadable)}</li>}
           </ul></dd></>}
         </dl> : <><p>{t.projectNone}</p><p className="chat-muted">{t.projectNoneHint}</p></>}
-        {/* #302: work in progress and results live in the Design Tree, the one history
-            entry; the card's former work lines are this link to it. */}
-        {project && <button type="button" className="chat-activity__open chat-project-card__tree" disabled={Boolean(toolBusy)}
-          onClick={() => { setProjectInfo(false); void openTool("tree"); }}><Icon name="tree" /><span>{t.openInTree}</span></button>}
         {/* The local address of the page on the right is a connection detail:
             available when it is asked for, not on screen all the time. */}
         {Boolean(projectRuntime?.operations?.length) && <details className="chat-project-card__connection" open={Boolean(unfinishedOperation) || undefined}>
