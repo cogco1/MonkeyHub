@@ -605,6 +605,17 @@ class ExpectedBoundsTest(unittest.TestCase):
             sorted(translation.physical_object_ids), sorted(bounds)
         )
 
+    def test_a_consumed_solid_retained_for_inspection_keeps_its_bounds(self):
+        build = program(
+            op("seed", "solid", ["seed-object"], origin=[0.0, 0.0, 0.0], size=[1.0, 1.0, 1.0],
+               retain_for_inspection=True, hidden_for_inspection=True),
+            op("row", "array", ["row-object"], ["seed-object"], count=2, step=[0.0, 0.0, 3.0]),
+        )
+        bounds = expected_object_bounds(build)
+        self.assertEqual(sorted(bounds), ["row-object", "seed-object"])
+        self.assertEqual(bounds["seed-object"]["bbox_max"], [1.0, 1.0, 1.0])
+        self.assertEqual(sorted(translate_to_rhino_python(build).physical_object_ids), ["row-object", "seed-object"])
+
 
 def semantic_build():
     return program(

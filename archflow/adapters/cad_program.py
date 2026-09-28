@@ -67,6 +67,8 @@ import re
 from dataclasses import dataclass
 from typing import Iterable, Mapping, Sequence
 
+from archflow.state.geometry_program import delivered_object_ids
+
 _SUPPORTED = {
     "planar_surface",
     "solid",
@@ -254,24 +256,6 @@ def _component_layer(
     return f"{_ROOT_LAYER}::{joined}"
 
 
-def _physical_ids(proposal) -> tuple[str, ...]:
-    consumed: set[str] = set()
-    for op in proposal.operations:
-        consumed.update(op.input_object_ids)
-    return tuple(
-        sorted(
-            object_id
-            for op in proposal.operations
-            for object_id in op.output_object_ids
-            if object_id not in consumed
-            and (
-                op.kind.value != "curve"
-                or bool(_params(op).get("retain_for_inspection", False))
-            )
-        )
-    )
-
-
 def _layer_color(component_key: str) -> tuple[int, int, int]:
     digest = hashlib.sha256(component_key.encode("utf-8")).digest()
     return (
@@ -422,7 +406,7 @@ def expected_object_semantics(
             families[f"archflow-family-{operation.op_id}"] = int(
                 parameters["count"]
             )
-    physical = set(_physical_ids(proposal))
+    physical = set(delivered_object_ids(proposal))
     return {
         "objects": {
             object_id: row
@@ -475,7 +459,7 @@ def _script_header(
         lines.append(f"rs.AddLayer({layer_path!r}, {color!r})")
     native_colors = {}
     layer_color_map = dict(layer_colors)
-    for object_id in _physical_ids(program.proposal):
+    for object_id in delivered_object_ids(program.proposal):
         row = semantics["objects"][object_id]
         material = row["user_text"].get("archflow:material")
         if material:
@@ -628,7 +612,7 @@ def translate_step_import_to_rhino_python(
         material_by_component=material_by_component,
         layer_by_component=layer_by_component,
     )
-    physical = _physical_ids(program.proposal)
+    physical = delivered_object_ids(program.proposal)
     missing = [object_id for object_id in physical if object_id not in step_file_by_object]
     if missing:
         raise CadTranslationError(
@@ -785,7 +769,7 @@ def translate_to_rhino_python(
     proposal = program.proposal
     operations = {op.op_id: op for op in proposal.operations}
     order = list(program.operation_order)
-    physical = _physical_ids(proposal)
+    physical = delivered_object_ids(proposal)
     if operation_subset is not None:
         subset = set(operation_subset)
         unknown = sorted(subset - set(order))
@@ -1224,12 +1208,10 @@ def expected_object_bounds(program) -> dict[str, dict]:
         elif kind == "transform":
             points[out] = list(points[ins[0]])
             counts[out] = counts[ins[0]]
-    consumed: set[str] = set()
-    for op in proposal.operations:
-        consumed.update(op.input_object_ids)
+    delivered = set(delivered_object_ids(proposal))
     bounds: dict[str, dict] = {}
     for object_id, pts in points.items():
-        if object_id in consumed:
+        if object_id not in delivered:
             continue
         bounds[object_id] = {
             "bbox_min": [min(p[axis] for p in pts) for axis in range(3)],

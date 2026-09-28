@@ -470,7 +470,8 @@
       ],
       "depends_on": [
         "adapters.cad_program",
-        "archflow.adapters.cad_program"
+        "archflow.adapters.cad_program",
+        "state.geometry_program"
       ],
       "used_by": [
         "archflow/adapters/cad_execution.py",
@@ -532,7 +533,9 @@
         "translate_step_import_to_rhino_python",
         "ROOT_LAYER"
       ],
-      "depends_on": [],
+      "depends_on": [
+        "state.geometry_program"
+      ],
       "used_by": [
         "archflow/adapters/cad_execution.py",
         "archflow/adapters/cad_patch.py",
@@ -3639,7 +3642,8 @@
         "the program proposal record and its digest (GeometryProgramProposal)",
         "project levels and grid axes as published datums (ProjectLevel, ProjectLevels, ProjectGridAxis, ProjectGrids, verify_project_datums)",
         "compiled geometry program/object values, asset substitution receipts and their retained serialization shared by the MonkeyArch compiler and ArchFlow CAD adapters",
-        "PLANAR_SURFACE: one explicitly closed planar polygon without thickness; operation construction rejects open, non-planar, self-intersecting and degenerate boundaries"
+        "PLANAR_SURFACE: one explicitly closed planar polygon without thickness; operation construction rejects open, non-planar, self-intersecting and degenerate boundaries",
+        "which objects a program delivers (delivered_object_ids): outputs nothing consumes, except unretained curves, and outputs whose operation states retain_for_inspection"
       ],
       "does_not_own": [
         "producing operations from design content (capabilities/element_producers.py, wall_solver, opening_solver)",
@@ -3697,7 +3701,8 @@
         "CompiledGeometryProgram",
         "CompiledGeometryObject",
         "AssetSubstitutionReceipt",
-        "GeometryCompilationError"
+        "GeometryCompilationError",
+        "delivered_object_ids"
       ],
       "depends_on": [
         "contracts.canonical",
@@ -3725,7 +3730,8 @@
         "every numeric field is finite and every collection is bounded",
         "a datum id namespace is unique across levels and grid axes (verify_project_datums)",
         "a proposal names the design-state digest it was produced from",
-        "never writes the filesystem"
+        "never writes the filesystem",
+        "an operation may name no semantic binding; allowing it changes no retained serialization"
       ],
       "status": "canonical",
       "tests": [

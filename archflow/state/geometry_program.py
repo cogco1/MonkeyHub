@@ -590,7 +590,9 @@ class GeometryOperation:
                 raise GeometryProgramError("planar_surface requires a POINTS3 profile")
             _require_planar_surface_profile(json.loads(profile.value_json))
         object.__setattr__(self, "statements", _statements(self.statements))
-        _ids(self.semantic_binding_ids, "operation semantic_binding_ids")
+        # Construction may be unbound; the compiler requires a binding only on
+        # what the program delivers (delivered_object_ids, #419).
+        _ids(self.semantic_binding_ids, "operation semantic_binding_ids", allow_empty=True)
         _ids(
             self.responds_to_object_ids,
             "responds_to_object_ids",
@@ -1347,6 +1349,29 @@ class GeometryProgramProposal:
             "hard_gate_authority": False,
             "canonical_write_authority": False,
         }
+
+
+def delivered_object_ids(proposal) -> tuple[str, ...]:
+    """The objects a program delivers, sorted: the one definition every consumer reads (#419).
+
+    An output that no operation consumes is delivered, except a curve, which
+    is a construction reference unless retained. An output another operation
+    consumes is construction; it is delivered as well when its operation
+    states ``retain_for_inspection`` (a void kept in the model, hidden, under
+    its own id). Construction needs no design identity; a delivered object does.
+    """
+
+    consumed = {object_id for operation in proposal.operations for object_id in operation.input_object_ids}
+    delivered: set[str] = set()
+    for operation in proposal.operations:
+        retained = any(
+            parameter.name == "retain_for_inspection" and json.loads(parameter.value_json) is True
+            for parameter in operation.parameters
+        )
+        for object_id in operation.output_object_ids:
+            if retained or (object_id not in consumed and operation.kind.value != "curve"):
+                delivered.add(object_id)
+    return tuple(sorted(delivered))
 
 
 # ---------------------------------------------------------------- P098

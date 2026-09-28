@@ -78,8 +78,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Callable, Mapping, Sequence
 
-from archflow.adapters.cad_program import _params, _physical_ids, _revolve_parameters, lift_to_base_level
-from archflow.state.geometry_program import CompiledGeometryProgram
+from archflow.adapters.cad_program import _params, _revolve_parameters, lift_to_base_level
+from archflow.state.geometry_program import CompiledGeometryProgram, delivered_object_ids
 
 
 class OcctBackendError(ValueError):
@@ -350,7 +350,7 @@ def build_program_shapes(
     recomputed_ids: list[str] = []
     reused_ids: list[str] = []
     input_ids: set[str] = set()
-    physical = tuple(sorted(_physical_ids(proposal)))
+    physical = delivered_object_ids(proposal)
     status = "failed"
     elapsed = None
     try:
