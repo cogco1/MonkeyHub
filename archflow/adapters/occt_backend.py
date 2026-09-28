@@ -157,6 +157,13 @@ _UNIT_TO_RHINO3DM: Mapping[str, str] = {
 #: a difference it cannot realize that way.
 DIFFERENCE_STRATEGIES = ("auto", "boolean", "profile_with_holes")
 _PLAN_TOLERANCE = 1e-7
+#: The required gap (metres) between a void and the outline and between
+#: voids (#419 IMPORTANT 2). Coarser than ``_PLAN_TOLERANCE``, which bounds
+#: coplanarity, reach and vector displacement: at tolerance-scale clearance a
+#: boolean cut can merge or shift faces where the profile keeps them apart,
+#: so a gap closer than this falls back to a cut under ``auto`` and is
+#: refused under ``profile_with_holes``.
+_PLAN_CLEARANCE = 1e-5
 
 
 @dataclass(frozen=True)
@@ -252,14 +259,14 @@ def _inside(point, flat):
 
 
 def _apart(first, second):
-    return all(_segment_gap(p, q, a, b) > _PLAN_TOLERANCE for p, q in _edges(first) for a, b in _edges(second))
+    return all(_segment_gap(p, q, a, b) > _PLAN_CLEARANCE for p, q in _edges(first) for a, b in _edges(second))
 
 
 def _simple(flat):
     edges = _edges(flat)
     count = len(edges)
     return all(
-        _segment_gap(*edges[i], *edges[j]) > _PLAN_TOLERANCE
+        _segment_gap(*edges[i], *edges[j]) > _PLAN_CLEARANCE
         for i in range(count) for j in range(i + 2, count) if not (i == 0 and j == count - 1)
     )
 
@@ -268,10 +275,17 @@ def _difference_plan(operation, operations, producers):
     """A face-with-holes realization of this boolean_difference, or ``None`` and why not (#419).
 
     It applies when the base is an extrusion and every void is an extrusion
-    along the same vector, with a profile parallel to the base profile, that
-    covers the base's whole extent along the vector and lies strictly inside
-    the base profile, apart from every other void. The result is then exactly
-    the base profile minus the void profiles, extruded once.
+    whose own vector reaches, at every one of its vertices, across the
+    base's whole extrusion extent (projected onto the base's normal), and
+    whose direction agrees with the base's own vector within an absolute
+    displacement bound measured across the base's thickness - never in how
+    far the void's profile sits from the base plane, which the bound never
+    depends on. Each void vertex is then projected onto the base's plane
+    along the VOID's own vector (exact for a tilted profile or a leaning
+    vector alike), giving a simple, non-degenerate hole that must lie
+    strictly inside the base profile, apart from every other void by at
+    least the plan clearance. The result is then exactly the base profile
+    minus the projected void profiles, extruded once.
     """
 
     params = _params(operation)
@@ -299,19 +313,33 @@ def _difference_plan(operation, operations, producers):
         void_params = _params(void)
         loop = _loop(lift_to_base_level(void_params["profile"], void_params, void.op_id))
         void_vector = tuple(float(value) for value in void_params["vector"])
-        void_normal = _unit_normal(loop)
-        if (void_normal is None or _length(_cross(void_normal, normal)) > _PLAN_TOLERANCE
-                or _length(_cross(void_vector, vector)) > _PLAN_TOLERANCE * _length(void_vector) * _length(vector)):
+        v_n = _dot(void_vector, normal)
+        if abs(v_n) <= _PLAN_TOLERANCE:
             return None, f"the void {void_id} is not extruded along the base"
-        start = _dot(_sub(loop[0], origin), normal)
-        reach = sorted((start, start + _dot(void_vector, normal)))
-        if reach[0] > extent[0] + _PLAN_TOLERANCE or reach[1] < extent[1] - _PLAN_TOLERANCE:
-            return None, f"the void {void_id} does not pass through the base"
-        shift = -start / rise
-        holes.append(tuple(tuple(point[i] + shift * vector[i] for i in range(3)) for point in loop))
+        # Vertex-independent (#419 CRITICAL 1): how far the void's walls
+        # would drift from the base's own extrusion across the base's
+        # thickness, in absolute metres - never in how far the void's
+        # profile plane sits from the base, which the old angle-only test
+        # left unbounded.
+        scaled = tuple((rise / v_n) * component for component in void_vector)
+        if _length(_sub(scaled, vector)) > _PLAN_TOLERANCE:
+            return None, f"the void {void_id} is not extruded along the base"
+        projected = []
+        for point in loop:
+            offset = _dot(_sub(point, origin), normal)
+            reach = sorted((offset, offset + v_n))
+            if reach[0] > extent[0] + _PLAN_TOLERANCE or reach[1] < extent[1] - _PLAN_TOLERANCE:
+                return None, f"the void {void_id} does not pass through the base"
+            # Project this vertex onto the base plane along the VOID's own
+            # vector, not the base's (#419 CRITICAL 1): exact for every
+            # vertex of a tilted profile, since each uses its own offset.
+            projected.append(tuple(point[i] - (offset / v_n) * void_vector[i] for i in range(3)))
+        holes.append(tuple(projected))
     flat_outer = _in_plane(outer, origin, normal)
     flat_holes = [_in_plane(hole, origin, normal) for hole in holes]
     for index, flat in enumerate(flat_holes):
+        if abs(_signed_area(flat)) <= _PLAN_TOLERANCE:
+            return None, "a void profile has no area across the base"
         if not _simple(flat):
             return None, "a void profile crosses itself"
         if not _apart(flat, flat_outer) or not all(_inside(point, flat_outer) for point in flat):
@@ -329,10 +357,13 @@ def _difference_plan(operation, operations, producers):
 
 def _profile_with_holes(occ: SimpleNamespace, plan: _ProfileWithHoles, op_id: str):
     maker = occ.BRepBuilderAPI.BRepBuilderAPI_MakeFace(_polygon(occ, plan.outer, op_id), True)
+    # IsDone reflects only this outer-wire construction; Add (below) reports
+    # no per-hole status in this binding, so the error names what is actually
+    # checked here rather than claiming the holes were verified too.
+    if not maker.IsDone():
+        raise OcctBuildError(f"{op_id}: the outer profile is not one planar face")
     for hole in plan.holes:
         maker.Add(_polygon(occ, hole, op_id))
-    if not maker.IsDone():
-        raise OcctBuildError(f"{op_id}: the profile with its holes is not one planar face")
     vx, vy, vz = cad_point(plan.vector)
     return occ.BRepPrimAPI.BRepPrimAPI_MakePrism(maker.Face(), occ.gp.gp_Vec(vx, vy, vz)).Shape()
 

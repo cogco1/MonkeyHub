@@ -1689,6 +1689,118 @@ class DifferenceLoweringTests(unittest.TestCase):
         self.assertNotIn("lowering", forced.to_dict())
         self.assertEqual(auto.expected_bounds, forced.expected_bounds)
         self.assertEqual(auto.physical_object_ids, ("slab-object",))
+        # The predicted expected_bounds agree by construction (same program,
+        # same analytic predictor); the measured cold readback is what each
+        # strategy's kernel build actually produced, and must agree too.
+        auto_readback = auto.readback["slab-object"]
+        forced_readback = forced.readback["slab-object"]
+        self.assertAlmostEqual(auto_readback["volume"], forced_readback["volume"], places=6)
+        for axis in range(3):
+            self.assertAlmostEqual(auto_readback["bbox"]["min"][axis], forced_readback["bbox"]["min"][axis], places=6)
+            self.assertAlmostEqual(auto_readback["bbox"]["max"][axis], forced_readback["bbox"]["max"][axis], places=6)
+
+    def test_a_leaning_void_far_from_the_base_matches_the_cut_and_excessive_lean_is_refused(self) -> None:
+        # #419 CRITICAL 1 regression: a void profile 50 m below the base, its
+        # own vector leaning off the base's vector by a tiny angle. The old,
+        # angle-only test accepted this and then shifted every hole vertex
+        # along the BASE's vector, so the hole's true position error grew
+        # with the void's distance from the base plane (here, off by about
+        # 4.5e-6 m) while volume, bounds and face count still agreed with
+        # the cut - a silent, unbounded, undetected corruption.
+        big = [[0.0, 0.0, 0.0], [40.0, 0.0, 0.0], [40.0, 0.0, 40.0], [0.0, 0.0, 40.0]]
+        base = _prism("big-body", big, [0.0, 0.3, 0.0])
+
+        def leaning(angle: float) -> CompiledGeometryProgram:
+            vector = [-100.0 * math.sin(angle), 100.0 * math.cos(angle), 0.0]
+            void = _prism(
+                "void", [[10.0, -50.0, 10.0], [30.0, -50.0, 10.0], [30.0, -50.0, 30.0], [10.0, -50.0, 30.0]], vector
+            )
+            return _program_of(base, void, _difference("big", base, void))
+
+        # The exact angle (9e-8 rad) the review measured as wrongly accepted
+        # with a real ~4.5e-6 m hole displacement under the old,
+        # distance-scaled formula. Fixed and bounded by absolute displacement
+        # alone - never by how far the void's profile sits from the base -
+        # its true error at this shallow a lean is negligible: correctly
+        # accepted, matching the cut almost exactly.
+        program = leaning(9e-8)
+        boolean = occt_backend.build_program_shapes(program, difference_strategy="boolean")
+        auto = occt_backend.build_program_shapes(program)
+        self.assertEqual(dict(auto.lowering), {"big": "profile_with_holes"})
+        self.assertAlmostEqual(
+            self._symmetric_volume(boolean.objects["big-object"].shape, auto.objects["big-object"].shape),
+            0.0, places=6,
+        )
+        # A lean that genuinely displaces the far side of the base's own
+        # thickness beyond tolerance is still refused, falling back to a cut.
+        self.assertEqual(dict(occt_backend.build_program_shapes(leaning(1e-5)).lowering), {})
+
+    def test_a_tilted_void_profile_builds_and_matches_the_cut(self) -> None:
+        # #419 IMPORTANT 1 regression: a void profile tilted a hair off
+        # parallel to the base. The old test rejected only by the void's own
+        # normal angle, then shifted every vertex by loop[0]'s offset alone,
+        # so a tilted profile's other vertices left the base plane and OCCT
+        # refused the result outright ("produced an invalid shape") where the
+        # cut succeeded. Projecting each vertex by its own offset fixes this;
+        # auto is free to pick either realization, as long as it builds and
+        # matches the cut.
+        big = [[0.0, 0.0, 0.0], [40.0, 0.0, 0.0], [40.0, 0.0, 40.0], [0.0, 0.0, 40.0]]
+        base = _prism("big-body", big, [0.0, 0.3, 0.0])
+        tilt = 9e-8
+        void_profile = [
+            [10.0, -0.1, 10.0], [30.0, -0.1 + tilt * 20.0, 10.0],
+            [30.0, -0.1 + tilt * 20.0, 30.0], [10.0, -0.1, 30.0],
+        ]
+        void = _prism("void", void_profile, [0.0, 0.5, 0.0])
+        program = _program_of(base, void, _difference("big", base, void))
+        boolean = occt_backend.build_program_shapes(program, difference_strategy="boolean")
+        auto = occt_backend.build_program_shapes(program)
+        boolean_shape = boolean.objects["big-object"].shape
+        auto_shape = auto.objects["big-object"].shape
+        self.assertTrue(occt_backend.measure_shape(boolean_shape).valid)
+        self.assertTrue(occt_backend.measure_shape(auto_shape).valid)
+        self.assertAlmostEqual(self._symmetric_volume(boolean_shape, auto_shape), 0.0, places=6)
+
+    def test_two_voids_a_hair_apart_do_not_lower(self) -> None:
+        # #419 IMPORTANT 2 regression: at tolerance-scale clearance a cut can
+        # merge or shift faces where the profile keeps two voids apart,
+        # contradicting "both strategies realize the same exact solid". A
+        # gap under the plan clearance now falls back to a cut under auto.
+        gap = 1.5e-7
+        slab = _prism("slab-body", L_SLAB, [0.0, 0.3, 0.0])
+        left = _prism("left", [[1.0, -0.1, 1.0], [2.0, -0.1, 1.0], [2.0, -0.1, 3.0], [1.0, -0.1, 3.0]], [0.0, 0.5, 0.0])
+        right = _prism(
+            "right", [[2.0 + gap, -0.1, 1.0], [3.0, -0.1, 1.0], [3.0, -0.1, 3.0], [2.0 + gap, -0.1, 3.0]],
+            [0.0, 0.5, 0.0],
+        )
+        program = _program_of(slab, left, right, _difference("slab", slab, left, right))
+        self.assertEqual(dict(occt_backend.build_program_shapes(program).lowering), {})
+
+    def test_a_void_in_the_l_slabs_concavity_does_not_lower(self) -> None:
+        # Inside the L slab's bounding box but outside its actual outline
+        # (the notch): the void cannot lie strictly inside the base profile,
+        # so auto falls back to a cut rather than refusing the export.
+        slab = _prism("slab-body", L_SLAB, [0.0, 0.3, 0.0])
+        void = _prism("void", [[5.0, -0.1, 5.0], [9.0, -0.1, 5.0], [9.0, -0.1, 7.0], [5.0, -0.1, 7.0]], [0.0, 0.5, 0.0])
+        program = _program_of(slab, void, _difference("slab", slab, void))
+        self.assertEqual(dict(occt_backend.build_program_shapes(program).lowering), {})
+
+    def test_two_separate_through_voids_both_lower(self) -> None:
+        slab = _prism("slab-body", L_SLAB, [0.0, 0.3, 0.0])
+        left = _prism("left", [[1.0, -0.1, 1.0], [3.0, -0.1, 1.0], [3.0, -0.1, 3.0], [1.0, -0.1, 3.0]], [0.0, 0.5, 0.0])
+        right = _prism("right", [[6.0, -0.1, 1.0], [8.0, -0.1, 1.0], [8.0, -0.1, 3.0], [6.0, -0.1, 3.0]], [0.0, 0.5, 0.0])
+        program = _program_of(slab, left, right, _difference("slab", slab, left, right))
+        built, shapes = self._both(program, "slab-object")
+        self.assertEqual(dict(built["profile_with_holes"].lowering), {"slab": "profile_with_holes"})
+        self.assertAlmostEqual(self._symmetric_volume(shapes["boolean"], shapes["profile_with_holes"]), 0.0, places=9)
+
+    def test_a_reversed_extrusion_still_lowers_the_same_way(self) -> None:
+        slab = _prism("slab-body", L_SLAB, [0.0, -0.3, 0.0])
+        void = _prism("void", [[1.0, 0.1, 1.0], [3.0, 0.1, 1.0], [3.0, 0.1, 3.0], [1.0, 0.1, 3.0]], [0.0, -0.5, 0.0])
+        program = _program_of(slab, void, _difference("slab", slab, void))
+        built, shapes = self._both(program, "slab-object")
+        self.assertEqual(dict(built["profile_with_holes"].lowering), {"slab": "profile_with_holes"})
+        self.assertAlmostEqual(self._symmetric_volume(shapes["boolean"], shapes["profile_with_holes"]), 0.0, places=9)
 
 
 @NEEDS_OCCT

@@ -44,6 +44,7 @@ from archflow.adapters.occt_backend import (
     _polyline_geometry,
     CLOSED_SOLID,
     CURVE,
+    DIFFERENCE_STRATEGIES,
     OPEN_SURFACE,
     OcctBackendError,
     OcctCapabilityError,
@@ -3225,6 +3226,11 @@ class OcctExecutionReceipt:
             for item in self.lowering
         ):
             raise CadExecutionError("lowering names only operations realized as a profile with holes")
+        lowering_ids = tuple(item[0] for item in self.lowering)
+        if lowering_ids != tuple(sorted(set(lowering_ids))):
+            raise CadExecutionError("lowering op ids must be sorted and unique")
+        for op_id in lowering_ids:
+            require_identifier(op_id, "lowering")
         if not isinstance(self.evidence_tier, str) or not self.evidence_tier:
             raise CadExecutionError("evidence_tier must be non-empty text")
         for field in ("exact_artifact", "preview_artifact"):
@@ -3399,6 +3405,8 @@ def execute_occt_export(
         # launched by create/save/reopen/preview.
     """
 
+    if difference_strategy not in DIFFERENCE_STRATEGIES:
+        raise CadExecutionError(f"unknown difference strategy {difference_strategy!r}")
     if not isinstance(binding, RhinoCadProgramBinding):
         raise TypeError("binding must be RhinoCadProgramBinding")
     binding.bind_program(program)
