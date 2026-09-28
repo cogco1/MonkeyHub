@@ -6,7 +6,7 @@ import type { WorktreeGraphDto } from "../workspaces/src/api/generated";
 import { projectStatus } from "./worktreeGraph";
 import type { AppStatus, ChatArchiveRequest, ChatCreateRequest, ChatDetail, ChatMessage, ChatPostRequest, ChatProject, ChatProvider, ChatSummary, ChatWorkspace, HubError, HubRuntimeDto, OperationRecord, ProjectArchiveExportRequest, ProjectArchiveRestoreRequest, ProjectArchiveRestoreResult, ProjectArchiveSummary, ProjectRuntimeDto, RuntimeEvent, UpdateStatus } from "./api/generated";
 import { ProjectRuntimeProvider, useStudio } from "../workspaces/src/api/ProjectRuntimeContext";
-import { projectStores, type IndexHint } from "../workspaces/src/api/projectStore";
+import { projectStores, relayHubStream } from "../workspaces/src/api/projectStore";
 import type { ModelSourceDto } from "../workspaces/src/api/generated";
 import { ModelThumbnail } from "../workspaces/src/features/artifacts/ModelThumbnail";
 import { MODEL_PREVIEW_RETAINED, previewSourceKey } from "../workspaces/src/features/artifacts/useRetainedModelPreview";
@@ -777,17 +777,19 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
   useEffect(() => {
     void refresh();
     let connected = false;
-    let stream: EventSource, reconnectTimer: number | undefined;
+    let stream: EventSource, reconnectTimer: number | undefined, relay = () => {};
     const connect = () => {
       reconnectTimer = undefined;
       stream = new EventSource("/api/runtime/events");
-      // Every open, reconnects included, also has each project store read what the stream may have carried meanwhile (#366).
-      stream.onopen = () => { connected = true; setEventsConnected(true); projectStores.opened(); void refresh(); };
+      // The project stores follow this one stream (#366): every open, reconnects included, has each of
+      // them read what the stream may have carried meanwhile, and a project's own events reach its store.
+      relay = relayHubStream(stream);
+      stream.onopen = () => { connected = true; setEventsConnected(true); void refresh(); };
       stream.onerror = () => {
-        connected = false; setEventsConnected(false); projectStores.closed();
+        connected = false; setEventsConnected(false);
         // A 503 can close EventSource permanently; transport errors use its
         // built-in retry. Both reconnect paths only read current state.
-        if (stream.readyState === EventSource.CLOSED && reconnectTimer === undefined) reconnectTimer = window.setTimeout(connect, 1500);
+        if (stream.readyState === EventSource.CLOSED && reconnectTimer === undefined) { relay(); reconnectTimer = window.setTimeout(connect, 1500); }
       };
       stream.addEventListener("runtime", (message) => {
         try {
@@ -797,20 +799,6 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
         } catch { /* Re-read the authoritative snapshot below. */ }
         void refresh();
       });
-      // A project worker's own events, relayed by the Hub on this one stream: they move a project
-      // store, never the Hub's runtime snapshot, so they read nothing of the Hub's.
-      stream.addEventListener("index", (message) => {
-        try {
-          const event = JSON.parse((message as MessageEvent).data) as { runtimeId?: string; index?: IndexHint | null };
-          if (event.runtimeId) projectStores.hint(event.runtimeId, event.index ?? null);
-        } catch { /* The next open or focus reads the index anyway. */ }
-      });
-      stream.addEventListener("studio", (message) => {
-        try {
-          const event = JSON.parse((message as MessageEvent).data) as { runtimeId?: string; studio?: Record<string, unknown> };
-          if (event.runtimeId && event.studio) projectStores.studioEvent(event.runtimeId, event.studio);
-        } catch { /* A progress line; the views read their own state. */ }
-      });
     };
     connect();
     const focused = () => projectStores.pullAll();
@@ -818,7 +806,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
     const timer = window.setInterval(() => { if (!connected && !document.hidden) void refresh(); }, 5000);
     const visible = () => { if (!document.hidden) void refresh(); };
     document.addEventListener("visibilitychange", visible);
-    return () => { stream.close(); projectStores.detached(); window.clearTimeout(reconnectTimer); window.clearInterval(timer); document.removeEventListener("visibilitychange", visible); window.removeEventListener("focus", focused); };
+    return () => { relay(); stream.close(); projectStores.detached(); window.clearTimeout(reconnectTimer); window.clearInterval(timer); document.removeEventListener("visibilitychange", visible); window.removeEventListener("focus", focused); };
   }, [refresh, receiveRuntime]);
   useEffect(() => {
     if (!providers.some((item) => item.modelCatalog === "checking")) return;

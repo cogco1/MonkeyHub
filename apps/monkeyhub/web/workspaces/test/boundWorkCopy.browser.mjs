@@ -65,11 +65,14 @@ try {
         import { createRoot } from "react-dom/client";
         import { convertToExcalidrawElements, newElementWith, CaptureUpdateAction } from "@excalidraw/excalidraw";
         import Board from "/src/workspaces/monkeyboard/Board";
+        import { relayHubStream } from "/src/api/projectStore";
         import { UserPreferencesProvider } from "/test/TestProviders.tsx";
         import "/src/styles.css";
         window.__boardHelpers = { convertToExcalidrawElements, newElementWith, CaptureUpdateAction };
+        // The Hub's one stream, followed as the Hub page does (#366): the Board learns of the saves through it.
+        relayHubStream(new EventSource("/api/runtime/events"));
         const forbidden = () => { throw new Error("Unexpected design operation"); };
-        createRoot(document.getElementById("root")).render(<UserPreferencesProvider baseUrl={${JSON.stringify(setup.basePath)}}>
+        createRoot(document.getElementById("root")).render(<UserPreferencesProvider baseUrl={${JSON.stringify(setup.basePath)}} runtimeId={${JSON.stringify(setup.runtimeId)}}>
           <Board onSubmit={forbidden} onSketch={forbidden} expectedProjectId={${JSON.stringify(setup.projectId)}} />
         </UserPreferencesProvider>);
       `, map: null };

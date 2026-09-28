@@ -696,7 +696,7 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
   }, [queue]);
   // The documents are read again when the project's store moves (#366), never on a timer: on
   // screen at once, otherwise when the board comes back. A read put off (hidden, a dialog open)
-  // is made when the window is shown again.
+  // is made when the window is shown again. Outside the Hub (no store) focus reads them.
   const revision = useProjectRevision();
   const readRevision = useRef<string | null | undefined>(revision);
   useEffect(() => {
@@ -728,7 +728,10 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
     if (readRevision.current !== revision) void refresh();
     const shown = () => { if (!document.hidden && readRevision.current !== revision) void refresh(); };
     document.addEventListener("visibilitychange", shown);
-    return () => { live = false; document.removeEventListener("visibilitychange", shown); };
+    // Outside the Hub no store moves: focus reads again, as the Hub's store does on focus.
+    const focused = () => { if (revision === null) void refresh(); };
+    window.addEventListener("focus", focused);
+    return () => { live = false; document.removeEventListener("visibilitychange", shown); window.removeEventListener("focus", focused); };
   }, [acceptDocuments, board.projectId, ready, receive, serial, active, revision]);
   useWheelZoom(root, canvas);
   // Leaving for a page is still a board edit: the canvas is saved first, and a

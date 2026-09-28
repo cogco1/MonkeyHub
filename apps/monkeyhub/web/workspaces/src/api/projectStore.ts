@@ -340,3 +340,38 @@ export class ProjectStores {
 
 /** The one registry of this page. */
 export const projectStores = new ProjectStores();
+
+/**
+ * Feed `stores` from one Hub event stream (`/api/runtime/events`): each open,
+ * reconnects included, has every store read; `index` frames are hints for the
+ * store of their runtime; `studio` frames reach that runtime's listeners. The
+ * stream's owner (ChatShell) keeps its own `runtime` handling and closes the
+ * stream; the returned function only stops relaying.
+ */
+export function relayHubStream(stream: EventSource, stores: ProjectStores = projectStores): () => void {
+  const opened = () => stores.opened();
+  const failed = () => stores.closed();
+  const index = (message: Event) => {
+    try {
+      const event = JSON.parse((message as MessageEvent).data) as { runtimeId?: string; index?: IndexHint | null };
+      if (event.runtimeId) stores.hint(event.runtimeId, event.index ?? null);
+    } catch { /* The next open or focus reads the index anyway. */ }
+  };
+  const studio = (message: Event) => {
+    try {
+      const event = JSON.parse((message as MessageEvent).data) as { runtimeId?: string; studio?: Record<string, unknown> };
+      if (event.runtimeId && event.studio) stores.studioEvent(event.runtimeId, event.studio);
+    } catch { /* A progress line; the views read their own state. */ }
+  };
+  stream.addEventListener("open", opened);
+  stream.addEventListener("error", failed);
+  stream.addEventListener("index", index);
+  stream.addEventListener("studio", studio);
+  if (stream.readyState === 1) opened();
+  return () => {
+    stream.removeEventListener("open", opened);
+    stream.removeEventListener("error", failed);
+    stream.removeEventListener("index", index);
+    stream.removeEventListener("studio", studio);
+  };
+}
