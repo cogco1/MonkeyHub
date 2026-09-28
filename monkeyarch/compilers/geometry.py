@@ -899,27 +899,31 @@ class _StateIdentity:
 
 
 def _state_identity(state: object) -> _StateIdentity:
-    """The canonical ``StateRecord@1`` or the developed-design projection it yields.
+    """The canonical ``StateRecord@1``, or what ``developed_design_view`` binds it to.
 
     The compiler never reads a design decision off the state: it checks that
-    the proposal and the state are exact-base peers. Both the record and the
-    legacy state answer those four questions, so the compiler depends on the
-    question, not on either class.
+    the proposal and the state are exact-base peers. The record, its run
+    binding (``RecordBinding``) and the developed state of a record that
+    declares massing all answer those four questions, so the compiler
+    depends on the question, not on any one class. The record and its
+    binding answer the component tree from the record alone (#402).
     """
 
-    from archflow.state.state_record import StateRecord, design_components_of
+    from archflow.state.state_record import RecordBinding, StateRecord, design_components_of
 
     if isinstance(state, StateRecord):
         components, developments = design_components_of(state), ()
+    elif isinstance(state, RecordBinding):
+        components, developments = state.components, ()
     elif isinstance(state, DevelopedDesignState):
         components, developments = state.selected_schematic.option.proposal.components, state.components
     else:
-        raise TypeError("state must be StateRecord or DevelopedDesignState")
+        raise TypeError("state must be StateRecord, RecordBinding or DevelopedDesignState")
     return _StateIdentity(state.project_id, state.run_id, state.base, state.state_digest, tuple(components), tuple(developments))
 
 
 def compile_geometry_program(
-    state: DevelopedDesignState,
+    state: object,
     proposal: GeometryProgramProposal,
     *,
     active_commitment_refs: tuple[str, ...] = (),
@@ -930,6 +934,10 @@ def compile_geometry_program(
     datum_bindings: tuple[DatumBinding, ...] = (),
 ) -> GeometryCompilationResult:
     """Compile a proposal or return a detached, explicit rejection receipt.
+
+    ``state`` is a bound ``StateRecord@1``, its ``RecordBinding`` or the
+    ``DevelopedDesignState`` of a record that declares massing
+    (``_state_identity``).
 
     Receipts carry the authored proposal digest; when datum bindings are
     supplied, the compiled program embeds the datum-resolved proposal

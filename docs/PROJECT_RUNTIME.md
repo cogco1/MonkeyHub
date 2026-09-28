@@ -161,8 +161,16 @@ In production only through the Hub's forwarding path
 and body (`PROJECT_MISMATCH`), `Idempotency-Key` admission for mutations — every request that is
 not `GET`, `HEAD` or `OPTIONS`, except `/api/events/*`, `POST /api/state/closure` and
 `POST /api/pick/resolve` (`runtime.py`, `forward`) — `X-Monkey-Candidate`
-and `X-Monkey-Worker` for candidate-producing requests, an allowlist of forwarded request
-headers, and a hand-piped SSE relay for `/api/events`. Chat tools use the same path. `AppStatus.apiUrl` identifies the runtime API for its
+and `X-Monkey-Worker` for candidate-producing requests, and an allowlist of forwarded request
+headers. `GET .../studio/api/events` is not forwarded (`STUDIO_EVENTS_RELAYED`): the Hub
+attaches once to each worker's own `/api/events` (`runtime.py`, `_WorkerEvents`; it resumes
+with `Last-Event-ID` and reattaches after 0.5 s, then 1, 2, 4 s … while attachments carry
+nothing) and relays it on its single `GET /api/runtime/events` stream, which every Hub page
+already holds: `index` frames are the worker's `index.committed` hints (#366), `studio` frames
+its other events with the worker stream they were numbered on, and a new connection opens with
+the runtime snapshot followed by each project's latest Studio events marked `replay`. A page
+therefore holds one SSE connection however many projects and surfaces it shows. Chat tools use
+the same forwarding path. `AppStatus.apiUrl` identifies the runtime API for its
 verified agent connection; `AppStatus.url` opens the corresponding workspace in MonkeyHub. A
 runtime that is not `ready` or `busy` and healthy answers `WORKER_UNAVAILABLE`. Direct access
 to the runtime's own port is for development and tests (§8).

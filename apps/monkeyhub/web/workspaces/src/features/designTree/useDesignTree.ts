@@ -8,12 +8,20 @@
  * `POST /api/candidates/{id}/accept`, on the Working Head only. View changes
  * nothing here. Each act that changed the design confirms itself in a toast
  * beside the chip (FN-5); a refusal stays inline where it was asked for. The
- * facts are read again on a short interval while the workspace is on screen,
- * when it comes back on screen, on focus, and after each action; a read that
- * finds the project unchanged keeps the tree it has.
+ * facts are read again when an entity the tree shows moves in the project's
+ * store (#366: its index committed, whoever wrote; `treeShows`), when a job
+ * starts, waits or ends while the tree is on screen (its running work lives in
+ * the runtime, not the project; a replayed event is not news), when the
+ * workspace comes back on screen after either, and after
+ * each action once the store holds that action's write. Reads never overlap:
+ * one runs, and whatever asks meanwhile is answered by one more after it. A
+ * read is kept in the store under the revision it was read at, so showing the
+ * tree again on an unchanged project asks for nothing; nothing reads on a timer.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { asStudioApiError, StudioApiError, type StudioClient } from "../../api/client";
+import { useProjectMoved, useProjectStoreInstance, useRuntimeKey } from "../../api/ProjectRuntimeContext";
+import { movedAt, projectStores, type ProjectStoreState } from "../../api/projectStore";
 import type { DesignHistoryDto, WorkingDraftDto, WorkingDraftSelectionDto, WorktreeGraphDto } from "../../api/generated";
 import type { DesignTreeSource } from "./contract";
 import { continueRequest, continueUndo, DESIGN_TREE_UNDO_MOVED, DESIGN_TREE_UNSYNCED, undoRequest, type ContinueUndo,
@@ -22,8 +30,21 @@ import { buildGrowthTree, type GrowthTree, type TreeNode } from "./model";
 
 export { DESIGN_TREE_UNDO_MOVED, DESIGN_TREE_UNSYNCED } from "./continueUndo";
 
-/** How often an open project re-reads its tree while it is on screen; an unchanged project answers in one request. */
-export const DESIGN_TREE_POLL_MS = 15_000;
+/**
+ * The index entities the tree is read from, and so the only ones whose move reads it again:
+ * the design branches and their Stages (`tree`), the working position the head and running
+ * lines come from (`working`), HEAD for a project without one (`area:head`), and every run
+ * (candidates, admissions, reviews, the head's own model). Not what a run keeps aside
+ * (`aside:<id>`: Board scenes, page and model annotations, one record per save), nor the
+ * working pointer's own file (`area:working`), which Modeling's every autosave rewrites, nor
+ * any other area. The index says which is which; nothing here knows a run by its id.
+ */
+export function treeShows(id: string): boolean {
+  return id === "tree" || id === "working" || id === "area:head" || id.startsWith("run:");
+}
+
+/** A job's lifecycle (`<kind>.queued|waiting|running|succeeded|failed`): the tree's running work moved. */
+const JOB_LIFECYCLE = /\.(queued|waiting|running|succeeded|failed)$/;
 
 export type DesignTreeAction = { readonly kind: "continue" | "review"; readonly node: string } | { readonly kind: "accept" } | { readonly kind: "undo" };
 
@@ -207,45 +228,105 @@ export function useDesignTree({ studio, capabilities, projectId, active, refresh
   const toastIds = useRef(0);
   const shownToast = useRef<DesignTreeToast | null>(null);
   shownToast.current = toast;
+  const store = useProjectStoreInstance();
+  const runtimeKey = useRuntimeKey();
+  const revision = useProjectMoved(treeShows);
+  const inFlight = useRef<Promise<void> | null>(null);
+  const trailing = useRef<{ fresh: boolean; done: Promise<void> } | null>(null);
+  const activeRef = useRef(active);
+  activeRef.current = active;
+  // A job moved while the tree was off screen: read once it is shown again.
+  const jobMissed = useRef(false);
 
-  const load = useCallback(async (signal?: AbortSignal) => {
+  /** One read: the one already made at the tree's revision in the store, or a new one. */
+  const readOnce = useCallback(async (fresh: boolean) => {
     if (!available || !projectId) return;
     const read = ++reads.current;
+    const shown = movedAt(store.current(), treeShows);
+    const key = fresh || shown === null ? `read:${read}` : shown;
     try {
-      const next = await readDesignTreeSource(studio, projectId, signal, sourceRef.current);
-      if (read !== reads.current || signal?.aborted) return;
+      const next = await store.derive(`design-tree:${projectId}`, key,
+        () => readDesignTreeSource(studio, projectId, undefined, sourceRef.current));
+      if (read !== reads.current) return;
       setSource(next); setError(null); setStatus("ready");
     } catch (cause) {
-      if (read !== reads.current || signal?.aborted) return;
+      if (read !== reads.current) return;
       setError(asStudioApiError(cause));
       setStatus((previous) => previous === "ready" ? previous : "failed");
     }
-  }, [available, projectId, studio]);
+  }, [available, projectId, studio, store]);
 
+  /**
+   * Read the tree, or take the read already made at the store's revision. `fresh` reads again
+   * whatever the store says (an explicit refresh, a job that moved); so does every read while the
+   * store has none (outside the Hub). One read at a time: asked while one runs, it is folded into
+   * the single read that follows it, which is fresh if any ask was; resolves once that one has.
+   */
+  const load = useCallback((fresh = false): Promise<void> => {
+    if (inFlight.current === null) {
+      const running = readOnce(fresh).finally(() => { if (inFlight.current === running) inFlight.current = null; });
+      inFlight.current = running;
+      return running;
+    }
+    if (trailing.current !== null) {
+      trailing.current.fresh ||= fresh;
+      return trailing.current.done;
+    }
+    const next = { fresh, done: Promise.resolve() };
+    next.done = inFlight.current.then(() => {
+      trailing.current = null;
+      return load(next.fresh);
+    });
+    trailing.current = next;
+    return next.done;
+  }, [readOnce]);
+
+  /** After a write: done once the store holds it, then the tree read at that revision (again, if nothing it shows moved). */
+  const reload = useCallback(async (before: ProjectStoreState) => {
+    await store.caughtUp();
+    const shown = movedAt(store.current(), treeShows);
+    await load(shown === null || shown === movedAt(before, treeShows));
+  }, [load, store]);
+
+  // The first read, an explicit refresh, a move of the store, or coming back on screen after one.
+  // A read already made at this revision is taken as it is: nothing is asked for.
+  const asked = useRef({ refreshKey, nudge });
   useEffect(() => {
     if (!available) return;
-    const controller = new AbortController();
-    void load(controller.signal);
-    return () => controller.abort();
-  }, [available, load, refreshKey, nudge]);
+    const missed = active && jobMissed.current;
+    const fresh = asked.current.refreshKey !== refreshKey || asked.current.nudge !== nudge || missed;
+    asked.current = { refreshKey, nudge };
+    if (!active && !fresh && sourceRef.current !== null) return;
+    if (busyRef.current && !fresh) return;
+    if (missed) jobMissed.current = false;
+    void load(fresh);
+  }, [available, active, load, refreshKey, nudge, revision]);
 
-  // Coming back to a surface that was paused reads the tree at once, as focus and a shown window do.
-  const wasActive = useRef(active);
+  // A job that queued, waited, started or ended moved the tree's running work, which the runtime
+  // holds in memory and no index commit announces. A tree off screen (a hidden project tab stays
+  // mounted) reads it once when shown again. Replayed events (those kept from before this tree
+  // listened, and those the Hub sends again as a connection opens) are not news.
   useEffect(() => {
-    const returned = active && !wasActive.current;
-    wasActive.current = active;
-    if (!available || !active) return;
+    if (!available || runtimeKey === null) return;
+    return projectStores.onStudioEvent(runtimeKey, (event, replayed) => {
+      if (replayed || typeof event.type !== "string" || !JOB_LIFECYCLE.test(event.type)) return;
+      if (activeRef.current) void load(true);
+      else jobMissed.current = true;
+    });
+  }, [available, runtimeKey, load]);
+
+  // Outside the Hub no store moves (no stream relays the index): the tree is read again when the
+  // window is focused or shown, as the Hub's store is. Never on a timer.
+  useEffect(() => {
+    if (!available || !active || revision !== null) return;
     const refresh = () => { if (!document.hidden && !busyRef.current) void load(); };
-    if (returned) refresh();
-    const timer = window.setInterval(refresh, DESIGN_TREE_POLL_MS);
     window.addEventListener("focus", refresh);
     document.addEventListener("visibilitychange", refresh);
     return () => {
-      window.clearInterval(timer);
       window.removeEventListener("focus", refresh);
       document.removeEventListener("visibilitychange", refresh);
     };
-  }, [available, active, load]);
+  }, [available, active, load, revision]);
 
   const tree = useMemo(() => source ? buildGrowthTree(source, showProcessed) : null, [source, showProcessed]);
 
@@ -257,12 +338,13 @@ export function useDesignTree({ studio, capabilities, projectId, active, refresh
     // A new act replaces the last one's outcome, toast and Undo; an Undo answers in its own toast.
     if (action.kind !== "undo") { setOutcome(null); setToast(null); undoable.current = null; }
     try {
+      const before = store.current();
       const done = await write();
       setOutcome(done.outcome);
       undoable.current = done.undo;
       setToast({ ...done.toast, id: ++toastIds.current } as DesignTreeToast);
       headMoved.current();
-      await load();
+      await reload(before);
       return true;
     } catch (cause) {
       const error = asStudioApiError(cause);
@@ -277,7 +359,7 @@ export function useDesignTree({ studio, capabilities, projectId, active, refresh
       busyRef.current = false;
       setBusy(null);
     }
-  }, [load]);
+  }, [reload, store]);
 
   const continueFrom = useCallback((nodeId: string) => {
     const node = tree?.nodes.get(nodeId);
@@ -307,16 +389,17 @@ export function useDesignTree({ studio, capabilities, projectId, active, refresh
     if (!canReview || !projectId || !node || (node.kind !== "candidate" && node.kind !== "stage") || busyRef.current) return false;
     busyRef.current = true; setBusy({ kind: "review", node: nodeId }); setOutcome(null);
     try {
+      const before = store.current();
       const judgement = await studio.reviewCandidate({ projectId, subjectKind: node.kind,
         subjectRef: node.kind === "candidate" ? node.candidate!.candidateId : node.stage!.ref,
         action, reason: reason?.trim() || null });
-      await load();
+      await reload(before);
       if (action === "restore" && judgement.disposition === "unreviewed") setShowProcessed(false);
       return true;
     } catch (cause) {
       setOutcome({ kind: "refused", node: nodeId, error: asStudioApiError(cause) }); return false;
     } finally { busyRef.current = false; setBusy(null); }
-  }, [canReview, load, projectId, studio, tree]);
+  }, [canReview, projectId, reload, store, studio, tree]);
 
   const undo = useCallback(() => {
     const last = undoable.current;

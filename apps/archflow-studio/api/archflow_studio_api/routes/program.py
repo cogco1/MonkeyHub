@@ -102,7 +102,9 @@ def apply_program(
     require_actionable(projection)
     if (
         body.state_digest != projection.state_digest
-        or body.sheet.state_digest != projection.record.state_digest
+        # a sheet saved before #402 cites the retired digest of this same
+        # record; it is recognized exactly (``StateRecord.cites_state``)
+        or not projection.record.cites_state(body.sheet.state_digest)
         or body.sheet.record_digest != projection.record_digest
     ):
         raise StudioError(

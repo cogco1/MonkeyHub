@@ -26,9 +26,11 @@ function SessionDiagnostics({ children }: { children: ReactNode }) {
 }
 
 /** Test host for isolated components; production appearance always comes from Hub. */
-export function UserPreferencesProvider({ children, baseUrl = "" }: {
+export function UserPreferencesProvider({ children, baseUrl = "", runtimeId = null }: {
   children: ReactNode;
   baseUrl?: string;
+  /** The Hub runtime the project runs in, for a host that follows the Hub's stream (#366). */
+  runtimeId?: string | null;
 }) {
   const [appearance, setAppearance] = useState<AppearancePreferences>(() =>
     appearanceFromSearch(window.location.search, resolveAppearance(storedFixturePreferences(), { language: "en", theme: "light", fontScale: 1 })));
@@ -38,7 +40,7 @@ export function UserPreferencesProvider({ children, baseUrl = "" }: {
     setTheme: (theme: ThemePreference) => setAppearance(value => ({ ...value, theme })),
   }), []);
   return <TestAppearance.Provider value={controls}>
-    <ProjectRuntimeProvider baseUrl={baseUrl}>
+    <ProjectRuntimeProvider baseUrl={baseUrl} runtimeId={runtimeId}>
       <ControlledPreferences appearance={appearance}><SessionDiagnostics>{children}</SessionDiagnostics></ControlledPreferences>
     </ProjectRuntimeProvider>
   </TestAppearance.Provider>;

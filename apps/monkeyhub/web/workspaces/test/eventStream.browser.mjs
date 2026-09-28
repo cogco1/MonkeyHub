@@ -195,3 +195,123 @@ test("Studio events keep one connection and deliver only accepted frames to the 
   assert.deepEqual(errors, []);
   assert.deepEqual(apiRequests, [], "the fixture never contacts an API or opens a real SSE connection");
 });
+
+const relayedFixture = `
+import React, { useState } from "react";
+import { createRoot } from "react-dom/client";
+import { UserPreferencesProvider } from "/test/TestProviders.tsx";
+import { useStudioEvents } from "/src/features/events/EventStream.tsx";
+import { relayHubStream } from "/src/api/projectStore.ts";
+import { refreshesVersions } from "/src/app/versionEvents.ts";
+
+// The Hub's one stream, which the page follows as ChatShell does; no project stream is opened.
+class FakeEventSource {
+  constructor(url) { this.url = url; this.listeners = new Map(); state.connections.push(this); }
+  addEventListener(type, listener) {
+    if (!this.listeners.has(type)) this.listeners.set(type, new Set());
+    this.listeners.get(type).add(listener);
+  }
+  removeEventListener(type, listener) { this.listeners.get(type)?.delete(listener); }
+  close() {}
+  emit(type, value) {
+    const message = new MessageEvent(type, { data: JSON.stringify(value) });
+    for (const listener of this.listeners.get(type) ?? []) listener(message);
+  }
+}
+const state = window.__relayed = { connections: [], callbacks: [], lines: [], later: [], version: 0 };
+window.EventSource = FakeEventSource;
+state.hub = new FakeEventSource("/api/runtime/events");
+relayHubStream(state.hub);
+function Modeling() {
+  // What App does with each event: versionRefreshRequest moves on the ones that name new versions.
+  const [versionRefreshRequest, setVersionRefreshRequest] = useState(0);
+  const lines = useStudioEvents(true, (event) => {
+    state.callbacks.push(event);
+    if (refreshesVersions(event)) setVersionRefreshRequest((current) => current + 1);
+  });
+  state.lines = lines;
+  state.version = versionRefreshRequest;
+  return null;
+}
+function LaterPanel() {
+  state.later = useStudioEvents(true);
+  return null;
+}
+function Harness() {
+  const [later, setLater] = useState(false);
+  return React.createElement(React.Fragment, null, React.createElement(Modeling),
+    later ? React.createElement(LaterPanel) : null,
+    React.createElement("button", { onClick: () => setLater(true) }, "Open another panel"));
+}
+createRoot(document.getElementById("root")).render(
+  React.createElement(UserPreferencesProvider, { runtimeId: "runtime-a" }, React.createElement(Harness)));
+`;
+
+test("Inside the Hub, a restarted worker's events are new ones, and a panel opened later begins with them", async (t) => {
+  const root = fileURLToPath(new URL("../", import.meta.url));
+  const cacheDir = await mkdtemp(join(tmpdir(), "monkeyarch-event-stream-test-"));
+  const http = createHttpServer();
+  const vite = await createServer({
+    root, configFile: false, resolve: { dedupe: ["react", "react-dom"] }, appType: "custom", publicDir: false, cacheDir,
+    plugins: [react(), {
+      name: "event-stream-relayed-fixture",
+      resolveId(id) { if (id === "/__event_stream_relayed.jsx") return "\0event-stream-relayed.jsx"; },
+      load(id) { if (id === "\0event-stream-relayed.jsx") return relayedFixture; },
+    }],
+    server: { middlewareMode: true, hmr: false, ws: { server: http }, watch: null },
+  });
+  let browser;
+  t.after(async () => {
+    await browser?.close();
+    if (http.listening) await new Promise((resolve, reject) => { http.close((error) => error ? reject(error) : resolve()); });
+    await vite.close();
+    assert.ok(basename(cacheDir).startsWith("monkeyarch-event-stream-test-"));
+    await rm(cacheDir, { recursive: true, force: true });
+  });
+  http.on("request", (request, response) => {
+    if (request.url === "/__event_stream_relayed__") {
+      void vite.transformIndexHtml(request.url, '<!doctype html><html><body><div id="root"></div><script type="module" src="/__event_stream_relayed.jsx"></script></body></html>')
+        .then((html) => { response.setHeader("Content-Type", "text/html"); response.end(html); });
+    } else vite.middlewares(request, response, () => { response.statusCode = 404; response.end(); });
+  });
+  await new Promise((resolve) => { http.listen(0, "127.0.0.1", resolve); });
+  const { chromium } = await import(process.env.PLAYWRIGHT_MODULE ? pathToFileURL(process.env.PLAYWRIGHT_MODULE).href : "playwright");
+  browser = await chromium.launch({ headless: true, channel: "chrome" });
+  const page = await (await browser.newContext()).newPage();
+  const errors = [], apiRequests = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.route((url) => url.pathname.startsWith("/api/"), async (route) => {
+    apiRequests.push(`${route.request().method()} ${route.request().url()}`);
+    await route.abort("blockedbyclient");
+  });
+  await page.goto(`http://127.0.0.1:${http.address().port}/__event_stream_relayed__`);
+  await page.getByRole("button", { name: "Open another panel" }).waitFor();
+  const run = ["candidate.queued", "candidate.running", "candidate.succeeded"];
+  const relay = (stream, types) => page.evaluate(({ stream, frames }) => {
+    for (const studio of frames) window.__relayed.hub.emit("studio", { runtimeId: "runtime-a", stream, studio });
+  }, { stream, frames: types.map((type, index) => event(index + 1, type)) });
+
+  await relay("worker-1", run);
+  await page.waitForFunction(() => window.__relayed.lines.length === 3);
+  assert.equal(await page.evaluate(() => window.__relayed.version), 1);
+  // The Hub's stream reconnected and replayed the same three: nothing twice.
+  await relay("worker-1", run);
+  // The worker was killed and recovered; its next candidate numbers from 1 again.
+  await relay("worker-2", run);
+  await page.waitForFunction(() => window.__relayed.lines.length === 6);
+  assert.deepEqual(await page.evaluate(() => window.__relayed.callbacks.map((event) => `${event.stream}:${event.seq}:${event.type}`)), [
+    ...run.map((type, index) => `worker-1:${index + 1}:${type}`), ...run.map((type, index) => `worker-2:${index + 1}:${type}`)]);
+  await page.waitForFunction(() => window.__relayed.version === 2);
+  assert.equal(await page.evaluate(() => window.__relayed.version), 2, "the restarted worker's succeeded moves versionRefreshRequest");
+  assert.equal(await page.evaluate(() => window.__relayed.lines.filter((line) => line.kind !== "event").length), 0,
+    "the relayed numbering names no gaps");
+
+  await page.getByRole("button", { name: "Open another panel" }).click();
+  await page.waitForFunction(() => window.__relayed.later.length === 6);
+  assert.deepEqual(await page.evaluate(() => window.__relayed.later.map((line) => line.key)),
+    ["worker-1", "worker-2"].flatMap((stream) => [1, 2, 3].map((seq) => `seq:${stream}:${seq}`)), "it opens with the kept events");
+  assert.deepEqual(await page.evaluate(() => window.__relayed.connections.map((source) => source.url)), ["/api/runtime/events"],
+    "the page holds the Hub's one stream and opens none of its own");
+  assert.deepEqual(errors, []);
+  assert.deepEqual(apiRequests, []);
+});

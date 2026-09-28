@@ -1,7 +1,7 @@
 import ModelPreview from "./ModelPreview";
 import { renderViewImage, type RenderView } from "../monkeyarch/viewer/renderView";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
-import { useStudio } from "../../api/ProjectRuntimeContext";
+import { useProjectRevision, useStudio } from "../../api/ProjectRuntimeContext";
 import { asStudioApiError } from "../../api/client";
 import type { RenderCapabilityDto, RenderJobDto, SourceDocumentDto } from "../../api/generated";
 import { usePreferences } from "../../features/settings/preferences";
@@ -10,6 +10,9 @@ import RenderResults, { ImageThumbnail, renderStatus } from "./RenderResults";
 import "./render.css";
 
 /** One mounted draft. Entering another workspace only suspends reads. */
+/** How many times Render reads its attempts again after a submit whose answer was lost. */
+const UNCERTAIN_READS = 5;
+
 export default function RenderWorkspace({ projectId, active, refreshKey, onBoard, readModelView, onModeling }: {
   readModelView?: () => RenderView | null; onModeling?: () => void;
   projectId: string; active: boolean; refreshKey: number; onBoard(source: PageSource): void;
@@ -37,8 +40,9 @@ export default function RenderWorkspace({ projectId, active, refreshKey, onBoard
   const sourceDocument = source ? findSource(images, source) : undefined;
   const hasPending = jobs.some((job) => job.status === "queued" || job.status === "running");
 
+  const readAgain = useRef(false);
   const refresh = useCallback(async () => {
-    if (reading.current) return;
+    if (reading.current) { readAgain.current = true; return; }
     reading.current = true;
     const epoch = readEpoch.current;
     setLoading(true);
@@ -56,17 +60,42 @@ export default function RenderWorkspace({ projectId, active, refreshKey, onBoard
         uncertainRef.current = null; setUncertain(null); setSubmitError(null);
       }
     } catch (cause) { if (alive.current) setError(asStudioApiError(cause).detail); }
-    finally { reading.current = false; if (alive.current) setLoading(false); }
+    finally {
+      reading.current = false; if (alive.current) setLoading(false);
+      if (readAgain.current && alive.current) { readAgain.current = false; void refresh(); }
+    }
   }, [studio, projectId]);
+  // Read when first shown, on an explicit refresh, and when the project's store moves (#366):
+  // a render attempt records each of its states, so a running one is followed without a timer,
+  // and coming back to an unchanged project reads nothing.
+  const revision = useProjectRevision();
+  const readAt = useRef<{ revision: string | null; refreshKey: number } | null>(null);
   useEffect(() => {
     if (!active) return;
+    const last = readAt.current;
+    if (last && last.refreshKey === refreshKey && revision !== null && last.revision === revision) return;
+    readAt.current = { revision, refreshKey };
     void refresh();
-  }, [active, refreshKey, refresh]);
+  }, [active, refreshKey, refresh, revision]);
+  // A submit whose answer was lost may or may not have started an attempt, and one that did not
+  // start commits nothing the store would announce: read the attempts again 1, 2, 4, 8 and 16 s
+  // later, until one of them names the request (the read then says it is no longer uncertain).
   useEffect(() => {
-    if (!active || (!hasPending && !uncertain)) return;
-    const timer = window.setInterval(() => void refresh(), 2500);
-    return () => window.clearInterval(timer);
-  }, [active, hasPending, uncertain, refresh]);
+    if (!active || !uncertain) return;
+    let attempt = 0, timer: number | undefined;
+    const later = () => {
+      timer = window.setTimeout(() => { void refresh(); attempt += 1; if (attempt < UNCERTAIN_READS) later(); }, 1000 * 2 ** attempt);
+    };
+    later();
+    return () => window.clearTimeout(timer);
+  }, [active, uncertain, refresh]);
+  // Outside the Hub no store moves: the window coming back reads again, as the tree and the board do.
+  useEffect(() => {
+    if (!active || revision !== null) return;
+    const focused = () => { if (!document.hidden) void refresh(); };
+    window.addEventListener("focus", focused);
+    return () => window.removeEventListener("focus", focused);
+  }, [active, revision, refresh]);
 
   const upload = async (files: FileList | null, target: "source" | "reference") => {
     if (!files?.length || uploadingRef.current) return;

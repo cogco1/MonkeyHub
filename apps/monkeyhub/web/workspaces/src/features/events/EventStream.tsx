@@ -33,11 +33,22 @@
  * This is a live view of a process, not a transcript and not version history:
  * it is bounded, it is dropped on reload, and nothing here is a record of what
  * the project is.
+ *
+ * Inside the Hub the panel opens no stream of its own (#366): the Hub already
+ * follows the project's stream and relays its events on the one stream the
+ * page holds (`projectStores.onStudioEvent`), which keeps the project's latest
+ * ones, so the panel opens with them as it opened with a replay before. Each
+ * relayed event names the worker stream that numbered it, and a line is known
+ * by `<stream>:<seq>`: a worker that restarted numbers from 1 again, and its
+ * events are new ones, never repeats of the last worker's. The numbering has
+ * holes by design - the project index's own announcements are not relayed as
+ * lines - so there the panel names no gaps.
  */
 
 import { useEffect, useRef, useState } from "react";
 
-import { useConnection } from "../../api/ProjectRuntimeContext";
+import { useConnection, useRuntimeKey } from "../../api/ProjectRuntimeContext";
+import { projectStores } from "../../api/projectStore";
 import type { StudioEventDto } from "../../api/generated";
 import { BilingualText } from "../../i18n/BilingualText";
 import type { MessageKey } from "../../../../src/i18n/messages.en";
@@ -90,6 +101,7 @@ export function useStudioEvents(
   onEvent?: (event: StudioEventDto) => void,
 ): readonly StreamLine[] {
   const connection = useConnection();
+  const runtimeKey = useRuntimeKey();
   const [lines, setLines] = useState<readonly StreamLine[]>([]);
   const onEventRef = useRef(onEvent);
   onEventRef.current = onEvent;
@@ -98,7 +110,7 @@ export function useStudioEvents(
   // a replayed line must not appear twice. Cleared on every open, and capped at
   // the same bound as the panel itself so a connection that lives for days does
   // not grow a set of numbers larger than the lines it is protecting.
-  const seenSeqRef = useRef<Set<number>>(new Set());
+  const seenSeqRef = useRef<Set<number | string>>(new Set());
   // Which connection a line arrived on. Two processes can both publish a seq 1,
   // and after a restart both may be on screen at once, so the key that tells
   // them apart has to name the connection as well as the number.
@@ -111,7 +123,7 @@ export function useStudioEvents(
 
   useEffect(() => {
     if (!enabled) return;
-    const source = new EventSource(connection.url("/api/events"));
+    const relayed = runtimeKey !== null;
 
     const push = (line: StreamLine) => {
       setLines((current) => [...current, line].slice(-KEEP));
@@ -134,7 +146,7 @@ export function useStudioEvents(
 
     // A Set iterates in insertion order, so the first entry is the oldest seq
     // this connection saw and is the one that goes when the set is full.
-    const remember = (seq: number) => {
+    const remember = (seq: number | string) => {
       const seen = seenSeqRef.current;
       seen.add(seq);
       while (seen.size > KEEP) {
@@ -156,10 +168,13 @@ export function useStudioEvents(
         );
         return;
       }
-      if (seenSeqRef.current.has(event.seq)) return;
-      remember(event.seq);
+      // Relayed: `<stream>:<seq>`, which a restarted worker never repeats. Direct: this connection's seq.
+      const stream = relayed ? (event as StudioEventDto & { stream?: string | null }).stream ?? "" : null;
+      const seen = stream === null ? event.seq : `${stream}:${event.seq}`;
+      if (seenSeqRef.current.has(seen)) return;
+      remember(seen);
       const previous = lastSeqRef.current;
-      if (previous !== null && event.seq > previous + 1) {
+      if (!relayed && previous !== null && event.seq > previous + 1) {
         const missing = event.seq - previous - 1;
         note(
           missing === 1 ? "evidence.events.gapOne" : "evidence.events.gapMany",
@@ -173,7 +188,7 @@ export function useStudioEvents(
       }
       if (previous === null || event.seq > previous) lastSeqRef.current = event.seq;
       push({
-        key: `seq:${connectionRef.current}:${event.seq}`,
+        key: stream === null ? `seq:${connectionRef.current}:${event.seq}` : `seq:${stream}:${event.seq}`,
         seq: event.seq,
         text: summarise(event),
         kind: "event",
@@ -181,6 +196,17 @@ export function useStudioEvents(
       onEventRef.current?.(event);
     };
 
+    if (relayed) {
+      connectionRef.current += 1;
+      seenSeqRef.current = new Set();
+      lastSeqRef.current = null;
+      return projectStores.onStudioEvent(runtimeKey, (event) => {
+        if (typeof event.type === "string" && EVENT_TYPES.includes(event.type)) {
+          receive(new MessageEvent("message", { data: JSON.stringify(event) }));
+        }
+      });
+    }
+    const source = new EventSource(connection.url("/api/events"));
     for (const type of EVENT_TYPES) {
       source.addEventListener(type, receive as EventListener);
     }
@@ -213,7 +239,7 @@ export function useStudioEvents(
       }
       source.close();
     };
-  }, [enabled, connection]);
+  }, [enabled, connection, runtimeKey]);
 
   return lines;
 }

@@ -289,8 +289,17 @@ class TransformElementRequestDto(BaseModel):
         "Proposal creation stays in memory; executing a proposal creates a candidate checkpoint.",
     )
     state_digest: str = Field(alias="stateDigest", pattern=STATE_DIGEST_PATTERN)
-    element_id: str = Field(alias="elementId", min_length=1)
-    kind: Literal["move", "rotate", "scale", "copy"]
+    element_id: str | None = Field(alias="elementId", default=None, min_length=1,
+        description="The one element selected for move, rotate, scale or copy.")
+    kind: Literal["move", "rotate", "scale", "copy", "compress-above"]
+    component_id: str | None = Field(alias="componentId", default=None, min_length=1,
+        description="compress-above only: select all elements whose component_id equals this component, at the exact source.")
+    element_ids: list[str] | None = Field(alias="elementIds", default=None, min_length=1,
+        description="compress-above only: explicit planar-surface selection, instead of componentId. One atomic proposal.")
+    threshold: float | None = Field(default=None, allow_inf_nan=False,
+        description="compress-above: fixed world +Y elevation in project length units; every point at or below stays fixed.")
+    factor: float | None = Field(default=None, gt=0, le=1, allow_inf_nan=False,
+        description="compress-above: multiply height above threshold by this factor. Only planar-surfaces remaining planar are supported.")
     translation: tuple[float, float, float] | None = None
     axis: tuple[float, float, float] | None = None
     angle_degrees: float = Field(alias="angleDegrees", default=0)
@@ -304,6 +313,21 @@ class TransformElementRequestDto(BaseModel):
 
     @model_validator(mode="after")
     def action_parameters(self) -> "TransformElementRequestDto":
+        if self.kind == "compress-above":
+            if self.element_id is not None or ((self.component_id is None) == (self.element_ids is None)):
+                raise ValueError("compress-above requires exactly one componentId or elementIds, without elementId")
+            if self.element_ids is not None and (
+                any(not item.strip() for item in self.element_ids) or len(set(self.element_ids)) != len(self.element_ids)
+            ):
+                raise ValueError("elementIds must be distinct nonempty ids")
+            if self.threshold is None or self.factor is None:
+                raise ValueError("compress-above requires threshold and factor")
+            if (any(value is not None for value in (self.translation, self.axis, self.scale, self.origin, self.copy_element_id))
+                    or self.angle_degrees != 0):
+                raise ValueError("compress-above takes threshold and factor, not affine transform parameters")
+            return self
+        if self.element_id is None or any(value is not None for value in (self.component_id, self.element_ids, self.threshold, self.factor)):
+            raise ValueError("move/rotate/scale/copy require elementId and do not accept compression selection or parameters")
         if self.kind in {"move", "copy"} and self.translation is None:
             raise ValueError("move/copy requires translation")
         if self.kind == "scale" and self.scale is None:

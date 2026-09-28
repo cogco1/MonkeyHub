@@ -2,7 +2,7 @@
 
 from pathlib import Path
 import re
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 
@@ -233,6 +233,48 @@ class ChatDocument(ChatDocumentRef):
     mimeType: str
 
 
+class ChatSuggestionEstimate(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, hide_input_in_errors=True)
+
+    value: str | None = Field(default=None, max_length=80)
+    basis: str | None = Field(default=None, max_length=400)
+
+    @model_validator(mode="after")
+    def estimate_requires_basis(self):
+        if self.value is not None and (not self.value.strip() or not self.basis or not self.basis.strip()):
+            raise ValueError("An estimate needs a nonempty value and its evidence basis; otherwise leave it unknown.")
+        return self
+
+
+class ChatSuggestion(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, hide_input_in_errors=True)
+
+    title: str = Field(min_length=1, max_length=160)
+    outcome: str = Field(min_length=1, max_length=600)
+    capability: Literal["available", "needs-development"]
+    rationale: str = Field(min_length=1, max_length=800)
+    tools: list[Annotated[str, Field(min_length=1, max_length=120)]] = Field(default_factory=list, max_length=8)
+    deliverables: list[Annotated[str, Field(min_length=1, max_length=160)]] = Field(default_factory=list, max_length=6)
+    timeEstimate: ChatSuggestionEstimate = Field(default_factory=ChatSuggestionEstimate)
+    costEstimate: ChatSuggestionEstimate = Field(default_factory=ChatSuggestionEstimate)
+    prompt: str = Field(min_length=1, max_length=2000)
+
+    @field_validator("title", "outcome", "rationale", "prompt")
+    @classmethod
+    def nonblank_text(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("Suggestion text must not be blank.")
+        return value
+
+
+class ChatSuggestionSelection(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, hide_input_in_errors=True)
+
+    messageId: str = Field(pattern=r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                           json_schema_extra={"format": "uuid"})
+    revision: int = Field(ge=0)
+
+
 class ChatMessage(BaseModel):
     id: str
     role: Literal["user", "assistant", "tool"]
@@ -247,6 +289,8 @@ class ChatMessage(BaseModel):
     documents: list[ChatDocument] = Field(default_factory=list)
     sourceTurnId: str | None = None
     presentationRevision: int | None = None
+    suggestion: ChatSuggestion | None = None
+    suggestionSelection: ChatSuggestionSelection | None = None
     contextMode: Literal["continue", "project", "stage"] = "continue"
     confirmedStageRef: str | None = None
     confirmedStageLabel: str | None = None
@@ -327,6 +371,13 @@ class ChatPresentationRequest(BaseModel):
     status: Literal["streaming", "complete", "failed", "interrupted"] = "complete"
     attachments: list[ChatAttachmentInput] = Field(default_factory=list, max_length=8)
     documents: list[ChatDocumentRef] = Field(default_factory=list, max_length=8)
+    suggestion: ChatSuggestion | None = None
+
+    @model_validator(mode="after")
+    def assistant_suggestion_only(self):
+        if self.suggestion is not None and self.kind != "assistant":
+            raise ValueError("Only an assistant result can present a suggestion.")
+        return self
 
 
 class ChatWorkspace(BaseModel):
@@ -459,9 +510,12 @@ class ChatPostRequest(BaseModel):
     # The verified editing projection for this turn only; old callers may omit it.
     designContext: ChatDesignContext | None = None
     contextMode: Literal["continue", "project", "stage"] = "continue"
+    suggestionSelection: ChatSuggestionSelection | None = None
 
     @model_validator(mode="after")
     def project_context_requires_source(self):
+        if self.suggestionSelection is not None and self.model_fields_set - {"projectId", "suggestionSelection"}:
+            raise ValueError("Select a saved suggestion using only projectId and suggestionSelection.")
         if self.contextMode in {"project", "stage"} and self.designContext is None:
             raise ValueError("Starting from project state requires an explicit designContext.")
         return self

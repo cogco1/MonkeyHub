@@ -27,6 +27,8 @@ const patchUploads = [];
 const emitRuntime = () => {
   const event = { serverId: "fixture-hub", sequence: ++runtimeSequence, kind: "changed", snapshot: runtimeSnapshot() };
   for (const stream of streams) stream.write(`event: runtime\ndata: ${JSON.stringify(event)}\n\n`);
+  // What changed a project also moved its index (a result, a chat's candidate): its keeper announces it.
+  for (const projectId of workspaceFixture.projects.keys()) workspaceFixture.commit(projectId);
 };
 const server = createServer(async (req, res) => {
   const pathname = new URL(req.url, "http://localhost").pathname;
@@ -129,10 +131,11 @@ let settings = { projectDir: "D:\\fixture\\A", referenceRun: null, cadExport: "o
 let preferences = { language: "en", theme: "light", fontScale: 1 };
 // GH-302: settings save themselves; a test holds one write to see what waits for it.
 let settingsWriteGate = null;
-const projects = [
+const initialProjects = () => [
   { projectId: "A", projectDir: "D:\\fixture\\A", name: "Project A", chatCount: 0, version: 3, stage: "S2" },
   { projectId: "B", projectDir: "D:\\fixture\\B", name: "Project B", chatCount: 0, version: 0, stage: null },
 ];
+const projects = initialProjects();
 // What the archive layer always leaves out, in its own words; the Hub carries
 // this list through untouched, so the dialogs must show all five lines.
 const archiveOmissions = [
@@ -156,7 +159,14 @@ Object.assign(apps.find((app) => app.appId === "monkeyfab"), { url: `${origin}/?
 Object.assign(apps.find((app) => app.appId === "monkeymonitor"), { url: `${origin}/?view=monitor`, apiUrl: `${origin}/` });
 const projectApps = new Map();
 const runtimes = new Map();
-const workspaceFixture = await createProjectWorkspaceFixture(runtimes, sessions);
+// #366: the Hub relays each project index commit on its one stream, as `index` frames.
+const indexFrames = [];
+const emitIndex = (runtime, index) => {
+  const frame = { serverId: "fixture-hub", sequence: ++runtimeSequence, runtimeId: runtime.runtimeId, index };
+  indexFrames.push(frame);
+  for (const stream of streams) stream.write(`event: index\ndata: ${JSON.stringify(frame)}\n\n`);
+};
+const workspaceFixture = await createProjectWorkspaceFixture(runtimes, sessions, { onIndex: (runtime, index) => emitIndex(runtime, index) });
 // GH-285: optional retained previews keyed by the exact project and run. The
 // same run-shaped names in another project deliberately do not share entries.
 const studyPreviews = new Map([["A", new Map([["cand-A-1", "ready"]])]]);
@@ -476,6 +486,29 @@ const hubApi = async (route) => {
       assert.equal(data().projectId, session.projectId);
       assert.equal(appsFor(session.projectDir).find((item) => item.appId === "monkeyarch").state, "running");
       if (session.projectDir === chatMessageFailureFor) return json({ code: "CHAT_SEND_FAILED", detail: "Fixture upload failed. Try again." }, 503);
+      if (data().suggestionSelection) {
+        // GH-432: the fixture admits a retained selection, not a browser-authored prompt.
+        // This exercises the built UI contract; provider execution is tested by the API suite.
+        const selection = data().suggestionSelection;
+        assert.deepEqual(Object.keys(data()).sort(), ["projectId", "suggestionSelection"]);
+        const card = session.messages.find((message) => message.id === selection.messageId);
+        const lastUser = session.messages.findLast((message) => message.role === "user");
+        const latest = session.messages.findLast((message) => message.suggestion && message.sourceTurnId === lastUser?.id);
+        if (session.status !== "idle" || session.sourceSessionId || !card?.suggestion
+          || card.status !== "complete" || card.sourceTurnId !== lastUser?.id
+          || latest?.id !== card.id || card.presentationRevision !== selection.revision
+          || session.messages.some((message) => message.suggestionSelection?.messageId === card.id
+            && message.suggestionSelection.revision === selection.revision)) {
+          return json({ code: "CHAT_SUGGESTION_STALE", detail: "This suggestion is no longer actionable." }, 409);
+        }
+        // Admission consumes the selection before a delayed response can be clicked again.
+        session.messages.push({ id: `u-${session.id}-${session.messages.length}`, role: "user", status: "complete",
+          content: card.suggestion.prompt, suggestionSelection: { ...selection }, attachments: [],
+          contextMode: "continue", createdAt: new Date().toISOString() });
+        session.status = "running";
+        await chatMessageResponseGate;
+        return json(session, 202);
+      }
       if (session.status === "running") {
         // #301: what the API does with a message sent while a turn runs.
         assert.equal(data().attachments, undefined, "an interjection carries no files");
@@ -780,18 +813,43 @@ const autosavedModelRestart = async () => {
   await page.evaluate(() => localStorage.removeItem("monkeyhub.chat-view.v1"));
 };
 /**
- * #364: a Hub left open on a project's Design Tree, with nothing changing, asks for less than ten
- * things a minute. It runs in a page of its own on Playwright's clock, paused and moved a second at a
- * time, so the minute is exact and takes seconds. The same walk counted 94 against main before
- * #364 (38138370): build that checkout's web and run MONKEYHUB_WEB_DIST=<its dist> MONKEYHUB_UI_FOCUS=idle.
+ * #364, #366: a Hub left open on a project's Design Tree, with nothing changing, asks the project for
+ * nothing at all. It runs in a page of its own on Playwright's clock, paused and moved a second at a
+ * time, so the minute is exact and takes seconds, and no timer can stand in for an event. The same
+ * walk counted 94 things a minute before #364 (38138370) and 8 before #366 (de3d5abf: the tree read
+ * its Worktree Graph every 15 s); build that checkout's web and run MONKEYHUB_WEB_DIST=<its dist>
+ * MONKEYHUB_UI_FOCUS=idle. What still asks is the Hub's own, outside #366: the chat attention read
+ * (useAttention, every 30 s while no turn runs), the Hub's application list (main.tsx, every 60 s)
+ * and the software-update status (ChatShell, every 60 s).
+ *
+ * The same page then checks the rest of #366 against the fixture's index: switching surfaces on an
+ * unchanged project asks for nothing; a change another client made reaches the tree through one
+ * index event; a restarted worker's reconnect (a hint without a revision, the stream reopening, a
+ * rebuilt index under a new epoch) is caught up or reset without missing the change; and the page
+ * holds exactly one event stream, however many surfaces are open.
  */
 async function idleMinute() {
   if (!projects.some((row) => row.projectId === "T")) projects.push({ projectId: "T", projectDir: "D:\\fixture\\T", name: "Tree project", chatCount: 0, version: 2, stage: "S2" });
-  workspaceFixture.designTrees.set("T", { stages: ["tree-s0", "tree-s1", "tree-s2"], edits: ["tree-e2", "tree-e1"] });
+  const tree = { stages: ["tree-s0", "tree-s1", "tree-s2"], edits: ["tree-e2", "tree-e1"] };
+  workspaceFixture.designTrees.set("T", tree);
+  workspaceFixture.studioEvents.add("T");
   const idle = await browser.newPage({ viewport: { width: 1440, height: 960 } });
   idle.setDefaultTimeout(12000);
   idle.on("pageerror", (error) => errors.push(error.message));
   await idle.route((url) => url.pathname.startsWith("/api/"), hubApi);
+  // Every event stream this page opens, whoever opens it, and how many are open at once.
+  await idle.addInitScript(() => {
+    const Native = window.EventSource;
+    const seen = window.__eventStreams = { urls: [], live: 0, most: 0 };
+    window.EventSource = class extends Native {
+      constructor(url, options) {
+        super(url, options);
+        seen.urls.push(new URL(String(url), location.href).pathname);
+        seen.most = Math.max(seen.most, ++seen.live);
+      }
+      close() { if (this.readyState !== Native.CLOSED) seen.live -= 1; super.close(); }
+    };
+  });
   await idle.clock.install();
   try {
     await idle.goto(origin);
@@ -800,23 +858,314 @@ async function idleMinute() {
       document.querySelector(`.chat-rail__tool[aria-label="${label}"]`)?.dataset.state === "running"));
     await idle.waitForFunction(() => document.querySelector(".chat-composer")?.dataset.context === "ready");
     await idle.getByRole("button", { name: "Design tree", exact: true }).click();
-    await idle.locator(".chat-project-workspace:not([hidden]) .design-tree").waitFor();
+    const surface = idle.locator(".chat-project-workspace:not([hidden]) .design-tree");
+    await surface.waitFor();
+    await idle.locator(".chat-project-workspace:not([hidden]) .project-bar").getByRole("button", { name: "List", exact: true }).click();
+    const stage = (run) => surface.locator(`[role="treeitem"][data-node="stage:project://T/runs/${run}/review/design-stage.json"]`);
+    await stage("tree-s2").waitFor();
     await idle.clock.pauseAt(await idle.evaluate(() => Date.now()) + 1000);
     // Each second's answers land before the next second starts.
     const seconds = async (count) => { for (let second = 0; second < count; second++) { await idle.clock.runFor(1000); await idle.waitForTimeout(100); } };
     await seconds(5);
-    const asked = [], notModifiedBefore = workspaceFixture.notModified.length;
+    let asked = [];
     const listen = (request) => { const url = new URL(request.url()); if (url.pathname.startsWith("/api/")) asked.push(url.pathname.replace(/^\/api\/runtime\/projects\/[^/]+\/studio/, "(runtime)")); };
+    const project = () => asked.filter((name) => name.startsWith("(runtime)"));
+    const count = (names) => names.reduce((counts, name) => ({ ...counts, [name]: (counts[name] ?? 0) + 1 }), {});
     idle.on("request", listen);
+    const notModifiedBefore = workspaceFixture.notModified.length;
     await seconds(60);
-    idle.off("request", listen);
-    const byPath = asked.reduce((counts, name) => ({ ...counts, [name]: (counts[name] ?? 0) + 1 }), {});
+    const byPath = count(asked);
     console.log(JSON.stringify({ idleMinute: asked.length, byPath, notModified: workspaceFixture.notModified.length - notModifiedBefore }));
-    assert.ok(asked.length < 10, `an idle minute on the Design Tree asked for ${asked.length} things: ${JSON.stringify(byPath)}`);
+    assert.deepEqual(project(), [], `an idle minute on the Design Tree asks the project for nothing: ${JSON.stringify(byPath)}`);
+    assert.ok(asked.length <= 4, `an idle minute asks only the Hub's own periodic reads: ${JSON.stringify(byPath)}`);
+
+    // Switching surfaces on an unchanged project asks the project for nothing, once each has been shown.
+    for (const label of ["Board", "Modeling", "Design tree"]) {
+      await idle.getByRole("button", { name: label, exact: true }).click();
+      await seconds(3);
+    }
+    asked = [];
+    for (const label of ["Board", "Modeling", "Design tree", "Board", "Modeling", "Design tree"]) {
+      await idle.getByRole("button", { name: label, exact: true }).click();
+      await seconds(1);
+    }
+    await stage("tree-s2").waitFor();
+    assert.deepEqual(project(), [], `switching surfaces on an unchanged project asks for nothing: ${JSON.stringify(count(asked))}`);
+
+    // Another client accepts S3: one index event, and the tree shows it.
+    const framesBefore = indexFrames.length;
+    tree.stages.push("tree-s3");
+    workspaceFixture.commit("T");
+    assert.equal(indexFrames.length, framesBefore + 1, "the change is one index event");
+    await seconds(1);
+    await stage("tree-s3").waitFor({ timeout: 2000 });
+    const afterEvent = count(project());
+    assert.ok(afterEvent["(runtime)/api/index"] >= 1, "the store read the changes the event named");
+
+    // A worker restart: the Hub reattaches and hints without a revision; the store reads since its revision.
+    tree.stages.push("tree-s4");
+    workspaceFixture.indexes.get("T").token = null; // the restarted keeper reconciled what moved while it was down
+    emitIndex(runtimes.get("D:\\fixture\\T"), null);
+    await seconds(1);
+    await stage("tree-s4").waitFor({ timeout: 2000 });
+    // The stream itself drops and reopens (the Hub restarted, no hint at all): reopening reads the index.
+    tree.stages.push("tree-s5");
+    workspaceFixture.indexes.get("T").token = null;
+    workspaceFixture.indexes.get("T").revision += 1;
+    for (const stream of [...streams]) stream.end();
+    await seconds(2);
+    await stage("tree-s5").waitFor({ timeout: 2000 });
+    // A rebuilt index (a new epoch, its revision back at 1): the store resets rather than skipping the change.
+    tree.stages.push("tree-s6");
+    const rebuilt = workspaceFixture.rebuild("T");
+    emitIndex(runtimes.get("D:\\fixture\\T"), { epoch: rebuilt.epoch, revision: rebuilt.revision, domains: ["reset"] });
+    await seconds(1);
+    await stage("tree-s6").waitFor({ timeout: 2000 });
+    tree.stages.splice(3);
+    workspaceFixture.commit("T");
+    await seconds(1);
+
+    // One event stream for the whole page: never one per surface or project, and never two at once.
+    const opened = await idle.evaluate(() => window.__eventStreams);
+    assert.deepEqual([...new Set(opened.urls)], ["/api/runtime/events"], "no surface opens a stream of its own");
+    assert.equal(opened.most, 1, `one stream open at a time: ${JSON.stringify(opened)}`);
+    assert.equal(opened.live, 1);
   } finally { await idle.close(); }
 }
+/** GH-432: retained structured suggestions in the real built UI, with synthetic local APIs. */
+async function suggestionCards() {
+  // The full walk's no-project scenario removes these catalog entries. Reuse fresh
+  // seeds without clearing retained runtimes, project records or earlier sessions.
+  for (const project of initialProjects()) {
+    if (!projects.some((row) => row.projectId === project.projectId)) projects.push(project);
+  }
+  // The preceding scenario can leave a restored Monitor panel over narrow chat.
+  // Only this synthetic browser's saved layout is reset; conversation data stays.
+  if (page.url().startsWith(origin)) await page.evaluate(() => localStorage.removeItem("monkeyhub.chat-view.v1"));
+  const createdSessions = [];
+  const postWrites = () => writes.filter(([method, pathname]) => method === "POST" && pathname.endsWith("/messages"));
+  const user = (id) => ({ id, role: "user", status: "complete", content: "Help me choose the next drawing task.", createdAt: "2026-09-28T12:00:00Z" });
+  const suggestion = (id, turn, overrides = {}) => ({ id, role: "assistant", status: "complete", content: "",
+    sourceTurnId: turn, presentationRevision: 1, createdAt: "2026-09-28T12:00:01Z",
+    suggestion: { title: id, outcome: "A readable section from the current model", capability: "available",
+      rationale: "Use the existing source-bound drawing tools.", tools: ["MonkeyDiagram"], deliverables: ["Editable SVG", "Review PDF"],
+      timeEstimate: { value: null, basis: null }, costEstimate: { value: null, basis: null },
+      prompt: "Prepare a section from the current model and retain its editable source.", ...overrides } });
+  const makeSession = (id, messages, overrides = {}) => {
+    const projectId = overrides.projectId ?? "A";
+    const project = projects.find((item) => item.projectId === projectId);
+    const session = { id: `suggestions-${id}`, projectId, projectDir: project.projectDir, title: `Suggestions ${id}`,
+      provider: "codex", model: "fixture-model-a", status: "idle", archived: false,
+      createdAt: "2026-09-28T12:00:00Z", updatedAt: "2026-09-28T12:00:01Z", messages, ...overrides };
+    sessions.unshift(session);
+    createdSessions.push(session);
+    return session;
+  };
+  const visit = async (session) => {
+    await page.goto(`${origin}/?chatId=${session.id}`);
+    await page.locator(".chat-header h1").filter({ hasText: session.title }).waitFor();
+    await urlParamIs("chatId", session.id, "the card opens its retained conversation");
+  };
+  const cardFor = (title) => page.locator(".chat-suggestion").filter({ hasText: title });
+  const action = (card, name = "accept") => card.locator(`[data-suggestion-action="${name}"]`);
+  const blocked = async (card, reason) => {
+    await card.waitFor();
+    assert.equal(await action(card).isDisabled(), true, reason);
+    // A disabled recommendation must explain itself in visible text, not just a title tooltip.
+    const explanation = await action(card).getAttribute("aria-describedby");
+    if (explanation) {
+      for (const id of explanation.split(/\s+/)) assert.equal(await page.locator(`[id="${id}"]`).isVisible(), true, reason);
+    }
+    const status = card.locator(".chat-suggestion__status");
+    assert.equal(await status.isVisible(), true, reason);
+    assert.ok((await status.innerText()).trim().length > 0, reason);
+  };
+
+  preferences = { ...preferences, language: "en", theme: "light", fontScale: 1 };
+  await page.setViewportSize({ width: 1440, height: 960 });
+  const available = suggestion("Retained drawing recommendation", "suggestion-user");
+  const sessionA = makeSession("A", [user("suggestion-user"), available]);
+  const before = postWrites().length;
+  await visit(sessionA);
+  const card = cardFor(available.suggestion.title);
+  await card.waitFor();
+  await contextReady();
+  assert.equal(await action(card).isEnabled(), true, "structured data renders even with empty assistant content");
+  assert.equal(await card.locator('[data-suggestion-action="accept"]').count(), 1, "one recommended execution action per card");
+  assert.match(await card.innerText(), /assess|unknown|not.*estimat|to be estimated/i, "unknown effort and cost remain unknown");
+  const details = card.locator("details");
+  assert.ok(await details.count() > 0, "rationale and method are progressively disclosed");
+  assert.equal(await details.first().getAttribute("open"), null);
+  await details.first().locator("summary").click();
+  await card.getByText(available.suggestion.rationale, { exact: true }).waitFor();
+  for (const text of [...available.suggestion.tools, ...available.suggestion.deliverables]) assert.ok((await card.innerText()).includes(text));
+  await details.first().locator("summary").click();
+  assert.equal(postWrites().length, before, "reading a recommendation does not execute it");
+
+  // Adjust keeps an unfinished draft and its attachments, and never sends for the architect.
+  const composer = page.locator("#chat-input");
+  await composer.fill("Keep my existing notes.");
+  await addAttachments([{ name: "suggestion-notes.txt", mimeType: "text/plain", buffer: Buffer.from("Retained local draft attachment") }]);
+  await action(card, "adjust").click();
+  assert.ok((await composer.inputValue()).startsWith("Keep my existing notes."));
+  assert.ok((await composer.inputValue()).includes(available.suggestion.prompt));
+  assert.equal(await page.locator(".chat-composer .chat-attachments li").count(), 1);
+  assert.equal(await composer.evaluate((node) => node === document.activeElement), true);
+  assert.equal(postWrites().length, before);
+
+  // Two synchronous clicks challenge the submit guard before a network response arrives.
+  let releaseSelection;
+  chatMessageResponseGate = new Promise((resolve) => { releaseSelection = resolve; });
+  const selectionRequest = page.waitForRequest((request) => new URL(request.url()).pathname === `/api/chat/sessions/${sessionA.id}/messages`);
+  await action(card).evaluate((button) => { button.click(); button.click(); });
+  await selectionRequest;
+  assert.equal(await action(card).isDisabled(), true);
+  releaseSelection(); chatMessageResponseGate = Promise.resolve();
+  await page.getByRole("button", { name: "Stop", exact: true }).waitFor();
+  assert.equal(postWrites().length, before + 1, "rapid double selection sends exactly once");
+  const selectionWrite = postWrites().at(-1);
+  assert.deepEqual(selectionWrite.slice(0, 3), ["POST", `/api/chat/sessions/${sessionA.id}/messages`,
+    { projectId: "A", suggestionSelection: { messageId: available.id, revision: 1 } }]);
+  assert.ok((await composer.inputValue()).startsWith("Keep my existing notes."), "choosing a suggestion does not send or erase the separate draft");
+  assert.equal(await page.locator(".chat-composer .chat-attachments li").count(), 1);
+  assert.equal(sessionA.messages.at(-1).content, available.suggestion.prompt, "the fixture resolves the prompt from the retained card");
+  assert.deepEqual(sessionA.messages.at(-1).suggestionSelection, { messageId: available.id, revision: 1 });
+  sessionA.status = "idle";
+  await page.reload();
+  await blocked(cardFor(available.suggestion.title), "a consumed card stays disabled after refresh");
+  assert.equal(postWrites().length, before + 1, "refresh only reads the consumed selection");
+
+  // Switching projects before choosing a card cannot send to the previously selected project.
+  const choiceB = suggestion("Project B recommendation", "suggestion-B-user");
+  const sessionB = makeSession("B", [user("suggestion-B-user"), choiceB], { projectId: "B" });
+  emitRuntime();
+  await page.getByRole("button", { name: "Project B", exact: true }).first().click();
+  await cardFor(choiceB.suggestion.title).waitFor();
+  await contextReady();
+  await action(cardFor(choiceB.suggestion.title)).click();
+  await page.getByRole("button", { name: "Stop", exact: true }).waitFor();
+  assert.deepEqual(postWrites().at(-1).slice(0, 3), ["POST", `/api/chat/sessions/${sessionB.id}/messages`,
+    { projectId: "B", suggestionSelection: { messageId: choiceB.id, revision: 1 } }]);
+  sessionB.status = "idle";
+
+  const old = suggestion("Earlier turn recommendation", "old-user");
+  const replaced = suggestion("Superseded recommendation", "latest-user");
+  const current = { ...suggestion("Current recommendation", "latest-user"), presentationRevision: 2 };
+  const revisionSession = makeSession("revisions", [user("old-user"), old, user("latest-user"), replaced, current]);
+  await visit(revisionSession);
+  await blocked(cardFor(old.suggestion.title), "an older request cannot be executed");
+  await blocked(cardFor(replaced.suggestion.title), "only the latest recommendation of the same request can execute");
+  assert.equal(await action(cardFor(current.suggestion.title)).isEnabled(), true);
+  assert.equal(await page.locator('.chat-suggestion [data-suggestion-action="accept"]:enabled').count(), 1,
+    "the current request has at most one executable recommendation");
+  const beforeDismiss = postWrites().length;
+  await action(cardFor(current.suggestion.title), "dismiss").click();
+  const remainingAccept = action(cardFor(current.suggestion.title));
+  assert.ok(!await remainingAccept.count() || !await remainingAccept.isVisible() || await remainingAccept.isDisabled(), "dismiss hides or disables this card's action");
+  assert.equal(postWrites().length, beforeDismiss, "dismiss is local and starts no task");
+
+  for (const [name, sessionOverrides, messageOverrides] of [
+    ["running", { status: "running" }, {}],
+    ["interrupted", { status: "interrupted" }, {}],
+    ["failed", { status: "failed" }, {}],
+    ["archived", { archived: true }, {}],
+    ["external", { sourceSessionId: "external-suggestion-source" }, {}],
+    ["incomplete", {}, { status: "streaming" }],
+  ]) {
+    const record = { ...suggestion(`Blocked ${name} recommendation`, `${name}-user`), ...messageOverrides };
+    const blockedSession = makeSession(name, [user(`${name}-user`), record], sessionOverrides);
+    await visit(blockedSession);
+    await blocked(cardFor(record.suggestion.title), `${name} recommendations remain readable but cannot execute`);
+  }
+  assert.equal(postWrites().length, beforeDismiss, "blocked recommendations never send");
+
+  // Both languages and narrow screens keep estimates qualified and their bases folded.
+  for (const language of ["en", "zh-CN"]) {
+    const theme = language === "en" ? "light" : "dark";
+    preferences = { ...preferences, language, theme };
+    await page.setViewportSize({ width: 1440, height: 960 });
+    const estimated = suggestion(`Estimated recommendation ${language}`, `estimated-user-${language}`, {
+      capability: "needs-development", timeEstimate: { value: "15–30 min", basis: "Comparable synthetic drawing tasks only." },
+      costEstimate: { value: "$0.20–0.40", basis: "Illustrative token rate; excludes software licenses." },
+    });
+    const estimatesSession = makeSession(`estimates-${language}`, [user(`estimated-user-${language}`), estimated]);
+    await visit(estimatesSession);
+    const estimateCard = cardFor(estimated.suggestion.title);
+    await estimateCard.waitFor();
+    // The mobile sidebar is an intentional overlay; close it through its real control.
+    const hideProjects = page.getByRole("button", { name: language === "en" ? "Hide projects" : "收起项目栏", exact: true }).first();
+    if (await hideProjects.isVisible()) await hideProjects.click();
+    assert.match(await estimateCard.innerText(), language === "en" ? /estimat/i : /估算/);
+    assert.match(await estimateCard.innerText(), language === "en" ? /New capability to assess/i : /需要评估新能力/);
+    for (const estimate of [estimated.suggestion.timeEstimate, estimated.suggestion.costEstimate]) {
+      assert.ok((await estimateCard.innerText()).includes(estimate.value));
+      assert.equal(await estimateCard.getByText(estimate.basis).isVisible(), false, "estimate basis starts folded");
+    }
+    for (const width of [1440, 375]) {
+      await page.setViewportSize({ width, height: 960 });
+      const overflow = await estimateCard.evaluate((node) => ({
+        card: node.scrollWidth > node.clientWidth + 1,
+        page: document.documentElement.scrollWidth > window.innerWidth + 1,
+      }));
+      assert.deepEqual(overflow, { card: false, page: false }, `${language} suggestions fit at ${width}px`);
+      await estimateCard.screenshot({ path: path.join(temporary, `suggestion-${language}-${theme}-${width}.png`) });
+    }
+    for (const disclosure of await estimateCard.locator("details").all()) {
+      if (!await disclosure.getAttribute("open")) await disclosure.locator(":scope > summary").click();
+    }
+    for (const estimate of [estimated.suggestion.timeEstimate, estimated.suggestion.costEstimate]) await estimateCard.getByText(estimate.basis).waitFor();
+  }
+
+  preferences = { ...preferences, language: "en", theme: "light" };
+  await page.setViewportSize({ width: 1440, height: 960 });
+  const normal = makeSession("ordinary", [user("ordinary-user"),
+    { id: "ordinary-tool", role: "tool", status: "complete", candidateId: "cand-A-1",
+      createdAt: "2026-09-28T12:00:01Z",
+      content: "studio_request · GET /api/jobs/job-1 · completed\ncandidateId: cand-A-1\nstatus: succeeded" },
+    { id: "ordinary-result", role: "assistant", status: "complete", createdAt: "2026-09-28T12:00:02Z", content: "The requested drawing is ready." }]);
+  await visit(normal);
+  await page.getByText("The requested drawing is ready.", { exact: true }).waitFor();
+  assert.equal(await page.locator(".chat-suggestion").count(), 0, "an explicit completed task needs no confirmation card");
+  await page.locator('.chat-study[data-candidates="cand-A-1"]').waitFor();
+  const permissionSession = makeSession("permission", [user("permission-user"),
+    suggestion("Permission-time recommendation", "permission-user"),
+    { id: "suggestion-permission", role: "tool", status: "streaming", content: "A protected action awaits permission.",
+      createdAt: "2026-09-28T12:00:02Z",
+      permission: { id: "suggestion-permission-request", title: "Allow this protected action?", options: [{ optionId: "allow", name: "Allow once", kind: "allow_once" }] } },
+  ], { status: "running" });
+  await visit(permissionSession);
+  await blocked(cardFor("Permission-time recommendation"), "suggestions do not replace runtime permission");
+  await page.getByRole("group", { name: "Allow this protected action?", exact: true }).getByRole("button", { name: "Allow once", exact: true }).click();
+  await page.getByRole("group", { name: "Allow this protected action?", exact: true }).waitFor({ state: "detached" });
+  assert.equal(postWrites().length, beforeDismiss, "a permission choice does not accept a suggestion");
+
+  // The two removed duplicate entries leave their primary navigation and global/project scopes intact.
+  await visit(normal);
+  await page.getByRole("menuitem", { name: "Help", exact: true }).click();
+  assert.equal(await page.getByRole("menuitem", { name: "Usage and task records", exact: true }).count(), 0);
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "This project: Project A", exact: true }).click();
+  const projectCard = page.locator(".chat-project-card");
+  await projectCard.waitFor();
+  assert.equal(await projectCard.getByRole("button", { name: "Open in Design tree", exact: true }).count(), 0);
+  await projectCard.getByText("Version 3", { exact: true }).waitFor();
+  await page.keyboard.press("Escape");
+  assert.equal(await page.getByRole("button", { name: "Design tree", exact: true }).count(), 1);
+  await page.getByRole("button", { name: "Usage", exact: true }).click();
+  await page.locator(".monitor-page:visible").waitFor();
+  await page.waitForFunction(() => document.querySelector('.monitor-scope [aria-pressed="true"]')?.textContent === "Project A");
+  await page.locator(".chat-usage").click();
+  await page.waitForFunction(() => document.querySelector('.monitor-scope [aria-pressed="true"]')?.textContent === "All");
+  // The running/permission cases are done. Stop only this walk's synthetic turns
+  // so the following idle-minute check does not measure their active polling.
+  for (const session of createdSessions) if (session.status === "running") session.status = "interrupted";
+  emitRuntime();
+  console.log(JSON.stringify({ suggestions: "passed", selectionPosts: 2, languages: ["en", "zh-CN"], widths: [1440, 375] }));
+}
 try {
-  if (process.env.MONKEYHUB_UI_FOCUS === "accessibility") {
+  if (process.env.MONKEYHUB_UI_FOCUS === "suggestions") {
+    await suggestionCards();
+  } else if (process.env.MONKEYHUB_UI_FOCUS === "accessibility") {
     const cdp = await page.context().newCDPSession(page);
     const accessible = async (role, name) => {
       const { nodes } = await cdp.send("Accessibility.getFullAXTree");
@@ -1244,10 +1593,13 @@ try {
   await otherProject.press("ArrowUp");
   await scopeIs("Project A");
   await page.getByRole("menuitem", { name: "Help", exact: true }).click();
-  await page.getByRole("menuitem", { name: "Usage and task records", exact: true }).click();
+  assert.equal(await page.getByRole("menuitem", { name: "Usage and task records", exact: true }).count(), 0,
+    "Help does not duplicate the global Usage entry");
+  await page.keyboard.press("Escape");
+  await page.locator(".chat-usage").click();
   await waitMonitor();
   await scopeIs("All");
-  assert.equal(await scopeNow(), "All", "the global Help menu opens all projects");
+  assert.equal(await scopeNow(), "All", "the retained sidebar entry opens all projects");
   await otherProject.selectOption("A");
   // A hidden mounted Monitor must not poll or take top-level navigation back.
   await page.getByRole("button", { name: "Hide tools" }).click();
@@ -1710,10 +2062,12 @@ try {
   await card.getByText("Modeling follows the current project").waitFor();
   assert.equal(await card.getByText("cand-A-1").count(), 0, "candidate ids stay internal to the Worktree Graph");
   assert.equal(await card.getByRole("button", { name: /Accept|Issue|Endorse/ }).count(), 0);
-  // #302: the card's work lines retired behind one link to the Design Tree, the one history entry.
+  // #432: project information keeps recovery; history uses the main Design Tree entry.
   assert.equal(await card.getByText(/Finished result|can be combined/).count(), 0, "no second list of work beside the Design Tree");
-  await card.getByRole("button", { name: "Open in Design tree", exact: true }).click();
+  assert.equal(await card.getByRole("button", { name: "Open in Design tree", exact: true }).count(), 0);
+  await page.keyboard.press("Escape");
   await card.waitFor({ state: "detached" });
+  await page.getByRole("button", { name: "Design tree", exact: true }).click();
   await visibleWorkspace().locator('[data-project-surface="tree"]:not([hidden])').waitFor();
   assert.equal(await page.getByRole("button", { name: "Design tree", exact: true }).getAttribute("aria-pressed"), "true");
   await page.getByRole("button", { name: "Modeling", exact: true }).click();
@@ -3545,6 +3899,7 @@ try {
   await page.keyboard.press("Escape");
   await page.getByRole("dialog").waitFor({ state: "hidden" });
   updateStatus = { ...updateStatus, state: "idle", prepared: null, canApply: false, error: null };
+  if (!process.env.MONKEYHUB_UI_FOCUS) await suggestionCards();
   await idleMinute();
   }
   assert.deepEqual(errors, []);

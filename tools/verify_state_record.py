@@ -15,9 +15,11 @@ this project holds (ADR-007).
 
 Two checks, both recorded in ``--run`` as ``state-record-equivalence``:
 
-1. State identity — the developed state the record yields through
+1. State identity — what the record binds to through
    ``developed_design_view`` (with the reference run's RunRef, branch and
-   selection) has the same digest the reference run recorded.
+   selection) has the same digest the reference run recorded. For a record
+   without massing, a reference run retained before #402 recorded the
+   retired placeholder's digest, which is recognized exactly.
 2. Geometry — the record is run through the real runner (``run_project``,
    canonical producers, seats, handovers) inside ``--run`` under an
    *equivalence-harness* workflow frozen in that run (one stage in the
@@ -62,7 +64,7 @@ from monkeyarch.runtime.project_runner import (  # noqa: E402
 from archflow.state.stage_workflow import DesignPhase
 from archflow.state.operational_state import DesignObligation  # noqa: E402
 from archflow.state.stage_workflow import ProjectStage, ProjectStageWorkflow, open_stage_run_envelope  # noqa: E402
-from archflow.state.state_record import developed_design_view  # noqa: E402
+from archflow.state.state_record import RecordBinding, developed_design_view  # noqa: E402
 from tools.run_project import _seat  # noqa: E402
 
 _AUTH = ("canonical_write_authority", "design_authority", "stage_acceptance_authority")
@@ -178,6 +180,11 @@ def main() -> int:
     reference_phase = _receipt_phase(reference_receipt)
     reference_state = developed_design_view(record, run=reference, portfolio_id=options.portfolio_id, branch_id=options.branch_id, selection_decision_ref=options.selection_decision_ref,
                                             phase=reference_phase)
+    if isinstance(reference_state, RecordBinding):
+        # a reference run retained before #402 cites the retired placeholder digest of this
+        # same record; it is recognized exactly (record, run, base, phase, view kwargs), never recomputed
+        reference_state = reference_state.retained_as(reference_receipt.get("design_state_digest"), portfolio_id=options.portfolio_id,
+                                                      branch_id=options.branch_id, selection_decision_ref=options.selection_decision_ref)
     state_equal = reference_state.state_digest == reference_receipt.get("design_state_digest")
 
     # 2. geometry through the real runner in the equivalence run
