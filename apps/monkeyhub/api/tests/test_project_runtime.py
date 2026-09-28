@@ -2,12 +2,16 @@
 
 import base64
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from copy import deepcopy
 from dataclasses import replace
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
 from pathlib import Path
 import signal
+import socket
+import ssl
 import subprocess
 import sys
 import tempfile
@@ -1328,6 +1332,64 @@ class RuntimeCostTests(unittest.TestCase):
             manager.snapshot()
             timings.append(time.perf_counter() - started)
         self.assertLess(min(timings), 0.2, f"GET /api/runtime took {min(timings) * 1000:.0f} ms at this size")
+
+    def test_a_worker_request_never_loads_the_certificate_store(self):
+        # A new opener per request made a new HTTPS context, which reads the system
+        # certificate store: about 20 ms of every forwarded request on Windows.
+        with _serving() as worker, patch.object(ssl.SSLContext, "load_default_certs",
+                                                side_effect=AssertionError("certificate store loaded")):
+            for _ in range(2):
+                self.assertEqual(runtime_module.request_http(worker, "/api/protocol").status, 200)
+
+    def test_a_worker_request_connects_at_once_and_its_timeout_bounds_the_exchange(self):
+        # A timed connect waits in select(), which Windows wakes a timer tick (about 15 ms)
+        # late even when the local worker accepted at once.
+        with _serving() as worker, patch("socket.create_connection", wraps=socket.create_connection) as connect:
+            self.assertEqual(runtime_module.request_http(worker, "/api/protocol", timeout=7).status, 200)
+        connect.assert_called_once()
+        self.assertIsNone(connect.call_args.args[1])
+
+    def test_a_worker_that_accepts_and_never_answers_still_times_out(self):
+        listener = socket.create_server(("127.0.0.1", 0))
+        self.addCleanup(listener.close)
+        outcome = []
+
+        def read():
+            try:
+                runtime_module.request_http(f"http://127.0.0.1:{listener.getsockname()[1]}", "/api/protocol", timeout=0.5)
+            except OSError as error:
+                outcome.append(error)
+        reader = threading.Thread(target=read, daemon=True)
+        reader.start()
+        reader.join(10)
+        self.assertFalse(reader.is_alive(), "A silent worker held the Hub's request past its timeout")
+        self.assertIsInstance(outcome[0], TimeoutError)
+
+
+@contextmanager
+def _serving():
+    """A worker stand-in on a loopback port: every GET answers 200 with a small JSON body."""
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            body = b'{"ok": true}'
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *args):
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield f"http://127.0.0.1:{server.server_address[1]}"
+    finally:
+        server.shutdown()
+        server.server_close()
 
 
 if __name__ == "__main__":
