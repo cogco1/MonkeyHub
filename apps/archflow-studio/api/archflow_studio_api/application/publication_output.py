@@ -315,7 +315,7 @@ def export_publication(binding, revision, format, projections=None):
                         fallback = _ppt_pdf(slide, data, item)
                         if fallback is None:
                             continue
-                raster, _ = cached_page(projections, document, data, source["pageIndex"])
+                raster = cached_page(projections, document, data, source["pageIndex"])
                 data, (x, y, w, h) = _image(raster, item)
                 if canvas is not None:
                     canvas.drawImage(ImageReader(BytesIO(data)), x, height - y - h, width=w, height=h, mask="auto")

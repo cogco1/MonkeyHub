@@ -22,7 +22,6 @@ from uuid import uuid4
 from archflow.adapters.cad_execution import project_occt_lines
 from archflow.adapters.occt_backend import OcctBackendError
 from archflow.contracts.canonical import canonical_digest, canonical_json
-from archflow.project.index import IndexUnavailable
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import DESIGN_STAGE, SEAT_OCCT_EXECUTION, STUDIO_SOURCE_DOCUMENT
 from archflow.project.refs import ProjectArtifactRef, ProjectRecordRef, record_ref_from_uri, require_identifier
@@ -238,7 +237,7 @@ def drawing_pipeline(kind: str) -> dict[str, Any]:
         from archflow.adapters.occt_backend import backend_identity
 
         return {"kind": kind, "code": _source_files(*_OCCT_DRAWING), "backend": backend_identity(),
-                "libraries": {name: _library_version(name) for name in ("Pillow", "numpy")}}
+                "libraries": {name: _library_version(name) for name in ("Pillow", "numpy", "rhino3dm")}}
     if kind == SHEET:
         from archflow.adapters.occt_backend import backend_identity
 
@@ -247,7 +246,8 @@ def drawing_pipeline(kind: str) -> dict[str, Any]:
                                        "sheet": hashlib.sha256(inspect.getsource(_drawn_sheet).encode("utf-8")).hexdigest()[:16]},
                 "fonts": {role: hashlib.sha256(path.read_bytes()).hexdigest()[:16] for role, path in _sheet_fonts().items()},
                 "backend": backend_identity(),
-                "libraries": {name: _library_version(name) for name in ("reportlab", "pypdf", "ezdxf", "Pillow")}}
+                "libraries": {name: _library_version(name)
+                              for name in ("reportlab", "pypdf", "ezdxf", "Pillow", "fonttools", "rhino3dm")}}
     if kind == DOCUMENT_PAGE:
         from .boards import PAGE_RASTER_EDGE
 
@@ -275,26 +275,33 @@ def _drawn_content(source, verified: VerifiedElevationSource) -> dict[str, Any]:
 def _through_projections(projections: ProjectionQueue | None, kind: str, model_source, recipe):
     """The ``cache`` a freeze asks for its drawn view: the projection of ``recipe(verified)``, drawn at most once.
 
-    Without a queue (a runtime that keeps no project index), or when the
-    index stops answering, the view is simply drawn. A hit shows in the
-    monitored stages: no ``drawing.hlr``, ``drawing.svg`` or ``drawing.png``.
+    Without a queue (a runtime that keeps no project index) the view is
+    simply drawn; a cache that fails is skipped by ``on_demand``. A hit shows
+    in the monitored stages: no ``drawing.hlr``, ``drawing.svg`` or
+    ``drawing.png``. What the receipt says about a hit follows from the
+    verified key and the files wherever it can: the backend (part of the
+    key's renderer), an elevation's view (its recipe) and the objects the SVG
+    names; the solve's own counts and details come from the key's manifest.
     """
 
     if projections is None:
         return None
 
     def cache(verified: VerifiedElevationSource, draw) -> DrawnView:
-        drawn: list[DrawnView] = []
-
         def files():
-            drawn.append(draw())
-            return {"png": drawn[0].png, "svg": drawn[0].svg}, drawn[0].facts()
+            drawn = draw()
+            return {"png": drawn.png, "svg": drawn.svg}, drawn.facts()
 
-        spec = on_demand_spec(kind, _source_of(model_source), recipe(verified))
-        try:
-            files, facts, _ = projections.on_demand(spec, files)
-        except IndexUnavailable:
-            return drawn[0] if drawn else draw()
+        recipe_of_view = recipe(verified)
+        files, facts, hit = projections.on_demand(on_demand_spec(kind, _source_of(model_source), recipe_of_view), files)
+        if hit:
+            from archflow.adapters.occt_backend import backend_identity
+            from monkeydiagram.drawing_svg import svg_objects
+
+            facts = {**facts, "backend": backend_identity(),
+                     "counts": {**facts["counts"], "objects_drawn_in_svg": len(svg_objects(files["svg"]))}}
+            if kind == ELEVATION:
+                facts["view"] = recipe_of_view["view"]
         return DrawnView.from_facts(facts, svg=files["svg"], png=files["png"])
 
     return cache
@@ -861,17 +868,11 @@ def generate_sheet(
             pdf, dxf = _drawn_sheet(binding, monitor, model_source.run_id, verified, frames, selected, layout, recipe_json)
             return {"pdf": pdf, "dxf": dxf}, {}
 
-        files = None
-        if projections is not None:
-            spec = on_demand_spec(SHEET, _source_of(model_source), {
-                "recipe": recipe, "content": _drawn_content(source, verified)})
-            drawn = []
-            try:
-                files, _, _ = projections.on_demand(spec, lambda: drawn.append(draw()) or drawn[0])
-            except IndexUnavailable:
-                files = drawn[0][0] if drawn else None
-        if files is None:
+        if projections is None:
             files = draw()[0]
+        else:
+            files, _, _ = projections.on_demand(on_demand_spec(SHEET, _source_of(model_source), {
+                "recipe": recipe, "content": _drawn_content(source, verified)}), draw)
         pdf, dxf = files["pdf"], files["dxf"]
         _document_pages(pdf, "application/pdf")
         digest = hashlib.sha256(pdf).hexdigest()

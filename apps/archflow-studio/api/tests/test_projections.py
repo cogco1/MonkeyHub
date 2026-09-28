@@ -22,7 +22,7 @@ from PIL import Image, PngImagePlugin
 
 from archflow.adapters import occt_backend
 from archflow.project.index import (
-    ArtifactRow, CandidateRow, IndexCommit, IndexStamp, ProjectIndex, RunRows, StageRow, TreeRows,
+    ArtifactRow, CandidateRow, IndexCommit, IndexStamp, IndexUnavailable, ProjectIndex, RunRows, StageRow, TreeRows,
     add_commit_listener,
 )
 from archflow_studio_api.application import projections
@@ -640,10 +640,12 @@ class QueueTests(unittest.TestCase):
         restarted.start()
         self.assertEqual(restarted.on_demand(spec, draw)[2], True, "a restart keeps the row and its files")
         old = self.clock.now - 101
-        for sha, suffix in ((row.files["png"], ".png"), (row.files["svg"], ".svg")):
-            os.utime(restarted.blobs.path(sha, suffix), (old, old))
+        for role, sha in row.files.items():
+            os.utime(restarted.blobs.path(sha, projections.FILE_SUFFIXES[role]), (old, old))
         restarted.collect()
-        self.assertEqual(restarted._files(row.files), files, "a live row's every file is kept, however old")
+        kept = restarted._files(row.files)
+        self.assertEqual(set(kept), {"png", "svg", "manifest"})
+        self.assertEqual({role: kept[role] for role in files}, files, "a live row's every file is kept, however old")
         restarted.blobs.path(row.files["svg"], ".svg").unlink()
         self.assertEqual(restarted.on_demand(spec, draw)[2], False, "a lost file means drawing again")
         self.assertEqual(len(drawn), 2)
@@ -652,6 +654,125 @@ class QueueTests(unittest.TestCase):
         with self.assertRaises(StudioError):
             restarted.on_demand(refused, lambda: (_ for _ in ()).throw(StudioError(422, "DRAWING_EMPTY", "nothing")))
         self.assertIsNone(restarted.store.get(refused.key), "a refused request leaves no row")
+
+    def page_spec(self, asset=ASSET):
+        return projections.on_demand_spec(projections.DOCUMENT_PAGE, {"runId": "run-doc", "assetSha256": asset},
+                                          {"page": 0, "maxEdge": 2048, "mimeType": "image/png"})
+
+    def forge(self, queue, spec, *, files=None, blob=None, body=None, **fields):
+        """Replace ``spec``'s row with an edited one, as a hand-edited or foreign index might hold it."""
+
+        from archflow.project.index import ProjectionRow
+
+        row = queue.store.get(spec.key)
+        queue.store.drop({row.key: row.touched_at})
+        stored = {"recipe": dict(spec.recipe), "source": spec.source.to_dict(), "files": dict(files or row.files),
+                  **(body or {})}
+        values = {"key": spec.key, "input_hash": spec.input_sha256, "kind": spec.kind,
+                  "recipe_hash": spec.recipe_hash, "renderer_version": spec.renderer, **fields}
+        self.index.enqueue_projection(ProjectionRow(values["key"], values["input_hash"], values["kind"],
+                                                    values["recipe_hash"], values["renderer_version"], stored),
+                                      now=self.clock.now)
+        self.index.claim_projection(spec.key, now=self.clock.now)
+        self.index.finish_projection(spec.key, blob_sha256=blob or row.blob_sha256, load_ms=0, render_ms=0,
+                                     now=self.clock.now)
+
+    def test_an_on_demand_hit_is_checked_against_its_key_and_manifest_and_redrawn_on_any_mismatch(self):
+        queue = self.queue(ScriptedRenderer(), grace_s=100)
+        spec, other = self.page_spec(), self.page_spec("c" * 64)
+        drawn = []
+
+        def drawer(pixels):
+            def draw():
+                drawn.append(pixels)
+                return {"png": pixels, "svg": b"<svg/>"}, {"width": len(pixels)}
+            return draw
+
+        queue.on_demand(spec, drawer(b"page pixels"))
+        queue.on_demand(other, drawer(b"other pixels"))
+        original, foreign = queue.store.get(spec.key), queue.store.get(other.key)
+        cases = {
+            # Another valid blob of the cache: a sketch registered as this drawing.
+            "the blob names another drawing": dict(files={**original.files, "png": foreign.files["png"]},
+                                                   blob=foreign.files["png"]),
+            "the row's blob is not its first file": dict(blob=foreign.files["png"]),
+            "the manifest is another key's": dict(files={**original.files, "manifest": foreign.files["manifest"]}),
+            "the manifest is missing": dict(files={role: sha for role, sha in original.files.items() if role != "manifest"}),
+            "a digest is not a digest": dict(files={**original.files, "svg": "../../elsewhere"}),
+            "the recipe was edited": dict(body={"recipe": {**spec.recipe, "page": 1}}),
+            "the renderer was edited": dict(renderer_version="elsewhere/0"),
+            "the input was edited": dict(body={"source": {**spec.source.to_dict(), "assetSha256": "c" * 64}}),
+        }
+        for name, forged in cases.items():
+            with self.subTest(name):
+                self.forge(queue, spec, **forged)
+                before = len(drawn)
+                files, facts, hit = queue.on_demand(spec, drawer(b"page pixels"))
+                self.assertEqual((files["png"], facts, hit), (b"page pixels", {"width": 11}, False))
+                self.assertEqual(len(drawn), before + 1, "a mismatched row is drawn again")
+                self.assertEqual(queue.store.get(spec.key).files, original.files, "and replaced by the true row")
+                self.assertEqual(queue.on_demand(spec, drawer(b"page pixels"))[2], True)
+        # Facts written into a row are not read: the manifest, named by its digest, says what was drawn.
+        self.forge(queue, spec, body={"facts": {"width": 999}})
+        self.assertEqual(queue.on_demand(spec, drawer(b"page pixels"))[1:], ({"width": 11}, True))
+
+    def test_a_corrupted_blob_is_drawn_again(self):
+        queue = self.queue(ScriptedRenderer(), grace_s=100)
+        spec = self.page_spec()
+        drawn = []
+
+        def draw():
+            drawn.append(1)
+            return {"png": b"page pixels"}, {}
+
+        queue.on_demand(spec, draw)
+        row = queue.store.get(spec.key)
+        for role in ("png", "manifest"):
+            with self.subTest(role):
+                path = queue.blobs.path(row.files[role], projections.FILE_SUFFIXES[role])
+                path.write_bytes(path.read_bytes() + b" edited")
+                before = len(drawn)
+                self.assertEqual(queue.on_demand(spec, draw), ({"png": b"page pixels"}, {}, False))
+                self.assertEqual(len(drawn), before + 1, "a blob that fails its digest is a miss")
+                self.assertEqual(queue.on_demand(spec, draw)[2], True, "and is written again")
+
+    def test_a_cache_that_cannot_be_read_or_written_still_draws(self):
+        queue = self.queue(ScriptedRenderer(), grace_s=100)
+        spec = self.page_spec()
+        shutil.rmtree(queue.blobs.blobs, ignore_errors=True)
+        queue.blobs.blobs.parent.mkdir(parents=True, exist_ok=True)
+        queue.blobs.blobs.write_bytes(b"not a folder")
+        draw = lambda: ({"png": b"page pixels"}, {})
+        with self.assertLogs(projections.__name__, "WARNING"):
+            self.assertEqual(queue.on_demand(spec, draw), ({"png": b"page pixels"}, {}, False))
+        self.assertIsNone(queue.store.get(spec.key), "nothing half-kept")
+        queue.blobs.blobs.unlink()
+        with patch.object(queue.store, "get", side_effect=IndexUnavailable("closed")), \
+                self.assertLogs(projections.__name__, "WARNING") as logged:
+            self.assertEqual(queue.on_demand(spec, draw), ({"png": b"page pixels"}, {}, False))
+        self.assertIn("could not be read", "\n".join(logged.output))
+        with self.assertRaises(StudioError):
+            queue.on_demand(spec, lambda: (_ for _ in ()).throw(StudioError(422, "DRAWING_EMPTY", "nothing")))
+
+    def test_an_older_build_reads_on_demand_rows_without_failing(self):
+        """The reader of the build before #368 builds every row's spec from ``body["source"]`` as a ModelSource."""
+
+        queue = self.queue(ScriptedRenderer(), grace_s=100)
+        queue.on_demand(self.page_spec(), lambda: ({"png": b"page pixels"}, {}))
+        drawn = projection_spec(SOURCE)
+        queue.request(drawn)
+        queue.start()
+        self.settle(queue)
+        rows = self.index.projections()
+        self.assertEqual({row.kind for row in rows}, {projections.DOCUMENT_PAGE, MODEL_LINES})
+        for row in rows:
+            # Base's ``_status``: ProjectionSpec(key, kind, dict(body["recipe"]), renderer, ModelSource.from_dict(body["source"])).
+            source = ModelSource.from_dict(row.body["source"])
+            dict(row.body["recipe"])
+            self.assertEqual(source.asset_sha256, row.input_hash)
+        # Base's ``_current`` refuses a kind it does not know, so it keeps such a row and never draws it.
+        with self.assertRaises(ProjectionError):
+            projections.pipeline_of("a-later-kind", {"view": "axon"})
 
     def test_the_collector_keeps_what_rows_reach_and_waits_out_the_grace_window(self):
         queue = self.queue(ScriptedRenderer(), grace_s=100)

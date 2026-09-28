@@ -1418,13 +1418,13 @@ export const readProjectionBlobApiProjectionsBlobsSha256Get = <ThrowOnError exte
 /**
  * Read Page Projection
  *
- * One registered document page as the raster Board, Publish and exports show; done when it answers.
+ * One registered document page as the PNG Board, Publish and exports show (at most 2048 px, transparency kept).
  *
- * The document is read and verified through P036 on every request; its
- * page's PNG (at most 2048 px, transparency kept) is drawn once per content
- * and kept in the cache, so the answer names an immutable blob. The document
- * stays what a Board or publication references; the raster only supplies
- * its pixels.
+ * The document is read and verified through P036 on every request. Its
+ * page is drawn once per content and kept in the projection cache when the
+ * project index has loaded; without it, or when the cache fails, the page is
+ * drawn and answered all the same. The document stays what a Board or
+ * publication references; the raster only supplies its pixels.
  */
 export const readPageProjectionApiProjectionsPagesGet = <ThrowOnError extends boolean = false>(options: Options<ReadPageProjectionApiProjectionsPagesGetData, ThrowOnError>): RequestResult<ReadPageProjectionApiProjectionsPagesGetResponses, ReadPageProjectionApiProjectionsPagesGetErrors, ThrowOnError> => (options.client ?? client).get<ReadPageProjectionApiProjectionsPagesGetResponses, ReadPageProjectionApiProjectionsPagesGetErrors, ThrowOnError>({ url: '/api/projections/pages', ...options });
 

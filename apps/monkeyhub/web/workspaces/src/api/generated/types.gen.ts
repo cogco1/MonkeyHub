@@ -7254,7 +7254,7 @@ export type ProjectionStatusDto = {
      */
     inputSha256: string;
     /**
-     * The requester's own model source, checked for this request; absent when the key alone was asked for, and for a document page.
+     * The requester's own model source, checked for this request; absent when the key alone was asked for and for a projection drawn on demand.
      */
     source?: ModelSourceDto | null;
     /**
@@ -7267,18 +7267,6 @@ export type ProjectionStatusDto = {
      * Immutable PNG bytes; present only when status is done and the blob is a PNG.
      */
     blobUrl?: string | null;
-    /**
-     * Width
-     *
-     * A document page's pixel width.
-     */
-    width?: number | null;
-    /**
-     * Height
-     *
-     * A document page's pixel height.
-     */
-    height?: number | null;
     /**
      * Attempts
      */
@@ -17749,10 +17737,8 @@ export type ReadPageProjectionApiProjectionsPagesGetResponses = {
     /**
      * Successful Response
      */
-    200: ProjectionStatusDto;
+    200: unknown;
 };
-
-export type ReadPageProjectionApiProjectionsPagesGetResponse = ReadPageProjectionApiProjectionsPagesGetResponses[keyof ReadPageProjectionApiProjectionsPagesGetResponses];
 
 export type ReadProjectionApiProjectionsKeyGetData = {
     body?: never;

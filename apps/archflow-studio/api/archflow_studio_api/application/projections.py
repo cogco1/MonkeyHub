@@ -57,11 +57,14 @@ document page that Board, Publish and the export previews show. These kinds
 are drawn on demand, in the request that needs them, through the same
 generator the request would run anyway (``ProjectionQueue.on_demand``); the
 background worker never draws them. Their row names the first file (the PNG
-or PDF) as its blob and keeps every file's digest and what the receipt says
-about the drawing in its body, so issuing the same recipe of the same content
-again reads the bytes back instead of drawing. The cache is never evidence:
-P036 keeps the issued files and their receipt, and a missing blob only means
-drawing again.
+or PDF) as its blob and every file's digest, among them a manifest naming the
+key, the files and what the receipt says about the drawing, so issuing the
+same recipe of the same content again reads the bytes back instead of
+drawing. The cache is never evidence and is optional: a hit counts only when
+the row hashes back to the requested key and the manifest, itself read by its
+digest, names that key and those files; anything else, and any failure to read
+or write the cache, means drawing without it. P036 keeps the issued files and
+their receipt.
 
 The collector keeps what is reachable: a row whose input some artifact of
 the index still names, or that was read within the grace window. An older
@@ -119,8 +122,10 @@ SHEET = "drawing-sheet"
 DOCUMENT_PAGE = "document-page"
 #: The kinds drawn in the request that needs them (``ProjectionQueue.on_demand``), never by the worker.
 ON_DEMAND = frozenset({ELEVATION, SECTION_PERSPECTIVE, SHEET, DOCUMENT_PAGE})
+#: The role of an on-demand row's manifest among its files: the key, the other files and their facts.
+MANIFEST = "manifest"
 #: The file suffix each role of an on-demand projection's files is kept under.
-FILE_SUFFIXES = {"png": ".png", "svg": ".svg", "pdf": ".pdf", "dxf": ".dxf"}
+FILE_SUFFIXES = {"png": ".png", "svg": ".svg", "pdf": ".pdf", "dxf": ".dxf", MANIFEST: ".json"}
 #: The recipe the design tree draws at: about twice its 80 x 56 px close cards.
 TREE_RECIPE = {"size": 256}
 PNG_MEDIA_TYPE = "image/png"
@@ -225,7 +230,10 @@ class RecordedSource:
     def of(cls, value: Mapping[str, Any]) -> RecordedSource:
         if not isinstance(value.get("assetSha256"), str):
             raise ProjectionError("a projection's source names the content it is drawn from (assetSha256)")
-        return cls(tuple(sorted(value.items())))
+        # An older build reads every row's source as a ModelSource (runId,
+        # stateDigest, assetSha256); with both named it keeps the row, never
+        # draws it (its kind is unknown there) and never fails on it.
+        return cls(tuple(sorted({"runId": None, "stateDigest": None, **value}.items())))
 
     @property
     def asset_sha256(self) -> str:
@@ -376,9 +384,8 @@ class ProjectionStatus:
     load_ms: int | None = None
     render_ms: int | None = None
     touched_at: float = 0.0
-    #: An on-demand row's files by role (its blob is the first) and what was recorded about them.
+    #: An on-demand row's files by role: its blob, the other files and its manifest.
     files: Mapping[str, str] | None = None
-    facts: Mapping[str, Any] | None = None
 
     @property
     def key(self) -> str:
@@ -400,7 +407,7 @@ def _status(row: ProjectionRow | None) -> ProjectionStatus | None:
                           RecordedSource.of(source) if row.kind in ON_DEMAND else ModelSource.from_dict(source))
     return ProjectionStatus(spec, row.status, row.attempts, row.claimed_at, row.blob_sha256, row.error,
                             row.next_attempt_at, row.load_ms, row.render_ms, row.touched_at,
-                            row.body.get("files"), row.body.get("facts"))
+                            row.body.get("files"))
 
 
 def _body(spec: ProjectionSpec, extra: Mapping[str, Any] | None = None) -> dict[str, Any]:
@@ -430,7 +437,7 @@ class StatusTable:
     def enqueue(self, spec: ProjectionSpec, *, now: float, body: Mapping[str, Any] | None = None) -> ProjectionStatus:
         """Insert a queued pending row unless one exists; return the row either way.
 
-        ``body`` adds to what the row keeps: an on-demand row's files and facts.
+        ``body`` adds to what the row keeps: an on-demand row's files.
         """
 
         return _status(self.index.enqueue_projection(ProjectionRow(
@@ -820,48 +827,108 @@ class ProjectionQueue:
               ) -> tuple[dict[str, bytes], dict[str, Any], bool]:
         """An on-demand projection's files and facts, and whether they came from the cache.
 
-        A done row whose every file reads back is a hit: nothing is drawn. Any
-        other row (its blobs gone, or left by a request that died) is dropped,
-        and ``draw()`` runs once, under this key's lock, returning the files by
-        role (the first becomes the row's blob) and what was recorded about
-        them as JSON values. They are kept, then the row is inserted done in one
-        step, so no worker ever sees it pending. ``draw`` raising leaves no row:
-        a refused request is its caller's answer, not this key's failure.
-        Raises ``IndexUnavailable`` when the index does not answer.
+        A hit (``_hit``) is drawn from nothing. Otherwise ``draw()`` runs once,
+        under this key's lock, returning the files by role (the first becomes
+        the row's blob) and what was recorded about them as JSON values. They
+        are kept with a manifest, then the row is inserted done in one step, so
+        no worker ever sees it pending. ``draw`` raising leaves no row: a
+        refused request is its caller's answer, not this key's failure.
+
+        The cache is optional: when it cannot be read or written (the index
+        stops answering, the blob folder is not writable) the failure is
+        logged and the files are drawn and returned as without it.
         """
 
         if spec.kind not in ON_DEMAND:
             raise ProjectionError(f"{spec.kind!r} is drawn by the worker, not on demand")
         with self._key(spec.key):
-            now = self.clock()
-            row = self.store.get(spec.key)
-            if row is not None and row.status == DONE and row.files is not None:
-                files = self._files(row.files)
-                if files is not None:
-                    if now - row.touched_at >= min(TOUCH_EVERY_S, self.grace_s / 2):
-                        self.store.touch(row.key, now=now)  # still asked for: its grace window starts over
-                    return files, dict(row.facts or {}), True
-            if row is not None:
-                self.store.drop({row.key: row.touched_at})
+            try:
+                found = self._hit(spec)
+                readable = True
+            except Exception:
+                _log.warning("projection %s: the cache could not be read; drawing without it", spec.key, exc_info=True)
+                found, readable = None, False
+            if found is not None:
+                return *found, True
             started = time.perf_counter()
             files, facts = draw()
             render_ms = round((time.perf_counter() - started) * 1000)
             files = {role: bytes(data) for role, data in files.items()}
             facts = json.loads(json.dumps(facts, sort_keys=True))
-            digests = {role: self.blobs.put(data, FILE_SUFFIXES[role]) for role, data in files.items()}
-            self.store.enqueue(spec, now=now, body={"files": digests, "facts": facts})
-            if self.store.claim(spec.key, now=now) is not None:
-                self.store.finish(spec.key, blob_sha256=next(iter(digests.values())), load_ms=0,
-                                  render_ms=render_ms, now=self.clock())
             self.drawn.append((spec.key, 0, render_ms))
+            if readable:
+                try:
+                    self._keep(spec, files, facts, render_ms)
+                except Exception:
+                    _log.warning("projection %s: the drawing could not be kept; it is returned uncached",
+                                 spec.key, exc_info=True)
             return files, facts, False
+
+    def _hit(self, spec: ProjectionSpec) -> tuple[dict[str, bytes], dict[str, Any]] | None:
+        """The files and facts a done row keeps for ``spec``, or None: the row is checked, not trusted.
+
+        The row's own kind, recipe, input and renderer must hash back to the
+        requested key; its manifest, read by its digest, must name that key,
+        the row's files and its blob; and every file must read back by its
+        digest. Any mismatch is a miss (the caller draws and the row is
+        replaced). The facts come from the manifest, never from the row.
+        """
+
+        row = self.store.get(spec.key)
+        if row is None or row.status != DONE or not row.files:
+            return None
+        stored = row.spec
+        if ((stored.kind, stored.renderer, stored.input_sha256, stored.recipe_hash)
+                != (spec.kind, spec.renderer, spec.input_sha256, spec.recipe_hash)
+                or projection_key(stored.input_sha256, stored.kind, stored.recipe,
+                                  renderer=stored.renderer) != spec.key):
+            return None
+        digests = dict(row.files)
+        manifest_sha256 = digests.pop(MANIFEST, None)
+        text = self._files({MANIFEST: manifest_sha256})
+        if text is None:
+            return None
+        try:
+            manifest = json.loads(text[MANIFEST])
+        except ValueError:
+            return None
+        if (not isinstance(manifest, dict) or manifest.get("key") != spec.key or manifest.get("files") != digests
+                or manifest.get("blob") != row.blob_sha256 or not isinstance(manifest.get("facts"), dict)):
+            return None
+        files = self._files(digests)
+        if files is None:
+            return None
+        now = self.clock()
+        if now - row.touched_at >= min(TOUCH_EVERY_S, self.grace_s / 2):
+            self.store.touch(row.key, now=now)  # still asked for: its grace window starts over
+        return files, manifest["facts"]
+
+    def _keep(self, spec: ProjectionSpec, files: Mapping[str, bytes], facts: Mapping[str, Any], render_ms: int) -> None:
+        """Keep drawn files, their manifest and a done row for ``spec``, replacing any row it had."""
+
+        now = self.clock()
+        digests = {role: self.blobs.put(data, FILE_SUFFIXES[role]) for role, data in files.items()}
+        blob = next(iter(digests.values()))
+        manifest = json.dumps({"key": spec.key, "blob": blob, "files": digests, "facts": dict(facts)},
+                              sort_keys=True, separators=(",", ":")).encode("utf-8")
+        digests[MANIFEST] = self.blobs.put(manifest, FILE_SUFFIXES[MANIFEST])
+        row = self.store.get(spec.key)
+        if row is not None:
+            self.store.drop({row.key: row.touched_at})
+        self.store.enqueue(spec, now=now, body={"files": digests})
+        if self.store.claim(spec.key, now=now) is not None:
+            self.store.finish(spec.key, blob_sha256=blob, load_ms=0, render_ms=render_ms, now=self.clock())
 
     def _files(self, digests: Mapping[str, str]) -> dict[str, bytes] | None:
         """Every file of an on-demand row, verified against its digest; None when any is missing or corrupt."""
 
         files = {}
         for role, sha256 in digests.items():
-            data = self.blobs.read(sha256, FILE_SUFFIXES.get(role, ".png"))
+            suffix = FILE_SUFFIXES.get(role)
+            try:
+                data = None if suffix is None or not isinstance(sha256, str) else self.blobs.read(sha256, suffix)
+            except ProjectionError:  # not a digest: an edited row
+                data = None
             if data is None:
                 return None
             files[role] = data

@@ -1,4 +1,4 @@
-"""Projection cache reads: request by source and recipe, poll by key, a document page's raster, bytes by digest."""
+"""Projection cache reads: request by source and recipe, poll by key, a document page's PNG, bytes by digest."""
 from __future__ import annotations
 
 from fastapi import APIRouter, Query
@@ -127,7 +127,7 @@ def read_projection_blob(request: Request, sha256: str):
     return Response(data, media_type=PNG_MEDIA_TYPE, headers=_BLOB_HEADERS)
 
 
-@router.get("/pages", response_model=ProjectionStatusDto, response_model_by_alias=True)
+@router.get("/pages", response_class=Response)
 def read_page_projection(
     request: Request,
     run_id: str = Query(alias="runId", min_length=1),
@@ -135,25 +135,18 @@ def read_page_projection(
     revision_ref: str | None = Query(alias="revisionRef", default=None, min_length=1),
     page_index: int = Query(alias="pageIndex", default=0, ge=0),
 ):
-    """One registered document page as the raster Board, Publish and exports show; done when it answers.
+    """One registered document page as the PNG Board, Publish and exports show (at most 2048 px, transparency kept).
 
-    The document is read and verified through P036 on every request; its
-    page's PNG (at most 2048 px, transparency kept) is drawn once per content
-    and kept in the cache, so the answer names an immutable blob. The document
-    stays what a Board or publication references; the raster only supplies
-    its pixels.
+    The document is read and verified through P036 on every request. Its
+    page is drawn once per content and kept in the projection cache when the
+    project index has loaded; without it, or when the cache fails, the page is
+    drawn and answered all the same. The document stays what a Board or
+    publication references; the raster only supplies its pixels.
     """
 
-    projections = queue_of(request)
     document, data = document_bytes(bound_project(request.app.state), run_id, asset_sha256, revision_ref)
-    try:
-        _, spec = cached_page(projections, document, data, page_index)
-        row = projections.store.get(spec.key) if spec is not None else None
-    except IndexUnavailable as exc:
-        raise _unavailable(exc) from exc
-    if row is None:
-        raise _unavailable(IndexUnavailable("the page raster was not kept"))
-    return _status(row, None)
+    raster = cached_page(ready_projections(request.app.state), document, data, page_index)
+    return Response(raster.png, media_type=PNG_MEDIA_TYPE, headers=_STATUS_HEADERS)
 
 
 @router.get("/{key}", response_model=ProjectionStatusDto, response_model_by_alias=True)

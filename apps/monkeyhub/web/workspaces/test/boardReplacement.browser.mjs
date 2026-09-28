@@ -90,8 +90,8 @@ let seeded = false, documents = [oldDocument], documentReads = 0;
 let competingVersion = false, conflicts = 0;
 const writes = [], uploads = [], failures = [], escaped = [], fileReads = [];
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
-// Each PDF's page rasters by the PDF's digest, and every raster served by its own digest.
-const pdfRasters = new Map(), rasters = new Map();
+// Each PDF's page rasters by the PDF's digest.
+const pdfRasters = new Map();
 let releasePreview;
 const previewGate = new Promise((resolve) => { releasePreview = resolve; });
 let previewRequested;
@@ -200,10 +200,10 @@ try {
     + "so no single file can stand for it.";
   for (const [bytes, colors] of [[oldBytes, oldColors], [headlessBytes, headlessColors], [distantBytes, distantColors], [uploadBytes, uploadColors]]) {
     pdfRasters.set(sha256(bytes), (await page.evaluate((colors) => colors.map((color) => {
-      // The server draws a PDF page at twice its size in points, as here: 200 x 120 pt.
-      const canvas = document.createElement("canvas"); canvas.width = 400; canvas.height = 240;
+      // The server draws a PDF page 2048 px on its long edge, as here: 200 x 120 pt.
+      const canvas = document.createElement("canvas"); canvas.width = 2048; canvas.height = 1229;
       const context = canvas.getContext("2d");
-      context.fillStyle = `rgb(${color.map((value) => Math.round(value * 255)).join(",")})`; context.fillRect(0, 0, 400, 240);
+      context.fillStyle = `rgb(${color.map((value) => Math.round(value * 255)).join(",")})`; context.fillRect(0, 0, 2048, 1229);
       return canvas.toDataURL("image/png").split(",")[1];
     }), colors)).map((encoded) => Buffer.from(encoded, "base64")));
   }
@@ -277,8 +277,8 @@ try {
         previewRequested(); await previewGate;
         return { contentType: "image/png", body: replacementBytes };
       };
-      // Board previews read a page's cached raster (#368): its status names an immutable blob. The
-      // fixture answers it from the page's own bytes; a PDF page is its solid colour, as drawn.
+      // Board previews read a page's raster (#368), as the server draws it from the page's own bytes;
+      // a PDF page is its solid colour.
       const pageRaster = request.method() === "GET" && url.pathname === "/api/projections/pages";
       if (pageRaster || (request.method() === "GET" && url.pathname.startsWith("/api/documents/"))) {
         const query = pageRaster ? new URLSearchParams({ runId: url.searchParams.get("runId"),
@@ -287,18 +287,8 @@ try {
           ? new URL(`/api/documents/${url.searchParams.get("assetSha256")}/bytes?${query}`, origin) : url);
         if (!pageRaster || answer.status) return await route.fulfill(answer);
         const pageIndex = Number(url.searchParams.get("pageIndex"));
-        const pdf = answer.contentType === "application/pdf";
-        const png = pdf ? pdfRasters.get(sha256(answer.body))[pageIndex] : answer.body;
-        const blob = sha256(png);
-        rasters.set(blob, png);
-        return await route.fulfill({ json: { key: blob, status: "done", kind: "document-page", recipe: {}, renderer: "fixture",
-          inputSha256: url.searchParams.get("assetSha256"), source: null, blobSha256: blob,
-          blobUrl: `/api/projections/blobs/${blob}`, width: pdf ? 400 : 200, height: pdf ? 240 : 120,
-          attempts: 1, error: null, loadMs: 0, renderMs: 0 } });
-      }
-      if (request.method() === "GET" && url.pathname.startsWith("/api/projections/blobs/")) {
-        const png = rasters.get(url.pathname.split("/").pop());
-        return await route.fulfill(png ? { contentType: "image/png", body: png } : { status: 404, json: { code: "PROJECTION_BLOB_NOT_FOUND", detail: "" } });
+        const png = answer.contentType === "application/pdf" ? pdfRasters.get(sha256(answer.body))[pageIndex] : answer.body;
+        return await route.fulfill({ contentType: "image/png", body: png });
       }
       if (request.method() === "POST" && url.pathname.endsWith("/work-copy")) {
         workCopies.push({ path: url.pathname, body: structuredClone(request.postDataJSON()) });

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import base64
+import hashlib
 from dataclasses import replace
 from datetime import datetime, timezone
 from io import BytesIO
@@ -794,6 +795,39 @@ class DrawingProjectionTests(CandidateTestCase):
             second = self.elevation("front-b")
         self.assertEqual(drawn.call_count, 2)
         self.assertEqual(self.retained(first).png, self.retained(second).png)
+
+    def test_a_drawing_is_issued_when_the_cache_cannot_be_written(self) -> None:
+        import shutil
+
+        self.elevation("warm-up", view="back")  # the cache has opened
+        blobs = self.cache / "projections" / "blobs"
+        shutil.rmtree(blobs)
+        blobs.write_bytes(b"not a folder")
+        with self.assertLogs("archflow_studio_api.application.projections", "WARNING") as logged:
+            first = self.elevation("front-a")
+        self.assertIn("could not be kept", "\n".join(logged.output))
+        retained = self.retained(first)
+        self.assertEqual(first["assetSha256"], hashlib.sha256(retained.png).hexdigest())
+        [kept] = self.rows("drawing-elevation")
+        self.assertEqual(kept.spec.recipe["view"]["name"], "elevation-back", "only the warm-up is kept")
+        sheet = self.client.post("/api/drawings/sheets", json={
+            "projectId": PROJECT_ID, "sourceStageRef": self.stage["stageRef"], "styleId": "arch400-white"})
+        self.assertEqual(sheet.status_code, 201, sheet.text)
+
+    def test_a_hit_takes_the_receipt_from_the_key_not_from_free_row_data(self) -> None:
+        first = self.elevation("front-a")
+        [row] = self.rows("drawing-elevation")
+        # The row names a sketch that is a valid blob of the cache: it is not registered as this elevation.
+        sketch = self.app.state.projections.blobs.put(b"\x89PNG sketch")
+        store = self.app.state.projections.store
+        store.drop({row.key: row.touched_at})
+        store.enqueue(row.spec, now=row.touched_at, body={"files": {**row.files, "png": sketch}})
+        store.claim(row.key, now=row.touched_at)
+        store.finish(row.key, blob_sha256=sketch, load_ms=0, render_ms=0, now=row.touched_at)
+        second = self.elevation("front-b")
+        self.assertEqual(second["assetSha256"], first["assetSha256"], "the elevation was drawn again")
+        self.assertEqual(self.retained(second).receipt["projection"], self.retained(first).receipt["projection"])
+        self.assertEqual(self.retained(second).receipt["view"], self.retained(first).receipt["view"])
 
     def test_a_section_perspective_is_drawn_once(self) -> None:
         from monkeydiagram import drawing_elevation
