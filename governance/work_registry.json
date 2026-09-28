@@ -1,31 +1,4 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": [
-    {
-      "id": "GH-355",
-      "lanes": [
-        {
-          "id": "suite-closeout",
-          "status": "active",
-          "branch": "codex/355-suite-closeout",
-          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-355-suite-closeout",
-          "base_ref": "3fc09a68",
-          "contributor": "Claude",
-          "reviewer": "Claude root task",
-          "handoff": "local session; merges after green CI and tells the master",
-          "modules": [
-            "hub.shell"
-          ],
-          "write_scope": [
-            "apps/monkeyhub/web/workspaces/test/pushPull.browser.mjs",
-            "apps/monkeyhub/web/workspaces/test/sceneSnapping.browser.mjs",
-            "apps/monkeyhub/web/workspaces/test/translationGizmo.browser.mjs",
-            "apps/monkeyhub/web/workspaces/test/viewportSelection.browser.mjs",
-            "apps/monkeyhub/web/workspaces/test/documentLink.browser.mjs"
-          ],
-          "depends_on": []
-        }
-      ]
-    }
-  ]
+  "items": []
 }
