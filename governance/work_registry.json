@@ -1,4 +1,28 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": []
+  "items": [
+    {
+      "id": "GH-363",
+      "lanes": [
+        {
+          "id": "hub-hop",
+          "status": "active",
+          "branch": "codex/363-hub-hop",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-363-hub-hop",
+          "base_ref": "634037c0",
+          "contributor": "Claude",
+          "reviewer": "Claude root task",
+          "handoff": "local session; opens the PR and merges it before #416, master resolves the runtime.py overlap",
+          "modules": [
+            "hub.shell"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/api/monkeyhub_api/runtime.py",
+            "apps/monkeyhub/api/tests/test_project_runtime.py"
+          ],
+          "depends_on": []
+        }
+      ]
+    }
+  ]
 }
