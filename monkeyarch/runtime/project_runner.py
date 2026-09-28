@@ -158,7 +158,6 @@ from archflow.state.spatial import (
     SpatialConnection,
     SpatialGridBasis,
     SpatialLevel,
-    SpatialOptionProposal,
     SpatialZone,
 )
 
