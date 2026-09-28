@@ -6,18 +6,19 @@ reconciled against retained results; absence of proof remains visible.
 
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from http.client import HTTPException
+from http.client import HTTPConnection, HTTPException
 import base64
 import hashlib
 import json
 import os
 from pathlib import Path
 import re
+import socket
 import threading
 import time
 from urllib.error import HTTPError
 from urllib.parse import parse_qs, urlencode, urlsplit
-from urllib.request import ProxyHandler, Request, build_opener
+from urllib.request import HTTPHandler, ProxyHandler, Request, build_opener
 from uuid import UUID, uuid4, uuid5, NAMESPACE_URL
 
 from archflow.project.record_kinds import STUDIO_DOCUMENT_MODEL_SOURCE, STUDIO_SOURCE_DOCUMENT
@@ -109,12 +110,39 @@ class HttpResult:
             return {}
 
 
+def _connect_then_time(address, timeout, source_address=None) -> socket.socket:
+    """Connect to a worker at once; the request's timeout then bounds the exchange.
+
+    A timed connect waits in select(), which Windows wakes a timer tick (about
+    15 ms) late even when the local worker accepted at once.
+    """
+    connection = socket.create_connection(address, None, source_address)
+    connection.settimeout(timeout)
+    return connection
+
+
+class _WorkerConnection(HTTPConnection):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._create_connection = _connect_then_time
+
+
+class _WorkerHandler(HTTPHandler):
+    def http_open(self, req):
+        return self.do_open(_WorkerConnection, req)
+
+
+# One opener for every worker request: building one makes an HTTPS handler whose
+# default context reads the system certificate store, about 20 ms on Windows.
+_WORKER_OPENER = build_opener(ProxyHandler({}), _NoRedirect(), _WorkerHandler())
+
+
 def request_http(base: str, path: str, method="GET", body: bytes | None = None,
                  headers: dict[str, str] | None = None, *, timeout: float = 10) -> HttpResult:
     """Exactly one request, including error responses. Never follows a redirect."""
     request = Request(base.rstrip("/") + path, data=body, method=method, headers=headers or {})
     try:
-        response = build_opener(ProxyHandler({}), _NoRedirect()).open(request, timeout=timeout)
+        response = _WORKER_OPENER.open(request, timeout=timeout)
     except HTTPError as error:
         response = error
     with response:
