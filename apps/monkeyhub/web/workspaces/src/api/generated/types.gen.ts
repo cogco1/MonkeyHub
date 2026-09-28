@@ -2253,6 +2253,8 @@ export type DecisionDto = {
     } & DocumentDecisionSourceDto) | ({
         kind: 'design';
     } & DesignDecisionSourceDto) | ({
+        kind: 'words';
+    } & WordsDecisionSourceDto) | ({
         kind: 'recipe-export';
     } & RecipeExportDecisionSourceDto);
     /**
@@ -2425,11 +2427,15 @@ export type DecisionRequestDto = {
     strength: 'hard' | 'strong_preference' | 'soft_preference' | 'temporary';
     /**
      * Targetref
+     *
+     * what the decision is about; may be omitted in the locator and research domains, whose one target (locator:content, research:sources) is then filled in
      */
-    targetRef: string;
+    targetRef?: string | null;
     scope: DecisionScopeDto;
     /**
      * Source
+     *
+     * the exact evidence it was said against; {kind: 'words'} (the user's message named in messageSource, nothing else) evidences a source policy only
      */
     source: ({
         kind: 'board';
@@ -2437,7 +2443,9 @@ export type DecisionRequestDto = {
         kind: 'document';
     } & DocumentDecisionSourceDto) | ({
         kind: 'design';
-    } & DesignDecisionSourceDto);
+    } & DesignDecisionSourceDto) | ({
+        kind: 'words';
+    } & WordsDecisionSourceDto);
     /**
      * Applicability
      *
@@ -12435,6 +12443,22 @@ export type VolumesDto = {
      * Honesty
      */
     honesty: Array<string>;
+};
+
+/**
+ * WordsDecisionSourceDto
+ *
+ * The user's own message, named in messageSource, and nothing on screen.
+ *
+ * Evidences a source policy (the research domain) only: "查材料先去 A、B,别用 C"
+ * is about no page, board or design, so a new project can hold one. A person's
+ * action without a message names what it was taken on instead.
+ */
+export type WordsDecisionSourceDto = {
+    /**
+     * Kind
+     */
+    kind: 'words';
 };
 
 /**

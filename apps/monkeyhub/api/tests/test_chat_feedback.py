@@ -102,14 +102,29 @@ class ChatFeedbackTests(unittest.TestCase):
         """#252: a source policy and a locator are saved from the user's words; a recipe is not."""
 
         self.user("以后查材料先去 A 建材库、B 手册，别用 C 网站。")
-        policy = {**self.body, "disposition": "require", "strength": "soft_preference", "targetRef": "research:sources",
-                  "scope": {"domain": "research", "extent": "project"},
-                  "typedBinding": {"kind": "source-policy", "topic": "材料", "keys": ["materials"],
-                                   "prefer": ["A 建材库", "B 手册"], "avoid": ["C 网站"]}}
+        # The user's words are the whole evidence and the one target goes unsaid, as the guide says.
+        guide = chat._GUIDES["/api/decisions"]
+        self.assertIn("source {kind: 'words'}", guide)
+        self.assertIn("omit targetRef (it is always research:sources)", guide)
+        self.assertIn("omit targetRef (it is always locator:content)", guide)
+        policy = {key: value for key, value in self.body.items() if key != "targetRef"}
+        policy.update({"disposition": "require", "strength": "soft_preference", "source": {"kind": "words"},
+                       "scope": {"domain": "research", "extent": "project"},
+                       "typedBinding": {"kind": "source-policy", "topic": "材料", "keys": ["materials"],
+                                        "prefer": ["A 建材库", "B 手册"], "avoid": ["C 网站"]}})
         saved = self.tool("/api/decisions", policy)
-        self.assertEqual((saved["disposition"], saved["scope"]["domain"], saved["sourceKind"]),
-                         ("require", "research", "agent"))
+        self.assertEqual((saved["disposition"], saved["scope"]["domain"], saved["sourceKind"], saved["source"],
+                          saved["targetRef"]), ("require", "research", "agent", {"kind": "words"}, "research:sources"))
         self.assertEqual(saved["rawLanguage"], self.session["messages"][-1]["content"])
+        self.assertEqual(saved["messageSource"], {"sessionId": self.session["id"], "messageId": self.session["messages"][-1]["id"]})
+        # A later turn's prepared (default) context carries it when its words are about materials.
+        context = {"projectId": self.session["projectId"], "utterance": "查一下这种砖的材料性能",
+                   **{key: self.body["source"][key] for key in ("sourceRunId", "stateDigest")}}
+        with TestClient(create_app(self.settings)) as cold:
+            handed = cold.post("/api/intents/context", json=context).json()["scopedDecisions"]
+            self.assertEqual([row["decisionId"] for row in handed], [saved["decisionId"]])
+            self.assertEqual(cold.post("/api/intents/context", json={**context, "utterance": "把檐口压低一点"})
+                             .json()["scopedDecisions"], [])
         for change in ({"disposition": "require", "scope": {"domain": "drawing", "extent": "project"}},
                        {"disposition": "refer", "scope": {"domain": "design", "extent": "project"}},
                        {"disposition": "keep", "scope": {"domain": "research", "extent": "project"}},

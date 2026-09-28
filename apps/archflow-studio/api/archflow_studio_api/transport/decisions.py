@@ -80,8 +80,27 @@ class RecipeExportDecisionSourceDto(_Frozen):
     export_sha256: str = Field(alias="exportSha256", pattern=SHA256)
 
 
+class WordsDecisionSourceDto(_Frozen):
+    """The user's own message, named in messageSource, and nothing on screen.
+
+    Evidences a source policy (the research domain) only: "查材料先去 A、B,别用 C"
+    is about no page, board or design, so a new project can hold one. A person's
+    action without a message names what it was taken on instead.
+    """
+
+    kind: Literal["words"]
+
+
+# What a turn or a decision can be said while looking at.
 DecisionSourceDto = Annotated[
     Union[BoardDecisionSourceDto, DocumentDecisionSourceDto, DesignDecisionSourceDto],
+    Field(discriminator="kind"),
+]
+
+# What a decision request can cite: what it was said while looking at, or the
+# user's words alone.
+DecisionRequestSourceDto = Annotated[
+    Union[BoardDecisionSourceDto, DocumentDecisionSourceDto, DesignDecisionSourceDto, WordsDecisionSourceDto],
     Field(discriminator="kind"),
 ]
 
@@ -89,7 +108,7 @@ DecisionSourceDto = Annotated[
 # imported recipe came from.
 RetainedDecisionSourceDto = Annotated[
     Union[BoardDecisionSourceDto, DocumentDecisionSourceDto, DesignDecisionSourceDto,
-          RecipeExportDecisionSourceDto],
+          WordsDecisionSourceDto, RecipeExportDecisionSourceDto],
     Field(discriminator="kind"),
 ]
 
@@ -324,9 +343,16 @@ class DecisionRequestDto(_Frozen):
     )
     disposition: Disposition
     strength: Strength
-    target_ref: str = Field(alias="targetRef", min_length=1, max_length=192)
+    target_ref: str | None = Field(
+        alias="targetRef", default=None, min_length=1, max_length=192,
+        description="what the decision is about; may be omitted in the locator and research domains, whose one "
+        "target (locator:content, research:sources) is then filled in",
+    )
     scope: DecisionScopeDto
-    source: DecisionSourceDto
+    source: DecisionRequestSourceDto = Field(
+        description="the exact evidence it was said against; {kind: 'words'} (the user's message named in "
+        "messageSource, nothing else) evidences a source policy only",
+    )
     applicability: Applicability = Field(
         description="'scope' survives later revisions inside the scope; 'exact-source' applies "
         "only while the caller reads the very source it was said against",

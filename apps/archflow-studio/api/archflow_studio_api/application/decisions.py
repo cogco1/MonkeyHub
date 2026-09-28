@@ -34,9 +34,12 @@ retained artifact or a board element. ``find_locators`` answers "where is X"
 by scope first and then by the words alone, and re-reads the target every
 time; one that no longer resolves is handed back stale with its reason. A
 source policy (domain ``research``) says where to look first, and what to
-avoid, for a topic; only a research turn whose words are about that topic is
-handed it. Neither copies the content it names, and neither is inferred from
+avoid, for a topic; only a turn whose words are about that topic is handed
+it, and the user's message alone evidences one. Neither copies the content it names, and neither is inferred from
 behaviour: both are saved from the user's words or a person's own action.
+Both live in their own fixed run, ``studio-memory``, with the same revision
+format, chains and revocation: a build that predates them reads only
+``studio-decisions`` and so never meets a decision it cannot describe.
 """
 
 from __future__ import annotations
@@ -71,6 +74,10 @@ from .boards import BOARD_RUN_ID, read_board
 from .projection import project_state, require_actionable
 
 DECISIONS_RUN_ID = "studio-decisions"
+# Locators and source policies (#252). An older build reads studio-decisions
+# alone and answers every decision it lists with its own closed contract, so
+# project memory never goes there.
+MEMORY_RUN_ID = "studio-memory"
 DECISION_SCHEMA = "StudioScopedDecision@1"
 
 _DESIGN_TARGET = re.compile(r"(parameter|entity|relation):([A-Za-z0-9][A-Za-z0-9._-]{0,127})")
@@ -79,16 +86,20 @@ _DESIGN_TARGET = re.compile(r"(parameter|entity|relation):([A-Za-z0-9][A-Za-z0-9
 # hatch density, the line-weight hierarchy, what lies beyond the cut,
 # entourage and poché.
 DRAWING_TARGETS = ("drawing:hatch", "drawing:lineweight", "drawing:beyond", "drawing:entourage", "drawing:poche")
-# Project memory's two forms each have one target: what they are about lives
-# in their typed binding. Either is said while looking at something - a page,
-# a board or the design itself - and that stays its evidence.
+# Project memory's two forms each have one target, so a request may omit it:
+# what they are about lives in their typed binding. A locator is said while
+# looking at something - a page, a board or the design itself - and that stays
+# its evidence. A source policy needs nothing on screen: the user's message
+# alone ('words') evidences it, so a new project with no design can hold one.
 LOCATOR_TARGET = "locator:content"
 SOURCE_POLICY_TARGET = "research:sources"
 _DOMAIN_TARGETS = {"drawing": DRAWING_TARGETS, "copy": ("copy:style",),
                    "locator": (LOCATOR_TARGET,), "research": (SOURCE_POLICY_TARGET,)}
+_MEMORY_TARGETS = {"locator": LOCATOR_TARGET, "research": SOURCE_POLICY_TARGET}
+WORDS = "words"
 _SAID_WHILE_READING = frozenset({"board", "document", "design"})
 _DOMAIN_SOURCES = {"drawing": frozenset({"board", "document"}), "copy": frozenset({"document"}),
-                   "locator": _SAID_WHILE_READING, "research": _SAID_WHILE_READING}
+                   "locator": _SAID_WHILE_READING, "research": _SAID_WHILE_READING | {WORDS}}
 # The one binding each memory domain holds, and the disposition it is held with.
 _MEMORY_FORMS = {"locator": ("locator", "refer"), "research": ("source-policy", "require")}
 # The normalized research topics, each with the words that put a turn on it.
@@ -118,8 +129,9 @@ _EXPORT_FIELDS = frozenset({"schema", "recipe", "source", "sha256"})
 _SHA256 = re.compile(r"[0-9a-f]{64}")
 # A turn that names no domain reads the design decisions and the drawing ones
 # that reach it, so the agent drawing next sees the recipe a new drawing
-# starts from. Copy stays opt-in.
-_DEFAULT_DOMAINS = ("design", "drawing")
+# starts from, and the source policies its own words are about, so a turn that
+# asks to look something up sees where to look first. Copy stays opt-in.
+_DEFAULT_DOMAINS = ("design", "drawing", "research")
 
 ACTIVE = "active"
 DEFERRED = "deferred"
@@ -146,16 +158,17 @@ class DecisionRevision:
 class DecisionContext:
     """What a next turn is asking about, as its own evidence states it.
 
-    ``domains`` holds the one domain a turn named, or the default pair a turn
-    that named none reads. Research is never in the default pair.
+    ``domains`` holds the one domain a turn named, or the default domains a
+    turn that named none reads. A research decision reaches either only when
+    the turn's words are about its topic.
     """
 
     domains: tuple[str, ...]
     stage_ref: str | None = None
     target_refs: tuple[str, ...] = ()
     source: Mapping[str, Any] | None = None
-    # The turn's own words: a research turn is handed only the source
-    # policies whose topic they are about.
+    # The turn's own words: a turn is handed only the source policies whose
+    # topic they are about.
     utterance: str = ""
 
 
@@ -193,8 +206,12 @@ def _export_invalid(message: str) -> StudioError:
 # ---- the fixed run ---------------------------------------------------------
 
 
-def _run(binding: ProjectBinding, *, create: bool):
-    """The decisions run, asked for by name; created only on an explicit save.
+def _run_id(domain: str) -> str:
+    return MEMORY_RUN_ID if domain in _MEMORY_FORMS else DECISIONS_RUN_ID
+
+
+def _run(binding: ProjectBinding, run_id: str, *, create: bool):
+    """One decisions run, asked for by name; created only on an explicit save.
 
     Never ``binding.run_ids()``: reading decisions must not cost a scan of
     every run in the project. "Not there" is one bounded read-only question
@@ -204,35 +221,44 @@ def _run(binding: ProjectBinding, *, create: bool):
     project holds no decisions, which would make active constraints vanish.
     """
 
-    if not binding.repository.layout.run(DECISIONS_RUN_ID).root.is_dir():
+    if not binding.repository.layout.run(run_id).root.is_dir():
         if not create:
             return None
         try:
-            return binding.repository.create_run(DECISIONS_RUN_ID)
+            return binding.repository.create_run(run_id)
         except (ProjectRepositoryError, OSError) as failure:
             raise StudioError(409, "DECISION_WRITE_FAILED",
                               "The decision run could not be created in this project.") from failure
-    return binding.load_run(DECISIONS_RUN_ID)
+    return binding.load_run(run_id)
 
 
 def _revisions(binding: ProjectBinding) -> dict[str, Mapping[str, Any]]:
-    """Every retained revision in the decisions run, keyed by its exact ref."""
+    """Every retained revision in both decision runs, keyed by its exact ref.
 
-    run = _run(binding, create=False)
-    if run is None:
-        return {}
-    refs = binding.repository.list_json(
-        run=run,
-        destination=PersistenceDestination(PersistenceArea.RUN_REVIEW, run_id=DECISIONS_RUN_ID),
-        record_kind=STUDIO_SCOPED_DECISION,
-    )
+    Each decision's chain stays in the run its domain puts it in; a revision
+    in the wrong one is refused rather than read.
+    """
+
     revisions: dict[str, Mapping[str, Any]] = {}
-    for ref in refs:
-        payload = binding.repository.load_json(ref)
-        if payload.get("schema") != DECISION_SCHEMA or payload.get("projectId") != binding.project_id:
-            raise StudioError(409, "DECISION_BINDING_MISMATCH",
-                              "A retained decision belongs to another project.")
-        revisions[ref.uri] = payload
+    for run_id in (DECISIONS_RUN_ID, MEMORY_RUN_ID):
+        run = _run(binding, run_id, create=False)
+        if run is None:
+            continue
+        refs = binding.repository.list_json(
+            run=run,
+            destination=PersistenceDestination(PersistenceArea.RUN_REVIEW, run_id=run_id),
+            record_kind=STUDIO_SCOPED_DECISION,
+        )
+        for ref in refs:
+            payload = binding.repository.load_json(ref)
+            if payload.get("schema") != DECISION_SCHEMA or payload.get("projectId") != binding.project_id:
+                raise StudioError(409, "DECISION_BINDING_MISMATCH",
+                                  "A retained decision belongs to another project.")
+            scope = payload.get("scope")
+            if not isinstance(scope, Mapping) or _run_id(scope.get("domain")) != run_id:
+                raise StudioError(409, "DECISION_BINDING_MISMATCH",
+                                  f"A retained decision in {run_id} belongs to the other decision run.")
+            revisions[ref.uri] = payload
     return revisions
 
 
@@ -314,6 +340,9 @@ def _validate_source(
     """
 
     kind = source["kind"]
+    if kind == WORDS:
+        # The user's message is the evidence; ``_content`` requires it named.
+        return {"kind": WORDS}, (), None
     if kind == RECIPE_EXPORT:
         if export is None or source["exportSha256"] != export.sha256:
             raise _invalid("a recipe export is cited only by importing that export, which reads it and checks "
@@ -822,8 +851,15 @@ def _content(
     source, retained, projection = _validate_source(binding, spec["source"], export)
     record = None if projection is None else projection.record
     scope = _validate_scope(binding, spec["scope"], record)
+    if source["kind"] == WORDS and spec.get("messageSource") is None:
+        raise _invalid("a 'words' source is the user's message: name it in messageSource. A person's own "
+                       "action without a message names the document, board or design it was taken on.")
+    # A memory domain has one target, so saying it is optional.
+    target_ref = spec.get("targetRef") or _MEMORY_TARGETS.get(scope["domain"])
+    if target_ref is None:
+        raise _invalid(f"a {scope['domain']} decision names its targetRef.")
     requested = spec.get("typedBinding")
-    _validate_target(scope["domain"], spec["targetRef"], source["kind"], record,
+    _validate_target(scope["domain"], target_ref, source["kind"], record,
                      recipe=requested is not None and requested["kind"] == "recipe")
     typed = _typed_binding(binding, spec, record, scope, source)
     if typed is not None and typed["kind"] == "recipe":
@@ -838,7 +874,7 @@ def _content(
         "messageSource": _message_source(spec.get("messageSource")),
         "disposition": spec["disposition"],
         "strength": spec["strength"],
-        "targetRef": spec["targetRef"],
+        "targetRef": target_ref,
         "scope": scope,
         "source": source,
         "applicability": spec["applicability"],
@@ -851,11 +887,12 @@ def _content(
 def _retain(
     binding: ProjectBinding, payload: Mapping[str, Any],
 ) -> DecisionRevision:
-    run = _run(binding, create=True)
+    run_id = _run_id(payload["scope"]["domain"])
+    run = _run(binding, run_id, create=True)
     try:
         ref = binding.repository.put_json(
             run=run,
-            destination=PersistenceDestination(PersistenceArea.RUN_REVIEW, run_id=DECISIONS_RUN_ID),
+            destination=PersistenceDestination(PersistenceArea.RUN_REVIEW, run_id=run_id),
             record_kind=STUDIO_SCOPED_DECISION,
             payload=payload,
         )
@@ -955,6 +992,10 @@ def revise_decision(
     elif replacement is None:
         raise _invalid("superseding a decision needs the replacement it is superseded by.")
     else:
+        if _run_id(replacement["scope"]["domain"]) != _run_id(current.payload["scope"]["domain"]):
+            raise _invalid("a supersession keeps its kind: project memory (a locator or a source policy) is "
+                           "replaced by memory, and any other decision by another decision. Revoke this one "
+                           "and save the new one instead.")
         content, retained = _content(binding, replacement, chains, replacing=decision_id)
         status = _status(replacement["disposition"])
     return _revision(binding, decision_id=decision_id, previous=current.ref, content=content,
@@ -1044,9 +1085,9 @@ def decision_context_for(
     A): the agent about to draw sees the same project recipe a new drawing
     starts from. Its only evidence is the design source it projects, so a
     drawing decision said against one exact page does not follow it. A turn
-    that names a domain reads that domain alone. A research turn reads the
-    source policies its words are about. Locators are not a turn's domain:
-    ``find_locators`` answers them from the words.
+    that names a domain reads that domain alone. Either way, a turn reads only
+    the source policies its words are about. Locators are not a turn's
+    domain: ``find_locators`` answers them from the words.
     """
 
     if requested is None:
