@@ -42,7 +42,7 @@ from monkeyarch.construction import (
 from ..adapters.seats import SeatsError, load_seat_pack, seats_of
 from ..transport.errors import StudioError
 from .binding import ProjectBinding
-from .intent import buildable_components, component_edit_proposal
+from .intent import buildable_components, component_edit_proposal, kept_refs
 from .projection import StateProjection, project_proposed_record
 from .proposals import Proposal, continue_proposal, operator_of, proposal_from
 
@@ -244,39 +244,6 @@ def script_result(
         return compile_construction_script(script, record, root_component_id=root)
     except ConstructionError as exc:
         raise ConstructionRefused(exc) from exc
-
-
-def kept_refs(record: StateRecord, refs: Sequence[str]) -> tuple[str, ...]:
-    """What keeping ``refs`` protects: each ref, and for a geometry id its parts and its child components'.
-
-    The record protects what a change reaches, and a geometry id's form
-    changes in its parts, never in its own row: a keep naming only the
-    geometry id would let every part of it change. A shape a script made is
-    its own geometry wherever it is parented (``made_by_construction``;
-    lowering places them all under the modelling root), so a keep on the
-    component above it never reaches it. A part id and a parameter ref are
-    kept as they are; a ref the record does not declare is left for the
-    record to refuse.
-    """
-
-    parts = _parts_by_component(record)
-    children: dict[str, list[str]] = {}
-    for component in record.entities_of("Component@1"):
-        own = [element.entity_id for element in parts.get(component.entity_id, ())]
-        if component.parent_id and not made_by_construction(component.entity_id, own):
-            children.setdefault(component.parent_id, []).append(component.entity_id)
-    kept = list(refs)
-    seen: set[str] = set()
-    pending = [ref.removeprefix("entity:") for ref in refs if ref.startswith("entity:")]
-    while pending:
-        identifier = pending.pop(0)
-        if identifier in seen:
-            continue
-        seen.add(identifier)
-        kept.extend(f"entity:{element.entity_id}" for element in parts.get(identifier, ()))
-        kept.extend(f"entity:{child}" for child in children.get(identifier, ()))
-        pending.extend(children.get(identifier, ()))
-    return tuple(dict.fromkeys(kept))
 
 
 def design_proposal(

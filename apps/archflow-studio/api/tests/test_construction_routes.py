@@ -443,6 +443,24 @@ class ConstructionKeepAndTargetTestCase(ConstructionTestCase):
         self.assertEqual(faceted["status"], "proposed")
         self.assertLessEqual({"entity:mass", "entity:mass-body"}, set(faceted["protected"]))
 
+    def test_keep_on_a_geometry_id_protects_it_on_every_route_that_takes_keep(self) -> None:
+        """The record's keep resolution widens a geometry id itself, so no route has to (bare spelling too)."""
+
+        proposal = self.construct('mass = extrude(rect(0, 0, 4, 4), param("block_height"))', parameters=[
+            {"key": "block_height", "value": 3.2, "unit": "m", "epistemic_status": "declared"}])
+        run = self.run_candidate(proposal["proposalId"])
+        bare = self.construct("m = get('mass')\nset_height(m, 4)", sourceRunId=run, keep=["mass"])
+        self.assertEqual(bare["status"], "conflict")
+        self.assertIn("entity:mass-body", bare["impact"]["conflicts"])
+        # A parameter edit through POST /api/proposals reaches mass through its height binding.
+        response = self.client.post("/api/proposals", json={
+            "stateDigest": self.digest(run), "sourceRunId": run, "keep": ["entity:mass"],
+            "semanticEdit": {"summary": "taller blocks", "parameters": [
+                {"key": "block_height", "value": 4, "unit": "m", "epistemic_status": "declared"}]}})
+        self.assertEqual(response.status_code, 201, response.text)
+        self.assertEqual(response.json()["status"], "conflict")
+        self.assertIn("entity:mass-body", response.json()["protected"])
+
     def test_a_proposal_names_the_first_geometry_it_changes_adds_or_removes_else_the_modelling_root(self) -> None:
         run = self.run_candidate(self.construct(TWO_BLOCKS)["proposalId"])
         # Not whichever component sorts first (building): the geometry the script is about.

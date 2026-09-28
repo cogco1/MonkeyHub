@@ -5427,7 +5427,8 @@
         "CandidatePool",
         "PoolCandidate",
         "PoolStudy",
-        "POST /api/candidate-reviews"
+        "POST /api/candidate-reviews",
+        "kept_refs"
       ],
       "depends_on": [
         "contracts.canonical",
@@ -5537,7 +5538,8 @@
         "the admission gate is Stage acceptance's own preflight (C1 replay, C2 completed and not executing, C3 review readiness against the exact base, C5 one complete model) plus C4 object readback and C7 supersession; if any result fails nothing is retained and every failing clause is named",
         "a person (ui or retroactive) may admit a result that is not review-ready as a comparison option, retaining the failing clauses as its marker; an Agent (hub-chat) admission is review-ready, needs the Hub-managed boundary and a bound message, and rejects only on the user's bound words; Stage acceptance still requires review readiness and refuses a run with a live rejection",
         "admission accepts no Stage, advances no branch, moves no Working Head and writes no working position; a Runtime connected to a shared project refuses admissions until they synchronize",
-        "an elevation edit on a record whose rows cannot be read answers 422 ELEVATION_EDIT_INVALID, never a 500"
+        "an elevation edit on a record whose rows cannot be read answers 422 ELEVATION_EDIT_INVALID, never a 500",
+        "the record's keep resolution protects what a keep names: each resolved ref, and for a kept geometry id its own parts and its child components' parts, never a shape a script placed under it (made_by_construction), so every route that takes keep, bare ids included, protects a geometry's form"
       ],
       "status": "canonical",
       "tests": [
@@ -6738,7 +6740,7 @@
       "purpose": "Serve the construction contract (#419, spec 3.2-3.5): one construction script becomes one Studio proposal, facets add meaning to existing geometry, the model reads back in construction terms with the capabilities its facets unlock, and the first of them, hosted-opening, puts a door or window on geometry that means a wall.",
       "owns": [
         "POST /api/proposals/construction, POST /api/proposals/facets, POST /api/proposals/hosted-opening, GET /api/construction and GET /api/construction/model",
-        "the modelling root new script geometry goes under: model when a seat builds it, else the first component a seat builds",
+        "the modelling root new script geometry goes under: model when a seat builds it, else the first component a seat builds that is not itself script-made geometry",
         "a refused script as 422 CONSTRUCTION_INVALID with line, column and source line, including the record's refusal of the rows a script produced, answered at the script line that made the shape it names and in construction words",
         "facet upserts on Component@1 through the component edit path, with stripped non-blank text and unknown or non-component targets refused",
         "the construction model view: geometry rows with facets and the capabilities facets unlock (hosted-opening for architectural.role = wall)",
@@ -6765,7 +6767,6 @@
         "facets_proposal",
         "hosted_opening_proposal",
         "in_construction_words",
-        "kept_refs",
         "modelling_root",
         "script_result"
       ],
@@ -6783,7 +6784,6 @@
         "a refusal answers the script line that caused it, or passes through unchanged when it names no shape of the script",
         "a facet edit upserts only the named components; every element, object, datum and dependency edge stays byte-identical",
         "an agent's answer is one proposal: its script, parameters and facets are read on the design the earlier parts would make, and what it keeps is judged on the whole of it, a keep it reaches making a reviewable conflict",
-        "a kept geometry id keeps its own parts and its child components' parts, never a shape a script placed under it (made_by_construction), on the construction, facets and hosted-opening routes as in the in-app answer",
         "a script's proposal is about the first geometry it makes, changes or removes, by line, else the modelling root; the modelling root is model when a seat builds it, else the first component a seat builds that is not a shape a script made",
         "a capability is listed on an entity only when its facets unlock it",
         "a door or window is proposed only on a component whose facets unlock hosted-opening; the host keeps its element id, its delivered object and its published top, so what stands on it keeps standing",

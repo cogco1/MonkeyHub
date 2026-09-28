@@ -205,7 +205,8 @@ def _change_answer(
     The construction owner chooses every realisation; a refused script
     propagates as its own 422 ``CONSTRUCTION_INVALID`` with the line, column
     and source line, and nothing is stored. What the script reported travels
-    with the answer. The proposal is about the geometry the agent named, else
+    with the answer. The proposal is about the first geometry its script
+    makes, changes or removes, else the geometry the agent named, else
     ``requested`` (the component the request selected), else the modelling
     root; what the answer keeps joins the keep marks.
     """

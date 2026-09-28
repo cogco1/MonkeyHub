@@ -954,7 +954,7 @@ def _stated_keep(compilation: Compilation, projection) -> Compilation:
     if not compilation.keep:
         return compilation
     try:
-        refs = DeterministicIntentProvider(projection)._protected(compilation.keep)
+        refs = DeterministicIntentProvider(projection)._resolved(compilation.keep)
     except StudioError as exc:
         question = getattr(exc, "question", None) or exc.detail
         raise ValueError(f"the {compilation.provider} agent's keep is not the record's: {question}") from exc
