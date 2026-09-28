@@ -425,6 +425,9 @@ class ChatPresentationTests(unittest.TestCase):
                         media_id = str(uuid4())
                         replies = self.mcp([self.tool_call(1, "chat_present", {"messageId": media_id,
                             "kind": "assistant", "status": "streaming", "content": "Preview from native tool",
+                            "suggestion": {"title": "Compare alternatives", "outcome": "A source-bound comparison",
+                                "capability": "available", "rationale": "The comparison tool is connected.",
+                                "prompt": "Compare the proposed alternatives."},
                             "attachments": [{"path": str(image_path)}]})], connection=connection)
                         self.assertEqual(json.loads(replies[0]["result"]["content"][0]["text"])["status"], "running")
                         media = next(row for row in self.store.get(session.id).messages if row.id == media_id)
@@ -437,9 +440,32 @@ class ChatPresentationTests(unittest.TestCase):
                     self.assertTrue(any(row.id.endswith(":late-tool") and row.status == "complete" for row in finished.messages))
                     media = next(row for row in finished.messages if row.id == media_id)
                     self.assertEqual(media.status, "complete")
+                    self.assertEqual(media.suggestion.prompt, "Compare the proposed alternatives.")
                     self.assertEqual(self.store.attachment(session.id, media.attachments[0].id)[1].read_bytes(), self.image.getvalue())
                     reopened = self.new_store().get(session.id)
                     self.assertEqual(reopened.model_dump(), finished.model_dump())
+
+    def test_external_mcp_advertises_and_publishes_structured_card_without_text(self):
+        self.present("user")
+        card = {"title": "Assess a missing tool", "outcome": "An implementation assessment",
+                "capability": "needs-development", "rationale": "No connected tool exposes this operation.",
+                "deliverables": ["Scope and limitations"], "prompt": "Assess the missing operation before implementing it."}
+        with self.live_server():
+            replies = self.mcp([
+                self.tool_call(1, "presentation_bind", {}),
+                {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
+                self.tool_call(3, "chat_present", {"turnId": self.turn, "messageId": self.assistant_id,
+                    "kind": "assistant", "suggestion": card}),
+            ])
+        tool = next(row for row in replies[1]["result"]["tools"] if row["name"] == "chat_present")
+        self.assertIn("suggestion", tool["inputSchema"]["properties"])
+        self.assertIn("ChatSuggestion", tool["inputSchema"]["$defs"])
+        self.assertIn("Leave timeEstimate and costEstimate unknown", tool["description"])
+        row = self.store.get(self.bound["chatId"]).messages[-1]
+        self.assertEqual(row.suggestion.prompt, card["prompt"])
+        self.assertEqual(row.content, "")
+        self.assertIsNone(row.suggestion.timeEstimate.value)
+        self.assertEqual(self.store.get(self.bound["chatId"]).status, "idle")
 
     def test_external_mcp_live_protocol_two_turns_path_image_and_rebind(self):
         image_path = self.root / "external-preview.png"
