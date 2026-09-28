@@ -1,28 +1,4 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": [
-    {
-      "id": "GH-438",
-      "lanes": [
-        {
-          "id": "external-chat-input",
-          "status": "active",
-          "branch": "codex/438-external-chat-input",
-          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-438-external-chat-input",
-          "base_ref": "a1df9b2b9c96bbce52c158160aadb90c7f02fae4",
-          "contributor": "Claude",
-          "reviewer": "Claude root task",
-          "handoff": "local session; master reviews and integrates",
-          "modules": [
-            "hub.shell"
-          ],
-          "write_scope": [
-            "apps/monkeyhub/web/src/ChatShell.tsx",
-            "apps/monkeyhub/web/test/chatShell.browser.mjs"
-          ],
-          "depends_on": []
-        }
-      ]
-    }
-  ]
+  "items": []
 }
