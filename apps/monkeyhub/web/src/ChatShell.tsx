@@ -683,7 +683,10 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
           item.operations?.some((operation) => ["queued", "planning", "validated", "executing", "committing"].includes(operation.status)))
         ? "busy" : null;
   const archived = chat?.id === chatId && chat.archived;
-  const external = chat?.id === chatId && Boolean(chat.sourceSessionId);
+  // The chat's own detail once read; until then its row in the list, so a chat the list already
+  // names external never offers a composer, not even while it opens (#438).
+  const shownChat = chat?.id === chatId ? chat : sessions.find((row) => row.id === chatId);
+  const external = Boolean(shownChat?.sourceSessionId);
   const visibleSessions = sessions.filter((session) => Boolean(session.archived) === archivedView);
   // An existing conversation keeps the connection it was created with; only a
   // new one takes the saved default.
@@ -817,12 +820,14 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
     return () => window.clearInterval(timer);
   }, [providers]);
   useEffect(() => {
+    // Only opening another chat clears the one shown. The read below is re-created when the saved
+    // launch settings arrive; clearing then emptied an open chat, and an external one showed a composer (#438).
     setChat(null); setError(null);
     // Reopening a chat shows its turns folded and lands at its latest message.
     setExpandedTurns(new Set()); openingChat.current = chatId; followLatest.current = true; jumping.current = false;
     setLatest({ away: false, unseen: 0 });
-    void refresh();
-  }, [chatId, refresh]);
+  }, [chatId]);
+  useEffect(() => { void refresh(); }, [chatId, refresh]);
   useEffect(() => { void refresh(); }, [archivedView, refresh]);
   useEffect(() => { if (!chatId) { setDraftModel(defaults.model); setCustomModel(null); } }, [chatId, defaults.model]);
   useEffect(() => {
