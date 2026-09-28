@@ -365,7 +365,7 @@ def _field(item: Capability, element_id: str, component_id: str) -> EditableFiel
 
 
 def _keep_scope(projection: StateProjection, target_element: str | None) -> KeepScope:
-    """The refs a keep clause may name, as ``intent._resolve_ref`` accepts them.
+    """The refs a keep clause may name, as ``intent.resolve_keep_refs`` accepts them.
 
     The element being changed is left out: keeping the thing you are changing
     is a contradiction the proposal would refuse, and offering it would read

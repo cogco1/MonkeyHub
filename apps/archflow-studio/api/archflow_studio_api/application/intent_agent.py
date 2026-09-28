@@ -53,7 +53,7 @@ from monkeyarch.construction import vocabulary
 from ..settings import INTENT_PROVIDER_ENV, SettingsError, StudioSettings
 from ..transport.errors import StudioError
 from .construction import MODEL_ROOT, construction_model, in_construction_words, script_result
-from .intent import ACCEPTED_FORMS, KEEP_SENTENCE, DeterministicIntentProvider
+from .intent import ACCEPTED_FORMS, KEEP_SENTENCE, resolve_keep_refs
 from .projection import StateProjection
 from .intent_context import IntentContext, _geometry_ids, compile_context, expand_context, model_context
 from .intent_budget import build_context_budget
@@ -954,7 +954,7 @@ def _stated_keep(compilation: Compilation, projection) -> Compilation:
     if not compilation.keep:
         return compilation
     try:
-        refs = DeterministicIntentProvider(projection)._resolved(compilation.keep)
+        refs = resolve_keep_refs(projection, compilation.keep)
     except StudioError as exc:
         question = getattr(exc, "question", None) or exc.detail
         raise ValueError(f"the {compilation.provider} agent's keep is not the record's: {question}") from exc

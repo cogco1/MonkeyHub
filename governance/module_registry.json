@@ -5431,7 +5431,8 @@
         "PoolCandidate",
         "PoolStudy",
         "POST /api/candidate-reviews",
-        "kept_refs"
+        "kept_refs",
+        "resolve_keep_refs"
       ],
       "depends_on": [
         "contracts.canonical",

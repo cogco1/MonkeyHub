@@ -251,6 +251,61 @@ def kept_refs(record: StateRecord, refs: Sequence[str]) -> tuple[str, ...]:
     return tuple(dict.fromkeys(kept))
 
 
+def resolve_keep_refs(projection: StateProjection, refs: Sequence[str]) -> tuple[str, ...]:
+    """``refs`` as the record's own prefixed refs, sorted and deduplicated, or ``BlockedNeedsHuman`` asking which.
+
+    An ``entity:`` or ``parameter:`` ref must name what the record declares. A
+    bare token is accepted only when exactly one thing answers to it: a record
+    that declared both an entity and a parameter called ``bay`` would be asked
+    which, rather than have one of them silently protected. The grammar's keep
+    clause and an agent's stated keep are read by this one resolver.
+    """
+
+    entities = {entity.entity_id for entity in projection.record.entities}
+    parameters = {item.key for item in projection.parameters}
+    return tuple(sorted({_resolved_keep_ref(ref, entities, parameters) for ref in refs}))
+
+
+def _resolved_keep_ref(ref: str, entities: set[str], parameters: set[str]) -> str:
+    if ref.startswith("entity:"):
+        if ref[len("entity:") :] in entities:
+            return ref
+        raise _unknown_keep_ref(ref)
+    if ref.startswith("parameter:"):
+        if ref[len("parameter:") :] in parameters:
+            return ref
+        raise _unknown_keep_ref(ref)
+    candidates = [
+        prefixed
+        for prefixed, declared in (
+            (f"entity:{ref}", ref in entities),
+            (f"parameter:{ref}", ref in parameters),
+        )
+        if declared
+    ]
+    if len(candidates) == 1:
+        return candidates[0]
+    if not candidates:
+        raise _unknown_keep_ref(ref)
+    raise BlockedNeedsHuman(
+        "the keep ref names two different things",
+        question=(
+            f"keep {ref} could mean {_listed(candidates)}; which did you "
+            "mean?"
+        ),
+    )
+
+
+def _unknown_keep_ref(ref: str) -> BlockedNeedsHuman:
+    return BlockedNeedsHuman(
+        "the keep ref names nothing in this record",
+        question=(
+            f"keep names {ref}, which this record declares neither as an "
+            "entity nor as a parameter. Which did you mean?"
+        ),
+    )
+
+
 def buildable_components(projection: StateProjection, seats: Sequence[Any]) -> tuple[str, ...]:
     """The components some seat will actually build, roots and descendants.
 
@@ -1420,62 +1475,10 @@ class DeterministicIntentProvider:
         sign = 1 if parsed.operation == INCREASE else -1
         return round(target.old * (1 + sign * parsed.number / 100), ROUNDING)
 
-    def _resolved(self, keep: tuple[str, ...]) -> tuple[str, ...]:
-        """The ``keep`` refs, prefixed and deduplicated, or a question."""
-
-        return tuple(sorted({self._resolve_ref(ref) for ref in keep}))
-
     def _protected(self, keep: tuple[str, ...]) -> tuple[str, ...]:
         """What the ``keep`` refs protect: each resolved ref, and a kept geometry id's parts (``kept_refs``)."""
 
-        return tuple(sorted(set(kept_refs(self.projection.record, self._resolved(keep)))))
-
-    def _resolve_ref(self, ref: str) -> str:
-        """One ``keep`` ref as the record's own prefixed ref.
-
-        A bare token is accepted only when exactly one thing answers to it: a
-        record that declared both an entity and a parameter called ``bay``
-        would be asked which, rather than have one of them silently protected.
-        """
-
-        entities = {entity.entity_id for entity in self.projection.record.entities}
-        parameters = {item.key for item in self.projection.parameters}
-        if ref.startswith("entity:"):
-            if ref[len("entity:") :] in entities:
-                return ref
-            raise self._unknown_ref(ref)
-        if ref.startswith("parameter:"):
-            if ref[len("parameter:") :] in parameters:
-                return ref
-            raise self._unknown_ref(ref)
-        candidates = [
-            prefixed
-            for prefixed, declared in (
-                (f"entity:{ref}", ref in entities),
-                (f"parameter:{ref}", ref in parameters),
-            )
-            if declared
-        ]
-        if len(candidates) == 1:
-            return candidates[0]
-        if not candidates:
-            raise self._unknown_ref(ref)
-        raise BlockedNeedsHuman(
-            "the keep ref names two different things",
-            question=(
-                f"keep {ref} could mean {_listed(candidates)}; which did you "
-                "mean?"
-            ),
-        )
-
-    def _unknown_ref(self, ref: str) -> BlockedNeedsHuman:
-        return BlockedNeedsHuman(
-            "the keep ref names nothing in this record",
-            question=(
-                f"keep names {ref}, which this record declares neither as an "
-                "entity nor as a parameter. Which did you mean?"
-            ),
-        )
+        return tuple(sorted(set(kept_refs(self.projection.record, resolve_keep_refs(self.projection, keep)))))
 
     # ---- the operator
 
