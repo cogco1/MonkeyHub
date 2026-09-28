@@ -14,7 +14,13 @@
         "hub.shell"
       ],
       "write_scope": [
-        "apps/monkeyhub/web/test/chatShell.browser.mjs"
+        "apps/monkeyhub/web/test/chatShell.browser.mjs",
+        "CONTRIBUTING.md",
+        "apps/monkeyhub/desktop/README.md",
+        "apps/monkeyhub/web/src/i18n/messages.en.ts",
+        "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
+        "docs/WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.md",
+        "pyproject.toml"
       ],
       "depends_on": []
     }
