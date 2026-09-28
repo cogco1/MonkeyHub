@@ -12,7 +12,7 @@
           "base_ref": "0efe3765",
           "contributor": "Claude",
           "reviewer": null,
-          "handoff": "Spec first (docs/2026-09-28-construction-voids-lowering.md) for the owner's review, then implementation. Overlaps open PR #420 (GH-402) in compilers/geometry.py, geometry_proposal.py and state_record.py and open PR #436 (GH-405) in element_producers.py; the changed functions are disjoint, and whichever lands later merges origin/main.",
+          "handoff": "Part 1 (spec docs/2026-09-28-construction-voids-lowering.md): construction intermediates, voids relation, OCCT lowering. Part 2 (spec docs/2026-09-28-construction-api.md): the agent authors geometry with one construction script; producers, component/element bookkeeping and backend proofs stay in the runtime; facets add meaning later; wall capabilities appear with meaning. Overlaps open PR #440 (GH-404) in chat.py, transport/proposal.py, intent.py, intent_context.py, routes/proposals.py, transport/state.py and element_producers.py; whichever lands later merges origin/main.",
           "modules": [
             "state.geometry_program",
             "state.record",
@@ -25,7 +25,12 @@
             "adapters.cad_patch",
             "adapters.cad_execution",
             "runtime.drawing_elevation",
-            "studio.artifacts"
+            "studio.artifacts",
+            "studio.intent",
+            "studio.shell",
+            "studio.binding",
+            "hub.shell",
+            "semantics.registry"
           ],
           "write_scope": [
             "docs/2026-09-28-construction-voids-lowering.md",
@@ -44,7 +49,30 @@
             "apps/archflow-studio/api/archflow_studio_api/application/drawing_plans.py",
             "apps/archflow-studio/api/archflow_studio_api/application/drawings.py",
             "apps/monkeyhub/web/workspaces/src/api/generated/types.gen.ts",
-            "apps/monkeyhub/web/workspaces/test/rhino3dmMaterials.test.ts"
+            "apps/monkeyhub/web/workspaces/test/rhino3dmMaterials.test.ts",
+            "docs/2026-09-28-construction-api.md",
+            "monkeyarch/construction/",
+            "archflow/semantics/facets.py",
+            "archflow/semantics/__init__.py",
+            "monkeyarch/capabilities/domain_readiness.py",
+            "apps/archflow-studio/api/archflow_studio_api/application/intent.py",
+            "apps/archflow-studio/api/archflow_studio_api/application/intent_agent.py",
+            "apps/archflow-studio/api/archflow_studio_api/application/intent_context.py",
+            "apps/archflow-studio/api/archflow_studio_api/application/clarification.py",
+            "apps/archflow-studio/api/archflow_studio_api/application/construction.py",
+            "apps/archflow-studio/api/archflow_studio_api/application/domains.py",
+            "apps/archflow-studio/api/archflow_studio_api/routes/construction.py",
+            "apps/archflow-studio/api/archflow_studio_api/routes/domains.py",
+            "apps/archflow-studio/api/archflow_studio_api/routes/intents.py",
+            "apps/archflow-studio/api/archflow_studio_api/routes/proposals.py",
+            "apps/archflow-studio/api/archflow_studio_api/transport/proposal.py",
+            "apps/archflow-studio/api/archflow_studio_api/transport/construction.py",
+            "apps/archflow-studio/api/archflow_studio_api/transport/state.py",
+            "apps/archflow-studio/api/archflow_studio_api/transport/intent.py",
+            "apps/archflow-studio/api/archflow_studio_api/main.py",
+            "apps/monkeyhub/api/monkeyhub_api/chat.py",
+            "apps/monkeyhub/api/tests/",
+            "apps/monkeyhub/web/workspaces/src/api/generated/"
           ],
           "depends_on": []
         }
