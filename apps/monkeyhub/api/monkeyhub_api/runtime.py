@@ -6,13 +6,14 @@ reconciled against retained results; absence of proof remains visible.
 
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from http.client import HTTPException
+from http.client import HTTPConnection, HTTPException
 import base64
 import hashlib
 import json
 import os
 from pathlib import Path
 import re
+import socket
 import threading
 import time
 from urllib.error import HTTPError
@@ -61,6 +62,9 @@ _WORK_COPY_CONTENT_REFRESH_NS = _IDLE_RETAINED_REFRESH_S * 1_000_000_000
 _DOCUMENT_RECORD_KINDS = (STUDIO_SOURCE_DOCUMENT, STUDIO_DOCUMENT_MODEL_SOURCE)
 # How often an unwoken watcher compares that key; a wake compares it at once.
 _WORK_COPY_CHECK_S = _IDLE_RETAINED_REFRESH_S
+# How long the Hub waits before it attaches to a worker's event stream again
+# after that stream ended or was refused.
+_WORKER_EVENTS_RETRY_S = 1.0
 
 
 def project_key(path: str) -> str:
@@ -120,7 +124,7 @@ def request_http(base: str, path: str, method="GET", body: bytes | None = None,
     with response:
         return HttpResult(response.status, response.read(), {
             name: value for name, value in response.headers.items()
-            if name.lower() in {"content-type", "content-disposition", "etag", "cache-control"}
+            if name.lower() in {"content-type", "content-disposition", "etag", "cache-control", "x-monkey-index"}
         })
 
 
@@ -564,6 +568,103 @@ class ProjectRuntime:
     binding_signature: tuple | None = None
 
 
+class _WorkerEvents:
+    """The Hub's one attachment to a project worker's event stream (#366).
+
+    It forwards what a browser follows on ``/api/runtime/events``, so each Hub
+    page holds one stream however many projects and surfaces it shows:
+    ``index.committed`` as an index hint, every other event as the Studio's own.
+    Each time it attaches - the first time, after the worker restarted, after
+    a ``stream.reset`` - it also sends a hint without a revision: whatever the
+    stream carried meanwhile may be lost, so clients read the index again. A
+    hint is never the data and never required: clients also read on their own
+    stream's open and on focus.
+    """
+
+    def __init__(self, manager: "ProjectRuntimeManager", runtime_id: str, url: str) -> None:
+        self.manager, self.runtime_id, self.url = manager, runtime_id, url
+        self._stopped = threading.Event()
+        self._socket: socket.socket | None = None
+        self._last_id = ""
+        self.thread = threading.Thread(target=self._run, daemon=True, name=f"hub-worker-events-{runtime_id[:8]}")
+
+    def start(self) -> None:
+        self.thread.start()
+
+    def stop(self) -> None:
+        self._stopped.set()
+        stream = self._socket
+        if stream is not None:
+            try:
+                stream.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+
+    @property
+    def alive(self) -> bool:
+        return self.thread.is_alive() and not self._stopped.is_set()
+
+    def _run(self) -> None:
+        address = urlsplit(self.url)
+        while not self._stopped.is_set():
+            connection = HTTPConnection(address.hostname, address.port, timeout=10)
+            try:
+                connection.connect()
+                self._socket = connection.sock
+                if self._stopped.is_set():
+                    return
+                connection.request("GET", "/api/events", headers={"Last-Event-ID": self._last_id,
+                                                                   "Accept": "text/event-stream"})
+                response = connection.getresponse()
+                if response.status == 200:
+                    # A held stream is quiet between events; only stop() or the worker ends it.
+                    connection.sock.settimeout(None)
+                    self.manager.index_hint(self.runtime_id, None)
+                    self._read(response)
+            except (OSError, HTTPException, ValueError):
+                pass
+            finally:
+                self._socket = None
+                connection.close()
+            self._stopped.wait(_WORKER_EVENTS_RETRY_S)
+
+    def _read(self, response) -> None:
+        event, data, event_id = "", [], None
+        while not self._stopped.is_set():
+            line = response.readline()
+            if not line:
+                return
+            text = line.decode("utf-8", "replace").rstrip("\r\n")
+            if text.startswith("event:"):
+                event = text[6:].strip()
+            elif text.startswith("data:"):
+                data.append(text[5:].strip())
+            elif text.startswith("id:"):
+                event_id = text[3:].strip()
+            elif text == "":
+                if data:
+                    self._dispatch(event, "\n".join(data))
+                if event_id is not None:
+                    self._last_id = event_id
+                event, data, event_id = "", [], None
+
+    def _dispatch(self, event: str, data: str) -> None:
+        try:
+            body = json.loads(data)
+        except ValueError:
+            return
+        if not isinstance(body, dict):
+            return
+        if event == "index.committed":
+            self.manager.index_hint(self.runtime_id, {"epoch": body.get("epoch"), "revision": body.get("revision"),
+                                                      "domains": body.get("domains") or []})
+        elif event == "stream.reset":
+            self.manager.index_hint(self.runtime_id, None)
+        elif event:
+            self.manager.events.publish(event={"kind": "studio/event", "runtimeId": self.runtime_id,
+                                               "studio": body})
+
+
 class ProjectRuntimeManager:
     def __init__(self, applications, chats):
         self.applications, self.chats = applications, chats
@@ -574,9 +675,43 @@ class ProjectRuntimeManager:
         self._closing = threading.Event()
         self._clients = 0
         self._chat_changed = set()
+        # One attachment per project to its worker's event stream (#366).
+        self._worker_events: dict[str, _WorkerEvents] = {}
 
     def emit(self, kind: str, runtime_id: str | None = None):
         self.events.publish(event={"kind": kind, "runtimeId": runtime_id})
+
+    def index_hint(self, runtime_id: str, index: dict | None) -> None:
+        """Tell attached clients that a project's index moved (``index``), or may have (None): read it again."""
+
+        self.events.publish(event={"kind": "index/committed", "runtimeId": runtime_id, "index": index})
+
+    def _follow_worker(self, runtime: ProjectRuntime, workers) -> None:
+        """Keep one attachment to the running worker's event stream, and none to any other."""
+
+        url = None
+        if runtime.state == "open" and not self._closing.is_set():
+            url = next((row.url for row in workers
+                        if row.state in {"ready", "busy"} and row.healthy and row.url), None)
+        with self._lock:
+            current = self._worker_events.get(runtime.runtime_id)
+            if current is not None and current.url == url and current.alive:
+                return
+            if current is not None:
+                current.stop()
+                del self._worker_events[runtime.runtime_id]
+            if url is None:
+                return
+            follower = _WorkerEvents(self, runtime.runtime_id, url)
+            self._worker_events[runtime.runtime_id] = follower
+        follower.start()
+
+    def _stop_following(self, runtime_id: str | None = None) -> None:
+        with self._lock:
+            ids = list(self._worker_events) if runtime_id is None else [runtime_id]
+            followers = [self._worker_events.pop(key) for key in ids if key in self._worker_events]
+        for follower in followers:
+            follower.stop()
 
     def chat_changed(self, session):
         # Called under ChatStore's lock: no lock inversion, IO or project open.
@@ -1043,6 +1178,7 @@ class ProjectRuntimeManager:
         try:
             self._watch_project(runtime)
         finally:
+            self._stop_following(runtime.runtime_id)
             # The binding's layout watch holds the project folder open; a
             # runtime that stopped observing lets go of it, and one opened
             # again watches again on its first read.
@@ -1058,6 +1194,7 @@ class ProjectRuntimeManager:
             force_read = runtime.wake.is_set()
             runtime.wake.clear()
             workers = self.applications.worker_snapshots(project_dir=runtime.project_dir)
+            self._follow_worker(runtime, workers)
             worker_states = tuple((row.instance_id, row.state, row.healthy) for row in workers)
             drained = runtime.state == "closed" and not any(row.process_id is not None for row in workers)
             active = runtime.operations._has_active() or any(
@@ -1283,6 +1420,7 @@ class ProjectRuntimeManager:
 
     def begin_shutdown(self):
         self._closing.set()
+        self._stop_following()
         with self._lock:
             runtimes = tuple(self._projects.values())
         for runtime in runtimes:

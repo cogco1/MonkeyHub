@@ -24,6 +24,11 @@ It can be deleted at any time; the next load builds it again.
 - One projector (Fossil's single crosslink) fills the rows for a rebuild and
   for every change. It runs before the write transaction opens, never inside
   it; the revision moves once per commit that changed a row.
+- ``change`` is the bounded change log (#366): for each entity a client reads
+  (``run:<id>``, ``tree``, ``area:<name>``), the revision that last changed or
+  deleted it. ``IndexSnapshot.changes`` answers ``since=<revision>`` from it;
+  a revision below ``meta.floor`` is older than the log and answers nothing,
+  so the caller sends a whole snapshot instead.
 
 Index rows and keys are never evidence: each row names the P036 record it was
 read from, and that record is the evidence.
@@ -47,7 +52,14 @@ from uuid import uuid4
 
 from archflow.project.layout import FINGERPRINT_POINTER_FILES, FINGERPRINT_SETTLED_NS
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
+# How many revisions the change log keeps: a client further behind than this
+# is sent a whole snapshot instead of the changes.
+CHANGE_LOG_REVISIONS = 512
+# The areas whose rows the index already keeps: a change there is a run's or
+# the tree's. Every other area is an entity of its own (``area:<name>``), so
+# that saving a draft or issuing a version moves the revision a client follows.
+_ROW_AREAS = ("runs", "branches")
 INDEX_FILE = "index.sqlite"
 LOCK_FILE = "index.lock"
 # How long a rebuild waits for the readers of the old file to finish before
@@ -89,6 +101,8 @@ CREATE TABLE stage (
     candidate_id TEXT NOT NULL, rev INTEGER NOT NULL, body TEXT NOT NULL,
     PRIMARY KEY (branch_id, position)
 );
+CREATE TABLE change (id TEXT PRIMARY KEY, revision INTEGER NOT NULL);
+CREATE INDEX change_revision ON change (revision);
 """
 
 # What an agent may filter each table by, and the order its rows come in.
@@ -164,6 +178,18 @@ class IndexToken:
 
     epoch: str
     revision: int
+
+
+@dataclass(frozen=True, slots=True)
+class IndexCommit:
+    """What one commit changed: where the index stands after it and the domains it touched.
+
+    ``domains`` are the entity kinds (``run``, ``tree``, ``area``); a rebuild
+    names ``reset``, since a client of another epoch reads everything again.
+    """
+
+    token: IndexToken
+    domains: frozenset[str]
 
 
 @dataclass(frozen=True, slots=True)
@@ -293,6 +319,14 @@ def line_places(lines: Iterable[str]) -> dict[str, tuple[str, int]]:
     return places
 
 
+def entity_area(area: str) -> str | None:
+    """The ``area:<name>`` entity an area is, or None when its rows are a run's or the tree's."""
+
+    if area in _ROW_AREAS or area.startswith("run:"):
+        return None
+    return area if area.startswith("area:") else f"area:{area}"
+
+
 def _racy(places: Mapping[str, tuple[str, int]], scanned_at_ns: int) -> set[str]:
     """Git's racy rule: the places whose time was too close to the scan to prove anything."""
 
@@ -395,6 +429,95 @@ class IndexSnapshot:
         return {key: value for key, value in self._connection.execute("SELECT key, value FROM meta")
                 if key != "tree"}
 
+    @property
+    def floor(self) -> int:
+        """The oldest revision the change log can answer ``changes`` from."""
+
+        kept = self._connection.execute("SELECT value FROM meta WHERE key = 'floor'").fetchone()
+        return self.token.revision if kept is None else int(kept[0])
+
+    def changes(self, since: int) -> tuple[list[dict[str, Any]], list[str]] | None:
+        """The entities changed after revision ``since`` and the ids deleted since; None past the log.
+
+        None when ``since`` is below the log's floor or ahead of this snapshot:
+        the caller then sends a whole snapshot (``entities``).
+        """
+
+        if since < self.floor or since > self.token.revision:
+            return None
+        ids = [row[0] for row in self._connection.execute(
+            "SELECT id FROM change WHERE revision > ? ORDER BY id", (since,))]
+        if not ids:
+            return [], []
+        present = self.entities(ids)
+        found = {entity["id"] for entity in present}
+        return present, [entity_id for entity_id in ids if entity_id not in found]
+
+    def entities(self, ids: Iterable[str] | None = None) -> list[dict[str, Any]]:
+        """What a client keeps of the index, one entity per run, the tree and each other area.
+
+        ``{id, domain, rev, body}``: a run's body holds its own body, candidate,
+        artifacts, documents and how many records it has (the records
+        themselves stay in ``GET /api/index/record``); the tree's is its body
+        and stages; an area's the layout lines it holds. ``rev`` is the
+        revision that last changed the entity. ``ids`` limits the answer to
+        those entities; an id that names nothing is left out.
+        """
+
+        wanted = None if ids is None else set(ids)
+        logged = dict(self._connection.execute("SELECT id, revision FROM change"))
+        found: list[dict[str, Any]] = []
+        run_ids = None if wanted is None else sorted(entity[4:] for entity in wanted if entity.startswith("run:"))
+        if run_ids is None or run_ids:
+            found.extend(self._runs(run_ids))
+        if wanted is None or "tree" in wanted:
+            tree = self.tree()
+            if tree is not None:
+                stages = self.rows("stage", limit=None)
+                kept = self._connection.execute("SELECT value FROM meta WHERE key = 'tree_rev'").fetchone()
+                found.append({"id": "tree", "domain": "tree", "rev": int(kept[0]) if kept else 1,
+                              "body": {"tree": tree, "stages": stages}})
+        if wanted is None or any(entity.startswith("area:") for entity in wanted):
+            areas: dict[str, list[str]] = {}
+            for key, line in self._connection.execute("SELECT key, line FROM place ORDER BY key"):
+                entity = entity_area(place_area(key))
+                if entity is not None and (wanted is None or entity in wanted):
+                    areas.setdefault(entity, []).append(line)
+            for entity, lines in sorted(areas.items()):
+                found.append({"id": entity, "domain": "area", "rev": logged.get(entity, 1),
+                              "body": {"area": entity[5:], "lines": lines}})
+        return found
+
+    def _runs(self, run_ids: list[str] | None) -> list[dict[str, Any]]:
+        where = "" if run_ids is None else f" WHERE run_id IN ({', '.join('?' * len(run_ids))})"
+        params = () if run_ids is None else tuple(run_ids)
+        runs = {run_id: {"id": f"run:{run_id}", "domain": "run", "rev": rev, "body": {
+                    "runId": run_id, "run": json.loads(body), "candidate": None,
+                    "artifacts": [], "documents": [], "records": 0}}
+                for run_id, rev, body in self._connection.execute(
+                    f"SELECT run_id, rev, body FROM run{where} ORDER BY run_id", params)}
+        for run_id, count in self._connection.execute(
+                f"SELECT run_id, COUNT(*) FROM record{where} GROUP BY run_id", params):
+            if run_id in runs:
+                runs[run_id]["body"]["records"] = count
+        for table in ("artifact", "document", "candidate"):
+            columns = [name for name in _COLUMNS[table] if name not in ("rev",)]
+            order = QUERYABLE[table][1]
+            for row in self._connection.execute(
+                    f"SELECT {', '.join(columns)} FROM {table}{where} ORDER BY {order}", params):
+                item = dict(zip(columns, row))
+                item["body"] = json.loads(item["body"])
+                if "available" in item:
+                    item["available"] = bool(item["available"])
+                run = runs.get(item.pop("run_id"))
+                if run is None:
+                    continue
+                if table == "candidate":
+                    run["body"]["candidate"] = item
+                else:
+                    run["body"][f"{table}s"].append(item)
+        return list(runs.values())
+
 
 class ProjectIndex:
     """One project's index file, written by one thread of this process alone.
@@ -433,6 +556,8 @@ class ProjectIndex:
         self._open = False
         # How the last load went: "reused", "reconciled" or "rebuilt".
         self.loaded: str | None = None
+        # The last commit that moved the revision (or the last rebuild), for the keeper to announce.
+        self.last_commit: IndexCommit | None = None
 
     # ---- the writer
 
@@ -615,6 +740,8 @@ class ProjectIndex:
                     building.execute("INSERT INTO meta VALUES (?, ?)", (key, value))
                 building.execute("INSERT INTO meta VALUES ('epoch', ?)", (uuid4().hex,))
                 building.execute("INSERT INTO meta VALUES ('revision', '1')")
+                # The change log starts empty: a client of another epoch reads everything.
+                building.execute("INSERT INTO meta VALUES ('floor', '1')")
                 building.execute("INSERT INTO meta VALUES ('scanned_at_ns', ?)", (str(scanned_at_ns),))
                 self._write_tree(building, tree, 1, None)
                 for rows in runs:
@@ -630,6 +757,7 @@ class ProjectIndex:
         self._places = dict(places)
         self._racy = _racy(places, scanned_at_ns)
         self._read_state()
+        self.last_commit = IndexCommit(self._token, frozenset({"reset"}))
         self._publish_open()
 
     def _swap(self, fresh: Path) -> None:
@@ -675,6 +803,12 @@ class ProjectIndex:
     def _apply(self, changed: set[str], extra: set[str], places: Mapping[str, tuple[str, int]],
                scanned_at_ns: int | None) -> None:
         areas = {place_area(key) for key in changed} | extra
+        # The areas without rows whose lines moved, or that this process wrote:
+        # each is an entity of its own. A line only read again (racy) moved nothing.
+        moved_areas = {entity_area(place_area(key)) for key in changed
+                       if self._places.get(key, (None,))[0] != places.get(key, (None,))[0]}
+        moved_areas |= {entity_area(area) for area in extra}
+        moved_areas.discard(None)
         if "manifest" in areas:
             stamp = self._stamp()
             meta = dict(self._writer.execute("SELECT key, value FROM meta"))
@@ -695,7 +829,7 @@ class ProjectIndex:
                          for run_id in sorted(dirty)}
         else:
             tree, projected = None, {}
-        if not changed and not projected and tree is None:
+        if not changed and not projected and tree is None and not moved_areas:
             self._places = dict(places)
             if scanned_at_ns is not None:
                 self._racy = _racy(places, scanned_at_ns)
@@ -704,16 +838,17 @@ class ProjectIndex:
         revision = self._token.revision + 1
         connection.execute("BEGIN IMMEDIATE")
         try:
-            moved = False
-            if tree is not None:
-                moved |= self._write_tree(connection, tree, revision, self._tree)
+            logged: set[str] = set(moved_areas)
+            if tree is not None and self._write_tree(connection, tree, revision, self._tree):
+                logged.add("tree")
             for run_id, rows in projected.items():
                 if rows is None:
                     if run_id in self._runs:
                         self._delete_run(connection, run_id)
-                        moved = True
-                else:
-                    moved |= self._write_run(connection, rows, revision, self._runs.get(run_id))
+                        logged.add(f"run:{run_id}")
+                elif self._write_run(connection, rows, revision, self._runs.get(run_id)):
+                    logged.add(f"run:{run_id}")
+            moved = bool(logged)
             for key in changed:
                 if key in places:
                     line, mtime = places[key]
@@ -724,6 +859,14 @@ class ProjectIndex:
                 connection.execute("INSERT OR REPLACE INTO meta VALUES ('scanned_at_ns', ?)", (str(scanned_at_ns),))
             if moved:
                 connection.execute("UPDATE meta SET value = ? WHERE key = 'revision'", (str(revision),))
+                connection.executemany("INSERT OR REPLACE INTO change VALUES (?, ?)",
+                                       [(entity, revision) for entity in sorted(logged)])
+                floor = revision - CHANGE_LOG_REVISIONS
+                if floor > 1:
+                    # Past the log's reach: a client that far behind reads a whole snapshot.
+                    connection.execute("DELETE FROM change WHERE revision <= ?", (floor,))
+                    connection.execute("UPDATE meta SET value = ? WHERE key = 'floor' AND CAST(value AS INTEGER) < ?",
+                                       (str(floor), floor))
             connection.execute("COMMIT")
         except BaseException:
             connection.execute("ROLLBACK")
@@ -733,6 +876,9 @@ class ProjectIndex:
         if scanned_at_ns is not None:
             self._racy = _racy(places, scanned_at_ns)
         self._read_state()
+        if moved:
+            self.last_commit = IndexCommit(self._token, frozenset(
+                "area" if entity.startswith("area:") else entity.partition(":")[0] for entity in logged))
 
     def _write_tree(self, connection: sqlite3.Connection, tree: TreeRows, revision: int,
                     kept: tuple[frozenset[str], str] | None) -> bool:
@@ -749,7 +895,8 @@ class ProjectIndex:
             positions[row.branch_id] = position + 1
             connection.execute("INSERT INTO stage VALUES (?, ?, ?, ?, ?, ?)",
                                (row.branch_id, position, row.stage_ref, row.candidate_id, revision, _text(row.body)))
-        for key, value in (("tree_digest", digest), ("tree", texts[0]), ("tree_cites", _text(cites))):
+        for key, value in (("tree_digest", digest), ("tree", texts[0]), ("tree_cites", _text(cites)),
+                           ("tree_rev", str(revision))):
             connection.execute("INSERT OR REPLACE INTO meta VALUES (?, ?)", (key, value))
         return True
 

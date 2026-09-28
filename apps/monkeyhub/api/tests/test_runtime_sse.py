@@ -2,7 +2,9 @@
 
 from contextlib import contextmanager
 import json
+import signal
 import threading
+import unittest
 from urllib.parse import urlencode
 from urllib.request import ProxyHandler, Request, build_opener
 from uuid import UUID
@@ -96,10 +98,127 @@ class RuntimeSseTests(LocalHubCase):
                 self.server.should_exit = True
                 self.server_thread.join(timeout=8)
                 self.assertFalse(self.server_thread.is_alive(), "Open SSE subscriptions blocked normal server shutdown")
-                self.assertEqual(studio_stream.read(), b"")
+                # The stream ended; all it carried was the project index's own announcements (#366).
+                rest = studio_stream.read().decode("utf-8")
+                self.assertEqual({line for line in rest.splitlines() if line.startswith("event:")} - {"event: index.committed"}, set())
                 self.assertTrue(app.state.runtimes._closing.is_set())
                 self.assertFalse(any(row.process_id for row in app.state.applications.worker_snapshots()))
             self.assertEqual(before, {str(p): p.read_bytes() for p in project.rglob("*") if p.is_file()})
+
+    def frame(self, stream):
+        """The next frame's event name and data."""
+        name = None
+        while True:
+            line = stream.readline().decode("utf-8").strip()
+            if line.startswith("event:"):
+                name = line[6:].strip()
+            if line.startswith("data:"):
+                return name, json.loads(line[5:])
+
+    def test_a_worker_index_commit_reaches_the_hub_stream_as_a_hint(self):
+        """#366: the Hub relays the worker's index.committed on its one stream, and the write names that revision."""
+        import base64
+        import io
+        from PIL import Image
+
+        project = self.root / "index-project"
+        FilesystemProjectRepository.initialize(project, project_id=project.name,
+                                                initial_state={"project_id": project.name, "version": 0})
+        with self.serving() as app:
+            opened = http_json(self.base_url + "/api/runtime/projects/open", method="POST",
+                               payload={"projectId": project.name, "projectDir": str(project)})
+            runtime_id = opened["runtimeId"]
+            http_json(self.base_url + "/api/apps/monkeyarch/start?" + urlencode({"projectDir": str(project)}), method="POST")
+            wait_for(lambda: any(row.healthy for row in app.state.applications.worker_snapshots(project_dir=str(project))),
+                     "managed Studio did not start")
+            studio = self.base_url + f"/api/runtime/projects/{runtime_id}/studio"
+            opener = build_opener(ProxyHandler({}))
+            with opener.open(self.base_url + "/api/runtime/events", timeout=30) as stream:
+                self.assertEqual(self.frame(stream)[0], "runtime")
+                # The worker's first index load, or the Hub attaching to it, is announced.
+                index = None
+                while index is None or index.get("index") is None:
+                    name, body = self.frame(stream)
+                    if name == "index" and body["runtimeId"] == runtime_id:
+                        index = body
+                snapshot = http_json(studio + "/api/index")
+                self.assertTrue(snapshot["reset"])
+                picture = io.BytesIO()
+                Image.new("RGB", (8, 8), "red").save(picture, format="PNG")
+                with opener.open(Request(studio + "/api/documents", method="POST", headers={"Content-Type": "application/json"},
+                                         data=json.dumps({"projectId": project.name, "fileName": "plan.png", "mimeType": "image/png",
+                                                          "contentBase64": base64.b64encode(picture.getvalue()).decode()}).encode()),
+                                 timeout=30) as written:
+                    epoch, revision = written.headers["X-Monkey-Index"].split(":")
+                self.assertEqual(epoch, snapshot["epoch"])
+                self.assertGreater(int(revision), snapshot["revision"])
+                for _ in range(200):
+                    name, body = self.frame(stream)
+                    if name == "index" and (body["index"] or {}).get("revision", 0) >= int(revision):
+                        break
+                else:
+                    self.fail("the write's index commit did not reach the Hub stream")
+                self.assertEqual(body["runtimeId"], runtime_id)
+                self.assertEqual(body["index"]["epoch"], epoch)
+                self.assertIn("run", body["index"]["domains"])
+                changes = http_json(studio + "/api/index?" + urlencode({"since": snapshot["revision"], "epoch": epoch}))
+                self.assertFalse(changes["reset"])
+                self.assertTrue(changes["upserts"])
+
+    @unittest.skipUnless(hasattr(signal, "SIGKILL"), "kills the worker the POSIX way")
+    def test_a_restarted_worker_is_followed_again_and_a_change_made_meanwhile_is_not_missed(self):
+        """#366: kill the worker, change the project while it is down, recover: the hint comes, the changes hold it."""
+        import os
+        from archflow.project.ports import PersistenceArea, PersistenceDestination
+        from archflow.project.record_kinds import STATE_RECORD
+
+        project = self.root / "restart-project"
+        repository = FilesystemProjectRepository.initialize(project, project_id=project.name,
+                                                             initial_state={"project_id": project.name, "version": 0})
+        with self.serving() as app:
+            opened = http_json(self.base_url + "/api/runtime/projects/open", method="POST",
+                               payload={"projectId": project.name, "projectDir": str(project)})
+            runtime_id = opened["runtimeId"]
+            http_json(self.base_url + "/api/apps/monkeyarch/start?" + urlencode({"projectDir": str(project)}), method="POST")
+            workers = lambda: app.state.applications.worker_snapshots(project_dir=str(project))
+            wait_for(lambda: any(row.healthy for row in workers()), "managed Studio did not start")
+            studio = self.base_url + f"/api/runtime/projects/{runtime_id}/studio"
+            before = wait_for(lambda: self.index(studio), "the index did not load")
+            process_id = next(row.process_id for row in workers() if row.process_id)
+            opener = build_opener(ProxyHandler({}))
+            with opener.open(self.base_url + "/api/runtime/events", timeout=60) as stream:
+                self.assertEqual(self.frame(stream)[0], "runtime")
+                os.kill(process_id, signal.SIGKILL)
+                wait_for(lambda: not any(row.healthy and row.process_id == process_id for row in workers()),
+                         "the killed worker is still reported healthy")
+                # Another client changes the project while no worker watches it.
+                repository.create_run("run-while-down")
+                repository.put_json(run=repository.load_run("run-while-down"),
+                                    destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id="run-while-down"),
+                                    record_kind=STATE_RECORD, payload={"written": "meanwhile"})
+                http_json(self.base_url + f"/api/runtime/projects/{runtime_id}/recover", method="POST",
+                          payload={"projectId": project.name})
+                wait_for(lambda: any(row.healthy and row.process_id != process_id for row in workers()),
+                         "the worker did not restart", timeout=60)
+                for _ in range(400):
+                    name, body = self.frame(stream)
+                    if name == "index" and body["runtimeId"] == runtime_id:
+                        break
+                else:
+                    self.fail("the Hub did not say the restarted worker's index may have moved")
+            after = wait_for(lambda: self.index(studio, since=before["revision"], epoch=before["epoch"]),
+                             "the restarted worker's index did not answer")
+            ids = {entity["id"] for entity in after["upserts"]}
+            self.assertIn("run:run-while-down", ids, "caught up or reset, the change made meanwhile is there")
+            if not after["reset"]:
+                self.assertEqual(after["epoch"], before["epoch"])
+                self.assertEqual(after["from"], before["revision"])
+
+    def index(self, studio, **query):
+        try:
+            return http_json(studio + "/api/index" + (f"?{urlencode(query)}" if query else ""))
+        except OSError:
+            return None
 
 
 if __name__ == "__main__":

@@ -5,6 +5,7 @@ import asyncio
 from contextlib import asynccontextmanager, contextmanager
 from dataclasses import dataclass
 import inspect
+import json
 import logging
 import os
 from pathlib import Path
@@ -666,6 +667,15 @@ def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> Fas
                         if value["seq"] <= sequence:
                             continue
                         sequence = value["seq"]
+                        if "index" in value or "studio" in value:
+                            # A project worker's own events, relayed (#366): ``index`` says its project
+                            # index moved (or may have: no revision), ``studio`` is a Studio progress
+                            # event. Neither changes the Hub's runtime snapshot.
+                            name = "index" if "index" in value else "studio"
+                            body = {"serverId": runtimes.server_id, "sequence": sequence,
+                                    "runtimeId": value.get("runtimeId"), name: value[name]}
+                            yield f"id: {runtimes.server_id}:{sequence}\nevent: {name}\ndata: {json.dumps(body, separators=(',', ':'))}\n\n"
+                            continue
                         event = RuntimeEvent(serverId=runtimes.server_id, sequence=sequence, kind=value["kind"], runtimeId=value.get("runtimeId"))
                         yield f"id: {runtimes.server_id}:{sequence}\nevent: runtime\ndata: {event.model_dump_json()}\n\n"
                 finally:
