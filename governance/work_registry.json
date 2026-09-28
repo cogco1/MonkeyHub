@@ -1,29 +1,4 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": [
-    {
-      "id": "GH-376",
-      "lanes": [
-        {
-          "id": "byte-identical",
-          "status": "active",
-          "branch": "codex/376-byte-identical-synthetic",
-          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-376-byte-identical-synthetic",
-          "base_ref": "1bea11da",
-          "contributor": "Claude",
-          "reviewer": "Claude root task",
-          "handoff": "local session; opens the PR, master merges",
-          "modules": [
-            "studio.shell"
-          ],
-          "write_scope": [
-            "apps/archflow-studio/api/tests/synthetic_project.py",
-            "apps/archflow-studio/api/tests/test_synthetic_project.py",
-            "docs/testing/projection-check.md"
-          ],
-          "depends_on": []
-        }
-      ]
-    }
-  ]
+  "items": []
 }
