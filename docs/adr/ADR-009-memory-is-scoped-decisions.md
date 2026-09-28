@@ -1,11 +1,9 @@
 # ADR-009 — Memory is scoped decisions; cross-project memory is a library project
 
-**Decision (2026-09-28, #252):** project memory is the existing scoped decisions (module `studio.intent`).
-Each memory item is a revisioned decision retained through the P036 ports. It keeps the user's raw words,
-their message source, the evidence it was said against, its scope (domain, then project, Stage or targets),
-its strength, and its revoke/supersede chain. Locators and source policies sit in their own fixed run,
-`studio-memory`, beside `studio-decisions`, with the same revision format and owner; a build that predates
-them reads only `studio-decisions` and never meets one.
+**Decision (2026-09-28, #252):** project memory is the existing scoped decisions (`studio-decisions`, module
+`studio.intent`). Each memory item is a revisioned decision retained through the P036 ports. It keeps the
+user's raw words, their message source, the evidence it was said against, its scope (domain, then project,
+Stage or targets), its strength, and its revoke/supersede chain.
 
 1. **Kinds.** Each kind is one decision form, told apart by its typed binding:
    - **standard**: a `hard` decision; **recipe**: a drawing `recipe` binding (the one a new drawing starts from);
@@ -13,9 +11,7 @@ them reads only `studio-decisions` and never meets one.
    - **locator**: domain `locator`, disposition `refer`. It points at retained project content: a registered
      document page, an artifact by sha256, or a board element. It is not a machine path or a URL;
    - **source policy**: domain `research`. It holds a topic in the user's words, normalized keys, ordered
-     `prefer` and `avoid` sources, and a note. Its evidence may be the user's message alone
-     (`source: {kind: 'words'}` with `messageSource`), so a project with no design can hold one;
-   - a locator's and a source policy's one `targetRef` may be omitted.
+     `prefer` and `avoid` sources, and a note.
    - **Inferred habits come later.** They wait for #253 accept/reject evidence and will be marked inferred.
 2. **Authority is kept apart from confidence.** `sourceKind` and `messageSource` say whose words these are.
    `strength` says how firmly the item holds. A future confidence score says how often behaviour supported it.
@@ -40,4 +36,4 @@ injected into every turn.
 - Save an item as the user's without their words.
 - Infer a preference from behaviour before #253.
 - Make embeddings the first filter.
-- Hand a source policy to a turn whose words are not about its topic, or to a turn that named design or drawing.
+- Hand a source policy to a design or drawing turn.
