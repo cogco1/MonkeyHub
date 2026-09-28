@@ -99,8 +99,11 @@ decision tree comes from two derived stores. Either store can be deleted at any 
 
 **Phase 2 as built (#366, 2026-09-28):**
 - The cursor is `(epoch, revision)`, both the index's. A client keeps entities: `run:<id>` (a run's own body,
-  candidate, artifacts, documents and record count), `tree` (the tree's body and stages) and `area:<name>` (the
-  layout lines of every other area: HEAD, the working draft, the manifest, each top-level directory without rows).
+  candidate, artifacts, documents and record count), `tree` (the tree's body and stages), `working` (the working
+  position a head is read from: `current`, `runs`, `active`, without the local recovery it names) and
+  `area:<name>` (the layout lines of every other area: HEAD, the working draft's file, the manifest, each
+  top-level directory without rows). Modeling saves its local recovery 250 ms after each edit; that save moves
+  `area:working` and the recovery run, never `working`, so a surface that shows the head can tell the two apart.
   An area moves the revision when one of its lines changed or this process wrote there, so a Continue or a saved
   draft reaches clients although it projects nothing; a line only read again (racy) moves nothing.
 - The `change` table is the bounded change log: per entity, the revision that last changed or deleted it, kept for
@@ -117,21 +120,37 @@ decision tree comes from two derived stores. Either store can be deleted at any 
   `stream.reset` and the whole buffer instead of silently skipping. The index revision never depends on `seq`.
 - A write's answer carries `X-Monkey-Index: <epoch>:<revision>` once the index holds it (the Hub forwards it).
 - The Hub attaches once to each open project's worker stream and relays `index.committed` on
-  `/api/runtime/events` as an `index` frame, and the job events as `studio` frames. Each attachment - the first,
-  after a worker restart, after a `stream.reset` - also sends an `index` frame without a revision: read again.
-  A Hub page therefore holds one event stream, whatever it shows.
+  `/api/runtime/events` as an `index` frame, and the job events as `studio` frames that name the worker stream
+  they were numbered on: a restarted worker numbers from 1 again, and clients know an event by `<stream>:<seq>`.
+  When the attachment may have missed something - the first one to a worker, or a `stream.reset` - it also sends
+  an `index` frame without a revision: read again. A reattachment that resumes sends none, and a stream that ends
+  at once is attached again after a delay doubling from 0.5 s to 30 s. The Hub keeps each project's last 200
+  Studio events and opens every page's stream with them after its snapshot, so an event panel opens with a
+  replay as it did on its own stream. Frames the Hub relays are never dropped against the snapshot's sequence:
+  the snapshot does not hold them. A Hub page therefore holds one event stream, whatever it shows; the per-page
+  proxy of the worker stream (`/api/runtime/projects/{id}/studio/api/events`) is retired and answers 404.
 - Each open project has one client store (`workspaces/src/api/projectStore.ts`) at the ChatShell level, shared by
   its surfaces and released by count: `{epoch, revision, byId}`, one request in flight, `wanted = max(wanted,
   hint.revision)`, a delta applied only onto its `from`, answers that are not newer dropped, another epoch reset.
-  It pulls on every open of the Hub stream (reconnects included) and on window focus, and only after the stream
-  first opened. A surface that wrote waits for the store to reach the write's revision before it ends "in
+  It pulls on every connection of the Hub stream (reconnects included) once its snapshot arrives - the Hub
+  subscribes before it sends that frame, and the connection's `open` comes before either - and on window focus,
+  and only after the stream first did. A store is made during render but held only by the provider's effect, so a
+  render React discards leaves none behind; a write that stopped waiting for the store is no longer kept. A surface that wrote waits for the store to reach the write's revision before it ends "in
   progress". Surfaces read it through `useSyncExternalStore` selectors, notified at most once a frame.
-- The Design Tree, Board and Render read their views again when the store's revision moves, not on a timer; a
-  view without a content hash is kept under the revision it was read at (`ProjectStore.derive`), so showing a
-  surface again on an unchanged project asks for nothing. Model bytes and previews stay content-addressed. The
+- The Design Tree, Board and Render read their views again when the store moves, not on a timer; a view without
+  a content hash is kept under the revision it was read at (`ProjectStore.derive`), so showing a surface again on
+  an unchanged project asks for nothing. The store keeps when each entity last moved (`moved`), and a surface
+  follows only what it shows (`movedAt`): the Design Tree follows `tree`, `working`, `area:head` and every run but
+  the local recovery, so twenty edits in Modeling read it no more (it read it twenty times, each a Worktree Graph,
+  working source and design history). Its reads never overlap: one runs and whatever asks meanwhile is one more
+  after it. A job's lifecycle event (`*.queued|waiting|running|succeeded|failed`) reads its running work, which
+  the runtime holds in memory and no commit announces. Modeling reads the Working Head again only when
+  `working`, `tree` or `area:head` moves. Render reads its attempts again 1, 2, 4, 8 and 16 s after a submit whose
+  answer was lost; outside the Hub it and the tree read on focus. Model bytes and previews stay content-addressed. The
   store is not persisted (no IndexedDB): a snapshot of a local index costs a few milliseconds.
 - Periodic requests left when idle are the Hub's own: the chat attention read (30 s while no turn runs), the
   application list (60 s) and the software-update status (60 s); the Monitor page polls only while it is open.
 - Known limit: surfaces still read their existing views after a move; they do not yet render from the store's
-  rows. A process without an index (no cache directory) sends no hints, so its surfaces refresh only on explicit
+  rows. Only the Design Tree waits for the store to reach its own write's revision before it ends "in progress";
+  Board and Render end it when the write answers, and show the write when the store next moves. A process without an index (no cache directory) sends no hints, so its surfaces refresh only on explicit
   reloads and their own writes.

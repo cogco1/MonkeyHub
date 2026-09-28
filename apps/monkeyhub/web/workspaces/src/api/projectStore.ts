@@ -17,7 +17,9 @@
  * surface that made it waits for `caughtUp()` before it ends "in progress".
  *
  * Surfaces read through `useSyncExternalStore` selectors (`useProjectStore`),
- * and are notified at most once per frame. What a surface derives from the
+ * and are notified at most once per frame. `moved` says when each entity last
+ * changed, so a surface can follow only the entities it shows (`movedAt`): the
+ * Design Tree does not read again because Modeling saved its local recovery. What a surface derives from the
  * project's views without a content hash is kept under the revision it was
  * read at (`derive`): switching surfaces on an unchanged project reads nothing.
  *
@@ -56,8 +58,22 @@ export interface ProjectStoreState {
   readonly epoch: string | null;
   readonly revision: number;
   readonly byId: ReadonlyMap<string, IndexEntity>;
-  /** The revision at which each domain (`run`, `tree`, `area`) last moved; a reset moves them all. */
+  /** The revision at which each domain (`run`, `tree`, `working`, `area`) last moved; a reset moves them all. */
   readonly domains: Readonly<Record<string, number>>;
+  /** The revision at which each entity id last changed or was deleted; a reset moves every one. */
+  readonly moved: ReadonlyMap<string, number>;
+}
+
+/**
+ * Where the entities `shown` picks last moved, as one key (`<epoch>:<revision>`), or null
+ * before the store has read the index. A surface that reads again when this moves reads
+ * nothing for a change it does not show.
+ */
+export function movedAt(state: ProjectStoreState, shown: (id: string) => boolean): string | null {
+  if (state.epoch === null) return null;
+  let revision = 0;
+  for (const [id, at] of state.moved) if (at > revision && shown(id)) revision = at;
+  return `${state.epoch}:${revision}`;
 }
 
 /** Reads the index: the changes since `since`, a snapshot without it; null while it cannot answer. */
@@ -66,7 +82,7 @@ export type IndexReader = (since: { readonly epoch: string; readonly revision: n
 /** How long a write waits for the store to reach its revision before the surface stops waiting. */
 export const WRITE_CATCH_UP_MS = 10_000;
 
-const EMPTY: ProjectStoreState = { status: "idle", epoch: null, revision: 0, byId: new Map(), domains: {} };
+const EMPTY: ProjectStoreState = { status: "idle", epoch: null, revision: 0, byId: new Map(), domains: {}, moved: new Map() };
 
 function nextFrame(callback: () => void): void {
   if (typeof requestAnimationFrame === "function" && typeof document !== "undefined" && !document.hidden) {
@@ -87,6 +103,8 @@ export class ProjectStore {
   private wanted = 0;
   private wantedEpoch: string | null = null;
   private waiters: { epoch: string; revision: number; resolve(): void }[] = [];
+  /** How many writes are waiting for the store; a wait that timed out is no longer one. */
+  get waiting(): number { return this.waiters.length; }
   private readonly derived = new Map<string, { key: string; promise: Promise<unknown> }>();
   private readonly frame: (callback: () => void) => void;
   /** Requests made, for tests and diagnostics. */
@@ -137,9 +155,13 @@ export class ProjectStore {
   wrote(epoch: string, revision: number, timeoutMs = WRITE_CATCH_UP_MS): Promise<void> {
     this.want(epoch, revision);
     if (this.holds(epoch, revision)) return Promise.resolve();
-    const reached = new Promise<void>((resolve) => { this.waiters.push({ epoch, revision, resolve }); });
-    this.pull();
-    return Promise.race([reached, new Promise<void>((resolve) => setTimeout(resolve, timeoutMs))]);
+    return new Promise<void>((resolve) => {
+      const waiter = { epoch, revision, resolve: () => { clearTimeout(timer); resolve(); } };
+      // Given up on: removed, so a store that never gets there does not keep every write that waited.
+      const timer = setTimeout(() => { this.waiters = this.waiters.filter((kept) => kept !== waiter); resolve(); }, timeoutMs);
+      this.waiters.push(waiter);
+      this.pull();
+    });
   }
 
   /** Resolves once the store holds every write it was told about (at once when it holds them all). */
@@ -207,8 +229,11 @@ export class ProjectStore {
       const domains: Record<string, number> = {};
       for (const entity of byId.values()) domains[entity.domain] = answer.revision;
       for (const domain of Object.keys(current.domains)) domains[domain] = answer.revision;
+      // Everything is read again: what the store held before and what it holds now have both moved.
+      const moved = new Map<string, number>();
+      for (const id of [...current.moved.keys(), ...byId.keys()]) moved.set(id, answer.revision);
       if (this.wantedEpoch !== answer.epoch) { this.wantedEpoch = answer.epoch; this.wanted = answer.revision; }
-      this.commit({ status: "ready", epoch: answer.epoch, revision: answer.revision, byId, domains }, true);
+      this.commit({ status: "ready", epoch: answer.epoch, revision: answer.revision, byId, domains, moved }, true);
       return true;
     }
     if (answer.epoch !== current.epoch || answer.from !== current.revision || answer.to <= current.revision) {
@@ -217,13 +242,15 @@ export class ProjectStore {
     }
     const byId = new Map(current.byId);
     const domains = { ...current.domains };
-    for (const entity of answer.upserts) { byId.set(entity.id, entity); domains[entity.domain] = answer.to; }
+    const moved = new Map(current.moved);
+    for (const entity of answer.upserts) { byId.set(entity.id, entity); domains[entity.domain] = answer.to; moved.set(entity.id, answer.to); }
     for (const id of answer.deletes) {
       const gone = byId.get(id);
       byId.delete(id);
       domains[gone?.domain ?? id.split(":")[0]] = answer.to;
+      moved.set(id, answer.to);
     }
-    this.commit({ status: "ready", epoch: answer.epoch, revision: answer.to, byId, domains });
+    this.commit({ status: "ready", epoch: answer.epoch, revision: answer.to, byId, domains, moved });
     return true;
   }
 
@@ -248,37 +275,45 @@ export class ProjectStore {
 
 type StudioListener = (event: Record<string, unknown>) => void;
 
+/** How many Studio events each project keeps for a panel that opens later. */
+const STUDIO_KEEP = 200;
+
 /**
  * Every open project's store, ref-counted, and the Hub's one event stream
- * they share. ChatShell owns the stream: it reports `opened` (each time,
- * reconnects included), relays `index` hints and Studio events by runtime,
- * and asks every store to pull when the window regains focus. A store taken
- * before the stream first opened waits for it: the stream is open before the
- * first snapshot is read, so no commit falls between the two.
+ * they share. ChatShell owns the stream: it reports each snapshot the Hub
+ * opens a connection with (reconnects included), relays `index` hints and
+ * Studio events by runtime, and asks every store to pull when the window
+ * regains focus. A store taken before the stream first opened waits for it:
+ * the Hub has subscribed before it sends that snapshot, so no commit falls
+ * between the subscription and the first read.
+ *
+ * A project's Studio events are kept (the last `STUDIO_KEEP`), so a panel
+ * that opens later begins with them, and are known by `<stream>:<seq>`: a
+ * restarted worker numbers from 1 again, and only its stream tells its
+ * events apart from the last one's. One replayed again is not delivered twice.
  */
 export class ProjectStores {
   private readonly stores = new Map<string, { store: ProjectStore; count: number }>();
   private readonly studio = new Map<string, Set<StudioListener>>();
+  private readonly kept = new Map<string, { keys: Set<string>; events: Record<string, unknown>[] }>();
   private open = false;
   /** Whether a Hub stream is relaying for these stores; without one, nothing waits for them. */
   attached = false;
 
-  /** The project's store, created (and read, once the stream is open) when it has none; not counted. */
-  store(key: string, read: IndexReader): ProjectStore {
+  /**
+   * The project's store, counted as used until `release`: the one already
+   * held, or `candidate`, which is held from now on (and read, once the stream
+   * is open). Called from an effect, so a render React discards holds nothing.
+   */
+  acquire(key: string, candidate: ProjectStore): ProjectStore {
     let entry = this.stores.get(key);
     if (!entry) {
-      entry = { store: new ProjectStore(read), count: 0 };
+      entry = { store: candidate, count: 0 };
       this.stores.set(key, entry);
-      if (this.open) entry.store.pull();
+      if (this.open) candidate.pull();
     }
+    entry.count += 1;
     return entry.store;
-  }
-
-  /** The project's store, counted as used until `release`. */
-  acquire(key: string, read: IndexReader): ProjectStore {
-    const store = this.store(key, read);
-    this.stores.get(key)!.count += 1;
-    return store;
   }
 
   /**
@@ -290,14 +325,23 @@ export class ProjectStores {
     if (!entry) return;
     entry.count -= 1;
     if (entry.count > 0) return;
-    setTimeout(() => { if (this.stores.get(key) === entry && entry.count <= 0) this.stores.delete(key); }, 0);
+    setTimeout(() => {
+      if (this.stores.get(key) !== entry || entry.count > 0) return;
+      this.stores.delete(key);
+      if (!this.studio.has(key)) this.kept.delete(key);
+    }, 0);
   }
 
   get(key: string): ProjectStore | undefined {
     return this.stores.get(key)?.store;
   }
 
-  /** The Hub's stream opened (first time or again): whatever it carried meanwhile is read now. */
+  /** How many uses hold the project's store (0 when none does). */
+  count(key: string): number {
+    return this.stores.get(key)?.count ?? 0;
+  }
+
+  /** The Hub's stream is subscribed (first time or again): whatever it carried meanwhile is read now. */
   opened(): void {
     this.attached = true;
     this.open = true;
@@ -323,53 +367,85 @@ export class ProjectStores {
     this.stores.get(key)?.store.hint(hint);
   }
 
+  /** Follow the project's Studio events: those kept first, then each one as it comes. */
   onStudioEvent(key: string, listener: StudioListener): () => void {
     let listeners = this.studio.get(key);
     if (!listeners) { listeners = new Set(); this.studio.set(key, listeners); }
     listeners.add(listener);
+    for (const event of [...(this.kept.get(key)?.events ?? [])]) listener(event);
     return () => {
       listeners.delete(listener);
       if (!listeners.size) this.studio.delete(key);
     };
   }
 
-  studioEvent(key: string, event: Record<string, unknown>): void {
-    for (const listener of [...(this.studio.get(key) ?? [])]) listener(event);
+  /** One Studio event of the project, numbered `seq` on the worker's `stream`; a repeat is dropped. */
+  studioEvent(key: string, event: Record<string, unknown>, stream: string | null = null): void {
+    let kept = this.kept.get(key);
+    if (!kept) { kept = { keys: new Set(), events: [] }; this.kept.set(key, kept); }
+    const known = studioEventKey(event, stream);
+    if (known !== null) {
+      if (kept.keys.has(known)) return;
+      kept.keys.add(known);
+    }
+    const stamped = stream === null ? event : { ...event, stream };
+    kept.events.push(stamped);
+    while (kept.events.length > STUDIO_KEEP) {
+      const dropped = kept.events.shift()!;
+      const droppedKey = studioEventKey(dropped, (dropped.stream as string | undefined) ?? null);
+      if (droppedKey !== null) kept.keys.delete(droppedKey);
+    }
+    for (const listener of [...(this.studio.get(key) ?? [])]) listener(stamped);
   }
+}
+
+/** `<stream>:<seq>`, what names one Studio event across worker restarts; null when it has no seq. */
+export function studioEventKey(event: Record<string, unknown>, stream: string | null): string | null {
+  return typeof event.seq === "number" ? `${stream ?? ""}:${event.seq}` : null;
 }
 
 /** The one registry of this page. */
 export const projectStores = new ProjectStores();
 
 /**
- * Feed `stores` from one Hub event stream (`/api/runtime/events`): each open,
- * reconnects included, has every store read; `index` frames are hints for the
- * store of their runtime; `studio` frames reach that runtime's listeners. The
- * stream's owner (ChatShell) keeps its own `runtime` handling and closes the
- * stream; the returned function only stops relaying.
+ * Feed `stores` from one Hub event stream (`/api/runtime/events`). Each
+ * connection opens with a runtime snapshot the Hub sends once it has
+ * subscribed; that frame, not the connection's `open` (which comes first),
+ * has every store read, so a commit announced before the Hub subscribed is
+ * read too. `index` frames are hints for the store of their runtime; `studio`
+ * frames reach that runtime's listeners with the worker stream they were
+ * numbered on. The stream's owner (ChatShell) keeps its own `runtime`
+ * handling and closes the stream; the returned function only stops relaying.
  */
 export function relayHubStream(stream: EventSource, stores: ProjectStores = projectStores): () => void {
-  const opened = () => stores.opened();
-  const failed = () => stores.closed();
+  let subscribed = false;
+  const opened = () => { subscribed = false; };
+  const runtime = () => {
+    if (subscribed) return;
+    subscribed = true;
+    stores.opened();
+  };
+  const failed = () => { subscribed = false; stores.closed(); };
   const index = (message: Event) => {
     try {
       const event = JSON.parse((message as MessageEvent).data) as { runtimeId?: string; index?: IndexHint | null };
       if (event.runtimeId) stores.hint(event.runtimeId, event.index ?? null);
-    } catch { /* The next open or focus reads the index anyway. */ }
+    } catch { /* The next snapshot or focus reads the index anyway. */ }
   };
   const studio = (message: Event) => {
     try {
-      const event = JSON.parse((message as MessageEvent).data) as { runtimeId?: string; studio?: Record<string, unknown> };
-      if (event.runtimeId && event.studio) stores.studioEvent(event.runtimeId, event.studio);
+      const event = JSON.parse((message as MessageEvent).data) as { runtimeId?: string; studio?: Record<string, unknown>; stream?: string | null };
+      if (event.runtimeId && event.studio) stores.studioEvent(event.runtimeId, event.studio, event.stream ?? null);
     } catch { /* A progress line; the views read their own state. */ }
   };
   stream.addEventListener("open", opened);
+  stream.addEventListener("runtime", runtime);
   stream.addEventListener("error", failed);
   stream.addEventListener("index", index);
   stream.addEventListener("studio", studio);
-  if (stream.readyState === 1) opened();
   return () => {
     stream.removeEventListener("open", opened);
+    stream.removeEventListener("runtime", runtime);
     stream.removeEventListener("error", failed);
     stream.removeEventListener("index", index);
     stream.removeEventListener("studio", studio);

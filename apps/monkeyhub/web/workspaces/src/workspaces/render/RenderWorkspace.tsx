@@ -10,6 +10,9 @@ import RenderResults, { ImageThumbnail, renderStatus } from "./RenderResults";
 import "./render.css";
 
 /** One mounted draft. Entering another workspace only suspends reads. */
+/** How many times Render reads its attempts again after a submit whose answer was lost. */
+const UNCERTAIN_READS = 5;
+
 export default function RenderWorkspace({ projectId, active, refreshKey, onBoard, readModelView, onModeling }: {
   readModelView?: () => RenderView | null; onModeling?: () => void;
   projectId: string; active: boolean; refreshKey: number; onBoard(source: PageSource): void;
@@ -74,6 +77,25 @@ export default function RenderWorkspace({ projectId, active, refreshKey, onBoard
     readAt.current = { revision, refreshKey };
     void refresh();
   }, [active, refreshKey, refresh, revision]);
+  // A submit whose answer was lost may or may not have started an attempt, and one that did not
+  // start commits nothing the store would announce: read the attempts again 1, 2, 4, 8 and 16 s
+  // later, until one of them names the request (the read then says it is no longer uncertain).
+  useEffect(() => {
+    if (!active || !uncertain) return;
+    let attempt = 0, timer: number | undefined;
+    const later = () => {
+      timer = window.setTimeout(() => { void refresh(); attempt += 1; if (attempt < UNCERTAIN_READS) later(); }, 1000 * 2 ** attempt);
+    };
+    later();
+    return () => window.clearTimeout(timer);
+  }, [active, uncertain, refresh]);
+  // Outside the Hub no store moves: the window coming back reads again, as the tree and the board do.
+  useEffect(() => {
+    if (!active || revision !== null) return;
+    const focused = () => { if (!document.hidden) void refresh(); };
+    window.addEventListener("focus", focused);
+    return () => window.removeEventListener("focus", focused);
+  }, [active, revision, refresh]);
 
   const upload = async (files: FileList | null, target: "source" | "reference") => {
     if (!files?.length || uploadingRef.current) return;

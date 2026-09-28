@@ -37,7 +37,7 @@ export async function createProjectWorkspaceFixture(runtimes, sessions, { onInde
     const current = projects.get(projectId);
     if (!current) return null;
     const { index, moved } = indexOf(current);
-    if (moved) onIndex(current.runtime, { epoch: index.epoch, revision: index.revision, domains: ["area"] });
+    if (moved) onIndex(current.runtime, { epoch: index.epoch, revision: index.revision, domains: ["tree", "working"] });
     return index;
   };
   // A rebuilt index (a new epoch), as a worker restart that found its file unusable leaves it.
@@ -48,8 +48,10 @@ export async function createProjectWorkspaceFixture(runtimes, sessions, { onInde
     Object.assign(index, { epoch: `epoch-${projectId}-${next}`, revision: 1, token: projectToken(projects.get(projectId)) });
     return index;
   };
-  const indexEntities = (current, index) => [{ id: "area:project", domain: "area", rev: index.revision,
-    body: { area: "project", lines: [digest(index.token)] } }];
+  // One token covers every fact of the fixture project, so any change is one to its Stages and its working
+  // position, as the real index would log for what this fixture changes (a Stage, the head, a run).
+  const indexEntities = (current, index) => ["tree", "working"].map((id) => ({ id, domain: id, rev: index.revision,
+    body: { token: digest(index.token) } }));
   const digest = (value) => createHash("sha256").update(value).digest("hex");
   const stateDigestOf = (projectId, runId) => digest(`state:${projectId}:${runId}`);
   const workingDraftDto = (projectId) => {
@@ -103,7 +105,7 @@ export async function createProjectWorkspaceFixture(runtimes, sessions, { onInde
         // A write names the index revision that holds it, and the index announces the commit.
         const { index, moved } = indexOf(current);
         await route.fulfill({ json: value, headers: { "x-monkey-index": `${index.epoch}:${index.revision}` } });
-        if (moved) onIndex(runtime, { epoch: index.epoch, revision: index.revision, domains: ["area"] });
+        if (moved) onIndex(runtime, { epoch: index.epoch, revision: index.revision, domains: ["tree", "working"] });
         return true;
       }
       if (!conditional.has(name)) { await route.fulfill({ json: value }); return true; }
@@ -117,7 +119,7 @@ export async function createProjectWorkspaceFixture(runtimes, sessions, { onInde
     if (method === "GET") {
       if (name === "/api/index") {
         const { index, moved } = indexOf(current);
-        if (moved) onIndex(runtime, { epoch: index.epoch, revision: index.revision, domains: ["area"] });
+        if (moved) onIndex(runtime, { epoch: index.epoch, revision: index.revision, domains: ["tree", "working"] });
         const since = url.searchParams.has("since") ? Number(url.searchParams.get("since")) : null;
         const delta = since !== null && url.searchParams.get("epoch") === index.epoch && since <= index.revision;
         const entities = indexEntities(current, index);

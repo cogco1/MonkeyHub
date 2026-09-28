@@ -7,7 +7,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { ProjectStore, ProjectStores, type IndexAnswer, type IndexEntity } from "../src/api/projectStore.ts";
+import { movedAt, ProjectStore, ProjectStores, relayHubStream, type IndexAnswer, type IndexEntity } from "../src/api/projectStore.ts";
 
 type Since = { epoch: string; revision: number } | null;
 
@@ -170,11 +170,40 @@ test("a write of another epoch is held once the store resets to the index as it 
   await written;
 });
 
-test("a write stops waiting after its timeout when nothing answers", async () => {
+test("a write stops waiting after its timeout when nothing answers, and is no longer kept", async () => {
   const reader = scripted();
   const { store: s } = store(reader.read);
   await s.wrote("e1", 1, 5);
   assert.equal(reader.asked.length, 1);
+  assert.equal(s.waiting, 0, "a wait that timed out is removed");
+  const held = s.wrote("e1", 2, 50);
+  assert.equal(s.waiting, 1);
+  await reader.answer(snapshot("e1", 2));
+  await held;
+  assert.equal(s.waiting, 0);
+});
+
+test("each entity's last move is kept, so a surface follows only what it shows", async () => {
+  const reader = scripted();
+  const { store: s, flush } = store(reader.read);
+  const tree = (id: string) => id === "tree" || id === "working";
+  assert.equal(movedAt(s.current(), tree), null, "nothing read yet");
+  s.pull();
+  await reader.answer(snapshot("e1", 5, [run("run:a", 2), run("tree", 3), run("working", 4), run("area:working", 5)]));
+  assert.equal(movedAt(s.current(), tree), "e1:5", "a snapshot moves everything it holds");
+  s.pull();
+  await reader.answer(delta("e1", 5, 6, [run("area:working", 6), run("run:studio-working-draft", 6)]));
+  assert.equal(movedAt(s.current(), tree), "e1:5", "an autosave moves nothing the tree shows");
+  s.pull();
+  await reader.answer(delta("e1", 6, 7, [run("area:working", 7), run("working", 7)]));
+  assert.equal(movedAt(s.current(), tree), "e1:7");
+  s.pull();
+  await reader.answer(delta("e1", 7, 8, [], ["tree"]));
+  flush();
+  assert.equal(movedAt(s.getSnapshot(), tree), "e1:8", "a delete is a move");
+  s.pull();
+  await reader.answer(snapshot("e2", 1, [run("run:a", 1)]));
+  assert.equal(movedAt(s.current(), tree), "e2:1", "a reset moves what the store held before too");
 });
 
 test("listeners are told at most once per frame, and only when the state moved", async () => {
@@ -226,8 +255,11 @@ test("derived reads are kept per name under their key", async () => {
 test("stores are shared per project, released by count, and read first once the stream opens", async () => {
   const stores = new ProjectStores();
   const reader = scripted();
-  const a = stores.acquire("runtime-a", reader.read);
-  assert.equal(stores.acquire("runtime-a", reader.read), a, "one store per project, shared");
+  const candidate = new ProjectStore(reader.read);
+  const a = stores.acquire("runtime-a", candidate);
+  assert.equal(a, candidate, "the first surface's store is held");
+  assert.equal(stores.acquire("runtime-a", new ProjectStore(reader.read)), a, "one store per project, shared");
+  assert.equal(stores.count("runtime-a"), 2);
   assert.equal(reader.asked.length, 0, "no snapshot before the stream is open");
   stores.opened();
   assert.equal(reader.asked.length, 1);
@@ -245,22 +277,72 @@ test("stores are shared per project, released by count, and read first once the 
   assert.equal(reader.asked.length, 4, "hints reach the store of their project");
   await reader.answer(delta("e1", 1, 2));
   const other = scripted();
-  stores.acquire("runtime-b", other.read);
+  stores.acquire("runtime-b", new ProjectStore(other.read));
   assert.equal(other.asked.length, 1, "a store taken while the stream is open reads at once");
   stores.release("runtime-a");
   assert.equal(stores.get("runtime-a"), a);
   stores.release("runtime-a");
-  stores.acquire("runtime-a", reader.read);
+  stores.acquire("runtime-a", new ProjectStore(reader.read));
   await settle();
   assert.equal(stores.get("runtime-a"), a, "taken again before the task ended: kept");
   stores.release("runtime-a");
   await settle();
   assert.equal(stores.get("runtime-a"), undefined, "the last release drops it");
-  const heard: unknown[] = [];
-  const stop = stores.onStudioEvent("runtime-b", (event) => heard.push(event));
-  stores.studioEvent("runtime-b", { type: "candidate.queued" });
-  stores.studioEvent("runtime-a", { type: "candidate.queued" });
+  // A store made for a render React threw away was never acquired: nothing holds it.
+  new ProjectStore(reader.read);
+  assert.equal(stores.get("runtime-c"), undefined);
+});
+
+test("a project's Studio events are kept, replayed to a later listener, and known by stream and seq", () => {
+  const stores = new ProjectStores();
+  const heard: string[] = [];
+  const said = (event: Record<string, unknown>) => `${event.stream}:${event.seq}:${event.type}`;
+  const kinds = ["candidate.queued", "candidate.running", "candidate.succeeded"];
+  kinds.forEach((type, index) => stores.studioEvent("runtime-a", { seq: index + 1, type }, "old"));
+  const stop = stores.onStudioEvent("runtime-a", (event) => heard.push(said(event)));
+  assert.deepEqual(heard, kinds.map((type, index) => `old:${index + 1}:${type}`), "a later panel opens with them");
+  // The Hub's stream reconnected and replayed them: nothing is delivered twice.
+  kinds.forEach((type, index) => stores.studioEvent("runtime-a", { seq: index + 1, type }, "old"));
+  assert.equal(heard.length, 3);
+  // The worker restarted and numbers from 1 again: six events, not three.
+  kinds.forEach((type, index) => stores.studioEvent("runtime-a", { seq: index + 1, type }, "new"));
+  assert.deepEqual(heard.slice(3), kinds.map((type, index) => `new:${index + 1}:${type}`));
+  stores.studioEvent("runtime-b", { seq: 1, type: "candidate.queued" }, "other");
   stop();
-  stores.studioEvent("runtime-b", { type: "candidate.running" });
-  assert.deepEqual(heard, [{ type: "candidate.queued" }]);
+  stores.studioEvent("runtime-a", { seq: 4, type: "candidate.queued" }, "new");
+  assert.equal(heard.length, 6, "a listener that stopped hears nothing more");
+});
+
+test("the Hub's stream has the stores read once the Hub has subscribed, not when the connection opens", () => {
+  const stores = new ProjectStores();
+  const reader = scripted();
+  stores.acquire("runtime-a", new ProjectStore(reader.read));
+  const listeners = new Map<string, Set<(event: Event) => void>>();
+  const stream = {
+    addEventListener(type: string, listener: (event: Event) => void) {
+      if (!listeners.has(type)) listeners.set(type, new Set());
+      listeners.get(type)!.add(listener);
+    },
+    removeEventListener(type: string, listener: (event: Event) => void) { listeners.get(type)?.delete(listener); },
+  };
+  const emit = (type: string, data: unknown = {}) => {
+    for (const listener of listeners.get(type) ?? []) listener(new MessageEvent(type, { data: JSON.stringify(data) }));
+  };
+  const stop = relayHubStream(stream as unknown as EventSource, stores);
+  emit("open");
+  assert.equal(reader.asked.length, 0, "the connection is open before the Hub has subscribed");
+  emit("runtime", { kind: "runtime/snapshot" });
+  assert.equal(reader.asked.length, 1, "the snapshot comes after the subscription: now read");
+  emit("runtime", { kind: "project/opened" });
+  assert.equal(reader.asked.length, 1, "later runtime frames are not a new subscription");
+  const heard: unknown[] = [];
+  stores.onStudioEvent("runtime-a", (event) => heard.push(event));
+  emit("studio", { runtimeId: "runtime-a", stream: "s1", studio: { seq: 1, type: "candidate.queued" } });
+  assert.deepEqual(heard, [{ seq: 1, type: "candidate.queued", stream: "s1" }]);
+  emit("error");
+  emit("open");
+  emit("runtime", { kind: "runtime/snapshot" });
+  assert.equal(reader.asked.length, 1, "one request in flight: the reconnect's read waits for it");
+  stop();
+  assert.ok([...listeners.values()].every((set) => set.size === 0), "stopping relays nothing more");
 });

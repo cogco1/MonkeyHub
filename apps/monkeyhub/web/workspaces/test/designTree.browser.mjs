@@ -32,6 +32,15 @@ const PROJECT = "riverside-library";
 // #406: the models with a retained preview. S2 and Current are the same model, so they share one image.
 const PREVIEWED = new Set(["run-massing-b", "run-massing-c", "run-s1-massing", "run-facade-c", "run-s2-layout"]);
 const previewReads = [], imageReads = [];
+// #366: the fixture project's index (its change log: each entity's last move) and the Hub streams that relay its hints.
+const index = { revision: 1, facts: null, moved: new Map([["tree", 1], ["working", 1], ["area:working", 1], ["run:run-site", 1]]) };
+const moveIndex = (ids) => { index.revision += 1; for (const id of ids) index.moved.set(id, index.revision); return index.revision; };
+const hubStreams = new Set(), treeReads = [];
+let indexReads = 0, hubSequence = 1;
+const hubSend = (name, body) => {
+  hubSequence += 1;
+  for (const stream of hubStreams) stream.write(`event: ${name}\ndata: ${JSON.stringify({ serverId: "design-tree-hub", sequence: hubSequence, runtimeId, ...body })}\n\n`);
+};
 const sha = (value) => createHash("sha256").update(value).digest("hex");
 /** A small opaque PNG: a sky over a block, tinted per model, so each card's image is its own. */
 function previewPng(run) {
@@ -76,14 +85,15 @@ async function runtime(request, response, url, body) {
     if (method === "GET" && name === "/api/project") return json({ projectId: PROJECT, projectDir: "D:\\fixture\\riverside-library",
       published: { version: 2, stateSha256: "0".repeat(64) }, referenceRun: { runId: "run-site", baseVersion: 2, baseSha256: "0".repeat(64) },
       intentProvider: "fixture", intentModel: "fixture" });
-    if (method === "GET" && name === "/api/working-source") return json(fixture.workingSource(url.searchParams.get("workspace") ?? "modeling"));
+    if (method === "GET" && name === "/api/working-source") { treeReads.push(name); return json(fixture.workingSource(url.searchParams.get("workspace") ?? "modeling")); }
     if (method === "GET" && name === "/api/design-history") {
+      treeReads.push(name);
       const history = fixture.designHistory(url.searchParams.get("branchId") ?? "main");
       return json({ ...history,
         stages: history.stages.map(stage => ({ ...stage, review: reviews.get(`stage:${stage.stageRef}`) ?? null })),
         candidates: history.candidates.map(candidate => ({ ...candidate, review: reviews.get(`candidate:${candidate.candidateId}`) ?? null })) });
     }
-    if (method === "GET" && name === "/api/worktrees") return json(fixture.worktrees());
+    if (method === "GET" && name === "/api/worktrees") { treeReads.push(name); return json(fixture.worktrees()); }
     if (method === "GET" && /^\/api\/model-assets\/[0-9a-f]{64}\/preview$/.test(name)) {
       const run = url.searchParams.get("runId");
       previewReads.push(run);
@@ -112,13 +122,17 @@ async function runtime(request, response, url, body) {
       response.write(": fixture\n\n");
       return;
     }
-    // #366: the project's index, which the Hub's project store reads when the Hub's stream opens: the fixture's
-    // revision is its cursor. This fixture's changes come with no index event; the page reads them on focus.
+    // #366: the project's index, which the Hub's project store reads once the Hub's stream has subscribed.
+    // A change of the fixture's facts moves the tree and the working position; the test moves others itself.
+    // Most of this fixture's changes come with no index event; the page reads them on focus.
     if (method === "GET" && name === "/api/index") {
-      const revision = fixture.state.revision, since = url.searchParams.get("since");
-      const current = url.searchParams.get("epoch") === "fixture" && Number(since) === revision;
-      return json({ projectId: PROJECT, epoch: "fixture", revision, reset: !current, from: current ? revision : null, to: revision,
-        upserts: current ? [] : [{ id: "area:working", domain: "area", rev: revision, body: { area: "working", lines: [] } }], deletes: [] });
+      indexReads += 1;
+      if (index.facts !== fixture.state.revision) { index.facts = fixture.state.revision; moveIndex(["tree", "working"]); }
+      const since = Number(url.searchParams.get("since"));
+      const changes = url.searchParams.get("epoch") === "fixture" && since >= 1 && since <= index.revision;
+      const entity = ([id, rev]) => ({ id, domain: id.split(":")[0], rev, body: {} });
+      return json({ projectId: PROJECT, epoch: "fixture", revision: index.revision, reset: !changes, from: changes ? since : null,
+        to: index.revision, upserts: [...index.moved].filter(([, rev]) => !changes || rev > since).map(entity), deletes: [] });
     }
     if (method === "GET" && name === "/api/working-draft") return json(fixture.workingDraft());
     // What Modeling's Record edits and continue does to the working draft here: its edits become recorded.
@@ -166,6 +180,8 @@ async function hubApi(request, response, url, body, origin) {
   if (name === "/api/runtime/events") {
     response.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" });
     response.write(`retry: 500\nevent: runtime\ndata: ${JSON.stringify({ serverId: "design-tree-hub", sequence: 1, kind: "snapshot", snapshot: hubRuntime(origin) })}\n\n`);
+    hubStreams.add(response);
+    response.on("close", () => hubStreams.delete(response));
     return;
   }
   if (name === "/api/apps") return json(hubApps(origin));
@@ -1010,6 +1026,51 @@ try {
   assert.equal(await railButton("Design tree").getAttribute("aria-pressed"), "true", "the chip opens the same surface");
   await hubPage.locator(".chat-project-workspace:not([hidden]) .stage-chip").click();
   await hubPage.getByTestId("arch-stub").waitFor();
+
+  // #366: Modeling saves its local recovery 250 ms after each edit. Each save moves the working pointer's
+  // file and the recovery run, and the Hub relays the index hint; the tree, mounted for the whole project,
+  // shows neither, so twenty edits read it no more. Its reads never overlap, and a job that moved reads it once.
+  const quiet = async (label) => {
+    let seen = -1;
+    for (let round = 0; round < 40 && seen !== treeReads.length + indexReads; round += 1) {
+      seen = treeReads.length + indexReads;
+      await new Promise((resolve) => setTimeout(resolve, 150));
+    }
+    assert.equal(seen, treeReads.length + indexReads, `${label}: the page settled`);
+  };
+  const hint = (revision, domains) => hubSend("index", { index: { epoch: "fixture", revision, domains } });
+  const count = () => ({ worktrees: treeReads.filter((name) => name === "/api/worktrees").length,
+    history: treeReads.filter((name) => name === "/api/design-history").length,
+    workingSource: treeReads.filter((name) => name === "/api/working-source").length, index: indexReads });
+  const since = (before) => Object.fromEntries(Object.entries(count()).map(([key, value]) => [key, value - before[key]]));
+  await quiet("before the edits");
+  let before = count();
+  for (let edit = 0; edit < 20; edit += 1) {
+    hint(moveIndex(["area:working", "run:studio-working-draft"]), ["area", "run"]);
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  await quiet("after twenty autosaves");
+  const autosaves = since(before);
+  console.log(JSON.stringify({ twentyAutosaves: autosaves }));
+  assert.deepEqual({ ...autosaves, index: undefined }, { worktrees: 0, history: 0, workingSource: 0, index: undefined },
+    "an autosave moves nothing the tree shows: no tree read, no Worktree Graph");
+  assert.ok(autosaves.index >= 1 && autosaves.index <= 20, `the store follows the hints, one request at a time: ${autosaves.index}`);
+  before = count();
+  hint(moveIndex(["working"]), ["working"]);
+  await quiet("after a Continue elsewhere");
+  assert.equal(since(before).worktrees, 1, "a moved working position reads the tree once");
+  before = count();
+  hubSend("studio", { stream: "worker-1", studio: { seq: 1, at: "2026-09-28T00:00:00Z", type: "candidate.queued", candidateId: "run-new" } });
+  await quiet("after a job queued");
+  assert.equal(since(before).worktrees, 1, "a job's lifecycle reads the tree's running work, which no commit announces");
+  before = count();
+  for (const [seq, type] of [[2, "candidate.running"], [3, "candidate.succeeded"], [4, "candidate.queued"], [5, "candidate.running"], [6, "candidate.failed"]]) {
+    hubSend("studio", { stream: "worker-1", studio: { seq, at: "2026-09-28T00:00:00Z", type, candidateId: "run-new" } });
+  }
+  await quiet("after five job events at once");
+  const burst = since(before).worktrees;
+  assert.ok(burst >= 1 && burst <= 2, `five events at once: one read and at most one after it, never overlapping: ${burst}`);
+  console.log(JSON.stringify({ continueElsewhere: 1, jobQueued: 1, fiveJobEventsAtOnce: burst }));
   await hubContext.close();
 
   assert.deepEqual(unexpected, [], "the tree reads only what it declares");

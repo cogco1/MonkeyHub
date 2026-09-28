@@ -1,7 +1,7 @@
-import { createContext, useContext, useEffect, useMemo, useSyncExternalStore, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
 import { createStudioClient, type StudioClient } from "./client";
 import { ServerConnection } from "./connection";
-import { projectStores, type IndexAnswer, type IndexReader, type ProjectStore, type ProjectStoreState } from "./projectStore";
+import { movedAt, ProjectStore, projectStores, type IndexAnswer, type IndexReader, type ProjectStoreState } from "./projectStore";
 
 interface ProjectRuntime {
   connection: ServerConnection;
@@ -35,17 +35,21 @@ export function ProjectRuntimeProvider({ baseUrl, token = null, runtimeId = null
   children: ReactNode;
 }) {
   const key = runtimeId ?? baseUrl;
-  const runtime = useMemo(() => {
-    const connection = new ServerConnection(baseUrl, token);
-    const store = projectStores.store(key, indexReader(connection));
-    // Without a Hub stream nothing keeps the store current, so a write waits for nothing.
-    connection.onIndexWrite = (epoch, revision) => { if (projectStores.attached) void store.wrote(epoch, revision); };
-    return { connection, studio: createStudioClient(connection), runtimeKey: runtimeId, store };
-  }, [baseUrl, token, key, runtimeId]);
+  const connection = useMemo(() => new ServerConnection(baseUrl, token), [baseUrl, token]);
+  // Made here, held only by the effect below: a render React discards leaves no store behind.
+  // The project's store already held by another surface is the one used.
+  const candidate = useMemo(() => new ProjectStore(indexReader(connection)), [connection]);
+  const [held, setHeld] = useState<{ key: string; store: ProjectStore } | null>(null);
+  const store = held?.key === key ? held.store : projectStores.get(key) ?? candidate;
   useEffect(() => {
-    projectStores.acquire(key, indexReader(runtime.connection));
-    return () => projectStores.release(key);
-  }, [runtime, key]);
+    const acquired = projectStores.acquire(key, candidate);
+    setHeld({ key, store: acquired });
+    // Without a Hub stream nothing keeps the store current, so a write waits for nothing.
+    connection.onIndexWrite = (epoch, revision) => { if (projectStores.attached) void acquired.wrote(epoch, revision); };
+    return () => { connection.onIndexWrite = null; projectStores.release(key); };
+  }, [key, candidate, connection]);
+  const studio = useMemo(() => createStudioClient(connection), [connection]);
+  const runtime = useMemo(() => ({ connection, studio, runtimeKey: runtimeId, store }), [connection, studio, runtimeId, store]);
   return <ProjectRuntimeContext.Provider value={runtime}>{children}</ProjectRuntimeContext.Provider>;
 }
 
@@ -86,4 +90,13 @@ export function useProjectStore<T>(selector: (state: ProjectStoreState) => T): T
  */
 export function useProjectRevision(): string | null {
   return useProjectStore((state) => state.epoch === null ? null : `${state.epoch}:${state.revision}`);
+}
+
+/**
+ * Where the entities `shown` picks last moved (`<epoch>:<revision>`), or null before the store
+ * has read the index. `shown` must be a stable function: a surface that reads again when this
+ * moves reads nothing for a change it does not show.
+ */
+export function useProjectMoved(shown: (id: string) => boolean): string | null {
+  return useProjectStore((state) => movedAt(state, shown));
 }

@@ -36,9 +36,13 @@
  *
  * Inside the Hub the panel opens no stream of its own (#366): the Hub already
  * follows the project's stream and relays its events on the one stream the
- * page holds (`projectStores.onStudioEvent`). There the numbering has holes
- * by design - the project index's own announcements are not relayed as
- * lines - so the panel names no gaps.
+ * page holds (`projectStores.onStudioEvent`), which keeps the project's latest
+ * ones, so the panel opens with them as it opened with a replay before. Each
+ * relayed event names the worker stream that numbered it, and a line is known
+ * by `<stream>:<seq>`: a worker that restarted numbers from 1 again, and its
+ * events are new ones, never repeats of the last worker's. The numbering has
+ * holes by design - the project index's own announcements are not relayed as
+ * lines - so there the panel names no gaps.
  */
 
 import { useEffect, useRef, useState } from "react";
@@ -106,7 +110,7 @@ export function useStudioEvents(
   // a replayed line must not appear twice. Cleared on every open, and capped at
   // the same bound as the panel itself so a connection that lives for days does
   // not grow a set of numbers larger than the lines it is protecting.
-  const seenSeqRef = useRef<Set<number>>(new Set());
+  const seenSeqRef = useRef<Set<number | string>>(new Set());
   // Which connection a line arrived on. Two processes can both publish a seq 1,
   // and after a restart both may be on screen at once, so the key that tells
   // them apart has to name the connection as well as the number.
@@ -142,7 +146,7 @@ export function useStudioEvents(
 
     // A Set iterates in insertion order, so the first entry is the oldest seq
     // this connection saw and is the one that goes when the set is full.
-    const remember = (seq: number) => {
+    const remember = (seq: number | string) => {
       const seen = seenSeqRef.current;
       seen.add(seq);
       while (seen.size > KEEP) {
@@ -164,8 +168,11 @@ export function useStudioEvents(
         );
         return;
       }
-      if (seenSeqRef.current.has(event.seq)) return;
-      remember(event.seq);
+      // Relayed: `<stream>:<seq>`, which a restarted worker never repeats. Direct: this connection's seq.
+      const stream = relayed ? (event as StudioEventDto & { stream?: string | null }).stream ?? "" : null;
+      const seen = stream === null ? event.seq : `${stream}:${event.seq}`;
+      if (seenSeqRef.current.has(seen)) return;
+      remember(seen);
       const previous = lastSeqRef.current;
       if (!relayed && previous !== null && event.seq > previous + 1) {
         const missing = event.seq - previous - 1;
@@ -181,7 +188,7 @@ export function useStudioEvents(
       }
       if (previous === null || event.seq > previous) lastSeqRef.current = event.seq;
       push({
-        key: `seq:${connectionRef.current}:${event.seq}`,
+        key: stream === null ? `seq:${connectionRef.current}:${event.seq}` : `seq:${stream}:${event.seq}`,
         seq: event.seq,
         text: summarise(event),
         kind: "event",
