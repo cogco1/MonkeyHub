@@ -173,8 +173,11 @@ try {
   console.log("PASS all seven cancellation paths leave no typed action");
   await reset(); await setView(false,[12,-15,10]);
   // Clear the viewport pick through a real empty-space click before selecting
-  // the object without a face, as an object-tree selection would do.
-  await page.mouse.click(24,24);
+  // the object without a face, as an object-tree selection would do. Since #345
+  // the Stage bar sits above the canvas, so aim inside the canvas itself.
+  const empty = await page.evaluate(()=>{ const r = document.querySelector("canvas").getBoundingClientRect(); return [r.left+24,r.top+24]; });
+  assert.equal(await page.evaluate(([x,y])=>document.elementFromPoint(x,y)?.tagName,empty),"CANVAS","the empty-space click must reach the viewport");
+  await page.mouse.click(...empty);
   assert.equal(await page.evaluate(()=>window.viewport.current.workPlaneFromSelection()),null);
   await page.evaluate(()=>window.selectWithoutFace());
   await page.waitForFunction(()=>window.selection === "source");
