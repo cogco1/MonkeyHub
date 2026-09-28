@@ -581,13 +581,19 @@ class ProjectIndex:
     @staticmethod
     def _connect(path: Path, *, reader: bool = False) -> sqlite3.Connection:
         connection = sqlite3.connect(os.fspath(path), check_same_thread=False, isolation_level=None)
-        connection.execute("PRAGMA busy_timeout=2000")
-        if reader:
-            # The file is already WAL (persistent); a reader never writes.
-            connection.execute("PRAGMA query_only=1")
-        else:
-            connection.execute("PRAGMA journal_mode=WAL")
-            connection.execute("PRAGMA synchronous=NORMAL")
+        try:
+            connection.execute("PRAGMA busy_timeout=2000")
+            if reader:
+                # The file is already WAL (persistent); a reader never writes.
+                connection.execute("PRAGMA query_only=1")
+            else:
+                connection.execute("PRAGMA journal_mode=WAL")
+                connection.execute("PRAGMA synchronous=NORMAL")
+        except BaseException:
+            # A file SQLite cannot read fails here, before the caller holds the
+            # connection: close it, or Windows keeps the file from being moved aside.
+            connection.close()
+            raise
         return connection
 
     def _rebuild(self, stamp: IndexStamp, places: Mapping[str, tuple[str, int]], scanned_at_ns: int) -> None:
