@@ -269,6 +269,25 @@ class IntentRequestSchemaTests(unittest.TestCase):
         self.assertIsNone(in_unit(90, "deg", "m"), "not a length: nothing to convert")
         self.assertIsNone(in_unit(3, "mm", "deg"))
 
+    def test_the_declared_unit_is_read_however_it_is_spelled(self):
+        # #404 review of 13f8b7b7: a record may declare "Metres" or "M". The declared
+        # side is read through the same aliases as the unit that was said.
+        from decimal import Decimal
+        from archflow_studio_api.application.intent_requests import in_unit, in_unit_exact
+        for value, unit, declared, expected in (
+                (2200, "mm", "Metres", 2.2), (2200, "mm", "M", 2.2), (2.2, "m", "millimetres", 2200),
+                (35, "cm", " Meter ", 0.35)):
+            with self.subTest(declared=declared):
+                self.assertEqual(in_unit(value, unit, declared), expected)
+                self.assertEqual(in_unit_exact(str(value), unit, declared), Decimal(str(expected)))
+        said = 2.25
+        self.assertIs(in_unit(said, "metres", "M"), said, "the same unit, however spelled, passes through unchanged")
+        for declared, value, unit, expected in (("Millimetres", 1.2, "m", 1200), ("M", 2200, "mm", 2.2)):
+            with self.subTest(parameter_unit=declared):
+                record = _record(bound=True, parameter_unit=declared)
+                result = action_answer(_answer(_action(value=value, unit=unit)), _context(record), record)
+                self.assertEqual(parse_utterance(result["utterance"]).number, expected)
+
     def test_bound_scalar_uses_declared_parameter_units_without_unbinding(self):
         record = _record(bound=True, parameter_unit="mm")
         context = _context(record)
