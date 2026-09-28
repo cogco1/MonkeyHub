@@ -98,6 +98,40 @@ class ChatFeedbackTests(unittest.TestCase):
         self.assertEqual(self.writes, [])
         self.assertEqual(self.client.get("/api/decisions").json()["decisions"], [])
 
+    def test_chat_retains_project_memory_but_never_a_recipe_or_other_kinds(self):
+        """#252: a source policy and a locator are saved from the user's words; a recipe is not."""
+
+        self.user("以后查材料先去 A 建材库、B 手册，别用 C 网站。")
+        policy = {**self.body, "disposition": "require", "strength": "soft_preference", "targetRef": "research:sources",
+                  "scope": {"domain": "research", "extent": "project"},
+                  "typedBinding": {"kind": "source-policy", "topic": "材料", "keys": ["materials"],
+                                   "prefer": ["A 建材库", "B 手册"], "avoid": ["C 网站"]}}
+        saved = self.tool("/api/decisions", policy)
+        self.assertEqual((saved["disposition"], saved["scope"]["domain"], saved["sourceKind"]),
+                         ("require", "research", "agent"))
+        self.assertEqual(saved["rawLanguage"], self.session["messages"][-1]["content"])
+        for change in ({"disposition": "require", "scope": {"domain": "drawing", "extent": "project"}},
+                       {"disposition": "refer", "scope": {"domain": "design", "extent": "project"}},
+                       {"disposition": "keep", "scope": {"domain": "research", "extent": "project"}},
+                       {"disposition": "require", "scope": "research"}):
+            with self.subTest(change=change), self.assertRaises(HubFailure) as refused:
+                self.tool("/api/decisions", {**policy, **change})
+            self.assertEqual(refused.exception.error.code, "CHAT_FEEDBACK_INVALID")
+        # A locator passes the chat's gate; the Runtime still checks its target (a path here, refused there).
+        with self.assertRaises(HubFailure) as target:
+            self.tool("/api/decisions", {**self.body, "disposition": "refer", "strength": "hard",
+                                         "targetRef": "locator:content", "scope": {"domain": "locator", "extent": "project"},
+                                         "typedBinding": {"kind": "locator", "label": "项目图框",
+                                                          "target": "D:/drawings/frame.dwg"}})
+        self.assertNotEqual(target.exception.error.code, "CHAT_FEEDBACK_INVALID")
+        self.assertEqual(len(self.writes), 2, "the policy and the locator reached the Runtime; the refused kinds did not")
+        # The policy is revoked from the user's later words, like avoid/keep feedback.
+        self.user("撤销刚才的查材料来源。")
+        revoked = self.tool(f"/api/decisions/{saved['decisionId']}/revisions",
+                            {"projectId": self.session["projectId"], "expectedRevisionRef": saved["revisionRef"],
+                             "action": "revoke"})
+        self.assertEqual(revoked["status"], "revoked")
+
     def test_revoke_binds_new_user_message_and_preserves_original_feedback(self):
         saved = self.save()
         original = deepcopy(self.session)
@@ -134,7 +168,7 @@ class ChatFeedbackTests(unittest.TestCase):
     def test_feedback_schema_is_the_runtime_contract_with_narrow_chat_inputs(self):
         saved = self.save()
         for path, key, hidden, field, values in (
-            ("/api/decisions", "DecisionRequestDto", {"rawLanguage", "messageSource", "sourceKind"}, "disposition", ["avoid", "keep"]),
+            ("/api/decisions", "DecisionRequestDto", {"rawLanguage", "messageSource", "sourceKind"}, "disposition", ["avoid", "keep", "refer", "require"]),
             (f"/api/decisions/{saved['decisionId']}/revisions", "DecisionRevisionRequestDto", {"reason", "revisionMessageSource", "replacement"}, "action", ["revoke"]),
         ):
             schema = self.tool(path, name="studio_schema")["components"]["schemas"][key]

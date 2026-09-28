@@ -2524,7 +2524,7 @@ def _stop_process(process: subprocess.Popen) -> None:
             process.kill()
 
 
-_READ = re.compile(r"^/api/(exports(?:/[A-Za-z0-9_-]+)?|project|state(?:/frame|/volumes)?|semantics|program|options|board|artifacts|model-assets/[0-9a-f]{64}/index|documents|document-annotations|studies/[A-Za-z0-9][A-Za-z0-9._-]{0,79}|decisions(?:/[A-Za-z0-9_-]+)?|drawings/(?:styles|model-view|plans/vector|plans/dimensions|corrections)|capabilities(?:/[A-Za-z0-9_.-]+)?|proposals/[A-Za-z0-9_-]+|jobs/[A-Za-z0-9_-]+|candidates/[A-Za-z0-9_-]+(?:/compare)?|admissions|working-source|working-draft/revision)$")
+_READ = re.compile(r"^/api/(exports(?:/[A-Za-z0-9_-]+)?|project|state(?:/frame|/volumes)?|semantics|program|options|board|artifacts|model-assets/[0-9a-f]{64}/index|documents|document-annotations|studies/[A-Za-z0-9][A-Za-z0-9._-]{0,79}|decisions(?:/[A-Za-z0-9_-]+)?|locators|drawings/(?:styles|model-view|plans/vector|plans/dimensions|corrections)|capabilities(?:/[A-Za-z0-9_.-]+)?|proposals/[A-Za-z0-9_-]+|jobs/[A-Za-z0-9_-]+|candidates/[A-Za-z0-9_-]+(?:/compare)?|admissions|working-source|working-draft/revision)$")
 _POST = re.compile(r"^/api/(exports|project/modeling|intents/context|board/export|decisions(?:/[A-Za-z0-9_-]+/revisions)?|state/closure|capabilities/[A-Za-z0-9_.-]+/run|proposals|proposals/(sketch|transform|push-pull|delete|elevation)|proposals/[A-Za-z0-9_-]+/candidate|program|options|options/[A-Za-z0-9_-]+/select|candidates/combine|drawings/(elevations|sheets|section-perspectives|plans|plans/status)|admissions)$")
 _WRITE = re.compile(r"^/api/(board|document-annotations|working-draft)$")
 # POSTs that only read. They go to the bound Studio as a GET would, with no
@@ -3362,6 +3362,24 @@ def _continue_body(chat_id: str, session: dict, body: dict, quote: str | None = 
             "messageSource": {"sessionId": chat_id, "messageId": message["id"]}}
 
 
+# What a chat turn may retain from the user's words: avoid/keep feedback, and
+# project memory (#252) - a locator ('refer' in the locator domain) and a source
+# policy ('require' in the research domain). A drawing recipe stays a person's
+# explicit confirmation, so 'require' anywhere else is refused.
+_CHAT_MEMORY = {"locator": "refer", "research": "require"}
+
+
+def _scope_domain(record: dict) -> object:
+    scope = record.get("scope")
+    return scope.get("domain") if isinstance(scope, dict) else None
+
+
+def _chat_saves(disposition: object, domain: object) -> bool:
+    if isinstance(domain, str) and domain in _CHAT_MEMORY:
+        return disposition == _CHAT_MEMORY[domain]
+    return disposition in {"avoid", "keep"}
+
+
 def _feedback_body(hub: str, base: str, chat_id: str, session: dict, path: str, body: dict,
                    quote: str | None = None) -> dict:
     """Bind ordinary feedback to real user words, not a model's claimed authorship.
@@ -3374,18 +3392,19 @@ def _feedback_body(hub: str, base: str, chat_id: str, session: dict, path: str, 
     provenance = {"sessionId": chat_id, "messageId": message["id"]}
     if path == "/api/decisions":
         reserved = {"rawLanguage", "raw_language", "messageSource", "message_source", "sourceKind", "source_kind"}
-        if reserved.intersection(body) or body.get("disposition") not in {"avoid", "keep"}:
-            raise HubFailure(422, "CHAT_FEEDBACK_INVALID", "Chat can save only avoid/keep feedback. Its words, message source and agent attribution are filled from this user turn.")
+        if reserved.intersection(body) or not _chat_saves(body.get("disposition"), _scope_domain(body)):
+            raise HubFailure(422, "CHAT_FEEDBACK_INVALID", "Chat can save avoid/keep feedback, a locator ('refer' in the locator domain) or a source policy ('require' in the research domain). Its words, message source and agent attribution are filled from this user turn.")
         return {**body, "projectId": session["projectId"], "rawLanguage": wording,
                 "messageSource": provenance, "sourceKind": "agent"}
     if set(body) - {"projectId", "expectedRevisionRef", "action"} or body.get("action") != "revoke":
-        raise HubFailure(422, "CHAT_FEEDBACK_INVALID", "Chat can only revoke its retained avoid/keep feedback; the reason and message source come from this user turn.")
+        raise HubFailure(422, "CHAT_FEEDBACK_INVALID", "Chat can only revoke what it retained (avoid/keep feedback, a locator or a source policy); the reason and message source come from this user turn.")
     history = _request_json(base, path.removesuffix("/revisions"))
     revisions = history.get("revisions", [])
     latest = revisions[-1] if revisions else {}
     origin = latest.get("messageSource") or {}
     if (history.get("projectId") != session["projectId"] or latest.get("sourceKind") != "agent"
-            or latest.get("disposition") not in {"avoid", "keep"} or not origin.get("sessionId") or not origin.get("messageId")):
+            or not _chat_saves(latest.get("disposition"), _scope_domain(latest))
+            or not origin.get("sessionId") or not origin.get("messageId")):
         raise HubFailure(403, "CHAT_FEEDBACK_UNAVAILABLE", "This record is not ordinary feedback saved from a user chat message.")
     original = _request_json(hub, f"/api/chat/sessions/{_identifier(origin['sessionId'])}")
     original_message = next((row for row in original.get("messages", [])
@@ -3652,7 +3671,7 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
             hidden = {"rawLanguage", "messageSource", "sourceKind"} if creating else {"reason", "revisionMessageSource", "replacement"}
             schema["properties"] = {key: value for key, value in schema["properties"].items() if key not in hidden}
             schema["required"] = [key for key in schema.get("required", []) if key not in hidden]
-            schema["properties"]["disposition" if creating else "action"]["enum"] = ["avoid", "keep"] if creating else ["revoke"]
+            schema["properties"]["disposition" if creating else "action"]["enum"] = ["avoid", "keep", "refer", "require"] if creating else ["revoke"]
         if (method, parsed.path) in _BOUND_WORDS:
             # Hub binds the user's message and words; the provider supplies neither.
             reference = operation["requestBody"]["content"]["application/json"]["schema"]["$ref"]
@@ -3903,7 +3922,8 @@ _MODELLING = chr(10).join([
     "OTHER DOMAINS: before working in one, call studio_schema with its pathPrefix (and no path) once; the answer carries that",
     "domain's full guide beside its action list.",
     "- Drawings (elevations, 剖透视 section perspectives, cut plans and entourage, sheets, drawing pages): pathPrefix /api/drawings.",
-    "- Retained feedback, decisions, context reads (POST /api/intents/context) and study precedents: pathPrefix /api/decisions.",
+    "- Retained feedback, project memory (where things are, where to look first), decisions, context reads (POST /api/intents/context)",
+    "  and study precedents: pathPrefix /api/decisions. A where-is question: GET /api/locators?q=<the user's words>.",
     "- Board, documents and page annotations: pathPrefix /api/board.",
     "- Model export or conversion (3DM, SKP, GLB, DWG): pathPrefix /api/exports.",
     "Stage acceptance, formal issue and printer upload are separate from this tool's reversible design actions.",
@@ -3952,6 +3972,11 @@ _GUIDES = {
         "RETAINED FEEDBACK: When the user gives an avoid/keep direction for later work, POST /api/decisions using its studio_schema, exact observed source and narrow stated scope. Save that feedback before continuing; do not turn an ordinary change request or your own judgment into a retained preference.",
         "The chat fills rawLanguage/messageSource from this actual user turn and sourceKind=agent for your interpretation. Never supply those fields, invent user approval or strengthen a soft preference into a hard rule. The user need not confirm an internal grant; the existing Runtime authorization still applies.",
         "GET /api/decisions reads retained feedback; GET /api/decisions/{id} reads its history. On the user's revocation request, POST /api/decisions/{id}/revisions with action=revoke and the revisionRef you read as expectedRevisionRef; the chat binds the reason and revisionMessageSource. This tool cannot supersede rules, save lock decisions, accept a Stage or unlock a parameter.",
+        "PROJECT MEMORY: when the user says where project content is (e.g. 项目图框在这份文件里), save a locator: disposition 'refer', strength 'hard', targetRef 'locator:content', scope {domain: 'locator', extent: 'project'}, applicability 'scope', source = that content ({kind: 'document', runId, assetSha256, revisionRef, pageIndex} from GET /api/documents),",
+        "typedBinding {kind: 'locator', label: their name for it, target: the same {kind: 'document', runId, assetSha256, revisionRef, pageIndex}, or {kind: 'artifact', sha256} or {kind: 'board', revisionSha256, elementId}}. A file path or URL is never a target; the file must be registered first.",
+        "For a where-is question, GET /api/locators?q=<their words> (context reads also carry ContextPack.locators) and answer with the current target; a stale one is reported with its staleReason, never replaced by a guess.",
+        "When the user says where to look first for a topic, or what not to use, save a source policy: disposition 'require', strength 'soft_preference' ('hard' only when they say it must be followed), targetRef 'research:sources', scope {domain: 'research', extent: 'project'}, applicability 'scope', source = the current design source,",
+        "typedBinding {kind: 'source-policy', topic: their words, keys: some of materials/regulations/products/precedents, prefer: [...], avoid: [...]}. Before researching a topic, read POST /api/intents/context with the user's words as utterance and decisionContext {domain: 'research'}; follow the returned policies (a hard one must be obeyed, a soft one yields to the current request) and say which sources you used.",
         "Before drawing or writing artifact copy, read /api/intents/context with the actual Stage/targets/source; its default reads design and drawing decisions, and copy work selects decisionContext.domain=copy. Consume only scopedDecisions returned for that task, not every record in the decision list. Refresh after saving/revoking feedback or changing scope/source.",
         "Copy feedback targets copy:style; drawing feedback targets drawing:hatch, drawing:lineweight, drawing:beyond, drawing:entourage or drawing:poche. Only design uses targetRefs. For copy/drawing context omit targetRefs; omit decisionContext.source when no exact document/Board evidence is needed, rather than putting the outer Design source there. Copy evidence is document; drawing evidence is document or Board. The outer ContextPack still binds the current Design source.",
         "Carry applicable supported design keep refs into the existing edit's keep field and check the execution result. Preserve the actual relation or parameter asked for, not an entire unrelated object. Keep existing parameter locks; unsupported relation protection or hatch controls require explicit defer, not invented enforcement.",
