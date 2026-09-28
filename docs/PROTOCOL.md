@@ -130,7 +130,7 @@ tolerate it.
 | GET | `/api/candidates/{candidateId}/validation` | the kernel's validation receipt and the server's review readiness (§5) | reads shared + published | stable |
 | POST | `/api/intents` → 201 | one of four outcomes: the resolved target and the proposal it became, or the pending intent the refusal belongs to (§5.1) | reads work in progress + shared | provisional |
 | POST | `/api/intents/context` | `ContextPack@1` against an exact source, with optional scalar, multiple-object, component or whole-project focus, dependency facts and bounded design-context supplements | reads work in progress + shared + published | provisional |
-| POST | `/api/visual-reviews` | one bounded visual review of exact sources: the runtime renders every frame through the source's own projection owner, looks once through the configured provider, and answers the observation, its usage and the loop's next `budgetState`. It accepts no pixels | reads shared; calls the configured provider | provisional |
+| POST | `/api/visual-reviews` | one bounded look at exact sources rendered by their existing owners: `delivery: observation` (Runtime default) returns configured-provider findings/usage; `delivery: frames` returns source-bound PNGs for the caller's model, with no findings or additional provider; both return the next `budgetState`. Requests accept no pixels | reads shared; only observation delivery calls the configured provider | provisional |
 | POST | `/api/proposals/{proposalId}/decision` → 201 | an explicit judgement: accepted with its successful `candidateId`, rejected, or modified into a linked replacement (§5.2) | accepted is **written into its named run**; other decisions stay in memory until a candidate run against the same state | provisional |
 | GET | `/api/episodes?stateDigest=` | the judgements this process holds, each saying whether it lives in a run or only in memory (§5.2) | server memory + reads shared | provisional |
 | GET | `/api/episodes/{episodeId}` | one of them | server memory + reads shared | provisional |
@@ -273,52 +273,62 @@ project/run/asset/revision/page identity, raster dimensions and `annotationsIncl
 `CHAT_IMAGE_TOO_LARGE` means to read the same page at a smaller `maxEdge`; invalid PNG responses
 report `CHAT_IMAGE_INVALID`. Runtime source/revision/page refusals retain their code and status.
 
-**Visual review.** `POST /api/visual-reviews` looks at exact sources once, under a caller-held
-allowance, and answers structured findings instead of images. The body names `projectId`,
-`domain` (`modeling`, `board`, `drawing` or `render`), 1–4 `sourceRefs`, `viewRecipe`, `task`
-(at most 600 characters), 1–8 `criteria` (`criterionId`, `text`), up to 6 `preserve`
-conditions, up to 6 `priorObservations`, up to 8 `knownFacts` of at most 120 characters (exact
-readback values the observer should not ask about again), `reason` (`first_bundle`,
-`after_repair` or `polish_round`), `addressedFindingIds` for an `after_repair` review, and
-`budgetState` (`taskClass`, `allowed`, `used`, `lastFindingIds`). A modeling review names one
-model (`kind: "model"` with `runId`, `stateDigest`, `assetSha256`) and model-view directions
-(`front`, `back`, `left`, `right`, `top` or the axonometric `axon`); the other domains name registered pages (`kind: "page"` with `runId`, `assetSha256`, an explicit
-`revisionRef` and `pageIndex`) and the recipe `page-<pageIndex>` of each. No field carries
-pixels and every object refuses unknown fields: the runtime renders each frame in process, with
-`model_view` for each recipe view or a one-page PNG export at 1600 px, and each owner verifies
-its exact source before it draws. The route keeps no loop state and writes nothing to the
-project; when Monitor is configured, each review is one `visual_observation` span.
+**Visual review.** `POST /api/visual-reviews` renders exact sources once under a
+caller-held allowance. `delivery` selects `observation` (the Runtime default, preserving
+existing clients) or `frames`. The body names `projectId`, `domain` (`modeling`, `board`,
+`drawing` or `render`), 1–4 distinct exact `sourceRefs`, `viewRecipe`, `task` (at most 600
+characters), 1–8 `criteria` (`criterionId`, `text`), up to 6 `preserve` conditions, up to 6
+`priorObservations`, up to 8 `knownFacts` of at most 120 characters, `reason` (`first_bundle`,
+`after_repair` or `polish_round`), `addressedFindingIds` for `after_repair`, and `budgetState`
+(`taskClass`, `allowed`, `used`, `lastFindingIds`).
 
-The answer is `observation` (`reviewId`, `reviewIndex`, `sourceRefs`, `viewRefs`, `frameSha256`,
-and findings with `findingId`, `type`, `targetRefs`, `description`, `confidence`, `severity` and
-an optional `evidenceRegion`, plus `unresolvedQuestions` and `suggestedChecks`; there is no
-verdict), `usage` as the provider reported it, and the next `budgetState`, which the caller sends
-back with the loop's next review. Its allowance must be the policy's own for `taskClass`: 0 for
-`deterministic_edit`, 2 for `spatial_formal` (a `first_bundle` review, then one `after_repair`
-review whose `addressedFindingIds` name findings of the last review), and the 1–4 rounds an
-explicit `polish` request named. Before any provider call, 409 answers `VISUAL_SOURCE_MISMATCH`
-with the `sourceRef` its owner does not retain exactly (a stale `stateDigest`, an unregistered
-asset, or a missing run, revision or page); `VISUAL_BUDGET_EXHAUSTED`,
-`VISUAL_REVIEW_NOT_WARRANTED` or `VISUAL_REVIEW_OUT_OF_ORDER` with the unchanged `budgetState`;
-or `VISUAL_PROVIDER_UNAVAILABLE` when the runtime's provider is deterministic. Other owner
-refusals keep their code and status. A failed provider call answers 502 `VISUAL_PROVIDER_FAILED`
-with the `budgetState` that counts the spent review and the call's `usage`.
+A modeling review names one model (`kind: "model"`, `runId`, `stateDigest`, `assetSha256`)
+and model-view directions (`front`, `back`, `left`, `right`, `top`, `axon`). Other domains
+name exact registered pages (`kind: "page"`, `runId`, `assetSha256`, explicit `revisionRef`,
+`pageIndex`). Source identity includes the document and revision: different documents may
+both name page 0. The caller may use `viewRecipe: ["page-0"]` for that bundle; the Runtime
+assigns distinct `source-<ordinal>-page-0` frame names in source order. Duplicate exact
+sources remain invalid. Request fields carry no pixels. Each frame comes from the source
+owner's verified `model_view` or one-page PNG export at 1600 px. Neither delivery mode
+writes project state or keeps a second review loop.
 
-MonkeyHub gives the Agent this route as its own `visual_review` tool and never through
-`studio_request` or `studio_schema`, so the allowance cannot be bypassed. The Agent declares
-`taskClass` (with `polishRounds` for `polish`) and the review's own fields; Hub fills `projectId` and
-`budgetState`. Hub holds one allowance for each user message the Agent answers, and the next message
-starts a new one. Until a review of it is spent, a new declaration replaces the class; after that
-another class answers `409 VISUAL_TASK_CLASS_FIXED`. More than two polish rounds need the user's own
-words in that message asking to keep refining (`409 VISUAL_POLISH_NOT_ASKED` otherwise). Hub keeps
-the `budgetState` each answer hands back: a 4xx refusal spends nothing, while a 5xx answer, or a sent
-review that is never answered (`504 VISUAL_REVIEW_UNANSWERED`), counts as spent. The Agent receives the
-`observation`, with `escalate: true` on each finding whose `targetRefs` name a `preserve:*`
-condition (a question for the architect rather than for another review), the provider's `usage`
-and the `allowance` (`taskClass`, `allowed`, `used`), never an image. The Hub trace records the call
-under its turn as a tool call with `request_kind` `visual_observation`, `image_inputs` from that usage
-and the review id, and none of the request's text; a raw `model-view` or page read through
-`studio_request` is recorded as `image_read` with one image input.
+With `delivery: "observation"`, the configured structured provider returns `observation`
+(`reviewId`, `reviewIndex`, `sourceRefs`, `viewRefs`, `frameSha256`, findings with `findingId`,
+`type`, `targetRefs`, `description`, `confidence`, `severity` and optional `evidenceRegion`,
+plus `unresolvedQuestions` and `suggestedChecks`; no verdict), provider-reported `usage`,
+and the next `budgetState`. This mode requires the Runtime's visual provider; a deterministic
+Runtime refuses with `VISUAL_PROVIDER_UNAVAILABLE`. When configured, Monitor records its
+`visual_observation` span and provider usage.
+
+With `delivery: "frames"`, no additional provider is called. The answer is `delivery: "frames"`,
+`observation: null`, `usage: null`, `frames` and the next `budgetState`. Each frame carries
+`sourceRef`, unique `viewRef`, `representation`, `frameSha256`, `width`, `height`,
+`mimeType: "image/png"` and base64 `data`. Successful delivery spends one review and leaves
+`lastFindingIds` empty. Images alone are not findings or acceptance; the receiving model
+must inspect them. Because this mode produces no structured finding ids, a subsequent
+`after_repair` request cannot satisfy the finding-bound repair contract and is refused.
+
+The allowance remains 0 for `deterministic_edit`, 2 for `spatial_formal` (one `first_bundle`,
+then an `after_repair` naming findings from the previous observation), or 1–4 rounds named
+by an explicit `polish` request. Source, allowance and rendering refusals before delivery
+or a provider call leave it unchanged. A missing exact source returns 409
+`VISUAL_SOURCE_MISMATCH` with `sourceRef`; the existing budget/order refusals retain their
+codes. A failed structured-provider call returns 502 `VISUAL_PROVIDER_FAILED`, its usage
+and the spent budget. Frames mode remains available without a configured observation provider.
+
+MonkeyHub exposes the route only through `visual_review`, not `studio_request` or
+`studio_schema`. Its native tool defaults to `delivery: "frames"`: the existing chat model
+receives native MCP images and source metadata, after Hub verifies every frame's source,
+PNG bytes, digest and dimensions. Explicit `delivery: "observation"` retains structured
+findings, with `escalate: true` when a finding targets a `preserve:*` condition. Hub fills
+`projectId` and `budgetState`; the Agent supplies `taskClass` and, for polish, `polishRounds`.
+One allowance belongs to each answered user message. Its class can change only before a
+review is spent; more than two polish rounds require the user's own refinement request.
+An answered frame-rendering failure spends nothing. A sent review with no answer
+(`VISUAL_REVIEW_UNANSWERED`) is conservatively counted as spent; a failed observation-provider
+call also stays spent. The returned `allowance` names `taskClass`, `allowed` and `used`.
+A structured review's trace records provider-reported image inputs and its review id;
+raw model-view or page reads remain `image_read`, separate from structured observations.
 
 **The program sheet.** A sheet is `ProgramSheet@1` and travels whole in both directions, carrying
 the `stateDigest` of the record it was read from. `POST /api/program` refuses `409 STALE_BASE` when
@@ -391,6 +401,22 @@ edits preserve the base. Binding a base follows only the named level or mass top
 keeps its current numeric position. A datum change propagates through existing declared
 dependencies. Cycles, missing targets, nonpositive height, protected state and stale bases
 refuse before a candidate is saved.
+
+`POST /api/proposals/transform` also accepts `kind: "compress-above"` for one atomic
+height edit of planar surfaces. It takes exactly one of `componentId` or nonempty
+`elementIds`, without `elementId`, plus finite `threshold` and `factor` with
+`0 < factor <= 1`. `componentId` selects elements whose component id equals it; it does
+not recurse into other components. The threshold is world +Y elevation in project units:
+points at or below it stay fixed, and a point above moves to
+`threshold + factor * (y - threshold)`. Crossing edges gain their threshold intersections.
+The existing `projectId`, `stateDigest`, `sourceRunId`, `sourceStageRef`, `sourceProposalId`
+and `keep` contracts still apply. All selected rows must be supported planar surfaces;
+nonplanar results, parameter bindings (including inherited Type bindings), unsupported
+host/top/cutout controls and the existing dependency guards refuse the whole batch.
+If nothing changes, the route returns `422 DIRECT_EDIT_NO_CHANGE`. A successful request
+returns the ordinary `ProposalDto`, with no partial proposal or project write on refusal.
+Only the existing proposal candidate endpoint executes and retains the result; acceptance
+and issue remain separate.
 
 The contextual elevation fields and datum chooser use the same local draft and undo history.
 Sync sends these intents through the typed route and saves one final candidate. New upright
@@ -1188,6 +1214,8 @@ limitation remains; this HTTP collaboration path does not depend on an SSE conne
 
 ## MonkeyHub project runtime
 
+Native Claude-compatible chats use `runtime/chats/<chatId>/scratch` under the explicit nonproject Hub runtime root for temporary calculation scripts and derived working files. ChatStore creates the directory, grants it through the existing CLI `--add-dir` argument and names it in the turn prompt. This does not grant writes to the CLI's protected configuration directory; retained design results still use the connected project APIs and P036.
+
 ### External conversation presentation
 
 `POST /api/chat/presentation/bind` accepts an existing `projectDir`, stable `sourceSessionId`,
@@ -1219,7 +1247,12 @@ The existing attachment download accepts `?inline=true` for validated PNG/JPEG/W
 other formats remain downloads. Responses are `no-store` and `nosniff`.
 
 The same stdio adapter exposes `presentation_bind` for external connections and `chat_present`
-for both external and native conversations. The adapter alone can read an explicitly selected
+for both external and native conversations. Native `chat_present` exposes only
+`kind: "progress" | "assistant"`: Hub already owns the actual user turn, so native providers
+do not manufacture or repeat a user message. External presentation retains
+`kind: "user" | "progress" | "assistant"` with explicit turn/message identities.
+Native presentation status is always `streaming` until the CLI turn finishes; its schema exposes only that value and the adapter normalizes older `complete` requests to it, so a provider can revise the same message before completion. External presentation status remains caller-controlled.
+The adapter alone can read an explicitly selected
 local attachment path and convert it to the existing bounded upload. Provider summaries,
 public commentary and document views confer no design acceptance or Board write authority.
 
@@ -1412,6 +1445,24 @@ A dismissed operation that needs recovery no longer holds its place ahead of fin
 record list. Nothing is sent or replayed, and the operation's status, reason and result are
 unchanged. A recoverable operation answers `409 OPERATION_NOT_ACKNOWLEDGEABLE` and stays until a
 retained result resolves it; an unknown id answers `404 OPERATION_NOT_FOUND`.
+
+The bound chat's `studio_schema` tool has two read-only modes. Omit `path` to discover
+actions in the current Runtime OpenAPI intersected with the existing chat allow-list.
+Optional `pathPrefix` (for example `/api/drawings`) and `method` narrow the list; omitting
+`method` includes both reads and writes. `offset` defaults to 0, `limit` to 30 (1–50).
+The reply contains only `actions` (`method`, `path`, `summary`), `total`, paging fields,
+an explanatory `note`, and a `next` tool call when more actions remain. Supply an exact
+`method`/`path` to read its existing request/response schema; `producer` still narrows
+semantic authoring inputs. Discovery neither grants authority nor proves input validity.
+The chat projection of `GET /api/capabilities` preserves its registered-workflow fields
+and adds `actionDiscovery` pointing to this tool; a matched workflow is not an exhaustive
+list of API actions. Unknown paths return `CHAT_ACTION_UNKNOWN` with bounded same-domain
+suggestions; an existing action outside the chat allow-list remains `CHAT_TOOL_UNAVAILABLE`.
+A permitted schema query absent from this Runtime returns `CHAT_ACTION_UNSUPPORTED`.
+No refusal automatically substitutes or executes a suggested action.
+Drawing-only tasks complete through their registered documents and exact output readback;
+model-candidate admission applies to new model revisions. A later observation or admission
+failure does not revoke a document already retained by its drawing owner.
 
 A chat message may carry an optional `designContext` with `stateDigest` and the same optional
 source, focus and supplement fields as `/api/intents/context`. When it is there,

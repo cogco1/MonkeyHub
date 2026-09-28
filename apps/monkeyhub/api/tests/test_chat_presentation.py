@@ -168,7 +168,7 @@ class ChatPresentationTests(unittest.TestCase):
             self.store.hub_url = previous_url
             self.assertFalse(thread.is_alive(), "Loopback Hub did not stop")
 
-    def mcp(self, requests, *, connection=None):
+    def mcp(self, requests, *, connection=None, expected_errors=()):
         connection = connection or {"command": sys.executable, "args": [str(Path(chat.__file__)), "--mcp",
             "--hub-url", self.store.hub_url, "--project-dir", str(self.project),
             "--source-session-id", self.bound["sourceSessionId"]]}
@@ -182,7 +182,7 @@ class ChatPresentationTests(unittest.TestCase):
         self.assertEqual(len(replies), len(requests), result.stdout)
         for reply in replies:
             self.assertNotIn("error", reply, reply)
-            self.assertFalse(reply["result"].get("isError"), reply)
+            self.assertEqual(bool(reply["result"].get("isError")), reply["id"] in expected_errors, reply)
         for token in self.store._presentation_tokens.values():
             self.assertNotIn(token, result.stdout)
             self.assertNotIn(token, result.stderr)
@@ -422,16 +422,39 @@ class ChatPresentationTests(unittest.TestCase):
                         self.assertNotIn(token, json.dumps(connection))
                         self.assertNotIn(token, " ".join(command))
                         connection = {**connection, "env": environment}
+                        advertised = self.mcp([
+                            {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
+                            {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
+                            self.tool_call(3, "chat_present", {"messageId": str(uuid4()), "kind": "user", "content": "duplicate"}),
+                        ], connection=connection, expected_errors=(3,))
+                        native = next(tool for tool in advertised[1]["result"]["tools"] if tool["name"] == "chat_present")
+                        self.assertEqual(native["inputSchema"]["properties"]["kind"]["enum"], ["progress", "assistant"])
+                        self.assertEqual(native["inputSchema"]["properties"]["status"]["enum"], ["streaming"])
+                        self.assertEqual(native["inputSchema"]["properties"]["status"]["default"], "streaming")
+                        self.assertNotIn("kind=user", native["description"])
+                        self.assertEqual(native["description"], advertised[0]["result"]["instructions"])
+                        self.assertTrue(advertised[2]["result"]["isError"], "schema projection does not replace the server refusal")
                         media_id = str(uuid4())
                         replies = self.mcp([self.tool_call(1, "chat_present", {"messageId": media_id,
-                            "kind": "assistant", "status": "streaming", "content": "Preview from native tool",
+                            "kind": "assistant", "content": "Preview from native tool",
+                            **({"status": "complete"} if provider == "codex" else {}),
                             "suggestion": {"title": "Compare alternatives", "outcome": "A source-bound comparison",
                                 "capability": "available", "rationale": "The comparison tool is connected.",
                                 "prompt": "Compare the proposed alternatives."},
                             "attachments": [{"path": str(image_path)}]})], connection=connection)
                         self.assertEqual(json.loads(replies[0]["result"]["content"][0]["text"])["status"], "running")
+                        # Omitted status and an older explicit complete both stay
+                        # streaming: the native turn, not a media card, settles them.
+                        revised = self.mcp([self.tool_call(2, "chat_present", {"messageId": media_id,
+                            "kind": "assistant", "revision": 1, "content": "Revised preview",
+                            "suggestion": {"title": "Compare alternatives", "outcome": "A source-bound comparison",
+                                "capability": "available", "rationale": "The comparison tool is connected.",
+                                "prompt": "Compare the proposed alternatives."},
+                            "attachments": [{"path": str(image_path)}]})], connection=connection)
+                        self.assertEqual(json.loads(revised[0]["result"]["content"][0]["text"])["status"], "running")
                         media = next(row for row in self.store.get(session.id).messages if row.id == media_id)
                         self.assertEqual(len(media.attachments), 1)
+                        self.assertEqual((media.content, media.presentationRevision, media.status), ("Revised preview", 1, "streaming"))
                     finally:
                         gate.touch()
                     finished = self.wait_chat(session.id, lambda row: row.status != "running")
@@ -487,6 +510,10 @@ class ChatPresentationTests(unittest.TestCase):
             self.assertEqual(replies[0]["result"]["protocolVersion"], "2024-11-05")
             names = {tool["name"] for tool in replies[1]["result"]["tools"]}
             self.assertTrue({"presentation_bind", "chat_present"}.issubset(names))
+            external = next(tool for tool in replies[1]["result"]["tools"] if tool["name"] == "chat_present")
+            self.assertIn("user", external["inputSchema"]["properties"]["kind"]["enum"])
+            self.assertEqual(external["inputSchema"]["properties"]["status"]["default"], "complete")
+            self.assertIn("kind=user", external["description"])
             bound = json.loads(replies[2]["result"]["content"][0]["text"])
             self.assertEqual(bound["chatId"], self.bound["chatId"])
             self.assertNotIn("token", bound)

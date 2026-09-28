@@ -334,6 +334,39 @@ def sketch_prism_proposal(
     )
 
 
+def _require_independent_element(record, entity) -> None:
+    dependents = sorted({edge.downstream_ref for edge in record.dependency_edges()
+                         if edge.upstream_ref == entity.ref and edge.downstream_ref != entity.ref})
+    relations = [r.relation_id for r in record.relations if entity.entity_id in (r.subject, r.object)]
+    if dependents or relations:
+        raise StudioError(409, "ELEMENT_HAS_DEPENDENTS",
+                          f"{entity.entity_id} has dependent elements or named relationships: {dependents + relations}. "
+                          "Direct transform cannot detach them; edit the controlling relation instead.")
+
+
+def _direct_element_fields(record, entity, row, changed):
+    from archflow.state.state_record import _element_fields
+
+    params = dict(entity.fields.get("params", {}))
+    authored_params = _element_fields(record, entity).get("params", {})
+
+    def bound(value):
+        return (isinstance(value, str) and value.startswith("@")) or (
+            isinstance(value, Mapping) and any(bound(v) for v in value.values())) or (
+            isinstance(value, (list, tuple)) and any(bound(v) for v in value))
+
+    for key in set(row.params) | set(changed.params):
+        if row.params.get(key) == changed.params.get(key):
+            continue
+        if bound(authored_params.get(key)):
+            raise ValueError(f"{entity.entity_id}.{key} is parameter-bound; edit its existing control instead of detaching it")
+        if key in changed.params:
+            params[key] = changed.params[key]
+        else:
+            params.pop(key, None)
+    return {**entity.fields, "producer": changed.producer, "params": params}
+
+
 def direct_element_proposal(projection: StateProjection, *, element_id: str, kind: str,
                             copy_element_id: str | None = None, keep_refs: Sequence[str] = (),
                             **action: Any) -> Mapping[str, Any]:
@@ -348,41 +381,19 @@ def direct_element_proposal(projection: StateProjection, *, element_id: str, kin
     if entity is None:
         raise StudioError(404, "ELEMENT_UNKNOWN", f"{element_id} is not an editable element of this record")
     if kind not in {"push_pull", "copy"}:
-        dependents = sorted({edge.downstream_ref for edge in record.dependency_edges()
-                             if edge.upstream_ref == entity.ref and edge.downstream_ref != entity.ref})
-        relations = [r.relation_id for r in record.relations if element_id in (r.subject, r.object)]
-        if dependents or relations:
-            raise StudioError(409, "ELEMENT_HAS_DEPENDENTS",
-                              f"{element_id} has dependent elements or named relationships: {dependents + relations}. "
-                              "Direct transform cannot detach them; edit the controlling relation instead.")
+        _require_independent_element(record, entity)
     try:
         rows = element_rows_of(record)
         row = next(item for item in rows if item.element_id == element_id)
         context = ProductionContext(ReferenceContext(grids=project_grids_of(record), levels=project_levels_of(record)), {})
         produce_rows(rows, context)
         changed = edit_drawn_element(row, context, kind=kind, **action)
-        params = dict(entity.fields.get("params", {}))
-
-        def bound(value):
-            return (isinstance(value, str) and value.startswith("@")) or (
-                isinstance(value, Mapping) and any(bound(v) for v in value.values())) or (
-                isinstance(value, (list, tuple)) and any(bound(v) for v in value))
-
-        for key in set(row.params) | set(changed.params):
-            if row.params.get(key) == changed.params.get(key):
-                continue
-            if bound(params.get(key)):
-                raise ValueError(f"{element_id}.{key} is parameter-bound; edit its existing control instead of detaching it")
-            if key in changed.params:
-                params[key] = changed.params[key]
-            else:
-                params.pop(key, None)
+        fields = _direct_element_fields(record, entity, row, changed)
         target_id = element_id
         if kind == "copy":
             target_id = copy_element_id or f"{element_id}-copy-{uuid4().hex[:8]}"
             if any(item.entity_id == target_id for item in record.entities):
                 raise ValueError(f"copy element id {target_id} already exists")
-        fields = {**entity.fields, "producer": changed.producer, "params": params}
         updated = {"entity_id": target_id, "schema": entity.schema, "parent_id": entity.parent_id,
                    "basis_refs": list(entity.basis_refs), "fields": fields}
     except (TypeError, ValueError, KeyError) as exc:
@@ -393,6 +404,53 @@ def direct_element_proposal(projection: StateProjection, *, element_id: str, kin
         "removeEntityIds": [], "removeParameterKeys": [], "removeRelationIds": [],
         "protected": [], "kept": list(keep_refs),
     }, utterance=said, component_id=row.component_id, keep_refs=keep_refs)
+
+
+def compress_above_proposal(projection: StateProjection, *, threshold: float, factor: float,
+                            component_id: str | None = None, element_ids: Sequence[str] = (),
+                            keep_refs: Sequence[str] = ()) -> Mapping[str, Any]:
+    """One atomic planar-surface edit, computed at the selected exact source."""
+
+    from monkeyarch.capabilities.element_producers import ProductionContext, edit_drawn_element, element_rows_of, produce_rows
+    from monkeyarch.capabilities.reference_resolver import ReferenceContext
+    from archflow.state.state_record import project_grids_of, project_levels_of
+
+    record = projection.record
+    entities = {entity.entity_id: entity for entity in record.entities_of("Element@1")}
+    if (component_id is None) == (not element_ids):
+        raise StudioError(422, "DIRECT_EDIT_UNSUPPORTED", "Select exactly one componentId or a nonempty elementIds list.")
+    unknown = sorted(set(element_ids) - entities.keys())
+    if unknown:
+        raise StudioError(404, "ELEMENT_UNKNOWN", f"Unknown editable elements: {unknown}")
+    try:
+        rows = element_rows_of(record)
+        selected = [row for row in rows if row.component_id == component_id] if component_id is not None else [
+            row for row in rows if row.element_id in element_ids
+        ]
+        if not selected:
+            raise StudioError(404, "ELEMENT_UNKNOWN", f"No editable elements belong to component {component_id}.")
+        context = ProductionContext(ReferenceContext(grids=project_grids_of(record), levels=project_levels_of(record)), {})
+        produce_rows(rows, context)
+        updates = []
+        for row in selected:
+            changed = edit_drawn_element(row, context, kind="compress_above", threshold=threshold, factor=factor)
+            if changed == row:
+                continue
+            entity = entities[row.element_id]
+            _require_independent_element(record, entity)
+            fields = _direct_element_fields(record, entity, row, changed)
+            updates.append({"entity_id": entity.entity_id, "schema": entity.schema, "parent_id": entity.parent_id,
+                            "basis_refs": list(entity.basis_refs), "fields": fields})
+    except (TypeError, ValueError, KeyError) as exc:
+        raise StudioError(422, "DIRECT_EDIT_UNSUPPORTED", str(exc)) from exc
+    if not updates:
+        raise StudioError(422, "DIRECT_EDIT_NO_CHANGE", "The selected surfaces do not change at this threshold and factor.")
+    said = f"Compress {len(updates)} surfaces above {threshold} by {factor}; keep the lower portion fixed"
+    return component_edit_proposal(projection, {
+        "summary": said, "entities": updates, "parameters": [], "relations": [],
+        "removeEntityIds": [], "removeParameterKeys": [], "removeRelationIds": [],
+        "protected": [], "kept": list(keep_refs),
+    }, utterance=said, component_id=component_id, keep_refs=keep_refs)
 
 
 def delete_element_proposal(
