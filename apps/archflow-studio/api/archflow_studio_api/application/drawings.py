@@ -26,7 +26,7 @@ from archflow.project.record_kinds import DESIGN_STAGE, SEAT_OCCT_EXECUTION, STU
 from archflow.project.refs import ProjectArtifactRef, ProjectRecordRef, record_ref_from_uri, require_identifier
 from monkeydiagram.drawing_elevation import (
     SECTION_PERSPECTIVE_KIND, UNIT_METRES, DrawingElevationError, ElevationSource, NativeModelSource, ElevationView, SectionPerspectiveError,
-    SectionPerspectiveView, freeze_model_axis_elevation, freeze_section_perspective,
+    SectionPerspectiveView, freeze_model_axis_elevation, freeze_section_perspective, inspection_witness_ids,
     project_model_axis_elevation, read_elevation_source, VerifiedElevationSource,
 )
 from monkeydiagram.mesh_views import MeshViewError, mesh_line_view, mesh_pipeline, pixel_size, triangulate
@@ -588,7 +588,7 @@ def generate_sheet(
         raise StudioError(422, "DRAWING_OBJECT_UNKNOWN", "These physical objects are not in the selected model: " + ", ".join(sorted(unknown)))
     if hidden & outline:
         raise StudioError(422, "DRAWING_OBJECT_CONFLICT", "An object cannot be both hidden and outlined: " + ", ".join(sorted(hidden & outline)))
-    selected = tuple(sorted(physical - hidden))
+    selected = tuple(sorted(physical - hidden - inspection_witness_ids(receipt)))
     if not selected:
         raise StudioError(422, "DRAWING_EMPTY", "Keep at least one physical object visible on the sheet.")
     fonts = _sheet_fonts()

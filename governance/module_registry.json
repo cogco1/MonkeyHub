@@ -3194,7 +3194,9 @@
         "DRAWING_VIEW_KINDS",
         "NativeModelSource",
         "CLEANUP_TOLERANCE_MM",
-        "object_semantics"
+        "object_semantics",
+        "current_object_id",
+        "inspection_witness_ids"
       ],
       "depends_on": [
         "adapters.cad_execution",
@@ -3221,7 +3223,9 @@
         "Dressing has independent object ids, uses fixed view coordinates or exact physical-object anchors, never creates design entities and never silently rebinds missing anchors.",
         "A section perspective's picture plane is its section plane: the cut is true to scale at the recorded 1:N, nothing on the eye's side is drawn, and the receipt records the request, the exact plane and the resolved camera (eye, target, up, field of view) that draw the same bytes again; a plane that misses the drawn objects and an eye on the kept side or on the plane are refused by name before anything is written.",
         "Native source receipts name the original model and its registration, GUID instance paths and geometry quality; STEP-derived receipt fields and old digest meanings remain unchanged.",
-        "The receipt's projection counts stay those of the solve; the SVG draws the cleaned lines and the receipt's cleanup says what was removed. A receipt retained before cleanup reads cold with cleanup None."
+        "The receipt's projection counts stay those of the solve; the SVG draws the cleaned lines and the receipt's cleanup says what was removed. A receipt retained before cleanup reads cold with cleanup None.",
+        "hidden inspection witnesses are left out of cut plans, model-axis elevations, section perspectives and review sheets alike",
+        "a retained obj-<X>-cut reference reads as obj-<X> only when the model lacks the former and has the latter; no other name is rebound"
       ],
       "status": "canonical",
       "tests": [
