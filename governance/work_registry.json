@@ -1,4 +1,46 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": []
+  "items": [
+    {
+      "id": "GH-368",
+      "lanes": [
+        {
+          "id": "drawing-projections",
+          "status": "active",
+          "branch": "codex/368-drawing-projections",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-368-drawing-projections",
+          "base_ref": "bb44b299",
+          "contributor": "Claude",
+          "reviewer": "Claude root task",
+          "handoff": "cloud session; master integrates",
+          "modules": [
+            "studio.artifacts",
+            "studio.board",
+            "studio.publication",
+            "runtime.drawing_elevation"
+          ],
+          "write_scope": [
+            "apps/archflow-studio/api/archflow_studio_api/application/projections.py",
+            "apps/archflow-studio/api/archflow_studio_api/application/drawings.py",
+            "apps/archflow-studio/api/archflow_studio_api/application/boards.py",
+            "apps/archflow-studio/api/archflow_studio_api/application/publications.py",
+            "apps/archflow-studio/api/archflow_studio_api/application/publication_output.py",
+            "apps/archflow-studio/api/archflow_studio_api/routes/drawings.py",
+            "apps/archflow-studio/api/archflow_studio_api/routes/boards.py",
+            "apps/archflow-studio/api/archflow_studio_api/routes/publications.py",
+            "apps/archflow-studio/api/archflow_studio_api/routes/projections.py",
+            "apps/archflow-studio/api/archflow_studio_api/transport/",
+            "monkeydiagram/drawing_elevation.py",
+            "monkeydiagram/documentation/",
+            "apps/monkeyhub/web/workspaces/src/workspaces/monkeyboard/",
+            "apps/monkeyhub/web/workspaces/src/workspaces/publish/",
+            "apps/monkeyhub/web/workspaces/src/api/",
+            "apps/monkeyhub/web/workspaces/test/",
+            "docs/adr/ADR-008-one-tree-many-projections.md"
+          ],
+          "depends_on": []
+        }
+      ]
+    }
+  ]
 }
