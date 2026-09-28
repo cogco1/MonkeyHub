@@ -521,7 +521,7 @@ class ApplyTests(ProgramTestCase):
         self.assertNotEqual(self.legacy_sheet_state_digest, self.sheet_state_digest)
         status, answer = self.apply(sheet_adding("store", zone="zone-hall"), save=True)
         self.assertEqual(status, 202, answer)
-        self.finished(answer["jobId"])
+        self.assertEqual(self.finished(answer["jobId"])["status"], "succeeded")
         saved = json.loads(self.repository.layout.program_sheet.read_text(encoding="utf-8"))
         saved["state_digest"] = self.legacy_sheet_state_digest
         self.repository.layout.program_sheet.write_text(json.dumps(saved, indent=2, sort_keys=True), encoding="utf-8")
@@ -537,7 +537,9 @@ class ApplyTests(ProgramTestCase):
             {**sheet_adding("store", zone="zone-hall"), "stateDigest": self.legacy_sheet_state_digest}
         )
         self.assertEqual(status, 202, answer)                                        # main answered 202 too
-        self.finished(answer["jobId"])
+        # Applied, not only accepted: the job applies the sheet on the digest it cites (#439).
+        job = self.finished(answer["jobId"])
+        self.assertEqual(job["status"], "succeeded", job)
 
     def test_a_sheet_citing_another_old_digest_is_still_stale(self) -> None:
         status, answer = self.apply(

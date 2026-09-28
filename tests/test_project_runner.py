@@ -1250,6 +1250,43 @@ class GeometryOnlyIssueTests(unittest.TestCase):
             issue_run(repository, run_id="stage-0-001", decided_by="architect-a")
         self.assertEqual(repository.read_head().version, 0)
 
+    def _forged(self, kind: str, **changes: object) -> FilesystemProjectRepository:
+        """The run's one retained ``kind`` record rewritten with ``changes``, as tampering would leave it (#439)."""
+
+        repository = FilesystemProjectRepository.open(self.root)
+        run = repository.load_run("stage-0-001")
+        destination = PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=run.run_id)
+        ref, = [ref for ref in repository.list_json(run=run, destination=destination) if ref.record_kind == kind]
+        target = repository.layout.resolve_relative(ref.relative_path)
+        forged = {**json.loads(target.read_text(encoding="utf-8")), **changes}
+        target.unlink()
+        repository.put_json(run=run, destination=destination, record_kind=kind, payload=forged)
+        return repository
+
+    def test_a_massing_run_whose_receipt_names_no_developed_state_is_not_issued(self) -> None:
+        # A record with complete massing executed as its developed state: its stage envelope
+        # is not published in that state's place, whatever a receipt says (#439).
+        self._opened_and_run(_record())
+        repository = self._forged(RUNNER_RUN_RECEIPT, design_state_ref=None)
+        with self.assertRaisesRegex(RunNotComplete, "declares complete massing"):
+            issue_run(repository, run_id="stage-0-001", decided_by="architect-a")
+        self.assertEqual(repository.read_head().version, 0)
+
+    def test_a_receipt_naming_another_stage_envelope_is_not_issued(self) -> None:
+        _, receipt = self._opened_and_run(_geometry_only(_record()))
+        repository = self._forged(RUNNER_RUN_RECEIPT, stage_envelope_ref=receipt["state_record_ref"])
+        with self.assertRaisesRegex(RunNotComplete, "names a stage envelope its stage exit binding did not close"):
+            issue_run(repository, run_id="stage-0-001", decided_by="architect-a")
+        self.assertEqual(repository.read_head().version, 0)
+
+    def test_an_exit_binding_naming_another_state_is_not_issued(self) -> None:
+        # The receipt and its envelope still agree; only the exit the stage closed through does not.
+        self._opened_and_run(_geometry_only(_record()))
+        repository = self._forged(STAGE_EXIT_BINDING, state_digest="1" * 64)
+        with self.assertRaisesRegex(RunNotComplete, "design_state_digest its stage envelope and exit binding do not bind"):
+            issue_run(repository, run_id="stage-0-001", decided_by="architect-a")
+        self.assertEqual(repository.read_head().version, 0)
+
     def test_the_binding_a_geometry_only_run_retains_declares_its_base(self) -> None:
         """#54: the binding in a geometry-only run's round requests and receipts names its base where its owner declares it.
 
