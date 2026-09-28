@@ -3141,7 +3141,8 @@
         "horizontal cut-plan composition: section boundaries, one material hatch and below-cut visible lines, with caller-resolved semantic dimensions and retained representation recipe",
         "representation-only SVG entourage in the existing cut-plan recipe; exact physical-object-centre anchors, explicit missing/outside-view status and immutable dressing readback across source rebuilds",
         "section perspective: SectionPerspectiveView (a plan line and kept side, or an origin and normal; an explicit or default one-point camera) checked with named refusals before the model is read, the default eye placed from the exact cut, and the request, exact plane, resolved camera and crop recorded in the one drawing receipt (freeze_section_perspective)",
-        "NativeModelSource: verify original 3DM bytes against their explicit registration and derive drawing shapes without fabricating semantic state or CAD execution provenance"
+        "NativeModelSource: verify original 3DM bytes against their explicit registration and derive drawing shapes without fabricating semantic state or CAD execution provenance",
+        "DrawnView: a drawn view's SVG, PNG and what its receipt says about the drawing apart from its source and run; freeze_model_axis_elevation and freeze_section_perspective take an optional cache (DrawingCache) asked for the drawn view once the source verified, so a kept drawing is retained without solving its view again"
       ],
       "does_not_own": [
         "the hidden-line solve - adapters.cad_execution",
@@ -3196,7 +3197,9 @@
         "DRAWING_VIEW_KINDS",
         "NativeModelSource",
         "CLEANUP_TOLERANCE_MM",
-        "object_semantics"
+        "object_semantics",
+        "DrawnView",
+        "DrawingCache"
       ],
       "depends_on": [
         "adapters.cad_execution",
@@ -4319,7 +4322,8 @@
         "direct native model drawing selection: registered external sourceAsset stays frozen and has no modelSource; state-bound composed 3DM uses its own geometry, never a partial paired STEP",
         "SKP upload through the local standalone SDK, retaining original SKP and derived 3DM face geometry in the same P036 registration; retries reuse the verified original content",
         "the drawing correction projection (05-S2, application/drawing_corrections.py): each cut-plan revision paired with the registered revision its receipt names as previous, the pair's replacement_cause, a recipe_diff of the two view recipes by dotted path and a classify into compiler_defect, semantic_rule, recipe or local_override; and the project's recipe suggestions - a pen or hatch spacing changed the same way in representation-only revisions no agent asked for on at least two drawings no active recipe covers - each citing its exact revision pairs and the page a recipe decision would cite",
-        "the content-keyed projection cache (ADR-008 #367): key = sha256(model asset sha256, kind, recipe hash, renderer, SALT) where renderer is the mesh renderer's source-derived version plus a digest of drawings.model_view_pipeline (view frame, crop margin, chord tolerance, the source of its framing and meshing, mesh_pipeline); every request, idle retry and re-queue first checks its source (check_model_view_source: the run's exact state and registered model, no geometry read) and a retry draws from the latest checked source; thumbnails read the run's own record, so a run on an older canonical base is drawn (require_readable) while actions keep require_actionable; PNG blobs in <project cache dir>/projections/blobs named by their own sha256, written then renamed and self-describing through text chunks; one status row per key in the project index's projection table (StatusTable), whose insert is the claim, with a per-key lock in the process; the queue is enqueued after every index commit (tree_model_sources: the working position's model, then what readers show, then the rest of the tree) and on a read miss; one low-priority render subprocess with timeout, memory cap, leases reclaimed at startup and after the timeout, bounded retries with backoff, a refused source or a cancel giving its attempt back, one model read for every size drawn next (load_model_view, draw_loaded_view), and a collector keeping what an index artifact reaches, replacing an older renderer's picture only once the current one is drawn, with a grace window"
+        "the content-keyed projection cache (ADR-008 #367): key = sha256(model asset sha256, kind, recipe hash, renderer, SALT) where renderer is the mesh renderer's source-derived version plus a digest of drawings.model_view_pipeline (view frame, crop margin, chord tolerance, the source of its framing and meshing, mesh_pipeline); every request, idle retry and re-queue first checks its source (check_model_view_source: the run's exact state and registered model, no geometry read) and a retry draws from the latest checked source; thumbnails read the run's own record, so a run on an older canonical base is drawn (require_readable) while actions keep require_actionable; PNG blobs in <project cache dir>/projections/blobs named by their own sha256, written then renamed and self-describing through text chunks; one status row per key in the project index's projection table (StatusTable), whose insert is the claim, with a per-key lock in the process; the queue is enqueued after every index commit (tree_model_sources: the working position's model, then what readers show, then the rest of the tree) and on a read miss; one low-priority render subprocess with timeout, memory cap, leases reclaimed at startup and after the timeout, bounded retries with backoff, a refused source or a cancel giving its attempt back, one model read for every size drawn next (load_model_view, draw_loaded_view), and a collector keeping what an index artifact reaches, replacing an older renderer's picture only once the current one is drawn, with a grace window",
+        "drawings as on-demand projections (#368): an elevation's and a section perspective's SVG and PNG, a review sheet's PDF and DXF and a document page's raster are kinds of the same content-keyed cache (drawing-elevation, drawing-section-perspective, drawing-sheet, document-page), keyed by the input asset's sha256, a recipe holding every field that changes the bytes (the complete view and the drawn source content: geometry digest, unit, objects, bounds and semantics) and a renderer digest of the drawing code, fonts and libraries (drawings.drawing_pipeline); ProjectionQueue.on_demand draws one in the request that needs it through the existing generator, at most once per key, and the worker never draws them; issuing reads the cached files back and retains them in P036 byte for byte with a receipt of its own"
       ],
       "does_not_own": [
         "producing the export or its receipt - adapters.cad_execution through runtime.project_runner",
@@ -4435,7 +4439,10 @@
         "StatusTable",
         "draw_model_view",
         "check_model_view_source",
-        "model_view_pipeline"
+        "model_view_pipeline",
+        "GET /api/projections/pages",
+        "on_demand_spec",
+        "drawing_pipeline"
       ],
       "depends_on": [
         "adapters.cad_execution",
@@ -4514,7 +4521,8 @@
         "SKP sourceImport metadata exposes the original file name and source artifact plus conversion warnings through model upload/listing and drawing receipts; import loss is never hidden by a successful projection.",
         "A drawing correction is derived, never recorded (05 option A): GET /api/drawings/corrections reads the retained revisions and the active recipe decisions again on every call and writes nothing. A pair is only a revision and the one its receipt names, within one drawing; its class is a pure function of the recipe diff and the replacement cause, and a source rebuild is no correction. A suggestion is only offered: it counts representation-only recipe pairs no agent asked for, grouped by key and direction, needs two distinct drawings (D-05-1), skips a key an active recipe already gives that drawing, and becomes memory only by a person's recipe decision citing its page. V0 cleanup reports name no object, so no hide is classed a compiler defect.",
         "one run's artifact rows and documents are kept per run under the stamps of its manifest, its records directory, every directory and file under its workspaces (artifacts) and each file its rows cite outside the run; the project's listing is the runs' rows in run order and then the committed-source step, whose per-run answer is kept under the stamps of the run, the design branches, its runner receipts and its source Stage; mutable row parts are copied for each caller, and artifact_bytes still reads and hashes the file on every call",
-        "A projection key names no run and no time; its blob is served immutable and never cited as evidence; deleting the cache directory only makes the next read draw again."
+        "A projection key names no run and no time; its blob is served immutable and never cited as evidence; deleting the cache directory only makes the next read draw again.",
+        "An issued drawing's retained files are the cached files byte for byte, and its P036 receipt cites their sha256 and its exact source, never a cache key; without an index, or with the cache deleted, the drawing is drawn and retained as before. A review sheet's PDF carries its source binding, so it is found in the cache only by the same source and recipe."
       ],
       "status": "canonical",
       "tests": [
@@ -4570,7 +4578,8 @@
         "receiving explicitly mapped PDF/image revisions into the existing board image ids, frames and geometry while preserving all other live scene edits; source histories remain registered documents",
         "opening an exact registered Board page in the existing document editor and returning with saved annotations, viewport and selection, without discarding unsynced model work",
         "reading one exact retained scene revision by name, so an older revision can answer as evidence without changing the board's current revision",
-        "An explicit BoardPageRequest source focuses that exact registered page or reinstates only that intentionally removed page through the existing insertion path, preserving the current scene draft"
+        "An explicit BoardPageRequest source focuses that exact registered page or reinstates only that intentionally removed page through the existing insertion path, preserving the current scene draft",
+        "the one raster of a registered document page (page_raster, cached_page, #368): at most 2048 px with transparency, a bounded PNG served as its own bytes; Board previews, Publish images and the publication exports' raster previews read it from the projection cache (GET /api/projections/pages) instead of each rasterising the page"
       ],
       "does_not_own": [
         "original PDF/image upload or drawing generation (studio.artifacts and runtime.drawing_elevation)",
@@ -4601,7 +4610,10 @@
         "web: createBoardFeedback",
         "web: prepareBoardDesignRequest",
         "read_board(binding, revision_sha256=None)",
-        "web: BoardPageRequest"
+        "web: BoardPageRequest",
+        "page_raster",
+        "cached_page",
+        "PAGE_RASTER_EDGE"
       ],
       "depends_on": [
         "studio.artifacts",
@@ -4610,7 +4622,8 @@
         "project.ports",
         "project.repository",
         "project.record_kinds",
-        "studio.intent"
+        "studio.intent",
+        "project.index"
       ],
       "used_by": [
         "apps/archflow-studio/api/archflow_studio_api/routes/boards.py",

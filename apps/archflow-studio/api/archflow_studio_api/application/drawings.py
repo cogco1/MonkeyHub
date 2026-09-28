@@ -21,14 +21,14 @@ from uuid import uuid4
 
 from archflow.adapters.cad_execution import project_occt_lines
 from archflow.adapters.occt_backend import OcctBackendError
-from archflow.contracts.canonical import canonical_json
+from archflow.contracts.canonical import canonical_digest, canonical_json
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import DESIGN_STAGE, SEAT_OCCT_EXECUTION, STUDIO_SOURCE_DOCUMENT
 from archflow.project.refs import ProjectArtifactRef, ProjectRecordRef, record_ref_from_uri, require_identifier
 from monkeydiagram.drawing_elevation import (
-    SECTION_PERSPECTIVE_KIND, UNIT_METRES, DrawingElevationError, ElevationSource, NativeModelSource, ElevationView, SectionPerspectiveError,
-    SectionPerspectiveView, freeze_model_axis_elevation, freeze_section_perspective,
-    project_model_axis_elevation, read_elevation_source, VerifiedElevationSource,
+    SECTION_PERSPECTIVE_KIND, UNIT_METRES, DrawingElevationError, DrawnView, ElevationSource, NativeModelSource, ElevationView,
+    SectionPerspectiveError, SectionPerspectiveView, freeze_model_axis_elevation, freeze_section_perspective,
+    object_semantics, project_model_axis_elevation, read_elevation_source, VerifiedElevationSource,
 )
 from monkeydiagram.mesh_views import MeshViewError, mesh_line_view, mesh_pipeline, pixel_size, triangulate
 
@@ -40,6 +40,7 @@ from .binding import retained_sources
 from .binding import ProjectBinding
 from .monitoring import StudioMonitor
 from .projection import StateProjection, project_state, require_readable
+from .projections import DOCUMENT_PAGE, ELEVATION, SECTION_PERSPECTIVE, SHEET, ProjectionQueue, on_demand_spec
 from ..transport.errors import StudioError
 
 
@@ -201,6 +202,113 @@ def model_view_pipeline(view: str) -> dict[str, Any]:
         _elevation_view, _axon_meshes, _draw_view, draw_loaded_view)).encode("utf-8")).hexdigest()[:12]
     return {"view": view, "right": list(right), "up": list(up), "look": list(look), "margin": VIEW_MARGIN,
             "chordPx": AXON_CHORD_PX, "code": code, "mesh": mesh_pipeline()}
+
+
+def _library_version(name: str) -> str:
+    from importlib import metadata
+
+    try:
+        return metadata.version(name)
+    except metadata.PackageNotFoundError:
+        return "absent"
+
+
+def _source_files(*modules: str) -> dict[str, str]:
+    import importlib
+
+    return {name: hashlib.sha256(Path(importlib.import_module(name).__file__).read_bytes()).hexdigest()[:16]
+            for name in modules}
+
+
+_OCCT_DRAWING = ("monkeydiagram.drawing_elevation", "monkeydiagram.drawing_svg", "archflow.adapters.cad_execution",
+                 "archflow.adapters.occt_backend")
+
+
+def drawing_pipeline(kind: str) -> dict[str, Any]:
+    """Every input of an on-demand projection other than its content and recipe: the code and libraries drawing it.
+
+    The projection cache digests this into the renderer version (once per
+    process), so an edit to the drawing code or a library upgrade gives new
+    keys rather than stale drawings. The whole source of each drawing module
+    counts: an edit that changes no byte only costs one more drawing.
+    """
+
+    if kind in (ELEVATION, SECTION_PERSPECTIVE):
+        from archflow.adapters.occt_backend import backend_identity
+
+        return {"kind": kind, "code": _source_files(*_OCCT_DRAWING), "backend": backend_identity(),
+                "libraries": {name: _library_version(name) for name in ("Pillow", "numpy", "rhino3dm")}}
+    if kind == SHEET:
+        from archflow.adapters.occt_backend import backend_identity
+
+        return {"kind": kind, "code": {**_source_files(*_OCCT_DRAWING, "monkeydiagram.drawing_output",
+                                                         "monkeydiagram.documentation.styles"),
+                                       "sheet": hashlib.sha256(inspect.getsource(_drawn_sheet).encode("utf-8")).hexdigest()[:16]},
+                "fonts": {role: hashlib.sha256(path.read_bytes()).hexdigest()[:16] for role, path in _sheet_fonts().items()},
+                "backend": backend_identity(),
+                "libraries": {name: _library_version(name)
+                              for name in ("reportlab", "pypdf", "ezdxf", "Pillow", "fonttools", "rhino3dm")}}
+    if kind == DOCUMENT_PAGE:
+        from .boards import PAGE_RASTER_EDGE
+
+        return {"kind": kind, "edge": PAGE_RASTER_EDGE, "code": _source_files("archflow_studio_api.application.boards"),
+                "libraries": {name: _library_version(name) for name in ("PyMuPDF", "Pillow")}}
+    raise ValueError(f"{kind!r} is not an on-demand projection")
+
+
+def _drawn_content(source, verified: VerifiedElevationSource) -> dict[str, Any]:
+    """What a drawing reads from its verified source besides the view: part of its projection recipe.
+
+    The geometry's own digest (the exact STEP or native model), its unit,
+    objects and their bounds, and the semantics the SVG names; none of it
+    depends on the run or base the source is bound to.
+    """
+
+    receipt = verified.receipt
+    return {"geometry": _source_digest(source), "unit": verified.length_unit,
+            "objects": list(verified.physical_object_ids),
+            "bounds": canonical_digest(receipt.get("readback") or {}),
+            "semantics": canonical_digest({"drawn": object_semantics(receipt),
+                                           "objects": receipt.get("expected_semantics", {}).get("objects", {})})}
+
+
+def _through_projections(projections: ProjectionQueue | None, kind: str, model_source, recipe):
+    """The ``cache`` a freeze asks for its drawn view: the projection of ``recipe(verified)``, drawn at most once.
+
+    Without a queue (a runtime that keeps no project index) the view is
+    simply drawn; a cache that fails is skipped by ``on_demand``. A hit shows
+    in the monitored stages: no ``drawing.hlr``, ``drawing.svg`` or
+    ``drawing.png``. What the receipt says about a hit follows from the
+    verified key and the files wherever it can: the backend (part of the
+    key's renderer), an elevation's view (its recipe) and the objects the SVG
+    names; the solve's own counts and details come from the key's manifest.
+    """
+
+    if projections is None:
+        return None
+
+    def cache(verified: VerifiedElevationSource, draw) -> DrawnView:
+        def files():
+            drawn = draw()
+            return {"png": drawn.png, "svg": drawn.svg}, drawn.facts()
+
+        recipe_of_view = recipe(verified)
+        files, facts, hit = projections.on_demand(on_demand_spec(kind, _source_of(model_source), recipe_of_view), files)
+        if hit:
+            from archflow.adapters.occt_backend import backend_identity
+            from monkeydiagram.drawing_svg import svg_objects
+
+            facts = {**facts, "backend": backend_identity(),
+                     "counts": {**facts["counts"], "objects_drawn_in_svg": len(svg_objects(files["svg"]))}}
+            if kind == ELEVATION:
+                facts["view"] = recipe_of_view["view"]
+        return DrawnView.from_facts(facts, svg=files["svg"], png=files["png"])
+
+    return cache
+
+
+def _source_of(model_source):
+    return model_source if isinstance(model_source, ModelSource) else model_source.to_dict()
 
 
 def _elevation_view(
@@ -495,8 +603,17 @@ def _registered_drawing(
 def generate_elevation(
     binding: ProjectBinding, *, source_stage_ref: str | None, model_source: ModelSource | None,
     view: str, drawing_id: str | None = None, hidden_lines: bool = False, scale_denominator: int = 100,
-    monitor: StudioMonitor | None = None, source_asset=None,
+    monitor: StudioMonitor | None = None, source_asset=None, projections: ProjectionQueue | None = None,
 ) -> SourceDocument:
+    """One elevation of a verified source, retained and registered in the documents list.
+
+    An identical request on the same source reads the registered revision
+    back. Otherwise the drawing's files come from ``projections`` when the
+    same content was drawn at the same recipe before (by any run), and are
+    drawn once and kept there when not; either way they are retained in P036
+    byte for byte, with a receipt of their own.
+    """
+
     monitor = monitor if monitor is not None else StudioMonitor(None)
     with monitor.measure(
         "drawing_generate", project_id=binding.project_id, source_ref=source_stage_ref,
@@ -525,11 +642,14 @@ def generate_elevation(
             input_object_ids=list(cad_receipt["physical_object_ids"]),
         )
 
+        cache = _through_projections(projections, ELEVATION, model_source, lambda verified: {
+            "view": recipe.to_dict(), "content": _drawn_content(source, verified)})
+
         def freeze(observe):
             try:
                 return freeze_model_axis_elevation(
                     binding.repository, source=source, view=recipe, drawing_run_id=f"studio-drawing-{uuid4().hex}",
-                    operation_observer=observe, parent_event_id=operation["event_id"],
+                    operation_observer=observe, parent_event_id=operation["event_id"], cache=cache,
                 )
             except DrawingElevationError as exc:
                 raise StudioError(409, "DRAWING_GENERATION_FAILED", str(exc)) from exc
@@ -545,11 +665,11 @@ def generate_section_perspective(
     section: dict[str, Any], camera: dict[str, Any] | None = None, depth: float | None = None,
     hidden_object_ids: tuple[str, ...] = (), drawing_id: str | None = None, scale_denominator: int = 100,
     graphics: dict[str, float] | None = None, hatch: dict[str, Any] | None = None, beyond: dict[str, Any] | None = None,
-    monitor: StudioMonitor | None = None, source_asset=None,
+    monitor: StudioMonitor | None = None, source_asset=None, projections: ProjectionQueue | None = None,
 ) -> SourceDocument:
     """One section perspective of a verified source, retained and registered like an elevation.
 
-    The same source resolution, cache, monitoring and documents-list
+    The same source resolution, caches, monitoring and documents-list
     registration as ``generate_elevation``; an identical request on the same
     source reads the registered revision back.  ``hatch`` and ``beyond`` are a
     cut plan's material rules and fade, which the view checks and stores
@@ -590,11 +710,14 @@ def generate_section_perspective(
         details.update(input_identity={"model_sha256" if isinstance(source, NativeModelSource) else "step_sha256": _source_digest(source), "view_recipe": request},
                        input_object_ids=list(cad_receipt["physical_object_ids"]))
 
+        cache = _through_projections(projections, SECTION_PERSPECTIVE, model_source, lambda verified: {
+            "view": request, "content": _drawn_content(source, verified)})
+
         def freeze(observe):
             try:
                 return freeze_section_perspective(
                     binding.repository, source=source, view=view, drawing_run_id=f"studio-drawing-{uuid4().hex}",
-                    operation_observer=observe, parent_event_id=operation["event_id"],
+                    operation_observer=observe, parent_event_id=operation["event_id"], cache=cache,
                 )
             except SectionPerspectiveError as exc:
                 raise StudioError(422, exc.code, str(exc)) from exc
@@ -609,6 +732,40 @@ def generate_section_perspective(
 
         return _registered_drawing(binding, monitor, operation, model_source=model_source, stage_ref=stage_ref,
                                    drawing_id=drawing_id, same_recipe=same_recipe, freeze=freeze)
+
+
+def _drawn_sheet(binding, monitor, run_id, verified, frames, selected, layout, recipe_json) -> tuple[bytes, bytes]:
+    """A review sheet's PDF, carrying its recipe, and DXF: three exact visibility solves, composed; writes nothing."""
+
+    from pypdf import PdfReader, PdfWriter
+    from monkeydiagram.documentation.styles import compose_review_sheet
+    from monkeydiagram.drawing_output import render_dxf, render_pdf
+
+    try:
+        # The same composer checks fit before any expensive visibility solve.
+        compose_review_sheet(views={name: () for name in frames}, **layout)
+        views = {}
+        for name, frame in frames.items():
+            with monitor.measure("drawing.hlr", project_id=binding.project_id, run_id=run_id,
+                                 details={"input_identity": {"view_recipe": {"view": name}},
+                                          "input_object_ids": list(selected)}) as projection:
+                views[name] = project_occt_lines(
+                    verified.entries, object_ids=selected, origin=frame.origin,
+                    right=frame.right, up=frame.up, linear_deflection=frame.linear_deflection,
+                )
+                projection["details"]["emitted_object_ids"] = sorted({line.object_id for line in views[name]})
+        canvas = compose_review_sheet(views=views, **layout)
+        pdf = render_pdf(canvas)
+        # Source/configuration identity remains recoverable from the exported
+        # PDF, including two recipes that happen to draw identical lines.
+        reader = PdfReader(BytesIO(pdf))
+        writer = PdfWriter(clone_from=reader)
+        writer.add_metadata({"/ArchFlowViewRecipe": recipe_json})
+        output = BytesIO()
+        writer.write(output)
+        return output.getvalue(), render_dxf(canvas)
+    except (ValueError, OcctBackendError) as exc:
+        raise StudioError(422, "DRAWING_GENERATION_FAILED", str(exc)) from exc
 
 
 def _sheet_fonts() -> dict[str, Path]:
@@ -635,13 +792,18 @@ def generate_sheet(
     binding: ProjectBinding, *, source_stage_ref: str | None, model_source: ModelSource | None,
     style_id: str, scale_denominator: int = 20, hidden_object_ids: tuple[str, ...] = (),
     outline_object_ids: tuple[str, ...] = (), notes: tuple[str, ...] = (),
-    monitor: StudioMonitor | None = None, source_asset=None,
+    monitor: StudioMonitor | None = None, source_asset=None, projections: ProjectionQueue | None = None,
 ) -> SourceDocument:
-    """Three exact visibility projections, composed and retained as one source PDF."""
+    """Three exact visibility projections, composed and retained as one source PDF.
 
-    from pypdf import PdfReader, PdfWriter
-    from monkeydiagram.documentation.styles import compose_review_sheet, drawing_style
-    from monkeydiagram.drawing_output import render_dxf, render_pdf
+    An identical request on the same source reads the registered sheet back;
+    otherwise its PDF and DXF come from ``projections`` when drawn before, or
+    are drawn once and kept there, and are retained byte for byte. The PDF
+    carries its recipe, source binding included, so only a request of the same
+    source and recipe finds it there.
+    """
+
+    from monkeydiagram.documentation.styles import drawing_style
 
     model_source, stage_ref = _selected_source(binding, source_stage_ref, model_source, source_asset)
     source, receipt = _complete_source(binding, model_source, stage_ref)
@@ -701,32 +863,17 @@ def generate_sheet(
         layout = dict(style_id=style_id, bounds=bounds, length_unit=verified.length_unit,
                       title=binding.project_id, scale_denominator=scale_denominator,
                       notes=notes, outline_object_ids=tuple(sorted(outline)), font_mapping=fonts)
-        try:
-            # The same composer checks fit before any expensive visibility solve.
-            compose_review_sheet(views={name: () for name in frames}, **layout)
-            views = {}
-            for name, frame in frames.items():
-                with monitor.measure("drawing.hlr", project_id=binding.project_id, run_id=model_source.run_id,
-                                     details={"input_identity": {"view_recipe": {"view": name}},
-                                              "input_object_ids": list(selected)}) as projection:
-                    views[name] = project_occt_lines(
-                        verified.entries, object_ids=selected, origin=frame.origin,
-                        right=frame.right, up=frame.up, linear_deflection=frame.linear_deflection,
-                    )
-                    projection["details"]["emitted_object_ids"] = sorted({line.object_id for line in views[name]})
-            canvas = compose_review_sheet(views=views, **layout)
-            pdf = render_pdf(canvas)
-            # Source/configuration identity remains recoverable from the exported
-            # PDF, including two recipes that happen to draw identical lines.
-            reader = PdfReader(BytesIO(pdf))
-            writer = PdfWriter(clone_from=reader)
-            writer.add_metadata({"/ArchFlowViewRecipe": recipe_json})
-            output = BytesIO()
-            writer.write(output)
-            pdf = output.getvalue()
-            dxf = render_dxf(canvas)
-        except (ValueError, OcctBackendError) as exc:
-            raise StudioError(422, "DRAWING_GENERATION_FAILED", str(exc)) from exc
+
+        def draw():
+            pdf, dxf = _drawn_sheet(binding, monitor, model_source.run_id, verified, frames, selected, layout, recipe_json)
+            return {"pdf": pdf, "dxf": dxf}, {}
+
+        if projections is None:
+            files = draw()[0]
+        else:
+            files, _, _ = projections.on_demand(on_demand_spec(SHEET, _source_of(model_source), {
+                "recipe": recipe, "content": _drawn_content(source, verified)}), draw)
+        pdf, dxf = files["pdf"], files["dxf"]
         _document_pages(pdf, "application/pdf")
         digest = hashlib.sha256(pdf).hexdigest()
         binding.repository.put_workspace_file(

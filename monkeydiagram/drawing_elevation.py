@@ -647,9 +647,50 @@ def _revision_provenance(attribution, reason, source_kind=None) -> dict[str, Any
     return provenance
 
 
-def _retain_projection(repository, *, source, verified, projection, view, name, drawing_run_id,
-                       backend, head_before, projection_details=None, previous_revision_ref=None, provenance=None):
+@dataclass(frozen=True, slots=True)
+class DrawnView:
+    """One drawn view before it is retained: its two files and what the receipt says about the drawing.
+
+    Everything here follows from the verified source's content and the view,
+    not from the source's run or base: ``freeze_*`` retains it once drawn, and
+    a cache may keep it and hand the same bytes to another retention of the
+    same content, so that view is not solved again (the ``cache`` argument).
+    """
+
+    view: Mapping[str, Any]
+    svg: bytes
+    png: bytes
+    counts: Mapping[str, Any]
+    cleanup: Mapping[str, Any] | None
+    details: Mapping[str, Any]
+    backend: Mapping[str, Any]
+
+    def facts(self) -> dict[str, Any]:
+        """Everything but the two files, as JSON values."""
+
+        return {"view": deepcopy(dict(self.view)), "counts": dict(self.counts),
+                "cleanup": None if self.cleanup is None else dict(self.cleanup),
+                "details": deepcopy(dict(self.details)), "backend": dict(self.backend)}
+
+    @classmethod
+    def from_facts(cls, facts: Mapping[str, Any], *, svg: bytes, png: bytes) -> DrawnView:
+        return cls(facts["view"], svg, png, facts["counts"], facts["cleanup"], facts["details"], facts["backend"])
+
+
+#: What a cache does with a drawing: given the verified source and the function drawing
+#: it, the drawn view, from the cache or by calling the function once.
+DrawingCache = Callable[[VerifiedElevationSource, Callable[[], DrawnView]], DrawnView]
+
+
+def _drawn(view: Mapping[str, Any], projection, backend, details=None) -> DrawnView:
+    return DrawnView(view, projection.svg, projection.png, projection.counts(),
+                     None if projection.cleanup is None else projection.cleanup.to_dict(), details or {}, backend)
+
+
+def _retain_projection(repository, *, source, verified, drawn: DrawnView, name, drawing_run_id,
+                       head_before, previous_revision_ref=None, provenance=None):
     """The one receipt/artifact boundary for elevation, cut-plan and section-perspective projections."""
+    view = drawn.view
     if isinstance(source, NativeModelSource) and verified.receipt.get("modelSource") is None:
         view = {**view, "sourceAsset": {"runId": source.run_id, "assetSha256": source.artifact.sha256}, "follow": "frozen"}
     run = _drawing_run(repository, drawing_run_id, verified.run)
@@ -658,12 +699,12 @@ def _retain_projection(repository, *, source, verified, projection, view, name, 
         svg_ref = repository.put_workspace_file(
             run=run, destination=destination, artifact_id=f"{name}-svg",
             workspace_relative_path=f"{DOCUMENTATION_WORKSPACE}/{name}.svg",
-            media_type=SVG_MEDIA_TYPE, source=BytesIO(projection.svg),
+            media_type=SVG_MEDIA_TYPE, source=BytesIO(drawn.svg),
         )
         png_ref = repository.put_workspace_file(
             run=run, destination=destination, artifact_id=f"{name}-png",
             workspace_relative_path=f"{DOCUMENTATION_WORKSPACE}/{name}.png",
-            media_type=PNG_MEDIA_TYPE, source=BytesIO(projection.png),
+            media_type=PNG_MEDIA_TYPE, source=BytesIO(drawn.png),
         )
         payload = {
             "schema": DRAWING_PROJECTION_RECEIPT_SCHEMA,
@@ -674,17 +715,17 @@ def _retain_projection(repository, *, source, verified, projection, view, name, 
             "unit": verified.length_unit,
             "source": _source_binding(source, verified),
             "projection": {
-                "backend": backend,
+                "backend": dict(drawn.backend),
                 "algorithm": "HLRBRep_Algo exact hidden-line solve over every listed object, then per-object extraction",
                 "object_count": len(verified.physical_object_ids),
-                **projection.counts(),
-                **(projection_details or {}),
+                **drawn.counts,
+                **drawn.details,
             },
             "artifacts": {"svg": _ref_dict(svg_ref), "png": _ref_dict(png_ref)},
         }
         # What the cleanup removed describes this drawing, not its recipe: it is kept here only.
-        if projection.cleanup is not None:
-            payload["cleanup"] = projection.cleanup.to_dict()
+        if drawn.cleanup is not None:
+            payload["cleanup"] = dict(drawn.cleanup)
         if previous_revision_ref is not None:
             payload["previousRevisionRef"] = previous_revision_ref
         payload.update(provenance or {})
@@ -695,7 +736,7 @@ def _retain_projection(repository, *, source, verified, projection, view, name, 
     except ProjectRepositoryError as exc:
         raise DrawingElevationError(f"the drawing could not be retained in run {run.run_id}: {exc}") from exc
     drawing = read_model_axis_elevation(repository, receipt_ref)
-    _require(drawing.svg == projection.svg and drawing.png == projection.png,
+    _require(drawing.svg == drawn.svg and drawing.png == drawn.png,
              "the retained drawing files read back differently from what was written")
     _require(repository.read_head() == head_before, "the project's published version changed while drawing")
     return drawing
@@ -816,15 +857,15 @@ def freeze_cut_plan(
         projection = ElevationProjection(lines=lines, svg=svg, png=render_svg_png(svg), cleanup=cleanup)
     except (OcctBackendError, DrawingSvgError) as exc:
         raise DrawingElevationError(f"cut-plan {view.name}: {exc}") from exc
+    drawn = _drawn(recipe, projection, backend_identity(), {
+        "algorithm": "BRepAlgoAPI_Section on the cut plane; exact below-cut slab and global HLRBRep_Algo visibility",
+        "selected_object_ids": list(selected), "section_polylines": len(sections),
+        "section_regions": len(regions), "dimensions": resolved, "unresolvedObjectIds": unresolved_objects,
+        **({"dressing": dressing} if "dressing" in recipe else {}),
+    })
     return _retain_projection(
-        repository, source=source, verified=verified, projection=projection, view=recipe, name=view.name,
-        drawing_run_id=drawing_run_id, backend=backend_identity(), head_before=head_before,
-        projection_details={
-            "algorithm": "BRepAlgoAPI_Section on the cut plane; exact below-cut slab and global HLRBRep_Algo visibility",
-            "selected_object_ids": list(selected), "section_polylines": len(sections),
-            "section_regions": len(regions), "dimensions": resolved, "unresolvedObjectIds": unresolved_objects,
-            **({"dressing": dressing} if "dressing" in recipe else {}),
-        }, previous_revision_ref=previous_revision_ref, provenance=provenance,
+        repository, source=source, verified=verified, drawn=drawn, name=view.name, drawing_run_id=drawing_run_id,
+        head_before=head_before, previous_revision_ref=previous_revision_ref, provenance=provenance,
     )
 
 
@@ -832,6 +873,7 @@ def freeze_model_axis_elevation(
     repository: FilesystemProjectRepository, *, source: ElevationSource | NativeModelSource, view: ElevationView, drawing_run_id: str,
     operation_observer: Callable[[Mapping[str, Any]], None] | None = None,
     parent_event_id: str | None = None, attribution: Mapping[str, Any] | None = None, reason: str | None = None,
+    cache: DrawingCache | None = None,
 ) -> ElevationDrawing:
     """Project retained STEP or native 3DM and retain SVG, PNG and receipt in the drawing run.
 
@@ -840,6 +882,8 @@ def freeze_model_axis_elevation(
     with the same source and view writes the same bytes to the same paths
     (the repository accepts identical content) and returns the same refs.
     ``attribution`` and ``reason`` say who asked and why (``_revision_provenance``).
+    ``cache``, when given, is asked for the drawn view once the source has
+    verified: it may answer from what it kept instead of solving the view.
     """
 
     if not isinstance(repository, FilesystemProjectRepository):
@@ -862,14 +906,17 @@ def freeze_model_axis_elevation(
         backend = backend_identity()
         identity.update(backend=backend["binding"], backend_version=backend["binding_version"])
         observation["input_object_ids"] = list(verified.physical_object_ids)
-    projection = project_model_axis_elevation(
-        verified.entries, object_ids=verified.physical_object_ids, view=view, unit=verified.length_unit,
-        operation_observer=observer, parent_event_id=parent_event_id, semantics=object_semantics(verified.receipt),
-    )
+    def draw() -> DrawnView:
+        return _drawn(view.to_dict(), project_model_axis_elevation(
+            verified.entries, object_ids=verified.physical_object_ids, view=view, unit=verified.length_unit,
+            operation_observer=observer, parent_event_id=parent_event_id, semantics=object_semantics(verified.receipt),
+        ), backend)
+
+    drawn = draw() if cache is None else cache(verified, draw)
     with _observed_stage(observer, "drawing.persist", parent_event_id=parent_event_id) as observation:
         drawing = _retain_projection(
-            repository, source=source, verified=verified, projection=projection, view=view.to_dict(), name=view.name,
-            drawing_run_id=drawing_run_id, backend=backend, head_before=head_before, provenance=provenance,
+            repository, source=source, verified=verified, drawn=drawn, name=view.name,
+            drawing_run_id=drawing_run_id, head_before=head_before, provenance=provenance,
         )
         observation["output_refs"] = [drawing.receipt_ref.uri, drawing.svg_ref.uri, drawing.png_ref.uri]
     return drawing
@@ -1321,6 +1368,7 @@ def freeze_section_perspective(
     repository: FilesystemProjectRepository, *, source: ElevationSource | NativeModelSource, view: SectionPerspectiveView,
     drawing_run_id: str, operation_observer: Callable[[Mapping[str, Any]], None] | None = None,
     parent_event_id: str | None = None, attribution: Mapping[str, Any] | None = None, reason: str | None = None,
+    cache: DrawingCache | None = None,
 ) -> ElevationDrawing:
     """Draw a section perspective of verified STEP or native geometry and retain SVG, PNG and receipt.
 
@@ -1329,7 +1377,8 @@ def freeze_section_perspective(
     projection and both renderings succeeded, and ``_retain_projection``
     retains the receipt with the exact plane and camera.  A repeat with the
     same source and view writes the same bytes and returns the same refs.
-    ``attribution`` and ``reason`` say who asked and why (``_revision_provenance``).
+    ``attribution`` and ``reason`` say who asked and why (``_revision_provenance``);
+    ``cache`` is asked for the drawn view as in ``freeze_model_axis_elevation``.
     """
 
     if not isinstance(repository, FilesystemProjectRepository):
@@ -1354,15 +1403,18 @@ def freeze_section_perspective(
         identity.update(backend=backend["binding"], backend_version=backend["binding_version"])
         selected = section_perspective_objects(verified, view.hidden_object_ids)
         observation["input_object_ids"] = list(selected)
-    projection = project_section_perspective(
-        verified.entries, object_ids=selected, view=view, unit=verified.length_unit,
-        operation_observer=observer, parent_event_id=parent_event_id, semantics=object_semantics(verified.receipt),
-    )
+    def draw() -> DrawnView:
+        projection = project_section_perspective(
+            verified.entries, object_ids=selected, view=view, unit=verified.length_unit,
+            operation_observer=observer, parent_event_id=parent_event_id, semantics=object_semantics(verified.receipt),
+        )
+        return _drawn(dict(projection.view), projection, backend, projection.details(selected))
+
+    drawn = draw() if cache is None else cache(verified, draw)
     with _observed_stage(observer, "drawing.persist", parent_event_id=parent_event_id) as observation:
         drawing = _retain_projection(
-            repository, source=source, verified=verified, projection=projection, view=dict(projection.view),
-            name=view.name, drawing_run_id=drawing_run_id, backend=backend, head_before=head_before,
-            projection_details=projection.details(selected), provenance=provenance,
+            repository, source=source, verified=verified, drawn=drawn, name=view.name,
+            drawing_run_id=drawing_run_id, head_before=head_before, provenance=provenance,
         )
         observation["output_refs"] = [drawing.receipt_ref.uri, drawing.svg_ref.uri, drawing.png_ref.uri]
     return drawing
@@ -1421,7 +1473,9 @@ __all__ = [
     "ELEVATION_KIND",
     "SECTION_PERSPECTIVE_KIND",
     "UNIT_METRES",
+    "DrawingCache",
     "DrawingElevationError",
+    "DrawnView",
     "ElevationDrawing",
     "ElevationProjection",
     "ElevationSource",

@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
-import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import { useConnection, useStudio } from "../../api/ProjectRuntimeContext";
 import { publicationClient } from "../../api/publication";
 import { asStudioApiError } from "../../api/client";
@@ -28,27 +27,9 @@ function SourceImage({ item, projectId }: { item: PublicationElementDto; project
     setUrl(""); setError("");
     void (async () => {
       const source = item.source!;
-      const blob = await studio.documentFile(source.runId, source.assetSha256, "publication-source", source.revisionRef);
-      let image: ImageBitmap;
-      if (blob.type === "application/pdf") {
-        const renderer = await import("pdfjs-dist");
-        renderer.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
-        const loading = renderer.getDocument({ data: await blob.arrayBuffer() });
-        try {
-          const pdf = await loading.promise, page = await pdf.getPage(source.pageIndex + 1);
-          const original = page.getViewport({ scale: 1 });
-          const view = page.getViewport({ scale: Math.min(2, 2048 / Math.max(original.width, original.height)) });
-          const canvas = document.createElement("canvas");
-          canvas.width = Math.ceil(view.width); canvas.height = Math.ceil(view.height);
-          await page.render({ canvas, canvasContext: canvas.getContext("2d", { alpha: true })!, viewport: view, background: "rgba(0,0,0,0)" }).promise;
-          image = await createImageBitmap(canvas);
-        } finally { await loading.destroy(); }
-      } else {
-        const original = await createImageBitmap(blob);
-        const scale = Math.min(1, 2048 / Math.max(original.width, original.height));
-        try { image = await createImageBitmap(original, { resizeWidth: Math.max(1, Math.round(original.width * scale)), resizeHeight: Math.max(1, Math.round(original.height * scale)) }); }
-        finally { original.close(); }
-      }
+      // The page's one cached raster (#368), as Board and the PPTX export show it; the source stays the document.
+      const raster = await studio.documentPage(source.runId, source.assetSha256, source.revisionRef ?? null, source.pageIndex);
+      const image = await createImageBitmap(raster.file);
       try {
         const [l, t, r, b] = item.crop ?? [0, 0, 0, 0];
         const canvas = document.createElement("canvas");
