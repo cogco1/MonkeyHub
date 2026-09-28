@@ -3452,29 +3452,37 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
                 task = document["components"]["schemas"]["AdmissionTaskDto"]["properties"]
                 task["kind"] = {**task["kind"], "enum": ["hub-chat"]}
         producer = arguments.get("producer")
+        if producer is not None and (method != "POST" or parsed.path != "/api/proposals" or not isinstance(producer, str)):
+            raise HubFailure(422, "CHAT_TOOL_INVALID", "producer selects the input schema of POST /api/proposals.")
+        entity = document.get("components", {}).get("schemas", {}).get("SemanticEditRequestDto", {}).get("properties", {}).get("entities", {}).get("items", {})
+        offered: dict[str, str] = {}
+        for variant in entity.get("anyOf", []):
+            for item in variant.get("properties", {}).get("fields", {}).get("anyOf", ()):
+                for offer in item.get("properties", {}).get("producer", {}).get("enum", []):
+                    # One line of the producer's own description, in contract order.
+                    offered.setdefault(offer, str(item.get("description", "")).split(". ")[0].rstrip("."))
+        if method == "POST" and parsed.path == "/api/proposals" and producer is None and offered:
+            # The union of every producer's contract is far larger than one tool
+            # answer; this question is which producer to ask about.
+            return {"path": template, "method": method,
+                    "producers": [{"producer": offer, "summary": summary} for offer, summary in offered.items()],
+                    "next": "Ask again with producer set to one of these for its authoring contract."}
         if producer is not None:
-            if method != "POST" or parsed.path != "/api/proposals" or not isinstance(producer, str):
-                raise HubFailure(422, "CHAT_TOOL_INVALID", "producer selects the input schema of POST /api/proposals.")
-            entity = document.get("components", {}).get("schemas", {}).get("SemanticEditRequestDto", {}).get("properties", {}).get("entities", {}).get("items", {})
-            available = set()
             matched = False
             for variant in entity.get("anyOf", []):
                 fields = variant.get("properties", {}).get("fields", {})
                 alternatives = fields.get("anyOf")
                 if alternatives is None:
                     continue
-                for item in alternatives:
-                    available.update(item.get("properties", {}).get("producer", {}).get("enum", []))
                 selected = [item for item in alternatives
                             if producer in item.get("properties", {}).get("producer", {}).get("enum", [])]
                 if selected:
                     matched = True
                     fields["anyOf"] = selected
             if not matched:
-                raise HubFailure(422, "CHAT_TOOL_UNAVAILABLE", f"No authoring schema for {producer!r}; available producers: {sorted(available)}")
-            # This query asks for one author's inputs. The response, including
-            # the same edit payload again, is available through the ordinary
-            # unfiltered schema query and need not accompany this request.
+                raise HubFailure(422, "CHAT_TOOL_UNAVAILABLE", f"No authoring schema for {producer!r}; available producers: {sorted(offered)}")
+            # This query asks for one author's inputs; the response arrives
+            # with the request itself.
             operation = {key: value for key, value in operation.items() if key != "responses"}
         schemas, pending = {}, [operation]
         while pending:
@@ -3683,7 +3691,7 @@ def _mcp(hub: str, chat_id: str | None, external: ChatPresentationBindRequest | 
         "pathPrefix": {"type": "string", "description": "Discover actions below this API prefix (for example /api/drawings); omit path. Omit method to include reads AND writes."},
         "offset": {"type": "integer", "minimum": 0, "description": "Action discovery page offset; omit path."},
         "limit": {"type": "integer", "minimum": 1, "maximum": 50, "description": "Action discovery page size, default 30; omit path."},
-        "producer": {"type": "string", "description": "For POST /api/proposals authoring, name one producer the running Studio advertises to read only its request contract, excluding unrelated geometry and response schemas. The unfiltered POST /api/proposals schema lists the available producers, most general first; an unknown name is answered with that list."},
+        "producer": {"type": "string", "description": "For POST /api/proposals authoring, name one producer the running Studio advertises to read only its request contract, excluding unrelated geometry and response schemas. Without it, POST /api/proposals answers the index of available producers, most general first; an unknown name is answered with that list."},
     }}
     request_schema = {
         "type": "object", "properties": {
@@ -3759,7 +3767,6 @@ def _mcp(hub: str, chat_id: str | None, external: ChatPresentationBindRequest | 
     # contracts remain discoverable on demand; the agent chooses observation points.
     modelling = chr(10).join([
         "Use the bound project's Studio API. Lengths are metres; plan points are [x, z], with Y up.",
-        "Read studio_schema for action details or producer inputs as needed.",
         "Design tools prepare the project's runtime themselves; nobody needs to open a page first.",
         "",
         "CURRENT STATE: GET /api/state and GET /api/state/frame provide stateDigest, components/elements and levels.",
@@ -3778,8 +3785,7 @@ def _mcp(hub: str, chat_id: str | None, external: ChatPresentationBindRequest | 
         "Use a specialized producer such as wall only when the user asks for it or the meaning is already established.",
         "Never ask for a GridAxis or a semanticKind for ordinary geometry; project-local points and levels are enough, and meaning can be added later to the same component.",
         "",
-        "EDIT: POST /api/proposals/transform, /api/proposals/push-pull, /api/proposals/elevation or /api/proposals/delete.",
-        "For a batch height compression of planar surfaces, transform kind=compress-above takes componentId OR elementIds, threshold and factor (0 < factor <= 1), plus exact source fields. It fixes Y <= threshold, scales height above it and inserts crossing-edge intersections in one proposal. Read the schema; do not calculate and submit individual polygon edits.",
+        "EDIT: POST /api/proposals/transform, /api/proposals/push-pull, /api/proposals/elevation or /api/proposals/delete; lower planar surfaces above a height with one transform kind=compress-above, not hand-computed polygons.",
         "Read each action's schema for its fields; tool errors identify unsupported operations. Choose methods that preserve design meaning.",
         "For an existing numeric control, GET /api/capabilities/candidate.modify_existing?target=<componentId>&elementId=<the element>&run=<candidateId>",
         "returns its current values, units and a ready request; edit that body and POST /api/capabilities/{capabilityId}/run.",
@@ -3787,7 +3793,7 @@ def _mcp(hub: str, chat_id: str | None, external: ChatPresentationBindRequest | 
         "keep is a list of protected refs, e.g. ['entity:portico-base']. Use the actual target and source, not a guessed field.",
         "For linked dimensions, use POST /api/proposals with {stateDigest, semanticEdit: {summary, parameters: [...], entities: [...]}}.",
         "Use semanticEdit or utterance, not both. Existing omitted fields/dependencies are retained; revise upstream controls for linked edits.",
-        "Read studio_schema POST /api/proposals for the producers the running Studio offers, then with producer set to one of them for its authoring contract.",
+        "studio_schema POST /api/proposals answers the index of producers the running Studio offers; with producer set to one, its authoring contract.",
         "Geometry binds parameters with '@key'; formulas belong in parameters[].expr with inputs, and value must match the expression.",
         "When the user says what a part is, send their word as semanticKind: Studio maps a registered alias or keeps the word as the part's intent, never a refusal, so do not read /api/semantics first; never guess a nearby id, and role.* or condition.* IDs are not kinds.",
         "Keep early forms generic until their role is established; enrich them by upserting the same component id, never by recreating them.",
@@ -3812,7 +3818,7 @@ def _mcp(hub: str, chat_id: str | None, external: ChatPresentationBindRequest | 
         "For invalid input, use the named schema to correct it. For stale state/conflicts, refresh the exact source and reconcile the change while preserving keep conditions.",
         "A refused request made no model. Distinguish unsupported operations from correctable inputs; report unresolved limits without inventing success.",
         "",
-        "ADMIT: when a MODEL REVISION loop is complete, POST /api/admissions once for its new design results: {task: {kind: 'hub-chat'}, study: {id, label, baseRunId}",
+        "ADMIT: when a model revision loop is complete, POST /api/admissions once: {task: {kind: 'hub-chat'}, study: {id, label, baseRunId}",
         "(id an ASCII slug) for several alternatives built from one run, results: [{runId, outcome: 'admitted', supersedes: [attempt runIds it replaced], label}]}.",
         "outcome 'rejected' only where the user's words reject that result; add feedbackQuote with their exact passage.",
         "The chat fills messageSource and rawLanguage; never supply them. A refusal names each failing clause per run; an identical",
@@ -3835,8 +3841,7 @@ def _mcp(hub: str, chat_id: str | None, external: ChatPresentationBindRequest | 
         "Carry applicable supported design keep refs into the existing edit's keep field and check the execution result. Preserve the actual relation or parameter asked for, not an entire unrelated object. Keep existing parameter locks; unsupported relation protection or hatch controls require explicit defer, not invented enforcement.",
         "Use each decision once for its relevant effect: preserve/filter for supported hard constraints, a generation preference for soft wording, or defer for unsupported effects. Inspect the next artifact and name any remaining gap; a context entry alone proves no behavior changed.",
         "PUT /api/board, /api/document-annotations. Use their schemas for exact inputs.",
-        "DRAWINGS: POST /api/drawings/elevations automatically registers results in MonkeyDiagram's documents list.",
-        "Drawing-only tasks finish by reading the returned documents and exact files/pages; drawing registration does not require candidate admission. Do not admit the unchanged source model as a new design result. A later observation or admission failure does not undo a drawing already registered; report retained outputs and any remaining limitation separately.",
+        "DRAWINGS: POST /api/drawings/elevations automatically registers results in MonkeyDiagram's documents list; drawing-only work admits nothing.",
         "SECTION PERSPECTIVE (剖透视): POST /api/drawings/section-perspectives cuts the exact model with a section plane, removes the side the eye is on,",
         "and draws the kept side in true perspective: the cut filled (poché) and true to scale at 1:scaleDenominator, farther geometry smaller,",
         "lines perpendicular to the cut converging at the eye's point on it. Minimal body: {projectId, sourceStageRef or modelSource,",
@@ -3858,7 +3863,7 @@ def _mcp(hub: str, chat_id: str | None, external: ChatPresentationBindRequest | 
         "the dimensions a plan can place. Drawing revisions never move the design. GET /api/drawings/corrections?projectId=[&drawingId=] reads how",
         "revisions changed and which repeated corrections the architect may save as a project recipe; only the architect can save one.",
         "SEE A VIEW: when the user asks to see a view, GET /api/drawings/model-view?runId=<id>&stateDigest=<digest>&assetSha256=<3dm sha256>&view=front returns an MCP image",
-        "with exact source metadata. To judge a spatial or formal result, call visual_review for a bounded bundle of exact images to inspect, or structured observations when configured.",
+        "with exact source metadata.",
         "Read modelSource from the awaited result's artifacts or the candidate's 3dm artifact. Views: front/back/left/right/top/axon (axon is isometric). This is a read-only line projection from complete retained STEP; unsupported sources refuse rather than show a proxy.",
         "GET /api/drawings/styles and POST /api/drawings/sheets compose a sheet from exact modelSource, styleId and scaleDenominator.",
         "Top is an orthographic projection, not a cut plan. GET /api/documents?runId=<runId> reads that run's drawings.",

@@ -1689,10 +1689,10 @@ class ChatTests(unittest.TestCase):
             self.assertEqual(selected, [variants[1]])
             self.assertEqual(schema["properties"]["parameters"], {"type": "array"})
             self.assertNotIn("ProposalDto", answer["components"]["schemas"])
-            full = chat.call_tool(self.store.hub_url, session.id, "studio_schema", {
+            index = chat.call_tool(self.store.hub_url, session.id, "studio_schema", {
                 "method": "POST", "path": "/api/proposals"})
-            self.assertIn("ProposalDto", full["components"]["schemas"])
-            self.assertEqual(full["components"]["schemas"]["SemanticEditRequestDto"], document["components"]["schemas"]["SemanticEditRequestDto"])
+            self.assertEqual([row["producer"] for row in index["producers"]], ["prism", "loft"])
+            self.assertNotIn("components", index)
             with self.assertRaises(HubFailure) as unavailable:
                 chat.call_tool(self.store.hub_url, session.id, "studio_schema", {
                     "method": "POST", "path": "/api/proposals", "producer": "missing"})
@@ -1747,6 +1747,61 @@ class ChatTests(unittest.TestCase):
             component = next(variant["properties"]["fields"] for variant in fields["anyOf"]
                              if variant["properties"]["schema"]["enum"] == ["Component@1"])
             self.assertNotIn("semantic_kind", component.get("required", ()))
+
+    def test_the_producer_index_is_compact_and_read_from_the_running_studio(self):
+        """#413: the unfiltered answer was 67,550 characters, over the CLI's tool-output limit."""
+
+        from archflow_studio_api.main import create_app as studio_app
+        from archflow_studio_api.settings import StudioSettings
+
+        project = self.root / "producer-index"
+        FilesystemProjectRepository.initialize(project, project_id="producer-index",
+                                               initial_state={"project_id": "producer-index", "version": 0})
+        with TestClient(studio_app(StudioSettings(project_dir=project, cad_export="off"))) as client:
+            document = client.get("/openapi.json").json()
+        entity = document["components"]["schemas"]["SemanticEditRequestDto"]["properties"]["entities"]["items"]
+        element = next(variant["properties"]["fields"]["anyOf"] for variant in entity["anyOf"]
+                       if variant["properties"]["schema"]["enum"] == ["Element@1"])
+        contract = [item["properties"]["producer"]["enum"][0] for item in element]
+        session = self.create()
+        served = [document]
+        with patch.object(chat, "_bound_studio", return_value=("http://127.0.0.1:8791", session.model_dump())), \
+                patch.object(chat, "_request_json", side_effect=lambda *a, **k: json.loads(json.dumps(served[0]))):
+            index = chat.call_tool(self.store.hub_url, session.id, "studio_schema", {
+                "method": "POST", "path": "/api/proposals"})
+            self.assertLess(len(json.dumps(index)), 3000)
+            self.assertEqual([row["producer"] for row in index["producers"]], contract)
+            self.assertEqual(contract[0], "prism", "most general first, as the contract orders them")
+            for row, item in zip(index["producers"], element):
+                self.assertTrue(row["summary"])
+                self.assertTrue(item["description"].startswith(row["summary"]), "the producer's own description")
+            full = chat.call_tool(self.store.hub_url, session.id, "studio_schema", {
+                "method": "POST", "path": "/api/proposals", "producer": "wall"})
+            self.assertIn("SemanticEditRequestDto", full["components"]["schemas"])
+            self.assertGreater(len(json.dumps(full)), len(json.dumps(index)))
+            # No list of its own: a Studio offering another producer is answered with it.
+            changed = json.loads(json.dumps(document))
+            variants = changed["components"]["schemas"]["SemanticEditRequestDto"]["properties"]["entities"]["items"]["anyOf"]
+            for variant in variants:
+                alternatives = variant["properties"]["fields"].get("anyOf")
+                if alternatives is not None:
+                    alternatives[:] = [item for item in alternatives if item["properties"]["producer"]["enum"] != ["loft"]]
+                    alternatives.append({"description": "A trial producer. More text.",
+                                         "properties": {"producer": {"enum": ["trial"]}}})
+            served[0] = changed
+            index = chat.call_tool(self.store.hub_url, session.id, "studio_schema", {
+                "method": "POST", "path": "/api/proposals"})
+            self.assertEqual([row["producer"] for row in index["producers"]],
+                             [name for name in contract if name != "loft"] + ["trial"])
+            self.assertEqual(index["producers"][-1]["summary"], "A trial producer")
+
+    def test_the_agent_guide_does_not_grow(self):
+        """#413 moved the producer answer into studio_schema without adding guide lines."""
+
+        modelling = next(tool for tool in _tools_of(chat) if tool["name"] == "studio_request")["description"]
+        self.assertLessEqual(len(modelling.splitlines()), 106)
+        self.assertLessEqual(len(modelling), 15972)
+        self.assertIn("studio_schema POST /api/proposals answers the index of producers", modelling)
 
     def test_existing_controls_and_candidate_continuation_are_discoverable(self):
         """One short pointer, and the bound path behind it — not a second hand-written contract."""

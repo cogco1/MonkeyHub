@@ -1780,3 +1780,20 @@ keep the draft and expose retry/reload, including after closing and reopening
 that project within the same UI session. Reloading or closing a page with
 unsaved content requires an explicit discard; an unavailable exact source still
 refuses export.
+
+## Local integration diagnostics
+
+`GET /api/integrations` is a Hub-local read-only snapshot of integration
+manifests, detected software, installed/enabled Monkey components, per-capability
+qualification and available workflow ids. The first read performs bounded local
+discovery; `?rescan=true` explicitly refreshes it and revokes earlier qualification.
+No query launches CAD, loads vendor DLLs, installs a bridge, checks a license or
+writes project data. Public installation entries omit full executable paths.
+
+Detection does not imply installation, installation does not imply qualification,
+and qualification grants no project authority. The default adapters are bundled;
+the optional SketchUp live extension is absent. Explicit Python qualification
+uses the existing CAD/SDK/projection executors and their saved-output checks.
+`ready` and `checkedAt` describe the last qualification in this Hub session,
+not an authorization or guarantee for a later execution. See
+[Integration packs](INTEGRATION_PACKS.md) for the contract and Revit design case.
