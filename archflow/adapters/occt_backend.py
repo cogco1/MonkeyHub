@@ -72,7 +72,7 @@ import importlib.metadata
 import math
 import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
@@ -150,6 +150,192 @@ _UNIT_TO_RHINO3DM: Mapping[str, str] = {
     "inch": "Inches",
     "foot": "Feet",
 }
+
+#: How a boolean_difference may be realized (#419): ``auto`` extrudes one face
+#: with holes when every void pierces an extruded base along its extrusion and
+#: cuts otherwise; ``boolean`` always cuts; ``profile_with_holes`` refuses
+#: a difference it cannot realize that way.
+DIFFERENCE_STRATEGIES = ("auto", "boolean", "profile_with_holes")
+_PLAN_TOLERANCE = 1e-7
+
+
+@dataclass(frozen=True)
+class _ProfileWithHoles:
+    """One planar face with inner wires, extruded once: a difference whose voids pierce an extruded base."""
+
+    outer: tuple[tuple[float, float, float], ...]
+    holes: tuple[tuple[tuple[float, float, float], ...], ...]
+    vector: tuple[float, float, float]
+
+
+def _sub(a, b):
+    return (a[0] - b[0], a[1] - b[1], a[2] - b[2])
+
+
+def _dot(a, b):
+    return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+
+
+def _cross(a, b):
+    return (a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0])
+
+
+def _length(a):
+    return math.sqrt(_dot(a, a))
+
+
+def _loop(points):
+    """A profile's distinct vertices, without a repeated closing point."""
+
+    loop = [tuple(float(value) for value in point) for point in points]
+    return loop[:-1] if len(loop) > 1 and loop[0] == loop[-1] else loop
+
+
+def _unit_normal(loop):
+    """Newell's normal of a planar loop, or None when the loop has no area."""
+
+    normal = [0.0, 0.0, 0.0]
+    for a, b in zip(loop, loop[1:] + loop[:1]):
+        normal[0] += (a[1] - b[1]) * (a[2] + b[2])
+        normal[1] += (a[2] - b[2]) * (a[0] + b[0])
+        normal[2] += (a[0] - b[0]) * (a[1] + b[1])
+    length = _length(normal)
+    return None if length <= _PLAN_TOLERANCE else tuple(value / length for value in normal)
+
+
+def _in_plane(loop, origin, normal):
+    """The loop in an orthonormal basis of the plane through ``origin`` with ``normal``."""
+
+    seed = (1.0, 0.0, 0.0) if abs(normal[0]) < 0.9 else (0.0, 1.0, 0.0)
+    first = _cross(normal, seed)
+    first = tuple(value / _length(first) for value in first)
+    second = _cross(normal, first)
+    return [(_dot(_sub(point, origin), first), _dot(_sub(point, origin), second)) for point in loop]
+
+
+def _signed_area(flat):
+    return sum(a[0] * b[1] - b[0] * a[1] for a, b in zip(flat, flat[1:] + flat[:1])) / 2.0
+
+
+def _edges(flat):
+    return list(zip(flat, flat[1:] + flat[:1]))
+
+
+def _segment_gap(p, q, a, b):
+    """The distance between segments pq and ab in the plane; zero when they cross or touch."""
+
+    def orient(u, v, w):
+        return (v[0] - u[0]) * (w[1] - u[1]) - (v[1] - u[1]) * (w[0] - u[0])
+
+    d1, d2, d3, d4 = orient(a, b, p), orient(a, b, q), orient(p, q, a), orient(p, q, b)
+    if 0.0 not in (d1, d2, d3, d4) and (d1 > 0) != (d2 > 0) and (d3 > 0) != (d4 > 0):
+        return 0.0
+
+    def to_segment(u, v, w):
+        dx, dy = w[0] - v[0], w[1] - v[1]
+        span = dx * dx + dy * dy
+        t = 0.0 if span == 0.0 else max(0.0, min(1.0, ((u[0] - v[0]) * dx + (u[1] - v[1]) * dy) / span))
+        return math.hypot(u[0] - v[0] - t * dx, u[1] - v[1] - t * dy)
+
+    return min(to_segment(p, a, b), to_segment(q, a, b), to_segment(a, p, q), to_segment(b, p, q))
+
+
+def _inside(point, flat):
+    """Even-odd containment of a point that lies on no edge."""
+
+    inside = False
+    for a, b in _edges(flat):
+        if (a[1] > point[1]) != (b[1] > point[1]):
+            if point[0] < a[0] + (point[1] - a[1]) * (b[0] - a[0]) / (b[1] - a[1]):
+                inside = not inside
+    return inside
+
+
+def _apart(first, second):
+    return all(_segment_gap(p, q, a, b) > _PLAN_TOLERANCE for p, q in _edges(first) for a, b in _edges(second))
+
+
+def _simple(flat):
+    edges = _edges(flat)
+    count = len(edges)
+    return all(
+        _segment_gap(*edges[i], *edges[j]) > _PLAN_TOLERANCE
+        for i in range(count) for j in range(i + 2, count) if not (i == 0 and j == count - 1)
+    )
+
+
+def _difference_plan(operation, operations, producers):
+    """A face-with-holes realization of this boolean_difference, or ``None`` and why not (#419).
+
+    It applies when the base is an extrusion and every void is an extrusion
+    along the same vector, with a profile parallel to the base profile, that
+    covers the base's whole extent along the vector and lies strictly inside
+    the base profile, apart from every other void. The result is then exactly
+    the base profile minus the void profiles, extruded once.
+    """
+
+    params = _params(operation)
+    inputs = sorted(operation.input_object_ids)
+    base_id = inputs[int(params.get("base_index", 0))]
+    source = operations.get(producers.get(base_id, ""))
+    if source is None or source.kind.value != "extrusion":
+        return None, f"the base {base_id} is not an extrusion"
+    base_params = _params(source)
+    outer = _loop(lift_to_base_level(base_params["profile"], base_params, source.op_id))
+    vector = tuple(float(value) for value in base_params["vector"])
+    normal = _unit_normal(outer)
+    rise = 0.0 if normal is None else _dot(vector, normal)
+    if normal is None or abs(rise) <= _PLAN_TOLERANCE:
+        return None, f"the base {base_id} has no area across its extrusion"
+    origin = outer[0]
+    extent = sorted((0.0, rise))
+    holes = []
+    for void_id in inputs:
+        if void_id == base_id:
+            continue
+        void = operations.get(producers.get(void_id, ""))
+        if void is None or void.kind.value != "extrusion":
+            return None, f"the void {void_id} is not an extrusion"
+        void_params = _params(void)
+        loop = _loop(lift_to_base_level(void_params["profile"], void_params, void.op_id))
+        void_vector = tuple(float(value) for value in void_params["vector"])
+        void_normal = _unit_normal(loop)
+        if (void_normal is None or _length(_cross(void_normal, normal)) > _PLAN_TOLERANCE
+                or _length(_cross(void_vector, vector)) > _PLAN_TOLERANCE * _length(void_vector) * _length(vector)):
+            return None, f"the void {void_id} is not extruded along the base"
+        start = _dot(_sub(loop[0], origin), normal)
+        reach = sorted((start, start + _dot(void_vector, normal)))
+        if reach[0] > extent[0] + _PLAN_TOLERANCE or reach[1] < extent[1] - _PLAN_TOLERANCE:
+            return None, f"the void {void_id} does not pass through the base"
+        shift = -start / rise
+        holes.append(tuple(tuple(point[i] + shift * vector[i] for i in range(3)) for point in loop))
+    flat_outer = _in_plane(outer, origin, normal)
+    flat_holes = [_in_plane(hole, origin, normal) for hole in holes]
+    for index, flat in enumerate(flat_holes):
+        if not _simple(flat):
+            return None, "a void profile crosses itself"
+        if not _apart(flat, flat_outer) or not all(_inside(point, flat_outer) for point in flat):
+            return None, "a void does not lie strictly inside the base profile"
+        for other in flat_holes[:index]:
+            if not _apart(flat, other) or _inside(flat[0], other) or _inside(other[0], flat):
+                return None, "two voids touch or overlap"
+    clockwise = _signed_area(flat_outer) < 0
+    oriented = tuple(
+        hole if (_signed_area(flat) < 0) != clockwise else tuple(reversed(hole))
+        for hole, flat in zip(holes, flat_holes)
+    )
+    return _ProfileWithHoles(tuple(outer), oriented, vector), None
+
+
+def _profile_with_holes(occ: SimpleNamespace, plan: _ProfileWithHoles, op_id: str):
+    maker = occ.BRepBuilderAPI.BRepBuilderAPI_MakeFace(_polygon(occ, plan.outer, op_id), True)
+    for hole in plan.holes:
+        maker.Add(_polygon(occ, hole, op_id))
+    if not maker.IsDone():
+        raise OcctBuildError(f"{op_id}: the profile with its holes is not one planar face")
+    vx, vy, vz = cad_point(plan.vector)
+    return occ.BRepPrimAPI.BRepPrimAPI_MakePrism(maker.Face(), occ.gp.gp_Vec(vx, vy, vz)).Shape()
+
 
 _LOFT_PRECISION = 1e-6
 _CLASSIFIER_TOLERANCE = 1e-7
@@ -316,12 +502,14 @@ class OcctProgramBuild:
     executed_operation_ids: tuple[str, ...] = ()
     recomputed_object_ids: tuple[str, ...] = ()
     reused_object_ids: tuple[str, ...] = ()
+    lowering: Mapping[str, str] = field(default_factory=dict)
 
 
 def build_program_shapes(
     program: CompiledGeometryProgram, *, reusable_shapes: Mapping[str, Any] | None = None,
     operation_observer: Callable[[Mapping[str, Any]], None] | None = None,
     observation_parent_id: str | None = None,
+    difference_strategy: str = "auto",
 ) -> OcctProgramBuild:
     """Interpret the program in operation order against the kernel.
 
@@ -334,11 +522,17 @@ def build_program_shapes(
     The optional observer receives one geometry span with actual consumed,
     recomputed, reused and emitted object ids. It does not re-evaluate the
     caller's input-equivalence decision, and observer failures are ignored.
+
+    ``difference_strategy`` chooses how a boolean_difference is realized
+    (DIFFERENCE_STRATEGIES); a profile with holes is recorded in ``lowering``.
     """
 
     if not isinstance(program, CompiledGeometryProgram):
         raise TypeError("program must be CompiledGeometryProgram")
     occ = _occt()
+    if difference_strategy not in DIFFERENCE_STRATEGIES:
+        raise OcctBackendError(f"unknown difference strategy {difference_strategy!r}")
+    lowering: dict[str, str] = {}
     started = time.perf_counter()
     started_at = datetime.now(timezone.utc)
     proposal = program.proposal
@@ -398,7 +592,14 @@ def build_program_shapes(
                 else:
                     executed.append(op_id)
                     input_ids.update(operation.input_object_ids)
-                    shape = _build_operation(occ, kind, operation, params, shapes)
+                    plan = None
+                    if kind == "boolean_difference" and difference_strategy != "boolean":
+                        plan, reason = _difference_plan(operation, operations, producers)
+                        if plan is None and difference_strategy == "profile_with_holes":
+                            raise OcctCapabilityError(op_id, kind, f"profile_with_holes does not apply: {reason}")
+                    shape = _build_operation(occ, kind, operation, params, shapes, plan=plan)
+                    if plan is not None:
+                        lowering[op_id] = "profile_with_holes"
             except OcctBackendError:
                 raise
             except Exception as exc:  # OCCT failures surface as Standard_Failure
@@ -420,6 +621,7 @@ def build_program_shapes(
             executed_operation_ids=tuple(executed),
             recomputed_object_ids=tuple(sorted(recomputed_ids)),
             reused_object_ids=tuple(sorted(reused_ids)),
+            lowering=dict(sorted(lowering.items())),
         )
         status = "succeeded"
         return result
@@ -471,6 +673,8 @@ def _build_operation(
     operation,
     params: Mapping[str, object],
     shapes: Mapping[str, Any],
+    *,
+    plan: _ProfileWithHoles | None = None,
 ):
     op_id = operation.op_id
     if kind == "curve":
@@ -555,6 +759,8 @@ def _build_operation(
             raise OcctBuildError(f"{op_id} ({kind}): inputs not built: {', '.join(missing)}")
         if len(inputs) < 2:
             raise OcctCapabilityError(op_id, kind, "a boolean needs at least two inputs")
+        if plan is not None:
+            return _profile_with_holes(occ, plan, op_id)
         if kind == "boolean_intersection":
             return _joint_intersection(occ, op_id, inputs, shapes)
         if kind == "boolean_difference":
@@ -2301,6 +2507,7 @@ def write_preview_three_dm(
 
 __all__ = [
     "CLOSED_SOLID",
+    "DIFFERENCE_STRATEGIES",
     "OPEN_SURFACE",
     "OcctBackendError",
     "OcctBuildError",

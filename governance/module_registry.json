@@ -249,7 +249,8 @@
         "Bounded 3DM/GLB mesh format adapters and conversion readback; runtime-qualified conversion-provider selection; provider execution remains separate from the standalone SKP reader, with no project writes.",
         "native 3DM drawing-shape decoding (planar BRep, linear extrusion, supported curves and meshes), with block transforms, visibility, units and explicit faceted/mesh approximation quality; unsupported geometry is refused",
         "independent local SketchUp C API reading of visible face geometry into meters/Z-up meshes; nested instances, transformations, holes and visibility, without launching a desktop host",
-        "Transport-neutral integration pack manifests, installed-component and per-capability qualification views over existing adapters; one bounded local software discovery registry for Rhino, Blender, SketchUp and retained AutoCAD discovery."
+        "Transport-neutral integration pack manifests, installed-component and per-capability qualification views over existing adapters; one bounded local software discovery registry for Rhino, Blender, SketchUp and retained AutoCAD discovery.",
+        "how the OCCT executor realizes a difference: a profile-with-holes extrusion when every void pierces an extruded base along its extrusion, otherwise a boolean cut (difference_strategy auto, boolean or profile_with_holes), recorded as the receipt's lowering"
       ],
       "does_not_own": [
         "translating the program into a script - adapters.cad_program",
@@ -401,7 +402,8 @@
         "a section perspective cuts every selected shape exactly with an oriented box on the kept side and solves visibility once with a perspective projector whose picture plane is the section plane, the shapes located in the eye's camera frame (HLRBRep's perspective misjudges back faces and silhouettes under a non-identity projector frame); the plane's sections map through the same camera move and projector",
         "Imported meshes and saved render meshes retain their faceted/approximation quality; no native reader creates a STEP or an OCCT execution receipt. SKP originals remain with the application owner; the reader does not write project data.",
         "SKP-derived mesh object IDs follow persistent instance paths and tag IDs within the same model; names and geometry changes do not mint new object identities. Unsupported or missing persistent IDs are refused.",
-        "Discovery/status never launches software, loads vendor libraries, queries a network/license or writes project data. Detected software, installed components and verified capabilities remain separate; qualification never grants project authority. CAD_BACKEND_REGISTRY remains the only compiled execution registry."
+        "Discovery/status never launches software, loads vendor libraries, queries a network/license or writes project data. Detected software, installed components and verified capabilities remain separate; qualification never grants project authority. CAD_BACKEND_REGISTRY remains the only compiled execution registry.",
+        "both difference strategies realize the same exact solid against the same predicted bounds and readback; the receipt's lowering names only differences not realized by a boolean"
       ],
       "status": "canonical",
       "tests": [

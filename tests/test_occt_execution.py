@@ -1584,6 +1584,113 @@ def _program_of(*operations: GeometryOperation) -> CompiledGeometryProgram:
     return replace(program, proposal=proposal, operation_order=tuple(op.op_id for op in operations), objects=objects)
 
 
+L_SLAB = [[0.0, 0.0, 0.0], [10.0, 0.0, 0.0], [10.0, 0.0, 4.0], [4.0, 0.0, 4.0], [4.0, 0.0, 8.0], [0.0, 0.0, 8.0]]
+SLAB_AREA = 10.0 * 4.0 + 4.0 * 4.0
+
+
+def _prism(op_id: str, profile: list[list[float]], vector: list[float]) -> GeometryOperation:
+    return GeometryOperation(
+        op_id=op_id,
+        kind=GeometryOperationKind.EXTRUSION,
+        output_object_ids=(f"{op_id}-object",),
+        input_object_ids=(),
+        frame_id="world",
+        parameters=(
+            GeometryParameter.create(name="profile", kind=GeometryParameterKind.POINTS3, value=profile, unit=LengthUnit.METER),
+            GeometryParameter.create(name="vector", kind=GeometryParameterKind.VECTOR3, value=vector, unit=LengthUnit.METER),
+        ),
+        semantic_binding_ids=("body-binding",),
+    )
+
+
+def _difference(op_id: str, base: GeometryOperation, *voids: GeometryOperation) -> GeometryOperation:
+    inputs = tuple(sorted((base.output_object_ids[0], *(void.output_object_ids[0] for void in voids))))
+    return GeometryOperation(
+        op_id=op_id,
+        kind=GeometryOperationKind.BOOLEAN_DIFFERENCE,
+        output_object_ids=(f"{op_id}-object",),
+        input_object_ids=inputs,
+        frame_id="world",
+        parameters=(GeometryParameter.create(
+            name="base_index", kind=GeometryParameterKind.INTEGER, value=inputs.index(base.output_object_ids[0])),),
+        semantic_binding_ids=("body-binding",),
+    )
+
+
+@NEEDS_OCCT
+class DifferenceLoweringTests(unittest.TestCase):
+    """#419: one difference, two exact realizations, the same certified object."""
+
+    def _slab(self, void_profile, void_vector) -> CompiledGeometryProgram:
+        slab = _prism("slab-body", L_SLAB, [0.0, 0.3, 0.0])
+        void = _prism("void", void_profile, void_vector)
+        return _program_of(slab, void, _difference("slab", slab, void))
+
+    def _through(self) -> CompiledGeometryProgram:
+        return self._slab([[1.0, -0.1, 1.0], [3.0, -0.1, 1.0], [3.0, -0.1, 3.0], [1.0, -0.1, 3.0]], [0.0, 0.5, 0.0])
+
+    def _niche(self) -> CompiledGeometryProgram:
+        return self._slab([[1.0, 0.1, 1.0], [3.0, 0.1, 1.0], [3.0, 0.1, 3.0], [1.0, 0.1, 3.0]], [0.0, 0.5, 0.0])
+
+    def _symmetric_volume(self, first, second) -> float:
+        occ = occt_backend._occt()
+        common = occ.BRepAlgoAPI.BRepAlgoAPI_Common(first, second)
+        common.Build()
+        shared = occt_backend.measure_shape(common.Shape()).volume or 0.0
+        return occt_backend.measure_shape(first).volume + occt_backend.measure_shape(second).volume - 2.0 * shared
+
+    def _both(self, program, name):
+        built = {strategy: occt_backend.build_program_shapes(program, difference_strategy=strategy)
+                 for strategy in ("boolean", "profile_with_holes")}
+        return built, {strategy: build.objects[name].shape for strategy, build in built.items()}
+
+    def test_a_through_void_gives_the_same_solid_either_way(self) -> None:
+        built, shapes = self._both(self._through(), "slab-object")
+        self.assertEqual(dict(built["boolean"].lowering), {})
+        self.assertEqual(dict(built["profile_with_holes"].lowering), {"slab": "profile_with_holes"})
+        boolean, profile = (occt_backend.measure_shape(shapes[s]) for s in ("boolean", "profile_with_holes"))
+        self.assertTrue(profile.valid and profile.closed)
+        self.assertEqual(profile.solid_count, 1)
+        self.assertAlmostEqual(boolean.volume, (SLAB_AREA - 4.0) * 0.3, places=9)
+        self.assertAlmostEqual(profile.volume, boolean.volume, places=9)
+        self.assertEqual(profile.face_count, boolean.face_count)
+        _assert_bbox(self, profile, boolean.bbox_min, boolean.bbox_max, places=9)
+        self.assertAlmostEqual(self._symmetric_volume(shapes["boolean"], shapes["profile_with_holes"]), 0.0, places=9)
+
+    def test_auto_picks_the_profile_for_a_through_void_and_a_boolean_for_a_niche(self) -> None:
+        self.assertEqual(dict(occt_backend.build_program_shapes(self._through()).lowering), {"slab": "profile_with_holes"})
+        niche = occt_backend.build_program_shapes(self._niche())
+        self.assertEqual(dict(niche.lowering), {})
+        self.assertAlmostEqual(occt_backend.measure_shape(niche.objects["slab-object"].shape).volume,
+                               SLAB_AREA * 0.3 - 4.0 * 0.2, places=9)
+
+    def test_forcing_the_profile_where_it_does_not_apply_is_refused_by_operation(self) -> None:
+        with self.assertRaisesRegex(occt_backend.OcctCapabilityError, "slab .*does not pass through"):
+            occt_backend.build_program_shapes(self._niche(), difference_strategy="profile_with_holes")
+
+    def test_a_tilted_host_pierced_along_its_extrusion_is_the_same_either_way(self) -> None:
+        panel = _prism("panel-body", [[0.0, 0.0, 0.0], [4.0, 0.0, 0.0], [4.0, 3.0, 0.0], [0.0, 3.0, 0.0]], [0.0, 0.0, 0.3])
+        hole = _prism("hole", [[1.0, 1.0, -0.1], [2.0, 1.0, -0.1], [2.0, 2.0, -0.1], [1.0, 2.0, -0.1]], [0.0, 0.0, 0.5])
+        program = _program_of(panel, hole, _difference("panel", panel, hole))
+        built, shapes = self._both(program, "panel-object")
+        self.assertEqual(dict(built["profile_with_holes"].lowering), {"panel": "profile_with_holes"})
+        self.assertAlmostEqual(occt_backend.measure_shape(shapes["profile_with_holes"]).volume, 4.0 * 3.0 * 0.3 - 0.3, places=9)
+        self.assertAlmostEqual(self._symmetric_volume(shapes["boolean"], shapes["profile_with_holes"]), 0.0, places=9)
+
+    def test_the_export_certifies_both_and_records_only_the_profile(self) -> None:
+        program = self._through()
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp).resolve()
+            auto, _ = _execute(program, _synthetic_binding(program), workspace, "auto@occt")
+            forced, _ = _execute(program, _synthetic_binding(program), workspace, "boolean@occt", difference_strategy="boolean")
+        for receipt in (auto, forced):
+            self.assertIs(receipt.status, CadExecutionStatus.SUCCEEDED, receipt.failures)
+        self.assertEqual(auto.to_dict()["lowering"], {"slab": "profile_with_holes"})
+        self.assertNotIn("lowering", forced.to_dict())
+        self.assertEqual(auto.expected_bounds, forced.expected_bounds)
+        self.assertEqual(auto.physical_object_ids, ("slab-object",))
+
+
 @NEEDS_OCCT
 class OcctOperationObservationTests(unittest.TestCase):
     def test_build_reports_actual_dependency_work_and_reused_final_shape(self) -> None:

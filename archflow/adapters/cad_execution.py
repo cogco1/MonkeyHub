@@ -3206,6 +3206,7 @@ class OcctExecutionReceipt:
     timings: dict[str, float]
     failures: tuple[dict[str, str], ...]
     reused_object_ids: tuple[str, ...] = ()
+    lowering: tuple[tuple[str, str], ...] = ()
 
     SCHEMA = "OcctExecutionReceipt@1"
 
@@ -3219,6 +3220,11 @@ class OcctExecutionReceipt:
             raise TypeError("backend must be dict")
         if not isinstance(self.reused_object_ids, tuple) or set(self.reused_object_ids) - set(self.physical_object_ids):
             raise CadExecutionError("reused objects must belong to the exported physical denominator")
+        if not isinstance(self.lowering, tuple) or any(
+            not isinstance(item, tuple) or len(item) != 2 or item[1] != "profile_with_holes"
+            for item in self.lowering
+        ):
+            raise CadExecutionError("lowering names only operations realized as a profile with holes")
         if not isinstance(self.evidence_tier, str) or not self.evidence_tier:
             raise CadExecutionError("evidence_tier must be non-empty text")
         for field in ("exact_artifact", "preview_artifact"):
@@ -3295,6 +3301,7 @@ class OcctExecutionReceipt:
                 "failures": list(self.failures),
                 "readback_verified": self.readback_verified,
                 **({"reused_object_ids": list(self.reused_object_ids)} if self.reused_object_ids else {}),
+                **({"lowering": dict(self.lowering)} if self.lowering else {}),
             }
         )
 
@@ -3340,6 +3347,7 @@ def execute_occt_export(
     prior_step_sha256: str | None = None,
     operation_observer: Callable[[Mapping[str, Any]], None] | None = None,
     observation_parent_id: str | None = None,
+    difference_strategy: str = "auto",
 ) -> OcctExecutionReceipt:
     """Realize the bound program, write STEP and a mesh/curve preview, cold-read both.
 
@@ -3361,6 +3369,10 @@ def execute_occt_export(
     An explicitly supplied prior program and verified STEP may contribute
     unchanged shapes. Only changed geometry is built; the complete current
     model is written and independently read back under the current binding.
+
+    ``difference_strategy`` is handed to ``build_program_shapes``; a
+    difference realized as a profile with holes is named in the receipt's
+    ``lowering``.
 
     Raises ``CadCapabilityError`` (a ``CadExecutionError``) before writing
     when the program uses an operation this executor does not realize, and
@@ -3480,7 +3492,8 @@ def execute_occt_export(
             reused_shapes = _reusable_occt_shapes(program, prior_program, prior_step, prior_step_sha256,
                                                   diagnostics=reuse_details)
         build = build_program_shapes(program, **({"reusable_shapes": reused_shapes} if reused_shapes else {}),
-                                     operation_observer=operation_observer, observation_parent_id=observation_parent_id)
+                                     operation_observer=operation_observer, observation_parent_id=observation_parent_id,
+                                     difference_strategy=difference_strategy)
     except OcctCapabilityError as exc:
         raise CadCapabilityError(
             f"OCCT executor cannot realize {exc.op_id} ({exc.kind}): {exc.reason}",
@@ -3626,6 +3639,7 @@ def execute_occt_export(
         timings=timings,
         failures=tuple(failures),
         reused_object_ids=tuple(sorted(reused_shapes)),
+        lowering=tuple(sorted(build.lowering.items())),
     )
 
 
