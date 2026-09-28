@@ -1,37 +1,4 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": [
-    {
-      "id": "GH-435",
-      "lanes": [
-        {
-          "id": "hub-idle",
-          "status": "active",
-          "branch": "codex/435-hub-idle",
-          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-435-hub-idle",
-          "base_ref": "bb44b299",
-          "contributor": "Claude",
-          "reviewer": "Claude root task",
-          "handoff": "cloud session; master integrates",
-          "modules": [
-            "hub.shell",
-            "studio.candidate"
-          ],
-          "write_scope": [
-            "apps/monkeyhub/api/monkeyhub_api/workers.py",
-            "apps/monkeyhub/api/monkeyhub_api/runtime.py",
-            "apps/monkeyhub/api/tests/test_workers.py",
-            "apps/monkeyhub/api/tests/test_project_runtime.py",
-            "apps/monkeyhub/api/tests/test_runtime_sse.py",
-            "apps/monkeyhub/api/tests/test_runtime_operations.py",
-            "apps/archflow-studio/api/archflow_studio_api/application/runtime.py",
-            "apps/archflow-studio/api/archflow_studio_api/routes/runtime.py",
-            "apps/archflow-studio/api/archflow_studio_api/transport/runtime.py",
-            "docs/PROJECT_RUNTIME.md"
-          ],
-          "depends_on": []
-        }
-      ]
-    }
-  ]
+  "items": []
 }
