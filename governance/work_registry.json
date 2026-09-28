@@ -1,35 +1,4 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": [
-    {
-      "id": "GH-450",
-      "lanes": [
-        {
-          "id": "stale-base-view",
-          "status": "active",
-          "branch": "codex/450-stale-base-view",
-          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-450-stale-base-view",
-          "base_ref": "bb44b299",
-          "contributor": "Claude",
-          "reviewer": "Claude root task",
-          "handoff": "cloud session; master integrates",
-          "modules": [
-            "hub.shell"
-          ],
-          "write_scope": [
-            "apps/monkeyhub/web/workspaces/src/app/useSession.ts",
-            "apps/monkeyhub/web/workspaces/src/app/App.tsx",
-            "apps/monkeyhub/web/workspaces/src/app/ErrorPanel.tsx",
-            "apps/monkeyhub/web/workspaces/src/workspaces/monkeyarch/",
-            "apps/monkeyhub/web/src/ChatShell.tsx",
-            "apps/monkeyhub/web/src/i18n/messages.en.ts",
-            "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
-            "apps/monkeyhub/web/workspaces/test/",
-            "apps/monkeyhub/web/test/projectWorkspaceFixture.mjs"
-          ],
-          "depends_on": []
-        }
-      ]
-    }
-  ]
+  "items": []
 }
