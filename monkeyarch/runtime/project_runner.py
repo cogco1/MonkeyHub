@@ -1016,6 +1016,12 @@ def run_project(
                                       phase=stage_guard.envelope.phase)
     except DevelopedDesignError as exc:
         raise ProjectRunnerError(f"the developed-design projection cannot carry the envelope phase {stage_guard.envelope.phase.value!r}: {exc}") from exc
+    if isinstance(state, RecordBinding):
+        # an envelope opened before #402 bound this same record by the retired placeholder's
+        # digest: recognized exactly (record, run, base, phase and view kwargs), never recomputed,
+        # and the run then carries that digest throughout; any other digest is refused below
+        state = state.retained_as(stage_guard.envelope.state_digest, portfolio_id=options.portfolio_id,
+                                  branch_id=options.branch_id, selection_decision_ref=options.selection_decision_ref)
     stage_guard.require(
         repository,
         run=run,

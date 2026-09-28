@@ -2996,7 +2996,7 @@ def _design_components(
 
 def _subject_path(design_state: DevelopedDesignState | RecordBinding) -> str:
     if isinstance(design_state, RecordBinding):
-        return "state_record_binding.record"
+        return "state_record"
     return "developed_design_state.selected_schematic.option.proposal"
 
 
@@ -3010,12 +3010,11 @@ def _state_payload(
     """
 
     if isinstance(design_state, RecordBinding):
+        # nothing derived from the base is serialised here: the binding's digest is
+        # the request's ``checkpoint_digest``, and both records name their own base
         return {
-            "state_record_binding": {
-                **design_state.to_dict(),
-                "state_digest": design_state.state_digest,
-                "record": design_state.record.to_dict(),
-            }
+            "state_record_binding": design_state.to_dict(),
+            "state_record": design_state.record.to_dict(),
         }
     return {"developed_design_state": design_state.to_dict()}
 

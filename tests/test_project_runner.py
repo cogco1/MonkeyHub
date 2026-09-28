@@ -14,6 +14,7 @@ import json
 import tempfile
 import unittest
 from dataclasses import replace
+from types import SimpleNamespace
 from pathlib import Path
 
 from monkeyarch.capabilities.declaration import DeclarationQuadrant
@@ -42,6 +43,7 @@ from archflow.state.developed_design import DevelopmentDiscipline
 from archflow.state.state_record import (
     Entity,
     Parameter,
+    RecordBinding,
     Relation,
     StateRecord,
     StateRecordError,
@@ -50,6 +52,7 @@ from archflow.state.state_record import (
     ValidatorBinding,
     apply_state_record_operator,
     developed_design_view,
+    legacy_state_digest,
     project_levels_of,
 )
 from archflow.state.operational_state import DesignObligation
@@ -915,13 +918,14 @@ class StagePhaseTests(_RunMixin, unittest.TestCase):
             self.assertFalse(any(name.startswith(("state-record-", "runner-run-failure-")) for name in names), names)
 
 
-def _ladder_project(root: Path, phases: tuple[DesignPhase, ...], workflow_id: str = "demo-two-stage") -> tuple[FilesystemProjectRepository, str]:
-    """A project holding the demo record as its WIP and a frozen workflow with one stage per phase; answers the workflow ref."""
+def _ladder_project(root: Path, phases: tuple[DesignPhase, ...], workflow_id: str = "demo-two-stage",
+                    record: StateRecord | None = None) -> tuple[FilesystemProjectRepository, str]:
+    """A project holding the demo record (or ``record``) as its WIP and a frozen workflow with one stage per phase; answers the workflow ref."""
 
     repository = FilesystemProjectRepository.initialize(root, project_id="demo", initial_state={"schema": "TestState@1"})
     authored = repository.layout.authored_record
     authored.parent.mkdir(parents=True, exist_ok=True)
-    authored.write_text(json.dumps(_record().to_dict()), encoding="utf-8")
+    authored.write_text(json.dumps((record or _record()).to_dict()), encoding="utf-8")
     workflow = ProjectStageWorkflow(
         project_id="demo",
         workflow_id=workflow_id,
@@ -1076,6 +1080,81 @@ class StagePhaseLadderTests(unittest.TestCase):
         with self.assertRaisesRegex(StageRunError, "candidate_coordination.*cannot carry"):
             open_stage_run(project_root=root, workflow_uri=workflow_ref, stage_index=0, run_id="stage-0-001")
         self.assertFalse(repository.layout.run("stage-0-001").manifest.exists())
+
+    def test_the_same_phase_gate_holds_for_a_record_without_massing(self) -> None:
+        """#402 binds such a record as itself, and keeps main's gate: candidate_coordination is refused."""
+
+        root = self.temporary / "geometry"
+        repository, workflow_ref = _ladder_project(root, (DesignPhase.CANDIDATE_COORDINATION,), workflow_id="demo-coordination",
+                                                   record=_geometry_only(_record()))
+        with self.assertRaisesRegex(StageRunError, "candidate_coordination.*cannot carry"):
+            open_stage_run(project_root=root, workflow_uri=workflow_ref, stage_index=0, run_id="stage-0-001")
+        self.assertFalse(repository.layout.run("stage-0-001").manifest.exists())
+
+
+def _geometry_only(record: StateRecord) -> StateRecord:
+    """The same record with no massing declared: no MassingLevel, Volume, Space or Connection, and no volume on any component."""
+
+    massing = {"MassingLevel@1", "Volume@1", "Space@1", "Connection@1"}
+    entities = tuple(
+        replace(e, fields={**e.fields, "volume_ids": []}) if e.schema == "Component@1" and "volume_ids" in e.fields else e
+        for e in record.entities if e.schema not in massing
+    )
+    return replace(record, entities=entities, relations=tuple(r for r in record.relations
+                                                               if {r.subject, r.object} <= {e.entity_id for e in entities}))
+
+
+class GeometryOnlyRecordRunTests(unittest.TestCase):
+    """#402: a record that declares no massing runs as itself, and what main bound it by still works."""
+
+    def setUp(self) -> None:
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.repository = FilesystemProjectRepository.initialize(Path(temporary.name) / "demo", project_id="demo", initial_state={"schema": "TestState@1"})
+        self.run = self.repository.create_run("run-1")
+        self.options, self.record = _options(), _geometry_only(_record())
+
+    def _guard(self, digest: str, phase: DesignPhase = DesignPhase.DESIGN_DEVELOPMENT) -> StageExecutionGuard:
+        return _stage_guard(self.repository, self.run, self.record, self.options, phase=phase, state=SimpleNamespace(state_digest=digest))
+
+    def test_a_geometry_only_record_runs_and_retains_no_spatial_option(self) -> None:
+        bound = self.record.bound_to(self.run)
+        binding = _state(bound, self.run, self.options)
+        self.assertIsInstance(binding, RecordBinding)
+        receipt = run_project(self.repository, run=self.run, stage_guard=self._guard(binding.state_digest), record=self.record,
+                              seats=_seats(DesignPhase.DESIGN_DEVELOPMENT), options=self.options)
+        self.assertEqual(receipt["closure_status"], "SATISFIED", receipt["seat_results"])
+        self.assertEqual(receipt["design_state_digest"], binding.state_digest)
+        self.assertIsNone(receipt["spatial_option_ref"])
+        self.assertIsNone(receipt["design_state_ref"])
+
+    def test_a_stage_opened_before_402_runs_on_the_digest_its_envelope_retained(self) -> None:
+        """Main bound this record by the retired placeholder's digest; the envelope still says so, and runs."""
+
+        bound = self.record.bound_to(self.run)
+        legacy = legacy_state_digest(bound, run=self.run, phase=DesignPhase.DESIGN_DEVELOPMENT, portfolio_id=self.options.portfolio_id,
+                                     branch_id=self.options.branch_id, selection_decision_ref=self.options.selection_decision_ref)
+        self.assertNotEqual(legacy, _state(bound, self.run, self.options).state_digest)
+        receipt = run_project(self.repository, run=self.run, stage_guard=self._guard(legacy), record=self.record,
+                              seats=_seats(DesignPhase.DESIGN_DEVELOPMENT), options=self.options)
+        self.assertEqual(receipt["closure_status"], "SATISFIED", receipt["seat_results"])
+        self.assertEqual(receipt["design_state_digest"], legacy)                                  # kept as written, not recomputed
+
+    def test_any_other_envelope_digest_is_still_refused(self) -> None:
+        bound = self.record.bound_to(self.run)
+        schematic_legacy = legacy_state_digest(bound, run=self.run, phase=DesignPhase.SCHEMATIC_DESIGN, portfolio_id=self.options.portfolio_id,
+                                               branch_id=self.options.branch_id, selection_decision_ref=self.options.selection_decision_ref)
+        for digest in ("0" * 64, schematic_legacy):                                             # a stranger, and the old digest of another phase
+            with self.subTest(digest=digest), self.assertRaisesRegex(ProjectRunnerError, "does not bind the exact developed state"):
+                run_project(self.repository, run=self.run, stage_guard=self._guard(digest), record=self.record,
+                            seats=_seats(DesignPhase.DESIGN_DEVELOPMENT), options=self.options)
+
+    def test_a_phase_main_refused_is_refused_for_a_geometry_only_record(self) -> None:
+        with self.assertRaisesRegex(ProjectRunnerError, "cannot carry the envelope phase 'candidate_coordination'"):
+            run_project(self.repository, run=self.run, stage_guard=self._guard("0" * 64, DesignPhase.CANDIDATE_COORDINATION),
+                        record=self.record, seats=_seats(DesignPhase.CANDIDATE_COORDINATION), options=self.options)
+        names = [path.name for path in self.repository.layout.run("run-1").records.glob("*.json")]
+        self.assertFalse(any(name.startswith(("state-record-", "runner-run-failure-")) for name in names), names)
 
 
 class ZoneRelationTests(unittest.TestCase):

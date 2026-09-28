@@ -9,7 +9,10 @@ same component, its elements and their dependencies.
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
+import subprocess
+import sys
 import tempfile
 import time
 import unittest
@@ -25,6 +28,44 @@ from archflow_studio_api.main import create_app
 from archflow_studio_api.settings import StudioSettings
 
 PROJECT_ID = "geometry-first"
+API_ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = API_ROOT.parents[2]
+
+# Run in a fresh interpreter by the cold-reopen test: open the project from disk,
+# read the run it names, and continue editing it through the public routes.
+REOPEN_AND_CONTINUE = """
+import json, sys, time
+from fastapi.testclient import TestClient
+from archflow_studio_api.main import create_app
+from archflow_studio_api.settings import StudioSettings
+
+project, project_id, run = sys.argv[1:4]
+
+class NoModel:
+    def compile(self, *args, **kwargs):
+        raise AssertionError("direct authoring cannot call a model")
+
+with TestClient(create_app(StudioSettings(cad_export="off", project_dir=project))) as client:
+    assert client.post("/api/project/modeling", json={"projectId": project_id}).status_code == 200
+    client.app.state.intent_compiler = NoModel()
+    state = client.get(f"/api/state?run={run}").json()
+    proposal = client.post("/api/proposals/sketch", json={
+        "stateDigest": state["stateDigest"], "sourceRunId": run,
+        "sketches": [{"componentId": "canopy", "elementId": "canopy-face", "profile": [[0, 0], [2, 0], [2, 2], [0, 2]],
+                      "height": 0, "parentComponentId": "model", "baseDatum": "mass-body-top"}]})
+    assert proposal.status_code == 201, proposal.text
+    started = client.post(f"/api/proposals/{proposal.json()['proposalId']}/candidate")
+    assert started.status_code == 202, started.text
+    accepted = started.json()
+    deadline = time.monotonic() + 240
+    while time.monotonic() < deadline:
+        job = client.get(f"/api/jobs/{accepted['jobId']}").json()
+        if job["status"] in ("succeeded", "failed"):
+            break
+        time.sleep(0.05)
+    assert job["status"] == "succeeded", job
+    print(json.dumps({"stateDigest": state["stateDigest"], "candidateId": accepted["candidateId"]}))
+"""
 SQUARE = [[0, 0], [4, 0], [4, 3], [0, 3]]
 
 
@@ -234,26 +275,21 @@ class GeometryFirstAuthoringTests(unittest.TestCase):
         self.assertTrue(state["stateDigest"])
         before = self.retained(first)
 
-        # Cold reopen: a new application process over the same project directory.
+        # Cold reopen: a new process over the same project directory, reading only what was retained,
+        # reopens the project and continues editing it. Nothing of this process's memory crosses.
         self.client.__exit__(None, None, None)
+        env = {**os.environ, "PYTHONPATH": os.pathsep.join((str(REPO_ROOT), str(API_ROOT), os.environ.get("PYTHONPATH", "")))}
+        completed = subprocess.run([sys.executable, "-c", REOPEN_AND_CONTINUE, str(self.project), PROJECT_ID, first],
+                                   capture_output=True, text=True, env=env, timeout=300)
+        self.assertEqual(completed.returncode, 0, completed.stderr[-4000:])
+        reopened = json.loads(completed.stdout.strip().splitlines()[-1])
+        self.assertEqual(reopened["stateDigest"], state["stateDigest"], "the retained binding reads back unchanged")
+        second = reopened["candidateId"]
+        self.assert_nothing_spatial_was_made_up(second)
         self.client = TestClient(create_app(StudioSettings(cad_export="off", project_dir=self.project)))
         self.client.__enter__()
         self.addCleanup(self.client.__exit__, None, None, None)
-        response = self.client.post("/api/project/modeling", json={"projectId": PROJECT_ID})
-        self.assertEqual(response.status_code, 200, response.text)
-        compiler = Mock()
-        compiler.compile.side_effect = AssertionError("direct authoring cannot call a model")
-        self.client.app.state.intent_compiler = compiler
-        reopened = self.state(first)
-        self.assertEqual(reopened["stateDigest"], state["stateDigest"], "the retained binding reads back unchanged")
-
-        # Continue: move the path and add a face on the mass; the same objects keep their identity.
-        proposal = self.created(self.client.post("/api/proposals/sketch", json={
-            "stateDigest": reopened["stateDigest"], "sourceRunId": first,
-            "sketches": [{"componentId": "canopy", "elementId": "canopy-face", "profile": [[0, 0], [2, 0], [2, 2], [0, 2]],
-                          "height": 0, "parentComponentId": "model", "baseDatum": "mass-body-top"}]}))
-        second = self.candidate(proposal)
-        self.assert_nothing_spatial_was_made_up(second)
+        self.assertEqual(self.client.post("/api/project/modeling", json={"projectId": PROJECT_ID}).status_code, 200)
         after = self.retained(second)
         self.assertEqual(after.entity("mass-body").to_dict(), before.entity("mass-body").to_dict())
         self.assertEqual(after.entity("canopy-face").fields["producer"], "planar-surface")

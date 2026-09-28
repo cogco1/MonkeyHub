@@ -43,7 +43,7 @@ from archflow.semantics.conditions import CONDITION_IDS
 from archflow.semantics.registry import resolve_semantic_kind, suggest_semantic, suggest_semantic_kind
 from archflow.semantics.roles import ROLE_IDS
 from archflow.state.design_portfolio import BranchRevisionRef
-from archflow.state.developed_design import DevelopedDesignState, DevelopmentCoordinationStatus, SelectedSchematicInput
+from archflow.state.developed_design import DEVELOPED_PHASES, DevelopedDesignError, DevelopedDesignState, DevelopmentCoordinationStatus, SelectedSchematicInput
 from archflow.state.spatial import (
     DesignComponent,
     MassingVolume,
@@ -1939,6 +1939,10 @@ class RecordBinding:
             raise StateRecordError("a record binding needs a StateRecord bound to a run")
         if type(self.active_phase) is not DesignPhase:
             raise StateRecordError("phase must be a DesignPhase")
+        if self.active_phase not in DEVELOPED_PHASES:
+            # the same gate the developed state keeps: a stage in any other phase is
+            # refused for a record with or without massing, as it always was
+            raise DevelopedDesignError(f"a record is executed in schematic_design or design_development, not {self.active_phase.value!r}")
 
     @property
     def project_id(self) -> str:
@@ -2052,6 +2056,11 @@ def _developed_design_view(record: StateRecord, run: RunRef, option_id: str | No
         raise StateRecordError("a developed-design view needs Component@1 entities")
     massing = all(record.entities_of(schema) for schema in ("Volume@1", "Space@1", "MassingLevel@1"))
     if not massing:
+        if evidence_ref is not None and evidence_ref not in record.evidence_refs:
+            # the old view added it to the placeholder's sources; a binding states only
+            # the record, so evidence the record does not cite is refused, not dropped
+            raise StateRecordError(f"evidence {evidence_ref!r} is not the record's; a record without massing is bound "
+                                   "with its own evidence only - add it to the record's evidence_refs")
         binding = RecordBinding(record if (record.run_id, record.base) == (run.run_id, run.base) else record.bound_to(run), phase)
         binding.components  # the tree must be readable: every component needs a source
         return binding
@@ -2108,7 +2117,13 @@ def _legacy_placeholder_state(record: StateRecord, run: RunRef, option_id: str, 
 # record's content identity unchanged, and the serialised record carries no
 # field derived from its base: ``state_digest`` is computed on demand and is
 # never written into the record.
-VERSION_REF_POINTERS = {"StateRecord@1": ("/base",)}
+#
+# A ``StateRecordBinding@1`` (``RecordBinding.to_dict``) names the same base
+# once, at ``/base``, and serialises nothing derived from it: its
+# ``state_digest`` is computed on demand, so restating the base moves the
+# digest for every record that cites it and nothing inside needs rebuilding.
+VERSION_REF_POINTERS = {"StateRecord@1": ("/base",), "StateRecordBinding@1": ("/base",)}
 
 _register_version_refs(VERSION_REF_POINTERS)
 _register_derived_fields("StateRecord@1", ())
+_register_derived_fields("StateRecordBinding@1", ())

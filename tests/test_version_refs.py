@@ -49,6 +49,7 @@ from pathlib import Path
 from archflow.project.repository import FilesystemProjectRepository
 from archflow.state.operational_state import DesignObligation
 from archflow.state.state_record import (
+    RecordBinding,
     RECORD_BINDING_PHASE,
     StateRecord,
     developed_design_view,
@@ -339,6 +340,10 @@ class EveryDeclaredKindIsBuiltByItsOwnerTests(unittest.TestCase):
         return {
             "StateRecord@1": StateRecord(
                 project_id="round-trip", run_id="r", entities=(), base=base,
+            ).to_dict(),
+            "StateRecordBinding@1": RecordBinding(
+                StateRecord(project_id="round-trip", run_id="r", entities=(), base=base),
+                DesignPhase.SCHEMATIC_DESIGN,
             ).to_dict(),
             "ProjectRun@1": {
                 "schema": "ProjectRun@1", "project_id": run.project_id,

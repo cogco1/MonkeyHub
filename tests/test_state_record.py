@@ -761,8 +761,11 @@ class StateRecordTests(unittest.TestCase):
             repository = FilesystemProjectRepository.initialize(Path(tmp) / "demo", project_id="demo", initial_state={"schema": "TestState@1"})
             run = repository.create_run("run-1")
             # The record projects in its own binding phase, as the round-trip test above does.
-            state = developed_design_view(record, run=run, evidence_ref="reading:detail-review",
+            state = developed_design_view(record, run=run, evidence_ref="reading:plan",
                                           phase=RECORD_BINDING_PHASE)
+            # evidence the record does not cite is refused, not silently dropped
+            with self.assertRaisesRegex(StateRecordError, "reading:detail-review"):
+                developed_design_view(record, run=run, evidence_ref="reading:detail-review", phase=RECORD_BINDING_PHASE)
         self.assertTrue(state.components)
         for component in state.components:
             self.assertEqual(set(component.source_refs), set(record.evidence_refs))      # nothing dropped, nothing invented
@@ -778,7 +781,9 @@ class StateRecordTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             repository = FilesystemProjectRepository.initialize(Path(tmp) / "demo", project_id="demo", initial_state={"schema": "TestState@1"})
             run = repository.create_run("run-1")
-            state = developed_design_view(record, run=run, evidence_ref=review, phase=RECORD_BINDING_PHASE)
+            state = developed_design_view(record, run=run, evidence_ref=manufacturer, phase=RECORD_BINDING_PHASE)
+            with self.assertRaises(StateRecordError):
+                developed_design_view(record, run=run, evidence_ref=review, phase=RECORD_BINDING_PHASE)
         self.assertTrue(state.components)
         for component in state.components:
             self.assertEqual(set(component.source_refs), set(record.evidence_refs))      # the record's sources, and only those
