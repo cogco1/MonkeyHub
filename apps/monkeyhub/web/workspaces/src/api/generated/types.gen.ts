@@ -401,7 +401,7 @@ export type AuthoredControlDraftDto = {
     /**
      * Unit
      *
-     * element params are bare numbers in the record; this seam converts nothing and states no unit the record does not
+     * null: a control that is not authored yet declares no unit. The scalar seam restates a stated length in a field's declared unit, and asks when the field declares none or the unit is not a length
      */
     unit: string | null;
     /**
