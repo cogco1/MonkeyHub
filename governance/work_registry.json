@@ -42,7 +42,9 @@
             "archflow/adapters/occt_backend.py",
             "monkeydiagram/drawing_elevation.py",
             "apps/archflow-studio/api/archflow_studio_api/application/drawing_plans.py",
-            "apps/archflow-studio/api/archflow_studio_api/application/drawings.py"
+            "apps/archflow-studio/api/archflow_studio_api/application/drawings.py",
+            "apps/monkeyhub/web/workspaces/src/api/generated/types.gen.ts",
+            "apps/monkeyhub/web/workspaces/test/rhino3dmMaterials.test.ts"
           ],
           "depends_on": []
         }
