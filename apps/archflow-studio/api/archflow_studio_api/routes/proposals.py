@@ -62,7 +62,7 @@ from ..application.projection import (
     project_proposed_record,
     require_actionable,
 )
-from ..application.proposals import Proposal, continue_proposal, operator_of, proposal_from
+from ..application.proposals import Proposal, continue_proposal, operator_of, proposal_from, sentences_of
 from ..application.gestures import DocumentAnnotationRef, read_document_tracing
 from ..transport.errors import BlockedNeedsHuman, StudioError
 from ..transport.proposal import (
@@ -291,7 +291,9 @@ def create_sketch_proposal(
     assert proposal is not None
     if isinstance(body, (SketchBatchRequestDto, DocumentTracingRequestDto)) and body.summary is not None:
         proposal = replace(proposal, utterance=body.summary,
-                           semantic_edit={**proposal.semantic_edit, "summary": body.summary})
+                           semantic_edit={**proposal.semantic_edit, "summary": body.summary},
+                           # A summarized batch is one step of its chain (#404 F17).
+                           steps=() if previous is None else (*sentences_of(previous), body.summary))
     return to_dto(request.app.state.proposals.put(proposal))
 
 

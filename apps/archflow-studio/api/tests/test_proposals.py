@@ -687,6 +687,22 @@ class ProposalOnlyTests(ProposalTestCase):
         self.assertGreater(len(before), 0)
 
 
+class ChainedProposalTargetTests(ProposalTestCase):
+    def test_a_continued_proposal_names_the_step_it_just_took(self):
+        # #404 F17: the chain answered with its first step's target, so a caller
+        # that continued it could not see what its own request had just changed.
+        first = self.accepted("set height to 0.8", elementId="portico-base")
+        self.assertEqual(first["target"]["elementId"], "portico-base")
+        second = self.accepted("set height to 0.4", elementId="portico-cornice",
+                               sourceProposalId=first["proposalId"])
+        self.assertEqual((second["target"]["elementId"], second["target"]["ref"], second["target"]["key"]),
+                         ("portico-cornice", "entity:portico-cornice", "height"))
+        # The chain itself still carries both changes on the first base.
+        changed = {row["entityId"] for row in second["change"]["changes"]}
+        self.assertTrue({"portico-base", "portico-cornice"} <= changed, changed)
+        self.assertEqual(second["baseStateDigest"], self.state_digest)
+
+
 class DirectSemanticProposalTests(ProposalTestCase):
     def submit(self, edit: dict, **body) -> dict:
         response = self.client.post("/api/proposals", json={

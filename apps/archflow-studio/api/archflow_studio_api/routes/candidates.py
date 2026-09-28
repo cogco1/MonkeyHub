@@ -44,7 +44,7 @@ from ..application.projection import (
     project_state,
     require_actionable,
 )
-from ..application.proposals import read_refs_of, write_refs_of, Proposal
+from ..application.proposals import read_refs_of, sentences_of, write_refs_of, Proposal
 from ..settings import StudioSettings
 from ..transport.candidate import (
     CandidateAcceptedDto,
@@ -286,7 +286,8 @@ def compare_candidate(
     why_source = "unavailable"
     try:
         job: Job = state.jobs.for_candidate(candidate_id)
-        why = state.proposals.get(job.proposal_id).utterance
+        # Every step of a continued proposal, not only its last (#404 F17).
+        why = "; ".join(sentences_of(state.proposals.get(job.proposal_id)))
         why_source = "proposal"
     except StudioError:
         # Not this process's candidate, or its proposal is gone: the
