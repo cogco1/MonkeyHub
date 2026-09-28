@@ -88,13 +88,25 @@ def request_projection(
 
 @router.get("/blobs/{sha256}", response_class=Response)
 def read_projection_blob(request: Request, sha256: str):
-    """Content-addressed PNG bytes, cached by the browser for good."""
+    """Content-addressed PNG bytes, cached by the browser for good.
 
+    A miss that a done row names (the cache directory was cleared) queues that
+    row's drawing again: the client shows the placeholder until the store hears
+    it is done.
+    """
+
+    projections = queue_of(request)
     try:
-        data = queue_of(request).blobs.read(sha256)
+        data = projections.blobs.read(sha256)
     except ProjectionError:
         data = None
+        sha256 = None
     if data is None:
+        if sha256 is not None:
+            try:
+                projections.lost(sha256)
+            except IndexUnavailable as exc:
+                raise _unavailable(exc) from exc
         raise StudioError(404, "PROJECTION_BLOB_NOT_FOUND", "No projection has these bytes; read its status again.")
     return Response(data, media_type=PNG_MEDIA_TYPE, headers=_BLOB_HEADERS)
 

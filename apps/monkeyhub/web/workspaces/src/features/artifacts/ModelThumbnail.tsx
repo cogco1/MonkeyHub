@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useProjectStore, useStudio } from "../../api/ProjectRuntimeContext";
 import type { ModelSourceDto } from "../../api/generated";
 import { MODEL_PREVIEW_RETAINED, previewSourceKey, readModelPreview } from "./useRetainedModelPreview";
-import { askThumbnail, askedThumbnail, thumbnailBlobs, thumbnailImage } from "./modelThumbnails";
+import { askThumbnail, askedThumbnail, thumbnailBlobs, thumbnailImage, thumbnailsMoved } from "./modelThumbnails";
 import "./modelThumbnail.css";
 
 /** The model's retained viewport screenshot (#326) where one is; no source or failed reads always show the model icon. */
@@ -82,13 +82,15 @@ export function ProjectionThumbnail({ source }: { source: ModelSourceDto | null 
     return () => observer.disconnect();
   }, []);
   const blob = useThumbnailBlob(source, visible);
+  // A read that failed (the server was drawing the blob again) is tried again when a projection lands.
+  const moved = useProjectStore(thumbnailsMoved);
   useEffect(() => {
     if (!visible || !blob) return;
     let live = true;
     // One download and one decode per blob, shared with the Design Tree's canvas and every other thumbnail.
     void thumbnailImage(studio, blob).then((decoded) => { if (live && decoded) setImage({ blob, url: decoded.url }); });
     return () => { live = false; };
-  }, [studio, blob, visible]);
+  }, [studio, blob, visible, moved]);
   const url = image && image.blob === blob ? image.url : null;
   return <span ref={host} className="model-thumbnail" data-preview-source={key} data-thumbnail={url ? blob ?? undefined : undefined} aria-hidden="true">
     {url ? <img src={url} alt="" onError={() => setImage(null)} />

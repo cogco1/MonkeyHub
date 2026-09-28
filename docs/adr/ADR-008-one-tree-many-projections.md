@@ -182,9 +182,17 @@ decision tree comes from two derived stores. Either store can be deleted at any 
   source of its drawing functions, `tessellate_shape` and the model reader, and the pipeline digest from the source of
   the view's framing: editing either redraws every thumbnail without a hand bump. Curve-only objects are left out of
   the axonometric's frame as well as its drawing.
-- The collector keeps a row while an artifact row of the index names its input; an unreachable row, and an older
-  renderer's, goes after the grace window (an older renderer's at once once replaced), and a blob no row names goes
-  after the grace window. A blob a remaining row names is never removed.
+- The collector keeps a row while an artifact row of the index names its input, or while it was read within the
+  grace window (a read restarts it at most once a day); an unreachable row goes after it. An older renderer's done
+  row stays, however old, until the current renderer's row for the same input and recipe is done, so a renderer
+  change replaces thumbnails one at a time; its rows not yet drawn go at once. A blob no row names goes after the
+  grace window, and a blob a remaining row names is never removed.
+- A done row whose blob is gone (the cache folder was deleted) goes back to pending when that is noticed: at
+  startup, in each commit's pass over the tree (a stat per model), when a status request finds it, and when a
+  client's blob read answers 404. Clients show the placeholder meanwhile and read the blob again when the redrawn
+  projection lands; a failed blob read or status ask is never kept as final, and asks that fail back off.
+- The renderer version (the pipeline digest, which reads source and library versions) is computed once per
+  process, so idle passes, commit passes and status requests never recompute it.
 - The Design Tree, its list and the inspector share one thumbnail cache per page (`modelThumbnails`): each blob is
   downloaded and decoded once, at most 48 decoded images are kept (least recently used out), and the canvas draws
   a copy at about twice its cell. Images arriving together rebuild the canvas scene at most once a frame, and not at

@@ -7,7 +7,10 @@
  * A model the store has no thumbnail for is asked for once (`askThumbnail`): the server
  * checks the source and queues the drawing, and answers pending; the placeholder shows
  * until the store hears the projection is done (`index.committed`, domain `projections`).
- * Nothing polls, and a placeholder is never kept as an image.
+ * An ask the server refuses or cannot answer (409, 503, offline) is kept like a pending one, and
+ * waits longer each time it fails again. Nothing polls, and a placeholder is never kept as an image.
+ * A blob that cannot be read (the server lost it and draws it again) is never kept either: the
+ * answers that named it are forgotten, so the model is asked for again.
  *
  * The images: each blob is downloaded once per page and decoded once, whoever asks first
  * (the Design Tree's canvas, its list, the inspector's `ModelThumbnail`). The decoded
@@ -76,32 +79,60 @@ export function thumbnailsMoved(state: ProjectStoreState): string {
   return `${state.epoch ?? ""}:${state.domains.projections ?? 0}`;
 }
 
-interface Asked { readonly at: number; readonly answer: Promise<string | null> }
+interface Asked {
+  /** Until when the answer stands: for good once done. */
+  until: number;
+  /** How many asks in a row failed: each waits twice as long as the one before. */
+  failures: number;
+  /** The blob a done answer named. */
+  blob: string | null;
+  readonly answer: Promise<string | null>;
+}
 
 // Per runtime client: the sources asked for, and the blobs their answers named (for a page whose store cannot read).
 const askedOf = new WeakMap<object, Map<string, Asked>>();
-/** How long a pending answer stands before a surface that shows the model again may ask again. */
-const ASK_AGAIN_MS = 30_000;
+/** How long a pending or failed answer stands before a surface that shows the model again may ask again. */
+export const ASK_AGAIN_MS = 30_000;
+/** The longest a model whose asks keep failing waits before it is asked again. */
+const ASK_AGAIN_MAX_MS = 16 * ASK_AGAIN_MS;
 
 const askKey = (source: ModelSourceDto) => `${source.runId}\n${source.stateDigest}\n${source.assetSha256}`;
 
 /**
  * Ask the server for this model's thumbnail: its blob digest when it is done, else null (pending, or a source
- * that cannot be drawn). One request per model while its answer stands; a failed request is not kept.
+ * that cannot be drawn). One request per model while its answer stands: a done answer for good, a pending one
+ * for `ASK_AGAIN_MS`, a failed one for `ASK_AGAIN_MS` doubled with each failure in a row.
  */
 export function askThumbnail(studio: Studio, source: ModelSourceDto, now = Date.now()): Promise<string | null> {
   let asked = askedOf.get(studio);
   if (!asked) { asked = new Map(); askedOf.set(studio, asked); }
+  const answers = asked;
   const key = askKey(source);
-  const kept = asked.get(key);
-  if (kept && now - kept.at < ASK_AGAIN_MS) return kept.answer;
-  const answer = studio.projection(source, THUMBNAIL_SIZE).then(
-    (status) => status.status === "done" && status.blobSha256 ? status.blobSha256 : null,
-    () => { asked!.delete(key); return null; });
-  // A done answer stands for good (the digest names the bytes); a pending one until it is old.
-  asked.set(key, { at: now, answer });
-  void answer.then((blob) => { if (blob && asked!.get(key)?.answer === answer) asked!.set(key, { at: Infinity, answer }); });
-  return answer;
+  const kept = answers.get(key);
+  if (kept && now < kept.until) return kept.answer;
+  const failures = kept?.failures ?? 0;
+  const entry: Asked = { until: now + ASK_AGAIN_MS, failures, blob: null, answer: studio.projection(source, THUMBNAIL_SIZE).then(
+    (status) => {
+      const blob = status.status === "done" && status.blobSha256 ? status.blobSha256 : null;
+      if (answers.get(key) === entry) Object.assign(entry, { failures: 0, blob, until: blob ? Infinity : entry.until });
+      return blob;
+    },
+    () => {
+      if (answers.get(key) === entry) {
+        entry.failures = failures + 1;
+        entry.until = now + Math.min(ASK_AGAIN_MAX_MS, ASK_AGAIN_MS * 2 ** failures);
+      }
+      return null;
+    }) };
+  answers.set(key, entry);
+  return entry.answer;
+}
+
+/** The blob could not be read: forget the done answers that named it, so its model is asked for again. */
+export function forgetThumbnailBlob(studio: object, blobSha256: string): void {
+  const asked = askedOf.get(studio);
+  if (!asked) return;
+  for (const [key, entry] of asked) if (entry.blob === blobSha256) asked.delete(key);
 }
 
 /** A done answer this page was given for the model, when the store does not hold it (yet). */
@@ -147,14 +178,17 @@ export function thumbnailImage(studio: Studio, blobSha256: string, limit = THUMB
       await image.decode();
     } catch {
       URL.revokeObjectURL(url);
+      if (images.get(blobSha256) === entry) images.delete(blobSha256);
+      forgetThumbnailBlob(studio, blobSha256);
       return null;
     }
     entry.decoded = { blobSha256, url, width: image.naturalWidth, height: image.naturalHeight };
     trim(images, limit);
     return entry.decoded;
   }).catch(() => {
-    // Not kept: the next surface that shows it reads it again.
+    // Not kept: the next surface that shows it reads it again, and its model is asked for again.
     if (images.get(blobSha256) === entry) images.delete(blobSha256);
+    forgetThumbnailBlob(studio, blobSha256);
     return null;
   });
   images.set(blobSha256, entry);

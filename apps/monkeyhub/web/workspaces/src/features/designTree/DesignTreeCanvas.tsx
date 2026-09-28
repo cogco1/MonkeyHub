@@ -150,8 +150,15 @@ export default function DesignTreeCanvas({ tree, source = null, words, selected,
   const studio = useStudio();
   const store = useProjectStoreInstance();
   const thumbnailsAt = useProjectStore(thumbnailsMoved);
-  const [answered, answer] = useReducer((known: ReadonlyMap<string, string>, [asset, blob]: readonly [string, string]) =>
-    known.get(asset) === blob ? known : new Map(known).set(asset, blob), new Map<string, string>());
+  // A done answer is kept until its blob cannot be read (the server lost it and draws it again).
+  const [answered, answer] = useReducer((known: ReadonlyMap<string, string>,
+    action: { readonly asset: string; readonly blob: string } | { readonly lost: string }) => {
+    if ("lost" in action) {
+      if (![...known.values()].includes(action.lost)) return known;
+      return new Map([...known].filter(([, blob]) => blob !== action.lost));
+    }
+    return known.get(action.asset) === action.blob ? known : new Map(known).set(action.asset, action.blob);
+  }, new Map<string, string>());
   const blobs = useMemo(() => {
     const held = thumbnailBlobs(store.getSnapshot());
     const byNode = new Map<string, string>();
@@ -174,7 +181,8 @@ export default function DesignTreeCanvas({ tree, source = null, words, selected,
       imageFrame.current = requestAnimationFrame(() => { imageFrame.current = 0; imageRead(); });
     };
     const created = createPreviewLoader<CanvasThumbnail>((blob) => canvasThumbnail(studio, blob, PREVIEW_PIXELS.width,
-      PREVIEW_PIXELS.height), { limit: 3, onChange: arrived });
+      PREVIEW_PIXELS.height).then((image) => { if (!image) answer({ lost: blob }); return image; }),
+    { limit: 3, onChange: arrived });
     setLoader(created);
     return () => { created.dispose(); cancelAnimationFrame(imageFrame.current); imageFrame.current = 0; };
   }, [studio]);
@@ -187,7 +195,7 @@ export default function DesignTreeCanvas({ tree, source = null, words, selected,
     for (const node of nodes) {
       const blob = blobsNow.current.get(node), model = modelsNow.current.get(node);
       if (blob) wanted.push(blob);
-      else if (model) void askThumbnail(studio, model).then((done) => { if (done) answer([model.assetSha256, done]); });
+      else if (model) void askThumbnail(studio, model).then((done) => { if (done) answer({ asset: model.assetSha256, blob: done }); });
     }
     loader?.want(wanted);
   };
@@ -233,6 +241,8 @@ export default function DesignTreeCanvas({ tree, source = null, words, selected,
 
   const drawn = useRef(layout);
   drawn.current = layout;
+  // A projection landed: a card whose image could not be read (its blob was being drawn again) reads it again.
+  useEffect(() => { loader?.retry(); }, [loader, thumbnailsAt]);
   useEffect(() => { if (ready) wantPreviews(); }, [ready, layout, blobs, loader, width]);
   const zoomFor = (box: Box, width: number, height: number, maxZoom: number) => Math.max(TREE_ZOOM.min,
     Math.min(maxZoom, (width - PAD * 2) / Math.max(1, box.width), (height - PAD * 2 - HEADER) / Math.max(1, box.height)));

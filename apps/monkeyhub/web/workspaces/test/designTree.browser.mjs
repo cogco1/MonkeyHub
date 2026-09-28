@@ -32,7 +32,7 @@ const PROJECT = "riverside-library";
 // #406, #367: the models whose server thumbnail is drawn. S2 and Current are the same model, so they share one image.
 // The index holds each drawn one (`projections:<key>`); any other model's is pending until the test draws it.
 const PREVIEWED = new Set(["run-massing-b", "run-massing-c", "run-s1-massing", "run-facade-c", "run-s2-layout"]);
-const statusReads = [], imageReads = [];
+const statusReads = [], imageReads = [], lostReads = [];
 /** The drawn thumbnails, by model asset. */
 const thumbnails = new Map();
 // #366: the fixture project's index (its change log: each entity's last move) and the Hub streams that relay its hints.
@@ -47,10 +47,13 @@ const hubSend = (name, body) => {
 };
 const sha = (value) => createHash("sha256").update(value).digest("hex");
 const thumbnailKey = (asset) => sha(`projection:${asset}`);
-/** Draw one model's thumbnail, as the projection cache does: the index gains its entity; the revision it moved at. */
-function drawThumbnail(run, asset, revision = null) {
-  const blob = sha(`thumbnail:${asset}`), key = thumbnailKey(asset);
-  thumbnails.set(asset, { run, blob });
+/**
+ * Draw one model's thumbnail, as the projection cache does: the index gains its entity; the revision it moved at.
+ * A `lost` blob is named but not served (the cache folder was cleared): the server answers 404 until it is drawn again.
+ */
+function drawThumbnail(run, asset, revision = null, { blob = sha(`thumbnail:${asset}`), lost = false } = {}) {
+  const key = thumbnailKey(asset);
+  thumbnails.set(asset, { run, blob, lost });
   index.bodies.set(`projections:${key}`, { key, inputSha256: asset, kind: "model-line-view",
     recipe: { view: "axon", size: 256, style: "lines" }, renderer: "fixture", blobSha256: blob });
   if (revision !== null) { index.moved.set(`projections:${key}`, revision); return revision; }
@@ -130,6 +133,12 @@ async function runtime(request, response, url, body) {
     const blob = name.match(/^\/api\/projections\/blobs\/([0-9a-f]{64})$/);
     if (method === "GET" && blob) {
       const drawn = [...thumbnails.values()].find((thumbnail) => thumbnail.blob === blob[1]);
+      if (drawn?.lost) {
+        lostReads.push(drawn.run);
+        response.writeHead(404, { "content-type": "application/json", "cache-control": "no-store" });
+        response.end(JSON.stringify({ code: "PROJECTION_BLOB_NOT_FOUND", detail: "No projection has these bytes; read its status again." }));
+        return;
+      }
       if (drawn) {
         imageReads.push(drawn.run);
         response.writeHead(200, { "content-type": "image/png", "cache-control": "private, max-age=31536000, immutable" });
@@ -1096,8 +1105,25 @@ try {
   assert.equal(imageReads.filter((run) => run === arrivingRun).length, 1, "its image is downloaded once");
   const hubCounts = imageReads.reduce((all, run) => ({ ...all, [run]: (all[run] ?? 0) + 1 }), {});
   assert.ok(Object.values(hubCounts).every((count) => count === 1), `one download per image: ${JSON.stringify(hubCounts)}`);
+  // #367: a blob the server lost (its cache folder was cleared) answers 404 while the server draws it again. The mounted
+  // card shows its words meanwhile, and the image once the index names the redrawn projection, with no remount.
+  const mounted = await hubPage.evaluate(() => { window.__treeMounted = window.__treeApi; return true; });
+  const arrivingAsset = modelsByRun().get(arrivingRun).assetSha256, redrawn = sha(`thumbnail-redrawn:${arrivingAsset}`);
+  const lostAt = drawThumbnail(arrivingRun, arrivingAsset, null, { blob: redrawn, lost: true });
+  hubSend("index", { index: { epoch: "fixture", revision: lostAt, domains: ["projections"] } });
+  for (let round = 0; round < 100 && !lostReads.includes(arrivingRun); round += 1) await new Promise((resolve) => setTimeout(resolve, 50));
+  assert.ok(mounted && lostReads.includes(arrivingRun), "the card read the redrawn blob, which the server has lost");
+  await hubPage.waitForFunction((id) => !window.__treeApi.getSceneElements()
+    .some((element) => element.type === "image" && element.customData?.tree?.node === id), arriving);
+  thumbnails.get(arrivingAsset).lost = false;
+  const redrawnAt = moveIndex([`projections:${thumbnailKey(arrivingAsset)}`]);
+  hubSend("index", { index: { epoch: "fixture", revision: redrawnAt, domains: ["projections"] } });
+  await hubPage.waitForFunction(({ id, file }) => window.__treeApi.getSceneElements().some((element) => element.type === "image"
+    && element.customData?.tree?.node === id && String(element.fileId).includes(file)), { id: arriving, file: redrawn.slice(0, 32) });
+  assert.equal(await hubPage.evaluate(() => window.__treeApi === window.__treeMounted), true, "the same canvas: no remount");
+  assert.equal(lostReads.filter((run) => run === arrivingRun).length, 1, "the lost blob was read once, not retried in a loop");
   console.log(JSON.stringify({ hubTreeOpenedClose: { statusRequestsForDrawnThumbnails: 0, imagesDownloaded: imageReads.length,
-    arrivingThumbnail: { statusRequests: 1, downloads: 1 } } }));
+    arrivingThumbnail: { statusRequests: 1, downloads: 1 }, lostBlobRedrawn: { failedReads: 1, remounted: false } } }));
   await hubPage.evaluate((view) => window.__treeApi.updateScene({ appState: view }), hubView);
   await hubLevel("mid");
   await hubPage.locator(".chat-project-workspace:not([hidden]) .stage-chip").click();

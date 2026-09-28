@@ -1407,6 +1407,10 @@ export const requestProjectionApiProjectionsGet = <ThrowOnError extends boolean 
  * Read Projection Blob
  *
  * Content-addressed PNG bytes, cached by the browser for good.
+ *
+ * A miss that a done row names (the cache directory was cleared) queues that
+ * row's drawing again: the client shows the placeholder until the store hears
+ * it is done.
  */
 export const readProjectionBlobApiProjectionsBlobsSha256Get = <ThrowOnError extends boolean = false>(options: Options<ReadProjectionBlobApiProjectionsBlobsSha256GetData, ThrowOnError>): RequestResult<ReadProjectionBlobApiProjectionsBlobsSha256GetResponses, ReadProjectionBlobApiProjectionsBlobsSha256GetErrors, ThrowOnError> => (options.client ?? client).get<ReadProjectionBlobApiProjectionsBlobsSha256GetResponses, ReadProjectionBlobApiProjectionsBlobsSha256GetErrors, ThrowOnError>({ url: '/api/projections/blobs/{sha256}', ...options });
 

@@ -4,6 +4,7 @@ bounded retries, enqueue on commit, collection and a real render process (#367).
 from __future__ import annotations
 
 import base64
+from contextlib import contextmanager
 from io import BytesIO
 import json
 import os
@@ -131,6 +132,22 @@ def reproject(index: ProjectIndex) -> None:
     index.apply(None, 0, areas={"branches", "working", "runs", *(f"run:{run}" for run in index._projector.run_ids())})
 
 
+@contextmanager
+def changed_renderer(change):
+    """A new renderer in this process: ``change`` (a version string, or a patch of a pipeline input) applies, and
+    the renderer version, computed once per process, is computed again inside and after."""
+
+    if isinstance(change, str):
+        change = patch("monkeydiagram.mesh_views.RENDERER_VERSION", change)
+    projections.forget_renderer()
+    try:
+        with change:
+            projections.forget_renderer()
+            yield
+    finally:
+        projections.forget_renderer()
+
+
 class Clock:
     def __init__(self):
         self.now = 1_000_000.0
@@ -173,7 +190,7 @@ class KeyTests(unittest.TestCase):
 
     def test_the_renderer_version_and_salt_reach_the_key_of_a_spec(self):
         before = projection_spec(SOURCE).key
-        with patch("monkeydiagram.mesh_views.RENDERER_VERSION", "mesh-lines-test"):
+        with changed_renderer("mesh-lines-test"):
             self.assertNotEqual(projection_spec(SOURCE).key, before)
         with patch.object(projections, "SALT", "archflow-projection-test"):
             self.assertNotEqual(projection_spec(SOURCE).key, before)
@@ -199,7 +216,7 @@ class KeyTests(unittest.TestCase):
         }
         keys = set()
         for name, change in changes.items():
-            with self.subTest(input=name), change:
+            with self.subTest(input=name), changed_renderer(change):
                 spec = projection_spec(SOURCE)
                 self.assertNotEqual(spec.key, before.key)
                 self.assertNotEqual(spec.renderer, before.renderer)
@@ -544,7 +561,7 @@ class QueueTests(unittest.TestCase):
             queue.request(spec)
         self.settle(queue)
         self.assertEqual({queue.request(spec).status for spec in specs}, {ERROR})
-        with patch("monkeydiagram.mesh_views.RENDERER_VERSION", "mesh-lines-next"):
+        with changed_renderer("mesh-lines-next"):
             renewed = projection_spec(specs[0].source)
             self.assertNotEqual(renewed.key, specs[0].key)
             self.assertEqual(queue.request(renewed).status, PENDING)
@@ -561,7 +578,7 @@ class QueueTests(unittest.TestCase):
         for spec in specs:
             queue.request(spec)
         self.settle(queue)
-        with patch("monkeydiagram.mesh_views.RENDERER_VERSION", "mesh-lines-next"):
+        with changed_renderer("mesh-lines-next"):
             renewed = projection_spec(specs[0].source)
             queue.request(renewed)
             self.settle(queue)
@@ -578,7 +595,7 @@ class QueueTests(unittest.TestCase):
         queue = self.queue(renderer)
         spec = projection_spec(SOURCE)
         queue.store.enqueue(spec, now=self.clock())
-        with patch("monkeydiagram.mesh_views.RENDERER_VERSION", "mesh-lines-next"):
+        with changed_renderer("mesh-lines-next"):
             queue.start()
             self.settle(queue)
             queue._run(spec.key)
@@ -665,6 +682,145 @@ class QueueTests(unittest.TestCase):
         self.settle(queue)
         self.assertEqual([order.get(key, key) for key in renderer.calls[5:]],
                          [projection_spec(new, recipe=TREE_RECIPE).key], "a commit draws only what is not drawn")
+
+    def test_an_idle_pass_and_a_tree_pass_never_compute_the_renderer_version_again(self):
+        sources = [ModelSource(f"run-{index}", STATE, f"{index:064x}") for index in range(100)]
+        self.projector.models = {source.run_id: [source] for source in sources}
+        self.projector.candidates = [source.run_id for source in sources]
+        reproject(self.index)
+        queue = self.queue(ScriptedRenderer(), tree_sources=lambda: tree_model_sources(self.index))
+        queue.start()
+        self.settle(queue)
+        self.assertEqual(len(queue.store.rows()), 100)
+        with patch.object(projections, "pipeline_of", wraps=projections.pipeline_of) as computed:
+            queue._idle()
+            queue._queue_tree()
+            queue.collect()
+            queue.request(projection_spec(sources[0], recipe=TREE_RECIPE))
+            self.settle(queue)
+        self.assertEqual(computed.call_count, 0, "the renderer version is computed once per process")
+
+    def test_startup_reads_the_table_without_holding_up_a_commit(self):
+        queue = self.queue(ScriptedRenderer(), tree_sources=lambda: [])
+        reading, go = threading.Event(), threading.Event()
+        rows = queue.store.rows
+
+        def slow_rows(**options):
+            reading.set()
+            go.wait(10)
+            return rows(**options)
+
+        with patch.object(queue.store, "rows", side_effect=slow_rows):
+            starting = threading.Thread(target=queue.start)
+            starting.start()
+            self.assertTrue(reading.wait(10))
+            heard = threading.Thread(target=queue.committed)
+            heard.start()
+            heard.join(2)
+            self.assertFalse(heard.is_alive(), "a commit's listener does not wait for startup")
+            go.set()
+            starting.join(10)
+        self.settle(queue)
+
+    def test_a_cleared_cache_is_drawn_again_at_startup_and_on_a_commit(self):
+        sources = [ModelSource(f"run-{index}", STATE, f"{index:064x}") for index in range(3)]
+        self.projector.models = {source.run_id: [source] for source in sources}
+        self.projector.candidates = [source.run_id for source in sources]
+        reproject(self.index)
+        renderer = ScriptedRenderer()
+        queue = self.queue(renderer, tree_sources=lambda: tree_model_sources(self.index))
+        queue.start()
+        self.settle(queue)
+        self.assertEqual(len(renderer.calls), 3)
+        before = self.index.token.revision
+        shutil.rmtree(self.root / "projections")  # while it runs: the next commit's pass finds it
+        queue.committed()
+        self.settle(queue)
+        self.assertEqual(sorted(renderer.calls[3:]), sorted(renderer.calls[:3]), "every thumbnail is drawn again")
+        self.assertEqual({row.status for row in queue.store.rows()}, {DONE})
+        self.assertTrue(all(queue.blobs.read(row.blob_sha256) for row in queue.store.rows()))
+        with self.index.snapshot() as snapshot:
+            upserts, deletes = snapshot.changes(before)
+        self.assertEqual(len(upserts), 3, "clients hear each one is done again")
+        queue.shutdown()
+        shutil.rmtree(self.root / "projections")  # while it is stopped: startup finds it
+        again = ScriptedRenderer()
+        restarted = self.queue(again, tree_sources=lambda: [])
+        restarted.start()
+        self.settle(restarted)
+        self.assertEqual(sorted(again.calls), sorted(renderer.calls[:3]))
+        self.assertTrue(all(restarted.blobs.read(row.blob_sha256) for row in restarted.store.rows()))
+
+    def test_a_blob_a_client_cannot_read_is_drawn_again(self):
+        renderer = ScriptedRenderer()
+        queue = self.queue(renderer)
+        spec = projection_spec(SOURCE, recipe=TREE_RECIPE)
+        queue.request(spec)
+        self.settle(queue)
+        blob = queue.store.get(spec.key).blob_sha256
+        self.assertEqual(queue.lost(blob), 0, "a blob that is there is not drawn again")
+        queue.blobs.path(blob).unlink()
+        self.assertEqual(queue.lost(blob), 1)
+        row = queue.store.get(spec.key)
+        self.assertEqual((row.status, row.attempts, row.blob_sha256), (PENDING, 0, None), "a lost file is no failure")
+        self.settle(queue)
+        self.assertEqual((queue.store.get(spec.key).status, len(renderer.calls)), (DONE, 2))
+        self.assertIsNotNone(queue.blobs.read(blob), "the same bytes again")
+
+    def test_a_new_renderer_replaces_old_pictures_past_the_grace_window_one_at_a_time(self):
+        sources = [ModelSource(f"run-{index}", STATE, f"{index:064x}") for index in range(3)]
+        self.projector.models = {source.run_id: [source] for source in sources}
+        reproject(self.index)
+        queue = self.queue(ScriptedRenderer(), grace_s=7 * 24 * 3600.0)
+        old = [projection_spec(source, recipe=TREE_RECIPE) for source in sources]
+        for spec in old:
+            queue.request(spec)
+        self.settle(queue)
+        blobs = {spec.key: queue.store.get(spec.key).blob_sha256 for spec in old}
+        self.clock.now += 8 * 24 * 3600.0
+        with changed_renderer("mesh-lines-next"):
+            queue.collect()
+            self.assertEqual({row.key for row in queue.store.rows()}, set(blobs),
+                             "an old picture stays, however old, until its replacement is drawn")
+            for drawn, source in enumerate(sources, 1):
+                queue.request(projection_spec(source, recipe=TREE_RECIPE))
+                self.settle(queue)
+                queue.collect()
+                kept = {row.key for row in queue.store.rows()} & set(blobs)
+                self.assertEqual(kept, {spec.key for spec in old[drawn:]}, "old pictures go one at a time")
+                self.assertTrue(all(queue.blobs.read(blobs[key]) for key in kept))
+
+    def test_a_read_restarts_the_grace_window_at_most_once_a_day(self):
+        queue = self.queue(ScriptedRenderer(), grace_s=7 * 24 * 3600.0)
+        spec = projection_spec(ModelSource("run-gone", STATE, "e" * 64))  # no artifact names it
+        queue.request(spec)
+        self.settle(queue)
+        drawn_at = queue.store.get(spec.key).touched_at
+        self.clock.now += 3600.0
+        queue.request(spec)
+        self.assertEqual(queue.store.get(spec.key).touched_at, drawn_at, "a read within a day writes nothing")
+        for _ in range(8):
+            self.clock.now += projections.TOUCH_EVERY_S
+            queue.request(spec)
+        queue.collect()
+        self.assertEqual(queue.store.get(spec.key).status, DONE, "read daily: kept past the grace window")
+        self.clock.now += 7 * 24 * 3600.0
+        queue.collect()
+        self.assertIsNone(queue.store.get(spec.key), "unread and unreachable for the grace window: dropped")
+
+    def test_the_lease_outlives_the_job_timeout_by_thirty_seconds(self):
+        queue = self.queue(ScriptedRenderer(), timeout_s=60)
+        queue.start()
+        spec = projection_spec(SOURCE)
+        queue.store.enqueue(spec, now=self.clock())
+        queue.store.claim(spec.key, now=self.clock())
+        self.clock.now += 89
+        queue._idle()
+        self.assertIsNotNone(queue.store.get(spec.key).claimed_at, "within 60 s + 30 s: still leased")
+        self.clock.now += 1
+        queue._idle()
+        self.settle(queue)
+        self.assertEqual(queue.store.get(spec.key).status, DONE, "at 90 s the lease is reclaimed and drawn")
 
     def test_the_same_model_is_drawn_at_its_next_size_first(self):
         renderer = ScriptedRenderer("block")
@@ -770,6 +926,34 @@ class RouteTests(unittest.TestCase):
         refused = self.client.get("/api/projections", params=fabricated)
         self.assertEqual(refused.status_code, 409, "a done key is no answer to a fabricated source")
         self.assertEqual(self.client.get(f"/api/projections/{key}").json()["status"], "done")
+
+    def test_a_blob_read_that_misses_queues_the_drawing_again(self):
+        key = self.client.get("/api/projections", params={**SOURCE.to_dict(), "size": 256}).json()["key"]
+        self.assertTrue(self.app.state.projections.wait_idle(10))
+        blob = self.client.get(f"/api/projections/{key}").json()["blobSha256"]
+        shutil.rmtree(self.root / "cache" / "projections" / "blobs")
+        missing = self.client.get(f"/api/projections/blobs/{blob}")
+        self.assertEqual((missing.status_code, missing.json()["code"]), (404, "PROJECTION_BLOB_NOT_FOUND"))
+        self.assertTrue(self.app.state.projections.wait_idle(10))
+        self.assertEqual(self.client.get(f"/api/projections/blobs/{blob}").status_code, 200, "drawn again")
+        self.assertEqual(len(self.renderer.calls), 2)
+
+    def test_commits_of_the_projection_queue_alone_queue_nothing(self):
+        from archflow.project.index import IndexToken
+        from archflow.project.index.keeper import _announce
+        from archflow_studio_api.main import _project_commits
+
+        class State:  # what the listener reads of the application's state
+            projections, binding = Mock(), None
+
+        state = State()
+        stop = _project_commits(self.settings, state)
+        self.addCleanup(stop)
+        root = str(Path(self.settings.project_dir).resolve())
+        _announce(root, IndexCommit(IndexToken("epoch", 1), frozenset({"projections"})))
+        state.projections.committed.assert_not_called()
+        _announce(root, IndexCommit(IndexToken("epoch", 2), frozenset({"projections", "run"})))
+        state.projections.committed.assert_called_once_with()
 
     def test_unknown_keys_blobs_and_recipes_are_refused(self):
         self.assertEqual(self.client.get(f"/api/projections/{'0' * 64}").json()["code"], "PROJECTION_UNKNOWN")

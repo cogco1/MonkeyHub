@@ -52,9 +52,12 @@ and never becomes a row that every other run with the same model asset
 would inherit.
 
 The collector keeps what is reachable: a row whose input some artifact of
-the index still names, drawn by the current renderer. An older renderer's
-done row stays until the current one's replaces it (pictures change one at a
-time) or its grace window ends; blobs no row names go after the grace window.
+the index still names, or that was read within the grace window. An older
+renderer's done row stays until the current one's replaces it, so pictures
+change one at a time; blobs no row names go after the grace window. A done
+row whose blob is gone (the cache directory was cleared) is drawn again when
+that is noticed: at startup, on each commit's pass over the tree, when a
+request finds it and when a client's blob read misses (``lost``).
 """
 
 from __future__ import annotations
@@ -63,6 +66,7 @@ import base64
 from collections import deque
 from contextlib import contextmanager
 from dataclasses import dataclass
+import functools
 import hashlib
 import json
 import logging
@@ -105,6 +109,8 @@ MAX_ATTEMPTS = 3
 BACKOFF_S = (30.0, 300.0)
 #: How long an unreferenced blob or temp file stays before the collector removes it.
 GRACE_S = 7 * 24 * 3600.0
+#: A read restarts a done row's grace window at most this often (a read does not write every time).
+TOUCH_EVERY_S = 24 * 3600.0
 _COLLECT_EVERY_S = 3600.0
 _MAX_QUEUED = 256
 #: How long a request waits for the project index to load before it is refused.
@@ -127,11 +133,24 @@ def pipeline_of(kind: str, recipe: Mapping[str, Any]) -> dict[str, Any]:
     return model_view_pipeline(recipe["view"])
 
 
-def renderer_version(kind: str, recipe: Mapping[str, Any]) -> str:
-    """The mesh renderer's own version and a digest of the whole pipeline it runs in."""
+@functools.cache
+def _pipeline(kind: str, view: str) -> tuple[str, str]:
+    # Once per process: the pipeline digests source and library versions, which
+    # cannot change while the process runs, and reading them costs tens of ms.
+    pipeline = pipeline_of(kind, {"view": view})
+    return json.dumps(pipeline, sort_keys=True), f"{pipeline['mesh']['renderer']}/{canonical_digest(pipeline)[:16]}"
 
-    pipeline = pipeline_of(kind, recipe)
-    return f"{pipeline['mesh']['renderer']}/{canonical_digest(pipeline)[:16]}"
+
+def forget_renderer() -> None:
+    """Compute the renderer version again on next use: only for tests that change a pipeline input in-process."""
+
+    _pipeline.cache_clear()
+
+
+def renderer_version(kind: str, recipe: Mapping[str, Any]) -> str:
+    """The mesh renderer's own version and a digest of the whole pipeline it runs in (computed once per process)."""
+
+    return _pipeline(kind, recipe["view"])[1]
 
 
 def recipe_of(kind: str, fields: Mapping[str, Any]) -> dict[str, Any]:
@@ -186,7 +205,7 @@ class ProjectionSpec:
         return {"archflow:projection-key": self.key, "archflow:input-sha256": self.input_sha256,
                 "archflow:kind": self.kind, "archflow:recipe": json.dumps(dict(self.recipe), sort_keys=True),
                 "archflow:renderer": self.renderer,
-                "archflow:pipeline": json.dumps(pipeline_of(self.kind, self.recipe), sort_keys=True)}
+                "archflow:pipeline": _pipeline(self.kind, self.recipe["view"])[0]}
 
 
 def projection_spec(source: ModelSource, kind: str = MODEL_LINES, recipe: Mapping[str, Any] | None = None) -> ProjectionSpec:
@@ -231,6 +250,11 @@ class BlobStore:
             Path(temporary).unlink(missing_ok=True)
             raise
         return sha256
+
+    def exists(self, sha256: str) -> bool:
+        """Whether the blob's file is there: a stat, not a read (a corrupt file is found when it is read)."""
+
+        return self.path(sha256).is_file()
 
     def read(self, sha256: str) -> bytes | None:
         """The bytes, or None when missing or corrupt: either is a miss."""
@@ -354,8 +378,18 @@ class StatusTable:
 
         return self.index.reclaim_projections(now=now, lease_s=lease_s)
 
-    def rows(self) -> tuple[ProjectionStatus, ...]:
-        return tuple(_status(row) for row in self.index.projections())
+    def rows(self, *, blob_sha256: str | None = None) -> tuple[ProjectionStatus, ...]:
+        return tuple(_status(row) for row in self.index.projections(blob_sha256=blob_sha256))
+
+    def redraw(self, keys: Sequence[str], *, now: float) -> tuple[ProjectionStatus, ...]:
+        """Queue done rows whose blob is gone again, from the source each was drawn from; the rows now queued."""
+
+        return tuple(_status(row) for row in self.index.redraw_projections(keys, now=now))
+
+    def touch(self, key: str, *, now: float) -> None:
+        """The row was read: its grace window starts over."""
+
+        self.index.touch_projection(key, now=now)
 
     def drop(self, keys: Mapping[str, float]) -> None:
         """Remove rows not touched since the time given for each."""
@@ -560,6 +594,7 @@ class ProjectionQueue:
         self._collected_at: float | None = None
         self._locks: dict[str, list] = {}
         self._locks_guard = threading.Lock()
+        self._starting = threading.Lock()
         #: What the worker drew, in order, and each job's load and render time (for tests and benchmarks).
         self.drawn: list[tuple[str, int, int]] = []
 
@@ -569,18 +604,53 @@ class ProjectionQueue:
         return self.timeout_s + 30.0
 
     def start(self) -> None:
-        with self._wake:
-            if self._thread is not None or self._stopping:
-                return
-            self.store.reclaim(now=self.clock(), lease_s=0.0)
-            for row in self.store.rows():
-                if row.status == PENDING and _current(row):
+        # Startup reads the table without holding ``_wake``: a commit's listener
+        # (``committed``) must never wait for it.
+        with self._starting:
+            with self._wake:
+                if self._thread is not None or self._stopping:
+                    return
+            now = self.clock()
+            self.store.reclaim(now=now, lease_s=0.0)
+            rows = self.store.rows()
+            queued = [row for row in rows if row.status == PENDING and _current(row)]
+            # A done row whose blob is gone (the cache directory was cleared) is drawn again.
+            queued += self._redraw([row for row in rows if row.status == DONE
+                                    and not self.blobs.exists(row.blob_sha256)], now=now)
+            with self._wake:
+                if self._stopping:
+                    return
+                for row in queued:
                     self._push_locked(row.key, REST, row.spec.input_sha256)
-            # The first pass over the tree: whatever was committed while no worker ran.
-            self._committed = self.tree_sources is not None
-            self._thread = threading.Thread(target=self._work, daemon=True, name="projection-worker")
-            self._thread.start()
+                # The first pass over the tree: whatever was committed while no worker ran.
+                self._committed = self.tree_sources is not None
+                self._thread = threading.Thread(target=self._work, daemon=True, name="projection-worker")
+                self._thread.start()
         self.collect()
+
+    def _redraw(self, rows: Sequence[ProjectionStatus], *, now: float) -> list[ProjectionStatus]:
+        """Done rows whose blob is gone: the current renderer's are queued again, an older one's dropped.
+
+        Returns the rows now queued; the caller pushes them. The render process
+        checks each one's source before it draws, and a refusal drops the row.
+        """
+
+        if not rows:
+            return []
+        self.store.drop({row.key: row.touched_at for row in rows if not _current(row)})
+        return list(self.store.redraw([row.key for row in rows if _current(row)], now=now))
+
+    def lost(self, blob_sha256: str) -> int:
+        """A client could not read this blob: every done row naming it is drawn again. Returns how many."""
+
+        if self.blobs.read(blob_sha256) is not None:
+            return 0
+        self.start()
+        redrawn = self._redraw([row for row in self.store.rows(blob_sha256=blob_sha256) if row.status == DONE],
+                               now=self.clock())
+        for row in redrawn:
+            self._push(row.key, VISIBLE, row.spec.input_sha256)
+        return len(redrawn)
 
     def committed(self) -> None:
         """The index committed: queue the tree's models the worker has not drawn. Returns at once."""
@@ -638,6 +708,8 @@ class ProjectionQueue:
                 row = self.store.enqueue(spec, now=now)
             if row.status == PENDING and row.claimed_at is None:
                 self._push(row.key, priority, spec.input_sha256)
+            elif row.status == DONE and now - row.touched_at >= min(TOUCH_EVERY_S, self.grace_s / 2):
+                self.store.touch(row.key, now=now)  # still read: its grace window starts over
             return row
 
     def read(self, key: str) -> ProjectionStatus | None:
@@ -709,11 +781,12 @@ class ProjectionQueue:
     def collect(self) -> tuple[str, ...]:
         """Drop what is no longer reachable or superseded; remove blobs no row names after the grace window.
 
-        A row goes when its input is no artifact's any more and its grace
-        window has passed; when an older renderer or salt drew it and the
-        current one's done row for the same input and recipe exists, or its
-        grace window has passed; at once when it is an older renderer's row
-        not yet drawn. A blob a remaining row names is never removed.
+        Any row goes when its input is no artifact's any more and its grace
+        window (restarted by reads, ``TOUCH_EVERY_S``) has passed. An older
+        renderer's or salt's done row otherwise stays until the current one's
+        done row for the same input and recipe exists, however old it is, so a
+        renderer change replaces pictures one at a time; its rows not yet drawn
+        go at once. A blob a remaining row names is never removed.
         """
 
         now = self.clock()
@@ -723,12 +796,9 @@ class ProjectionQueue:
                     for row in rows if row.status == DONE and _current(row)}
         drop: dict[str, float] = {}
         for row in rows:
-            expired = now - row.touched_at >= self.grace_s
-            if _current(row):
-                if expired and row.spec.input_sha256 not in inputs:
-                    drop[row.key] = row.touched_at
-            elif row.status != DONE or expired or (
-                    row.spec.input_sha256, row.spec.kind, row.spec.recipe_hash) in replaced:
+            unreachable = now - row.touched_at >= self.grace_s and row.spec.input_sha256 not in inputs
+            if unreachable or (not _current(row) and (row.status != DONE or (
+                    row.spec.input_sha256, row.spec.kind, row.spec.recipe_hash) in replaced)):
                 drop[row.key] = row.touched_at
         self.store.drop(drop)
         referenced = {row.blob_sha256 for row in self.store.rows() if row.blob_sha256}
@@ -795,6 +865,8 @@ class ProjectionQueue:
                         except Exception:  # noqa: BLE001 - a model the tree cannot draw stays a placeholder
                             continue
                     row = self.store.enqueue(spec, now=self.clock())
+                elif row.status == DONE and not self.blobs.exists(row.blob_sha256):
+                    row = next(iter(self._redraw([row], now=self.clock())), row)  # the cache was cleared
             if row.status == PENDING and row.claimed_at is None:
                 self._push(row.key, priority, spec.input_sha256)
 
@@ -852,7 +924,7 @@ def _current(row: ProjectionStatus) -> bool:
     spec = row.spec
     try:
         renderer = renderer_version(spec.kind, spec.recipe)
-    except (ProjectionError, ValueError, KeyError):
+    except (ProjectionError, ValueError, KeyError, TypeError):
         return False
     return spec.renderer == renderer and spec.key == projection_key(
         spec.input_sha256, spec.kind, spec.recipe, renderer=renderer)

@@ -1112,9 +1112,11 @@ class ProjectIndex:
         found = self._projection_read(" WHERE key = ?", (key,))
         return found[0] if found else None
 
-    def projections(self) -> tuple[ProjectionRow, ...]:
-        """Every status row, by key."""
+    def projections(self, *, blob_sha256: str | None = None) -> tuple[ProjectionRow, ...]:
+        """Every status row, by key; only those naming ``blob_sha256`` when it is given."""
 
+        if blob_sha256 is not None:
+            return tuple(self._projection_read(" WHERE blob_sha256 = ? ORDER BY key", (blob_sha256,)))
         return tuple(self._projection_read(" ORDER BY key"))
 
     def enqueue_projection(self, row: ProjectionRow, *, now: float) -> ProjectionRow:
@@ -1173,6 +1175,24 @@ class ProjectIndex:
                 "ORDER BY key", (PROJECTION_PENDING, now, lease_s))]
             connection.executemany("UPDATE projection SET claimed_at = NULL WHERE key = ?", [(key,) for key in stale])
             return tuple(stale)
+
+    def redraw_projections(self, keys: Iterable[str], *, now: float) -> tuple[ProjectionRow, ...]:
+        """Queue done rows again whose blob is gone, as new (no attempt counted); the rows now queued.
+
+        Each stops being an entity, so the revision moves and clients show the
+        placeholder until it is done again.
+        """
+
+        redrawn = []
+        with self._projection_write() as (connection, moved):
+            for key in sorted(set(keys)):
+                if connection.execute(
+                        "UPDATE projection SET status = ?, attempts = 0, claimed_at = NULL, blob_sha256 = NULL, "
+                        "error = NULL, next_attempt_at = NULL, touched_at = ? WHERE key = ? AND status = ?",
+                        (PROJECTION_PENDING, now, key, PROJECTION_DONE)).rowcount:
+                    moved.add(f"projections:{key}")
+                    redrawn.append(self._get_projection(connection, key))
+        return tuple(redrawn)
 
     def touch_projection(self, key: str, *, now: float) -> None:
         """A row was asked for: its grace window starts over."""

@@ -4,8 +4,10 @@
  * Only a node that is in view at the close level asks for its image; each image
  * is read once per blob digest, a few at a time, and what the view no longer
  * wants is not started. A digest names its bytes, so an image once read is never
- * read again for it; a model whose thumbnail is redrawn has a new digest. The
- * read itself is the shared thumbnail cache (`modelThumbnails`), which the
+ * read again for it. A read that fails is not final: the server draws a lost
+ * blob again, so the digest is read again once the view stops wanting it and
+ * wants it back (the store drops and returns it) or after a while. The read
+ * itself is the shared thumbnail cache (`modelThumbnails`), which the
  * inspector's thumbnail uses too. Nothing polls (ADR-008).
  */
 import type { ModelSourceDto } from "../../api/generated";
@@ -45,21 +47,33 @@ export interface PreviewLoader<T> {
   want(keys: Iterable<string>): void;
   /** A read image, null when there is none, undefined while not yet read. */
   get(key: string): T | null | undefined;
+  /** Something changed that may give failed keys an image now (a new projection landed): read them again. */
+  retry(): void;
   dispose(): void;
 }
+
+/** How long a key whose read failed waits before a view that still wants it reads it again. */
+export const PREVIEW_RETRY_MS = 30_000;
 
 /**
  * Reads each key once, at most `limit` at a time, and keeps at most `keep` read
  * images, the least recently wanted going first (one the view wants stays). A
- * read that fails counts as no image, never as an error; `onChange` runs
- * whenever a key's image changes.
+ * read that fails, or finds no image, counts as no image, never as an error,
+ * and is not kept for good: the key is read again once it has left the wanted
+ * keys and come back, or `retryMs` after the failure. `onChange` runs whenever
+ * a key's image changes.
  */
-export function createPreviewLoader<T>(load: (key: string) => Promise<T | null>, { limit = 3, keep = 64, onChange }: {
+export function createPreviewLoader<T>(load: (key: string) => Promise<T | null>, { limit = 3, keep = 64, retryMs = PREVIEW_RETRY_MS,
+  now = Date.now, onChange }: {
   limit?: number;
   keep?: number;
+  retryMs?: number;
+  now?: () => number;
   onChange(): void;
 }): PreviewLoader<T> {
-  const read = new Map<string, T | null>();
+  const read = new Map<string, T>();
+  // Keys whose last read found nothing, and when.
+  const failed = new Map<string, number>();
   const running = new Set<string>();
   let wanted: readonly string[] = [];
   let disposed = false;
@@ -74,12 +88,15 @@ export function createPreviewLoader<T>(load: (key: string) => Promise<T | null>,
     for (const key of wanted) {
       if (disposed || running.size >= limit) return;
       if (running.has(key) || read.has(key)) continue;
+      const failedAt = failed.get(key);
+      if (failedAt !== undefined && now() - failedAt < retryMs) continue;
       running.add(key);
       void Promise.resolve().then(() => load(key)).catch(() => null).then((value) => {
         running.delete(key);
         if (disposed) return;
-        const changed = !read.has(key) || read.get(key) !== value;
-        read.set(key, value);
+        const changed = value === null ? !failed.has(key) : read.get(key) !== value;
+        if (value === null) failed.set(key, now());
+        else { failed.delete(key); read.set(key, value); }
         trim();
         if (changed) onChange();
         pump();
@@ -89,11 +106,18 @@ export function createPreviewLoader<T>(load: (key: string) => Promise<T | null>,
   return {
     want(keys) {
       wanted = [...new Set(keys)];
+      // A key no longer wanted is read afresh when it is wanted again: a failed read is not held against it.
+      const shown = new Set(wanted);
+      for (const key of failed.keys()) if (!shown.has(key)) failed.delete(key);
       // Wanted now: last out.
       for (const key of wanted) if (read.has(key)) { const value = read.get(key)!; read.delete(key); read.set(key, value); }
       pump();
     },
-    get: (key) => read.get(key),
+    get: (key) => read.get(key) ?? (failed.has(key) ? null : undefined),
+    retry() {
+      failed.clear();
+      pump();
+    },
     dispose() { disposed = true; wanted = []; },
   };
 }
