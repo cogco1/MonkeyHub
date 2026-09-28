@@ -966,7 +966,8 @@
         "edit_drawn_element",
         "drawn_element_placement",
         "element_vertical_extent",
-        "parameter_unit"
+        "parameter_unit",
+        "canonical_params"
       ],
       "depends_on": [
         "monkeyarch.capabilities.opening_solver",
