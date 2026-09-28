@@ -459,7 +459,7 @@ try {
     assert.equal((await api("project-a", "/fixture/metrics")).head, headBefore);
     assert.deepEqual(errors, []);
   });
-  await step("a source and direction alone can generate; a lost response recovers by read without replay", async () => {
+  await step("a source and direction alone can generate; a lost response recovers by an automatic read without replay", async () => {
     await workspace().getByRole("button", { name: "Use these inputs", exact: true }).click();
     while (await workspace().locator('.render-references li').count()) await workspace().getByRole('button', { name: 'Remove reference 1', exact: true }).click();
     await direction().fill('Source only');
@@ -469,9 +469,13 @@ try {
       else await route.continue();
     });
     await generate().click();
+    const unknown = workspace().locator('.render-note[role="alert"]');
+    await until(() => unknown.count(), (n) => n === 1, 'the lost answer is said to be unknown');
     await until(jobs, (r) => r.jobs.length === 6 && r.jobs[0].status === 'succeeded', 'source only generation');
-    await refresh().click();
-    await until(() => history().count(), (n) => n === 6, 'lost response recovered by history');
+    // #366: nobody clicks Refresh. The attempts are read again 1, 2, 4… s after the uncertain submit,
+    // and the read that names the request ends the uncertainty.
+    await until(() => history().count(), (n) => n === 6, 'lost response recovered by an automatic history read');
+    await until(() => unknown.count(), (n) => n === 0, 'the read that names the request clears the notice');
     const latest = (await jobs()).jobs[0]; assert.equal(latest.request.references.length, 0);
     assert.equal((await api('project-a', '/fixture/metrics')).calls.length, 6);
     assert.equal((await api('project-a', '/fixture/metrics')).head, headBefore);

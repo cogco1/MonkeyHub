@@ -27,6 +27,8 @@ const patchUploads = [];
 const emitRuntime = () => {
   const event = { serverId: "fixture-hub", sequence: ++runtimeSequence, kind: "changed", snapshot: runtimeSnapshot() };
   for (const stream of streams) stream.write(`event: runtime\ndata: ${JSON.stringify(event)}\n\n`);
+  // What changed a project also moved its index (a result, a chat's candidate): its keeper announces it.
+  for (const projectId of workspaceFixture.projects.keys()) workspaceFixture.commit(projectId);
 };
 const server = createServer(async (req, res) => {
   const pathname = new URL(req.url, "http://localhost").pathname;
@@ -157,7 +159,14 @@ Object.assign(apps.find((app) => app.appId === "monkeyfab"), { url: `${origin}/?
 Object.assign(apps.find((app) => app.appId === "monkeymonitor"), { url: `${origin}/?view=monitor`, apiUrl: `${origin}/` });
 const projectApps = new Map();
 const runtimes = new Map();
-const workspaceFixture = await createProjectWorkspaceFixture(runtimes, sessions);
+// #366: the Hub relays each project index commit on its one stream, as `index` frames.
+const indexFrames = [];
+const emitIndex = (runtime, index) => {
+  const frame = { serverId: "fixture-hub", sequence: ++runtimeSequence, runtimeId: runtime.runtimeId, index };
+  indexFrames.push(frame);
+  for (const stream of streams) stream.write(`event: index\ndata: ${JSON.stringify(frame)}\n\n`);
+};
+const workspaceFixture = await createProjectWorkspaceFixture(runtimes, sessions, { onIndex: (runtime, index) => emitIndex(runtime, index) });
 // GH-285: optional retained previews keyed by the exact project and run. The
 // same run-shaped names in another project deliberately do not share entries.
 const studyPreviews = new Map([["A", new Map([["cand-A-1", "ready"]])]]);
@@ -804,18 +813,43 @@ const autosavedModelRestart = async () => {
   await page.evaluate(() => localStorage.removeItem("monkeyhub.chat-view.v1"));
 };
 /**
- * #364: a Hub left open on a project's Design Tree, with nothing changing, asks for less than ten
- * things a minute. It runs in a page of its own on Playwright's clock, paused and moved a second at a
- * time, so the minute is exact and takes seconds. The same walk counted 94 against main before
- * #364 (38138370): build that checkout's web and run MONKEYHUB_WEB_DIST=<its dist> MONKEYHUB_UI_FOCUS=idle.
+ * #364, #366: a Hub left open on a project's Design Tree, with nothing changing, asks the project for
+ * nothing at all. It runs in a page of its own on Playwright's clock, paused and moved a second at a
+ * time, so the minute is exact and takes seconds, and no timer can stand in for an event. The same
+ * walk counted 94 things a minute before #364 (38138370) and 8 before #366 (de3d5abf: the tree read
+ * its Worktree Graph every 15 s); build that checkout's web and run MONKEYHUB_WEB_DIST=<its dist>
+ * MONKEYHUB_UI_FOCUS=idle. What still asks is the Hub's own, outside #366: the chat attention read
+ * (useAttention, every 30 s while no turn runs), the Hub's application list (main.tsx, every 60 s)
+ * and the software-update status (ChatShell, every 60 s).
+ *
+ * The same page then checks the rest of #366 against the fixture's index: switching surfaces on an
+ * unchanged project asks for nothing; a change another client made reaches the tree through one
+ * index event; a restarted worker's reconnect (a hint without a revision, the stream reopening, a
+ * rebuilt index under a new epoch) is caught up or reset without missing the change; and the page
+ * holds exactly one event stream, however many surfaces are open.
  */
 async function idleMinute() {
   if (!projects.some((row) => row.projectId === "T")) projects.push({ projectId: "T", projectDir: "D:\\fixture\\T", name: "Tree project", chatCount: 0, version: 2, stage: "S2" });
-  workspaceFixture.designTrees.set("T", { stages: ["tree-s0", "tree-s1", "tree-s2"], edits: ["tree-e2", "tree-e1"] });
+  const tree = { stages: ["tree-s0", "tree-s1", "tree-s2"], edits: ["tree-e2", "tree-e1"] };
+  workspaceFixture.designTrees.set("T", tree);
+  workspaceFixture.studioEvents.add("T");
   const idle = await browser.newPage({ viewport: { width: 1440, height: 960 } });
   idle.setDefaultTimeout(12000);
   idle.on("pageerror", (error) => errors.push(error.message));
   await idle.route((url) => url.pathname.startsWith("/api/"), hubApi);
+  // Every event stream this page opens, whoever opens it, and how many are open at once.
+  await idle.addInitScript(() => {
+    const Native = window.EventSource;
+    const seen = window.__eventStreams = { urls: [], live: 0, most: 0 };
+    window.EventSource = class extends Native {
+      constructor(url, options) {
+        super(url, options);
+        seen.urls.push(new URL(String(url), location.href).pathname);
+        seen.most = Math.max(seen.most, ++seen.live);
+      }
+      close() { if (this.readyState !== Native.CLOSED) seen.live -= 1; super.close(); }
+    };
+  });
   await idle.clock.install();
   try {
     await idle.goto(origin);
@@ -824,19 +858,78 @@ async function idleMinute() {
       document.querySelector(`.chat-rail__tool[aria-label="${label}"]`)?.dataset.state === "running"));
     await idle.waitForFunction(() => document.querySelector(".chat-composer")?.dataset.context === "ready");
     await idle.getByRole("button", { name: "Design tree", exact: true }).click();
-    await idle.locator(".chat-project-workspace:not([hidden]) .design-tree").waitFor();
+    const surface = idle.locator(".chat-project-workspace:not([hidden]) .design-tree");
+    await surface.waitFor();
+    await idle.locator(".chat-project-workspace:not([hidden]) .project-bar").getByRole("button", { name: "List", exact: true }).click();
+    const stage = (run) => surface.locator(`[role="treeitem"][data-node="stage:project://T/runs/${run}/review/design-stage.json"]`);
+    await stage("tree-s2").waitFor();
     await idle.clock.pauseAt(await idle.evaluate(() => Date.now()) + 1000);
     // Each second's answers land before the next second starts.
     const seconds = async (count) => { for (let second = 0; second < count; second++) { await idle.clock.runFor(1000); await idle.waitForTimeout(100); } };
     await seconds(5);
-    const asked = [], notModifiedBefore = workspaceFixture.notModified.length;
+    let asked = [];
     const listen = (request) => { const url = new URL(request.url()); if (url.pathname.startsWith("/api/")) asked.push(url.pathname.replace(/^\/api\/runtime\/projects\/[^/]+\/studio/, "(runtime)")); };
+    const project = () => asked.filter((name) => name.startsWith("(runtime)"));
+    const count = (names) => names.reduce((counts, name) => ({ ...counts, [name]: (counts[name] ?? 0) + 1 }), {});
     idle.on("request", listen);
+    const notModifiedBefore = workspaceFixture.notModified.length;
     await seconds(60);
-    idle.off("request", listen);
-    const byPath = asked.reduce((counts, name) => ({ ...counts, [name]: (counts[name] ?? 0) + 1 }), {});
+    const byPath = count(asked);
     console.log(JSON.stringify({ idleMinute: asked.length, byPath, notModified: workspaceFixture.notModified.length - notModifiedBefore }));
-    assert.ok(asked.length < 10, `an idle minute on the Design Tree asked for ${asked.length} things: ${JSON.stringify(byPath)}`);
+    assert.deepEqual(project(), [], `an idle minute on the Design Tree asks the project for nothing: ${JSON.stringify(byPath)}`);
+    assert.ok(asked.length <= 4, `an idle minute asks only the Hub's own periodic reads: ${JSON.stringify(byPath)}`);
+
+    // Switching surfaces on an unchanged project asks the project for nothing, once each has been shown.
+    for (const label of ["Board", "Modeling", "Design tree"]) {
+      await idle.getByRole("button", { name: label, exact: true }).click();
+      await seconds(3);
+    }
+    asked = [];
+    for (const label of ["Board", "Modeling", "Design tree", "Board", "Modeling", "Design tree"]) {
+      await idle.getByRole("button", { name: label, exact: true }).click();
+      await seconds(1);
+    }
+    await stage("tree-s2").waitFor();
+    assert.deepEqual(project(), [], `switching surfaces on an unchanged project asks for nothing: ${JSON.stringify(count(asked))}`);
+
+    // Another client accepts S3: one index event, and the tree shows it.
+    const framesBefore = indexFrames.length;
+    tree.stages.push("tree-s3");
+    workspaceFixture.commit("T");
+    assert.equal(indexFrames.length, framesBefore + 1, "the change is one index event");
+    await seconds(1);
+    await stage("tree-s3").waitFor({ timeout: 2000 });
+    const afterEvent = count(project());
+    assert.ok(afterEvent["(runtime)/api/index"] >= 1, "the store read the changes the event named");
+
+    // A worker restart: the Hub reattaches and hints without a revision; the store reads since its revision.
+    tree.stages.push("tree-s4");
+    workspaceFixture.indexes.get("T").token = null; // the restarted keeper reconciled what moved while it was down
+    emitIndex(runtimes.get("D:\\fixture\\T"), null);
+    await seconds(1);
+    await stage("tree-s4").waitFor({ timeout: 2000 });
+    // The stream itself drops and reopens (the Hub restarted, no hint at all): reopening reads the index.
+    tree.stages.push("tree-s5");
+    workspaceFixture.indexes.get("T").token = null;
+    workspaceFixture.indexes.get("T").revision += 1;
+    for (const stream of [...streams]) stream.end();
+    await seconds(2);
+    await stage("tree-s5").waitFor({ timeout: 2000 });
+    // A rebuilt index (a new epoch, its revision back at 1): the store resets rather than skipping the change.
+    tree.stages.push("tree-s6");
+    const rebuilt = workspaceFixture.rebuild("T");
+    emitIndex(runtimes.get("D:\\fixture\\T"), { epoch: rebuilt.epoch, revision: rebuilt.revision, domains: ["reset"] });
+    await seconds(1);
+    await stage("tree-s6").waitFor({ timeout: 2000 });
+    tree.stages.splice(3);
+    workspaceFixture.commit("T");
+    await seconds(1);
+
+    // One event stream for the whole page: never one per surface or project, and never two at once.
+    const opened = await idle.evaluate(() => window.__eventStreams);
+    assert.deepEqual([...new Set(opened.urls)], ["/api/runtime/events"], "no surface opens a stream of its own");
+    assert.equal(opened.most, 1, `one stream open at a time: ${JSON.stringify(opened)}`);
+    assert.equal(opened.live, 1);
   } finally { await idle.close(); }
 }
 /** GH-432: retained structured suggestions in the real built UI, with synthetic local APIs. */

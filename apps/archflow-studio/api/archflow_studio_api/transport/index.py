@@ -1,4 +1,4 @@
-"""The wire form of ``GET /api/index/{table}``: project index rows, read only."""
+"""The wire form of ``GET /api/index`` and ``GET /api/index/{table}``: the project index, read only."""
 
 from __future__ import annotations
 
@@ -27,3 +27,73 @@ class IndexRowsDto(BaseModel):
         "the revision that last changed it",
     )
     truncated: bool = Field(description="more rows matched than the limit returned")
+
+
+class IndexEntityDto(BaseModel):
+    """One entity a client keeps of the index: a run, what a run keeps aside, the tree, the working position, or another area.
+
+    ``id`` is ``run:<runId>``, ``aside:<runId>``, ``tree``, ``working`` or
+    ``area:<name>``; ``domain`` is the part before the colon; ``rev`` the
+    revision that last changed it. ``aside:<runId>`` counts the records a run
+    keeps beside what it shows (Board scene revisions, page and model
+    annotations): saving one moves it and not ``run:<runId>``.
+    ``working`` is the working position a head is read from (``current``,
+    ``active`` and the digest of the retained runs' rows, ``runsDigest``)
+    without the local recovery it may name: saving that recovery moves
+    ``area:working`` alone. Like a row, an entity is never evidence: its body
+    names the records it was read from.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    id: str
+    domain: str = Field(description="run | aside | tree | working | area")
+    rev: int
+    body: dict[str, Any]
+
+
+class IndexChangesDto(BaseModel):
+    """``GET /api/index``: a whole snapshot of the index, or the changes since a revision (#366).
+
+    With ``since`` and ``epoch`` naming this index's epoch and a revision the
+    change log still holds, the answer holds only what changed after it:
+    ``from`` is that revision, ``to`` the current one, ``upserts`` every entity
+    changed since (as it is now) and ``deletes`` the ids removed since. Equal
+    ``from`` and ``to`` means nothing changed. Otherwise - no ``since``,
+    another epoch (a rebuild), a revision ahead of the index or older than the
+    log - ``reset`` is true and ``upserts`` is every entity: replace what you
+    kept. Tagged ``"<epoch>:<revision>"``.
+    """
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True)
+
+    project_id: str = Field(alias="projectId")
+    epoch: str
+    revision: int
+    reset: bool
+    from_revision: int | None = Field(alias="from", default=None)
+    to_revision: int = Field(alias="to")
+    upserts: list[IndexEntityDto]
+    deletes: list[str]
+
+
+class IndexEventDto(BaseModel):
+    """``index.committed`` and ``stream.reset`` on ``GET /api/events`` (#366).
+
+    ``index.committed`` is a hint that carries no rows: the index now stands
+    at ``epoch``/``revision`` and moved the named ``domains`` (``reset`` after
+    a rebuild or a first load); read ``GET /api/index?since=`` to catch up.
+    Nothing may depend on receiving it. ``stream.reset`` opens a reconnection
+    that cannot resume (``reason`` restart or overflow): whatever the client
+    kept from this stream may be missing events, so it reads again.
+    """
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True)
+
+    seq: int
+    at: str
+    type: str
+    epoch: str | None = None
+    revision: int | None = None
+    domains: list[str] | None = None
+    reason: str | None = None

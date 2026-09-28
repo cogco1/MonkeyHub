@@ -32,7 +32,8 @@ import {
   asStudioApiError,
   type StudioApiError,
 } from "../api/client";
-import { useStudio } from "../api/ProjectRuntimeContext";
+import { useProjectMoved, useStudio } from "../api/ProjectRuntimeContext";
+import { refreshesVersions } from "./versionEvents";
 import type { PageSource } from "../workspaces/monkeyboard/boardScene";
 import type { ServerIdentity } from "../api/connection";
 import type {
@@ -246,6 +247,9 @@ export type WorkspaceDesignContext = {
   /** While edits keep project state out of chat: record them, so the refused context can start (#302). */
   record?: () => Promise<void>;
 };
+
+/** Where the Working Head is read from in the project index: the working position, the branches, HEAD (#366). */
+const headShows = (id: string) => id === "working" || id === "tree" || id === "area:head";
 
 export default function App({ server, expectedProjectId, initialDocumentIntent, initialSketchRequest, initialRunId, initialRunAsset = null, initialRunRequest = 0, initialRunFollowsHead = false, documentSource = null, active = true, refreshKey = 0, onReturnToBoard, onOpenBoard, onChatRequest, onDesignContextChange, onRenderReader, onView, onRecorder, onOpenTree }: {
   onRenderReader?: (reader: (() => RenderView | null) | null) => void;
@@ -534,8 +538,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
   const [versionRefreshRequest, setVersionRefreshRequest] = useState(0);
   const versionRefreshHandled = useRef(0);
   const eventLines = useStudioEvents(server.capabilities.includes("events"), (event) => {
-    if (event.type === "model_asset.registered" || event.type === "working_copy.option_added" ||
-        event.type === "candidate.succeeded") setVersionRefreshRequest((current) => current + 1);
+    if (refreshesVersions(event)) setVersionRefreshRequest((current) => current + 1);
     if (event.candidateId && (event.type === "candidate.succeeded" || event.type === "candidate.failed")) {
       candidateRuns.refresh(event.candidateId);
     }
@@ -1585,17 +1588,27 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
     localEdits: () => localEditingRef.current || Boolean(workingDraft?.localDraft) || [...localModels.current.values()].some(unsynced),
     viewed: () => sourceLabel === LOCAL_SOURCE_LABEL ? LOCAL_SOURCE_LABEL : loadedArtifactsRef.current[0]?.runId ?? null,
   };
+  // What the last completed head read was made at: where the head is read from in the project's
+  // store (#366), the base and the explicit refreshes. Coming back on screen with none of them
+  // moved reads nothing again, and neither does an autosave, which moves none of them.
+  const storeRevision = useProjectMoved(headShows);
+  const followReadAt = useRef<string | null>(null);
   useEffect(() => {
     if (!followsHead || !active || session.status !== "ready" || followBusy) return;
+    const at = JSON.stringify([storeRevision, editingRunId, versionRefreshRequest, refreshKey]);
+    if (storeRevision !== null && followReadAt.current === at) return;
     const read = ++followRead.current;
     const controller = new AbortController();
     const projectId = session.value.project.projectId;
     const localEdits = localEditingRef.current || Boolean(session.value.workingDraft?.localDraft) ||
       [...localModels.current.values()].some(unsynced);
     void studio.workingSource("modeling", controller.signal).then(async (source) => {
-      if (read !== followRead.current || source.projectId !== projectId || !source.head) return;
+      if (read !== followRead.current || source.projectId !== projectId) return;
       const head = headOf(source);
-      if (followStep({ baseRunId: editingRunId, head, busy: autoShowRef.current !== null, localEdits }) !== "follow" || head === null) return;
+      const step = source.head ? followStep({ baseRunId: editingRunId, head, busy: autoShowRef.current !== null, localEdits }) : "stay";
+      // A deferred follow is not done: the next run of this effect reads the head again.
+      if (step !== "defer") followReadAt.current = at;
+      if (step !== "follow" || head === null || !source.head) return;
       const viewed = sourceLabel === LOCAL_SOURCE_LABEL ? LOCAL_SOURCE_LABEL : loadedArtifactsRef.current[0]?.runId ?? null;
       const next = await reload(head.runId, source.head.accepted ? source.head.sourceStageRef ?? undefined : undefined,
         source.head.branchId ?? undefined, true, undefined, false);
@@ -1604,7 +1617,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
       if (viewerFollows(viewed, editingRunId)) setHeadFollow({ runId: head.runId, viewRequest: modelLoadRequest.current });
     }).catch(() => { /* The current base stays usable; the next event reads the head again. */ });
     return () => controller.abort();
-  }, [followsHead, active, session.status, followBusy, editingRunId, versionRefreshRequest, refreshKey, studio, reload, pushNotice, t, sourceLabel]);
+  }, [followsHead, active, session.status, followBusy, editingRunId, versionRefreshRequest, refreshKey, studio, reload, pushNotice, t, sourceLabel, storeRevision]);
   useEffect(() => {
     // Show the head once the base and its listed model describe it, unless the
     // person loaded or started editing something since the follow was decided.

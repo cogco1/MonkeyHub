@@ -15,6 +15,11 @@ that overlaps it): the keeper retries taking it with a bounded back-off and
 says so in ``status`` meanwhile; every reader reads the project itself until
 the index has loaded.
 
+After each commit that moved the revision, and after the first load, the
+keeper tells the listeners registered for its project (``add_commit_listener``)
+where the index stands and which domains moved: a hint for clients to read the
+changes, never the changes themselves (#366).
+
 A reader asks ``state`` (one attribute read) whether the index answers yet,
 and ``readable`` whether it has applied every write this process made; it
 then reads a snapshot (``ProjectIndex.snapshot``), which never waits for the
@@ -35,7 +40,7 @@ from typing import Callable
 from archflow.project.repository import add_write_observer, project_path_key, write_serial
 from archflow.project.watch import LayoutLease, LayoutSighting
 
-from .store import IndexLocked, IndexToken, IndexUnavailable, ProjectIndex, path_area
+from .store import IndexCommit, IndexLocked, IndexToken, IndexUnavailable, ProjectIndex, path_area
 
 _LOG = logging.getLogger(__name__)
 
@@ -49,6 +54,43 @@ WRITTEN_LIMIT = 4096
 LOCK_RETRY_FIRST_S = 0.1
 LOCK_RETRY_MAX_S = 5.0
 LOCK_RETRY_TOTAL_S = 120.0
+
+
+_LISTENERS_LOCK = threading.Lock()
+_LISTENERS: dict[str, list[Callable[[IndexCommit], None]]] = {}
+
+
+def add_commit_listener(root: Path | str, listener: Callable[[IndexCommit], None]) -> Callable[[], None]:
+    """Hear of every commit of the index of the project at ``root``; returns the removal.
+
+    Called on the keeper's thread after the commit is readable, with where the
+    index stands and the domains it moved (``reset`` for a rebuild or a first
+    load). It must return at once: publish, never read or write the project.
+    """
+
+    key = project_path_key(root).rstrip(os.sep)
+    with _LISTENERS_LOCK:
+        _LISTENERS.setdefault(key, []).append(listener)
+
+    def remove() -> None:
+        with _LISTENERS_LOCK:
+            listeners = _LISTENERS.get(key, [])
+            if listener in listeners:
+                listeners.remove(listener)
+            if not listeners:
+                _LISTENERS.pop(key, None)
+
+    return remove
+
+
+def _announce(root: str, commit: IndexCommit) -> None:
+    with _LISTENERS_LOCK:
+        listeners = tuple(_LISTENERS.get(project_path_key(root).rstrip(os.sep), ()))
+    for listener in listeners:
+        try:
+            listener(commit)
+        except Exception:  # noqa: BLE001 - a hint that failed to go out is not a failed commit
+            _LOG.exception("an index commit listener failed")
 
 
 @dataclass(frozen=True, slots=True)
@@ -87,6 +129,7 @@ class IndexKeeper:
         self._stopping = False
         self._state: IndexState | None = None
         self._loaded = threading.Event()
+        self._announced: IndexToken | None = None
         self._thread: threading.Thread | None = None
         self._remove_observer: Callable[[], None] | None = None
         self._remove_listener: Callable[[], None] | None = None
@@ -352,3 +395,11 @@ class IndexKeeper:
         with self._changed:
             self._state = IndexState(token, serial, sighting.layout.fingerprint.digest, sighting.layout.generation)
             self._changed.notify_all()
+        if token != self._announced:
+            # The first load is announced whatever it found: a client that
+            # asked while the index was loading was refused, and reads now.
+            commit = self.index.last_commit
+            domains = commit.domains if commit is not None and commit.token == token and self._announced is not None \
+                else frozenset({"reset"})
+            self._announced = token
+            _announce(self._root, IndexCommit(token, domains))

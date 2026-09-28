@@ -20,6 +20,12 @@ buffer has forgotten.
 Subscribers get their own unbounded ``queue.Queue`` rather than sharing a
 cursor into the buffer: a slow reader then falls behind on its own connection
 instead of blocking the thread that is running the design work.
+
+A ``seq`` means something only within one process, so each log has a
+``stream`` of its own and a resume point names both (``<stream>:<seq>``).
+``resume`` tells a reconnecting client when it cannot be given what it missed:
+a point from another process (a restart) or one older than the buffer (an
+overflow). Such a client must reset rather than resume (#366).
 """
 
 from __future__ import annotations
@@ -29,7 +35,8 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 import queue
 import threading
-from typing import Any, Iterator, Mapping
+from typing import Any, Iterator, Literal, Mapping
+from uuid import uuid4
 
 # How many events one process remembers. A candidate run publishes three, so
 # this is roughly the last sixty runs — long enough that a client reconnecting
@@ -47,6 +54,8 @@ class StudioEvents:
 
     def __init__(self, buffer_size: int = BUFFER_SIZE) -> None:
         self._lock = threading.Lock()
+        # Names this process's numbering: a resume point from another one is not ours.
+        self.stream = uuid4().hex
         self._seq = 0
         self._buffer: deque[Mapping[str, Any]] = deque(maxlen=buffer_size)
         self._subscribers: set[queue.Queue[Mapping[str, Any]]] = set()
@@ -90,6 +99,28 @@ class StudioEvents:
             # own connection rather than holding up the design work.
             for inbox in self._subscribers:
                 inbox.put(stamped)
+
+    def resume(self, last_event_id: str | None) -> tuple[int | None, Literal["restart", "overflow"] | None]:
+        """Where a client that sent ``last_event_id`` resumes, and why it must reset instead, if it must.
+
+        ``<stream>:<seq>`` of this process resumes after ``seq`` unless events
+        after it have left the buffer (``overflow``). Any other point - another
+        process's, or one without a stream - replays everything and says
+        ``restart``: the client cannot know what it missed. No point at all is
+        a first connection.
+        """
+
+        if last_event_id is None or not last_event_id.strip():
+            return None, None
+        stream, _, seq = last_event_id.strip().rpartition(":")
+        if stream != self.stream or not seq.isdigit():
+            return None, "restart"
+        after = int(seq)
+        with self._lock:
+            oldest = self._buffer[0]["seq"] if self._buffer else self._seq + 1
+        if after + 1 < oldest:
+            return None, "overflow"
+        return after, None
 
     def replay(self, after: int | None = None) -> tuple[Mapping[str, Any], ...]:
         """What this process still remembers, optionally after one sequence."""

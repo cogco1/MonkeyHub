@@ -3,7 +3,7 @@ import { CaptureUpdateAction, convertToExcalidrawElements, MainMenu, newElementW
 import type { ExcalidrawElement, FileId } from "@excalidraw/excalidraw/element/types";
 import type { AppState, BinaryFiles, DataURL, ExcalidrawImperativeAPI, ExcalidrawInitialDataState } from "@excalidraw/excalidraw/types";
 
-import { useStudio } from "../../api/ProjectRuntimeContext";
+import { useProjectRevision, useStudio } from "../../api/ProjectRuntimeContext";
 import type { StudioClient } from "../../api/client";
 import type { BoardDto, FrameLevelDto, SourceDocumentDto } from "../../api/generated";
 import { CANVAS_APP_STATE, PROJECT_CANVAS_CLASS, ProjectCanvas, useScenePointer, useWheelZoom } from "../../features/canvas/ProjectCanvas";
@@ -694,12 +694,21 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
       window.removeEventListener("beforeunload", warn);
     };
   }, [queue]);
+  // The documents are read again when the project's store moves (#366), never on a timer: on
+  // screen at once, otherwise when the board comes back. A read put off (hidden, a dialog open)
+  // is made when the window is shown again. Outside the Hub (no store) focus reads them.
+  const revision = useProjectRevision();
+  const readRevision = useRef<string | null | undefined>(revision);
   useEffect(() => {
     if (!ready || !active) return;
     let live = true;
     let refreshing = false;
     const refresh = async () => {
-      if (!live || refreshing || document.hidden || feedbackOpen.current || replacementOpen.current) return;
+      if (!live || refreshing || document.hidden || feedbackOpen.current || replacementOpen.current) {
+        readRevision.current = undefined;
+        return;
+      }
+      readRevision.current = revision;
       refreshing = true;
       try {
         await serial(async () => {
@@ -716,10 +725,14 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
       finally { refreshing = false; }
     };
     void serial(() => receive(documentsRef.current));
-    const timer = window.setInterval(() => { void refresh(); }, 5000);
-    window.addEventListener("focus", refresh);
-    return () => { live = false; window.clearInterval(timer); window.removeEventListener("focus", refresh); };
-  }, [acceptDocuments, board.projectId, ready, receive, serial, active]);
+    if (readRevision.current !== revision) void refresh();
+    const shown = () => { if (!document.hidden && readRevision.current !== revision) void refresh(); };
+    document.addEventListener("visibilitychange", shown);
+    // Outside the Hub no store moves: focus reads again, as the Hub's store does on focus.
+    const focused = () => { if (revision === null) void refresh(); };
+    window.addEventListener("focus", focused);
+    return () => { live = false; document.removeEventListener("visibilitychange", shown); window.removeEventListener("focus", focused); };
+  }, [acceptDocuments, board.projectId, ready, receive, serial, active, revision]);
   useWheelZoom(root, canvas);
   // Leaving for a page is still a board edit: the canvas is saved first, and a
   // refused save keeps the operator here with their marks rather than losing them.
@@ -802,13 +815,15 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
   }); };
   const wasActive = useRef(active);
   const lastRefresh = useRef(refreshKey);
+  // The revision the pictures were last drawn at: coming back to an unchanged project redraws nothing.
+  const visualRevision = useRef(revision);
   useEffect(() => {
-    const returning = active && !wasActive.current;
+    const returning = active && !wasActive.current && (revision === null || visualRevision.current !== revision);
     wasActive.current = active;
     if (ready && (returning || lastRefresh.current !== refreshKey)) {
-      lastRefresh.current = refreshKey; preview.invalidate(); retryVisuals();
+      lastRefresh.current = refreshKey; visualRevision.current = revision; preview.invalidate(); retryVisuals();
     }
-  }, [active, ready, refreshKey]);
+  }, [active, ready, refreshKey, revision]);
   const sendToPublish = async () => {
     const api = canvas.current;
     if (!api || !onPublish || !ready || busy || saveState.conflict) return;
