@@ -46,7 +46,10 @@ from .support import (
 
 # The kernel's own sentence when a record carries nothing to stand the
 # developed-design view on. Pinned here because the API repeats it verbatim.
-NO_EVIDENCE = "a developed-design view needs at least one evidence ref"
+# A component with no source of its own, in a record that states no evidence,
+# has nothing to cite: the one authoring fault that still refuses a record
+# without massing (#402 binds such a record as itself otherwise).
+NO_EVIDENCE = "has no source: give the entity source_refs, or the record evidence"
 
 
 class StateProjectionTests(unittest.TestCase):
@@ -650,8 +653,8 @@ class MalformedRecordTests(unittest.TestCase):
 class UnviewableRecordTests(unittest.TestCase):
     """A record the kernel will not bind still says what it declares.
 
-    ``developed_design_view`` refuses three authoring faults with one
-    ``StateRecordError``. Failing to arrange a record's components is not a
+    ``developed_design_view`` refuses a component that cites no source with
+    a ``StateRecordError``. Failing to arrange a record's components is not a
     claim that they are absent, so ``GET /api/state`` answers with the
     entities and names what the kernel refused — and every route that would
     have to *stand on* that view refuses instead of proceeding without it.
@@ -663,6 +666,11 @@ class UnviewableRecordTests(unittest.TestCase):
         self.repository = make_empty_project(self.root)
         payload = json.loads(json.dumps(RECORD_PAYLOAD))
         payload["evidence_refs"] = []
+        payload["entities"] = [
+            {**entity, "fields": {k: v for k, v in entity["fields"].items() if k != "source_refs"}}
+            if entity["schema"] == "Component@1" else entity
+            for entity in payload["entities"]
+        ]
         write_runner_record(self.repository, payload)
         self.client = TestClient(
             create_app(StudioSettings(cad_export="off", project_dir=self.root / PROJECT_ID))
@@ -676,7 +684,7 @@ class UnviewableRecordTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200, response.text)
         payload = response.json()
-        self.assertEqual(payload["componentTreeError"], NO_EVIDENCE)
+        self.assertIn(NO_EVIDENCE, payload["componentTreeError"])
         self.assertIsNone(payload["componentTree"])
         # The entities are the record's answer and they are still served.
         self.assertEqual(payload["counts"]["entities"], 6)
@@ -685,7 +693,7 @@ class UnviewableRecordTests(unittest.TestCase):
         self.assertEqual(len(payload["parameters"]), 4)
         self.assertEqual(len(payload["dependencyEdges"]), 5)
         self.assertIn(
-            f"component tree unavailable: {NO_EVIDENCE}", payload["honesty"]
+            f"component tree unavailable: {payload['componentTreeError']}", payload["honesty"]
         )
         # No view, no bound digest: the number a receipt cites is absent
         # rather than invented, and the comparison stays unmade.

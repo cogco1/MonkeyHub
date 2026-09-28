@@ -49,12 +49,19 @@ on the three content fields it already has:
   ``developed-design-state`` and the ``stage-closure`` that closed its stage.
   Sorted so the state's digest does not depend on the order this module
   happened to build them in; the kind in each file name says which is which.
+  A run whose record declares no complete massing has no developed state
+  (#402): it executed its record bound as itself, the ``StateRecordBinding``
+  whose digest its receipt names as ``design_state_digest``. That binding is
+  issued in the developed state's place, through the retained
+  ``stage-run-envelope`` that binds exactly it: the envelope names the run,
+  the base, the phase and the binding digest, and the authoritative record is
+  the binding's record. Nothing is computed into a state the run never had.
 * ``phase`` - the ``stage_id`` of the closed stage. The published design is at
   that stage and no further.
 
 A retained record's file name is ``<kind>-<sha256>.json``, so every URI above
 *is* that record's digest as well as its address. The two **content** digests -
-``StateRecord.digest`` and the developed state's ``state_digest`` - are not
+``StateRecord.digest`` and the developed state's (or binding's) ``state_digest`` - are not
 copied here: each is a field of the record its URI names, and the URI binds
 that record's bytes. Two identities, never three (ADR-003); a third copy of an
 identity is a third place for it to disagree.
@@ -89,8 +96,10 @@ from archflow.state.stage_workflow import (
     StageClosureError,
     StageClosureStatus,
     StageExitBinding,
+    StageRunEnvelope,
     StageWorkflowError,
 )
+from archflow.state.state_record import RecordBinding, StateRecord, StateRecordError
 from archflow.project.version_refs import (
     register as _register_version_refs,
     register_derived as _register_derived_fields,
@@ -103,6 +112,8 @@ DECISION_ACCEPTED = "accepted"
 
 STATE_RECORD_REF = "state_record_ref"
 DESIGN_STATE_REF = "design_state_ref"
+STAGE_ENVELOPE_REF = "stage_envelope_ref"
+DESIGN_STATE_DIGEST = "design_state_digest"
 
 
 class IssueError(RuntimeError):
@@ -172,10 +183,13 @@ def issue_run(
 
     records = _run_records(repository, run)
     closure, closure_ref = _satisfied_closure(records, run_id)
-    _exit_binding(records, closure, closure_ref, run_id)
+    exit_binding = _exit_binding(records, closure, closure_ref, run_id)
     receipt = _run_receipt(records, run_id)
     authored_ref = _retained_ref(receipt, records, STATE_RECORD_REF, run_id)
-    developed_ref = _retained_ref(receipt, records, DESIGN_STATE_REF, run_id)
+    if receipt.get(DESIGN_STATE_REF) is None:
+        developed_ref = _record_binding_ref(receipt, records, run, exit_binding, authored_ref)
+    else:
+        developed_ref = _retained_ref(receipt, records, DESIGN_STATE_REF, run_id)
 
     replacement_state = {
         "schema": CANONICAL_STATE_SCHEMA,
@@ -406,6 +420,68 @@ def _retained_ref(
             f"run {run_id!r} receipt names a {field} the run does not retain"
         )
     return value
+
+
+def _record_binding_ref(
+    receipt: Mapping[str, Any],
+    records: tuple[tuple[str | None, ProjectRecordRef, Mapping[str, Any]], ...],
+    run: RunRef,
+    exit_binding: StageExitBinding,
+    authored_ref: str,
+) -> str:
+    """The retained envelope binding the ``StateRecordBinding`` a geometry-only run executed.
+
+    A run whose record declares no complete massing retains no developed
+    state (#402); its receipt names the binding by ``design_state_digest``.
+    The binding is issued exactly or not at all: the receipt's envelope must
+    be the one the stage's exit binding closed, both must bind the digest the
+    receipt names, and the authored record the issue publishes must be the
+    one this run bound - same content digest, run and base - in a phase a
+    record can be bound in. The envelope's URI then stands where a developed
+    state's would, and the digest itself is the one the runner's stage guard
+    checked before the run's first write, recognized there and never
+    recomputed here.
+    """
+
+    run_id = run.run_id
+    envelope_uri = _retained_ref(receipt, records, STAGE_ENVELOPE_REF, run_id)
+    if exit_binding.envelope_ref != envelope_uri:
+        raise RunNotComplete(
+            f"run {run_id!r} receipt names a stage envelope its stage exit "
+            "binding did not close"
+        )
+    payloads = {ref.uri: payload for _, ref, payload in records}
+    try:
+        envelope = StageRunEnvelope.from_dict(payloads[envelope_uri])
+        record = StateRecord.from_dict(payloads[authored_ref])
+        binding = RecordBinding(record, envelope.phase)
+    # a phase no record can be bound in is a DevelopedDesignError, which is a ValueError
+    except (StageWorkflowError, StateRecordError, KeyError, TypeError, ValueError) as exc:
+        raise RunNotComplete(
+            f"run {run_id!r} retains no developed state, and its record and "
+            f"stage envelope do not bind a record as itself: {exc}"
+        ) from exc
+    digest = receipt.get(DESIGN_STATE_DIGEST)
+    if (
+        not isinstance(digest, str)
+        or digest != envelope.state_digest
+        or digest != exit_binding.state_digest
+    ):
+        raise RunNotComplete(
+            f"run {run_id!r} receipt names a design_state_digest its stage "
+            "envelope and exit binding do not bind"
+        )
+    if (
+        record.digest != receipt.get("state_record_digest")
+        or (record.project_id, record.run_id, record.base)
+        != (run.project_id, run.run_id, run.base)
+        or (binding.project_id, binding.run_id) != (envelope.project_id, envelope.run_id)
+    ):
+        raise RunNotComplete(
+            f"run {run_id!r} retains a state record that is not the one this "
+            "run bound"
+        )
+    return envelope_uri
 
 
 # A promotion decision states the exact published version it checked, and

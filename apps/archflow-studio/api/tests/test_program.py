@@ -33,6 +33,7 @@ from archflow.project.layout import PROGRAM_SHEET_PATH
 from archflow.project.record_kinds import STATE_RECORD
 from archflow.project.refs import RunRef
 from archflow.state.program_sheet import PROGRAM_SHEET_SCHEMA
+from archflow.state.state_record import RECORD_BINDING_PHASE, legacy_state_digest
 
 from archflow_studio_api.main import create_app
 from archflow_studio_api.settings import StudioSettings
@@ -201,6 +202,11 @@ class ProgramTestCase(unittest.TestCase):
         )
         self.record_digest = bound_record.digest
         self.sheet_state_digest = bound_record.state_digest
+        # What main bound this record by before #402, when it declares no
+        # massing: the retired placeholder's digest a sheet saved then cites.
+        self.legacy_sheet_state_digest = legacy_state_digest(
+            bound_record, run=bound_record.run_ref, phase=RECORD_BINDING_PHASE
+        )
         settings = (
             StudioSettings(cad_export="off", project_dir=self.repository.layout.root)
             if self.mode == "local"
@@ -507,6 +513,38 @@ class ApplyTests(ProgramTestCase):
         status, answer = self.apply(second["sheet"], digest=second["stateDigest"])
         self.assertEqual(status, 202, answer)
         self.finished(answer["jobId"])
+
+    def test_a_sheet_saved_before_402_is_still_read_and_applied(self) -> None:
+        """The zoned record declares no massing; a sheet saved on main cites its retired digest, exactly."""
+
+        self.assertIsNotNone(self.legacy_sheet_state_digest)
+        self.assertNotEqual(self.legacy_sheet_state_digest, self.sheet_state_digest)
+        status, answer = self.apply(sheet_adding("store", zone="zone-hall"), save=True)
+        self.assertEqual(status, 202, answer)
+        self.finished(answer["jobId"])
+        saved = json.loads(self.repository.layout.program_sheet.read_text(encoding="utf-8"))
+        saved["state_digest"] = self.legacy_sheet_state_digest
+        self.repository.layout.program_sheet.write_text(json.dumps(saved, indent=2, sort_keys=True), encoding="utf-8")
+
+        read = self.get("/api/program")
+
+        self.assertEqual(read["source"], "input")                                   # not reported stale
+        self.assertFalse(
+            any("was not returned or silently rebound" in line for line in read["sheet"]["honesty"]),
+            read["sheet"]["honesty"],
+        )
+        status, answer = self.apply(
+            {**sheet_adding("store", zone="zone-hall"), "stateDigest": self.legacy_sheet_state_digest}
+        )
+        self.assertEqual(status, 202, answer)                                        # main answered 202 too
+        self.finished(answer["jobId"])
+
+    def test_a_sheet_citing_another_old_digest_is_still_stale(self) -> None:
+        status, answer = self.apply(
+            {**sheet_adding("store", zone="zone-hall"), "stateDigest": "c" * 64}
+        )
+        self.assertEqual(status, 409, answer)
+        self.assertEqual(answer["code"], "STALE_BASE")
 
     def test_a_file_at_that_path_that_is_not_a_sheet_is_named_not_ignored(self) -> None:
         self.repository.layout.program_sheet.parent.mkdir(

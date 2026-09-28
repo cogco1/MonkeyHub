@@ -6,7 +6,10 @@ only a project with no eligible run reads the authored WIP and attaches it via
 ``bound_to``. The component tree comes from ``design_components_of``, the
 edges from ``StateRecord.dependency_edges`` and the digest from the same
 ``developed_design_view`` the project runner uses, so a projection and a run
-receipt name the same number or the difference is stated out loud.
+receipt name the same number or the difference is stated out loud. A record
+that declares no complete massing is bound as itself (``RecordBinding``); a
+run retained before #402 cites the retired placeholder digest for it, and
+that citation is recognized (``RecordBinding.retained_as``), not recomputed.
 
 Two identities travel, not three: ``record.digest`` is the record's content and
 ``state.state_digest`` is that content bound to a run. Neither is computed here.
@@ -44,6 +47,7 @@ from archflow.state.spatial import DesignComponent
 from archflow.state.stage_workflow import DesignPhase
 from archflow.state.state_record import (
     Parameter,
+    RecordBinding,
     StateRecord,
     StateRecordError,
     design_components_of,
@@ -81,7 +85,7 @@ UNSTATED_PHASE = DesignPhase.DESIGN_DEVELOPMENT
 _VIEW_DIGESTS = ContentMemo("studio.view-digests", max_entries=64)
 
 
-def _state_digest(state: DevelopedDesignState) -> str:
+def _state_digest(state: DevelopedDesignState | RecordBinding) -> str:
     key = (id(state),)
     kept = _VIEW_DIGESTS.get(key)
     if kept is not None and kept[0] is state:
@@ -172,7 +176,7 @@ class StateProjection:
     phase: DesignPhase
     # ``None`` when the kernel refused to build the bound view. Only
     # ``GET /api/state`` is served such a projection; see ``project_state``.
-    state: DevelopedDesignState | None
+    state: DevelopedDesignState | RecordBinding | None
     matches_reference_receipt: bool | None
     components: tuple[DesignComponent, ...] | None
     component_tree_error: str | None
@@ -336,6 +340,16 @@ def project_state(
         if reference.receipt is None
         else reference.receipt.get("design_state_digest")
     )
+    if isinstance(state, RecordBinding) and reference_state_exact and phase_error is None:
+        # A run retained before #402 bound this same record by the retired
+        # placeholder projection's digest; it is that run's number, checked
+        # against its record, run and phase, and is never rewritten.
+        state = state.retained_as(
+            claimed,
+            portfolio_id=PORTFOLIO_ID,
+            branch_id=BRANCH_ID,
+            selection_decision_ref=SELECTION_DECISION_REF,
+        )
     matches = (
         False
         if reference.source != "none" and not reference_state_exact
@@ -572,7 +586,7 @@ def _bound_view(
     require_view: bool,
     record_source: str,
 ) -> tuple[
-    DevelopedDesignState | None,
+    DevelopedDesignState | RecordBinding | None,
     tuple[DesignComponent, ...] | None,
     str | None,
 ]:

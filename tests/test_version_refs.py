@@ -49,11 +49,12 @@ from pathlib import Path
 from archflow.project.repository import FilesystemProjectRepository
 from archflow.state.operational_state import DesignObligation
 from archflow.state.state_record import (
+    RecordBinding,
     RECORD_BINDING_PHASE,
     StateRecord,
     developed_design_view,
 )
-from tests.test_state_record import _record as state_record_fixture
+from tests.support import authored_record
 from archflow.state.stage_workflow import (
     CompositeStageClosureReceipt,
     DesignPhase,
@@ -267,9 +268,11 @@ class EveryDeclaredKindIsBuiltByItsOwnerTests(unittest.TestCase):
 
         ``developed_design_view`` is the only thing that builds this graph, so
         the payload comes from there rather than from a literal written here.
+        Only a record that declares its massing has a selected schematic
+        (#402), so the record is the shared fixture that declares one.
         """
 
-        record = state_record_fixture()
+        record = authored_record()
         with tempfile.TemporaryDirectory() as temporary:
             repository = FilesystemProjectRepository.initialize(
                 Path(temporary) / record.project_id, project_id=record.project_id,
@@ -279,7 +282,7 @@ class EveryDeclaredKindIsBuiltByItsOwnerTests(unittest.TestCase):
             repository.create_run("r")
             state = developed_design_view(
                 record, run=RunRef(record.project_id, "r", head),
-                evidence_ref="reading:detail-review", phase=RECORD_BINDING_PHASE,
+                phase=RECORD_BINDING_PHASE,
             )
         payload = state.selected_schematic.to_dict()
         # Projected against that throwaway project's head; restate it onto the
@@ -337,6 +340,10 @@ class EveryDeclaredKindIsBuiltByItsOwnerTests(unittest.TestCase):
         return {
             "StateRecord@1": StateRecord(
                 project_id="round-trip", run_id="r", entities=(), base=base,
+            ).to_dict(),
+            "StateRecordBinding@1": RecordBinding(
+                StateRecord(project_id="round-trip", run_id="r", entities=(), base=base),
+                DesignPhase.SCHEMATIC_DESIGN,
             ).to_dict(),
             "ProjectRun@1": {
                 "schema": "ProjectRun@1", "project_id": run.project_id,
