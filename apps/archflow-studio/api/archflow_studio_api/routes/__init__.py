@@ -11,6 +11,7 @@ from . import (
     candidates,
     capabilities,
     decisions,
+    domains,
     drawings,
     episodes,
     events,
@@ -51,6 +52,7 @@ router.include_router(rendering.router)
 router.include_router(publications.router)
 router.include_router(boards.router)
 router.include_router(decisions.router)
+router.include_router(domains.router)
 router.include_router(drawings.router)
 router.include_router(study.router)
 router.include_router(pick.router)

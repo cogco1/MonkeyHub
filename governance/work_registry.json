@@ -30,7 +30,9 @@
             "studio.shell",
             "studio.binding",
             "hub.shell",
-            "semantics.registry"
+            "semantics.registry",
+            "capabilities.domain_readiness",
+            "studio.domains"
           ],
           "write_scope": [
             "docs/2026-09-28-construction-voids-lowering.md",
@@ -63,6 +65,7 @@
             "apps/archflow-studio/api/archflow_studio_api/application/domains.py",
             "apps/archflow-studio/api/archflow_studio_api/routes/construction.py",
             "apps/archflow-studio/api/archflow_studio_api/routes/domains.py",
+            "apps/archflow-studio/api/archflow_studio_api/routes/__init__.py",
             "apps/archflow-studio/api/archflow_studio_api/routes/intents.py",
             "apps/archflow-studio/api/archflow_studio_api/routes/proposals.py",
             "apps/archflow-studio/api/archflow_studio_api/transport/proposal.py",
