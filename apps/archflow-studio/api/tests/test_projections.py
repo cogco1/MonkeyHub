@@ -1227,8 +1227,15 @@ class RenderProcessTests(unittest.TestCase):
         with TestClient(app) as client:
             refused = client.get("/api/projections", params=stale.to_dict())
             self.assertEqual(refused.status_code, 409, refused.text)
-            self.assertEqual(app.state.projections.store.rows(), (), "nothing queued for the stale source")
-            self.assertEqual(client.get("/api/projections", params=self.model.to_dict()).json()["status"], "pending")
+            # The design tree's first pass may already have queued, or even drawn, this model's own
+            # row: the tree draws at the same recipe, so the same key (#454). What the refused
+            # request must not do is leave anything of its own: no row carries the stale source,
+            # and none is in error.
+            rows = app.state.projections.store.rows()
+            self.assertEqual([row.key for row in rows if row.spec.source.state_digest == stale.state_digest], [],
+                             "nothing queued for the stale source")
+            self.assertEqual([row.key for row in rows if row.status == ERROR], [], "the key is not poisoned")
+            self.assertIn(client.get("/api/projections", params=self.model.to_dict()).json()["status"], {PENDING, DONE})
             self.assertTrue(app.state.projections.wait_idle(120))
             self.assertEqual(client.get("/api/projections", params=self.model.to_dict()).json()["status"], "done")
 
