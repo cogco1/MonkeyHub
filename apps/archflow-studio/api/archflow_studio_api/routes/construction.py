@@ -55,8 +55,8 @@ _OPENING_REFUSED = {
     409: {"model": EnrichmentRequiredDto,
           "description": "ENRICHMENT_REQUIRED names the facet to add first; STALE_BASE a request made against another state"},
     422: {"model": ConstructionRefusalDto,
-          "description": "Refused with a code and one sentence: HOST_INVALID, HOST_NOT_WALL_SHAPED with the reason, "
-                         "FAMILY_INVALID, OPENING_INVALID"},
+          "description": "Refused with a code and one sentence: HOST_INVALID; a block that cannot take one as it is "
+                         "drawn, with the reason; FAMILY_INVALID; INTERFACE_UNKNOWN; OPENING_INVALID"},
 }
 
 
@@ -135,7 +135,7 @@ def create_hosted_opening_proposal(request: Request, body: HostedOpeningRequestD
     _require_state(body.state_digest, projection, "opening")
     proposal = hosted_opening_proposal(
         projection, body.host, kind=body.kind, along=body.along, width=body.width, sill=body.sill, head=body.head,
-        shape=body.shape, spring_height=body.spring_height, family=body.family,
+        shape=body.shape, spring_height=body.spring_height, family=body.family, interface_ref=body.interface_ref,
         summary=body.summary, keep_refs=tuple(body.keep),
     )
     return _remember(request, proposal, base, previous, body)

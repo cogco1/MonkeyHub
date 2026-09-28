@@ -938,7 +938,7 @@
         "straight-wall authoring accepts explicit project-local point references through the existing resolver and retains @parameter binding and hosted opening relations",
         "Absolute numeric prism/face base references and read-only placement of drawn elements through their existing datum dependencies; free placement publishes its own fixed base instead of binding an editable Level.",
         "the voids relation: with_void_hosts annotates every ElementRow with the hosts naming it (voided_by); a void keeps obj-<id>, retained hidden, with no top datum or support relation; a host emits <id>-body and the difference that keeps obj-<id>",
-        "realising a block as a wall in place (wall_fields_from_block, #419 Stage C): a rectangular prism standing on a level or datum becomes the wall producer's fields under the same element id, the line along its longest side (the first of equal ones) with inward toward the opposite side and the thickness across it; a tilted plane, panel cutouts, an outline that is not a rectangle or is bound to parameters, and a block lifted off its base are refused with the reason",
+        "realising a block as a wall in place (wall_fields_from_block, #419 Stage C): a rectangular prism standing on a level or datum becomes the wall producer's fields under the same element id; the line runs the way the longest side runs (the first of equal ones), on that side when the block lies right of it, else on the opposite long face, so along starts beside the side's first corner whichever way the outline winds and doors and windows are set out from the line's face; corners rounded to the nanometre still make a rectangle; a tilted plane, panel cutouts, an outline that is not a rectangle or is bound to parameters, and a block lifted off its base are refused with the reason",
         "where a wall's along is measured on a line of two stated points (wall_along_line): the same turn produce_wall makes when inward lies left of the line"
       ],
       "does_not_own": [
@@ -1108,8 +1108,7 @@
         "state.operational_state",
         "state.record",
         "state.spatial",
-        "state.stage_workflow",
-        "capabilities.opening_solver"
+        "state.stage_workflow"
       ],
       "used_by": [
         "monkeyarch/runtime/project_runner.py",
@@ -1130,7 +1129,7 @@
         "datum-seated lofts accept an optional base_offset in metres, matching the existing extrusion and revolve seat-height contract",
         "the authoring contract states relations and results, not operation idioms: a host_cut member may be any region derived from its host or consumed together with it",
         "an operation may state no semantic binding when all of its outputs are construction",
-        "an assembly may cite the opening solver's own interface (an opening passes through its host) without a record connection, so a filled door or window is delivered before the spaces it joins are modelled (#419 Stage C); any other interface must be one the record's connections state"
+        "an assembly's interface_refs are only the relations the record's connections declare; an assembly that names none cites none"
       ],
       "status": "canonical",
       "tests": [
@@ -1197,13 +1196,15 @@
         "every member is placed relative to the void the wall granted",
         "a void whose opening id has no type fails OpeningSolverError rather than being left empty",
         "member operation ids are scoped by the hosting wall: an opening id is unique inside its wall, not inside the building, and a wall id already prefixing the opening id is not doubled",
-        "rectangular window and door types cannot silently fill a non-rectangular hosted aperture"
+        "rectangular window and door types cannot silently fill a non-rectangular hosted aperture",
+        "an opening that names no interface_ref carries no interface: the solver never states a spatial relation it was not given (#419 R17)"
       ],
       "status": "canonical",
       "tests": [
         "tests/test_element_producers.py",
         "tests/test_opening_solver.py",
-        "tests/test_occt_execution.py"
+        "tests/test_occt_execution.py",
+        "tests/test_wall_realization.py"
       ],
       "notes": "P092 filler side; P099 gives the arrayed placement so N identical openings share one member definition."
     },
@@ -3814,7 +3815,8 @@
         "a datum id namespace is unique across levels and grid axes (verify_project_datums)",
         "a proposal names the design-state digest it was produced from",
         "never writes the filesystem",
-        "an operation may name no semantic binding; allowing it changes no retained serialization"
+        "an operation may name no semantic binding; allowing it changes no retained serialization",
+        "a hosted assembly may cite no interface; one that cites any serializes exactly as before"
       ],
       "status": "canonical",
       "tests": [
@@ -3822,7 +3824,8 @@
         "tests/test_geometry_compiler.py",
         "tests/test_geometry_program.py",
         "tests/test_interface_datums.py",
-        "tests/test_occt_execution.py"
+        "tests/test_occt_execution.py",
+        "tests/test_wall_realization.py"
       ],
       "notes": "Defines its own digest_value/require_sha256 instead of using contracts.canonical, a second digest implementation on the spine; at 1564 lines it is the largest contract module."
     },
@@ -4897,7 +4900,8 @@
         "the Working Head is the architect's editing base, read from retained facts and never guessed from the newest file; a generated candidate is recorded and shown but never moves it, viewing history never moves it, and only the explicit working-draft selection (Continue, adopting the architect's own Sync, or the Hub Agent's Continue on the user's bound words through a Hub-managed Runtime) does; every selection onto a run is retained as an attributed design.continued event and admits no Candidate; a recorded continuation keeps its source position's branch",
         "a page's representation status is derived on read and never stored; an explicit page replacement answers before what the page depicts; a missing or unverifiable page or input is unavailable and is never rebound; a person's keep (a drawing's follow: frozen, Publish's freeze) is frozen; each consumer keeps its own wire words",
         "an answer is remembered only in memory and only under a stable ReadToken, which is read from the project's layout watch (project.watch) and never walked on a request: this process's writes change the token at once and leave it unstable until the watch has seen them, another process's once the watch sees them (about a second); closing the binding gives back its share of the watch",
-        "a State Record is parsed once per content digest and shared by every binding in the process, and nobody changes it; state_record still checks the ref's file on every call. A design branch's Stage chain is kept by the head and fork refs that fix it, each Stage file still checked; each run's part of the reference-run survey is kept under the stamps of its manifest, records directory and the receipt and workflow files it read; a bound view's state digest is taken once per view"
+        "a State Record is parsed once per content digest and shared by every binding in the process, and nobody changes it; state_record still checks the ref's file on every call. A design branch's Stage chain is kept by the head and fork refs that fix it, each Stage file still checked; each run's part of the reference-run survey is kept under the stamps of its manifest, records directory and the receipt and workflow files it read; a bound view's state digest is taken once per view",
+        "the drawing context publishes every wall's <id>-top from the producer itself, in production order, so a drawn shape standing on a wall keeps its drawing controls"
       ],
       "status": "canonical",
       "tests": [
@@ -4916,7 +4920,8 @@
         "apps/archflow-studio/api/tests/test_conditional_reads.py",
         "apps/archflow-studio/api/tests/test_derivation_memo.py",
         "apps/archflow-studio/api/tests/test_indexed_reads.py",
-        "apps/archflow-studio/api/tests/test_index_changes.py"
+        "apps/archflow-studio/api/tests/test_index_changes.py",
+        "apps/archflow-studio/api/tests/test_hosted_opening.py"
       ],
       "notes": "Every other Studio concern reads the project through this one binding.",
       "files": [
@@ -6697,7 +6702,7 @@
         "a refused script as 422 CONSTRUCTION_INVALID with line, column and source line, including the record's refusal of the rows a script produced, answered at the script line that made the shape it names and in construction words",
         "facet upserts on Component@1 through the component edit path, with stripped non-blank text and unknown or non-component targets refused",
         "the construction model view: geometry rows with facets and the capabilities facets unlock (hosted-opening for architectural.role = wall)",
-        "the hosted-opening capability (Stage C): a door or window on a component of one element whose facets unlock it (architectural.role = wall), else 409 ENRICHMENT_REQUIRED naming the facet to add; a block realised as a wall in place first, else 422 HOST_NOT_WALL_SHAPED with the reason; ids opening-<n> skipping ids in use; a family as the type <opening>-type, checked by constructing it (FAMILY_INVALID); the record's refusal as OPENING_INVALID",
+        "the hosted-opening capability (Stage C): a door or window on a component of one element whose facets unlock it (architectural.role = wall), else 409 ENRICHMENT_REQUIRED naming the facet to add; a block realised as a wall in place first, else 422 HOST_NOT_WALL_SHAPED with the reason; ids opening-<n> skipping opening and type ids in use; a family as the type <opening>-type, checked by constructing it (FAMILY_INVALID); an optional interfaceRef that must be a relationship ref the record's connections declare (INTERFACE_UNKNOWN names them); the record's refusal as OPENING_INVALID in construction words",
         "the model view's openings per component of one element and its alongLine, where a door's or window's along is measured"
       ],
       "does_not_own": [
@@ -7979,7 +7984,8 @@
         "lowering construction results to Component@1/Element@1 rows, the one place a producer is chosen for script-authored geometry",
         "script edits of existing geometry in place, rewriting only its element's params and references",
         "cuts authored as the host element's references.voids",
-        "the construction geometry view: per component form, bounds, cuts, cutBy and hidden, without producers"
+        "the construction geometry view: per component form, bounds, cuts, cutBy and hidden, without producers",
+        "the bounds of produced operations read in dependency order, whatever order a producer gives them in"
       ],
       "does_not_own": [
         "producing geometry from rows (capabilities.element_producers)",
@@ -8031,7 +8037,7 @@
         "An id that already names anything but construction-made geometry is refused by name, never overwritten.",
         "A get() edit rewrites only its element's params and references; an existing component is never re-emitted.",
         "geometry_view never raises; bounds it cannot predict are None.",
-        "top() of existing geometry stands on what publishes a horizontal top: a prism drawn in plan or a block realised as a wall, moved or not; a cutter's top carries nothing"
+        "top() of existing geometry stands on what publishes a horizontal top: a prism drawn in plan or any wall, moved or not; a cutter's top carries nothing"
       ],
       "status": "canonical",
       "tests": [

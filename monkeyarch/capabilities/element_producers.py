@@ -898,19 +898,29 @@ def wall_fields_from_block(fields: Mapping[str, Any], element_id: str) -> dict[s
 
     The element keeps its id, so it keeps ``obj-<element>`` and ``<element>-top``:
     the wall is the same solid on the same base, and whatever stood on the block
-    keeps standing. The line runs along the block's longest side (the first of
-    equal ones, in the outline's order) from its first corner to its second,
-    with ``inward`` the unit vector toward the opposite side; the thickness is
-    the side next to it and ``openings`` starts empty. The base (a zero datum
-    offset is no offset), the height or top, the voids and every other field
-    stay as they are; the fields given are not changed.
+    keeps standing. The line runs the way the block's longest side runs (the
+    first of equal ones, in the outline's order), the thickness is the side next
+    to it and ``openings`` starts empty. The wall keeps its thickness right of
+    its line (normal ``(dz, -dx)``) and measures ``along`` from the line's start,
+    so the line lies on whichever long face has the block on that side: the
+    longest side itself when the outline winds clockwise, else the opposite long
+    face running the same way. Either way ``along`` starts beside the longest
+    side's first corner and runs as that side does, whichever way the outline
+    winds, and ``inward`` points across the block from the line's face. That face
+    is the one doors and windows are set out from: frames stand proud of it by
+    ``frame_projection``, and leaf and glazing offsets are measured from it into
+    the block. For ``rect(x, z, w, d)`` with ``w >= d`` it is the face at
+    ``z + d``, and ``along`` runs from ``(x, z + d)`` toward +x. The base (a zero
+    datum offset is no offset), the height or top, the voids and every other
+    field stay as they are; the fields given are not changed.
 
     Refused with the reason (``ElementProducerError``, ``"<element>: <reason>"``):
     anything but a block extruded up from a plan outline, a drawing plane,
     panel cutouts, an outline bound to parameters or not a rectangle (four
-    corners, no side of no length, adjacent sides perpendicular within 1e-9
-    relative), and a block lifted off its base by an elevation, an offset or
-    an absolute base.
+    corners, no side of no length, adjacent sides perpendicular: their dot
+    product within ``2e-9 * (l1 + l2)``, which nanometre-rounded corners of a
+    turned block meet), and a block lifted off its base by an elevation, an
+    offset or an absolute base.
     """
 
     def refused(reason: str) -> ElementProducerError:
@@ -938,7 +948,7 @@ def wall_fields_from_block(fields: Mapping[str, Any], element_id: str) -> dict[s
     lengths = [math.hypot(*side) for side in sides]
     if any(length <= 0.0 for length in lengths) or any(
             abs(sides[k][0] * sides[(k + 1) % 4][0] + sides[k][1] * sides[(k + 1) % 4][1])
-            > 1e-9 * lengths[k] * lengths[(k + 1) % 4] for k in range(4)):
+            > 2e-9 * (lengths[k] + lengths[(k + 1) % 4]) for k in range(4)):
         raise refused(_NOT_A_RECTANGLE)
     elevation = params.pop("elevation", 0)
     base = references.get("base")
@@ -951,13 +961,16 @@ def wall_fields_from_block(fields: Mapping[str, Any], element_id: str) -> dict[s
         references["base"] = {"datum": base["datum"]}
     else:
         raise refused(_LIFTED)
-    # The first longest side; float noise does not make an equal later side longer.
-    k = next(index for index, length in enumerate(lengths) if length >= max(lengths) * (1.0 - 1e-9))
+    # The first longest side; nanometre noise does not make an equal later side longer.
+    longest = max(lengths)
+    k = next(index for index, length in enumerate(lengths) if longest - length <= max(4e-9, 1e-9 * longest))
     across, thickness = sides[(k + 1) % 4], lengths[(k + 1) % 4]
-    references["line"] = {
-        "from": {"point": list(profile[k])}, "to": {"point": list(profile[(k + 1) % 4])},
-        "inward": [round(across[0] / thickness, 9) + 0.0, round(across[1] / thickness, 9) + 0.0],
-    }
+    start, end, inward = profile[k], profile[(k + 1) % 4], (across[0] / thickness, across[1] / thickness)
+    if _turned((sides[k][0] / lengths[k], sides[k][1] / lengths[k]), inward):
+        # The block lies left of that side: the opposite long face, running the same way.
+        start, end, inward = profile[(k - 1) % 4], profile[(k + 2) % 4], (-inward[0], -inward[1])
+    references["line"] = {"from": {"point": list(start)}, "to": {"point": list(end)},
+                          "inward": [round(inward[0], 9) + 0.0, round(inward[1], 9) + 0.0]}
     params["thickness"] = thickness
     params["openings"] = []
     return {**fields, "producer": "wall", "references": references, "params": params}

@@ -57,7 +57,12 @@ from archflow.state.state_record import (
     project_levels_of,
     resolve_element_bindings,
 )
-from monkeyarch.capabilities.element_producers import ProductionContext, drawn_element_placement, element_rows_of
+from monkeyarch.capabilities.element_producers import (
+    ProductionContext,
+    drawn_element_placement,
+    element_rows_of,
+    produce_rows,
+)
 from monkeyarch.capabilities.reference_resolver import ReferenceContext
 
 from ..transport.errors import StudioError, error_sentence
@@ -102,6 +107,15 @@ def drawing_context(record):
     context = ProductionContext(ReferenceContext(grids=project_grids_of(record), levels=project_levels_of(record)), {})
     placements = {}
     for row in rows:
+        if row.producer == "wall":
+            # A wall publishes <id>-top as a horizontal prism does, so what stands
+            # on a block realised as a wall (#419 Stage C) keeps its drawing
+            # controls: the datum is the producer's own, in production order.
+            try:
+                produce_rows((row,), context)
+            except (KeyError, TypeError, ValueError):
+                pass
+            continue
         if row.producer not in {"prism", "planar-surface"}:
             continue
         try:

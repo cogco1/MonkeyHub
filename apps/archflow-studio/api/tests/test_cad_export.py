@@ -749,12 +749,12 @@ class ExplicitCadSettingsTests(OcctCandidateTestCase):
 # axis are the fixture's, the numbered wall axis is the producer fixture's.
 #
 # The record also declares the one block of massing, two zones in it and the
-# interface between them, because a typed window's assembly cites an interface
-# and the runner offers only the interfaces the record's own ``Connection@1``
-# entities name (``relation:<declared relation>``); a record with no massing
-# projects to a spatial option with no connections, and the seat is exhausted
-# before any CAD. That interface relation binds no validator, so the run
-# reports it ``unchecked`` ("no validator bound"), and the test says so.
+# interface between them, because the typed window names the interface it
+# serves (``interface_ref``) and its assembly may cite only the interfaces the
+# record's own ``Connection@1`` entities name (``relation:<declared relation>``);
+# a window that names none cites none. That interface relation binds no
+# validator, so the run reports it ``unchecked`` ("no validator bound"), and the
+# test says so.
 
 UPPER_LEVEL = "level-upper"
 MASSING_LEVEL, BLOCK, INSIDE, OUTSIDE = "massing-ground", "block", "zone-inside", "zone-outside"

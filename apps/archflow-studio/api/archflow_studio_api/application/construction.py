@@ -275,6 +275,7 @@ def hosted_opening_proposal(
     shape: str | None = None,
     spring_height: float | None = None,
     family: Mapping[str, Any] | None = None,
+    interface_ref: str | None = None,
     summary: str | None = None,
     keep_refs: Sequence[str] = (),
 ) -> Proposal:
@@ -288,10 +289,13 @@ def hosted_opening_proposal(
     ``obj-<element>`` and ``<element>-top``) or refused ``HOST_NOT_WALL_SHAPED``
     with the reason. The opening is ``opening-<n>``, n one more than the
     openings there are, skipping ids in use; a ``family`` becomes the type
-    ``<opening>-type``, checked by constructing it (``FAMILY_INVALID``). The
-    edit goes through the component-edit path every design edit takes; the
-    record's refusal of it (an opening outside the host, above its top, a family
-    that does not fit) answers ``OPENING_INVALID``.
+    ``<opening>-type``, checked by constructing it (``FAMILY_INVALID``). An
+    ``interface_ref`` must be a relationship ref one of the record's
+    connections declares (``INTERFACE_UNKNOWN`` names the ones it does); left
+    out, the opening serves no connection and cites none. The edit goes through
+    the component-edit path every design edit takes; the record's refusal of it
+    (an opening outside the host, above its top, a family that does not fit)
+    answers ``OPENING_INVALID`` in construction words.
     """
 
     element = _opening_host(projection.record, host)
@@ -317,6 +321,13 @@ def hosted_opening_proposal(
         opening["shape"] = shape
     if spring_height is not None:
         opening["spring_height"] = spring_height
+    if interface_ref is not None:
+        declared = _declared_interfaces(projection.record)
+        if interface_ref not in declared:
+            raise StudioError(422, "INTERFACE_UNKNOWN", f"no connection of this project declares {interface_ref}; "
+                              + (f"its connections declare {', '.join(declared)}" if declared else
+                                 "it declares no connection between spaces yet"))
+        opening["interface_ref"] = interface_ref
     if family is not None:
         filling = _opening_family(kind, f"{opening_id}-type", family)
         types.append(filling.to_dict())
@@ -333,7 +344,8 @@ def hosted_opening_proposal(
                                                      keep_refs=keep_refs))
     except StudioError as exc:
         if exc.code == "SEMANTIC_EDIT_INVALID":
-            raise StudioError(422, "OPENING_INVALID", f"{host} cannot take this {kind}: {exc.detail}") from exc
+            said = in_construction_words(exc.detail.removeprefix(f"{element.entity_id}: "))
+            raise StudioError(422, "OPENING_INVALID", f"{host} cannot take this {kind}: {said}") from exc
         raise
 
 
@@ -486,6 +498,13 @@ def _opening_host(record: StateRecord, host: str) -> Entity:
         raise StudioError(422, "HOST_INVALID", f"{host} cuts {', '.join(cut)}; a door or window goes into geometry "
                                                "that is delivered, so uncut it first")
     return element
+
+
+def _declared_interfaces(record: StateRecord) -> list[str]:
+    """The relationship refs the record's connections declare: the interfaces an opening may serve."""
+
+    return sorted({str(ref) for connection in record.entities_of("Connection@1")
+                   for ref in (connection.fields.get("relationship_refs") or ())})
 
 
 def _voids_named(element: Entity) -> tuple[str, ...]:

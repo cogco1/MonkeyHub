@@ -7,8 +7,9 @@ base, the row's own notes) as it was. The converted row makes the same solid
 under the same ``obj-<element>`` and publishes ``<element>-top`` exactly as the
 block did, so whatever stands on the block keeps standing. A block that is not a
 straight rectangle standing on a level or another solid's top is refused with
-the reason, and nothing is converted. A door or window filled by its family is
-delivered before any space it joins is modelled.
+the reason, and nothing is converted. ``along`` starts beside the longest side's
+first corner, whichever way the outline winds. A door or window filled by its
+family cites no interface it was not given.
 """
 from __future__ import annotations
 
@@ -33,7 +34,6 @@ from monkeyarch.capabilities.element_producers import (
     with_void_hosts,
 )
 from monkeyarch.capabilities.geometry_proposal import GeometryProposalStatus
-from monkeyarch.capabilities.opening_solver import INTERFACE_INSIDE_OUTSIDE
 from monkeyarch.capabilities.reference_resolver import ReferenceContext
 from monkeyarch.compilers.geometry import compile_geometry_program
 from tests.support import ProducerFixture, authored_record
@@ -120,14 +120,16 @@ class ConversionTests(unittest.TestCase):
 
     def test_the_line_runs_along_the_longest_side_with_the_thickness_across_it(self) -> None:
         for label, profile, line, thickness in (
+            # rect() winds counter-clockwise: the line takes the opposite long face, running the same way.
             ("long in x", [[0, 0], [6, 0], [6, 0.3], [0, 0.3]],
-             {"from": {"point": [0, 0]}, "to": {"point": [6, 0]}, "inward": [0.0, 1.0]}, 0.3),
+             {"from": {"point": [0, 0.3]}, "to": {"point": [6, 0.3]}, "inward": [0.0, -1.0]}, 0.3),
             ("long in z: its second side", [[0, 0], [0.3, 0], [0.3, 6], [0, 6]],
-             {"from": {"point": [0.3, 0]}, "to": {"point": [0.3, 6]}, "inward": [-1.0, 0.0]}, 0.3),
+             {"from": {"point": [0, 0]}, "to": {"point": [0, 6]}, "inward": [1.0, 0.0]}, 0.3),
+            # Drawn clockwise, the same block keeps the line on its longest side: the same line.
             ("drawn clockwise", [[0, 0], [0, 0.3], [6, 0.3], [6, 0]],
              {"from": {"point": [0, 0.3]}, "to": {"point": [6, 0.3]}, "inward": [0.0, -1.0]}, 0.3),
             ("a square: its first side", [[1, 1], [3, 1], [3, 3], [1, 3]],
-             {"from": {"point": [1, 1]}, "to": {"point": [3, 1]}, "inward": [0.0, 1.0]}, 2),
+             {"from": {"point": [1, 3]}, "to": {"point": [3, 3]}, "inward": [0.0, -1.0]}, 2),
         ):
             with self.subTest(label):
                 fields = wall_fields_from_block(_block(profile), "block-1-body")
@@ -137,8 +139,8 @@ class ConversionTests(unittest.TestCase):
         turned = wall_fields_from_block(_block(_rectangle(30.0)), "block-1-body")
         inward = turned["references"]["line"]["inward"]
         self.assertAlmostEqual(math.hypot(*inward), 1.0, places=9)
-        self.assertAlmostEqual(inward[0], -math.sin(math.radians(30.0)), places=9)
-        self.assertAlmostEqual(inward[1], math.cos(math.radians(30.0)), places=9)
+        self.assertAlmostEqual(inward[0], math.sin(math.radians(30.0)), places=9)
+        self.assertAlmostEqual(inward[1], -math.cos(math.radians(30.0)), places=9)
         self.assertAlmostEqual(turned["params"]["thickness"], DEEP, places=9)
 
     def test_everything_but_the_outline_is_kept_and_the_given_fields_are_untouched(self) -> None:
@@ -154,7 +156,7 @@ class ConversionTests(unittest.TestCase):
                          {key: value for key, value in given.items() if key not in ("producer", "references", "params")})
         self.assertEqual(fields["references"], {
             "base": {"datum": "plinth-top"}, "top": {"level": PN}, "voids": ["cutter-body"],
-            "line": {"from": {"point": [0, 0]}, "to": {"point": [4, 0]}, "inward": [0.0, 1.0]}})
+            "line": {"from": {"point": [0, 0.2]}, "to": {"point": [4, 0.2]}, "inward": [0.0, -1.0]}})
         self.assertEqual(fields["params"], {"thickness": 0.2, "openings": []})
         bound = wall_fields_from_block(_block(_rectangle(), references={"base": {"datum": "plinth-top", "offset": 0}},
                                               height="@storey"), "block-1-body")
@@ -239,7 +241,20 @@ class AlongLineTests(unittest.TestCase):
         self.assertEqual(wall_along_line({**line, "inward": [0, -1]}), ((0.0, 0.0), (6.0, 0.0)))
         self.assertEqual(wall_along_line({**line, "inward": [0, 1]}), ((6.0, 0.0), (0.0, 0.0)))
         converted = wall_fields_from_block(_block([[0, 0], [6, 0], [6, 0.3], [0, 0.3]]), "block-1-body")
-        self.assertEqual(wall_along_line(converted["references"]["line"]), ((6.0, 0.0), (0.0, 0.0)))
+        self.assertEqual(wall_along_line(converted["references"]["line"]), ((0.0, 0.3), (6.0, 0.3)))
+
+    def test_along_starts_at_the_same_corner_whichever_way_the_outline_winds(self) -> None:
+        for degrees in (0.0, 30.0, 90.0, 217.5):
+            with self.subTest(degrees=degrees):
+                lines = [wall_fields_from_block(_block(_rectangle(degrees, clockwise=clockwise)), "block-1-body")
+                         ["references"]["line"] for clockwise in (False, True)]
+                (start, end), (cw_start, cw_end) = (wall_along_line(line) for line in lines)
+                corner = _rectangle(degrees)[3]   # beside the first corner, across the thickness
+                for got, want in ((start, corner), (cw_start, corner)):
+                    self.assertAlmostEqual(got[0], want[0], places=9)
+                    self.assertAlmostEqual(got[1], want[1], places=9)
+                self.assertAlmostEqual(math.dist(start, end), LONG, places=9)
+                self.assertAlmostEqual(math.dist(cw_start, cw_end), LONG, places=9)
 
     def test_a_line_that_is_not_two_stated_points_has_no_stated_along(self) -> None:
         for line in ({"from": {"grid": ["1", "W"]}, "to": {"grid": ["2", "W"]}},
@@ -274,34 +289,116 @@ class ScriptOnARealisedBlockTests(unittest.TestCase):
                 _apply(record, result)
 
 
+class RoundedTurnTests(unittest.TestCase):
+    """A turned block's corners are rounded to the nanometre the record keeps; it is still a rectangle."""
+
+    def test_rounded_turned_rectangles_are_all_realised(self) -> None:
+        for degrees in range(0, 360, 5):
+            for long, deep in ((6.0, 0.3), (4.2, 0.25), (0.9, 0.12)):
+                for clockwise in (False, True):
+                    profile = [[round(x, 9), round(z, 9)] for x, z in
+                               _rectangle(degrees + 0.3, clockwise=clockwise, at=(12.345678901, -7.654321), long=long, deep=deep)]
+                    with self.subTest(degrees=degrees, long=long, clockwise=clockwise):
+                        fields = wall_fields_from_block(_block(profile), "block-1-body")
+                        self.assertAlmostEqual(fields["params"]["thickness"], deep, delta=2e-9)
+                        start, end = wall_along_line(fields["references"]["line"])
+                        self.assertAlmostEqual(math.dist(start, end), long, delta=2e-9)
+
+    def test_a_rounded_turned_block_is_the_same_solid_to_the_nanometre(self) -> None:
+        for degrees in (0.7, 17.0, 33.3, 71.9, 123.4, 211.1, 299.99):
+            for clockwise in (False, True):
+                with self.subTest(degrees=degrees, clockwise=clockwise):
+                    block = _block([[round(x, 9), round(z, 9)] for x, z in _rectangle(degrees, clockwise=clockwise)])
+                    before = _compiled(self, _row("block-1-body", block))["obj-block-1-body"]
+                    after = _compiled(self, _converted("block-1-body", block))["obj-block-1-body"]
+                    for corner in ("bbox_min", "bbox_max"):
+                        for got, want in zip(after[corner], before[corner]):
+                            self.assertAlmostEqual(got, want, delta=2e-9)
+
+    def test_a_block_turned_by_a_script_is_realised(self) -> None:
+        from tests.test_construction_lowering import _apply, _compile, _record
+
+        record = _apply(_record(), _compile("block = extrude(rect(0, 0, 6, 0.3), 3)\nrotate(block, 33.3)"))
+        block = next(entity for entity in record.entities if entity.entity_id == "block-body")
+        fields = wall_fields_from_block(block.fields, "block-body")
+        self.assertAlmostEqual(fields["params"]["thickness"], 0.3, delta=2e-9)
+        start, _ = wall_along_line(fields["references"]["line"])
+        corner = block.fields["params"]["profile"][3]
+        self.assertAlmostEqual(math.dist(start, corner), 0.0, delta=2e-9)
+
+
+DOOR_TYPE = {"schema": "DoorType@1", "type_id": "opening-1-type", "frame_width": 0.06, "frame_depth": 0.12,
+             "frame_projection": 0.0, "leaf_thickness": 0.04, "leaf_offset": 0.04, "leaf_count": 1, "leaf_gap": 0.0,
+             "clearance_bottom": 0.01, "clearance_top": 0.005}
+DOOR = {"opening_id": "opening-1", "kind": "door", "along": 1.5, "width": 0.9, "sill": 0, "head": 2.1,
+        "type_id": "opening-1-type"}
+
+
+class HostedDoorTests(unittest.TestCase):
+    """A door in a realised block: the interface it cites is the one it names, and the model keeps the block's bounds."""
+
+    def test_a_filled_opening_cites_only_the_interface_it_names(self) -> None:
+        wall = _converted("block-1-body", _block([[0, 0], [6, 0], [6, 0.3], [0, 0.3]]))
+        for opening, cited in ((DOOR, ()), ({**DOOR, "interface_ref": "relation:outside-to-room"},
+                                             ("relation:outside-to-room",))):
+            with self.subTest(cited=cited):
+                door = replace(wall, params={**wall.params, "openings": [opening], "types": [DOOR_TYPE]})
+                produced, _ = _produced(door)
+                [assembly] = produced["block-1-body"].assemblies
+                self.assertEqual(assembly.interface_refs, cited)
+                self.assertLessEqual({"door-frame-block-1-body-opening-1-left", "door-leaf-block-1-body-opening-1-0"},
+                                     {op.op_id for op in produced["block-1-body"].operations})
+
+    def test_the_model_view_keeps_the_bounds_of_a_block_with_a_door(self) -> None:
+        from monkeyarch.construction import geometry_view
+        from tests.test_construction_lowering import _apply, _compile, _record
+
+        record = _apply(_record(), _compile("block = extrude(rect(0, 0, 6, 0.3), 3)"))
+        block = next(entity for entity in record.entities if entity.entity_id == "block-body")
+        fields = wall_fields_from_block(block.fields, "block-body")
+        fields["params"] = {**fields["params"], "openings": [DOOR], "types": [DOOR_TYPE]}
+        record = replace(record, entities=tuple(replace(block, fields=fields) if entity is block else entity
+                                                for entity in record.entities))
+        validate_element_contract(record, ("block-body",))
+        view = {row["id"]: row for row in geometry_view(record)}
+        self.assertEqual(view["block"]["bounds"], [[0.0, 0.0, 0.0], [6.0, 3.0, 0.3]])
+
+
 class OpeningInterfaceTests(ProducerFixture):
-    """A filled door or window is delivered before the spaces it joins are modelled (D-419-0).
+    """An assembly cites only the interfaces its record states (R17): none is invented, an undeclared one is refused."""
 
-    Its assembly cites the opening solver's own interface (the opening passes
-    through its host) until a record states a connection it serves; that one
-    needs no declaration. Any other interface is still a fact the record must state.
-    """
-
-    async def _produced_with(self, interface_ref: str):
+    async def _produced_with(self, interface_refs: tuple[str, ...]):
         from monkeyarch.capabilities.geometry_proposal import proposal_authoring_output
         from tests.support import ScriptedProvider
 
         [assembly] = self.proposal.assemblies
-        proposal = replace(self.proposal, assemblies=(replace(assembly, interface_refs=(interface_ref,)),))
+        proposal = replace(self.proposal, assemblies=(replace(assembly, interface_refs=interface_refs),))
         result = await self.produce(ScriptedProvider((proposal_authoring_output(proposal),)))
         issues = [(issue["code"], issue["detail"]) for ref in result.round_refs
                   for issue in self.repository.load_json(ref).get("issues", [])]
         return result.status, issues
 
-    async def test_the_opening_solvers_own_interface_needs_no_declared_connection(self) -> None:
-        status, issues = await self._produced_with(INTERFACE_INSIDE_OUTSIDE)
+    async def test_an_assembly_that_names_no_interface_is_delivered(self) -> None:
+        status, issues = await self._produced_with(())
         self.assertIs(status, GeometryProposalStatus.ACCEPTED, issues)
 
-    async def test_any_other_undeclared_interface_is_still_refused(self) -> None:
-        status, issues = await self._produced_with("relation:somewhere-else")
+    async def test_a_declared_interface_is_delivered(self) -> None:
+        from tests.support import INTERFACE_REF
+
+        status, issues = await self._produced_with((INTERFACE_REF,))
+        self.assertIs(status, GeometryProposalStatus.ACCEPTED, issues)
+
+    async def test_an_undeclared_interface_is_refused(self) -> None:
+        status, issues = await self._produced_with(("relation:somewhere-else",))
         self.assertIsNot(status, GeometryProposalStatus.ACCEPTED)
         self.assertIn(("malformed_model_output", "assembly interface_refs are absent from the supplied spatial option; "
                                                  "unavailable=['relation:somewhere-else']"), issues)
+
+    async def test_the_solvers_former_default_is_undeclared_too(self) -> None:
+        status, issues = await self._produced_with(("interface:inside-to-outside",))
+        self.assertIsNot(status, GeometryProposalStatus.ACCEPTED)
+        self.assertIn(("malformed_model_output", "assembly interface_refs are absent from the supplied spatial option; "
+                                                 "unavailable=['interface:inside-to-outside']"), issues)
 
 
 class RefusalTests(unittest.TestCase):

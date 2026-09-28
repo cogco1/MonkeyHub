@@ -981,11 +981,14 @@ def rebase(producer: str, params: dict, references: dict, base: dict, elevation:
 
 # ---------------------------------------------------------------- bounds of produced operations
 def object_bounds(operations, bindings, context: ProductionContext) -> dict[str, Box]:
-    """Bounds of every delivered object of these operations, their base datums resolved from ``context``."""
+    """Bounds of every delivered object of these operations, their base datums resolved from ``context``.
+
+    They are read in dependency order, whatever order they come in: a wall's come sorted by id, its cut first.
+    """
 
     datum_of = {binding.op_id: binding.datum_id for binding in bindings if binding.parameter_name == "base_level"}
     resolved = []
-    for operation in operations:
+    for operation in _by_inputs(tuple(operations)):
         datum = datum_of.get(operation.op_id)
         if datum is not None and all(parameter.name != "base_level" for parameter in operation.parameters):
             level = GeometryParameter.create(name="base_level", kind=GeometryParameterKind.NUMBER,
@@ -996,6 +999,27 @@ def object_bounds(operations, bindings, context: ProductionContext) -> dict[str,
                               operation_order=tuple(operation.op_id for operation in resolved))
     return {object_id: _box((tuple(row["bbox_min"]), tuple(row["bbox_max"])))
             for object_id, row in expected_object_bounds(program).items()}
+
+
+def _by_inputs(operations: tuple) -> list:
+    """The operations in the order given, each moved after those whose outputs it consumes."""
+
+    made_here = {object_id for operation in operations for object_id in operation.output_object_ids}
+    ordered: list = []
+    made: set[str] = set()
+    remaining = list(operations)
+    while remaining:
+        waiting = []
+        for operation in remaining:
+            if all(object_id in made or object_id not in made_here for object_id in operation.input_object_ids):
+                ordered.append(operation)
+                made.update(operation.output_object_ids)
+            else:
+                waiting.append(operation)
+        if len(waiting) == len(remaining):  # a cycle: left as given, for the reader to refuse
+            return ordered + waiting
+        remaining = waiting
+    return ordered
 
 
 # ---------------------------------------------------------------- the record's facts

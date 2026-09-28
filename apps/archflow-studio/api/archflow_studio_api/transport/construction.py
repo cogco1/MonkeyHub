@@ -167,6 +167,10 @@ class HostedOpeningRequestDto(_SourceFields):
                     "frame_projection, leaf_thickness, leaf_offset, leaf_count (1 or 2), leaf_gap, clearance_bottom "
                     "and clearance_top. Left out, the opening is an empty passage with no frame or leaf",
     )
+    interface_ref: str | None = Field(
+        alias="interfaceRef", default=None, min_length=1,
+        description="the connection between spaces it serves: one of the relationship refs the project's "
+                    "connections declare. Left out, it serves none yet")
 
 
 class EnrichmentRequiredDto(BaseModel):
