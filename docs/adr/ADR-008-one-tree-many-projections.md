@@ -205,3 +205,37 @@ decision tree comes from two derived stores. Either store can be deleted at any 
 - Known limits: a runtime without the Hub's cache directory keeps no index, so it answers
   `PROJECTION_INDEX_UNAVAILABLE` and shows placeholders. The queue follows the tree the index holds; it does not know
   which cards a client has on screen until that client asks.
+
+**Phase 4A as built (#368, drawings, 2026-09-28):**
+- Issued drawings are projection kinds of the same cache: `drawing-elevation` and `drawing-section-perspective`
+  (their SVG and PNG), `drawing-sheet` (the review sheet's PDF and DXF) and `document-page` (one registered page as
+  a PNG of at most 2048 px, transparency kept; a PDF page is exactly 2048 px on its long edge, the size Board always
+  drew it, because a saved Board crop is kept in those source pixels). The input is the model or document asset's sha256; the recipe holds
+  the complete view and what the drawing reads from its verified source (geometry digest, unit, objects, bounds and
+  semantics); the renderer is a digest of the drawing modules' source, fonts and library versions, computed once per
+  process. No run and no time enters a key, and the drawings are deterministic except the sheet's DXF, whose
+  writer stamps a time and GUIDs.
+- These kinds are drawn on demand, in the request that needs them, through the existing generator
+  (`ProjectionQueue.on_demand`); the worker never draws them, and they are not moved onto its below-normal
+  process: a drawing is drawn in its request thread, as before the cache. A row is inserted done with every file's
+  digest and a manifest (the key, the files, the facts the receipt states), so a hit reads the files back instead of
+  solving the view again. The row is checked, not trusted: its kind, recipe, input and renderer must hash back to
+  the requested key, the manifest must name that key and those files, and every file must read back by its digest;
+  anything else is a miss. A hit's receipt facts come from the key (backend, an elevation's view), the files (the
+  objects the SVG names) and the manifest, never from free row data. A refused request leaves no row.
+- The cache is optional. Any failure to read or write it (no index, an index that stops answering, a blob folder
+  that cannot be written) is logged, and the request draws and answers as without it.
+- On-demand rows keep a `source` with `runId`, `stateDigest` and `assetSha256`, so a build before #368 reading the
+  same cache builds its specs from them; it never draws those kinds and at most drops a row whose blob is not a PNG
+  (a sheet), which costs one drawing.
+- Issuing a drawing verifies its source through P036 as before, takes the drawn files from the cache or draws them
+  once, and retains them in P036 byte for byte with a receipt of its own; the receipt cites their sha256 and its
+  exact source, never the key. Without an index, or after the cache folder is deleted, the drawing is drawn and
+  retained as before. A sheet's PDF carries its source binding, so only the same source and recipe finds it.
+- Board previews, Publish images and the publication exports' raster previews read the one `document-page` raster
+  (`GET /api/projections/pages` answers the PNG, drawn and kept when a cache answers, drawn when not) instead of
+  each rasterising the page: Board no longer runs
+  PDF.js for a preview, Publish no longer loads PDF.js, and the export no longer draws its own raster. The retained
+  document stays what a Board or publication references.
+- Known limits: plan cuts (`drawing_plans`) and the transient model views are not yet kinds. A runtime without an
+  index draws drawings and page previews on every request.

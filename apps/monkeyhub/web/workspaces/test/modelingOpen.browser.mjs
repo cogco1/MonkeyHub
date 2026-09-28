@@ -76,7 +76,11 @@ try {
     const row = log.at(-1);
     const bound = new URL(`/api/runtime/projects/${runtime.runtimeId}/studio${url.pathname}${url.search}`, origin);
     try {
-      if (await fixture.handle(route, bound)) { row.done = Date.now(); return; }
+      // A write reaches the runtime with the Idempotency-Key the Hub's relay adds to it.
+      const relayed = Object.create(route);
+      relayed.request = () => { const request = route.request(), key = randomUUID();
+        return Object.assign(Object.create(request), { headers: () => ({ "idempotency-key": key, ...request.headers() }) }); };
+      if (await fixture.handle(relayed, bound)) { row.done = Date.now(); return; }
     } catch (error) { unexpected.push(`${route.request().method()} ${url.pathname}: ${error.message.split("\n")[0]}`); }
     row.done = Date.now();
     await route.fulfill({ status: 404, json: { code: "FIXTURE_UNSERVED", detail: `${url.pathname} is not part of this fixture.` } });
@@ -116,6 +120,63 @@ try {
   assert.equal(workers.filter((url) => url.startsWith("blob:")).length, 1, "one rhino3dm worker parses every model");
   assert.equal(workers.length, workersAfterTwo, "reopening a model starts no worker");
   console.log(`Modeling opening: ${rounds} rounds, ${result.clickToModelMs} ms to the model at ${latency} ms a request (synthetic); reopened without bytes or wasm PASS`);
+
+  // #450: a verified run on an older published version opens read-only and says why; its
+  // tools refuse edits, inspection still works, and only the explicit return moves the base.
+  // A broken run is still refused with the card and its Retry.
+  const draft = fixture.workingDrafts.get("M"), project = fixture.projects.get("M");
+  const oldPublished = project.published;
+  project.published = { version: 1, stateSha256: "1".repeat(64) };
+  fixture.runStates.set("M", new Map([["m-old", { baseVersion: 0, baseSha256: oldPublished.stateSha256 }],
+    ["m-broken", { matchesReferenceReceipt: false }]]));
+  const position = (runId) => ({ runId, sourceStageRef: null, branchId: null, updatedAt: "2026-09-25T00:00:00Z", label: null });
+  draft.current = position("m-old"); draft.revisionSha256 = "fixture-stale-position";
+  fixture.headsFollowDraft.add("M");
+  const writes = () => fixture.requests.filter((row) => row.method !== "GET" && row.method !== "HEAD");
+  const writesBefore = writes().length;
+  const STALE = "The project has published v1; this design is based on v0 and cannot be edited further directly. " +
+    "Choose “Return to default editing base” in the menu to continue from v1.";
+  await page.goto(`${origin}/?lang=en`);
+  await modelShown("m-old");
+  await page.locator(".editing-base__notice", { hasText: STALE }).waitFor();
+  assert.equal(await page.locator(".editing-base__notice", { hasText: STALE }).count(), 1, "the reason is said once");
+  assert.equal(await page.locator(".refusal__card").count(), 0, "a stale base is not refused");
+  assert.equal(await page.getByRole("button", { name: "Retry", exact: true }).count(), 0, "nothing about a stale base is transient");
+  const rectangle = page.getByRole("button", { name: "Rectangle", exact: true });
+  await rectangle.click();
+  assert.equal(await rectangle.getAttribute("aria-pressed"), "false", "no drawing tool arms on a read-only view");
+  assert.equal(await page.getByRole("button", { name: "Select", exact: true }).getAttribute("aria-pressed"), "true");
+  const cameraAt = () => page.evaluate(() => window.readRuntime?.()?.camera?.position?.toArray().map((value) => value.toFixed(3)).join());
+  const orbit = await cameraAt();
+  const canvas = await page.locator(".viewport-canvas").first().boundingBox();
+  await page.mouse.move(canvas.x + canvas.width / 2, canvas.y + canvas.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(canvas.x + canvas.width / 2 + 120, canvas.y + canvas.height / 2 + 40, { steps: 8 });
+  await page.mouse.up();
+  await page.waitForFunction((before) => window.readRuntime?.()?.camera?.position?.toArray().map((value) => value.toFixed(3)).join() !== before,
+    orbit, { polling: "raf" }); // orbiting stays available
+  const staleContext = await page.evaluate(() => window.__workspaceDesignContext);
+  assert.equal(staleContext.unavailableReason, "readOnly");
+  assert.equal(staleContext.designContext, null, "chat carries no editable design context");
+  assert.deepEqual(staleContext.staleBase, { publishedVersion: 1, baseVersion: 0 });
+  assert.deepEqual(writes().slice(writesBefore), [], "opening and inspecting the view writes nothing");
+  assert.deepEqual(draft.current, position("m-old"), "the saved position is kept");
+  const readsBefore = fixture.requests.length;
+  await page.getByRole("button", { name: "Return to default editing base", exact: true }).click();
+  await page.locator(".editing-base__notice", { hasText: STALE }).waitFor({ state: "detached" });
+  assert.equal(draft.current?.runId, "m-s1", "only the explicit return moves the saved position, to the head Stage");
+  const stateReads = fixture.requests.slice(readsBefore).filter((row) => row.name === "/api/state");
+  assert.deepEqual(stateReads[0]?.query, { run: "m-s1", sourceStageRef: "project://M/runs/m-s1/review/design-stage.json" },
+    "the return opens the default editing base, the head Stage");
+  await page.waitForFunction(() => window.__workspaceDesignContext?.designContext !== null);
+  assert.equal((await page.evaluate(() => window.__workspaceDesignContext)).unavailableReason, null, "editing is available again");
+  draft.current = position("m-broken");
+  await page.goto(`${origin}/?lang=en`);
+  await page.locator(".refusal__card").waitFor();
+  assert.equal(await page.locator(".refusal__title").innerText(), "Could not reopen the selected editing version");
+  assert.equal(await page.locator(".refusal__card").getByRole("button", { name: "Retry", exact: true }).count(), 1);
+  assert.deepEqual(errors, []);
+  console.log("Stale published base: read-only view, reason once, continue from the default base; broken run still refused PASS");
   if (unexpected.length) console.log(JSON.stringify({ unserved: [...new Set(unexpected)] }));
 } finally {
   await browser?.close(); await vite?.close(); await new Promise((resolve) => http.close(resolve)); await rm(cacheDir, { recursive: true, force: true });

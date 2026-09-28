@@ -195,6 +195,7 @@ export const messagesZhCN = {
   "stage.base.modelUnavailable": "已读取所选版本的修改记录，但模型不可用。可以重试加载，或返回默认修改起点。",
   "stage.base.retry": "重试",
   "stage.base.viewOnly": "当前仅查看。请选择“从这里继续”，或返回修改起点后再修改。",
+  "stage.base.staleBase": "项目已发布 v{published}；这个方案基于 v{base}，不能直接在它上面继续修改。要继续修改，请在菜单中选择“返回默认修改起点”，从 v{published} 继续。",
   "stage.follow.moved": "已跟随项目当前模型。",
   "stage.base.notSaved": "浏览器未能保存这次修改起点；选择仅在当前标签页有效。",
   "stage.base.programUnavailable": "任务书编辑尚未支持候选续改，请返回默认修改起点后编辑。",

@@ -587,6 +587,49 @@ test("a reused projection still rejects a foreign project, run, published base, 
   assert.equal((await controller.reload("candidate-b", "stage:requested", undefined, true, matching)).projection, matching);
 });
 
+test("editing-base classification separates a stale published base from a broken run (#450)", async (t) => {
+  const h = await editingSessionHarness(t);
+  const valid = h.projection("candidate-b");
+  assert.deepEqual(h.classifyEditingBase(valid), { kind: "editable" });
+  assert.deepEqual(h.classifyEditingBase({ ...valid, stateDigest: null }), { kind: "unavailable" });
+  assert.deepEqual(h.classifyEditingBase({ ...valid, matchesReferenceReceipt: false }), { kind: "unavailable" });
+  assert.deepEqual(h.classifyEditingBase({ ...valid, matchesReferenceReceipt: null }), { kind: "unavailable" });
+  // A broken run stays broken even when its base is also old.
+  assert.deepEqual(h.classifyEditingBase({ ...valid, matchesReferenceReceipt: false,
+    referenceRun: { ...valid.referenceRun, baseVersion: 99 } }), { kind: "unavailable" });
+  const published = { version: 1, stateSha256: "d".repeat(64) };
+  assert.deepEqual(h.classifyEditingBase({ ...valid, published }),
+    { kind: "staleBase", staleBase: { publishedVersion: 1, baseVersion: 0 } });
+  // Only an older base is stale: the same version on other bytes, or a newer one, contradicts HEAD.
+  assert.deepEqual(h.classifyEditingBase({ ...valid, referenceRun: { ...valid.referenceRun, baseSha256: "wrong-base-sha" } }),
+    { kind: "unavailable" });
+  assert.deepEqual(h.classifyEditingBase({ ...valid, referenceRun: { ...valid.referenceRun, baseVersion: 99 } }), { kind: "unavailable" });
+  // A Stage names its own line, so its base is not compared with HEAD.
+  assert.deepEqual(h.classifyEditingBase({ ...valid, published, sourceStageRef: "stage:s1" }), { kind: "editable" });
+});
+
+test("a verified run on an older published version opens read-only and never moves the saved position (#450)", async (t) => {
+  const h = await editingSessionHarness(t);
+  const controller = h.createSessionController();
+  await controller.reload("chosen-a");
+  // HEAD is published again as v1; the run below was made on v0.
+  const published = h.projection("chosen-a").published;
+  const v0 = published.stateSha256;
+  Object.assign(published, { version: 1, stateSha256: "d".repeat(64) });
+  const valid = h.projection("candidate-b");
+  const stale = { ...valid, referenceRun: { ...valid.referenceRun, baseVersion: 0, baseSha256: v0 } };
+  const session = await controller.reload("candidate-b", undefined, undefined, false, stale);
+  assert.ok(session, "the stale run is shown, not refused");
+  assert.equal(session.projection, stale);
+  assert.deepEqual(session.staleBase, { publishedVersion: 1, baseVersion: 0 });
+  assert.equal(controller.getSnapshot().session.status, "ready");
+  assert.equal(controller.getSnapshot().baseError, null);
+  assert.equal(h.editingBasePreferences.read("", "project-a"), "chosen-a", "viewing never records consent");
+  const back = await controller.reload(null);
+  assert.equal(back.staleBase, null);
+  assert.equal(h.editingBasePreferences.read("", "project-a"), null, "only the explicit return moves the saved position");
+});
+
 test("session metadata reads start together after project identity is checked", async (t) => {
   const h = await editingSessionHarness(t);
   const controller = h.createSessionController("", ["design-history", "working-copies"], false);

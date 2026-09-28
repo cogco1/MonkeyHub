@@ -64,7 +64,9 @@ print(json.dumps({"models": models, "pdf": base64.b64encode(two_page_pdf()).deco
     probe.listen(0, "127.0.0.1", () => { const { port } = probe.address(); probe.close(() => resolve(port)); });
   });
   api = spawn(python, ["-m", "archflow_studio_api.main", "--port", String(apiPort), "--project-dir", projectDir], {
-    cwd: apiRoot, env: { ...pythonEnv, ARCHFLOW_STUDIO_CAD_EXPORT: "off", ARCHFLOW_STUDIO_INTENT_PROVIDER: "deterministic" },
+    // The Hub's cache directory: Board previews are the project's cached page rasters (#368).
+    cwd: apiRoot, env: { ...pythonEnv, ARCHFLOW_STUDIO_CAD_EXPORT: "off", ARCHFLOW_STUDIO_INTENT_PROVIDER: "deterministic",
+      ARCHFLOW_STUDIO_CACHE_DIR: path.join(root, "cache") },
     stdio: ["ignore", "pipe", "pipe"],
   });
   api.on("error", (error) => errors.push(error.message));

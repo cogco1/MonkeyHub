@@ -18,6 +18,7 @@ from ..transport.drawings import (
 )
 from ..transport.errors import StudioError
 from ..transport.proposal import ProposalDto, to_dto as proposal_dto
+from .projections import ready_projections
 
 router = APIRouter(tags=["drawings"])
 
@@ -144,7 +145,7 @@ def create_sheet(request: Request, payload: SheetRequestDto) -> SourceDocumentDt
         model_source=None if payload.model_source is None else model_source_from(payload.model_source),
         style_id=payload.style_id, scale_denominator=payload.scale_denominator,
         hidden_object_ids=tuple(payload.hidden_object_ids), outline_object_ids=tuple(payload.outline_object_ids),
-        notes=tuple(payload.notes), monitor=request.app.state.monitor,
+        notes=tuple(payload.notes), monitor=request.app.state.monitor, projections=ready_projections(request.app.state),
     ))
 
 
@@ -180,6 +181,7 @@ def create_section_perspective(request: Request, payload: SectionPerspectiveRequ
         scale_denominator=payload.scale_denominator, graphics=graphics or None,
         hatch=None if payload.hatch is None else payload.hatch.model_dump(by_alias=True, exclude_none=True),
         beyond=None if payload.beyond is None else payload.beyond.model_dump(), monitor=request.app.state.monitor,
+        projections=ready_projections(request.app.state),
     ))
 
 
@@ -194,5 +196,5 @@ def create_elevation(request: Request, payload: ElevationRequestDto) -> SourceDo
         model_source=None if payload.model_source is None else model_source_from(payload.model_source),
         view=payload.view, drawing_id=payload.drawing_id, hidden_lines=payload.hidden_lines,
         scale_denominator=payload.scale_denominator,
-        monitor=request.app.state.monitor,
+        monitor=request.app.state.monitor, projections=ready_projections(request.app.state),
     ))
