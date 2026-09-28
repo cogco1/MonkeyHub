@@ -361,7 +361,7 @@ class ApplySheetTests(unittest.TestCase):
     def test_a_refused_function_is_offered_close_spellings_never_condition_ids(self) -> None:
         """#413: a space's function is what the space is; condition ids, the axis among them, are not offered."""
 
-        for word, close in (("clearence", "clearance"), ("axsi", None)):
+        for word, close in (("clearence", "clearance"), ("axsi", None), ("role.acess", "role.access")):
             with self.subTest(word=word):
                 sheet = sheet_with()
                 sheet["departments"][0]["spaces"][0]["function"] = word

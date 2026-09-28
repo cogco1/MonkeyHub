@@ -753,7 +753,8 @@ def _unregistered_kinds_as_intent(
         if not isinstance(stated, str) or not stated.strip() or stated == entity_id:
             fields["intent"] = word
             note = f"{entity_id} keeps {word!r} as its intent"
-        elif word.casefold() in stated.casefold():
+        elif re.search(rf"(?<![a-z0-9]){re.escape(word.casefold())}(?![a-z0-9])", stated.casefold()):
+            # As a word: "drywall" does not already say "wall"; 外墙 says 墙.
             note = f"{entity_id}'s intent already says {word!r}"
         else:
             fields["intent"] = f"{stated.strip()}; {word}"

@@ -19,6 +19,7 @@ from fastapi.testclient import TestClient
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.repository import FilesystemProjectRepository
 from archflow.state.state_record import StateRecord, component_semantics
+from archflow_studio_api.application.intent import _unregistered_kinds_as_intent
 from archflow_studio_api.application.intent_agent import response_schema
 from archflow_studio_api.main import create_app
 from archflow_studio_api.settings import StudioSettings
@@ -216,6 +217,21 @@ class GeometryFirstAuthoringTests(unittest.TestCase):
         record = self.retained(self.candidate(continued))
         self.assertEqual(record.entity("block").fields["intent"], "the north block; rooof")
         self.assertIsNone(component_semantics(record.entity("block")))
+
+    def test_a_stated_intent_already_says_the_word_only_as_a_word(self) -> None:
+        """#413: "a drywall partition" does not already say "wall"; 外墙 does say 墙."""
+
+        rows, notes = _unregistered_kinds_as_intent([
+            {"entity_id": "partition", "schema": "Component@1",
+             "fields": {"intent": "a drywall partition", "semantic_kind": "wall"}},
+            {"entity_id": "front", "schema": "Component@1", "fields": {"intent": "南立面外墙", "semantic_kind": "墙"}},
+            {"entity_id": "side", "schema": "Component@1", "fields": {"intent": "the east wall", "semantic_kind": "Wall"}},
+        ], {})
+        self.assertEqual([row["fields"]["intent"] for row in rows],
+                         ["a drywall partition; wall", "南立面外墙", "the east wall"])
+        self.assertIn("partition adds 'wall' to its intent", notes[0])
+        self.assertIn("front's intent already says '墙'", notes[1])
+        self.assertIn("side's intent already says 'Wall'", notes[2])
 
     def test_naming_a_generic_component_later_keeps_its_identity(self) -> None:
         run = self.sketch_generic_forms()

@@ -3323,14 +3323,14 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
         offered: dict[str, str] = {}
         for variant in entity.get("anyOf", []):
             for item in variant.get("properties", {}).get("fields", {}).get("anyOf", ()):
-                for name in item.get("properties", {}).get("producer", {}).get("enum", []):
+                for offer in item.get("properties", {}).get("producer", {}).get("enum", []):
                     # One line of the producer's own description, in contract order.
-                    offered.setdefault(name, str(item.get("description", "")).split(". ")[0].rstrip("."))
+                    offered.setdefault(offer, str(item.get("description", "")).split(". ")[0].rstrip("."))
         if method == "POST" and parsed.path == "/api/proposals" and producer is None and offered:
             # The union of every producer's contract is far larger than one tool
             # answer; this question is which producer to ask about.
             return {"path": template, "method": method,
-                    "producers": [{"producer": name, "summary": summary} for name, summary in offered.items()],
+                    "producers": [{"producer": offer, "summary": summary} for offer, summary in offered.items()],
                     "next": "Ask again with producer set to one of these for its authoring contract."}
         if producer is not None:
             matched = False
