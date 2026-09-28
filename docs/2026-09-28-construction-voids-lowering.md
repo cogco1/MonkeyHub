@@ -140,7 +140,7 @@ In both refused cases, every vertex of the host survives the cut, so the bounds 
   It replaces `CADP._physical_ids`. `CADP`, `adapters.cad_patch`, `CADX` and `OCCT` import it, so the compiler, the exporters, incremental rebuild and the predictor share one definition. Existing programs keep the same delivered set, because only curves may state `retain_for_inspection` today.
 - **Empty bindings allowed.** `GeometryOperation.semantic_binding_ids` may be empty. An operation's serialization does not change, so retained digests do not move.
 - **`COMP._operation_graph`:**
-  - `UNOWNED_OBJECT` applies only to delivered objects: "delivered geometry object has no design identity".
+  - `UNOWNED_OBJECT` applies only to delivered objects: "delivered geometry object has no design identity binding".
   - An output listed by a binding must come from an operation that names that binding. This is today's coverage rule, restricted to owned outputs. An output no binding lists needs nothing more.
   - Unknown bindings, ambiguous owners, duplicate producers, cycles and object digests work as today.
 - **`COMP._validate_assemblies`.** A `host_cut` member is accepted when it is related to its host by construction, in either of two ways:
@@ -158,7 +158,7 @@ In both refused cases, every vertex of the host survives the cut, so the bounds 
   - a void has no voids of its own;
   - host and void belong to one seat.
 
-**Record (`SR._entity_references`).** Each id in `references.voids` becomes an entity reference. The dependency closure therefore invalidates the host when a void changes, and `production_order` already produces voids first, because it follows every string in `references`.
+**Record (`SR._entity_references`).** Each id in `references.voids` becomes an entity reference. The dependency closure therefore invalidates the host when a void changes. `production_order` does not count `voids` as an ordering dependency: a host names its voids only as objects its difference consumes, so a void may stand on the top of the host it is cut into (a recess read from that top) and is produced after it; the operation graph orders the consumption. A true support cycle is still refused.
 
 **Production (`PROD`).**
 - `produce_rows` works out, over the rows it produces, which elements are named as voids. It also gives producers a table of the one closed solid each produced element delivers.
@@ -169,7 +169,10 @@ In both refused cases, every vertex of the host survives the cut, so the bounds 
 
   Without voids it emits exactly what it emits today.
 - **Refused with `ElementProducerError`, naming the element:**
-  - a void that this seat does not produce, that is not one closed solid, that has voids itself, or that forms a cycle;
+  - a void that is not one closed solid, that has voids itself, or that forms a cycle;
+  - an element standing on a void's top;
+  - a void produced by another seat: the host's cut then consumes an unknown object, and the compiler refuses it;
+  - a void whose box misses its host's box: the bounds predictor refuses it, naming both.
   - a prism that combines `voids` with `rectangular_cutouts`;
   - an uncapped loft named as a host, because it is a surface and booleans consume solids.
 

@@ -69,8 +69,11 @@ existing convention (`plan points are [x, z], with Y up`), unchanged.
 `return`; `break`, `continue`, `pass`; list comprehensions; arithmetic and comparisons. Builtins:
 `range len min max abs round sum enumerate zip list tuple float int print`; math: `pi sqrt sin cos
 tan atan2 radians degrees floor ceil`. No imports, attributes, dunder names, `while`, `with`,
-`try`, `lambda`, `global`, classes or string formatting beyond `+`. Limits: 20 000 characters,
-20 000 evaluation steps, 1 000 loop iterations per loop, call depth 16, 300 geometry results.
+`try`, `lambda`, `global`, classes or string formatting beyond `+`. Every primitive is bounded, so
+no short script can hold the server: 20 000 characters, 20 000 evaluation steps, 1 000 iterations per
+loop, call depth 16, 300 geometry results, 10 000 elements per value and 200 000 per script, loft
+≤ 64 sections, 100 000 points per script, 300 cutters per host, lengths ≥ 1 µm, and a 5 s wall-clock
+deadline over interpretation and lowering. `GET /api/construction` states every limit.
 
 **Vocabulary** (every verb returns a handle or a value; handles are opaque):
 
@@ -83,22 +86,27 @@ tan atan2 radians degrees floor ceil`. No imports, attributes, dunder names, `wh
 | `plane(origin, x_axis, y_axis)` / `front(z=0)` / `side(x=0)` | A drawing plane for vertical profiles; `front` draws in `(x, y)` and extrudes along `+z`, `side` draws in `(z, y)` and extrudes along `+x`. |
 | `extrude(profile, height, at=0, plane=None)` | Push-pull a profile into a solid. In plan it rises from `at`; a negative height goes down. |
 | `face(profile, at=0, plane=None)` | A flat face. |
-| `path(points)` | An open 3D polyline `[(x, y, z), …]`. |
+| `path(points)` | An open 3D polyline `[(x, y, z), …]` lying in one plane. |
 | `loft(sections, cap=True)` | A solid through `section(profile, at)` rings (same point count). |
 | `move(obj, dx=0, dy=0, dz=0)`, `rotate(obj, degrees, about=(x, z))`, `scale(obj, factor, about=(x, z))`, `mirror(obj, x=None, z=None)` | Change a handle in place. Rotation is about a vertical axis and turns +x toward +z; `scale` scales plan positions about `about` and heights about the base; `mirror` reflects across the vertical plane `x = …` or `z = …`. |
 | `copy(obj, dx=0, dy=0, dz=0)`, `array(obj, count, dx=0, dy=0, dz=0)` | New handles with the same geometry (not its cuts); `array` returns `[obj, copy1, …]`. |
 | `pushpull(obj, distance)`, `set_height(obj, h)`, `set_base(obj, at)` | Edit a solid's height or base. |
-| `cut(host, *cutters)`, `uncut(host, *cutters)` | Remove the cutters' solids from the host, or stop removing them. A cutter keeps its id and stays in the model hidden; `uncut` delivers it again. |
+| `cut(host, *cutters)`, `uncut(host, *cutters)` | Remove the cutters' solids from the host, or stop removing them. A cutter keeps its id and stays in the model hidden; `uncut` delivers it again, and `uncut(host)` with no cutters clears them all. A cutter may stand on its own host's top (a recess measured from the top). |
 | `level(id)`, `top(obj)` | Anchors for `at`: a project level, or the top of a solid (a dependency: it follows that solid). `anchor + number` offsets it. |
 | `param(key)` | A project parameter, used directly as a height or an `at` offset (a binding, not a number). |
 | `bounds(obj)` | `((xmin, ymin, zmin), (xmax, ymax, zmax))` from the definition. |
 | `name(obj, id)`, `get(id)`, `delete(obj)` | Identity: name a result, reach existing geometry, remove it. |
 
 **Identity.** Each geometry result that survives the script is persisted under one **geometry id**:
-the `name(...)` given, else the top-level variable it was last assigned to (`_` → `-`), numbered
-`<name>-2`, `<name>-3` when a loop reuses a variable, else `shape-<n>`. Ids are deterministic, so
-re-running a script updates the same geometry. `get(id)` returns existing geometry for editing.
-The agent never sees a second id, a producer, a component tree or a digest inside the script.
+the `name(...)` given, else the module-level variable it was last assigned to (`_` → `-`; several
+shapes under one variable in a loop are `<v>-1 … <v>-n`), else an id hashed from the chain of
+statements that made it (`shape-<12 hex>`, `<host>-cut-<12 hex>`). Ids are deterministic, so
+re-running a script updates the same geometry, and a different script does not collide with it.
+`get(id)` returns existing geometry for editing. A shape redefined under an existing id keeps its
+cuts (redrawing the form does not undo a relation; `uncut(host)` does); an id held by anything other
+than construction geometry is refused, and so is redefining geometry that carries hosted openings
+(edit it through `get()` instead). The agent never sees a second id, a producer, a component tree or
+a digest inside the script.
 
 **Errors.** A refused script saves nothing and answers `422 CONSTRUCTION_INVALID` with `line`,
 `column`, the source line and one sentence. Geometric refusals from the runtime (a cutter that has
@@ -168,11 +176,15 @@ after. `semantic_kind`, `roles` and `conditions` stay readable for existing proj
 `GET /api/construction/model` lists, per entity, the capabilities its facets unlock. Today there is
 one: `hosted-opening` (a door or window with its family, frame and leaf) for
 `architectural.role = wall`. `POST /api/proposals/hosted-opening {stateDigest, host, kind, along,
-width, sill, head, typeId?}` refuses a host without that facet with `409 ENRICHMENT_REQUIRED`
-naming the facet to add. For a wall-faced block whose geometry is a straight rectangular prism
-standing on a level or datum, the runtime re-realises the element with the `wall` producer, keeping
-the element id and `obj-<element>` (D-419-1). Anything else is refused with the reason (`the block's
-footprint is not a rectangle`).
+width, sill, head, shape?, springHeight?, family?, interfaceRef?}` refuses a host without that facet
+with `409 ENRICHMENT_REQUIRED` naming the facet to add. For a wall-faced block whose geometry is a
+straight rectangular prism standing on a level or datum, the runtime re-realises the element with
+the `wall` producer, keeping the element id, `obj-<element>` (D-419-1) and its `<element>-top` datum,
+so whatever stands on the block keeps standing. Anything else is refused with the reason (`the
+block's footprint is not a rectangle`). `along` is measured from the near corner of the block's long
+side (the model view shows that side as `alongLine`); `family` gives the frame, leaf or glazing
+proportions. An opening names a spatial connection only when `interfaceRef` names one the record
+declares; otherwise it carries none, so a Stage C opening never invents a relation between spaces.
 
 ### 3.6 L4: domains ask for what they need
 
@@ -192,10 +204,15 @@ or `semanticKind`; a test pins that. OCCT keeps exact B-rep, lowering strategy a
 One fixed Stage A task, run by Codex through three paths, recording tool calls, refusals, model
 rounds, wall time, first-result time and human corrections:
 
-1. **Native baseline.** Codex writing a script for a desktop modeller through its own MCP. SketchUp
-   2025 cannot run unattended here: a fresh instance with `-RubyStartup` never ran its script within
-   120 s because the welcome screen waits for a person (probe, 2026-09-28). The baseline is Rhino 8
-   through Codex's configured Rhino MCP, the same kind of direct scripting.
+1. **Native baseline.** Codex writing and running a Python program against a CAD kernel (OCCT
+   through `OCP`) and exporting STEP: the same kind of direct scripting as SketchUp Ruby or Blender
+   `bpy`. No desktop modeller could be driven unattended on the measuring machine: a fresh SketchUp
+   2025 instance with `-RubyStartup` never ran its script within 120 s (the welcome screen waits for
+   a person); Codex's own Rhino MCP could neither start Rhino 8 nor attach to a running one from
+   inside Codex's process job (CreateProcess error 5 in four attempts, with and without the command
+   sandbox); Blender is not installed. Codex's workspace sandbox also refused to start the installed
+   Python, so this run used `-s danger-full-access`. `--path rhino` keeps the Rhino attempt
+   reproducible.
 2. **Hub, producer path** (origin/main).
 3. **Hub, construction path** (this branch).
 
@@ -224,7 +241,45 @@ Results: §7, filled from the retained outputs.
 - Facet vocabularies are deliberately short; new keys are additive.
 - Construction edits change `prism`, `planar-surface`, `curve`, `loft` and `wall` rows; rows of the
   retired runner producers (`column-array`, `stair`, …) are readable but not editable by script.
+  Wall-realized geometry (a block with hosted openings) takes `move`, `rotate`, `mirror`,
+  `set_height`, `set_base`, `cut`, `uncut` and `delete`, not `pushpull`, `scale` or `copy`.
+- `path()` is a flat polyline: the path realization draws on one work plane.
+- A block converted to the wall realization no longer states its own `<element>-stands-on` support
+  relation, so the runtime does not check that bearing for it.
+- Editing a row placed on another row's line (`host` references) still produces the whole record
+  once to place it; that cost grows with the project (about 0.8 s at 3 000 boxes).
+- Editing an unnamed cutter's statement makes a new cutter while the old one keeps cutting the
+  redefined host; name the cutters you will change, or `uncut(host)` first. The vocabulary says so.
+- The 5 s deadline is wall-clock time, so the heaviest valid scripts pass or fail with machine load.
 
 ## 7. Benchmark results
 
-(Filled after the runs.)
+Task (Stage A, the same text for every path apart from each tool's axes): a 12 × 8 × 3.2 m ground
+block at plan (20, 0); a 10 × 8 × 3 m block on top of it, flush at x = 20 and on both long faces; a
+0.3 m roof slab overhanging that block by 0.5 m; four 1.2 × 1.5 m window recesses 0.3 m deep in the
+ground block's face, sill 0.9 m. Success is judged on the exported STEP whatever the objects are
+called: total visible volume 574.74 m³, the overall extent, and nine sample points in material or in
+the recesses (`tests/monkeymonitor/massing_check.py`). Codex CLI with the user's default model,
+2026-09-28. Metrics come from the Hub's turn trace (`run_turn_benchmark.py`) and from Codex's own
+event stream (`run_native_baseline.py`).
+
+| Path | Result | Wall time | First candidate | Tool calls | Refused / failed | Model rounds | Input tokens | Recesses made by |
+|---|---|---|---|---|---|---|---|---|
+| Native: Codex + OCCT script | ✓ | 85 s | — | 4 | 0 | 2 | 107k | a boolean cut in the script |
+| Hub, producer path (main `a1df9b2b`) | ✓ | 154 s | 127 s | 12 | 1 (`COMPONENT_NOT_BUILT`) | 13 | 507k | five prisms composed around the holes |
+| Hub, construction path, run 1 | ✓ | 86 s | 59 s | 10 | 0 | 11 | 433k | `cut` (cutters kept, hidden) |
+| Hub, construction path, run 2 | ✓ | 80 s | 53 s | 8 | 0 | 9 | 312k | `cut` (cutters kept, hidden) |
+
+No run needed a human correction. On the producer path, seven of twelve calls read state or schemas
+(about 64 kB: state, the producer index, the 20 kB proposal schema, the action index, the 22 kB
+sketch schema, push-pull and admission schemas), and one write was refused because a new component
+had to be placed under an existing one. On the construction path the script was written once and
+accepted the first time.
+
+Against the owner's bar ("if the construction path cannot come significantly close to the native
+baseline, keep deleting abstractions"): wall time now matches the native path and the first result
+arrives more than twice as fast as on the producer path; tool calls and input tokens are still about
+twice and three times the native path's. What remains is Hub workflow and context, not authoring:
+the Hub's tool descriptions sent every round, `studio_schema` answering response schemas along with
+request schemas (16 kB for the construction route), and the admission step the native path does not
+have. Those are the next abstractions to delete.

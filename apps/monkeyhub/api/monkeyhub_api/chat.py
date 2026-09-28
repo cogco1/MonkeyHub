@@ -3864,7 +3864,7 @@ def _mcp(hub: str, chat_id: str | None, external: ChatPresentationBindRequest | 
         "  for i in range(4):",
         "      w = extrude(rect(21.5 + 3 * i, 0, 1.2, 0.3), 1.5, at=0.9)",
         "      cut(mass, w)                                # removes w from mass; w stays, hidden, under its own id",
-        "Verbs: rect polygon circle offset | extrude face path loft section | move rotate scale mirror copy array |",
+        "Verbs: rect polygon circle offset | plane front side | extrude face path loft section | move rotate scale mirror copy array |",
         "pushpull set_height set_base | cut uncut | level top param bounds | name get delete | print.",
         "Plain Python works: variables, arithmetic, for/if/def, lists, range, pi/sin/cos/sqrt.",
         "A variable is the shape's id (w in a loop gives w-1..w-4); name(obj, \"id\") sets one; get(\"id\") edits",
