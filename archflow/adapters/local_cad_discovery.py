@@ -136,15 +136,16 @@ class SoftwareDiscoveryRegistry:
             if paths is None:
                 command = shutil.which("blender")
                 paths = (command,) if command else ()
-            # PATH takes precedence, matching existing Blender selection. Resolve
-            # symlink commands, which are common on Unix PATH, without executing.
+            # PATH takes precedence, matching existing Blender selection. Symlink
+            # commands, common on Unix PATH, are compared by target but kept as
+            # named: launchers such as snap dispatch on argv[0].
             candidates[:0] = [("blender", path, "path") for path in paths]
         found = {}
         for product, path, source in candidates:
             path = Path(path)
             try:
-                if source == "path" and not path.is_absolute():
-                    path = path.absolute()
+                if source == "path":
+                    path = Path(os.path.abspath(path))
                 if (not path.is_absolute() or not path.is_file() or
                         (path.is_symlink() and source != "path")):
                     continue
@@ -155,7 +156,8 @@ class SoftwareDiscoveryRegistry:
             hint = re.search(_VERSION_PATTERNS[product], str(path), re.I)
             key = product, str(resolved)
             if key not in found or found[key].evidence != "path":
-                found[key] = Installation(product, resolved, hint.group(1) if hint else None, source)
+                executable = path if source == "path" else resolved
+                found[key] = Installation(product, executable, hint.group(1) if hint else None, source)
         return Discovery(self.system, tuple(sorted(found.values(), key=_preference)),
                          tuple(dict.fromkeys(diagnostics)))
 

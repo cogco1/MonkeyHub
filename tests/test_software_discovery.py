@@ -129,6 +129,14 @@ class SoftwareDiscoveryTests(unittest.TestCase):
         with patch.object(cad_execution, "SoftwareDiscoveryRegistry", return_value=registry):
             self.assertEqual(cad_execution.discover_rhino_executables(), expected)
 
+    def test_rhino_wrapper_reports_only_the_windows_com_host(self):
+        # A Rhino for Mac bundle is software evidence, not the supervised COM host.
+        self.file("Rhino 8.app/Contents/MacOS/Rhinoceros")
+        mac = self.registry(system="Darwin", application_roots=(self.root,))
+        self.assertEqual(len(mac.discover("rhino").installations), 1)
+        with patch.object(cad_execution, "SoftwareDiscoveryRegistry", return_value=mac):
+            self.assertEqual(cad_execution.discover_rhino_executables(), ())
+
     def test_blender_path_precedes_standard_installs_then_newest_version(self):
         command = self.file("commands/blender.exe")
         older = self.file("Blender Foundation/Blender 4.5/blender.exe")
@@ -162,6 +170,23 @@ class SoftwareDiscoveryTests(unittest.TestCase):
             result = self.registry(program_roots=[], path_candidates=None).discover("blender")
         lookup.assert_called_once_with("blender")
         self.assertEqual(result.installations[0].executable, command)
+
+    def test_blender_path_command_keeps_the_name_path_gives_it(self):
+        # snap links /snap/bin/blender to /usr/bin/snap and dispatches on
+        # argv[0], so the resolved target is not a runnable Blender.
+        launcher = self.file("usr/bin/snap")
+        command = self.root / "snap" / "bin" / "blender"
+        command.parent.mkdir(parents=True)
+        try:
+            command.symlink_to(launcher)
+        except (OSError, NotImplementedError):
+            self.skipTest("this host cannot create symbolic links")
+        registry = self.registry(system="Linux", path_candidates=[command])
+        row, = registry.discover("blender").installations
+        self.assertEqual((row.executable, row.evidence), (command, "path"))
+        self.assertEqual(row.public()["executableName"], "blender")
+        with patch.object(discovery, "SoftwareDiscoveryRegistry", return_value=registry):
+            self.assertEqual(discovery.resolve_blender_executable(), str(command))
 
     def test_blender_backend_uses_shared_selection_before_its_worker(self):
         from archflow.adapters import blender_cad

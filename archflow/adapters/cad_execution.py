@@ -1178,7 +1178,11 @@ def prepare_rhino_three_dm_export(
 def discover_rhino_executables() -> tuple[Path, ...]:
     """Read-only discovery; never launches or attaches to Rhino."""
 
-    return tuple(row.executable for row in SoftwareDiscoveryRegistry().discover("rhino").installations)
+    discovery = SoftwareDiscoveryRegistry().discover("rhino")
+    # The supervised host is Rhino's Windows COM server; a Mac bundle is not one.
+    if discovery.system != "Windows":
+        return ()
+    return tuple(row.executable for row in discovery.installations)
 
 
 def discover_powershell() -> Path | None:

@@ -37,8 +37,10 @@ existing conversion providers remain independent.
 `SoftwareDiscoveryRegistry.discover(product_id)` serves `rhino`, `blender`,
 `sketchup`, `autocad` and `autocad-core`. It checks only the requested product's
 known installation locations and Windows App Paths. Blender also preserves
-PATH resolution. An explicit executable still wins and never silently falls
-back to another installation. Legacy discovery functions use the same registry.
+PATH resolution, keeping a symlinked command as PATH names it. An explicit
+executable still wins and never silently falls back to another installation.
+Legacy discovery functions use the same registry; `discover_rhino_executables`
+still answers only on Windows, where the supervised COM host runs.
 
 Discovery runs no shell, CAD host, DLL loader, network or license query; it never
 recursively scans disks or writes project data. `Installation.executable` stays
