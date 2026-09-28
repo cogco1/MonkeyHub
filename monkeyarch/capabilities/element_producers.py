@@ -203,6 +203,7 @@ def producer_signatures() -> dict[str, dict[str, Any]]:
                          "face": {"type": "string", "description": "The existing wall face label, when the record names one."},
                          "inward": {"type": "array", "items": {"type": "number"},
                                     "minItems": 2, "maxItems": 2}}, ("from", "to")),
+            "voids": voids,
         }),
         "requiredParameters": ["thickness"],
         "requiredReferences": ["base", "line"],
@@ -212,6 +213,7 @@ def producer_signatures() -> dict[str, dict[str, Any]]:
             "A semicircular aperture requires spring_height >= sill and head - spring_height = width / 2.",
             "Use @parameter bindings for dimensions that subsequent changes must share.",
             "Use existing relation kinds for support, host, adjacency or clearance; proximity does not prove support.",
+            "references.voids removes other elements' solids through the same cut as the openings; the wall stays obj-<wall>.",
         ],
     }, "prism": prism, "loft": {
         "producer": "loft",
@@ -525,7 +527,7 @@ def _stating(operation: GeometryOperation, **statements: str) -> GeometryOperati
     return replace(operation, statements={**operation.statements, **statements})
 
 
-_VOID_HOSTS = ("prism", "loft")
+_VOID_HOSTS = ("prism", "loft", "wall")
 _VOID_SOLIDS = ("prism", "loft")
 
 
@@ -813,7 +815,9 @@ def produce_wall(row: ElementRow, context: ProductionContext) -> ProducedElement
                                         spring_height=(None if o.get("spring_height") is None else
                                                        round(_finite(o["spring_height"], f"{o['opening_id']} spring_height"), 9))))
     exclusions = context.exclusions if p.get("respect_exclusions", True) else ()
-    solution = solve_wall(wall, tuple(openings), exclusions=exclusions, base_elevation=context.datum_value(base_datum) if exclusions else None)
+    solution = solve_wall(wall, tuple(openings), exclusions=exclusions,
+                          base_elevation=context.datum_value(base_datum) if exclusions else None,
+                          void_object_ids=tuple(f"obj-{void}" for void in _void_ids(row)))
     ops, bindings, assemblies = list(solution.operations), list(solution.datum_bindings), []
     types: dict[str, Any] = {}
     for t in p.get("types", ()):
@@ -1704,7 +1708,7 @@ def with_void_hosts(rows: tuple[ElementRow, ...]) -> tuple[ElementRow, ...]:
         voids = _void_ids(row)
         if voids and (row.producer not in _VOID_HOSTS or row.params.get("cap_ends", True) is False
                       or "rectangular_cutouts" in row.params):
-            raise ElementProducerError(f"{row.element_id}: only a prism or a capped loft can host voids")
+            raise ElementProducerError(f"{row.element_id}: only a prism, a capped loft or a wall can host voids")
         for void in voids:
             target = by_id.get(void)
             if target is None:

@@ -642,7 +642,7 @@ class OpeningIdScopeTests(unittest.TestCase):
         self.assertEqual({op.output_object_ids[0] for op in produced[0].operations if op.op_id.startswith("glazing-")},
                          {"obj-glazing-wall-south-window"})
         # the wall's own operations are untouched by the scoping
-        self.assertLessEqual({"wall-south", "wall-south-void-window", "wall-south-aperture-window", "wall-south-cut"}, ops)
+        self.assertLessEqual({"wall-south-body", "wall-south-void-window", "wall-south-aperture-window", "wall-south"}, ops)
 
     def test_three_walls_may_each_carry_an_opening_called_window(self) -> None:
         rows = (_wall_row("wall-south", "1", "2"), _wall_row("wall-middle", "3", "4"), _wall_row("wall-north", "5", "6"))
@@ -1105,8 +1105,8 @@ class AuthoredRecordTests(unittest.TestCase):
         self.assertIsNotNone(result.program, [(i.code.value, i.subject_id, i.detail) for i in result.receipt.issues])
         bounds = expected_object_bounds(result.program)
         # the wall's physical object is what the void was cut out of; it sits on the plinth's top face
-        self.assertAlmostEqual(bounds["obj-plinth"]["bbox_max"][1], bounds["obj-wall-south-cut"]["bbox_min"][1])
-        self.assertAlmostEqual(bounds["obj-wall-south-cut"]["bbox_max"][1] - bounds["obj-wall-south-cut"]["bbox_min"][1], 2.97)
+        self.assertAlmostEqual(bounds["obj-plinth"]["bbox_max"][1], bounds["obj-wall-south"]["bbox_min"][1])
+        self.assertAlmostEqual(bounds["obj-wall-south"]["bbox_max"][1] - bounds["obj-wall-south"]["bbox_min"][1], 2.97)
 
 
 class BoundRowTests(unittest.TestCase):
@@ -1126,7 +1126,7 @@ class BoundRowTests(unittest.TestCase):
         context = ProductionContext(references=ReferenceContext(grids=project_grids_of(self._bound()), levels=project_levels_of(self._bound())), published={}, frame_id="world")
         plinth, wall = produce_rows(element_rows_of(self._bound()), context)
         body = {op.op_id: _op_params(op)["vector"][1] for op in wall.operations if "vector" in _op_params(op)}
-        self.assertAlmostEqual(body["wall-south"], 2.97)                                            # the wall body rises by the bound height; the void keeps its own
+        self.assertAlmostEqual(body["wall-south-body"], 2.97)                                       # the wall body rises by the bound height; the void keeps its own
 
     def test_a_stale_bound_derived_value_fails_typed_before_any_producer_runs(self) -> None:
         with self.assertRaisesRegex(ElementProducerError, r"element wall-south: params.height binds @wall_height: stored value 2.5 of derived parameter wall_height disagrees"):
@@ -1328,7 +1328,7 @@ class VoidRelationTests(unittest.TestCase):
             "names 'ghost', which is not an element": (_prism_row("block-7", BLOCK, 3.0, voids=["ghost"]),),
             "an element cannot void itself": (_prism_row("block-7", BLOCK, 3.0, voids=["block-7"]),),
             "names block-9 twice": (_prism_row("block-7", BLOCK, 3.0, voids=["block-9", "block-9"]), _prism_row("block-9", NICHE, 1.2)),
-            "only a prism or a capped loft can host voids": (surface, _prism_row("block-9", NICHE, 1.2)),
+            "only a prism, a capped loft or a wall can host voids": (surface, _prism_row("block-9", NICHE, 1.2)),
             "block-9 has voids of its own": (_prism_row("block-7", BLOCK, 3.0, voids=["block-9"]),
                                              _prism_row("block-9", NICHE, 1.2, voids=["block-10"]), _prism_row("block-10", NICHE, 0.5)),
         }
@@ -1349,9 +1349,17 @@ class VoidRelationTests(unittest.TestCase):
         self.assertTrue(_op_params(hidden)["retain_for_inspection"])
         self.assertEqual(produced["plug"].relations, ())
 
+    def test_a_wall_takes_a_void_from_a_prism(self) -> None:
+        wall = _wall_row("wall-south", "1", "2")
+        wall = replace(wall, references={**wall.references, "voids": ["niche"]})
+        produced = self._produce_all(wall, _prism_row("niche", NICHE, 1.2, elevation=1.0))
+        cut = next(op for op in produced["wall-south"].operations if op.op_id == "wall-south")
+        self.assertIn("obj-niche", cut.input_object_ids)
+        self.assertEqual(cut.output_object_ids, ("obj-wall-south",))
+
     def test_the_signatures_offer_voids_where_they_are_realized(self) -> None:
         signatures = producer_signatures()
-        for producer in ("prism", "loft"):
+        for producer in ("prism", "loft", "wall"):
             self.assertIn("voids", signatures[producer]["references"]["properties"], producer)
         for producer in ("planar-surface", "curve"):
             self.assertNotIn("voids", signatures[producer]["references"]["properties"], producer)

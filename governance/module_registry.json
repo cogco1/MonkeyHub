@@ -1406,7 +1406,8 @@
         "the wall is one solid; every opening is a void request the wall hosts, never a separate subtraction chain",
         "an opening's position is expressed in wall coordinates (along, across), never in project coordinates",
         "a contract violation - non-positive size, an opening outside the wall, overlapping voids - fails WallSolverError",
-        "a semicircular aperture has head minus spring height equal to half its width, with its spring at or above its sill; rectangular opening serialization is unchanged"
+        "a semicircular aperture has head minus spring height equal to half its width, with its spring at or above its sill; rectangular opening serialization is unchanged",
+        "a wall delivers obj-<wall> with or without openings or voids; once cut, its uncut extrusion is obj-<wall>-body, consumed by the cut and the apertures"
       ],
       "status": "canonical",
       "tests": [
