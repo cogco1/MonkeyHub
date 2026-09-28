@@ -83,6 +83,7 @@ class RecordingProjector:
         self.version = version
         self.projected: list[str] = []
         self.trees = 0
+        self.workings = 0
         self.threads: set[str] = set()
         self.delay = 0.0
 
@@ -104,6 +105,11 @@ class RecordingProjector:
             time.sleep(self.delay)
         return RunRows(run_id, {"records": len(refs)},
                        tuple(RecordRow(ref.uri, ref.record_kind, ref.sha256) for ref in refs))
+
+    def project_working(self):
+        self.workings += 1
+        value, _ = self.repository.read_working_draft()
+        return {key: value[key] for key in ("current", "runs", "active")}
 
     def project_tree(self) -> TreeRows:
         self.trees += 1
@@ -161,7 +167,7 @@ class RebuildTests(_IndexCase):
         self.assertEqual(projector.projected, ["run-001"])
         self.assertEqual(self.records(index, "run-001"), 1)
         meta = index.meta()
-        self.assertEqual((meta["project_id"], meta["schema_version"]), (PROJECT_ID, "3"))
+        self.assertEqual((meta["project_id"], meta["schema_version"]), (PROJECT_ID, "4"))
         self.assertNotIn(os.fspath(self.root), repr(meta), "no machine path is kept as identity")
 
     def test_a_different_projector_version_rebuilds_under_a_new_epoch(self) -> None:
@@ -378,6 +384,26 @@ class ApplyTests(_AppliedCase):
         self.assertEqual([entity["id"] for entity in upserts], ["area:head", "area:working"])
         self.assertEqual(deletes, ["area:design"], "an area with no directory left is gone")
         self.assertEqual(self.index_.last_commit.domains, frozenset({"area"}))
+
+    def test_a_rewritten_working_pointer_moves_the_position_only_when_it_moved(self) -> None:
+        self.repository.create_run("run-002")
+        self.sync()
+        value, revision = self.repository.read_working_draft()
+        written = self.repository.compare_and_swap_working_draft(expected_revision=revision, value=value)
+        rewritten = self.index_.apply(None, 0, areas={"working"})
+        with self.index_.snapshot() as snapshot:
+            self.assertEqual([entity["id"] for entity in snapshot.changes(rewritten.revision - 1)[0]], ["area:working"],
+                             "the same position written again moves the pointer file only")
+        self.repository.protect_working_run("run-002", "run-001")
+        moved = self.index_.apply(None, 0, areas={"working"})
+        with self.index_.snapshot() as snapshot:
+            upserts, _ = snapshot.changes(rewritten.revision)
+        self.assertEqual(moved.revision, rewritten.revision + 1)
+        moved_ids = {entity["id"]: entity for entity in upserts}
+        self.assertEqual(set(moved_ids), {"area:working", "working"})
+        self.assertEqual(moved_ids["working"]["body"]["active"], {"run-002": ["run-001"]})
+        self.assertEqual(self.index_.last_commit.domains, frozenset({"area", "working"}))
+        self.assertTrue(written)
 
     def test_the_query_refuses_what_it_does_not_list(self) -> None:
         with self.assertRaisesRegex(ValueError, "no table"):

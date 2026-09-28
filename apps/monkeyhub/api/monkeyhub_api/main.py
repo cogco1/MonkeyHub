@@ -13,7 +13,6 @@ import sys
 import threading
 import time
 import queue
-import socket
 from typing import Literal
 from urllib.parse import urlsplit
 from urllib.parse import quote
@@ -131,11 +130,6 @@ class HubServer(uvicorn.Server):
         # End subscriptions first; admitted mutations still drain normally.
         app = self.config.app
         app.state.runtimes.begin_shutdown()
-        for stream_socket in tuple(app.state.studio_event_sockets):
-            try:
-                stream_socket.shutdown(socket.SHUT_RDWR)
-            except OSError:
-                pass
         await super().shutdown(sockets=sockets)
 
 
@@ -204,7 +198,6 @@ def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> Fas
     app.state.chats = chats
     app.state.runtimes = runtimes
     app.state.updates = updates
-    app.state.studio_event_sockets = set()
     # Desktop automation costs two PowerShell hosts, so it is composed on first
     # use rather than started with the Hub, and there is only ever one.
     app.state.computer = None
@@ -648,34 +641,50 @@ def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> Fas
     async def runtime_events(request: Request):
         await asyncio.to_thread(runtimes.discover)
 
+        def relayed(value: dict, sequence: int, *, replay: bool = False) -> str:
+            # A project worker's own events, relayed (#366): ``index`` says its project index moved
+            # (or may have: no revision), ``studio`` is a Studio event with the worker ``stream`` it
+            # was numbered on. Neither is part of the Hub's runtime snapshot. A replayed one carries
+            # no id: it resumes nothing.
+            name = "index" if "index" in value else "studio"
+            body = {"serverId": runtimes.server_id, "sequence": sequence, "runtimeId": value.get("runtimeId"), name: value[name]}
+            if name == "studio":
+                body["stream"] = value.get("stream")
+            if replay:
+                body["replay"] = True
+            head = "" if replay else f"id: {runtimes.server_id}:{sequence}\n"
+            return f"{head}event: {name}\ndata: {json.dumps(body, separators=(',', ':'))}\n\n"
+
         async def stream():
-            # Subscribe before reading the snapshot. Drop queued events the
+            # Subscribe before reading the snapshot. Drop queued runtime events the
             # snapshot already includes, so no change can fall through a gap.
             with runtimes.events.subscribe() as (_, inbox):
                 runtimes._clients += 1
                 try:
+                    # Taken after subscribing: an event kept here and also queued arrives twice,
+                    # and the client knows it by its ``<stream>:<seq>``; none falls between the two.
+                    replay = runtimes.studio_replay()
                     snapshot = await asyncio.to_thread(runtimes.snapshot)
                     sequence = snapshot.sequence
                     event = RuntimeEvent(serverId=runtimes.server_id, sequence=sequence, kind="runtime/snapshot", snapshot=snapshot)
                     yield f"id: {runtimes.server_id}:{sequence}\nevent: runtime\ndata: {event.model_dump_json()}\n\n"
+                    # The projects' latest Studio events: a page's event panel opens with them.
+                    for value in replay:
+                        yield relayed(value, sequence, replay=True)
                     while not await request.is_disconnected() and not runtimes._closing.is_set():
                         try:
                             value = await asyncio.to_thread(inbox.get, True, 1)
                         except queue.Empty:
                             yield ": keepalive\n\n"
                             continue
+                        if "index" in value or "studio" in value:
+                            # Queued after subscribing and never in the snapshot: always sent.
+                            sequence = max(sequence, value["seq"])
+                            yield relayed(value, value["seq"])
+                            continue
                         if value["seq"] <= sequence:
                             continue
                         sequence = value["seq"]
-                        if "index" in value or "studio" in value:
-                            # A project worker's own events, relayed (#366): ``index`` says its project
-                            # index moved (or may have: no revision), ``studio`` is a Studio progress
-                            # event. Neither changes the Hub's runtime snapshot.
-                            name = "index" if "index" in value else "studio"
-                            body = {"serverId": runtimes.server_id, "sequence": sequence,
-                                    "runtimeId": value.get("runtimeId"), name: value[name]}
-                            yield f"id: {runtimes.server_id}:{sequence}\nevent: {name}\ndata: {json.dumps(body, separators=(',', ':'))}\n\n"
-                            continue
                         event = RuntimeEvent(serverId=runtimes.server_id, sequence=sequence, kind=value["kind"], runtimeId=value.get("runtimeId"))
                         yield f"id: {runtimes.server_id}:{sequence}\nevent: runtime\ndata: {event.model_dump_json()}\n\n"
                 finally:
@@ -688,46 +697,10 @@ def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> Fas
         runtime = await asyncio.to_thread(runtimes.get, runtime_id)
         target = "/" + path + (f"?{request.url.query}" if request.url.query else "")
         if path == "api/events" and request.method == "GET":
-            # Preserve the existing Studio job stream for embedded clients.
-            # The Hub's application stream above remains their runtime source.
-            from http.client import HTTPConnection, HTTPException
-            worker = runtimes.service(runtime)
-            address = urlsplit(worker.url)
-            connection = HTTPConnection(address.hostname, address.port, timeout=20)
-
-            def attach():
-                connection.connect()
-                stream_socket = connection.sock
-                try:
-                    connection.request("GET", target, headers={"Last-Event-ID": request.headers.get("last-event-id", "")})
-                    return connection.getresponse(), stream_socket
-                except Exception:
-                    connection.close()
-                    raise
-
-            upstream, stream_socket = await asyncio.to_thread(attach)
-            app.state.studio_event_sockets.add(stream_socket)
-
-            async def chunks():
-                try:
-                    while not runtimes._closing.is_set() and not await request.is_disconnected():
-                        line = await asyncio.to_thread(upstream.readline)
-                        if not line:
-                            break
-                        yield line
-                except (OSError, HTTPException):
-                    # A dead/replaced worker ends this attachment. The browser
-                    # reconnects; no operation is admitted by this read stream.
-                    return
-                finally:
-                    try:
-                        stream_socket.shutdown(socket.SHUT_RDWR)
-                    except OSError:
-                        pass
-                    upstream.close()
-                    connection.close()
-                    app.state.studio_event_sockets.discard(stream_socket)
-            return StreamingResponse(chunks(), status_code=upstream.status, media_type="text/event-stream", headers={"Cache-Control": "no-cache"})
+            # Superseded (#366): the Hub follows each worker's stream once and relays it on
+            # /api/runtime/events, which every Hub page already holds. Never buffered through
+            # the forward below, which would wait on a stream that does not end.
+            raise HubFailure(404, "STUDIO_EVENTS_RELAYED", "Follow /api/runtime/events: it carries this project's events.")
         result = await asyncio.to_thread(runtimes.forward, runtime, target, request.method,
                                          await request.body(), dict(request.headers))
         return Response(result.body, status_code=result.status, headers=result.headers)

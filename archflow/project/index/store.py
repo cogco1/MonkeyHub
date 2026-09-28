@@ -25,7 +25,7 @@ It can be deleted at any time; the next load builds it again.
   for every change. It runs before the write transaction opens, never inside
   it; the revision moves once per commit that changed a row.
 - ``change`` is the bounded change log (#366): for each entity a client reads
-  (``run:<id>``, ``tree``, ``area:<name>``), the revision that last changed or
+  (``run:<id>``, ``tree``, ``working``, ``area:<name>``), the revision that last changed or
   deleted it. ``IndexSnapshot.changes`` answers ``since=<revision>`` from it;
   a revision below ``meta.floor`` is older than the log and answers nothing,
   so the caller sends a whole snapshot instead.
@@ -52,7 +52,7 @@ from uuid import uuid4
 
 from archflow.project.layout import FINGERPRINT_POINTER_FILES, FINGERPRINT_SETTLED_NS
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 # How many revisions the change log keeps: a client further behind than this
 # is sent a whole snapshot instead of the changes.
 CHANGE_LOG_REVISIONS = 512
@@ -269,6 +269,15 @@ class Projector(Protocol):
 
     def project_tree(self) -> TreeRows: ...
 
+    def project_working(self) -> Mapping[str, Any] | None:
+        """The working position a head is read from, without the local recovery it may name.
+
+        None when it cannot be read. Its own entity (``working``): saving a
+        local recovery rewrites the same pointer file, and moves only
+        ``area:working``, so a reader of the head can tell the two apart.
+        """
+        ...
+
 
 def place_area(key: str) -> str:
     """The part of a project a layout line's key belongs to.
@@ -454,12 +463,13 @@ class IndexSnapshot:
         return present, [entity_id for entity_id in ids if entity_id not in found]
 
     def entities(self, ids: Iterable[str] | None = None) -> list[dict[str, Any]]:
-        """What a client keeps of the index, one entity per run, the tree and each other area.
+        """What a client keeps of the index, one entity per run, the tree, the working position and each other area.
 
         ``{id, domain, rev, body}``: a run's body holds its own body, candidate,
         artifacts, documents and how many records it has (the records
         themselves stay in ``GET /api/index/record``); the tree's is its body
-        and stages; an area's the layout lines it holds. ``rev`` is the
+        and stages; the working position's is what ``project_working`` read;
+        an area's the layout lines it holds. ``rev`` is the
         revision that last changed the entity. ``ids`` limits the answer to
         those entities; an id that names nothing is left out.
         """
@@ -477,6 +487,12 @@ class IndexSnapshot:
                 kept = self._connection.execute("SELECT value FROM meta WHERE key = 'tree_rev'").fetchone()
                 found.append({"id": "tree", "domain": "tree", "rev": int(kept[0]) if kept else 1,
                               "body": {"tree": tree, "stages": stages}})
+        if wanted is None or "working" in wanted:
+            kept = dict(self._connection.execute(
+                "SELECT key, value FROM meta WHERE key IN ('working', 'working_rev')"))
+            if "working" in kept:
+                found.append({"id": "working", "domain": "working", "rev": int(kept.get("working_rev", 1)),
+                              "body": json.loads(kept["working"])})
         if wanted is None or any(entity.startswith("area:") for entity in wanted):
             areas: dict[str, list[str]] = {}
             for key, line in self._connection.execute("SELECT key, line FROM place ORDER BY key"):
@@ -545,6 +561,7 @@ class ProjectIndex:
         # row digest, the tree's cites and digest, every place and the racy ones.
         self._runs: dict[str, tuple[frozenset[str], str]] = {}
         self._tree: tuple[frozenset[str], str] | None = None
+        self._working: str | None = None
         self._places: dict[str, tuple[str, int]] = {}
         self._racy: set[str] = set()
         # Readers: pooled connections, how many are reading, and whether the
@@ -726,6 +743,7 @@ class ProjectIndex:
 
         # Projected before anything is written: a failing projector leaves the old file as it was.
         tree = self._projector.project_tree()
+        working = self._projector.project_working()
         runs = [self._projector.project_run(run_id) for run_id in self._projector.run_ids()]
         fresh = self.directory / f"{INDEX_FILE}.new"
         try:
@@ -744,6 +762,9 @@ class ProjectIndex:
                 building.execute("INSERT INTO meta VALUES ('floor', '1')")
                 building.execute("INSERT INTO meta VALUES ('scanned_at_ns', ?)", (str(scanned_at_ns),))
                 self._write_tree(building, tree, 1, None)
+                self._working = None
+                if working is not None:
+                    self._write_working(building, working, 1)
                 for rows in runs:
                     self._write_run(building, rows, 1, None)
                 building.executemany("INSERT INTO place VALUES (?, ?, ?)",
@@ -799,6 +820,7 @@ class ProjectIndex:
                       for run_id, cites, digest in connection.execute("SELECT run_id, cites, digest FROM run")}
         tree_cites = json.loads(meta.get("tree_cites", "[]"))
         self._tree = (frozenset(tree_cites), meta["tree_digest"]) if "tree_digest" in meta else None
+        self._working = meta.get("working_digest")
 
     def _apply(self, changed: set[str], extra: set[str], places: Mapping[str, tuple[str, int]],
                scanned_at_ns: int | None) -> None:
@@ -824,12 +846,13 @@ class ProjectIndex:
             tree_due = self._tree is None or "branches" in areas or bool(self._tree[0] & areas)
             # Projected outside the transaction: readers and the next commit never wait for it.
             tree = self._projector.project_tree() if tree_due else None
+            working = self._projector.project_working() if "working" in areas else None
             present = set(current)
             projected = {run_id: self._projector.project_run(run_id) if run_id in present else None
                          for run_id in sorted(dirty)}
         else:
-            tree, projected = None, {}
-        if not changed and not projected and tree is None and not moved_areas:
+            tree, projected, working = None, {}, None
+        if not changed and not projected and tree is None and working is None and not moved_areas:
             self._places = dict(places)
             if scanned_at_ns is not None:
                 self._racy = _racy(places, scanned_at_ns)
@@ -841,6 +864,8 @@ class ProjectIndex:
             logged: set[str] = set(moved_areas)
             if tree is not None and self._write_tree(connection, tree, revision, self._tree):
                 logged.add("tree")
+            if working is not None and self._write_working(connection, working, revision):
+                logged.add("working")
             for run_id, rows in projected.items():
                 if rows is None:
                     if run_id in self._runs:
@@ -897,6 +922,17 @@ class ProjectIndex:
                                (row.branch_id, position, row.stage_ref, row.candidate_id, revision, _text(row.body)))
         for key, value in (("tree_digest", digest), ("tree", texts[0]), ("tree_cites", _text(cites)),
                            ("tree_rev", str(revision))):
+            connection.execute("INSERT OR REPLACE INTO meta VALUES (?, ?)", (key, value))
+        return True
+
+    def _write_working(self, connection: sqlite3.Connection, working: Mapping[str, Any], revision: int) -> bool:
+        """Keep the working position when it moved; False when it reads as it did."""
+
+        text = _text(working)
+        digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
+        if digest == self._working:
+            return False
+        for key, value in (("working", text), ("working_digest", digest), ("working_rev", str(revision))):
             connection.execute("INSERT OR REPLACE INTO meta VALUES (?, ?)", (key, value))
         return True
 

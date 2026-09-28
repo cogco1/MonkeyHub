@@ -4,6 +4,7 @@ No operation is replayed by a watcher or by recovery. A lost HTTP response is
 reconciled against retained results; absence of proof remains visible.
 """
 
+from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from http.client import HTTPConnection, HTTPException
@@ -63,8 +64,12 @@ _DOCUMENT_RECORD_KINDS = (STUDIO_SOURCE_DOCUMENT, STUDIO_DOCUMENT_MODEL_SOURCE)
 # How often an unwoken watcher compares that key; a wake compares it at once.
 _WORK_COPY_CHECK_S = _IDLE_RETAINED_REFRESH_S
 # How long the Hub waits before it attaches to a worker's event stream again
-# after that stream ended or was refused.
-_WORKER_EVENTS_RETRY_S = 1.0
+# after that stream ended or was refused: doubled after each attachment that
+# carried nothing, up to the cap, and back to the first after one that did.
+_WORKER_EVENTS_RETRY_S = 0.5
+_WORKER_EVENTS_RETRY_MAX_S = 30.0
+# How many of each project's Studio events the Hub keeps to open a new page's panel with.
+_STUDIO_REPLAY = 200
 
 
 def project_key(path: str) -> str:
@@ -573,12 +578,18 @@ class _WorkerEvents:
 
     It forwards what a browser follows on ``/api/runtime/events``, so each Hub
     page holds one stream however many projects and surfaces it shows:
-    ``index.committed`` as an index hint, every other event as the Studio's own.
-    Each time it attaches - the first time, after the worker restarted, after
-    a ``stream.reset`` - it also sends a hint without a revision: whatever the
-    stream carried meanwhile may be lost, so clients read the index again. A
+    ``index.committed`` as an index hint, every other event as the Studio's own,
+    with the worker stream it was numbered on (``stream``): a restarted worker
+    numbers from 1 again, and only ``<stream>:<seq>`` tells its events apart
+    from the last one's. When the stream may have lost something - the first
+    attachment to this worker, or a ``stream.reset`` (the worker restarted, or
+    its buffer overflowed) - it also sends a hint without a revision, so
+    clients read the index again; a reattachment that resumes sends none. A
     hint is never the data and never required: clients also read on their own
-    stream's open and on focus.
+    stream's snapshot and on focus.
+
+    A stream that ends or is refused is attached again after a delay that
+    doubles while attachments carry nothing (up to ``_WORKER_EVENTS_RETRY_MAX_S``).
     """
 
     def __init__(self, manager: "ProjectRuntimeManager", runtime_id: str, url: str) -> None:
@@ -586,6 +597,8 @@ class _WorkerEvents:
         self._stopped = threading.Event()
         self._socket: socket.socket | None = None
         self._last_id = ""
+        self._attached = False
+        self._received = False
         self.thread = threading.Thread(target=self._run, daemon=True, name=f"hub-worker-events-{runtime_id[:8]}")
 
     def start(self) -> None:
@@ -606,11 +619,13 @@ class _WorkerEvents:
 
     def _run(self) -> None:
         address = urlsplit(self.url)
+        delay = _WORKER_EVENTS_RETRY_S
         while not self._stopped.is_set():
             connection = HTTPConnection(address.hostname, address.port, timeout=10)
+            self._received = False
             try:
                 connection.connect()
-                self._socket = connection.sock
+                self._socket = stream = connection.sock
                 if self._stopped.is_set():
                     return
                 connection.request("GET", "/api/events", headers={"Last-Event-ID": self._last_id,
@@ -618,15 +633,20 @@ class _WorkerEvents:
                 response = connection.getresponse()
                 if response.status == 200:
                     # A held stream is quiet between events; only stop() or the worker ends it.
-                    connection.sock.settimeout(None)
-                    self.manager.index_hint(self.runtime_id, None)
+                    # (A response that closes the connection has taken the socket from it.)
+                    stream.settimeout(None)
+                    if not self._attached:
+                        # This worker's history before now was never relayed: clients read the index again.
+                        self._attached = True
+                        self.manager.index_hint(self.runtime_id, None)
                     self._read(response)
             except (OSError, HTTPException, ValueError):
                 pass
             finally:
                 self._socket = None
                 connection.close()
-            self._stopped.wait(_WORKER_EVENTS_RETRY_S)
+            delay = _WORKER_EVENTS_RETRY_S if self._received else min(delay * 2, _WORKER_EVENTS_RETRY_MAX_S)
+            self._stopped.wait(delay)
 
     def _read(self, response) -> None:
         event, data, event_id = "", [], None
@@ -643,12 +663,13 @@ class _WorkerEvents:
                 event_id = text[3:].strip()
             elif text == "":
                 if data:
-                    self._dispatch(event, "\n".join(data))
+                    self._received = True
+                    self._dispatch(event, "\n".join(data), event_id)
                 if event_id is not None:
                     self._last_id = event_id
                 event, data, event_id = "", [], None
 
-    def _dispatch(self, event: str, data: str) -> None:
+    def _dispatch(self, event: str, data: str, event_id: str | None) -> None:
         try:
             body = json.loads(data)
         except ValueError:
@@ -661,8 +682,9 @@ class _WorkerEvents:
         elif event == "stream.reset":
             self.manager.index_hint(self.runtime_id, None)
         elif event:
-            self.manager.events.publish(event={"kind": "studio/event", "runtimeId": self.runtime_id,
-                                               "studio": body})
+            # ``<stream>:<seq>``: the worker process that numbered it.
+            stream = (event_id or "").rpartition(":")[0] or None
+            self.manager.studio_event(self.runtime_id, stream, body)
 
 
 class ProjectRuntimeManager:
@@ -677,6 +699,8 @@ class ProjectRuntimeManager:
         self._chat_changed = set()
         # One attachment per project to its worker's event stream (#366).
         self._worker_events: dict[str, _WorkerEvents] = {}
+        # Each project's latest Studio events, which open a new page's event panel (#366).
+        self._studio_replay: dict[str, deque] = {}
 
     def emit(self, kind: str, runtime_id: str | None = None):
         self.events.publish(event={"kind": kind, "runtimeId": runtime_id})
@@ -685,6 +709,20 @@ class ProjectRuntimeManager:
         """Tell attached clients that a project's index moved (``index``), or may have (None): read it again."""
 
         self.events.publish(event={"kind": "index/committed", "runtimeId": runtime_id, "index": index})
+
+    def studio_event(self, runtime_id: str, stream: str | None, event: dict) -> None:
+        """Relay one of a project worker's own events, numbered on its ``stream``, and keep it for replay."""
+
+        relayed = {"kind": "studio/event", "runtimeId": runtime_id, "stream": stream, "studio": event}
+        with self._lock:
+            self._studio_replay.setdefault(runtime_id, deque(maxlen=_STUDIO_REPLAY)).append(relayed)
+        self.events.publish(event=relayed)
+
+    def studio_replay(self) -> list[dict]:
+        """Every project's kept Studio events, oldest first per project."""
+
+        with self._lock:
+            return [event for kept in self._studio_replay.values() for event in kept]
 
     def _follow_worker(self, runtime: ProjectRuntime, workers) -> None:
         """Keep one attachment to the running worker's event stream, and none to any other."""
@@ -710,6 +748,8 @@ class ProjectRuntimeManager:
         with self._lock:
             ids = list(self._worker_events) if runtime_id is None else [runtime_id]
             followers = [self._worker_events.pop(key) for key in ids if key in self._worker_events]
+            for key in ids:
+                self._studio_replay.pop(key, None)
         for follower in followers:
             follower.stop()
 

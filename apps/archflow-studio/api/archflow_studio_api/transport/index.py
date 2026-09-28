@@ -30,17 +30,20 @@ class IndexRowsDto(BaseModel):
 
 
 class IndexEntityDto(BaseModel):
-    """One entity a client keeps of the index: a run, the tree, or another area of the project.
+    """One entity a client keeps of the index: a run, the tree, the working position, or another area.
 
-    ``id`` is ``run:<runId>``, ``tree`` or ``area:<name>``; ``domain`` is the
-    part before the colon; ``rev`` the revision that last changed it. Like a
+    ``id`` is ``run:<runId>``, ``tree``, ``working`` or ``area:<name>``;
+    ``domain`` is the part before the colon; ``rev`` the revision that last
+    changed it. ``working`` is the working position a head is read from
+    (``current``, ``runs``, ``active``) without the local recovery it may
+    name: saving that recovery moves ``area:working`` alone. Like a
     row, an entity is never evidence: its body names the records it was read from.
     """
 
     model_config = ConfigDict(frozen=True)
 
     id: str
-    domain: str = Field(description="run | tree | area")
+    domain: str = Field(description="run | tree | working | area")
     rev: int
     body: dict[str, Any]
 

@@ -4488,10 +4488,13 @@ export type IndexChangesDto = {
 /**
  * IndexEntityDto
  *
- * One entity a client keeps of the index: a run, the tree, or another area of the project.
+ * One entity a client keeps of the index: a run, the tree, the working position, or another area.
  *
- * ``id`` is ``run:<runId>``, ``tree`` or ``area:<name>``; ``domain`` is the
- * part before the colon; ``rev`` the revision that last changed it. Like a
+ * ``id`` is ``run:<runId>``, ``tree``, ``working`` or ``area:<name>``;
+ * ``domain`` is the part before the colon; ``rev`` the revision that last
+ * changed it. ``working`` is the working position a head is read from
+ * (``current``, ``runs``, ``active``) without the local recovery it may
+ * name: saving that recovery moves ``area:working`` alone. Like a
  * row, an entity is never evidence: its body names the records it was read from.
  */
 export type IndexEntityDto = {
@@ -4502,7 +4505,7 @@ export type IndexEntityDto = {
     /**
      * Domain
      *
-     * run | tree | area
+     * run | tree | working | area
      */
     domain: string;
     /**

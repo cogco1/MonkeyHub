@@ -188,6 +188,15 @@ class StudioProjector:
                 }))
         return TreeRows(body, tuple(stages), frozenset(cites))
 
+    def project_working(self) -> dict[str, Any] | None:
+        # The position every head reader reads (``resolve_working_source``, the Worktree Graph),
+        # without ``localDraftRef``: saving Modeling's local recovery moves nothing a head shows (#366).
+        try:
+            value, _ = self.binding.repository.read_working_draft()
+        except _UNREADABLE:
+            return {"working_unreadable": True}
+        return {key: value[key] for key in ("current", "runs", "active")}
+
 
 def attach_project_index(binding: ProjectBinding, directory: Path) -> IndexKeeper:
     """Give ``binding`` its project index in ``directory``, loaded and kept current in the background."""

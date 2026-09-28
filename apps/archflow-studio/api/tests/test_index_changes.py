@@ -111,6 +111,28 @@ class IndexChangesTests(DesignHistoryFixture):
         answer = self.indexed.get("/api/index", params={"since": current["revision"], "epoch": current["epoch"]}).json()
         self.assertTrue(answer["reset"], "older than the change log: a whole snapshot")
 
+    def test_saving_the_local_recovery_moves_no_working_position(self) -> None:
+        """Modeling's autosave rewrites the working pointer; the position a head is read from is its own entity."""
+        before = self.snapshot()
+        position = next(entity for entity in before["upserts"] if entity["id"] == "working")
+        self.assertEqual(set(position["body"]), {"current", "runs", "active"})
+        digest = self.indexed.get("/api/state").json()["stateDigest"]
+        draft = {"source": {"projectId": PROJECT_ID, "sourceRunId": REFERENCE_RUN_ID, "sourceStageRef": None,
+                            "stateDigest": digest},
+                 "commands": [{"kind": "translate", "offset": [1, 0, 0]}], "attempt": {"syncedCommands": [], "pending": None}}
+        revision = self.indexed.get("/api/working-draft").json()["revisionSha256"]
+        saved = self.indexed.put("/api/working-draft/local", json={"projectId": PROJECT_ID, "baseRevisionSha256": revision,
+                                                                   "draft": draft})
+        self.assertEqual(saved.status_code, 200, saved.text)
+        epoch, written = saved.headers["x-monkey-index"].split(":")
+
+        answer = self.indexed.get("/api/index", params={"since": before["revision"], "epoch": epoch}).json()
+        self.assertGreaterEqual(answer["to"], int(written))
+        moved = {entity["id"] for entity in answer["upserts"]}
+        self.assertIn("area:working", moved, "the pointer file moved")
+        self.assertNotIn("working", moved, "the position a head is read from did not")
+        self.assertNotIn("tree", moved)
+
     def test_each_commit_is_announced_on_the_event_stream(self) -> None:
         events = self.app_.state.events
         revision = int(self.write("plan.png").headers["x-monkey-index"].split(":")[1])
