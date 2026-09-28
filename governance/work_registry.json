@@ -1,28 +1,4 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": [
-    {
-      "id": "GH-429",
-      "lanes": [
-        {
-          "id": "projection-base",
-          "status": "active",
-          "branch": "codex/429-projection-base-project",
-          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-429-projection-base-project",
-          "base_ref": "3bf3c2b2",
-          "contributor": "Claude",
-          "reviewer": "Claude root task",
-          "handoff": "master session; CI job and its doc",
-          "modules": [
-            "studio.binding"
-          ],
-          "write_scope": [
-            ".github/workflows/verify.yml",
-            "docs/testing/projection-check.md"
-          ],
-          "depends_on": []
-        }
-      ]
-    }
-  ]
+  "items": []
 }
