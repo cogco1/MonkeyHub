@@ -114,6 +114,7 @@ const composerWords = {
     operationOpenChat: "打开对话", operationDismiss: "知道了",
     operationMore: (count: number) => `另有 ${count} 个`,
     targetViewing: (name: string) => `正在查看 ${name}，这条消息仍会修改当前`,
+    targetStale: (published: number, base: number) => `项目已发布 v${published}；这个方案基于 v${base}，不能直接在它上面继续修改。`,
   },
   en: {
     composerMenu: "Attachments and new topic", newTopic: "New topic",
@@ -123,6 +124,7 @@ const composerWords = {
     operationOpenChat: "Open chat", operationDismiss: "Dismiss",
     operationMore: (count: number) => `${count} more`,
     targetViewing: (name: string) => `Viewing ${name}; this message still changes Current`,
+    targetStale: (published: number, base: number) => `The project has published v${published}; this design is based on v${base} and cannot be edited further directly.`,
   },
 } as const;
 /**
@@ -636,7 +638,11 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
   const workspaceContext = projectRuntime ? designContexts[projectRuntime.runtimeId] : null;
   const designContext = workspaceContext?.projectId === project?.projectId ? workspaceContext?.designContext : null;
   // Saved or not, local model edits no candidate holds keep project state out of chat.
-  const contextUnavailable = workspaceContext?.unavailableReason === "unsaved" || workspaceContext?.unavailableReason === "unsynced"
+  // #450: a run on an older published version is only viewed; chat stays usable without editing it.
+  const staleBase = workspaceContext?.projectId === project?.projectId && workspaceContext?.unavailableReason === "readOnly"
+    ? workspaceContext.staleBase ?? null : null;
+  const contextUnavailable = staleBase ? w.targetStale(staleBase.publishedVersion, staleBase.baseVersion)
+    : workspaceContext?.unavailableReason === "unsaved" || workspaceContext?.unavailableReason === "unsynced"
     ? t.contextUnsaved : workspaceContext?.unavailableReason === "loading" ? t.contextLoading : t.contextOpenProject;
   // #302: unrecorded model edits are the refusal the workspace can clear in one click.
   const recordContext = workspaceContext?.projectId === project?.projectId && (workspaceContext?.unavailableReason === "unsaved" ||
@@ -645,7 +651,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
   // DC-9: what the next message changes. It always works on Current, the editing base the design
   // context names; the label adds where Current stands, and says so when another model is on screen.
   const position = projectRuntime && workspaceContext?.projectId === project?.projectId ? positions[projectRuntime.runtimeId] ?? null : null;
-  const target = [w.target, position?.current,
+  const target = staleBase ? w.targetStale(staleBase.publishedVersion, staleBase.baseVersion) : [w.target, position?.current,
     workspaceContext?.projectId === project?.projectId && (workspaceContext?.unavailableReason === "unsaved" || workspaceContext?.unavailableReason === "unsynced")
       ? w.targetUnrecorded : null].filter(Boolean).join(" · ");
   const running = chat?.id === chatId && chat.status === "running";
@@ -1766,7 +1772,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
           {draggingFiles && <p className="chat-attachment-drop" role="status">{t.dropFiles}</p>}
           {/* DC-9: what this message will change, and DC-5: a New topic chosen from the + menu, as one removable chip. */}
           <div className="chat-composer__context">
-            {project && <p className="chat-target" id="chat-target" data-viewing={Boolean(position?.viewing)}>
+            {project && <p className="chat-target" id="chat-target" data-viewing={Boolean(position?.viewing)} data-read-only={Boolean(staleBase)}>
               <span className="chat-target__text">{target}</span>
               {position?.viewing && <span className="chat-target__viewing">{w.targetViewing(position.viewing)}</span>}
             </p>}

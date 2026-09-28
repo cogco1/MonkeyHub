@@ -193,6 +193,7 @@ export const messagesEn = {
   "stage.base.modelUnavailable": "The selected editing record was read, but its model is unavailable. Retry loading it, or return to the default editing base.",
   "stage.base.retry": "Retry",
   "stage.base.viewOnly": "Viewing only. Choose “Continue from here”, or return to the editing base before making changes.",
+  "stage.base.staleBase": "The project has published v{published}; this design is based on v{base} and cannot be edited further directly. Choose “Return to default editing base” in the menu to continue from v{published}.",
   "stage.follow.moved": "Now following the current project model.",
   "stage.base.notSaved": "This editing choice could not be saved in this browser; it applies to this tab only.",
   "stage.base.programUnavailable": "Program-sheet editing still uses the default base. Return to it to edit the sheet.",

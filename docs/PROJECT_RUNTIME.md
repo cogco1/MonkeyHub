@@ -148,8 +148,16 @@ are unchanged. No new panel replaces the old panels.
 worker only when all of them match its own launch (`workers.py`, health verification), and
 then requires `GET /api/project` to name the exact `projectId` and a normcase-equal
 `projectDir`. A mismatch is `SERVICE_IDENTITY_MISMATCH` and the child is stopped; the start
-deadline is 30 s (`START_TIMEOUT`); a verified worker that stops answering becomes
-`unavailable`. `GET /api/protocol` (`protocol.py`) answers `archflow/<major>` and the
+deadline is 30 s (`START_TIMEOUT`); a verified worker that stops answering for 5 s becomes
+`unavailable`. The supervisor probes health every 0.1 s while a worker starts, every second
+while it is busy or has just missed a probe, and every 5 s while it is verified and idle
+(#435). An exit never waits for a probe: a thread blocked on the process records a crash at
+once and wakes the project observer, which reports it. The observer passes every second while
+anything is in motion (an operation or job, a worker between states, a closing runtime, an
+observed work copy) and every 5 s otherwise; a Hub mutation, a chat change or an attaching
+client ends its wait. A write by another program is read on the 30 s idle fallback, and only
+when the project's read token moved since the last read, including the one at open.
+`GET /api/protocol` (`protocol.py`) answers `archflow/<major>` and the
 capability list computed from the settings; the client refuses a foreign or mismatched server
 at handshake (PROTOCOL.md §1).
 

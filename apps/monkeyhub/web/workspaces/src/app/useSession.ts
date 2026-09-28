@@ -34,6 +34,35 @@ export interface Session {
   readonly workingDraft?: WorkingDraftDto | null;
   /** The exact model explicitly selected by a Stage/default-head action. */
   readonly stageModelSource?: ModelSourceDto | null;
+  /**
+   * Set when the run verifies but was based on an older published version: it
+   * is shown read-only, and no proposal or candidate starts from it (#450).
+   */
+  readonly staleBase?: StaleBase | null;
+}
+
+/** A verified run based on an older published version than the project's HEAD. */
+export interface StaleBase {
+  readonly publishedVersion: number;
+  readonly baseVersion: number;
+}
+
+/**
+ * Whether a restored run can be edited, only viewed, or not opened at all.
+ * A missing digest or a receipt mismatch is a broken run; a run whose state
+ * verifies but whose base is an older published version is a valid design
+ * that can still be inspected (#450).
+ */
+export function classifyEditingBase(projection: StateProjectionDto):
+  { readonly kind: "editable" } | { readonly kind: "staleBase"; readonly staleBase: StaleBase } | { readonly kind: "unavailable" } {
+  if (projection.stateDigest === null || projection.matchesReferenceReceipt !== true) return { kind: "unavailable" };
+  const { baseVersion, baseSha256 } = projection.referenceRun, published = projection.published;
+  if (!projection.sourceStageRef && (baseVersion !== published.version || baseSha256 !== published.stateSha256)) {
+    // Only an older published base is a design to look at; any other mismatch contradicts HEAD.
+    return baseVersion < published.version
+      ? { kind: "staleBase", staleBase: { publishedVersion: published.version, baseVersion } } : { kind: "unavailable" };
+  }
+  return { kind: "editable" };
 }
 
 interface SessionSnapshot {
@@ -161,17 +190,17 @@ export function createSessionController(studio: StudioClient, serverBaseUrl = ""
         throw new StudioApiError({ status: 0, code: "EDITING_PROJECT_CHANGED", detail:
           "The state response does not match the requested project, run and Stage. Retry to read the current binding." });
       }
-      if (runId !== null && (projection.stateDigest === null ||
-          projection.matchesReferenceReceipt !== true ||
-          (!projection.sourceStageRef && (projection.referenceRun.baseVersion !== projection.published.version ||
-            projection.referenceRun.baseSha256 !== projection.published.stateSha256)))) {
+      const base = runId === null ? { kind: "editable" as const } : classifyEditingBase(projection);
+      if (base.kind === "unavailable") {
         throw new StudioApiError({ status: 0, code: "EDITING_BASE_UNAVAILABLE", detail:
           `Run ${runId} cannot currently be restored as an editing base. Its verified state must match its receipt and current published base. ` + projection.honesty.join(" ") });
       }
+      const staleBase = base.kind === "staleBase" ? base.staleBase : null;
       // Only an explicit choice moves the saved position: finishing a generated
       // candidate never does (GH-234 Q2). A quiet background adoption of the
       // architect's own Sync selects it here unless the position already names it.
-      if (workingDraft && persistEditingBase && persist &&
+      // Viewing a run on an older published version never moves it (#450).
+      if (!staleBase && workingDraft && persistEditingBase && persist &&
         ((requestedRunId !== undefined && (!background || workingDraft.current?.runId !== runId)) ||
           (workingDraft.revisionSha256 == null && legacyChoice !== null))) {
         workingDraft = await studio.selectWorkingDraft({ projectId: project.projectId,
@@ -179,11 +208,11 @@ export function createSessionController(studio: StudioClient, serverBaseUrl = ""
           baseRevisionSha256: workingDraft.revisionSha256 ?? null });
         if (currentRequest !== request) return null;
       }
-      const next = { project, projection, sourceRunId: runId, workingCopies, designHistory, stageModelSource, workingDraft };
+      const next = { project, projection, sourceRunId: runId, workingCopies, designHistory, stageModelSource, workingDraft, staleBase };
       // Reading a model or refreshing a session never records consent. Only the
       // explicit continuation/default action reaches the existing preference writer.
       let persistenceFailed = snapshot.persistenceFailed;
-      if (!workingDraft && requestedRunId !== undefined && persistEditingBase && persist) {
+      if (!staleBase && !workingDraft && requestedRunId !== undefined && persistEditingBase && persist) {
         try {
           persistenceFailed = !editingBasePreferences.writeChoice(serverBaseUrl, project.projectId, runId === null ? null : {
             runId, sourceStageRef: stageRef ?? null, branchId: designHistory?.branchId ?? null,

@@ -126,6 +126,32 @@ class HubTraceTests(unittest.TestCase):
         for private in ("private-response", "private-prompt", "private-command-title"):
             self.assertNotIn(private, exported)
 
+    def test_partial_message_usage_counts_the_final_output_once(self):
+        """#404 F16: with --include-partial-messages the first assistant event holds message_start's usage."""
+
+        trace = HubTurnObserver(self.store, "turn", "project", "claude", None)
+        trace.ready()
+        started = {"input_tokens": 12, "cache_read_input_tokens": 900, "cache_creation_input_tokens": 40,
+                   "output_tokens": 2}
+        trace.claude_stream({"type": "message_start", "message": {"id": "msg-1", "model": "exact-model", "usage": started}})
+        trace.claude_stream({"type": "content_block_start", "index": 0})
+        # The CLI's assistant event for the finished block repeats the start's usage.
+        trace.claude_usage({"id": "msg-1", "model": "exact-model", "content": [], "usage": started})
+        trace.tool("call-1", "studio_request", {"method": "GET", "path": "/api/state"}, running=True)
+        self.assertEqual([row for row in self.rows() if row.model_call], [], "not counted before the message ends")
+        trace.claude_stream({"type": "message_delta", "usage": {"output_tokens": 431}})
+        trace.claude_stream({"type": "message_stop"})
+        trace.claude_usage({"id": "msg-1", "model": "exact-model", "content": [], "usage": started})
+        # A second message whose stream never finished is still counted at the end.
+        trace.claude_usage({"id": "msg-2", "usage": {**started, "output_tokens": 7}})
+        trace.finish("succeeded")
+        calls = {row.event_id.rsplit(":", 1)[-1]: row for row in self.rows() if row.model_call}
+        self.assertEqual(set(calls), {"msg-1", "msg-2"})
+        self.assertEqual(calls["msg-1"].tokens.output_tokens, 431)
+        self.assertEqual(calls["msg-1"].tokens.input_tokens, 952)
+        self.assertEqual(calls["msg-1"].model, "exact-model")
+        self.assertEqual(calls["msg-2"].tokens.output_tokens, 7)
+
     def test_cli_usage_carries_its_plan_and_the_shipped_catalog_prices_a_standard_call(self):
         standard = {"input_tokens": 500, "cache_read_input_tokens": 400, "cache_creation_input_tokens": 100,
                     "cache_creation": {"ephemeral_1h_input_tokens": 0}, "output_tokens": 200,
