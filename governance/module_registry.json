@@ -1025,7 +1025,8 @@
         "the lineage / round / proposal / deferral / escalation records and their persistence through the repository",
         "reloading one exact compiled program from its retained record",
         "the planar_surface function contract: one explicit POINTS3 boundary, optional datum-relative base_offset and no input objects",
-        "the retained CURVE function contract accepts optional datum-relative base_offset beside points and basis; the existing polyline representation serves drawn curves"
+        "the retained CURVE function contract accepts optional datum-relative base_offset beside points and basis; the existing polyline representation serves drawn curves",
+        "the extrusion and loft function contracts' optional retain_for_inspection, and the loft's optional hidden_for_inspection"
       ],
       "does_not_own": [
         "compiling the proposal into objects and digests - compilers.geometry",
@@ -1106,7 +1107,9 @@
         "a round is capped by policy; exhausting the cap deposits a deferral or escalation record, not a result",
         "every round is retained before the next one is authored",
         "the function contract checks parameters by kind and statements by shape; an operation that declares nothing decodes and re-encodes to the same bytes it always did",
-        "datum-seated lofts accept an optional base_offset in metres, matching the existing extrusion and revolve seat-height contract"
+        "datum-seated lofts accept an optional base_offset in metres, matching the existing extrusion and revolve seat-height contract",
+        "the authoring contract states relations and results, not operation idioms: a host_cut member may be any region derived from its host or consumed together with it",
+        "an operation may state no semantic binding when all of its outputs are construction"
       ],
       "status": "canonical",
       "tests": [
