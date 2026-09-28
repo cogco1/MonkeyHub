@@ -1,4 +1,41 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": []
+  "items": [
+    {
+      "id": "GH-402",
+      "lanes": [
+        {
+          "id": "no-fabricated-spatial",
+          "status": "active",
+          "branch": "codex/402-no-fabricated-spatial",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-402-no-fabricated-spatial",
+          "base_ref": "1bea11da",
+          "contributor": "Claude",
+          "reviewer": "Claude root task",
+          "handoff": "cloud session; master integrates",
+          "modules": [
+            "state.record",
+            "studio.binding",
+            "studio.intent"
+          ],
+          "write_scope": [
+            "archflow/state/",
+            "monkeyarch/",
+            "apps/archflow-studio/api/archflow_studio_api/application/",
+            "apps/archflow-studio/api/tests/",
+            "tests/",
+            "governance/module_registry.json",
+            "docs/SYSTEM_MAP.md",
+            "archflow/project/issue.py",
+            "archflow/project/version_ref_owners.py",
+            "apps/archflow-studio/api/archflow_studio_api/routes/program.py",
+            "apps/archflow-studio/api/archflow_studio_api/adapters/harness.py",
+            "tools/verify_state_record.py",
+            "tools/open_stage_run.py"
+          ],
+          "depends_on": []
+        }
+      ]
+    }
+  ]
 }
