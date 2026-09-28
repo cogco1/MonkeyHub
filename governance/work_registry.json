@@ -1,4 +1,31 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": []
+  "items": [
+    {
+      "id": "GH-414",
+      "lanes": [
+        {
+          "id": "runtime-start",
+          "status": "active",
+          "branch": "codex/414-agent-runtime-start",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-414-agent-runtime-start",
+          "base_ref": "c7fb13a9",
+          "contributor": "Claude",
+          "reviewer": "Claude root task",
+          "handoff": "cloud session; master integrates",
+          "modules": [
+            "hub.shell"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/api/monkeyhub_api/chat.py",
+            "apps/monkeyhub/api/tests/test_chat.py",
+            "apps/monkeyhub/api/tests/test_acp_chat.py",
+            "apps/monkeyhub/api/tests/test_acp_session.py",
+            "apps/monkeyhub/README.md"
+          ],
+          "depends_on": []
+        }
+      ]
+    }
+  ]
 }
