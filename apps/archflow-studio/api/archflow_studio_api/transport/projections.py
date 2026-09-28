@@ -22,10 +22,11 @@ class ProjectionStatusDto(BaseModel):
     renderer: str
     input_sha256: str = Field(alias="inputSha256")
     source: ModelSourceDto | None = Field(default=None, description=(
-        "The requester's own source, checked for this request; absent when the key alone was asked for."))
+        "The requester's own model source, checked for this request; absent when the key alone was asked for "
+        "and for a projection drawn on demand."))
     blob_sha256: str | None = Field(alias="blobSha256", default=None)
     blob_url: str | None = Field(alias="blobUrl", default=None,
-                                 description="Immutable PNG bytes; present only when status is done.")
+                                 description="Immutable PNG bytes; present only when status is done and the blob is a PNG.")
     attempts: int = Field(ge=0)
     error: str | None = None
     load_ms: int | None = Field(alias="loadMs", default=None)
@@ -41,6 +42,6 @@ def projection_status_dto(row: ProjectionStatus, source: ModelSource | None) -> 
         source=None if source is None else ModelSourceDto(
             run_id=source.run_id, state_digest=source.state_digest, asset_sha256=source.asset_sha256),
         blob_sha256=row.blob_sha256 if done else None,
-        blob_url=f"/api/projections/blobs/{row.blob_sha256}" if done else None,
+        blob_url=f"/api/projections/blobs/{row.blob_sha256}" if done and row.png else None,
         attempts=row.attempts, error=row.error, load_ms=row.load_ms, render_ms=row.render_ms,
     )
