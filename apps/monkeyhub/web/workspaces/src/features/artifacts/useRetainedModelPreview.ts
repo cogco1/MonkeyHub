@@ -3,23 +3,10 @@ import { useStudio } from "../../api/ProjectRuntimeContext";
 import type { StudioClient } from "../../api/client";
 import type { ModelSourceDto } from "../../api/generated";
 
+/** A viewport screenshot of this model was retained (the chat's study previews follow it); the Design Tree does not. */
 export const MODEL_PREVIEW_RETAINED = "monkeyhub:model-preview-retained";
 export const previewSourceKey = (source: ModelSourceDto | null | undefined) => source
   ? JSON.stringify([source.runId, source.stateDigest, source.assetSha256]) : "";
-
-/**
- * The retained preview image of exactly this model, or null when none was retained.
- * The one place a preview is fetched: the inspector's thumbnail and the Design Tree's
- * close cards both read it here, so a content-keyed thumbnail service (#367) replaces
- * only this function. `id` names the image's content.
- */
-export async function readModelPreview(studio: Pick<StudioClient, "modelPreview" | "documentFile">,
-  source: ModelSourceDto): Promise<{ id: string; file: File } | null> {
-  const document = await studio.modelPreview(source);
-  if (!document || previewSourceKey(document.modelSource) !== previewSourceKey(source)) return null;
-  const file = await studio.documentFile(document.runId, document.assetSha256, document.fileName, document.revisionRef);
-  return { id: document.assetSha256, file };
-}
 
 /** Only pixels captured while this exact, unchanged model is still on screen. */
 export async function retainModelPreview(studio: Pick<StudioClient, "modelPreview" | "capture">,
@@ -40,7 +27,11 @@ const retainedOf = (studio: object) => {
   return keys;
 };
 
-/** Runs after the viewport is ready, never on the candidate execution chain. */
+/**
+ * Retains a viewport screenshot of the loaded model as a P036 document (#326), for the Board and other uses.
+ * Runs after the viewport is ready, never on the candidate execution chain. The Design Tree and the thumbnails
+ * show the projection cache's drawings instead (`modelThumbnails`, #367): nothing is looked up here for them.
+ */
 export function useRetainedModelPreview(source: ModelSourceDto | null, ready: boolean,
   capture: () => Promise<Blob | null>, current: () => ModelSourceDto | null) {
   const studio = useStudio();
