@@ -1665,11 +1665,17 @@ def _mentions(value: Any, names: Mapping[str, str]) -> set[str]:
 
 
 def production_order(rows: tuple[ElementRow, ...]) -> tuple[ElementRow, ...]:
-    """Supports before supported: an element that names another (or its published top) comes after it; ties keep the given order."""
+    """Supports before supported: an element that names another (or its published top) comes after it; ties keep the given order.
+
+    ``references.voids`` is no ordering dependency (#419): a host names its voids only as objects its difference
+    consumes, so a void may stand on the top of the host it is cut into (a recess read from that top) and is
+    produced after it; the operation graph orders the consumption. A true support cycle is still refused.
+    """
 
     names = {r.element_id: r.element_id for r in rows}
     names.update({f"{r.element_id}-top": r.element_id for r in rows})
-    deps = {r.element_id: _mentions(r.references, names) - {r.element_id} for r in rows}
+    deps = {r.element_id: _mentions({key: value for key, value in r.references.items() if key != "voids"}, names)
+            - {r.element_id} for r in rows}
     for r in rows:
         for opening in r.params.get("openings", ()) if isinstance(r.params.get("openings"), (list, tuple)) else ():
             deps[r.element_id] |= _mentions(opening.get("at"), names) - {r.element_id} if isinstance(opening, Mapping) else set()
