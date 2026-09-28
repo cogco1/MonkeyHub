@@ -25,7 +25,7 @@ include = ["archflow*", "monkeyarch*", "monkeydiagram*", "monkeymonitor*", "monk
 exclude = ["tests*", "governance*", "docs*", "tools*"]
 
 [tool.setuptools.package-data]
-monkeymonitor = ["web/*", "rates.json"]
+monkeymonitor = ["rates.json"]
 monkeycontrol = ["hosts/*.ps1", "demos/*.json"]
 "monkeydiagram.documentation" = ["*.json"]
 "apps.shared-web.src" = ["appearance.js", "i18n.js", "browserTranslator.js", "base.css"]

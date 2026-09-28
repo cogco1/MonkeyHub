@@ -1,8 +1,8 @@
 # MonkeyHub desktop host
 
-This Windows Tauri 2 host opens the existing MonkeyHub/Studio UI. It starts one
-Hub root through `apps/monkeyhub/run.py`; Hub continues to own Studio, Monitor,
-agent sessions and accepted operations. The shell never reads or writes project
+This Windows Tauri 2 host opens the existing MonkeyHub UI. It starts one
+Hub root through `apps/monkeyhub/run.py`; Hub continues to own project runtimes,
+Monitor, agent sessions and accepted operations. The shell never reads or writes project
 state. P036 remains the project persistence authority.
 
 ## Build and package
@@ -17,7 +17,8 @@ cargo build --locked --release
 
 `target/release/MonkeyHub.exe` is the native host. It is **not a standalone
 application bundle**. `tools/package_monkeyapps.py` owns the distribution tree,
-Python dependencies, existing Hub/Studio frontend builds and package validation.
+Python dependencies, the MonkeyHub frontend build (`apps/monkeyhub/web/dist/`) and
+package validation.
 The package places this EXE at its root alongside `source-version.txt`,
 `apps/monkeyhub/run.py` and `_runtime/python/python.exe`. It supplies
 `ARCHFLOW_SOURCE_REVISION` when building from an exact source archive. Checkout
@@ -46,7 +47,8 @@ with preparation and `send` dependencies. No external Fab repository or version
 argument is needed. For source mode, install `apps/monkeyfab[send]` into the
 `--python` environment from the repository root.
 
-For explicit source development (both frontend `dist` directories must exist):
+For explicit source development (the MonkeyHub frontend build
+`apps/monkeyhub/web/dist/index.html` must exist):
 
 ```powershell
 & ./target/release/MonkeyHub.exe `
