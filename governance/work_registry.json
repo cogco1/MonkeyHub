@@ -89,7 +89,9 @@
             "apps/archflow-studio/api/archflow_studio_api/routes/project.py",
             "apps/archflow-studio/api/archflow_studio_api/application/intent_requests.py",
             "apps/archflow-studio/api/archflow_studio_api/application/gestures.py",
-            "apps/archflow-studio/api/archflow_studio_api/application/proposals.py"
+            "apps/archflow-studio/api/archflow_studio_api/application/proposals.py",
+            "docs/WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.md",
+            "docs/ARCHITECTURE.md"
           ],
           "depends_on": []
         }
