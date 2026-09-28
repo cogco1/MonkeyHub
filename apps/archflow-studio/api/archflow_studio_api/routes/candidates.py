@@ -282,12 +282,13 @@ def compare_candidate(
 
     state = request.app.state
     binding = bound_project(state)
-    why: str | None = None
+    why: tuple[str, ...] | None = None
     why_source = "unavailable"
     try:
         job: Job = state.jobs.for_candidate(candidate_id)
-        # Every step of a continued proposal, not only its last (#404 F17).
-        why = "; ".join(sentences_of(state.proposals.get(job.proposal_id)))
+        # Every step of a continued proposal, not only its last (#404 F17);
+        # compare_runs bounds a long chain (item 13).
+        why = sentences_of(state.proposals.get(job.proposal_id))
         why_source = "proposal"
     except StudioError:
         # Not this process's candidate, or its proposal is gone: the
