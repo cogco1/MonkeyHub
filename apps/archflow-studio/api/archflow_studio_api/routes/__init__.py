@@ -15,6 +15,7 @@ from . import (
     episodes,
     events,
     health,
+    index,
     intents,
     options,
     pick,
@@ -41,6 +42,7 @@ router.include_router(settings.router)
 router.include_router(projects.router)
 router.include_router(project.router)
 router.include_router(runtime.router)
+router.include_router(index.router)
 router.include_router(state.router)
 router.include_router(program.router)
 router.include_router(artifacts.router)

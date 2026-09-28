@@ -26,6 +26,7 @@ for directory in (ROOT, ROOT / "apps/archflow-studio/api", ROOT / "apps/monkeyhu
         sys.path.insert(0, str(directory))
 
 from archflow_studio_api.transport.settings import ApplicationSettingsDto
+from archflow_studio_api.application.projections import projection_queue
 from archflow_studio_api.settings import StudioSettings
 from archflow_studio_api.render_adapters.gemini import adapter_from_settings
 from monkeyhub_api.applications import Applications
@@ -95,7 +96,12 @@ class StudioChildEnvironmentTests(unittest.TestCase):
         self.assertEqual(Path(launch.environment["ARCHFLOW_STUDIO_CACHE_DIR"]), expected)
         self.assertFalse(expected.is_relative_to(self.project.resolve()))
         with patch.dict(os.environ, launch.environment, clear=True):
-            self.assertEqual(StudioSettings.from_env().project_cache_dir, expected)
+            child = StudioSettings.from_env()
+        self.assertEqual(child.project_cache_dir, expected)
+        # One cache directory: the index and the projection cache are its subdirectories.
+        self.assertNotIn("ARCHFLOW_STUDIO_INDEX_DIR", launch.environment)
+        self.assertEqual(child.project_index_dir, expected / "index")
+        self.assertEqual(projection_queue(child).cache_root, expected / "projections")
 
     def test_saved_preferences_and_settings_reach_the_child(self):
         self.save_preferences(intentProvider="codex", intentModel="gpt-5", intentTimeoutS=45.5)
