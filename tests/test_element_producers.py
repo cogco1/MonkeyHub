@@ -24,6 +24,7 @@ from monkeyarch.capabilities.element_producers import (
     production_order,
     producer_signatures,
     validate_element_contract,
+    with_void_hosts,
 )
 from monkeyarch.capabilities.geometry_proposal import GeometryProposalStatus
 from monkeyarch.capabilities.reference_resolver import ReferenceContext
@@ -1259,6 +1260,101 @@ class StatedRowsThroughTheProposalTests(ProducerFixture):
 
         self.assertEqual([issue.code for issue in issues], ["malformed_model_output"])
         self.assertIn("wedge_axis", issues[0].detail)
+
+
+def _prism_row(element_id: str, profile, height: float, *, voids=None, elevation=None, base=None) -> ElementRow:
+    references = {"base": base or {"level": PN}}
+    if voids is not None:
+        references["voids"] = list(voids)
+    params = {"profile": profile, "height": height}
+    if elevation is not None:
+        params["elevation"] = elevation
+    return ElementRow(element_id, "building", "prism", references, params, BASIS)
+
+
+BLOCK = [[0, 0], [4, 0], [4, 0.3], [0, 0.3]]
+NICHE = [[1, -0.1], [2, -0.1], [2, 0.2], [1, 0.2]]
+
+
+class VoidRelationTests(unittest.TestCase):
+    """#419: an element removes its solid from a host because the host names it; nothing is classified."""
+
+    def _produce_all(self, *rows):
+        produced, _ = _produce(production_order(with_void_hosts(tuple(rows))))
+        return {element.operations[0].op_id.removesuffix("-body"): element for element in produced}
+
+    def test_a_host_keeps_its_id_and_the_void_stays_hidden_under_its_own(self) -> None:
+        produced = self._produce_all(_prism_row("block-7", BLOCK, 3.0, voids=["block-9"]),
+                                     _prism_row("block-9", NICHE, 1.2, elevation=1.0))
+        host, void = produced["block-7"], produced["block-9"]
+        body, cut = host.operations
+        self.assertEqual((body.op_id, body.output_object_ids), ("block-7-body", ("obj-block-7-body",)))
+        self.assertEqual((cut.op_id, cut.kind, cut.output_object_ids), ("block-7", GeometryOperationKind.BOOLEAN_DIFFERENCE, ("obj-block-7",)))
+        self.assertEqual(cut.input_object_ids, ("obj-block-7-body", "obj-block-9"))
+        self.assertEqual([binding.op_id for binding in host.bindings], ["block-7-body"])
+        self.assertEqual([datum.datum_id for datum in host.datums], ["block-7-top"])
+        (hidden,) = void.operations
+        self.assertEqual(hidden.output_object_ids, ("obj-block-9",))
+        self.assertEqual({k: v for k, v in _op_params(hidden).items() if k.endswith("_for_inspection")},
+                         {"hidden_for_inspection": True, "retain_for_inspection": True})
+        self.assertEqual((void.datums, void.relations), ((), ()))
+
+    def test_removing_the_relation_restores_the_same_ids(self) -> None:
+        produced = self._produce_all(_prism_row("block-7", BLOCK, 3.0), _prism_row("block-9", NICHE, 1.2, elevation=1.0))
+        (host,), (void,) = produced["block-7"].operations, produced["block-9"].operations
+        self.assertEqual((host.op_id, host.output_object_ids), ("block-7", ("obj-block-7",)))
+        self.assertEqual(void.output_object_ids, ("obj-block-9",))
+        self.assertNotIn("retain_for_inspection", _op_params(void))
+        self.assertEqual([datum.datum_id for datum in produced["block-9"].datums], ["block-9-top"])
+
+    def test_one_void_may_cut_two_hosts(self) -> None:
+        produced = self._produce_all(_prism_row("block-7", BLOCK, 3.0, voids=["corner"]),
+                                     _prism_row("block-8", [[3.7, 0], [4, 0], [4, 4], [3.7, 4]], 3.0, voids=["corner"]),
+                                     _prism_row("corner", [[3.5, -0.1], [4.1, -0.1], [4.1, 0.5], [3.5, 0.5]], 1.0, elevation=1.0))
+        for host in ("block-7", "block-8"):
+            self.assertIn("obj-corner", produced[host].operations[1].input_object_ids)
+        self.assertEqual(len(produced["corner"].operations), 1)
+
+    def test_standing_on_a_void_is_refused_by_name(self) -> None:
+        rows = (_prism_row("block-7", BLOCK, 3.0, voids=["block-9"]), _prism_row("block-9", NICHE, 1.2),
+                _prism_row("shelf", NICHE, 0.1, base={"datum": "block-9-top"}))
+        with self.assertRaisesRegex(ElementProducerError, "shelf: stands on the top of block-9, which is a void of block-7"):
+            with_void_hosts(rows)
+
+    def test_what_cannot_be_a_void_or_a_host_is_refused_by_name(self) -> None:
+        surface = ElementRow("face", "building", "planar-surface", {"base": {"level": PN}, "voids": ["block-9"]},
+                             {"profile": [[0, 0], [1, 0], [1, 1], [0, 0]]}, BASIS)
+        cases = {
+            "names 'ghost', which is not an element": (_prism_row("block-7", BLOCK, 3.0, voids=["ghost"]),),
+            "an element cannot void itself": (_prism_row("block-7", BLOCK, 3.0, voids=["block-7"]),),
+            "names block-9 twice": (_prism_row("block-7", BLOCK, 3.0, voids=["block-9", "block-9"]), _prism_row("block-9", NICHE, 1.2)),
+            "only a prism or a capped loft can host voids": (surface, _prism_row("block-9", NICHE, 1.2)),
+            "block-9 has voids of its own": (_prism_row("block-7", BLOCK, 3.0, voids=["block-9"]),
+                                             _prism_row("block-9", NICHE, 1.2, voids=["block-10"]), _prism_row("block-10", NICHE, 0.5)),
+        }
+        for message, rows in cases.items():
+            with self.subTest(message=message), self.assertRaisesRegex(ElementProducerError, message):
+                with_void_hosts(rows)
+
+    def test_a_capped_loft_can_host_and_act_as_a_void(self) -> None:
+        square = lambda y, s: [[0, y, 0], [s, y, 0], [s, y, s], [0, y, s]]
+        loft = ElementRow("vault", "building", "loft", {"base": {"level": PN}, "voids": ["plug"]},
+                          {"profiles": [square(0.0, 4.0), square(3.0, 4.0)], "profile_size": 4}, BASIS)
+        plug = ElementRow("plug", "building", "loft", {"base": {"level": PN}},
+                          {"profiles": [square(1.0, 1.0), square(2.0, 1.0)], "profile_size": 4}, BASIS)
+        produced = self._produce_all(loft, plug)
+        body, cut = produced["vault"].operations
+        self.assertEqual((body.op_id, cut.op_id, cut.output_object_ids), ("vault-body", "vault", ("obj-vault",)))
+        (hidden,) = produced["plug"].operations
+        self.assertTrue(_op_params(hidden)["retain_for_inspection"])
+        self.assertEqual(produced["plug"].relations, ())
+
+    def test_the_signatures_offer_voids_where_they_are_realized(self) -> None:
+        signatures = producer_signatures()
+        for producer in ("prism", "loft"):
+            self.assertIn("voids", signatures[producer]["references"]["properties"], producer)
+        for producer in ("planar-surface", "curve"):
+            self.assertNotIn("voids", signatures[producer]["references"]["properties"], producer)
 
 
 if __name__ == "__main__":

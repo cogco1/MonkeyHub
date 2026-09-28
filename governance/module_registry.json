@@ -936,7 +936,8 @@
         "editing drawn prism and planar-surface rows through their existing parameters: signed push/pull, translation, rotation, scale and copy; planar-surface compress_above fixes world +Y points at or below a threshold, scales the rest and inserts crossing-edge intersections, refusing nonplanar results and inherited or direct parameter bindings; loft section controls support translation, rotation, copy and scale while retaining type, identity and datum binding; normal lofts refuse nonuniform scaling because refitting is not an equivalent transform, and loft push/pull is unsupported; dependent and parameter-bound changes retain the existing intent guards",
         "one datum-bound polyline curve producer for authored lines, sampled freehand and segmented arcs; no face, thickness, top datum or support relation is inferred",
         "straight-wall authoring accepts explicit project-local point references through the existing resolver and retains @parameter binding and hosted opening relations",
-        "Absolute numeric prism/face base references and read-only placement of drawn elements through their existing datum dependencies; free placement publishes its own fixed base instead of binding an editable Level."
+        "Absolute numeric prism/face base references and read-only placement of drawn elements through their existing datum dependencies; free placement publishes its own fixed base instead of binding an editable Level.",
+        "the voids relation: with_void_hosts annotates every ElementRow with the hosts naming it (voided_by); a void keeps obj-<id>, retained hidden, with no top datum or support relation; a host emits <id>-body and the difference that keeps obj-<id>"
       ],
       "does_not_own": [
         "turning a reference into a plan coordinate or an elevation datum - capabilities.reference_resolver",
@@ -971,7 +972,8 @@
         "producer_signatures",
         "validate_element_contract",
         "edit_drawn_element",
-        "drawn_element_placement"
+        "drawn_element_placement",
+        "with_void_hosts"
       ],
       "depends_on": [
         "monkeyarch.capabilities.opening_solver",
@@ -1005,7 +1007,9 @@
         "an unfilled semicircular wall opening passes its explicit shape and spring height to wall_solver and creates no frame or leaf",
         "rectangular_cutouts require an ordered axis-aligned rectangular prism profile; untouched panels retain their original operation id, and a cut panel publishes no whole-prism top datum",
         "a planar-surface produces no top datum or support relation; its single outer boundary must be simple and explicitly closed; holes, thickness and extra fields are refused",
-        "a prism elevation defaults to zero for retained inputs; without a top reference elevation moves the whole extrusion while height leaves its bottom fixed; with a top reference both declared height and derived height account for elevation"
+        "a prism elevation defaults to zero for retained inputs; without a top reference elevation moves the whole extrusion while height leaves its bottom fixed; with a top reference both declared height and derived height account for elevation",
+        "an element acts as a void only because a host names it in references.voids; nothing on the element states it and no classification is required",
+        "a host's delivered object is obj-<id> with or without voids"
       ],
       "status": "canonical",
       "tests": [
