@@ -32,7 +32,9 @@
         "apps/archflow-studio/api/archflow_studio_api/routes/proposals.py",
         "apps/archflow-studio/api/tests/test_sketch.py",
         "docs/PROTOCOL.md",
-        "docs/WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.md"
+        "docs/WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.md",
+        "governance/module_registry.json",
+        "docs/SYSTEM_MAP.md"
       ],
       "depends_on": []
     }
