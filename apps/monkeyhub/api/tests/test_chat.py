@@ -1816,8 +1816,10 @@ class ChatTests(unittest.TestCase):
                        "GET /api/state?run=<candidateId>", "original baseStateDigest",
                        "Multiple observation and revision cycles",
                        # #404 F4: authored params/references are opt-in, and an
-                       # edit that sends them replaces them whole.
-                       "GET /api/state?authored=true"):
+                       # edit that sends them replaces them whole; what it omits,
+                       # dependencies included, is retained (what an agent sends).
+                       "GET /api/state?authored=true", "fields/dependencies are retained",
+                       "components/elements"):
             self.assertIn(stated, description, stated)
         for restriction in ("Never generate an intermediate", "READ ONCE", "do not read the index",
                             "yield_time_ms", "functions.wait"):
