@@ -870,6 +870,46 @@ class BoundElementTests(unittest.TestCase):
         self.assertEqual(state.status_code, 200, state.text)
         return client, state.json()
 
+    def test_every_advertised_producer_states_its_vertical_extent(self) -> None:
+        # #404 F14: wall and loft rows had no elevation at all, so an agent could
+        # not read where they stand. verticalExtent is read-only and stated for every
+        # advertised producer; elevation stays the drawn prism/face controls.
+        payload = json.loads(json.dumps(RECORD_PAYLOAD))
+
+        def element(entity_id, producer, references, params):
+            return {"entity_id": entity_id, "schema": "Element@1", "parent_id": "portico",
+                    "fields": {"component_id": "portico", "producer": producer,
+                               "references": references, "params": params}}
+
+        ground = {"base": {"level": "level-ground"}}
+        payload["entities"] += [
+            element("portico-wall", "wall", {**ground, "line": {"from": {"point": [0, 0]}, "to": {"point": [4, 0]}}},
+                    {"thickness": 0.2, "height": 3.0}),
+            element("portico-drum", "loft", ground,
+                    {"profile_size": 4, "profiles": [[[0, 1, 0], [1, 1, 0], [1, 1, 1], [0, 1, 1]],
+                                                     [[0, 2.5, 0], [1, 2.5, 0], [1, 2.5, 1], [0, 2.5, 1]]]}),
+            element("portico-path", "curve", ground, {"profile": [[0, 0], [3, 0]], "elevation": 1.2}),
+            element("portico-plate", "prism", ground,
+                    {"profile": [[0, 0], [2, 0], [2, 1], [0, 1]], "height": 0.1,
+                     "work_plane": {"origin": [0, 0, 5], "xAxis": [1, 0, 0], "yAxis": [0, 1, 0], "normal": [0, 0, 1]}}),
+        ]
+        client, state = self._project(payload)
+        extents = {item["elementId"]: item["verticalExtent"] for item in state["elements"]}
+        self.assertEqual(extents, {
+            "portico-base": {"base": 0, "top": 0.6},
+            "portico-cornice": {"base": 0.6, "top": 0.9},
+            "portico-wall": {"base": 0, "top": 3},
+            "portico-drum": {"base": 1, "top": 2.5},
+            "portico-path": {"base": 1.2, "top": 1.2},
+            "portico-plate": {"base": 0, "top": 1},
+        })
+        elevation = {item["elementId"]: item["elevation"] for item in state["elements"]}
+        self.assertIsNone(elevation["portico-wall"], "the elevation controls stay the drawn prism's")
+        self.assertIsNone(elevation["portico-plate"], "a tilted plate has no horizontal elevation controls")
+        with patch("monkeyarch.capabilities.element_producers.produce_rows",
+                   side_effect=AssertionError("state reads must not produce geometry")):
+            self.assertEqual(client.get("/api/state").json(), state)
+
     def test_rows_carry_the_params_and_references_a_semantic_edit_replaces(self) -> None:
         # #404 F4: numericFields and drawnShape are resolved values. An agent that
         # copied them into semanticEdit's params wrote a bound height as a number
@@ -978,6 +1018,9 @@ class BoundElementTests(unittest.TestCase):
         self.assertEqual(elements["portico-base"]["elevation"]["height"], 0.6)
         self.assertIsNone(elements["portico-cornice"]["drawnShape"])
         self.assertIn("retained-legacy", elements["portico-cornice"]["drawnShapeReason"])
+        # A producer that is not advertised states no extent rather than a guessed one.
+        self.assertIsNone(elements["portico-cornice"]["verticalExtent"])
+        self.assertEqual(elements["portico-base"]["verticalExtent"], {"base": 0, "top": 0.6})
 
     def test_constrained_drawings_have_an_explicit_local_preview_refusal(self) -> None:
         for change in ("top", "rectangular_cutouts"):

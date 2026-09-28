@@ -13,6 +13,7 @@ from typing import Any, Literal, Mapping
 from pydantic import BaseModel, ConfigDict, Field
 
 from archflow.state.state_record import component_semantics, parameter_bindings_of
+from monkeyarch.capabilities.element_producers import element_vertical_extent
 
 from ..application.catalog import Catalog
 from ..application.frame import ClosureAnswer, RecordFrame
@@ -98,6 +99,15 @@ class ElementElevationDto(BaseModel):
     top_reference: ElevationReferenceDto | None = Field(alias="topReference")
 
 
+class VerticalExtentDto(BaseModel):
+    """Where an element stands: its lowest and highest world +Y, in metres (#404 F14)."""
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True, allow_inf_nan=False)
+
+    base: float
+    top: float
+
+
 class LevelDto(BaseModel):
     model_config = ConfigDict(populate_by_name=True, frozen=True, allow_inf_nan=False)
 
@@ -121,7 +131,12 @@ class ElementDto(BaseModel):
         "Read-only facts; edit through params."))
     drawn_shape: DrawnShapeDto | None = Field(alias="drawnShape", default=None)
     drawn_shape_reason: str | None = Field(alias="drawnShapeReason", default=None)
-    elevation: ElementElevationDto | None = None
+    elevation: ElementElevationDto | None = Field(default=None, description=(
+        "The editable elevation controls of a horizontal drawn prism or face; null for other elements. "
+        "Where any element stands is verticalExtent."))
+    vertical_extent: VerticalExtentDto | None = Field(alias="verticalExtent", default=None, description=(
+        "Read-only: the lowest and highest world +Y in metres, by the producer's own datum and height rules, "
+        "for prism, planar-surface, curve, wall and loft; null for other producers or unreadable inputs."))
     # What a semantic edit replaces (#404 F4): copying the resolved values
     # above wrote bindings as numbers and counted the elevation twice.
     params: dict[str, Any] = Field(default_factory=dict, description=(
@@ -363,21 +378,34 @@ def catalog_dto(catalog: Catalog) -> CatalogDto:
     )
 
 
-def _drawn_shapes(projection: StateProjection) -> dict[str, tuple[DrawnShapeDto | None, str | None, ElementElevationDto | None]]:
-    """Read drawing inputs through the existing in-memory producer datum graph."""
+def _vertical_extent(row, context) -> VerticalExtentDto | None:
+    """Where the element stands by its producer's own rules; None when it states none."""
+
+    try:
+        base, top = element_vertical_extent(row, context)
+    except (KeyError, TypeError, ValueError):
+        return None
+    return VerticalExtentDto(base=base, top=top)
+
+
+def _drawn_shapes(projection: StateProjection) -> dict[str, tuple[
+        DrawnShapeDto | None, str | None, ElementElevationDto | None, VerticalExtentDto | None]]:
+    """Read drawing inputs and vertical extents through the existing in-memory producer datum graph."""
 
     record = projection.record
     elements = record.entities_of("Element@1")
     try:
         rows, context, placements = drawing_context(record)
     except (KeyError, TypeError, ValueError) as exc:
-        return {entity.entity_id: (None, f"Drawing inputs are unavailable: {exc}", None) for entity in elements}
+        return {entity.entity_id: (None, f"Drawing inputs are unavailable: {exc}", None, None) for entity in elements}
     shapes = {}
     for entity in elements:
         row = rows[entity.entity_id]
         producer = row.producer
+        # Every placement above has published its top, so any base it names reads here.
+        extent = _vertical_extent(row, context)
         if producer not in {"prism", "planar-surface"}:
-            shapes[entity.entity_id] = (None, f"Direct push/pull supports drawn faces and prisms, not {producer}.", None)
+            shapes[entity.entity_id] = (None, f"Direct push/pull supports drawn faces and prisms, not {producer}.", None, extent)
             continue
         try:
             placement = placements[entity.entity_id]
@@ -399,9 +427,9 @@ def _drawn_shapes(projection: StateProjection) -> dict[str, tuple[DrawnShapeDto 
                     base_reference=elevation_reference(row.references["base"], placement["base"], context),
                     top_reference=elevation_reference(row.references.get("top"), placement["top"], context),
                 )
-            shapes[entity.entity_id] = (shape, None, elevation)
+            shapes[entity.entity_id] = (shape, None, elevation, extent)
         except (KeyError, TypeError, ValueError) as exc:
-            shapes[entity.entity_id] = (None, f"Drawing inputs are unavailable: {exc}", None)
+            shapes[entity.entity_id] = (None, f"Drawing inputs are unavailable: {exc}", None, extent)
     return shapes
 
 
@@ -470,6 +498,7 @@ def to_dto(projection: StateProjection, catalog: Catalog | None = None) -> State
                 drawn_shape=drawn_shapes[element.element_id][0],
                 drawn_shape_reason=drawn_shapes[element.element_id][1],
                 elevation=drawn_shapes[element.element_id][2],
+                vertical_extent=drawn_shapes[element.element_id][3],
                 params=dict(authored[element.element_id].get("params") or {}),
                 references=dict(authored[element.element_id].get("references") or {}),
             )
