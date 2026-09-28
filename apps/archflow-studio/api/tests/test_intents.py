@@ -614,6 +614,45 @@ class ConstructionIntentTests(IntentTestCase):
                 else:
                     self.assertEqual(successor.entity("portico-cornice").fields["params"]["height"], 0.3)
 
+    def test_keeping_the_portico_never_keeps_a_shape_a_script_placed_under_it(self) -> None:
+        # #419 C7 round 2: the plinth is parented under the modelling root (portico) and is its own geometry.
+        from archflow.state.state_record import apply_state_record_operator
+
+        self.app.state.intent_compiler = scripted(script=PLINTH, keep=("entity:portico",), why="Add a plinth.")
+        status, body = self.ask("Add a plinth; keep the portico as it is.", targetComponentId=None)
+        self.assertEqual((status, body["proposal"]["status"]), (201, "proposed"))
+        self.app.state.intent_compiler = scripted(script="p = get('plinth')\nset_height(p, 0.3)",
+                                                  why="The plinth is 30 cm.")
+        decided = self.client.post(f"/api/proposals/{body['proposal']['proposalId']}/decision", json={
+            "decision": "modified", "modifiedTo": {"utterance": "Make the plinth 30 cm."}})
+        self.assertEqual(decided.status_code, 201, decided.text)
+        replacement = self.app.state.proposals.get(decided.json()["proposals"][0]["modifiedTo"]["proposalId"])
+        self.assertEqual(replacement.status, "proposed")
+        successor = apply_state_record_operator(project_state(bound_project(self.app.state)).record,
+                                                replacement.state_record_operator)
+        self.assertEqual(successor.entity("plinth-body").fields["params"]["height"], 0.3)
+        # The portico's own parts are still kept.
+        self.assertLessEqual({"entity:portico", "entity:portico-base", "entity:portico-cornice"},
+                             set(replacement.protected))
+        self.assertNotIn("entity:plinth-body", replacement.protected)
+
+    def test_a_modified_decision_on_a_proposal_that_removes_what_it_keeps_is_a_chain_conflict(self) -> None:
+        # #419 C7 round 2: the original proposal's own keep conflict, never a question to the architect.
+        created = self.client.post("/api/proposals", json={
+            "stateDigest": self.state_digest, "targetComponentId": "portico", "keep": ["entity:portico-cornice"],
+            "semanticEdit": {"summary": "Take the cornice away.", "removeEntityIds": ["portico-cornice"],
+                             "removeRelationIds": ["rel-cornice-on-base"]}})
+        self.assertEqual(created.status_code, 201, created.text)
+        self.assertEqual(created.json()["status"], "conflict")
+        reviser = scripted(script=PLINTH, why="Add a plinth instead.")
+        self.app.state.intent_compiler = reviser
+        decided = self.client.post(f"/api/proposals/{created.json()['proposalId']}/decision", json={
+            "decision": "modified", "modifiedTo": {"utterance": "Leave the cornice and add a plinth."}})
+        self.assertEqual(decided.status_code, 409, decided.text)
+        self.assertEqual(decided.json()["code"], "PROPOSAL_CHAIN_CONFLICT")
+        self.assertIn("removes entity:portico-cornice, which it keeps", decided.json()["detail"])
+        self.assertEqual(reviser.calls, [], "no model is asked about a change that cannot stand")
+
     def test_a_chain_is_never_continued_from_a_keep_conflict(self) -> None:
         self.app.state.intent_compiler = scripted(script=RAISED_BASE, keep=("entity:portico-base",), why="Raise the base.")
         status, body = self.ask("Rework portico-base; keep the base as it is.", elementId="portico-base")

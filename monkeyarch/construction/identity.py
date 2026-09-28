@@ -21,7 +21,7 @@ from __future__ import annotations
 import hashlib
 import re
 from dataclasses import dataclass, field
-from typing import Iterable
+from typing import Iterable, Sequence
 
 from monkeyarch.construction.shapes import RowShape, Shape
 
@@ -29,6 +29,17 @@ ELEMENT_SUFFIX = "-body"
 HASH_DIGITS = 12
 VARIABLE_ID = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
 _WIDER = (16, 24, 40)  # the digits a hashed id keeps when a shape of the same script already has the first twelve
+
+
+def made_by_construction(component_id: str, element_ids: Sequence[str] | None) -> bool:
+    """Whether a component is geometry a construction script made: its one element is ``<component id>-body``.
+
+    Lowering places every shape it makes under the modelling root, so such a
+    component is its own geometry wherever it is parented, never a part of
+    the component above it.
+    """
+
+    return list(element_ids or ()) == [component_id + ELEMENT_SUFFIX]
 
 
 def hashed(prefix: str, shape: Shape, claimed: Iterable[str]) -> str:

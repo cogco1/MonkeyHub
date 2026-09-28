@@ -6782,7 +6782,9 @@
         "the construction compiler chooses how each shape is realised; no route or DTO here names a producer, and the agent-facing text keeps the layer rule",
         "a refusal answers the script line that caused it, or passes through unchanged when it names no shape of the script",
         "a facet edit upserts only the named components; every element, object, datum and dependency edge stays byte-identical",
-        "an agent's answer is one proposal: its script, parameters and facets are read on the design the earlier parts would make, and what it keeps is judged on the whole of it, a keep it reaches making a reviewable conflict; a kept geometry id keeps every part under it",
+        "an agent's answer is one proposal: its script, parameters and facets are read on the design the earlier parts would make, and what it keeps is judged on the whole of it, a keep it reaches making a reviewable conflict",
+        "a kept geometry id keeps its own parts and its child components' parts, never a shape a script placed under it (made_by_construction), on the construction, facets and hosted-opening routes as in the in-app answer",
+        "a script's proposal is about the first geometry it makes, changes or removes, by line, else the modelling root; the modelling root is model when a seat builds it, else the first component a seat builds that is not a shape a script made",
         "a capability is listed on an entity only when its facets unlock it",
         "a door or window is proposed only on a component whose facets unlock hosted-opening; the host keeps its element id, its delivered object and its published top, so what stands on it keeps standing",
         "every hosted-opening refusal says what to do: the facet to add, the reason the shape cannot take one as drawn, or the family's or the record's own sentence"
@@ -8026,7 +8028,7 @@
         "the construction vocabulary ConstructionVocabulary@1: verbs, signatures, conventions, limits and one example, the single table the interpreter binds its verbs from",
         "the layer rule over L1 text (LAYER_RULE_TOKENS, case-insensitive substrings): no realisation name, classification field or backend word",
         "construction values: plan and plane profiles, drawing planes, level and top anchors, parameter bindings, loft sections, and transforms baked into a shape's definition",
-        "construction identity: name(), module-level variables, then <host>-cut-<12 hex> and shape-<12 hex> hashed from the chain of statements that made the shape (the module-level statement, the statements it called, down to the one that made it); <id>-body elements; reuse only of construction-made components; the session reads the same ids while the script runs, so a new shape given the id of existing geometry is its current version",
+        "construction identity: name(), module-level variables, then <host>-cut-<12 hex> and shape-<12 hex> hashed from the chain of statements that made the shape (the module-level statement, the statements it called, down to the one that made it); <id>-body elements; reuse only of construction-made components (made_by_construction, the one test of what a script made); the session reads the same ids while the script runs, so a new shape given the id of existing geometry is its current version",
         "lowering construction results to Component@1/Element@1 rows, the one place a producer is chosen for script-authored geometry",
         "script edits of existing geometry in place, rewriting only its element's params and references",
         "cuts authored as the host element's references.voids, kept when a new shape redefines existing geometry",
@@ -8058,6 +8060,7 @@
         "vocabulary",
         "geometry_view",
         "ELEMENT_SUFFIX",
+        "made_by_construction",
         "layer_rule_violations",
         "LAYER_RULE_TOKENS"
       ],

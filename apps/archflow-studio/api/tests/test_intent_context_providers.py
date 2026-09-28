@@ -606,18 +606,44 @@ class ConstructionContractProviderTests(unittest.TestCase):
                 self.assertEqual(caught.exception.receipt.status, ModelInvocationStatus.MALFORMED)
                 self.assertIn("entity:tower", caught.exception.detail)
 
-    def test_a_kept_geometry_id_keeps_every_part_under_it(self):
-        # A change reaches parts, never a geometry id's own row, so keeping the id keeps what is under it.
+    def test_a_kept_geometry_id_keeps_its_own_parts_and_not_the_shapes_placed_under_it(self):
+        # A change reaches parts, never a geometry id's own row, so keeping the id keeps its parts. The
+        # shapes a script made are placed under the modelling root and are each their own geometry.
         from archflow_studio_api.application.construction import kept_refs
 
         record = self.projection.record
         self.assertEqual(kept_refs(record, ("entity:block", "parameter:module")),
                          ("entity:block", "parameter:module", "entity:block-body"))
         self.assertEqual(kept_refs(record, ("entity:block-body",)), ("entity:block-body",))
-        whole = kept_refs(record, ("entity:model",))
-        self.assertEqual(whole[0], "entity:model")
-        self.assertLessEqual({"entity:mass", "entity:mass-body", "entity:block-body", "entity:cutter-1-body"},
-                             set(whole))
+        self.assertEqual(kept_refs(record, ("entity:model",)), ("entity:model",))
+
+    def test_the_design_sheets_grammar_has_no_sentence_keep(self):
+        # #419 C7 round 2: a design answer states what it keeps in keep; the parser still reads the
+        # sentence form for the web client.
+        from archflow_studio_api.application.intent import ACCEPTED_FORMS, parse_utterance
+
+        answer = construction_answer(status="unsupported", why="Nothing to change yet.")
+        for name in PROVIDERS:
+            with self.subTest(provider=name), self.provider(name, [answer]) as provider:
+                self.compile(provider)
+                self.assertEqual(self.sheet(provider.calls[0])["grammar"], {"forms": list(ACCEPTED_FORMS)})
+        self.assertIsNotNone(parse_utterance("set height to 3 keep entity:mass"))
+
+    def test_a_local_script_whose_writes_cannot_be_checked_is_malformed(self):
+        # #419 C7 round 2: the scope check fails closed, with the compile's reason.
+        from archflow_studio_api.application.construction import ConstructionRefused
+        from monkeyarch.construction import ConstructionError
+
+        answer = construction_answer(script="b = get('block')\nset_height(b, 3)", targetId="block",
+                                     why="Raise the block.")
+        refused = ConstructionRefused(ConstructionError("the shapes of this script cannot be read"))
+        for name in PROVIDERS:
+            with self.subTest(provider=name), self.provider(name, [answer]) as provider, \
+                    patch.object(intent_agent, "script_result", side_effect=refused):
+                with self.assertRaises(IntentAgentFailed) as caught:
+                    self.compile(provider, "rework block, add a plinth", Selection("block", None))
+                self.assertEqual(caught.exception.receipt.status, ModelInvocationStatus.MALFORMED)
+                self.assertIn("the shapes of this script cannot be read", caught.exception.detail)
 
     def test_a_local_answer_that_changes_other_geometry_is_malformed_naming_its_geometry_id(self):
         # #419 C7 round 1: recorded as the old scope refusal was (a malformed-answer receipt), in the ids the

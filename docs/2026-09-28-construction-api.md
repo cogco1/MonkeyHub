@@ -145,8 +145,9 @@ routes and `/api/state` from the Hub's agent allow-lists (the Studio web client 
 routes); `Element@1`/`Type@1` rows in an agent's `semanticEdit` (the Hub refuses them and names the
 construction route). The in-app intent agent answers `{status, script, facets, parameters, keep,
 utterance, targetId, why, question}`: a script of at most 12 000 characters (its answer's output budget),
-and keep as the record's keep refs, a geometry id keeping every part under it. Its sheet describes
-geometry in construction terms without producers, the language and the model for a design request only.
+and keep as the record's keep refs, a geometry id keeping its parts but no shape placed under it (on
+every route that takes keep). Its sheet describes geometry in construction terms without producers,
+the language and the model for a design request only.
 
 ### 3.3 L2: identity, promotion, dependencies
 

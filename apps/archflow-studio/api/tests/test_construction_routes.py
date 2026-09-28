@@ -416,6 +416,48 @@ class ConstructionDecisionTestCase(ConstructionTestCase):
                          (proposal["proposalId"], "rejected", "edit_components"))
 
 
+class ConstructionKeepAndTargetTestCase(ConstructionTestCase):
+    """What a keep protects on every route, and which geometry a proposal is about (#419 C7 round 2)."""
+
+    def test_a_kept_geometry_id_keeps_its_parts_and_never_a_shape_placed_under_it(self) -> None:
+        from archflow_studio_api.application.construction import kept_refs
+
+        # A script's shape is parented under the modelling root (portico) and is still its own geometry.
+        record = self.successor(self.construct("plinth = extrude(rect(0, 3, 4, 2), 0.2)"))
+        self.assertEqual(record.entity("plinth").parent_id, "portico")
+        self.assertEqual(kept_refs(record, ("entity:portico",)),
+                         ("entity:portico", "entity:portico-base", "entity:portico-cornice"))
+        self.assertEqual(kept_refs(record, ("entity:building",)),
+                         ("entity:building", "entity:portico", "entity:portico-base", "entity:portico-cornice"))
+        self.assertEqual(kept_refs(record, ("entity:plinth", "parameter:module")),
+                         ("entity:plinth", "parameter:module", "entity:plinth-body"))
+
+    def test_keep_protects_a_geometry_ids_parts_on_the_construction_and_facets_routes(self) -> None:
+        run = self.run_candidate(self.construct(TWO_BLOCKS)["proposalId"])
+        kept = self.construct("m = get('mass')\nset_height(m, 4)", sourceRunId=run, keep=["entity:mass"])
+        self.assertEqual(kept["status"], "conflict")
+        self.assertIn("entity:mass-body", kept["impact"]["conflicts"])
+        self.assertLessEqual({"entity:mass", "entity:mass-body"}, set(kept["protected"]))
+        faceted = self.facets([{"id": "block", "set": {"architectural.role": "roof"}}], sourceRunId=run,
+                              keep=["entity:mass"])
+        self.assertEqual(faceted["status"], "proposed")
+        self.assertLessEqual({"entity:mass", "entity:mass-body"}, set(faceted["protected"]))
+
+    def test_a_proposal_names_the_first_geometry_it_changes_adds_or_removes_else_the_modelling_root(self) -> None:
+        run = self.run_candidate(self.construct(TWO_BLOCKS)["proposalId"])
+        # Not whichever component sorts first (building): the geometry the script is about.
+        self.assertEqual(self.construct("delete(get('block'))", sourceRunId=run)["target"]["componentId"], "block")
+        self.assertEqual(self.construct("m = get('mass')\nset_height(m, 4)", sourceRunId=run)["target"]["componentId"],
+                         "mass")
+        parameters = self.construct('print("no shapes")', sourceRunId=run, parameters=[
+            {"key": "block_height", "value": 3.2, "unit": "m", "epistemic_status": "declared"}])
+        self.assertEqual(parameters["target"]["componentId"], "portico")
+        # The modelling root stays where the seat builds, never a shape a script made there (block sorts first).
+        plinth = self.construct("plinth = extrude(rect(0, 3, 4, 2), 0.2)", sourceRunId=run)
+        [row] = [row for row in plinth["change"]["edits"]["entities"] if row["entity_id"] == "plinth"]
+        self.assertEqual(row["parent_id"], "portico")
+
+
 class ConstructionParametersTestCase(ConstructionTestCase):
     def test_parameters_travel_with_the_script_and_param_binds_them(self) -> None:
         proposal = self.construct('mass = extrude(rect(0, 0, 4, 4), param("block_height"))', parameters=[

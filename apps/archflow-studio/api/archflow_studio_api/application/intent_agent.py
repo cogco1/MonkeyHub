@@ -967,10 +967,11 @@ def _require_writable(compilation: Compilation, context: IntentContext, projecti
     A dependency supplement grants reads, never writes. What a script writes
     is known once it is compiled, so it is compiled here against the same
     record (the modelling root only places new shapes, never existing ones);
-    a script, or parameters, that cannot compile are left to the proposal,
-    which refuses them with the line. Facets write the geometry ids they
-    name. Anything outside is the agent's malformed answer, named in the
-    geometry ids the agent saw (``editTargets``), never an internal part id.
+    a script whose writes cannot be known this way is refused with the
+    compile's reason, as an answer outside its scope is. Facets write the
+    geometry ids they name. Anything outside is the agent's malformed answer,
+    named in the geometry ids the agent saw (``editTargets``), never an
+    internal part id.
     """
 
     record = projection.record
@@ -982,10 +983,12 @@ def _require_writable(compilation: Compilation, context: IntentContext, projecti
         try:
             result = script_result(projection, compilation.script, root=root,
                                    parameters=compilation.parameters or (), summary=compilation.why or None)
-        except StudioError:
-            result = None
-        if result is not None:
-            written |= ({row["entity_id"] for row in result.entities} | set(result.remove_entity_ids)) & existing
+        except StudioError as exc:
+            line = getattr(exc, "line", None)
+            raise ValueError(
+                f"the {compilation.provider} agent's script cannot be checked against what this request may "
+                f"change{f' (line {line})' if line else ''}: {exc.detail}; nothing was proposed") from exc
+        written |= ({row["entity_id"] for row in result.entities} | set(result.remove_entity_ids)) & existing
     rows = {row["elementId"]: row for row in context.sheet.get("elements", ())}
     allowed = set(context.target_ids) | {rows[target]["componentId"] for target in context.target_ids if target in rows}
     outside = written - allowed

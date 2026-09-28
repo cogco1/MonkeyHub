@@ -762,6 +762,10 @@ def _construction_facts(context: IntentContext) -> dict[str, Any]:
     for key in _READ_SECTIONS:
         if key in source:
             result[key] = deepcopy(source[key])
+    if "grammar" in result:
+        # A design answer states what it keeps in keep; the sentence's keep
+        # suffix stays the grammar's own, for the web client.
+        result["grammar"] = {key: value for key, value in result["grammar"].items() if key != "keep"}
     if context.design_sheet is not None:
         result["editTargets"] = sorted({geometry.get(target, target) for target in context.target_ids})
     return result

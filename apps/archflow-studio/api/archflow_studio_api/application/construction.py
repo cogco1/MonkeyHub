@@ -19,7 +19,8 @@ the same element id, so it keeps its delivered object and its published top.
 ``design_proposal`` makes one proposal of the in-app agent's answer: a script
 with its parameters, or parameters alone, then facets on what that leaves,
 with what the answer keeps judged on the whole of it. ``kept_refs`` is what a
-keep protects: a geometry id keeps every part under it.
+keep protects: a geometry id keeps its parts, never a shape a script placed
+under it.
 """
 
 from __future__ import annotations
@@ -34,7 +35,9 @@ from archflow.semantics.facets import FACET_KEYS, suggest_facet_key
 from archflow.state.state_record import Entity, StateRecord, apply_state_record_operator, component_facets
 from monkeyarch.capabilities.element_producers import ElementProducerError, wall_along_line, wall_fields_from_block
 from monkeyarch.capabilities.opening_solver import DoorType, WindowType
-from monkeyarch.construction import ConstructionError, ConstructionResult, compile_construction_script, geometry_view
+from monkeyarch.construction import (
+    ConstructionError, ConstructionResult, compile_construction_script, geometry_view, made_by_construction,
+)
 
 from ..adapters.seats import SeatsError, load_seat_pack, seats_of
 from ..transport.errors import StudioError
@@ -147,9 +150,11 @@ class EnrichmentRequired(StudioError):
 def modelling_root(binding: ProjectBinding, projection: StateProjection) -> str:
     """Where new geometry goes: ``model`` when a seat builds it, else the first component a seat builds.
 
-    New geometry under a component no seat builds would be carried by the
-    record and built by nobody, so a project whose seats build nothing is
-    refused here, before anything runs.
+    A shape a script made (``made_by_construction``) is geometry, not where
+    other geometry goes, so it is passed over while another buildable
+    component remains. New geometry under a component no seat builds would
+    be carried by the record and built by nobody, so a project whose seats
+    build nothing is refused here, before anything runs.
     """
 
     try:
@@ -164,7 +169,10 @@ def modelling_root(binding: ProjectBinding, projection: StateProjection) -> str:
             f"no seat builds any of {components}, so new geometry would be built by nobody: have the project's "
             "seat pack own one of them. Nothing was run.",
         )
-    return MODEL_ROOT if MODEL_ROOT in buildable else buildable[0]
+    parts = _parts_by_component(projection.record)
+    containers = [identifier for identifier in buildable if not made_by_construction(
+        identifier, [element.entity_id for element in parts.get(identifier, ())])]
+    return MODEL_ROOT if MODEL_ROOT in buildable else (containers or buildable)[0]
 
 
 def construction_proposal(
@@ -181,7 +189,9 @@ def construction_proposal(
     ``parameters`` (the record's parameter shape) are added or changed with the
     script, and the script is read against a record that already has them, so
     ``param(key)`` binds a parameter the same request introduces. The proposal
-    is not remembered and carries no source run; the caller places it.
+    is about the first geometry the script makes, changes or removes, by line,
+    else the modelling root. It is not remembered and carries no source run;
+    the caller places it.
     """
 
     root = modelling_root(binding, projection)
@@ -197,7 +207,10 @@ def construction_proposal(
     edit = _edit(said, entities=result.entities, parameters=parameters,
                  remove_entity_ids=result.remove_entity_ids, kept=keep_refs)
     try:
-        proposal = proposal_from(component_edit_proposal(projection, edit, utterance=said, keep_refs=keep_refs))
+        proposal = proposal_from(component_edit_proposal(
+            projection, edit, utterance=said, component_id=_first_geometry(projection.record, result) or root,
+            keep_refs=keep_refs,
+        ))
     except StudioError as exc:
         refused = _refused_at_line(exc, result, script)
         if refused is None:
@@ -234,19 +247,23 @@ def script_result(
 
 
 def kept_refs(record: StateRecord, refs: Sequence[str]) -> tuple[str, ...]:
-    """What keeping ``refs`` protects: each ref, and for a geometry id every component and part under it.
+    """What keeping ``refs`` protects: each ref, and for a geometry id its parts and its child components'.
 
     The record protects what a change reaches, and a geometry id's form
     changes in its parts, never in its own row: a keep naming only the
-    geometry id would let every part of it change. A part id and a parameter
-    ref are kept as they are; a ref the record does not declare is left for
-    the record to refuse.
+    geometry id would let every part of it change. A shape a script made is
+    its own geometry wherever it is parented (``made_by_construction``;
+    lowering places them all under the modelling root), so a keep on the
+    component above it never reaches it. A part id and a parameter ref are
+    kept as they are; a ref the record does not declare is left for the
+    record to refuse.
     """
 
     parts = _parts_by_component(record)
     children: dict[str, list[str]] = {}
     for component in record.entities_of("Component@1"):
-        if component.parent_id:
+        own = [element.entity_id for element in parts.get(component.entity_id, ())]
+        if component.parent_id and not made_by_construction(component.entity_id, own):
             children.setdefault(component.parent_id, []).append(component.entity_id)
     kept = list(refs)
     seen: set[str] = set()
@@ -528,6 +545,23 @@ def construction_model(projection: StateProjection) -> dict[str, Any]:
                        for parameter in record.parameters],
         "entities": entities,
     }
+
+
+def _first_geometry(record: StateRecord, result: ConstructionResult) -> str | None:
+    """The component of the first shape the script made, changed or removed, by line; ``None`` for none.
+
+    A part of a geometry id with several is named by the component it
+    belongs to, since a proposal is about a component.
+    """
+
+    first = min(result.report, key=lambda row: row["line"], default=None)
+    if first is None:
+        return None
+    identifier = str(first["id"])
+    entity = next((item for item in record.entities if item.entity_id == identifier), None)
+    if entity is not None and entity.schema == "Element@1":
+        return str(entity.fields.get("component_id") or entity.parent_id)
+    return identifier
 
 
 def _parameters_named(parameters: Sequence[Mapping[str, Any]]) -> str:

@@ -40,7 +40,7 @@ from monkeyarch.capabilities.element_producers import (
     production_order,
     with_void_hosts,
 )
-from monkeyarch.construction.identity import ELEMENT_SUFFIX, Naming, identify, identity_of
+from monkeyarch.construction.identity import ELEMENT_SUFFIX, Naming, identify, identity_of, made_by_construction
 from monkeyarch.construction.script import (
     MAX_CUTTERS,
     MAX_ID,
@@ -159,15 +159,14 @@ class _Lowering:
         return self.ids[shape][0] + ELEMENT_SUFFIX
 
     def reusable(self, identifier: str) -> bool:
-        """Construction-made geometry: a component whose one element is ``<id>-body`` and editable."""
+        """Construction-made geometry (``made_by_construction``) that a script can edit."""
 
         entity = self.world.entities.get(identifier)
         if entity is None or entity.schema != "Component@1":
             return False
-        element_id = identifier + ELEMENT_SUFFIX
-        if self.world.elements_of.get(identifier) != [element_id]:
+        if not made_by_construction(identifier, self.world.elements_of.get(identifier)):
             return False
-        return self.world.entities[element_id].fields.get("producer") in EDITABLE_PRODUCERS
+        return self.world.entities[identifier + ELEMENT_SUFFIX].fields.get("producer") in EDITABLE_PRODUCERS
 
     def check_ids(self) -> None:
         reached: set[str] = set()

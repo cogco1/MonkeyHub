@@ -588,7 +588,7 @@ def compile_intent(request: Request, body: IntentRequestDto) -> IntentDto:
     if resolution.outcome != clarification.COMPILED:
         raise _refused(store, token=body.continuation_token, source_stage_ref=projection.source_stage_ref, model_source=model_source, document_visuals=document_visuals, resolution=resolution, document_comment_ref=document_comment_ref)
     assert compilation.utterance is not None
-    # What was drawn to keep and what the agent was told to keep, a geometry id with every part under it.
+    # What was drawn to keep and what the agent was told to keep, a geometry id with its parts.
     keep = kept_refs(projection.record, (*reading.keep_refs, *compilation.keep))
     if keep:
         compilation = replace(compilation, utterance=merge_keep(compilation.utterance, keep))

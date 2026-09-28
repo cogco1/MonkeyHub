@@ -633,6 +633,18 @@ def _reproposed(
                 projection.record, replace(operator_of(proposal, projection.record), protected=())))
         except StateRecordError as exc:
             raise StudioError(409, "PROPOSAL_CHAIN_CONFLICT", str(exc)) from exc
+        # A proposal that removes what it keeps has no design to change on top
+        # of: that is its own keep conflict, never a question to the architect.
+        declared = ({entity.ref for entity in proposed.record.entities}
+                    | {parameter.ref for parameter in proposed.record.parameters})
+        removed = [ref for ref in proposal.protected if ref not in declared]
+        if removed:
+            raise StudioError(
+                409, "PROPOSAL_CHAIN_CONFLICT",
+                f"proposal {proposal.proposal_id} removes {', '.join(removed)}, which it keeps: take "
+                f"{'it' if len(removed) == 1 else 'them'} out of keep, or propose a change that does not remove "
+                f"{'it' if len(removed) == 1 else 'them'}",
+            )
         summary = str(proposal.semantic_edit.get("summary") or proposal.utterance)
         compilation = state.intent_compiler.compile(
             message=(

@@ -2402,8 +2402,10 @@ def compiled_proposal(
     (``design_proposal``), which chooses how every shape is realised; the
     numeric component tier's own edit goes through the component edit it
     already is. What the answer keeps joins ``keep_refs`` (keep marks, or a
-    proposal's own keep), each geometry id with every part under it
-    (``kept_refs``). The proposal is about the geometry the agent named
+    proposal's own keep), each geometry id with its parts
+    (``kept_refs``). A script's proposal is about the first geometry it makes,
+    changes or removes (``construction_proposal``); parameters alone, or the
+    component tier's edit, are about the geometry the agent named
     (``targeted``), else ``component_id`` (the request's selection), else the
     project's modelling root. What a local answer may change was checked when
     the answer was read (``intent_agent``).

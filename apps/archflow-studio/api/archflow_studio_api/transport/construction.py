@@ -45,7 +45,8 @@ class _SourceFields(BaseModel):
         alias="sourceProposalId", default=None, min_length=1,
         description="continue this unexecuted proposal; stateDigest stays its original baseStateDigest",
     )
-    keep: list[str] = Field(default_factory=list, description="entity: or parameter: refs this change must not disturb")
+    keep: list[str] = Field(default_factory=list, description=(
+        "entity: or parameter: refs this change must not disturb; entity:<geometry id> keeps every part of it"))
     project_id: str | None = Field(alias="projectId", default=None, min_length=1,
                                    description="the project the client believes it is working on")
 
