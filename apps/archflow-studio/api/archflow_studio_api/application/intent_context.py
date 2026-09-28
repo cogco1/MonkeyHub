@@ -578,12 +578,13 @@ def control_unit(context: IntentContext, row: Mapping[str, Any], field: str) -> 
         parameter = next((item for item in context.sheet.get("parameters", ()) if item["key"] == binding.removeprefix("@")), None)
         unit = parameter.get("unit") if parameter is not None else None
         return unit if isinstance(unit, str) and unit else None
-    # produce_wall declares dimensions in metres and builds its geometry with
-    # _M (monkeyarch.capabilities.element_producers). Other producers/fields
-    # have no unit metadata in the queried signature; do not guess theirs.
-    if row.get("producer") == "wall" and field in {"height", "thickness"}:
-        return "m"
-    return None
+    # The advertised producer declares the unit of its numeric parameters
+    # (every length it reads is metres); a producer or field that declares
+    # none gets none here, never a guess (#404 F17).
+    from monkeyarch.capabilities.element_producers import parameter_unit
+
+    producer = row.get("producer")
+    return parameter_unit(producer, field) if isinstance(producer, str) else None
 
 
 def _display_name(row: Mapping[str, Any]) -> str:

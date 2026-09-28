@@ -728,8 +728,9 @@ class AuthoredControlDraftDto(BaseModel):
         description="where its base reference would come from",
     )
     unit: str | None = Field(
-        description="element params are bare numbers in the record; this seam "
-        "converts nothing and states no unit the record does not",
+        description="null: a control that is not authored yet declares no unit. The scalar "
+        "seam restates a stated length in a field's declared unit, and asks when the field "
+        "declares none or the unit is not a length",
     )
     provenance: list[str] = Field(
         description="exactly which elements and producers this was read from",

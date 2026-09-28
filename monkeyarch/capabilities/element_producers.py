@@ -352,6 +352,23 @@ def _check_signature_value(value: Any, schema: Mapping[str, Any], field_name: st
         raise ElementProducerError(f"{field_name}: value is below {schema['minimum']}")
 
 
+# The unit each advertised numeric parameter is authored in (#404 F17): every
+# length these producers read is metres (``_M``, and the signatures' "a value in
+# metres"); counts, flags and choices carry none.
+_PARAMETER_UNITS: dict[str, dict[str, str]] = {
+    "prism": {"height": "m", "elevation": "m"},
+    "planar-surface": {"elevation": "m"},
+    "curve": {"elevation": "m"},
+    "wall": {"height": "m", "thickness": "m"},
+}
+
+
+def parameter_unit(producer: str, key: str) -> str | None:
+    """The unit an advertised producer declares for one numeric parameter, or None when it declares none."""
+
+    return _PARAMETER_UNITS.get(producer, {}).get(key)
+
+
 def validate_element_contract(record, element_ids: tuple[str, ...]) -> None:
     """Check a semantic edit against the advertised producer and its real solver.
 
@@ -1073,6 +1090,42 @@ def drawn_element_placement(row: ElementRow, context: ProductionContext) -> dict
     return {"profile": row.params["profile"], "workPlane": plane, "height": height,
             "referenceElevation": context.datum_value(base_id) + reference_offset,
             "base": base, "top": round(base + height, 9), "horizontal": horizontal}
+
+
+def element_vertical_extent(row: ElementRow, context: ProductionContext) -> tuple[float, float]:
+    """The lowest and highest world +Y of an advertised element, read without producing geometry (#404 F14).
+
+    Each producer's own datum and height rules, as it applies them: a prism,
+    planar surface or curve lies on its work plane, and a prism is pulled along
+    the plane's normal; a wall stands on its base datum to its height; a loft's
+    sections carry their heights above its base datum. Any other producer
+    states no extent here, rather than one guessed without its geometry.
+    """
+
+    if row.producer in {"prism", "planar-surface", "curve"}:
+        base_id, reference_offset = _base(row, context)
+        offset = reference_offset + _finite(row.params.get("elevation", 0.0), f"{row.element_id} elevation")
+        profile, normal = _profile_on_work_plane(row)
+        heights = [point[1] for point in profile]
+        if row.producer == "prism":
+            upward = all(abs(y - heights[0]) < 1e-8 for y in heights) and abs(normal[1] - 1.0) < 1e-8
+            if not upward and ("top" in row.references or "rectangular_cutouts" in row.params):
+                raise ElementProducerError(f"{row.element_id}: a tilted or reversed work plane cannot use a horizontal top reference or rectangular panel cutouts")
+            pull = _height(row, context, base_id, base_offset=offset + min(heights))
+            heights += [y + normal[1] * pull for y in heights]
+        world = context.datum_value(base_id) + offset
+        return round(world + min(heights), 9), round(world + max(heights), 9)
+    if row.producer in {"wall", "loft"}:
+        base_id, base_offset = _base(row, context)
+        if base_offset:
+            raise ElementProducerError(f"{row.element_id}: a {row.producer} stands on its datum, not on an offset")
+        base = context.datum_value(base_id)
+        if row.producer == "wall":
+            return round(base, 9), round(base + _height(row, context, base_id), 9)
+        heights = [_finite(point[1], f"{row.element_id} profile coordinate")
+                   for section in row.params["profiles"] for point in section]
+        return round(base + min(heights), 9), round(base + max(heights), 9)
+    raise ElementProducerError(f"{row.element_id}: {row.producer} states no vertical extent without producing its geometry")
 
 
 def edit_drawn_element(row: ElementRow, context: ProductionContext, *, kind: str,

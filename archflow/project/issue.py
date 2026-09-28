@@ -99,7 +99,7 @@ from archflow.state.stage_workflow import (
     StageRunEnvelope,
     StageWorkflowError,
 )
-from archflow.state.state_record import RecordBinding, StateRecord, StateRecordError
+from archflow.state.state_record import RecordBinding, StateRecord, StateRecordError, developed_design_view
 from archflow.project.version_refs import (
     register as _register_version_refs,
     register_derived as _register_derived_fields,
@@ -433,7 +433,10 @@ def _record_binding_ref(
 
     A run whose record declares no complete massing retains no developed
     state (#402); its receipt names the binding by ``design_state_digest``.
-    The binding is issued exactly or not at all: the receipt's envelope must
+    The binding is issued exactly or not at all. The record must be one the
+    runner binds as itself: a record that declares complete massing executed
+    as its developed state, and its envelope does not stand in for that
+    state whatever the receipt says (#439). The receipt's envelope must
     be the one the stage's exit binding closed, both must bind the digest the
     receipt names, and the authored record the issue publishes must be the
     one this run bound - same content digest, run and base - in a phase a
@@ -454,13 +457,20 @@ def _record_binding_ref(
     try:
         envelope = StageRunEnvelope.from_dict(payloads[envelope_uri])
         record = StateRecord.from_dict(payloads[authored_ref])
-        binding = RecordBinding(record, envelope.phase)
+        # The runner's own answer to what executing this record binds to.
+        binding = developed_design_view(record, run=run, phase=envelope.phase)
     # a phase no record can be bound in is a DevelopedDesignError, which is a ValueError
     except (StageWorkflowError, StateRecordError, KeyError, TypeError, ValueError) as exc:
         raise RunNotComplete(
             f"run {run_id!r} retains no developed state, and its record and "
             f"stage envelope do not bind a record as itself: {exc}"
         ) from exc
+    if not isinstance(binding, RecordBinding):
+        raise RunNotComplete(
+            f"run {run_id!r} retains no developed state, but its record "
+            "declares complete massing: it executed as its developed state, "
+            "which is what an issue publishes"
+        )
     digest = receipt.get(DESIGN_STATE_DIGEST)
     if (
         not isinstance(digest, str)

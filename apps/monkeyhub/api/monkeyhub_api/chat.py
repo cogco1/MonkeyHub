@@ -2648,6 +2648,12 @@ class _NoRedirect(HTTPRedirectHandler):
         raise HubFailure(409, "CHAT_SERVICE_CHANGED", "The bound service redirected the request.")
 
 
+# One opener for every call to a bound service (#363): building one makes an
+# HTTPS handler whose default context reads the system certificate store,
+# about 20 ms of CPU per call on Windows. ``_url`` lets only http through.
+_SERVICE_OPENER = build_opener(ProxyHandler({}), _NoRedirect())
+
+
 def _url(value: str) -> str:
     url = urlsplit(value)
     if url.scheme != "http" or url.hostname not in {"127.0.0.1", "localhost"} or url.username or url.password or url.query or url.fragment:
@@ -2674,7 +2680,7 @@ def _request_json(base: str, path: str, method: str = "GET", body=None, timeout:
         "Content-Type": "application/json", **_trace_headers.get(), **(headers or {}),
     })
     try:
-        with build_opener(ProxyHandler({}), _NoRedirect()).open(request, timeout=timeout) as response:
+        with _SERVICE_OPENER.open(request, timeout=timeout) as response:
             if png:
                 return _page_image(response)
             return json.load(response)
@@ -3856,12 +3862,13 @@ def _mcp(hub: str, chat_id: str | None, external: ChatPresentationBindRequest | 
     # trip; meaning, capabilities and domains follow in their own stages, and
     # no runtime realisation is named. The agent chooses observation points.
     modelling = chr(10).join([
-        "Use the bound project's Studio API. Lengths are metres; plan points are (x, z), with Y up.",
+        "Use the bound project's Studio API in metres; 3D points are (x, y-up, z), plan points (x, z).",
         "Design tools prepare the project's runtime themselves; nobody needs to open a page first.",
         "",
-        "CURRENT MODEL: GET /api/construction/model (add ?run=<candidateId> for a candidate) gives stateDigest, levels,",
-        "parameters and one entry per geometry id: form, bounds, cuts, cutBy, facets and the capabilities they unlock.",
-        "Keep sourceStageRef when provided. An empty project first prepares a modelling base with POST /api/project/modeling {projectId}.",
+        "CURRENT MODEL: GET /api/construction/model gives stateDigest, levels, parameters and one entry per geometry id:",
+        "form, bounds, cuts, cutBy, facets and the capabilities they unlock. Without ?run=<candidateId> it reads the default",
+        "source; with it, send sourceRunId on writes. Keep sourceStageRef when provided.",
+        "An empty project first prepares a modelling base with POST /api/project/modeling {projectId}.",
         "",
         "MAKE AND CHANGE GEOMETRY: POST /api/proposals/construction {stateDigest, script, summary?, sourceRunId?, sourceProposalId?, keep?}.",
         "The script is a small Python-like program; one script makes and changes many shapes:",
@@ -3908,7 +3915,7 @@ def _mcp(hub: str, chat_id: str | None, external: ChatPresentationBindRequest | 
         "Use an available artifact's non-null modelSource unchanged for visual_review and model-view. A missing source cannot be reconstructed from hashes.",
         "Follow next for missing reads and retain any source/state/context checks the task still requires.",
         "On timeout, follow the returned job/candidate reads; never send the request again merely to wait.",
-        "GET /api/candidates/{id} returns retained objects with bbox.min/max, lengthUnit and upAxis, plus objectReadbackError if inspection is unavailable.",
+        "GET /api/candidates/{id} lists retained objects: Z-up bbox [x, z, y], lengthUnit, upAxis or objectReadbackError.",
         "GET /api/candidates/{id}/compare?against=<runId> compares with the required source run. The first candidate has no prior run to compare.",
         "Object bounds and successful checks are not visual inspection or proof of the user's spatial intent; for a spatial or formal task, check the result with visual_review and report gaps.",
         "For invalid input, use the named schema to correct it. For stale state/conflicts, refresh the exact source and reconcile the change while preserving keep conditions.",

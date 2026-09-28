@@ -87,7 +87,7 @@ from ..transport.intent import (
 )
 from ..transport.proposal import ProposalScopeDto, to_dto
 from ..transport.artifacts import model_source_from, model_source_dto
-from .proposals import _require_bound_project
+from .proposals import _require_bound_project, _stale_base
 
 router = APIRouter(tags=["intents"])
 
@@ -256,14 +256,7 @@ def read_intent_context(request: Request, body: ContextPackRequestDto) -> Contex
                           "this context read does not choose a recent candidate.")
     require_actionable(projection)
     if body.state_digest != projection.state_digest:
-        raise StudioError(
-            409,
-            "STALE_BASE",
-            f"the request names state {body.state_digest}, but "
-            f"{binding.project_id} is at {projection.state_digest}. Read GET "
-            "/api/construction/model (or /api/state) again and ask against "
-            "the state that answers now.",
-        )
+        raise _stale_base(binding, projection, body.state_digest, "the context read", body.source_run_id)
     declared = {entity.entity_id for entity in projection.record.entities_of("Component@1")}
     if body.target_component_id is not None and body.target_component_id not in declared:
         raise StudioError(
@@ -373,14 +366,7 @@ def compile_intent(request: Request, body: IntentRequestDto) -> IntentDto:
     # against a historical run whose exact state cannot base new work.
     require_actionable(projection)
     if body.state_digest != projection.state_digest:
-        raise StudioError(
-            409,
-            "STALE_BASE",
-            f"the request names state {body.state_digest}, but "
-            f"{binding.project_id} is at {projection.state_digest}. Read GET "
-            "/api/construction/model (or /api/state) again and ask against "
-            "the state that answers now.",
-        )
+        raise _stale_base(binding, projection, body.state_digest, "the intent", body.source_run_id)
     if projection.reference_state_exact:
         body = body.model_copy(update={"source_run_id": projection.run.run_id})
     model_source = model_source_from(body.model_source) if body.model_source else None

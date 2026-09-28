@@ -1,4 +1,4 @@
-"""The content-keyed projection cache and its one background renderer (ADR-008, #367 part A).
+"""The content-keyed projection cache and its one background renderer (ADR-008, #367).
 
 A projection is a picture derived from one retained model: today the
 axonometric line drawing of the model view, at a thumbnail size. It is
@@ -23,32 +23,65 @@ project folder, never evidence; deleting it only means drawing again)::
 
 Every PNG carries its input, kind, recipe and renderer version as text chunks.
 
-One status row per key says pending, done or error. ``StatusStore`` is that
-table's interface; ``InMemoryStatusStore`` is the part-A stand-in that part B
-replaces with the table inside the project index before this issue merges. A
-pending row is a lease: claimed when the worker starts the job and reclaimed
-when it outlives its timeout or the process restarts, so a lost job never
-leaves a permanent placeholder. A failure retries a bounded number of times
-with backoff; a cancel gives its attempt back.
+One status row per key says pending, done or error. The rows live in the
+project index (``archflow.project.index``, the ``projection`` table), so a
+restart finds every picture it drew; ``StatusTable`` reads and writes them.
+Inserting a row is the claim on a key (insert-ignore), and a per-key lock in
+this process keeps two requests from racing past each other. A pending row
+is a lease once the worker takes it: reclaimed at startup and when it
+outlives its timeout, so a lost job never leaves a permanent placeholder. A
+failure retries a bounded number of times with backoff; a cancel gives its
+attempt back, and so does a source the render process refuses. A row that
+becomes done moves the index's revision, so ``index.committed`` (domain
+``projections``) tells clients, and their store holds the blob's digest.
 
-One low-priority worker thread takes one job at a time and hands it to a
-long-lived render subprocess (``python -m`` this module), which opens the
-project read-only, verifies the exact model and draws. The subprocess makes
-the timeout and the memory cap real: past either it is killed or exits, and
-the next job starts a fresh one.
+Jobs are queued three ways, one priority each: the working position's model
+when the index commits (``committed``), a reader's miss (what a client
+shows), and every other model of the design tree after a commit. One
+low-priority worker thread takes one job at a time, the same model's next
+size first, and hands it to a long-lived render subprocess (``python -m``
+this module), which checks the exact source, reads the model once for every
+size it is asked to draw next, and draws. The subprocess makes the timeout
+and the memory cap real: past either it is killed or exits, and the next job
+starts a fresh one.
 
-A miss or a due retry first checks the requesting source (the route passes
-``check``), so a stale or unknown source is refused to its own requester and
-never becomes a row that every other run with the same model asset would
-inherit; a retry draws from the source of the request that asked for it, not
-from the row's first requester.
+Every request checks its source (``check``), whether the key is new, done,
+due for a retry or lost; so does an idle retry, which draws from the source
+it last checked. A stale or unknown source is refused to its own requester
+and never becomes a row that every other run with the same model asset
+would inherit.
+
+Drawings are projections too (#368): a retained elevation or section
+perspective's SVG and PNG, a review sheet's PDF and DXF, and the raster of a
+document page that Board, Publish and the export previews show. These kinds
+are drawn on demand, in the request that needs them, through the same
+generator the request would run anyway (``ProjectionQueue.on_demand``); the
+background worker never draws them. Their row names the first file (the PNG
+or PDF) as its blob and every file's digest, among them a manifest naming the
+key, the files and what the receipt says about the drawing, so issuing the
+same recipe of the same content again reads the bytes back instead of
+drawing. The cache is never evidence and is optional: a hit counts only when
+the row hashes back to the requested key and the manifest, itself read by its
+digest, names that key and those files; anything else, and any failure to read
+or write the cache, means drawing without it. P036 keeps the issued files and
+their receipt.
+
+The collector keeps what is reachable: a row whose input some artifact of
+the index still names, or that was read within the grace window. An older
+renderer's done row stays until the current one's replaces it, so pictures
+change one at a time; blobs no row names go after the grace window. A done
+row whose blob is gone (the cache directory was cleared) is drawn again when
+that is noticed: at startup, on each commit's pass over the tree, when a
+request finds it and when a client's blob read misses (``lost``).
 """
 
 from __future__ import annotations
 
 import base64
 from collections import deque
-from dataclasses import dataclass, field, replace
+from contextlib import contextmanager
+from dataclasses import dataclass
+import functools
 import hashlib
 import json
 import logging
@@ -60,9 +93,12 @@ import sys
 import tempfile
 import threading
 import time
-from typing import Any, Callable, Mapping, Protocol
+from typing import Any, Callable, Mapping, Protocol, Sequence
 
 from archflow.contracts.canonical import canonical_digest
+from archflow.project.index import (
+    PROJECTION_DONE as DONE, PROJECTION_ERROR as ERROR, PROJECTION_PENDING as PENDING, ProjectIndex, ProjectionRow,
+)
 
 from .artifacts import ModelSource
 
@@ -76,8 +112,25 @@ MODEL_LINES = "model-line-view"
 RECIPES: dict[str, dict[str, tuple[Any, ...]]] = {
     MODEL_LINES: {"view": ("axon",), "size": (512, 128, 256, 1024), "style": ("lines",)},
 }
+#: A retained model-axis elevation's SVG and PNG (``drawings.generate_elevation``).
+ELEVATION = "drawing-elevation"
+#: A retained section perspective's SVG and PNG (``drawings.generate_section_perspective``).
+SECTION_PERSPECTIVE = "drawing-section-perspective"
+#: A retained review sheet's PDF and DXF (``drawings.generate_sheet``).
+SHEET = "drawing-sheet"
+#: One page of a retained document as a bounded PNG: what Board, Publish and export previews show.
+DOCUMENT_PAGE = "document-page"
+#: The kinds drawn in the request that needs them (``ProjectionQueue.on_demand``), never by the worker.
+ON_DEMAND = frozenset({ELEVATION, SECTION_PERSPECTIVE, SHEET, DOCUMENT_PAGE})
+#: The role of an on-demand row's manifest among its files: the key, the other files and their facts.
+MANIFEST = "manifest"
+#: The file suffix each role of an on-demand projection's files is kept under.
+FILE_SUFFIXES = {"png": ".png", "svg": ".svg", "pdf": ".pdf", "dxf": ".dxf", MANIFEST: ".json"}
+#: The recipe the design tree draws at: about twice its 80 x 56 px close cards.
+TREE_RECIPE = {"size": 256}
 PNG_MEDIA_TYPE = "image/png"
-PENDING, DONE, ERROR = "pending", "done", "error"
+#: Queue priorities: the working position's model, what a reader shows, the rest of the tree.
+CURRENT, VISIBLE, REST = 0, 1, 2
 
 DEFAULT_TIMEOUT_S = 120.0
 DEFAULT_MEMORY_CAP_MB = 3072
@@ -85,8 +138,12 @@ MAX_ATTEMPTS = 3
 BACKOFF_S = (30.0, 300.0)
 #: How long an unreferenced blob or temp file stays before the collector removes it.
 GRACE_S = 7 * 24 * 3600.0
+#: A read restarts a done row's grace window at most this often (a read does not write every time).
+TOUCH_EVERY_S = 24 * 3600.0
 _COLLECT_EVERY_S = 3600.0
 _MAX_QUEUED = 256
+#: How long a request waits for the project index to load before it is refused.
+INDEX_WAIT_S = 10.0
 #: Lines of the render process's stderr kept for a failure's message.
 _STDERR_TAIL = 20
 
@@ -96,20 +153,37 @@ class ProjectionError(ValueError):
 
 
 def pipeline_of(kind: str, recipe: Mapping[str, Any]) -> dict[str, Any]:
-    """Everything besides the input and the recipe that changes this kind's pixels."""
+    """Everything besides the input and the recipe that changes this kind's bytes."""
 
-    from .drawings import model_view_pipeline
+    from .drawings import drawing_pipeline, model_view_pipeline
 
+    if kind in ON_DEMAND:
+        return drawing_pipeline(kind)
     if kind != MODEL_LINES:
         raise ProjectionError(f"unknown projection kind {kind!r}")
     return model_view_pipeline(recipe["view"])
 
 
-def renderer_version(kind: str, recipe: Mapping[str, Any]) -> str:
-    """The mesh renderer's own version and a digest of the whole pipeline it runs in."""
+@functools.cache
+def _pipeline(kind: str, view: str | None) -> tuple[str, str]:
+    # Once per process: the pipeline digests source and library versions, which
+    # cannot change while the process runs, and reading them costs tens of ms.
+    pipeline = pipeline_of(kind, {"view": view})
+    if kind in ON_DEMAND:
+        return json.dumps(pipeline, sort_keys=True), f"{kind}/{canonical_digest(pipeline)[:16]}"
+    return json.dumps(pipeline, sort_keys=True), f"{pipeline['mesh']['renderer']}/{canonical_digest(pipeline)[:16]}"
 
-    pipeline = pipeline_of(kind, recipe)
-    return f"{pipeline['mesh']['renderer']}/{canonical_digest(pipeline)[:16]}"
+
+def forget_renderer() -> None:
+    """Compute the renderer version again on next use: only for tests that change a pipeline input in-process."""
+
+    _pipeline.cache_clear()
+
+
+def renderer_version(kind: str, recipe: Mapping[str, Any]) -> str:
+    """The mesh renderer's own version and a digest of the whole pipeline it runs in (computed once per process)."""
+
+    return _pipeline(kind, None if kind in ON_DEMAND else recipe["view"])[1]
 
 
 def recipe_of(kind: str, fields: Mapping[str, Any]) -> dict[str, Any]:
@@ -143,24 +217,55 @@ def projection_key(input_sha256: str, kind: str, recipe: Mapping[str, Any], *,
 
 
 @dataclass(frozen=True, slots=True)
+class RecordedSource:
+    """What an on-demand projection was drawn from, as its request named it: kept with the row, never resolved.
+
+    The model, imported asset or document page the request had already
+    verified through P036; ``assetSha256`` is the key's input.
+    """
+
+    fields: tuple[tuple[str, Any], ...]
+
+    @classmethod
+    def of(cls, value: Mapping[str, Any]) -> RecordedSource:
+        if not isinstance(value.get("assetSha256"), str):
+            raise ProjectionError("a projection's source names the content it is drawn from (assetSha256)")
+        # An older build reads every row's source as a ModelSource (runId,
+        # stateDigest, assetSha256); with both named it keeps the row, never
+        # draws it (its kind is unknown there) and never fails on it.
+        return cls(tuple(sorted({"runId": None, "stateDigest": None, **value}.items())))
+
+    @property
+    def asset_sha256(self) -> str:
+        return dict(self.fields)["assetSha256"]
+
+    def to_dict(self) -> dict[str, Any]:
+        return dict(self.fields)
+
+
+@dataclass(frozen=True, slots=True)
 class ProjectionSpec:
-    """What one key draws, and the exact retained model it is drawn from."""
+    """What one key draws, and the exact retained model (or, on demand, the verified content) it is drawn from."""
 
     key: str
     kind: str
     recipe: Mapping[str, Any]
     renderer: str
-    source: ModelSource
+    source: ModelSource | RecordedSource
 
     @property
     def input_sha256(self) -> str:
         return self.source.asset_sha256
 
+    @property
+    def recipe_hash(self) -> str:
+        return canonical_digest(dict(self.recipe))
+
     def png_text(self) -> dict[str, str]:
         return {"archflow:projection-key": self.key, "archflow:input-sha256": self.input_sha256,
                 "archflow:kind": self.kind, "archflow:recipe": json.dumps(dict(self.recipe), sort_keys=True),
                 "archflow:renderer": self.renderer,
-                "archflow:pipeline": json.dumps(pipeline_of(self.kind, self.recipe), sort_keys=True)}
+                "archflow:pipeline": _pipeline(self.kind, self.recipe["view"])[0]}
 
 
 def projection_spec(source: ModelSource, kind: str = MODEL_LINES, recipe: Mapping[str, Any] | None = None) -> ProjectionSpec:
@@ -168,6 +273,23 @@ def projection_spec(source: ModelSource, kind: str = MODEL_LINES, recipe: Mappin
     renderer = renderer_version(kind, complete)
     return ProjectionSpec(projection_key(source.asset_sha256, kind, complete, renderer=renderer),
                           kind, complete, renderer, source)
+
+
+def on_demand_spec(kind: str, source: ModelSource | Mapping[str, Any], recipe: Mapping[str, Any]) -> ProjectionSpec:
+    """The key of an on-demand kind: its input's own sha256, its complete recipe and its renderer; no run, no time.
+
+    ``recipe`` holds every field that changes the bytes and is kept as given;
+    the caller has resolved and verified ``source`` through P036.
+    """
+
+    if kind not in ON_DEMAND:
+        raise ProjectionError(f"{kind!r} is not drawn on demand")
+    if not isinstance(source, ModelSource):
+        source = RecordedSource.of(source)
+    recipe = json.loads(json.dumps(recipe, sort_keys=True))  # JSON values, as the row keeps them
+    renderer = renderer_version(kind, recipe)
+    return ProjectionSpec(projection_key(source.asset_sha256, kind, recipe, renderer=renderer),
+                          kind, recipe, renderer, source)
 
 
 # ---------------------------------------------------------------- blobs
@@ -181,15 +303,17 @@ class BlobStore:
         self.blobs = root / "blobs"
         self.tmp = root / "tmp"
 
-    def path(self, sha256: str) -> Path:
+    def path(self, sha256: str, suffix: str = ".png") -> Path:
         if len(sha256) != 64 or any(char not in "0123456789abcdef" for char in sha256):
             raise ProjectionError("a blob is named by a lowercase sha256")
-        return self.blobs / f"{sha256}.png"
+        if suffix not in FILE_SUFFIXES.values():
+            raise ProjectionError(f"a blob is one of {', '.join(FILE_SUFFIXES.values())}")
+        return self.blobs / f"{sha256}{suffix}"
 
-    def put(self, data: bytes) -> str:
+    def put(self, data: bytes, suffix: str = ".png") -> str:
         sha256 = hashlib.sha256(data).hexdigest()
-        target = self.path(sha256)
-        if self.read(sha256) is not None:
+        target = self.path(sha256, suffix)
+        if self.read(sha256, suffix) is not None:
             os.utime(target)  # seen again: the grace window starts over
             return sha256
         self.blobs.mkdir(parents=True, exist_ok=True)
@@ -206,11 +330,16 @@ class BlobStore:
             raise
         return sha256
 
-    def read(self, sha256: str) -> bytes | None:
+    def exists(self, sha256: str, suffix: str = ".png") -> bool:
+        """Whether the blob's file is there: a stat, not a read (a corrupt file is found when it is read)."""
+
+        return self.path(sha256, suffix).is_file()
+
+    def read(self, sha256: str, suffix: str = ".png") -> bytes | None:
         """The bytes, or None when missing or corrupt: either is a miss."""
 
         try:
-            data = self.path(sha256).read_bytes()
+            data = self.path(sha256, suffix).read_bytes()
         except OSError:
             return None
         return data if hashlib.sha256(data).hexdigest() == sha256 else None
@@ -219,10 +348,11 @@ class BlobStore:
         """Remove blobs no row references and temp files, once older than the grace window."""
 
         removed = []
-        for folder, pattern in ((self.blobs, "*.png"), (self.tmp, "*.tmp")):
+        blobs = tuple(f"*{suffix}" for suffix in FILE_SUFFIXES.values())
+        for folder, patterns in ((self.blobs, blobs), (self.tmp, ("*.tmp",))):
             if not folder.is_dir():
                 continue
-            for path in sorted(folder.glob(pattern)):
+            for path in sorted(path for pattern in patterns for path in folder.glob(pattern)):
                 if folder is self.blobs and path.stem in referenced:
                     continue
                 try:
@@ -239,7 +369,10 @@ class BlobStore:
 
 @dataclass(frozen=True, slots=True)
 class ProjectionStatus:
-    """One key's row: pending (queued, or leased while ``claimed_at`` is set), done or error."""
+    """One key's row: pending (queued, or leased while ``claimed_at`` is set), done or error.
+
+    ``spec.source`` is the source the row is drawn from: the last one checked.
+    """
 
     spec: ProjectionSpec
     status: str
@@ -250,110 +383,117 @@ class ProjectionStatus:
     next_attempt_at: float | None = None
     load_ms: int | None = None
     render_ms: int | None = None
+    touched_at: float = 0.0
+    #: An on-demand row's files by role: its blob, the other files and its manifest.
+    files: Mapping[str, str] | None = None
 
     @property
     def key(self) -> str:
         return self.spec.key
 
+    @property
+    def png(self) -> bool:
+        """Whether the row's blob is a PNG, which the blob route serves."""
 
-class StatusStore(Protocol):
-    """The projection status table. Every method is atomic on its key."""
+        return self.files is None or next((role for role, sha256 in self.files.items()
+                                           if sha256 == self.blob_sha256), "png") == "png"
 
-    def get(self, key: str) -> ProjectionStatus | None: ...
 
-    def enqueue(self, spec: ProjectionSpec) -> ProjectionStatus:
-        """Insert a queued pending row unless one exists; return the row either way."""
+def _status(row: ProjectionRow | None) -> ProjectionStatus | None:
+    if row is None:
+        return None
+    source = row.body["source"]
+    spec = ProjectionSpec(row.key, row.kind, dict(row.body["recipe"]), row.renderer_version,
+                          RecordedSource.of(source) if row.kind in ON_DEMAND else ModelSource.from_dict(source))
+    return ProjectionStatus(spec, row.status, row.attempts, row.claimed_at, row.blob_sha256, row.error,
+                            row.next_attempt_at, row.load_ms, row.render_ms, row.touched_at,
+                            row.body.get("files"))
+
+
+def _body(spec: ProjectionSpec, extra: Mapping[str, Any] | None = None) -> dict[str, Any]:
+    return {"recipe": dict(spec.recipe), "source": spec.source.to_dict(), **(extra or {})}
+
+
+class StatusTable:
+    """The projection status table in the project index; every method is one transaction.
+
+    Raises ``IndexUnavailable`` when the index is closed.
+    """
+
+    def __init__(self, index: ProjectIndex | None) -> None:
+        self._index = index
+
+    @property
+    def index(self) -> ProjectIndex:
+        if self._index is None:
+            from archflow.project.index import IndexUnavailable
+
+            raise IndexUnavailable("this runtime keeps no project index")
+        return self._index
+
+    def get(self, key: str) -> ProjectionStatus | None:
+        return _status(self.index.projection(key))
+
+    def enqueue(self, spec: ProjectionSpec, *, now: float, body: Mapping[str, Any] | None = None) -> ProjectionStatus:
+        """Insert a queued pending row unless one exists; return the row either way.
+
+        ``body`` adds to what the row keeps: an on-demand row's files.
+        """
+
+        return _status(self.index.enqueue_projection(ProjectionRow(
+            spec.key, spec.input_sha256, spec.kind, spec.recipe_hash, spec.renderer, _body(spec, body)), now=now))
 
     def claim(self, key: str, *, now: float) -> ProjectionStatus | None:
         """Lease a queued row to the worker (attempts + 1); None when it is not queued."""
 
-    def finish(self, key: str, *, blob_sha256: str, load_ms: int, render_ms: int) -> None: ...
+        return _status(self.index.claim_projection(key, now=now))
 
-    def fail(self, key: str, *, error: str, next_attempt_at: float | None) -> None: ...
+    def finish(self, key: str, *, blob_sha256: str, load_ms: int, render_ms: int, now: float) -> None:
+        self.index.finish_projection(key, blob_sha256=blob_sha256, load_ms=load_ms, render_ms=render_ms, now=now)
+
+    def fail(self, key: str, *, error: str, next_attempt_at: float | None, now: float) -> None:
+        self.index.fail_projection(key, error=error, next_attempt_at=next_attempt_at, now=now)
 
     def release(self, key: str) -> None:
-        """A cancel: remove the row and give its attempt back; nothing is recorded as failed."""
+        """A cancel or a refused source: remove the row and give its attempt back; nothing is recorded as failed."""
 
-    def retry(self, key: str, spec: ProjectionSpec) -> ProjectionStatus | None:
+        self.index.drop_projections({key})
+
+    def retry(self, key: str, spec: ProjectionSpec, *, now: float) -> ProjectionStatus | None:
         """Queue an error row again, keeping its attempts, to be drawn from ``spec``'s source.
 
         None when the row is not an error (for instance, another request retried it first).
         """
 
+        return _status(self.index.retry_projection(key, _body(spec), now=now))
+
     def reclaim(self, *, now: float, lease_s: float) -> tuple[str, ...]:
         """Turn leases older than ``lease_s`` (all of them at startup) back into queued rows."""
 
-    def rows(self) -> tuple[ProjectionStatus, ...]: ...
+        return self.index.reclaim_projections(now=now, lease_s=lease_s)
 
-    def drop(self, keys: set[str]) -> None: ...
+    def rows(self, *, blob_sha256: str | None = None) -> tuple[ProjectionStatus, ...]:
+        return tuple(_status(row) for row in self.index.projections(blob_sha256=blob_sha256))
 
+    def redraw(self, keys: Sequence[str], *, now: float) -> tuple[ProjectionStatus, ...]:
+        """Queue done rows whose blob is gone again, from the source each was drawn from; the rows now queued."""
 
-class InMemoryStatusStore:
-    """STAND-IN for part A of #367: part B replaces it with the status table in index.sqlite.
+        return tuple(_status(row) for row in self.index.redraw_projections(keys, now=now))
 
-    Rows live in this process only, so a restart forgets them; a blob already
-    on disk is found again by its digest when the same projection is drawn.
-    """
+    def touch(self, key: str, *, now: float) -> None:
+        """The row was read: its grace window starts over."""
 
-    def __init__(self) -> None:
-        self._rows: dict[str, ProjectionStatus] = {}
-        self._lock = threading.Lock()
+        self.index.touch_projection(key, now=now)
 
-    def get(self, key):
-        with self._lock:
-            return self._rows.get(key)
+    def drop(self, keys: Mapping[str, float]) -> None:
+        """Remove rows not touched since the time given for each."""
 
-    def enqueue(self, spec):
-        with self._lock:
-            return self._rows.setdefault(spec.key, ProjectionStatus(spec, PENDING))
+        self.index.drop_projections(set(keys), touched=keys)
 
-    def claim(self, key, *, now):
-        with self._lock:
-            row = self._rows.get(key)
-            if row is None or row.status != PENDING or row.claimed_at is not None:
-                return None
-            row = self._rows[key] = replace(row, claimed_at=now, attempts=row.attempts + 1)
-            return row
+    def inputs(self) -> frozenset[str]:
+        """The content hashes the project's artifacts still name: what a projection is reachable from."""
 
-    def finish(self, key, *, blob_sha256, load_ms, render_ms):
-        with self._lock:
-            row = self._rows[key]
-            self._rows[key] = replace(row, status=DONE, claimed_at=None, blob_sha256=blob_sha256, error=None,
-                                      next_attempt_at=None, load_ms=load_ms, render_ms=render_ms)
-
-    def fail(self, key, *, error, next_attempt_at):
-        with self._lock:
-            row = self._rows[key]
-            self._rows[key] = replace(row, status=ERROR, claimed_at=None, error=error, next_attempt_at=next_attempt_at)
-
-    def release(self, key):
-        with self._lock:
-            self._rows.pop(key, None)
-
-    def retry(self, key, spec):
-        with self._lock:
-            row = self._rows.get(key)
-            if row is None or row.status != ERROR:
-                return None
-            row = self._rows[key] = replace(row, spec=spec, status=PENDING, claimed_at=None, next_attempt_at=None)
-            return row
-
-    def reclaim(self, *, now, lease_s):
-        with self._lock:
-            stale = [key for key, row in self._rows.items()
-                     if row.status == PENDING and row.claimed_at is not None and now - row.claimed_at >= lease_s]
-            for key in stale:
-                self._rows[key] = replace(self._rows[key], claimed_at=None)
-            return tuple(sorted(stale))
-
-    def rows(self):
-        with self._lock:
-            return tuple(self._rows[key] for key in sorted(self._rows))
-
-    def drop(self, keys):
-        with self._lock:
-            for key in keys:
-                self._rows.pop(key, None)
+        return self.index.model_inputs()
 
 
 # ---------------------------------------------------------------- rendering
@@ -365,6 +505,10 @@ class RenderFailed(RuntimeError):
 
 class RenderCancelled(RuntimeError):
     """The job was stopped on purpose; its attempt is given back."""
+
+
+class RenderRefused(RuntimeError):
+    """The render process refused the source (it no longer names a retained model); its attempt is given back."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -468,6 +612,8 @@ class SubprocessRenderer:
             tail = self.stderr_tail()
             raise RenderFailed(f"render process exited with {code}" + (f": {tail[-1500:]}" if tail else ""))
         answer = json.loads(line)
+        if answer.get("refused"):
+            raise RenderRefused(answer["error"])
         if not answer["ok"]:
             raise RenderFailed(answer["error"])
         return RenderResult(base64.b64decode(answer["png"]), answer["loadS"], answer["renderS"])
@@ -501,17 +647,27 @@ def _backoff(attempts: int) -> float:
     return BACKOFF_S[min(attempts, len(BACKOFF_S)) - 1]
 
 
+# What the worker is doing when it is not drawing (``_running``).
+_TREE, _IDLE = "<tree>", "<idle>"
+
+
 @dataclass
 class ProjectionQueue:
-    """One low-priority worker drawing one projection at a time, enqueued on a read miss.
+    """One low-priority worker drawing one projection at a time.
 
-    ``start`` reclaims every lease (nothing is running yet), queues the pending
-    rows again and collects old outputs; the worker starts on the first request.
+    Enqueued on a reader's miss (``request``) and, after each commit of the
+    index (``committed``), for every model ``tree_sources`` names: first the
+    working position's, then the rest of the design tree. ``start`` reclaims
+    every lease (nothing is running yet), queues the pending rows again and
+    collects old outputs. ``check(spec)`` raises when ``spec``'s source cannot
+    be drawn; it runs on every request and before every retry.
     """
 
     cache_root: Path
     renderer_factory: Callable[[], Renderer]
-    store: StatusStore = field(default_factory=InMemoryStatusStore)
+    store: StatusTable
+    check: Callable[[ProjectionSpec], None] | None = None
+    tree_sources: Callable[[], Sequence[tuple[int, ModelSource]]] | None = None
     timeout_s: float = DEFAULT_TIMEOUT_S
     max_attempts: int = MAX_ATTEMPTS
     grace_s: float = GRACE_S
@@ -519,13 +675,22 @@ class ProjectionQueue:
 
     def __post_init__(self) -> None:
         self.blobs = BlobStore(self.cache_root)
-        self._queued: deque[str] = deque()
+        self._queued: dict[int, deque[str]] = {CURRENT: deque(), VISIBLE: deque(), REST: deque()}
+        self._priority: dict[str, int] = {}
+        self._inputs: dict[str, str] = {}
         self._wake = threading.Condition()
         self._thread: threading.Thread | None = None
         self._renderer: Renderer | None = None
         self._running: str | None = None
+        self._last_input: str | None = None
         self._stopping = False
+        self._committed = False
         self._collected_at: float | None = None
+        self._locks: dict[str, list] = {}
+        self._locks_guard = threading.Lock()
+        self._starting = threading.Lock()
+        #: What was drawn, in order (by the worker or on demand), with load and render time (for tests and benchmarks).
+        self.drawn: list[tuple[str, int, int]] = []
 
     @property
     def lease_s(self) -> float:
@@ -533,68 +698,284 @@ class ProjectionQueue:
         return self.timeout_s + 30.0
 
     def start(self) -> None:
-        with self._wake:
-            if self._thread is not None or self._stopping:
-                return
-            self.store.reclaim(now=self.clock(), lease_s=0.0)
-            for row in self.store.rows():
-                if row.status == PENDING:
-                    self._queued.append(row.key)
-            self._thread = threading.Thread(target=self._work, daemon=True, name="projection-worker")
-            self._thread.start()
+        # Startup reads the table without holding ``_wake``: a commit's listener
+        # (``committed``) must never wait for it.
+        with self._starting:
+            with self._wake:
+                if self._thread is not None or self._stopping:
+                    return
+            now = self.clock()
+            self.store.reclaim(now=now, lease_s=0.0)
+            rows = self.store.rows()
+            queued = [row for row in rows if row.status == PENDING and _background(row) and _current(row)]
+            # A done row whose blob is gone (the cache directory was cleared) is drawn again.
+            queued += self._redraw([row for row in rows if row.status == DONE and not self._present(row)], now=now)
+            with self._wake:
+                if self._stopping:
+                    return
+                for row in queued:
+                    self._push_locked(row.key, REST, row.spec.input_sha256)
+                # The first pass over the tree: whatever was committed while no worker ran.
+                self._committed = self.tree_sources is not None
+                self._thread = threading.Thread(target=self._work, daemon=True, name="projection-worker")
+                self._thread.start()
         self.collect()
 
-    def request(self, spec: ProjectionSpec, check: Callable[[ModelSource], None] | None = None) -> ProjectionStatus:
-        """The key's row; a miss, a vanished blob or a due retry queues the job.
+    def _redraw(self, rows: Sequence[ProjectionStatus], *, now: float) -> list[ProjectionStatus]:
+        """Done rows whose blob is gone: the current renderer's are queued again, an older one's dropped.
 
-        ``check(spec.source)`` runs before anything is queued and raises when
-        the requester's source cannot be drawn; the row is then left as it
-        was. A due retry draws from the source of the request that asks for it.
+        Returns the rows now queued; the caller pushes them. The render process
+        checks each one's source before it draws, and a refusal drops the row.
+        An on-demand row is dropped too: the next request that needs it draws it.
+        """
+
+        if not rows:
+            return []
+        again = [row for row in rows if _background(row) and _current(row)]
+        self.store.drop({row.key: row.touched_at for row in rows if row not in again})
+        return list(self.store.redraw([row.key for row in again], now=now))
+
+    def _present(self, row: ProjectionStatus, *, read: bool = False) -> bool:
+        """Whether a done row's files are all there: a stat each, or with ``read`` a verified read."""
+
+        digests = row.files if row.files is not None else {"png": row.blob_sha256}
+        for role, sha256 in digests.items():
+            suffix = FILE_SUFFIXES.get(role, ".png")
+            if not (self.blobs.read(sha256, suffix) is not None if read else self.blobs.exists(sha256, suffix)):
+                return False
+        return True
+
+    def lost(self, blob_sha256: str) -> int:
+        """A client could not read this blob: every done row naming it is drawn again. Returns how many."""
+
+        self.start()
+        redrawn = self._redraw([row for row in self.store.rows(blob_sha256=blob_sha256)
+                                if row.status == DONE and not self._present(row, read=True)], now=self.clock())
+        for row in redrawn:
+            self._push(row.key, VISIBLE, row.spec.input_sha256)
+        return len(redrawn)
+
+    def committed(self) -> None:
+        """The index committed: queue the tree's models the worker has not drawn. Returns at once."""
+
+        if self.tree_sources is None:
+            return
+        with self._wake:
+            self._committed = True
+            self._wake.notify_all()
+
+    @contextmanager
+    def _key(self, key: str):
+        """The per-key lock of this process: one request at a time decides what a key needs."""
+
+        with self._locks_guard:
+            entry = self._locks.setdefault(key, [threading.Lock(), 0])
+            entry[1] += 1
+        try:
+            with entry[0]:
+                yield
+        finally:
+            with self._locks_guard:
+                entry[1] -= 1
+                if not entry[1]:
+                    self._locks.pop(key, None)
+
+    def request(self, spec: ProjectionSpec, *, priority: int = VISIBLE) -> ProjectionStatus:
+        """The key's row; a miss, a vanished blob, a lost lease or a due retry queues the job.
+
+        ``check(spec)`` runs first, whatever the row: a source that cannot be
+        drawn is refused to its requester even when the key is done, and the
+        row is left as it was. A due retry draws from this request's source.
         """
 
         self.start()
-        row = self.store.get(spec.key)
-        if row is not None and row.status == DONE and self.blobs.read(row.blob_sha256) is None:
-            self.store.release(row.key)  # the cache directory was cleared: draw again
-            row = None
-        if row is not None and row.status == ERROR and self._due(row):
-            if check is not None:
-                check(spec.source)
-            retried = self.store.retry(row.key, spec)
-            if retried is None:  # another request retried it first
-                return self.store.get(row.key) or row
-            self._push(retried.key)
-            return retried
-        if (row is not None and row.status == PENDING and row.claimed_at is not None
-                and self.clock() - row.claimed_at >= self.lease_s and row.key != self._running):
-            self.store.reclaim(now=self.clock(), lease_s=self.lease_s)  # a lost job: take the lease back
-            row = self.store.get(row.key)
-            if row is not None:
-                self._push(row.key)
-        if row is None:
-            if check is not None:
-                check(spec.source)
-            row = self.store.enqueue(spec)
+        if self.check is not None:
+            self.check(spec)
+        with self._key(spec.key):
+            now = self.clock()
+            row = self.store.get(spec.key)
+            if row is not None and row.status == DONE and self.blobs.read(row.blob_sha256) is None:
+                self.store.release(row.key)  # the cache directory was cleared: draw again
+                row = None
+            if row is not None and row.status == ERROR and self._due(row):
+                retried = self.store.retry(row.key, spec, now=now)
+                if retried is None:  # another request retried it first
+                    return self.store.get(row.key) or row
+                self._push(retried.key, priority, spec.input_sha256)
+                return retried
+            if (row is not None and row.status == PENDING and row.claimed_at is not None
+                    and now - row.claimed_at >= self.lease_s and row.key != self._running):
+                self.store.reclaim(now=now, lease_s=self.lease_s)  # a lost job: take the lease back
+                row = self.store.get(row.key)
+            if row is None:
+                row = self.store.enqueue(spec, now=now)
             if row.status == PENDING and row.claimed_at is None:
-                self._push(row.key)
-        return row
+                self._push(row.key, priority, spec.input_sha256)
+            elif row.status == DONE and now - row.touched_at >= min(TOUCH_EVERY_S, self.grace_s / 2):
+                self.store.touch(row.key, now=now)  # still read: its grace window starts over
+            return row
+
+    def read(self, key: str) -> ProjectionStatus | None:
+        """A known key's row, requested again from the source it was last drawn from (checked again)."""
+
+        row = self.store.get(key)
+        if row is not None and row.spec.kind in ON_DEMAND:
+            return row  # drawn again only by the request that needs it
+        return None if row is None else self.request(row.spec)
+
+    def on_demand(self, spec: ProjectionSpec, draw: Callable[[], tuple[Mapping[str, bytes], Mapping[str, Any]]],
+              ) -> tuple[dict[str, bytes], dict[str, Any], bool]:
+        """An on-demand projection's files and facts, and whether they came from the cache.
+
+        A hit (``_hit``) is drawn from nothing. Otherwise ``draw()`` runs once,
+        under this key's lock, returning the files by role (the first becomes
+        the row's blob) and what was recorded about them as JSON values. They
+        are kept with a manifest, then the row is inserted done in one step, so
+        no worker ever sees it pending. ``draw`` raising leaves no row: a
+        refused request is its caller's answer, not this key's failure.
+
+        The cache is optional: when it cannot be read or written (the index
+        stops answering, the blob folder is not writable) the failure is
+        logged and the files are drawn and returned as without it.
+        """
+
+        if spec.kind not in ON_DEMAND:
+            raise ProjectionError(f"{spec.kind!r} is drawn by the worker, not on demand")
+        with self._key(spec.key):
+            try:
+                found = self._hit(spec)
+                readable = True
+            except Exception:
+                _log.warning("projection %s: the cache could not be read; drawing without it", spec.key, exc_info=True)
+                found, readable = None, False
+            if found is not None:
+                return *found, True
+            started = time.perf_counter()
+            files, facts = draw()
+            render_ms = round((time.perf_counter() - started) * 1000)
+            files = {role: bytes(data) for role, data in files.items()}
+            facts = json.loads(json.dumps(facts, sort_keys=True))
+            self.drawn.append((spec.key, 0, render_ms))
+            if readable:
+                try:
+                    self._keep(spec, files, facts, render_ms)
+                except Exception:
+                    _log.warning("projection %s: the drawing could not be kept; it is returned uncached",
+                                 spec.key, exc_info=True)
+            return files, facts, False
+
+    def _hit(self, spec: ProjectionSpec) -> tuple[dict[str, bytes], dict[str, Any]] | None:
+        """The files and facts a done row keeps for ``spec``, or None: the row is checked, not trusted.
+
+        The row's own kind, recipe, input and renderer must hash back to the
+        requested key; its manifest, read by its digest, must name that key,
+        the row's files and its blob; and every file must read back by its
+        digest. Any mismatch is a miss (the caller draws and the row is
+        replaced). The facts come from the manifest, never from the row.
+        """
+
+        row = self.store.get(spec.key)
+        if row is None or row.status != DONE or not row.files:
+            return None
+        stored = row.spec
+        if ((stored.kind, stored.renderer, stored.input_sha256, stored.recipe_hash)
+                != (spec.kind, spec.renderer, spec.input_sha256, spec.recipe_hash)
+                or projection_key(stored.input_sha256, stored.kind, stored.recipe,
+                                  renderer=stored.renderer) != spec.key):
+            return None
+        digests = dict(row.files)
+        manifest_sha256 = digests.pop(MANIFEST, None)
+        text = self._files({MANIFEST: manifest_sha256})
+        if text is None:
+            return None
+        try:
+            manifest = json.loads(text[MANIFEST])
+        except ValueError:
+            return None
+        if (not isinstance(manifest, dict) or manifest.get("key") != spec.key or manifest.get("files") != digests
+                or manifest.get("blob") != row.blob_sha256 or not isinstance(manifest.get("facts"), dict)):
+            return None
+        files = self._files(digests)
+        if files is None:
+            return None
+        now = self.clock()
+        if now - row.touched_at >= min(TOUCH_EVERY_S, self.grace_s / 2):
+            self.store.touch(row.key, now=now)  # still asked for: its grace window starts over
+        return files, manifest["facts"]
+
+    def _keep(self, spec: ProjectionSpec, files: Mapping[str, bytes], facts: Mapping[str, Any], render_ms: int) -> None:
+        """Keep drawn files, their manifest and a done row for ``spec``, replacing any row it had."""
+
+        now = self.clock()
+        digests = {role: self.blobs.put(data, FILE_SUFFIXES[role]) for role, data in files.items()}
+        blob = next(iter(digests.values()))
+        manifest = json.dumps({"key": spec.key, "blob": blob, "files": digests, "facts": dict(facts)},
+                              sort_keys=True, separators=(",", ":")).encode("utf-8")
+        digests[MANIFEST] = self.blobs.put(manifest, FILE_SUFFIXES[MANIFEST])
+        row = self.store.get(spec.key)
+        if row is not None:
+            self.store.drop({row.key: row.touched_at})
+        self.store.enqueue(spec, now=now, body={"files": digests})
+        if self.store.claim(spec.key, now=now) is not None:
+            self.store.finish(spec.key, blob_sha256=blob, load_ms=0, render_ms=render_ms, now=self.clock())
+
+    def _files(self, digests: Mapping[str, str]) -> dict[str, bytes] | None:
+        """Every file of an on-demand row, verified against its digest; None when any is missing or corrupt."""
+
+        files = {}
+        for role, sha256 in digests.items():
+            suffix = FILE_SUFFIXES.get(role)
+            try:
+                data = None if suffix is None or not isinstance(sha256, str) else self.blobs.read(sha256, suffix)
+            except ProjectionError:  # not a digest: an edited row
+                data = None
+            if data is None:
+                return None
+            files[role] = data
+        return files
 
     def _due(self, row: ProjectionStatus) -> bool:
         return (row.attempts < self.max_attempts and row.next_attempt_at is not None
                 and self.clock() >= row.next_attempt_at)
 
-    def _push(self, key: str) -> None:
+    def _push(self, key: str, priority: int, input_sha256: str) -> None:
         with self._wake:
-            if key not in self._queued and key != self._running and len(self._queued) < _MAX_QUEUED:
-                self._queued.append(key)
-                self._wake.notify()
+            self._push_locked(key, priority, input_sha256)
+
+    def _push_locked(self, key: str, priority: int, input_sha256: str) -> None:
+        if key == self._running:
+            return
+        kept = self._priority.get(key)
+        if kept is not None:
+            if kept <= priority:
+                return
+            self._queued[kept].remove(key)  # asked for sooner: moved up
+        elif sum(map(len, self._queued.values())) >= _MAX_QUEUED and priority == REST:
+            return  # the row stays pending; an idle pass queues it later
+        self._queued[priority].append(key)
+        self._priority[key] = priority
+        self._inputs[key] = input_sha256
+        self._wake.notify_all()
+
+    def _pop_locked(self) -> str | None:
+        order = [key for priority in (CURRENT, VISIBLE, REST) for key in self._queued[priority]]
+        if not order:
+            return None
+        # The same model's next size first: its shapes are still loaded in the render process.
+        key = next((key for key in order if self._last_input is not None
+                    and self._inputs.get(key) == self._last_input), order[0])
+        self._queued[self._priority.pop(key)].remove(key)
+        self._last_input = self._inputs.pop(key, None)
+        return key
 
     def cancel(self, key: str) -> None:
         """Stop one job, queued or running; it is not a failure and keeps no attempt."""
 
         with self._wake:
-            if key in self._queued:
-                self._queued.remove(key)
+            priority = self._priority.pop(key, None)
+            if priority is not None:
+                self._queued[priority].remove(key)
+                self._inputs.pop(key, None)
                 self.store.release(key)
                 return
             running = key == self._running
@@ -614,24 +995,39 @@ class ProjectionQueue:
             self._renderer.close()
 
     def collect(self) -> tuple[str, ...]:
-        """Drop rows drawn by other renderer versions or salts; remove blobs nothing reaches after the grace window."""
+        """Drop what is no longer reachable or superseded; remove blobs no row names after the grace window.
+
+        Any row goes when its input is no artifact's any more and its grace
+        window (restarted by reads, ``TOUCH_EVERY_S``) has passed. An older
+        renderer's or salt's done row otherwise stays until the current one's
+        done row for the same input and recipe exists, however old it is, so a
+        renderer change replaces pictures one at a time; its rows not yet drawn
+        go at once. A blob a remaining row names is never removed.
+        """
 
         now = self.clock()
-        stale = {row.key for row in self.store.rows()
-                 if row.spec.renderer != renderer_version(row.spec.kind, row.spec.recipe)
-                 or row.key != projection_key(row.spec.input_sha256, row.spec.kind, row.spec.recipe,
-                                              renderer=row.spec.renderer)}
-        self.store.drop(stale)
-        referenced = {row.blob_sha256 for row in self.store.rows() if row.status == DONE and row.blob_sha256}
+        rows = self.store.rows()
+        inputs = self.store.inputs()
+        replaced = {(row.spec.input_sha256, row.spec.kind, row.spec.recipe_hash)
+                    for row in rows if row.status == DONE and _current(row)}
+        drop: dict[str, float] = {}
+        for row in rows:
+            unreachable = now - row.touched_at >= self.grace_s and row.spec.input_sha256 not in inputs
+            if unreachable or (not _current(row) and (row.status != DONE or (
+                    row.spec.input_sha256, row.spec.kind, row.spec.recipe_hash) in replaced)):
+                drop[row.key] = row.touched_at
+        self.store.drop(drop)
+        referenced = {sha256 for row in self.store.rows()
+                      for sha256 in (row.blob_sha256, *(row.files or {}).values()) if sha256}
         self._collected_at = now
         return self.blobs.collect(referenced, now=now, grace_s=self.grace_s)
 
     def wait_idle(self, timeout_s: float = 60.0) -> bool:
-        """For tests and benchmarks: True once nothing is queued or running."""
+        """For tests and benchmarks: True once nothing is queued or running and no commit awaits its pass."""
 
         deadline = time.monotonic() + timeout_s
         with self._wake:
-            while self._queued or self._running is not None:
+            while any(self._queued.values()) or self._running is not None or self._committed:
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
                     return False
@@ -641,69 +1037,189 @@ class ProjectionQueue:
     def _next(self) -> str | None:
         with self._wake:
             while not self._stopping:
-                if self._queued:
-                    self._running = self._queued.popleft()
-                    return self._running
+                if self._committed:
+                    self._committed = False
+                    self._running = _TREE
+                    return _TREE
+                key = self._pop_locked()
+                if key is not None:
+                    self._running = key
+                    return key
                 self._wake.notify_all()
                 self._wake.wait(timeout=5.0)
-                if not self._queued:
-                    self._idle()
+                if not self._committed and not any(self._queued.values()) and not self._stopping:
+                    self._running = _IDLE
+                    return _IDLE
             return None
 
-    def _idle(self) -> None:
-        # Called with the condition held and nothing queued: take back lost
-        # leases, queue due retries and rows the full queue turned away, and
-        # collect now and then.
-        now = self.clock()
-        self.store.reclaim(now=now, lease_s=self.lease_s)
-        for row in self.store.rows():
-            if len(self._queued) >= _MAX_QUEUED:
-                break
-            if row.status == ERROR and self._due(row) and self.store.retry(row.key, row.spec) is not None:
-                self._queued.append(row.key)
-            elif row.status == PENDING and row.claimed_at is None and row.key not in self._queued:
-                self._queued.append(row.key)
-        if self._collected_at is None or now - self._collected_at >= _COLLECT_EVERY_S:
-            self._collected_at = now
-            threading.Thread(target=self.collect, daemon=True, name="projection-collect").start()
-
     def _work(self) -> None:
-        while (key := self._next()) is not None:
+        while (job := self._next()) is not None:
             try:
-                self._run(key)
+                if job == _TREE:
+                    self._queue_tree()
+                elif job == _IDLE:
+                    self._idle()
+                else:
+                    self._run(job)
             except Exception:  # a store error must not end the worker; the lease comes back later
-                _log.exception("projection job %s could not be recorded", key)
+                _log.exception("projection job %s could not be recorded", job)
             finally:
                 with self._wake:
                     self._running = None
                     self._wake.notify_all()
 
+    def _queue_tree(self) -> None:
+        """Queue every model of the tree without a row: the working position's first, then the rest."""
+
+        for priority, source in self.tree_sources():
+            spec = projection_spec(source, MODEL_LINES, TREE_RECIPE)
+            with self._key(spec.key):
+                row = self.store.get(spec.key)
+                if row is None:
+                    if self.check is not None:
+                        try:
+                            self.check(spec)
+                        except Exception:  # noqa: BLE001 - a model the tree cannot draw stays a placeholder
+                            continue
+                    row = self.store.enqueue(spec, now=self.clock())
+                elif row.status == DONE and not self.blobs.exists(row.blob_sha256):
+                    row = next(iter(self._redraw([row], now=self.clock())), row)  # the cache was cleared
+            if row.status == PENDING and row.claimed_at is None:
+                self._push(row.key, priority, spec.input_sha256)
+
+    def _idle(self) -> None:
+        # Nothing queued: take back lost leases, queue due retries (their source
+        # checked again) and rows the full queue turned away, and collect now and then.
+        now = self.clock()
+        self.store.reclaim(now=now, lease_s=self.lease_s)
+        for row in self.store.rows():
+            if sum(map(len, self._queued.values())) >= _MAX_QUEUED:
+                break
+            if not _background(row) or not _current(row):
+                continue
+            if row.status == ERROR and self._due(row):
+                try:
+                    if self.check is not None:
+                        self.check(row.spec)
+                except Exception:  # noqa: BLE001 - a source no longer drawable is not retried
+                    continue
+                if self.store.retry(row.key, row.spec, now=now) is not None:
+                    self._push(row.key, REST, row.spec.input_sha256)
+            elif row.status == PENDING and row.claimed_at is None:
+                self._push(row.key, REST, row.spec.input_sha256)
+        if self._collected_at is None or now - self._collected_at >= _COLLECT_EVERY_S:
+            self.collect()
+
     def _run(self, key: str) -> None:
         row = self.store.claim(key, now=self.clock())
         if row is None:
+            return
+        if not _background(row) or not _current(row):
+            # Drawn now it would carry another renderer's key, or it is drawn only on demand.
+            self.store.release(key)
             return
         try:
             if self._renderer is None:
                 self._renderer = self.renderer_factory()
             result = self._renderer.render(row.spec, timeout_s=self.timeout_s)
             blob = self.blobs.put(result.png)
-        except RenderCancelled:
+        except (RenderCancelled, RenderRefused):
             self.store.release(key)
             return
         except Exception as exc:  # a failed job is recorded, never raised into the worker
             detail = f"{type(exc).__name__}: {exc}" if not isinstance(exc, RenderFailed) else str(exc)
             retry_at = self.clock() + _backoff(row.attempts) if row.attempts < self.max_attempts else None
-            self.store.fail(key, error=detail[-2000:], next_attempt_at=retry_at)
+            self.store.fail(key, error=detail[-2000:], next_attempt_at=retry_at, now=self.clock())
             return
-        self.store.finish(key, blob_sha256=blob, load_ms=round(result.load_s * 1000),
-                          render_ms=round(result.render_s * 1000))
+        load_ms, render_ms = round(result.load_s * 1000), round(result.render_s * 1000)
+        self.drawn.append((key, load_ms, render_ms))
+        self.store.finish(key, blob_sha256=blob, load_ms=load_ms, render_ms=render_ms, now=self.clock())
 
 
-def projection_queue(settings) -> ProjectionQueue:
-    """The runtime's queue: its cache under the project's cache directory, rendering in a subprocess."""
+def _background(row: ProjectionStatus) -> bool:
+    """Whether the worker draws this row's kind (on-demand kinds are drawn by their request)."""
 
-    return ProjectionQueue(settings.project_cache_dir / "projections",
-                           lambda: SubprocessRenderer(settings.project_dir))
+    return row.spec.kind in RECIPES
+
+
+def _current(row: ProjectionStatus) -> bool:
+    """Whether the current renderer and salt would give this row's key."""
+
+    spec = row.spec
+    try:
+        renderer = renderer_version(spec.kind, spec.recipe)
+    except (ProjectionError, ValueError, KeyError, TypeError):
+        return False
+    return spec.renderer == renderer and spec.key == projection_key(
+        spec.input_sha256, spec.kind, spec.recipe, renderer=renderer)
+
+
+def tree_model_sources(index: ProjectIndex) -> list[tuple[int, ModelSource]]:
+    """The models the design tree shows, from one snapshot of the index, in the order to draw them.
+
+    The working position's run first (``CURRENT``); then each committed
+    Stage's model, newest first, and each candidate run's models (``REST``).
+    A model is a run's available 3dm artifact with its exact model source
+    (``artifact_model_source``).
+    """
+
+    with index.snapshot() as snapshot:
+        working = next((entity["body"] for entity in snapshot.entities(["working"])), None) or {}
+        stages = snapshot.rows("stage", limit=None)
+        candidates = snapshot.rows("candidate", limit=None)
+        artifacts = snapshot.rows("artifact", {"format": "3dm"}, limit=None)
+    models: dict[str, list[ModelSource]] = {}
+    for row in artifacts:
+        # As ``artifact_model_source`` reads a listed row: its declared source, else its run's exact state.
+        body, source = row["body"], row["body"].get("model_source")
+        if not row["available"]:
+            continue
+        if isinstance(source, Mapping):
+            source = ModelSource(source["run_id"], source["state_digest"], source["asset_sha256"])
+        elif body.get("design_state_digest") and row["sha256"]:
+            source = ModelSource(row["run_id"], body["design_state_digest"], row["sha256"])
+        else:
+            continue
+        models.setdefault(row["run_id"], []).append(source)
+    order: list[tuple[int, ModelSource]] = []
+    current = working.get("current")
+    order += [(CURRENT, source) for source in models.get(current, ())] if isinstance(current, str) else []
+    for stage in sorted(stages, key=lambda row: (-row["position"], row["branch_id"])):
+        order += [(REST, source) for source in models.get(stage["candidate_id"], ())
+                  if source.asset_sha256 == stage["body"].get("model_sha256")]
+    for candidate in candidates:
+        order += [(REST, source) for source in models.get(candidate["run_id"], ())]
+    seen: set[ModelSource] = set()
+    return [(priority, source) for priority, source in order if not (source in seen or seen.add(source))]
+
+
+def projection_queue(settings, index: ProjectIndex | None = None, *,
+                     check: Callable[[ProjectionSpec], None] | None = None) -> ProjectionQueue:
+    """The runtime's queue: its blobs in the project's cache directory, its rows in ``index``, drawn in a subprocess.
+
+    ``index`` is the project index the binding keeps (``open_projections``);
+    without one the table refuses every call with ``IndexUnavailable``.
+    """
+
+    return ProjectionQueue(
+        settings.project_cache_dir / "projections", lambda: SubprocessRenderer(settings.project_dir),
+        StatusTable(index), check=check, tree_sources=None if index is None else (lambda: tree_model_sources(index)))
+
+
+def open_projections(binding) -> ProjectionQueue:
+    """The queue of ``binding``'s project, once its index has loaded; every request checks its source.
+
+    Raises ``IndexUnavailable`` when the runtime keeps no index, or it has not loaded within ``INDEX_WAIT_S``.
+    """
+
+    from archflow.project.index import IndexUnavailable
+    from .drawings import check_model_view_source
+
+    keeper = binding.await_index(INDEX_WAIT_S)
+    if keeper is None:
+        raise IndexUnavailable(f"project index: {binding.index_status() or 'this process keeps none'}")
+    return projection_queue(binding.settings, keeper.index,
+                            check=lambda spec: check_model_view_source(binding, spec.source, spec.recipe["view"]))
 
 
 # ---------------------------------------------------------------- the render process
@@ -756,27 +1272,40 @@ def _serve(project_dir: Path, memory_cap_mb: int) -> None:
         os.nice(10)
     threading.Thread(target=_watch_memory, args=(memory_cap_mb * 1024 * 1024,), daemon=True).start()
     from .binding import ProjectBinding
-    from .drawings import draw_model_view
+    from .drawings import check_model_view_source, draw_loaded_view, load_model_view
     from ..settings import StudioSettings
     from ..transport.errors import StudioError
 
     answers.write(_READY.decode("ascii") + "\n")
     answers.flush()
     binding = None
+    # The last model read: the next size of the same model is drawn without reading it again.
+    loaded = None
     try:
         for line in sys.stdin:
             request = json.loads(line)
+            source = ModelSource.from_dict(request["source"])
             try:
                 if binding is None:
                     binding = ProjectBinding.open(StudioSettings(project_dir=project_dir, cad_export="off"))
-                drawn = draw_model_view(binding, model_source=ModelSource.from_dict(request["source"]),
-                                        view=request["view"], size_px=request["size"], png_text=request["text"])
-                answer = {"ok": True, "png": base64.b64encode(drawn.png).decode("ascii"),
-                          "loadS": drawn.load_s, "renderS": drawn.render_s}
+                check_model_view_source(binding, source, request["view"])
             except StudioError as exc:
-                answer = {"ok": False, "error": f"{exc.code}: {exc.detail}"}
-            except Exception as exc:  # reported to the queue as this job's failure
-                answer = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+                # The source names no retained model (any more): not this projection's failure.
+                answer = {"ok": False, "refused": True, "error": f"{exc.code}: {exc.detail}"}
+            else:
+                try:
+                    reused = loaded is not None and loaded.model_source == source
+                    if not reused:
+                        loaded = None
+                        loaded = load_model_view(binding, source)
+                    drawn = draw_loaded_view(loaded, view=request["view"], size_px=request["size"],
+                                             png_text=request["text"])
+                    answer = {"ok": True, "png": base64.b64encode(drawn.png).decode("ascii"),
+                              "loadS": 0.0 if reused else drawn.load_s, "renderS": drawn.render_s}
+                except StudioError as exc:
+                    answer = {"ok": False, "error": f"{exc.code}: {exc.detail}"}
+                except Exception as exc:  # reported to the queue as this job's failure
+                    answer = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
             answers.write(json.dumps(answer) + "\n")
             answers.flush()
     finally:

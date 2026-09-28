@@ -1,9 +1,13 @@
 """Typed Runtime refusals survive HTTP and MCP without secrets or blind retries."""
+from contextlib import contextmanager
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import io
 import json
 import os
 from pathlib import Path
+import ssl
 import sys
+import threading
 import unittest
 from unittest.mock import Mock, patch
 from urllib.error import HTTPError
@@ -23,7 +27,7 @@ class ModelingErrorTests(unittest.TestCase):
     def refused(self, status, body):
         opener = Mock()
         opener.open.side_effect = HTTPError("http://127.0.0.1:8791/api/proposals", status, "refused", {}, io.BytesIO(body))
-        with patch.object(chat, "build_opener", return_value=opener), self.assertRaises(HubFailure) as result:
+        with patch.object(chat, "_SERVICE_OPENER", opener), self.assertRaises(HubFailure) as result:
             chat._request_json("http://127.0.0.1:8791", "/api/proposals", "POST", {})
         opener.open.assert_called_once()
         return result.exception
@@ -71,3 +75,52 @@ class ModelingErrorTests(unittest.TestCase):
         self.assertTrue(failure["detail"].startswith("Geometry is authored with POST /api/proposals/construction;"))
         request.assert_not_called()
         studio.assert_not_called()
+
+
+@contextmanager
+def _serving():
+    """A bound-service stand-in on a loopback port: GET answers JSON, /moved redirects."""
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            if self.path == "/moved":
+                self.send_response(302)
+                self.send_header("Location", "/api/protocol")
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
+            body = b'{"ok": true}'
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *args):
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield f"http://127.0.0.1:{server.server_address[1]}"
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+class ServiceCallTests(unittest.TestCase):
+    """What one call from a chat to its bound service costs the Hub (#363)."""
+
+    def test_a_service_call_never_loads_the_certificate_store(self):
+        # A new opener per call made a new HTTPS context, which reads the system
+        # certificate store: about 20 ms of CPU of every Studio call on Windows.
+        with _serving() as base, patch.object(ssl.SSLContext, "load_default_certs",
+                                              side_effect=AssertionError("certificate store loaded")):
+            for _ in range(2):
+                self.assertEqual(chat._request_json(base, "/api/protocol", timeout=5), {"ok": True})
+
+    def test_a_redirecting_service_is_still_refused(self):
+        with _serving() as base, self.assertRaises(HubFailure) as refused:
+            chat._request_json(base, "/moved", timeout=5)
+        self.assertEqual((refused.exception.status, refused.exception.error.code), (409, "CHAT_SERVICE_CHANGED"))

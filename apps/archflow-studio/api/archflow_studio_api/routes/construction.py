@@ -43,7 +43,7 @@ from ..transport.construction import (
 )
 from ..transport.errors import StudioError
 from ..transport.proposal import ProposalDto
-from .proposals import _proposal_source, _remember_proposal
+from .proposals import _proposal_source, _remember_proposal, _stale_base
 
 router = APIRouter(tags=["construction"])
 
@@ -96,7 +96,7 @@ def create_construction_proposal(request: Request, body: ConstructionRequestDto)
     """
 
     binding, base, projection, previous, body = _proposal_source(request, body)
-    _require_state(body.state_digest, projection, "script")
+    _require_state(binding, body, projection, "script")
     made = construction_proposal(
         binding, projection, body.script,
         parameters=[parameter.model_dump(exclude_unset=True) for parameter in body.parameters],
@@ -114,7 +114,7 @@ def create_facets_proposal(request: Request, body: FacetsRequestDto) -> Proposal
     they are. Unknown keys and values are refused with the nearest key or the allowed values."""
 
     binding, base, projection, previous, body = _proposal_source(request, body)
-    _require_state(body.state_digest, projection, "facet change")
+    _require_state(binding, body, projection, "facet change")
     proposal = facets_proposal(projection, [target.model_dump() for target in body.targets],
                                summary=body.summary, keep_refs=tuple(body.keep))
     return _remember(request, proposal, base, previous, body)
@@ -132,7 +132,7 @@ def create_hosted_opening_proposal(request: Request, body: HostedOpeningRequestD
     """
 
     binding, base, projection, previous, body = _proposal_source(request, body)
-    _require_state(body.state_digest, projection, "opening")
+    _require_state(binding, body, projection, "opening")
     proposal = hosted_opening_proposal(
         projection, body.host, kind=body.kind, along=body.along, width=body.width, sill=body.sill, head=body.head,
         shape=body.shape, spring_height=body.spring_height, family=body.family, interface_ref=body.interface_ref,
@@ -141,15 +141,11 @@ def create_hosted_opening_proposal(request: Request, body: HostedOpeningRequestD
     return _remember(request, proposal, base, previous, body)
 
 
-def _require_state(state_digest: str, projection: StateProjection, what: str) -> None:
-    """Made against one exact state, like every other proposal."""
+def _require_state(binding, body, projection: StateProjection, what: str) -> None:
+    """Made against one exact state, like every other proposal; a refusal names the run that holds the sent state."""
 
-    if state_digest != projection.state_digest:
-        raise StudioError(
-            409, "STALE_BASE",
-            f"the {what} names state {state_digest}, but {projection.project_id} is at {projection.state_digest}. "
-            f"Read /api/construction/model again and send the {what} against the state that answers now.",
-        )
+    if body.state_digest != projection.state_digest:
+        raise _stale_base(binding, projection, body.state_digest, f"the {what}", body.source_run_id)
 
 
 def _remember(request: Request, proposal: Proposal, base: StateProjection, previous: Proposal | None,

@@ -110,9 +110,10 @@ def resolve_pick(
             409,
             "STALE_BASE",
             f"the pick names state {request.state_digest}, but "
-            f"{projection.project_id} is at {projection.state_digest}. Read GET "
-            "/api/construction/model (or /api/state) again and resolve the pick "
-            "against the state that answers now.",
+            f"{projection.project_id} is at {projection.state_digest}. Read "
+            "GET /api/construction/model?run=<runId> (or /api/state?run=<runId>) for the "
+            "run the pick was made on and send its stateDigest with sourceRunId; without "
+            "sourceRunId the project's default source answers.",
         )
     documents = request.document_user_strings or {}
     source_state = _source_state(documents, projection.state_digest)

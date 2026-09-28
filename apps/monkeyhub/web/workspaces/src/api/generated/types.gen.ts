@@ -401,7 +401,7 @@ export type AuthoredControlDraftDto = {
     /**
      * Unit
      *
-     * element params are bare numbers in the record; this seam converts nothing and states no unit the record does not
+     * null: a control that is not authored yet declares no unit. The scalar seam restates a stated length in a field's declared unit, and asks when the field declares none or the unit is not a length
      */
     unit: string | null;
     /**
@@ -570,6 +570,8 @@ export type BoardRequestDto = {
 
 /**
  * BoxDto
+ *
+ * Inspected bounds in the export's Z-up CAD frame: [x, z, y] of the modeling frame (+y up) writes use.
  */
 export type BoxDto = {
     /**
@@ -824,7 +826,7 @@ export type CandidateObjectDto = {
      */
     producerOp: string | null;
     /**
-     * retained inspected bounds; null when no box was recorded
+     * retained inspected bounds in the export's Z-up CAD frame: [x, z, y] of the modeling frame writes use, whose +y is up; null when no box was recorded
      */
     bbox: BoxDto | null;
     /**
@@ -836,7 +838,7 @@ export type CandidateObjectDto = {
     /**
      * Upaxis
      *
-     * the matching export's CAD up axis, before viewer conversion; null when unknown
+     * the matching export's CAD up axis, before viewer conversion; Z-up means bbox height is its third coordinate, which writes state as y; null when unknown
      */
     upAxis: string | null;
 };
@@ -4162,6 +4164,10 @@ export type DrawingStylesDto = {
  * DrawnShapeDto
  *
  * A recorded face/prism for local preview, in building-world Y-up metres.
+ *
+ * Resolved, not authored: bindings are evaluated and the base datum, the
+ * reference offset and the elevation are already in the work plane. It is
+ * never a template for ``fields.params``; ``ElementDto.params`` is.
  */
 export type DrawnShapeDto = {
     /**
@@ -4257,6 +4263,8 @@ export type ElementDto = {
     producer: string;
     /**
      * Numericfields
+     *
+     * The scalars the producer reads, resolved: literals as authored, '@key' bindings evaluated. Read-only facts; edit through params.
      */
     numericFields: {
         [key: string]: number | number;
@@ -4266,7 +4274,30 @@ export type ElementDto = {
      * Drawnshapereason
      */
     drawnShapeReason?: string | null;
+    /**
+     * The editable elevation controls of a horizontal drawn prism or face; null for other elements. Where any element stands is verticalExtent.
+     */
     elevation?: ElementElevationDto | null;
+    /**
+     * Read-only: the lowest and highest world +Y in metres, by the producer's own datum and height rules, for prism, planar-surface, curve, wall and loft; null for other producers or unreadable inputs.
+     */
+    verticalExtent?: VerticalExtentDto | null;
+    /**
+     * Params
+     *
+     * Only with ?authored=true: fields.params exactly as authored, '@key' bindings kept, positions relative to the base reference. A semanticEdit that supplies params replaces this whole object: start from this one and change only what you mean to, never from numericFields or drawnShape.
+     */
+    params?: {
+        [key: string]: unknown;
+    } | null;
+    /**
+     * References
+     *
+     * Only with ?authored=true: fields.references exactly as authored (base, top, line, ...); a supplied references object replaces this whole object too.
+     */
+    references?: {
+        [key: string]: unknown;
+    } | null;
 };
 
 /**
@@ -7871,7 +7902,10 @@ export type ProjectionStatusDto = {
      * Inputsha256
      */
     inputSha256: string;
-    source: ModelSourceDto;
+    /**
+     * The requester's own model source, checked for this request; absent when the key alone was asked for and for a projection drawn on demand.
+     */
+    source?: ModelSourceDto | null;
     /**
      * Blobsha256
      */
@@ -7879,7 +7913,7 @@ export type ProjectionStatusDto = {
     /**
      * Bloburl
      *
-     * Immutable PNG bytes; present only when status is done.
+     * Immutable PNG bytes; present only when status is done and the blob is a PNG.
      */
     blobUrl?: string | null;
     /**
@@ -7981,7 +8015,7 @@ export type ProposalDto = {
     /**
      * Status
      *
-     * conflict means the change reaches something the utterance asked to keep; it is still a proposal, never an execution
+     * conflict means the change reaches something it was asked to keep (keep, or a keep clause in the words); it is still a proposal, never an execution
      */
     status: 'proposed' | 'conflict';
     /**
@@ -8394,10 +8428,14 @@ export type PushPullRequestDto = {
     elementId: string;
     /**
      * Distance
+     *
+     * Metres the selected end face moves along its normal; negative pulls it back.
      */
     distance: number;
     /**
      * Normal
+     *
+     * The face that moves, by its outward normal: omit for the end face the extrusion points to (the top of an upward prism); a normal across the extrusion picks a prism's side face. [x, y, z] in metres in the building-local modeling frame: +y is up and x, z lie in plan (plan points are [x, z]). Candidate and compare boxes are Z-up CAD [x, z, y]; swap their last two coordinates before comparing.
      */
     normal?: [
         number,
@@ -10916,6 +10954,8 @@ export type SketchBatchRequestDto = {
 export type SketchPlaneDto = {
     /**
      * Origin
+     *
+     * Relative to the resolved base datum; [x, y, z] in metres in the building-local modeling frame: +y is up and x, z lie in plan (plan points are [x, z]). Candidate and compare boxes are Z-up CAD [x, z, y]; swap their last two coordinates before comparing.
      */
     origin: [
         number,
@@ -10924,6 +10964,8 @@ export type SketchPlaneDto = {
     ];
     /**
      * Xaxis
+     *
+     * Unit vector along which profile x runs; [x, y, z] in metres in the building-local modeling frame: +y is up and x, z lie in plan (plan points are [x, z]). Candidate and compare boxes are Z-up CAD [x, z, y]; swap their last two coordinates before comparing.
      */
     xAxis: [
         number,
@@ -10932,6 +10974,8 @@ export type SketchPlaneDto = {
     ];
     /**
      * Yaxis
+     *
+     * Unit vector along which profile y runs; [x, y, z] in metres in the building-local modeling frame: +y is up and x, z lie in plan (plan points are [x, z]). Candidate and compare boxes are Z-up CAD [x, z, y]; swap their last two coordinates before comparing.
      */
     yAxis: [
         number,
@@ -10940,6 +10984,8 @@ export type SketchPlaneDto = {
     ];
     /**
      * Normal
+     *
+     * Unit vector positive height follows; [0, 1, 0] pulls up. [x, y, z] in metres in the building-local modeling frame: +y is up and x, z lie in plan (plan points are [x, z]). Candidate and compare boxes are Z-up CAD [x, z, y]; swap their last two coordinates before comparing.
      */
     normal: [
         number,
@@ -12015,6 +12061,8 @@ export type TransformElementRequestDto = {
     factor?: number | null;
     /**
      * Translation
+     *
+     * move/copy offset; [0, 0.5, 0] raises 0.5 m and [0, 0, 0.5] moves 0.5 m in plan. [x, y, z] in metres in the building-local modeling frame: +y is up and x, z lie in plan (plan points are [x, z]). Candidate and compare boxes are Z-up CAD [x, z, y]; swap their last two coordinates before comparing.
      */
     translation?: [
         number,
@@ -12023,6 +12071,8 @@ export type TransformElementRequestDto = {
     ] | null;
     /**
      * Axis
+     *
+     * rotate: the axis direction; [0, 1, 0] turns in plan about a vertical axis. [x, y, z] in metres in the building-local modeling frame: +y is up and x, z lie in plan (plan points are [x, z]). Candidate and compare boxes are Z-up CAD [x, z, y]; swap their last two coordinates before comparing.
      */
     axis?: [
         number,
@@ -12031,10 +12081,14 @@ export type TransformElementRequestDto = {
     ] | null;
     /**
      * Angledegrees
+     *
+     * rotate: degrees about axis, right-handed.
      */
     angleDegrees?: number;
     /**
      * Scale
+     *
+     * scale: factors along x, y (vertical) and z of the modeling frame; negative mirrors.
      */
     scale?: [
         number,
@@ -12043,6 +12097,8 @@ export type TransformElementRequestDto = {
     ] | null;
     /**
      * Origin
+     *
+     * rotate/scale: the fixed point, in project coordinates. [x, y, z] in metres in the building-local modeling frame: +y is up and x, z lie in plan (plan points are [x, z]). Candidate and compare boxes are Z-up CAD [x, z, y]; swap their last two coordinates before comparing.
      */
     origin?: [
         number,
@@ -12298,6 +12354,22 @@ export type ValidationReceiptDto = {
      * every finding the gates returned; empty is a real answer
      */
     findings: Array<ValidationFindingDto>;
+};
+
+/**
+ * VerticalExtentDto
+ *
+ * Where an element stands: its lowest and highest world +Y, in metres (#404 F14).
+ */
+export type VerticalExtentDto = {
+    /**
+     * Base
+     */
+    base: number;
+    /**
+     * Top
+     */
+    top: number;
 };
 
 /**
@@ -13670,6 +13742,12 @@ export type ReadStateApiStateGetData = {
          * Answer for this run instead of the one the rule chooses. The run must exist in the bound project.
          */
         run?: string | null;
+        /**
+         * Authored
+         *
+         * Also answer each element's authored params and references, the objects a semanticEdit replaces whole. Read them this way before editing an element.
+         */
+        authored?: boolean;
     };
     url: '/api/state';
 };
@@ -18520,6 +18598,56 @@ export type ReadProjectionBlobApiProjectionsBlobsSha256GetErrors = {
 export type ReadProjectionBlobApiProjectionsBlobsSha256GetError = ReadProjectionBlobApiProjectionsBlobsSha256GetErrors[keyof ReadProjectionBlobApiProjectionsBlobsSha256GetErrors];
 
 export type ReadProjectionBlobApiProjectionsBlobsSha256GetResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
+export type ReadPageProjectionApiProjectionsPagesGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query: {
+        /**
+         * Runid
+         */
+        runId: string;
+        /**
+         * Assetsha256
+         */
+        assetSha256: string;
+        /**
+         * Revisionref
+         */
+        revisionRef?: string | null;
+        /**
+         * Pageindex
+         */
+        pageIndex?: number;
+    };
+    url: '/api/projections/pages';
+};
+
+export type ReadPageProjectionApiProjectionsPagesGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadPageProjectionApiProjectionsPagesGetError = ReadPageProjectionApiProjectionsPagesGetErrors[keyof ReadPageProjectionApiProjectionsPagesGetErrors];
+
+export type ReadPageProjectionApiProjectionsPagesGetResponses = {
     /**
      * Successful Response
      */

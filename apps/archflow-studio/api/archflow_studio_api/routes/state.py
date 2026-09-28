@@ -18,7 +18,6 @@ from ..application.catalog import catalog_of
 from ..application.frame import closure_of_refs, frame_of
 from ..application.options import record_massing
 from ..application.projection import project_state
-from ..transport.errors import StudioError
 from ..transport.options import VolumesDto, volumes_dto
 from ..transport.state import (
     ClosureDto,
@@ -29,6 +28,7 @@ from ..transport.state import (
     frame_dto,
     to_dto,
 )
+from .proposals import _stale_base
 
 router = APIRouter(tags=["state"])
 
@@ -48,6 +48,13 @@ def read_state(
             "The run must exist in the bound project."
         ),
     ),
+    authored: bool = Query(
+        default=False,
+        description=(
+            "Also answer each element's authored params and references, the objects "
+            "a semanticEdit replaces whole. Read them this way before editing an element."
+        ),
+    ),
 ) -> StateProjectionDto:
     """Ask the kernel; shape the answer. No design question is decided here.
 
@@ -63,7 +70,7 @@ def read_state(
     # The catalog stands on the bound view; a record the kernel refused to
     # view has no tree to catalogue, and the honesty line already says so.
     catalog = None if projection.state is None else catalog_of(binding, projection)
-    return to_dto(projection, catalog)
+    return to_dto(projection, catalog, authored=authored)
 
 
 @router.get(
@@ -134,14 +141,7 @@ def read_closure(request: Request, body: ClosureRequestDto) -> ClosureDto:
     binding = bound_project(request.app.state)
     projection = project_state(binding, run_id=body.source_run_id)
     if body.state_digest != projection.state_digest:
-        raise StudioError(
-            409,
-            "STALE_BASE",
-            f"the request names state {body.state_digest}, but "
-            f"{binding.project_id} is at {projection.state_digest}. Read GET "
-            "/api/construction/model (or /api/state) again and ask against "
-            "the state that answers now.",
-        )
+        raise _stale_base(binding, projection, body.state_digest, "the closure question", body.source_run_id)
     return closure_dto(
         closure_of_refs(projection.record, tuple(body.changed_refs))
     )

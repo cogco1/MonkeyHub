@@ -9,6 +9,7 @@ exactly what was declared.
 """
 from __future__ import annotations
 
+import json
 import unittest
 
 # Both owner tiers, loaded the way an entry point loads them. Relying on a
@@ -406,11 +407,16 @@ class EveryDeclaredKindIsBuiltByItsOwnerTests(unittest.TestCase):
 
     def test_every_declared_schema_is_found_where_its_owner_writes_it(self) -> None:
         built = self.built()
-        for schema in declared_schemas():
+        # Both ways (#439): a declaration needs a payload its owner built, and a payload built
+        # here with a base needs its declaration. Walking the declarations alone passed when
+        # StateRecordBinding@1's /base registration was removed.
+        for schema in sorted({*declared_schemas(), *built}):
             if schema.startswith("Test"):
                 continue
             with self.subTest(schema=schema):
                 self.assertIn(schema, built, "no owner-built payload for this schema")
+                self.assertIsNotNone(declared_pointers(schema),
+                                     f"{schema} is written with a base, and no owner declares where it sits")
                 payload = built[schema]
                 # A keyed-row declaration resolves to the pointer of the row
                 # it selected, and a payload may also be covered structurally,
@@ -434,6 +440,9 @@ class EveryDeclaredKindIsBuiltByItsOwnerTests(unittest.TestCase):
                     [SEMANTIC] * len(found),
                     f"{schema} left a declared location behind",
                 )
+                # A base the declarations do not reach is still the old one after restating.
+                self.assertNotIn(self.BASE, json.dumps(restated),
+                                 f"{schema} carries its base where no declared pointer reaches")
 
     def test_the_closure_receipt_restates_its_own_identity(self) -> None:
         """Blocking item 1: a one-way migration used to leave this stale."""

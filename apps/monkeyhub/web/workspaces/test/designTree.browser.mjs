@@ -29,11 +29,15 @@ let recorded = 0;
 const http = createHttpServer();
 let vite, browser, fixture, fixtureModule, runtimeId = null;
 const PROJECT = "riverside-library";
-// #406: the models with a retained preview. S2 and Current are the same model, so they share one image.
+// #406, #367: the models whose server thumbnail is drawn. S2 and Current are the same model, so they share one image.
+// The index holds each drawn one (`projections:<key>`); any other model's is pending until the test draws it.
 const PREVIEWED = new Set(["run-massing-b", "run-massing-c", "run-s1-massing", "run-facade-c", "run-s2-layout"]);
-const previewReads = [], imageReads = [];
+const statusReads = [], imageReads = [], lostReads = [];
+/** The drawn thumbnails, by model asset. */
+const thumbnails = new Map();
 // #366: the fixture project's index (its change log: each entity's last move) and the Hub streams that relay its hints.
-const index = { revision: 1, facts: null, moved: new Map([["tree", 1], ["working", 1], ["area:working", 1], ["run:run-site", 1]]) };
+const index = { revision: 1, facts: null, moved: new Map([["tree", 1], ["working", 1], ["area:working", 1], ["run:run-site", 1]]),
+  bodies: new Map() };
 const moveIndex = (ids) => { index.revision += 1; for (const id of ids) index.moved.set(id, index.revision); return index.revision; };
 const hubStreams = new Set(), treeReads = [];
 let indexReads = 0, hubSequence = 1;
@@ -42,6 +46,26 @@ const hubSend = (name, body) => {
   for (const stream of hubStreams) stream.write(`event: ${name}\ndata: ${JSON.stringify({ serverId: "design-tree-hub", sequence: hubSequence, runtimeId, ...body })}\n\n`);
 };
 const sha = (value) => createHash("sha256").update(value).digest("hex");
+const thumbnailKey = (asset) => sha(`projection:${asset}`);
+/**
+ * Draw one model's thumbnail, as the projection cache does: the index gains its entity; the revision it moved at.
+ * A `lost` blob is named but not served (the cache folder was cleared): the server answers 404 until it is drawn again.
+ */
+function drawThumbnail(run, asset, revision = null, { blob = sha(`thumbnail:${asset}`), lost = false } = {}) {
+  const key = thumbnailKey(asset);
+  thumbnails.set(asset, { run, blob, lost });
+  index.bodies.set(`projections:${key}`, { key, inputSha256: asset, kind: "model-line-view",
+    recipe: { view: "axon", size: 256, style: "lines" }, renderer: "fixture", blobSha256: blob });
+  if (revision !== null) { index.moved.set(`projections:${key}`, revision); return revision; }
+  return moveIndex([`projections:${key}`]);
+}
+/** Each run's model, as the tree reads it. */
+function modelsByRun() {
+  const history = fixture.designHistory("main"), head = fixture.workingSource("modeling").head;
+  const sources = [...history.stages.map((stage) => stage.modelSource), ...history.candidates.map((candidate) => candidate.modelSource),
+    head?.modelSource];
+  return new Map(sources.filter(Boolean).map((source) => [source.runId, source]));
+}
 /** A small opaque PNG: a sky over a block, tinted per model, so each card's image is its own. */
 function previewPng(run) {
   const width = 160, height = 100, hue = parseInt(sha(run).slice(0, 2), 16);
@@ -94,25 +118,31 @@ async function runtime(request, response, url, body) {
         candidates: history.candidates.map(candidate => ({ ...candidate, review: reviews.get(`candidate:${candidate.candidateId}`) ?? null })) });
     }
     if (method === "GET" && name === "/api/worktrees") { treeReads.push(name); return json(fixture.worktrees()); }
-    if (method === "GET" && /^\/api\/model-assets\/[0-9a-f]{64}\/preview$/.test(name)) {
-      const run = url.searchParams.get("runId");
-      previewReads.push(run);
-      if (PREVIEWED.has(run)) {
-        const assetSha256 = sha(`preview:${run}`), size = previewPng(run).length;
-        return json({ projectId: PROJECT, runId: run, assetSha256, fileName: `${run}-preview.png`, mimeType: "image/png", sizeBytes: size, pageCount: 1,
-          pages: [], modelSource: { runId: run, stateDigest: url.searchParams.get("stateDigest"), assetSha256: name.split("/")[3] }, revisionRef: null });
-      }
-      response.writeHead(204);
-      response.end();
+    // #367: a model's thumbnail status (a miss queues it; here, it stays pending until the test draws it) and its bytes.
+    if (method === "GET" && name === "/api/projections") {
+      const run = url.searchParams.get("runId"), asset = url.searchParams.get("assetSha256"), drawn = thumbnails.get(asset);
+      statusReads.push(run);
+      response.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
+      response.end(JSON.stringify({ key: thumbnailKey(asset), status: drawn ? "done" : "pending", kind: "model-line-view",
+        recipe: { view: "axon", size: Number(url.searchParams.get("size")), style: "lines" }, renderer: "fixture", inputSha256: asset,
+        source: { runId: run, stateDigest: url.searchParams.get("stateDigest"), assetSha256: asset },
+        blobSha256: drawn?.blob ?? null, blobUrl: drawn ? `/api/projections/blobs/${drawn.blob}` : null, attempts: drawn ? 1 : 0,
+        error: null, loadMs: null, renderMs: null }));
       return;
     }
-    const bytes = name.match(/^\/api\/documents\/([0-9a-f]{64})\/bytes$/);
-    if (method === "GET" && bytes) {
-      const run = [...PREVIEWED].find((candidate) => sha(`preview:${candidate}`) === bytes[1]);
-      if (run) {
-        imageReads.push(run);
-        response.writeHead(200, { "content-type": "image/png" });
-        response.end(previewPng(run));
+    const blob = name.match(/^\/api\/projections\/blobs\/([0-9a-f]{64})$/);
+    if (method === "GET" && blob) {
+      const drawn = [...thumbnails.values()].find((thumbnail) => thumbnail.blob === blob[1]);
+      if (drawn?.lost) {
+        lostReads.push(drawn.run);
+        response.writeHead(404, { "content-type": "application/json", "cache-control": "no-store" });
+        response.end(JSON.stringify({ code: "PROJECTION_BLOB_NOT_FOUND", detail: "No projection has these bytes; read its status again." }));
+        return;
+      }
+      if (drawn) {
+        imageReads.push(drawn.run);
+        response.writeHead(200, { "content-type": "image/png", "cache-control": "private, max-age=31536000, immutable" });
+        response.end(previewPng(drawn.run));
         return;
       }
     }
@@ -130,7 +160,7 @@ async function runtime(request, response, url, body) {
       if (index.facts !== fixture.state.revision) { index.facts = fixture.state.revision; moveIndex(["tree", "working"]); }
       const since = Number(url.searchParams.get("since"));
       const changes = url.searchParams.get("epoch") === "fixture" && since >= 1 && since <= index.revision;
-      const entity = ([id, rev]) => ({ id, domain: id.split(":")[0], rev, body: {} });
+      const entity = ([id, rev]) => ({ id, domain: id.split(":")[0], rev, body: index.bodies.get(id) ?? {} });
       return json({ projectId: PROJECT, epoch: "fixture", revision: index.revision, reset: !changes, from: changes ? since : null,
         to: index.revision, upserts: [...index.moved].filter(([, rev]) => !changes || rev > since).map(entity), deletes: [] });
     }
@@ -245,6 +275,7 @@ try {
     server: { middlewareMode: true, hmr: false, ws: { server: http }, watch: null } });
   fixtureModule = await vite.ssrLoadModule("/workspaces/src/features/designTree/fixture.ts");
   fixture = fixtureModule.createDesignTreeFixture();
+  for (const [run, source] of modelsByRun()) if (PREVIEWED.has(run)) drawThumbnail(run, source.assetSha256, 1);
   const handle = async (request, response) => {
     const url = new URL(request.url, "http://fixture.test");
     if (url.pathname === "/tree-workspace") {
@@ -509,7 +540,8 @@ try {
   assert.equal((await follows("light, classic")).trunk, lightColours.trunk);
 
   // Semantic zoom (#406): far shows dots, the trunk and counts; middle, text cards; close, summaries and status, and on the
-  // cards in view the retained preview of their model, each read once. Nothing is read at far or middle, or off screen.
+  // cards in view the server thumbnail of their model (#367), each asked for and downloaded once. This page has no Hub
+  // store, so it asks the projection cache itself; nothing is read at far or middle, or off screen.
   const zoomShots = await mkdtemp(path.join(tmpdir(), "design-tree-zoom-"));
   const shootLevel = async (name) => {
     await tab.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
@@ -519,7 +551,7 @@ try {
     await tab.keyboard.press("Escape");
     await surface.locator(".design-tree-inspector").waitFor({ state: "detached" });
   }
-  previewReads.length = 0;
+  statusReads.length = 0;
   imageReads.length = 0;
   const images = async () => (await scene()).elements.filter((element) => element.type === "image");
   const runOf = (id) => id === "current" ? fixture.state.head : id.startsWith("candidate:") ? id.slice("candidate:".length)
@@ -545,7 +577,7 @@ try {
   assert.deepEqual(await images(), [], "far: no images");
   await shootLevel("far");
   await shoot(tab, "03-tree-far");
-  assert.deepEqual(previewReads, [], "nothing is read at the middle or far level");
+  assert.deepEqual([...statusReads, ...imageReads], [], "nothing is read at the middle or far level");
   // The hysteresis: back just over the far edge stays far, a little further is the middle level.
   const zoomTo = (zoom) => tab.evaluate((value) => {
     const api = window.__treeApi, state = api.getAppState();
@@ -559,8 +591,8 @@ try {
   await tab.waitForFunction(() => document.querySelector(".design-tree__canvas")?.dataset.level === "mid");
   await zoomTo(1.25); await settleFrames();
   assert.equal(await level(), "mid", "125 % is still the middle level coming from it");
-  assert.deepEqual(previewReads, [], "nothing is read below the close level");
-  // Close, centred on Massing B: the previewed cards in view get their images, and only they are read.
+  assert.deepEqual([...statusReads, ...imageReads], [], "nothing is read below the close level");
+  // Close, centred on Massing B: the cards in view whose thumbnail is drawn get their images, and only cards in view are read.
   const centre = (id, zoom) => tab.evaluate(({ id: node, zoom: value }) => {
     const api = window.__treeApi, state = api.getAppState();
     const card = api.getSceneElements().find((element) => element.id === `${node}:card`);
@@ -578,7 +610,7 @@ try {
       return ids.every((id) => drawn.has(id));
     }, wanted);
     const drawn = (await images()).map((element) => element.data.node);
-    assert.ok(drawn.every((id) => PREVIEWED.has(runOf(id))), `images only where a preview was retained: ${drawn}`);
+    assert.ok(drawn.every((id) => PREVIEWED.has(runOf(id))), `images only where a thumbnail is drawn: ${drawn}`);
     assert.equal(new Set(drawn).size, drawn.length, "one image per card");
     return { visible, wanted, drawn };
   };
@@ -587,9 +619,11 @@ try {
   assert.deepEqual(shown.drawn.sort(), shown.wanted, "the first close view draws exactly its previewed cards");
   const offScreen = [...PREVIEWED].filter((run) => !shown.visible.some((id) => runOf(id) === run));
   assert.ok(offScreen.length > 0, "some previewed models are off screen");
-  assert.ok(previewReads.every((run) => shown.visible.some((id) => runOf(id) === run)), `only cards in view are read: ${previewReads}`);
-  assert.ok(offScreen.every((run) => !previewReads.includes(run) && !imageReads.includes(run)), "off-screen models are not read");
-  assert.ok(shown.visible.some((id) => id.startsWith("candidate:") && !PREVIEWED.has(runOf(id))), "a card in view has no preview");
+  assert.ok(statusReads.every((run) => shown.visible.some((id) => runOf(id) === run)), `only cards in view are read: ${statusReads}`);
+  assert.ok(offScreen.every((run) => !statusReads.includes(run) && !imageReads.includes(run)), "off-screen models are not read");
+  const pending = shown.visible.filter((id) => id.startsWith("candidate:") && !PREVIEWED.has(runOf(id)));
+  assert.ok(pending.length > 0 && pending.every((id) => statusReads.includes(runOf(id))),
+    "a card in view whose thumbnail is not drawn yet asked for it, and keeps its words meanwhile");
   view = await scene();
   assert.ok(view.elements.some((element) => element.data?.role === "summary"), "close: summaries on the cards without images");
   assert.ok(view.elements.some((element) => element.data?.role === "status"), "close: status");
@@ -597,7 +631,7 @@ try {
   await tab.waitForTimeout(500); // Excalidraw decodes a new file before it draws it.
   await shootLevel("close");
   await shoot(tab, "04-tree-close");
-  // Along the trunk to Current: S2 and Current share one model, so one read gives both their image.
+  // Along the trunk to Current: S2 and Current share one model, so one download gives both their image.
   await centre("current", 1.5);
   shown = await expectImages();
   assert.ok(shown.wanted.includes("current"), `Current shows its model: ${shown.wanted}`);
@@ -605,19 +639,22 @@ try {
   await expectImages();
   await settleFrames();
   const counts = (reads) => reads.reduce((all, run) => ({ ...all, [run]: (all[run] ?? 0) + 1 }), {});
-  assert.ok(Object.values(counts(previewReads)).every((count) => count === 1), `one read per preview: ${JSON.stringify(counts(previewReads))}`);
+  assert.ok(Object.values(counts(statusReads)).every((count) => count === 1), `one question per model: ${JSON.stringify(counts(statusReads))}`);
   assert.ok(Object.values(counts(imageReads)).every((count) => count === 1), `one download per image: ${JSON.stringify(counts(imageReads))}`);
   // A click on the image opens the card's inspector, as a click on its words does. (S1's, so no option counts as seen.)
   const picture = (await images()).find((element) => element.data.node === S1);
   const now = await scene();
   await tab.mouse.click((picture.x + picture.width / 2 + now.scrollX) * now.zoom + now.offsetLeft, (picture.y + picture.height / 2 + now.scrollY) * now.zoom + now.offsetTop);
-  await surface.locator(`.design-tree-inspector[data-node="${S1}"]`).waitFor();
+  const inspector = surface.locator(`.design-tree-inspector[data-node="${S1}"]`);
+  await inspector.waitFor();
+  // #409: the inspector's thumbnail is the canvas's image, downloaded once for both.
+  await inspector.locator(".model-thumbnail img").waitFor();
+  assert.equal(imageReads.filter((run) => run === runOf(S1)).length, 1, "the inspector does not download its card's image again");
   await tab.keyboard.press("Escape");
   await surface.locator(".design-tree-inspector").waitFor({ state: "detached" });
-  // Out again: no images, and panning the middle level over previewed cards reads nothing more. (The inspector's own
-  // thumbnail may have read S1's preview; that read is its own, and it has finished.)
+  // Out again: no images, and panning the middle level over drawn cards reads nothing more.
   await tab.waitForTimeout(300);
-  const reads = previewReads.length;
+  const reads = statusReads.length + imageReads.length;
   await bar.getByRole("button", { name: "Fit", exact: true }).click();
   await tab.waitForFunction(() => document.querySelector(".design-tree__canvas")?.dataset.level === "mid");
   await tab.waitForFunction(() => !window.__treeApi.getSceneElements().some((element) => element.type === "image"));
@@ -625,7 +662,7 @@ try {
   await settleFrames();
   assert.equal(await level(), "mid");
   assert.deepEqual(await images(), []);
-  assert.equal(previewReads.length, reads, "zoomed out, nothing more is read");
+  assert.equal(statusReads.length + imageReads.length, reads, "zoomed out, nothing more is read");
   console.log(`design tree zoom levels: ${zoomShots} (far.png, mid.png, close.png)`);
   // Fit again; the level is already the middle one, so wait for the fitted view itself before anything clicks on it.
   const fitted = await tab.evaluate(() => window.__treeApi.getAppState().zoom.value);
@@ -1024,6 +1061,71 @@ try {
   await hubPage.locator(".chat-project-workspace:not([hidden]) .stage-chip").click();
   await hubSurface.locator(".design-tree__canvas canvas").first().waitFor();
   assert.equal(await railButton("Design tree").getAttribute("aria-pressed"), "true", "the chip opens the same surface");
+  // #367, #409: in the Hub the store already names every drawn thumbnail, so opening the tree close up asks the projection
+  // cache nothing for them, and each image is downloaded once. A thumbnail drawn later reaches its card through the
+  // index (`index.committed`, domain `projections`): its card asked once and is told, with no polling.
+  statusReads.length = 0;
+  imageReads.length = 0;
+  const hubLevel = (value) => hubPage.waitForFunction((wanted) =>
+    document.querySelector(".chat-project-workspace:not([hidden]) .design-tree__canvas")?.dataset.level === wanted, value);
+  const hubView = await hubPage.evaluate(() => {
+    const state = window.__treeApi.getAppState();
+    return { zoom: state.zoom, scrollX: state.scrollX, scrollY: state.scrollY };
+  });
+  await hubPage.evaluate(({ node, value }) => {
+    const api = window.__treeApi, state = api.getAppState();
+    const card = api.getSceneElements().find((element) => element.id === `${node}:card`);
+    api.updateScene({ appState: { zoom: { value }, scrollX: state.width / (2 * value) - (card.x + card.width / 2),
+      scrollY: (state.height + 36) / (2 * value) - (card.y + card.height / 2) } });
+  }, { node: "candidate:run-massing-b", value: 1.5 });
+  await hubLevel("close");
+  const hubInView = await hubPage.evaluate(() => {
+    const api = window.__treeApi, state = api.getAppState(), zoom = state.zoom.value;
+    const left = -state.scrollX, top = -state.scrollY, right = left + state.width / zoom, bottom = top + state.height / zoom;
+    return api.getSceneElements().filter((element) => element.id.endsWith(":card") && element.x < right && element.x + element.width > left
+      && element.y < bottom && element.y + element.height > top).map((element) => element.customData.tree.node);
+  });
+  const hubImageOn = (ids) => hubPage.waitForFunction((wanted) => wanted.every((id) => window.__treeApi.getSceneElements()
+    .some((element) => element.type === "image" && element.customData?.tree?.node === id)), ids);
+  const drawnInView = hubInView.filter((id) => PREVIEWED.has(runOf(id)));
+  assert.ok(drawnInView.length >= 2, `drawn thumbnails in view: ${drawnInView}`);
+  await hubImageOn(drawnInView);
+  assert.deepEqual(statusReads.filter((run) => PREVIEWED.has(run)), [], "no status request for a thumbnail the store names");
+  const arriving = hubInView.find((id) => id.startsWith("candidate:") && !PREVIEWED.has(runOf(id)));
+  assert.ok(arriving, "a card in view whose thumbnail is not drawn yet");
+  const arrivingRun = runOf(arriving);
+  for (let round = 0; round < 100 && !statusReads.includes(arrivingRun); round += 1) await new Promise((resolve) => setTimeout(resolve, 50));
+  assert.ok(statusReads.includes(arrivingRun), "the card in view asked for its thumbnail: a miss queues it");
+  assert.equal((await scene(hubPage)).elements.some((element) => element.type === "image" && element.data?.node === arriving), false,
+    "pending: the card keeps its words");
+  const drawnAt = drawThumbnail(arrivingRun, modelsByRun().get(arrivingRun).assetSha256);
+  hubSend("index", { index: { epoch: "fixture", revision: drawnAt, domains: ["projections"] } });
+  await hubImageOn([arriving]);
+  assert.equal(statusReads.filter((run) => run === arrivingRun).length, 1, "asked once, then told by the index");
+  assert.equal(imageReads.filter((run) => run === arrivingRun).length, 1, "its image is downloaded once");
+  const hubCounts = imageReads.reduce((all, run) => ({ ...all, [run]: (all[run] ?? 0) + 1 }), {});
+  assert.ok(Object.values(hubCounts).every((count) => count === 1), `one download per image: ${JSON.stringify(hubCounts)}`);
+  // #367: a blob the server lost (its cache folder was cleared) answers 404 while the server draws it again. The mounted
+  // card shows its words meanwhile, and the image once the index names the redrawn projection, with no remount.
+  const mounted = await hubPage.evaluate(() => { window.__treeMounted = window.__treeApi; return true; });
+  const arrivingAsset = modelsByRun().get(arrivingRun).assetSha256, redrawn = sha(`thumbnail-redrawn:${arrivingAsset}`);
+  const lostAt = drawThumbnail(arrivingRun, arrivingAsset, null, { blob: redrawn, lost: true });
+  hubSend("index", { index: { epoch: "fixture", revision: lostAt, domains: ["projections"] } });
+  for (let round = 0; round < 100 && !lostReads.includes(arrivingRun); round += 1) await new Promise((resolve) => setTimeout(resolve, 50));
+  assert.ok(mounted && lostReads.includes(arrivingRun), "the card read the redrawn blob, which the server has lost");
+  await hubPage.waitForFunction((id) => !window.__treeApi.getSceneElements()
+    .some((element) => element.type === "image" && element.customData?.tree?.node === id), arriving);
+  thumbnails.get(arrivingAsset).lost = false;
+  const redrawnAt = moveIndex([`projections:${thumbnailKey(arrivingAsset)}`]);
+  hubSend("index", { index: { epoch: "fixture", revision: redrawnAt, domains: ["projections"] } });
+  await hubPage.waitForFunction(({ id, file }) => window.__treeApi.getSceneElements().some((element) => element.type === "image"
+    && element.customData?.tree?.node === id && String(element.fileId).includes(file)), { id: arriving, file: redrawn.slice(0, 32) });
+  assert.equal(await hubPage.evaluate(() => window.__treeApi === window.__treeMounted), true, "the same canvas: no remount");
+  assert.equal(lostReads.filter((run) => run === arrivingRun).length, 1, "the lost blob was read once, not retried in a loop");
+  console.log(JSON.stringify({ hubTreeOpenedClose: { statusRequestsForDrawnThumbnails: 0, imagesDownloaded: imageReads.length,
+    arrivingThumbnail: { statusRequests: 1, downloads: 1 }, lostBlobRedrawn: { failedReads: 1, remounted: false } } }));
+  await hubPage.evaluate((view) => window.__treeApi.updateScene({ appState: view }), hubView);
+  await hubLevel("mid");
   await hubPage.locator(".chat-project-workspace:not([hidden]) .stage-chip").click();
   await hubPage.getByTestId("arch-stub").waitFor();
 
@@ -1117,7 +1219,7 @@ try {
   assert.deepEqual(unexpected, [], "the tree reads only what it declares");
   assert.deepEqual(external, [], "no external request");
   assert.deepEqual(errors.filter((message) => !/Failed to load resource: the server responded with a status of 404/.test(message)), []);
-  console.log(JSON.stringify({ passed: "chip → tree, trunk, twigs, planar, three zoom levels with close-card previews read on demand, inspector, review-open warning, View read-only, Continue re-roots via PUT /api/working-draft, its toast's Undo puts the previous Current back through the same PUT, Accept on Current only via POST accept with a toast and no Undo, a toast stays while hovered and then fades, no toast on refusal, the chip's viewing state continues from here, a rejected Current cannot be accepted, keyboard list, return to previous surface, zh copy, Hub rail entry and deep link",
+  console.log(JSON.stringify({ passed: "chip → tree, trunk, twigs, planar, three zoom levels with close-card server thumbnails read on demand and arriving through the index, inspector, review-open warning, View read-only, Continue re-roots via PUT /api/working-draft, its toast's Undo puts the previous Current back through the same PUT, Accept on Current only via POST accept with a toast and no Undo, a toast stays while hovered and then fades, no toast on refusal, the chip's viewing state continues from here, a rejected Current cannot be accepted, keyboard list, return to previous surface, zh copy, Hub rail entry and deep link",
     writes: writes.map((row) => `${row.method} ${row.name}`) }));
 } catch (error) {
   console.error("FAILED:", error);

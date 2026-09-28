@@ -29,6 +29,13 @@ It can be deleted at any time; the next load builds it again.
   last changed or deleted it. ``IndexSnapshot.changes`` answers ``since=<revision>`` from it;
   a revision below ``meta.floor`` is older than the log and answers nothing,
   so the caller sends a whole snapshot instead.
+- ``projection`` is the projection cache's status table (#367): one row per
+  projection key, pending, done or error. It is no projection of P036 but the
+  state of a cache beside it, so a rebuild carries it into the new file and
+  its rows are written by the projection queue (``*_projection`` methods)
+  rather than the keeper, under the same write lock. A row that becomes done,
+  or a done row that goes, is an entity of its own (``projections:<key>``)
+  and moves the revision like any other change.
 
 Index rows and keys are never evidence: each row names the P036 record it was
 read from, and that record is the evidence.
@@ -52,7 +59,7 @@ from uuid import uuid4
 
 from archflow.project.layout import FINGERPRINT_POINTER_FILES, FINGERPRINT_SETTLED_NS
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 # How many revisions the change log keeps: a client further behind than this
 # is sent a whole snapshot instead of the changes.
 CHANGE_LOG_REVISIONS = 512
@@ -104,7 +111,22 @@ CREATE TABLE stage (
 );
 CREATE TABLE change (id TEXT PRIMARY KEY, revision INTEGER NOT NULL);
 CREATE INDEX change_revision ON change (revision);
+CREATE TABLE projection (
+    key TEXT PRIMARY KEY, input_hash TEXT NOT NULL, kind TEXT NOT NULL, recipe_hash TEXT NOT NULL,
+    renderer_version TEXT NOT NULL, body TEXT NOT NULL, status TEXT NOT NULL, attempts INTEGER NOT NULL,
+    claimed_at REAL, blob_sha256 TEXT, error TEXT, next_attempt_at REAL, load_ms INTEGER, render_ms INTEGER,
+    touched_at REAL NOT NULL, rev INTEGER NOT NULL
+);
+CREATE INDEX projection_input ON projection (input_hash, kind, recipe_hash, renderer_version);
+CREATE INDEX projection_blob ON projection (blob_sha256);
 """
+_PROJECTION_COLUMNS = ("key", "input_hash", "kind", "recipe_hash", "renderer_version", "body", "status", "attempts",
+                       "claimed_at", "blob_sha256", "error", "next_attempt_at", "load_ms", "render_ms", "touched_at",
+                       "rev")
+# A projection row's status: queued (a lease once claimed_at is set), drawn, or failed.
+PROJECTION_PENDING = "pending"
+PROJECTION_DONE = "done"
+PROJECTION_ERROR = "error"
 
 # What an agent may filter each table by, and the order its rows come in.
 QUERYABLE: dict[str, tuple[tuple[str, ...], str]] = {
@@ -264,6 +286,47 @@ class TreeRows:
     body: Mapping[str, Any]
     stages: tuple[StageRow, ...] = ()
     cites: frozenset[str] = field(default_factory=frozenset)
+
+
+@dataclass(frozen=True, slots=True)
+class ProjectionRow:
+    """One projection key's status (#367): pending (queued, or leased while ``claimed_at`` is set), done or error.
+
+    ``key`` digests the four identity columns and the cache's salt: the input's
+    content hash, the kind, the recipe's hash and the renderer version. ``body``
+    is the caller's own (the complete recipe, the source to draw from). Times
+    are the caller's clock, in seconds.
+    """
+
+    key: str
+    input_hash: str
+    kind: str
+    recipe_hash: str
+    renderer_version: str
+    body: Mapping[str, Any]
+    status: str = PROJECTION_PENDING
+    attempts: int = 0
+    claimed_at: float | None = None
+    blob_sha256: str | None = None
+    error: str | None = None
+    next_attempt_at: float | None = None
+    load_ms: int | None = None
+    render_ms: int | None = None
+    touched_at: float = 0.0
+    rev: int = 0
+
+    def entity(self) -> dict[str, Any]:
+        """What a client keeps of a done row: enough to find it by input and recipe, and its blob."""
+
+        return {"id": f"projections:{self.key}", "domain": "projections", "rev": self.rev, "body": {
+            "key": self.key, "inputSha256": self.input_hash, "kind": self.kind,
+            "recipe": self.body.get("recipe"), "renderer": self.renderer_version, "blobSha256": self.blob_sha256}}
+
+
+def _projection_row(values: tuple) -> ProjectionRow:
+    item = dict(zip(_PROJECTION_COLUMNS, values))
+    item["body"] = json.loads(item["body"])
+    return ProjectionRow(**item)
 
 
 class Projector(Protocol):
@@ -471,14 +534,15 @@ class IndexSnapshot:
         return present, [entity_id for entity_id in ids if entity_id not in found]
 
     def entities(self, ids: Iterable[str] | None = None) -> list[dict[str, Any]]:
-        """What a client keeps of the index, one entity per run, the tree, the working position and each other area.
+        """What a client keeps of the index, one entity per run, the tree, the working position, each other area and done projection.
 
         ``{id, domain, rev, body}``: a run's body holds its own body, candidate,
         artifacts, documents and how many records it has (the records
         themselves stay in ``GET /api/index/record``); a run that keeps records
         aside has one more entity, ``aside:<id>``, whose body counts them; the tree's is its body
         and stages; the working position's is what ``project_working`` read;
-        an area's the layout lines it holds. ``rev`` is the
+        an area's the layout lines it holds; a done projection's
+        (``projections:<key>``) its input, kind, recipe, renderer and blob. ``rev`` is the
         revision that last changed the entity. ``ids`` limits the answer to
         those entities; an id that names nothing is left out.
         """
@@ -505,6 +569,13 @@ class IndexSnapshot:
             if "working" in kept:
                 found.append({"id": "working", "domain": "working", "rev": int(kept.get("working_rev", 1)),
                               "body": json.loads(kept["working"])})
+        projection_keys = None if wanted is None else sorted(
+            entity[len("projections:"):] for entity in wanted if entity.startswith("projections:"))
+        if projection_keys is None or projection_keys:
+            where = "" if projection_keys is None else f" AND key IN ({', '.join('?' * len(projection_keys))})"
+            found.extend(_projection_row(row).entity() for row in self._connection.execute(
+                f"SELECT {', '.join(_PROJECTION_COLUMNS)} FROM projection WHERE status = ?{where} ORDER BY key",
+                (PROJECTION_DONE, *(projection_keys or ()))))
         if wanted is None or any(entity.startswith("area:") for entity in wanted):
             areas: dict[str, list[str]] = {}
             for key, line in self._connection.execute("SELECT key, line FROM place ORDER BY key"):
@@ -596,6 +667,12 @@ class ProjectIndex:
         self.loaded: str | None = None
         # The last commit that moved the revision (or the last rebuild), for the keeper to announce.
         self.last_commit: IndexCommit | None = None
+        # Every write to the file: the keeper's commits, the projection queue's and a rebuild's swap.
+        self._write_lock = threading.RLock()
+        # The domains committed since the keeper last announced (``take_committed``).
+        self._committed: set[str] = set()
+        # Told after each projection commit, outside the write lock (the keeper announces it).
+        self.projection_listener: Callable[[], None] | None = None
 
     # ---- the writer
 
@@ -684,13 +761,14 @@ class ProjectIndex:
             pool, self._pool = self._pool, []
         for connection in pool:
             connection.close()
-        if self._writer is not None:
-            self._writer.close()
-            self._writer = None
-        if self._lease is not None:
-            self._lease.release()
-            self._lease = None
-        self._token = None
+        with self._write_lock:
+            if self._writer is not None:
+                self._writer.close()
+                self._writer = None
+            if self._lease is not None:
+                self._lease.release()
+                self._lease = None
+            self._token = None
 
     @property
     def token(self) -> IndexToken | None:
@@ -767,6 +845,9 @@ class ProjectIndex:
         working = self._projector.project_working()
         runs = [self._projector.project_run(run_id) for run_id in self._projector.run_ids()]
         fresh = self.directory / f"{INDEX_FILE}.new"
+        # Held from carrying the projection rows over until the new file is in
+        # place: a projection written meanwhile would land in the old file.
+        self._write_lock.acquire()
         try:
             for stale in (fresh, Path(f"{fresh}-journal")):
                 if stale.exists():
@@ -774,6 +855,7 @@ class ProjectIndex:
             building = sqlite3.connect(os.fspath(fresh), isolation_level=None)
             try:
                 building.executescript(_SCHEMA)
+                self._carry_projections(building)
                 building.execute("BEGIN")
                 for key, value in stamp.items().items():
                     building.execute("INSERT INTO meta VALUES (?, ?)", (key, value))
@@ -794,13 +876,41 @@ class ProjectIndex:
             finally:
                 building.close()
             self._swap(fresh)
+            self._places = dict(places)
+            self._racy = _racy(places, scanned_at_ns)
+            self._read_state()
+            self._note_commit(IndexCommit(self._token, frozenset({"reset"})))
         except (sqlite3.Error, OSError) as exc:
             raise IndexUnavailable(f"the project index could not be rebuilt: {exc}") from exc
-        self._places = dict(places)
-        self._racy = _racy(places, scanned_at_ns)
-        self._read_state()
-        self.last_commit = IndexCommit(self._token, frozenset({"reset"}))
+        finally:
+            self._write_lock.release()
         self._publish_open()
+
+    def _carry_projections(self, building: sqlite3.Connection) -> None:
+        """Copy the projection status rows of the file being replaced, if it has readable ones.
+
+        They are a cache's state, not rows of P036: a new projector or a
+        repaired file must not make every picture be drawn again. Their
+        revisions start again with the new epoch. A file whose table differs
+        (another schema) or cannot be read carries nothing.
+        """
+
+        if not self.path.exists():
+            return
+        try:
+            building.execute("ATTACH DATABASE ? AS kept", (os.fspath(self.path),))
+        except sqlite3.Error:
+            return
+        try:
+            columns = ", ".join(_PROJECTION_COLUMNS[:-1])
+            building.execute(f"INSERT INTO projection ({columns}, rev) SELECT {columns}, 1 FROM kept.projection")
+        except sqlite3.Error:
+            building.execute("DELETE FROM projection")
+        finally:
+            try:
+                building.execute("DETACH DATABASE kept")
+            except sqlite3.Error:
+                pass
 
     def _swap(self, fresh: Path) -> None:
         """Rename ``fresh`` over the index once no reader has the old file open."""
@@ -855,7 +965,8 @@ class ProjectIndex:
         moved_areas.discard(None)
         if "manifest" in areas:
             stamp = self._stamp()
-            meta = dict(self._writer.execute("SELECT key, value FROM meta"))
+            with self._write_lock:
+                meta = dict(self._writer.execute("SELECT key, value FROM meta"))
             if any(meta.get(key) != value for key, value in stamp.items().items()):
                 # A different project, or one of another format: never migrated.
                 self._rebuild(stamp, places, scanned_at_ns if scanned_at_ns is not None else time.time_ns())
@@ -879,7 +990,13 @@ class ProjectIndex:
             if scanned_at_ns is not None:
                 self._racy = _racy(places, scanned_at_ns)
             return
+        with self._write_lock:
+            self._commit_apply(changed, places, scanned_at_ns, moved_areas, tree, working, projected)
+
+    def _commit_apply(self, changed, places, scanned_at_ns, moved_areas, tree, working, projected) -> None:
         connection = self._writer
+        if connection is None:
+            raise IndexUnavailable("the project index is not open")
         revision = self._token.revision + 1
         connection.execute("BEGIN IMMEDIATE")
         try:
@@ -907,15 +1024,7 @@ class ProjectIndex:
             if scanned_at_ns is not None:
                 connection.execute("INSERT OR REPLACE INTO meta VALUES ('scanned_at_ns', ?)", (str(scanned_at_ns),))
             if moved:
-                connection.execute("UPDATE meta SET value = ? WHERE key = 'revision'", (str(revision),))
-                connection.executemany("INSERT OR REPLACE INTO change VALUES (?, ?)",
-                                       [(entity, revision) for entity in sorted(logged)])
-                floor = revision - CHANGE_LOG_REVISIONS
-                if floor > 1:
-                    # Past the log's reach: a client that far behind reads a whole snapshot.
-                    connection.execute("DELETE FROM change WHERE revision <= ?", (floor,))
-                    connection.execute("UPDATE meta SET value = ? WHERE key = 'floor' AND CAST(value AS INTEGER) < ?",
-                                       (str(floor), floor))
+                self._log_changes(connection, revision, logged)
             connection.execute("COMMIT")
         except BaseException:
             connection.execute("ROLLBACK")
@@ -926,8 +1035,199 @@ class ProjectIndex:
             self._racy = _racy(places, scanned_at_ns)
         self._read_state()
         if moved:
-            self.last_commit = IndexCommit(self._token, frozenset(
-                "area" if entity.startswith("area:") else entity.partition(":")[0] for entity in logged))
+            self._note_commit(IndexCommit(self._token, frozenset(
+                "area" if entity.startswith("area:") else entity.partition(":")[0] for entity in logged)))
+
+    @staticmethod
+    def _log_changes(connection: sqlite3.Connection, revision: int, logged: Iterable[str]) -> None:
+        """Move the revision to ``revision`` and log the entities that moved at it."""
+
+        connection.execute("UPDATE meta SET value = ? WHERE key = 'revision'", (str(revision),))
+        connection.executemany("INSERT OR REPLACE INTO change VALUES (?, ?)",
+                               [(entity, revision) for entity in sorted(logged)])
+        floor = revision - CHANGE_LOG_REVISIONS
+        if floor > 1:
+            # Past the log's reach: a client that far behind reads a whole snapshot.
+            connection.execute("DELETE FROM change WHERE revision <= ?", (floor,))
+            connection.execute("UPDATE meta SET value = ? WHERE key = 'floor' AND CAST(value AS INTEGER) < ?",
+                               (str(floor), floor))
+
+    def _note_commit(self, commit: IndexCommit) -> None:
+        self.last_commit = commit
+        with self._gate:
+            self._committed |= commit.domains
+
+    def take_committed(self) -> frozenset[str]:
+        """The domains committed since the last call: what the keeper's next announcement names."""
+
+        with self._gate:
+            domains, self._committed = frozenset(self._committed), set()
+        return domains
+
+    # ---- the projection status table (#367)
+
+    @contextmanager
+    def _projection_write(self) -> Iterator[tuple[sqlite3.Connection, set[str]]]:
+        """One transaction on the projection table; the entities it names in the set move the revision."""
+
+        moved: set[str] = set()
+        with self._write_lock:
+            connection = self._writer
+            if connection is None or self._token is None:
+                raise IndexUnavailable("the project index is not open")
+            connection.execute("BEGIN IMMEDIATE")
+            try:
+                yield connection, moved
+                if moved:
+                    revision = self._token.revision + 1
+                    connection.executemany("UPDATE projection SET rev = ? WHERE key = ?",
+                                           [(revision, entity.partition(":")[2]) for entity in moved])
+                    self._log_changes(connection, revision, moved)
+                connection.execute("COMMIT")
+            except BaseException:
+                connection.execute("ROLLBACK")
+                raise
+            if moved:
+                self._token = IndexToken(self._token.epoch, revision)
+                self._note_commit(IndexCommit(self._token, frozenset({"projections"})))
+        listener = self.projection_listener
+        if moved and listener is not None:
+            listener()
+
+    def _projection_read(self, sql: str, params: tuple = ()) -> list[ProjectionRow]:
+        with self._write_lock:
+            connection = self._writer
+            if connection is None:
+                raise IndexUnavailable("the project index is not open")
+            return [_projection_row(row) for row in connection.execute(
+                f"SELECT {', '.join(_PROJECTION_COLUMNS)} FROM projection{sql}", params)]
+
+    @staticmethod
+    def _get_projection(connection: sqlite3.Connection, key: str) -> ProjectionRow | None:
+        found = connection.execute(f"SELECT {', '.join(_PROJECTION_COLUMNS)} FROM projection WHERE key = ?",
+                                   (key,)).fetchone()
+        return None if found is None else _projection_row(found)
+
+    def projection(self, key: str) -> ProjectionRow | None:
+        found = self._projection_read(" WHERE key = ?", (key,))
+        return found[0] if found else None
+
+    def projections(self, *, blob_sha256: str | None = None) -> tuple[ProjectionRow, ...]:
+        """Every status row, by key; only those naming ``blob_sha256`` when it is given."""
+
+        if blob_sha256 is not None:
+            return tuple(self._projection_read(" WHERE blob_sha256 = ? ORDER BY key", (blob_sha256,)))
+        return tuple(self._projection_read(" ORDER BY key"))
+
+    def enqueue_projection(self, row: ProjectionRow, *, now: float) -> ProjectionRow:
+        """Insert ``row`` as queued unless its key has a row (insert-ignore: the insert is the claim on the key)."""
+
+        with self._projection_write() as (connection, _):
+            connection.execute(
+                f"INSERT OR IGNORE INTO projection ({', '.join(_PROJECTION_COLUMNS)}) "
+                f"VALUES ({', '.join('?' * len(_PROJECTION_COLUMNS))})",
+                (row.key, row.input_hash, row.kind, row.recipe_hash, row.renderer_version, _text(row.body),
+                 PROJECTION_PENDING, 0, None, None, None, None, None, None, now, 0))
+            return self._get_projection(connection, row.key)
+
+    def claim_projection(self, key: str, *, now: float) -> ProjectionRow | None:
+        """Lease a queued row (attempts + 1); None when it is not queued."""
+
+        with self._projection_write() as (connection, _):
+            claimed = connection.execute(
+                "UPDATE projection SET claimed_at = ?, attempts = attempts + 1, touched_at = ? "
+                "WHERE key = ? AND status = ? AND claimed_at IS NULL", (now, now, key, PROJECTION_PENDING)).rowcount
+            return self._get_projection(connection, key) if claimed else None
+
+    def finish_projection(self, key: str, *, blob_sha256: str, load_ms: int, render_ms: int, now: float) -> None:
+        """A leased row is done: it becomes an entity (``projections:<key>``) and the revision moves."""
+
+        with self._projection_write() as (connection, moved):
+            if connection.execute(
+                    "UPDATE projection SET status = ?, claimed_at = NULL, blob_sha256 = ?, error = NULL, "
+                    "next_attempt_at = NULL, load_ms = ?, render_ms = ?, touched_at = ? WHERE key = ?",
+                    (PROJECTION_DONE, blob_sha256, load_ms, render_ms, now, key)).rowcount:
+                moved.add(f"projections:{key}")
+
+    def fail_projection(self, key: str, *, error: str, next_attempt_at: float | None, now: float) -> None:
+        with self._projection_write() as (connection, _):
+            connection.execute(
+                "UPDATE projection SET status = ?, claimed_at = NULL, error = ?, next_attempt_at = ?, touched_at = ? "
+                "WHERE key = ?", (PROJECTION_ERROR, error, next_attempt_at, now, key))
+
+    def retry_projection(self, key: str, body: Mapping[str, Any], *, now: float) -> ProjectionRow | None:
+        """Queue an error row again, keeping its attempts, with ``body``; None when it is not an error."""
+
+        with self._projection_write() as (connection, _):
+            if not connection.execute(
+                    "UPDATE projection SET status = ?, claimed_at = NULL, next_attempt_at = NULL, body = ?, "
+                    "touched_at = ? WHERE key = ? AND status = ?",
+                    (PROJECTION_PENDING, _text(body), now, key, PROJECTION_ERROR)).rowcount:
+                return None
+            return self._get_projection(connection, key)
+
+    def reclaim_projections(self, *, now: float, lease_s: float) -> tuple[str, ...]:
+        """Turn leases older than ``lease_s`` (all of them at startup) back into queued rows."""
+
+        with self._projection_write() as (connection, _):
+            stale = [key for (key,) in connection.execute(
+                "SELECT key FROM projection WHERE status = ? AND claimed_at IS NOT NULL AND ? - claimed_at >= ? "
+                "ORDER BY key", (PROJECTION_PENDING, now, lease_s))]
+            connection.executemany("UPDATE projection SET claimed_at = NULL WHERE key = ?", [(key,) for key in stale])
+            return tuple(stale)
+
+    def redraw_projections(self, keys: Iterable[str], *, now: float) -> tuple[ProjectionRow, ...]:
+        """Queue done rows again whose blob is gone, as new (no attempt counted); the rows now queued.
+
+        Each stops being an entity, so the revision moves and clients show the
+        placeholder until it is done again.
+        """
+
+        redrawn = []
+        with self._projection_write() as (connection, moved):
+            for key in sorted(set(keys)):
+                if connection.execute(
+                        "UPDATE projection SET status = ?, attempts = 0, claimed_at = NULL, blob_sha256 = NULL, "
+                        "error = NULL, next_attempt_at = NULL, touched_at = ? WHERE key = ? AND status = ?",
+                        (PROJECTION_PENDING, now, key, PROJECTION_DONE)).rowcount:
+                    moved.add(f"projections:{key}")
+                    redrawn.append(self._get_projection(connection, key))
+        return tuple(redrawn)
+
+    def touch_projection(self, key: str, *, now: float) -> None:
+        """A row was asked for: its grace window starts over."""
+
+        with self._projection_write() as (connection, _):
+            connection.execute("UPDATE projection SET touched_at = ? WHERE key = ?", (now, key))
+
+    def drop_projections(self, keys: Iterable[str], *, touched: Mapping[str, float] | None = None) -> None:
+        """Remove rows (a cancel gives its attempt back this way); a done row that goes moves the revision.
+
+        With ``touched``, a row is removed only while its ``touched_at`` is
+        still the one given: a row asked for again meanwhile stays.
+        """
+
+        keys = sorted(set(keys))
+        if not keys:
+            return
+        with self._projection_write() as (connection, moved):
+            for key in keys:
+                row = self._get_projection(connection, key)
+                if row is None or (touched is not None and key in touched and row.touched_at != touched[key]):
+                    continue
+                connection.execute("DELETE FROM projection WHERE key = ?", (key,))
+                if row.status == PROJECTION_DONE:
+                    moved.add(f"projections:{key}")
+
+    def model_inputs(self) -> frozenset[str]:
+        """Every content hash an artifact row of the index names: what a projection's input is reachable from."""
+
+        with self._write_lock:
+            connection = self._writer
+            if connection is None:
+                raise IndexUnavailable("the project index is not open")
+            return frozenset(sha for (sha,) in connection.execute(
+                "SELECT DISTINCT sha256 FROM artifact WHERE sha256 IS NOT NULL"))
 
     def _write_tree(self, connection: sqlite3.Connection, tree: TreeRows, revision: int,
                     kept: tuple[frozenset[str], str] | None) -> bool:

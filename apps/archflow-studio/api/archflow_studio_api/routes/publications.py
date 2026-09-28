@@ -8,6 +8,7 @@ from ..application.binding import bound_project
 from ..transport.publications import PublicationDto, PublicationRequestDto, PublicationExportRequestDto, PublicationBoardRequestDto
 from ..transport.errors import StudioError
 from .artifacts import _content_disposition
+from .projections import ready_projections
 
 router = APIRouter(tags=["publication"])
 
@@ -38,6 +39,7 @@ def publication_from_board(request: Request, payload: PublicationBoardRequestDto
 
 @router.post("/publication/export", response_class=Response)
 def export(request: Request, payload: PublicationExportRequestDto):
-    result = export_publication(_binding(request, payload.project_id), payload.revision_sha256, payload.format)
+    result = export_publication(_binding(request, payload.project_id), payload.revision_sha256, payload.format,
+                                ready_projections(request.app.state))
     return Response(result.content, media_type=result.media_type,
         headers={"Content-Disposition": _content_disposition(result.file_name, payload.revision_sha256), "Cache-Control": "no-store"})

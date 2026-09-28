@@ -159,3 +159,83 @@ decision tree comes from two derived stores. Either store can be deleted at any 
   rows. Only the Design Tree waits for the store to reach its own write's revision before it ends "in progress";
   Board and Render end it when the write answers, and show the write when the store next moves. A process without an index (no cache directory) sends no hints, so its surfaces refresh only on explicit
   reloads and their own writes.
+
+**Phase 3 as built (#367 parts A and B, 2026-09-28):**
+- The status of every projection key lives in the project index (`projection` table), not in memory: a restart
+  finds what it drew, and a rebuild of the index carries the rows into its new file. Inserting a row is the claim on
+  a key (insert-ignore); a per-key lock keeps two requests in one process from racing. A pending row the worker took
+  is a lease, reclaimed at startup and once it outlives the job timeout. A failure retries three times with backoff;
+  a cancel, or a source the render process refuses, gives its attempt back.
+- A done row is an entity of its own (`projections:<key>`: input, kind, recipe, renderer and blob digest, never a
+  requester's source). Becoming done moves the revision and is announced as `index.committed` with domain
+  `projections`; a client store therefore holds each model's thumbnail digest, and a surface draws it with no status
+  request. `useProjectRevision` (Board, Render) ignores these entities: no view is read from them.
+- After every commit of the index, the worker queues each model the design tree shows that has no row: the working
+  position's first, then what a reader asked for (a card in view that found no thumbnail), then every Stage (newest
+  first) and candidate. A new renderer version gives every model a new key; an older renderer's done picture stays
+  until the current one's is drawn, so thumbnails change one at a time and requests for visible cards go first.
+- Every request checks its source first (the run's exact state and its registered model; no geometry is read), even
+  for a done key: a fabricated state digest is refused and never answered with another run's source. So do the idle
+  retries and the re-queue behind `GET /api/projections/{key}`, which answers no source at all.
+- The render process reads a model once and draws its next size from the same shapes (the finer mesh of the first
+  size is cleared first, so the bytes are those of a fresh read). The mesh renderer's version is derived from the
+  source of its drawing functions, `tessellate_shape` and the model reader, and the pipeline digest from the source of
+  the view's framing: editing either redraws every thumbnail without a hand bump. Curve-only objects are left out of
+  the axonometric's frame as well as its drawing.
+- The collector keeps a row while an artifact row of the index names its input, or while it was read within the
+  grace window (a read restarts it at most once a day); an unreachable row goes after it. An older renderer's done
+  row stays, however old, until the current renderer's row for the same input and recipe is done, so a renderer
+  change replaces thumbnails one at a time; its rows not yet drawn go at once. A blob no row names goes after the
+  grace window, and a blob a remaining row names is never removed.
+- A done row whose blob is gone (the cache folder was deleted) goes back to pending when that is noticed: at
+  startup, in each commit's pass over the tree (a stat per model), when a status request finds it, and when a
+  client's blob read answers 404. Clients show the placeholder meanwhile and read the blob again when the redrawn
+  projection lands; a failed blob read or status ask is never kept as final, and asks that fail back off.
+- The renderer version (the pipeline digest, which reads source and library versions) is computed once per
+  process, so idle passes, commit passes and status requests never recompute it.
+- The Design Tree, its list and the inspector share one thumbnail cache per page (`modelThumbnails`): each blob is
+  downloaded and decoded once, at most 48 decoded images are kept (least recently used out), and the canvas draws
+  a copy at about twice its cell. Images arriving together rebuild the canvas scene at most once a frame, and not at
+  all below the close level. #326's viewport screenshots stay P036 documents for the Board, and the versions strip,
+  candidate cards and chat study previews still show them (`ModelThumbnail`); the tree no longer looks them up.
+- Measured on the synthetic candidate fixture (one small model): the tree's thumbnail is done 1.8 s after the
+  project is opened with a cold render process (load 0.86 s, render 0.12 s); a second size of the same model loads in
+  0 ms and renders in 18-61 ms. Opening the tree in the Hub makes no status request for a drawn thumbnail and one blob
+  request per image, after which the browser keeps it.
+- Known limits: a runtime without the Hub's cache directory keeps no index, so it answers
+  `PROJECTION_INDEX_UNAVAILABLE` and shows placeholders. The queue follows the tree the index holds; it does not know
+  which cards a client has on screen until that client asks.
+
+**Phase 4A as built (#368, drawings, 2026-09-28):**
+- Issued drawings are projection kinds of the same cache: `drawing-elevation` and `drawing-section-perspective`
+  (their SVG and PNG), `drawing-sheet` (the review sheet's PDF and DXF) and `document-page` (one registered page as
+  a PNG of at most 2048 px, transparency kept; a PDF page is exactly 2048 px on its long edge, the size Board always
+  drew it, because a saved Board crop is kept in those source pixels). The input is the model or document asset's sha256; the recipe holds
+  the complete view and what the drawing reads from its verified source (geometry digest, unit, objects, bounds and
+  semantics); the renderer is a digest of the drawing modules' source, fonts and library versions, computed once per
+  process. No run and no time enters a key, and the drawings are deterministic except the sheet's DXF, whose
+  writer stamps a time and GUIDs.
+- These kinds are drawn on demand, in the request that needs them, through the existing generator
+  (`ProjectionQueue.on_demand`); the worker never draws them, and they are not moved onto its below-normal
+  process: a drawing is drawn in its request thread, as before the cache. A row is inserted done with every file's
+  digest and a manifest (the key, the files, the facts the receipt states), so a hit reads the files back instead of
+  solving the view again. The row is checked, not trusted: its kind, recipe, input and renderer must hash back to
+  the requested key, the manifest must name that key and those files, and every file must read back by its digest;
+  anything else is a miss. A hit's receipt facts come from the key (backend, an elevation's view), the files (the
+  objects the SVG names) and the manifest, never from free row data. A refused request leaves no row.
+- The cache is optional. Any failure to read or write it (no index, an index that stops answering, a blob folder
+  that cannot be written) is logged, and the request draws and answers as without it.
+- On-demand rows keep a `source` with `runId`, `stateDigest` and `assetSha256`, so a build before #368 reading the
+  same cache builds its specs from them; it never draws those kinds and at most drops a row whose blob is not a PNG
+  (a sheet), which costs one drawing.
+- Issuing a drawing verifies its source through P036 as before, takes the drawn files from the cache or draws them
+  once, and retains them in P036 byte for byte with a receipt of its own; the receipt cites their sha256 and its
+  exact source, never the key. Without an index, or after the cache folder is deleted, the drawing is drawn and
+  retained as before. A sheet's PDF carries its source binding, so only the same source and recipe finds it.
+- Board previews, Publish images and the publication exports' raster previews read the one `document-page` raster
+  (`GET /api/projections/pages` answers the PNG, drawn and kept when a cache answers, drawn when not) instead of
+  each rasterising the page: Board no longer runs
+  PDF.js for a preview, Publish no longer loads PDF.js, and the export no longer draws its own raster. The retained
+  document stays what a Board or publication references.
+- Known limits: plan cuts (`drawing_plans`) and the transient model views are not yet kinds. A runtime without an
+  index draws drawings and page previews on every request.

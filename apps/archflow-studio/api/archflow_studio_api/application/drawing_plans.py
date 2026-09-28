@@ -29,6 +29,7 @@ from .decisions import project_recipe
 from .drawings import _complete_source, _elevation_view, _selected_source, _document_source, DrawingAssetSource
 from .drawing_dimensions import resolve_plan_dimensions, list_plan_dimension_intents
 from .intent import component_edit_proposal
+from .intent_requests import in_unit
 from .projection import project_state, require_actionable
 from .working_draft import WorkingSources
 from .proposals import proposal_from
@@ -506,11 +507,12 @@ def dimension_proposal(binding, *, run_id, asset_sha256, revision_ref, dimension
     dimension = next((row for row in readings if row["id"] == dimension_id), None)
     if dimension is None or dimension["status"] != "resolved" or not dimension.get("canDrive") or not dimension.get("parameterKey"):
         raise StudioError(409, "DRAWING_DIMENSION_NOT_DRIVING", "This dimension has no verified, unlocked direct design parameter." if dimension is None else dimension.get("driveReason", dimension.get("detail", "This dimension cannot drive the design.")))
-    factors = {"m": 1, "meter": 1, "mm": .001, "millimeter": .001, "cm": .01, "inch": .0254, "in": .0254, "foot": .3048, "ft": .3048}
+    # The typed value is in the drawing's length unit; the one exact converter
+    # restates it in the parameter's (#404 F17), so 700 mm drives 0.7 m, not 0.7000000000000001.
     parameter_unit = dimension.get("parameterUnit")
-    if parameter_unit not in factors:
+    amount = None if not isinstance(parameter_unit, str) else in_unit(value, status["lengthUnit"], parameter_unit)
+    if amount is None:
         raise StudioError(409, "DRAWING_DIMENSION_UNIT_UNSUPPORTED", "The parameter has no supported length unit.")
-    amount = value * UNIT_METRES[status["lengthUnit"]] / factors[parameter_unit]
     require_actionable(projection)
     proposal = proposal_from(component_edit_proposal(projection, {
         "summary": f"Set opening width to {amount:g} {parameter_unit}",

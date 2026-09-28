@@ -236,7 +236,8 @@ class IntentRequestSchemaTests(unittest.TestCase):
             self.assertAlmostEqual(parse_utterance(result["utterance"]).number, expected)
 
     def test_unknown_unit_allows_bare_numbers_but_asks_for_explicit_units(self):
-        record = _record(producer="prism")
+        # A producer that declares no unit for this field (#404 F17 declares the advertised ones).
+        record = _record(producer="retained-legacy")
         context = _context(record)
         self.assertIsNone(action_preflight(context, record))
         result = action_answer(_answer(_action(value=1.25)), context, record)
@@ -244,6 +245,48 @@ class IntentRequestSchemaTests(unittest.TestCase):
         result = action_answer(_answer(_action(value=1200, unit="mm")), context, record)
         self.assertEqual(result["status"], "question")
         self.assertIsNone(result["utterance"])
+
+    def test_a_producer_declared_unit_converts_an_explicit_length(self):
+        # #404 F17: the prism producer declares its height in metres, so 1200 mm is 1.2.
+        record = _record(producer="prism")
+        context = _context(record)
+        result = action_answer(_answer(_action(value=1200, unit="mm")), context, record)
+        self.assertEqual(result["status"], "compiled")
+        self.assertEqual(parse_utterance(result["utterance"]).number, 1.2)
+        # Exact, as the scalar seam is: float factors made 700 mm 0.7000000000000001.
+        result = action_answer(_answer(_action(value=700, unit="mm")), context, record)
+        self.assertEqual(parse_utterance(result["utterance"]).number, 0.7)
+
+    def test_lengths_convert_exactly_into_the_declared_unit(self):
+        # #404 F17: one table serves the scalar seam and this path, with no float drift.
+        from archflow_studio_api.application.intent_requests import in_unit
+        for value, unit, declared, expected in (
+                (1100, "mm", "m", 1.1), (2200, "mm", "m", 2.2), (5, "mm", "m", 0.005), (12.5, "cm", "m", 0.125),
+                (700, "mm", "m", 0.7), (10, "ft", "m", 3.048), (12, "in", "m", 0.3048), (1.2, "m", "mm", 1200),
+                (3, "Metres", "m", 3), (90, "deg", "deg", 90)):
+            with self.subTest(value=value, unit=unit, declared=declared):
+                self.assertEqual(in_unit(value, unit, declared), expected)
+        self.assertIsNone(in_unit(90, "deg", "m"), "not a length: nothing to convert")
+        self.assertIsNone(in_unit(3, "mm", "deg"))
+
+    def test_the_declared_unit_is_read_however_it_is_spelled(self):
+        # #404 review of 13f8b7b7: a record may declare "Metres" or "M". The declared
+        # side is read through the same aliases as the unit that was said.
+        from decimal import Decimal
+        from archflow_studio_api.application.intent_requests import in_unit, in_unit_exact
+        for value, unit, declared, expected in (
+                (2200, "mm", "Metres", 2.2), (2200, "mm", "M", 2.2), (2.2, "m", "millimetres", 2200),
+                (35, "cm", " Meter ", 0.35)):
+            with self.subTest(declared=declared):
+                self.assertEqual(in_unit(value, unit, declared), expected)
+                self.assertEqual(in_unit_exact(str(value), unit, declared), Decimal(str(expected)))
+        said = 2.25
+        self.assertIs(in_unit(said, "metres", "M"), said, "the same unit, however spelled, passes through unchanged")
+        for declared, value, unit, expected in (("Millimetres", 1.2, "m", 1200), ("M", 2200, "mm", 2.2)):
+            with self.subTest(parameter_unit=declared):
+                record = _record(bound=True, parameter_unit=declared)
+                result = action_answer(_answer(_action(value=value, unit=unit)), _context(record), record)
+                self.assertEqual(parse_utterance(result["utterance"]).number, expected)
 
     def test_bound_scalar_uses_declared_parameter_units_without_unbinding(self):
         record = _record(bound=True, parameter_unit="mm")

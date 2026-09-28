@@ -47,6 +47,7 @@ from ..transport.options import (
     option_dto,
     options_dto,
 )
+from .proposals import _stale_base
 
 router = APIRouter(tags=["options"])
 
@@ -66,12 +67,8 @@ def make_massing_option(
     binding = bound_project(state)
     projection = project_state(binding, run_id=body.source_run_id, source_stage_ref=body.source_stage_ref)
     require_actionable(projection)
-    _require_current_base(
-        binding,
-        projection,
-        state_digest=body.state_digest,
-        record_digest=projection.record_digest,
-    )
+    if body.state_digest != projection.state_digest:
+        raise _stale_base(binding, projection, body.state_digest, "the massing option", body.source_run_id)
     envelope = (
         None
         if body.envelope is None

@@ -171,7 +171,7 @@ class RebuildTests(_IndexCase):
         self.assertEqual(projector.projected, ["run-001"])
         self.assertEqual(self.records(index, "run-001"), 1)
         meta = index.meta()
-        self.assertEqual((meta["project_id"], meta["schema_version"]), (PROJECT_ID, "5"))
+        self.assertEqual((meta["project_id"], meta["schema_version"]), (PROJECT_ID, "6"))
         self.assertNotIn(os.fspath(self.root), repr(meta), "no machine path is kept as identity")
 
     def test_a_different_projector_version_rebuilds_under_a_new_epoch(self) -> None:

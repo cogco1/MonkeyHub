@@ -638,10 +638,10 @@
       "owner_path": "monkeydiagram/mesh_views.py",
       "purpose": "Draw a fast look-only line view of named shapes from their triangles against a depth buffer: the model view's axonometric and the projection cache's thumbnails. Created because the exact hidden-line solve (adapters.cad_execution through runtime.drawing_elevation) grows too fast with object count for a view nobody retains, and no drawing owner rasterises meshes.",
       "owns": [
-        "triangulating the named shapes at a caller-chosen chord error and naming the curve-only objects left out (triangulate)",
+        "triangulating the named shapes at a caller-chosen chord error, after forgetting any mesh a shape already holds so a model read once draws every size as a fresh read would, and naming the curve-only objects left out (triangulate)",
         "feature edges of each object's welded mesh: creases over CREASE_DEGREES, open boundaries, non-manifold edges and view silhouettes",
         "the scanline depth buffer at twice the output resolution and the edge visibility test against it, reduced to an anti-aliased greyscale PNG whose longer side is the requested size (mesh_line_view)",
-        "RENDERER_VERSION, which changes whenever the same input would draw different pixels, and mesh_pipeline: every setting and library version (OCP, numpy, Pillow) that changes the pixels",
+        "RENDERER_VERSION, derived from the source of this module's drawing functions, tessellate_shape and the model reader (read_elevation_source), so it changes whenever the same input would draw different pixels without a hand bump; and mesh_pipeline: every setting and library version (OCP, numpy, Pillow) that changes the pixels",
         "working memory bounded by pixel count: triangles are rasterised and edges sampled in chunks of at most a million candidate pixels, splitting a large triangle into row bands; the output side is at most MAX_SIZE_PX",
         "the caller-named PNG text chunks; no time or random id in the bytes"
       ],
@@ -977,7 +977,9 @@
         "drawn_element_placement",
         "with_void_hosts",
         "wall_fields_from_block",
-        "wall_along_line"
+        "wall_along_line",
+        "element_vertical_extent",
+        "parameter_unit"
       ],
       "depends_on": [
         "monkeyarch.capabilities.opening_solver",
@@ -2247,13 +2249,14 @@
       "owner_path": "archflow/project/index/__init__.py",
       "purpose": "The derived project index (ADR-008 phase 1b): one SQLite file per project in a cache directory outside it, filled by one projector for a rebuild and for every change on one keeper thread, stamped, never migrated, and read in snapshots by agents and routes without re-reading the records.",
       "owns": [
-        "ProjectIndex: the index file, its schema (meta, place, run, record, artifact, document, candidate, stage), the writer lease beside it, load (reuse, reconcile or rebuild), apply (projected before the write transaction opens; one commit, and one revision when a row changed), quarantine of an unreadable file, and read-only snapshots",
+        "ProjectIndex: the index file, its schema (meta, place, run, record, artifact, document, candidate, stage, projection), the writer lease beside it, load (reuse, reconcile or rebuild), apply (projected before the write transaction opens; one commit, and one revision when a row changed), quarantine of an unreadable file, and read-only snapshots",
         "IndexKeeper: the index's only writer, a thread per index fed by the layout watch's sightings (project.watch add_listener) and this process's write observer; its IndexState, and whether the rows hold every write this process made (readable)",
         "IndexStamp and manifest_stamp: schema version, projector version, project id and the digest of project.json; a different stamp rebuilds under a new epoch",
         "the row values a projector returns (RunRows, TreeRows, RecordRow, ArtifactRow, DocumentRow, CandidateRow, StageRow) and the Projector protocol",
         "line_places, place_area and path_area: which part of a project a layout line or a written path belongs to",
         "the bounded change log (#366): the change table (per entity - run:<id>, aside:<id>, tree, working, area:<name> - the revision that last changed or deleted it, kept for CHANGE_LOG_REVISIONS revisions above meta.floor), IndexSnapshot.changes (the entities changed and ids deleted since a revision, or None below the floor or ahead) and IndexSnapshot.entities (the whole snapshot a client keeps)",
-        "IndexCommit and add_commit_listener: the keeper announces each commit that moved the revision, and its first load, to the listeners registered for the project's root (a hint, never data)"
+        "IndexCommit and add_commit_listener: the keeper announces each commit that moved the revision, and its first load, to the listeners registered for the project's root (a hint, never data)",
+        "the projection cache's status table (#367): one ProjectionRow per key (input hash, kind, recipe hash, renderer version; status pending/done/error, attempts, claimed_at, blob, error), written by the projection queue through ProjectIndex.*_projection(s) under the index's write lock (insert-ignore is the claim), carried into a rebuilt file, and a done row an entity of its own (projections:<key>) whose change moves the revision and is announced with domain projections"
       ],
       "does_not_own": [
         "what a row holds, and how it is derived (the projector: studio.binding's StudioProjector)",
@@ -2318,7 +2321,21 @@
         "IndexCommit",
         "add_commit_listener",
         "entity_area",
-        "CHANGE_LOG_REVISIONS"
+        "CHANGE_LOG_REVISIONS",
+        "ProjectionRow",
+        "PROJECTION_PENDING",
+        "PROJECTION_DONE",
+        "PROJECTION_ERROR",
+        "ProjectIndex.enqueue_projection",
+        "ProjectIndex.claim_projection",
+        "ProjectIndex.finish_projection",
+        "ProjectIndex.fail_projection",
+        "ProjectIndex.retry_projection",
+        "ProjectIndex.reclaim_projections",
+        "ProjectIndex.drop_projections",
+        "ProjectIndex.projection",
+        "ProjectIndex.projections",
+        "ProjectIndex.model_inputs"
       ],
       "depends_on": [
         "project.layout",
@@ -2335,20 +2352,22 @@
       "invariants": [
         "never a source of truth and never evidence: every row names the P036 record it was read from, and the index can be deleted at any time and rebuilt from P036",
         "the file is never inside the project folder and never migrated with it; no absolute machine path is stored as identity",
-        "one writer: the keeper thread of the process holding index.lock; any other process gets IndexLocked, retries with a bounded back-off (the holder may be exiting) and reads P036 itself until it holds the lock; no request thread projects, stats or writes for the index",
+        "one writer process, the one holding index.lock: its keeper thread writes every row projected from P036, and the projection queue only the projection table, both under one write lock; any other process gets IndexLocked, retries with a bounded back-off (the holder may be exiting) and reads P036 itself until it holds the lock; no request thread projects, stats or writes for the index",
         "a reader reads one snapshot (one read transaction) and never waits for the writer; any failure to read is IndexUnavailable, never a partial answer",
         "a stamp that differs (schema version, projector version, project id, manifest digest) rebuilds under a new epoch, never migrates; a rebuild writes a new file and renames it into place once no reader has the old one open",
         "a file SQLite cannot read is moved aside with its journal (only the latest such copy is kept), rebuilt once and a warning logged; a failed rebuild makes the index unavailable and never blocks opening the project",
         "one projector fills the rows for a rebuild and for every change, outside the write transaction; a commit that changed a row moves the revision exactly once, and an apply that found nothing to do commits nothing",
         "a keeper never outlives its binding: closing the binding, or collecting one nobody closed, stops the keeper and gives up index.lock",
         "a kept file reopened after a restart is reused as it is when every layout line matches and none was racy when written; otherwise only the places that moved are projected again; a racy place is projected again once it settles",
-        "every committed change to a run's rows (the records it keeps aside, RunRows.aside, are an entity of their own, aside:<id>, so saving one never moves run:<id>), the tree, the working position (Projector.project_working: the working draft without its local recovery ref, its own entity so an autosave moves only area:working) or another area (HEAD, the working draft's file, any top-level directory without rows) moves the revision once and is logged; a since below the log's floor or ahead of the index answers nothing, so the caller sends a whole snapshot; a rebuild starts a new epoch with an empty log; a commit listener only publishes and never reads or writes the project"
+        "every committed change to a run's rows (the records it keeps aside, RunRows.aside, are an entity of their own, aside:<id>, so saving one never moves run:<id>), the tree, the working position (Projector.project_working: the working draft without its local recovery ref, its own entity so an autosave moves only area:working) or another area (HEAD, the working draft's file, any top-level directory without rows) moves the revision once and is logged; a since below the log's floor or ahead of the index answers nothing, so the caller sends a whole snapshot; a rebuild starts a new epoch with an empty log; a commit listener only publishes and never reads or writes the project",
+        "the projection table is a cache's state, never evidence: a rebuild carries its rows into the new file, and only a row that becomes done or a done row that goes moves the revision"
       ],
       "status": "canonical",
       "tests": [
         "tests/test_project_index.py",
         "apps/archflow-studio/api/tests/test_indexed_reads.py",
-        "apps/archflow-studio/api/tests/test_index_changes.py"
+        "apps/archflow-studio/api/tests/test_index_changes.py",
+        "apps/archflow-studio/api/tests/test_projections.py"
       ],
       "notes": "Created because no owner held a persistent derived store (ADR-008 phase 1b, #365). It hears of changes only through project.watch and the repository write observer; it never walks the project itself.",
       "files": [
@@ -3152,7 +3171,8 @@
         "horizontal cut-plan composition: section boundaries, one material hatch and below-cut visible lines, with caller-resolved semantic dimensions and retained representation recipe",
         "representation-only SVG entourage in the existing cut-plan recipe; exact physical-object-centre anchors, explicit missing/outside-view status and immutable dressing readback across source rebuilds",
         "section perspective: SectionPerspectiveView (a plan line and kept side, or an origin and normal; an explicit or default one-point camera) checked with named refusals before the model is read, the default eye placed from the exact cut, and the request, exact plane, resolved camera and crop recorded in the one drawing receipt (freeze_section_perspective)",
-        "NativeModelSource: verify original 3DM bytes against their explicit registration and derive drawing shapes without fabricating semantic state or CAD execution provenance"
+        "NativeModelSource: verify original 3DM bytes against their explicit registration and derive drawing shapes without fabricating semantic state or CAD execution provenance",
+        "DrawnView: a drawn view's SVG, PNG and what its receipt says about the drawing apart from its source and run; freeze_model_axis_elevation and freeze_section_perspective take an optional cache (DrawingCache) asked for the drawn view once the source verified, so a kept drawing is retained without solving its view again"
       ],
       "does_not_own": [
         "the hidden-line solve - adapters.cad_execution",
@@ -3209,7 +3229,9 @@
         "CLEANUP_TOLERANCE_MM",
         "object_semantics",
         "current_object_id",
-        "inspection_witness_ids"
+        "inspection_witness_ids",
+        "DrawnView",
+        "DrawingCache"
       ],
       "depends_on": [
         "adapters.cad_execution",
@@ -4378,7 +4400,8 @@
         "direct native model drawing selection: registered external sourceAsset stays frozen and has no modelSource; state-bound composed 3DM uses its own geometry, never a partial paired STEP",
         "SKP upload through the local standalone SDK, retaining original SKP and derived 3DM face geometry in the same P036 registration; retries reuse the verified original content",
         "the drawing correction projection (05-S2, application/drawing_corrections.py): each cut-plan revision paired with the registered revision its receipt names as previous, the pair's replacement_cause, a recipe_diff of the two view recipes by dotted path and a classify into compiler_defect, semantic_rule, recipe or local_override; and the project's recipe suggestions - a pen or hatch spacing changed the same way in representation-only revisions no agent asked for on at least two drawings no active recipe covers - each citing its exact revision pairs and the page a recipe decision would cite",
-        "the content-keyed projection cache (ADR-008 #367): key = sha256(model asset sha256, kind, recipe hash, renderer, SALT) where renderer is the mesh renderer's version plus a digest of drawings.model_view_pipeline (view frame, crop margin, chord tolerance, mesh_pipeline); a miss or due retry first checks the requester's source (check_model_view_source) and a retry draws from the latest requester's source; thumbnails read the run's own record, so a run on an older canonical base is drawn (require_readable) while actions keep require_actionable; PNG blobs in <project cache dir>/projections/blobs named by their own sha256, written then renamed and self-describing through text chunks; one status row per key behind StatusStore (InMemoryStatusStore is the part-A stand-in for the index table); one low-priority render subprocess with timeout, memory cap, leases, bounded retries and a collector with a grace window"
+        "the content-keyed projection cache (ADR-008 #367): key = sha256(model asset sha256, kind, recipe hash, renderer, SALT) where renderer is the mesh renderer's source-derived version plus a digest of drawings.model_view_pipeline (view frame, crop margin, chord tolerance, the source of its framing and meshing, mesh_pipeline); every request, idle retry and re-queue first checks its source (check_model_view_source: the run's exact state and registered model, no geometry read) and a retry draws from the latest checked source; thumbnails read the run's own record, so a run on an older canonical base is drawn (require_readable) while actions keep require_actionable; PNG blobs in <project cache dir>/projections/blobs named by their own sha256, written then renamed and self-describing through text chunks; one status row per key in the project index's projection table (StatusTable), whose insert is the claim, with a per-key lock in the process; the queue is enqueued after every index commit (tree_model_sources: the working position's model, then what readers show, then the rest of the tree) and on a read miss; one low-priority render subprocess with timeout, memory cap, leases reclaimed at startup and after the timeout, bounded retries with backoff, a refused source or a cancel giving its attempt back, one model read for every size drawn next (load_model_view, draw_loaded_view), and a collector keeping what an index artifact reaches, replacing an older renderer's picture only once the current one is drawn, with a grace window",
+        "drawings as on-demand projections (#368): an elevation's and a section perspective's SVG and PNG, a review sheet's PDF and DXF and a document page's raster are kinds of the same content-keyed cache (drawing-elevation, drawing-section-perspective, drawing-sheet, document-page), keyed by the input asset's sha256, a recipe holding every field that changes the bytes (the complete view and the drawn source content: geometry digest, unit, objects, bounds and semantics) and a renderer digest of the drawing code, fonts and libraries (drawings.drawing_pipeline); ProjectionQueue.on_demand draws one in the request that needs it through the existing generator, at most once per key, and the worker never draws them; issuing reads the cached files back and retains them in P036 byte for byte with a receipt of its own"
       ],
       "does_not_own": [
         "producing the export or its receipt - adapters.cad_execution through runtime.project_runner",
@@ -4489,10 +4512,15 @@
         "projection_key",
         "projection_spec",
         "ProjectionQueue",
-        "StatusStore",
+        "open_projections",
+        "tree_model_sources",
+        "StatusTable",
         "draw_model_view",
         "check_model_view_source",
-        "model_view_pipeline"
+        "model_view_pipeline",
+        "GET /api/projections/pages",
+        "on_demand_spec",
+        "drawing_pipeline"
       ],
       "depends_on": [
         "adapters.cad_execution",
@@ -4571,7 +4599,8 @@
         "SKP sourceImport metadata exposes the original file name and source artifact plus conversion warnings through model upload/listing and drawing receipts; import loss is never hidden by a successful projection.",
         "A drawing correction is derived, never recorded (05 option A): GET /api/drawings/corrections reads the retained revisions and the active recipe decisions again on every call and writes nothing. A pair is only a revision and the one its receipt names, within one drawing; its class is a pure function of the recipe diff and the replacement cause, and a source rebuild is no correction. A suggestion is only offered: it counts representation-only recipe pairs no agent asked for, grouped by key and direction, needs two distinct drawings (D-05-1), skips a key an active recipe already gives that drawing, and becomes memory only by a person's recipe decision citing its page. V0 cleanup reports name no object, so no hide is classed a compiler defect.",
         "one run's artifact rows and documents are kept per run under the stamps of its manifest, its records directory, every directory and file under its workspaces (artifacts) and each file its rows cite outside the run; the project's listing is the runs' rows in run order and then the committed-source step, whose per-run answer is kept under the stamps of the run, the design branches, its runner receipts and its source Stage; mutable row parts are copied for each caller, and artifact_bytes still reads and hashes the file on every call",
-        "A projection key names no run and no time; its blob is served immutable and never cited as evidence; deleting the cache directory only makes the next read draw again."
+        "A projection key names no run and no time; its blob is served immutable and never cited as evidence; deleting the cache directory only makes the next read draw again.",
+        "An issued drawing's retained files are the cached files byte for byte, and its P036 receipt cites their sha256 and its exact source, never a cache key; without an index, or with the cache deleted, the drawing is drawn and retained as before. A review sheet's PDF carries its source binding, so it is found in the cache only by the same source and recipe."
       ],
       "status": "canonical",
       "tests": [
@@ -4627,7 +4656,8 @@
         "receiving explicitly mapped PDF/image revisions into the existing board image ids, frames and geometry while preserving all other live scene edits; source histories remain registered documents",
         "opening an exact registered Board page in the existing document editor and returning with saved annotations, viewport and selection, without discarding unsynced model work",
         "reading one exact retained scene revision by name, so an older revision can answer as evidence without changing the board's current revision",
-        "An explicit BoardPageRequest source focuses that exact registered page or reinstates only that intentionally removed page through the existing insertion path, preserving the current scene draft"
+        "An explicit BoardPageRequest source focuses that exact registered page or reinstates only that intentionally removed page through the existing insertion path, preserving the current scene draft",
+        "the one raster of a registered document page (page_raster, cached_page, #368): at most 2048 px with transparency, a bounded PNG served as its own bytes; Board previews, Publish images and the publication exports' raster previews read it from the projection cache (GET /api/projections/pages) instead of each rasterising the page"
       ],
       "does_not_own": [
         "original PDF/image upload or drawing generation (studio.artifacts and runtime.drawing_elevation)",
@@ -4658,7 +4688,10 @@
         "web: createBoardFeedback",
         "web: prepareBoardDesignRequest",
         "read_board(binding, revision_sha256=None)",
-        "web: BoardPageRequest"
+        "web: BoardPageRequest",
+        "page_raster",
+        "cached_page",
+        "PAGE_RASTER_EDGE"
       ],
       "depends_on": [
         "studio.artifacts",
@@ -4667,7 +4700,8 @@
         "project.ports",
         "project.repository",
         "project.record_kinds",
-        "studio.intent"
+        "studio.intent",
+        "project.index"
       ],
       "used_by": [
         "apps/archflow-studio/api/archflow_studio_api/routes/boards.py",

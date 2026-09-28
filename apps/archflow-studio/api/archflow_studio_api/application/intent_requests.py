@@ -321,11 +321,49 @@ def action_preflight(context: IntentContext, record: StateRecord) -> dict[str, A
     return None
 
 
-_LENGTH_UNITS = {"mm": 0.001, "cm": 0.01, "m": 1.0, "in": 0.0254, "ft": 0.3048}
+# Metres per unit, as exact decimals: a length restated in another unit never
+# drifts (float factors made 700 mm 0.7000000000000001). The one table both the
+# scalar seam and this path read (#404 F17).
+_LENGTH_UNITS = {"mm": Decimal("0.001"), "cm": Decimal("0.01"), "m": Decimal("1"),
+                 "in": Decimal("0.0254"), "ft": Decimal("0.3048")}
 _UNIT_ALIASES = {"meter": "m", "meters": "m", "metre": "m", "metres": "m",
                  "millimeter": "mm", "millimeters": "mm", "millimetre": "mm", "millimetres": "mm",
                  "centimeter": "cm", "centimeters": "cm", "centimetre": "cm", "centimetres": "cm",
-                 "inch": "in", "inches": "in", "foot": "ft", "feet": "ft"}
+                 "inch": "in", "inches": "in", "foot": "ft", "feet": "ft",
+                 "毫米": "mm", "厘米": "cm", "米": "m"}
+
+
+def _canonical_unit(unit: str) -> str:
+    name = unit.strip().lower()
+    return _UNIT_ALIASES.get(name, name)
+
+
+def in_unit_exact(value: str | int | float | Decimal, unit: str, declared: str) -> Decimal | None:
+    """``value`` (as written) said in ``unit``, restated exactly in ``declared``; None when it cannot be.
+
+    The one converter (#404 F17): the same unit, however spelled, passes
+    through; two length units convert through ``_LENGTH_UNITS``; anything else
+    is None, for the caller to ask about rather than guess.
+    """
+
+    number = value if isinstance(value, Decimal) else Decimal(str(value))
+    source, target = _canonical_unit(unit), _canonical_unit(declared)
+    if source == target:
+        return number
+    if source not in _LENGTH_UNITS or target not in _LENGTH_UNITS:
+        return None
+    return number * _LENGTH_UNITS[source] / _LENGTH_UNITS[target]
+
+
+def in_unit(value: int | float, unit: str, declared: str) -> int | float | None:
+    """``in_unit_exact`` for a number: the same unit returns ``value`` unchanged, a whole result comes back whole."""
+
+    if _canonical_unit(unit) == _canonical_unit(declared):
+        return value
+    result = in_unit_exact(value, unit, declared)
+    if result is None:
+        return None
+    return int(result) if result == result.to_integral_value() else float(result)
 
 
 def _action_value(action: Mapping[str, Any], old: float, declared_unit: str | None) -> float | None:
@@ -338,13 +376,8 @@ def _action_value(action: Mapping[str, Any], old: float, declared_unit: str | No
     else:
         if declared_unit is None:
             return None
-        declared = declared_unit.strip().lower()
-        declared = _UNIT_ALIASES.get(declared, declared)
-        if unit == declared:
-            result = value
-        elif unit in _LENGTH_UNITS and declared in _LENGTH_UNITS:
-            result = value * _LENGTH_UNITS[unit] / _LENGTH_UNITS[declared]
-        else:
+        result = in_unit(value, unit, declared_unit)
+        if result is None:
             return None
     if not _finite(result):
         raise ValueError("the action result must be finite")

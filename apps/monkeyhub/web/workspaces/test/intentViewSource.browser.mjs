@@ -284,6 +284,11 @@ try {
           const bytes = url.pathname.includes(referenceSha) ? referenceBytes : drawingBytes;
           assert.ok(bytes); return await route.fulfill({ status: 200, contentType: "image/png", body: bytes });
         }
+        // Board previews read a page's raster (#368): a PNG page is its own raster.
+        if (url.pathname === "/api/projections/pages") {
+          const bytes = url.searchParams.get("assetSha256") === referenceSha ? referenceBytes : drawingBytes;
+          assert.ok(bytes); return await route.fulfill({ status: 200, contentType: "image/png", body: bytes });
+        }
         if (url.pathname === "/api/document-comments") return await json({ comments });
       }
       if (method === "POST" && url.pathname === "/api/pick/resolve") {
