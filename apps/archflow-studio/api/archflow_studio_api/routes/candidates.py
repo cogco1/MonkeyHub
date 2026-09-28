@@ -44,7 +44,7 @@ from ..application.projection import (
     project_state,
     require_actionable,
 )
-from ..application.proposals import read_refs_of, write_refs_of, Proposal
+from ..application.proposals import read_refs_of, sentences_of, write_refs_of, Proposal
 from ..settings import StudioSettings
 from ..transport.candidate import (
     CandidateAcceptedDto,
@@ -82,10 +82,10 @@ def start_candidate(
         raise StudioError(
             409,
             "PROPOSAL_NOT_RUNNABLE",
-            f"proposal {proposal_id} conflicts with what the utterance asked "
-            f"to keep ({', '.join(proposal.impact.conflicts)}). Resolve the "
-            "conflict and propose again; the studio never runs a change past "
-            "a protection the user named.",
+            f"proposal {proposal_id} would change what it was asked to keep "
+            f"({', '.join(proposal.impact.conflicts)}). Nothing ran: take those "
+            "refs out of keep, or propose a change that does not reach them; "
+            "the studio never runs a change past a protection that was named.",
         )
     binding = bound_project(state)
     projection = project_state(binding, run_id=proposal.source_run_id, source_stage_ref=proposal.source_stage_ref)
@@ -286,7 +286,8 @@ def compare_candidate(
     why_source = "unavailable"
     try:
         job: Job = state.jobs.for_candidate(candidate_id)
-        why = state.proposals.get(job.proposal_id).utterance
+        # Every step of a continued proposal, not only its last (#404 F17).
+        why = "; ".join(sentences_of(state.proposals.get(job.proposal_id)))
         why_source = "proposal"
     except StudioError:
         # Not this process's candidate, or its proposal is gone: the

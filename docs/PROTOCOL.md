@@ -392,6 +392,31 @@ A null base reference means absolute placement; a null top reference means heigh
 the top. State `levels[]` projects each retained Level's `levelId`, `name` and `elevation`.
 References are spatial datums and do not classify a mass as a storey, wall or slab.
 
+`GET /api/state?authored=true` also answers each element row's `params` and `references`
+exactly as authored: `"@key"` bindings kept, positions relative to the base reference. They
+are opt-in, so the default response does not grow; without the flag the row has neither key.
+These are the objects a `semanticEdit` entity replaces whole when it supplies them, so an
+edit to an existing element starts from them; `numericFields` and `drawnShape`
+are resolved values (bindings evaluated, datum and elevation applied) and are never a
+template for them. `verticalExtent: {base, top}` is the element's lowest and highest world
++Y in metres, from its producer's own datum and height rules and without producing geometry,
+for `prism` (tilted ones too), `planar-surface`, `curve`, `wall` and `loft`; other producers
+and unreadable inputs answer `null`. `elevation` remains the editable controls of upright
+drawn prisms and faces.
+
+Write vectors (`translation`, `axis`, `scale`, `origin`, push/pull `normal`, work-plane axes,
+loft sections) are the building-local modeling frame `[x, y, z]` with +y up; plan points are
+`[x, z]`. Candidate object and compare boxes are the export's Z-up CAD frame, `[x, z, y]` of
+the same point. A direct action's proposal summary states its vector and which way it goes
+(up or down, or horizontal along plan x or z) before anything runs.
+
+A modeling write whose `stateDigest` is not the selected source's is refused
+`409 STALE_BASE`, as are `POST /api/intents`, `/api/intents/context`, `/api/state/closure`,
+`/api/pick/resolve` and `/api/options`. The detail names the source it was checked against (the project's default
+source when no `sourceRunId` was sent) and, reading the newest 200 runs, the run whose
+receipt carries the sent state and the `sourceRunId` to send; otherwise it says no run it
+read has that state.
+
 `POST /api/proposals/elevation` shares the exact state/run/Stage and `sourceProposalId`
 continuation contract of the existing direct model routes. It accepts `set-base`, `set-top`,
 `set-height`, `bind-base`, `bind-top`, `detach-base`, `detach-top` for an `elementId`, or
@@ -436,7 +461,9 @@ Drawing, Push/Pull, numeric transforms, Delete and Undo/Redo update an in-memory
 without proposal or candidate requests. The exact loaded catalog and export identity
 can identify a local selection immediately; this is not a new server pick verdict.
 Manual Sync freezes the current action snapshot and sends the existing typed routes
-with `sourceProposalId`, followed by one final candidate request. Net-zero edits do
+with `sourceProposalId`, followed by one final candidate request. A continued proposal
+answers with its latest step's `target`, and its candidate's compare `why` joins every
+step's sentence in order (a summarized sketch batch is one step). Net-zero edits do
 not create a candidate. The original state/run/Stage binding remains fixed throughout
 the chain, and MonkeyHub's existing `Idempotency-Key` admission prevents duplicate
 candidate execution when the same submission is retried. Edits during Sync remain
@@ -533,6 +560,16 @@ whose own capability is editable, the answer is `NEEDS_CLARIFICATION` and its co
 `candidates`; where it is a level — a level's elevation is not an element capability — the answer
 is the terminal `MISSING_EDITABLE_CONTROL`, naming the level, with the draft's `suggestedAction`
 saying to move it. Neither reaches the agent.
+
+**A control states its unit.** Each catalog capability, and so each
+`candidate.modify_existing` field, carries `unit`: a bound field its parameter's unit, a
+literal the unit its advertised producer declares (`m` for every length those producers
+read), `null` where none is declared. The scalar grammar and the intent-request path read
+one exact table: a length said in any length unit (`mm`, `cm`, `m`, `in`, `ft`) is restated
+in the declared unit (`set height to 2200 mm` proposes 2.2 in m), and a bare number is taken in
+the declared unit. They ask, naming the unit expected, about a unit on a number that declares
+none and about a unit that is not a length. A keep conflict names the kept refs the change
+would reach, whether they came from `keep` or from a keep clause in the words.
 
 **The continuation is the whole of the continuity.** A client that answers sends back
 `continuationToken` and nothing else — never a transcript, and never its own idea of the

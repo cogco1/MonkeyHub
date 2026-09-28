@@ -157,6 +157,26 @@ class SketchTestCase(unittest.TestCase):
             self.assertEqual(stale.status_code, 409, stale.text)
             self.assertEqual(stale.json()["code"], "STALE_BASE")
 
+    def test_a_move_says_in_words_which_way_it_goes(self) -> None:
+        # #404 F3: writes are Y-up [x, y, z] while readback boxes are Z-up, and
+        # translation [0, 0, 0.5] silently moved a volume sideways. The proposal
+        # an agent reads before running anything now says which way is which.
+        drawn = self.draw()[1]
+        summaries = {}
+        for vector in ([0, 0, 0.5], [0, 0.5, 0], [-2, 0, 0]):
+            response = self.client.post("/api/proposals/transform", json={
+                "stateDigest": self.state_digest, "sourceProposalId": drawn["proposalId"],
+                "elementId": "portico-porch", "kind": "move", "translation": vector})
+            self.assertEqual(response.status_code, 201, response.text)
+            # What the move does, after the vector and the frame it is stated in.
+            summaries[tuple(vector)] = response.json()["change"]["summary"].rsplit(": ", 1)[1]
+        self.assertIn("horizontal", summaries[(0, 0, 0.5)])
+        self.assertIn("+z", summaries[(0, 0, 0.5)])
+        self.assertNotIn("up", summaries[(0, 0, 0.5)])
+        self.assertIn("up", summaries[(0, 0.5, 0)])
+        self.assertNotIn("horizontal", summaries[(0, 0.5, 0)])
+        self.assertIn("-x", summaries[(-2, 0, 0)])
+
     def test_direct_transform_refuses_dependencies_and_cannot_detach_a_host(self) -> None:
         before = self.client.get("/api/state").json()
         runs_before = sorted(path.name for path in (self.root / PROJECT_ID / "runs").iterdir())
@@ -290,6 +310,83 @@ class SketchContinuationTestCase(unittest.TestCase):
 
         # Nothing here published anything: the project's own version stands.
         self.assertEqual(self.repository.read_head().version, self.head)
+
+    def test_a_stale_base_names_the_run_whose_state_was_sent(self) -> None:
+        # #404 F5: an agent read GET /api/state?run=<candidate>, then wrote without
+        # sourceRunId. Answering "read /api/state again" led back to the project's
+        # default source, which never holds the agent's own candidate.
+        first = self.draw(run=None, elementId="block-a", profile=SQUARE, height=3.0,
+                          baseLevel="level-ground")
+        sent = self.digest_of(first)
+        checked = self.client.get("/api/state").json()["referenceRun"]["runId"]
+        self.assertNotEqual(checked, first, "the candidate is not the default source")
+        for route, action in (("transform", {"kind": "move", "translation": [1, 0, 0]}),
+                              ("elevation", {"action": "set-base", "value": 0.5})):
+            with self.subTest(route=route):
+                refused = self.client.post(f"/api/proposals/{route}",
+                                           json={"stateDigest": sent, "elementId": "block-a", **action})
+                self.assertEqual(refused.status_code, 409, refused.text)
+                self.assertEqual(refused.json()["code"], "STALE_BASE")
+                detail = refused.json()["detail"]
+                self.assertIn(f"/api/state?run={first}", detail, "the run whose state was sent is named")
+                self.assertIn(f'sourceRunId "{first}"', detail)
+                self.assertIn(checked, detail, "the source it was checked against is named")
+        # The utterance, capability-run and parameter-lock paths answer the same way (#404 review).
+        for path, body in (
+            ("/api/proposals", {"targetComponentId": "portico", "elementId": "block-a", "utterance": "set height to 2"}),
+            ("/api/capabilities/candidate.modify_existing/run",
+             {"targetComponentId": "portico", "elementId": "block-a", "utterance": "set height to 2"}),
+            ("/api/proposals/parameter-locks", {"parameterKeys": ["module"], "action": "lock"}),
+        ):
+            with self.subTest(path=path):
+                refused = self.client.post(path, json={"stateDigest": sent, **body})
+                self.assertEqual(refused.status_code, 409, refused.text)
+                self.assertEqual(refused.json()["code"], "STALE_BASE")
+                self.assertIn(f'sourceRunId "{first}"', refused.json()["detail"])
+        # A chain continued with another state names that state's run and the chain's own base.
+        started = self.client.post("/api/proposals", json={
+            "stateDigest": self.digest_of(None), "targetComponentId": "portico", "elementId": "portico-base",
+            "utterance": "set height to 0.7"})
+        self.assertEqual(started.status_code, 201, started.text)
+        refused = self.client.post("/api/proposals/transform", json={
+            "stateDigest": sent, "sourceProposalId": started.json()["proposalId"],
+            "elementId": "portico-base", "kind": "move", "translation": [1, 0, 0]})
+        self.assertEqual(refused.status_code, 409, refused.text)
+        self.assertIn(f'sourceRunId "{first}"', refused.json()["detail"])
+        self.assertIn(started.json()["baseStateDigest"], refused.json()["detail"])
+        # A state no retained run has names no run at all.
+        unknown = self.client.post("/api/proposals/transform", json={
+            "stateDigest": "0" * 64, "elementId": "block-a", "kind": "move", "translation": [1, 0, 0]})
+        self.assertEqual(unknown.status_code, 409, unknown.text)
+        self.assertNotIn(first, unknown.json()["detail"])
+        self.assertIn("/api/state", unknown.json()["detail"])
+
+    def test_the_questions_asked_of_a_sent_state_name_its_run_too(self) -> None:
+        # #404 review of 13f8b7b7: a closure, a pick, an intent, a massing option and a
+        # context read also check the state they are sent, and "Read /api/state again"
+        # sent the agent back to the default source from each of them.
+        first = self.draw(run=None, elementId="block-a", profile=SQUARE, height=3.0,
+                          baseLevel="level-ground")
+        sent = self.digest_of(first)
+        checked = self.client.get("/api/state").json()["referenceRun"]["runId"]
+        for path, body in (
+            ("/api/state/closure", {"changedRefs": ["entity:block-a"]}),
+            ("/api/pick/resolve", {"userStrings": {}}),
+            ("/api/intents", {"targetComponentId": "portico", "elementId": "block-a", "utterance": "set height to 2"}),
+            ("/api/options", {"transform": "add_floor"}),
+            # The context read names its source exactly; the one named is what was checked.
+            ("/api/intents/context", {"projectId": PROJECT_ID, "sourceRunId": checked,
+                                      "utterance": "Continue the massing"}),
+        ):
+            with self.subTest(path=path):
+                refused = self.client.post(path, json={"stateDigest": sent, **body})
+                self.assertEqual(refused.status_code, 409, refused.text)
+                self.assertEqual(refused.json()["code"], "STALE_BASE")
+                detail = refused.json()["detail"]
+                self.assertIn(f"/api/state?run={first}", detail, "the run whose state was sent is named")
+                self.assertIn(f'sourceRunId "{first}"', detail)
+                self.assertIn(checked, detail, "the source it was checked against is named")
+                self.assertNotIn("/api/state again", detail)
 
     def test_going_back_to_an_earlier_run_and_carrying_on_from_it(self) -> None:
         first = self.draw(run=None, elementId="block-a", profile=SQUARE, height=3.0,

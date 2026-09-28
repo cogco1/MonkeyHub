@@ -19,7 +19,9 @@ from monkeyarch.capabilities.element_producers import (
     ElementRow,
     ProductionContext,
     element_rows_of,
+    element_vertical_extent,
     edit_drawn_element,
+    parameter_unit,
     produce_rows,
     production_order,
     producer_signatures,
@@ -319,6 +321,67 @@ class CurveProducerTests(unittest.TestCase):
                        {"profile": [[0, 0], [float("nan"), 1]]}, {**row.params, "height": 1}):
             with self.subTest(params=params), self.assertRaises(ElementProducerError):
                 _produce((replace(row, params=params),))
+
+
+class VerticalExtentTests(unittest.TestCase):
+    """#404 F14: where an element stands, by its producer's own rules, without producing geometry."""
+
+    def extent(self, row: ElementRow) -> tuple[float, float]:
+        return element_vertical_extent(row, ProductionContext(ReferenceContext(grids=_grids(), levels=_levels()), {}))
+
+    def test_each_advertised_producer_states_its_lowest_and_highest_point(self) -> None:
+        profile = [[0, 0], [3, 0], [3, 2], [0, 2]]
+        on_pn, on_ground = {"base": {"level": PN}}, {"base": {"level": "level-ground"}}
+        cases = (
+            # PN is 3.57: elevation 0.25 lifts the whole prism, height 1.5 pulls it up.
+            (ElementRow("block", "envelope", "prism", on_pn, {"profile": profile, "height": 1.5, "elevation": 0.25}, BASIS),
+             (3.82, 5.32)),
+            # A vertical plate: its profile y runs 4..6 above the datum; the pull along +z adds no height.
+            (ElementRow("plate", "envelope", "prism", on_pn, {"profile": profile, "height": 1.5, "work_plane": {
+                "origin": [10, 4, 20], "xAxis": [1, 0, 0], "yAxis": [0, 1, 0], "normal": [0, 0, 1]}}, BASIS), (7.57, 9.57)),
+            # A reversed plane pulls downward from the datum.
+            (ElementRow("pit", "envelope", "prism", on_pn, {"profile": profile, "height": 1.5, "work_plane": {
+                "origin": [0, 0, 0], "xAxis": [1, 0, 0], "yAxis": [0, 0, 1], "normal": [0, -1, 0]}}, BASIS), (2.07, 3.57)),
+            (ElementRow("floor", "envelope", "planar-surface", on_pn, {"profile": [*profile, [0, 0]], "elevation": 0.1}, BASIS),
+             (3.67, 3.67)),
+            (ElementRow("path", "envelope", "curve", on_ground, {"profile": [[0, 0], [3, 0]], "elevation": 1.2}, BASIS), (1.2, 1.2)),
+            (ElementRow("wall", "envelope", "wall", {**on_pn, "line": {"from": _on("axis-ox", 0), "to": _on("axis-ox", 4)}},
+                        {"thickness": 0.2, "height": 3.0}, BASIS), (3.57, 6.57)),
+            (ElementRow("drum", "envelope", "loft", on_ground, {"profile_size": 4, "profiles": [
+                [[0, 1, 0], [1, 1, 0], [1, 1, 1], [0, 1, 1]], [[0, 2.5, 0], [1, 2.5, 0], [1, 2.5, 1], [0, 2.5, 1]]]}, BASIS),
+             (1.0, 2.5)),
+        )
+        for row, (base, top) in cases:
+            with self.subTest(element=row.element_id):
+                low, high = self.extent(row)
+                self.assertAlmostEqual(low, base, places=9)
+                self.assertAlmostEqual(high, top, places=9)
+
+    def test_an_extent_the_producer_would_refuse_is_refused_too(self) -> None:
+        profile = [[0, 0], [3, 0], [3, 2], [0, 2]]
+        for row in (
+            ElementRow("beam", "envelope", "beam", {"base": {"level": PN}}, {"height": 1.0, "depth": 0.5}, BASIS),
+            ElementRow("wall", "envelope", "wall", {"base": {"datum": PN, "offset": 0.3},
+                                                     "line": {"from": _on("axis-ox", 0), "to": _on("axis-ox", 4)}},
+                       {"thickness": 0.2, "height": 3.0}, BASIS),
+            ElementRow("plate", "envelope", "prism", {"base": {"level": PN}, "top": {"level": "level-ground"}},
+                       {"profile": profile, "work_plane": {"origin": [0, 0, 0], "xAxis": [1, 0, 0], "yAxis": [0, 1, 0],
+                                                           "normal": [0, 0, 1]}}, BASIS),
+        ):
+            with self.subTest(element=row.element_id, producer=row.producer), self.assertRaises(ElementProducerError):
+                self.extent(row)
+
+
+class ParameterUnitTests(unittest.TestCase):
+    def test_every_advertised_length_declares_metres_and_nothing_else_declares_a_unit(self) -> None:
+        # #404 F17: a scalar parameter (a number or an @binding) of an advertised producer is a
+        # length the producer reads in metres; counts, lists and frames declare none.
+        for producer, signature in producer_signatures().items():
+            for key, schema in signature["parameters"]["properties"].items():
+                scalar = [option.get("type") for option in schema.get("anyOf", ())] == ["number", "string"]
+                with self.subTest(producer=producer, key=key):
+                    self.assertEqual(parameter_unit(producer, key), "m" if scalar else None)
+        self.assertIsNone(parameter_unit("beam", "height"), "a producer that is not advertised declares nothing")
 
 
 class DrawingPlaneTests(unittest.TestCase):

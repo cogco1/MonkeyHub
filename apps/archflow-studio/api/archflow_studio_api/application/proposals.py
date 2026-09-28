@@ -88,6 +88,15 @@ class Proposal:
     # Exact saved source/page ink and submitted words, read again on candidate execution.
     document_comment_ref: ProjectRecordRef | None = None
     model_source: "ModelSource | None" = None
+    # The sentence of every step a continued proposal folded in, in order
+    # (``sentences_of``); empty for one step, whose utterance says it all.
+    steps: tuple[str, ...] = ()
+
+
+def sentences_of(proposal: Proposal) -> tuple[str, ...]:
+    """What each step of this proposal said, in the order it was taken."""
+
+    return proposal.steps or (proposal.utterance,)
 
 
 
@@ -175,6 +184,11 @@ def continue_proposal(
         # The cumulative keep list also governs later proposal continuations;
         # the final operator and its impact remain relative to the first base.
         protected=protected,
+        # The step just taken is what the continuation answers for (#404 F17):
+        # the cumulative diff alone names whichever changed ref sorts first.
+        component_id=proposal.component_id, element_id=proposal.element_id,
+        target_ref=proposal.target_ref, key=proposal.key,
+        steps=(*sentences_of(previous), *sentences_of(proposal)),
     )
 
 
