@@ -5,8 +5,8 @@ the frame stands proud of the exterior face, glazing or leaf thickness
 and offsets). Where the opening is, how large, and on which storey come
 from the ``HostedVoid`` the wall solver granted — the type never carries
 a project coordinate. Every member binds ``base_level`` to the storey
-datum and rides its own seat height as ``base_offset``; the wall's cut
-result is the assembly's HOST_CUT member, so the compiler sees the void,
+datum and rides its own seat height as ``base_offset``; the aperture, the
+wall body met by the void's tool, is the assembly's HOST_CUT member, so the compiler sees the void,
 the frame and the infill as one hosted assembly at ENVELOPE maturity.
 
 A window frame is delivered whole: its four bars are fused by one

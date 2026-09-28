@@ -651,8 +651,8 @@ class SemanticCandidateChainTests(IntentTestCase):
         self.assertAlmostEqual(radius, 2.0 / 2)
         self.assertAlmostEqual(upper, 2.5 + CUT_MARGIN - SPRING)
         self.assertEqual(jambs, (ARCH_ALONG - 1.0, ARCH_ALONG + 1.0))
-        self.assertEqual(_op_value(ops_a["passage-wall"], "vector"), [0.0, WALL_HEIGHT, 0.0])
-        self.assertEqual(max(p[0] for p in _op_value(ops_a["passage-wall"], "profile")), 0.3)   # thickness, through @passage_thickness
+        self.assertEqual(_op_value(ops_a["passage-wall-body"], "vector"), [0.0, WALL_HEIGHT, 0.0])
+        self.assertEqual(max(p[0] for p in _op_value(ops_a["passage-wall-body"], "profile")), 0.3)   # thickness, through @passage_thickness
         self.assertEqual(_op_value(ops_a["portico-base"], "vector"), [0.0, 0.6, 0.0])
         self.assertEqual(_op_value(ops_a["portico-cornice"], "base_level"), 0.6)
         candidate_a = self.client.get(f"/api/candidates/{run_a}").json()
@@ -788,7 +788,7 @@ class SemanticCandidateChainTests(IntentTestCase):
         for run_id, width, head in ((run_a, 2.0, 2.5), (run_b, 1.6, 2.3)):
             with self.subTest(run=run_id):
                 shapes = measured[run_id]
-                self.assertEqual(set(shapes), {"obj-passage-wall-cut", "obj-passage-wall-aperture-passage-arch", "obj-portico-base", "obj-portico-cornice"})
+                self.assertEqual(set(shapes), {"obj-passage-wall", "obj-passage-wall-aperture-passage-arch", "obj-portico-base", "obj-portico-cornice"})
                 aperture = shapes["obj-passage-wall-aperture-passage-arch"]
                 self.assertTrue(aperture.valid and aperture.closed and aperture.solid_count == 1)
                 # CAD frame is (thickness x, along y, up z): the jambs, the crown and the volume of a semicircular arch of that width.
@@ -796,7 +796,7 @@ class SemanticCandidateChainTests(IntentTestCase):
                 self.assertAlmostEqual(aperture.bbox_min[1], ARCH_ALONG - width / 2, places=6)
                 self.assertAlmostEqual(aperture.bbox_max[2], head, places=6)
                 self.assertAlmostEqual(aperture.volume, 0.3 * (width * SPRING + math.pi * (width / 2) ** 2 / 2), places=6)
-                cut = shapes["obj-passage-wall-cut"]
+                cut = shapes["obj-passage-wall"]
                 self.assertAlmostEqual(cut.volume, 4.0 * 0.3 * WALL_HEIGHT - aperture.volume, places=6)
         for name in ("obj-portico-base", "obj-portico-cornice"):
             self.assertEqual(measured[run_a][name], measured[run_b][name])

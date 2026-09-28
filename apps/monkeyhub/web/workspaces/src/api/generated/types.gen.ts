@@ -8892,6 +8892,10 @@ export type SemanticEditRequestDto = {
                         offset: number | string;
                     };
                 };
+                /**
+                 * Elements whose solids are removed from this one. Each keeps its own identity and stays in the model hidden; remove it from this list and it is delivered again. Neither element needs to be classified. A void is a prism without rectangular_cutouts or a capped loft, has no voids of its own, and nothing stands on its top.
+                 */
+                voids?: Array<string>;
             };
             params?: {
                 /**
@@ -9102,6 +9106,10 @@ export type SemanticEditRequestDto = {
                 } | {
                     datum: string;
                 };
+                /**
+                 * Elements whose solids are removed from this one. Each keeps its own identity and stays in the model hidden; remove it from this list and it is delivered again. Neither element needs to be classified. A void is a prism without rectangular_cutouts or a capped loft, has no voids of its own, and nothing stands on its top.
+                 */
+                voids?: Array<string>;
             };
             params?: {
                 /**
@@ -9257,6 +9265,10 @@ export type SemanticEditRequestDto = {
                         number
                     ];
                 };
+                /**
+                 * Elements whose solids are removed from this one. Each keeps its own identity and stays in the model hidden; remove it from this list and it is delivered again. Neither element needs to be classified. A void is a prism without rectangular_cutouts or a capped loft, has no voids of its own, and nothing stands on its top.
+                 */
+                voids?: Array<string>;
             };
             params?: {
                 /**
@@ -9449,6 +9461,10 @@ export type SemanticEditRequestDto = {
                         offset: number | string;
                     };
                 };
+                /**
+                 * Elements whose solids are removed from this one. Each keeps its own identity and stays in the model hidden; remove it from this list and it is delivered again. Neither element needs to be classified. A void is a prism without rectangular_cutouts or a capped loft, has no voids of its own, and nothing stands on its top.
+                 */
+                voids?: Array<string>;
             };
             params?: {
                 /**
@@ -9653,6 +9669,10 @@ export type SemanticEditRequestDto = {
                 } | {
                     datum: string;
                 };
+                /**
+                 * Elements whose solids are removed from this one. Each keeps its own identity and stays in the model hidden; remove it from this list and it is delivered again. Neither element needs to be classified. A void is a prism without rectangular_cutouts or a capped loft, has no voids of its own, and nothing stands on its top.
+                 */
+                voids?: Array<string>;
             };
             params?: {
                 /**
@@ -9806,6 +9826,10 @@ export type SemanticEditRequestDto = {
                         number
                     ];
                 };
+                /**
+                 * Elements whose solids are removed from this one. Each keeps its own identity and stays in the model hidden; remove it from this list and it is delivered again. Neither element needs to be classified. A void is a prism without rectangular_cutouts or a capped loft, has no voids of its own, and nothing stands on its top.
+                 */
+                voids?: Array<string>;
             };
             params?: {
                 /**

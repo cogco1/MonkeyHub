@@ -998,7 +998,7 @@ class WallOpeningBooleanTests(unittest.TestCase):
             receipt, _ = _execute(program, _persisted_binding(program, "stage-occt-half-round"), workspace, "half-round@occt")
             self.assertIs(receipt.status, CadExecutionStatus.SUCCEEDED, receipt.failures)
             entries = _entries_by_name(workspace / receipt.exact_artifact["relative_path"])
-            cut = entries["obj-wall-south-cut"].shape
+            cut = entries["obj-wall-south"].shape
             self.assertAlmostEqual(occt_backend.measure_shape(cut).volume,
                                    6.0 * 0.3 * 2.97 - math.pi * 1.2 ** 2 * 0.3, places=6)
             for index, centre in enumerate((1.7, 4.3)):
@@ -1023,9 +1023,9 @@ class WallOpeningBooleanTests(unittest.TestCase):
             receipt, _ = _execute(program, binding, workspace, "arch@occt")
             self.assertIs(receipt.status, CadExecutionStatus.SUCCEEDED, receipt.failures)
             self.assertEqual(receipt.physical_object_ids,
-                             ("obj-plinth", "obj-wall-south-aperture-arch", "obj-wall-south-cut"))
+                             ("obj-plinth", "obj-wall-south", "obj-wall-south-aperture-arch"))
             entries = _entries_by_name(workspace / receipt.exact_artifact["relative_path"])
-            shape = entries["obj-wall-south-cut"].shape
+            shape = entries["obj-wall-south"].shape
             aperture_shape = entries["obj-wall-south-aperture-arch"].shape
             cut = occt_backend.measure_shape(shape)
             aperture = occt_backend.measure_shape(aperture_shape)
@@ -1065,7 +1065,7 @@ class WallOpeningBooleanTests(unittest.TestCase):
     def test_the_cut_wall_is_the_saved_solid_with_its_opening(self) -> None:
         program = _compile(authored_record())
         binding = _persisted_binding(program, "stage-occt-wall")
-        expected_ids = ("obj-plinth", "obj-wall-south-aperture-window-south", "obj-wall-south-cut")
+        expected_ids = ("obj-plinth", "obj-wall-south", "obj-wall-south-aperture-window-south")
 
         with tempfile.TemporaryDirectory() as tmp:
             workspace = Path(tmp).resolve()
@@ -1082,7 +1082,7 @@ class WallOpeningBooleanTests(unittest.TestCase):
             self.assertEqual((plinth.valid, plinth.solid_count, plinth.closed, plinth.face_count), (True, 1, True, 6))
             self.assertAlmostEqual(plinth.volume, 6.0 * 1.2 * 0.6, places=6)
 
-            cut = occt_backend.measure_shape(entries["obj-wall-south-cut"].shape)
+            cut = occt_backend.measure_shape(entries["obj-wall-south"].shape)
             self.assertEqual((cut.valid, cut.solid_count, cut.closed), (True, 1, True))
             self.assertEqual(cut.face_count, 10)                                       # the box's six faces and the opening's four reveals
             self.assertAlmostEqual(cut.volume, 6.0 * 0.3 * 2.97 - 1.2 * 0.3 * 1.5, places=6)
@@ -1097,14 +1097,14 @@ class WallOpeningBooleanTests(unittest.TestCase):
                 (2.3, 2.2, plan_z): "inside", (2.5, 2.2, plan_z): "outside",
             }
             for point, expected in probes.items():
-                self.assertEqual(occt_backend.classify_program_point(entries["obj-wall-south-cut"].shape, point), expected, point)
+                self.assertEqual(occt_backend.classify_program_point(entries["obj-wall-south"].shape, point), expected, point)
 
             aperture = occt_backend.measure_shape(entries["obj-wall-south-aperture-window-south"].shape)
             self.assertEqual((aperture.valid, aperture.solid_count, aperture.closed), (True, 1, True))
             self.assertAlmostEqual(aperture.volume, 1.2 * 0.3 * 1.5, places=6)         # the void clipped to the wall's thickness
 
             # the receipt measured the same file the same way
-            self.assertAlmostEqual(receipt.readback["obj-wall-south-cut"]["volume"], cut.volume, places=9)
+            self.assertAlmostEqual(receipt.readback["obj-wall-south"]["volume"], cut.volume, places=9)
             self.assertEqual(receipt.readback["obj-wall-south-aperture-window-south"]["layers"], ["archflow::building"])
 
             # the preview carries all three, the aperture hidden as its semantics say
@@ -1116,7 +1116,7 @@ class WallOpeningBooleanTests(unittest.TestCase):
 
             model = rhino3dm.File3dm.Read(str(preview))
             visibility = {obj.Attributes.Name: obj.Attributes.Visible for obj in model.Objects}
-            self.assertEqual(visibility, {"obj-plinth": True, "obj-wall-south-aperture-window-south": False, "obj-wall-south-cut": True})
+            self.assertEqual(visibility, {"obj-plinth": True, "obj-wall-south-aperture-window-south": False, "obj-wall-south": True})
             self.assertEqual(
                 receipt.expected_semantics["objects"]["obj-wall-south-aperture-window-south"]["user_text"]["archflow:inspection_witness"],
                 "hidden",
@@ -1168,7 +1168,7 @@ class WindowFrameExecutionTests(unittest.TestCase):
             self.assertIs(receipt.status, CadExecutionStatus.SUCCEEDED, receipt.failures)
             self.assertEqual(
                 receipt.physical_object_ids,
-                (FRAME_ID, PANE_ID, "obj-plinth", "obj-wall-south-aperture-window-south", "obj-wall-south-cut"),
+                (FRAME_ID, PANE_ID, "obj-plinth", "obj-wall-south", "obj-wall-south-aperture-window-south"),
             )
             # the bars were consumed by the union: none of them is a delivered object
             self.assertFalse(any(name.endswith(("-bottom", "-left", "-right", "-top")) for name in receipt.physical_object_ids))
@@ -1196,9 +1196,9 @@ class WindowFrameExecutionTests(unittest.TestCase):
             self.assertEqual(occt_backend.classify_program_point(entries[PANE_ID].shape, (3.0, 2.25, -0.0225)), "inside")
             self.assertEqual(occt_backend.classify_program_point(entries[FRAME_ID].shape, (3.0, 2.25, -0.0225)), "outside")
 
-            cut = occt_backend.measure_shape(entries["obj-wall-south-cut"].shape)
+            cut = occt_backend.measure_shape(entries["obj-wall-south"].shape)
             self.assertAlmostEqual(cut.volume, 6.0 * 0.3 * 2.97 - 1.2 * 0.3 * 1.5, places=6)
-            self.assertEqual(occt_backend.classify_program_point(entries["obj-wall-south-cut"].shape, (3.0, 2.25, -0.15)), "outside")
+            self.assertEqual(occt_backend.classify_program_point(entries["obj-wall-south"].shape, (3.0, 2.25, -0.15)), "outside")
 
             # the receipt's cold read agrees, and the analytic predictor already knew the union's bounds
             self.assertAlmostEqual(receipt.readback[FRAME_ID]["volume"], FRAME_VOLUME, places=6)
@@ -1215,7 +1215,7 @@ class WindowFrameExecutionTests(unittest.TestCase):
             self.assertEqual({name: row["material_id"] for name, row in materials.items()}, {"frame": "frame", "glazing": "glazing"})
             self.assertEqual(bindings[FRAME_ID], ("MaterialFromObject", materials["frame"]["index"]))
             self.assertEqual(bindings[PANE_ID], ("MaterialFromObject", materials["glazing"]["index"]))
-            for other in ("obj-plinth", "obj-wall-south-cut", "obj-wall-south-aperture-window-south"):
+            for other in ("obj-plinth", "obj-wall-south", "obj-wall-south-aperture-window-south"):
                 self.assertEqual(bindings[other], ("MaterialFromLayer", -1))
             self.assertEqual(
                 receipt.preview_artifact["materials"],
@@ -1249,7 +1249,7 @@ class WindowFrameExecutionTests(unittest.TestCase):
             receipt, elapsed = _execute(program, binding, workspace, "windows@occt")
             print(f"\n[occt] three windows: {elapsed:.3f} s wall clock; timings={ {k: round(v, 3) for k, v in receipt.timings.items()} }")
             self.assertIs(receipt.status, CadExecutionStatus.SUCCEEDED, receipt.failures)
-            self.assertEqual(receipt.physical_object_ids, (frame_array, pane_array, "obj-plinth", *apertures, "obj-wall-south-cut"))
+            self.assertEqual(receipt.physical_object_ids, (frame_array, pane_array, "obj-plinth", "obj-wall-south", *apertures))
             self.assertEqual(receipt.expected_bounds[frame_array], {"min": [0.6, -0.08, 1.5], "max": [5.4, 0.1, 3.0]})
 
             entries = _entries_by_name(workspace / receipt.exact_artifact["relative_path"])
@@ -1265,7 +1265,7 @@ class WindowFrameExecutionTests(unittest.TestCase):
             self.assertEqual(entries[pane_array].layers, ("archflow::building",))
 
             # each copy stands where its aperture is: a rail inside, the aperture centre outside, the pane inside
-            frame_shape, pane_shape, wall_shape = entries[frame_array].shape, entries[pane_array].shape, entries["obj-wall-south-cut"].shape
+            frame_shape, pane_shape, wall_shape = entries[frame_array].shape, entries[pane_array].shape, entries["obj-wall-south"].shape
             for centre in centres:
                 self.assertEqual(occt_backend.classify_program_point(frame_shape, (centre, 1.545, 0.01)), "inside", centre)
                 self.assertEqual(occt_backend.classify_program_point(frame_shape, (centre - 0.555, 2.25, 0.01)), "inside", centre)
@@ -2685,7 +2685,7 @@ class StepWorkModelImportTests(unittest.TestCase):
                     hashlib.sha256(written.read_bytes()).hexdigest(), item.sha256
                 )
 
-            cut = next(item for item in objects if item.object_id == "obj-wall-south-cut")
+            cut = next(item for item in objects if item.object_id == "obj-wall-south")
             solid = 6.0 * 0.3 * 2.97
             self.assertTrue(cut.closed and cut.solid_count == 1)
             # The opening is still missing from the solid: a healed or dropped
