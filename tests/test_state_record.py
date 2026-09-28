@@ -33,8 +33,12 @@ from archflow.state.state_record import (
     compile_parameter_locks,
     combine_component_changes,
     component_semantics,
+    RecordBinding,
+    design_components_of,
     developed_design_view,
+    legacy_state_digest,
     parameter_bindings_of,
+    schematic_pack_of,
     resolve_element_bindings,
 )
 
@@ -739,8 +743,9 @@ class StateRecordTests(unittest.TestCase):
             repository = FilesystemProjectRepository.initialize(Path(tmp) / "demo", project_id="demo", initial_state={"schema": "TestState@1"})
             run = repository.create_run("run-1")
             state = _as_developed_state(_record(), run=run, phase=DesignPhase.DESIGN_DEVELOPMENT)
-            self.assertEqual(state.selected_schematic.option.option_id, "declared")
-            self.assertIs(_as_developed_state(state, run=run, phase=None), state)          # legacy input passes through untouched, and states its own phase
+            self.assertIsInstance(state, RecordBinding)                                     # no massing declared: the record is bound as itself (#402)
+            self.assertEqual(state.record.digest, _record().digest)
+            self.assertIs(_as_developed_state(state, run=run, phase=None), state)          # a binding passes through untouched, and states its own phase
             bare = StateRecord("demo", "run-1", _record().entities, decision_ref="decision:declared")
             with self.assertRaises(GeometryProposalProductionError):
                 _as_developed_state(bare, run=run, phase=DesignPhase.DESIGN_DEVELOPMENT)   # no evidence: typed refusal
@@ -749,7 +754,7 @@ class StateRecordTests(unittest.TestCase):
 
     def test_view_without_massing_keeps_every_evidence_source(self) -> None:
         # A record with several evidence refs and no massing entities: every component carries all of them
-        # (design_components_of), so the block-view proposal must declare the same set, not just the first.
+        # (design_components_of), and the binding adds none the record does not state.
         base = _record()
         record = replace(base, evidence_refs=("reading:manufacturer-board", "reading:plan", "reading:section"))
         with tempfile.TemporaryDirectory() as tmp:
@@ -758,11 +763,9 @@ class StateRecordTests(unittest.TestCase):
             # The record projects in its own binding phase, as the round-trip test above does.
             state = developed_design_view(record, run=run, evidence_ref="reading:detail-review",
                                           phase=RECORD_BINDING_PHASE)
-        proposal = state.selected_schematic.option.proposal
-        self.assertEqual(proposal.evidence_refs, ("reading:detail-review", "reading:manufacturer-board", "reading:plan", "reading:section"))
-        self.assertTrue(proposal.components)
-        for component in proposal.components:
-            self.assertEqual(set(component.source_refs), set(proposal.evidence_refs))    # nothing dropped, nothing invented
+        self.assertTrue(state.components)
+        for component in state.components:
+            self.assertEqual(set(component.source_refs), set(record.evidence_refs))      # nothing dropped, nothing invented
 
     def test_record_without_massing_preserves_all_drawing_and_material_sources(self) -> None:
         manufacturer = "reading:manufacturer-board"
@@ -776,12 +779,9 @@ class StateRecordTests(unittest.TestCase):
             repository = FilesystemProjectRepository.initialize(Path(tmp) / "demo", project_id="demo", initial_state={"schema": "TestState@1"})
             run = repository.create_run("run-1")
             state = developed_design_view(record, run=run, evidence_ref=review, phase=RECORD_BINDING_PHASE)
-        proposal = state.selected_schematic.option.proposal
-        self.assertEqual(set(proposal.evidence_refs), {"reading:plan", manufacturer, review})
-        self.assertTrue(proposal.components)
-        for component in proposal.components:
-            self.assertTrue(set(record.evidence_refs) <= set(component.source_refs))
-            self.assertTrue(set(component.source_refs) <= set(proposal.evidence_refs))
+        self.assertTrue(state.components)
+        for component in state.components:
+            self.assertEqual(set(component.source_refs), set(record.evidence_refs))      # the record's sources, and only those
         self.assertEqual(record.entity("manufacturer-board").fields["source_ref"], "source:manufacturer-board.pdf")
 
     def test_massing_entities_rebuild_the_spatial_option_exactly(self) -> None:
@@ -869,14 +869,42 @@ class StateRecordTests(unittest.TestCase):
             with self.assertRaises(StateRecordError):
                 _record().state_digest                                                    # a record with no base cannot name its run
 
-    def test_developed_design_view_forwards_to_the_legacy_state(self) -> None:
+    def test_a_record_without_massing_is_bound_as_itself(self) -> None:
+        """#402: no level, block, zone, program node or assumption is made up for a geometry-only record."""
+
         with tempfile.TemporaryDirectory() as tmp:
             repository = FilesystemProjectRepository.initialize(Path(tmp) / "demo", project_id="demo", initial_state={"schema": "TestState@1"})
             run = repository.create_run("run-1")
-            state = developed_design_view(_record(), run=run, option_id="declared", evidence_ref="reading:plan", phase=DesignPhase.DESIGN_DEVELOPMENT)
-            ids = [c.component_id for c in state.selected_schematic.option.proposal.components]
-            self.assertEqual(ids, ["building", "portico-columns", "portico-entablature", "portico-west"])
+            record = _record()
+            state = developed_design_view(record, run=run, option_id="declared", evidence_ref="reading:plan", phase=DesignPhase.DESIGN_DEVELOPMENT)
+            self.assertIsInstance(state, RecordBinding)
+            self.assertEqual(sorted(c.component_id for c in state.components), ["building", "portico-columns", "portico-entablature", "portico-west"])
+            self.assertEqual(state.components, design_components_of(record.bound_to(run)))    # the record's own tree, as written
+            self.assertTrue(all(c.volume_ids == () for c in state.components))                 # the root is not given a block
+            self.assertEqual(state.obligations, ())
+            self.assertEqual(state.to_dict(), {"schema": "StateRecordBinding@1", "project_id": "demo", "run_id": "run-1",
+                                               "base": {"project_id": "demo", "version": run.base.version, "state_sha256": run.base.state_sha256},
+                                               "phase": "design_development", "record_digest": record.digest})
             self.assertEqual(len(state.state_digest), 64)
+            self.assertIsNone(schematic_pack_of(record))
+            # The retired placeholder is readable only as the digest older runs cite, and is never what binds now.
+            legacy = legacy_state_digest(record.bound_to(run), run=run, phase=RECORD_BINDING_PHASE)
+            self.assertNotEqual(legacy, state.state_digest)
+            bound = record.bound_to(run)
+            self.assertTrue(bound.cites_state(bound.state_digest) and bound.cites_state(legacy))
+            self.assertFalse(bound.cites_state("0" * 64))
+            self.assertIs(state.retained_as("0" * 64), state)                                   # an unrecognized citation changes nothing
+            self.assertEqual(state.retained_as(legacy).state_digest, legacy)                    # a recognized one is kept as written
+            other = developed_design_view(record, run=run, phase=DesignPhase.SCHEMATIC_DESIGN)
+            self.assertIs(other.retained_as(legacy), other)                                     # another phase does not answer to it
+            # An operator retained before #402 cites the old digest and still applies, exactly as written;
+            # the same citation against another run's binding is stale.
+            edit = replace(compile_component_edit(bound, entities=(replace(bound.entity("portico-west"), fields={"intent": "west porch"}),)),
+                           base_state_digest=legacy)
+            self.assertEqual(apply_state_record_operator(bound, edit).entity("portico-west").fields["intent"], "west porch")
+            elsewhere = record.bound_to(repository.create_run("run-2"))
+            with self.assertRaises(StateRecordError):
+                apply_state_record_operator(elsewhere, edit)
 
     # ---- parameters: declared expressions, explicit bindings, one evaluator (B3)
     def _bound_record(self, *, derived_value: float = 6.0, height_binding="@derived", inputs=("source",), expr="source * 2") -> StateRecord:
@@ -1046,7 +1074,7 @@ class StateRecordTests(unittest.TestCase):
             self.assertIs(developed.active_phase, DesignPhase.DESIGN_DEVELOPMENT)               # the historical reading, unchanged
             self.assertIs(schematic.active_phase, DesignPhase.SCHEMATIC_DESIGN)
             self.assertNotEqual(developed.state_digest, schematic.state_digest)
-            self.assertEqual(developed.selected_schematic.option.option_digest, schematic.selected_schematic.option.option_digest)   # same content
+            self.assertEqual(developed.record.digest, schematic.record.digest)                  # same content
             self.assertIs(RECORD_BINDING_PHASE, DesignPhase.DESIGN_DEVELOPMENT)                 # the record's own binding identity names its phase
             self.assertEqual(record.bound_to(run).state_digest, developed.state_digest)
             with self.assertRaises(StateRecordError):

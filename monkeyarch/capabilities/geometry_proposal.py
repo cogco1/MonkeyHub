@@ -44,7 +44,8 @@ from monkeyarch.compilers.geometry import (
 )
 from archflow.state.developed_design import DevelopedDesignState
 from archflow.state.stage_workflow import DesignPhase
-from archflow.state.spatial import SpatialOptionProposal
+from archflow.state.spatial import DesignComponent, SpatialOptionProposal
+from archflow.state.state_record import RecordBinding, StateRecord, StateRecordError
 from archflow.state.geometry_program import (
     ASSET_URI_PATTERN,
     AffineTransform,
@@ -1677,17 +1678,17 @@ class GeometryProposalRepository(RecordSink, Protocol):
 def _as_developed_state(design_state, *, run: RunRef, phase: DesignPhase | None):
     """Accept the canonical ``StateRecord@1`` at the production entry (P102).
 
-    Callers no longer author a ``DevelopedDesignState``; a record is
-    forwarded through ``developed_design_view`` here, once, with lineage.
-    A ``DevelopedDesignState`` is still accepted while the compiler reads
-    the legacy shape, and it already states its own phase.
+    Callers no longer author a ``DevelopedDesignState``; a record is bound
+    through ``developed_design_view`` here, once: the developed state of a
+    record that declares massing, else the record's own ``RecordBinding``
+    (#402). Either of those is accepted as given, and states its own phase.
 
     ``phase`` is the phase of the run this production belongs to (ADR-007
     rule 1). A record states none, so a record arriving with no phase is
     refused here rather than projected in one this module chose.
     """
 
-    from archflow.state.state_record import StateRecord, developed_design_view
+    from archflow.state.state_record import developed_design_view
 
     if isinstance(design_state, StateRecord):
         if not design_state.evidence_refs:
@@ -1708,7 +1709,7 @@ async def produce_geometry_program_proposal(
     run: RunRef,
     destination: PersistenceDestination,
     spatial_option_ref: ProjectRecordRef,
-    design_state: DevelopedDesignState,
+    design_state: DevelopedDesignState | RecordBinding | StateRecord,
     required_commitment_refs: tuple[str, ...],
     provider_identity: GeometryProposalProviderIdentity,
     policy: GeometryProposalPolicy,
@@ -1741,8 +1742,14 @@ async def produce_geometry_program_proposal(
     ``phase`` is read only when ``design_state`` is a ``StateRecord@1``,
     which states no phase of its own: it is then the phase of the run's
     stage envelope, and the record is refused without one. A
-    ``DevelopedDesignState`` already carries the phase it was projected
-    in, so a caller handing one states nothing twice.
+    ``DevelopedDesignState`` or ``RecordBinding`` already carries the
+    phase it was bound in, so a caller handing one states nothing twice.
+
+    ``spatial_option_ref`` names the retained record the proposal is
+    authored against: the selected ``SpatialOptionProposal`` of a record
+    that declares massing, or, for a ``RecordBinding``, the retained
+    ``StateRecord@1`` itself. Nothing spatial is made up for a record that
+    declares none (#402).
     """
 
     destination = require_destination(destination, producer="geometry proposal producer")
@@ -1775,15 +1782,9 @@ async def produce_geometry_program_proposal(
         template_refs,
         required_geometry_component_ids,
     )
-    spatial_payload = repository.load_json(spatial_option_ref)
-    spatial_option = SpatialOptionProposal.from_dict(spatial_payload)
-    if (
-        spatial_option
-        != design_state.selected_schematic.option.proposal
-    ):
-        raise GeometryProposalProductionError(
-            "developed design state does not select the supplied spatial option record"
-        )
+    subject_digest, available_interface_refs = _design_subject(
+        repository.load_json(spatial_option_ref), design_state
+    )
     template_payloads = tuple(
         {"ref": ref.to_dict(), "payload": repository.load_json(ref)}
         for ref in template_refs
@@ -1807,9 +1808,6 @@ async def produce_geometry_program_proposal(
                 "catalog confrontation selected templates outside the supplied project records"
             )
         allowed_template_uris = confronted
-    available_interface_refs = _available_interface_refs(
-        spatial_option,
-    )
     expected_predecessor_program_digest = (
         None if prior_program is None else prior_program.program_digest
     )
@@ -1874,7 +1872,7 @@ async def produce_geometry_program_proposal(
     for round_index in range(1, policy.round_cap + 1):
         request_payload = _request_payload(
             spatial_option_ref,
-            spatial_option,
+            subject_digest,
             design_state,
             required_commitment_refs,
             template_payloads,
@@ -2090,7 +2088,7 @@ async def produce_geometry_program_proposal(
                 destination,
                 GeometryProposalStatus.ACCEPTED,
                 spatial_option_ref,
-                spatial_option.proposal_digest,
+                subject_digest,
                 design_state,
                 required_commitment_refs,
                 provider_identity,
@@ -2114,7 +2112,7 @@ async def produce_geometry_program_proposal(
                 destination,
                 GeometryProposalStatus.REFUSED,
                 spatial_option_ref,
-                spatial_option.proposal_digest,
+                subject_digest,
                 design_state,
                 required_commitment_refs,
                 provider_identity,
@@ -2199,7 +2197,7 @@ async def produce_geometry_program_proposal(
                     destination,
                     GeometryProposalStatus.ACCEPTED,
                     spatial_option_ref,
-                    spatial_option.proposal_digest,
+                    subject_digest,
                     design_state,
                     required_commitment_refs,
                     provider_identity,
@@ -2244,7 +2242,7 @@ async def produce_geometry_program_proposal(
         destination,
         GeometryProposalStatus.EXHAUSTED,
         spatial_option_ref,
-        spatial_option.proposal_digest,
+        subject_digest,
         design_state,
         required_commitment_refs,
         provider_identity,
@@ -2331,7 +2329,7 @@ def _validate_inputs(
     run: RunRef,
     destination: PersistenceDestination,
     spatial_option_ref: ProjectRecordRef,
-    design_state: DevelopedDesignState,
+    design_state: DevelopedDesignState | RecordBinding,
     commitment_refs: tuple[str, ...],
     provider_identity: GeometryProposalProviderIdentity,
     policy: GeometryProposalPolicy,
@@ -2340,7 +2338,7 @@ def _validate_inputs(
 ) -> None:
     if not isinstance(run, RunRef) or not isinstance(
         design_state,
-        DevelopedDesignState,
+        (DevelopedDesignState, RecordBinding),
     ):
         raise TypeError("run and design_state must be typed values")
     if destination.area is not PersistenceArea.RUN_RECORD or destination.run_id != run.run_id:
@@ -2373,8 +2371,7 @@ def _validate_inputs(
         allow_empty=True,
     )
     component_ids = {
-        item.component_id
-        for item in design_state.selected_schematic.option.proposal.components
+        item.component_id for item in _design_components(design_state)
     }
     unavailable_components = sorted(
         set(required_geometry_component_ids) - component_ids
@@ -2391,8 +2388,8 @@ def _validate_inputs(
 
 def _request_payload(
     spatial_ref: ProjectRecordRef,
-    spatial: SpatialOptionProposal,
-    design_state: DevelopedDesignState,
+    subject_digest: str,
+    design_state: DevelopedDesignState | RecordBinding,
     commitments: tuple[str, ...],
     templates: tuple[dict[str, object], ...],
     repair_issues: tuple[GeometryProposalIssue, ...],
@@ -2415,12 +2412,10 @@ def _request_payload(
         "schema": "GeometryProposalAuthoringRequest@1",
         "spatial_option_record": {
             "ref": spatial_ref.to_dict(),
-            "proposal_digest": spatial.proposal_digest,
-            "proposal_path": (
-                "developed_design_state.selected_schematic.option.proposal"
-            ),
+            "proposal_digest": subject_digest,
+            "proposal_path": _subject_path(design_state),
         },
-        "developed_design_state": design_state.to_dict(),
+        **_state_payload(design_state),
         "available_predecessor_program_digest": (
             expected_predecessor_program_digest
         ),
@@ -2559,7 +2554,7 @@ def _validate_rejected_round_resume(
     rejected_round: GeometryProposalRoundReceipt,
     *,
     spatial_option_ref: ProjectRecordRef,
-    design_state: DevelopedDesignState,
+    design_state: DevelopedDesignState | RecordBinding,
     required_commitment_refs: tuple[str, ...],
     provider_identity: GeometryProposalProviderIdentity,
     expected_predecessor_program_digest: str | None,
@@ -2608,7 +2603,7 @@ def _validate_rejected_round_resume(
         )
     exact_fields = {
         "schema": "GeometryProposalAuthoringRequest@1",
-        "developed_design_state": design_state.to_dict(),
+        **_state_payload(design_state),
         "available_predecessor_program_digest": (
             expected_predecessor_program_digest
         ),
@@ -2732,7 +2727,7 @@ def _authoring_output(
 
 def _validate_semantic_coverage(
     proposal: GeometryProgramProposal,
-    design_state: DevelopedDesignState,
+    design_state: DevelopedDesignState | RecordBinding,
     commitments: tuple[str, ...],
     spatial_ref: ProjectRecordRef,
     available_interface_refs: tuple[str, ...],
@@ -2749,8 +2744,7 @@ def _validate_semantic_coverage(
         issues.append(GeometryProposalIssue("malformed_model_output", detail))
 
     component_ids = {
-        item.component_id
-        for item in design_state.selected_schematic.option.proposal.components
+        item.component_id for item in _design_components(design_state)
     }
     bound_component_ids = tuple(
         binding.component_id for binding in proposal.semantic_bindings
@@ -2990,6 +2984,80 @@ def _validate_host_cut_apertures(
             )
 
 
+def _design_components(
+    design_state: DevelopedDesignState | RecordBinding,
+) -> tuple[DesignComponent, ...]:
+    """The component tree the run executes: the record's own for a binding."""
+
+    if isinstance(design_state, RecordBinding):
+        return tuple(design_state.components)
+    return tuple(design_state.selected_schematic.option.proposal.components)
+
+
+def _subject_path(design_state: DevelopedDesignState | RecordBinding) -> str:
+    if isinstance(design_state, RecordBinding):
+        return "state_record_binding.record"
+    return "developed_design_state.selected_schematic.option.proposal"
+
+
+def _state_payload(
+    design_state: DevelopedDesignState | RecordBinding,
+) -> dict[str, object]:
+    """What the request states about the executed design state, under its own name.
+
+    A record that declares no massing is sent as itself, bound to the run and
+    phase; it is never dressed as a developed-design state (#402).
+    """
+
+    if isinstance(design_state, RecordBinding):
+        return {
+            "state_record_binding": {
+                **design_state.to_dict(),
+                "state_digest": design_state.state_digest,
+                "record": design_state.record.to_dict(),
+            }
+        }
+    return {"developed_design_state": design_state.to_dict()}
+
+
+def _design_subject(
+    payload: Mapping[str, Any],
+    design_state: DevelopedDesignState | RecordBinding,
+) -> tuple[str, tuple[str, ...]]:
+    """(digest, interface refs) of the retained record a proposal is authored against.
+
+    A developed state must select exactly the supplied spatial option record.
+    A ``RecordBinding`` must be handed the retained ``StateRecord@1`` with
+    exactly its content; its interface refs are the relationship refs its own
+    ``Connection@1`` entities declare, and none are supplied for it.
+    """
+
+    if isinstance(design_state, RecordBinding):
+        try:
+            retained = StateRecord.from_dict(payload)
+        except (StateRecordError, KeyError, TypeError, ValueError) as exc:
+            raise GeometryProposalProductionError(
+                "a record binding is authored against its retained StateRecord@1; "
+                f"the supplied record is not one: {exc}"
+            ) from exc
+        if retained.digest != design_state.record.digest:
+            raise GeometryProposalProductionError(
+                "the supplied state record is not the record this run binds"
+            )
+        refs = sorted({
+            str(ref)
+            for entity in retained.entities_of("Connection@1")
+            for ref in entity.fields.get("relationship_refs", ())
+        })
+        return retained.digest, tuple(refs)
+    spatial_option = SpatialOptionProposal.from_dict(payload)
+    if spatial_option != design_state.selected_schematic.option.proposal:
+        raise GeometryProposalProductionError(
+            "developed design state does not select the supplied spatial option record"
+        )
+    return spatial_option.proposal_digest, _available_interface_refs(spatial_option)
+
+
 def _available_interface_refs(
     spatial: SpatialOptionProposal,
 ) -> tuple[str, ...]:
@@ -3010,7 +3078,7 @@ def _available_interface_refs(
 
 def _proposal_from_body(
     value: Mapping[str, Any],
-    design_state: DevelopedDesignState,
+    design_state: DevelopedDesignState | RecordBinding,
     prior_program: CompiledGeometryProgram | None,
     *,
     errors: list[Exception] | None = None,
@@ -3045,7 +3113,7 @@ def _proposal_from_body(
 
 def _proposal_from_edit(
     value: Mapping[str, Any],
-    design_state: DevelopedDesignState,
+    design_state: DevelopedDesignState | RecordBinding,
     prior_program: CompiledGeometryProgram,
     *,
     errors: list[Exception] | None = None,
@@ -3851,7 +3919,7 @@ def _persist_lineage(
     status: GeometryProposalStatus,
     spatial_ref: ProjectRecordRef,
     spatial_digest: str,
-    design_state: DevelopedDesignState,
+    design_state: DevelopedDesignState | RecordBinding,
     commitments: tuple[str, ...],
     identity: GeometryProposalProviderIdentity,
     round_refs: tuple[ProjectRecordRef, ...],

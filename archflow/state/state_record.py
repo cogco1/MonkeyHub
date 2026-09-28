@@ -11,10 +11,11 @@ stage is a property of the run that executes the record, stated by that run's
 retained ``StageRunEnvelope`` (ADR-007).
 
 The record is the canonical abstraction that retires the second design
-state model used by geometry production. Until every consumer reads it
-directly, ``developed_design_view`` forwards a record to the legacy
-``DevelopedDesignState`` the producer and the seats still take; the view is
-an adapter with a lineage note, scheduled for retirement with them.
+state model used by geometry production. ``developed_design_view`` answers
+what executing a record binds to: a record that declares complete massing
+is read as that declared spatial option (the legacy ``DevelopedDesignState``
+the massing capabilities still take); any other record is bound as itself
+(``RecordBinding``), with no spatial semantics supplied for it (#402).
 """
 from __future__ import annotations
 
@@ -586,21 +587,39 @@ class StateRecord:
 
     @property
     def state_digest(self) -> str:
-        """The digest of the developed-design projection this record yields.
+        """The binding identity: this record bound to its run, read in ``RECORD_BINDING_PHASE``.
 
-        The compiler binds a program to a state by this digest. The
-        projection is a pure function of the record, so citing it cites the
-        record; the value is computed once and kept.
+        The compiler binds a program to a state by this digest. It is the
+        digest of what ``developed_design_view`` answers for this record: the
+        declared spatial option's developed-design state when the record
+        declares complete massing, else the record's own ``RecordBinding``
+        (#402). Either is a pure function of the record, so citing it cites
+        the record; the value is computed once and kept.
 
         The phase is ``RECORD_BINDING_PHASE`` and is stated there: this
         property has no run envelope to read one from, and the only values
         ever compared with it - an operator's exact base, a program sheet's
-        declared state - are this same property. A run's own digest is the
-        projection under that run's envelope phase, and is not taken here.
+        declared state - are this same property (``cites_state``). A run's
+        own digest is the binding under that run's envelope phase, and is not
+        taken here.
         """
 
         return _kept(self, "_state_digest_cache",
                      lambda: developed_design_view(self, run=self.run_ref, phase=RECORD_BINDING_PHASE).state_digest)
+
+    def cites_state(self, state_digest: object) -> bool:
+        """Whether an exact-base citation names this record's binding.
+
+        That is ``state_digest``, or, for a record without complete massing,
+        the digest an operator or sheet retained before #402 cited for this
+        same record, run, base and phase (``legacy_state_digest``). The old
+        citation is recognized as it was written, never recomputed into the
+        new one; anything else is stale.
+        """
+
+        return isinstance(state_digest, str) and (
+            state_digest == self.state_digest
+            or state_digest == legacy_state_digest(self, run=self.run_ref, phase=RECORD_BINDING_PHASE))
 
     # ---- serialization
     def to_dict(self) -> dict[str, object]:
@@ -1316,7 +1335,7 @@ def apply_state_record_operator(
         raise TypeError("operator must be a StateRecordOperator")
     if (
         operator.base_record_digest != record.digest
-        or operator.base_state_digest != record.state_digest
+        or not record.cites_state(operator.base_state_digest)
     ):
         raise StateRecordError("state-record operator exact base is stale")
     _require_declared_protections(record, operator.protected)
@@ -1817,8 +1836,8 @@ def schematic_pack_of(record: StateRecord, *, option_id: str | None = None, evid
     view from this, and so does anything that measures the massing
     (``monkeyarch.capabilities.massing_metrics``) or offers a variant of it. A record is said to
     declare massing when it carries volumes, zones and massing levels together;
-    with any of the three absent the view falls back to one block and this
-    answers ``None`` rather than half a pack.
+    with any of the three absent this answers ``None`` rather than half a
+    pack, and nothing stands in for the missing massing (#402).
 
     ``option_id`` and ``evidence_refs`` are the caller's when the caller has
     already resolved them — that is how the view keeps its own sentences for a
@@ -1887,24 +1906,116 @@ def bootstrap_developed_state(pack: SchematicPack, *, run: RunRef, portfolio_id:
     )
 
 
+@dataclass(frozen=True, slots=True)
+class RecordBinding:
+    """A State Record bound to one run and read in that run's phase.
+
+    What executing a record binds to when the record declares no complete
+    massing (``schematic_pack_of`` answers ``None``). It states nothing the
+    record does not: no level, volume, zone, program node, footprint or
+    selection that nobody declared. Its component tree is the record's own
+    (``design_components_of``); its binding identity is the record's content
+    digest bound to the run, the base and the phase (ADR-003, ADR-007), so
+    any change to the record, the run or the phase is a different binding.
+
+    The geometry compiler, the seats, the handovers and the proposal producer
+    take it where they take a ``DevelopedDesignState``; a capability that
+    truly needs zones or program says so from the record, not from here.
+
+    ``retained_state_digest`` is set only by ``retained_as``: a run retained
+    before #402 carries the digest of the retired placeholder projection, and
+    that digest is recognized - checked against the record, the run and the
+    phase - instead of being recomputed or rewritten.
+    """
+
+    record: StateRecord
+    active_phase: DesignPhase
+    retained_state_digest: str | None = None
+
+    SCHEMA = "StateRecordBinding@1"
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.record, StateRecord) or self.record.base is None:
+            raise StateRecordError("a record binding needs a StateRecord bound to a run")
+        if type(self.active_phase) is not DesignPhase:
+            raise StateRecordError("phase must be a DesignPhase")
+
+    @property
+    def project_id(self) -> str:
+        return self.record.project_id
+
+    @property
+    def run_id(self) -> str:
+        return self.record.run_id
+
+    @property
+    def base(self) -> ProjectVersionRef:
+        return cast(ProjectVersionRef, self.record.base)
+
+    @property
+    def run(self) -> RunRef:
+        return self.record.run_ref
+
+    @property
+    def components(self) -> tuple:
+        """The record's own component tree; nothing is added to its root."""
+
+        return design_components_of(self.record)
+
+    @property
+    def obligations(self) -> tuple:
+        """No development obligation is stated by binding a record; the record's own stay on it."""
+
+        return ()
+
+    def to_dict(self) -> dict[str, object]:
+        base = self.base
+        return {"schema": self.SCHEMA, "project_id": self.project_id, "run_id": self.run_id,
+                "base": {"project_id": base.project_id, "version": base.version, "state_sha256": base.state_sha256},
+                "phase": self.active_phase.value, "record_digest": self.record.digest}
+
+    @property
+    def state_digest(self) -> str:
+        if self.retained_state_digest is not None:
+            return self.retained_state_digest
+        return _kept_reading(self.record, "_binding_digests_cache", self.active_phase, lambda: canonical_digest(self.to_dict()))
+
+    def retained_as(self, claimed: object, **view_kwargs: Any) -> "RecordBinding":
+        """This binding under the digest a pre-#402 run retained, when ``claimed`` is exactly that.
+
+        ``view_kwargs`` are the ones that run's projection was taken with
+        (``portfolio_id``, ``branch_id``, ``selection_decision_ref``,
+        ``option_id``, ``evidence_ref``). Any other value leaves the binding
+        as it is, so a wrong run, base, phase or record is still refused by
+        whoever compares it.
+        """
+
+        if not isinstance(claimed, str) or claimed == self.state_digest:
+            return self
+        if claimed != legacy_state_digest(self.record, run=self.run, phase=self.active_phase, **view_kwargs):
+            return self
+        return replace(self, retained_state_digest=claimed)
+
+
 def developed_design_view(record: StateRecord, *, run: RunRef, option_id: str | None = None, evidence_ref: str | None = None, portfolio_id: str = "declared-state-record",
                           branch_id: str = "state-record", selection_decision_ref: str = "decision:state-record-declared",
                           phase: DesignPhase):
-    """Forward a State Record to the legacy ``DevelopedDesignState`` the compiler still takes.
+    """What executing ``record`` in ``run`` and ``phase`` binds to.
 
-    With massing entities (MassingLevel@1, Volume@1, Space@1 zones,
-    Connection@1) and a declared ``option``, the spatial option is rebuilt
-    exactly from the record; without them the building entity owns one
-    block spanning the record's levels. This view exists only until the
-    compiler, the seats and the handovers read the record directly; each
-    call is a lineage event, not a second source of truth.
+    A record that declares complete massing (MassingLevel@1, Volume@1, Space@1
+    zones, optionally Connection@1) and an option is read as the declared
+    spatial option it is, into the legacy ``DevelopedDesignState`` the seats
+    and the massing capabilities read. A record that declares less is bound
+    as itself (``RecordBinding``): no level, block, zone, program node or
+    assumption is made up for it (#402). Missing semantics stay missing, and
+    only a capability that depends on them refuses, naming what it needs.
 
     ``phase`` is the executing run's (its stage envelope's) and is required;
     see ``bootstrap_developed_state``. The record itself states no phase, so
     there is nothing here for a default to fall back on: a caller that omits
     it is a caller that has not said which run it is projecting.
 
-    The view is a pure function of the record and these arguments, all
+    The answer is a pure function of the record and these arguments, all
     hashable and immutable, and a frozen value: it is built once per record
     instance and arguments (``_kept``).
     """
@@ -1918,15 +2029,8 @@ def developed_design_view(record: StateRecord, *, run: RunRef, option_id: str | 
                          lambda: _developed_design_view(record, *arguments))
 
 
-def _developed_design_view(record: StateRecord, run: RunRef, option_id: str | None, evidence_ref: str | None,
-                           portfolio_id: str, branch_id: str, selection_decision_ref: str, phase: DesignPhase):
-    from dataclasses import replace as _replace
-
-
-    replace_volume_ids = lambda component, volume_ids: _replace(component, volume_ids=volume_ids)
-
-    components = record.entities_of("Component@1")
-    if not components:
+def _view_inputs(record: StateRecord, option_id: str | None, evidence_ref: str | None) -> tuple[str, tuple[str, ...]]:
+    if not record.entities_of("Component@1"):
         raise StateRecordError("a developed-design view needs Component@1 entities")
     evidence = tuple(sorted(set(record.evidence_refs) | ({evidence_ref} if evidence_ref else set())))
     if not evidence:
@@ -1935,14 +2039,61 @@ def _developed_design_view(record: StateRecord, run: RunRef, option_id: str | No
     option_id = option_id or option.get("option_id") or (record.decision_ref or "").split(":", 1)[-1] or None
     if not option_id:
         raise StateRecordError("a developed-design view needs an option id (record.option, record.decision_ref, or the caller)")
-    pack = schematic_pack_of(record, option_id=option_id, evidence_refs=evidence)
-    if pack is not None:
-        return bootstrap_developed_state(pack, run=run, portfolio_id=portfolio_id, branch_id=branch_id, selection_decision_ref=selection_decision_ref, phase=phase)
-    evidence_ref = evidence[0]
+    return option_id, evidence
+
+
+def _developed_design_view(record: StateRecord, run: RunRef, option_id: str | None, evidence_ref: str | None,
+                           portfolio_id: str, branch_id: str, selection_decision_ref: str, phase: DesignPhase):
+    if not isinstance(run, RunRef):
+        raise StateRecordError("a developed-design view needs a RunRef")
+    if type(phase) is not DesignPhase:
+        raise StateRecordError("phase must be a DesignPhase")
+    if not record.entities_of("Component@1"):
+        raise StateRecordError("a developed-design view needs Component@1 entities")
+    massing = all(record.entities_of(schema) for schema in ("Volume@1", "Space@1", "MassingLevel@1"))
+    if not massing:
+        binding = RecordBinding(record if (record.run_id, record.base) == (run.run_id, run.base) else record.bound_to(run), phase)
+        binding.components  # the tree must be readable: every component needs a source
+        return binding
+    option_id, evidence = _view_inputs(record, option_id, evidence_ref)
+    pack = cast(SchematicPack, schematic_pack_of(record, option_id=option_id, evidence_refs=evidence))
+    return bootstrap_developed_state(pack, run=run, portfolio_id=portfolio_id, branch_id=branch_id, selection_decision_ref=selection_decision_ref, phase=phase)
+
+
+def legacy_state_digest(record: StateRecord, *, run: RunRef, phase: DesignPhase, option_id: str | None = None, evidence_ref: str | None = None,
+                        portfolio_id: str = "declared-state-record", branch_id: str = "state-record",
+                        selection_decision_ref: str = "decision:state-record-declared") -> str | None:
+    """The digest a run retained before #402 for a record without complete massing, or ``None``.
+
+    Until #402 such a record was projected through a placeholder spatial
+    option (one ``record`` level, a ``block`` volume spanning -1..1 in X/Z, a
+    ``record-zone`` holding ``program-node:record``, and the assumption
+    ``assumption:state-record-view``) and bound by that projection's digest.
+    Runs, stage envelopes, operators and program sheets retained then still
+    cite it. This reader recomputes it only to recognize such a citation; it
+    produces nothing that is retained, and nothing new is bound by it.
+    ``None`` when the record declares massing (its digest never changed) or
+    could not have been projected then.
+    """
+
+    if all(record.entities_of(schema) for schema in ("Volume@1", "Space@1", "MassingLevel@1")):
+        return None
+    try:
+        option_id, evidence = _view_inputs(record, option_id, evidence_ref)
+    except StateRecordError:
+        return None
+    arguments = (run, option_id, evidence, portfolio_id, branch_id, selection_decision_ref, phase)
+    return _kept_reading(record, "_legacy_digests_cache", arguments, lambda: _legacy_placeholder_state(record, *arguments).state_digest)
+
+
+def _legacy_placeholder_state(record: StateRecord, run: RunRef, option_id: str, evidence: tuple[str, ...], portfolio_id: str,
+                              branch_id: str, selection_decision_ref: str, phase: DesignPhase) -> DevelopedDesignState:
+    # Retained reader only (legacy_state_digest): the pre-#402 placeholder, byte for byte.
+    components = record.entities_of("Component@1")
     levels = record.entities_of("Level@1")
     elevations = sorted(float(l.fields.get("elevation", 0.0)) for l in levels) or [0.0, 1.0]
     top = max(elevations[-1], elevations[0] + 1.0)
-    design_components = tuple(replace_volume_ids(c, ("block",) if c.parent_component_id is None else ()) for c in design_components_of(record, source_ref=evidence_ref))
+    design_components = tuple(replace(c, volume_ids=("block",) if c.parent_component_id is None else ()) for c in design_components_of(record, source_ref=evidence[0]))
     pack = SchematicPack(project_id=record.project_id, option_id=option_id, label=f"{record.project_id} state record {record.digest[:12]}", typology=str(record.entity(components[0].entity_id).fields.get("typology", "declared")),
                          rationale="view of a StateRecord@1; not a second source of truth", evidence_refs=evidence,
                          levels=({"level_id": "record", "base_y": int(elevations[0]), "height": max(1, int(top - elevations[0] + 0.999))},),

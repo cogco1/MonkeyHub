@@ -69,6 +69,7 @@ from monkeyarch.capabilities.discipline_seats import (
     SeatSpec,
     check_seat_datums,
     compile_handover,
+    design_tree,
     owned_subtree,
     project_seat_context,
     schedule_seats,
@@ -141,7 +142,7 @@ from archflow.state.geometry_program import (
     SemanticBinding,
 )
 from archflow.state.spatial import SiteBounds
-from archflow.state.state_record import Relation, SchematicPack, StateRecord, ValidatorBinding, bootstrap_developed_state, developed_design_view, project_grids_of, project_levels_of, volume_boxes_of
+from archflow.state.state_record import RecordBinding, Relation, SchematicPack, StateRecord, ValidatorBinding, bootstrap_developed_state, developed_design_view, project_grids_of, project_levels_of, volume_boxes_of
 from archflow.state.stage_workflow import (
     HARNESS_WORKFLOW_IDS,
     ProjectStageWorkflow,
@@ -519,7 +520,7 @@ class StageExecutionGuard:
         *,
         run: RunRef,
         branch: BranchRef,
-        state: DevelopedDesignState,
+        state: DevelopedDesignState | RecordBinding,
         seats: tuple[SeatSpec, ...],
     ) -> None:
         def retained(ref: ProjectRecordRef, payload: Mapping[str, object], label: str) -> None:
@@ -638,8 +639,8 @@ class StageExecutionGuard:
             raise ProjectRunnerError("predecessor closure is not SATISFIED for the exact stage state")
 
 
-def _subtree_leaves(proposal: SpatialOptionProposal, subtree: tuple[str, ...]) -> tuple[str, ...]:
-    parents = {c.parent_component_id for c in proposal.components if c.parent_component_id}
+def _subtree_leaves(tree: tuple[DesignComponent, ...], subtree: tuple[str, ...]) -> tuple[str, ...]:
+    parents = {c.parent_component_id for c in tree if c.parent_component_id}
     return tuple(sorted(c for c in subtree if c not in parents))
 
 
@@ -1006,8 +1007,10 @@ def run_project(
     # and that binding is exactly what the compiler checks against every proposal (P102)
     record = record.bound_to(run)
     # the phase is the stage's, stated by the envelope this run opened (ADR-007, P112): the
-    # projection carries it into the state digest, and the guard then checks that the envelope
-    # binds exactly this state - so an envelope opened under another phase is refused below
+    # binding carries it into the state digest, and the guard then checks that the envelope
+    # binds exactly this state - so an envelope opened under another phase is refused below.
+    # A record that declares complete massing executes as its declared spatial option; any
+    # other record is bound as itself, with nothing spatial made up for it (#402).
     try:
         state = developed_design_view(record, run=run, portfolio_id=options.portfolio_id, branch_id=options.branch_id, selection_decision_ref=options.selection_decision_ref,
                                       phase=stage_guard.envelope.phase)
@@ -1032,9 +1035,13 @@ def run_project(
     record_ref = put(STATE_RECORD, {**record.to_dict(), **no_authority(_AUTH)})
     levels_ref = put(PROJECT_LEVELS, {**levels.to_dict(), **no_authority(_AUTH)})
     grids_ref = put(PROJECT_GRIDS, {**grids.to_dict(), **no_authority(_AUTH)}).uri if grids is not None else None
-    proposal_tree = state.selected_schematic.option.proposal
-    spatial_ref = put(SELECTED_SPATIAL_OPTION, proposal_tree.to_dict())
-    state_ref = put(DEVELOPED_DESIGN_STATE, {**state.to_dict(), **no_authority(_AUTH)}) if hasattr(state, "to_dict") else None
+    proposal_tree = design_tree(state)
+    # the declared spatial option and its developed state are retained only when the record
+    # declares them; a record bound as itself is authored against its own retained record
+    declared = isinstance(state, DevelopedDesignState)
+    spatial_ref = put(SELECTED_SPATIAL_OPTION, state.selected_schematic.option.proposal.to_dict()) if declared else None
+    state_ref = put(DEVELOPED_DESIGN_STATE, {**state.to_dict(), **no_authority(_AUTH)}) if declared else None
+    subject_ref = spatial_ref if spatial_ref is not None else record_ref
     seat_by_id = {s.seat_id: s for s in seats}
     seat_refs = {s.seat_id: put(DISCIPLINE_SEAT, s.to_dict()).uri for s in seats}
     rounds = schedule_seats(seats)
@@ -1092,7 +1099,7 @@ def run_project(
                 for op in produced.operations:
                     by_component.setdefault(op.semantic_binding_ids[0].removeprefix("binding-"), []).extend(op.output_object_ids)
                 bindings = tuple(SemanticBinding(binding_id=f"binding-{c}", component_id=c, object_ids=tuple(sorted(o)), commitment_refs=(options.commitment_ref,),
-                                                 evidence_refs=tuple(sorted({spatial_ref.uri, record_ref.uri}))) for c, o in sorted(by_component.items()))
+                                                 evidence_refs=tuple(sorted({subject_ref.uri, record_ref.uri}))) for c, o in sorted(by_component.items()))
                 proposal = GeometryProgramProposal(
                     proposal_id=f"{run.project_id}-{seat_id}-round-{round_index}", project_id=run.project_id, run_id=run.run_id, base=run.base,
                     design_state_digest=state.state_digest, predecessor_program_digest=None, length_unit=_M, tolerance=GeometryTolerance(0.001, 0.001),
@@ -1103,7 +1110,7 @@ def run_project(
                 # presents, so a silent substitution is still refused and no retained round
                 # says a model answered
                 result = asyncio.run(produce_geometry_program_proposal(
-                    repository, provider, run=run, destination=destination, spatial_option_ref=spatial_ref, design_state=state,
+                    repository, provider, run=run, destination=destination, spatial_option_ref=subject_ref, design_state=state,
                     required_commitment_refs=(options.commitment_ref,), provider_identity=RECORDED_PROPOSAL_IDENTITY, policy=GeometryProposalPolicy(1),
                     seat_scope=subtree, interface_datums=datums, datum_bindings=produced.bindings))
                 issues = tuple(row for r in result.round_refs for row in repository.load_json(r).get("issues", []))
@@ -1187,7 +1194,7 @@ def run_project(
     owned_any = set()
     for seat in seats:
         owned_any.update(owned_subtree(proposal_tree, seat.owned_component_ids))
-    unowned = tuple(sorted(c for c in _subtree_leaves(proposal_tree, tuple(c.component_id for c in proposal_tree.components)) if c not in owned_any))
+    unowned = tuple(sorted(c for c in _subtree_leaves(proposal_tree, tuple(c.component_id for c in proposal_tree)) if c not in owned_any))
     # The stage closes here or not at all (ADR-007 rule 3). The closure is
     # written either way, because a stage that did not close still owes the
     # project the statement of why; only a SATISFIED one yields an exit
@@ -1205,7 +1212,7 @@ def run_project(
         "schema": "RunnerRunReceipt@3", "project_id": run.project_id, "run_id": run.run_id, "state_record_ref": record_ref.uri, "state_record_digest": record.digest,
         "coverage_mode": "strict" if options.strict_coverage else "relaxed",
         "unowned_components": list(unowned),
-        "levels_ref": levels_ref.uri, "grids_ref": grids_ref, "spatial_option_ref": spatial_ref.uri, "design_state_ref": state_ref.uri if state_ref else None,
+        "levels_ref": levels_ref.uri, "grids_ref": grids_ref, "spatial_option_ref": spatial_ref.uri if spatial_ref else None, "design_state_ref": state_ref.uri if state_ref else None,
         "design_state_digest": state.state_digest,
         "workflow_ref": stage_guard.workflow_record_ref.uri,
         "workflow_digest": stage_guard.workflow.workflow_digest,
