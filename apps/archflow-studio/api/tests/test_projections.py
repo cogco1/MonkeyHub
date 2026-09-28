@@ -616,6 +616,43 @@ class QueueTests(unittest.TestCase):
         row = queue.request(spec)
         self.assertEqual((row.status, row.attempts, row.error), (DONE, 1, None))
 
+    def test_an_on_demand_projection_is_drawn_once_kept_and_collected_with_all_its_files_never_by_the_worker(self):
+        renderer = ScriptedRenderer()
+        queue = self.queue(renderer, grace_s=100)
+        spec = projections.on_demand_spec(projections.DOCUMENT_PAGE, {"runId": "run-doc", "assetSha256": ASSET},
+                                          {"page": 0, "maxEdge": 2048, "mimeType": "image/png"})
+        drawn = []
+
+        def draw():
+            drawn.append(spec.key)
+            return {"png": b"page pixels", "svg": b"<svg/>"}, {"width": 3, "height": 2}
+
+        files, facts, hit = queue.on_demand(spec, draw)
+        self.assertEqual((files, facts, hit), ({"png": b"page pixels", "svg": b"<svg/>"}, {"width": 3, "height": 2}, False))
+        self.assertEqual(queue.on_demand(spec, draw), (files, facts, True))
+        self.assertEqual(drawn, [spec.key], "the second request reads the kept files")
+        row = queue.store.get(spec.key)
+        self.assertEqual((row.status, row.blob_sha256), (DONE, queue.blobs.put(b"page pixels")))
+        queue.start()
+        self.settle(queue)
+        self.assertEqual(renderer.calls, [], "the worker never draws an on-demand kind")
+        restarted = self.queue(ScriptedRenderer(), grace_s=100)
+        restarted.start()
+        self.assertEqual(restarted.on_demand(spec, draw)[2], True, "a restart keeps the row and its files")
+        old = self.clock.now - 101
+        for sha, suffix in ((row.files["png"], ".png"), (row.files["svg"], ".svg")):
+            os.utime(restarted.blobs.path(sha, suffix), (old, old))
+        restarted.collect()
+        self.assertEqual(restarted._files(row.files), files, "a live row's every file is kept, however old")
+        restarted.blobs.path(row.files["svg"], ".svg").unlink()
+        self.assertEqual(restarted.on_demand(spec, draw)[2], False, "a lost file means drawing again")
+        self.assertEqual(len(drawn), 2)
+        refused = projections.on_demand_spec(projections.DOCUMENT_PAGE, {"runId": "run-doc", "assetSha256": "b" * 64},
+                                             {"page": 0, "maxEdge": 2048, "mimeType": "image/png"})
+        with self.assertRaises(StudioError):
+            restarted.on_demand(refused, lambda: (_ for _ in ()).throw(StudioError(422, "DRAWING_EMPTY", "nothing")))
+        self.assertIsNone(restarted.store.get(refused.key), "a refused request leaves no row")
+
     def test_the_collector_keeps_what_rows_reach_and_waits_out_the_grace_window(self):
         queue = self.queue(ScriptedRenderer(), grace_s=100)
         spec = projection_spec(SOURCE)

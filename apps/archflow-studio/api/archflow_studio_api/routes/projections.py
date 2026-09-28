@@ -1,4 +1,4 @@
-"""Projection cache reads: request by source and recipe, poll by key, bytes by digest."""
+"""Projection cache reads: request by source and recipe, poll by key, a document page's raster, bytes by digest."""
 from __future__ import annotations
 
 from fastapi import APIRouter, Query
@@ -7,7 +7,8 @@ from starlette.requests import Request
 
 from archflow.project.index import IndexUnavailable
 
-from ..application.artifacts import ModelSource
+from ..application.artifacts import ModelSource, document_bytes
+from ..application.boards import cached_page
 from ..application.binding import bound_project
 from ..application.projections import (
     MODEL_LINES, PNG_MEDIA_TYPE, ProjectionError, ProjectionQueue, open_projections, projection_spec,
@@ -36,6 +37,21 @@ def projections_of(state) -> ProjectionQueue:
         if state.projections is None:
             state.projections = open_projections(binding)
         return state.projections
+
+
+def ready_projections(state) -> ProjectionQueue | None:
+    """The queue when the project index has already loaded, else None: a request that draws anyway never waits for it.
+
+    A drawing issued without the cache is drawn and retained as before; only
+    its bytes are not kept for the next request.
+    """
+
+    if getattr(state, "projections", None) is None and bound_project(state).await_index(0) is None:
+        return None
+    try:
+        return projections_of(state)
+    except IndexUnavailable:
+        return None
 
 
 def queue_of(request: Request) -> ProjectionQueue:
@@ -109,6 +125,35 @@ def read_projection_blob(request: Request, sha256: str):
                 raise _unavailable(exc) from exc
         raise StudioError(404, "PROJECTION_BLOB_NOT_FOUND", "No projection has these bytes; read its status again.")
     return Response(data, media_type=PNG_MEDIA_TYPE, headers=_BLOB_HEADERS)
+
+
+@router.get("/pages", response_model=ProjectionStatusDto, response_model_by_alias=True)
+def read_page_projection(
+    request: Request,
+    run_id: str = Query(alias="runId", min_length=1),
+    asset_sha256: str = Query(alias="assetSha256", pattern=r"^[0-9a-f]{64}$"),
+    revision_ref: str | None = Query(alias="revisionRef", default=None, min_length=1),
+    page_index: int = Query(alias="pageIndex", default=0, ge=0),
+):
+    """One registered document page as the raster Board, Publish and exports show; done when it answers.
+
+    The document is read and verified through P036 on every request; its
+    page's PNG (at most 2048 px, transparency kept) is drawn once per content
+    and kept in the cache, so the answer names an immutable blob. The document
+    stays what a Board or publication references; the raster only supplies
+    its pixels.
+    """
+
+    projections = queue_of(request)
+    document, data = document_bytes(bound_project(request.app.state), run_id, asset_sha256, revision_ref)
+    try:
+        _, spec = cached_page(projections, document, data, page_index)
+        row = projections.store.get(spec.key) if spec is not None else None
+    except IndexUnavailable as exc:
+        raise _unavailable(exc) from exc
+    if row is None:
+        raise _unavailable(IndexUnavailable("the page raster was not kept"))
+    return _status(row, None)
 
 
 @router.get("/{key}", response_model=ProjectionStatusDto, response_model_by_alias=True)

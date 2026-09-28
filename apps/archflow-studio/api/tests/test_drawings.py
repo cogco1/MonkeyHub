@@ -689,3 +689,137 @@ class DrawingTests(CandidateTestCase):
                 self.assertEqual(repeated.status_code, 201, repeated.text)
                 self.assertEqual(repeated.json(), r1)
                 self.assertEqual(reopened.get("/api/documents", params={"runId": self.model["runId"]}).json()["documents"], docs)
+
+
+@unittest.skipUnless(occt_backend.occt_available(), "cadquery-ocp is not installed")
+class DrawingProjectionTests(CandidateTestCase):
+    """Issued drawings are projections (#368): one drawing per content and recipe, retained byte for byte."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.client.close()
+        self.cache = self.root / "cache"
+        self.settings = StudioSettings(project_dir=self.root / PROJECT_ID, cad_export="occt", cache_dir=self.cache)
+        self.app = create_app(self.settings)
+        self.addCleanup(self.app.state.stop_index_events)
+        self.client = TestClient(self.app)
+        self.addCleanup(self.client.close)
+        binding = bound_project(self.app.state)
+        self.addCleanup(binding.close)
+        self.assertIsNotNone(binding.await_index(30), "the index loads")
+        self.addCleanup(lambda: self.app.state.projections and self.app.state.projections.shutdown())
+        accepted, job = self.run_candidate("set height to 2.2", elementId="portico-base")
+        self.assertEqual(job["status"], "succeeded", job)
+        candidate = self.client.get(f"/api/candidates/{accepted['candidateId']}").json()
+        self.model = next(row for row in candidate["artifacts"] if row["format"] == "3dm")["modelSource"]
+        initialized = self.client.post("/api/design-stages/initialize", json={"projectId": PROJECT_ID, "modelSource": self.model})
+        self.assertEqual(initialized.status_code, 201, initialized.text)
+        self.stage = initialized.json()
+        self.head = self.repository.read_head()
+
+    def elevation(self, drawing_id: str, **body: object):
+        response = self.client.post("/api/drawings/elevations", json={
+            "projectId": PROJECT_ID, "modelSource": self.model, "view": "front", "drawingId": drawing_id, **body})
+        self.assertEqual(response.status_code, 201, response.text)
+        return response.json()
+
+    def retained(self, document: dict):
+        return read_model_axis_elevation(self.repository, record_ref_from_uri(document["revisionRef"], PROJECT_ID))
+
+    def blob(self, sha256: str, suffix: str = ".png") -> bytes:
+        return (self.cache / "projections" / "blobs" / f"{sha256}{suffix}").read_bytes()
+
+    def rows(self, kind: str):
+        return [row for row in self.app.state.projections.store.rows() if row.spec.kind == kind]
+
+    def test_the_same_recipe_is_drawn_once_and_issued_from_the_cached_bytes(self) -> None:
+        from monkeydiagram import drawing_elevation
+
+        with patch.object(drawing_elevation, "project_model_axis_elevation",
+                          wraps=drawing_elevation.project_model_axis_elevation) as drawn:
+            first = self.elevation("front-a")
+            # Another registered drawing of the same content and view: the document list has no
+            # match (another drawing id), the projection does.
+            second = self.elevation("front-b")
+            staged = self.elevation("front-c", modelSource=None, sourceStageRef=self.stage["stageRef"])
+        self.assertEqual(drawn.call_count, 1, "the second and third issue read the cached drawing")
+        self.assertEqual({first["assetSha256"], second["assetSha256"], staged["assetSha256"]}, {first["assetSha256"]})
+        self.assertEqual(len({first["revisionRef"], second["revisionRef"], staged["revisionRef"]}), 3,
+                         "each issue is its own retained drawing in P036")
+        [row] = self.rows("drawing-elevation")
+        self.assertEqual((row.status, row.blob_sha256), ("done", first["assetSha256"]))
+        for document in (first, second, staged):
+            retained = self.retained(document)
+            self.assertEqual(retained.png, self.blob(row.files["png"]))
+            self.assertEqual(retained.svg, self.blob(row.files["svg"], ".svg"))
+            self.assertEqual(retained.receipt["source"]["run_id"], self.model["runId"])
+            self.assertEqual(retained.receipt["projection"]["visible_polylines"],
+                             self.retained(first).receipt["projection"]["visible_polylines"])
+            self.assertNotIn(row.key, json.dumps(retained.receipt), "the cache key is not evidence")
+        self.assertEqual(self.retained(staged).receipt["view"], self.retained(first).receipt["view"])
+        self.assertEqual(self.repository.read_head(), self.head)
+        self.assertFalse(any("projections" in path.parts for path in (self.root / PROJECT_ID).rglob("*")))
+
+    def test_another_recipe_is_another_projection(self) -> None:
+        first = self.elevation("front")
+        right = self.elevation("right", view="right")
+        scaled = self.elevation("front-50", scaleDenominator=50)
+        self.assertEqual(len({first["assetSha256"], right["assetSha256"], scaled["assetSha256"]}), 3)
+        self.assertEqual(len(self.rows("drawing-elevation")), 3)
+
+    def test_deleting_the_cache_draws_again_and_leaves_p036_as_it_was(self) -> None:
+        import shutil
+        from monkeydiagram import drawing_elevation
+
+        first = self.elevation("front-a")
+        before = self.retained(first)
+        shutil.rmtree(self.cache / "projections")
+        with patch.object(drawing_elevation, "project_model_axis_elevation",
+                          wraps=drawing_elevation.project_model_axis_elevation) as drawn:
+            again = self.elevation("front-b")
+        self.assertEqual(drawn.call_count, 1, "the lost drawing is drawn again")
+        self.assertEqual(again["assetSha256"], first["assetSha256"], "drawing is deterministic")
+        self.assertEqual(self.retained(first).receipt, before.receipt)
+        self.assertEqual(self.retained(again).png, self.blob(again["assetSha256"]))
+        [row] = self.rows("drawing-elevation")
+        self.assertEqual(row.status, "done")
+
+    def test_a_drawing_is_issued_without_a_cache(self) -> None:
+        from monkeydiagram import drawing_elevation
+
+        self.app.state.projections_closed = True  # the index no longer answers
+        with patch.object(drawing_elevation, "project_model_axis_elevation",
+                          wraps=drawing_elevation.project_model_axis_elevation) as drawn:
+            first = self.elevation("front-a")
+            second = self.elevation("front-b")
+        self.assertEqual(drawn.call_count, 2)
+        self.assertEqual(self.retained(first).png, self.retained(second).png)
+
+    def test_a_section_perspective_is_drawn_once(self) -> None:
+        from monkeydiagram import drawing_elevation
+
+        body = {"projectId": PROJECT_ID, "modelSource": self.model,
+                "section": {"line": [[-5, 0.5], [5, 0.5]], "keep": "right"}, "scaleDenominator": 100}
+        with patch.object(drawing_elevation, "project_section_perspective",
+                          wraps=drawing_elevation.project_section_perspective) as drawn:
+            first = self.client.post("/api/drawings/section-perspectives", json=body)
+            self.assertEqual(first.status_code, 201, first.text)
+            second = self.client.post("/api/drawings/section-perspectives", json={
+                **body, "modelSource": None, "sourceStageRef": self.stage["stageRef"]})
+            self.assertEqual(second.status_code, 201, second.text)
+        self.assertEqual(drawn.call_count, 1)
+        self.assertEqual(second.json()["assetSha256"], first.json()["assetSha256"])
+        self.assertNotEqual(second.json()["revisionRef"], first.json()["revisionRef"])
+        [row] = self.rows("drawing-section-perspective")
+        self.assertEqual(self.retained(second.json()).png, self.blob(row.blob_sha256))
+
+    def test_a_sheet_keeps_its_pdf_and_dxf_as_retained(self) -> None:
+        response = self.client.post("/api/drawings/sheets", json={
+            "projectId": PROJECT_ID, "sourceStageRef": self.stage["stageRef"], "styleId": "arch400-white"})
+        self.assertEqual(response.status_code, 201, response.text)
+        document = response.json()
+        [row] = self.rows("drawing-sheet")
+        self.assertEqual(row.blob_sha256, document["assetSha256"])
+        workspace = self.repository.layout.run(document["runId"]).workspaces / "documentation" / document["assetSha256"]
+        self.assertEqual((workspace / "sheet.pdf").read_bytes(), self.blob(row.files["pdf"], ".pdf"))
+        self.assertEqual((workspace / "sheet.dxf").read_bytes(), self.blob(row.files["dxf"], ".dxf"))

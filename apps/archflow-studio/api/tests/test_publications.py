@@ -468,3 +468,110 @@ class PublicationTests(unittest.TestCase):
             pixels = Image.frombytes("RGB", (pixmap.width, pixmap.height), pixmap.samples)
             self.assertFalse(any(red > 200 and green < 50 and blue < 50 for _, (red, green, blue) in pixels.getcolors(pixels.width * pixels.height)))
         self.assert_design_unchanged()
+
+
+class PagePreviewTests(unittest.TestCase):
+    """Board, Publish and the export previews read one cached raster per document page (#368)."""
+
+    upload = board_helpers.BoardTests.upload
+    save_publication = PublicationTests.save_publication
+    export = PublicationTests.export
+
+    def setUp(self):
+        import tempfile
+        from pathlib import Path
+        from fastapi.testclient import TestClient
+        from archflow.project.repository import FilesystemProjectRepository
+        from archflow_studio_api.application.binding import bound_project
+        from archflow_studio_api.main import create_app
+        from archflow_studio_api.settings import StudioSettings
+
+        temporary = tempfile.TemporaryDirectory(prefix="studio-pages-")
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name) / PROJECT_ID
+        self.cache = Path(temporary.name) / "cache"
+        FilesystemProjectRepository.initialize(self.root, project_id=PROJECT_ID,
+                                               initial_state={"project_id": PROJECT_ID, "version": 0})
+        self.app = create_app(StudioSettings(project_dir=self.root, cad_export="off", cache_dir=self.cache))
+        self.addCleanup(self.app.state.stop_index_events)
+        binding = bound_project(self.app.state)
+        self.addCleanup(binding.close)
+        self.assertIsNotNone(binding.await_index(30), "the index loads")
+        self.addCleanup(lambda: self.app.state.projections and self.app.state.projections.shutdown())
+        self.client = TestClient(self.app)
+        self.addCleanup(self.client.close)
+
+    def page(self, document, page_index=0):
+        response = self.client.get("/api/projections/pages", params={
+            "runId": document["runId"], "assetSha256": document["assetSha256"], "pageIndex": page_index,
+            **({"revisionRef": document["revisionRef"]} if document.get("revisionRef") else {})})
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.headers["cache-control"], "no-store")
+        return response.json()
+
+    def test_a_pdf_page_is_rasterised_once_and_served_as_an_immutable_blob(self):
+        from unittest.mock import patch
+        from archflow_studio_api.application import boards
+
+        document = self.upload(two_page_pdf())
+        with patch.object(boards, "page_raster", wraps=boards.page_raster) as drawn:
+            first = self.page(document, 1)
+            again = self.page(document, 1)
+            other = self.page(document, 0)
+        self.assertEqual(drawn.call_count, 2, "the second read of page 2 is the cached raster")
+        self.assertEqual((first["status"], first["kind"], first["inputSha256"]), ("done", "document-page", document["assetSha256"]))
+        self.assertEqual((again["key"], again["blobSha256"]), (first["key"], first["blobSha256"]))
+        self.assertNotEqual(other["key"], first["key"])
+        blob = self.client.get(first["blobUrl"])
+        self.assertEqual((blob.status_code, blob.headers["content-type"]), (200, "image/png"))
+        self.assertEqual(blob.headers["cache-control"], "private, max-age=31536000, immutable")
+        with Image.open(BytesIO(blob.content)) as image:
+            self.assertEqual(image.size, (first["width"], first["height"]))
+            self.assertEqual(image.mode, "RGBA", "transparency is kept for Publish and the PPTX preview")
+        self.assertFalse(any("projections" in path.parts for path in self.root.rglob("*")))
+
+    def test_a_png_page_is_its_own_raster_and_a_lost_cache_draws_again(self):
+        import shutil
+
+        document = self.upload(image_bytes(), "section.png", "image/png")
+        first = self.page(document)
+        self.assertEqual(first["blobSha256"], document["assetSha256"], "a bounded PNG is served as retained")
+        shutil.rmtree(self.cache / "projections")
+        self.assertEqual(self.client.get(first["blobUrl"]).status_code, 404)
+        again = self.page(document)
+        self.assertEqual((again["key"], again["blobSha256"]), (first["key"], first["blobSha256"]))
+        self.assertEqual(self.client.get(first["blobUrl"]).status_code, 200)
+
+    def test_unknown_pages_and_documents_are_refused(self):
+        document = self.upload(image_bytes(), "section.png", "image/png")
+        missing = self.client.get("/api/projections/pages", params={
+            "runId": document["runId"], "assetSha256": document["assetSha256"], "pageIndex": 3})
+        self.assertEqual((missing.status_code, missing.json()["code"]), (422, "DOCUMENT_PAGE_NOT_FOUND"))
+        unknown = self.client.get("/api/projections/pages", params={"runId": document["runId"], "assetSha256": "0" * 64})
+        self.assertEqual(unknown.status_code, 404, unknown.text)
+
+    def test_exports_draw_their_raster_previews_from_the_same_cache(self):
+        from unittest.mock import patch
+        from archflow_studio_api.application import boards
+
+        document = self.upload(_jpeg(), "section.jpg", "image/jpeg")
+        saved = self.save_publication(request([page("p1", document=document)]))
+        shown = self.page(document)
+        with patch.object(boards, "page_raster", wraps=boards.page_raster) as drawn:
+            pptx = self.export(saved["revisionSha256"], "pptx")
+            pdf = self.export(saved["revisionSha256"])
+        self.assertEqual((pptx.status_code, pdf.status_code), (200, 200), pptx.text)
+        self.assertEqual(drawn.call_count, 0, "the exports read the raster Publish showed")
+        deck = Presentation(BytesIO(pptx.content))
+        picture = next(shape for shape in deck.slides[0].shapes if hasattr(shape, "image"))
+        with Image.open(BytesIO(picture.image.blob)) as exported, \
+                Image.open(BytesIO(self.client.get(shown["blobUrl"]).content)) as raster:
+            self.assertEqual(exported.size, raster.size)
+
+
+def _jpeg():
+    pixels = Image.new("RGB", (300, 200), "white")
+    pixels.paste("navy", (0, 0, 150, 200))
+    output = BytesIO()
+    pixels.save(output, format="JPEG", quality=90)
+    return output.getvalue()

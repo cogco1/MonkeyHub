@@ -24,9 +24,12 @@ from archflow.project.record_kinds import STUDIO_BOARD_SCENE
 from archflow.project.repository import ProjectRepositoryError
 
 from ..transport.errors import StudioError
-from .artifacts import document_bytes
+from archflow.project.index import IndexUnavailable
+
+from .artifacts import SourceDocument, document_bytes
 from .binding import retained_sources
 from .binding import ProjectBinding, record_kind
+from .projections import DOCUMENT_PAGE, ProjectionQueue, ProjectionSpec, on_demand_spec
 
 BOARD_RUN_ID = "studio-board"
 MAX_BOARD_BYTES = 8 * 1024 * 1024
@@ -165,6 +168,83 @@ def _page_raster(
     else:
         image.save(output, format="JPEG", quality=95, subsampling=0, optimize=True)
     return output.getvalue()
+
+
+#: The longest edge of a page raster, in pixels.
+PAGE_RASTER_EDGE = 2048
+
+
+@dataclass(frozen=True, slots=True)
+class PageRaster:
+    png: bytes
+    width: int
+    height: int
+
+
+def page_raster(data: bytes, mime_type: str, page_index: int) -> PageRaster:
+    """One page of a retained document as the PNG every surface previews: at most 2048 px, transparency kept.
+
+    A PDF page is drawn by MuPDF at up to 2x, its CropBox and /Rotate
+    applied, over transparent pixels. A PNG within the bound and without an
+    EXIF orientation is its own raster, byte for byte; any other image is
+    oriented and reduced. Deterministic: the same bytes give the same PNG.
+    """
+
+    if mime_type == "application/pdf":
+        document = fitz.open(stream=data, filetype="pdf")
+        try:
+            page = document.load_page(page_index)
+            scale = min(2, PAGE_RASTER_EDGE / max(page.rect.width, page.rect.height))
+            # MuPDF pixels use premultiplied alpha; PNG encoding unpremultiplies them.
+            pixmap = page.get_pixmap(matrix=fitz.Matrix(scale, scale), alpha=True)
+            return PageRaster(pixmap.tobytes("png"), pixmap.width, pixmap.height)
+        finally:
+            document.close()
+    with Image.open(BytesIO(data)) as source:
+        if source.format == "PNG" and source.getexif().get(0x0112, 1) == 1 and max(source.size) <= PAGE_RASTER_EDGE:
+            return PageRaster(data, *source.size)
+        image = ImageOps.exif_transpose(source)
+        if image.mode not in {"1", "L", "LA", "RGB", "RGBA"}:
+            image = image.convert("RGBA")
+        image.thumbnail((PAGE_RASTER_EDGE, PAGE_RASTER_EDGE), Image.Resampling.LANCZOS)
+        output = BytesIO()
+        image.save(output, format="PNG")
+        return PageRaster(output.getvalue(), *image.size)
+
+
+def page_spec(document: SourceDocument, page_index: int) -> ProjectionSpec:
+    """The projection key of one document page's raster: the document's own bytes, the page and the bound."""
+
+    return on_demand_spec(DOCUMENT_PAGE, {
+        "runId": document.run_id, "assetSha256": document.asset_sha256, "revisionRef": document.revision_ref,
+        "pageIndex": page_index,
+    }, {"page": page_index, "maxEdge": PAGE_RASTER_EDGE, "mimeType": document.mime_type})
+
+
+def cached_page(projections: ProjectionQueue | None, document: SourceDocument, data: bytes,
+                page_index: int) -> tuple[PageRaster, ProjectionSpec | None]:
+    """A retained document page's raster: from the projection cache, else drawn once (and kept, when a cache answers).
+
+    ``document`` and ``data`` come from ``document_bytes``, which verified them
+    against P036; the raster only supplies pixels, the document stays the source.
+    """
+
+    if not 0 <= page_index < len(document.pages):
+        raise StudioError(422, "DOCUMENT_PAGE_NOT_FOUND", "The requested page no longer exists in its registered source.")
+
+    def draw():
+        raster = page_raster(data, document.mime_type, page_index)
+        return {"png": raster.png}, {"width": raster.width, "height": raster.height}
+
+    if projections is not None:
+        spec = page_spec(document, page_index)
+        try:
+            files, facts, _ = projections.on_demand(spec, draw)
+            return PageRaster(files["png"], facts["width"], facts["height"]), spec
+        except IndexUnavailable:
+            pass
+    files, facts = draw()
+    return PageRaster(files["png"], facts["width"], facts["height"]), None
 
 
 def export_board_pages(

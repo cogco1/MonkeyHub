@@ -205,3 +205,26 @@ decision tree comes from two derived stores. Either store can be deleted at any 
 - Known limits: a runtime without the Hub's cache directory keeps no index, so it answers
   `PROJECTION_INDEX_UNAVAILABLE` and shows placeholders. The queue follows the tree the index holds; it does not know
   which cards a client has on screen until that client asks.
+
+**Phase 4A as built (#368, drawings, 2026-09-28):**
+- Issued drawings are projection kinds of the same cache: `drawing-elevation` and `drawing-section-perspective`
+  (their SVG and PNG), `drawing-sheet` (the review sheet's PDF and DXF) and `document-page` (one registered page as
+  a PNG of at most 2048 px, transparency kept). The input is the model or document asset's sha256; the recipe holds
+  the complete view and what the drawing reads from its verified source (geometry digest, unit, objects, bounds and
+  semantics); the renderer is a digest of the drawing modules' source, fonts and library versions, computed once per
+  process. No run and no time enters a key, and the drawings are deterministic except the sheet's DXF, whose
+  writer stamps a time and GUIDs.
+- These kinds are drawn on demand, in the request that needs them, through the existing generator
+  (`ProjectionQueue.on_demand`); the worker never draws them. A row is inserted done with every file's digest, so a
+  hit reads the files back instead of solving the view again. A missing file is a miss; a refused request leaves
+  no row.
+- Issuing a drawing verifies its source through P036 as before, takes the drawn files from the cache or draws them
+  once, and retains them in P036 byte for byte with a receipt of its own; the receipt cites their sha256 and its
+  exact source, never the key. Without an index, or after the cache folder is deleted, the drawing is drawn and
+  retained as before. A sheet's PDF carries its source binding, so only the same source and recipe finds it.
+- Board previews, Publish images and the publication exports' raster previews read the one `document-page` raster
+  (`GET /api/projections/pages`, then the immutable blob) instead of each rasterising the page: Board no longer runs
+  PDF.js for a preview, Publish no longer loads PDF.js, and the export no longer draws its own raster. The retained
+  document stays what a Board or publication references.
+- Known limits: plan cuts (`drawing_plans`) and the transient model views are not yet kinds. A runtime without an
+  index draws drawings as before, but Board and Publish show no page preview there.

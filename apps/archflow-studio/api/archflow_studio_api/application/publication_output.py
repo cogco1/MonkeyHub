@@ -6,7 +6,7 @@ from pathlib import Path
 import re
 
 import fitz
-from PIL import Image, ImageOps
+from PIL import Image
 from pypdf import PdfReader, PdfWriter, Transformation
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
@@ -21,7 +21,7 @@ from pptx.util import Pt
 
 from ..transport.errors import StudioError
 from .artifacts import document_bytes
-from .boards import BoardExport
+from .boards import BoardExport, cached_page
 from .publications import read_publication
 
 
@@ -72,18 +72,10 @@ def _placement(item, width, height):
     return item["x"] + (item["width"] - w) / 2, item["y"] + (item["height"] - h) / 2, w, h, scale
 
 
-def _image(data, mime_type, item):
-    if mime_type == "application/pdf":
-        with fitz.open(stream=data, filetype="pdf") as document:
-            page = document[item["source"]["pageIndex"]]
-            scale = min(2, 2048 / max(page.rect.width, page.rect.height))
-            pixmap = page.get_pixmap(matrix=fitz.Matrix(scale, scale), alpha=True)
-            # MuPDF pixels use premultiplied alpha; PNG encoding unpremultiplies
-            # before Pillow and PowerPoint consume the image.
-            data = pixmap.tobytes("png")
-    with Image.open(BytesIO(data)) as source:
-        original = ImageOps.exif_transpose(source).convert("RGBA")
-        original.thumbnail((2048, 2048), Image.Resampling.LANCZOS)
+def _image(raster, item):
+    """The placed element's pixels: its page's raster (``boards.cached_page``, as Board and Publish show it), cropped."""
+    with Image.open(BytesIO(raster.png)) as source:
+        original = source.convert("RGBA")
         left, top, right, bottom = item["crop"]
         box = (round(left * original.width), round(top * original.height), round((1 - right) * original.width), round((1 - bottom) * original.height))
         if box[0] >= box[2] or box[1] >= box[3]:
@@ -287,7 +279,8 @@ def _ppt_pdf(slide, data, item):
         return None
 
 
-def export_publication(binding, revision, format):
+def export_publication(binding, revision, format, projections=None):
+    """The publication's PDF or PPTX; its raster previews come from ``projections`` when a cache answers."""
     publication = read_publication(binding, revision)
     if not publication["pages"]:
         raise StudioError(422, "PUBLICATION_EMPTY", "Add a page before exporting.")
@@ -322,7 +315,8 @@ def export_publication(binding, revision, format):
                         fallback = _ppt_pdf(slide, data, item)
                         if fallback is None:
                             continue
-                data, (x, y, w, h) = _image(data, document.mime_type, item)
+                raster, _ = cached_page(projections, document, data, source["pageIndex"])
+                data, (x, y, w, h) = _image(raster, item)
                 if canvas is not None:
                     canvas.drawImage(ImageReader(BytesIO(data)), x, height - y - h, width=w, height=h, mask="auto")
                 else:
