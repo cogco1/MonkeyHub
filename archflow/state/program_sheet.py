@@ -740,9 +740,12 @@ def _function(value: object, space_id: str) -> None:
         return
     if not isinstance(value, str) or not value.strip():
         raise ProgramSheetError(
-            f"space {space_id}: function is a registered role id or alias, or null"
+            f"space {space_id}: function is null, or a registered role or condition id, "
+            "an alias of one, a registered phrase, or such ids and aliases joined with '+'"
         )
     if resolve_semantic_kind(value) is None:
+        # Retained sheets name condition ids too, the axis among them, so the
+        # refusal says they are accepted (#404 item 4) while offering none.
         # A space's function is what the space is, so it is answered like a
         # semantic_kind: close registered spellings, never condition ids; a
         # misspelt role id is answered with the role id it is close to.
@@ -750,8 +753,9 @@ def _function(value: object, space_id: str) -> None:
                 *difflib.get_close_matches(value.strip().lower(), [i for i in registered_ids() if i.startswith("role.")],
                                           n=3, cutoff=0.75))
         raise ProgramSheetError(
-            f"space {space_id}: function {value!r} is not a registered role "
-            f"or alias; nearest: {', '.join(dict.fromkeys(near)) or 'none close'}"
+            f"space {space_id}: function {value!r} is not a registered role or "
+            "condition id, an alias of one, a registered phrase, or such ids and "
+            f"aliases joined with '+'; nearest: {', '.join(dict.fromkeys(near)) or 'none close'}"
         )
 
 

@@ -225,6 +225,46 @@ class WhyTests(CompareTestCase):
         self.assertEqual(payload["why"], "set height to 0.8; set height to 0.4")
         self.assertEqual(payload["whySource"], "proposal")
 
+    def test_a_long_chain_names_its_first_and_last_steps_and_counts_the_rest(self) -> None:
+        # #404 item 13: a Manual Sync chain of 20 steps does not become a 20-sentence why.
+        from archflow_studio_api.application.binding import bound_project
+        from archflow_studio_api.application.compare import compare_runs, why_of
+
+        steps = tuple(f"set height to {0.1 * index:.1f}" for index in range(1, 21))
+        self.write_run("run-before", {"s": [obj("obj-a", "portico", "a", SHA_A, box(0, 0, 0, 1, 1, 1))]})
+        self.write_run("cand-long", {"s": [obj("obj-a", "portico", "a", SHA_B, box(0, 0, 0, 1, 1, 1.2))]})
+        with self.client:
+            comparison = compare_runs(bound_project(self.app.state), candidate_id="cand-long", against="run-before",
+                                      why=steps, why_source="proposal")
+        self.assertEqual(comparison.why, "set height to 0.1; … and 18 more …; set height to 2.0")
+        self.assertEqual(why_of(steps[:3]), "set height to 0.1; set height to 0.2; set height to 0.3")
+        self.assertEqual(why_of(steps[:1]), "set height to 0.1")
+
+    def test_the_compare_route_bounds_a_long_chain_and_the_proposal_keeps_every_step(self) -> None:
+        # #404 item 13 end to end: the route passes the steps, not their join.
+        proposal_ids: list[str] = []
+        for index in range(1, 21):
+            response = self.client.post("/api/proposals", json={
+                "stateDigest": self.state_digest, "targetComponentId": "portico",
+                "elementId": "portico-base" if index % 2 else "portico-cornice",
+                "utterance": f"set height to {0.1 * index:.1f}",
+                **({"sourceProposalId": proposal_ids[-1]} if proposal_ids else {}),
+            })
+            self.assertEqual(response.status_code, 201, response.text)
+            proposal_ids.append(response.json()["proposalId"])
+        self.write_run("run-before", {"s": [obj("obj-a", "portico", "a", SHA_A, box(0, 0, 0, 1, 1, 1))]})
+        self.write_run("cand-long", {"s": [obj("obj-a", "portico", "a", SHA_B, box(0, 0, 0, 1, 1, 1.2))]})
+        self.app.state.jobs.submit(candidate_id="cand-long", proposal_id=proposal_ids[-1], work=lambda: None)
+        status, payload = self.compare("cand-long", "run-before")
+        self.assertEqual(status, 200, payload)
+        self.assertEqual(payload["why"], "set height to 0.1; … and 18 more …; set height to 2.0")
+        self.assertEqual(payload["whySource"], "proposal")
+        self.assertEqual(self.client.get(f"/api/proposals/{proposal_ids[-1]}").status_code, 200)
+        self.assertEqual(
+            self.app.state.proposals.get(proposal_ids[-1]).steps,
+            tuple(f"set height to {0.1 * index:.1f}" for index in range(1, 21)),
+        )
+
     def test_a_summarized_sketch_batch_is_one_step(self) -> None:
         square = [[0.0, 0.0], [3.0, 0.0], [3.0, 2.0], [0.0, 2.0]]
         response = self.client.post("/api/proposals/sketch", json={

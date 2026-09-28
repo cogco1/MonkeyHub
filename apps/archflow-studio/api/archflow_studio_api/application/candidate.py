@@ -759,8 +759,26 @@ def describe(
         ),
         skipped_runs=tuple(sorted(set(listing.skipped_runs) | set(projection.reference.skipped_runs))),
         wall_time_s=_number(receipt.get("wall_time_s")),
-        honesty=_honesty(proposal, projection, executed),
+        honesty=_honesty(proposal, _source_projection(binding, proposal, projection), executed),
     )
+
+
+def _source_projection(binding: ProjectBinding, proposal: Proposal | None,
+                       default: StateProjection) -> StateProjection | None:
+    """The projection the proposal was made against, whose edges and values the honesty lines read (#404 F11).
+
+    A proposal with an explicit editing base read that base, not the project's
+    default projection; its dependency edges are the ones the change could
+    follow. None when that base can no longer be projected: the lines that
+    need it are left out rather than read off another record.
+    """
+
+    if proposal is None or (proposal.source_run_id is None and proposal.source_stage_ref is None):
+        return default
+    try:
+        return project_state(binding, run_id=proposal.source_run_id, source_stage_ref=proposal.source_stage_ref)
+    except StudioError:
+        return None
 
 
 def _executed_record(
@@ -788,7 +806,7 @@ def _executed_record(
 
 def _honesty(
     proposal: Proposal | None,
-    projection: StateProjection,
+    projection: StateProjection | None,
     executed: StateRecord | None = None,
 ) -> tuple[str, ...]:
     """What this candidate did and did not do, said out loud.
@@ -813,7 +831,7 @@ def _honesty(
             "what it changed is stated by the records its run retained, not "
             "by this readout",
         )
-    if not projection.edges and not proposal.impact.propagated:
+    if projection is not None and not projection.edges and not proposal.impact.propagated:
         # Nothing propagated, and nothing could have: the record declares no
         # dependencies at all. Reporting the first without the second would
         # let "nothing downstream" read as "nothing is downstream".
@@ -826,7 +844,8 @@ def _honesty(
         parameters = {
             parameter.key: parameter
             for parameter in (
-                executed.parameters if executed is not None else projection.parameters
+                executed.parameters if executed is not None
+                else projection.parameters if projection is not None else ()
             )
         }
         derived = [

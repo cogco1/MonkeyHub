@@ -191,6 +191,26 @@ class SemanticWallContractTests(unittest.TestCase):
         with self.assertRaisesRegex(ElementProducerError, "lies outside the wall length"):
             _produce((replace(row, params={**row.params, "openings": [{**row.params["openings"][0], "along": 1.485 + 1e-8}]}),))
 
+    def test_thickness_lies_left_of_the_line_seen_from_above_unless_inward_says_right(self) -> None:
+        # #404 F9: the signature's words, checked against the solver's geometry. Seen from
+        # above in the right-handed Y-up frame, left of a walk along d is up × d = (d_z, -d_x).
+        from_, to = (1.0, 2.0), (4.0, 6.0)
+        d = ((to[0] - from_[0]) / 5.0, (to[1] - from_[1]) / 5.0)
+        left = (d[1], -d[0])
+        line = {"from": {"point": list(from_)}, "to": {"point": list(to)}}
+        description = producer_signatures()["wall"]["parameters"]["properties"]["thickness"]["description"]
+        self.assertIn("to the left of the line walked from its from point to its to point", description)
+        for inward, side in ((None, 1.0), ([-left[0], -left[1]], -1.0), (list(left), 1.0)):
+            row = ElementRow("parapet", "envelope", "wall",
+                             {"base": {"level": PN}, "line": {**line, **({"inward": inward} if inward else {})}},
+                             {"thickness": 0.25, "height": 1.1}, BASIS)
+            produced, _ = _produce((row,))
+            body = next(op for op in produced[0].operations if op.op_id == "parapet")
+            across = [(x - from_[0]) * left[0] + (z - from_[1]) * left[1] for x, _, z in _op_params(body)["profile"]]
+            with self.subTest(inward=inward):
+                self.assertAlmostEqual(min(across) if side > 0 else -max(across), 0.0)
+                self.assertAlmostEqual(max(across) if side > 0 else -min(across), 0.25)
+
     def test_a_wall_ends_at_the_referenced_slab_underside(self) -> None:
         original = _wall_row("support-wall", "1", "2")
         row = replace(original, references={**original.references, "base": {"level": "level-ground"},
@@ -271,13 +291,65 @@ class PlanarSurfaceProducerTests(unittest.TestCase):
             elevations.append(_op_params(element.operations[0])["base_offset"])
         self.assertAlmostEqual(elevations[1] - elevations[0], 0.5)
 
-    def test_missing_closure_and_unimplemented_thickness_are_not_repaired(self) -> None:
+    def test_unimplemented_thickness_is_not_repaired(self) -> None:
         row = ElementRow("surface", "envelope", "planar-surface", {"base": {"level": PN}},
                          {"profile": [[0, 0], [2, 0], [2, 3], [0, 0]]}, BASIS)
-        for params, message in (({"profile": row.params["profile"][:-1]}, "explicitly close"),
-                                ({**row.params, "thickness": 0.1}, "does not support")):
-            with self.subTest(message=message), self.assertRaisesRegex(ElementProducerError, message):
-                _produce((replace(row, params=params),))
+        with self.assertRaisesRegex(ElementProducerError, "does not support"):
+            _produce((replace(row, params={**row.params, "thickness": 0.1}),))
+
+
+class ClosedProfileSpellingTests(unittest.TestCase):
+    """#404 F8: a closed profile may repeat its first point or not; each producer reads one spelling."""
+
+    OPEN = [[0, 0], [2, 0], [2, 3]]
+    CLOSED = [[0, 0], [2, 0], [2, 3], [0, 0]]
+
+    def _operation(self, producer: str, profile) -> dict:
+        params = {"profile": profile, **({"height": 1.5} if producer == "prism" else {})}
+        produced, _ = _produce((ElementRow("shape", "envelope", producer, {"base": {"level": PN}}, params, BASIS),))
+        return _op_params(produced[0].operations[0])
+
+    def test_both_spellings_produce_the_same_prism_and_surface(self) -> None:
+        for producer in ("prism", "planar-surface"):
+            with self.subTest(producer=producer):
+                self.assertEqual(self._operation(producer, self.OPEN), self._operation(producer, self.CLOSED))
+        self.assertEqual(len(self._operation("prism", self.CLOSED)["profile"]), 3)
+        self.assertEqual(len(self._operation("planar-surface", self.OPEN)["profile"]), 4)
+
+    def test_an_edit_returns_the_producers_one_spelling_whichever_came_in(self) -> None:
+        for producer, stored in (("prism", self.OPEN), ("planar-surface", self.CLOSED)):
+            params = {"height": 1.5} if producer == "prism" else {}
+            results = []
+            for profile in (self.OPEN, self.CLOSED):
+                row = ElementRow("shape", "envelope", producer, {"base": {"level": PN}}, {"profile": profile, **params}, BASIS)
+                _, context = _produce((row,))
+                results.append(edit_drawn_element(row, context, kind="move", translation=[1, 0, 0]).params)
+            with self.subTest(producer=producer):
+                self.assertEqual(results[0], results[1])
+                self.assertEqual(len(results[0]["profile"]), len(stored))
+
+    def test_the_signatures_say_it_the_same_way(self) -> None:
+        signatures = producer_signatures()
+        for producer in ("prism", "planar-surface"):
+            with self.subTest(producer=producer):
+                profile = signatures[producer]["parameters"]["properties"]["profile"]
+                self.assertIn("repeating its first point at the end is optional", profile["description"])
+                self.assertEqual(profile["minItems"], 3)
+
+    def test_a_loft_section_may_close_unless_that_is_ambiguous(self) -> None:
+        square = [[0, 0, 0], [2, 0, 0], [2, 0, 2], [0, 0, 2]]
+        top = [[x, 3, z] for x, _, z in square]
+
+        def loft(profiles, size=4):
+            row = ElementRow("tower", "envelope", "loft", {"base": {"level": PN}},
+                             {"profiles": profiles, "profile_size": size}, BASIS)
+            produced, _ = _produce((row,))
+            return _op_params(produced[0].operations[0])
+
+        self.assertEqual(loft([square, top]), loft([[*square, square[0]], top]))
+        # Four points whose last repeats the first: did profile_size count the repeat? Refused.
+        with self.assertRaisesRegex(ElementProducerError, "repeats its first vertex"):
+            loft([[*square[:3], square[0]], [*top[:3], top[0]]])
 
 
 class CurveProducerTests(unittest.TestCase):
@@ -618,6 +690,15 @@ class PlanarCompressionTests(unittest.TestCase):
             with self.subTest(producer=producer), self.assertRaisesRegex(ElementProducerError, "supports planar-surface"):
                 edit_drawn_element(replace(self.surface(), producer=producer), context,
                                    kind="compress_above", threshold=2, factor=0.5)
+
+    def test_an_element_wholly_below_the_threshold_is_left_whatever_produces_it(self):
+        # #404 item 7: only an element that would move must be a planar surface.
+        prism = ElementRow("block", "building", "prism", {"base": {"level": "level-ground"}},
+                           {"profile": [[0, 0], [2, 0], [2, 2], [0, 2]], "height": 1.5}, BASIS)
+        _, context = _produce((prism,))
+        self.assertIs(edit_drawn_element(prism, context, kind="compress_above", threshold=2, factor=0.5), prism)
+        with self.assertRaisesRegex(ElementProducerError, "supports planar-surface.*reaches above the threshold"):
+            edit_drawn_element(prism, context, kind="compress_above", threshold=1, factor=0.5)
 
     def test_nonfinite_and_expanding_compression_inputs_are_refused(self):
         for factor in (0, -0.1, 1.1, float("inf"), float("nan")):

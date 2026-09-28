@@ -969,6 +969,7 @@ export const messagesZhCN = {
   "designTree.fact.updated": "更新时间",
   "designTree.actor.you": "你",
   "designTree.actor.retroactive": "你（补录）",
+  "designTree.actor.hubAgent": "智能体（按你在对话里的话）",
   "designTree.action.view": "查看",
   "designTree.action.continue": "从这里继续",
   "designTree.action.endorse": "认可方向",
