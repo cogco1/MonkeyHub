@@ -38,7 +38,7 @@ from archflow.project.index import (
 )
 from archflow.project.layout import FINGERPRINT_SETTLED_NS, layout_fingerprint
 from archflow.project.ports import PersistenceArea, PersistenceDestination
-from archflow.project.record_kinds import STATE_RECORD
+from archflow.project.record_kinds import STATE_RECORD, STUDIO_BOARD_SCENE
 from archflow.project.repository import FilesystemProjectRepository
 from archflow.project.watch import _Tree, watch_layout
 
@@ -86,6 +86,8 @@ class RecordingProjector:
         self.workings = 0
         self.threads: set[str] = set()
         self.delay = 0.0
+        # The record kinds this projector keeps aside (``RunRows.aside``).
+        self.aside_kinds: frozenset[str] = frozenset()
 
     def run_ids(self) -> tuple[str, ...]:
         runs = self.repository.layout.runs
@@ -103,8 +105,10 @@ class RecordingProjector:
             return RunRows(run_id, {"unreadable": True})
         if self.delay:
             time.sleep(self.delay)
-        return RunRows(run_id, {"records": len(refs)},
-                       tuple(RecordRow(ref.uri, ref.record_kind, ref.sha256) for ref in refs))
+        rows = [RecordRow(ref.uri, ref.record_kind, ref.sha256) for ref in refs]
+        shown = tuple(row for row in rows if row.kind not in self.aside_kinds)
+        return RunRows(run_id, {"records": len(shown)}, shown,
+                       aside=tuple(row for row in rows if row.kind in self.aside_kinds))
 
     def project_working(self):
         self.workings += 1
@@ -131,11 +135,11 @@ class _IndexCase(unittest.TestCase):
         self.repository.create_run("run-001")
         self.put("run-001", {"record": 1})
 
-    def put(self, run_id: str, payload: dict) -> Path:
+    def put(self, run_id: str, payload: dict, kind: str = STATE_RECORD) -> Path:
         ref = self.repository.put_json(
             run=self.repository.load_run(run_id),
             destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=run_id),
-            record_kind=STATE_RECORD, payload=payload,
+            record_kind=kind, payload=payload,
         )
         return self.repository.layout.resolve_record(ref)
 
@@ -167,7 +171,7 @@ class RebuildTests(_IndexCase):
         self.assertEqual(projector.projected, ["run-001"])
         self.assertEqual(self.records(index, "run-001"), 1)
         meta = index.meta()
-        self.assertEqual((meta["project_id"], meta["schema_version"]), (PROJECT_ID, "4"))
+        self.assertEqual((meta["project_id"], meta["schema_version"]), (PROJECT_ID, "5"))
         self.assertNotIn(os.fspath(self.root), repr(meta), "no machine path is kept as identity")
 
     def test_a_different_projector_version_rebuilds_under_a_new_epoch(self) -> None:
@@ -434,6 +438,46 @@ class ChangeLogTests(_AppliedCase):
         self.assertEqual(deletes, [])
         self.assertEqual(self.changes(token.revision), ([], []))
         self.assertEqual(self.index_.last_commit.domains, frozenset({"run"}))
+
+    def test_records_kept_aside_move_their_own_entity_and_not_the_run(self) -> None:
+        """A Board scene or a page's annotations saved into a run: ``aside:<id>`` moves, ``run:<id>`` does not."""
+        self.projector.aside_kinds = frozenset({STUDIO_BOARD_SCENE})
+        self.put("run-001", {"scene": 1}, kind=STUDIO_BOARD_SCENE)
+        first = self.sync()
+        self.assertEqual([entity["id"] for entity in self.changes(1)[0]], ["aside:run-001"])
+        with self.index_.snapshot() as snapshot:
+            run = snapshot.entities(["run:run-001"])[0]
+        self.assertEqual(run["body"]["records"], 1, "a run counts what it shows")
+
+        for number in range(2, 5):
+            before = self.sync().revision
+            self.put("run-001", {"scene": number}, kind=STUDIO_BOARD_SCENE)
+            token = self.sync()
+            upserts, deletes = self.changes(before)
+            self.assertEqual([entity["id"] for entity in upserts], ["aside:run-001"])
+            self.assertEqual(upserts[0], {"id": "aside:run-001", "domain": "aside", "rev": token.revision,
+                                          "body": {"runId": "run-001", "records": number}})
+            self.assertEqual(deletes, [])
+            self.assertEqual(self.index_.last_commit.domains, frozenset({"aside"}))
+        with self.index_.snapshot() as snapshot:
+            kept = next(entity for entity in snapshot.entities() if entity["id"] == "run:run-001")
+        self.assertEqual(kept, run, "the run reads as it did, at the revision that last moved it")
+        self.assertLessEqual(kept["rev"], first.revision)
+        self.assertEqual(self.records(self.index_, "run-001"), 5, "aside records are still records")
+
+        # A change to what the run shows moves the run, and keeps the aside entity where it was.
+        aside_rev = token.revision
+        self.put("run-001", {"record": 2})
+        moved = self.sync()
+        upserts, _ = self.changes(aside_rev)
+        self.assertEqual([entity["id"] for entity in upserts], ["run:run-001"])
+        self.assertEqual(upserts[0]["rev"], moved.revision)
+        with self.index_.snapshot() as snapshot:
+            self.assertEqual(snapshot.entities(["aside:run-001"])[0]["rev"], aside_rev)
+
+        shutil.rmtree(self.root / "runs" / "run-001")
+        self.sync()
+        self.assertEqual(self.changes(moved.revision)[1], ["aside:run-001", "run:run-001"])
 
     def test_a_removed_run_is_a_delete(self) -> None:
         self.repository.create_run("run-002")

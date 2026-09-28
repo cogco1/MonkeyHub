@@ -1027,9 +1027,12 @@ try {
   await hubPage.locator(".chat-project-workspace:not([hidden]) .stage-chip").click();
   await hubPage.getByTestId("arch-stub").waitFor();
 
-  // #366: Modeling saves its local recovery 250 ms after each edit. Each save moves the working pointer's
-  // file and the recovery run, and the Hub relays the index hint; the tree, mounted for the whole project,
-  // shows neither, so twenty edits read it no more. Its reads never overlap, and a job that moved reads it once.
+  // #366: Modeling saves its local recovery 250 ms after each edit, the Board its scene 700 ms after each
+  // change, and a drawing page its annotations once per stroke. The index moves the working pointer's file
+  // (`area:working`) for the first, and what the Board's or the document's run keeps aside (`aside:<run>`)
+  // for the others, never the run itself; the Hub relays each hint. The tree, mounted for the whole
+  // project, shows none of them, so twenty of each read it no more. A new candidate or a Stage reads it
+  // once. Its reads never overlap, a job that moved reads it once, and a replayed job event not at all.
   const quiet = async (label) => {
     let seen = -1;
     for (let round = 0; round < 40 && seen !== treeReads.length + indexReads; round += 1) {
@@ -1045,20 +1048,58 @@ try {
   const since = (before) => Object.fromEntries(Object.entries(count()).map(([key, value]) => [key, value - before[key]]));
   await quiet("before the edits");
   let before = count();
-  for (let edit = 0; edit < 20; edit += 1) {
-    hint(moveIndex(["area:working", "run:studio-working-draft"]), ["area", "run"]);
-    await new Promise((resolve) => setTimeout(resolve, 250));
+  const saves = {};
+  for (const [label, moves, domains, every] of [
+    ["twentyAutosaves", ["area:working"], ["area"], 250],
+    ["twentyBoardSaves", ["aside:studio-board"], ["aside"], 100],
+    ["twentyAnnotationSaves", ["aside:run-site"], ["aside"], 100],
+  ]) {
+    before = count();
+    for (let save = 0; save < 20; save += 1) {
+      hint(moveIndex(moves), domains);
+      await new Promise((resolve) => setTimeout(resolve, every));
+    }
+    await quiet(`after ${label}`);
+    saves[label] = since(before);
+    assert.deepEqual({ ...saves[label], index: undefined }, { worktrees: 0, history: 0, workingSource: 0, index: undefined },
+      `${label}: nothing the tree shows moved, so no tree read, no Worktree Graph`);
+    assert.ok(saves[label].index >= 1 && saves[label].index <= 20, `${label}: the store follows the hints, one request at a time: ${saves[label].index}`);
   }
-  await quiet("after twenty autosaves");
-  const autosaves = since(before);
-  console.log(JSON.stringify({ twentyAutosaves: autosaves }));
-  assert.deepEqual({ ...autosaves, index: undefined }, { worktrees: 0, history: 0, workingSource: 0, index: undefined },
-    "an autosave moves nothing the tree shows: no tree read, no Worktree Graph");
-  assert.ok(autosaves.index >= 1 && autosaves.index <= 20, `the store follows the hints, one request at a time: ${autosaves.index}`);
+  console.log(JSON.stringify(saves));
+  const once = {};
+  for (const [label, moves, domains] of [
+    ["continueElsewhere", ["working"], ["working"]],
+    ["newCandidate", ["run:run-new"], ["run"]],
+    ["newStage", ["tree", "run:run-new"], ["tree", "run"]],
+  ]) {
+    before = count();
+    hint(moveIndex(moves), domains);
+    await quiet(`after ${label}`);
+    once[label] = since(before).worktrees;
+    assert.equal(once[label], 1, `${label}: the tree moved, and is read exactly once`);
+  }
+  console.log(JSON.stringify(once));
   before = count();
-  hint(moveIndex(["working"]), ["working"]);
-  await quiet("after a Continue elsewhere");
-  assert.equal(since(before).worktrees, 1, "a moved working position reads the tree once");
+  hubSend("studio", { stream: "worker-0", replay: true, studio: { seq: 9, at: "2026-09-28T00:00:00Z", type: "candidate.succeeded", candidateId: "run-old" } });
+  await quiet("after a replayed job event");
+  assert.equal(since(before).worktrees, 0, "a job event the Hub replays as a connection opens is not news");
+  // The panel closed: the project's workspace stays mounted but hidden, and its tree reads nothing for a
+  // job until it is shown again, then once.
+  await railButton("Modeling").click();
+  await hubPage.locator(".chat-project-workspace[hidden]").waitFor({ state: "attached" });
+  before = count();
+  for (const [seq, type] of [[7, "candidate.queued"], [8, "candidate.running"], [9, "candidate.succeeded"]]) {
+    hubSend("studio", { stream: "worker-1", studio: { seq, at: "2026-09-28T00:00:00Z", type, candidateId: "run-hidden" } });
+  }
+  await quiet("after three job events off screen");
+  const hidden = since(before).worktrees;
+  assert.equal(hidden, 0, "a hidden tree reads nothing for a job");
+  await railButton("Modeling").click();
+  await hubPage.getByTestId("arch-stub").waitFor();
+  await quiet("after showing the project again");
+  const shownAgain = since(before).worktrees;
+  assert.equal(shownAgain, 1, "shown again, it catches up once");
+  console.log(JSON.stringify({ jobEventsWhileHidden: hidden, onShowingAgain: shownAgain }));
   before = count();
   hubSend("studio", { stream: "worker-1", studio: { seq: 1, at: "2026-09-28T00:00:00Z", type: "candidate.queued", candidateId: "run-new" } });
   await quiet("after a job queued");
@@ -1070,7 +1111,7 @@ try {
   await quiet("after five job events at once");
   const burst = since(before).worktrees;
   assert.ok(burst >= 1 && burst <= 2, `five events at once: one read and at most one after it, never overlapping: ${burst}`);
-  console.log(JSON.stringify({ continueElsewhere: 1, jobQueued: 1, fiveJobEventsAtOnce: burst }));
+  console.log(JSON.stringify({ jobQueued: 1, fiveJobEventsAtOnce: burst }));
   await hubContext.close();
 
   assert.deepEqual(unexpected, [], "the tree reads only what it declares");

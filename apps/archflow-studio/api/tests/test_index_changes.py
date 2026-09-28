@@ -25,6 +25,7 @@ from archflow_studio_api.settings import StudioSettings
 from .support import PROJECT_ID, REFERENCE_RUN_ID
 from .test_conditional_reads import wait_until
 from .test_design_history import DesignHistoryFixture
+from .test_document_annotations import stroke
 from .test_documents import image_bytes
 
 
@@ -113,25 +114,83 @@ class IndexChangesTests(DesignHistoryFixture):
 
     def test_saving_the_local_recovery_moves_no_working_position(self) -> None:
         """Modeling's autosave rewrites the working pointer; the position a head is read from is its own entity."""
-        before = self.snapshot()
-        position = next(entity for entity in before["upserts"] if entity["id"] == "working")
-        self.assertEqual(set(position["body"]), {"current", "runs", "active"})
+        position = next(entity for entity in self.snapshot()["upserts"] if entity["id"] == "working")
+        self.assertEqual(set(position["body"]), {"current", "active", "runsDigest"}, "no runs map in every delta")
         digest = self.indexed.get("/api/state").json()["stateDigest"]
-        draft = {"source": {"projectId": PROJECT_ID, "sourceRunId": REFERENCE_RUN_ID, "sourceStageRef": None,
-                            "stateDigest": digest},
-                 "commands": [{"kind": "translate", "offset": [1, 0, 0]}], "attempt": {"syncedCommands": [], "pending": None}}
-        revision = self.indexed.get("/api/working-draft").json()["revisionSha256"]
-        saved = self.indexed.put("/api/working-draft/local", json={"projectId": PROJECT_ID, "baseRevisionSha256": revision,
-                                                                   "draft": draft})
-        self.assertEqual(saved.status_code, 200, saved.text)
-        epoch, written = saved.headers["x-monkey-index"].split(":")
 
+        def save(offset: int):
+            draft = {"source": {"projectId": PROJECT_ID, "sourceRunId": REFERENCE_RUN_ID, "sourceStageRef": None,
+                                "stateDigest": digest},
+                     "commands": [{"kind": "translate", "offset": [offset, 0, 0]}],
+                     "attempt": {"syncedCommands": [], "pending": None}}
+            revision = self.indexed.get("/api/working-draft").json()["revisionSha256"]
+            return self.indexed.put("/api/working-draft/local", json={
+                "projectId": PROJECT_ID, "baseRevisionSha256": revision, "draft": draft})
+
+        first = self.moved_by(lambda: save(1))
+        self.assertIn("run:studio-working-draft", first, "the recovery's run is new once")
+        for offset in (2, 3):
+            moved = self.moved_by(lambda: save(offset))
+            self.assertIn("area:working", moved, "the pointer file moved")
+            self.assertNotIn("working", moved, "the position a head is read from did not")
+            self.assertNotIn("tree", moved)
+            self.assertFalse({entity_id for entity_id in moved if entity_id.startswith(("run:", "aside:"))}, moved)
+
+    def moved_by(self, save) -> set[str]:
+        """The entities one write moved, read from the changes since the revision before it."""
+        before = self.snapshot()
+        response = save()
+        self.assertLess(response.status_code, 300, response.text)
+        epoch, written = response.headers["x-monkey-index"].split(":")
+        self.assertEqual(epoch, before["epoch"])
         answer = self.indexed.get("/api/index", params={"since": before["revision"], "epoch": epoch}).json()
+        self.assertFalse(answer["reset"])
         self.assertGreaterEqual(answer["to"], int(written))
-        moved = {entity["id"] for entity in answer["upserts"]}
-        self.assertIn("area:working", moved, "the pointer file moved")
-        self.assertNotIn("working", moved, "the position a head is read from did not")
-        self.assertNotIn("tree", moved)
+        return {entity["id"] for entity in answer["upserts"]} | set(answer["deletes"])
+
+    def test_board_scene_saves_move_only_what_the_board_keeps_aside(self) -> None:
+        """Each Board autosave adds a scene record to the Board's run; the run itself, as the tree reads it, stays."""
+        latest = None
+
+        def save(title: str):
+            nonlocal latest
+            response = self.indexed.put("/api/board", json={"projectId": PROJECT_ID, "baseRevisionSha256": latest,
+                                                            "title": title, "elements": [], "seenDocuments": []})
+            if response.status_code < 300:
+                latest = response.json()["revisionSha256"]
+            return response
+
+        save("first")  # the Board's run is created: a new run is news
+        for number in range(3):
+            moved = self.moved_by(lambda: save(f"sketch {number}"))
+            self.assertEqual({entity_id for entity_id in moved if entity_id.startswith(("run:", "aside:"))},
+                             {"aside:studio-board"}, moved)
+            self.assertNotIn("tree", moved)
+        aside = next(entity for entity in self.snapshot()["upserts"] if entity["id"] == "aside:studio-board")
+        self.assertEqual((aside["domain"], aside["body"]["records"]), ("aside", 4))
+
+    def test_page_annotation_saves_move_only_what_the_document_run_keeps_aside(self) -> None:
+        """Each stroke saved on a drawing page adds an annotation record to the document's run; the run stays."""
+        document = self.write("page.png").json()
+        latest = None
+
+        def save(number: int):
+            nonlocal latest
+            response = self.indexed.put("/api/document-annotations", json={
+                "projectId": PROJECT_ID, "runId": REFERENCE_RUN_ID, "assetSha256": document["assetSha256"],
+                "pageIndex": 0, "baseRevisionSha256": latest, "comment": f"stroke {number}",
+                "annotations": [stroke(f"stroke-{number}")]})
+            if response.status_code < 300:
+                latest = response.json()["revisionSha256"]
+            return response
+
+        for number in range(3):
+            moved = self.moved_by(lambda: save(number))
+            self.assertEqual({entity_id for entity_id in moved if entity_id.startswith(("run:", "aside:"))},
+                             {f"aside:{REFERENCE_RUN_ID}"}, moved)
+            self.assertNotIn("tree", moved)
+        run = next(entity for entity in self.snapshot()["upserts"] if entity["id"] == f"run:{REFERENCE_RUN_ID}")
+        self.assertNotIn("studio-document-annotations", str(run["body"]))
 
     def test_each_commit_is_announced_on_the_event_stream(self) -> None:
         events = self.app_.state.events

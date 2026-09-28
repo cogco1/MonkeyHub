@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any
 import weakref
 
+from archflow.contracts.canonical import canonical_digest
 from archflow.project.index import (
     ArtifactRow,
     CandidateRow,
@@ -34,6 +35,7 @@ from archflow.project.index import (
     manifest_stamp,
     path_area,
 )
+from archflow.project.record_kinds import STUDIO_BOARD_SCENE, STUDIO_DOCUMENT_ANNOTATIONS, STUDIO_MODEL_ANNOTATIONS
 from archflow.project.refs import ProjectRecordRef, record_ref_from_uri
 from archflow.project.repository import ProjectRepositoryError
 
@@ -51,6 +53,12 @@ from .binding import ProjectBinding, record_kind
 # version is rebuilt, never migrated. The source digest of the projector and
 # of the readers it stores is part of it, so a change there rebuilds too.
 PROJECTOR_NAME = "studio-projector@1"
+
+# The records a run keeps beside what it shows (``RunRows.aside``): each save of a
+# Board scene or of a page's or a model's annotations adds one, and none of them
+# changes the run's result, its candidacy or its place in the tree. (Modeling's local
+# recovery is no run record at all: saving it moves only the working pointer.)
+ASIDE_KINDS = frozenset({STUDIO_BOARD_SCENE, STUDIO_DOCUMENT_ANNOTATIONS, STUDIO_MODEL_ANNOTATIONS})
 
 # What makes one part of a run's projection fail without failing the others.
 _UNREADABLE = (StudioError, ProjectRepositoryError, KeyError, TypeError, ValueError, OSError)
@@ -93,13 +101,16 @@ class StudioProjector:
         body: dict[str, Any] = {}
         cites: set[str] = set()
         records: tuple[RecordRow, ...] = ()
+        aside: tuple[RecordRow, ...] = ()
         try:
             run = binding.load_run(run_id)
             body["base"] = run.base.to_dict()
         except _UNREADABLE:
             body["run_unreadable"] = True
         try:
-            records = tuple(RecordRow(ref.uri, record_kind(ref), ref.sha256) for ref in binding.record_refs(run_id))
+            rows = [RecordRow(ref.uri, record_kind(ref), ref.sha256) for ref in binding.record_refs(run_id)]
+            records = tuple(row for row in rows if row.kind not in ASIDE_KINDS)
+            aside = tuple(row for row in rows if row.kind in ASIDE_KINDS)
         except _UNREADABLE:
             body["records_unreadable"] = True
 
@@ -157,7 +168,7 @@ class StudioProjector:
             # branches; HEAD and the working draft play no part in it.
             cites.add("branches")
         cites.discard(f"run:{run_id}")
-        return RunRows(run_id, body, records, artifacts, documents, candidate, frozenset(cites))
+        return RunRows(run_id, body, records, artifacts, documents, candidate, frozenset(cites), aside)
 
     def project_tree(self) -> TreeRows:
         binding = self.binding
@@ -191,11 +202,13 @@ class StudioProjector:
     def project_working(self) -> dict[str, Any] | None:
         # The position every head reader reads (``resolve_working_source``, the Worktree Graph),
         # without ``localDraftRef``: saving Modeling's local recovery moves nothing a head shows (#366).
+        # The retained runs' rows (labels, times) move the Worktree Graph too, but no client reads
+        # them from here: they count by their digest alone, not sent in every snapshot and delta.
         try:
             value, _ = self.binding.repository.read_working_draft()
         except _UNREADABLE:
             return {"working_unreadable": True}
-        return {key: value[key] for key in ("current", "runs", "active")}
+        return {"current": value["current"], "active": value["active"], "runsDigest": canonical_digest(value["runs"])}
 
 
 def attach_project_index(binding: ProjectBinding, directory: Path) -> IndexKeeper:

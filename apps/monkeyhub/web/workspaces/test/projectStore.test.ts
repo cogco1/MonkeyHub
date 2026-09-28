@@ -296,17 +296,20 @@ test("stores are shared per project, released by count, and read first once the 
 test("a project's Studio events are kept, replayed to a later listener, and known by stream and seq", () => {
   const stores = new ProjectStores();
   const heard: string[] = [];
-  const said = (event: Record<string, unknown>) => `${event.stream}:${event.seq}:${event.type}`;
+  const said = (event: Record<string, unknown>, replayed: boolean) => `${event.stream}:${event.seq}:${event.type}${replayed ? ":replayed" : ""}`;
   const kinds = ["candidate.queued", "candidate.running", "candidate.succeeded"];
   kinds.forEach((type, index) => stores.studioEvent("runtime-a", { seq: index + 1, type }, "old"));
-  const stop = stores.onStudioEvent("runtime-a", (event) => heard.push(said(event)));
-  assert.deepEqual(heard, kinds.map((type, index) => `old:${index + 1}:${type}`), "a later panel opens with them");
+  const stop = stores.onStudioEvent("runtime-a", (event, replayed) => heard.push(said(event, replayed)));
+  assert.deepEqual(heard, kinds.map((type, index) => `old:${index + 1}:${type}:replayed`), "a later panel opens with them, as no news");
   // The Hub's stream reconnected and replayed them: nothing is delivered twice.
   kinds.forEach((type, index) => stores.studioEvent("runtime-a", { seq: index + 1, type }, "old"));
   assert.equal(heard.length, 3);
   // The worker restarted and numbers from 1 again: six events, not three.
   kinds.forEach((type, index) => stores.studioEvent("runtime-a", { seq: index + 1, type }, "new"));
   assert.deepEqual(heard.slice(3), kinds.map((type, index) => `new:${index + 1}:${type}`));
+  // One the Hub replays that this page never had: delivered, and said to be a replay.
+  stores.studioEvent("runtime-a", { seq: 9, type: "candidate.failed" }, "older", true);
+  assert.equal(heard.pop(), "older:9:candidate.failed:replayed");
   stores.studioEvent("runtime-b", { seq: 1, type: "candidate.queued" }, "other");
   stop();
   stores.studioEvent("runtime-a", { seq: 4, type: "candidate.queued" }, "new");
@@ -336,9 +339,11 @@ test("the Hub's stream has the stores read once the Hub has subscribed, not when
   emit("runtime", { kind: "project/opened" });
   assert.equal(reader.asked.length, 1, "later runtime frames are not a new subscription");
   const heard: unknown[] = [];
-  stores.onStudioEvent("runtime-a", (event) => heard.push(event));
+  stores.onStudioEvent("runtime-a", (event, replayed) => heard.push({ ...event, replayed }));
   emit("studio", { runtimeId: "runtime-a", stream: "s1", studio: { seq: 1, type: "candidate.queued" } });
-  assert.deepEqual(heard, [{ seq: 1, type: "candidate.queued", stream: "s1" }]);
+  emit("studio", { runtimeId: "runtime-a", stream: "s0", replay: true, studio: { seq: 7, type: "candidate.succeeded" } });
+  assert.deepEqual(heard, [{ seq: 1, type: "candidate.queued", stream: "s1", replayed: false },
+    { seq: 7, type: "candidate.succeeded", stream: "s0", replayed: true }], "the Hub's replay is marked as one");
   emit("error");
   emit("open");
   emit("runtime", { kind: "runtime/snapshot" });

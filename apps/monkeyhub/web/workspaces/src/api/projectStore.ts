@@ -273,7 +273,11 @@ export class ProjectStore {
   }
 }
 
-type StudioListener = (event: Record<string, unknown>) => void;
+/**
+ * One Studio event of a project. `replayed` when it is not news: an event this page kept
+ * from before the listener came, or one the Hub replays when a connection opens.
+ */
+type StudioListener = (event: Record<string, unknown>, replayed: boolean) => void;
 
 /** How many Studio events each project keeps for a panel that opens later. */
 const STUDIO_KEEP = 200;
@@ -290,7 +294,8 @@ const STUDIO_KEEP = 200;
  * A project's Studio events are kept (the last `STUDIO_KEEP`), so a panel
  * that opens later begins with them, and are known by `<stream>:<seq>`: a
  * restarted worker numbers from 1 again, and only its stream tells its
- * events apart from the last one's. One replayed again is not delivered twice.
+ * events apart from the last one's. One replayed again is not delivered twice;
+ * one the Hub replays for the first time is delivered as `replayed`.
  */
 export class ProjectStores {
   private readonly stores = new Map<string, { store: ProjectStore; count: number }>();
@@ -367,20 +372,23 @@ export class ProjectStores {
     this.stores.get(key)?.store.hint(hint);
   }
 
-  /** Follow the project's Studio events: those kept first, then each one as it comes. */
+  /** Follow the project's Studio events: those kept first (replayed), then each one as it comes. */
   onStudioEvent(key: string, listener: StudioListener): () => void {
     let listeners = this.studio.get(key);
     if (!listeners) { listeners = new Set(); this.studio.set(key, listeners); }
     listeners.add(listener);
-    for (const event of [...(this.kept.get(key)?.events ?? [])]) listener(event);
+    for (const event of [...(this.kept.get(key)?.events ?? [])]) listener(event, true);
     return () => {
       listeners.delete(listener);
       if (!listeners.size) this.studio.delete(key);
     };
   }
 
-  /** One Studio event of the project, numbered `seq` on the worker's `stream`; a repeat is dropped. */
-  studioEvent(key: string, event: Record<string, unknown>, stream: string | null = null): void {
+  /**
+   * One Studio event of the project, numbered `seq` on the worker's `stream`; a repeat is dropped.
+   * `replayed`: the Hub sent it again as a connection opened (it may be older than this page).
+   */
+  studioEvent(key: string, event: Record<string, unknown>, stream: string | null = null, replayed = false): void {
     let kept = this.kept.get(key);
     if (!kept) { kept = { keys: new Set(), events: [] }; this.kept.set(key, kept); }
     const known = studioEventKey(event, stream);
@@ -395,7 +403,7 @@ export class ProjectStores {
       const droppedKey = studioEventKey(dropped, (dropped.stream as string | undefined) ?? null);
       if (droppedKey !== null) kept.keys.delete(droppedKey);
     }
-    for (const listener of [...(this.studio.get(key) ?? [])]) listener(stamped);
+    for (const listener of [...(this.studio.get(key) ?? [])]) listener(stamped, replayed);
   }
 }
 
@@ -414,7 +422,7 @@ export const projectStores = new ProjectStores();
  * has every store read, so a commit announced before the Hub subscribed is
  * read too. `index` frames are hints for the store of their runtime; `studio`
  * frames reach that runtime's listeners with the worker stream they were
- * numbered on. The stream's owner (ChatShell) keeps its own `runtime`
+ * numbered on, and those the Hub replays as a connection opens say so. The stream's owner (ChatShell) keeps its own `runtime`
  * handling and closes the stream; the returned function only stops relaying.
  */
 export function relayHubStream(stream: EventSource, stores: ProjectStores = projectStores): () => void {
@@ -434,8 +442,9 @@ export function relayHubStream(stream: EventSource, stores: ProjectStores = proj
   };
   const studio = (message: Event) => {
     try {
-      const event = JSON.parse((message as MessageEvent).data) as { runtimeId?: string; studio?: Record<string, unknown>; stream?: string | null };
-      if (event.runtimeId && event.studio) stores.studioEvent(event.runtimeId, event.studio, event.stream ?? null);
+      const event = JSON.parse((message as MessageEvent).data) as {
+        runtimeId?: string; studio?: Record<string, unknown>; stream?: string | null; replay?: boolean };
+      if (event.runtimeId && event.studio) stores.studioEvent(event.runtimeId, event.studio, event.stream ?? null, event.replay === true);
     } catch { /* A progress line; the views read their own state. */ }
   };
   stream.addEventListener("open", opened);

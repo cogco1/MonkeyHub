@@ -10,8 +10,9 @@
  * beside the chip (FN-5); a refusal stays inline where it was asked for. The
  * facts are read again when an entity the tree shows moves in the project's
  * store (#366: its index committed, whoever wrote; `treeShows`), when a job
- * starts, waits or ends (its running work lives in the runtime, not the
- * project), when the workspace comes back on screen after either, and after
+ * starts, waits or ends while the tree is on screen (its running work lives in
+ * the runtime, not the project; a replayed event is not news), when the
+ * workspace comes back on screen after either, and after
  * each action once the store holds that action's write. Reads never overlap:
  * one runs, and whatever asks meanwhile is answered by one more after it. A
  * read is kept in the store under the revision it was read at, so showing the
@@ -29,18 +30,17 @@ import { buildGrowthTree, type GrowthTree, type TreeNode } from "./model";
 
 export { DESIGN_TREE_UNDO_MOVED, DESIGN_TREE_UNSYNCED } from "./continueUndo";
 
-/** The run that holds Modeling's local recovery (`retain_local_draft`): saved on every edit, shown nowhere in the tree. */
-const LOCAL_RECOVERY_RUN = "run:studio-working-draft";
-
 /**
  * The index entities the tree is read from, and so the only ones whose move reads it again:
  * the design branches and their Stages (`tree`), the working position the head and running
  * lines come from (`working`), HEAD for a project without one (`area:head`), and every run
- * (candidates, admissions, reviews, the head's own model) but the local recovery. Not the
- * working pointer's own file (`area:working`), which every autosave rewrites, nor any other area.
+ * (candidates, admissions, reviews, the head's own model). Not what a run keeps aside
+ * (`aside:<id>`: Board scenes, page and model annotations, one record per save), nor the
+ * working pointer's own file (`area:working`), which Modeling's every autosave rewrites, nor
+ * any other area. The index says which is which; nothing here knows a run by its id.
  */
 export function treeShows(id: string): boolean {
-  return id === "tree" || id === "working" || id === "area:head" || (id.startsWith("run:") && id !== LOCAL_RECOVERY_RUN);
+  return id === "tree" || id === "working" || id === "area:head" || id.startsWith("run:");
 }
 
 /** A job's lifecycle (`<kind>.queued|waiting|running|succeeded|failed`): the tree's running work moved. */
@@ -233,6 +233,10 @@ export function useDesignTree({ studio, capabilities, projectId, active, refresh
   const revision = useProjectMoved(treeShows);
   const inFlight = useRef<Promise<void> | null>(null);
   const trailing = useRef<{ fresh: boolean; done: Promise<void> } | null>(null);
+  const activeRef = useRef(active);
+  activeRef.current = active;
+  // A job moved while the tree was off screen: read once it is shown again.
+  const jobMissed = useRef(false);
 
   /** One read: the one already made at the tree's revision in the store, or a new one. */
   const readOnce = useCallback(async (fresh: boolean) => {
@@ -289,23 +293,26 @@ export function useDesignTree({ studio, capabilities, projectId, active, refresh
   const asked = useRef({ refreshKey, nudge });
   useEffect(() => {
     if (!available) return;
-    const fresh = asked.current.refreshKey !== refreshKey || asked.current.nudge !== nudge;
+    const missed = active && jobMissed.current;
+    const fresh = asked.current.refreshKey !== refreshKey || asked.current.nudge !== nudge || missed;
     asked.current = { refreshKey, nudge };
     if (!active && !fresh && sourceRef.current !== null) return;
     if (busyRef.current && !fresh) return;
+    if (missed) jobMissed.current = false;
     void load(fresh);
   }, [available, active, load, refreshKey, nudge, revision]);
 
   // A job that queued, waited, started or ended moved the tree's running work, which the runtime
-  // holds in memory and no index commit announces. The events a panel opens with are not news.
+  // holds in memory and no index commit announces. A tree off screen (a hidden project tab stays
+  // mounted) reads it once when shown again. Replayed events (those kept from before this tree
+  // listened, and those the Hub sends again as a connection opens) are not news.
   useEffect(() => {
     if (!available || runtimeKey === null) return;
-    let replaying = true;
-    const stop = projectStores.onStudioEvent(runtimeKey, (event) => {
-      if (!replaying && typeof event.type === "string" && JOB_LIFECYCLE.test(event.type)) void load(true);
+    return projectStores.onStudioEvent(runtimeKey, (event, replayed) => {
+      if (replayed || typeof event.type !== "string" || !JOB_LIFECYCLE.test(event.type)) return;
+      if (activeRef.current) void load(true);
+      else jobMissed.current = true;
     });
-    replaying = false;
-    return stop;
   }, [available, runtimeKey, load]);
 
   // Outside the Hub no store moves (no stream relays the index): the tree is read again when the

@@ -25,8 +25,8 @@ It can be deleted at any time; the next load builds it again.
   for every change. It runs before the write transaction opens, never inside
   it; the revision moves once per commit that changed a row.
 - ``change`` is the bounded change log (#366): for each entity a client reads
-  (``run:<id>``, ``tree``, ``working``, ``area:<name>``), the revision that last changed or
-  deleted it. ``IndexSnapshot.changes`` answers ``since=<revision>`` from it;
+  (``run:<id>``, ``aside:<id>``, ``tree``, ``working``, ``area:<name>``), the revision that
+  last changed or deleted it. ``IndexSnapshot.changes`` answers ``since=<revision>`` from it;
   a revision below ``meta.floor`` is older than the log and answers nothing,
   so the caller sends a whole snapshot instead.
 
@@ -52,7 +52,7 @@ from uuid import uuid4
 
 from archflow.project.layout import FINGERPRINT_POINTER_FILES, FINGERPRINT_SETTLED_NS
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 # How many revisions the change log keeps: a client further behind than this
 # is sent a whole snapshot instead of the changes.
 CHANGE_LOG_REVISIONS = 512
@@ -73,10 +73,11 @@ CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE place (key TEXT PRIMARY KEY, line TEXT NOT NULL, mtime_ns INTEGER NOT NULL);
 CREATE TABLE run (
     run_id TEXT PRIMARY KEY, rev INTEGER NOT NULL, digest TEXT NOT NULL,
-    cites TEXT NOT NULL, body TEXT NOT NULL
+    cites TEXT NOT NULL, body TEXT NOT NULL, aside_rev INTEGER NOT NULL, aside_digest TEXT NOT NULL
 );
 CREATE TABLE record (
     run_id TEXT NOT NULL, uri TEXT NOT NULL, kind TEXT, sha256 TEXT NOT NULL, rev INTEGER NOT NULL,
+    aside INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (run_id, uri)
 );
 CREATE INDEX record_kind ON record (kind);
@@ -123,6 +124,8 @@ _COLUMNS: dict[str, tuple[str, ...]] = {
     "stage": ("branch_id", "position", "stage_ref", "candidate_id", "rev", "body"),
 }
 QUERY_LIMIT = 1000
+# The aside digest of a run that keeps nothing aside.
+_NO_ASIDE = ""
 
 # The area each pointer file belongs to (``place_area``). HEAD and the working
 # draft are areas of their own that no row cites: saving a draft or issuing a
@@ -184,7 +187,7 @@ class IndexToken:
 class IndexCommit:
     """What one commit changed: where the index stands after it and the domains it touched.
 
-    ``domains`` are the entity kinds (``run``, ``tree``, ``area``); a rebuild
+    ``domains`` are the entity kinds (``run``, ``aside``, ``tree``, ``working``, ``area``); a rebuild
     names ``reset``, since a client of another epoch reads everything again.
     """
 
@@ -235,6 +238,10 @@ class RunRows:
 
     ``cites`` names the areas outside the run the rows were read from, as
     ``place_area`` spells them: a change there projects this run again.
+    ``aside`` are the records the run keeps beside what it shows (a Board's
+    scene revisions, a page's annotations): they are
+    records like the others, but an entity of their own (``aside:<id>``), so
+    saving one moves nothing a reader of ``run:<id>`` shows (#366).
     """
 
     run_id: str
@@ -244,6 +251,7 @@ class RunRows:
     documents: tuple[DocumentRow, ...] = ()
     candidate: CandidateRow | None = None
     cites: frozenset[str] = field(default_factory=frozenset)
+    aside: tuple[RecordRow, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -467,7 +475,8 @@ class IndexSnapshot:
 
         ``{id, domain, rev, body}``: a run's body holds its own body, candidate,
         artifacts, documents and how many records it has (the records
-        themselves stay in ``GET /api/index/record``); the tree's is its body
+        themselves stay in ``GET /api/index/record``); a run that keeps records
+        aside has one more entity, ``aside:<id>``, whose body counts them; the tree's is its body
         and stages; the working position's is what ``project_working`` read;
         an area's the layout lines it holds. ``rev`` is the
         revision that last changed the entity. ``ids`` limits the answer to
@@ -480,6 +489,9 @@ class IndexSnapshot:
         run_ids = None if wanted is None else sorted(entity[4:] for entity in wanted if entity.startswith("run:"))
         if run_ids is None or run_ids:
             found.extend(self._runs(run_ids))
+        aside_ids = None if wanted is None else sorted(entity[6:] for entity in wanted if entity.startswith("aside:"))
+        if aside_ids is None or aside_ids:
+            found.extend(self._asides(aside_ids))
         if wanted is None or "tree" in wanted:
             tree = self.tree()
             if tree is not None:
@@ -513,7 +525,8 @@ class IndexSnapshot:
                 for run_id, rev, body in self._connection.execute(
                     f"SELECT run_id, rev, body FROM run{where} ORDER BY run_id", params)}
         for run_id, count in self._connection.execute(
-                f"SELECT run_id, COUNT(*) FROM record{where} GROUP BY run_id", params):
+                f"SELECT run_id, COUNT(*) FROM record{where}{' AND' if where else ' WHERE'} aside = 0 GROUP BY run_id",
+                params):
             if run_id in runs:
                 runs[run_id]["body"]["records"] = count
         for table in ("artifact", "document", "candidate"):
@@ -533,6 +546,14 @@ class IndexSnapshot:
                 else:
                     run["body"][f"{table}s"].append(item)
         return list(runs.values())
+
+    def _asides(self, run_ids: list[str] | None) -> list[dict[str, Any]]:
+        where = "" if run_ids is None else f" AND run.run_id IN ({', '.join('?' * len(run_ids))})"
+        params = () if run_ids is None else tuple(run_ids)
+        return [{"id": f"aside:{run_id}", "domain": "aside", "rev": rev, "body": {"runId": run_id, "records": count}}
+                for run_id, rev, count in self._connection.execute(
+                    "SELECT run.run_id, run.aside_rev, COUNT(*) FROM run JOIN record ON record.run_id = run.run_id"
+                    f" WHERE record.aside = 1{where} GROUP BY run.run_id ORDER BY run.run_id", params)]
 
 
 class ProjectIndex:
@@ -559,7 +580,7 @@ class ProjectIndex:
         self._token: IndexToken | None = None
         # The writer's view of the file, kept in memory: each run's cites and
         # row digest, the tree's cites and digest, every place and the racy ones.
-        self._runs: dict[str, tuple[frozenset[str], str]] = {}
+        self._runs: dict[str, tuple[frozenset[str], str, str]] = {}
         self._tree: tuple[frozenset[str], str] | None = None
         self._working: str | None = None
         self._places: dict[str, tuple[str, int]] = {}
@@ -816,8 +837,9 @@ class ProjectIndex:
         connection = self._writer
         meta = dict(connection.execute("SELECT key, value FROM meta"))
         self._token = IndexToken(meta["epoch"], int(meta["revision"]))
-        self._runs = {run_id: (frozenset(json.loads(cites)), digest)
-                      for run_id, cites, digest in connection.execute("SELECT run_id, cites, digest FROM run")}
+        self._runs = {run_id: (frozenset(json.loads(cites)), digest, aside_digest)
+                      for run_id, cites, digest, aside_digest in connection.execute(
+                          "SELECT run_id, cites, digest, aside_digest FROM run")}
         tree_cites = json.loads(meta.get("tree_cites", "[]"))
         self._tree = (frozenset(tree_cites), meta["tree_digest"]) if "tree_digest" in meta else None
         self._working = meta.get("working_digest")
@@ -842,7 +864,7 @@ class ProjectIndex:
             current = self._projector.run_ids()
             dirty = {area[4:] for area in areas if area.startswith("run:")}
             dirty |= set(current) ^ self._runs.keys()
-            dirty |= {run_id for run_id, (cites, _) in self._runs.items() if cites & areas}
+            dirty |= {run_id for run_id, (cites, *_) in self._runs.items() if cites & areas}
             tree_due = self._tree is None or "branches" in areas or bool(self._tree[0] & areas)
             # Projected outside the transaction: readers and the next commit never wait for it.
             tree = self._projector.project_tree() if tree_due else None
@@ -871,8 +893,10 @@ class ProjectIndex:
                     if run_id in self._runs:
                         self._delete_run(connection, run_id)
                         logged.add(f"run:{run_id}")
-                elif self._write_run(connection, rows, revision, self._runs.get(run_id)):
-                    logged.add(f"run:{run_id}")
+                        if self._runs[run_id][2] != _NO_ASIDE:
+                            logged.add(f"aside:{run_id}")
+                else:
+                    logged |= self._write_run(connection, rows, revision, self._runs.get(run_id))
             moved = bool(logged)
             for key in changed:
                 if key in places:
@@ -937,7 +961,16 @@ class ProjectIndex:
         return True
 
     def _write_run(self, connection: sqlite3.Connection, rows: RunRows, revision: int,
-                   kept: tuple[frozenset[str], str] | None) -> bool:
+                   kept: tuple[frozenset[str], str, str] | None) -> set[str]:
+        """Keep one run's rows; the entities that moved (``run:<id>``, ``aside:<id>``), none when it reads as it did.
+
+        The run and what it keeps aside have a digest each: a new scene or
+        annotation rewrites the aside records and moves ``aside:<id>`` alone.
+        """
+
+        run_id = rows.run_id
+        aside = [(row.uri, row.kind, row.sha256) for row in rows.aside]
+        aside_digest = _NO_ASIDE if not aside else hashlib.sha256(_text(aside).encode("utf-8")).hexdigest()
         records = [(row.uri, row.kind, row.sha256) for row in rows.records]
         artifacts = [(row.sha256, row.format, row.representation, int(row.available), _text(row.body))
                      for row in rows.artifacts]
@@ -948,13 +981,27 @@ class ProjectIndex:
         body = _text(rows.body)
         digest = hashlib.sha256(_text([body, cites, records, artifacts, documents, candidate]).encode("utf-8"))
         digest = digest.hexdigest()
-        if kept is not None and kept[1] == digest:
-            return False
-        self._delete_run(connection, rows.run_id)
-        run_id = rows.run_id
-        connection.execute("INSERT INTO run VALUES (?, ?, ?, ?, ?)", (run_id, revision, digest, cites, body))
-        connection.executemany("INSERT OR REPLACE INTO record VALUES (?, ?, ?, ?, ?)",
-                               [(run_id, *row, revision) for row in records])
+        moved = set()
+        if kept is None or kept[1] != digest:
+            moved.add(f"run:{run_id}")
+        if (_NO_ASIDE if kept is None else kept[2]) != aside_digest:
+            moved.add(f"aside:{run_id}")
+        if not moved:
+            return moved
+        aside_rows = [(run_id, *row, revision, 1) for row in aside]
+        if f"run:{run_id}" not in moved:
+            connection.execute("DELETE FROM record WHERE run_id = ? AND aside = 1", (run_id,))
+            connection.executemany("INSERT OR REPLACE INTO record VALUES (?, ?, ?, ?, ?, ?)", aside_rows)
+            connection.execute("UPDATE run SET aside_rev = ?, aside_digest = ? WHERE run_id = ?",
+                               (revision, aside_digest, run_id))
+            return moved
+        kept_aside = connection.execute("SELECT aside_rev FROM run WHERE run_id = ?", (run_id,)).fetchone()
+        aside_rev = revision if f"aside:{run_id}" in moved or kept_aside is None else kept_aside[0]
+        self._delete_run(connection, run_id)
+        connection.execute("INSERT INTO run VALUES (?, ?, ?, ?, ?, ?, ?)",
+                           (run_id, revision, digest, cites, body, aside_rev, aside_digest))
+        connection.executemany("INSERT OR REPLACE INTO record VALUES (?, ?, ?, ?, ?, ?)",
+                               [(run_id, *row, revision, 0) for row in records] + aside_rows)
         connection.executemany("INSERT INTO artifact VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                                [(run_id, position, *row[:4], revision, row[4])
                                 for position, row in enumerate(artifacts)])
@@ -964,7 +1011,7 @@ class ProjectIndex:
         if candidate is not None:
             connection.execute("INSERT INTO candidate VALUES (?, ?, ?, ?)",
                                (run_id, candidate[0], revision, candidate[1]))
-        return True
+        return moved
 
     @staticmethod
     def _delete_run(connection: sqlite3.Connection, run_id: str) -> None:
