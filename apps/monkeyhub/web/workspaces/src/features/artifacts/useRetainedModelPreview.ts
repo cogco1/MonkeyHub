@@ -7,6 +7,20 @@ export const MODEL_PREVIEW_RETAINED = "monkeyhub:model-preview-retained";
 export const previewSourceKey = (source: ModelSourceDto | null | undefined) => source
   ? JSON.stringify([source.runId, source.stateDigest, source.assetSha256]) : "";
 
+/**
+ * The retained preview image of exactly this model, or null when none was retained.
+ * The one place a preview is fetched: the inspector's thumbnail and the Design Tree's
+ * close cards both read it here, so a content-keyed thumbnail service (#367) replaces
+ * only this function. `id` names the image's content.
+ */
+export async function readModelPreview(studio: Pick<StudioClient, "modelPreview" | "documentFile">,
+  source: ModelSourceDto): Promise<{ id: string; file: File } | null> {
+  const document = await studio.modelPreview(source);
+  if (!document || previewSourceKey(document.modelSource) !== previewSourceKey(source)) return null;
+  const file = await studio.documentFile(document.runId, document.assetSha256, document.fileName, document.revisionRef);
+  return { id: document.assetSha256, file };
+}
+
 /** Only pixels captured while this exact, unchanged model is still on screen. */
 export async function retainModelPreview(studio: Pick<StudioClient, "modelPreview" | "capture">,
   source: ModelSourceDto, capture: () => Promise<Blob | null>, isCurrent: () => boolean) {

@@ -18,6 +18,7 @@ from uuid import uuid4
 
 from archflow.contracts.canonical import canonical_json
 from archflow.project.layout import AUTHORED_RECORD_PATH
+from archflow.semantics.registry import resolve_semantic_kind
 from archflow.state.decision_operator import (
     ConditionComparator,
     DecisionOperator,
@@ -288,23 +289,14 @@ def sketch_prism_proposal(
                 f"{component_id} is new here: name parentComponentId as one of "
                 f"{sorted(components)} so a seat builds it.",
             )
-        # What the new part *is* belongs to the record's own vocabulary, and
-        # nothing here may invent one: the question is architectural and short,
-        # so it is asked rather than answered with a guess.
-        if semantic_kind is None:
-            from archflow.semantics.registry import registered_ids
-
-            raise StudioError(
-                422, "COMPONENT_KIND_REQUIRED",
-                f"{component_id} is new: say what it is as semanticKind. "
-                f"The record accepts {sorted(registered_ids())}, and the words already used here: "
-                f"{sorted({str(entity.fields.get('semantic_kind')) for entity in projection.record.entities_of('Component@1') if entity.fields.get('semantic_kind')})}.",
-            )
+        # Geometry first: the new part exists with its identity, placement and
+        # provenance before anyone says what it is. A stated semanticKind is
+        # kept; an unstated one stays absent, never guessed (#400).
         rows.append({
             "entity_id": component_id,
             "schema": "Component@1",
             "parent_id": parent_component_id,
-            "fields": {"intent": component_id, "semantic_kind": semantic_kind},
+            "fields": {"intent": component_id, **({"semantic_kind": semantic_kind} if semantic_kind is not None else {})},
         })
     row = {
         "entity_id": element_id,
@@ -557,8 +549,14 @@ def component_edit_proposal(
                 raise ValueError(f"semantic edit {key} must contain nonempty strings")
         record = projection.record
         existing = {entity.entity_id: entity for entity in record.entities}
+        edit_entities, unclassified = _unregistered_kinds_as_intent(edit["entities"], existing)
+        if unclassified:
+            summary = summary.strip() + " (" + "; ".join(
+                f"{component} keeps {word!r} as its intent, unclassified: not a registered semantic kind"
+                for component, word in unclassified
+            ) + ")"
         entities = []
-        for payload in edit["entities"]:
+        for payload in edit_entities:
             if not isinstance(payload, Mapping) or set(payload) - {
                 "entity_id", "schema", "parent_id", "fields", "basis_refs"
             }:
@@ -712,7 +710,7 @@ def component_edit_proposal(
             "edits": {
                 "entities": [
                     {**entity.to_dict(), "fields": dict(payload.get("fields", {}))}
-                    for entity, payload in zip(entities, edit["entities"])
+                    for entity, payload in zip(entities, edit_entities)
                 ],
                 "parameters": [parameter.to_dict() for parameter in parameters],
                 "relations": [relation.to_dict() for relation in relations],
@@ -722,6 +720,41 @@ def component_edit_proposal(
             },
         },
     }
+
+
+def _unregistered_kinds_as_intent(
+    payloads: Sequence[Any], existing: Mapping[str, Entity],
+) -> tuple[list[Any], list[tuple[str, str]]]:
+    """Component rows whose ``semantic_kind`` names no registered alias, kept unclassified.
+
+    The user's own word for a part ("wall", "墙") is not refused and not
+    matched to a nearby id: the geometry goes ahead, the component carries no
+    semantic_kind (an existing one keeps what it had), and the word is kept as
+    its intent when no intent was stated (#408). Returns the rows and the
+    ``(component, word)`` pairs moved this way.
+    """
+
+    rows: list[Any] = []
+    moved: list[tuple[str, str]] = []
+    for payload in payloads:
+        if not isinstance(payload, Mapping) or not isinstance(payload.get("fields"), Mapping):
+            rows.append(payload)  # malformed rows are refused by the typed path below
+            continue
+        fields = payload["fields"]
+        previous = existing.get(payload.get("entity_id"))
+        schema = payload.get("schema") or (previous.schema if previous is not None else None)
+        word = fields.get("semantic_kind")
+        if schema != "Component@1" or not isinstance(word, str) or not word.strip() or resolve_semantic_kind(word) is not None:
+            rows.append(payload)
+            continue
+        entity_id = str(payload.get("entity_id"))
+        fields = {key: value for key, value in fields.items() if key != "semantic_kind"}
+        stated = fields.get("intent", previous.fields.get("intent") if previous is not None else None)
+        if not isinstance(stated, str) or not stated.strip() or stated == entity_id:
+            fields["intent"] = word.strip()
+        rows.append({**payload, "fields": fields})
+        moved.append((entity_id, word.strip()))
+    return rows, moved
 
 
 @dataclass(frozen=True, slots=True)

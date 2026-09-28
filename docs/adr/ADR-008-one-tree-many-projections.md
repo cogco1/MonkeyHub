@@ -61,3 +61,38 @@ decision tree comes from two derived stores. Either store can be deleted at any 
 - Garbage-collect a cache entry without a grace window.
 - Add a poll or a per-surface copy beside the client store.
 - Keep a route's interim response memo after that route reads the index.
+
+**Phase 1b as built (#365, 2026-09-27):**
+- `archflow.project.index` owns the file, its stamp and its revision; the Studio's `StudioProjector` is the one projector. It
+  stores what `record_refs`, `_run_artifacts`, `_run_documents`, `_candidate_stage_source` and `design_history` already
+  return, per run and for the tree; it derives nothing new.
+- The Hub names the directory: the project's one cache directory, `<runtime root>/cache/projects/<runtime_id>`, reaches
+  the project runtime as `ARCHFLOW_STUDIO_CACHE_DIR`; the index keeps its file, `index.lock` and any `.corrupt-*` copy in
+  its `index` subdirectory, beside the projection cache's `projections`. Without that variable, no index is kept and
+  every route reads the runs.
+- `index.lock` beside the file is the writer lease. A second process that asks is refused and reads P036; its keeper
+  retries for a bounded time, since the holder may be a process that is exiting. Closing a binding (or collecting one
+  nobody closed, or a shared-project pull replacing it) stops its keeper and gives the lease up.
+- One `IndexKeeper` thread per index is its only writer. It hears of changes from the project's layout watch (#363): each
+  publication (`LayoutSighting`) carries the fingerprint's own lines and the directories a notification or a write asked
+  it to read again. This process's writes also reach it at once through the repository's write observer. No request
+  thread projects, stats or writes for the index; the projector runs before the write transaction opens.
+- Readers take one snapshot (one read transaction) for a whole listing. Any failure to read the index - loading,
+  rebuilding, SQLite refusing, a run whose reading failed when projected - makes the listing read the runs, so every
+  refusal stays the runs' own. A listing reads the index only once it holds every write this process made; until then
+  it waits up to `INDEX_CATCH_UP_S` for the keeper, and then reads the runs.
+- The projector version includes a digest of its own source and of the readers it stores, so a changed reader
+  rebuilds the index rather than trusting rows it no longer produces.
+- `place` keeps every layout line. A reopen diffs the lines and projects again only the runs (or the tree) whose
+  lines moved or were racy when written; a run that cites another place (a registered model's blob, a drawing
+  revision's receipt, the design branches for a candidate) is projected again when that place moves. HEAD and the
+  working draft are cited by no row: saving a draft or issuing a version projects nothing.
+- The revision moves once per commit that changed a row.
+- `/api/artifacts`, `/api/documents` and the byte routes' lookups read the index; they keep no whole-page memo once an
+  index answers, and their tag adds the index's epoch and revision to the process's token. It is stable only when the
+  index was projected under the token's own fingerprint and holds the token's writes. The process's `READ_EPOCH` stays
+  in every tag: the index's epoch survives a restart, the process's counters do not. Design history, worktrees,
+  working source and the board keep their phase-0a memo until they read the index.
+- Known limit: a file rewritten in place without a directory entry changing is seen only where a notification
+  (Windows) or this process's write names it. Byte routes still re-hash what they serve.
+- Deleted rows keep no tombstones yet; `since=<revision>` diffs belong to phase 2.

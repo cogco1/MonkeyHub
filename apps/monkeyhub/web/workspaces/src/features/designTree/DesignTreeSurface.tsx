@@ -107,7 +107,7 @@ export default function DesignTreeSurface({ data, markSeen, active, returnTo, on
         {!data.available ? t("designTree.unavailable") : data.status === "failed" && data.error ? <><ErrorPanel error={data.error} what="GET /api/design-history" />
           <button type="button" className="btn btn--small" onClick={data.reload}>{t("designTree.retry")}</button></> : t("designTree.loading")}
       </div> : mode === "canvas" ? <>
-        <DesignTreeCanvas tree={tree} words={words} selected={selected} fitRequest={fitRequest} centerOn={center} title={t("designTree.title")}
+        <DesignTreeCanvas tree={tree} source={data.source} words={words} selected={selected} fitRequest={fitRequest} centerOn={center} title={t("designTree.title")}
           onSelect={select} onAccept={acceptFromCanvas} onLevel={setLevel} />
         <p className="visually-hidden">{t("designTree.canvasNote")}</p>
       </> : <DesignTreeList tree={tree} words={words} selected={selected} onSelect={select} />}

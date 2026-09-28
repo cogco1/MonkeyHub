@@ -43,10 +43,11 @@ import math
 import os
 from pathlib import Path, PurePosixPath
 import re
+import sqlite3
 import struct
 import threading
 import zlib
-from typing import Any, Iterable, Mapping, NamedTuple
+from typing import Any, Callable, Iterable, Mapping, NamedTuple
 
 from PIL import Image, ImageOps
 from pypdf import PdfReader
@@ -58,6 +59,7 @@ from archflow.project.record_kinds import (
 )
 from archflow.adapters.three_dm_inspector import inspect_three_dm_contents, inspect_three_dm_index, ThreeDmInspectionError
 from archflow.adapters.cad_program import ROOT_LAYER
+from archflow.project.index import IndexUnavailable
 from archflow.project.layout import cad_workspace_path
 from archflow.project.memo import ContentMemo, PathStamps
 from archflow.project.ports import PersistenceArea, PersistenceDestination
@@ -363,12 +365,20 @@ def _document_pages(data: bytes, mime_type: str) -> tuple[DocumentPage, ...]:
         raise StudioError(422, "DOCUMENT_INVALID", "The source is not a complete, readable PDF, PNG or JPEG.") from exc
 
 
-def list_documents(binding: ProjectBinding, run_id: str | None = None) -> tuple[SourceDocument, ...]:
+def list_documents(
+    binding: ProjectBinding, run_id: str | None = None, *, indexed: bool = False,
+) -> tuple[SourceDocument, ...]:
     """Registered documents in one run, or across the bound project.
 
     One run's documents are kept per run under its stamp (``_run_documents``).
+    ``indexed`` reads the same rows from the project index when one answers
+    (``_indexed_documents``); a route's read asks for it, a write never does.
     """
 
+    if indexed:
+        documents = _indexed_documents(binding, run_id)
+        if documents is not None:
+            return documents
     if run_id is None:
         return _ordered_documents(
             document for source_run in binding.run_ids() for document in list_documents(binding, source_run)
@@ -440,9 +450,13 @@ def document_bytes(
 
     if not SHA256_HEX.fullmatch(asset_sha256):
         raise StudioError(422, "DOCUMENT_INVALID", "A source document is addressed by its SHA-256.")
-    # The registrations are remembered while the project is unchanged; the
-    # bytes themselves are read and verified again below on every call.
-    listed = binding.memo(("documents-listing", run_id), lambda: list_documents(binding, run_id))
+    # The registrations come from the index, or are remembered while the
+    # project is unchanged; the bytes themselves are read and verified again
+    # below on every call.
+    listed = _indexed_documents(binding, run_id)
+    if listed is None or not any(row.asset_sha256 == asset_sha256 for row in listed):
+        # Not in the index, or not in it yet: the runs answer, as they do without one.
+        listed = binding.memo(("documents-listing", run_id), lambda: list_documents(binding, run_id))
     document = next((row for row in listed if row.asset_sha256 == asset_sha256
                      and (revision_ref is None or row.revision_ref == revision_ref)
                      and (binding_ref is None or row.model_source_binding_ref == binding_ref)), None)
@@ -1145,13 +1159,20 @@ def read_model_preview(binding: ProjectBinding, source: ModelSource) -> SourceDo
 
 def list_artifacts(
     binding: ProjectBinding, *, run_id: str | None = None, include_candidate_sources: bool = False,
+    indexed: bool = False,
 ) -> ArtifactListing:
     """Certified artifacts in the requested run, or the whole project when omitted.
 
     Each run is read on its own and kept per run under its stamp
     (``_run_artifacts``); the project's listing is the runs' rows in run order.
+    ``indexed`` reads the same rows from the project index when one answers
+    (``_indexed_artifacts``); a route's read asks for it, a write never does.
     """
 
+    if indexed:
+        listing = _indexed_artifacts(binding, run_id, include_candidate_sources=include_candidate_sources)
+        if listing is not None:
+            return listing
     records: list[ArtifactRecord] = []
     skipped: list[str] = []
     for run_id in binding.run_ids() if run_id is None else (run_id,):
@@ -1159,13 +1180,27 @@ def list_artifacts(
         records.extend(rows)
         if unreadable:
             skipped.append(run_id)
-    if include_candidate_sources:
+    return _artifact_listing(
+        binding, records, skipped,
+        (lambda source_run: _candidate_stage_source(binding, source_run)) if include_candidate_sources else None,
+    )
+
+
+def _artifact_listing(
+    binding: ProjectBinding,
+    records: list[ArtifactRecord],
+    skipped: list[str],
+    source_of: Callable[[str], tuple[str, str] | None] | None,
+) -> ArtifactListing:
+    """The runs' rows, each marked with its candidate's committed source when asked, in listing order."""
+
+    if source_of is not None:
         sources: dict[str, tuple[str, str] | None] = {}
         for row_index, record in enumerate(records):
             if record.design_state_digest is None:
                 continue
             if record.run_id not in sources:
-                sources[record.run_id] = _candidate_stage_source(binding, record.run_id)
+                sources[record.run_id] = source_of(record.run_id)
             source = sources[record.run_id]
             if source is not None and source[0] == record.design_state_digest:
                 records[row_index] = replace(record, source_stage_ref=source[1])
@@ -1294,6 +1329,124 @@ def _run_documents(binding: ProjectBinding, run_id: str) -> tuple[SourceDocument
 
 def _handed_document(document: SourceDocument) -> SourceDocument:
     return document if document.view_recipe is None else replace(document, view_recipe=deepcopy(document.view_recipe))
+
+
+# ---- the same rows, read back from the project index (ADR-008 phase 1b) ----
+#
+# The projector (``application.index``) stores each run's rows exactly as
+# ``_run_artifacts`` and ``_run_documents`` produce them, and each candidate's
+# ``_candidate_stage_source``; a listing read from the index is those rows put
+# through the same ordering as a listing read from the runs. Where the index
+# holds no answer - it is not loaded, the run is not in it, or reading the run
+# failed when it was projected - the caller reads the runs itself, so that
+# every refusal is the one the runs give.
+
+
+def artifact_row_body(binding: ProjectBinding, row: ArtifactRecord) -> dict[str, Any]:
+    """One artifact row as the index keeps it: its file named relative to the project."""
+
+    body = asdict(row)
+    body["path"] = None if row.path is None else row.path.relative_to(binding.repository.layout.root).as_posix()
+    return body
+
+
+def _artifact_from_body(binding: ProjectBinding, body: Mapping[str, Any]) -> ArtifactRecord:
+    values = dict(body)
+    if values["path"] is not None:
+        values["path"] = binding.repository.layout.root.joinpath(*values["path"].split("/"))
+    if values["model_source"] is not None:
+        values["model_source"] = ModelSource(**values["model_source"])
+    return ArtifactRecord(**values)
+
+
+def document_row_body(document: SourceDocument) -> dict[str, Any]:
+    """One document row as the index keeps it."""
+
+    return asdict(document)
+
+
+def _document_from_body(body: Mapping[str, Any]) -> SourceDocument:
+    values = dict(body)
+    values["pages"] = tuple(DocumentPage(**page) for page in values["pages"])
+    values["replaces_pages"] = tuple(DocumentPageReplacement(**page) for page in values["replaces_pages"])
+    if values["model_source"] is not None:
+        values["model_source"] = ModelSource(**values["model_source"])
+    if values["attribution"] is not None:
+        values["attribution"] = ActorAttribution(**values["attribution"])
+    return SourceDocument(**values)
+
+
+def _indexed_rows(
+    binding: ProjectBinding, run_id: str | None, flag: str, table: str, filters: dict[str, str],
+    *, candidates: bool = False,
+) -> tuple[dict[str, Mapping[str, Any]], list[str], list[dict[str, Any]], dict[str, Any]] | None:
+    """The run rows, the runs a listing covers and its rows, all from one snapshot; None when it holds no answer.
+
+    One read transaction: an apply between two queries cannot pair one
+    commit's runs with another's rows. Any failure to read the index - not
+    loaded, behind this process's writes, rebuilding, or SQLite refusing -
+    is None, never an error: the caller reads the runs.
+    """
+
+    index = binding.index_reader()
+    if index is None:
+        return None
+    try:
+        with index.snapshot() as snapshot:
+            runs = {row["run_id"]: row["body"] for row in snapshot.rows("run", limit=None)}
+            if run_id is not None and run_id not in runs:
+                return None
+            selected = sorted(runs) if run_id is None else [run_id]
+            if any(runs[source_run].get(flag) for source_run in selected):
+                return None
+            if run_id is not None:
+                filters = {**filters, "run_id": run_id}
+            rows = snapshot.rows(table, filters, limit=None)
+            sources = ({row["run_id"]: row["body"]["source"] for row in snapshot.rows("candidate", limit=None)}
+                       if candidates else {})
+    except (IndexUnavailable, sqlite3.Error, KeyError, TypeError, ValueError):
+        return None
+    order = {source_run: position for position, source_run in enumerate(selected)}
+    rows = [row for row in rows if row["run_id"] in order]
+    rows.sort(key=lambda row: (order[row["run_id"]], row["position"]))
+    return runs, selected, rows, sources
+
+
+def _indexed_artifacts(
+    binding: ProjectBinding, run_id: str | None, *, include_candidate_sources: bool = False,
+    sha256: str | None = None,
+) -> ArtifactListing | None:
+    """``list_artifacts`` from the index; with ``sha256``, only the rows that claim it."""
+
+    found = _indexed_rows(binding, run_id, "artifacts_error", "artifact",
+                          {} if sha256 is None else {"sha256": sha256}, candidates=include_candidate_sources)
+    if found is None:
+        return None
+    runs, selected, rows, sources = found
+    try:
+        records = [_artifact_from_body(binding, row["body"]) for row in rows]
+    except (KeyError, TypeError, ValueError):
+        return None
+    return _artifact_listing(
+        binding,
+        records,
+        [source_run for source_run in selected if runs[source_run].get("artifacts_unreadable")],
+        (lambda source_run: None if sources.get(source_run) is None else tuple(sources[source_run]))
+        if include_candidate_sources else None,
+    )
+
+
+def _indexed_documents(binding: ProjectBinding, run_id: str | None) -> tuple[SourceDocument, ...] | None:
+    """``list_documents`` from the index."""
+
+    found = _indexed_rows(binding, run_id, "documents_error", "document", {})
+    if found is None:
+        return None
+    try:
+        documents = tuple(_document_from_body(row["body"]) for row in found[2])
+    except (KeyError, TypeError, ValueError):
+        return None
+    return documents if run_id is not None else _ordered_documents(documents)
 
 
 _CANDIDATE_SOURCES = ContentMemo("studio.candidate-sources", max_entries=4096)
@@ -2056,9 +2209,14 @@ def artifact_bytes(
             f"{sha256!r} is not an artifact digest: artifacts are addressed by "
             "the 64 lowercase hex characters of their sha256.",
         )
-    # Which receipt claims the digest is remembered while the project is
-    # unchanged; reading and hashing the claimed file is never skipped.
-    listing = binding.memo(("artifacts-listing", run_id), lambda: list_artifacts(binding, run_id=run_id))
+    # Which receipt claims the digest comes from the index, or is remembered
+    # while the project is unchanged; reading and hashing the claimed file is
+    # never skipped.
+    listing = _indexed_artifacts(binding, run_id, sha256=sha256)
+    if listing is None or not listing.artifacts:
+        # Not in the index, or not in it yet (another process's write the
+        # index has not applied): the runs answer, as they do without one.
+        listing = binding.memo(("artifacts-listing", run_id), lambda: list_artifacts(binding, run_id=run_id))
     claiming = [item for item in listing.artifacts if item.sha256 == sha256]
     if not claiming:
         raise StudioError(

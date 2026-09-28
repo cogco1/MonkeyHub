@@ -373,12 +373,15 @@ class SketchNewComponentTestCase(unittest.TestCase):
         self.assertIn("portico", body["detail"], body["detail"])
         self.assertIn("Nothing was run", body["detail"])
 
-    def test_a_new_component_with_no_stated_kind_is_asked_what_it_is(self) -> None:
+    def test_a_new_component_with_no_stated_kind_is_created_without_one(self) -> None:
+        # Geometry first (#400): what the part is stays unsaid rather than asked or guessed.
         status, body = self.draw(componentId="small-house", parentComponentId="portico",
                                  elementId="small-house-main")
-        self.assertEqual(status, 422, body)
-        self.assertEqual(body["code"], "COMPONENT_KIND_REQUIRED")
-        self.assertIn("semanticKind", body["detail"])
+        self.assertEqual(status, 201, body)
+        component = next(entity for entity in body["change"]["edits"]["entities"] if entity["entity_id"] == "small-house")
+        self.assertEqual(component["schema"], "Component@1")
+        self.assertEqual(component["parent_id"], "portico")
+        self.assertNotIn("semantic_kind", component["fields"])
 
     def test_a_new_component_under_a_built_one_is_created_and_exported(self) -> None:
         status, proposal = self.draw(componentId="small-house", parentComponentId="portico", semanticKind="building",

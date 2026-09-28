@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useStudio } from "../../api/ProjectRuntimeContext";
 import type { ModelSourceDto } from "../../api/generated";
-import { MODEL_PREVIEW_RETAINED, previewSourceKey } from "./useRetainedModelPreview";
+import { MODEL_PREVIEW_RETAINED, previewSourceKey, readModelPreview } from "./useRetainedModelPreview";
 import "./modelThumbnail.css";
 
 /** A retained image is optional; no source or failed reads always show the model icon. */
@@ -29,11 +29,9 @@ export function ModelThumbnail({ source }: { source: ModelSourceDto | null | und
     if (!visible || !source) return;
     let live = true, url: string | null = null;
     setImage(null);
-    void studio.modelPreview(source).then(async (document) => {
-      if (!live || !document || previewSourceKey(document.modelSource) !== key) return;
-      const file = await studio.documentFile(document.runId, document.assetSha256, document.fileName, document.revisionRef);
-      if (!live) return;
-      url = URL.createObjectURL(file);
+    void readModelPreview(studio, source).then(async (preview) => {
+      if (!live || !preview) return;
+      url = URL.createObjectURL(preview.file);
       const decoded = new Image(); decoded.src = url;
       await decoded.decode();
       if (live) setImage({ key, url });

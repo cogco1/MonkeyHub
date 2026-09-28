@@ -8,7 +8,7 @@ from monkeyarch.compilers.geometry import (
     GeometryIssueCode,
     compile_geometry_program,
 )
-from archflow.state.spatial import ComponentMaturity, DesignComponent, SpatialProposalError, compile_component_transition
+from archflow.state.spatial import NEUTRAL_SEMANTIC_KIND, ComponentMaturity, DesignComponent, SpatialProposalError, compile_component_transition
 from archflow.state.geometry_program import SemanticBinding
 from tests.test_design_portfolio import EVIDENCE, _option
 from tests.test_geometry_compiler import COMMITMENT, _proposal, _state
@@ -202,6 +202,30 @@ class SemanticGeometryTreeTests(unittest.TestCase):
                         if item.component_id != "portico"
                     ),
                 ),
+            )
+
+    def test_an_unclassified_component_gains_meaning_but_a_stated_one_keeps_it(
+        self,
+    ) -> None:
+        """Neutral -> enclosure is enrichment; enclosure -> column is a change of meaning (#408)."""
+
+        coarse = _coarse_proposal()
+
+        def with_dome(proposal, **changes):
+            return replace(proposal, components=tuple(
+                replace(item, **changes) if item.component_id == "dome" else item
+                for item in proposal.components
+            ))
+
+        neutral = with_dome(coarse, semantic_kind=NEUTRAL_SEMANTIC_KIND)
+        dome = next(item for item in neutral.components if item.component_id == "dome")
+        enclosure = with_dome(neutral, semantic_kind="enclosure", revision=dome.revision + 1)
+        receipt = compile_component_transition(neutral, enclosure)
+        self.assertIn("dome", receipt.changed_component_ids)
+        with self.assertRaisesRegex(SpatialProposalError, "changed meaning"):
+            compile_component_transition(
+                enclosure,
+                with_dome(enclosure, semantic_kind="column", revision=dome.revision + 2),
             )
 
     def test_geometry_objects_require_one_semantic_component_owner(self) -> None:

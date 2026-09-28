@@ -192,7 +192,7 @@ const releaseStudioStarts = () => {
   emitRuntime();
 };
 page.on("pageerror", (error) => errors.push(error.message));
-await page.route((url) => url.pathname.startsWith("/api/"), async (route) => {
+const hubApi = async (route) => {
   const req = route.request(), url = new URL(req.url()), method = req.method();
   if (url.pathname === "/api/runtime/events") return route.continue();
   if (/^\/api\/runtime\/projects\/[^/]+\/studio\//.test(url.pathname)) {
@@ -531,7 +531,8 @@ await page.route((url) => url.pathname.startsWith("/api/"), async (route) => {
     return json(session);
   }
   errors.push(`Unexpected request: ${method} ${url.pathname}`); return json({ detail: "Unexpected fixture request" }, 404);
-});
+};
+await page.route((url) => url.pathname.startsWith("/api/"), hubApi);
 const railWidth = () => page.evaluate(() => document.querySelector(".chat-rail").getBoundingClientRect().width);
 // GH-302: Hub settings have no Save button; each change saves itself and the status line says Saved.
 const settingsSaved = () => page.waitForFunction(() => document.querySelector("#settings-save-state")?.dataset.state === "saved");
@@ -590,6 +591,18 @@ const addAttachments = async (files) => {
   await composerMenu().click();
   await page.getByRole("menuitem", { name: "Add attachments", exact: true }).click();
   await (await chooser).setFiles(files);
+};
+/**
+ * #411: the address bar follows the selected surface from an effect after render, so a
+ * DOM condition can hold before the URL does. Wait for the URL itself; a wrong one still fails.
+ */
+const urlParamIs = async (name, expected, message) => {
+  try {
+    await page.waitForFunction(([key, value]) => new URLSearchParams(location.search).get(key) === value, [name, expected], { timeout: 5000 });
+  } catch (error) {
+    assert.equal(new URL(page.url()).searchParams.get(name), expected, message);
+    throw error;
+  }
 };
 const contextReady = () => page.waitForFunction(() => document.querySelector(".chat-composer")?.dataset.context === "ready");
 const waitWorkspace = async (kind = "arch") => {
@@ -766,6 +779,42 @@ const autosavedModelRestart = async () => {
   updateStatus = { ...updateStatus, state: "idle", prepared: null, canApply: false };
   await page.evaluate(() => localStorage.removeItem("monkeyhub.chat-view.v1"));
 };
+/**
+ * #364: a Hub left open on a project's Design Tree, with nothing changing, asks for less than ten
+ * things a minute. It runs in a page of its own on Playwright's clock, paused and moved a second at a
+ * time, so the minute is exact and takes seconds. The same walk counted 94 against main before
+ * #364 (38138370): build that checkout's web and run MONKEYHUB_WEB_DIST=<its dist> MONKEYHUB_UI_FOCUS=idle.
+ */
+async function idleMinute() {
+  if (!projects.some((row) => row.projectId === "T")) projects.push({ projectId: "T", projectDir: "D:\\fixture\\T", name: "Tree project", chatCount: 0, version: 2, stage: "S2" });
+  workspaceFixture.designTrees.set("T", { stages: ["tree-s0", "tree-s1", "tree-s2"], edits: ["tree-e2", "tree-e1"] });
+  const idle = await browser.newPage({ viewport: { width: 1440, height: 960 } });
+  idle.setDefaultTimeout(12000);
+  idle.on("pageerror", (error) => errors.push(error.message));
+  await idle.route((url) => url.pathname.startsWith("/api/"), hubApi);
+  await idle.clock.install();
+  try {
+    await idle.goto(origin);
+    await idle.getByRole("button", { name: "Tree project", exact: true }).first().click();
+    await idle.waitForFunction(() => ["Modeling", "Board"].every((label) =>
+      document.querySelector(`.chat-rail__tool[aria-label="${label}"]`)?.dataset.state === "running"));
+    await idle.waitForFunction(() => document.querySelector(".chat-composer")?.dataset.context === "ready");
+    await idle.getByRole("button", { name: "Design tree", exact: true }).click();
+    await idle.locator(".chat-project-workspace:not([hidden]) .design-tree").waitFor();
+    await idle.clock.pauseAt(await idle.evaluate(() => Date.now()) + 1000);
+    // Each second's answers land before the next second starts.
+    const seconds = async (count) => { for (let second = 0; second < count; second++) { await idle.clock.runFor(1000); await idle.waitForTimeout(100); } };
+    await seconds(5);
+    const asked = [], notModifiedBefore = workspaceFixture.notModified.length;
+    const listen = (request) => { const url = new URL(request.url()); if (url.pathname.startsWith("/api/")) asked.push(url.pathname.replace(/^\/api\/runtime\/projects\/[^/]+\/studio/, "(runtime)")); };
+    idle.on("request", listen);
+    await seconds(60);
+    idle.off("request", listen);
+    const byPath = asked.reduce((counts, name) => ({ ...counts, [name]: (counts[name] ?? 0) + 1 }), {});
+    console.log(JSON.stringify({ idleMinute: asked.length, byPath, notModified: workspaceFixture.notModified.length - notModifiedBefore }));
+    assert.ok(asked.length < 10, `an idle minute on the Design Tree asked for ${asked.length} things: ${JSON.stringify(byPath)}`);
+  } finally { await idle.close(); }
+}
 try {
   if (process.env.MONKEYHUB_UI_FOCUS === "accessibility") {
     const cdp = await page.context().newCDPSession(page);
@@ -950,6 +999,8 @@ try {
     await page.goto(origin);
     await composerMenu("附件与新话题").waitFor();
     await page.locator(".chat-composer").screenshot({ path: path.join(temporary, "composer-zh.png") });
+  } else if (process.env.MONKEYHUB_UI_FOCUS === "idle") {
+    await idleMinute();
   } else {
   if (process.env.MONKEYHUB_UI_FOCUS !== "updates") {
   await page.goto(origin);
@@ -1386,7 +1437,7 @@ try {
   await study.getByRole("button", { name: "View", exact: true }).click();
   await visibleWorkspace().locator('[data-project-surface="tree"]:not([hidden])').waitFor();
   assert.equal(await page.getByRole("button", { name: "Design tree", exact: true }).getAttribute("aria-pressed"), "true");
-  assert.equal(new URL(page.url()).searchParams.get("view"), "tree");
+  await urlParamIs("view", "tree");
   await viewCandidate("cand-A-1");
   const originalPanelWidth = Number(await page.locator('.chat-resizer').getAttribute('aria-valuenow'));
   await page.setViewportSize({ width: 1920, height: 960 });
@@ -1455,7 +1506,7 @@ try {
     await waitWorkspace(kind);
     if (kind === "board") assert.equal(await visibleWorkspace().getByLabel("Board title", { exact: true }).inputValue(), "Board A retained");
     if (kind === "drawing") {
-      assert.equal(new URL(page.url()).searchParams.get("view"), "drawing");
+      await urlParamIs("view", "drawing");
       assert.equal(await visibleWorkspace().locator('[data-project-surface="arch"]').isVisible(), false);
       assert.equal(await visibleWorkspace().locator('[data-project-surface="board"]').isVisible(), false);
     }
@@ -1478,7 +1529,7 @@ try {
     assert.equal(await drawingTool.getAttribute("aria-pressed"), "true");
     assert.equal(await surface.getAttribute("aria-pressed"), "false");
     assert.equal(await drawingTool.getAttribute("title"), `Close Drawings and return to ${label}`);
-    assert.equal(new URL(page.url()).searchParams.get("runtimeId"), runtimeA, "Drawing stays on this project's runtime");
+    await urlParamIs("runtimeId", runtimeA, "Drawing stays on this project's runtime");
     assert.equal(await page.locator(".chat-header__project").innerText(), "Project A");
     assert.equal(await visibleWorkspace().evaluate((element) => element.switchMarker), "retained",
       "Drawing is the same mounted project workspace, not a new project context");
@@ -1494,8 +1545,8 @@ try {
     await waitWorkspace(kind);
     assert.equal(await surface.getAttribute("aria-pressed"), "true", `leaving Drawing returns to ${label}`);
     assert.equal(await drawingTool.getAttribute("aria-pressed"), "false");
-    assert.equal(new URL(page.url()).searchParams.get("view"), kind);
-    assert.equal(new URL(page.url()).searchParams.get("runtimeId"), runtimeA);
+    await urlParamIs("view", kind);
+    await urlParamIs("runtimeId", runtimeA);
     if (kind === "board") assert.equal(await visibleWorkspace().getByLabel("Board title", { exact: true }).inputValue(), "Board A retained");
   }
   assert.deepEqual(await editingBase(), baseBeforeDrawing, "visiting Drawing leaves the editing base and the viewed model as they were");
@@ -1837,7 +1888,7 @@ try {
   await boardModes.getByRole("radio", { name: "Layout", exact: true }).click();
   const layoutTitle = visibleWorkspace().getByLabel("Publication title", { exact: true });
   await layoutTitle.waitFor();
-  assert.equal(new URL(page.url()).searchParams.get("view"), "publish");
+  await urlParamIs("view", "publish");
   assert.equal(await page.getByRole("button", { name: "Board", exact: true }).getAttribute("aria-pressed"), "true", "Board stays pressed in Layout");
   assert.equal(await boardModes.getByRole("radio", { name: "Layout", exact: true }).getAttribute("aria-checked"), "true");
   await layoutTitle.fill("Layout B draft");
@@ -2159,12 +2210,21 @@ try {
   await diagnostics.uncheck();
   const englishStageLabel = await visibleWorkspace().locator(".stage").getAttribute("aria-label");
   await settingsPage("Display");
-  await page.locator("#theme").selectOption("dark");
+  await page.locator("#theme").selectOption("dark"); await settingsSaved();
+  // GH-381: a choice made while the previous one is still being saved is saved
+  // after it, even when it equals what was saved before that.
+  let releaseChinese; settingsWriteGate = new Promise((resolve) => { releaseChinese = resolve; });
+  const chineseWrite = page.waitForRequest((req) => req.method() === "PUT" && new URL(req.url()).pathname === "/api/settings/user");
   await page.locator("#language").selectOption("zh-CN");
+  await chineseWrite;
   assert.equal(await page.locator("html").getAttribute("lang"), "zh-CN");
   assert.notEqual(await visibleWorkspace().locator(".stage").getAttribute("aria-label"), englishStageLabel, "workspace language follows Hub context");
   assert.equal(await page.locator("html").getAttribute("data-theme"), "dark");
   await page.locator("#language").selectOption("en");
+  settingsWriteGate = null; releaseChinese();
+  await page.waitForFunction(() => document.querySelector("#settings-save-state")?.dataset.state !== "saving");
+  assert.equal(await page.locator("#settings-save-state").getAttribute("data-state"), "saved");
+  assert.equal(preferences.language, "en", "the last language chosen is the one the Hub keeps");
   await page.getByRole("dialog").getByRole("button", { name: "Close", exact: true }).click();
   await page.screenshot({ path: path.join(temporary, "dark.png"), fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 });
@@ -2508,7 +2568,7 @@ try {
   await waitWorkspace();
   await page.getByRole("button", { name: "Fabrication", exact: true }).click();
   await page.waitForFunction(() => document.querySelector("iframe:not([hidden])")?.src.includes("view=fab"));
-  assert.equal(new URL(page.url()).searchParams.has("runtimeId"), false);
+  await urlParamIs("runtimeId", null);
   await page.reload();
   await page.waitForFunction(() => document.querySelector("iframe:not([hidden])")?.src.includes("view=fab"));
   assert.equal(await page.locator('.chat-project[data-selected="true"] .chat-project__name').innerText(), "Project B");
@@ -2545,7 +2605,7 @@ try {
   await contextReady();
   assert.equal(await visibleWorkspace().locator(".stage canvas").count(), 0, "Board-first context uses the same session without opening Arch");
   assert.equal(await page.getByRole("button", { name: "Board", exact: true }).getAttribute("aria-pressed"), "true");
-  assert.equal(new URL(page.url()).searchParams.get("view"), "board");
+  await urlParamIs("view", "board");
 
   // archive export and restore dialogs show the summary — a whole project
   // leaves and comes back as one file, and each dialog states what that file
@@ -3484,6 +3544,8 @@ try {
   updateApplyResponse = "normal";
   await page.keyboard.press("Escape");
   await page.getByRole("dialog").waitFor({ state: "hidden" });
+  updateStatus = { ...updateStatus, state: "idle", prepared: null, canApply: false, error: null };
+  await idleMinute();
   }
   assert.deepEqual(errors, []);
   console.log(JSON.stringify({ passed: true, sessions: sessions.length, writes: writes.length, screenshots: temporary }));

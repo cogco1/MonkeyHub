@@ -27,6 +27,13 @@ How the watch learns that something moved:
   a synced folder or a restore that sets old times can change a project
   without a notification or a new time.
 
+Whoever keeps something derived from the tree beside the digest - the project
+index (``archflow.project.index``) - asks for every publication with
+``add_listener``: a ``LayoutSighting`` carries the fingerprint's own lines,
+so the listener can tell which directories moved, and the directories a
+notification or a write named in that pass, whose files may have changed in
+place without moving anything the lines state.
+
 The fingerprint is the one ``layout_fingerprint`` gives for the same tree: the
 same lines (``LayoutFingerprint.from_lines``), the same traversal
 (``is_layout_directory``: no link and no junction is walked into) and the same
@@ -110,6 +117,24 @@ class WatchedLayout:
     serial: int
     generation: int
     notified: bool
+
+
+@dataclass(frozen=True, slots=True)
+class LayoutSighting:
+    """One publication of a watch, as a listener (``LayoutWatch.add_listener``) is told it.
+
+    ``lines`` are the fingerprint's own lines (``LayoutFingerprint.from_lines``):
+    one per directory, per unreadable listing and per pointer file, so two
+    sightings differ in exactly the lines of what moved between them.
+    ``reread`` names the directories a notification or this process's write
+    asked the pass to read again, as POSIX paths relative to the root (""
+    for the root): a file rewritten in place moves no line, only this.
+    """
+
+    layout: WatchedLayout
+    lines: tuple[str, ...]
+    scanned_at_ns: int
+    reread: frozenset[str] = frozenset()
 
 
 class _Stopped(Exception):
@@ -228,8 +253,8 @@ class _Tree:
                 return found, end == len(parts)
         return "", not parts
 
-    def fingerprint(self, scanned_at_ns: int) -> tuple[LayoutFingerprint, bool]:
-        """The fingerprint of the tree as it stands, and whether anything in it was unreadable."""
+    def fingerprint(self, scanned_at_ns: int) -> tuple[LayoutFingerprint, bool, tuple[str, ...]]:
+        """The fingerprint of the tree as it stands, whether anything in it was unreadable, and its lines."""
 
         lines: list[str] = []
         newest = 0
@@ -253,7 +278,7 @@ class _Tree:
         unreadable = unreadable or pointer_unreadable
         return LayoutFingerprint.from_lines(
             lines, newest_mtime_ns=max(newest, pointer_newest), scanned_at_ns=scanned_at_ns, unreadable=unreadable,
-        ), unreadable
+        ), unreadable, tuple(lines)
 
     # ---- one directory at a time
 
@@ -565,6 +590,11 @@ class LayoutWatch:
         self._first = threading.Event()
         self._thread: threading.Thread | None = None
         self._stopped = False
+        # ``add_listener``: who is told every publication, who has yet to be
+        # told the last one, and that last one.
+        self._listeners: tuple[Callable[[LayoutSighting], object], ...] = ()
+        self._unseen: list[Callable[[LayoutSighting], object]] = []
+        self._sighting: LayoutSighting | None = None
         # Kept by the watch's own thread only.
         self._notifier: _Notifier | None = None
         self._identity: tuple[int, int] | None = None
@@ -650,6 +680,43 @@ class LayoutWatch:
             self._touched.append(os.fspath(path))
         self._signal.set()
 
+    def add_listener(self, callback: Callable[[LayoutSighting], object]) -> Callable[[], None]:
+        """Tell ``callback`` every publication from now on, and the last one at once if there is one.
+
+        It runs on the watch's thread, after the publication is visible to
+        readers, so it must be quick: queue and return. One that raises is
+        logged and never stops the watch. Returns the function that removes it.
+        """
+
+        with self._lock:
+            self._listeners = (*self._listeners, callback)
+            self._unseen.append(callback)
+        self._signal.set()
+
+        def remove() -> None:
+            with self._lock:
+                self._listeners = tuple(item for item in self._listeners if item is not callback)
+                self._unseen = [item for item in self._unseen if item is not callback]
+
+        return remove
+
+    def _tell(self, listeners, sighting: LayoutSighting) -> None:
+        for listener in listeners:
+            try:
+                listener(sighting)
+            except Exception:  # noqa: BLE001 - a listener never stops the watch
+                _LOG.exception("layout watch listener of %s failed", self.root)
+
+    def _greet(self) -> None:
+        """Tell listeners added since the last publication what that publication was."""
+
+        with self._lock:
+            sighting = self._sighting
+            if sighting is None or not self._unseen:
+                return
+            unseen, self._unseen = self._unseen, []
+        self._tell(unseen, sighting)
+
     # ---- life
 
     def start(self) -> None:
@@ -713,6 +780,7 @@ class LayoutWatch:
     def _watch(self) -> None:
         while not self._stopping:
             _release_collected()
+            self._greet()
             now = _monotonic()
             if self._notifier is None and self.notify and now >= self._retry_at and self._open_notifier():
                 # Changes before the read was armed were never reported.
@@ -767,6 +835,7 @@ class LayoutWatch:
             ticket = self._sync_wanted
         scanned_at_ns = _time_ns()
         tree = self._tree
+        reread: frozenset[str] = frozenset()
         if kind == "walk":
             self._full = False
             self._clear_dirty()
@@ -777,6 +846,7 @@ class LayoutWatch:
             tree.refresh_all(self._is_stopping)
         elif kind == "dirty":
             dirty, pointers = self._dirty, self._pointers_dirty
+            reread = frozenset(dirty)
             self._clear_dirty()
             tree.refresh(dirty, self._is_stopping)
             if pointers:
@@ -785,10 +855,10 @@ class LayoutWatch:
             tree.refresh(tree.young(), self._is_stopping)
             if tree.pointers_young():
                 tree.read_pointers()
-        fingerprint, unreadable = tree.fingerprint(scanned_at_ns)
+        fingerprint, unreadable, lines = tree.fingerprint(scanned_at_ns)
         self.passes[kind] += 1
         self._failing = 0
-        self._publish(fingerprint, serial, ticket if kind == "walk" else None)
+        self._publish(fingerprint, serial, ticket if kind == "walk" else None, lines, reread)
         finished = _monotonic()
         if self._notifier is None:
             self._poll_at = max(started + POLL_S, finished + POLL_S / 4)
@@ -804,14 +874,23 @@ class LayoutWatch:
         self._pointers_dirty = False
         self._dirty_since = None
 
-    def _publish(self, fingerprint: LayoutFingerprint, serial: int, ticket: int | None) -> None:
+    def _publish(self, fingerprint: LayoutFingerprint, serial: int, ticket: int | None,
+                 lines: tuple[str, ...] = (), reread: frozenset[str] = frozenset()) -> None:
         with self._published_changed:
             self._generation += 1
-            self._published = WatchedLayout(fingerprint, serial, self._generation, self._notifier is not None)
+            published = WatchedLayout(fingerprint, serial, self._generation, self._notifier is not None)
+            self._published = published
             if ticket is not None:
                 self._sync_done = max(self._sync_done, ticket)
             self._published_changed.notify_all()
         self._first.set()
+        sighting = LayoutSighting(published, lines, fingerprint.scanned_at_ns, reread)
+        with self._lock:
+            self._sighting = sighting
+            # Whoever was waiting to be greeted hears this one instead.
+            self._unseen = []
+            listeners = self._listeners
+        self._tell(listeners, sighting)
 
     def _publish_unsettled(self) -> None:
         """Say the last fingerprint can no longer be trusted, keeping its digest.
@@ -984,6 +1063,9 @@ class LayoutLease:
 
     def sync(self, timeout: float = 30.0) -> WatchedLayout:
         return self.watch.sync(timeout)
+
+    def add_listener(self, callback: Callable[[LayoutSighting], object]) -> Callable[[], None]:
+        return self.watch.add_listener(callback)
 
     @property
     def released(self) -> bool:

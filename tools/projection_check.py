@@ -1,7 +1,8 @@
 """Compare a candidate code root's projections with a base's on one project (GH-376).
 
     python tools/projection_check.py --base <code-root> --candidate <code-root> \\
-        --project <project-dir> --out <result.json> [--summary <summary.md>]
+        --project <project-dir> --out <result.json> [--summary <summary.md>] \\
+        [--index-dir <cache-dir>]
 
 The project is copied once into a scratch directory under its own folder name
 and every step reads that one copy:
@@ -19,6 +20,13 @@ A candidate that tags its answers (ADR-008 conditional reads) must also answer
 artifact bytes ``immutable``; a base that predates them is not asked. Timings
 are reported, and fail only when the candidate's cold read is both more than
 twice the base's and more than 200 ms slower.
+
+With ``--index-dir`` (opt-in, ADR-008 phase 1b) the candidate runs with that
+directory, outside the project copy, as its project cache directory, keeps its
+project index in ``<dir>/index`` and waits for the index to
+load before its cold reads; the result then says how the index loaded, how
+long that took and where it stood after the write. What is compared and judged
+does not change. Without it the candidate keeps no index.
 
 Each side runs in its own interpreter with ``<code-root>`` and
 ``<code-root>/apps/archflow-studio/api`` first on ``sys.path`` and refuses to
@@ -57,6 +65,8 @@ SLOWER_MS = 200.0
 # project is settled (older than any racy window) before a side reads it.
 SETTLED_AGE_NS = 3600 * 1_000_000_000
 STUDIO_API = Path("apps") / "archflow-studio" / "api"
+# How long an opt-in index (``--index-dir``) is waited for to load or catch up.
+INDEX_WAIT_S = 600.0
 
 
 # ---- the project copy --------------------------------------------------------
@@ -138,7 +148,16 @@ def _first_candidate(client: Any) -> str | None:
     return next((row["candidateId"] for row in history.get("candidates", ()) if row.get("candidateId")), None)
 
 
-def _worker(code_root: Path, project_dir: Path, mode: str, bodies: Path) -> dict[str, Any]:
+def _index_state(binding: Any) -> dict[str, Any]:
+    state = binding.index_state()
+    if state is None:
+        return {"state": None}
+    return {"epoch": state.token.epoch, "revision": state.token.revision,
+            "readable": binding.index_reader(wait=INDEX_WAIT_S) is not None}
+
+
+def _worker(code_root: Path, project_dir: Path, mode: str, bodies: Path,
+            index_dir: Path | None = None) -> dict[str, Any]:
     _bind(code_root)
     from fastapi.testclient import TestClient
     from archflow_studio_api.main import create_app
@@ -146,7 +165,23 @@ def _worker(code_root: Path, project_dir: Path, mode: str, bodies: Path) -> dict
     import archflow
 
     result: dict[str, Any] = {"mode": mode, "archflow": str(Path(archflow.__file__).resolve())}
-    with TestClient(create_app(StudioSettings(project_dir=project_dir))) as client:
+    settings = StudioSettings(project_dir=project_dir, **({} if index_dir is None else {"cache_dir": index_dir}))
+    app = create_app(settings)
+    with TestClient(app) as client:
+        binding = None
+        if index_dir is not None:
+            from archflow_studio_api.application.binding import bound_project
+
+            started = time.perf_counter()
+            binding = bound_project(app.state)
+            keeper = binding.await_index(INDEX_WAIT_S)
+            result["index"] = {
+                "dir": str(index_dir / "index"),
+                "loaded": None if keeper is None else keeper.index.loaded,
+                "loadMs": (time.perf_counter() - started) * 1000.0,
+                "failure": getattr(binding._index_keeper, "failure", None) if keeper is None else None,
+                **_index_state(binding),
+            }
         if mode == "read":
             result["reads"] = _read_all(client, bodies / "reads")
             return result
@@ -171,6 +206,8 @@ def _worker(code_root: Path, project_dir: Path, mode: str, bodies: Path) -> dict
         result["write"] = write
         after = _read_all(client, bodies / "after")
         result["after"] = after
+        if binding is not None:
+            result["index"]["afterWrite"] = _index_state(binding)
         if supports:
             result["afterWrite"] = _after_write(client, subject, cold, after)
             result["artifactBytes"] = _artifact_bytes(client)
@@ -217,7 +254,8 @@ def _slug(route: str) -> str:
     return route.strip("/").replace("/", "_").replace("?", "__").replace("=", "-").replace("&", "_") + ".body"
 
 
-def run_side(code_root: Path, project_dir: Path, mode: str, work: Path, name: str) -> dict[str, Any]:
+def run_side(code_root: Path, project_dir: Path, mode: str, work: Path, name: str,
+             index_dir: Path | None = None) -> dict[str, Any]:
     """Run one side in a fresh interpreter and answer what it measured."""
 
     out = work / f"{name}.json"
@@ -226,7 +264,7 @@ def run_side(code_root: Path, project_dir: Path, mode: str, work: Path, name: st
     completed = subprocess.run(
         [sys.executable, str(Path(__file__).resolve()), "worker", "--code-root", str(code_root),
          "--project-dir", str(project_dir), "--mode", mode, "--bodies", str(work / "bodies" / name),
-         "--out", str(out)],
+         "--out", str(out), *(() if index_dir is None else ("--index-dir", str(index_dir)))],
         env=env, cwd=str(work), capture_output=True, text=True, encoding="utf-8", errors="replace",
     )
     if completed.returncode != 0:
@@ -368,6 +406,12 @@ def summary_markdown(result: Mapping[str, Any]) -> str:
         lines.append(f"Conditional reads: {passed}/{len(verdict['conditional'])} checks passed.")
     else:
         lines.append("Conditional reads: the candidate tags no answer; not checked.")
+    index = result.get("index")
+    if index:
+        lines.append(f"Index (opt-in): {index.get('loaded') or 'not used'} in {_ms(index.get('loadMs'))} ms, "
+                     f"revision {index.get('revision')}; after the write revision "
+                     f"{index.get('afterWrite', {}).get('revision')}"
+                     + (f"; failure: {index['failure']}" if index.get("failure") else "") + ".")
     if verdict["failures"]:
         lines += ["", "**Failures**", ""] + [f"- {failure}" for failure in verdict["failures"]]
     for route, text in result.get("differences", {}).items():
@@ -384,13 +428,15 @@ def _revision(root: Path) -> str:
         return "unknown"
 
 
-def check(base: Path, candidate: Path, project: Path, work: Path) -> dict[str, Any]:
-    """Run the three steps on one scratch copy and judge them."""
+def check(base: Path, candidate: Path, project: Path, work: Path, index_dir: Path | None = None) -> dict[str, Any]:
+    """Run the three steps on one scratch copy and judge them; the candidate keeps an index only when asked."""
 
     copy = scratch_copy(project, work / "project")
+    if index_dir is not None and index_dir.is_relative_to(copy):
+        raise SystemExit(f"--index-dir must be outside the project copy {copy}")
     base_before = run_side(base, copy, "read", work, "base-before")
     settle(copy)
-    candidate_side = run_side(candidate, copy, "candidate", work, "candidate")
+    candidate_side = run_side(candidate, copy, "candidate", work, "candidate", index_dir)
     base_after = run_side(base, copy, "read", work, "base-after")
     verdict = evaluate(base_before["reads"], base_after["reads"], candidate_side)
     differences: dict[str, str] = {}
@@ -413,6 +459,7 @@ def check(base: Path, candidate: Path, project: Path, work: Path) -> dict[str, A
         "project": {"name": project.name, "runs": sum(1 for path in (project / "runs").iterdir() if path.is_dir()),
                     "jsonFiles": sum(1 for _ in project.rglob("*.json"))},
         "write": candidate_side.get("write", {}),
+        "index": candidate_side.get("index"),
         "sides": {"baseBefore": base_before, "candidate": candidate_side, "baseAfter": base_after},
         "verdict": verdict,
         "differences": differences,
@@ -428,8 +475,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         parser.add_argument("--mode", choices=("read", "candidate"), required=True)
         parser.add_argument("--bodies", type=Path, required=True)
         parser.add_argument("--out", type=Path, required=True)
+        parser.add_argument("--index-dir", type=Path)
         options = parser.parse_args(arguments[1:])
-        result = _worker(options.code_root.resolve(), options.project_dir.resolve(), options.mode, options.bodies)
+        result = _worker(options.code_root.resolve(), options.project_dir.resolve(), options.mode, options.bodies,
+                         None if options.index_dir is None else options.index_dir.resolve())
         _write(options.out, json.dumps(result, indent=2).encode("utf-8"))
         return 0
 
@@ -440,9 +489,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--out", type=Path, required=True, help="where to write the JSON result")
     parser.add_argument("--summary", type=Path, help="where to write the Markdown summary")
     parser.add_argument("--work", type=Path, help="scratch directory (default: a new temporary one)")
+    parser.add_argument("--index-dir", type=Path,
+                        help="opt-in: the candidate's project cache directory (outside the project); it keeps its "
+                             "project index in <dir>/index and waits "
+                             "for it to load; what is judged does not change")
     options = parser.parse_args(arguments)
     work = (options.work or Path(tempfile.mkdtemp(prefix="projection-check-"))).resolve()
-    result = check(options.base.resolve(), options.candidate.resolve(), options.project.resolve(), work)
+    result = check(options.base.resolve(), options.candidate.resolve(), options.project.resolve(), work,
+                   None if options.index_dir is None else options.index_dir.resolve())
     _write(options.out, json.dumps(result, indent=2, ensure_ascii=False).encode("utf-8"))
     text = summary_markdown(result)
     if options.summary is not None:

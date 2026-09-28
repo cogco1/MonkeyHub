@@ -1,0 +1,845 @@
+"""The project index: one SQLite file of rows derived from a project (ADR-008 phase 1b).
+
+P036 stays the only source of truth. The index holds what one projector
+derives from it, per run and for the design tree, so that a reader can ask
+"which run, which artifact, which stage" without reading the records again.
+It can be deleted at any time; the next load builds it again.
+
+- One file per project, in a cache directory the caller names (the Hub's
+  ``cache/projects/<runtime_id>/index``), never in the project folder.
+- One writer: the thread of the ``IndexKeeper`` (``keeper.py``) of the process
+  that holds ``index.lock`` beside the file. Any other process that tries gets
+  ``IndexLocked`` (its keeper retries for a while: the holder may be exiting)
+  and meanwhile reads P036 itself. ``load`` and ``apply`` are that
+  thread's alone; readers take ``snapshot`` from any thread and never wait for
+  the writer (WAL).
+- ``meta`` states the stamp (schema version, projector version, project id and
+  the digest of ``project.json``), the ``epoch``, the monotonic ``revision``
+  and when the layout lines were read. A stamp that differs means rebuild,
+  never migrate: a new file is written, then renamed into place, under a new
+  epoch. A file SQLite cannot read is moved aside and rebuilt once.
+- ``place`` keeps every layout line (``archflow.project.watch.LayoutSighting``),
+  so a kept index reopened after a restart re-projects only what moved while
+  nobody watched.
+- One projector (Fossil's single crosslink) fills the rows for a rebuild and
+  for every change. It runs before the write transaction opens, never inside
+  it; the revision moves once per commit that changed a row.
+
+Index rows and keys are never evidence: each row names the P036 record it was
+read from, and that record is the evidence.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Iterable, Iterator, Mapping
+from contextlib import contextmanager
+from dataclasses import dataclass, field
+import hashlib
+import json
+import logging
+import os
+from pathlib import Path
+import sqlite3
+import threading
+import time
+from typing import Any, Callable, Protocol
+from uuid import uuid4
+
+from archflow.project.layout import FINGERPRINT_POINTER_FILES, FINGERPRINT_SETTLED_NS
+
+SCHEMA_VERSION = 2
+INDEX_FILE = "index.sqlite"
+LOCK_FILE = "index.lock"
+# How long a rebuild waits for the readers of the old file to finish before
+# it renames the new one over it (Windows refuses to replace an open file).
+SWAP_WAIT_S = 5.0
+
+_LOG = logging.getLogger(__name__)
+
+_SCHEMA = """
+CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+CREATE TABLE place (key TEXT PRIMARY KEY, line TEXT NOT NULL, mtime_ns INTEGER NOT NULL);
+CREATE TABLE run (
+    run_id TEXT PRIMARY KEY, rev INTEGER NOT NULL, digest TEXT NOT NULL,
+    cites TEXT NOT NULL, body TEXT NOT NULL
+);
+CREATE TABLE record (
+    run_id TEXT NOT NULL, uri TEXT NOT NULL, kind TEXT, sha256 TEXT NOT NULL, rev INTEGER NOT NULL,
+    PRIMARY KEY (run_id, uri)
+);
+CREATE INDEX record_kind ON record (kind);
+CREATE INDEX record_sha256 ON record (sha256);
+CREATE TABLE artifact (
+    run_id TEXT NOT NULL, position INTEGER NOT NULL, sha256 TEXT, format TEXT NOT NULL,
+    representation TEXT NOT NULL, available INTEGER NOT NULL, rev INTEGER NOT NULL, body TEXT NOT NULL,
+    PRIMARY KEY (run_id, position)
+);
+CREATE INDEX artifact_sha256 ON artifact (sha256);
+CREATE TABLE document (
+    run_id TEXT NOT NULL, position INTEGER NOT NULL, asset_sha256 TEXT NOT NULL, revision_ref TEXT,
+    rev INTEGER NOT NULL, body TEXT NOT NULL,
+    PRIMARY KEY (run_id, position)
+);
+CREATE INDEX document_asset_sha256 ON document (asset_sha256);
+CREATE TABLE candidate (
+    run_id TEXT PRIMARY KEY, source_stage_ref TEXT, rev INTEGER NOT NULL, body TEXT NOT NULL
+);
+CREATE TABLE stage (
+    branch_id TEXT NOT NULL, position INTEGER NOT NULL, stage_ref TEXT NOT NULL,
+    candidate_id TEXT NOT NULL, rev INTEGER NOT NULL, body TEXT NOT NULL,
+    PRIMARY KEY (branch_id, position)
+);
+"""
+
+# What an agent may filter each table by, and the order its rows come in.
+QUERYABLE: dict[str, tuple[tuple[str, ...], str]] = {
+    "run": (("run_id",), "run_id"),
+    "record": (("run_id", "uri", "kind", "sha256"), "run_id, uri"),
+    "artifact": (("run_id", "sha256", "format", "representation"), "run_id, position"),
+    "document": (("run_id", "asset_sha256", "revision_ref"), "run_id, position"),
+    "candidate": (("run_id", "source_stage_ref"), "run_id"),
+    "stage": (("branch_id", "stage_ref", "candidate_id"), "branch_id, position"),
+}
+_COLUMNS: dict[str, tuple[str, ...]] = {
+    "run": ("run_id", "rev", "body"),
+    "record": ("run_id", "uri", "kind", "sha256", "rev"),
+    "artifact": ("run_id", "position", "sha256", "format", "representation", "available", "rev", "body"),
+    "document": ("run_id", "position", "asset_sha256", "revision_ref", "rev", "body"),
+    "candidate": ("run_id", "source_stage_ref", "rev", "body"),
+    "stage": ("branch_id", "position", "stage_ref", "candidate_id", "rev", "body"),
+}
+QUERY_LIMIT = 1000
+
+# The area each pointer file belongs to (``place_area``). HEAD and the working
+# draft are areas of their own that no row cites: saving a draft or issuing a
+# version projects nothing again.
+_POINTER_AREAS = {
+    "project.json": "manifest",
+    "HEAD": "head",
+    "design/branches.json": "branches",
+    "design/working.json": "working",
+}
+assert set(_POINTER_AREAS) == set(FINGERPRINT_POINTER_FILES)
+
+
+class IndexUnavailable(RuntimeError):
+    """The index cannot be used here; the caller reads P036 itself."""
+
+
+class IndexLocked(IndexUnavailable):
+    """Another writer holds ``index.lock``; it may give it up soon (a process that is exiting)."""
+
+
+@dataclass(frozen=True, slots=True)
+class IndexStamp:
+    """What a kept index must have been built for; any difference means rebuild."""
+
+    projector_version: str
+    project_id: str
+    manifest_sha256: str
+    schema_version: int = SCHEMA_VERSION
+
+    def items(self) -> dict[str, str]:
+        return {
+            "schema_version": str(self.schema_version),
+            "projector_version": self.projector_version,
+            "project_id": self.project_id,
+            "manifest_sha256": self.manifest_sha256,
+        }
+
+
+def manifest_stamp(root: Path, *, projector_version: str, project_id: str) -> IndexStamp:
+    """The stamp of the project at ``root``: its manifest's bytes, digested."""
+
+    try:
+        digest = hashlib.sha256((Path(root) / "project.json").read_bytes()).hexdigest()
+    except OSError:
+        digest = "unreadable"
+    return IndexStamp(projector_version, project_id, digest)
+
+
+@dataclass(frozen=True, slots=True)
+class IndexToken:
+    """Where the index stands: a new epoch per build, one revision per commit that changed a row."""
+
+    epoch: str
+    revision: int
+
+
+@dataclass(frozen=True, slots=True)
+class RecordRow:
+    uri: str
+    kind: str | None
+    sha256: str
+
+
+@dataclass(frozen=True, slots=True)
+class ArtifactRow:
+    sha256: str | None
+    format: str
+    representation: str
+    available: bool
+    body: Mapping[str, Any]
+
+
+@dataclass(frozen=True, slots=True)
+class DocumentRow:
+    asset_sha256: str
+    revision_ref: str | None
+    body: Mapping[str, Any]
+
+
+@dataclass(frozen=True, slots=True)
+class CandidateRow:
+    source_stage_ref: str | None
+    body: Mapping[str, Any]
+
+
+@dataclass(frozen=True, slots=True)
+class StageRow:
+    branch_id: str
+    stage_ref: str
+    candidate_id: str
+    body: Mapping[str, Any]
+
+
+@dataclass(frozen=True, slots=True)
+class RunRows:
+    """Everything the projector derives from one run.
+
+    ``cites`` names the areas outside the run the rows were read from, as
+    ``place_area`` spells them: a change there projects this run again.
+    """
+
+    run_id: str
+    body: Mapping[str, Any]
+    records: tuple[RecordRow, ...] = ()
+    artifacts: tuple[ArtifactRow, ...] = ()
+    documents: tuple[DocumentRow, ...] = ()
+    candidate: CandidateRow | None = None
+    cites: frozenset[str] = field(default_factory=frozenset)
+
+
+@dataclass(frozen=True, slots=True)
+class TreeRows:
+    """What the projector derives from the design branches: the committed stages.
+
+    ``cites`` names the areas the stages were read from; ``branches`` is always cited.
+    """
+
+    body: Mapping[str, Any]
+    stages: tuple[StageRow, ...] = ()
+    cites: frozenset[str] = field(default_factory=frozenset)
+
+
+class Projector(Protocol):
+    """The one derivation that fills the index, for a rebuild and for every change."""
+
+    version: str
+
+    def run_ids(self) -> tuple[str, ...]: ...
+
+    def project_run(self, run_id: str) -> RunRows: ...
+
+    def project_tree(self) -> TreeRows: ...
+
+
+def place_area(key: str) -> str:
+    """The part of a project a layout line's key belongs to.
+
+    A key is a line's kind and name (``d runs/r1/records``, ``f HEAD``,
+    ``l design``). ``run:<id>`` for anything in one run, ``runs`` for the run
+    directory's own listing, a pointer file's own area (``manifest``, ``head``,
+    ``branches``, ``working``), ``root`` for the project directory itself and
+    ``area:<name>`` for every other top-level directory.
+    """
+
+    kind, _, name = key.partition(" ")
+    if kind == "f":
+        return _POINTER_AREAS.get(name, f"area:{name}")
+    return path_area(name)
+
+
+def path_area(relative_path: str) -> str:
+    """The area of a project-relative POSIX path: a pointer file's, a run's or a top-level directory's."""
+
+    if relative_path in _POINTER_AREAS:
+        return _POINTER_AREAS[relative_path]
+    if relative_path in ("", "."):
+        return "root"
+    parts = relative_path.split("/")
+    if parts[0] == "runs":
+        return "runs" if len(parts) == 1 else f"run:{parts[1]}"
+    return f"area:{parts[0]}"
+
+
+def line_places(lines: Iterable[str]) -> dict[str, tuple[str, int]]:
+    """Layout lines by key (kind and name), each with the time it states (0 when none)."""
+
+    places: dict[str, tuple[str, int]] = {}
+    for line in lines:
+        kind, _, rest = line.partition(" ")
+        if kind == "f":
+            # "f <pointer> <size> <mtime>" or "f <pointer> missing|unreadable ..."
+            name = next((pointer for pointer in FINGERPRINT_POINTER_FILES if rest.startswith(pointer + " ")), rest)
+        else:
+            # "d <name> <mtime>", "d . missing", "d|l <name> unreadable <errno>"
+            name = rest.rpartition(" ")[0]
+            if name.endswith(" unreadable"):
+                name = name[: -len(" unreadable")]
+        tail = line.rsplit(" ", 1)[-1]
+        mtime = int(tail) if tail.isdigit() and "unreadable" not in line else 0
+        places[f"{kind} {name}"] = (line, mtime)
+    return places
+
+
+def _racy(places: Mapping[str, tuple[str, int]], scanned_at_ns: int) -> set[str]:
+    """Git's racy rule: the places whose time was too close to the scan to prove anything."""
+
+    return {key for key, (_, mtime) in places.items()
+            if mtime and scanned_at_ns - mtime <= FINGERPRINT_SETTLED_NS}
+
+
+def _text(value: Any) -> str:
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":"), allow_nan=False)
+
+
+class _WriterLease:
+    """``index.lock`` held exclusively for as long as this process writes the index."""
+
+    def __init__(self, directory: Path) -> None:
+        directory.mkdir(parents=True, exist_ok=True)
+        # The file stays: deleting it would let another process lock a
+        # replacement while this one still holds the old one.
+        self._handle = (directory / LOCK_FILE).open("a+b")
+        try:
+            if os.name == "nt":
+                import msvcrt
+
+                self._handle.seek(0)
+                msvcrt.locking(self._handle.fileno(), msvcrt.LK_NBLCK, 1)
+            else:
+                import fcntl
+
+                fcntl.flock(self._handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError as exc:
+            self._handle.close()
+            raise IndexLocked(f"another process writes the index in {directory}") from exc
+
+    def release(self) -> None:
+        if self._handle.closed:
+            return
+        try:
+            if os.name == "nt":
+                import msvcrt
+
+                self._handle.seek(0)
+                msvcrt.locking(self._handle.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                import fcntl
+
+                fcntl.flock(self._handle.fileno(), fcntl.LOCK_UN)
+        finally:
+            self._handle.close()
+
+
+class IndexSnapshot:
+    """One read transaction: every row it answers comes from the same commit."""
+
+    def __init__(self, connection: sqlite3.Connection) -> None:
+        self._connection = connection
+        meta = dict(connection.execute("SELECT key, value FROM meta WHERE key IN ('epoch', 'revision')"))
+        self.token = IndexToken(meta["epoch"], int(meta["revision"]))
+
+    def rows(self, table: str, filters: Mapping[str, str] | None = None, *,
+             limit: int | None = QUERY_LIMIT) -> list[dict[str, Any]]:
+        """Rows of one table, filtered by exact values of its queryable columns.
+
+        ``body`` comes back decoded; ``limit=None`` returns every row. Refuses
+        a table or a column it does not list rather than guessing.
+        """
+
+        if table not in QUERYABLE:
+            raise ValueError(f"the index has no table {table!r}; it has {', '.join(QUERYABLE)}")
+        allowed, order = QUERYABLE[table]
+        filters = dict(filters or {})
+        unknown = sorted(set(filters) - set(allowed))
+        if unknown:
+            raise ValueError(f"{table} rows are filtered by {', '.join(allowed)}, not {', '.join(unknown)}")
+        columns = _COLUMNS[table]
+        where = " AND ".join(f"{name} = ?" for name in filters)
+        sql = (f"SELECT {', '.join(columns)} FROM {table}" + (f" WHERE {where}" if where else "")
+               + f" ORDER BY {order} LIMIT ?")
+        found = self._connection.execute(
+            sql, (*filters.values(), -1 if limit is None else max(0, int(limit))),
+        ).fetchall()
+        decoded = []
+        for row in found:
+            item = dict(zip(columns, row))
+            if "body" in item:
+                item["body"] = json.loads(item["body"])
+            if "available" in item:
+                item["available"] = bool(item["available"])
+            decoded.append(item)
+        return decoded
+
+    def tree(self) -> Any:
+        """The design tree's own body, as the projector stated it."""
+
+        kept = self._connection.execute("SELECT value FROM meta WHERE key = 'tree'").fetchone()
+        return None if kept is None else json.loads(kept[0])
+
+    def meta(self) -> dict[str, str]:
+        """The stamp, epoch, revision and scan time the index stands at."""
+
+        return {key: value for key, value in self._connection.execute("SELECT key, value FROM meta")
+                if key != "tree"}
+
+
+class ProjectIndex:
+    """One project's index file, written by one thread of this process alone.
+
+    ``load`` opens, reconciles or rebuilds it and ``apply`` brings it up to
+    date; both belong to the writer (``IndexKeeper``). ``snapshot`` and
+    ``query`` read it from any thread and never wait for the writer.
+    """
+
+    def __init__(
+        self,
+        directory: Path,
+        *,
+        projector: Projector,
+        stamp: Callable[[], IndexStamp],
+    ) -> None:
+        self.directory = Path(directory)
+        self.path = self.directory / INDEX_FILE
+        self._projector = projector
+        self._stamp = stamp
+        self._lease: _WriterLease | None = None
+        self._writer: sqlite3.Connection | None = None
+        self._token: IndexToken | None = None
+        # The writer's view of the file, kept in memory: each run's cites and
+        # row digest, the tree's cites and digest, every place and the racy ones.
+        self._runs: dict[str, tuple[frozenset[str], str]] = {}
+        self._tree: tuple[frozenset[str], str] | None = None
+        self._places: dict[str, tuple[str, int]] = {}
+        self._racy: set[str] = set()
+        # Readers: pooled connections, how many are reading, and whether the
+        # file is being swapped under them.
+        self._gate = threading.Condition()
+        self._pool: list[sqlite3.Connection] = []
+        self._reading = 0
+        self._swapping = False
+        self._open = False
+        # How the last load went: "reused", "reconciled" or "rebuilt".
+        self.loaded: str | None = None
+
+    # ---- the writer
+
+    def load(self, lines: Iterable[str], scanned_at_ns: int) -> IndexToken:
+        """Open the kept file, or rebuild it; never migrate one.
+
+        ``lines`` are the layout's lines now. A kept file whose stamp matches
+        is reconciled with them: only the places whose line moved since it was
+        written, or whose time was then too new to be trusted, are projected
+        again. Raises ``IndexUnavailable`` when another process holds the
+        index or when a rebuild itself fails.
+        """
+
+        self.lock()
+        places = line_places(lines)
+        stamp = self._stamp()
+        kept = self._open_kept(stamp)
+        if kept is None:
+            self._rebuild(stamp, places, scanned_at_ns)
+            self.loaded = "rebuilt"
+            return self._token
+        stored, stored_scan = kept
+        changed = {key for key in stored.keys() | places.keys()
+                   if stored.get(key, (None,))[0] != places.get(key, (None,))[0]}
+        # Git's racy rule, across a restart: a line read too close to its
+        # time may hide a later write with the same time.
+        changed |= _racy(stored, stored_scan)
+        self._places = stored
+        self._racy = set()
+        self._apply(changed, set(), places, scanned_at_ns)
+        self.loaded = "reconciled" if changed else "reused"
+        self._publish_open()
+        return self._token
+
+    def lock(self) -> None:
+        """Take ``index.lock`` for this writer, unless it holds it already.
+
+        Raises ``IndexLocked`` while another writer holds it; ``load`` takes it too.
+        """
+
+        if self._lease is None:
+            self._lease = _WriterLease(self.directory)
+
+    def apply(self, lines: Iterable[str] | None, scanned_at_ns: int, *,
+              areas: Iterable[str] = (), reread: Iterable[str] = ()) -> IndexToken:
+        """Project again what moved, as one commit; the revision moves only when a row changed.
+
+        ``lines`` are the layout's lines now (None: unchanged since the last
+        call); ``areas`` names areas known to have changed besides (this
+        process's writes), ``reread`` project-relative directories whose files
+        may have changed in place.
+        """
+
+        if self._writer is None:
+            raise IndexUnavailable("the project index is not open")
+        places = self._places if lines is None else line_places(lines)
+        changed = {key for key in self._places.keys() | places.keys()
+                   if self._places.get(key, (None,))[0] != places.get(key, (None,))[0]}
+        if lines is not None:
+            # A place read racily before is read again once it has settled.
+            changed |= {key for key in self._racy
+                        if key not in places or scanned_at_ns - places[key][1] > FINGERPRINT_SETTLED_NS}
+        extra = set(areas) | {path_area(relative) for relative in reread}
+        self._apply(changed, extra, places, scanned_at_ns if lines is not None else None)
+        return self._token
+
+    def rebuild(self, lines: Iterable[str], scanned_at_ns: int) -> IndexToken:
+        """Project everything again into a new file under a new epoch (the writer's repair)."""
+
+        if self._lease is None:
+            raise IndexUnavailable("the project index is not open")
+        self._rebuild(self._stamp(), line_places(lines), scanned_at_ns)
+        self.loaded = "rebuilt"
+        return self._token
+
+    def run_ids(self) -> tuple[str, ...]:
+        """The runs the index holds rows for."""
+
+        return tuple(sorted(self._runs))
+
+    def close(self) -> None:
+        """Close the writer and every reader, and give up the lease."""
+
+        with self._gate:
+            self._open = False
+            pool, self._pool = self._pool, []
+        for connection in pool:
+            connection.close()
+        if self._writer is not None:
+            self._writer.close()
+            self._writer = None
+        if self._lease is not None:
+            self._lease.release()
+            self._lease = None
+        self._token = None
+
+    @property
+    def token(self) -> IndexToken | None:
+        return self._token
+
+    def _open_kept(self, stamp: IndexStamp) -> tuple[dict[str, tuple[str, int]], int] | None:
+        """The kept file's places and scan time, or None when it must be rebuilt."""
+
+        if not self.path.exists():
+            return None
+        connection = None
+        try:
+            connection = self._connect(self.path)
+            if connection.execute("PRAGMA quick_check").fetchone()[0] != "ok":
+                raise sqlite3.DatabaseError("quick_check failed")
+            meta = dict(connection.execute("SELECT key, value FROM meta"))
+            if any(meta.get(key) != value for key, value in stamp.items().items()):
+                connection.close()
+                return None
+            if not meta["epoch"] or int(meta["revision"]) < 1:
+                raise ValueError("the index states no epoch or revision")
+            stored = {key: (line, mtime) for key, line, mtime in
+                      connection.execute("SELECT key, line, mtime_ns FROM place")}
+            self._writer = connection
+            self._read_state()
+            return stored, int(meta["scanned_at_ns"])
+        except (sqlite3.DatabaseError, KeyError, ValueError, json.JSONDecodeError) as exc:
+            if connection is not None:
+                connection.close()
+            self._writer = None
+            self._quarantine(exc)
+            return None
+
+    def _quarantine(self, reason: BaseException) -> None:
+        """Move a file SQLite cannot read aside, with its journal; it is rebuilt once.
+
+        Only the latest such file is kept: it is there to be looked at, and a
+        cache directory must not grow with every failure.
+        """
+
+        for earlier in self.directory.glob(f"{INDEX_FILE}*.corrupt-*"):
+            earlier.unlink()
+        suffix = f".corrupt-{time.time_ns()}"
+        for name in (INDEX_FILE, f"{INDEX_FILE}-wal", f"{INDEX_FILE}-shm"):
+            source = self.directory / name
+            if source.exists():
+                os.replace(source, self.directory / (name + suffix))
+        _LOG.warning("project index %s could not be read (%s); moved aside as %s and rebuilt",
+                     self.path, reason, INDEX_FILE + suffix)
+
+    @staticmethod
+    def _connect(path: Path, *, reader: bool = False) -> sqlite3.Connection:
+        connection = sqlite3.connect(os.fspath(path), check_same_thread=False, isolation_level=None)
+        try:
+            connection.execute("PRAGMA busy_timeout=2000")
+            if reader:
+                # The file is already WAL (persistent); a reader never writes.
+                connection.execute("PRAGMA query_only=1")
+            else:
+                connection.execute("PRAGMA journal_mode=WAL")
+                connection.execute("PRAGMA synchronous=NORMAL")
+        except BaseException:
+            # A file SQLite cannot read fails here, before the caller holds the
+            # connection: close it, or Windows keeps the file from being moved aside.
+            connection.close()
+            raise
+        return connection
+
+    def _rebuild(self, stamp: IndexStamp, places: Mapping[str, tuple[str, int]], scanned_at_ns: int) -> None:
+        """Project everything into a new file, then rename it over the old one."""
+
+        # Projected before anything is written: a failing projector leaves the old file as it was.
+        tree = self._projector.project_tree()
+        runs = [self._projector.project_run(run_id) for run_id in self._projector.run_ids()]
+        fresh = self.directory / f"{INDEX_FILE}.new"
+        try:
+            for stale in (fresh, Path(f"{fresh}-journal")):
+                if stale.exists():
+                    stale.unlink()
+            building = sqlite3.connect(os.fspath(fresh), isolation_level=None)
+            try:
+                building.executescript(_SCHEMA)
+                building.execute("BEGIN")
+                for key, value in stamp.items().items():
+                    building.execute("INSERT INTO meta VALUES (?, ?)", (key, value))
+                building.execute("INSERT INTO meta VALUES ('epoch', ?)", (uuid4().hex,))
+                building.execute("INSERT INTO meta VALUES ('revision', '1')")
+                building.execute("INSERT INTO meta VALUES ('scanned_at_ns', ?)", (str(scanned_at_ns),))
+                self._write_tree(building, tree, 1, None)
+                for rows in runs:
+                    self._write_run(building, rows, 1, None)
+                building.executemany("INSERT INTO place VALUES (?, ?, ?)",
+                                     [(key, line, mtime) for key, (line, mtime) in places.items()])
+                building.execute("COMMIT")
+            finally:
+                building.close()
+            self._swap(fresh)
+        except (sqlite3.Error, OSError) as exc:
+            raise IndexUnavailable(f"the project index could not be rebuilt: {exc}") from exc
+        self._places = dict(places)
+        self._racy = _racy(places, scanned_at_ns)
+        self._read_state()
+        self._publish_open()
+
+    def _swap(self, fresh: Path) -> None:
+        """Rename ``fresh`` over the index once no reader has the old file open."""
+
+        with self._gate:
+            self._swapping = True
+            deadline = time.monotonic() + SWAP_WAIT_S
+            while self._reading and time.monotonic() < deadline:
+                self._gate.wait(deadline - time.monotonic())
+            pool, self._pool = self._pool, []
+        try:
+            for connection in pool:
+                connection.close()
+            if self._writer is not None:
+                self._writer.close()
+                self._writer = None
+            # The old file's journal must not be replayed into the new one.
+            for name in (f"{INDEX_FILE}-wal", f"{INDEX_FILE}-shm"):
+                journal = self.directory / name
+                if journal.exists():
+                    journal.unlink()
+            os.replace(fresh, self.path)
+            self._writer = self._connect(self.path)
+        finally:
+            with self._gate:
+                self._swapping = False
+                self._gate.notify_all()
+
+    def _publish_open(self) -> None:
+        with self._gate:
+            self._open = True
+
+    def _read_state(self) -> None:
+        connection = self._writer
+        meta = dict(connection.execute("SELECT key, value FROM meta"))
+        self._token = IndexToken(meta["epoch"], int(meta["revision"]))
+        self._runs = {run_id: (frozenset(json.loads(cites)), digest)
+                      for run_id, cites, digest in connection.execute("SELECT run_id, cites, digest FROM run")}
+        tree_cites = json.loads(meta.get("tree_cites", "[]"))
+        self._tree = (frozenset(tree_cites), meta["tree_digest"]) if "tree_digest" in meta else None
+
+    def _apply(self, changed: set[str], extra: set[str], places: Mapping[str, tuple[str, int]],
+               scanned_at_ns: int | None) -> None:
+        areas = {place_area(key) for key in changed} | extra
+        if "manifest" in areas:
+            stamp = self._stamp()
+            meta = dict(self._writer.execute("SELECT key, value FROM meta"))
+            if any(meta.get(key) != value for key, value in stamp.items().items()):
+                # A different project, or one of another format: never migrated.
+                self._rebuild(stamp, places, scanned_at_ns if scanned_at_ns is not None else time.time_ns())
+                return
+        if areas:
+            current = self._projector.run_ids()
+            dirty = {area[4:] for area in areas if area.startswith("run:")}
+            dirty |= set(current) ^ self._runs.keys()
+            dirty |= {run_id for run_id, (cites, _) in self._runs.items() if cites & areas}
+            tree_due = self._tree is None or "branches" in areas or bool(self._tree[0] & areas)
+            # Projected outside the transaction: readers and the next commit never wait for it.
+            tree = self._projector.project_tree() if tree_due else None
+            present = set(current)
+            projected = {run_id: self._projector.project_run(run_id) if run_id in present else None
+                         for run_id in sorted(dirty)}
+        else:
+            tree, projected = None, {}
+        if not changed and not projected and tree is None:
+            self._places = dict(places)
+            if scanned_at_ns is not None:
+                self._racy = _racy(places, scanned_at_ns)
+            return
+        connection = self._writer
+        revision = self._token.revision + 1
+        connection.execute("BEGIN IMMEDIATE")
+        try:
+            moved = False
+            if tree is not None:
+                moved |= self._write_tree(connection, tree, revision, self._tree)
+            for run_id, rows in projected.items():
+                if rows is None:
+                    if run_id in self._runs:
+                        self._delete_run(connection, run_id)
+                        moved = True
+                else:
+                    moved |= self._write_run(connection, rows, revision, self._runs.get(run_id))
+            for key in changed:
+                if key in places:
+                    line, mtime = places[key]
+                    connection.execute("INSERT OR REPLACE INTO place VALUES (?, ?, ?)", (key, line, mtime))
+                else:
+                    connection.execute("DELETE FROM place WHERE key = ?", (key,))
+            if scanned_at_ns is not None:
+                connection.execute("INSERT OR REPLACE INTO meta VALUES ('scanned_at_ns', ?)", (str(scanned_at_ns),))
+            if moved:
+                connection.execute("UPDATE meta SET value = ? WHERE key = 'revision'", (str(revision),))
+            connection.execute("COMMIT")
+        except BaseException:
+            connection.execute("ROLLBACK")
+            self._read_state()
+            raise
+        self._places = dict(places)
+        if scanned_at_ns is not None:
+            self._racy = _racy(places, scanned_at_ns)
+        self._read_state()
+
+    def _write_tree(self, connection: sqlite3.Connection, tree: TreeRows, revision: int,
+                    kept: tuple[frozenset[str], str] | None) -> bool:
+        texts = [_text(tree.body), *(_text([row.branch_id, row.stage_ref, row.candidate_id, row.body])
+                                     for row in tree.stages)]
+        cites = sorted(tree.cites | {"branches"})
+        digest = hashlib.sha256("\n".join([*texts, _text(cites)]).encode("utf-8")).hexdigest()
+        if kept is not None and kept[1] == digest:
+            return False
+        connection.execute("DELETE FROM stage")
+        positions: dict[str, int] = {}
+        for row in tree.stages:
+            position = positions.get(row.branch_id, 0)
+            positions[row.branch_id] = position + 1
+            connection.execute("INSERT INTO stage VALUES (?, ?, ?, ?, ?, ?)",
+                               (row.branch_id, position, row.stage_ref, row.candidate_id, revision, _text(row.body)))
+        for key, value in (("tree_digest", digest), ("tree", texts[0]), ("tree_cites", _text(cites))):
+            connection.execute("INSERT OR REPLACE INTO meta VALUES (?, ?)", (key, value))
+        return True
+
+    def _write_run(self, connection: sqlite3.Connection, rows: RunRows, revision: int,
+                   kept: tuple[frozenset[str], str] | None) -> bool:
+        records = [(row.uri, row.kind, row.sha256) for row in rows.records]
+        artifacts = [(row.sha256, row.format, row.representation, int(row.available), _text(row.body))
+                     for row in rows.artifacts]
+        documents = [(row.asset_sha256, row.revision_ref, _text(row.body)) for row in rows.documents]
+        candidate = (None if rows.candidate is None
+                     else (rows.candidate.source_stage_ref, _text(rows.candidate.body)))
+        cites = _text(sorted(rows.cites))
+        body = _text(rows.body)
+        digest = hashlib.sha256(_text([body, cites, records, artifacts, documents, candidate]).encode("utf-8"))
+        digest = digest.hexdigest()
+        if kept is not None and kept[1] == digest:
+            return False
+        self._delete_run(connection, rows.run_id)
+        run_id = rows.run_id
+        connection.execute("INSERT INTO run VALUES (?, ?, ?, ?, ?)", (run_id, revision, digest, cites, body))
+        connection.executemany("INSERT OR REPLACE INTO record VALUES (?, ?, ?, ?, ?)",
+                               [(run_id, *row, revision) for row in records])
+        connection.executemany("INSERT INTO artifact VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                               [(run_id, position, *row[:4], revision, row[4])
+                                for position, row in enumerate(artifacts)])
+        connection.executemany("INSERT INTO document VALUES (?, ?, ?, ?, ?, ?)",
+                               [(run_id, position, *row[:2], revision, row[2])
+                                for position, row in enumerate(documents)])
+        if candidate is not None:
+            connection.execute("INSERT INTO candidate VALUES (?, ?, ?, ?)",
+                               (run_id, candidate[0], revision, candidate[1]))
+        return True
+
+    @staticmethod
+    def _delete_run(connection: sqlite3.Connection, run_id: str) -> None:
+        for table in ("run", "record", "artifact", "document", "candidate"):
+            connection.execute(f"DELETE FROM {table} WHERE run_id = ?", (run_id,))
+
+    # ---- readers
+
+    @contextmanager
+    def snapshot(self) -> Iterator[IndexSnapshot]:
+        """One read transaction on a connection of its own; raises ``IndexUnavailable`` when none can be had.
+
+        It never waits for the writer: WAL gives every reader the last commit.
+        While a rebuild renames a new file into place it does not wait
+        either; it refuses, and the caller reads the project itself.
+        """
+
+        with self._gate:
+            if not self._open or self._swapping:
+                raise IndexUnavailable("the project index is not open")
+            self._reading += 1
+            connection = self._pool.pop() if self._pool else None
+        clean = False
+        try:
+            try:
+                if connection is None:
+                    connection = self._connect(self.path, reader=True)
+                connection.execute("BEGIN")
+                snapshot = IndexSnapshot(connection)
+            except (sqlite3.Error, KeyError, ValueError) as exc:
+                raise IndexUnavailable(f"the project index could not be read: {exc}") from exc
+            try:
+                yield snapshot
+            except sqlite3.Error as exc:
+                raise IndexUnavailable(f"the project index could not be read: {exc}") from exc
+            finally:
+                try:
+                    connection.execute("COMMIT")
+                    clean = True
+                except sqlite3.Error:
+                    clean = False
+        finally:
+            with self._gate:
+                self._reading -= 1
+                if connection is not None:
+                    if clean and self._open and not self._swapping:
+                        self._pool.append(connection)
+                    else:
+                        connection.close()
+                self._gate.notify_all()
+
+    def query(self, table: str, filters: Mapping[str, str] | None = None, *,
+              limit: int | None = QUERY_LIMIT) -> list[dict[str, Any]]:
+        """``IndexSnapshot.rows`` in a snapshot of its own."""
+
+        with self.snapshot() as snapshot:
+            return snapshot.rows(table, filters, limit=limit)
+
+    def meta(self) -> dict[str, str]:
+        with self.snapshot() as snapshot:
+            return snapshot.meta()

@@ -12,7 +12,7 @@ from typing import Any, Literal, Mapping
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from archflow.state.state_record import parameter_bindings_of
+from archflow.state.state_record import component_semantics, parameter_bindings_of
 
 from ..application.catalog import Catalog
 from ..application.frame import ClosureAnswer, RecordFrame
@@ -59,7 +59,10 @@ class ComponentNodeDto(BaseModel):
 
     component_id: str = Field(alias="componentId")
     parent_component_id: str | None = Field(alias="parentComponentId")
-    semantic_kind: str = Field(alias="semanticKind")
+    semantic_kind: str | None = Field(
+        alias="semanticKind",
+        description="What the component has been said to be; null while it is geometry whose meaning is not yet established.",
+    )
     intent: str
     maturity: str
     revision: int
@@ -390,6 +393,7 @@ def to_dto(projection: StateProjection, catalog: Catalog | None = None) -> State
     """Shape one projection for the wire; every value is already the kernel's."""
 
     record = projection.record
+    authored_components = {entity.entity_id: entity for entity in record.entities_of("Component@1")}
     drawn_shapes = _drawn_shapes(projection)
     return StateProjectionDto(
         project_id=projection.project_id,
@@ -431,7 +435,7 @@ def to_dto(projection: StateProjection, catalog: Catalog | None = None) -> State
                 ComponentNodeDto(
                     component_id=component.component_id,
                     parent_component_id=component.parent_component_id,
-                    semantic_kind=component.semantic_kind,
+                    semantic_kind=component_semantics(authored_components[component.component_id]),
                     intent=component.intent,
                     maturity=component.maturity.value,
                     revision=component.revision,
