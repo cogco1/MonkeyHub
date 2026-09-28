@@ -1981,6 +1981,16 @@ export type ConstructionEntityDto = {
      * what its facets allow
      */
     capabilities: Array<ConstructionCapabilityDto>;
+    /**
+     * Openings
+     *
+     * the doors and windows it hosts, when it is one part
+     */
+    openings: Array<ConstructionOpeningDto>;
+    /**
+     * where the along of a door or window on it is measured, when its capabilities include hosted-opening and its shape can take one; null otherwise
+     */
+    alongLine: ConstructionLineDto | null;
 };
 
 /**
@@ -2023,6 +2033,28 @@ export type ConstructionLevelDto = {
      * Elevation
      */
     elevation: number;
+};
+
+/**
+ * ConstructionLineDto
+ *
+ * Where a door's or window's along is measured: from start toward end, plan points (x, z) in metres.
+ */
+export type ConstructionLineDto = {
+    /**
+     * Start
+     */
+    start: [
+        number,
+        number
+    ];
+    /**
+     * End
+     */
+    end: [
+        number,
+        number
+    ];
 };
 
 /**
@@ -2069,6 +2101,50 @@ export type ConstructionModelDto = {
      * Entities
      */
     entities: Array<ConstructionEntityDto>;
+};
+
+/**
+ * ConstructionOpeningDto
+ *
+ * A door or a window this geometry hosts, as it was asked for.
+ */
+export type ConstructionOpeningDto = {
+    /**
+     * Id
+     *
+     * the opening's id, unique within its host
+     */
+    id: string;
+    /**
+     * Kind
+     *
+     * door or window
+     */
+    kind: string;
+    /**
+     * Along
+     *
+     * metres from the host's alongLine.start to the opening's centre; null when stated another way
+     */
+    along: number | null;
+    /**
+     * Width
+     *
+     * metres across; null when stated another way
+     */
+    width: number | null;
+    /**
+     * Sill
+     *
+     * metres from the host's base up to its bottom; null when stated another way
+     */
+    sill: number | null;
+    /**
+     * Head
+     *
+     * metres from the host's base up to its top; null when stated another way
+     */
+    head: number | null;
 };
 
 /**
@@ -2181,7 +2257,7 @@ export type ConstructionProposalDto = {
     /**
      * Status
      *
-     * conflict means the change reaches something the utterance asked to keep; it is still a proposal, never an execution
+     * conflict means the change reaches something it was asked to keep (keep, or a keep clause in the words); it is still a proposal, never an execution
      */
     status: 'proposed' | 'conflict';
     /**
@@ -2443,7 +2519,7 @@ export type ConstructionVocabularyDto = {
      * Limits
      */
     limits: {
-        [key: string]: number;
+        [key: string]: number | number;
     };
     /**
      * Verbs
@@ -3777,12 +3853,6 @@ export type DocumentTracingRequestDto = {
      */
     parentComponentId?: string | null;
     /**
-     * Semantickind
-     *
-     * optional: what a new component is, when stated; omit it for geometry whose meaning is not established
-     */
-    semanticKind?: string | null;
-    /**
      * Baselevel
      */
     baseLevel?: string | null;
@@ -4426,6 +4496,48 @@ export type ElevationRequestDto = {
 };
 
 /**
+ * EnrichmentRequiredDto
+ *
+ * Refused until the geometry has the meaning a capability needs: the facet to add, and one sentence.
+ */
+export type EnrichmentRequiredDto = {
+    /**
+     * Code
+     *
+     * ENRICHMENT_REQUIRED; STALE_BASE for a request made against another state
+     */
+    code: string;
+    /**
+     * Detail
+     */
+    detail: string;
+    /**
+     * Message
+     *
+     * the one sentence, also given as detail
+     */
+    message?: string | null;
+    /**
+     * Entity
+     *
+     * the geometry id that needs the facet
+     */
+    entity?: string | null;
+    /**
+     * Facet
+     *
+     * the facet key to add with POST /api/proposals/facets
+     */
+    facet?: string | null;
+    /**
+     * Value
+     *
+     * the value that facet needs
+     */
+    value?: string | null;
+};
+
+/**
  * EnvelopeDto
  *
  * The buildable envelope an option is measured against; every field optional.
@@ -5061,6 +5173,114 @@ export type HttpValidationError = {
      * Detail
      */
     detail?: Array<ValidationError>;
+};
+
+/**
+ * HostedOpeningRequestDto
+ *
+ * A door or a window on geometry whose meaning is architectural.role = wall, against one exact state.
+ */
+export type HostedOpeningRequestDto = {
+    /**
+     * Statedigest
+     *
+     * the stateDigest GET /api/construction/model answered with; any other base is STALE_BASE
+     */
+    stateDigest: string;
+    /**
+     * Summary
+     *
+     * one sentence for the proposal; left out, the change describes itself
+     */
+    summary?: string | null;
+    /**
+     * Sourcerunid
+     *
+     * the run to build on; left out, the project's current state
+     */
+    sourceRunId?: string | null;
+    /**
+     * Sourcestageref
+     */
+    sourceStageRef?: string | null;
+    /**
+     * Sourceproposalid
+     *
+     * continue this unexecuted proposal; stateDigest stays its original baseStateDigest
+     */
+    sourceProposalId?: string | null;
+    /**
+     * Keep
+     *
+     * entity: or parameter: refs this change must not disturb
+     */
+    keep?: Array<string>;
+    /**
+     * Projectid
+     *
+     * the project the client believes it is working on
+     */
+    projectId?: string | null;
+    /**
+     * Host
+     *
+     * the geometry id to take it; the model view lists hosted-opening among its capabilities
+     */
+    host: string;
+    /**
+     * Kind
+     */
+    kind: 'door' | 'window';
+    /**
+     * Along
+     *
+     * metres from the host's alongLine.start toward its alongLine.end (as the model view gives them) to the centre of the opening
+     */
+    along: number;
+    /**
+     * Width
+     *
+     * metres across the opening
+     */
+    width: number;
+    /**
+     * Sill
+     *
+     * metres from the host's base up to the bottom of the opening; 0 for a door
+     */
+    sill: number;
+    /**
+     * Head
+     *
+     * metres from the host's base up to the top of the opening
+     */
+    head: number;
+    /**
+     * Shape
+     *
+     * rectangular when left out; a semicircular_arch needs springHeight
+     */
+    shape?: 'rectangular' | 'semicircular_arch' | null;
+    /**
+     * Springheight
+     *
+     * semicircular_arch only: metres from the base up to where the arch springs; head - springHeight = width / 2
+     */
+    springHeight?: number | null;
+    /**
+     * Family
+     *
+     * the family that fills the opening, in metres: a window takes frame_width, frame_depth, frame_projection, glazing_thickness and glazing_offset; a door takes frame_width, frame_depth, frame_projection, leaf_thickness, leaf_offset, leaf_count (1 or 2), leaf_gap, clearance_bottom and clearance_top. Left out, the opening is an empty passage with no frame or leaf
+     */
+    family?: {
+        [key: string]: number | number;
+    } | null;
+    /**
+     * Interfaceref
+     *
+     * the connection between spaces it serves: one of the relationship refs the project's connections declare. Left out, it serves none yet
+     */
+    interfaceRef?: string | null;
 };
 
 /**
@@ -5781,7 +6001,7 @@ export type MassingOptionRequestDto = {
     /**
      * Statedigest
      *
-     * the stateDigest GET /api/state answered; an option made against another state is refused
+     * the stateDigest GET /api/construction/model (or /api/state) answered; an option made against another state is refused
      */
     stateDigest: string;
     /**
@@ -8121,7 +8341,7 @@ export type ProposalRequestDto = ({
      */
     utterance?: string | null;
     /**
-     * Submit the current Agent's typed component edit directly, without another model call. Entity producer inputs use @parameter_key bindings; expressions belong to Parameter.expr and inputs. Exactly one of semanticEdit and utterance is required.
+     * Submit the current Agent's typed component edit directly, without another model call. Entity numeric inputs use @parameter_key bindings; expressions belong to Parameter.expr and inputs. Exactly one of semanticEdit and utterance is required.
      */
     semanticEdit?: SemanticEditRequestDto | null;
     /**
@@ -9519,1137 +9739,7 @@ export type SectionPlaneDto = {
 export type SemanticEditRequestDto = {
     summary: string;
     entities?: Array<{
-        entity_id: string;
-        schema?: 'Element@1';
-        parent_id?: string | null;
-        basis_refs?: Array<string>;
-        fields?: {
-            component_id?: string;
-            producer?: 'prism';
-            type_ref?: string | null;
-            references?: {
-                base?: {
-                    /**
-                     * The existing Level@1 entity_id, not its role.
-                     */
-                    level: string;
-                } | {
-                    datum: string;
-                    /**
-                     * A value in metres, or an explicit @parameter binding.
-                     */
-                    offset?: number | string;
-                } | {
-                    offset_from: {
-                        /**
-                         * The existing Level@1 entity_id, not its role.
-                         */
-                        level: string;
-                        /**
-                         * A value in metres, or an explicit @parameter binding.
-                         */
-                        offset: number | string;
-                    };
-                } | {
-                    /**
-                     * A value in metres, or an explicit @parameter binding.
-                     */
-                    elevation: number | string;
-                };
-                top?: {
-                    /**
-                     * The existing Level@1 entity_id, not its role.
-                     */
-                    level: string;
-                } | {
-                    datum: string;
-                    /**
-                     * A value in metres, or an explicit @parameter binding.
-                     */
-                    offset?: number | string;
-                } | {
-                    offset_from: {
-                        /**
-                         * The existing Level@1 entity_id, not its role.
-                         */
-                        level: string;
-                        /**
-                         * A value in metres, or an explicit @parameter binding.
-                         */
-                        offset: number | string;
-                    };
-                };
-                /**
-                 * Elements whose solids are removed from this one. Each keeps its own identity and stays in the model hidden; remove it from this list and it is delivered again. Neither element needs to be classified. A void is a prism without rectangular_cutouts or a capped loft, has no voids of its own, and nothing stands on its top.
-                 */
-                voids?: Array<string>;
-            };
-            params?: {
-                /**
-                 * The closed plan profile in order; the first point is not repeated. Coordinates may bind @parameters.
-                 */
-                profile?: Array<[
-                    number | string,
-                    number | string
-                ]>;
-                /**
-                 * How far the profile is pulled; optional when references.top determines it.
-                 */
-                height?: number | string;
-                /**
-                 * Metres above references.base, added to that reference's own offset; defaults to zero. It moves the whole prism and leaves the height alone.
-                 */
-                elevation?: number | string;
-                /**
-                 * Optional orthonormal drawing frame relative to references.base. Profile pairs follow xAxis/yAxis; height follows normal. Omit for the retained XZ/+Y convention.
-                 */
-                work_plane?: {
-                    origin: [
-                        number,
-                        number,
-                        number
-                    ];
-                    xAxis: [
-                        number,
-                        number,
-                        number
-                    ];
-                    yAxis: [
-                        number,
-                        number,
-                        number
-                    ];
-                    normal: [
-                        number,
-                        number,
-                        number
-                    ];
-                };
-                /**
-                 * Openings through an axis-aligned rectangular profile.
-                 */
-                rectangular_cutouts?: Array<{
-                    cutout_id: string;
-                    span0: number;
-                    span1: number;
-                    bottom: number;
-                    top: number;
-                }>;
-            };
-            name?: string | null;
-            label?: string | null;
-            note?: string | null;
-        } | {
-            component_id?: string;
-            producer?: 'planar-surface';
-            type_ref?: string | null;
-            references?: {
-                base?: {
-                    /**
-                     * The existing Level@1 entity_id, not its role.
-                     */
-                    level: string;
-                } | {
-                    datum: string;
-                    /**
-                     * A value in metres, or an explicit @parameter binding.
-                     */
-                    offset?: number | string;
-                } | {
-                    offset_from: {
-                        /**
-                         * The existing Level@1 entity_id, not its role.
-                         */
-                        level: string;
-                        /**
-                         * A value in metres, or an explicit @parameter binding.
-                         */
-                        offset: number | string;
-                    };
-                } | {
-                    datum: string;
-                } | {
-                    /**
-                     * A value in metres, or an explicit @parameter binding.
-                     */
-                    elevation: number | string;
-                };
-            };
-            params?: {
-                /**
-                 * One simple boundary in work_plane coordinates (XZ when omitted), repeating its first vertex at the end.
-                 */
-                profile?: Array<[
-                    number | string,
-                    number | string
-                ]>;
-                /**
-                 * Metres above references.base, added to that reference's own offset; defaults to zero.
-                 */
-                elevation?: number | string;
-                work_plane?: {
-                    origin: [
-                        number,
-                        number,
-                        number
-                    ];
-                    xAxis: [
-                        number,
-                        number,
-                        number
-                    ];
-                    yAxis: [
-                        number,
-                        number,
-                        number
-                    ];
-                    normal: [
-                        number,
-                        number,
-                        number
-                    ];
-                };
-            };
-            name?: string | null;
-            label?: string | null;
-            note?: string | null;
-        } | {
-            component_id?: string;
-            producer?: 'curve';
-            type_ref?: string | null;
-            references?: {
-                base?: {
-                    /**
-                     * The existing Level@1 entity_id, not its role.
-                     */
-                    level: string;
-                } | {
-                    datum: string;
-                    /**
-                     * A value in metres, or an explicit @parameter binding.
-                     */
-                    offset?: number | string;
-                } | {
-                    offset_from: {
-                        /**
-                         * The existing Level@1 entity_id, not its role.
-                         */
-                        level: string;
-                        /**
-                         * A value in metres, or an explicit @parameter binding.
-                         */
-                        offset: number | string;
-                    };
-                };
-            };
-            params?: {
-                /**
-                 * Ordered points in work_plane coordinates (XZ when omitted); no closing segment is added.
-                 */
-                profile?: Array<[
-                    number | string,
-                    number | string
-                ]>;
-                /**
-                 * A value in metres, or an explicit @parameter binding.
-                 */
-                elevation?: number | string;
-                work_plane?: {
-                    origin: [
-                        number,
-                        number,
-                        number
-                    ];
-                    xAxis: [
-                        number,
-                        number,
-                        number
-                    ];
-                    yAxis: [
-                        number,
-                        number,
-                        number
-                    ];
-                    normal: [
-                        number,
-                        number,
-                        number
-                    ];
-                };
-            };
-            name?: string | null;
-            label?: string | null;
-            note?: string | null;
-        } | {
-            component_id?: string;
-            producer?: 'loft';
-            type_ref?: string | null;
-            references?: {
-                base?: {
-                    /**
-                     * The existing Level@1 entity_id, not its role.
-                     */
-                    level: string;
-                } | {
-                    datum: string;
-                };
-                /**
-                 * Elements whose solids are removed from this one. Each keeps its own identity and stays in the model hidden; remove it from this list and it is delivered again. Neither element needs to be classified. A void is a prism without rectangular_cutouts or a capped loft, has no voids of its own, and nothing stands on its top.
-                 */
-                voids?: Array<string>;
-            };
-            params?: {
-                /**
-                 * Ordered sections of [X, Y-up, Z] points relative to the base datum; coordinates may bind @parameters.
-                 */
-                profiles?: Array<Array<[
-                    number | string,
-                    number | string,
-                    number | string
-                ]>>;
-                /**
-                 * The same number of vertices in every section; do not repeat the first vertex.
-                 */
-                profile_size?: number;
-                /**
-                 * straight (default) connects sections with ruled faces; normal interpolates between the sections.
-                 */
-                loft_type?: 'straight' | 'normal';
-                /**
-                 * Polyline sections (default); interpolated section curves are not exposed by this authoring path.
-                 */
-                profile_basis?: 'polyline';
-                /**
-                 * True (default) caps both ends into one solid; false leaves both end sections open as a surface.
-                 */
-                cap_ends?: boolean;
-                closed_profile?: true;
-            };
-            name?: string | null;
-            label?: string | null;
-            note?: string | null;
-        } | {
-            component_id?: string;
-            producer?: 'wall';
-            type_ref?: string | null;
-            references?: {
-                base?: {
-                    /**
-                     * The existing Level@1 entity_id, not its role.
-                     */
-                    level: string;
-                } | {
-                    datum: string;
-                };
-                top?: {
-                    /**
-                     * The existing Level@1 entity_id, not its role.
-                     */
-                    level: string;
-                } | {
-                    datum: string;
-                    /**
-                     * A value in metres, or an explicit @parameter binding.
-                     */
-                    offset?: number | string;
-                } | {
-                    offset_from: {
-                        /**
-                         * The existing Level@1 entity_id, not its role.
-                         */
-                        level: string;
-                        /**
-                         * A value in metres, or an explicit @parameter binding.
-                         */
-                        offset: number | string;
-                    };
-                };
-                /**
-                 * Existing support reference; bearing is declared by a named support relationship.
-                 */
-                support?: string;
-                line?: {
-                    from: {
-                        /**
-                         * Explicit project-local [x, z] in metres; coordinates may bind @parameters. No grid is required.
-                         */
-                        point: [
-                            number | string,
-                            number | string
-                        ];
-                    } | {
-                        grid: string | [
-                            string,
-                            string
-                        ];
-                    } | {
-                        axis_point: {
-                            /**
-                             * Optional reference system: the role (not entity_id) of a GridAxis@1 the project already declares.
-                             */
-                            axis: string;
-                            /**
-                             * A value in metres, or an explicit @parameter binding.
-                             */
-                            along: number | string;
-                        };
-                    } | {
-                        host: {
-                            element: string;
-                            /**
-                             * A value in metres, or an explicit @parameter binding.
-                             */
-                            along: number | string;
-                            /**
-                             * A value in metres, or an explicit @parameter binding.
-                             */
-                            across?: number | string;
-                        };
-                    };
-                    to: {
-                        /**
-                         * Explicit project-local [x, z] in metres; coordinates may bind @parameters. No grid is required.
-                         */
-                        point: [
-                            number | string,
-                            number | string
-                        ];
-                    } | {
-                        grid: string | [
-                            string,
-                            string
-                        ];
-                    } | {
-                        axis_point: {
-                            /**
-                             * Optional reference system: the role (not entity_id) of a GridAxis@1 the project already declares.
-                             */
-                            axis: string;
-                            /**
-                             * A value in metres, or an explicit @parameter binding.
-                             */
-                            along: number | string;
-                        };
-                    } | {
-                        host: {
-                            element: string;
-                            /**
-                             * A value in metres, or an explicit @parameter binding.
-                             */
-                            along: number | string;
-                            /**
-                             * A value in metres, or an explicit @parameter binding.
-                             */
-                            across?: number | string;
-                        };
-                    };
-                    /**
-                     * The existing wall face label, when the record names one.
-                     */
-                    face?: string;
-                    inward?: [
-                        number,
-                        number
-                    ];
-                };
-                /**
-                 * Elements whose solids are removed from this one. Each keeps its own identity and stays in the model hidden; remove it from this list and it is delivered again. Neither element needs to be classified. A void is a prism without rectangular_cutouts or a capped loft, has no voids of its own, and nothing stands on its top.
-                 */
-                voids?: Array<string>;
-            };
-            params?: {
-                /**
-                 * Wall height; optional when references.top determines it.
-                 */
-                height?: number | string;
-                /**
-                 * Positive wall thickness towards the line's inward normal.
-                 */
-                thickness?: number | string;
-                openings?: Array<{
-                    opening_id: string;
-                    component_id?: string;
-                    kind: 'door' | 'window';
-                    /**
-                     * The aperture profile. An unfilled doorway has no door leaf.
-                     */
-                    shape?: 'rectangular' | 'semicircular_arch';
-                    /**
-                     * A value in metres, or an explicit @parameter binding.
-                     */
-                    along?: number | string;
-                    at?: {
-                        /**
-                         * Explicit project-local [x, z] in metres; coordinates may bind @parameters. No grid is required.
-                         */
-                        point: [
-                            number | string,
-                            number | string
-                        ];
-                    } | {
-                        grid: string | [
-                            string,
-                            string
-                        ];
-                    } | {
-                        axis_point: {
-                            /**
-                             * Optional reference system: the role (not entity_id) of a GridAxis@1 the project already declares.
-                             */
-                            axis: string;
-                            /**
-                             * A value in metres, or an explicit @parameter binding.
-                             */
-                            along: number | string;
-                        };
-                    } | {
-                        host: {
-                            element: string;
-                            /**
-                             * A value in metres, or an explicit @parameter binding.
-                             */
-                            along: number | string;
-                            /**
-                             * A value in metres, or an explicit @parameter binding.
-                             */
-                            across?: number | string;
-                        };
-                    };
-                    /**
-                     * A value in metres, or an explicit @parameter binding.
-                     */
-                    width: number | string;
-                    sill: number | string | {
-                        /**
-                         * The existing Level@1 entity_id, not its role.
-                         */
-                        level: string;
-                    } | {
-                        offset_from: {
-                            /**
-                             * The existing Level@1 entity_id, not its role.
-                             */
-                            level: string;
-                            /**
-                             * A value in metres, or an explicit @parameter binding.
-                             */
-                            offset: number | string;
-                        };
-                    };
-                    head: number | string | {
-                        /**
-                         * The existing Level@1 entity_id, not its role.
-                         */
-                        level: string;
-                    } | {
-                        offset_from: {
-                            /**
-                             * The existing Level@1 entity_id, not its role.
-                             */
-                            level: string;
-                            /**
-                             * A value in metres, or an explicit @parameter binding.
-                             */
-                            offset: number | string;
-                        };
-                    };
-                    /**
-                     * For semicircular_arch only: springing above the wall base; head - spring_height = width / 2.
-                     */
-                    spring_height?: number | string;
-                    count?: number | string;
-                    /**
-                     * A value in metres, or an explicit @parameter binding.
-                     */
-                    step?: number | string;
-                    /**
-                     * Only an existing compatible rectangular window or door type; omit for an empty passage.
-                     */
-                    type_id?: string;
-                    interface_ref?: string;
-                }>;
-            };
-            name?: string | null;
-            label?: string | null;
-            note?: string | null;
-        };
-    } | {
-        entity_id: string;
-        schema?: 'Component@1';
-        parent_id?: string | null;
-        basis_refs?: Array<string>;
-        fields?: {
-            /**
-             * What this part of the design is for, in the architect's words.
-             */
-            intent?: string;
-            source_refs?: Array<string>;
-            /**
-             * Optional and deferred: omit it for new geometry whose meaning the project has not established. State it only when the architect says what the part is or the record already does; then use one registered alias in local-id form (GET /api/semantics), not a role.* or condition.* id. Adding it later upserts the same entity_id, keeping its identity and dependencies.
-             */
-            semantic_kind?: string;
-        };
-    } | {
-        entity_id: string;
-        schema?: 'Type@1';
-        parent_id?: string | null;
-        basis_refs?: Array<string>;
-        fields?: {
-            producer?: 'prism';
-            references?: {
-                base?: {
-                    /**
-                     * The existing Level@1 entity_id, not its role.
-                     */
-                    level: string;
-                } | {
-                    datum: string;
-                    /**
-                     * A value in metres, or an explicit @parameter binding.
-                     */
-                    offset?: number | string;
-                } | {
-                    offset_from: {
-                        /**
-                         * The existing Level@1 entity_id, not its role.
-                         */
-                        level: string;
-                        /**
-                         * A value in metres, or an explicit @parameter binding.
-                         */
-                        offset: number | string;
-                    };
-                } | {
-                    /**
-                     * A value in metres, or an explicit @parameter binding.
-                     */
-                    elevation: number | string;
-                };
-                top?: {
-                    /**
-                     * The existing Level@1 entity_id, not its role.
-                     */
-                    level: string;
-                } | {
-                    datum: string;
-                    /**
-                     * A value in metres, or an explicit @parameter binding.
-                     */
-                    offset?: number | string;
-                } | {
-                    offset_from: {
-                        /**
-                         * The existing Level@1 entity_id, not its role.
-                         */
-                        level: string;
-                        /**
-                         * A value in metres, or an explicit @parameter binding.
-                         */
-                        offset: number | string;
-                    };
-                };
-                /**
-                 * Elements whose solids are removed from this one. Each keeps its own identity and stays in the model hidden; remove it from this list and it is delivered again. Neither element needs to be classified. A void is a prism without rectangular_cutouts or a capped loft, has no voids of its own, and nothing stands on its top.
-                 */
-                voids?: Array<string>;
-            };
-            params?: {
-                /**
-                 * The closed plan profile in order; the first point is not repeated. Coordinates may bind @parameters.
-                 */
-                profile?: Array<[
-                    number | string,
-                    number | string
-                ]>;
-                /**
-                 * How far the profile is pulled; optional when references.top determines it.
-                 */
-                height?: number | string;
-                /**
-                 * Metres above references.base, added to that reference's own offset; defaults to zero. It moves the whole prism and leaves the height alone.
-                 */
-                elevation?: number | string;
-                /**
-                 * Optional orthonormal drawing frame relative to references.base. Profile pairs follow xAxis/yAxis; height follows normal. Omit for the retained XZ/+Y convention.
-                 */
-                work_plane?: {
-                    origin: [
-                        number,
-                        number,
-                        number
-                    ];
-                    xAxis: [
-                        number,
-                        number,
-                        number
-                    ];
-                    yAxis: [
-                        number,
-                        number,
-                        number
-                    ];
-                    normal: [
-                        number,
-                        number,
-                        number
-                    ];
-                };
-                /**
-                 * Openings through an axis-aligned rectangular profile.
-                 */
-                rectangular_cutouts?: Array<{
-                    cutout_id: string;
-                    span0: number;
-                    span1: number;
-                    bottom: number;
-                    top: number;
-                }>;
-            };
-            name?: string | null;
-            label?: string | null;
-            note?: string | null;
-        } | {
-            producer?: 'planar-surface';
-            references?: {
-                base?: {
-                    /**
-                     * The existing Level@1 entity_id, not its role.
-                     */
-                    level: string;
-                } | {
-                    datum: string;
-                    /**
-                     * A value in metres, or an explicit @parameter binding.
-                     */
-                    offset?: number | string;
-                } | {
-                    offset_from: {
-                        /**
-                         * The existing Level@1 entity_id, not its role.
-                         */
-                        level: string;
-                        /**
-                         * A value in metres, or an explicit @parameter binding.
-                         */
-                        offset: number | string;
-                    };
-                } | {
-                    datum: string;
-                } | {
-                    /**
-                     * A value in metres, or an explicit @parameter binding.
-                     */
-                    elevation: number | string;
-                };
-            };
-            params?: {
-                /**
-                 * One simple boundary in work_plane coordinates (XZ when omitted), repeating its first vertex at the end.
-                 */
-                profile?: Array<[
-                    number | string,
-                    number | string
-                ]>;
-                /**
-                 * Metres above references.base, added to that reference's own offset; defaults to zero.
-                 */
-                elevation?: number | string;
-                work_plane?: {
-                    origin: [
-                        number,
-                        number,
-                        number
-                    ];
-                    xAxis: [
-                        number,
-                        number,
-                        number
-                    ];
-                    yAxis: [
-                        number,
-                        number,
-                        number
-                    ];
-                    normal: [
-                        number,
-                        number,
-                        number
-                    ];
-                };
-            };
-            name?: string | null;
-            label?: string | null;
-            note?: string | null;
-        } | {
-            producer?: 'curve';
-            references?: {
-                base?: {
-                    /**
-                     * The existing Level@1 entity_id, not its role.
-                     */
-                    level: string;
-                } | {
-                    datum: string;
-                    /**
-                     * A value in metres, or an explicit @parameter binding.
-                     */
-                    offset?: number | string;
-                } | {
-                    offset_from: {
-                        /**
-                         * The existing Level@1 entity_id, not its role.
-                         */
-                        level: string;
-                        /**
-                         * A value in metres, or an explicit @parameter binding.
-                         */
-                        offset: number | string;
-                    };
-                };
-            };
-            params?: {
-                /**
-                 * Ordered points in work_plane coordinates (XZ when omitted); no closing segment is added.
-                 */
-                profile?: Array<[
-                    number | string,
-                    number | string
-                ]>;
-                /**
-                 * A value in metres, or an explicit @parameter binding.
-                 */
-                elevation?: number | string;
-                work_plane?: {
-                    origin: [
-                        number,
-                        number,
-                        number
-                    ];
-                    xAxis: [
-                        number,
-                        number,
-                        number
-                    ];
-                    yAxis: [
-                        number,
-                        number,
-                        number
-                    ];
-                    normal: [
-                        number,
-                        number,
-                        number
-                    ];
-                };
-            };
-            name?: string | null;
-            label?: string | null;
-            note?: string | null;
-        } | {
-            producer?: 'loft';
-            references?: {
-                base?: {
-                    /**
-                     * The existing Level@1 entity_id, not its role.
-                     */
-                    level: string;
-                } | {
-                    datum: string;
-                };
-                /**
-                 * Elements whose solids are removed from this one. Each keeps its own identity and stays in the model hidden; remove it from this list and it is delivered again. Neither element needs to be classified. A void is a prism without rectangular_cutouts or a capped loft, has no voids of its own, and nothing stands on its top.
-                 */
-                voids?: Array<string>;
-            };
-            params?: {
-                /**
-                 * Ordered sections of [X, Y-up, Z] points relative to the base datum; coordinates may bind @parameters.
-                 */
-                profiles?: Array<Array<[
-                    number | string,
-                    number | string,
-                    number | string
-                ]>>;
-                /**
-                 * The same number of vertices in every section; do not repeat the first vertex.
-                 */
-                profile_size?: number;
-                /**
-                 * straight (default) connects sections with ruled faces; normal interpolates between the sections.
-                 */
-                loft_type?: 'straight' | 'normal';
-                /**
-                 * Polyline sections (default); interpolated section curves are not exposed by this authoring path.
-                 */
-                profile_basis?: 'polyline';
-                /**
-                 * True (default) caps both ends into one solid; false leaves both end sections open as a surface.
-                 */
-                cap_ends?: boolean;
-                closed_profile?: true;
-            };
-            name?: string | null;
-            label?: string | null;
-            note?: string | null;
-        } | {
-            producer?: 'wall';
-            references?: {
-                base?: {
-                    /**
-                     * The existing Level@1 entity_id, not its role.
-                     */
-                    level: string;
-                } | {
-                    datum: string;
-                };
-                top?: {
-                    /**
-                     * The existing Level@1 entity_id, not its role.
-                     */
-                    level: string;
-                } | {
-                    datum: string;
-                    /**
-                     * A value in metres, or an explicit @parameter binding.
-                     */
-                    offset?: number | string;
-                } | {
-                    offset_from: {
-                        /**
-                         * The existing Level@1 entity_id, not its role.
-                         */
-                        level: string;
-                        /**
-                         * A value in metres, or an explicit @parameter binding.
-                         */
-                        offset: number | string;
-                    };
-                };
-                /**
-                 * Existing support reference; bearing is declared by a named support relationship.
-                 */
-                support?: string;
-                line?: {
-                    from: {
-                        /**
-                         * Explicit project-local [x, z] in metres; coordinates may bind @parameters. No grid is required.
-                         */
-                        point: [
-                            number | string,
-                            number | string
-                        ];
-                    } | {
-                        grid: string | [
-                            string,
-                            string
-                        ];
-                    } | {
-                        axis_point: {
-                            /**
-                             * Optional reference system: the role (not entity_id) of a GridAxis@1 the project already declares.
-                             */
-                            axis: string;
-                            /**
-                             * A value in metres, or an explicit @parameter binding.
-                             */
-                            along: number | string;
-                        };
-                    } | {
-                        host: {
-                            element: string;
-                            /**
-                             * A value in metres, or an explicit @parameter binding.
-                             */
-                            along: number | string;
-                            /**
-                             * A value in metres, or an explicit @parameter binding.
-                             */
-                            across?: number | string;
-                        };
-                    };
-                    to: {
-                        /**
-                         * Explicit project-local [x, z] in metres; coordinates may bind @parameters. No grid is required.
-                         */
-                        point: [
-                            number | string,
-                            number | string
-                        ];
-                    } | {
-                        grid: string | [
-                            string,
-                            string
-                        ];
-                    } | {
-                        axis_point: {
-                            /**
-                             * Optional reference system: the role (not entity_id) of a GridAxis@1 the project already declares.
-                             */
-                            axis: string;
-                            /**
-                             * A value in metres, or an explicit @parameter binding.
-                             */
-                            along: number | string;
-                        };
-                    } | {
-                        host: {
-                            element: string;
-                            /**
-                             * A value in metres, or an explicit @parameter binding.
-                             */
-                            along: number | string;
-                            /**
-                             * A value in metres, or an explicit @parameter binding.
-                             */
-                            across?: number | string;
-                        };
-                    };
-                    /**
-                     * The existing wall face label, when the record names one.
-                     */
-                    face?: string;
-                    inward?: [
-                        number,
-                        number
-                    ];
-                };
-                /**
-                 * Elements whose solids are removed from this one. Each keeps its own identity and stays in the model hidden; remove it from this list and it is delivered again. Neither element needs to be classified. A void is a prism without rectangular_cutouts or a capped loft, has no voids of its own, and nothing stands on its top.
-                 */
-                voids?: Array<string>;
-            };
-            params?: {
-                /**
-                 * Wall height; optional when references.top determines it.
-                 */
-                height?: number | string;
-                /**
-                 * Positive wall thickness towards the line's inward normal.
-                 */
-                thickness?: number | string;
-                openings?: Array<{
-                    opening_id: string;
-                    component_id?: string;
-                    kind: 'door' | 'window';
-                    /**
-                     * The aperture profile. An unfilled doorway has no door leaf.
-                     */
-                    shape?: 'rectangular' | 'semicircular_arch';
-                    /**
-                     * A value in metres, or an explicit @parameter binding.
-                     */
-                    along?: number | string;
-                    at?: {
-                        /**
-                         * Explicit project-local [x, z] in metres; coordinates may bind @parameters. No grid is required.
-                         */
-                        point: [
-                            number | string,
-                            number | string
-                        ];
-                    } | {
-                        grid: string | [
-                            string,
-                            string
-                        ];
-                    } | {
-                        axis_point: {
-                            /**
-                             * Optional reference system: the role (not entity_id) of a GridAxis@1 the project already declares.
-                             */
-                            axis: string;
-                            /**
-                             * A value in metres, or an explicit @parameter binding.
-                             */
-                            along: number | string;
-                        };
-                    } | {
-                        host: {
-                            element: string;
-                            /**
-                             * A value in metres, or an explicit @parameter binding.
-                             */
-                            along: number | string;
-                            /**
-                             * A value in metres, or an explicit @parameter binding.
-                             */
-                            across?: number | string;
-                        };
-                    };
-                    /**
-                     * A value in metres, or an explicit @parameter binding.
-                     */
-                    width: number | string;
-                    sill: number | string | {
-                        /**
-                         * The existing Level@1 entity_id, not its role.
-                         */
-                        level: string;
-                    } | {
-                        offset_from: {
-                            /**
-                             * The existing Level@1 entity_id, not its role.
-                             */
-                            level: string;
-                            /**
-                             * A value in metres, or an explicit @parameter binding.
-                             */
-                            offset: number | string;
-                        };
-                    };
-                    head: number | string | {
-                        /**
-                         * The existing Level@1 entity_id, not its role.
-                         */
-                        level: string;
-                    } | {
-                        offset_from: {
-                            /**
-                             * The existing Level@1 entity_id, not its role.
-                             */
-                            level: string;
-                            /**
-                             * A value in metres, or an explicit @parameter binding.
-                             */
-                            offset: number | string;
-                        };
-                    };
-                    /**
-                     * For semicircular_arch only: springing above the wall base; head - spring_height = width / 2.
-                     */
-                    spring_height?: number | string;
-                    count?: number | string;
-                    /**
-                     * A value in metres, or an explicit @parameter binding.
-                     */
-                    step?: number | string;
-                    /**
-                     * Only an existing compatible rectangular window or door type; omit for an empty passage.
-                     */
-                    type_id?: string;
-                    interface_ref?: string;
-                }>;
-            };
-            name?: string | null;
-            label?: string | null;
-            note?: string | null;
-        };
-    } | {
-        entity_id: string;
-        schema?: 'Reading@1';
-        parent_id?: string | null;
-        basis_refs?: Array<string>;
-        fields?: {
-            /**
-             * A retained design condition, observation or assumption, with its status stated in the text. A reading is context, not approval or a lock.
-             */
-            note?: string;
-            /**
-             * Exact entity:/parameter:/relation: refs this reading concerns; empty for a project-wide condition.
-             */
-            subject_refs?: Array<string>;
-            source_ref?: string | null;
-        };
+        [key: string]: unknown;
     }>;
     parameters?: Array<{
         key: string;
@@ -10661,28 +9751,7 @@ export type SemanticEditRequestDto = {
         source_ref?: string | null;
     }>;
     relations?: Array<{
-        relation_id: string;
-        kind?: 'composition' | 'aggregates' | 'primary_contains' | 'references_zone' | 'adjacent' | 'intersects' | 'dependency' | 'support' | 'load_transfer' | 'host' | 'hosts_void' | 'fills_void' | 'access' | 'allows_passage' | 'clearance' | 'realization' | 'realizes' | 'lineage' | 'refines' | 'replaces' | 'interface' | 'alignment' | 'symmetric_with' | 'blocks' | 'evidences';
-        subject?: string;
-        object?: string;
-        datum_role?: string | null;
-        propagation?: 'unchanged' | 'revalidate' | 'invalidate';
-        validator?: null | {
-            check_kind: 'support_contact' | 'aperture_exists';
-            tolerance: number;
-        } | {
-            check_kind: 'clearance_interval';
-            interval_m: [
-                number,
-                number
-            ];
-        };
-        parameters?: {
-            engagement_depth?: number;
-            rise?: number;
-        };
-        epistemic_status?: 'declared' | 'derived' | 'hypothesis';
-        basis_refs?: Array<string>;
+        [key: string]: unknown;
     }>;
     removeEntityIds?: Array<string>;
     removeParameterKeys?: Array<string>;
@@ -10848,12 +9917,6 @@ export type SketchActionDto = {
      */
     parentComponentId?: string | null;
     /**
-     * Semantickind
-     *
-     * optional: what a new component is, as a registered alias, when the architect has said so. Omit it for geometry whose meaning is not established; the component is created without semantics and can be enriched later under the same componentId
-     */
-    semanticKind?: string | null;
-    /**
      * Elementid
      *
      * the Element@1 this action authors; an existing id edits that element. It must differ from componentId: a component and its element are two entities with their own ids
@@ -11010,12 +10073,6 @@ export type SketchPrismRequestDto = {
      * required when componentId is new here: the existing component it belongs under, which is what decides the seat that builds it
      */
     parentComponentId?: string | null;
-    /**
-     * Semantickind
-     *
-     * optional: what a new component is, as a registered alias, when the architect has said so. Omit it for geometry whose meaning is not established; the component is created without semantics and can be enriched later under the same componentId
-     */
-    semanticKind?: string | null;
     /**
      * Elementid
      *
@@ -16612,6 +15669,45 @@ export type CreateFacetsProposalApiProposalsFacetsPostResponses = {
 };
 
 export type CreateFacetsProposalApiProposalsFacetsPostResponse = CreateFacetsProposalApiProposalsFacetsPostResponses[keyof CreateFacetsProposalApiProposalsFacetsPostResponses];
+
+export type CreateHostedOpeningProposalApiProposalsHostedOpeningPostData = {
+    body: HostedOpeningRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/proposals/hosted-opening';
+};
+
+export type CreateHostedOpeningProposalApiProposalsHostedOpeningPostErrors = {
+    /**
+     * ENRICHMENT_REQUIRED names the facet to add first; STALE_BASE a request made against another state
+     */
+    409: EnrichmentRequiredDto;
+    /**
+     * Refused with a code and one sentence: HOST_INVALID; a block that cannot take one as it is drawn, with the reason; FAMILY_INVALID; INTERFACE_UNKNOWN; OPENING_INVALID
+     */
+    422: ConstructionRefusalDto;
+};
+
+export type CreateHostedOpeningProposalApiProposalsHostedOpeningPostError = CreateHostedOpeningProposalApiProposalsHostedOpeningPostErrors[keyof CreateHostedOpeningProposalApiProposalsHostedOpeningPostErrors];
+
+export type CreateHostedOpeningProposalApiProposalsHostedOpeningPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: ProposalDto;
+};
+
+export type CreateHostedOpeningProposalApiProposalsHostedOpeningPostResponse = CreateHostedOpeningProposalApiProposalsHostedOpeningPostResponses[keyof CreateHostedOpeningProposalApiProposalsHostedOpeningPostResponses];
 
 export type ReadSavedModelAnnotationsApiModelAnnotationsGetData = {
     body?: never;
