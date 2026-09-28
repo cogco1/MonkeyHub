@@ -1475,7 +1475,9 @@
         "a structurally invalid input raises; a semantically rejected proposal returns a receipt with issues and no program",
         "every issue is appended, not short-circuited, so one round reports every independent failure",
         "the compiled program is bound to the state digest and, on a revision, to the predecessor program digest",
-        "operation order is deterministic for one proposal"
+        "operation order is deterministic for one proposal",
+        "only a delivered object (state.geometry_program.delivered_object_ids) must be owned by a semantic binding; a consumed intermediate may be unowned",
+        "a host_cut member is derived from its named host or consumed together with it by one operation; no operation kind is prescribed"
       ],
       "status": "canonical",
       "tests": [

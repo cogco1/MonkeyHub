@@ -600,5 +600,76 @@ class GeometryCompilerTests(unittest.TestCase):
         )
 
 
+class ConstructionOwnershipTests(unittest.TestCase):
+    """#419: only delivered geometry needs a design identity; a host cut relates to its host by construction."""
+
+    def setUp(self) -> None:
+        self.state = _state()
+
+    def _compile(self, proposal):
+        return compile_geometry_program(self.state, proposal, active_commitment_refs=(COMMITMENT,))
+
+    def _without_owner(self, proposal, *object_ids):
+        binding = proposal.semantic_bindings[0]
+        owned = tuple(item for item in binding.object_ids if item not in object_ids)
+        return replace(proposal, semantic_bindings=(replace(binding, object_ids=owned),))
+
+    def _block(self) -> GeometryOperation:
+        return _operation(op_id="block", kind=GeometryOperationKind.SOLID, output="block", parameter=_number("width", 2.0))
+
+    def _cutter(self, *, retained: bool = False) -> GeometryOperation:
+        parameters = [_number("width", 0.5)]
+        if retained:
+            parameters.append(GeometryParameter.create(
+                name="retain_for_inspection", kind=GeometryParameterKind.BOOLEAN, value=True))
+        return GeometryOperation(
+            op_id="niche-cutter", kind=GeometryOperationKind.SOLID, output_object_ids=("niche-cutter",),
+            input_object_ids=(), frame_id="world",
+            parameters=tuple(sorted(parameters, key=lambda item: item.name)), semantic_binding_ids=(),
+        )
+
+    def _niche(self) -> GeometryOperation:
+        return _operation(op_id="niche", kind=GeometryOperationKind.BOOLEAN_DIFFERENCE, output="niche-block",
+                          inputs=("block", "niche-cutter"))
+
+    def _host_cut(self, object_id: str):
+        proposal = _proposal(self.state)
+        assembly = proposal.assemblies[0]
+        members = tuple(
+            replace(member, object_ids=(object_id,)) if member.role is AssemblyRole.HOST_CUT else member
+            for member in assembly.members
+        )
+        return replace(proposal, assemblies=(replace(assembly, members=members),))
+
+    def test_a_consumed_intermediate_needs_no_design_identity(self) -> None:
+        proposal = self._without_owner(
+            _proposal(self.state, extra_operations=(self._block(), self._cutter(), self._niche())), "niche-cutter")
+        result = self._compile(proposal)
+        self.assertIs(result.receipt.status, GeometryCompileStatus.COMPILED, result.receipt.issues)
+        assert result.program is not None
+        self.assertIn("niche-cutter", {item.object_id for item in result.program.objects})
+
+    def test_an_unbound_delivered_object_is_refused(self) -> None:
+        proposal = self._without_owner(_proposal(self.state, extra_operations=(self._cutter(),)), "niche-cutter")
+        issues = [item for item in self._compile(proposal).receipt.issues if item.code is GeometryIssueCode.UNOWNED_OBJECT]
+        self.assertEqual([(item.subject_id, item.detail) for item in issues],
+                         [("niche-cutter", "delivered geometry object has no design identity binding")])
+
+    def test_a_retained_intermediate_needs_a_design_identity(self) -> None:
+        proposal = self._without_owner(
+            _proposal(self.state, extra_operations=(self._block(), self._cutter(retained=True), self._niche())),
+            "niche-cutter")
+        self.assertIn(GeometryIssueCode.UNOWNED_OBJECT, _codes(self._compile(proposal)))
+
+    def test_a_host_cut_region_consumed_with_its_host_is_accepted(self) -> None:
+        result = self._compile(self._host_cut("opening-tool"))
+        self.assertIs(result.receipt.status, GeometryCompileStatus.COMPILED, result.receipt.issues)
+
+    def test_a_host_cut_related_to_its_host_by_no_operation_is_refused(self) -> None:
+        issues = self._compile(self._host_cut("unrelated-axis")).receipt.issues
+        self.assertEqual([item.detail for item in issues if item.code is GeometryIssueCode.INVALID_ASSEMBLY],
+                         ["host-cut region is related to its named host by no operation"])
+
+
 if __name__ == "__main__":
     unittest.main()
