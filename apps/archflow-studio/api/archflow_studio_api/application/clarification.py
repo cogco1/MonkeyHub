@@ -2430,7 +2430,8 @@ def compiled_proposal(
     component tier's edit, are about the geometry the agent named
     (``targeted``), else ``component_id`` (the request's selection), else the
     project's modelling root. What a local answer may change was checked when
-    the answer was read (``intent_agent``).
+    the answer was read (``intent_agent``), by compiling its script; that
+    compiled script is what is proposed, so it is interpreted once.
     """
 
     if not compilation.proposes_change:
@@ -2445,6 +2446,7 @@ def compiled_proposal(
         made = design_proposal(
             binding, projection, script=compilation.script, parameters=compilation.parameters or (),
             facets=compilation.facets or (), summary=compilation.why or None, keep_refs=keep, component_id=about,
+            compiled=compilation.compiled_script,
         )
     return made._replace(proposal=replace(made.proposal, utterance=utterance))
 

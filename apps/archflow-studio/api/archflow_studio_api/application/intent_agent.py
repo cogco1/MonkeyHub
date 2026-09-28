@@ -21,7 +21,7 @@ and produces no invocation receipt.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from contextlib import contextmanager
 from copy import deepcopy
 from datetime import datetime, timezone
@@ -52,7 +52,7 @@ from monkeyarch.construction import vocabulary
 
 from ..settings import INTENT_PROVIDER_ENV, SettingsError, StudioSettings
 from ..transport.errors import StudioError
-from .construction import MODEL_ROOT, construction_model, in_construction_words, script_result
+from .construction import MODEL_ROOT, CompiledScript, construction_model, in_construction_words, script_result
 from .intent import ACCEPTED_FORMS, KEEP_SENTENCE, resolve_keep_refs
 from .projection import StateProjection
 from .intent_context import IntentContext, _geometry_ids, compile_context, expand_context, model_context
@@ -356,6 +356,9 @@ class Compilation:
     parameters: tuple[Mapping[str, Any], ...] | None = None
     target_id: str | None = None
     keep: tuple[str, ...] = ()
+    # A local design answer's script as it was compiled to check what it writes (``_require_writable``);
+    # the proposal is made from it, so the script is interpreted once per answer. Never on the wire.
+    compiled_script: CompiledScript | None = field(default=None, compare=False, repr=False)
 
     @property
     def proposes_change(self) -> bool:
@@ -961,8 +964,8 @@ def _stated_keep(compilation: Compilation, projection) -> Compilation:
     return replace(compilation, keep=refs)
 
 
-def _require_writable(compilation: Compilation, context: IntentContext, projection) -> None:
-    """A local design answer changes its request's targets and nothing else it reads.
+def _require_writable(compilation: Compilation, context: IntentContext, projection) -> CompiledScript | None:
+    """A local design answer changes its request's targets and nothing else it reads; its script as compiled.
 
     A dependency supplement grants reads, never writes. What a script writes
     is known once it is compiled, so it is compiled here against the same
@@ -971,12 +974,14 @@ def _require_writable(compilation: Compilation, context: IntentContext, projecti
     compile's reason, as an answer outside its scope is. Facets write the
     geometry ids they name. Anything outside is the agent's malformed answer,
     named in the geometry ids the agent saw (``editTargets``), never an
-    internal part id.
+    internal part id. The compiled script is returned for the proposal to be
+    made from (``None`` without a script), so it is interpreted once.
     """
 
     record = projection.record
     existing = {entity.entity_id for entity in record.entities}
     written = {str(target.get("id")) for target in compilation.facets or ()} & existing
+    compiled = None
     if compilation.script is not None:
         components = sorted(entity.entity_id for entity in record.entities_of("Component@1"))
         root = MODEL_ROOT if MODEL_ROOT in components else next(iter(components), MODEL_ROOT)
@@ -989,6 +994,7 @@ def _require_writable(compilation: Compilation, context: IntentContext, projecti
                 f"the {compilation.provider} agent's script cannot be checked against what this request may "
                 f"change{f' (line {line})' if line else ''}: {exc.detail}; nothing was proposed") from exc
         written |= ({row["entity_id"] for row in result.entities} | set(result.remove_entity_ids)) & existing
+        compiled = CompiledScript(root, result)
     rows = {row["elementId"]: row for row in context.sheet.get("elements", ())}
     allowed = set(context.target_ids) | {rows[target]["componentId"] for target in context.target_ids if target in rows}
     outside = written - allowed
@@ -999,6 +1005,7 @@ def _require_writable(compilation: Compilation, context: IntentContext, projecti
         raise ValueError(
             f"the {compilation.provider} agent's answer changes {', '.join(named)}, outside what this request may "
             f"change ({', '.join(targets)}); nothing was proposed")
+    return compiled
 
 
 @contextmanager
@@ -1397,7 +1404,7 @@ def _answered(
                 expand_context(context, full_sheet, compilation.context_refs, record=record)
             if (compilation.status == "compiled" and context.tier == "design" and context.design_sheet is not None
                     and projection is not None):
-                _require_writable(compilation, context, projection)
+                compilation = replace(compilation, compiled_script=_require_writable(compilation, context, projection))
     except (StudioError, ValueError) as exc:
         detail = exc.detail if isinstance(exc, StudioError) else str(exc)
         raise IntentAgentFailed(

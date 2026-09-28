@@ -805,6 +805,44 @@ class ConstructionIntentTests(IntentTestCase):
         self.assertEqual(layer_rule_violations(text.replace('"wall"', '""')), ())
 
 
+class LocalDesignAnswerTests(IntentTestCase):
+    """#419 final round: a local design answer's script is interpreted once per answer."""
+
+    def test_a_local_script_is_interpreted_once_and_proposed_from_that_result(self) -> None:
+        # What a local answer may change is checked by compiling its script; the proposal is made from that same
+        # result, its new shape placed under the modelling root (portico here), not compiled a second time.
+        from types import SimpleNamespace
+        from unittest.mock import patch
+
+        from archflow_studio_api.application import construction, intent_agent
+
+        answer = {"status": "compiled", "script": RAISED_BASE + "\n" + PLINTH, "facets": None, "parameters": None,
+                  "keep": None, "utterance": None, "targetId": "portico-base", "why": "Raise the base on a plinth.",
+                  "question": None, "contextRefs": []}
+        response = SimpleNamespace(content=[SimpleNamespace(type="text", text=json.dumps(answer))],
+                                   model="unit-test-model", usage={"input_tokens": 10, "output_tokens": 5})
+        sdk = SimpleNamespace(Anthropic=lambda **kwargs: SimpleNamespace(
+            messages=SimpleNamespace(create=lambda **request: response)))
+        with patch.object(intent_agent, "_anthropic_sdk", return_value=(sdk, "unit-test-sdk")):
+            self.app.state.intent_compiler = intent_agent.AnthropicCompiler(model="unit-test-model")
+        interpret = construction.compile_construction_script
+        roots: list[str] = []
+
+        def counted(*args, **kwargs):
+            roots.append(kwargs["root_component_id"])
+            return interpret(*args, **kwargs)
+
+        with patch.object(construction, "compile_construction_script", side_effect=counted):
+            status, body = self.ask("rework portico-base and add a plinth", targetComponentId="portico")
+        self.assertEqual(status, 201, body)
+        self.assertEqual(len(roots), 1, roots)
+        rows = {row["entity_id"]: row for row in body["proposal"]["change"]["edits"]["entities"]}
+        self.assertEqual(rows["plinth"]["parent_id"], "portico")
+        self.assertEqual(rows["portico-base"]["fields"]["params"]["height"], 0.8)
+        self.assertEqual(sorted((row["id"], row["status"]) for row in body["construction"]["report"]),
+                         [("plinth", "created"), ("portico-base", "updated")])
+
+
 class DirectComponentEditTests(IntentTestCase):
     """The Studio's own component edits (POST /api/proposals semanticEdit): no agent, no model."""
 

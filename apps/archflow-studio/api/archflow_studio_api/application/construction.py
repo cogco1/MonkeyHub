@@ -128,6 +128,18 @@ class ConstructionProposal(NamedTuple):
     result: ConstructionResult | None
 
 
+class CompiledScript(NamedTuple):
+    """A script already compiled against a proposal's projection, and the root it was compiled under.
+
+    ``construction_proposal`` proposes from it instead of interpreting the
+    script again; the root only places the shapes the script makes
+    (``_placed_under``).
+    """
+
+    root: str
+    result: ConstructionResult
+
+
 class EnrichmentRequired(StudioError):
     """409 ``ENRICHMENT_REQUIRED``: a capability asked of geometry whose facets do not unlock it yet.
 
@@ -183,6 +195,7 @@ def construction_proposal(
     parameters: Sequence[Mapping[str, Any]] = (),
     summary: str | None = None,
     keep_refs: Sequence[str] = (),
+    compiled: CompiledScript | None = None,
 ) -> ConstructionProposal:
     """One construction script as a proposal against ``projection``, with what the script reported.
 
@@ -191,12 +204,15 @@ def construction_proposal(
     ``param(key)`` binds a parameter the same request introduces. The proposal
     is about the first geometry the script makes, changes or removes, by line,
     else the modelling root. It is not remembered and carries no source run;
-    the caller places it.
+    the caller places it. ``compiled`` is this script with these parameters
+    already compiled against ``projection``: the proposal is made from it, and
+    the script is not interpreted again.
     """
 
     root = modelling_root(binding, projection)
     named = _parameters_named(parameters)
-    result = script_result(projection, script, root=root, parameters=parameters, summary=summary)
+    result = (_placed_under(compiled, root) if compiled is not None
+              else script_result(projection, script, root=root, parameters=parameters, summary=summary))
     shaped = bool(result.entities or result.remove_entity_ids)
     if not shaped and not parameters:
         raise ConstructionRefused(ConstructionError(
@@ -246,6 +262,21 @@ def script_result(
         raise ConstructionRefused(exc) from exc
 
 
+def _placed_under(compiled: CompiledScript, root: str) -> ConstructionResult:
+    """A compiled script's result with the shapes it made placed under ``root``.
+
+    The root a script is compiled under is the parent of the components of the
+    shapes it makes and nothing else (``compile_construction_script``), so a
+    script compiled under another root is not interpreted again for this one.
+    """
+
+    if compiled.root == root:
+        return compiled.result
+    return replace(compiled.result, entities=tuple(
+        {**row, "parent_id": root} if row["schema"] == "Component@1" and row["parent_id"] == compiled.root else row
+        for row in compiled.result.entities))
+
+
 def design_proposal(
     binding: ProjectBinding,
     projection: StateProjection,
@@ -256,19 +287,22 @@ def design_proposal(
     summary: str | None = None,
     keep_refs: Sequence[str] = (),
     component_id: str | None = None,
+    compiled: CompiledScript | None = None,
 ) -> ConstructionProposal:
     """An agent's construction answer as one proposal against ``projection``.
 
-    A script goes through ``construction_proposal`` with its parameters, and
-    parameters without a script are a parameters-only component edit about
-    ``component_id``, the geometry the request is about. Facets come last, so
-    they may name geometry the same script makes: they are read against the
-    design the first part would make (``facets_proposal``) and folded onto the
-    same exact base (``continue_proposal``), so everything they do not name
-    stays as that part left it. ``keep_refs`` are judged on the whole answer
-    on that base: a part that reaches one makes the proposal a reviewable
-    ``conflict`` naming it, as a script alone would. ``result`` is the
-    script's report, ``None`` without a script.
+    A script goes through ``construction_proposal`` with its parameters (and
+    ``compiled``, the same script already compiled against ``projection`` when
+    the answer was checked, so it is interpreted once), and parameters without
+    a script are a parameters-only component edit about ``component_id``, the
+    geometry the request is about. Facets come last, so they may name geometry
+    the same script makes: they are read against the design the first part
+    would make (``facets_proposal``) and folded onto the same exact base
+    (``continue_proposal``), so everything they do not name stays as that part
+    left it. ``keep_refs`` are judged on the whole answer on that base: a part
+    that reaches one makes the proposal a reviewable ``conflict`` naming it, as
+    a script alone would. ``result`` is the script's report, ``None`` without a
+    script.
     """
 
     # With facets the parts are made without the keep, which is judged once, on the whole answer.
@@ -276,7 +310,7 @@ def design_proposal(
     made: ConstructionProposal | None = None
     if script is not None:
         made = construction_proposal(binding, projection, script, parameters=parameters, summary=summary,
-                                     keep_refs=keep)
+                                     keep_refs=keep, compiled=compiled)
     elif parameters:
         said = summary or _parameters_named(parameters)
         made = ConstructionProposal(proposal_from(component_edit_proposal(
