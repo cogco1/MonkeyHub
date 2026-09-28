@@ -284,6 +284,18 @@ try {
           const bytes = url.pathname.includes(referenceSha) ? referenceBytes : drawingBytes;
           assert.ok(bytes); return await route.fulfill({ status: 200, contentType: "image/png", body: bytes });
         }
+        // Board previews read a page's cached raster (#368): the status names the PNG's own digest.
+        if (url.pathname === "/api/projections/pages") {
+          const bytes = url.searchParams.get("assetSha256") === referenceSha ? referenceBytes : drawingBytes;
+          assert.ok(bytes); const blob = createHash("sha256").update(bytes).digest("hex");
+          return await json({ key: blob, status: "done", kind: "document-page", recipe: {}, renderer: "fixture",
+            inputSha256: url.searchParams.get("assetSha256"), source: null, blobSha256: blob, blobUrl: `/api/projections/blobs/${blob}`,
+            width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20), attempts: 1, error: null, loadMs: 0, renderMs: 0 });
+        }
+        if (url.pathname.startsWith("/api/projections/blobs/")) {
+          const bytes = [drawingBytes, referenceBytes].find((value) => value && url.pathname.endsWith(createHash("sha256").update(value).digest("hex")));
+          assert.ok(bytes); return await route.fulfill({ status: 200, contentType: "image/png", body: bytes });
+        }
         if (url.pathname === "/api/document-comments") return await json({ comments });
       }
       if (method === "POST" && url.pathname === "/api/pick/resolve") {
