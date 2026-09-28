@@ -10,6 +10,13 @@ every push to `main` (issue #376).
 
 It runs on one invented project and compares a **base** code root with a **candidate** code root.
 
+In CI the **base** code builds that project (`build_synthetic_project` from the base checkout, with the base
+first on `PYTHONPATH`; the step refuses to run if `archflow` or `archflow_studio_api` loads from anywhere else).
+The promise is about existing projects: whatever the base wrote, the candidate must answer the same. A candidate
+that deliberately changes what new runs record (#402 binds a record without massing by a new digest) writes data
+the base cannot read, so building the project with the candidate would fail such a change for the wrong reason
+(GH-429). A change to the generator itself is still covered by `test_synthetic_project.py` in `verify`.
+
 1. The project is copied once into a scratch directory under its own folder name, and its file times are
    moved back so the project counts as settled. The project you pass is never written.
 2. **Base, fresh process.** The base reads each route and records the status, a sha256 of the body and the time taken.
