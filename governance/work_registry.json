@@ -19,12 +19,19 @@
             "studio.binding",
             "studio.candidate",
             "studio.intent",
-            "studio.validation"
+            "studio.validation",
+            "studio.options",
+            "studio.artifacts"
           ],
           "write_scope": [
             "apps/archflow-studio/api/archflow_studio_api/routes/proposals.py",
             "apps/archflow-studio/api/archflow_studio_api/routes/candidates.py",
             "apps/archflow-studio/api/archflow_studio_api/routes/state.py",
+            "apps/archflow-studio/api/archflow_studio_api/routes/intents.py",
+            "apps/archflow-studio/api/archflow_studio_api/routes/pick.py",
+            "apps/archflow-studio/api/archflow_studio_api/routes/options.py",
+            "apps/archflow-studio/api/archflow_studio_api/application/pick.py",
+            "apps/archflow-studio/api/archflow_studio_api/application/drawing_plans.py",
             "apps/archflow-studio/api/archflow_studio_api/application/proposals.py",
             "apps/archflow-studio/api/archflow_studio_api/application/clarification.py",
             "apps/archflow-studio/api/archflow_studio_api/application/intent.py",
