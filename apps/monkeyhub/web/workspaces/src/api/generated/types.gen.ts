@@ -7254,7 +7254,7 @@ export type ProjectionStatusDto = {
      */
     inputSha256: string;
     /**
-     * The requester's own source, checked for this request; absent when the key alone was asked for.
+     * The requester's own model source, checked for this request; absent when the key alone was asked for, and for a document page.
      */
     source?: ModelSourceDto | null;
     /**
@@ -7264,9 +7264,21 @@ export type ProjectionStatusDto = {
     /**
      * Bloburl
      *
-     * Immutable PNG bytes; present only when status is done.
+     * Immutable PNG bytes; present only when status is done and the blob is a PNG.
      */
     blobUrl?: string | null;
+    /**
+     * Width
+     *
+     * A document page's pixel width.
+     */
+    width?: number | null;
+    /**
+     * Height
+     *
+     * A document page's pixel height.
+     */
+    height?: number | null;
     /**
      * Attempts
      */
@@ -17689,6 +17701,58 @@ export type ReadProjectionBlobApiProjectionsBlobsSha256GetResponses = {
      */
     200: unknown;
 };
+
+export type ReadPageProjectionApiProjectionsPagesGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query: {
+        /**
+         * Runid
+         */
+        runId: string;
+        /**
+         * Assetsha256
+         */
+        assetSha256: string;
+        /**
+         * Revisionref
+         */
+        revisionRef?: string | null;
+        /**
+         * Pageindex
+         */
+        pageIndex?: number;
+    };
+    url: '/api/projections/pages';
+};
+
+export type ReadPageProjectionApiProjectionsPagesGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadPageProjectionApiProjectionsPagesGetError = ReadPageProjectionApiProjectionsPagesGetErrors[keyof ReadPageProjectionApiProjectionsPagesGetErrors];
+
+export type ReadPageProjectionApiProjectionsPagesGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: ProjectionStatusDto;
+};
+
+export type ReadPageProjectionApiProjectionsPagesGetResponse = ReadPageProjectionApiProjectionsPagesGetResponses[keyof ReadPageProjectionApiProjectionsPagesGetResponses];
 
 export type ReadProjectionApiProjectionsKeyGetData = {
     body?: never;

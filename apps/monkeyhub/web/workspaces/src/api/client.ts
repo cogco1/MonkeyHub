@@ -6,7 +6,7 @@
 
 import type { ServerConnection } from "./connection";
 import { renderCapabilitiesApiRenderCapabilitiesGet, listRenderJobsApiRenderJobsGet, createRenderJobApiRenderJobsPost, retainRenderViewApiRenderViewsPost } from "./generated";
-import { requestProjectionApiProjectionsGet, readProjectionBlobApiProjectionsBlobsSha256Get } from "./generated";
+import { requestProjectionApiProjectionsGet, readProjectionBlobApiProjectionsBlobsSha256Get, readPageProjectionApiProjectionsPagesGet } from "./generated";
 import type { ProjectionStatusDto } from "./generated";
 import type { RenderCapabilitiesDto, RenderJobListDto, RenderJobDto, RenderRequestDto, RenderViewSourceRequestDto } from "./generated";
 import type { ElevationEditRequestDto } from "./generated";
@@ -544,6 +544,24 @@ export const createStudioClient = (connection: ServerConnection) => ({
   projectionBlob(sha256: string): Promise<Blob> {
     return call<Blob>(`GET /api/projections/blobs/${sha256}`, readProjectionBlobApiProjectionsBlobsSha256Get({
       client: connection.client, path: { sha256 }, parseAs: "blob" }) as Promise<FieldsResult<Blob>>);
+  },
+
+  /**
+   * One registered page as the raster Board, Publish and exports all show (#368): a PNG of at most 2048 px,
+   * transparency kept, drawn once per document and page and read back by its digest (immutable, browser-cached).
+   * The document stays the page's source; this only supplies its pixels.
+   */
+  async documentPage(runId: string, assetSha256: string, revisionRef: string | null, pageIndex: number,
+  ): Promise<{ file: File; width: number; height: number }> {
+    const status = await call("GET /api/projections/pages", readPageProjectionApiProjectionsPagesGet({ client: connection.client,
+      query: { runId, assetSha256, pageIndex, ...(revisionRef ? { revisionRef } : {}) } }));
+    if (status.status !== "done" || !status.blobSha256 || !status.width || !status.height) {
+      throw new Error("The page preview is not available yet.");
+    }
+    const sha256 = status.blobSha256;
+    const blob = await call<Blob>(`GET /api/projections/blobs/${sha256}`, readProjectionBlobApiProjectionsBlobsSha256Get({
+      client: connection.client, path: { sha256 }, parseAs: "blob" }) as Promise<FieldsResult<Blob>>);
+    return { file: new File([blob], `${sha256}.png`, { type: "image/png" }), width: status.width, height: status.height };
   },
 
   async retainRenderView(body: Omit<RenderViewSourceRequestDto, "pngBase64">, png: Blob): Promise<SourceDocumentDto> {

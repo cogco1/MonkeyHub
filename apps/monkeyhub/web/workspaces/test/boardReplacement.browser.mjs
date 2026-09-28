@@ -43,7 +43,8 @@ function pdfBytes(colors) {
   text += offsets.slice(1).map((offset) => `${String(offset).padStart(10, "0")} 00000 n \n`).join("");
   return Buffer.from(`${text}trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`);
 }
-const oldBytes = pdfBytes([[0.1, 0.2, 0.8], [0.8, 0.1, 0.1]]);
+const oldColors = [[0.1, 0.2, 0.8], [0.8, 0.1, 0.1]];
+const oldBytes = pdfBytes(oldColors);
 function sourceDocument(bytes, fileName, count, revisionRef, mimeType = "application/pdf") {
   return { projectId, runId: "source-documents", assetSha256: createHash("sha256").update(bytes).digest("hex"),
     fileName, mimeType, sizeBytes: bytes.length, pageCount: count,
@@ -51,17 +52,20 @@ function sourceDocument(bytes, fileName, count, revisionRef, mimeType = "applica
     modelSource: null, modelSourceBindingRef: null, sourceStageRef: null, revisionRef };
 }
 const oldDocument = sourceDocument(oldBytes, "Original two pages.pdf", 2, "old-drawing-revision");
-const headlessBytes = pdfBytes([[0.75, 0.3, 0.85]]);
+const headlessColors = [[0.75, 0.3, 0.85]];
+const headlessBytes = pdfBytes(headlessColors);
 const headlessDocument = { ...sourceDocument(headlessBytes, "Headless updated.pdf", 1, "headless-drawing-revision"),
   replacesPages: [{ ...pageSource(oldDocument, 0), newPageIndex: 0 }] };
-const distantBytes = pdfBytes([[0.2, 0.7, 0.8]]);
+const distantColors = [[0.2, 0.7, 0.8]];
+const distantBytes = pdfBytes(distantColors);
 const distantDocument = sourceDocument(distantBytes, "Headless new frame.pdf", 1, "distant-drawing-revision");
 let headlessPreviewAvailable = false, headlessPreviewFailures = 0;
 let replacementBytes, replacement;
 // Two revisions of one cut plan with the same page shape; the rebuild names
 // the first as the page it replaces, as a rebuilt drawing registers (#291).
 let planBytes, rebuiltPlanBytes, planDocument, rebuiltPlan, restoredPlan;
-const uploadBytes = pdfBytes([[0.3, 0.3, 0.3], [0.9, 0.7, 0.1]]);
+const uploadColors = [[0.3, 0.3, 0.3], [0.9, 0.7, 0.1]];
+const uploadBytes = pdfBytes(uploadColors);
 let uploadedReplacement;
 // The explicit editable copy of one whole registered document.
 let workCopy, workCopyRefusal;
@@ -85,6 +89,9 @@ let saved = { projectId, title: "Page replacement regression", elements: [],
 let seeded = false, documents = [oldDocument], documentReads = 0;
 let competingVersion = false, conflicts = 0;
 const writes = [], uploads = [], failures = [], escaped = [], fileReads = [];
+const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
+// Each PDF's page rasters by the PDF's digest, and every raster served by its own digest.
+const pdfRasters = new Map(), rasters = new Map();
 let releasePreview;
 const previewGate = new Promise((resolve) => { releasePreview = resolve; });
 let previewRequested;
@@ -191,6 +198,15 @@ try {
   // document owner has no single file that can stand for it.
   workCopyRefusal = "Pages of this document are answered for by different documents now, "
     + "so no single file can stand for it.";
+  for (const [bytes, colors] of [[oldBytes, oldColors], [headlessBytes, headlessColors], [distantBytes, distantColors], [uploadBytes, uploadColors]]) {
+    pdfRasters.set(sha256(bytes), (await page.evaluate((colors) => colors.map((color) => {
+      // The server draws a PDF page at twice its size in points, as here: 200 x 120 pt.
+      const canvas = document.createElement("canvas"); canvas.width = 400; canvas.height = 240;
+      const context = canvas.getContext("2d");
+      context.fillStyle = `rgb(${color.map((value) => Math.round(value * 255)).join(",")})`; context.fillRect(0, 0, 400, 240);
+      return canvas.toDataURL("image/png").split(",")[1];
+    }), colors)).map((encoded) => Buffer.from(encoded, "base64")));
+  }
   [planBytes, rebuiltPlanBytes] = (await page.evaluate(() => ["#e9e4d8", "#2f4f9e"].map((fill) => {
     const canvas = document.createElement("canvas"); canvas.width = 200; canvas.height = 120;
     const context = canvas.getContext("2d"); context.fillStyle = fill; context.fillRect(0, 0, 200, 120);
@@ -223,42 +239,66 @@ try {
           drawingRevisionRef: url.searchParams.get("drawingRevisionRef"), revisionSha256: null,
           annotations: [], comment: "" } });
       }
-      if (request.method() === "GET" && url.pathname.startsWith("/api/documents/")) {
+      // A registered document's bytes, as the document owner answers them.
+      const sourceBytes = async (url) => {
         fileReads.push({ path: url.pathname, query: Object.fromEntries(url.searchParams) });
         assert.equal(url.searchParams.get("runId"), oldDocument.runId);
         if (url.pathname === `/api/documents/${oldDocument.assetSha256}/bytes`) {
           assert.equal(url.searchParams.get("revisionRef"), oldDocument.revisionRef);
-          return await route.fulfill({ contentType: "application/pdf", body: oldBytes });
+          return { contentType: "application/pdf", body: oldBytes };
         }
         if (url.pathname === `/api/documents/${headlessDocument.assetSha256}/bytes`) {
           assert.equal(url.searchParams.get("revisionRef"), headlessDocument.revisionRef);
           if (!headlessPreviewAvailable) {
             headlessPreviewFailures++;
-            return await route.fulfill({ status: 503,
-              json: { code: "DOCUMENT_UNAVAILABLE", detail: "The saved preview is temporarily unavailable." } });
+            return { status: 503,
+              json: { code: "DOCUMENT_UNAVAILABLE", detail: "The saved preview is temporarily unavailable." } };
           }
-          return await route.fulfill({ contentType: "application/pdf", body: headlessBytes });
+          return { contentType: "application/pdf", body: headlessBytes };
         }
         if (url.pathname === `/api/documents/${distantDocument.assetSha256}/bytes`) {
           assert.equal(url.searchParams.get("revisionRef"), distantDocument.revisionRef);
-          return await route.fulfill({ contentType: "application/pdf", body: distantBytes });
+          return { contentType: "application/pdf", body: distantBytes };
         }
         if (url.pathname === `/api/documents/${uploadedReplacement.assetSha256}/bytes`) {
           assert.equal(url.searchParams.get("revisionRef"), uploadedReplacement.revisionRef);
-          return await route.fulfill({ contentType: "application/pdf", body: uploadBytes });
+          return { contentType: "application/pdf", body: uploadBytes };
         }
         if (url.pathname === `/api/documents/${planDocument.assetSha256}/bytes`) {
           assert.ok([planDocument.revisionRef, restoredPlan.revisionRef].includes(url.searchParams.get("revisionRef")));
-          return await route.fulfill({ contentType: "image/png", body: planBytes });
+          return { contentType: "image/png", body: planBytes };
         }
         if (url.pathname === `/api/documents/${rebuiltPlan.assetSha256}/bytes`) {
           assert.equal(url.searchParams.get("revisionRef"), rebuiltPlan.revisionRef);
-          return await route.fulfill({ contentType: "image/png", body: rebuiltPlanBytes });
+          return { contentType: "image/png", body: rebuiltPlanBytes };
         }
         assert.equal(url.pathname, `/api/documents/${replacement.assetSha256}/bytes`);
         assert.equal(url.searchParams.get("revisionRef"), replacement.revisionRef);
         previewRequested(); await previewGate;
-        return await route.fulfill({ contentType: "image/png", body: replacementBytes });
+        return { contentType: "image/png", body: replacementBytes };
+      };
+      // Board previews read a page's cached raster (#368): its status names an immutable blob. The
+      // fixture answers it from the page's own bytes; a PDF page is its solid colour, as drawn.
+      const pageRaster = request.method() === "GET" && url.pathname === "/api/projections/pages";
+      if (pageRaster || (request.method() === "GET" && url.pathname.startsWith("/api/documents/"))) {
+        const query = pageRaster ? new URLSearchParams({ runId: url.searchParams.get("runId"),
+          ...(url.searchParams.has("revisionRef") ? { revisionRef: url.searchParams.get("revisionRef") } : {}) }) : null;
+        const answer = await sourceBytes(pageRaster
+          ? new URL(`/api/documents/${url.searchParams.get("assetSha256")}/bytes?${query}`, origin) : url);
+        if (!pageRaster || answer.status) return await route.fulfill(answer);
+        const pageIndex = Number(url.searchParams.get("pageIndex"));
+        const pdf = answer.contentType === "application/pdf";
+        const png = pdf ? pdfRasters.get(sha256(answer.body))[pageIndex] : answer.body;
+        const blob = sha256(png);
+        rasters.set(blob, png);
+        return await route.fulfill({ json: { key: blob, status: "done", kind: "document-page", recipe: {}, renderer: "fixture",
+          inputSha256: url.searchParams.get("assetSha256"), source: null, blobSha256: blob,
+          blobUrl: `/api/projections/blobs/${blob}`, width: pdf ? 400 : 200, height: pdf ? 240 : 120,
+          attempts: 1, error: null, loadMs: 0, renderMs: 0 } });
+      }
+      if (request.method() === "GET" && url.pathname.startsWith("/api/projections/blobs/")) {
+        const png = rasters.get(url.pathname.split("/").pop());
+        return await route.fulfill(png ? { contentType: "image/png", body: png } : { status: 404, json: { code: "PROJECTION_BLOB_NOT_FOUND", detail: "" } });
       }
       if (request.method() === "POST" && url.pathname.endsWith("/work-copy")) {
         workCopies.push({ path: url.pathname, body: structuredClone(request.postDataJSON()) });

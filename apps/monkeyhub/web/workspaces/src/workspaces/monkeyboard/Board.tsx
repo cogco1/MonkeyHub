@@ -253,7 +253,6 @@ function records(elements: readonly ExcalidrawElement[]): BoardDto["elements"] {
   }) as unknown as BoardDto["elements"];
 }
 function createPreviewLoader(studio: StudioClient) {
-  const originals = new Map<string, Promise<File>>();
   const previews = new Map<string, Promise<Preview>>();
   const load = (document: SourceDocumentDto, pageIndex: number) => {
     const key = pageKey(pageSource(document, pageIndex));
@@ -262,22 +261,17 @@ function createPreviewLoader(studio: StudioClient) {
     const task = (async () => {
       const page = document.pages.find((item) => item.pageIndex === pageIndex);
       if (!page) throw new Error("The original document does not contain this page.");
-      const key = documentKey(document);
-      let original = originals.get(key);
-      if (!original) {
-        original = studio.documentFile(document.runId, document.assetSha256, document.fileName, document.revisionRef)
-          .then((file) => file.type === document.mimeType ? file : new File([file], file.name, { type: document.mimeType }))
-          .catch((error) => { originals.delete(key); throw error; });
-        originals.set(key, original);
-      }
-      // The page as its editor saved it. A page whose marks cannot be read is
-      // still placed, showing the original rather than nothing. Both reads are
-      // awaited together, so an original that fails before the marks arrive is
+      // The page as its editor saved it: the project's one cached raster of the
+      // page (#368) under its saved marks. A page whose marks cannot be read is
+      // still placed, showing the page rather than nothing. Both reads are
+      // awaited together, so a raster that fails before the marks arrive is
       // reported to this caller instead of escaping as an unhandled rejection.
-      const [file, annotations] = await Promise.all([original, studio
-        .documentAnnotations(document.runId, document.assetSha256, pageIndex, null, document.revisionRef ?? null)
-        .then((saved) => saved.annotations, () => [])]);
-      const visual = await renderDocumentVisual(file, page, annotations);
+      const [raster, annotations] = await Promise.all([
+        studio.documentPage(document.runId, document.assetSha256, document.revisionRef ?? null, pageIndex),
+        studio.documentAnnotations(document.runId, document.assetSha256, pageIndex, null, document.revisionRef ?? null)
+          .then((saved) => saved.annotations, () => [])]);
+      // Marks are placed in page fractions, so the raster's own size is the page.
+      const visual = await renderDocumentVisual(raster.file, { ...page, width: raster.width, height: raster.height, rotation: 0 }, annotations);
       return { dataURL: `data:image/png;base64,${visual.annotatedPngBase64 ?? visual.pagePngBase64}` as DataURL,
         width: visual.width, height: visual.height };
     })().catch((error) => { previews.delete(key); throw error; });
