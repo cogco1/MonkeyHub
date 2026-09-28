@@ -1073,7 +1073,9 @@ class PlanarCompressionProposalTestCase(unittest.TestCase):
             ({"sourceRunId": "other-run"}, 409, "PROPOSAL_SOURCE_MISMATCH"),
             ({"componentId": "missing"}, 404, "ELEMENT_UNKNOWN"),
             ({"componentId": None, "elementIds": ["missing"]}, 404, "ELEMENT_UNKNOWN"),
-            ({"componentId": "portico"}, 422, "DIRECT_EDIT_UNSUPPORTED"),
+            # #404 item 7: portico's prisms stay below 2 m, so nothing moves; at 0.5 m its base would move.
+            ({"componentId": "portico"}, 422, "DIRECT_EDIT_NO_CHANGE"),
+            ({"componentId": "portico", "threshold": 0.5}, 422, "DIRECT_EDIT_UNSUPPORTED"),
             ({"componentId": None, "elementIds": ["lower-face"]}, 422, "DIRECT_EDIT_NO_CHANGE"),
             ({"elementIds": ["upper-face"]}, 422, "REQUEST_INVALID"),
             ({"componentId": None, "elementIds": ["upper-face", "upper-face"]}, 422, "REQUEST_INVALID"),
