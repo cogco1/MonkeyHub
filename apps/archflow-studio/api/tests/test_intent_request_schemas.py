@@ -79,7 +79,7 @@ def _design_answer(**changes):
 
     answer = {
         "status": "compiled", "script": "block = extrude(rect(0, 0, 2, 2), 3, at=level('level-02'))",
-        "facets": None, "parameters": None, "utterance": None, "targetId": None,
+        "facets": None, "parameters": None, "keep": None, "utterance": None, "targetId": None,
         "why": "Add a block beside the selected geometry.", "question": None, "contextRefs": [],
     }
     answer.update(changes)

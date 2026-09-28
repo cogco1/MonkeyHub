@@ -464,9 +464,15 @@ class ModelContextTests(unittest.TestCase):
 
     def test_design_path_reads_the_model_in_construction_terms(self):
         from monkeyarch.construction import vocabulary
+        from archflow_studio_api.application.intent_agent import _design_facts
 
         record, sheet = fixture()
         context = compile_context("reorganize the gallery", sheet, record=record)
+        # The record sheet carries neither: the in-app compiler adds them to a design request's sheet only.
+        self.assertFalse({"construction", "model"} & set(model_context(context)))
+        design = _design_facts(SimpleNamespace(project_id=record.project_id, record=record, state_digest="c" * 64,
+                                               record_digest=record.digest))
+        context = replace(context, sheet={**context.sheet, **design})
         public = model_context(context)
         # One id per piece of geometry, the model and its language, and meaning as facets.
         self.assertEqual(controls(public), {"wall-07", "window-23", "window-24", "remote-wall"})

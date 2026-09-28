@@ -9,6 +9,7 @@ proved is the contract around the agent, not the agent.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 import json
 import math
@@ -31,6 +32,7 @@ from archflow_studio_api.application.intent_agent import (
     record_sheet,
     response_schema,
 )
+from archflow_studio_api.application.construction import in_construction_words
 from archflow_studio_api.application.projection import project_state
 from archflow_studio_api.application.binding import bound_project
 from archflow_studio_api.main import create_app
@@ -374,15 +376,14 @@ class ScriptedAgentTests(IntentTestCase):
 
 class RecordSheetTests(IntentTestCase):
     def test_the_sheet_reads_the_model_in_construction_terms(self) -> None:
-        from monkeyarch.construction import vocabulary
-
         with self.client:
             self.client.get("/api/state")
             projection = project_state(bound_project(self.app.state))
         sheet = record_sheet(projection, Selection("portico", "portico-base"))
-        self.assertEqual(sheet["construction"], vocabulary())
-        self.assertEqual([(row["id"], row["parts"]) for row in sheet["model"]],
-                         [("portico", ["portico-base", "portico-cornice"])])
+        # The language and the model are read by a design request only (intent_agent adds them there):
+        # a numeric request and a ContextPack never build the model view.
+        self.assertNotIn("construction", sheet)
+        self.assertNotIn("model", sheet)
         self.assertEqual({component["id"] for component in sheet["components"]}, {"building", "portico"})
         portico = next(component for component in sheet["components"] if component["id"] == "portico")
         self.assertEqual((set(portico), portico["facets"]), ({"id", "intent", "facets"}, {}))
@@ -394,7 +395,7 @@ class RecordSheetTests(IntentTestCase):
         self.assertEqual(sheet["selection"], {"id": "portico-base"})
         self.assertEqual(record_sheet(projection, Selection("portico", None))["selection"], {"id": "portico"})
         self.assertEqual(len(sheet["grammar"]["forms"]), 4)
-        self.assertEqual(list(sheet["honesty"]), list(projection.honesty))
+        self.assertEqual(sheet["honesty"], [in_construction_words(line) for line in projection.honesty])
         for key in ("producerSignatures", "semanticIds"):
             self.assertNotIn(key, sheet)
         # Only a type that names no realisation is shared data a model may read; this record has none.
@@ -409,6 +410,9 @@ TWO_BLOCKS = "\n".join([
     "block = extrude(rect(1, 3.5, 2, 1), 1, at=top(mass))",
     "print(bounds(block))",
 ])
+# The portico base raised in place (it is 0.6 m), and a new plinth beside the portico that reaches nothing.
+RAISED_BASE = "b = get('portico-base')\nset_height(b, 0.8)"
+PLINTH = "plinth = extrude(rect(0, 3, 4, 2), 0.2, at=level('level-ground'))"
 
 
 class ConstructionIntentTests(IntentTestCase):
@@ -535,21 +539,114 @@ class ConstructionIntentTests(IntentTestCase):
         self.assertEqual(component_facets(successor.entity("canopy")), {"architectural.role": "canopy"})
         self.assertEqual([row["id"] for row in body["construction"]["report"]], ["canopy"])
 
-    def test_a_local_answer_may_change_only_its_targets(self) -> None:
-        # The design compiler says what a local answer may change; a script that reaches further is refused.
-        outside = scripted(script="c = get('portico-cornice')\nset_height(c, 0.5)", why="Lower the cornice.",
-                           writable_ids=("portico", "portico-base"))
-        self.app.state.intent_compiler = outside
-        status, body = self.ask("Rework portico-base, add a plinth.", elementId="portico-base")
-        self.assertEqual(status, 502, body)
-        self.assertEqual(body["code"], AGENT_FAILED)
-        self.assertIn("portico-cornice", body["detail"])
-        self.assertEqual(self.app.state.proposals.for_state(self.state_digest), ())
-        inside = scripted(script="b = get('portico-base')\nset_height(b, 0.7)\nplinth = extrude(rect(0, 3, 4, 2), 0.2)",
-                          why="Raise the base; add a plinth.", writable_ids=("portico", "portico-base"))
-        self.app.state.intent_compiler = inside
-        status, body = self.ask("Rework portico-base, add a plinth.", elementId="portico-base")
+    def test_a_stated_keep_makes_a_script_that_changes_the_kept_geometry_a_conflict(self) -> None:
+        # #419 C7 round 1: keep is the agent's to state. A geometry id keeps every part under it, since a
+        # change reaches parts and never the geometry id's own row.
+        self.app.state.intent_compiler = scripted(script=RAISED_BASE, keep=("entity:portico",), why="Raise the base.")
+        status, body = self.ask("Rework portico-base; keep the portico as it is.", elementId="portico-base")
         self.assertEqual(status, 201, body)
+        proposal = body["proposal"]
+        self.assertEqual(proposal["status"], "conflict")
+        self.assertIn("entity:portico-base", proposal["impact"]["conflicts"])
+        self.assertEqual(set(proposal["protected"]), {"entity:portico", "entity:portico-base", "entity:portico-cornice"})
+        # A conflict is reviewable and never runs (#404's wording names what it was asked to keep).
+        refused = self.client.post(f"/api/proposals/{proposal['proposalId']}/candidate")
+        self.assertEqual(refused.status_code, 409, refused.text)
+        self.assertIn("entity:portico-base", refused.json()["detail"])
+        # What the script does not reach stays reviewable as proposed, with its keep bound.
+        self.app.state.intent_compiler = scripted(script=PLINTH, keep=("entity:portico",), why="Add a plinth.")
+        status, body = self.ask("Add a plinth; keep the portico as it is.", targetComponentId=None)
+        self.assertEqual(status, 201, body)
+        self.assertEqual(body["proposal"]["status"], "proposed")
+        self.assertIn("entity:portico", body["proposal"]["protected"])
+
+    def test_a_script_and_facets_that_reach_a_keep_are_one_conflict_with_both_parts(self) -> None:
+        from archflow.state.state_record import apply_state_record_operator, component_facets
+
+        for keep in (("entity:portico-base",), ("entity:portico",)):
+            with self.subTest(keep=keep):
+                compiler = scripted(script=RAISED_BASE, facets=({"id": "portico", "set": {"architectural.role": "canopy"}},),
+                                    keep=keep, why="Raise the base; the portico is a canopy.")
+                self.app.state.intent_compiler = compiler
+                status, body = self.ask("Rework portico-base; the portico is a canopy.", elementId="portico-base")
+                self.assertEqual(status, 201, body)
+                proposal = body["proposal"]
+                self.assertEqual(proposal["status"], "conflict")
+                self.assertIn("entity:portico-base", proposal["impact"]["conflicts"])
+                stored = self.app.state.proposals.get(proposal["proposalId"])
+                self.assertEqual({entity.entity_id for entity in stored.state_record_operator.entities},
+                                 {"portico-base", "portico"})
+                successor = apply_state_record_operator(compiler.calls[0]["projection"].record,
+                                                        replace(stored.state_record_operator, protected=()))
+                self.assertEqual(successor.entity("portico-base").fields["params"]["height"], 0.8)
+                self.assertEqual(component_facets(successor.entity("portico")), {"architectural.role": "canopy"})
+
+    def test_a_modified_decision_on_a_keep_conflict_answers_a_proposal(self) -> None:
+        # #419 C7 round 1: the reviser reads the design as the conflicting change would make it, and the
+        # replacement is still reviewable, a conflict naming the kept part - never a 500.
+        from archflow.state.state_record import apply_state_record_operator
+
+        for label, reviser in (
+            ("script", scripted(script=PLINTH, why="Add a plinth as well.")),
+            ("scalar", scripted(utterance="set height to 0.3", target_id="portico-cornice")),
+        ):
+            with self.subTest(reviser=label):
+                self.app.state.intent_compiler = scripted(script=RAISED_BASE, keep=("entity:portico-base",),
+                                                          why="Raise the base.")
+                status, body = self.ask("Rework portico-base; keep the base as it is.", elementId="portico-base")
+                self.assertEqual(status, 201, body)
+                self.assertEqual(body["proposal"]["status"], "conflict")
+                self.app.state.intent_compiler = reviser
+                decided = self.client.post(f"/api/proposals/{body['proposal']['proposalId']}/decision", json={
+                    "decision": "modified", "modifiedTo": {"utterance": "Also change the rest."}})
+                self.assertEqual(decided.status_code, 201, decided.text)
+                shown = reviser.calls[-1]["projection"].record
+                self.assertEqual(shown.entity("portico-base").fields["params"]["height"], 0.8)
+                replacement = self.app.state.proposals.get(decided.json()["proposals"][0]["modifiedTo"]["proposalId"])
+                self.assertEqual(replacement.status, "conflict")
+                self.assertIn("entity:portico-base", replacement.impact.conflicts)
+                self.assertIn("entity:portico-base", replacement.protected)
+                successor = apply_state_record_operator(project_state(bound_project(self.app.state)).record,
+                                                        replace(replacement.state_record_operator, protected=()))
+                self.assertEqual(successor.entity("portico-base").fields["params"]["height"], 0.8)
+                if label == "script":
+                    self.assertIn("plinth", {entity.entity_id for entity in successor.entities})
+                else:
+                    self.assertEqual(successor.entity("portico-cornice").fields["params"]["height"], 0.3)
+
+    def test_a_chain_is_never_continued_from_a_keep_conflict(self) -> None:
+        self.app.state.intent_compiler = scripted(script=RAISED_BASE, keep=("entity:portico-base",), why="Raise the base.")
+        status, body = self.ask("Rework portico-base; keep the base as it is.", elementId="portico-base")
+        self.assertEqual((status, body["proposal"]["status"]), (201, "conflict"))
+        source = body["proposal"]["proposalId"]
+        for route, payload in (
+            ("/api/proposals", {"utterance": "set module to 1.5", "targetComponentId": "portico"}),
+            ("/api/proposals/construction", {"script": PLINTH}),
+        ):
+            with self.subTest(route=route):
+                continued = self.client.post(route, json={"stateDigest": self.state_digest,
+                                                          "sourceProposalId": source, **payload})
+                self.assertEqual(continued.status_code, 409, continued.text)
+                self.assertEqual(continued.json()["code"], "PROPOSAL_NOT_RUNNABLE")
+
+    def test_a_parameters_answer_names_the_requested_geometry_else_the_modelling_root(self) -> None:
+        # #419 C7 round 1: not whichever component sorts first (building, here); portico is also the root.
+        for target_id, body in (("portico", {}), (None, {"targetComponentId": None})):
+            with self.subTest(target_id=target_id):
+                self.app.state.intent_compiler = scripted(parameters=({"key": "module", "value": 1.5},),
+                                                          target_id=target_id, why="The module grows to 1.5 m.")
+                status, answer = self.ask("Make the module one and a half metres.", **body)
+                self.assertEqual(status, 201, answer)
+                self.assertEqual(answer["proposal"]["target"]["componentId"], "portico")
+
+    def test_the_component_tiers_parameter_edit_names_its_part(self) -> None:
+        edit = {"summary": "Grow the module.", "entities": [], "parameters": [{"key": "module", "value": 1.3}],
+                "relations": [], "removeEntityIds": [], "removeParameterKeys": [], "removeRelationIds": [],
+                "protected": [], "kept": []}
+        self.app.state.intent_compiler = scripted(semantic_edit=edit, target_id="portico-base", why="Grow the module.")
+        status, body = self.ask("Grow the module of the base slightly.", elementId="portico-base")
+        self.assertEqual(status, 201, body)
+        self.assertEqual(body["proposal"]["target"]["componentId"], "portico")
 
     def test_a_modified_decision_changes_the_proposal_on_top_of_it(self) -> None:
         from archflow.state.state_record import apply_state_record_operator
@@ -643,10 +740,19 @@ class ConstructionIntentTests(IntentTestCase):
         from archflow_studio_api.application.intent_agent import SYSTEM_PROMPT
 
         schema = response_schema(strict=False)
-        self.assertEqual(schema["required"], ["status", "script", "facets", "parameters", "utterance", "targetId",
-                                              "why", "question"])
+        self.assertEqual(schema["required"], ["status", "script", "facets", "parameters", "keep", "utterance",
+                                              "targetId", "why", "question"])
         self.assertFalse(schema["additionalProperties"])
-        self.assertEqual(schema["properties"]["script"]["maxLength"], LIMITS["characters"])
+        # The in-app script fits a design answer's output budget; the construction route keeps the language's limit.
+        self.assertEqual(schema["properties"]["script"]["maxLength"], 12_000)
+        self.assertLess(schema["properties"]["script"]["maxLength"], LIMITS["characters"])
+        self.assertIn("at most 12 000 characters", SYSTEM_PROMPT)
+        keep = schema["properties"]["keep"]["anyOf"][1]
+        self.assertEqual((keep["type"], keep["minItems"], keep["items"]["type"]), ("array", 1, "string"))
+        self.assertIn("When the architect says to keep something unchanged, list it in keep.", SYSTEM_PROMPT)
+        # The prompt and the gesture sentence say the same about a remove mark (application/gestures.py).
+        self.assertIn("A remove mark may become a script that deletes the marked geometry; ask first when the target "
+                      "is unclear.", SYSTEM_PROMPT)
         target = schema["properties"]["facets"]["anyOf"][1]["items"]
         self.assertEqual(target["required"], ["id"])
         self.assertEqual(target["properties"]["set"]["properties"]["architectural.role"]["enum"],
@@ -1042,8 +1148,8 @@ class SemanticCandidateChainTests(IntentTestCase):
 def _answer(**changes: object) -> str:
     """One provider answer in the construction contract, as JSON text."""
 
-    return json.dumps({"status": "compiled", "script": None, "facets": None, "parameters": None, "utterance": None,
-                       "targetId": None, "why": "", "question": None, **changes})
+    return json.dumps({"status": "compiled", "script": None, "facets": None, "parameters": None, "keep": None,
+                       "utterance": None, "targetId": None, "why": "", "question": None, **changes})
 
 
 def _parsed(raw: str):
@@ -1072,6 +1178,27 @@ class AnswerParsingTests(unittest.TestCase):
         compilation = _parsed(_answer(script=script, targetId="block"))
         self.assertEqual(compilation.script, script)
         self.assertEqual(compilation.target_id, "block")
+
+    def test_an_in_app_script_fits_the_answers_output_budget(self) -> None:
+        # #419 C7 round 1: 12 000 characters, not the language's 20 000, so a design answer fits its 5 000 tokens.
+        from archflow_studio_api.application.intent_agent import SCRIPT_CHARACTERS
+
+        self.assertEqual(SCRIPT_CHARACTERS, 12_000)
+        self.assertEqual(len(_parsed(_answer(script="#" * 12_000)).script), 12_000)
+        with self.assertRaises(StudioError) as caught:
+            _parsed(_answer(script="#" * 12_001))
+        self.assertEqual(caught.exception.code, AGENT_FAILED)
+        self.assertIn("12 000", caught.exception.detail)
+
+    def test_a_stated_keep_is_read_as_the_refs_the_agent_named(self) -> None:
+        compilation = _parsed(_answer(script="block = extrude(rect(0, 0, 1, 1), 1)",
+                                      keep=[" entity:portico ", "parameter:module", "entity:portico"]))
+        self.assertEqual(compilation.keep, ("entity:portico", "parameter:module"))
+        self.assertEqual(_parsed(_answer(script="block = extrude(rect(0, 0, 1, 1), 1)")).keep, ())
+        for keep in ("entity:portico", [], [""], [7]):
+            with self.subTest(keep=keep), self.assertRaises(StudioError) as caught:
+                _parsed(_answer(script="block = extrude(rect(0, 0, 1, 1), 1)", keep=keep))
+            self.assertEqual(caught.exception.code, AGENT_FAILED)
 
     def test_compiled_says_what_changes_and_an_utterance_says_it_alone(self) -> None:
         for answer in (
@@ -1255,6 +1382,19 @@ class ContextPackTests(IntentTestCase):
         self.assertNotIn("capability", payload)
         # Reading changed nothing the project stands on.
         self.assertEqual(self.repository.layout.head.read_bytes(), self.head)
+
+    def test_a_pack_never_builds_the_model_view(self) -> None:
+        # #419 C7 round 1: the model view is built for the in-app agent's design requests only.
+        from unittest.mock import patch
+
+        from archflow_studio_api.application import intent_agent
+
+        with patch.object(intent_agent, "construction_model", wraps=intent_agent.construction_model) as built:
+            for utterance in ("Raise portico-cornice height to 0.5 m.", "Reorganize the whole portico."):
+                with self.subTest(utterance=utterance):
+                    status, payload = self.pack(utterance)
+                    self.assertEqual(status, 200, payload)
+        built.assert_not_called()
 
     def test_whole_and_multi_element_tasks_do_not_invent_a_single_target(self) -> None:
         for focuses in ({}, {"elementIds": ["portico-base", "portico-cornice"]}):

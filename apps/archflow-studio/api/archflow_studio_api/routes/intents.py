@@ -26,6 +26,7 @@ from ..application.artifacts import ModelSource, require_model_source
 from ..application.catalog import catalog_of
 from ..application.conventions import project_conventions
 from ..application.clarification import PendingIntentStore, Resolution
+from ..application.construction import kept_refs
 from ..application.gestures import (
     DocumentAnnotationRef, GestureReading, list_document_comments, read_document_annotations, read_gestures,
     retain_document_comment, save_document_annotations,
@@ -196,21 +197,26 @@ def _change_answer(
     compilation: Compilation,
     compile_ms: int,
     document_comment_ref: ProjectRecordRef | None = None,
+    *,
+    requested: str | None = None,
 ) -> IntentDto:
     """A compiled script, facets or parameters, stored as one proposal.
 
     The construction owner chooses every realisation; a refused script
     propagates as its own 422 ``CONSTRUCTION_INVALID`` with the line, column
     and source line, and nothing is stored. What the script reported travels
-    with the answer.
+    with the answer. The proposal is about the geometry the agent named, else
+    ``requested`` (the component the request selected), else the modelling
+    root; what the answer keeps joins the keep marks.
     """
 
     typed_at = time.perf_counter()
     utterance = body.utterance if pending is None else (
         f"Original request: {pending.original_utterance}\nArchitect's clarification: {body.utterance}"
     )
+    compilation = clarification.targeted(projection, compilation)
     made = clarification.compiled_proposal(binding, projection, compilation, utterance=utterance,
-                                           keep_refs=reading.keep_refs)
+                                           keep_refs=reading.keep_refs, component_id=requested)
     proposal = made.proposal
     resolution = clarification.semantic_resolution(
         projection, utterance=body.utterance,
@@ -470,7 +476,8 @@ def compile_intent(request: Request, body: IntentRequestDto) -> IntentDto:
         )
         compile_ms = int((time.perf_counter() - started) * 1000)
         if compilation.proposes_change:
-            return _change_answer(request, body, binding, projection, reading, pending, compilation, compile_ms, document_comment_ref)
+            return _change_answer(request, body, binding, projection, reading, pending, compilation, compile_ms,
+                                  document_comment_ref, requested=agent_selection.component_id)
         if edit_request:
             question = compilation.question if compilation.status == "question" else None
             raise _refused(store, token=body.continuation_token, source_stage_ref=projection.source_stage_ref, model_source=model_source, document_visuals=document_visuals, document_comment_ref=document_comment_ref, resolution=clarification.semantic_resolution(
@@ -516,7 +523,8 @@ def compile_intent(request: Request, body: IntentRequestDto) -> IntentDto:
         compilation = configured_compiler.compile(message=message, selection=selection, projection=projection)
         compile_ms = int((time.perf_counter() - started) * 1000)
         if compilation.proposes_change:
-            return _change_answer(request, body, binding, projection, reading, pending, compilation, compile_ms, document_comment_ref)
+            return _change_answer(request, body, binding, projection, reading, pending, compilation, compile_ms,
+                                  document_comment_ref, requested=selection.component_id)
         # The geometry id the agent named, read into the component and element it is.
         compilation = clarification.targeted(projection, compilation)
         checked = clarification.read_compilation(
@@ -568,7 +576,8 @@ def compile_intent(request: Request, body: IntentRequestDto) -> IntentDto:
         )
         compile_ms = int((time.perf_counter() - compiled_at) * 1000)
     if compilation.proposes_change:
-        return _change_answer(request, body, binding, projection, reading, pending, compilation, compile_ms, document_comment_ref)
+        return _change_answer(request, body, binding, projection, reading, pending, compilation, compile_ms,
+                              document_comment_ref, requested=resolution.selection.component_id)
     compilation = clarification.targeted(projection, compilation)
     # What the compiler answered, in the same four outcomes. An agent that asks
     # still names a target, and that target is kept: losing it is what made the
@@ -579,11 +588,10 @@ def compile_intent(request: Request, body: IntentRequestDto) -> IntentDto:
     if resolution.outcome != clarification.COMPILED:
         raise _refused(store, token=body.continuation_token, source_stage_ref=projection.source_stage_ref, model_source=model_source, document_visuals=document_visuals, resolution=resolution, document_comment_ref=document_comment_ref)
     assert compilation.utterance is not None
-    if reading.keep_refs:
-        compilation = replace(
-            compilation,
-            utterance=merge_keep(compilation.utterance, reading.keep_refs),
-        )
+    # What was drawn to keep and what the agent was told to keep, a geometry id with every part under it.
+    keep = kept_refs(projection.record, (*reading.keep_refs, *compilation.keep))
+    if keep:
+        compilation = replace(compilation, utterance=merge_keep(compilation.utterance, keep))
     typed_at = time.perf_counter()
     try:
         parts = DeterministicIntentProvider(projection).propose(

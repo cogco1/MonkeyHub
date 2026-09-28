@@ -367,8 +367,8 @@ class GeometryFirstAuthoringTests(unittest.TestCase):
             for word in ("semantic_kind", "semanticKind", "producer", "semanticEdit", "Element@1"):
                 self.assertNotIn(word, text)
             properties = schema["properties"]
-            self.assertEqual(set(properties), {"status", "script", "facets", "parameters", "utterance", "targetId",
-                                               "why", "question"})
+            self.assertEqual(set(properties), {"status", "script", "facets", "parameters", "keep", "utterance",
+                                               "targetId", "why", "question"})
             self.assertIn({"type": "null"}, properties["facets"]["anyOf"])
         facet_set = response_schema(strict=False)["properties"]["facets"]["anyOf"][1]["items"]["properties"]["set"]
         self.assertEqual(set(facet_set["properties"]), set(FACETS))

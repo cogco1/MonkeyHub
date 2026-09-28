@@ -64,7 +64,7 @@ from .artifacts import ModelSource
 
 from ..transport.errors import StudioError
 from .binding import ProjectBinding
-from .construction import ConstructionProposal, design_proposal
+from .construction import ConstructionProposal, design_proposal, kept_refs, modelling_root
 from .intent import ACCEPTED_FORMS, component_edit_proposal, parse_utterance
 from .intent_agent import AGENT_FAILED, DETERMINISTIC, Compilation, DocumentVisual, Selection
 from .projection import ProjectedElement, StateProjection
@@ -2394,41 +2394,44 @@ def compiled_proposal(
     *,
     utterance: str,
     keep_refs: Sequence[str] = (),
+    component_id: str | None = None,
 ) -> ConstructionProposal:
     """What a compiled change proposes, as one proposal whose utterance is the architect's words.
 
     A script, facets or parameters go through the construction owner
     (``design_proposal``), which chooses how every shape is realised; the
     numeric component tier's own edit goes through the component edit it
-    already is. A local answer may change only the existing entities its
-    request targeted (``Compilation.writable_ids``): anything else it would
-    change is the agent's failure, and nothing is proposed.
+    already is. What the answer keeps joins ``keep_refs`` (keep marks, or a
+    proposal's own keep), each geometry id with every part under it
+    (``kept_refs``). The proposal is about the geometry the agent named
+    (``targeted``), else ``component_id`` (the request's selection), else the
+    project's modelling root. What a local answer may change was checked when
+    the answer was read (``intent_agent``).
     """
 
     if not compilation.proposes_change:
         raise StudioError(502, AGENT_FAILED, "the agent must compile one change or ask a question")
+    keep = kept_refs(projection.record, (*keep_refs, *compilation.keep))
+    about = compilation.component_id or component_id or _modelling_root_or_none(binding, projection)
     if compilation.semantic_edit is not None:
         made = ConstructionProposal(proposal_from(component_edit_proposal(
-            projection, compilation.semantic_edit, utterance=utterance,
-            component_id=compilation.component_id, keep_refs=keep_refs,
+            projection, compilation.semantic_edit, utterance=utterance, component_id=about, keep_refs=keep,
         )), None)
     else:
         made = design_proposal(
             binding, projection, script=compilation.script, parameters=compilation.parameters or (),
-            facets=compilation.facets or (), summary=compilation.why or None, keep_refs=keep_refs,
+            facets=compilation.facets or (), summary=compilation.why or None, keep_refs=keep, component_id=about,
         )
-    if compilation.writable_ids is not None:
-        operator = made.proposal.state_record_operator
-        existing = {entity.entity_id for entity in projection.record.entities}
-        written = ({entity.entity_id for entity in operator.entities} | set(operator.remove_entity_ids)) & existing
-        outside = sorted(written - set(compilation.writable_ids))
-        if outside:
-            raise StudioError(
-                502, AGENT_FAILED,
-                f"the {compilation.provider} agent's answer changes {', '.join(outside)}, outside what this request "
-                f"may change ({', '.join(compilation.writable_ids)}); nothing was proposed",
-            )
     return made._replace(proposal=replace(made.proposal, utterance=utterance))
+
+
+def _modelling_root_or_none(binding: ProjectBinding, projection: StateProjection) -> str | None:
+    """The component new geometry goes under, or ``None`` when no seat builds one: the edit then names its own."""
+
+    try:
+        return modelling_root(binding, projection)
+    except StudioError:
+        return None
 
 
 def read_compilation(

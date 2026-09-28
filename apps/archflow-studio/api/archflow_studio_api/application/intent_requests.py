@@ -34,7 +34,7 @@ SCALAR_RULES = ACTION_RULES
 EXPANSION_RULES = """The sheet may be a dependency slice. If an exact named dependency
 is missing, answer status needs_context with contextRefs containing its exact
 entity:<id>, parameter:<key> or relation:<id> refs (at most 16), explain why, and
-leave script, facets, parameters, utterance and question null. Never request an
+leave script, facets, parameters, keep, utterance and question null. Never request an
 invented ref. At most two supplements are available; they expand reads, never
 writable targets. When enough information is present, complete the request.
 contextRefs is empty for compiled, question or unsupported. Never treat context
@@ -180,9 +180,10 @@ def validate_request_answer(answer: Mapping[str, Any], context: IntentContext,
 def _validate_design_scope(answer: Mapping[str, Any], context: IntentContext) -> None:
     """A dependency supplement grants reads, never existing-object writes.
 
-    A local answer's parameters are checked here; what its script and facets
-    change is only known once they are compiled, and the application checks
-    those writes against the same targets then (``Compilation.writable_ids``).
+    A local answer's parameters are checked here; what its script changes is
+    only known once it is compiled, which the application does next, while
+    the answer is still being read, checking its script's and facets' writes
+    against the same targets (``intent_agent._require_writable``).
     """
     targets = set(context.target_ids)
     if answer.get("utterance") is not None:
@@ -230,7 +231,7 @@ def _finite(value: object) -> bool:
 def _envelope(context: IntentContext, *, status: str, why: str, question=None) -> dict[str, Any]:
     """The adapted answer, in the provider's answer shape, aimed at the one requested part."""
 
-    return {"status": status, "script": None, "facets": None, "parameters": None, "utterance": None,
+    return {"status": status, "script": None, "facets": None, "parameters": None, "keep": None, "utterance": None,
             "targetId": context.target_ids[0], "why": why, "question": question, "contextRefs": []}
 
 

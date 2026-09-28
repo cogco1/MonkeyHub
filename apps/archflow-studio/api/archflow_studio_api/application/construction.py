@@ -17,7 +17,9 @@ unlocks (Stage C, spec §3.5): a door or a window on a component whose facets
 say ``architectural.role = wall``; a block is realised as a wall in place under
 the same element id, so it keeps its delivered object and its published top.
 ``design_proposal`` makes one proposal of the in-app agent's answer: a script
-with its parameters, or parameters alone, then facets on what that leaves.
+with its parameters, or parameters alone, then facets on what that leaves,
+with what the answer keeps judged on the whole of it. ``kept_refs`` is what a
+keep protects: a geometry id keeps every part under it.
 """
 
 from __future__ import annotations
@@ -183,16 +185,8 @@ def construction_proposal(
     """
 
     root = modelling_root(binding, projection)
-    record = projection.record
-    named = "parameters: " + ", ".join(dict.fromkeys(str(parameter.get("key")) for parameter in parameters))
-    if parameters:
-        staged = component_edit_proposal(projection, _edit(summary or named, parameters=parameters),
-                                         utterance=summary or named)
-        record = apply_state_record_operator(record, staged["state_record_operator"])
-    try:
-        result = compile_construction_script(script, record, root_component_id=root)
-    except ConstructionError as exc:
-        raise ConstructionRefused(exc) from exc
+    named = _parameters_named(parameters)
+    result = script_result(projection, script, root=root, parameters=parameters, summary=summary)
     shaped = bool(result.entities or result.remove_entity_ids)
     if not shaped and not parameters:
         raise ConstructionRefused(ConstructionError(
@@ -212,6 +206,62 @@ def construction_proposal(
     return ConstructionProposal(proposal, result)
 
 
+def script_result(
+    projection: StateProjection,
+    script: str,
+    *,
+    root: str,
+    parameters: Sequence[Mapping[str, Any]] = (),
+    summary: str | None = None,
+) -> ConstructionResult:
+    """``script`` compiled against ``projection``'s record under ``root``, the ``parameters`` staged first.
+
+    What the script makes, changes and removes, as rows, before any proposal
+    exists: ``param(key)`` binds a parameter the same request introduces. A
+    refused script raises ``ConstructionRefused`` with its line, and parameters
+    the record refuses raise the component edit's own refusal.
+    """
+
+    record = projection.record
+    if parameters:
+        said = summary or _parameters_named(parameters)
+        staged = component_edit_proposal(projection, _edit(said, parameters=parameters), utterance=said)
+        record = apply_state_record_operator(record, staged["state_record_operator"])
+    try:
+        return compile_construction_script(script, record, root_component_id=root)
+    except ConstructionError as exc:
+        raise ConstructionRefused(exc) from exc
+
+
+def kept_refs(record: StateRecord, refs: Sequence[str]) -> tuple[str, ...]:
+    """What keeping ``refs`` protects: each ref, and for a geometry id every component and part under it.
+
+    The record protects what a change reaches, and a geometry id's form
+    changes in its parts, never in its own row: a keep naming only the
+    geometry id would let every part of it change. A part id and a parameter
+    ref are kept as they are; a ref the record does not declare is left for
+    the record to refuse.
+    """
+
+    parts = _parts_by_component(record)
+    children: dict[str, list[str]] = {}
+    for component in record.entities_of("Component@1"):
+        if component.parent_id:
+            children.setdefault(component.parent_id, []).append(component.entity_id)
+    kept = list(refs)
+    seen: set[str] = set()
+    pending = [ref.removeprefix("entity:") for ref in refs if ref.startswith("entity:")]
+    while pending:
+        identifier = pending.pop(0)
+        if identifier in seen:
+            continue
+        seen.add(identifier)
+        kept.extend(f"entity:{element.entity_id}" for element in parts.get(identifier, ()))
+        kept.extend(f"entity:{child}" for child in children.get(identifier, ()))
+        pending.extend(children.get(identifier, ()))
+    return tuple(dict.fromkeys(kept))
+
+
 def design_proposal(
     binding: ProjectBinding,
     projection: StateProjection,
@@ -221,26 +271,33 @@ def design_proposal(
     facets: Sequence[Mapping[str, Any]] = (),
     summary: str | None = None,
     keep_refs: Sequence[str] = (),
+    component_id: str | None = None,
 ) -> ConstructionProposal:
     """An agent's construction answer as one proposal against ``projection``.
 
     A script goes through ``construction_proposal`` with its parameters, and
-    parameters without a script are a parameters-only component edit. Facets
-    come last, so they may name geometry the same script makes: they are read
-    against the successor the first part proposes (``facets_proposal``) and
-    folded onto the same exact base (``continue_proposal``), so everything
-    they do not name stays as that part left it. ``result`` is the script's
-    report, ``None`` without a script.
+    parameters without a script are a parameters-only component edit about
+    ``component_id``, the geometry the request is about. Facets come last, so
+    they may name geometry the same script makes: they are read against the
+    design the first part would make (``facets_proposal``) and folded onto the
+    same exact base (``continue_proposal``), so everything they do not name
+    stays as that part left it. ``keep_refs`` are judged on the whole answer
+    on that base: a part that reaches one makes the proposal a reviewable
+    ``conflict`` naming it, as a script alone would. ``result`` is the
+    script's report, ``None`` without a script.
     """
 
+    # With facets the parts are made without the keep, which is judged once, on the whole answer.
+    keep = () if facets else keep_refs
     made: ConstructionProposal | None = None
     if script is not None:
         made = construction_proposal(binding, projection, script, parameters=parameters, summary=summary,
-                                     keep_refs=keep_refs)
+                                     keep_refs=keep)
     elif parameters:
-        said = summary or "parameters: " + ", ".join(dict.fromkeys(str(row.get("key")) for row in parameters))
+        said = summary or _parameters_named(parameters)
         made = ConstructionProposal(proposal_from(component_edit_proposal(
-            projection, _edit(said, parameters=parameters, kept=keep_refs), utterance=said, keep_refs=keep_refs,
+            projection, _edit(said, parameters=parameters, kept=keep), utterance=said, component_id=component_id,
+            keep_refs=keep,
         )), None)
     if not facets:
         if made is None:
@@ -250,12 +307,11 @@ def design_proposal(
     if made is None:
         return ConstructionProposal(facets_proposal(projection, facets, summary=summary, keep_refs=keep_refs), None)
     successor = apply_state_record_operator(projection.record, operator_of(made.proposal, projection.record))
-    faceted = facets_proposal(project_proposed_record(projection, successor), facets, summary=summary,
-                              keep_refs=keep_refs)
+    faceted = facets_proposal(project_proposed_record(projection, successor), facets, summary=summary)
     said = summary or "; ".join(str((proposal.semantic_edit or {}).get("summary") or proposal.utterance)
                                 for proposal in (made.proposal, faceted))
-    return ConstructionProposal(continue_proposal(projection, made.proposal, replace(faceted, utterance=said)),
-                                made.result)
+    return ConstructionProposal(continue_proposal(projection, made.proposal, replace(faceted, utterance=said),
+                                                  keep_refs=keep_refs), made.result)
 
 
 def in_construction_words(message: str) -> str:
@@ -472,6 +528,12 @@ def construction_model(projection: StateProjection) -> dict[str, Any]:
                        for parameter in record.parameters],
         "entities": entities,
     }
+
+
+def _parameters_named(parameters: Sequence[Mapping[str, Any]]) -> str:
+    """What a change of these parameters says when nothing else names it."""
+
+    return "parameters: " + ", ".join(dict.fromkeys(str(parameter.get("key")) for parameter in parameters))
 
 
 def _edit(summary: str, *, entities: Sequence[Mapping[str, Any]] = (), parameters: Sequence[Mapping[str, Any]] = (),

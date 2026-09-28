@@ -479,7 +479,8 @@ class DocumentAnnotationTests(unittest.TestCase):
         updated_reference = self.save(reference, [], base=reference_saved["revisionSha256"], comment="后续参照意见")
         self.assertNotEqual(updated_primary["revisionSha256"], saved["revisionSha256"])
         self.assertNotEqual(updated_reference["revisionSha256"], reference_saved["revisionSha256"])
-        compiler = scripted(script=PASSAGE_SCRIPT, why="A passage two metres from the base.")
+        compiler = scripted(script=PASSAGE_SCRIPT, keep=("entity:level-ground", "entity:portico-base"),
+                            why="A passage two metres from the base.")
         self.app.state.intent_compiler = compiler
         second = self.intent([], utterance="Two metres.", continuationToken=token)
         self.assertEqual(second.status_code, 201, second.text)
@@ -487,8 +488,9 @@ class DocumentAnnotationTests(unittest.TestCase):
         self.assertEqual(resumed_selection.document_visuals, original_visuals)
         self.assertNotIn(old_reference_comment, compiler.calls[-1]["message"])
         self.assertNotIn(old_reference_comment, " ".join(resumed_selection.gestures))
-        # A document keep mark is context, never a keep clause: nothing is protected by it.
-        self.assertEqual(second.json()["proposal"]["protected"], [])
+        # A document keep mark is context, never a keep clause: what is protected is what the agent was told to keep.
+        self.assertEqual(second.json()["proposal"]["protected"], ["entity:level-ground", "entity:portico-base"])
+        self.assertEqual(second.json()["proposal"]["status"], "proposed")
         self.assertEqual([row["id"] for row in second.json()["construction"]["report"]], ["passage"])
         self.assertEqual(second.json()["proposal"]["sourceRunId"], REFERENCE_RUN_ID)
         self.assertEqual(second.json()["proposal"]["modelSource"], self.model_source)

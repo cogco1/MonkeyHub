@@ -47,8 +47,8 @@ def supplement(*refs):
 def construction_answer(**changes):
     """A design-tier answer in the construction contract, every key present as a strict provider writes it."""
 
-    return {"status": "compiled", "script": None, "facets": None, "parameters": None, "utterance": None,
-            "targetId": None, "why": "", "question": None, "contextRefs": [], **changes}
+    return {"status": "compiled", "script": None, "facets": None, "parameters": None, "keep": None,
+            "utterance": None, "targetId": None, "why": "", "question": None, "contextRefs": [], **changes}
 
 
 # A project made by one construction script: neutral ids, two voids in a loop,
@@ -228,6 +228,20 @@ class ContextProviderTests(unittest.TestCase):
                 if name == "anthropic":
                     self.assertEqual(provider.calls[0]["max_tokens"], 5000)
 
+    def test_only_a_design_request_builds_the_model_view(self):
+        # #419 C7 round 1: a numeric request reads its controls; the model view is built for a design request only.
+        design = construction_answer(status="unsupported", why="This proposal needs an architectural design step.")
+        for name in PROVIDERS:
+            for message, answer, reads in ((SCALAR_MESSAGE, scalar_answer(), False),
+                                           ("reorganize the entire gallery", design, True)):
+                with self.subTest(provider=name, message=message), patch.object(
+                        intent_agent, "construction_model", wraps=intent_agent.construction_model) as built, \
+                        self.provider(name, [answer]) as provider:
+                    self.invoke(provider, message)
+                    self.assertEqual(built.call_count, int(reads))
+                    self.assertEqual("model" in self.sheet(provider.calls[0]), reads)
+                    self.assertEqual("construction" in self.sheet(provider.calls[0]), reads)
+
     def test_budget_blocks_initial_call_and_does_not_invent_usage_or_receipt(self):
         for name in PROVIDERS:
             for message in (SCALAR_MESSAGE, "reorganize the entire gallery", "replace wall-07 while keeping its base"):
@@ -258,8 +272,7 @@ class ContextProviderTests(unittest.TestCase):
                 self.assertNotIn("remote-wall", {row["id"] for row in first["controls"]})
                 self.assertIn("remote-wall", {row["id"] for row in second["controls"]})
                 self.assertEqual(provider.requests[0].checkpoint_digest, provider.requests[1].checkpoint_digest)
-                # An answer that changes nothing carries no write scope.
-                self.assertIsNone(result.writable_ids)
+                self.assertEqual(result.status, "unsupported")
 
     def test_budget_rechecked_before_supplement_without_second_provider_call(self):
         for name in PROVIDERS:
@@ -294,9 +307,8 @@ class ContextProviderTests(unittest.TestCase):
             with self.subTest(provider=name), self.provider(name, [answer]) as provider:
                 result = self.invoke(provider, "reconfigure wall-07 while keeping its base")
                 self.assertEqual(result.status, "compiled")
+                # The script changes only the request's own target, so the scope check lets it through.
                 self.assertEqual(result.script, answer["script"])
-                # What a local answer may change is carried with it: the target, as a part and as its geometry id.
-                self.assertEqual(result.writable_ids, ("facade", "wall-07"))
                 self.assertNotIn("unrelated-99", json.dumps(self.sheet(provider.calls[0])))
                 blocked = self.invoke(provider, "reconfigure the entire building")
                 self.assertEqual(blocked.status, "unsupported")
@@ -576,6 +588,73 @@ class ConstructionContractProviderTests(unittest.TestCase):
                 self.assertEqual(result.parameters, ({"key": "module", "value": 1.5},))
                 self.assertIsNone(result.script)
                 self.assertEqual(json.loads(result.receipt.output_json)["facets"], [{"id": "block", "set": {"architectural.role": "canopy"}}])
+
+    def test_a_stated_keep_is_read_as_the_records_refs_and_an_unknown_one_is_malformed(self):
+        # #419 C7 round 1: validated as the construction route's keep is; an unknown ref is a malformed answer.
+        kept = construction_answer(script="b = get('block')\nset_height(b, 3)", keep=["mass", "parameter:module"],
+                                   why="Raise the block; the mass and the module stay.")
+        unknown = construction_answer(script="b = get('block')\nset_height(b, 3)", keep=["entity:tower"],
+                                      why="Raise the block; the tower stays.")
+        for name in PROVIDERS:
+            with self.subTest(provider=name), self.provider(name, [kept]) as provider:
+                result = self.compile(provider)
+                self.assertEqual(result.keep, ("entity:mass", "parameter:module"))
+                self.assertEqual(json.loads(result.receipt.output_json)["keep"], ["entity:mass", "parameter:module"])
+            with self.subTest(provider=name, keep="unknown"), self.provider(name, [unknown]) as provider:
+                with self.assertRaises(IntentAgentFailed) as caught:
+                    self.compile(provider)
+                self.assertEqual(caught.exception.receipt.status, ModelInvocationStatus.MALFORMED)
+                self.assertIn("entity:tower", caught.exception.detail)
+
+    def test_a_kept_geometry_id_keeps_every_part_under_it(self):
+        # A change reaches parts, never a geometry id's own row, so keeping the id keeps what is under it.
+        from archflow_studio_api.application.construction import kept_refs
+
+        record = self.projection.record
+        self.assertEqual(kept_refs(record, ("entity:block", "parameter:module")),
+                         ("entity:block", "parameter:module", "entity:block-body"))
+        self.assertEqual(kept_refs(record, ("entity:block-body",)), ("entity:block-body",))
+        whole = kept_refs(record, ("entity:model",))
+        self.assertEqual(whole[0], "entity:model")
+        self.assertLessEqual({"entity:mass", "entity:mass-body", "entity:block-body", "entity:cutter-1-body"},
+                             set(whole))
+
+    def test_a_local_answer_that_changes_other_geometry_is_malformed_naming_its_geometry_id(self):
+        # #419 C7 round 1: recorded as the old scope refusal was (a malformed-answer receipt), in the ids the
+        # agent saw: mass, never its part mass-body.
+        message, selection = "rework block, add a plinth", Selection("block", None)
+        outside = (
+            construction_answer(script="m = get('mass')\nset_height(m, 4)", targetId="block", why="Raise the mass."),
+            construction_answer(facets=[{"id": "mass", "set": {"material.name": "brick"}}], targetId="block",
+                                why="The mass is brick."),
+        )
+        inside = construction_answer(
+            script="b = get('block')\nset_height(b, 3)\nplinth = extrude(rect(0, 0, 1, 1), 0.2, at=level('ground'))",
+            facets=[{"id": "plinth", "set": {"material.name": "stone"}}], targetId="block",
+            why="Raise the block on a stone plinth.")
+        for name in PROVIDERS:
+            for answer in outside:
+                with self.subTest(provider=name, why=answer["why"]), self.provider(name, [answer]) as provider:
+                    with self.assertRaises(IntentAgentFailed) as caught:
+                        self.compile(provider, message, selection)
+                    self.assertEqual(self.sheet(provider.calls[0])["editTargets"], ["block"])
+                    self.assertEqual(caught.exception.receipt.status, ModelInvocationStatus.MALFORMED)
+                    detail = caught.exception.detail
+                    self.assertIn("changes mass, outside what this request may change (block)", detail)
+                    self.assertNotIn("mass-body", detail)
+            with self.subTest(provider=name, why="inside"), self.provider(name, [inside]) as provider:
+                self.assertEqual(self.compile(provider, message, selection).status, "compiled")
+
+    def test_honesty_reaches_the_model_in_construction_words(self):
+        # #419 C7 round 1: backend prose is translated; the ids in it stay as they are.
+        self.projection = SimpleNamespace(**{**vars(self.projection), "honesty": (
+            "bound element values unavailable: the prism producer refuses a boolean aperture on block-body",)})
+        answer = construction_answer(status="unsupported", why="Nothing to change yet.")
+        for name in PROVIDERS:
+            with self.subTest(provider=name), self.provider(name, [answer]) as provider:
+                self.compile(provider)
+                self.assertEqual(self.sheet(provider.calls[0])["honesty"], [
+                    "bound element values unavailable: the solid realisation refuses a cut opening on block-body"])
 
 
 if __name__ == "__main__":

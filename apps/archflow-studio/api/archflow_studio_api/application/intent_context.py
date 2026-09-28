@@ -446,12 +446,6 @@ def _slice(sheet: Mapping[str, Any], seeds: set[str], record: StateRecord, *, ch
     producers = {row.get("producer") for row in result.get("elements", ())}
     producers.update(row.get("fields", {}).get("producer") for row in result.get("types", ()))
     result["producerSignatures"] = {key: deepcopy(value) for key, value in sheet.get("producerSignatures", {}).items() if key in producers}
-    # The construction language and the model are needed for authoring
-    # geometry, not for changing the declared numeric controls of one current
-    # element; a local design slice keeps them.
-    if include_global_locks:
-        result.pop("construction", None)
-        result.pop("model", None)
     return result, tuple(sorted(included.intersection(rows)))
 
 
@@ -730,8 +724,9 @@ def _geometry_ids(sheet: Mapping[str, Any]) -> dict[str, str]:
 def _construction_facts(context: IntentContext) -> dict[str, Any]:
     """A design request's sheet in construction terms: nothing about how the runtime realises a shape.
 
-    The language, the model by geometry id and the components' intent and
-    facets; each part's numeric controls under its geometry id (``controls``);
+    The language and the model by geometry id (which the in-app compiler adds
+    to a design request's sheet), the components' intent and facets; each
+    part's numeric controls under its geometry id (``controls``);
     parameters, the frame, readings, relationships and conditions. A local
     request reads only its slice, with ``editTargets`` as geometry ids. The
     private rows the checks read (realisations, params, references, types,
@@ -745,13 +740,14 @@ def _construction_facts(context: IntentContext) -> dict[str, Any]:
     components = [{"id": row["id"], "intent": row.get("intent"), "facets": deepcopy(row.get("facets") or {})}
                   for row in source.get("components", ())]
     elements = list(source.get("elements", ()))
-    model = list(source.get("model", ()))
-    if context.design_sheet is not None:
-        # A slice reads the geometry of the components it kept, and of the parts it kept.
-        kept = {row["id"] for row in components}
-        parts = {row["elementId"] for row in elements}
-        model = [row for row in model if row.get("id") in kept or parts.intersection(row.get("parts") or ())]
-    result["model"] = deepcopy(model)
+    if "model" in source:
+        model = list(source["model"])
+        if context.design_sheet is not None:
+            # A slice reads the geometry of the components it kept, and of the parts it kept.
+            kept = {row["id"] for row in components}
+            parts = {row["elementId"] for row in elements}
+            model = [row for row in model if row.get("id") in kept or parts.intersection(row.get("parts") or ())]
+        result["model"] = deepcopy(model)
     result["components"] = components
     result["controls"] = [
         {"id": geometry.get(row["elementId"], row["elementId"]),

@@ -35,10 +35,11 @@ from starlette.datastructures import State
 from starlette.requests import Request
 
 from archflow.project.repository import ProjectRepositoryError
-from archflow.state.state_record import apply_state_record_operator
+from archflow.state.state_record import StateRecordError, apply_state_record_operator
 
 from ..application import clarification, episodes
 from ..application.authentication import request_attribution
+from ..application.construction import kept_refs
 from ..application.elevation import elevation_proposal
 from ..application.binding import ProjectBinding, bound_project
 from ..adapters.seats import SeatsError, load_seat_pack, seats_of
@@ -625,9 +626,13 @@ def _reproposed(
         # terms, and answers the change to make on top of it; the replacement is
         # that change folded onto the same exact base. It is shown no record
         # row: the proposal travels as its summary and the model it would make.
-        proposed = project_proposed_record(
-            projection, apply_state_record_operator(projection.record, operator_of(proposal, projection.record)),
-        )
+        # That is the design the change would make, whatever it was asked to
+        # keep: a keep conflict stays one, reviewable, on the replacement.
+        try:
+            proposed = project_proposed_record(projection, apply_state_record_operator(
+                projection.record, replace(operator_of(proposal, projection.record), protected=())))
+        except StateRecordError as exc:
+            raise StudioError(409, "PROPOSAL_CHAIN_CONFLICT", str(exc)) from exc
         summary = str(proposal.semantic_edit.get("summary") or proposal.utterance)
         compilation = state.intent_compiler.compile(
             message=(
@@ -647,11 +652,13 @@ def _reproposed(
         if compilation.proposes_change:
             revision = clarification.compiled_proposal(
                 binding, proposed, compilation, utterance=utterance, keep_refs=proposal.protected,
+                component_id=proposal.component_id,
             ).proposal
         else:
             revision = proposal_from(DeterministicIntentProvider(proposed).propose(
                 session_ref=f"project:{binding.project_id}",
-                message=merge_keep(compilation.utterance or "", proposal.protected),
+                message=merge_keep(compilation.utterance or "",
+                                   kept_refs(proposed.record, (*proposal.protected, *compilation.keep))),
                 context_refs=compiled_context_refs(
                     proposed.state_digest or "", compilation,
                     Selection(proposal.component_id, proposal.element_id),
