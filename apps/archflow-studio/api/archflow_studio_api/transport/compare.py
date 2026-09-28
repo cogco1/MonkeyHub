@@ -15,6 +15,8 @@ Vector3 = tuple[float, float, float]
 
 
 class BoxDto(BaseModel):
+    """Inspected bounds in the export's Z-up CAD frame: [x, z, y] of the modeling frame (+y up) writes use."""
+
     model_config = ConfigDict(populate_by_name=True, frozen=True)
 
     min: Vector3

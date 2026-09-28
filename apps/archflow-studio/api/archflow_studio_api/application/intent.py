@@ -367,6 +367,49 @@ def _direct_element_fields(record, entity, row, changed):
     return {**entity.fields, "producer": changed.producer, "params": params}
 
 
+def _decimal(value: float) -> str:
+    return format(float(value), ".9g")
+
+
+def _vector(values: Sequence[float]) -> str:
+    return "[" + ", ".join(_decimal(value) for value in values) + "]"
+
+
+def _frame_words(vector: Sequence[float]) -> str:
+    """A modeling-frame vector in words (#404 F3): +y is up, x and z lie in plan.
+
+    Readback boxes are Z-up CAD coordinates, so a caller that reads one and
+    writes the other can send a horizontal move meaning a vertical one. The
+    proposal says which way the vector goes before anything runs.
+    """
+
+    x, y, z = (float(value) for value in vector)
+    words = [f"{_decimal(abs(y))} m {'up' if y > 0 else 'down'}"] if y else []
+    plan = [f"{_decimal(abs(value))} m along plan {'+' if value > 0 else '-'}{axis}"
+            for axis, value in (("x", x), ("z", z)) if value]
+    if plan:
+        words.append("horizontal, " + " and ".join(plan))
+    return "; ".join(words) or "no movement"
+
+
+def _action_words(kind: str, action: Mapping[str, Any]) -> str:
+    """What a direct action does, stated in the modeling frame (+y up)."""
+
+    if kind in {"move", "copy"} and action.get("translation") is not None:
+        return f" by {_vector(action['translation'])} m (+y up): {_frame_words(action['translation'])}"
+    if kind == "rotate" and action.get("axis") is not None:
+        return f" {_decimal(action.get('angle_degrees') or 0)} degrees about axis {_vector(action['axis'])} (+y up)"
+    if kind == "scale" and action.get("scale") is not None:
+        return f" by factors {_vector(action['scale'])} along x, y (vertical), z"
+    if kind == "push_pull":
+        distance = float(action.get("distance") or 0)
+        normal = action.get("normal")
+        if normal is None:
+            return f" by {_decimal(distance)} m along its face normal"
+        return f" by {_decimal(distance)} m along {_vector(normal)} (+y up): {_frame_words([c * distance for c in normal])}"
+    return ""
+
+
 def direct_element_proposal(projection: StateProjection, *, element_id: str, kind: str,
                             copy_element_id: str | None = None, keep_refs: Sequence[str] = (),
                             **action: Any) -> Mapping[str, Any]:
@@ -398,7 +441,7 @@ def direct_element_proposal(projection: StateProjection, *, element_id: str, kin
                    "basis_refs": list(entity.basis_refs), "fields": fields}
     except (TypeError, ValueError, KeyError) as exc:
         raise StudioError(422, "DIRECT_EDIT_UNSUPPORTED", str(exc)) from exc
-    said = f"{kind.replace('_', '/')} {element_id}" + (f" as {target_id}" if kind == "copy" else "")
+    said = f"{kind.replace('_', '/')} {element_id}" + (f" as {target_id}" if kind == "copy" else "") + _action_words(kind, action)
     return component_edit_proposal(projection, {
         "summary": said, "entities": [updated], "parameters": [], "relations": [],
         "removeEntityIds": [], "removeParameterKeys": [], "removeRelationIds": [],

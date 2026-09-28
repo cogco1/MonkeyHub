@@ -157,6 +157,26 @@ class SketchTestCase(unittest.TestCase):
             self.assertEqual(stale.status_code, 409, stale.text)
             self.assertEqual(stale.json()["code"], "STALE_BASE")
 
+    def test_a_move_says_in_words_which_way_it_goes(self) -> None:
+        # #404 F3: writes are Y-up [x, y, z] while readback boxes are Z-up, and
+        # translation [0, 0, 0.5] silently moved a volume sideways. The proposal
+        # an agent reads before running anything now says which way is which.
+        drawn = self.draw()[1]
+        summaries = {}
+        for vector in ([0, 0, 0.5], [0, 0.5, 0], [-2, 0, 0]):
+            response = self.client.post("/api/proposals/transform", json={
+                "stateDigest": self.state_digest, "sourceProposalId": drawn["proposalId"],
+                "elementId": "portico-porch", "kind": "move", "translation": vector})
+            self.assertEqual(response.status_code, 201, response.text)
+            # What the move does, after the vector and the frame it is stated in.
+            summaries[tuple(vector)] = response.json()["change"]["summary"].rsplit(": ", 1)[1]
+        self.assertIn("horizontal", summaries[(0, 0, 0.5)])
+        self.assertIn("+z", summaries[(0, 0, 0.5)])
+        self.assertNotIn("up", summaries[(0, 0, 0.5)])
+        self.assertIn("up", summaries[(0, 0.5, 0)])
+        self.assertNotIn("horizontal", summaries[(0, 0.5, 0)])
+        self.assertIn("-x", summaries[(-2, 0, 0)])
+
     def test_direct_transform_refuses_dependencies_and_cannot_detach_a_host(self) -> None:
         before = self.client.get("/api/state").json()
         runs_before = sorted(path.name for path in (self.root / PROJECT_ID / "runs").iterdir())
