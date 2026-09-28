@@ -31,7 +31,7 @@ from ..application.visual_observation import (
 )
 from ..application.visual_reviews import planned_frames
 from .capability import CapabilitySourceDto, CapabilityTargetDto, KeepScopeDto, detail_dto
-from .decisions import DecisionContextDto, DecisionDto, decision_dto
+from .decisions import DecisionContextDto, DecisionDto, LocatorMatchDto, decision_dto, locator_match_dto
 from .proposal import STATE_DIGEST_PATTERN, ProposalDto
 from .artifacts import ModelSourceDto, model_source_dto
 from .study import StudyRevisionRequestDto, study_evidence_dto
@@ -547,6 +547,12 @@ class ContextPackDto(BaseModel):
         "deferred, superseded and derived-stale ones are left out, and no transcript is "
         "carried; it authorizes nothing and changes no reference",
     )
+    locators: list[LocatorMatchDto] = Field(
+        default_factory=list,
+        description="the project's locators this utterance asks about, found by scope and then by its words "
+        "alone, each target re-read now. A stale one is kept with its reason, never replaced by a guess; "
+        "a locator names content and copies none of it",
+    )
     study_evidence: list[dict[str, Any]] = Field(
         alias="studyEvidence", default_factory=list,
         description="Read-only projections of explicitly selected Study revisions. Check each completeness "
@@ -878,7 +884,7 @@ BLOCKED_NOTE = (
 def context_pack_dto(
     description, context, preflight: Mapping[str, Any] | None, model_facts: Mapping[str, Any],
     *, confirmed_stage: Mapping[str, Any] | None = None, scoped_decisions: Sequence[Any] = (),
-    study_evidence: Sequence[Mapping[str, Any]] = (),
+    locators: Sequence[Any] = (), study_evidence: Sequence[Mapping[str, Any]] = (),
 ) -> ContextPackDto:
     """One capability description and one compiled read context, as the pack.
 
@@ -901,6 +907,7 @@ def context_pack_dto(
         preflight=None if preflight is None else dict(preflight),
         confirmed_stage=None if confirmed_stage is None else ConfirmedStageContextDto(**confirmed_stage),
         scoped_decisions=[decision_dto(row) for row in scoped_decisions],
+        locators=[locator_match_dto(row) for row in locators],
         study_evidence=[study_evidence_dto(row) for row in study_evidence],
         honesty=[
             *detail.honesty,

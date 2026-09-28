@@ -365,6 +365,22 @@ export type ArtifactListDto = {
 };
 
 /**
+ * ArtifactLocatorTargetDto
+ *
+ * One retained artifact, by the sha256 its receipt certifies.
+ */
+export type ArtifactLocatorTargetDto = {
+    /**
+     * Kind
+     */
+    kind: 'artifact';
+    /**
+     * Sha256
+     */
+    sha256: string;
+};
+
+/**
  * AuthoredControlDraftDto
  *
  * A control somebody would have to author, and where it was read from.
@@ -538,6 +554,26 @@ export type BoardExportRequestDto = {
      * Optional longest pixel edge for transient PNG/JPEG previews; omitted exports retain 144 dpi.
      */
     maxEdge?: number | null;
+};
+
+/**
+ * BoardLocatorTargetDto
+ *
+ * One element on one exact retained board revision.
+ */
+export type BoardLocatorTargetDto = {
+    /**
+     * Kind
+     */
+    kind: 'board';
+    /**
+     * Revisionsha256
+     */
+    revisionSha256: string;
+    /**
+     * Elementid
+     */
+    elementId: string;
 };
 
 /**
@@ -1954,6 +1990,12 @@ export type ContextPackDto = {
      */
     scopedDecisions?: Array<DecisionDto>;
     /**
+     * Locators
+     *
+     * the project's locators this utterance asks about, found by scope and then by its words alone, each target re-read now. A stale one is kept with its reason, never replaced by a guess; a locator names content and copies none of it
+     */
+    locators?: Array<LocatorMatchDto>;
+    /**
      * Studyevidence
      *
      * Read-only projections of explicitly selected Study revisions. Check each completeness and applicability result before using a prior; evidence never becomes a design decision or constraint.
@@ -2127,13 +2169,14 @@ export type DecisionAttributionDto = {
  * decisions), the projection's own Stage and the focus the request already
  * names answer for it. Present, it names the one domain the turn reads and is
  * checked exactly like a decision's own evidence; it never invents a Stage or a
- * design source.
+ * design source. 'research' reads only the source policies whose topic the
+ * utterance is about; no other domain is ever handed one.
  */
 export type DecisionContextDto = {
     /**
      * Domain
      */
-    domain: 'drawing' | 'copy' | 'design';
+    domain: 'drawing' | 'copy' | 'design' | 'research';
     /**
      * Stageref
      */
@@ -2190,7 +2233,7 @@ export type DecisionDto = {
     /**
      * Disposition
      */
-    disposition: 'keep' | 'reject' | 'avoid' | 'require' | 'lock' | 'defer';
+    disposition: 'keep' | 'reject' | 'avoid' | 'require' | 'lock' | 'defer' | 'refer';
     /**
      * Strength
      */
@@ -2227,7 +2270,11 @@ export type DecisionDto = {
         kind: 'parameter';
     } & DecisionParameterBindingDto) | ({
         kind: 'recipe';
-    } & DecisionRecipeBindingDto) | null;
+    } & DecisionRecipeBindingDto) | ({
+        kind: 'locator';
+    } & DecisionLocatorBindingDto) | ({
+        kind: 'source-policy';
+    } & SourcePolicyBindingDto) | null;
     attribution: DecisionAttributionDto;
     /**
      * Createdat
@@ -2273,6 +2320,32 @@ export type DecisionListDto = {
      * Decisions
      */
     decisions: Array<DecisionDto>;
+};
+
+/**
+ * DecisionLocatorBindingDto
+ *
+ * What this locator points at, as it was resolved when saved.
+ */
+export type DecisionLocatorBindingDto = {
+    /**
+     * Kind
+     */
+    kind: 'locator';
+    /**
+     * Label
+     */
+    label: string;
+    /**
+     * Target
+     */
+    target: ({
+        kind: 'document';
+    } & DocumentLocatorTargetDto) | ({
+        kind: 'artifact';
+    } & ArtifactLocatorTargetDto) | ({
+        kind: 'board';
+    } & BoardLocatorTargetDto);
 };
 
 /**
@@ -2345,7 +2418,7 @@ export type DecisionRequestDto = {
     /**
      * Disposition
      */
-    disposition: 'keep' | 'reject' | 'avoid' | 'require' | 'lock' | 'defer';
+    disposition: 'keep' | 'reject' | 'avoid' | 'require' | 'lock' | 'defer' | 'refer';
     /**
      * Strength
      */
@@ -2380,13 +2453,17 @@ export type DecisionRequestDto = {
     /**
      * Typedbinding
      *
-     * 'parameter' names a design parameter whose value, unit and lock the server reads itself; 'recipe' carries a project recipe's paper-space values, retained only for a person's confirmed 'require' decision in the drawing domain
+     * 'parameter' names a design parameter whose value, unit and lock the server reads itself; 'recipe' carries a project recipe's paper-space values, retained only for a person's confirmed 'require' decision in the drawing domain; 'locator' names retained project content for a 'refer' decision in the locator domain; 'source-policy' says where to look first for a topic, for a 'require' decision in the research domain
      */
     typedBinding?: ({
         kind: 'parameter';
     } & ParameterBindingRequestDto) | ({
         kind: 'recipe';
-    } & RecipeBindingRequestDto) | null;
+    } & RecipeBindingRequestDto) | ({
+        kind: 'locator';
+    } & LocatorBindingRequestDto) | ({
+        kind: 'source-policy';
+    } & SourcePolicyBindingDto) | null;
 };
 
 /**
@@ -2427,7 +2504,7 @@ export type DecisionScopeDto = {
     /**
      * Domain
      */
-    domain: 'drawing' | 'copy' | 'design';
+    domain: 'drawing' | 'copy' | 'design' | 'research' | 'locator';
     /**
      * Extent
      */
@@ -3039,6 +3116,34 @@ export type DocumentGestureDto = {
      * Required only for polyline: whether the ordered editable vertices close into a contour. The first point is not repeated.
      */
     closed?: boolean | null;
+};
+
+/**
+ * DocumentLocatorTargetDto
+ *
+ * One registered document at its exact revision, and one page of it when named.
+ */
+export type DocumentLocatorTargetDto = {
+    /**
+     * Kind
+     */
+    kind: 'document';
+    /**
+     * Runid
+     */
+    runId: string;
+    /**
+     * Assetsha256
+     */
+    assetSha256: string;
+    /**
+     * Revisionref
+     */
+    revisionRef?: string | null;
+    /**
+     * Pageindex
+     */
+    pageIndex?: number | null;
 };
 
 /**
@@ -4999,6 +5104,85 @@ export type LocalDraftSourceDto = {
      * Sourcestageref
      */
     sourceStageRef?: string | null;
+};
+
+/**
+ * LocatorBindingRequestDto
+ *
+ * Where one piece of retained project content is, under the name the user calls it.
+ *
+ * A 'refer' decision in the locator domain, applying by 'scope' to the project
+ * or one Stage. The target must resolve now; a string target (an absolute
+ * machine path or a URL) is refused with its reason: register the file first.
+ * Saved for sourceKind 'human', or 'agent' with the user's messageSource.
+ */
+export type LocatorBindingRequestDto = {
+    /**
+     * Kind
+     */
+    kind: 'locator';
+    /**
+     * Label
+     *
+     * the user's short name for it, e.g. 项目图框
+     */
+    label: string;
+    /**
+     * Target
+     *
+     * the retained content itself; a string is accepted only to be refused with its reason
+     */
+    target: ({
+        kind: 'document';
+    } & DocumentLocatorTargetDto) | ({
+        kind: 'artifact';
+    } & ArtifactLocatorTargetDto) | ({
+        kind: 'board';
+    } & BoardLocatorTargetDto) | string;
+};
+
+/**
+ * LocatorListDto
+ */
+export type LocatorListDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Query
+     */
+    query: string;
+    /**
+     * Locators
+     */
+    locators: Array<LocatorMatchDto>;
+};
+
+/**
+ * LocatorMatchDto
+ *
+ * One locator a lookup found, and whether its target resolves now.
+ *
+ * 'stale' is never dropped: the content moved or went, and staleReason says
+ * how. Nothing is guessed in its place.
+ */
+export type LocatorMatchDto = {
+    decision: DecisionDto;
+    /**
+     * Status
+     */
+    status: 'current' | 'stale';
+    /**
+     * Stalereason
+     */
+    staleReason: string | null;
+    /**
+     * Matchedterms
+     *
+     * the normalized terms the words shared with this locator
+     */
+    matchedTerms: Array<string>;
 };
 
 /**
@@ -10571,6 +10755,49 @@ export type SourceDocumentRequestDto = {
 };
 
 /**
+ * SourcePolicyBindingDto
+ *
+ * Where to look first for a research topic, and what to avoid.
+ *
+ * A 'require' decision in the research domain, applying by 'scope'. Held hard,
+ * it must be followed: use a preferred source, never an avoided one. Held as
+ * a preference, it is a default the current request can override. Saved for
+ * sourceKind 'human', or 'agent' with the user's messageSource.
+ */
+export type SourcePolicyBindingDto = {
+    /**
+     * Kind
+     */
+    kind: 'source-policy';
+    /**
+     * Topic
+     *
+     * the topic in the user's words
+     */
+    topic: string;
+    /**
+     * Keys
+     */
+    keys: Array<'materials' | 'regulations' | 'products' | 'precedents'>;
+    /**
+     * Prefer
+     *
+     * sources to look in first, in order: site domains or names
+     */
+    prefer?: Array<string>;
+    /**
+     * Avoid
+     *
+     * sources not to use: site domains or names
+     */
+    avoid?: Array<string>;
+    /**
+     * Note
+     */
+    note?: string | null;
+};
+
+/**
  * StageContextChangesDto
  *
  * Content differences and declared review scope, never a validation receipt.
@@ -14491,6 +14718,52 @@ export type CreateDecisionApiDecisionsPostResponses = {
 };
 
 export type CreateDecisionApiDecisionsPostResponse = CreateDecisionApiDecisionsPostResponses[keyof CreateDecisionApiDecisionsPostResponses];
+
+export type FindLocatorsApiLocatorsGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query: {
+        /**
+         * Q
+         *
+         * the words asking where something is
+         */
+        q: string;
+        /**
+         * Stageref
+         */
+        stageRef?: string | null;
+    };
+    url: '/api/locators';
+};
+
+export type FindLocatorsApiLocatorsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type FindLocatorsApiLocatorsGetError = FindLocatorsApiLocatorsGetErrors[keyof FindLocatorsApiLocatorsGetErrors];
+
+export type FindLocatorsApiLocatorsGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: LocatorListDto;
+};
+
+export type FindLocatorsApiLocatorsGetResponse = FindLocatorsApiLocatorsGetResponses[keyof FindLocatorsApiLocatorsGetResponses];
 
 export type ReadDecisionApiDecisionsDecisionIdGetData = {
     body?: never;

@@ -26,6 +26,17 @@ A recipe can travel (#252): ``recipe_export`` writes one as a small file that
 carries its values and identity and nothing else of its project, and
 ``import_recipe`` retains such a file in another project as that project's
 preference, on a person's confirmation, evidenced by the file's own digest.
+
+Project memory is two more forms of the same decision (#252, ADR-009), never a
+second store. A locator (domain ``locator``) says where one piece of retained
+project content is, in the user's words: a registered document page, a
+retained artifact or a board element. ``find_locators`` answers "where is X"
+by scope first and then by the words alone, and re-reads the target every
+time; one that no longer resolves is handed back stale with its reason. A
+source policy (domain ``research``) says where to look first, and what to
+avoid, for a topic; only a research turn whose words are about that topic is
+handed it. Neither copies the content it names, and neither is inferred from
+behaviour: both are saved from the user's words or a person's own action.
 """
 
 from __future__ import annotations
@@ -34,6 +45,8 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 import re
 from typing import Any, Iterable, Mapping, Sequence
+import unicodedata
+from urllib.parse import urlsplit
 import uuid
 
 from pydantic import ValidationError
@@ -51,7 +64,7 @@ from archflow.state.state_record import (
 )
 
 from ..transport.errors import StudioError
-from .artifacts import document_bytes
+from .artifacts import artifact_bytes, document_bytes
 from .authentication import ActorAttribution
 from .binding import ProjectBinding, retained_sources
 from .boards import BOARD_RUN_ID, read_board
@@ -66,8 +79,26 @@ _DESIGN_TARGET = re.compile(r"(parameter|entity|relation):([A-Za-z0-9][A-Za-z0-9
 # hatch density, the line-weight hierarchy, what lies beyond the cut,
 # entourage and poché.
 DRAWING_TARGETS = ("drawing:hatch", "drawing:lineweight", "drawing:beyond", "drawing:entourage", "drawing:poche")
-_DOMAIN_TARGETS = {"drawing": DRAWING_TARGETS, "copy": ("copy:style",)}
-_DOMAIN_SOURCES = {"drawing": frozenset({"board", "document"}), "copy": frozenset({"document"})}
+# Project memory's two forms each have one target: what they are about lives
+# in their typed binding. Either is said while looking at something - a page,
+# a board or the design itself - and that stays its evidence.
+LOCATOR_TARGET = "locator:content"
+SOURCE_POLICY_TARGET = "research:sources"
+_DOMAIN_TARGETS = {"drawing": DRAWING_TARGETS, "copy": ("copy:style",),
+                   "locator": (LOCATOR_TARGET,), "research": (SOURCE_POLICY_TARGET,)}
+_SAID_WHILE_READING = frozenset({"board", "document", "design"})
+_DOMAIN_SOURCES = {"drawing": frozenset({"board", "document"}), "copy": frozenset({"document"}),
+                   "locator": _SAID_WHILE_READING, "research": _SAID_WHILE_READING}
+# The one binding each memory domain holds, and the disposition it is held with.
+_MEMORY_FORMS = {"locator": ("locator", "refer"), "research": ("source-policy", "require")}
+# The normalized research topics, each with the words that put a turn on it.
+# An ASCII word matches a whole word; a CJK word matches where it occurs.
+RESEARCH_KEYS = {
+    "materials": ("材料", "材质", "建材", "性能", "material", "materials"),
+    "regulations": ("规范", "法规", "标准", "条文", "规定", "regulation", "regulations", "code", "codes"),
+    "products": ("产品", "厂家", "厂商", "型号", "品牌", "product", "products", "manufacturer"),
+    "precedents": ("案例", "先例", "参考项目", "precedent", "precedents", "case", "cases"),
+}
 # The paper-space values a project recipe can set, each under the one drawing
 # target it belongs to. The wire bounds them exactly as a drawing request does.
 RECIPE_KEYS = {"cutLineMm": "drawing:lineweight", "visibleLineMm": "drawing:lineweight",
@@ -116,13 +147,16 @@ class DecisionContext:
     """What a next turn is asking about, as its own evidence states it.
 
     ``domains`` holds the one domain a turn named, or the default pair a turn
-    that named none reads.
+    that named none reads. Research is never in the default pair.
     """
 
     domains: tuple[str, ...]
     stage_ref: str | None = None
     target_refs: tuple[str, ...] = ()
     source: Mapping[str, Any] | None = None
+    # The turn's own words: a research turn is handed only the source
+    # policies whose topic they are about.
+    utterance: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -399,17 +433,24 @@ def _parameter_of(record: StateRecord | None, key: str) -> Parameter:
 
 
 def _typed_binding(
-    spec: Mapping[str, Any], record: StateRecord | None, scope: Mapping[str, Any], source: Mapping[str, Any],
+    binding: ProjectBinding, spec: Mapping[str, Any], record: StateRecord | None, scope: Mapping[str, Any],
+    source: Mapping[str, Any],
 ) -> dict[str, Any] | None:
     """The parameter value and basis the server reads now, not a client claim.
 
     ``lock`` records an existing lock; it never takes one. A decision that
     named a parameter nobody has locked is refused rather than pretending to
     have acquired the lock it describes. A recipe binding is checked against
-    the rest of the decision (``_recipe_binding``).
+    the rest of the decision (``_recipe_binding``); a locator or a source
+    policy is project memory (``_memory_binding``).
     """
 
     request, disposition = spec.get("typedBinding"), spec["disposition"]
+    kind = None if request is None else request["kind"]
+    if scope["domain"] in _MEMORY_FORMS or kind in {form for form, _ in _MEMORY_FORMS.values()}:
+        return _memory_binding(binding, spec, request, scope)
+    if disposition == "refer":
+        raise _invalid("refer is a locator's disposition; it points at content and settles nothing else.")
     if request is None:
         if disposition == "lock":
             raise _invalid("a lock decision names the parameter binding whose existing lock it records.")
@@ -473,6 +514,257 @@ def _recipe_binding(
     return {"kind": "recipe", "graphics": {key: float(graphics[key]) for key in RECIPE_KEYS if key in graphics}}
 
 
+# ---- project memory: locators and source policies (#252) --------------------
+
+# A URL names something outside the project; ``project://`` is a record ref.
+_URL = re.compile(r"^(?!project://)[A-Za-z][A-Za-z0-9+.-]*://|^www\.", re.IGNORECASE)
+# A drive, a UNC share, a POSIX root or a home directory: one machine's path.
+_MACHINE_PATH = re.compile(r"^(?:[A-Za-z]:[\\/]|[\\/]|~[\\/]|file:)", re.IGNORECASE)
+_DOMAIN_NAME = re.compile(r"^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$")
+
+
+def _outside_project(value: Any) -> str | None:
+    """Why this string cannot identify retained project content, or None."""
+
+    if not isinstance(value, str):
+        return None
+    text = value.strip()
+    if _MACHINE_PATH.match(text):
+        return ("an absolute machine path is never a stable identity (AGENTS.md): it names one computer's "
+                "disk, not this project's content. Register the file as a project document first, then "
+                "point at that registration.")
+    if _URL.match(text):
+        return ("a URL names something outside this project, and what it serves can change under it. "
+                "Register the file as a project document first, then point at that registration.")
+    return None
+
+
+def _said_by_the_user(spec: Mapping[str, Any], form: str) -> None:
+    """A memory item is the user's own: their words, or a person's explicit action.
+
+    An agent that interpreted the fields keeps sourceKind 'agent' and must
+    name the user's message the words came from; it never saves one as the
+    user's on its own. Nothing is inferred from behaviour (#253 first).
+    """
+
+    if spec["sourceKind"] not in ("human", "agent"):
+        raise _invalid(f"a {form} is saved from the user's words or a person's explicit action; an evaluator "
+                       "or rule may propose one but never retain it, and none is inferred from behaviour.")
+    if spec["sourceKind"] == "agent" and spec.get("messageSource") is None:
+        raise _invalid(f"an agent saves a {form} only from the user's own words: name the message they came "
+                       "from in messageSource.")
+    if spec["strength"] == "temporary":
+        raise _invalid(f"a temporary {form} is not memory; say it in the turn it belongs to.")
+    if spec["applicability"] != "scope":
+        raise _invalid(f"a {form} applies by scope; an exact-source one would never reach a later turn.")
+
+
+def _memory_binding(
+    binding: ProjectBinding, spec: Mapping[str, Any], request: Mapping[str, Any] | None,
+    scope: Mapping[str, Any],
+) -> dict[str, Any]:
+    domain = scope["domain"]
+    expected = _MEMORY_FORMS.get(domain)
+    if expected is None or request is None or request["kind"] != expected[0]:
+        raise _invalid("a locator is a locator-domain decision with a locator binding, and a source policy "
+                       "is a research-domain decision with a source-policy binding.")
+    form = "locator" if domain == "locator" else "source policy"
+    if spec["disposition"] != expected[1]:
+        raise _invalid(f"a {form} is held with disposition {expected[1]}.")
+    _said_by_the_user(spec, form)
+    if domain == "locator":
+        label = unicodedata.normalize("NFKC", request["label"]).strip()
+        if not label:
+            raise _invalid("a locator's label is the short name the user calls this content by.")
+        return {"kind": "locator", "label": label, "target": _locator_target(binding, request["target"])}
+    return _source_policy(request)
+
+
+def _locator_target(binding: ProjectBinding, target: Any) -> dict[str, Any]:
+    """One piece of retained project content, normalized and resolved now."""
+
+    if isinstance(target, str):
+        raise StudioError(422, "LOCATOR_TARGET_INVALID", _outside_project(target) or (
+            "a locator points at retained project content: a registered document page, an artifact by its "
+            "sha256, or a board revision element - not a free-text name."))
+    for value in target.values():
+        reason = _outside_project(value)
+        if reason is not None:
+            raise StudioError(422, "LOCATOR_TARGET_INVALID", reason)
+    kind = target["kind"]
+    if kind == "document":
+        normalized = {"kind": "document", "runId": target["runId"], "assetSha256": target["assetSha256"],
+                      "revisionRef": target.get("revisionRef"), "pageIndex": target.get("pageIndex")}
+    elif kind == "artifact":
+        normalized = {"kind": "artifact", "sha256": target["sha256"]}
+    else:
+        normalized = {"kind": "board", "revisionSha256": target["revisionSha256"], "elementId": target["elementId"]}
+    stale = _stale_reason(binding, normalized)
+    if stale is not None:
+        raise StudioError(404, "LOCATOR_TARGET_UNKNOWN", f"that content does not resolve in this project: {stale}")
+    return normalized
+
+
+def _stale_reason(binding: ProjectBinding, target: Mapping[str, Any]) -> str | None:
+    """Why a locator's target no longer resolves through P036, or None when it does.
+
+    Every read asks again: the document is still registered at that exact
+    revision and its bytes hash back to its digest, an artifact's bytes hash to
+    its sha256, a board element is still live on that retained revision.
+    """
+
+    try:
+        if target["kind"] == "document":
+            document, _ = document_bytes(binding, target["runId"], target["assetSha256"], target["revisionRef"])
+            if document.revision_ref != target["revisionRef"]:
+                return "the document is no longer registered at that exact revision."
+            if target["pageIndex"] is not None and not 0 <= target["pageIndex"] < len(document.pages):
+                return "that page does not exist in this document version."
+        elif target["kind"] == "artifact":
+            artifact_bytes(binding, target["sha256"])
+        else:
+            scene = read_board(binding, target["revisionSha256"])
+            if not any(element.get("id") == target["elementId"] and not element.get("isDeleted")
+                       for element in scene.elements):
+                return "that board revision has no live element with that id."
+    except StudioError as exc:
+        return f"{exc.code}: {exc.detail}"
+    return None
+
+
+def _source_name(value: str) -> str:
+    """A site's domain, lowercased, or a named source as written."""
+
+    text = unicodedata.normalize("NFKC", value).strip()
+    if re.match(r"^[A-Za-z][A-Za-z0-9+.-]*://", text):
+        host = urlsplit(text).hostname
+        if not host:
+            raise _invalid(f"{value!r} names no site; give its domain or the source's name.")
+        return host
+    return text.lower() if _DOMAIN_NAME.fullmatch(text.lower()) else text
+
+
+def _source_policy(request: Mapping[str, Any]) -> dict[str, Any]:
+    topic = unicodedata.normalize("NFKC", request["topic"]).strip()
+    keys = list(request["keys"])
+    if not topic:
+        raise _invalid("a source policy names its topic in the user's words.")
+    if not keys or len(set(keys)) != len(keys) or any(key not in RESEARCH_KEYS for key in keys):
+        raise _invalid(f"a source policy names one or more distinct keys of {', '.join(RESEARCH_KEYS)}.")
+    prefer = [_source_name(value) for value in request.get("prefer") or ()]
+    avoid = [_source_name(value) for value in request.get("avoid") or ()]
+    if not prefer and not avoid:
+        raise _invalid("a source policy prefers or avoids at least one source.")
+    named = [value.casefold() for value in (*prefer, *avoid)]
+    if any(not value for value in named) or len(set(named)) != len(named):
+        raise _invalid("each source appears once: a source is either preferred, in its order, or avoided.")
+    note = request.get("note")
+    note = None if note is None else note.strip() or None
+    return {"kind": "source-policy", "topic": topic, "keys": [key for key in RESEARCH_KEYS if key in keys],
+            "prefer": prefer, "avoid": avoid, "note": note}
+
+
+def _label_key(label: str) -> str:
+    return "".join(unicodedata.normalize("NFKC", label).casefold().split())
+
+
+def _require_one_locator(
+    chains: Mapping[str, Sequence[DecisionRevision]], typed: Mapping[str, Any], scope: Mapping[str, Any],
+    replacing: str | None,
+) -> None:
+    """One active locator per label and reach: moving one supersedes it."""
+
+    for chain in chains.values():
+        other = chain[-1]
+        bound = other.payload.get("typedBinding") or {}
+        if (other.decision_id != replacing and other.status == ACTIVE and bound.get("kind") == "locator"
+                and _label_key(bound["label"]) == _label_key(typed["label"])
+                and _reach(other.payload["scope"]) == _reach(scope)):
+            raise StudioError(409, "DECISION_LOCATOR_CONFLICT",
+                              f"decision {other.decision_id} already locates {bound['label']!r} for the same reach. "
+                              "Supersede it to point somewhere else.")
+
+
+# Deterministic lexical lookup: NFKC folds width, casefold folds case; CJK text
+# is read as character bigrams and other text as words. No embeddings.
+_CJK_RUN = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]+")
+_WORD = re.compile(r"[^\W_]+")
+_STOP_TERMS = frozenset({
+    "在哪", "哪里", "哪儿", "放在", "在这", "这里", "那里", "这个", "那个", "这份", "那份", "一下", "什么",
+    "我们", "你们", "上次", "之前", "说的",
+    "a", "an", "and", "at", "for", "in", "is", "it", "of", "on", "or", "our", "the", "this", "that",
+    "to", "we", "what", "where", "which",
+})
+
+
+def _normalized(text: str) -> str:
+    return unicodedata.normalize("NFKC", text).casefold()
+
+
+def lexical_terms(text: str) -> frozenset[str]:
+    """The terms a lookup compares: CJK bigrams (a lone character as itself) and words."""
+
+    normalized = _normalized(text)
+    terms: set[str] = set()
+    for run in _CJK_RUN.findall(normalized):
+        terms.update([run] if len(run) == 1 else (run[index:index + 2] for index in range(len(run) - 1)))
+    terms.update(word for word in _WORD.findall(_CJK_RUN.sub(" ", normalized)) if len(word) > 1)
+    return frozenset(terms - _STOP_TERMS)
+
+
+@dataclass(frozen=True, slots=True)
+class LocatorMatch:
+    """One locator a lookup found, why, and whether its target still resolves."""
+
+    revision: DecisionRevision
+    matched_terms: tuple[str, ...]
+    stale_reason: str | None
+
+
+def find_locators(binding: ProjectBinding, query: str, *, stage_ref: str | None = None) -> tuple[LocatorMatch, ...]:
+    """Where the words say X is: scope first, then the words, then the target read again.
+
+    Only active locators whose reach includes this Stage (or the project) are
+    compared. A locator matches when the query shares a term with its label,
+    or two with the user's words it was saved from; label hits rank first.
+    Each match is re-verified (``_stale_reason``): one that no longer resolves
+    is returned stale with the reason, never dropped and never guessed.
+    """
+
+    query_terms = lexical_terms(query)
+    if not query_terms:
+        return ()
+    ranked: list[tuple[tuple[Any, ...], DecisionRevision, tuple[str, ...]]] = []
+    for revision in _ordered(_latest(binding).values()):
+        payload = revision.payload
+        typed = payload.get("typedBinding") or {}
+        if revision.status != ACTIVE or typed.get("kind") != "locator":
+            continue
+        scope = payload["scope"]
+        if scope["extent"] == "stage" and scope["stageRef"] != stage_ref:
+            continue
+        label_terms = lexical_terms(typed["label"])
+        by_label = query_terms & label_terms
+        by_words = (query_terms & lexical_terms(payload["rawLanguage"])) - label_terms
+        if not by_label and len(by_words) < 2:
+            continue
+        ranked.append(((-len(by_label), -len(by_words), str(payload["createdAt"]), revision.decision_id),
+                       revision, tuple(sorted(by_label | by_words))))
+    return tuple(LocatorMatch(revision, terms, _stale_reason(binding, revision.payload["typedBinding"]["target"]))
+                 for _, revision, terms in sorted(ranked, key=lambda row: row[0]))
+
+
+def _topic_applies(typed: Mapping[str, Any], utterance: str) -> bool:
+    """Whether a research turn's words are about this source policy's topic."""
+
+    terms = lexical_terms(utterance)
+    if terms & lexical_terms(typed["topic"]):
+        return True
+    normalized = _normalized(utterance)
+    return any((word in terms) if word.isascii() else (word in normalized)
+               for key in typed["keys"] for word in RESEARCH_KEYS[key])
+
+
 def _reach(scope: Mapping[str, Any]) -> tuple[str, str | None]:
     return scope["extent"], scope.get("stageRef")
 
@@ -533,9 +825,11 @@ def _content(
     requested = spec.get("typedBinding")
     _validate_target(scope["domain"], spec["targetRef"], source["kind"], record,
                      recipe=requested is not None and requested["kind"] == "recipe")
-    typed = _typed_binding(spec, record, scope, source)
+    typed = _typed_binding(binding, spec, record, scope, source)
     if typed is not None and typed["kind"] == "recipe":
         _require_one_recipe_value(chains, typed, spec["strength"], scope, replacing)
+    if typed is not None and typed["kind"] == "locator":
+        _require_one_locator(chains, typed, scope, replacing)
     content = {
         "rawLanguage": spec["rawLanguage"],
         # A claim about which message these words came from, not a credential:
@@ -734,7 +1028,7 @@ def focus_refs(record: StateRecord | None, element_ids: Sequence[str]) -> tuple[
 
 def decision_context_for(
     binding: ProjectBinding, *, requested: Mapping[str, Any] | None, design_source: Mapping[str, Any],
-    stage_ref: str | None, focus: Sequence[str], record: StateRecord | None,
+    stage_ref: str | None, focus: Sequence[str], record: StateRecord | None, utterance: str = "",
 ) -> DecisionContext:
     """What this turn is about, checked as strictly as a decision's own evidence.
 
@@ -750,12 +1044,16 @@ def decision_context_for(
     A): the agent about to draw sees the same project recipe a new drawing
     starts from. Its only evidence is the design source it projects, so a
     drawing decision said against one exact page does not follow it. A turn
-    that names a domain reads that domain alone.
+    that names a domain reads that domain alone. A research turn reads the
+    source policies its words are about. Locators are not a turn's domain:
+    ``find_locators`` answers them from the words.
     """
 
     if requested is None:
-        return DecisionContext(_DEFAULT_DOMAINS, stage_ref, tuple(focus), design_source)
+        return DecisionContext(_DEFAULT_DOMAINS, stage_ref, tuple(focus), design_source, utterance)
     domain = requested["domain"]
+    if domain == "locator":
+        raise _invalid("locators are looked up by the turn's words (find_locators), not read as a domain.")
     if requested.get("stageRef") is not None and requested["stageRef"] != stage_ref:
         raise StudioError(409, "DECISION_STAGE_MISMATCH",
                           "decisionContext names a Stage other than the one this source is under; "
@@ -778,14 +1076,14 @@ def decision_context_for(
                                   "context pack projects; read the pack for that source instead.")
         if record is not None:
             targets = tuple(_require_design_ref(record, ref) for ref in targets)
-        return DecisionContext((domain,), stage_ref, targets or tuple(focus), design_source)
+        return DecisionContext((domain,), stage_ref, targets or tuple(focus), design_source, utterance)
     if targets:
         raise _invalid(f"a {domain} turn names no design targetRefs.")
     if source is not None and source["kind"] not in _DOMAIN_SOURCES[domain]:
         raise _invalid(f"a {domain} turn is evidenced by "
                        f"{' or '.join(sorted(_DOMAIN_SOURCES[domain]))}, not by a {source['kind']} source.")
     return DecisionContext((domain,), stage_ref, (),
-                           None if source is None else _validate_source(binding, source)[0])
+                           None if source is None else _validate_source(binding, source)[0], utterance)
 
 
 def _applies_to_scope(scope: Mapping[str, Any], context: DecisionContext) -> str | None:
@@ -865,6 +1163,10 @@ def compile_scoped_decisions(
             reason = payload["status"]
         else:
             reason = _applies_to_scope(payload["scope"], context)
+        typed = payload.get("typedBinding") or {}
+        if (reason is None and typed.get("kind") == "source-policy"
+                and not _topic_applies(typed, context.utterance)):
+            reason = "topic-outside-turn"
         if reason is None and payload["applicability"] == "exact-source" and payload["source"] != context.source:
             reason = "exact-source-changed"
         if reason is None:

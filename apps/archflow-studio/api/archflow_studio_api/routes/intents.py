@@ -37,7 +37,7 @@ from ..application.intent import (
     parse_utterance,
 )
 from ..application.capability import capability, describe_capability
-from ..application.decisions import compile_scoped_decisions, decision_context_for, focus_refs
+from ..application.decisions import compile_scoped_decisions, decision_context_for, find_locators, focus_refs
 from ..application.intent_agent import (
     AGENT_FAILED,
     DETERMINISTIC,
@@ -318,11 +318,13 @@ def read_intent_context(request: Request, body: ContextPackRequestDto) -> Contex
         binding, _decision_context(binding, body, projection, element_ids or context.target_ids),
         projection.record,
     )
+    locators = find_locators(binding, body.utterance,
+                             stage_ref=None if projection.source_stage_ref is None else projection.source_stage_ref.uri)
     study_evidence = [study_evidence_context(read_study(binding, item.study_id, item.ledger_ref))
                       for item in body.study_evidence]
     return context_pack_dto(description, context, preflight, model_context(context),
                             confirmed_stage=confirmed_stage, scoped_decisions=decisions,
-                            study_evidence=study_evidence)
+                            locators=locators, study_evidence=study_evidence)
 
 
 def _decision_context(
@@ -346,6 +348,7 @@ def _decision_context(
         stage_ref=stage_ref,
         focus=focus_refs(projection.record, element_ids),
         record=projection.record,
+        utterance=body.utterance,
     )
 
 
