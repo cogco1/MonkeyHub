@@ -52,7 +52,7 @@ from __future__ import annotations
 
 import math
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from decimal import Decimal, localcontext
 import re
 from typing import Mapping, Sequence
@@ -63,9 +63,12 @@ from archflow.state.state_record import component_semantics
 from .artifacts import ModelSource
 
 from ..transport.errors import StudioError
-from .intent import ACCEPTED_FORMS, parse_utterance
-from .intent_agent import DETERMINISTIC, Compilation, DocumentVisual, Selection
+from .binding import ProjectBinding
+from .construction import ConstructionProposal, design_proposal
+from .intent import ACCEPTED_FORMS, component_edit_proposal, parse_utterance
+from .intent_agent import AGENT_FAILED, DETERMINISTIC, Compilation, DocumentVisual, Selection
 from .projection import ProjectedElement, StateProjection
+from .proposals import proposal_from
 
 # ---- the closed set of answers ---------------------------------------------
 
@@ -2323,6 +2326,79 @@ def _advance_or(previous: PendingIntent | None, answer: Resolution) -> Resolutio
     )
 
 
+def targeted(projection: StateProjection, compilation: Compilation) -> Compilation:
+    """The geometry id the agent named, read into the component and element it is.
+
+    A part id is its element. A geometry id with exactly one part is that
+    part; one with several leaves the element open, and the resolver asks
+    which of them, naming each (``resolve``), as it does for any component
+    selection. A scalar sentence aimed at an id this record does not declare
+    as geometry is the agent's failure; any other answer keeps its own words
+    and loses nothing by a target it did not need.
+    """
+
+    identifier = compilation.target_id
+    if identifier is None:
+        return compilation
+    elements = {element.element_id: element for element in projection.elements}
+    if identifier in elements:
+        return replace(compilation, component_id=elements[identifier].component_id, element_id=identifier)
+    if identifier in _component_parents(projection):
+        own = [element.element_id for element in projection.elements if element.component_id == identifier]
+        return replace(compilation, component_id=identifier, element_id=own[0] if len(own) == 1 else None)
+    if compilation.status == "compiled" and compilation.utterance is not None:
+        raise StudioError(
+            502, AGENT_FAILED,
+            f"the {compilation.provider} agent aimed {compilation.utterance!r} at {identifier}, which this record "
+            "does not declare as geometry; the model lists every geometry id",
+        )
+    return compilation
+
+
+def compiled_proposal(
+    binding: ProjectBinding,
+    projection: StateProjection,
+    compilation: Compilation,
+    *,
+    utterance: str,
+    keep_refs: Sequence[str] = (),
+) -> ConstructionProposal:
+    """What a compiled change proposes, as one proposal whose utterance is the architect's words.
+
+    A script, facets or parameters go through the construction owner
+    (``design_proposal``), which chooses how every shape is realised; the
+    numeric component tier's own edit goes through the component edit it
+    already is. A local answer may change only the existing entities its
+    request targeted (``Compilation.writable_ids``): anything else it would
+    change is the agent's failure, and nothing is proposed.
+    """
+
+    if not compilation.proposes_change:
+        raise StudioError(502, AGENT_FAILED, "the agent must compile one change or ask a question")
+    if compilation.semantic_edit is not None:
+        made = ConstructionProposal(proposal_from(component_edit_proposal(
+            projection, compilation.semantic_edit, utterance=utterance,
+            component_id=compilation.component_id, keep_refs=keep_refs,
+        )), None)
+    else:
+        made = design_proposal(
+            binding, projection, script=compilation.script, parameters=compilation.parameters or (),
+            facets=compilation.facets or (), summary=compilation.why or None, keep_refs=keep_refs,
+        )
+    if compilation.writable_ids is not None:
+        operator = made.proposal.state_record_operator
+        existing = {entity.entity_id for entity in projection.record.entities}
+        written = ({entity.entity_id for entity in operator.entities} | set(operator.remove_entity_ids)) & existing
+        outside = sorted(written - set(compilation.writable_ids))
+        if outside:
+            raise StudioError(
+                502, AGENT_FAILED,
+                f"the {compilation.provider} agent's answer changes {', '.join(outside)}, outside what this request "
+                f"may change ({', '.join(compilation.writable_ids)}); nothing was proposed",
+            )
+    return made._replace(proposal=replace(made.proposal, utterance=utterance))
+
+
 def read_compilation(
     projection: StateProjection,
     *,
@@ -2437,12 +2513,60 @@ def read_compilation(
             "INTENT_AGENT_FAILED",
             detail,
         )
+    if compilation.target_id is not None and component_id is not None and element_id is None:
+        parts = [element for element in projection.elements if element.component_id == component_id]
+        if len(parts) > 1:
+            # A geometry id with several parts is not one number: which part is a question, by part id.
+            return _parts_question(compilation, resolution, pending, component_id=component_id, parts=parts)
     return Resolution(
         outcome=COMPILED,
         pending=resolution.pending,
         selection=resolution.selection,
         question=None,
         detail="",
+    )
+
+
+def _parts_question(
+    compilation: Compilation,
+    resolution: Resolution,
+    pending: PendingIntent | None,
+    *,
+    component_id: str,
+    parts: Sequence[ProjectedElement],
+) -> Resolution:
+    """The agent aimed one scalar sentence at a geometry id with several parts: ask which, naming each."""
+
+    resolved = resolution.pending
+    options = tuple(_option(element, resolved.requested_semantic_property) for element in parts)
+    asked = _pending(
+        state_digest=resolved.state_digest,
+        original_utterance=resolved.original_utterance,
+        action_kind=resolved.action_kind,
+        target_component_id=component_id,
+        element_id=None,
+        semantic_property=resolved.requested_semantic_property,
+        known=resolved.known_slots,
+        missing=(SLOT_TARGET,) + tuple(slot for slot in resolved.missing_slots if slot != SLOT_TARGET),
+        candidates=options,
+        rejected=resolved.rejected_candidates,
+        reason_code=TARGET_AMBIGUOUS,
+        terminal=False,
+        previous=pending,
+        scope_options=resolved.scope_options,
+    )
+    return _advance_or(
+        pending,
+        Resolution(
+            outcome=NEEDS_CLARIFICATION,
+            pending=asked,
+            selection=None,
+            question="Which part did you mean? " + ", ".join(option.label for option in options),
+            detail=(
+                f"the {compilation.provider} agent compiled {compilation.utterance!r} for {component_id}, "
+                f"which has {len(parts)} parts, and a sentence changes one"
+            ),
+        ),
     )
 
 

@@ -34,10 +34,11 @@ SCALAR_RULES = ACTION_RULES
 EXPANSION_RULES = """The sheet may be a dependency slice. If an exact named dependency
 is missing, answer status needs_context with contextRefs containing its exact
 entity:<id>, parameter:<key> or relation:<id> refs (at most 16), explain why, and
-leave utterance, semanticEdit and question null. Never request an invented ref.
-At most two supplements are available; they expand reads, never writable targets.
-When enough information is present, complete the request. contextRefs is empty
-for compiled, question or unsupported. Never treat context as permission to edit."""
+leave script, facets, parameters, utterance and question null. Never request an
+invented ref. At most two supplements are available; they expand reads, never
+writable targets. When enough information is present, complete the request.
+contextRefs is empty for compiled, question or unsupported. Never treat context
+as permission to edit."""
 
 
 def _json(value: Any) -> str:
@@ -83,7 +84,7 @@ def _factor_schema(schema: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def request_schema(context: IntentContext, full_schema: Mapping[str, Any]) -> dict[str, Any]:
-    """Actions name only requested controls; design retains its existing contract."""
+    """Actions name only requested controls; design answers in the construction contract."""
     if context.tier != "design":
         if (context.tier not in {"scalar", "component"} or len(context.target_ids) != 1
                 or not context.editable_fields or len(set(context.editable_fields)) != len(context.editable_fields)
@@ -158,39 +159,41 @@ def validate_request_answer(answer: Mapping[str, Any], context: IntentContext,
         elif refs or (status == "question" and (not isinstance(question, str) or not question.strip())) or (status != "question" and question is not None):
             raise ValueError("only a design question may contain question text")
         return
+    changes = [key for key in ("script", "facets", "parameters") if answer.get(key) is not None]
     if answer["status"] == "needs_context":
-        if not refs or any(answer.get(key) is not None for key in ("utterance", "semanticEdit", "question")):
-            raise ValueError("context supplement must name refs and contain no edit or question")
+        if not refs or changes or any(answer.get(key) is not None for key in ("utterance", "question")):
+            raise ValueError("context supplement must name refs and contain no change or question")
         return
     if refs:
         raise ValueError("only a context supplement may request additional refs")
-    if answer["status"] == "compiled" and (answer.get("utterance") is None) == (answer.get("semanticEdit") is None):
-        raise ValueError("a compiled answer must supply exactly one scalar or component edit")
+    if answer["status"] == "compiled":
+        if answer.get("utterance") is None and not changes:
+            raise ValueError("a compiled answer must supply a script, facets, parameters or one scalar sentence")
+        if answer.get("utterance") is not None and changes:
+            raise ValueError("a scalar sentence comes alone, without a script, facets or parameters")
+    elif changes or answer.get("utterance") is not None:
+        raise ValueError("a question or a stated limitation carries no change")
     if context.design_sheet is not None and answer["status"] == "compiled":
         _validate_design_scope(answer, context)
 
 
 def _validate_design_scope(answer: Mapping[str, Any], context: IntentContext) -> None:
-    """A dependency supplement grants reads, never existing-object writes."""
+    """A dependency supplement grants reads, never existing-object writes.
+
+    A local answer's parameters are checked here; what its script and facets
+    change is only known once they are compiled, and the application checks
+    those writes against the same targets then (``Compilation.writable_ids``).
+    """
     targets = set(context.target_ids)
-    edit = answer.get("semanticEdit")
-    if edit is None:
-        # Numeric actions already have a safer existing adapter. A semantic
-        # slice must not bypass shared/derived checks through scalar grammar.
-        raise ValueError("a scoped design answer requires a typed component edit")
+    if answer.get("utterance") is not None:
+        # Numeric actions already have a safer existing adapter. A local
+        # design answer must not bypass shared/derived checks through scalar grammar.
+        raise ValueError("a scoped design answer changes geometry with a script, facets or parameters, "
+                         "not a scalar sentence")
     rows = _rows(context.sheet)
-    entities = {row["entity_id"]: row for row in edit["entities"]}
-    created = {key for key in entities if "entity:" + key not in rows}
-    if answer.get("elementId") is not None and answer["elementId"] not in targets | created:
-        raise ValueError("the design answer changes a target outside the requested scope")
-    components = {rows["entity:" + target][1]["componentId"] for target in targets}
-    components.update(key for key in created if entities[key]["schema"] == "Component@1")
-    if answer.get("targetComponentId") is not None and answer["targetComponentId"] not in components:
-        raise ValueError("the design answer names a component outside the requested scope")
-    existing_writes = (set(entities) | set(edit["removeEntityIds"])) - created
-    if not existing_writes.issubset(targets):
-        raise ValueError("the design answer edits an existing dependency outside the requested scope")
-    changed_parameters = {row["key"] for row in edit["parameters"]} | set(edit["removeParameterKeys"])
+    changed_parameters = {row["key"] for row in answer.get("parameters") or ()}
+    if not changed_parameters:
+        return
     existing_parameters = {row["key"]: row for row in context.sheet.get("parameters", ())}
     used_parameters = set()
     for target in targets:
@@ -215,38 +218,6 @@ def _validate_design_scope(answer: Mapping[str, Any], context: IntentContext) ->
         if group in {"elements", "types", "contextEntities"} and ref.removeprefix("entity:") not in targets:
             if _named_refs(row, rows).intersection("parameter:" + key for key in affected):
                 raise ValueError("the design answer changes a shared control outside the requested scope")
-    relations = {row["relation_id"]: row for row in context.sheet.get("relationships", ())}
-    for key in edit["removeRelationIds"]:
-        relation = relations.get(key)
-        if relation is None or not {relation["subject"], relation["object"]}.intersection(targets):
-            raise ValueError("the design answer removes a relationship outside the requested scope")
-    # New members must have declared connections to the requested objects;
-    # sharing a broad component parent alone is not a local connection.
-    connected = set(targets)
-    links = []
-    for relation in edit["relations"]:
-        old = relations.get(relation["relation_id"])
-        if old is not None and not {old["subject"], old["object"]}.intersection(targets):
-            raise ValueError("the design answer edits a relationship outside the requested scope")
-        endpoints = {relation["subject"], relation["object"]}
-        if not endpoints.intersection(targets | created):
-            raise ValueError("the design answer adds an unrelated relationship")
-        links.append(endpoints & (targets | created))
-    known = {**rows, **{"entity:" + key: None for key in created}}
-    for key, row in entities.items():
-        refs = _named_refs(row.get("fields", {}).get("references", {}), known)
-        if row.get("schema") == "Reading@1":
-            refs.update(_named_refs(row.get("fields", {}).get("subject_refs", ()), known))
-        refs.update(_named_refs(row.get("parent_id"), known))
-        refs.update(_named_refs(row.get("fields", {}).get("type_ref"), known))
-        links.append({key} | ({ref.removeprefix("entity:") for ref in refs if ref.startswith("entity:")} & (targets | created)))
-    while True:
-        extended = connected | set().union(*(link for link in links if link.intersection(connected)))
-        if extended == connected:
-            break
-        connected = extended
-    if not created.issubset(connected):
-        raise ValueError("new design members must declare their connection to the requested targets")
 
 
 def _finite(value: object) -> bool:
@@ -257,10 +228,10 @@ def _finite(value: object) -> bool:
 
 
 def _envelope(context: IntentContext, *, status: str, why: str, question=None) -> dict[str, Any]:
-    target = context.target_ids[0]
-    row = next(item for item in context.sheet.get("elements", ()) if item["elementId"] == target)
-    return {"status": status, "targetComponentId": row["componentId"], "elementId": target,
-            "utterance": None, "semanticEdit": None, "why": why, "question": question, "contextRefs": []}
+    """The adapted answer, in the provider's answer shape, aimed at the one requested part."""
+
+    return {"status": status, "script": None, "facets": None, "parameters": None, "utterance": None,
+            "targetId": context.target_ids[0], "why": why, "question": question, "contextRefs": []}
 
 
 def _controls(context: IntentContext, record: StateRecord):
@@ -270,11 +241,14 @@ def _controls(context: IntentContext, record: StateRecord):
     if target.schema != "Element@1":
         raise ValueError("numeric actions require an existing element")
     row = next((item for item in context.sheet.get("elements", ()) if item["elementId"] == target.entity_id), None)
-    if row is None or row["componentId"] != target.fields["component_id"] or row["producer"] != target.fields["producer"]:
+    # The sheet an agent reads names no realisation; a private sheet that does must agree with the record.
+    if (row is None or row["componentId"] != target.fields["component_id"]
+            or row.get("producer", target.fields["producer"]) != target.fields["producer"]):
         raise ValueError("numeric action context does not match its record target")
     bindings = {path.removeprefix("params."): key for path, key in parameter_bindings_of(target, record)
                 if path.startswith("params.") and "." not in path.removeprefix("params.") and "[" not in path}
-    source_row = {**row, "parameterBindings": bindings}
+    # Units are read from the record's own realisation (``control_unit``), never from the sheet.
+    source_row = {**row, "producer": target.fields["producer"], "parameterBindings": bindings}
     source_context = replace(context, sheet={**context.sheet, "parameters": [item.to_dict() for item in record.parameters]})
     return target, source_row, source_context, bindings
 
@@ -388,6 +362,9 @@ def action_answer(answer: Mapping[str, Any], context: IntentContext, record: Sta
         value = parameter_values[bindings[field]] if field in bindings else values[field]
         result["utterance"] = f"set {grammar_field} to {format(Decimal(str(value)), 'f')}"
         return result
+    # Several controls of one part: the application's own edit, under the
+    # internal "semanticEdit" key the caller takes out before reading the
+    # answer (``intent_agent._answered``); a provider never answers one.
     entities = []
     if values:
         # The established authoring owner merges outer fields, preserving

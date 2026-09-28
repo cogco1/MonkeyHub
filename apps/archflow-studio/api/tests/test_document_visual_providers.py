@@ -42,10 +42,11 @@ MESSAGE = "Use the reference drawing and its blue line to adjust the portico."
 MODEL = "existing-configured-test-model"
 ANSWER = json.dumps({
     "status": "compiled",
-    "targetComponentId": "portico",
-    "elementId": "portico-base",
+    "script": None,
+    "facets": None,
+    "parameters": None,
     "utterance": "set height to 0.8",
-    "semanticEdit": None,
+    "targetId": "portico-base",
     "why": "The blue line indicates the requested height.",
     "question": None,
 })
@@ -141,6 +142,7 @@ class DocumentVisualTestCase(unittest.TestCase):
     def assert_bound_visuals(self, compilation, selection: Selection, prompt: str) -> None:
         self.assertEqual(compilation.status, "compiled")
         self.assertEqual(compilation.utterance, "set height to 0.8")
+        self.assertEqual(compilation.target_id, "portico-base")
         self.assertEqual(compilation.model, MODEL)
         receipt = compilation.receipt
         self.assertIsNotNone(receipt)

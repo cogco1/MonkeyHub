@@ -21,7 +21,10 @@ from archflow_studio_api.settings import StudioSettings
 from .support import PROJECT_ID, REFERENCE_RUN_ID, make_project, retain_rhino_receipt, runner_state_digest
 from .test_documents import image_bytes, two_page_pdf
 from .test_gestures import Scripted, gesture, hit
-from .test_intents import scripted, semantic_wall_edit
+from .test_intents import scripted
+
+# The agent's answer to a drawn request, in the construction contract: one new shape, nothing classified.
+PASSAGE_SCRIPT = "passage = extrude(rect(0, 3, 4, 0.3), 2.5, at=level('level-ground'))"
 
 
 def stroke(id: str = "blue-stroke", kind: str = "freehand") -> dict:
@@ -476,8 +479,7 @@ class DocumentAnnotationTests(unittest.TestCase):
         updated_reference = self.save(reference, [], base=reference_saved["revisionSha256"], comment="后续参照意见")
         self.assertNotEqual(updated_primary["revisionSha256"], saved["revisionSha256"])
         self.assertNotEqual(updated_reference["revisionSha256"], reference_saved["revisionSha256"])
-        semantic_edit = semantic_wall_edit()
-        compiler = scripted(semantic_edit=semantic_edit, component_id="portico")
+        compiler = scripted(script=PASSAGE_SCRIPT, why="A passage two metres from the base.")
         self.app.state.intent_compiler = compiler
         second = self.intent([], utterance="Two metres.", continuationToken=token)
         self.assertEqual(second.status_code, 201, second.text)
@@ -485,7 +487,9 @@ class DocumentAnnotationTests(unittest.TestCase):
         self.assertEqual(resumed_selection.document_visuals, original_visuals)
         self.assertNotIn(old_reference_comment, compiler.calls[-1]["message"])
         self.assertNotIn(old_reference_comment, " ".join(resumed_selection.gestures))
-        self.assertEqual(second.json()["proposal"]["protected"], semantic_edit["protected"])
+        # A document keep mark is context, never a keep clause: nothing is protected by it.
+        self.assertEqual(second.json()["proposal"]["protected"], [])
+        self.assertEqual([row["id"] for row in second.json()["construction"]["report"]], ["passage"])
         self.assertEqual(second.json()["proposal"]["sourceRunId"], REFERENCE_RUN_ID)
         self.assertEqual(second.json()["proposal"]["modelSource"], self.model_source)
         proposal = self.app.state.proposals.get(second.json()["proposal"]["proposalId"])
@@ -504,7 +508,7 @@ class DocumentAnnotationTests(unittest.TestCase):
         ink = self.save(saved, [stroke()])
         for utterance, target, element in (("please consider this drawing", None, None), ("make the base a little taller", "portico", "portico-base")):
             with self.subTest(utterance=utterance):
-                self.app.state.intent_compiler = scripted(semantic_edit=semantic_wall_edit(), component_id="portico")
+                self.app.state.intent_compiler = scripted(script=PASSAGE_SCRIPT, why="A passage beside the base.")
                 answer = self.intent([page_ref(ink)], utterance=utterance, targetComponentId=target, elementId=element)
                 self.assertEqual(answer.status_code, 201, answer.text)
                 proposal = self.app.state.proposals.get(answer.json()["proposal"]["proposalId"])

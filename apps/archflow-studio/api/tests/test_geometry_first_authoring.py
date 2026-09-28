@@ -356,16 +356,23 @@ class GeometryFirstAuthoringTests(unittest.TestCase):
         self.assertIsNone(component_semantics(after.entity("canopy")))
         self.assertNotEqual(self.state(second)["stateDigest"], state["stateDigest"])
 
-    def test_the_agent_schema_leaves_semantic_kind_optional(self) -> None:
-        edit = response_schema(strict=False)["properties"]["semanticEdit"]["anyOf"][1]
-        component = next(variant for variant in edit["properties"]["entities"]["items"]["anyOf"]
-                         if variant["properties"]["schema"]["enum"] == ["Component@1"])["properties"]["fields"]
-        self.assertNotIn("semantic_kind", component["required"])
-        self.assertNotEqual(next(iter(component["properties"])), "semantic_kind")
-        strict = response_schema()["properties"]["semanticEdit"]["anyOf"][1]
-        strict_component = next(variant for variant in strict["properties"]["entities"]["items"]["anyOf"]
-                                if variant["properties"]["schema"]["enum"] == ["Component@1"])["properties"]["fields"]
-        self.assertIn({"type": "null"}, strict_component["properties"]["semantic_kind"]["anyOf"])
+    def test_the_agent_schema_makes_geometry_without_meaning_and_adds_meaning_as_facets(self) -> None:
+        """#419: the in-app agent answers a script; meaning is a separate, optional list of facets."""
+
+        from archflow.semantics.facets import FACETS
+
+        for strict in (False, True):
+            schema = response_schema(strict=strict)
+            text = json.dumps(schema)
+            for word in ("semantic_kind", "semanticKind", "producer", "semanticEdit", "Element@1"):
+                self.assertNotIn(word, text)
+            properties = schema["properties"]
+            self.assertEqual(set(properties), {"status", "script", "facets", "parameters", "utterance", "targetId",
+                                               "why", "question"})
+            self.assertIn({"type": "null"}, properties["facets"]["anyOf"])
+        facet_set = response_schema(strict=False)["properties"]["facets"]["anyOf"][1]["items"]["properties"]["set"]
+        self.assertEqual(set(facet_set["properties"]), set(FACETS))
+        self.assertEqual(facet_set["required"], [])
 
 
 if __name__ == "__main__":
