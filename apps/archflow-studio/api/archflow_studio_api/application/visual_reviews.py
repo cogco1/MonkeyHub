@@ -1,21 +1,23 @@
-"""``POST /api/visual-reviews``: exact sources in, owner-rendered frames, one bounded look (GH-303).
+"""``POST /api/visual-reviews``: exact sources in, owner-rendered frames, one bounded look.
 
 The caller names exact sources and carries its loop's Harness allowance; it
 never sends pixels. Each source is rendered here, in process, by its projection
 owner: ``model_view`` draws each requested view of one retained model, and
 ``export_board_pages`` rasterizes one registered page. The owner's own answer
-becomes the frame, so a frame can only show the source it was asked for, and
-``observe_frames`` then binds, admits, looks once and validates.
+becomes the frame, so a frame can only show the source it was asked for. The
+configured structured provider returns findings, or the channel delivers the
+same bounded evidence to the caller's existing visual model without claiming
+it has already been observed.
 
-Nothing is written. The frames are transient, the allowance goes back to the
-caller with the answer, and the only trace is the ``visual_observation``
-Monitor span the channel already keeps. Every refusal before the provider call
+Nothing is written. The frames are transient and the allowance goes back to the
+caller with the answer. Every refusal before frame delivery or the provider call
 (the allowance, a source the project does not retain exactly, a frame outside
 the channel's bounds) leaves the allowance as it was.
 """
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Sequence
 
 from ..transport.errors import StudioError
@@ -27,7 +29,7 @@ from .monitoring import StudioMonitor
 from .visual_observation import (
     MODEL_VIEWS, EvidenceFrame, ObservationUsage, ReviewReason, SourceRef, StudioModelVisualProvider,
     VisualBudgetRefused, VisualObservationProvider, VisualProviderFailed, VisualReviewBudget, VisualReviewInvalid,
-    VisualReviewRequest, VisualReviewResult, observe_frames, page_frame,
+    VisualReviewRequest, VisualReviewResult, bind_frames, observe_frames, page_frame,
 )
 
 MODELING = "modeling"
@@ -90,7 +92,10 @@ def planned_frames(request: VisualReviewRequest) -> tuple[tuple[SourceRef, str],
 
     A modeling review looks at one exact model in every view of its recipe. The
     other domains look at registered pages (drawing revisions, render results,
-    Board pages), one frame each, named ``page-<pageIndex>``.
+    Board pages), one frame each. Page numbers belong to a document: repeated
+    page numbers get a source ordinal in their frame name, never another page
+    number or a weaker source identity. The old page recipe remains accepted;
+    the owner supplies the unique names mechanically.
     """
 
     kinds = {source.kind for source in request.source_refs}
@@ -103,12 +108,12 @@ def planned_frames(request: VisualReviewRequest) -> tuple[tuple[SourceRef, str],
         return tuple((request.source_refs[0], view) for view in request.view_recipe)
     if kinds != {"page"}:
         raise VisualReviewInvalid(f"a {request.domain} review looks at registered pages, not models")
-    frames = tuple((source, f"page-{source.page_index}") for source in request.source_refs)
-    views = [view for _, view in frames]
-    if len(set(views)) != len(views):
-        raise VisualReviewInvalid("the pages of one review need distinct page indexes; review the others separately")
-    if set(views) != set(request.view_recipe):
-        raise VisualReviewInvalid(f"viewRecipe must name exactly this review's page frames: {', '.join(views)}")
+    pages = [f"page-{source.page_index}" for source in request.source_refs]
+    frames = tuple((source, f"source-{index}-page-{source.page_index}" if pages.count(page) > 1 else page)
+                   for index, (source, page) in enumerate(zip(request.source_refs, pages), start=1))
+    views = {view for _, view in frames}
+    if set(request.view_recipe) not in (set(pages), views):
+        raise VisualReviewInvalid(f"viewRecipe must name exactly this review's page frames: {', '.join(dict.fromkeys(pages))}")
     return frames
 
 
@@ -140,22 +145,20 @@ def render_frames(binding: ProjectBinding, planned: Sequence[tuple[SourceRef, st
     return tuple(frames)
 
 
-def review_sources(binding: ProjectBinding, request: VisualReviewRequest, *, reason: ReviewReason | str,
-                   budget: VisualReviewBudget, provider: VisualObservationProvider, addressed: Sequence[str] = (),
-                   monitor: StudioMonitor | None = None) -> VisualReviewResult:
-    """Admit, render through the owners, look once.
-
-    ``budget`` is the caller's loop state (``VisualReviewBudget.resume``) and is
-    updated in place, so the caller can be handed it back with the answer. An
-    ``after_repair`` review names in ``addressed`` the findings of the last
-    review that the repair answered.
-    """
+def _review_frames(binding: ProjectBinding, request: VisualReviewRequest, *, reason: ReviewReason | str,
+                   budget: VisualReviewBudget, addressed: Sequence[str]) -> tuple[VisualReviewRequest, tuple[EvidenceFrame, ...]]:
+    """Check the allowance, render exact sources and bind all frames before spending a review."""
 
     try:
         reason = ReviewReason(reason)
         if addressed and reason is not ReviewReason.AFTER_REPAIR:
             raise VisualReviewInvalid("addressed findings belong to an after_repair review")
         planned = planned_frames(request)
+        views = tuple(view for _, view in planned)
+        if request.view_recipe != views:
+            request = replace(request, view_recipe=views)
+        if request.budget != budget.allowed:
+            raise VisualReviewInvalid("the request names a different allowance than the Harness holds")
         if reason is ReviewReason.AFTER_REPAIR:
             budget.note_repair(addressed)
         refused = budget.refusal(reason)
@@ -166,9 +169,41 @@ def review_sources(binding: ProjectBinding, request: VisualReviewRequest, *, rea
     except ValueError as exc:
         raise VisualReviewRefused(422, "VISUAL_REVIEW_INVALID", f"{exc}. {_NOTHING_SENT}") from exc
     try:
-        frames = render_frames(binding, planned)
+        frames = bind_frames(request, render_frames(binding, planned))
     except VisualReviewInvalid as exc:
-        raise VisualReviewRefused(422, "VISUAL_REVIEW_INVALID", f"{exc}. {_NOTHING_SENT}") from exc
+        raise VisualReviewRefused(422, "VISUAL_REVIEW_INVALID", f"{exc}. {_NOTHING_SENT}", budget=budget) from exc
+    except VisualReviewRefused as exc:
+        exc.budget_state = budget.to_dict()
+        raise
+    except StudioError as exc:
+        raise VisualReviewRefused(exc.status, exc.code, exc.detail, budget=budget) from exc
+    return request, frames
+
+
+def deliver_frames(binding: ProjectBinding, request: VisualReviewRequest, *, reason: ReviewReason | str,
+                   budget: VisualReviewBudget, addressed: Sequence[str] = ()) -> tuple[EvidenceFrame, ...]:
+    """Send bounded evidence to the caller's existing visual model, without claiming an observation.
+
+    Delivery spends one look. It produces no structured findings, so it cannot
+    justify an after-repair review. No alternate provider, project write or
+    persistent loop state is introduced.
+    """
+
+    _, frames = _review_frames(binding, request, reason=reason, budget=budget, addressed=addressed)
+    budget.admit(reason)
+    return frames
+
+
+def review_sources(binding: ProjectBinding, request: VisualReviewRequest, *, reason: ReviewReason | str,
+                   budget: VisualReviewBudget, provider: VisualObservationProvider, addressed: Sequence[str] = (),
+                   monitor: StudioMonitor | None = None) -> VisualReviewResult:
+    """Render through the owners and look once using the configured structured provider.
+
+    ``budget`` is the caller's loop state and is updated in place. An
+    ``after_repair`` review names findings of the last review in ``addressed``.
+    """
+
+    request, frames = _review_frames(binding, request, reason=reason, budget=budget, addressed=addressed)
     used = budget.used
     try:
         return observe_frames(request, frames, provider=provider, budget=budget, reason=reason, monitor=monitor,

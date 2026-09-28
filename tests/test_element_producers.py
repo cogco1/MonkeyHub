@@ -471,6 +471,99 @@ class DrawingPlaneTests(unittest.TestCase):
                         self.edit(row, kind="push_pull", distance=distance, normal=[0.6, 0, 0.8])
 
 
+class PlanarCompressionTests(unittest.TestCase):
+    def surface(self, *, profile=None, plane=None, **params):
+        return ElementRow("surface", "building", "planar-surface", {"base": {"level": "level-ground"}}, {
+            "profile": profile or [[0, 0], [4, 4], [0, 4], [0, 0]],
+            "work_plane": plane or {"origin": [0, 0, 0], "xAxis": [1, 0, 0],
+                                    "yAxis": [0, 1, 0], "normal": [0, 0, -1]},
+            **params,
+        }, BASIS)
+
+    def compress(self, row, threshold=2, factor=0.5):
+        _, context = _produce((row,))
+        return edit_drawn_element(row, context, kind="compress_above", threshold=threshold, factor=factor)
+
+    def world_profile(self, row):
+        from archflow.adapters.cad_program import lift_to_base_level
+
+        produced, context = _produce((row,))
+        params = _op_params(produced[0].operations[0])
+        params["base_level"] = context.datum_value(produced[0].bindings[0].datum_id)
+        return lift_to_base_level(params["profile"], params, row.element_id)
+
+    def test_crossing_edges_gain_fixed_intersections_and_nonzero_datums_stay_bound(self):
+        row = replace(self.surface(elevation=0.4), references={"base": {"offset_from": {"level": PN, "offset": 0.2}}})
+        before = json.dumps(row.params, sort_keys=True)
+        changed = self.compress(row, threshold=6.17)
+        expected = [[0, 4.17, 0], [2, 6.17, 0], [4, 7.17, 0], [0, 7.17, 0], [0, 6.17, 0], [0, 4.17, 0]]
+        actual = self.world_profile(changed)
+        self.assertEqual(len(actual), len(expected))
+        for point, wanted in zip(actual, expected):
+            for coordinate, value in zip(point, wanted):
+                self.assertAlmostEqual(coordinate, value)
+        # The lower diagonal is still (0,4.17)->(2,6.17), not a chord to (4,7.17).
+        self.assertEqual(changed.references, row.references)
+        self.assertEqual(changed.params["elevation"], row.params["elevation"])
+        self.assertEqual(changed.params["work_plane"], row.params["work_plane"])
+        self.assertEqual(json.dumps(row.params, sort_keys=True), before)
+
+    def test_fully_upper_tilted_surface_uses_exact_affine_image(self):
+        plane = {"origin": [1, 4, 2], "xAxis": [1, 0, 0], "yAxis": [0, 0.6, 0.8], "normal": [0, -0.8, 0.6]}
+        row = self.surface(plane=plane, elevation=0.5)
+        changed = self.compress(row, threshold=3, factor=0.72)
+        before, after = self.world_profile(row), self.world_profile(changed)
+        for point, actual in zip(before, after):
+            expected = [point[0], 3 + (point[1] - 3) * 0.72, point[2]]
+            for coordinate, wanted in zip(actual, expected):
+                self.assertAlmostEqual(coordinate, wanted)
+        for key in ("xAxis", "yAxis", "normal"):
+            self.assertAlmostEqual(sum(c * c for c in changed.params["work_plane"][key]), 1)
+
+    def test_lower_surface_and_unit_factor_return_original_value_without_rewriting(self):
+        row = self.surface()
+        self.assertIs(self.compress(row, threshold=4), row)
+        self.assertIs(self.compress(row, factor=1), row)
+
+    def test_tilted_surface_touching_threshold_with_roundoff_is_not_a_fold(self):
+        plane = {"origin": [0, 2 - 3e-11, 0], "xAxis": [1, 0, 0],
+                 "yAxis": [0, 0.6, 0.8], "normal": [0, -0.8, 0.6]}
+        row = self.surface(plane=plane)
+        changed = self.compress(row)
+        for point, actual in zip(self.world_profile(row), self.world_profile(changed)):
+            expected = [point[0], point[1] if point[1] <= 2 else 2 + (point[1] - 2) * 0.5, point[2]]
+            for coordinate, wanted in zip(actual, expected):
+                self.assertAlmostEqual(coordinate, wanted)
+
+    def test_existing_threshold_vertex_is_not_duplicated(self):
+        for elevation in (2, 2 - 1e-11, 2 + 1e-11):
+            with self.subTest(elevation=elevation):
+                row = self.surface(profile=[[0, 0], [2, elevation], [4, 4], [0, 4], [0, 0]])
+                changed = self.compress(row)
+                points = self.world_profile(changed)
+                self.assertEqual(len(points), 6)
+                self.assertEqual(sum(math.dist(point, (2, 2, 0)) < 1e-9 for point in points), 1)
+                self.assertTrue(all(a != b for a, b in zip(points, points[1:])))
+                self.assertEqual(points[0], points[-1])
+
+    def test_crossing_tilted_surface_and_other_producers_are_refused(self):
+        plane = {"origin": [0, 0, 0], "xAxis": [1, 0, 0], "yAxis": [0, 0.6, 0.8], "normal": [0, -0.8, 0.6]}
+        with self.assertRaisesRegex(ElementProducerError, "surface.*fold"):
+            self.compress(self.surface(plane=plane), threshold=1)
+        _, context = _produce((self.surface(),))
+        for producer in ("prism", "loft"):
+            with self.subTest(producer=producer), self.assertRaisesRegex(ElementProducerError, "supports planar-surface"):
+                edit_drawn_element(replace(self.surface(), producer=producer), context,
+                                   kind="compress_above", threshold=2, factor=0.5)
+
+    def test_nonfinite_and_expanding_compression_inputs_are_refused(self):
+        for factor in (0, -0.1, 1.1, float("inf"), float("nan")):
+            with self.subTest(factor=factor), self.assertRaises(ElementProducerError):
+                self.compress(self.surface(), factor=factor)
+        with self.assertRaises(ElementProducerError):
+            self.compress(self.surface(), threshold=float("nan"))
+
+
 class PrismElevationTests(unittest.TestCase):
     def test_top_reference_accounts_for_both_base_offset_and_elevation(self) -> None:
         row = ElementRow("panel", "envelope", "prism",

@@ -11220,12 +11220,38 @@ export type TransformElementRequestDto = {
     stateDigest: string;
     /**
      * Elementid
+     *
+     * The one element selected for move, rotate, scale or copy.
      */
-    elementId: string;
+    elementId?: string | null;
     /**
      * Kind
      */
-    kind: 'move' | 'rotate' | 'scale' | 'copy';
+    kind: 'move' | 'rotate' | 'scale' | 'copy' | 'compress-above';
+    /**
+     * Componentid
+     *
+     * compress-above only: select all elements whose component_id equals this component, at the exact source.
+     */
+    componentId?: string | null;
+    /**
+     * Elementids
+     *
+     * compress-above only: explicit planar-surface selection, instead of componentId. One atomic proposal.
+     */
+    elementIds?: Array<string> | null;
+    /**
+     * Threshold
+     *
+     * compress-above: fixed world +Y elevation in project length units; every point at or below stays fixed.
+     */
+    threshold?: number | null;
+    /**
+     * Factor
+     *
+     * compress-above: multiply height above threshold by this factor. Only planar-surfaces remaining planar are supported.
+     */
+    factor?: number | null;
     /**
      * Translation
      */
@@ -11709,6 +11735,77 @@ export type VisualReviewDto = {
 };
 
 /**
+ * VisualReviewFrameDto
+ *
+ * One owner-rendered frame with its exact source and content, ready for native image delivery.
+ */
+export type VisualReviewFrameDto = {
+    /**
+     * Sourceref
+     */
+    sourceRef: ({
+        kind: 'model';
+    } & ModelSourceRefDto) | ({
+        kind: 'page';
+    } & PageSourceRefDto);
+    /**
+     * Viewref
+     */
+    viewRef: string;
+    /**
+     * Representation
+     */
+    representation: string;
+    /**
+     * Framesha256
+     */
+    frameSha256: string;
+    /**
+     * Width
+     */
+    width: number;
+    /**
+     * Height
+     */
+    height: number;
+    /**
+     * Mimetype
+     */
+    mimeType?: 'image/png';
+    /**
+     * Data
+     *
+     * Base64-encoded PNG bytes, bounded by the visual observation channel.
+     */
+    data: string;
+};
+
+/**
+ * VisualReviewFramesDto
+ *
+ * Evidence delivery, not an observation or approval. The caller still has to look at the images.
+ */
+export type VisualReviewFramesDto = {
+    /**
+     * Delivery
+     */
+    delivery?: 'frames';
+    /**
+     * Observation
+     */
+    observation?: null;
+    /**
+     * Usage
+     */
+    usage?: null;
+    /**
+     * Frames
+     */
+    frames: Array<VisualReviewFrameDto>;
+    budgetState: VisualBudgetStateDto;
+};
+
+/**
  * VisualReviewRefusalDto
  *
  * A refused or failed visual review: the error body, plus what the caller needs to go on.
@@ -11757,15 +11854,21 @@ export type VisualReviewRequestDto = {
      */
     domain: 'modeling' | 'board' | 'drawing' | 'render';
     /**
+     * Delivery
+     *
+     * observation uses the configured structured provider; frames sends owner-rendered PNG evidence to the caller's existing visual model, spends one review and returns no findings.
+     */
+    delivery?: 'observation' | 'frames';
+    /**
      * Sourcerefs
      *
-     * A modeling review names one exact model; board, drawing and render reviews name 1-4 registered pages with distinct page indexes.
+     * A modeling review names one exact model; board, drawing and render reviews name 1-4 distinct registered pages; different documents may have the same page index.
      */
     sourceRefs: Array<ModelSourceRefDto | PageSourceRefDto>;
     /**
      * Viewrecipe
      *
-     * For a model, the model-view directions to render (front, back, left, right, top); for pages, page-<pageIndex> of each named page.
+     * For a model, the model-view directions to render (front, back, left, right, top); for pages, the distinct page-<pageIndex> values of the named pages. The runtime gives repeated page numbers unique source-<source ordinal>-page-<pageIndex> frame names automatically.
      */
     viewRecipe: Array<string>;
     /**
@@ -15685,7 +15788,7 @@ export type ReviewVisualSourcesApiVisualReviewsPostData = {
 
 export type ReviewVisualSourcesApiVisualReviewsPostErrors = {
     /**
-     * Refused before the provider was called; the allowance is unchanged
+     * Refused before delivery or a provider call; the allowance is unchanged
      */
     409: VisualReviewRefusalDto;
     /**
@@ -15693,7 +15796,7 @@ export type ReviewVisualSourcesApiVisualReviewsPostErrors = {
      */
     422: HttpValidationError;
     /**
-     * The provider call failed; budgetState counts the spent review and usage its cost
+     * Rendering or the provider call failed; budgetState reports whether the review was spent
      */
     502: VisualReviewRefusalDto;
 };
@@ -15702,9 +15805,11 @@ export type ReviewVisualSourcesApiVisualReviewsPostError = ReviewVisualSourcesAp
 
 export type ReviewVisualSourcesApiVisualReviewsPostResponses = {
     /**
+     * Response Review Visual Sources Api Visual Reviews Post
+     *
      * Successful Response
      */
-    200: VisualReviewDto;
+    200: VisualReviewDto | VisualReviewFramesDto;
 };
 
 export type ReviewVisualSourcesApiVisualReviewsPostResponse = ReviewVisualSourcesApiVisualReviewsPostResponses[keyof ReviewVisualSourcesApiVisualReviewsPostResponses];
