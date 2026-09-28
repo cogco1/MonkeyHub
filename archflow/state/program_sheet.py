@@ -44,7 +44,7 @@ from typing import Any, Iterable, Mapping, Sequence
 
 from archflow.relations.contracts import ArchitecturalRelationKind
 from archflow.project.refs import require_identifier
-from archflow.semantics.registry import resolve_semantic_kind, suggest_semantic
+from archflow.semantics.registry import resolve_semantic_kind, suggest_semantic_kind
 from archflow.state.state_record import (
     Entity,
     Relation,
@@ -742,10 +742,12 @@ def _function(value: object, space_id: str) -> None:
             f"space {space_id}: function is a registered role id or alias, or null"
         )
     if resolve_semantic_kind(value) is None:
-        near = ", ".join(suggest_semantic(value)) or "none close"
+        # A space's function is what the space is, so it is answered like a
+        # semantic_kind: close registered spellings, never condition ids.
+        near = ", ".join(suggest_semantic_kind(value)) or "none close"
         raise ProgramSheetError(
-            f"space {space_id}: function {value!r} is not a registered role, "
-            f"condition or alias; nearest: {near}"
+            f"space {space_id}: function {value!r} is not a registered role "
+            f"or alias; nearest: {near}"
         )
 
 

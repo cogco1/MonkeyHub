@@ -127,6 +127,22 @@ def _kept(record: "StateRecord", name: str, compute: Callable[[], Any]) -> Any:
     return found
 
 
+def _clashing(items: tuple[Any, ...] | list[Any], identity: str) -> str | None:
+    """Name each repeated id and what carries it, or None when all are distinct."""
+
+    carriers: dict[str, list[str]] = {}
+    for item in items:
+        carriers.setdefault(getattr(item, identity), []).append(getattr(item, "schema", ""))
+    clashes = [f"{key!r} is used by {' and '.join(names)}" if all(names) else f"{key!r} appears {len(names)} times"
+               for key, names in carriers.items() if len(names) > 1]
+    if not clashes:
+        return None
+    text = "; ".join(clashes)
+    if any({"Component@1", "Element@1"} <= set(names) for names in carriers.values() if len(names) > 1):
+        text += "; a component and its element need different ids"
+    return text
+
+
 def _refs(values: object, field_name: str, *, allow_empty: bool = True) -> tuple[str, ...]:
     if not isinstance(values, tuple) or any(not isinstance(v, str) or not v for v in values):
         raise StateRecordError(f"{field_name} must be a tuple of non-empty text")
@@ -405,8 +421,9 @@ class StateRecord:
             if len(items) > _MAX_ITEMS:
                 raise StateRecordError(f"{name} exceeds the bounded item count")
         ids = [e.entity_id for e in self.entities]
-        if len(set(ids)) != len(ids):
-            raise StateRecordError("entity ids must be unique")
+        clash = _clashing(self.entities, "entity_id")
+        if clash is not None:
+            raise StateRecordError(f"entity ids must be unique: {clash}")
         known = set(ids)
         for e in self.entities:
             if e.parent_id is not None and e.parent_id not in known:
@@ -1680,8 +1697,9 @@ def _apply_component_operator(record: StateRecord, operator: StateRecordOperator
     ):
         known = {getattr(item, identity) for item in items}
         edited_ids = [getattr(item, identity) for item in edits]
-        if len(set(edited_ids)) != len(edited_ids):
-            raise StateRecordError(f"edit_components {name} ids must be unique")
+        clash = _clashing(edits, identity)
+        if clash is not None:
+            raise StateRecordError(f"edit_components {name} ids must be unique: {clash}")
         unknown = set(removals) - known
         if unknown:
             raise StateRecordError(f"edit_components removes unknown {name}: " + ", ".join(sorted(unknown)))
@@ -1737,8 +1755,9 @@ def _upsert_graph(
 ) -> StateRecord:
     entity_ids = [entity.entity_id for entity in entities]
     relation_ids = [relation.relation_id for relation in relations]
-    if len(set(entity_ids)) != len(entity_ids):
-        raise StateRecordError("operator entity ids must be unique")
+    clash = _clashing(entities, "entity_id")
+    if clash is not None:
+        raise StateRecordError(f"operator entity ids must be unique: {clash}")
     if len(set(relation_ids)) != len(relation_ids):
         raise StateRecordError("operator relation ids must be unique")
     existing_entities = {entity.entity_id for entity in record.entities}

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import unittest
+from unittest.mock import patch
 
 from archflow.semantics.conditions import CONDITION_IDS
 from archflow.semantics.registry import COMPOUND_PHRASES, resolve_semantic_kind, suggest_semantic, suggest_semantic_kind
@@ -39,6 +40,15 @@ class RegistryTests(unittest.TestCase):
                 self.assertFalse(hit.startswith(("role.", "condition.")), (word, hit))
                 self.assertNotIn(resolve_semantic_kind(hit).conditions, (("condition.axis",),), (word, hit))
         self.assertEqual(suggest_semantic_kind("wall"), ())
+
+    def test_a_compound_phrase_for_an_axis_is_not_offered_as_a_kind(self) -> None:
+        """#413: phrases pass the same axis filter as aliases."""
+
+        with patch.dict(COMPOUND_PHRASES, {"axial-alignment-datum": ((), ("condition.axis",)),
+                                           "axial-alignment-support": (("role.structural_support",), ())}):
+            near = suggest_semantic_kind("axial-alignment-datun")
+        self.assertNotIn("axial-alignment-datum", near)
+        self.assertIn("axial-alignment-support", near)
 
 
 class RecordRulesTests(unittest.TestCase):
