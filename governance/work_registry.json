@@ -1,4 +1,41 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": []
+  "items": [
+    {
+      "id": "GH-404",
+      "lanes": [
+        {
+          "id": "agent-followups",
+          "status": "active",
+          "branch": "codex/404-agent-followups",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-404-agent-followups",
+          "base_ref": "bb44b299",
+          "contributor": "Claude",
+          "reviewer": "Claude root task",
+          "handoff": "cloud session; master integrates",
+          "modules": [
+            "hub.shell",
+            "capabilities.element_producers",
+            "studio.candidate",
+            "studio.intent",
+            "studio.validation",
+            "state.program_sheet"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/web/workspaces/src/features/designTree/",
+            "apps/monkeyhub/web/workspaces/test/designTree.test.ts",
+            "apps/monkeyhub/web/workspaces/test/designTree.browser.mjs",
+            "apps/monkeyhub/web/src/i18n/messages.en.ts",
+            "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
+            "monkeyarch/capabilities/element_producers.py",
+            "apps/archflow-studio/api/archflow_studio_api/application/candidate.py",
+            "apps/archflow-studio/api/archflow_studio_api/application/clarification.py",
+            "apps/archflow-studio/api/archflow_studio_api/application/compare.py",
+            "archflow/state/program_sheet.py"
+          ],
+          "depends_on": []
+        }
+      ]
+    }
+  ]
 }
