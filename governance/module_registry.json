@@ -6677,6 +6677,59 @@
       "reason": "Design step 4 (stacking and massing): several masses side by side with their metrics, the architect choosing; the generative provider plugs into the pack transform later."
     },
     {
+      "module_id": "studio.construction",
+      "owner_path": "apps/archflow-studio/api/archflow_studio_api/application/construction.py",
+      "purpose": "Serve the construction contract (#419, spec 3.2-3.5): one construction script becomes one Studio proposal, facets add meaning to existing geometry, and the model reads back in construction terms with the capabilities its facets unlock.",
+      "owns": [
+        "POST /api/proposals/construction, POST /api/proposals/facets, GET /api/construction and GET /api/construction/model",
+        "the modelling root new script geometry goes under: model when a seat builds it, else the first component a seat builds",
+        "a refused script as 422 CONSTRUCTION_INVALID with line, column and source line, including the record's refusal of the rows a script produced, answered at the script line that made the shape it names and in construction words",
+        "facet upserts on Component@1 through the component edit path, with stripped non-blank text and unknown or non-component targets refused",
+        "the construction model view: geometry rows with facets and the capabilities facets unlock (hosted-opening for architectural.role = wall)"
+      ],
+      "does_not_own": [
+        "the construction language, its lowering and the geometry view (construction.script)",
+        "the facet vocabulary and its record validation (semantics.facets, state.record)",
+        "typing a component edit, proposal chaining and the stale-base check (studio.intent)",
+        "running a proposal as a candidate (studio.candidate)",
+        "the hosted-opening capability itself (GH-419 Task C4)"
+      ],
+      "public_api": [
+        "ConstructionProposal",
+        "ConstructionRefused",
+        "MODEL_ROOT",
+        "capabilities_of",
+        "construction_model",
+        "construction_proposal",
+        "facets_proposal",
+        "in_construction_words",
+        "modelling_root"
+      ],
+      "depends_on": [
+        "monkeyarch.construction",
+        "monkeyarch.construction.vocabulary",
+        "semantics.facets",
+        "state.record"
+      ],
+      "invariants": [
+        "a script is compiled against the exact record of the proposal's source, including an unexecuted proposal it continues; nothing is written and nothing runs until the candidate route runs the proposal",
+        "the construction compiler chooses how each shape is realised; no route or DTO here names a producer, and the agent-facing text keeps the layer rule",
+        "a refusal answers the script line that caused it, or passes through unchanged when it names no shape of the script",
+        "a facet edit upserts only the named components; every element, object, datum and dependency edge stays byte-identical",
+        "a capability is listed on an entity only when its facets unlock it"
+      ],
+      "status": "provisional",
+      "files": [
+        "apps/archflow-studio/api/archflow_studio_api/application/construction.py",
+        "apps/archflow-studio/api/archflow_studio_api/routes/construction.py",
+        "apps/archflow-studio/api/archflow_studio_api/transport/construction.py"
+      ],
+      "tests": [
+        "apps/archflow-studio/api/tests/test_construction_routes.py"
+      ],
+      "reason": "GH-419: the agent authors geometry with one construction script and the runtime chooses producers; meaning and the capabilities it unlocks arrive later as facets on the same identity."
+    },
+    {
       "module_id": "state.program_sheet",
       "owner_path": "archflow/state/program_sheet.py",
       "purpose": "The architect's program sheet and the two directions between it and a record's spatial option: one sheet row per Space@1, and a typed operator for what a sheet adds.",

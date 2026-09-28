@@ -1885,6 +1885,559 @@ export type ConfirmedStageContextDto = {
 };
 
 /**
+ * ConstructionCapabilityDto
+ *
+ * Something this geometry's facets allow, and the route that does it.
+ */
+export type ConstructionCapabilityDto = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Route
+     */
+    route: string;
+    /**
+     * Needs
+     */
+    needs: {
+        [key: string]: unknown;
+    };
+};
+
+/**
+ * ConstructionEntityDto
+ *
+ * One geometry id: what it is, where it is, what it cuts and what its meaning allows.
+ */
+export type ConstructionEntityDto = {
+    /**
+     * Id
+     *
+     * the geometry id; get(id) reaches it in a script
+     */
+    id: string;
+    /**
+     * Form
+     *
+     * solid, face, path or other
+     */
+    form: string;
+    /**
+     * Bounds
+     *
+     * ((xmin, ymin, zmin), (xmax, ymax, zmax)) in metres, Y up; null when they cannot be predicted
+     */
+    bounds: [
+        [
+            number,
+            number,
+            number
+        ],
+        [
+            number,
+            number,
+            number
+        ]
+    ] | null;
+    /**
+     * Cuts
+     *
+     * the ids this geometry removes from itself
+     */
+    cuts: Array<string>;
+    /**
+     * Cutby
+     *
+     * the ids this geometry is removed from
+     */
+    cutBy: Array<string>;
+    /**
+     * Hidden
+     *
+     * true while it cuts something: kept in the model, not delivered
+     */
+    hidden: boolean;
+    /**
+     * Parts
+     *
+     * its part ids when it has several, which get() reaches one by one; null for one
+     */
+    parts: Array<string> | null;
+    /**
+     * Facets
+     *
+     * the meaning given to it so far; empty until someone says
+     */
+    facets: {
+        [key: string]: string;
+    };
+    /**
+     * Capabilities
+     *
+     * what its facets allow
+     */
+    capabilities: Array<ConstructionCapabilityDto>;
+};
+
+/**
+ * ConstructionLanguageDto
+ */
+export type ConstructionLanguageDto = {
+    /**
+     * Summary
+     */
+    summary: string;
+    /**
+     * Allowed
+     */
+    allowed: Array<string>;
+    /**
+     * Notallowed
+     */
+    notAllowed: Array<string>;
+    /**
+     * Builtins
+     */
+    builtins: Array<string>;
+    /**
+     * Math
+     */
+    math: Array<string>;
+};
+
+/**
+ * ConstructionLevelDto
+ *
+ * A project level a script can stand on with level(id).
+ */
+export type ConstructionLevelDto = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Elevation
+     */
+    elevation: number;
+};
+
+/**
+ * ConstructionModelDto
+ *
+ * The model in construction terms, at one exact state.
+ */
+export type ConstructionModelDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * the issued design this model was read against
+     */
+    published: ProjectVersionDto;
+    /**
+     * the run this model was read from
+     */
+    referenceRun: ReferenceRunDto;
+    /**
+     * Sourcestageref
+     */
+    sourceStageRef?: string | null;
+    /**
+     * Statedigest
+     *
+     * the state a script is sent against; null when this state cannot base a proposal
+     */
+    stateDigest: string | null;
+    /**
+     * Recorddigest
+     */
+    recordDigest: string;
+    /**
+     * Levels
+     */
+    levels: Array<ConstructionLevelDto>;
+    /**
+     * Parameters
+     */
+    parameters: Array<ConstructionParameterValueDto>;
+    /**
+     * Entities
+     */
+    entities: Array<ConstructionEntityDto>;
+};
+
+/**
+ * ConstructionOutcomeDto
+ *
+ * What the script reported: one row per shape it left or removed, and what it printed.
+ */
+export type ConstructionOutcomeDto = {
+    /**
+     * Report
+     */
+    report: Array<ConstructionReportRowDto>;
+    /**
+     * Log
+     *
+     * what print() wrote, in order
+     */
+    log: Array<string>;
+};
+
+/**
+ * ConstructionParameterDto
+ *
+ * One project parameter to add or change, in the record's own parameter shape.
+ *
+ * Omitted fields keep the existing value; a new parameter needs a value and a unit.
+ */
+export type ConstructionParameterDto = {
+    /**
+     * Key
+     */
+    key: string;
+    /**
+     * Value
+     */
+    value?: number | number | null;
+    /**
+     * Unit
+     */
+    unit?: string | null;
+    /**
+     * Expr
+     */
+    expr?: string | null;
+    /**
+     * Inputs
+     */
+    inputs?: Array<string> | null;
+    /**
+     * Epistemic Status
+     */
+    epistemic_status?: string | null;
+    /**
+     * Source Ref
+     */
+    source_ref?: string | null;
+};
+
+/**
+ * ConstructionParameterValueDto
+ *
+ * A project parameter a script can bind with param(key).
+ */
+export type ConstructionParameterValueDto = {
+    /**
+     * Key
+     */
+    key: string;
+    /**
+     * Value
+     */
+    value: number | number;
+    /**
+     * Unit
+     */
+    unit: string;
+};
+
+/**
+ * ConstructionProposalDto
+ *
+ * A proposal made from one construction script, with what the script reported.
+ */
+export type ConstructionProposalDto = {
+    /**
+     * Sourcestageref
+     */
+    sourceStageRef?: string | null;
+    modelSource?: ModelSourceDto | null;
+    /**
+     * Proposalid
+     */
+    proposalId: string;
+    /**
+     * Status
+     *
+     * conflict means the change reaches something the utterance asked to keep; it is still a proposal, never an execution
+     */
+    status: 'proposed' | 'conflict';
+    /**
+     * Basestatedigest
+     *
+     * the exact base the operator refuses to run without
+     */
+    baseStateDigest: string;
+    /**
+     * Recorddigest
+     */
+    recordDigest: string;
+    /**
+     * Sourcerunid
+     *
+     * the explicitly selected editing-base run, or null for the project's default state projection
+     */
+    sourceRunId?: string | null;
+    target: ProposalTargetDto;
+    /**
+     * Change
+     */
+    change: ({
+        kind: 'set_scalar';
+    } & ProposalChangeDto) | ({
+        kind: 'edit_components';
+    } & ComponentEditChangeDto);
+    /**
+     * Protected
+     */
+    protected: Array<string>;
+    /**
+     * Decisionoperator
+     *
+     * the kernel's DecisionOperator@2 payload, opaque here
+     */
+    decisionOperator: {
+        [key: string]: unknown;
+    } | null;
+    impact: ImpactDto;
+    /**
+     * Utterance
+     */
+    utterance: string;
+    /**
+     * Persistence
+     *
+     * where this proposal lives; it is not version history
+     */
+    persistence: string;
+    /**
+     * Createdat
+     */
+    createdAt: string;
+    /**
+     * the scope the intent exchange settled, when it settled one; null for a proposal made straight from a selection, which asked nobody how far
+     */
+    scope?: ProposalScopeDto | null;
+    construction: ConstructionOutcomeDto;
+};
+
+/**
+ * ConstructionRefusalDto
+ *
+ * A refused request: a code and one sentence. A refused script also says where it failed.
+ */
+export type ConstructionRefusalDto = {
+    /**
+     * Code
+     *
+     * CONSTRUCTION_INVALID for a refused script; another code for any other refusal
+     */
+    code: string;
+    /**
+     * Detail
+     */
+    detail: string;
+    /**
+     * Line
+     *
+     * the script line the refusal names
+     */
+    line?: number | null;
+    /**
+     * Column
+     *
+     * 1-based column on that line
+     */
+    column?: number | null;
+    /**
+     * Sourceline
+     *
+     * that line of the script
+     */
+    sourceLine?: string | null;
+    /**
+     * Message
+     *
+     * the one sentence, also given as detail
+     */
+    message?: string | null;
+};
+
+/**
+ * ConstructionReportRowDto
+ *
+ * One shape the script left: its id, what it is, and where the script made or last changed it.
+ */
+export type ConstructionReportRowDto = {
+    /**
+     * Id
+     *
+     * the geometry id: the name the model view and get() use
+     */
+    id: string;
+    /**
+     * Form
+     *
+     * solid, face, path or other
+     */
+    form: string;
+    /**
+     * Status
+     *
+     * created, updated or deleted
+     */
+    status: string;
+    /**
+     * Bounds
+     *
+     * ((xmin, ymin, zmin), (xmax, ymax, zmax)) in metres, Y up, before cuts; null when they cannot be predicted
+     */
+    bounds: [
+        [
+            number,
+            number,
+            number
+        ],
+        [
+            number,
+            number,
+            number
+        ]
+    ] | null;
+    /**
+     * Cuts
+     *
+     * the ids this shape removes from itself
+     */
+    cuts: Array<string>;
+    /**
+     * Line
+     *
+     * the script line that made or last changed the shape
+     */
+    line: number | null;
+};
+
+/**
+ * ConstructionRequestDto
+ *
+ * One construction script against one exact state.
+ */
+export type ConstructionRequestDto = {
+    /**
+     * Statedigest
+     *
+     * the stateDigest GET /api/construction/model answered with; any other base is STALE_BASE
+     */
+    stateDigest: string;
+    /**
+     * Summary
+     *
+     * one sentence for the proposal; left out, the change describes itself
+     */
+    summary?: string | null;
+    /**
+     * Sourcerunid
+     *
+     * the run to build on; left out, the project's current state
+     */
+    sourceRunId?: string | null;
+    /**
+     * Sourcestageref
+     */
+    sourceStageRef?: string | null;
+    /**
+     * Sourceproposalid
+     *
+     * continue this unexecuted proposal; stateDigest stays its original baseStateDigest
+     */
+    sourceProposalId?: string | null;
+    /**
+     * Keep
+     *
+     * entity: or parameter: refs this change must not disturb
+     */
+    keep?: Array<string>;
+    /**
+     * Projectid
+     *
+     * the project the client believes it is working on
+     */
+    projectId?: string | null;
+    /**
+     * Script
+     *
+     * a construction script in the language GET /api/construction describes: interpreted, never executed. The shapes it leaves are proposed under their ids; a refused script proposes nothing and answers 422 CONSTRUCTION_INVALID with its line, column and source line
+     */
+    script: string;
+    /**
+     * Parameters
+     *
+     * project parameters to add or change with the script; the script reads them with param(key)
+     */
+    parameters?: Array<ConstructionParameterDto>;
+};
+
+/**
+ * ConstructionVerbDto
+ */
+export type ConstructionVerbDto = {
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Signature
+     */
+    signature: string;
+    /**
+     * Returns
+     */
+    returns: string;
+    /**
+     * Description
+     */
+    description: string;
+};
+
+/**
+ * ConstructionVocabularyDto
+ *
+ * The construction contract: conventions, language, limits, verbs and one example.
+ */
+export type ConstructionVocabularyDto = {
+    /**
+     * Schema
+     */
+    schema: string;
+    /**
+     * Conventions
+     */
+    conventions: {
+        [key: string]: string;
+    };
+    language: ConstructionLanguageDto;
+    /**
+     * Limits
+     */
+    limits: {
+        [key: string]: number;
+    };
+    /**
+     * Verbs
+     */
+    verbs: Array<ConstructionVerbDto>;
+    /**
+     * Example
+     */
+    example: string;
+};
+
+/**
  * ContextPackDto
  *
  * What a caller would otherwise discover by reading before it can act.
@@ -4135,6 +4688,86 @@ export type ExportTimingDto = {
      * Rebuildratio
      */
     rebuildRatio: number | null;
+};
+
+/**
+ * FacetTargetDto
+ *
+ * Facets to set or remove on one geometry id (a component).
+ */
+export type FacetTargetDto = {
+    /**
+     * Id
+     *
+     * the geometry id the model view lists
+     */
+    id: string;
+    /**
+     * Set
+     *
+     * facet keys and values to add or change: architectural.role, architectural.enclosure, structural.role, material.name, fabrication.method
+     */
+    set?: {
+        [key: string]: string;
+    } | null;
+    /**
+     * Remove
+     *
+     * facet keys to take off
+     */
+    remove?: Array<string> | null;
+};
+
+/**
+ * FacetsRequestDto
+ *
+ * Meaning added to, or taken from, existing geometry. Its form, cuts and objects stay as they are.
+ */
+export type FacetsRequestDto = {
+    /**
+     * Statedigest
+     *
+     * the stateDigest GET /api/construction/model answered with; any other base is STALE_BASE
+     */
+    stateDigest: string;
+    /**
+     * Summary
+     *
+     * one sentence for the proposal; left out, the change describes itself
+     */
+    summary?: string | null;
+    /**
+     * Sourcerunid
+     *
+     * the run to build on; left out, the project's current state
+     */
+    sourceRunId?: string | null;
+    /**
+     * Sourcestageref
+     */
+    sourceStageRef?: string | null;
+    /**
+     * Sourceproposalid
+     *
+     * continue this unexecuted proposal; stateDigest stays its original baseStateDigest
+     */
+    sourceProposalId?: string | null;
+    /**
+     * Keep
+     *
+     * entity: or parameter: refs this change must not disturb
+     */
+    keep?: Array<string>;
+    /**
+     * Projectid
+     *
+     * the project the client believes it is working on
+     */
+    projectId?: string | null;
+    /**
+     * Targets
+     */
+    targets: Array<FacetTargetDto>;
 };
 
 /**
@@ -15644,6 +16277,157 @@ export type DecideProposalApiProposalsProposalIdDecisionPostResponses = {
 };
 
 export type DecideProposalApiProposalsProposalIdDecisionPostResponse = DecideProposalApiProposalsProposalIdDecisionPostResponses[keyof DecideProposalApiProposalsProposalIdDecisionPostResponses];
+
+export type ReadConstructionVocabularyApiConstructionGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/construction';
+};
+
+export type ReadConstructionVocabularyApiConstructionGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadConstructionVocabularyApiConstructionGetError = ReadConstructionVocabularyApiConstructionGetErrors[keyof ReadConstructionVocabularyApiConstructionGetErrors];
+
+export type ReadConstructionVocabularyApiConstructionGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: ConstructionVocabularyDto;
+};
+
+export type ReadConstructionVocabularyApiConstructionGetResponse = ReadConstructionVocabularyApiConstructionGetResponses[keyof ReadConstructionVocabularyApiConstructionGetResponses];
+
+export type ReadConstructionModelApiConstructionModelGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Run
+         *
+         * Answer for this run instead of the one the rule chooses. The run must exist in the bound project.
+         */
+        run?: string | null;
+        /**
+         * Sourcestageref
+         */
+        sourceStageRef?: string | null;
+    };
+    url: '/api/construction/model';
+};
+
+export type ReadConstructionModelApiConstructionModelGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadConstructionModelApiConstructionModelGetError = ReadConstructionModelApiConstructionModelGetErrors[keyof ReadConstructionModelApiConstructionModelGetErrors];
+
+export type ReadConstructionModelApiConstructionModelGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: ConstructionModelDto;
+};
+
+export type ReadConstructionModelApiConstructionModelGetResponse = ReadConstructionModelApiConstructionModelGetResponses[keyof ReadConstructionModelApiConstructionModelGetResponses];
+
+export type CreateConstructionProposalApiProposalsConstructionPostData = {
+    body: ConstructionRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/proposals/construction';
+};
+
+export type CreateConstructionProposalApiProposalsConstructionPostErrors = {
+    /**
+     * Refused; a refused script (CONSTRUCTION_INVALID) names its line
+     */
+    422: ConstructionRefusalDto;
+};
+
+export type CreateConstructionProposalApiProposalsConstructionPostError = CreateConstructionProposalApiProposalsConstructionPostErrors[keyof CreateConstructionProposalApiProposalsConstructionPostErrors];
+
+export type CreateConstructionProposalApiProposalsConstructionPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: ConstructionProposalDto;
+};
+
+export type CreateConstructionProposalApiProposalsConstructionPostResponse = CreateConstructionProposalApiProposalsConstructionPostResponses[keyof CreateConstructionProposalApiProposalsConstructionPostResponses];
+
+export type CreateFacetsProposalApiProposalsFacetsPostData = {
+    body: FacetsRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/proposals/facets';
+};
+
+export type CreateFacetsProposalApiProposalsFacetsPostErrors = {
+    /**
+     * Refused with a code and one sentence (FACETS_INVALID, FACETS_TARGET_INVALID)
+     */
+    422: ConstructionRefusalDto;
+};
+
+export type CreateFacetsProposalApiProposalsFacetsPostError = CreateFacetsProposalApiProposalsFacetsPostErrors[keyof CreateFacetsProposalApiProposalsFacetsPostErrors];
+
+export type CreateFacetsProposalApiProposalsFacetsPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: ProposalDto;
+};
+
+export type CreateFacetsProposalApiProposalsFacetsPostResponse = CreateFacetsProposalApiProposalsFacetsPostResponses[keyof CreateFacetsProposalApiProposalsFacetsPostResponses];
 
 export type ReadSavedModelAnnotationsApiModelAnnotationsGetData = {
     body?: never;

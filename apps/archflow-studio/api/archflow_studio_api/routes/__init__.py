@@ -10,6 +10,7 @@ from . import (
     boards,
     candidates,
     capabilities,
+    construction,
     decisions,
     drawings,
     episodes,
@@ -55,6 +56,7 @@ router.include_router(drawings.router)
 router.include_router(study.router)
 router.include_router(pick.router)
 router.include_router(proposals.router)
+router.include_router(construction.router)
 router.include_router(intents.router)
 router.include_router(options.router)
 router.include_router(candidates.router)
