@@ -1,9 +1,9 @@
 """The projection check's synthetic project: its size, its shape and its repeatability (GH-376).
 
-The API stamps reviews, admissions and Stages with the wall clock, and those
-stamps reach the content digests of the records that cite them, so two
-generations are compared in structure: the same runs, the same record kinds in
-the same numbers, and the same Stage chain on every branch.
+Clock stamps, event ids and measured durations reach the content digests of
+the records that cite them, so one of them left to the machine changes the
+names and bytes of much of the project; two generations must therefore match
+file for file, byte for byte.
 """
 
 from __future__ import annotations
@@ -38,6 +38,13 @@ def record_kinds(project: Path) -> dict[str, Counter]:
                     counter[f"{area}/{match['kind']}"] += 1
         kinds[run.name] = counter
     return kinds
+
+
+def files(project: Path) -> dict[str, bytes]:
+    """Every file in the project, by its path inside it."""
+
+    return {path.relative_to(project).as_posix(): path.read_bytes()
+            for path in project.rglob("*") if path.is_file()}
 
 
 def stage_chains(project: Path) -> dict[str, list[tuple[str, str]]]:
@@ -96,15 +103,14 @@ class SyntheticProjectTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.text)
         self.assertTrue(response.json()["head"]["runId"].startswith("studio-cand-"))
 
-    def test_two_generations_have_the_same_structure(self) -> None:
-        self.assertEqual(record_kinds(self.first), record_kinds(self.second))
-        self.assertEqual(stage_chains(self.first), stage_chains(self.second))
-        # Inputs and artifacts carry no clock: those bytes are identical.
-        for pattern in ("input/runner/*.json", "runs/*/workspaces/*/*", "project.json"):
-            first = {path.relative_to(self.first): path.read_bytes() for path in self.first.glob(pattern)}
-            second = {path.relative_to(self.second): path.read_bytes() for path in self.second.glob(pattern)}
-            self.assertTrue(first, pattern)
-            self.assertEqual(first, second, pattern)
+    def test_two_generations_are_identical_byte_for_byte(self) -> None:
+        first, second = files(self.first), files(self.second)
+        differences = {
+            "only in the first": sorted(set(first) - set(second)),
+            "only in the second": sorted(set(second) - set(first)),
+            "different bytes": sorted(name for name in set(first) & set(second) if first[name] != second[name]),
+        }
+        self.assertEqual(differences, {key: [] for key in differences})
 
     def test_a_project_below_the_scenario_is_refused(self) -> None:
         with self.assertRaises(ValueError):
