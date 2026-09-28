@@ -1,4 +1,27 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": []
+  "items": [
+    {
+      "id": "GH-403",
+      "lanes": [
+        {
+          "id": "ci-names",
+          "status": "active",
+          "branch": "codex/403-ci-names",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-403-ci-names",
+          "base_ref": "a1df9b2b",
+          "contributor": "Claude",
+          "reviewer": "Claude root task",
+          "handoff": "master session; job display names with branch protection",
+          "modules": [
+            "studio.binding"
+          ],
+          "write_scope": [
+            ".github/workflows/verify.yml"
+          ],
+          "depends_on": []
+        }
+      ]
+    }
+  ]
 }
