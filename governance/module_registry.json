@@ -8025,6 +8025,111 @@
         "monkeyarch/construction/lowering.py",
         "monkeyarch/construction/vocabulary.py"
       ]
+    },
+    {
+      "module_id": "capabilities.domain_readiness",
+      "owner_path": "monkeyarch/capabilities/domain_readiness.py",
+      "purpose": "L4: the honest entry gate a technical domain calls before it runs - read only the semantics it needs, and answer an explicit enrichment request for what is missing instead of guessing it from shape, producer or name.",
+      "owns": [
+        "DomainNeeds and the DOMAINS registry: each domain's architectural.role read set and the facet keys it needs once it reads",
+        "readiness: sorting every Component@1 that owns an Element@1 into read, a request for a missing architectural.role, a request for missing needed facets, or neither, per domain",
+        "describe: one domain's own reads/needs/known_facets with no record in hand",
+        "DomainUnknown, naming the domains that are registered"
+      ],
+      "does_not_own": [
+        "validating or storing a facet value - archflow.semantics.facets and the State Record's own facet validation",
+        "reading a facet off a Component@1 - archflow.state.state_record.component_facets",
+        "running any domain's own structural, thermal or other evaluation - no such engine exists yet; this is only the gate",
+        "serving the HTTP routes - apps/archflow-studio/api/archflow_studio_api/application/domains.py (studio.domains)"
+      ],
+      "inputs": [
+        "StateRecord",
+        "a domain name"
+      ],
+      "outputs": [
+        "{domain, status, reads, requests, known_facets} readiness mapping",
+        "{domain, reads, needs, known_facets} description mapping"
+      ],
+      "public_api": [
+        "DomainNeeds",
+        "DOMAINS",
+        "DomainUnknown",
+        "describe",
+        "readiness"
+      ],
+      "depends_on": [
+        "archflow.semantics.facets",
+        "semantics.facets",
+        "archflow.state.state_record",
+        "state.record"
+      ],
+      "used_by": [
+        "tests/test_domain_readiness.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/domains.py"
+      ],
+      "invariants": [
+        "never infers architectural.role, structural.role, architectural.enclosure or material.name from geometry, producer or names (D-419-0)",
+        "a Component@1 with no owned Element@1 is neither read nor asked about",
+        "a role outside a domain's read set is neither read nor asked about",
+        "reads and requests are both sorted by id; the missing keys within a request are sorted"
+      ],
+      "status": "canonical",
+      "tests": [
+        "tests/test_domain_readiness.py"
+      ],
+      "notes": "spec docs/2026-09-28-construction-api.md §3.6 (GH-419 Task C5). No structural or thermal engine exists behind this gate yet; it is the readiness question every future domain tool will call first."
+    },
+    {
+      "module_id": "studio.domains",
+      "owner_path": "apps/archflow-studio/api/archflow_studio_api/application/domains.py",
+      "purpose": "Serve L4 domain readiness: GET /api/domains describes every known domain, GET /api/domains/{domain}/readiness answers whether a domain can evaluate the bound project's projection now.",
+      "owns": [
+        "domains_index: every known domain, described, with no project in hand",
+        "domain_readiness: one domain's readiness against the projection GET /api/state?run= would resolve, and the 404 DOMAIN_UNKNOWN refusal for an unrecognised domain"
+      ],
+      "does_not_own": [
+        "what a domain reads and needs, or sorting components into reads/requests - monkeyarch.capabilities.domain_readiness (capabilities.domain_readiness)",
+        "resolving a run to a projection - application.projection.project_state (studio.binding)",
+        "adding or editing a component's facets - the generic semanticEdit route (studio.intent)"
+      ],
+      "inputs": [
+        "ProjectBinding",
+        "a domain name",
+        "an optional run id"
+      ],
+      "outputs": [
+        "{domains: [...]} index mapping",
+        "the readiness mapping monkeyarch.capabilities.domain_readiness.readiness answers"
+      ],
+      "public_api": [
+        "domains_index",
+        "domain_readiness"
+      ],
+      "depends_on": [
+        "monkeyarch.capabilities.domain_readiness",
+        "capabilities.domain_readiness",
+        "studio.binding",
+        "studio.shell"
+      ],
+      "used_by": [
+        "apps/archflow-studio/api/archflow_studio_api/routes/domains.py",
+        "apps/archflow-studio/api/archflow_studio_api/routes/__init__.py",
+        "apps/archflow-studio/api/tests/test_domains.py"
+      ],
+      "files": [
+        "apps/archflow-studio/api/archflow_studio_api/application/domains.py",
+        "apps/archflow-studio/api/archflow_studio_api/routes/domains.py"
+      ],
+      "invariants": [
+        "GET /api/domains never 404s: only the per-domain readiness route names an unknown domain",
+        "the domain name is checked before the project is read, so an unknown domain refuses the same way regardless of project state",
+        "neither route writes"
+      ],
+      "status": "canonical",
+      "tests": [
+        "apps/archflow-studio/api/tests/test_domains.py"
+      ],
+      "notes": "spec docs/2026-09-28-construction-api.md §3.6 (GH-419 Task C5)."
     }
   ]
 }
