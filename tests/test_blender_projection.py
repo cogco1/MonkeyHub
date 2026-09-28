@@ -49,7 +49,7 @@ class ProjectionTests(unittest.TestCase):
         self.assertIn("unavailable", missing["failures"][0]["detail"])
         for error in (subprocess.TimeoutExpired("blender", 1, output="timeout log"),
                       subprocess.CalledProcessError(7, "blender", output="failure log")):
-            with self.subTest(error=type(error)), patch.object(projection.shutil, "which", return_value="blender"), \
+            with self.subTest(error=type(error)), patch.object(projection, "resolve_blender_executable", return_value="blender"), \
                     patch.object(projection, "_run_worker", side_effect=error):
                 request = replace(self.request, artifact_stem=type(error).__name__)
                 result = projection.execute_blender_projection(request, self.source, blender_executable="blender")
