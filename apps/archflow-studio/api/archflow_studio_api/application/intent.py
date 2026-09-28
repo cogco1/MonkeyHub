@@ -598,7 +598,8 @@ def delete_element_proposal(
     relations name it; removing it under them would either dangle those
     references or silently take objects the architect never picked. Both are
     refused here, with the dependents named, so the answer is a fact about the
-    building rather than a failure inside the record.
+    building rather than a failure inside the record. An element that names
+    this one in ``references.voids`` is cut by it, and is said to be.
     """
 
     record = projection.record
@@ -611,23 +612,27 @@ def delete_element_proposal(
             "names the element a pick resolved to, and this record declares "
             f"{_listed(sorted(item.entity_id for item in record.entities_of('Element@1')))}.",
         )
-    standing = sorted({
-        edge.downstream_ref[len("entity:"):]
+    dependents = [
+        (edge.downstream_ref[len("entity:"):], edge.relation)
         for edge in record.dependency_edges()
         if edge.upstream_ref == f"entity:{element_id}"
         and edge.downstream_ref.startswith("entity:")
         and edge.downstream_ref != f"entity:{element_id}"
-    })
+    ]
+    # A host names its cutters in references.voids (#419): it is cut by this element, not standing on it.
+    cut = sorted({dependent for dependent, relation in dependents if relation == "voids"})
+    standing = sorted({dependent for dependent, relation in dependents if relation != "voids"})
     named_by = sorted({
         relation.relation_id for relation in record.relations
         if element_id in (relation.subject, relation.object)
     })
-    if standing or named_by:
+    if cut or standing or named_by:
         raise StudioError(
             409,
             "ELEMENT_HAS_DEPENDENTS",
             f"{element_id} cannot be removed on its own: "
             + "; ".join(filter(None, [
+                f"{_listed(cut)} {'is' if len(cut) == 1 else 'are'} cut by it" if cut else "",
                 f"{_listed(standing)} stand{'s' if len(standing) == 1 else ''} on it" if standing else "",
                 f"the record declares {_listed(named_by)} about it" if named_by else "",
             ]))
