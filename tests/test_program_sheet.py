@@ -358,6 +358,21 @@ class ApplySheetTests(unittest.TestCase):
         self.assertIn("brooding-nook", str(raised.exception))
         self.assertIn("nearest", str(raised.exception))
 
+    def test_a_refused_function_is_offered_close_spellings_never_condition_ids(self) -> None:
+        """#413: a space's function is what the space is; condition ids, the axis among them, are not offered."""
+
+        for word, close in (("clearence", "clearance"), ("axsi", None), ("role.acess", "role.access")):
+            with self.subTest(word=word):
+                sheet = sheet_with()
+                sheet["departments"][0]["spaces"][0]["function"] = word
+                with self.assertRaises(ProgramSheetError) as raised:
+                    apply_sheet(bound_record(), sheet)
+                message = str(raised.exception)
+                self.assertNotIn("condition.", message)
+                self.assertNotIn("axis", message)
+                if close is not None:
+                    self.assertIn(close, message)
+
     def test_a_requirement_with_no_kernel_kind_is_refused_by_name(self) -> None:
         for requirement in ("near", "visual"):
             with self.subTest(requirement=requirement):

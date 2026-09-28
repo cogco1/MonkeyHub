@@ -39,12 +39,13 @@ read and write.
 from __future__ import annotations
 
 from dataclasses import replace
+import difflib
 from types import MappingProxyType
 from typing import Any, Iterable, Mapping, Sequence
 
 from archflow.relations.contracts import ArchitecturalRelationKind
 from archflow.project.refs import require_identifier
-from archflow.semantics.registry import resolve_semantic_kind, suggest_semantic
+from archflow.semantics.registry import registered_ids, resolve_semantic_kind, suggest_semantic_kind
 from archflow.state.state_record import (
     Entity,
     Relation,
@@ -742,10 +743,15 @@ def _function(value: object, space_id: str) -> None:
             f"space {space_id}: function is a registered role id or alias, or null"
         )
     if resolve_semantic_kind(value) is None:
-        near = ", ".join(suggest_semantic(value)) or "none close"
+        # A space's function is what the space is, so it is answered like a
+        # semantic_kind: close registered spellings, never condition ids; a
+        # misspelt role id is answered with the role id it is close to.
+        near = (*suggest_semantic_kind(value),
+                *difflib.get_close_matches(value.strip().lower(), [i for i in registered_ids() if i.startswith("role.")],
+                                          n=3, cutoff=0.75))
         raise ProgramSheetError(
-            f"space {space_id}: function {value!r} is not a registered role, "
-            f"condition or alias; nearest: {near}"
+            f"space {space_id}: function {value!r} is not a registered role "
+            f"or alias; nearest: {', '.join(dict.fromkeys(near)) or 'none close'}"
         )
 
 

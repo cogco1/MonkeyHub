@@ -18,7 +18,7 @@ from uuid import uuid4
 
 from archflow.contracts.canonical import canonical_json
 from archflow.project.layout import AUTHORED_RECORD_PATH
-from archflow.semantics.registry import resolve_semantic_kind
+from archflow.semantics.registry import resolve_semantic_kind, suggest_semantic_kind
 from archflow.state.decision_operator import (
     ConditionComparator,
     DecisionOperator,
@@ -551,10 +551,7 @@ def component_edit_proposal(
         existing = {entity.entity_id: entity for entity in record.entities}
         edit_entities, unclassified = _unregistered_kinds_as_intent(edit["entities"], existing)
         if unclassified:
-            summary = summary.strip() + " (" + "; ".join(
-                f"{component} keeps {word!r} as its intent, unclassified: not a registered semantic kind"
-                for component, word in unclassified
-            ) + ")"
+            summary = summary.strip() + " (" + "; ".join(unclassified) + ")"
         entities = []
         for payload in edit_entities:
             if not isinstance(payload, Mapping) or set(payload) - {
@@ -724,18 +721,21 @@ def component_edit_proposal(
 
 def _unregistered_kinds_as_intent(
     payloads: Sequence[Any], existing: Mapping[str, Entity],
-) -> tuple[list[Any], list[tuple[str, str]]]:
+) -> tuple[list[Any], list[str]]:
     """Component rows whose ``semantic_kind`` names no registered alias, kept unclassified.
 
     The user's own word for a part ("wall", "墙") is not refused and not
     matched to a nearby id: the geometry goes ahead, the component carries no
-    semantic_kind (an existing one keeps what it had), and the word is kept as
-    its intent when no intent was stated (#408). Returns the rows and the
-    ``(component, word)`` pairs moved this way.
+    semantic_kind (an existing one keeps what it had), and the word goes into
+    its intent (#408): as the intent when none was stated, otherwise added to
+    the stated one, because the summary that also mentions it is replaced when
+    the proposal is continued (#413). Returns the rows and one note per word
+    saying what happened to it, with close registered spellings when the word
+    looks like a misspelling of one.
     """
 
     rows: list[Any] = []
-    moved: list[tuple[str, str]] = []
+    notes: list[str] = []
     for payload in payloads:
         if not isinstance(payload, Mapping) or not isinstance(payload.get("fields"), Mapping):
             rows.append(payload)  # malformed rows are refused by the typed path below
@@ -747,14 +747,25 @@ def _unregistered_kinds_as_intent(
         if schema != "Component@1" or not isinstance(word, str) or not word.strip() or resolve_semantic_kind(word) is not None:
             rows.append(payload)
             continue
-        entity_id = str(payload.get("entity_id"))
+        entity_id, word = str(payload.get("entity_id")), word.strip()
         fields = {key: value for key, value in fields.items() if key != "semantic_kind"}
         stated = fields.get("intent", previous.fields.get("intent") if previous is not None else None)
         if not isinstance(stated, str) or not stated.strip() or stated == entity_id:
-            fields["intent"] = word.strip()
+            fields["intent"] = word
+            note = f"{entity_id} keeps {word!r} as its intent"
+        elif re.search(rf"(?<![a-z0-9]){re.escape(word.casefold())}(?![a-z0-9])", stated.casefold()):
+            # As a word: "drywall" does not already say "wall"; 外墙 says 墙.
+            note = f"{entity_id}'s intent already says {word!r}"
+        else:
+            fields["intent"] = f"{stated.strip()}; {word}"
+            note = f"{entity_id} adds {word!r} to its intent"
+        note += ", unclassified: not a registered semantic kind"
+        near = suggest_semantic_kind(word)
+        if near:
+            note += "; registered spellings close to it: " + ", ".join(near)
         rows.append({**payload, "fields": fields})
-        moved.append((entity_id, word.strip()))
-    return rows, moved
+        notes.append(note)
+    return rows, notes
 
 
 @dataclass(frozen=True, slots=True)
