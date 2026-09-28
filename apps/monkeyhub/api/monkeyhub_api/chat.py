@@ -2681,6 +2681,14 @@ def _prepare_studio(hub: str, session: Mapping, budget: float) -> dict:
                 raise unready()
             time.sleep(_PREPARE_POLL_S)
         return studio
+    except HubFailure as failure:
+        # Recovery, ports and settings are the user's: an agent cannot fix a
+        # runtime that will not start, so it is told to say so, in the Hub's words.
+        if failure.error.code in {"CHAT_STUDIO_UNAVAILABLE", "CHAT_PROJECT_MISMATCH"}:
+            raise
+        raise HubFailure(failure.status, failure.error.code,
+                         f"{failure.error.detail} The project runtime could not start: tell the user this, "
+                         "and do not change Hub settings or retry the same call.") from failure
     finally:
         held.release()
 
@@ -2777,8 +2785,10 @@ def _prepared_context(hub: str, chat_id: str, content: str, selected: ChatDesign
     returns. Nothing waits on it either — not this function and not the
     interpreter's own exit — so a Studio that has stopped answering cannot keep
     the Hub from shutting down. It stays safe to leave running because the route
-    it calls only reads: it makes no proposal, holds no project lock and writes
-    nothing through P036, so the answer nobody collects changes nothing.
+    it calls makes no proposal and writes nothing through P036, so the answer
+    nobody collects changes nothing. It may first prepare the project's runtime
+    (#414), holding that project's preparation lock until the preparation ends
+    or its own budget runs out; a later tool call then waits for it or retries.
     """
 
     done, outcome = threading.Event(), {}
@@ -3260,14 +3270,15 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
             body.pop("accessCode", None)
             return _request_json(hub, path, "POST", body)
         raise HubFailure(422, "CHAT_TOOL_UNAVAILABLE", "The chat can list Fab profiles and validate a prepared job; uploads remain explicit in MonkeyFab.")
-    base, session = _bound_studio(hub, chat_id)
     # Asking what a documented action takes is not calling it. The path is
     # checked against the same allow-list either way, with a schema question's
     # `{id}` segments standing for the id they name, so the templates this
-    # tool's own description lists can actually be read.
+    # tool's own description lists can actually be read. It is checked before
+    # the Studio is resolved, so a refused request never starts a runtime.
     checked = re.sub(r"\{[^}/]+\}", "id", parsed.path) if name == "studio_schema" else parsed.path
     if parsed.scheme or parsed.netloc or parsed.fragment or method not in allowed or not allowed[method].fullmatch(checked):
         raise HubFailure(422, "CHAT_TOOL_UNAVAILABLE", "This action is not exposed to the chat.")
+    base, session = _bound_studio(hub, chat_id)
     query = parse_qs(parsed.query, keep_blank_values=True)
     if any(query[key] != [session["projectId"]] for key in ("projectId", "project_id") if key in query):
         raise HubFailure(409, "CHAT_PROJECT_MISMATCH", "A tool cannot select another project.")

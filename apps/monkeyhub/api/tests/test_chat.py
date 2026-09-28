@@ -1862,9 +1862,20 @@ class ChatTests(unittest.TestCase):
         request, state = self._preparing_hub(session, worker=crashed)
         with patch.object(chat, "_request_json", side_effect=request), self.assertRaises(HubFailure) as refused:
             chat.call_tool(self.store.hub_url, session.id, "studio_request", {"method": "GET", "path": "/api/state"})
-        self.assertEqual((refused.exception.error.code, refused.exception.error.detail),
-                         ("WORKER_EXITED", "The project service exited with code 3."))
+        self.assertEqual(refused.exception.error.code, "WORKER_EXITED")
+        # The Hub's own words first, then what the agent can do about it: tell the user.
+        self.assertTrue(refused.exception.error.detail.startswith("The project service exited with code 3. "))
+        self.assertIn("tell the user", refused.exception.error.detail)
         self.assertEqual(state["starts"], 0, "recovery stays an explicit act; nothing is started")
+
+    def test_a_request_the_chat_may_not_make_never_prepares_a_runtime(self):
+        session = self.create()
+        session.status = "running"
+        request, state = self._preparing_hub(session)
+        with patch.object(chat, "_request_json", side_effect=request), self.assertRaises(HubFailure) as refused:
+            chat.call_tool(self.store.hub_url, session.id, "studio_request", {"method": "DELETE", "path": "/api/project"})
+        self.assertEqual(refused.exception.error.code, "CHAT_TOOL_UNAVAILABLE")
+        self.assertEqual(state["starts"], 0, "the allow-list is checked before the Studio is resolved")
 
     def test_a_runtime_attached_to_another_project_is_refused(self):
         session = self.create()
