@@ -91,7 +91,7 @@ jobs:
         run: python -m unittest discover -s apps/monkeyhub/api/tests
 
   web:
-    name: Studio web
+    name: Hub web
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -212,7 +212,7 @@ jobs:
         run: node workspaces/test/viewportSelection.browser.mjs
 
   studio:
-    name: Studio first-run (${{ matrix.os }})
+    name: Hub first-run (${{ matrix.os }})
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest]
