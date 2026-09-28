@@ -253,7 +253,6 @@ def sketch_prism_proposal(
     closed: bool = True,
     plane: Mapping[str, Any] | None = None,
     parent_component_id: str | None = None,
-    semantic_kind: str | None = None,
     summary: str | None = None,
     keep_refs: Sequence[str] = (),
     source_document_trace: Mapping[str, Any] | None = None,
@@ -290,13 +289,13 @@ def sketch_prism_proposal(
                 f"{sorted(components)} so a seat builds it.",
             )
         # Geometry first: the new part exists with its identity, placement and
-        # provenance before anyone says what it is. A stated semanticKind is
-        # kept; an unstated one stays absent, never guessed (#400).
+        # provenance before anyone says what it is; meaning is added afterward
+        # with POST /api/proposals/facets, never guessed here (#400, #419).
         rows.append({
             "entity_id": component_id,
             "schema": "Component@1",
             "parent_id": parent_component_id,
-            "fields": {"intent": component_id, **({"semantic_kind": semantic_kind} if semantic_kind is not None else {})},
+            "fields": {"intent": component_id},
         })
     row = {
         "entity_id": element_id,
@@ -920,8 +919,8 @@ class DeterministicIntentProvider:
             "STALE_BASE",
             f"the proposal names state {state_digest}, but "
             f"{self.projection.project_id} is at "
-            f"{self.projection.state_digest}. Read /api/state again and "
-            "propose against the state that answers now.",
+            f"{self.projection.state_digest}. Read GET /api/construction/model "
+            "(or /api/state) again and propose against the state that answers now.",
         )
 
     def _component(self, component_id: str | None) -> str:

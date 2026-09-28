@@ -333,9 +333,10 @@ def _require_current_base(
         f"proposal {proposal.proposal_id} was made against state "
         f"record {proposal.record_digest} / state "
         f"{proposal.base_state_digest}, and {binding.project_id} now has "
-        f"record {live_record} / state {live_state}. Re-read /api/state and "
-        "propose again: a candidate is only meaningful against the exact "
-        "record it was proposed for.",
+        f"record {live_record} / state {live_state}. Re-read GET "
+        "/api/construction/model (or /api/state) and propose again: a "
+        "candidate is only meaningful against the exact record it was "
+        "proposed for.",
     )
 
 

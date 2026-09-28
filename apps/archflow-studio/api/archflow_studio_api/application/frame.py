@@ -271,7 +271,7 @@ def _require_known(record: StateRecord, changed_refs: tuple[str, ...]) -> None:
             "the record carries no "
             + ", ".join(sorted(unknown))
             + ". A ref is entity:<entityId> or parameter:<key>, and it must "
-            "name something GET /api/state already showed you.",
+            "name something GET /api/construction/model (or /api/state) already showed you.",
         )
 
 

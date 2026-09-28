@@ -402,7 +402,7 @@ def initialization_description(
         state_digest=None if projection is None else projection.state_digest,
         exact_source=projection is not None and projection.reference_state_exact,
         actionable=projection is not None and projection.state is not None,
-        source_stage_ref=None, read_with="GET /api/state",
+        source_stage_ref=None, read_with="GET /api/construction/model",
         write_with="POST /api/project/modeling with projectId",
         target=None, keep=None,
         request={"method": "POST", "path": "/api/project/modeling",
@@ -529,7 +529,7 @@ def describe_capability(
         # against when one was selected. A hint that said "the same base" and
         # pointed at another projection would be worse than no hint.
         read_with=_read_with(source_run_id, stage_ref),
-        write_with=("omit sourceRunId; use stateDigest from GET /api/state for authored input"
+        write_with=("omit sourceRunId; use stateDigest from GET /api/construction/model (or /api/state) for authored input"
                     if source_run_id is None else
                     f'sourceRunId="{source_run_id}"'
                     + ("" if stage_ref is None else f', sourceStageRef="{stage_ref}"')),
@@ -541,12 +541,17 @@ def describe_capability(
 
 
 def _read_with(run_id: str | None, stage_ref: str | None) -> str:
-    """The read that answers for this same base, as a URL a client can send."""
+    """The read that answers for this same base, as a URL a client can send.
+
+    ``GET /api/construction/model`` answers the same ``stateDigest`` as
+    ``GET /api/state`` for the same run and Stage: an agent's own read, now
+    that the Hub no longer lets an agent call ``/api/state`` directly.
+    """
 
     query = {} if run_id is None else {"run": run_id}
     if stage_ref is not None:
         query["sourceStageRef"] = stage_ref
-    return "GET /api/state" + ("?" + urlencode(query) if query else "")
+    return "GET /api/construction/model" + ("?" + urlencode(query) if query else "")
 
 
 def _request(

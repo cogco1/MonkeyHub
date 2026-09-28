@@ -205,7 +205,7 @@ class CapabilityIndexTestCase(unittest.TestCase):
     def test_the_description_says_how_to_read_and_how_to_write_the_same_base(self) -> None:
         body = self.client.get(f"/api/capabilities/{CAPABILITY}", params={"target": "portico"}).json()
         run_id = body["source"]["runId"]
-        self.assertEqual(body["source"]["readWith"], f"GET /api/state?run={run_id}")
+        self.assertEqual(body["source"]["readWith"], f"GET /api/construction/model?run={run_id}")
         self.assertIn("sourceRunId", body["source"]["writeWith"])
         self.assertEqual(body["request"]["body"]["sourceRunId"], run_id)
         self.assertEqual(body["request"]["body"]["projectId"], PROJECT_ID)
@@ -221,7 +221,7 @@ class CapabilityIndexTestCase(unittest.TestCase):
             built = capability_module._read_with("run-001", ref)
             self.assertIn("run=run-001", built)
             self.assertIn(quote(ref, safe=""), built.replace("+", "%20"))
-            self.assertEqual(capability_module._read_with("run-001", None), "GET /api/state?run=run-001")
+            self.assertEqual(capability_module._read_with("run-001", None), "GET /api/construction/model?run=run-001")
             return
         body = self.client.get(f"/api/capabilities/{CAPABILITY}", params={
             "target": "portico", "sourceStageRef": stage_ref}).json()
@@ -308,7 +308,7 @@ class AuthoredCapabilityTestCase(unittest.TestCase):
                 self.assertEqual(described.status_code, 200, described.text)
                 detail = described.json()
                 source = detail["source"]
-                self.assertEqual(source["readWith"], "GET /api/state")
+                self.assertEqual(source["readWith"], "GET /api/construction/model")
                 self.assertIn("omit sourceRunId", source["writeWith"])
                 self.assertNotIn(source["runId"], source["writeWith"])
                 state = client.get(source["readWith"].removeprefix("GET "))
@@ -448,7 +448,7 @@ class CapabilityRunTestCase(unittest.TestCase):
 
         drawn = self.client.post("/api/proposals/sketch", json={
             "stateDigest": self.digest(), "componentId": "small-house",
-            "parentComponentId": "portico", "semanticKind": "building",
+            "parentComponentId": "portico",
             "elementId": "small-house-main", "profile": SQUARE, "height": height,
             "baseLevel": "level-ground",
         })

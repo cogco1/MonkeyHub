@@ -76,7 +76,12 @@
             "apps/archflow-studio/api/archflow_studio_api/main.py",
             "apps/monkeyhub/api/monkeyhub_api/chat.py",
             "apps/monkeyhub/api/tests/",
-            "apps/monkeyhub/web/workspaces/src/api/generated/"
+            "apps/monkeyhub/web/workspaces/src/api/generated/",
+            "apps/archflow-studio/api/archflow_studio_api/application/capability.py",
+            "apps/archflow-studio/api/archflow_studio_api/application/frame.py",
+            "apps/archflow-studio/api/archflow_studio_api/application/pick.py",
+            "apps/archflow-studio/api/archflow_studio_api/routes/candidates.py",
+            "apps/archflow-studio/api/archflow_studio_api/routes/options.py"
           ],
           "depends_on": []
         }
