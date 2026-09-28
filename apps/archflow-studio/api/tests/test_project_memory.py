@@ -3,24 +3,33 @@
 A locator says where one piece of retained project content is, in the user's
 words; a later turn that asks for it in other words finds it, and the target
 is read again every time. A source policy says where to look first for a
-research topic; only a research turn about that topic is handed it. Neither is
-a second store: both are revisioned decisions in ``studio-decisions``.
+research topic; a turn whose words are about that topic is handed it, and a
+new project can hold one from the user's words alone. Neither is a second
+store: both are revisioned decisions, retained in their own ``studio-memory``
+run so that a build predating them never reads one.
 """
 
 from __future__ import annotations
 
 import json
+from pathlib import Path
+from tempfile import TemporaryDirectory
+
+from fastapi.testclient import TestClient
 
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import STUDIO_SCOPED_DECISION
-from archflow_studio_api.application.decisions import DECISIONS_RUN_ID, lexical_terms
+from archflow_studio_api.application.decisions import DECISIONS_RUN_ID, MEMORY_RUN_ID, lexical_terms
+from archflow_studio_api.main import create_app
+from archflow_studio_api.settings import StudioSettings
 
-from .support import PROJECT_ID
+from .support import PROJECT_ID, make_empty_project
 from .test_decisions import DecisionFixture, board_source, document_source, message
 from .test_documents import two_page_pdf
 
 LOCATOR_WORDS = "项目图框在这份文件里,第一页就是"
 POLICY_WORDS = "查材料先去 A、B,别用 C"
+WORDS = {"kind": "words"}
 
 
 def page_target(document: dict, page_index: int | None = 0) -> dict:
@@ -196,12 +205,15 @@ class SourcePolicyTests(MemoryFixture):
         self.assertEqual(self.research("查一下这种砖的材料性能", cold), [policy])
         self.assertEqual(self.research("查一下疏散的防火规范", cold), [regulations])
         self.assertEqual(self.research("找几个类似的住宅案例", cold), [])
-        # Never a design or drawing turn's, named or by default.
-        for body in ({}, {"decisionContext": {"domain": "design"}}, {"decisionContext": {"domain": "drawing"}}):
+        # Never a turn that named design or drawing.
+        for body in ({"decisionContext": {"domain": "design"}}, {"decisionContext": {"domain": "drawing"}}):
             with self.subTest(body=body):
                 handed = self.context(cold, utterance="查一下这种砖的材料性能", **body)["scopedDecisions"]
                 self.assertNotIn(policy["decisionId"], {row["decisionId"] for row in handed})
-        self.assertEqual(self.context(cold, utterance="查一下这种砖的材料性能")["scopedDecisions"], [keep])
+        # A default read - the Hub's prepared per-turn context - carries the
+        # policy its words are about, beside the design decisions, and no other.
+        self.assertEqual(self.context(cold, utterance="查一下这种砖的材料性能")["scopedDecisions"], [policy, keep])
+        self.assertEqual(self.context(cold, utterance="把檐口压低一点")["scopedDecisions"], [keep])
 
         # A supersede replaces it; a revoke removes it.
         replacement = {"projectId": PROJECT_ID, "rawLanguage": "材料还是先查 D", "messageSource": message(6),
@@ -233,6 +245,88 @@ class SourcePolicyTests(MemoryFixture):
                 self.policy(status, **overrides)
         # A locator domain is not a turn's domain: its words look it up.
         self.context(utterance="图框在哪", decisionContext={"domain": "locator"}, expect=422)
+
+    def test_the_users_words_alone_evidence_a_policy_and_nothing_else(self) -> None:
+        saved = self.policy(source=WORDS, targetRef=None)
+        self.assertEqual((saved["source"], saved["targetRef"], saved["messageSource"]),
+                         (WORDS, "research:sources", message(2)))
+        self.assertEqual(self.research("查一下这种砖的材料性能", self.new_client()), [saved])
+        # Words are a message: a person's action without one names what it was taken on.
+        self.assertIn("messageSource", self.policy(422, source=WORDS, sourceKind="human", messageSource=None)["detail"])
+        self.assertEqual(self.policy(source=WORDS, sourceKind="human", messageSource=message(4),
+                                     binding={"kind": "source-policy", "topic": "规范", "keys": ["regulations"],
+                                              "prefer": ["官方规范库"], "avoid": [], "note": None})["sourceKind"],
+                         "human")
+        # Only a source policy: a locator, a drawing or a design decision names what it was said about.
+        self.locator(422, source=WORDS)
+        self.save(422, source=WORDS)
+        self.save(422, source=WORDS, disposition="keep", targetRef="parameter:module",
+                  scope={"domain": "design", "extent": "project"})
+        # A context read names what it is looking at; its words are its utterance.
+        self.context(utterance="查材料", decisionContext={"domain": "research", "source": WORDS}, expect=422)
+
+    def test_a_new_project_with_no_design_saves_a_policy_from_the_users_words(self) -> None:
+        with TemporaryDirectory() as directory:
+            make_empty_project(Path(directory))
+            with TestClient(create_app(StudioSettings(project_dir=Path(directory) / PROJECT_ID,
+                                                      cad_export="off"))) as client:
+                response = client.post("/api/decisions", json={
+                    "projectId": PROJECT_ID, "rawLanguage": "以后查材料先去 A 建材库、B 手册,别用 C 网站。",
+                    "messageSource": message(1), "disposition": "require", "strength": "soft_preference",
+                    "scope": {"domain": "research", "extent": "project"}, "source": WORDS,
+                    "applicability": "scope", "sourceKind": "agent",
+                    "typedBinding": {"kind": "source-policy", "topic": "材料", "keys": ["materials"],
+                                     "prefer": ["A 建材库", "B 手册"], "avoid": ["C 网站"]}})
+                self.assertEqual(response.status_code, 201, response.text)
+                self.assertEqual([row["decisionId"] for row in client.get("/api/decisions").json()["decisions"]],
+                                 [response.json()["decisionId"]])
+                # No modeling base appeared to hold it: only the memory run exists.
+                runs = Path(directory) / PROJECT_ID / "runs"
+                self.assertEqual(sorted(path.name for path in runs.iterdir()), [MEMORY_RUN_ID])
+
+
+class OmittedTargetTests(MemoryFixture):
+    def test_a_locator_and_a_policy_omit_their_one_target(self) -> None:
+        locator = self.locator(targetRef=None)
+        policy = self.policy(targetRef=None, source=WORDS)
+        self.assertEqual((locator["targetRef"], policy["targetRef"]), ("locator:content", "research:sources"))
+        # The trial's first save: a locator's own name is not its target.
+        self.assertIn("locator:content", self.locator(422, targetRef="locator:项目图框", label="设计说明")["detail"])
+        # Every other domain still names what it is about.
+        self.assertIn("targetRef", self.save(422, targetRef=None, source=document_source(self.page))["detail"])
+        self.save(422, targetRef=None, disposition="keep", scope={"domain": "design", "extent": "project"},
+                  source=self.design_source())
+
+
+class MemoryRunTests(MemoryFixture):
+    """A build that predates project memory reads studio-decisions alone and must not meet it."""
+
+    def reviews(self, run_id: str) -> list[tuple[str, str]]:
+        """What one run's review area holds, read as an older build would: that run alone."""
+
+        run = self.repository.load_run(run_id)
+        refs = self.repository.list_json(
+            run=run, destination=PersistenceDestination(PersistenceArea.RUN_REVIEW, run_id=run_id),
+            record_kind=STUDIO_SCOPED_DECISION)
+        return sorted((payload["decisionId"], payload["status"])
+                      for payload in map(self.repository.load_json, refs))
+
+    def test_memory_lives_in_its_own_run_and_reads_back_with_the_rest(self) -> None:
+        hatch = self.save(source=board_source(self.save_board("wall"), "wall"))
+        locator = self.locator()
+        policy = self.policy(source=WORDS)
+        revoked = self.revise(locator, action="revoke", reason="不用了")
+        self.assertEqual(self.reviews(DECISIONS_RUN_ID), [(hatch["decisionId"], "active")])
+        self.assertEqual(self.reviews(MEMORY_RUN_ID), sorted([
+            (locator["decisionId"], "active"), (locator["decisionId"], "revoked"), (policy["decisionId"], "active")]))
+        # This build lists them with the rest, exactly as before for callers.
+        self.assertEqual(self.decisions(self.new_client()), [hatch, policy, revoked])
+        history = self.new_client().get(f"/api/decisions/{locator['decisionId']}").json()["revisions"]
+        self.assertEqual([row["status"] for row in history], ["superseded", "revoked"])
+        # A supersession keeps its kind, so a chain never spans the two runs.
+        crossing = {**self.spec(), "source": board_source(self.board_revision, "wall")}
+        refused = self.revise(policy, action="supersede", replacement=crossing, expect=422)
+        self.assertIn("keeps its kind", refused["detail"])
 
 
 class RetainedDecisionTests(MemoryFixture):
