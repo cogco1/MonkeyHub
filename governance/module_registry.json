@@ -733,8 +733,8 @@
         "monkeyarch/runtime/project_runner.py",
         "tests/test_three_dm_inspector.py",
         "tests/test_cad_execution.py",
-        "tests/test_pantheon_progress_snapshot.py",
-        "tests/test_parthenon_stage4_reconstruction.py"
+        "tests/test_occt_execution.py",
+        "archflow/project/version_ref_owners.py"
       ],
       "invariants": [
         "read-only: rhino3dm is imported lazily, one immutable byte snapshot is read, and no Rhino process is started",
@@ -1565,8 +1565,8 @@
         "archflow/state/operational_state.py",
         "archflow/state/stage_workflow.py",
         "archflow/relations/contracts.py",
-        "archflow/validation/contracts.py",
-        "archflow/evidence/claims.py",
+        "archflow/state/decision_operator.py",
+        "archflow/state/developed_design.py",
         "monkeyarch/runtime/project_runner.py",
         "archflow/ports/model.py"
       ],
@@ -1631,9 +1631,9 @@
       ],
       "used_by": [
         "archflow/relations/contracts.py",
-        "archflow/validation/contracts.py",
-        "archflow/evidence/claims.py",
-        "archflow/evidence/applicability.py"
+        "archflow/state/operational_state.py",
+        "archflow/state/geometry_program.py",
+        "monkeyarch/capabilities/wall_solver.py"
       ],
       "invariants": [
         "a tuple field must already be sorted and unique; the validator never sorts on the caller's behalf",
@@ -2101,8 +2101,7 @@
       ],
       "used_by": [
         "apps/archflow-studio/api/archflow_studio_api/application/binding.py",
-        "tests/integration/test_component_family_realization.py",
-        "tests/integration/test_multi_building_experiments.py"
+        "tests/test_project_location.py"
       ],
       "invariants": [
         "never creates directories and never writes state",
@@ -2571,7 +2570,7 @@
       "used_by": [
         "apps/archflow-studio/api/archflow_studio_api/application/binding.py",
         "apps/archflow-studio/api/archflow_studio_api/application/validation.py",
-        "archflow/contracts/branch.py",
+        "archflow/project/manifest.py",
         "archflow/contracts/fields.py",
         "archflow/project/containers.py",
         "archflow/project/layout.py",
@@ -3860,9 +3859,9 @@
         "archflow/state/state_record.py",
         "archflow/state/spatial.py",
         "archflow/state/developed_design.py",
-        "archflow/state/design_maturity.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/projection.py",
         "archflow/state/design_portfolio.py",
-        "archflow/state/site_context.py",
+        "tests/test_operational_markov_compiler.py",
         "archflow/state/stage_workflow.py",
         "archflow/state/decision_operator.py",
         "archflow/state/geometry_program.py",
@@ -5570,7 +5569,7 @@
         "GET /api/health and GET /api/protocol",
         "local-only GET/PUT user preferences at APPDATA/MonkeyArch/settings.json with shared HTTP/file validation and atomic replacement, served for MonkeyHub, which owns the settings authority and injects the resolved values into the runtime's launch environment",
         "Optional MonitoredCompiler host adapter: MONKEYMONITOR_DATA_DIR enables metadata-only recording of intent and structured Study model outcomes without changing its result or retrying a call",
-        "Managed stdin stop/EOF and additive process, parent process, launch instance and actual source revision health identity; optional prebuilt Studio web hosting",
+        "Managed stdin stop/EOF and additive process, parent process, launch instance and actual source revision health identity",
         "ApplicationSettingsDto and atomic local application configuration in the caller-selected Hub runtime root, separate from shared user preferences",
         "Reading the positive application-text intent context budget from ARCHFLOW_STUDIO_CONTEXT_BUDGET_TOKENS; preserving per-attempt provider usage and request-output outcomes through the existing optional Monitor adapter",
         "operator-configured actor authentication with explicit project read/propose/accept/release grants; shared-project service role excludes local computation; Runtime upstream settings contain no project authority",
@@ -7186,7 +7185,8 @@
         "POST /api/updates/check",
         "PUT /api/updates/settings",
         "GET /api/chat/sessions/{session_id}/attachments/{attachment_id}/model-source",
-        "GET /api/integrations"
+        "GET /api/integrations",
+        "ChatSuggestion via chat_present / ChatPresentationRequest; ChatPostRequest.suggestionSelection resolves one retained card into the existing native user-turn admission"
       ],
       "invariants": [
         "Hub construction never fabricates a Studio project or relaxes StudioSettings.project_dir",
@@ -7224,7 +7224,8 @@
         "Automatic project selection, chat and first Render entry attach and verify the Runtime without seeding authored modeling inputs; explicit Arch entry initializes only when the modeling projection is not ready, including after Render-first navigation",
         "A project watcher derives which work copies exist again only when the runs, their document records or the files in their copy workspaces change, compared on a wake and every 30 s without reading other records; a read forwarded to Studio never wakes it (#314)",
         "The Agent looks through visual_review only, never studio_request or studio_schema: one allowance per answered user message, its class fixed once a review is spent, more than two polish rounds only on the user's own words, a refusal spending nothing and an unanswered or failed call counted as spent",
-        "The idle project observer reads the retained history again only when the binding's read token (this process's write serial and the layout watch's fingerprint) moved or is not stable; asking walks nothing, and an observer that stops closes the binding, releasing the watch's handle on the project folder (#363)"
+        "The idle project observer reads the retained history again only when the binding's read token (this process's write serial and the layout watch's fingerprint) moved or is not stable; asking walks nothing, and an observer that stops closes the binding, releasing the watch's handle on the project folder (#363)",
+        "Suggestion cards remain source-turn/revision-bound ChatStore messages. Selecting the latest completed card records its reference before the ordinary provider turn; stale, repeated, cross-project, non-idle, archived and external selections cannot execute. Estimates without a basis stay unknown; a suggestion grants no tool, installation, spending or project-issue authority."
       ],
       "used_by": [
         "apps/monkeyhub/run.py",
@@ -7314,7 +7315,9 @@
         "apps/monkeyhub/web/workspaces/src/features/designTree/DesignTreeDetails.tsx",
         "apps/monkeyhub/web/workspaces/src/features/designTree/DesignTreeList.tsx",
         "apps/monkeyhub/web/workspaces/src/features/designTree/designTree.css",
-        "apps/monkeyhub/web/workspaces/src/features/designTree/fixture.ts"
+        "apps/monkeyhub/web/workspaces/src/features/designTree/fixture.ts",
+        "apps/monkeyhub/web/src/ChatSuggestionCard.tsx",
+        "apps/monkeyhub/web/src/ChatSuggestionCard.css"
       ],
       "tests": [
         "apps/monkeyhub/api/tests/test_monkeyhub_lifecycle.py",
@@ -7364,7 +7367,8 @@
         "apps/archflow-studio/api/tests/test_agent_drawing_dressing.py",
         "apps/monkeyhub/web/workspaces/test/errorBoundary.browser.mjs",
         "apps/monkeyhub/web/test/catalogs.test.ts",
-        "apps/monkeyhub/api/tests/test_integrations.py"
+        "apps/monkeyhub/api/tests/test_integrations.py",
+        "apps/monkeyhub/api/tests/test_chat_suggestions.py"
       ],
       "depends_on": [
         "project.repository",

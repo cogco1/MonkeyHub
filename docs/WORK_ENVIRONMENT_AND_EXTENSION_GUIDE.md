@@ -150,6 +150,16 @@ prism/planar-surface 的轮廓坐标支持参数引用；渐变截面形体可�
 保存在 Hub runtime 的 `chats/`，建筑输入与结果仍在项目根。共享工具箱的自动检索与执行仍待接入，
 开发源码时继续按上表查询 owner。新成员的实际试用仍应验证首次配置、一次真实候选以及同项目续改。
 
+**对话中的建议卡片：** 用户意图需要选择，或 Agent 想提出下一步时，可通过已有
+`chat_present` 的 `suggestion` 发布结构化卡片。先查询当前工具和需要的资料，再说明能得到什么、
+已有能力或需要评估的新能力、时间与费用；没有依据的估算留空，界面显示“待评估”。
+用户点“先做一版／先评估方案”后，保存的请求进入同一段对话，仍经过原有工具和权限流程。
+“调整想法”只补入草稿，“暂时跳过”不执行。明确且可直接完成的请求无需先弹卡片。
+卡片的依据、拟用工具、估算来源和将发送的请求默认折叠；外部来源对话只展示，继续工作仍回原来源。
+刷新不会重复执行，换轮次后的旧卡片需要重新确认。完整字段与边界见
+[对话建议协议](PROTOCOL.md#conversational-suggestions)。这条链复用 ChatStore，不建立另一套聊天、
+工具商店或预算系统。设计树和全局用量保留各自的主入口，项目资料卡与 Help 中重复的导航已移除。
+
 **与 Codex 的接入方式比较：** Codex 在启动时按固定位置发现
 [项目指令](https://learn.chatgpt.com/docs/agent-configuration/agents-md)，先呈现
 [技能名称与描述](https://learn.chatgpt.com/docs/build-skills)，选中后才读取正文；
@@ -363,8 +373,8 @@ work registry 只登记进行中的源码 claim；模块的 `canonical` 标签�
 | 跨项目汇报或一次性给人看的汇总包 | 操作方显式指定的项目外分发目录；必须带来源 project/run/ref 清单 | 分发副本，不是项目状态；当前没有受管 `output_root` |
 | 可重建下载、编译缓存 | 外部 `cache/` | 可删除 |
 | 一次性诊断缓冲 | 外部 `temp/` 或测试临时目录 | 可删除且不得作为证据 |
-| Studio 进程日志 | `apps/archflow-studio/.runtime/`（git ignored） | 本机诊断，不是项目证据 |
-| Web 同步和构建产物 | `apps/monkeyhub/web/workspaces/.generated/`、`dist/` | 可重建 |
+| 项目运行时进程日志 | Hub 运行根目录下的 `logs/studio-<instance-id>.log`（由 Hub 启动子进程时写入） | 本机诊断，不是项目证据 |
+| Web 同步和构建产物 | `apps/monkeyhub/web/.generated/`（同步资源）、`apps/monkeyhub/web/dist/`（构建产物），均 git ignored | 可重建 |
 
 **旧规则的分层修正。**
 早期工作区的 `GENERATION_RECORD_SPEC.md`（不在本仓库内）第八节原本把“预览模型、截图、审查包”统一

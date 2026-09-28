@@ -7,11 +7,14 @@ leaves behind, the Studio API for what an architect does - so the routes the
 check compares read the same kinds of records a real project holds. The
 content is invented: one portico, its module and some sketch pages.
 
-Run ids, candidate ids, stage labels, branch names and bytes are fixed. The API
-stamps reviews, stages and documents with the wall clock, so two generations
-are equal in structure (runs, record kinds and counts, the stage chain), not
-byte for byte; the check therefore generates once and copies that project for
-every process it starts.
+Run ids, candidate ids, stage labels, branch names and bytes are fixed, and so
+is what the product would take from the machine: the Studio stamps reviews,
+admissions, Stages and the working draft with the wall clock and random event
+ids, and the runner records how long each round took. While the scenario plays,
+those modules read a clock that starts at a fixed instant, ids from a seeded
+generator and a timer that advances a fixed step per reading, so two
+generations are identical byte for byte. The check still generates once and
+copies that project for every process it starts.
 """
 
 from __future__ import annotations
@@ -19,9 +22,15 @@ from __future__ import annotations
 import base64
 import contextlib
 import copy
+from datetime import datetime, timedelta, timezone
 from io import BytesIO
+import itertools
 from pathlib import Path
+import random
+import time
 from typing import Any, Iterator
+from unittest import mock
+import uuid
 
 from fastapi.testclient import TestClient
 from PIL import Image
@@ -29,11 +38,13 @@ from PIL import Image
 from archflow.project.refs import record_ref_from_uri
 from archflow.project.repository import FilesystemProjectRepository
 from archflow.state.state_record import StateRecordEditKind, StateRecordOperator
+from archflow_studio_api.application import design_history, working_draft
 from archflow_studio_api.application.binding import bound_project
 from archflow_studio_api.application.candidate import run_operator
 from archflow_studio_api.application.projection import project_state
 from archflow_studio_api.main import create_app
 from archflow_studio_api.settings import StudioSettings
+from monkeyarch.runtime import project_runner
 
 from . import support
 
@@ -47,6 +58,15 @@ STUDIO_RUNS = (REFERENCE_RUN_ID, "studio-admissions", "studio-candidate-reviews"
 # Three Stages on main and a fork with its own need six candidates; with the
 # four runs above and two document runs that is twelve.
 MIN_RUNS = 12
+# What the product stamps from the machine, fixed: the Studio's wall clock starts at
+# EPOCH and ticks a second per reading, its random event ids come from a generator
+# seeded with ID_SEED, and the runner's timer advances TIMER_STEP per reading, so a
+# measured duration counts readings instead of the machine's speed.
+EPOCH = datetime(2026, 9, 1, 9, 0, tzinfo=timezone.utc)
+ID_SEED = 376
+TIMER_STEP = 0.05
+# The modules that stamp an architect's acts with the wall clock and a random event id.
+STAMPING_MODULES = (design_history, working_draft)
 
 
 @contextlib.contextmanager
@@ -59,6 +79,43 @@ def _project_id(project_id: str) -> Iterator[None]:
         yield
     finally:
         support.PROJECT_ID = previous
+
+
+class _RunnerTime:
+    """The runner's ``time``: ``perf_counter`` advances ``TIMER_STEP`` per reading, the rest is real."""
+
+    def __init__(self) -> None:
+        self._readings = itertools.count()
+
+    def perf_counter(self) -> float:
+        return next(self._readings) * TIMER_STEP
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(time, name)
+
+
+@contextlib.contextmanager
+def _fixed_stamps() -> Iterator[None]:
+    """Give the modules that stamp records the fixed clock, event ids and runner timer."""
+
+    ticks = itertools.count()
+    ids = random.Random(ID_SEED)
+
+    class Clock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            moment = EPOCH + timedelta(seconds=next(ticks))
+            return moment.replace(tzinfo=None) if tz is None else moment.astimezone(tz)
+
+    def uuid4() -> uuid.UUID:
+        return uuid.UUID(int=ids.getrandbits(128), version=4)
+
+    with contextlib.ExitStack() as stack:
+        for module in STAMPING_MODULES:
+            stack.enter_context(mock.patch.object(module, "datetime", Clock))
+            stack.enter_context(mock.patch.object(module, "uuid4", uuid4))
+        stack.enter_context(mock.patch.object(project_runner, "time", _RunnerTime()))
+        yield
 
 
 def _payloads(project_id: str) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -200,7 +257,7 @@ def build_synthetic_project(parent: Path, project_id: str = "synthetic-bench", *
     candidates, documents = plan(runs)
     project_dir = Path(parent) / project_id
     record, seats = _payloads(project_id)
-    with _project_id(project_id):
+    with _project_id(project_id), _fixed_stamps():
         repository = FilesystemProjectRepository.initialize(
             project_dir, project_id=project_id,
             initial_state={"project_id": project_id, "version": 0},
