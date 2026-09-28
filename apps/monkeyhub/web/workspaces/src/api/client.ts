@@ -6,6 +6,8 @@
 
 import type { ServerConnection } from "./connection";
 import { renderCapabilitiesApiRenderCapabilitiesGet, listRenderJobsApiRenderJobsGet, createRenderJobApiRenderJobsPost, retainRenderViewApiRenderViewsPost } from "./generated";
+import { requestProjectionApiProjectionsGet, readProjectionBlobApiProjectionsBlobsSha256Get } from "./generated";
+import type { ProjectionStatusDto } from "./generated";
 import type { RenderCapabilitiesDto, RenderJobListDto, RenderJobDto, RenderRequestDto, RenderViewSourceRequestDto } from "./generated";
 import type { ElevationEditRequestDto } from "./generated";
 import type { SaveStudyRequestDto, StudyViewDto, ProposeStudyRequestDto } from "./generated";
@@ -527,6 +529,21 @@ export const createStudioClient = (connection: ServerConnection) => ({
       client: connection.client, path: { asset_sha256: source.assetSha256 },
       query: { runId: source.runId, stateDigest: source.stateDigest },
     }));
+  },
+
+  /**
+   * The projection cache's status for this exact model's thumbnail at `size` (#367): done with its blob's
+   * digest, or pending or error (show a placeholder). A miss queues it; the server checks the source every time.
+   */
+  projection(source: ModelSourceDto, size: number): Promise<ProjectionStatusDto> {
+    return call("GET /api/projections", requestProjectionApiProjectionsGet({ client: connection.client,
+      query: { runId: source.runId, stateDigest: source.stateDigest, assetSha256: source.assetSha256, size } }));
+  },
+
+  /** A projection's PNG, named by its own digest: immutable, so the browser keeps it for good. */
+  projectionBlob(sha256: string): Promise<Blob> {
+    return call<Blob>(`GET /api/projections/blobs/${sha256}`, readProjectionBlobApiProjectionsBlobsSha256Get({
+      client: connection.client, path: { sha256 }, parseAs: "blob" }) as Promise<FieldsResult<Blob>>);
   },
 
   async retainRenderView(body: Omit<RenderViewSourceRequestDto, "pngBase64">, png: Blob): Promise<SourceDocumentDto> {

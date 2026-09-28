@@ -18,7 +18,9 @@ random id). Nothing is written; retained drawings stay with
 from __future__ import annotations
 
 from dataclasses import dataclass
+import hashlib
 from importlib import metadata
+import inspect
 from io import BytesIO
 import math
 from typing import Any, Mapping, Sequence
@@ -26,8 +28,7 @@ from typing import Any, Mapping, Sequence
 from archflow.adapters.cad_execution import StepEntry
 from archflow.adapters.occt_backend import OcctBackendError, tessellate_shape
 
-#: Changes whenever the pixels this module draws for the same input change.
-RENDERER_VERSION = "mesh-lines-1"
+RENDERER_NAME = "mesh-lines"
 #: Adjacent triangles meeting at more than this angle draw their shared edge.
 CREASE_DEGREES = 30.0
 #: The angular deflection each face is triangulated with, in radians.
@@ -72,6 +73,24 @@ class ObjectMesh:
     triangles: tuple[tuple[int, int, int], ...]
 
 
+def _renderer_version() -> str:
+    """The renderer's name and a digest of the source of everything that reads or draws the shapes.
+
+    Derived, never bumped by hand (#367): editing this module's drawing
+    functions, the tessellation (``tessellate_shape``) or the model reader
+    (``read_elevation_source``) gives every projection a new key.
+    """
+
+    from monkeydiagram import drawing_elevation
+
+    functions = (tessellate_shape, drawing_elevation.read_elevation_source, drawing_elevation._read_native_source,
+                 triangulate, _clean, _welded, _feature_edges, _expand, _depth_buffer, mesh_line_view)
+    digest = hashlib.sha256()
+    for function in functions:
+        digest.update(inspect.getsource(function).encode("utf-8"))
+    return f"{RENDERER_NAME}-{digest.hexdigest()[:12]}"
+
+
 def mesh_pipeline() -> dict[str, Any]:
     """Every setting of this module and library that changes the pixels drawn for the same input.
 
@@ -105,6 +124,7 @@ def triangulate(entries: Sequence[StepEntry], object_ids: Sequence[str], *, line
     meshes, skipped = [], []
     for entry in sorted((entry for entry in entries if entry.name in wanted), key=lambda entry: entry.name):
         try:
+            _clean(entry.shape)
             vertices, triangles = tessellate_shape(entry.shape, linear_deflection=linear_deflection,
                                                    angular_deflection=ANGULAR_DEFLECTION)
         except OcctBackendError:
@@ -112,6 +132,20 @@ def triangulate(entries: Sequence[StepEntry], object_ids: Sequence[str], *, line
             continue
         meshes.append(ObjectMesh(entry.name, tuple(vertices), tuple(triangles)))
     return tuple(meshes), tuple(skipped)
+
+
+def _clean(shape) -> None:
+    """Forget a triangulation the shape already holds.
+
+    OCCT keeps a finer mesh when asked for a coarser one, so a model loaded
+    once and drawn at 1024 px and then 512 px would draw the 512 px picture
+    from the finer mesh. Cleaning first makes the bytes depend on the size
+    alone, not on what was drawn before.
+    """
+
+    from OCP.BRepTools import BRepTools
+
+    BRepTools.Clean_s(shape)
 
 
 def _welded(np, vertices, triangles, tolerance):
@@ -306,3 +340,7 @@ def mesh_line_view(
     buffer = BytesIO()
     picture.save(buffer, format="PNG", pnginfo=info, compress_level=_PNG_COMPRESS_LEVEL)
     return MeshLineView(buffer.getvalue(), width, height, triangle_count, drawn)
+
+
+#: Changes whenever the pixels this module draws for the same input change: derived from the source.
+RENDERER_VERSION = _renderer_version()

@@ -18,7 +18,10 @@ the index has loaded.
 After each commit that moved the revision, and after the first load, the
 keeper tells the listeners registered for its project (``add_commit_listener``)
 where the index stands and which domains moved: a hint for clients to read the
-changes, never the changes themselves (#366).
+changes, never the changes themselves (#366). The projection queue's commits
+(a projection done, ``projections``) are announced the same way, from the
+queue's thread, the moment they land (#367); every announcement names the
+domains of all commits since the last one.
 
 A reader asks ``state`` (one attribute read) whether the index answers yet,
 and ``readable`` whether it has applied every write this process made; it
@@ -133,6 +136,9 @@ class IndexKeeper:
         self._thread: threading.Thread | None = None
         self._remove_observer: Callable[[], None] | None = None
         self._remove_listener: Callable[[], None] | None = None
+        # One announcement at a time, from the keeper's thread or the projection queue's.
+        self._announcing = threading.Lock()
+        index.projection_listener = self._projections_committed
         # What the keeper has done, for tests and diagnostics.
         self.applies = 0
         self.failure: str | None = None
@@ -389,17 +395,36 @@ class IndexKeeper:
         self.index.rebuild(sighting.lines, sighting.scanned_at_ns)
 
     def _publish(self, serial: int, sighting: LayoutSighting) -> None:
-        token = self.index.token
-        if token is None:
-            raise IndexUnavailable("the project index closed")
-        with self._changed:
-            self._state = IndexState(token, serial, sighting.layout.fingerprint.digest, sighting.layout.generation)
-            self._changed.notify_all()
-        if token != self._announced:
-            # The first load is announced whatever it found: a client that
-            # asked while the index was loading was refused, and reads now.
-            commit = self.index.last_commit
-            domains = commit.domains if commit is not None and commit.token == token and self._announced is not None \
-                else frozenset({"reset"})
-            self._announced = token
-            _announce(self._root, IndexCommit(token, domains))
+        with self._announcing:
+            token = self.index.token
+            if token is None:
+                raise IndexUnavailable("the project index closed")
+            with self._changed:
+                self._state = IndexState(token, serial, sighting.layout.fingerprint.digest, sighting.layout.generation)
+                self._changed.notify_all()
+            self._announce_locked(token)
+
+    def _projections_committed(self) -> None:
+        """The projection queue committed (a projection is done): announce it now, whatever the keeper is doing."""
+
+        with self._announcing:
+            token = self.index.token
+            if token is None or self._announced is None:
+                return  # not loaded yet: the first load announces everything
+            with self._changed:
+                state = self._state
+                if state is not None and state.token != token:
+                    self._state = IndexState(token, state.serial, state.digest, state.generation)
+                    self._changed.notify_all()
+            self._announce_locked(token)
+
+    def _announce_locked(self, token: IndexToken) -> None:
+        if token == self._announced:
+            return
+        # The first load is announced whatever it found: a client that
+        # asked while the index was loading was refused, and reads now.
+        domains = self.index.take_committed()
+        if self._announced is None or not domains:
+            domains = frozenset({"reset"})
+        self._announced = token
+        _announce(self._root, IndexCommit(token, domains))

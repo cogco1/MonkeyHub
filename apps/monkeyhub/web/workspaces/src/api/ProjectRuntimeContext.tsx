@@ -83,13 +83,17 @@ export function useProjectStore<T>(selector: (state: ProjectStoreState) => T): T
   return useSyncExternalStore(store.subscribe, () => selector(store.getSnapshot()));
 }
 
+/** Every entity but the projection cache's thumbnails (#367), which no view is read from. */
+const viewsShow = (id: string) => !id.startsWith("projections:");
+
 /**
  * Where the project index stands, as one key (`<epoch>:<revision>`), or null
  * before the store has read it (outside the Hub it never does). A surface
- * reads its views again when this moves, and never on a timer.
+ * reads its views again when this moves, and never on a timer. A thumbnail
+ * drawn in the background does not move it.
  */
 export function useProjectRevision(): string | null {
-  return useProjectStore((state) => state.epoch === null ? null : `${state.epoch}:${state.revision}`);
+  return useProjectStore((state) => movedAt(state, viewsShow));
 }
 
 /**
