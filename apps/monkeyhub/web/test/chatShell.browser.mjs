@@ -131,6 +131,8 @@ let settings = { projectDir: "D:\\fixture\\A", referenceRun: null, cadExport: "o
 let preferences = { language: "en", theme: "light", fontScale: 1 };
 // GH-302: settings save themselves; a test holds one write to see what waits for it.
 let settingsWriteGate = null;
+// #438: a test holds the launch settings read so they arrive after a conversation opened.
+let settingsReadGate = null;
 const initialProjects = () => [
   { projectId: "A", projectDir: "D:\\fixture\\A", name: "Project A", chatCount: 0, version: 3, stage: "S2" },
   { projectId: "B", projectDir: "D:\\fixture\\B", name: "Project B", chatCount: 0, version: 0, stage: null },
@@ -308,7 +310,10 @@ const hubApi = async (route) => {
     if (url.pathname === "/api/rates") return json({ rates: [] });
     return json({ paths: ["D:\\fixture\\usage.jsonl"] });
   }
-  if (url.pathname === "/api/settings/apps") { if (method === "PUT") settings = data(); return json(settings); }
+  if (url.pathname === "/api/settings/apps") {
+    if (method === "PUT") settings = data(); else if (settingsReadGate) await settingsReadGate;
+    return json(settings);
+  }
   if (url.pathname === "/api/credentials") return json(["gemini", "coding-plan"].map((id) => ({ id, configured: false, source: null, variable: null, saved: false, storeAvailable: true })));
   if (url.pathname === "/api/settings/user") {
     if (method === "PUT") { const body = data(); if (settingsWriteGate) await settingsWriteGate; preferences = body; }
@@ -3114,6 +3119,28 @@ try {
   uploadedAttachments.set("external-svg", { sessionId: externalSession.id, name: "diagram.svg", mimeType: "image/svg+xml", data: Buffer.from("<svg></svg>").toString("base64") });
   sessions.unshift(externalSession);
   const beforeExternalTurns = writes.filter(([, name]) => /\/(messages|stop|model)$/.test(name)).length;
+  // #438: the saved launch settings can arrive after an external conversation has opened. Taking
+  // them used to clear the open conversation until the next read, and its composer came back.
+  let releaseSettingsRead; settingsReadGate = new Promise((resolve) => { releaseSettingsRead = resolve; });
+  await page.goto(`${origin}/?chatId=${externalSession.id}`);
+  await page.locator(".chat-header h1").filter({ hasText: "Exterior review" }).waitFor();
+  await page.locator(".chat-external-notice").waitFor();
+  await page.evaluate(() => {
+    const look = () => { if (document.getElementById("chat-input")) window.composerSeen = true; };
+    window.composerSeen = false; look();
+    new MutationObserver(look).observe(document.body, { childList: true, subtree: true });
+  });
+  const conversationRead = (response) => new URL(response.url()).pathname === `/api/chat/sessions/${externalSession.id}`;
+  let settingsArrived = false;
+  const settingsRead = page.waitForResponse((response) => (settingsArrived ||= new URL(response.url()).pathname === "/api/settings/apps"));
+  const readAfterSettings = page.waitForResponse((response) => settingsArrived && conversationRead(response));
+  settingsReadGate = null; releaseSettingsRead();
+  await settingsRead; await readAfterSettings;
+  // A runtime event reads the conversation again too.
+  const readAfterEvent = page.waitForResponse(conversationRead);
+  emitRuntime(); await readAfterEvent;
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  assert.equal(await page.evaluate(() => window.composerSeen), false, "an external conversation never shows a composer while it is read again");
   await page.goto(`${origin}/?chatId=${externalSession.id}`);
   await page.locator(".chat-header h1").filter({ hasText: "Exterior review" }).waitFor();
   await page.locator(".chat-external-notice").getByText("External conversation", { exact: true }).waitFor();

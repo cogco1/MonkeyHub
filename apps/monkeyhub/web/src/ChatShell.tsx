@@ -817,12 +817,14 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
     return () => window.clearInterval(timer);
   }, [providers]);
   useEffect(() => {
+    // Only opening another chat clears the one shown. The read below is re-created when the saved
+    // launch settings arrive; clearing then emptied an open chat, and an external one showed a composer (#438).
     setChat(null); setError(null);
     // Reopening a chat shows its turns folded and lands at its latest message.
     setExpandedTurns(new Set()); openingChat.current = chatId; followLatest.current = true; jumping.current = false;
     setLatest({ away: false, unseen: 0 });
-    void refresh();
-  }, [chatId, refresh]);
+  }, [chatId]);
+  useEffect(() => { void refresh(); }, [chatId, refresh]);
   useEffect(() => { void refresh(); }, [archivedView, refresh]);
   useEffect(() => { if (!chatId) { setDraftModel(defaults.model); setCustomModel(null); } }, [chatId, defaults.model]);
   useEffect(() => {
