@@ -105,7 +105,6 @@
 .chat-project-card__status li[data-state="stale"]::before { content: "⚠ "; color: var(--accent); }
 .chat-project-card__status li[data-state="running"]::before { content: "↻ "; }
 /* #302: the card's one link to the Design Tree, where its work lines went. */
-.chat-project-card__tree { margin-top: 10px; min-height: 32px; padding: 6px 10px; }
 
 /* GH-285: a turn's tool calls as one folded row, and the jump back to the latest message. */
 .chat-process{min-width:0;font-size:var(--text-caption);color:var(--muted)}

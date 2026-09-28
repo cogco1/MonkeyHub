@@ -19,6 +19,7 @@
         "apps/monkeyhub/api/tests/test_chat_presentation.py",
         "apps/monkeyhub/api/tests/test_chat_suggestions.py",
         "apps/monkeyhub/web/src/ChatShell.tsx",
+        "apps/monkeyhub/web/src/ChatShell.css",
         "apps/monkeyhub/web/src/ChatSuggestionCard.tsx",
         "apps/monkeyhub/web/src/ChatSuggestionCard.css",
         "apps/monkeyhub/web/src/chatProcess.ts",
