@@ -29,6 +29,7 @@
             "apps/archflow-studio/api/archflow_studio_api/application/intent_context.py",
             "apps/archflow-studio/api/archflow_studio_api/application/intent_requests.py",
             "apps/archflow-studio/api/archflow_studio_api/application/catalog.py",
+            "apps/archflow-studio/api/archflow_studio_api/transport/intent.py",
             "apps/archflow-studio/api/archflow_studio_api/transport/proposal.py",
             "apps/archflow-studio/api/archflow_studio_api/transport/candidate.py",
             "apps/archflow-studio/api/archflow_studio_api/transport/compare.py",
