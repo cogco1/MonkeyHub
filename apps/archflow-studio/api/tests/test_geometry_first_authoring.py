@@ -8,7 +8,11 @@ same component, its elements and their dependencies.
 """
 from __future__ import annotations
 
+import json
+import os
 from pathlib import Path
+import subprocess
+import sys
 import tempfile
 import time
 import unittest
@@ -25,6 +29,44 @@ from archflow_studio_api.main import create_app
 from archflow_studio_api.settings import StudioSettings
 
 PROJECT_ID = "geometry-first"
+API_ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = API_ROOT.parents[2]
+
+# Run in a fresh interpreter by the cold-reopen test: open the project from disk,
+# read the run it names, and continue editing it through the public routes.
+REOPEN_AND_CONTINUE = """
+import json, sys, time
+from fastapi.testclient import TestClient
+from archflow_studio_api.main import create_app
+from archflow_studio_api.settings import StudioSettings
+
+project, project_id, run = sys.argv[1:4]
+
+class NoModel:
+    def compile(self, *args, **kwargs):
+        raise AssertionError("direct authoring cannot call a model")
+
+with TestClient(create_app(StudioSettings(cad_export="off", project_dir=project))) as client:
+    assert client.post("/api/project/modeling", json={"projectId": project_id}).status_code == 200
+    client.app.state.intent_compiler = NoModel()
+    state = client.get(f"/api/state?run={run}").json()
+    proposal = client.post("/api/proposals/sketch", json={
+        "stateDigest": state["stateDigest"], "sourceRunId": run,
+        "sketches": [{"componentId": "canopy", "elementId": "canopy-face", "profile": [[0, 0], [2, 0], [2, 2], [0, 2]],
+                      "height": 0, "parentComponentId": "model", "baseDatum": "mass-body-top"}]})
+    assert proposal.status_code == 201, proposal.text
+    started = client.post(f"/api/proposals/{proposal.json()['proposalId']}/candidate")
+    assert started.status_code == 202, started.text
+    accepted = started.json()
+    deadline = time.monotonic() + 240
+    while time.monotonic() < deadline:
+        job = client.get(f"/api/jobs/{accepted['jobId']}").json()
+        if job["status"] in ("succeeded", "failed"):
+            break
+        time.sleep(0.05)
+    assert job["status"] == "succeeded", job
+    print(json.dumps({"stateDigest": state["stateDigest"], "candidateId": accepted["candidateId"]}))
+"""
 SQUARE = [[0, 0], [4, 0], [4, 3], [0, 3]]
 
 
@@ -254,6 +296,62 @@ class GeometryFirstAuthoringTests(unittest.TestCase):
         self.assertEqual({(edge.upstream_ref, edge.downstream_ref) for edge in after.dependency_edges()}, edges)
         # The rest stays generic: naming one part names nothing else.
         self.assertIsNone(component_semantics(after.entity("mass")))
+
+    def run_records(self, run_id: str) -> list[dict]:
+        refs = self.repository.list_json(run=self.repository.load_run(run_id), destination=PersistenceDestination(
+            PersistenceArea.RUN_RECORD, run_id=run_id))
+        return [self.repository.load_json(ref) for ref in refs]
+
+    def assert_nothing_spatial_was_made_up(self, run_id: str) -> None:
+        """#402: no placeholder level/block/zone/program node reaches a run's records or bindings."""
+
+        records = self.run_records(run_id)
+        text = json.dumps(records, sort_keys=True)
+        for placeholder in ("record-zone", "program-node:record", "assumption:state-record-view"):
+            self.assertNotIn(placeholder, text, placeholder)
+        schemas = {payload.get("schema") for payload in records}
+        self.assertTrue({"SeatAuthoringContext@1", "RunnerRunReceipt@3"} <= schemas, schemas)
+        receipt = next(payload for payload in records if payload.get("schema") == "RunnerRunReceipt@3")
+        # no spatial option or developed state is retained for a record that declares none
+        self.assertIsNone(receipt["spatial_option_ref"])
+        self.assertIsNone(receipt["design_state_ref"])
+        for payload in records:
+            if payload.get("schema") == "SeatAuthoringContext@1":
+                self.assertEqual(payload["base_state_digest"], receipt["design_state_digest"])
+                for component in payload["components"]:
+                    self.assertEqual(component["volume_ids"], [], component["component_id"])   # no fixed-bounds block
+        record = self.retained(run_id)
+        self.assertFalse([e.schema for e in record.entities if e.schema in ("Volume@1", "Space@1", "MassingLevel@1")])
+
+    def test_geometry_only_record_runs_saves_reopens_and_continues_without_made_up_space(self) -> None:
+        """#402 acceptance: create -> compile -> save -> cold reopen -> continue, through the public routes."""
+
+        first = self.sketch_generic_forms()
+        self.assert_nothing_spatial_was_made_up(first)
+        state = self.state(first)
+        self.assertTrue(state["stateDigest"])
+        before = self.retained(first)
+
+        # Cold reopen: a new process over the same project directory, reading only what was retained,
+        # reopens the project and continues editing it. Nothing of this process's memory crosses.
+        self.client.__exit__(None, None, None)
+        env = {**os.environ, "PYTHONPATH": os.pathsep.join((str(REPO_ROOT), str(API_ROOT), os.environ.get("PYTHONPATH", "")))}
+        completed = subprocess.run([sys.executable, "-c", REOPEN_AND_CONTINUE, str(self.project), PROJECT_ID, first],
+                                   capture_output=True, text=True, env=env, timeout=300)
+        self.assertEqual(completed.returncode, 0, completed.stderr[-4000:])
+        reopened = json.loads(completed.stdout.strip().splitlines()[-1])
+        self.assertEqual(reopened["stateDigest"], state["stateDigest"], "the retained binding reads back unchanged")
+        second = reopened["candidateId"]
+        self.assert_nothing_spatial_was_made_up(second)
+        self.client = TestClient(create_app(StudioSettings(cad_export="off", project_dir=self.project)))
+        self.client.__enter__()
+        self.addCleanup(self.client.__exit__, None, None, None)
+        self.assertEqual(self.client.post("/api/project/modeling", json={"projectId": PROJECT_ID}).status_code, 200)
+        after = self.retained(second)
+        self.assertEqual(after.entity("mass-body").to_dict(), before.entity("mass-body").to_dict())
+        self.assertEqual(after.entity("canopy-face").fields["producer"], "planar-surface")
+        self.assertIsNone(component_semantics(after.entity("canopy")))
+        self.assertNotEqual(self.state(second)["stateDigest"], state["stateDigest"])
 
     def test_the_agent_schema_leaves_semantic_kind_optional(self) -> None:
         edit = response_schema(strict=False)["properties"]["semanticEdit"]["anyOf"][1]

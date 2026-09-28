@@ -299,13 +299,19 @@ def _placed_on_axis(payload: dict) -> dict:
 def _unviewable(payload: dict) -> dict:
     """A record the kernel parses and refuses to build a bound view for.
 
-    A record with no declared option: the record itself accepts that (an
-    option is optional), and ``developed_design_view`` refuses it because it
-    has no option id to name the design it is a view of. The entities — the
-    level, the axis and the elements — are untouched, which is the point.
+    Components that cite no source in a record that states no evidence: the
+    record itself accepts that, and ``developed_design_view`` refuses it
+    because its component tree would cite nothing. (A record without an
+    option or massing is bound as itself since #402, so that is no longer a
+    refusal.) The level, the axis and the elements are untouched, which is
+    the point.
     """
 
-    return {key: value for key, value in payload.items() if key != "option"}
+    return {**payload, "evidence_refs": [], "entities": [
+        {**entity, "fields": {k: v for k, v in entity["fields"].items() if k != "source_refs"}}
+        if entity["schema"] == "Component@1" else entity
+        for entity in _entities(payload)
+    ]}
 
 
 if __name__ == "__main__":

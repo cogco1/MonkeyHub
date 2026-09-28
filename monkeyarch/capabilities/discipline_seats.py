@@ -29,6 +29,7 @@ from archflow.state.developed_design import (
 )
 from archflow.state.geometry_program import InterfaceDatum, ProjectGrids, ProjectLevels, verify_project_datums
 from archflow.state.spatial import DesignComponent, SpatialOptionProposal
+from archflow.state.state_record import RecordBinding
 from archflow.contracts.canonical import canonical_digest, canonical_json
 
 _RECORD_AUTHORITY = (
@@ -110,14 +111,32 @@ class SeatSpec:
         }
 
 
-def _components(proposal: SpatialOptionProposal) -> dict[str, DesignComponent]:
-    if not isinstance(proposal, SpatialOptionProposal):
-        raise SeatError("proposal must be a SpatialOptionProposal")
-    return {item.component_id: item for item in proposal.components}
+ComponentTree = SpatialOptionProposal | tuple[DesignComponent, ...]
+
+
+def _components(tree: ComponentTree) -> dict[str, DesignComponent]:
+    """The component tree of a declared spatial option, or a record's own tree as given."""
+
+    if isinstance(tree, SpatialOptionProposal):
+        return {item.component_id: item for item in tree.components}
+    if isinstance(tree, tuple) and all(isinstance(item, DesignComponent) for item in tree):
+        return {item.component_id: item for item in tree}
+    raise SeatError("a component tree is a SpatialOptionProposal or a tuple of DesignComponent")
+
+
+def design_tree(design_state: object) -> tuple[DesignComponent, ...]:
+    """The component tree a design state executes: the record's own for a
+    ``RecordBinding``, the declared spatial option's for a developed state."""
+
+    if isinstance(design_state, RecordBinding):
+        return tuple(sorted(design_state.components, key=lambda item: item.component_id))
+    if isinstance(design_state, DevelopedDesignState):
+        return tuple(design_state.selected_schematic.option.proposal.components)
+    raise SeatError("design_state must be a RecordBinding or a DevelopedDesignState")
 
 
 def owned_subtree(
-    proposal: SpatialOptionProposal, roots: tuple[str, ...]
+    proposal: ComponentTree, roots: tuple[str, ...]
 ) -> tuple[str, ...]:
     """Every component under the roots, roots included, sorted."""
 
@@ -140,7 +159,7 @@ def owned_subtree(
 
 
 def ancestors(
-    proposal: SpatialOptionProposal, ids: tuple[str, ...]
+    proposal: ComponentTree, ids: tuple[str, ...]
 ) -> tuple[str, ...]:
     """Every strict ancestor of the given components, sorted."""
 
@@ -266,7 +285,7 @@ def compile_handover(
     *,
     from_seat: SeatSpec,
     to_seat: SeatSpec,
-    design_state: DevelopedDesignState,
+    design_state: DevelopedDesignState | RecordBinding,
     published_datums: tuple[InterfaceDatum, ...] = (),
     program_bindings=(),
     realized_bounds: Mapping[str, Bounds] | None = None,
@@ -278,16 +297,17 @@ def compile_handover(
     from-seat owns; exclusion bounds for owned objects the caller has
     realized bounds for; every OPEN obligation in the to-seat's
     disciplines. Nothing else crosses — in particular no provider text.
+
+    ``design_state`` is what the run executes (``developed_design_view``):
+    a record without declared massing hands over from its own component
+    tree and states no obligation it does not carry.
     """
 
     if not isinstance(from_seat, SeatSpec) or not isinstance(to_seat, SeatSpec):
         raise SeatError("seats must be SeatSpec")
     if from_seat.reviewer:
         raise SeatError("a reviewer seat hands nothing over")
-    if not isinstance(design_state, DevelopedDesignState):
-        raise SeatError("design_state must be DevelopedDesignState")
-    proposal = design_state.selected_schematic.option.proposal
-    owned_components = owned_subtree(proposal, from_seat.owned_component_ids)
+    owned_components = owned_subtree(design_tree(design_state), from_seat.owned_component_ids)
     owned_objects = _owned_objects(program_bindings, owned_components)
     publishers = set(owned_components) | set(owned_objects)
     digests = dict(object_digests or {})
@@ -471,7 +491,7 @@ class SeatAuthoringContext:
 def project_seat_context(
     *,
     seat: SeatSpec,
-    design_state: DevelopedDesignState,
+    design_state: DevelopedDesignState | RecordBinding,
     inherited_commitment_refs: tuple[str, ...],
     handovers: tuple[SeatHandover, ...] = (),
     project_levels: ProjectLevels | None = None,
@@ -480,7 +500,9 @@ def project_seat_context(
     """Project the design state onto one seat; sibling subtrees never leak.
 
     Project levels and grids (P098) enter every seat's context as
-    datums: a seat binds to them, it never restates them.
+    datums: a seat binds to them, it never restates them. The component
+    tree is the one the run executes (``design_tree``): a record without
+    declared massing is projected from its own components (#402).
     """
 
     if project_levels is not None and not isinstance(project_levels, ProjectLevels):
@@ -492,8 +514,7 @@ def project_seat_context(
         raise SeatError("seat must be SeatSpec")
     if seat.reviewer:
         raise SeatError("a reviewer seat has no authoring context")
-    if not isinstance(design_state, DevelopedDesignState):
-        raise SeatError("design_state must be DevelopedDesignState")
+    tree = design_tree(design_state)
     phase = design_state.active_phase
     if phase not in seat.phases:
         raise SeatError(
@@ -511,11 +532,10 @@ def project_seat_context(
             )
         if handover.base_state_digest != design_state.state_digest:
             raise SeatError("handover was compiled against another design state")
-    proposal = design_state.selected_schematic.option.proposal
-    owned = owned_subtree(proposal, seat.owned_component_ids)
-    visible = tuple(sorted(set(owned) | set(ancestors(proposal, owned))))
+    owned = owned_subtree(tree, seat.owned_component_ids)
+    visible = tuple(sorted(set(owned) | set(ancestors(tree, owned))))
     components = tuple(
-        item for item in proposal.components if item.component_id in set(visible)
+        item for item in tree if item.component_id in set(visible)
     )
     refs = tuple(inherited_commitment_refs)
     if tuple(sorted(set(refs))) != refs:

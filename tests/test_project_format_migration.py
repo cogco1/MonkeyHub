@@ -67,6 +67,7 @@ from archflow.state.spatial import (
     SpatialOptionProposal,
 )
 from archflow.state.state_record import RECORD_BINDING_PHASE, developed_design_view
+from tests.support import authored_record
 from tests.test_state_record import _record as state_record_fixture
 from archflow.state.stage_workflow import (
     CompositeStageClosureReceipt,
@@ -1310,8 +1311,10 @@ class ProjectFormatPlannerTests(unittest.TestCase):
             destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=name),
             record_kind=SEAT_3DM_INSPECTION, payload=inspection.to_dict(),
         )
+        # Only a record that declares its massing has a developed state and a
+        # selected spatial option to retain (#402).
         state = developed_design_view(
-            replace(state_record_fixture(), project_id=run.project_id),
+            replace(authored_record(), project_id=run.project_id),
             run=RunRef(run.project_id, name, head),
             evidence_ref="reading:detail-review", phase=RECORD_BINDING_PHASE,
         )

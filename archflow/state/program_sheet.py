@@ -466,7 +466,7 @@ def compile_sheet_operator(
             "from the record before sending it back"
         )
     if (
-        str(declared_state) != record.state_digest
+        not record.cites_state(str(declared_state))
         or str(declared_record) != record.digest
     ):
         raise ProgramSheetError("program sheet exact base is stale")

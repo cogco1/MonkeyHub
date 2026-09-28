@@ -29,7 +29,9 @@ from archflow.project.record_kinds import RUNNER_RUN_RECEIPT, STATE_RECORD_EQUIV
 from archflow.project.refs import parse_record_file_name
 from archflow.project.repository import FilesystemProjectRepository
 from archflow.state.stage_workflow import DesignPhase
-from tests.test_project_runner import DECLARED_LIVE_IDENTITY, _ladder_project, _run_opened_stage, _seats
+from archflow.project.inputs import load_authored_record
+from archflow.state.state_record import legacy_state_digest
+from tests.test_project_runner import DECLARED_LIVE_IDENTITY, _geometry_only, _ladder_project, _options, _record, _run_opened_stage, _seats
 from tools import verify_state_record
 from tools.open_stage_run import open_stage_run
 
@@ -37,7 +39,7 @@ REFERENCE_RUN = "stage-0-001"
 EQUIVALENCE_RUN = "equivalence-001"
 
 
-def _reference_project(root: Path, phase: DesignPhase) -> tuple[FilesystemProjectRepository, dict]:
+def _reference_project(root: Path, phase: DesignPhase, record=None) -> tuple[FilesystemProjectRepository, dict]:
     """A temporary P036 project whose WIP record ran one stage in ``phase``, with a seat pack admitted only in that phase.
 
     The seat pack is the same seats the runner suite hands the reference run,
@@ -47,7 +49,7 @@ def _reference_project(root: Path, phase: DesignPhase) -> tuple[FilesystemProjec
     runner retained.
     """
 
-    repository, workflow_ref = _ladder_project(root, (phase,))
+    repository, workflow_ref = _ladder_project(root, (phase,), record=record)
     seat_pack = repository.layout.seat_pack
     seat_pack.parent.mkdir(parents=True, exist_ok=True)
     seat_pack.write_text(json.dumps({
@@ -166,6 +168,47 @@ class VerifyStateRecordPhaseTests(unittest.TestCase):
         self.assertEqual(equivalence["reference_phase"], "design_development")
         self.assertEqual(receipt["stage"]["phase"], "design_development")
         self.assertEqual(equivalence["reference_state_digest"], reference["design_state_digest"])
+
+
+class VerifyStateRecordLegacyDigestTests(unittest.TestCase):
+    """#402: a geometry-only reference run retained before the change cites the retired placeholder's digest."""
+
+    def setUp(self) -> None:
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name) / "demo"
+        self.repository, self.reference = _reference_project(self.root, DesignPhase.DESIGN_DEVELOPMENT, record=_geometry_only(_record()))
+        self.receipt_path = _only(Path(self.repository.layout.run(REFERENCE_RUN).records), RUNNER_RUN_RECEIPT)
+
+    def _cite(self, digest: str) -> None:
+        # what main's runner retained for the same record: its receipt names the placeholder digest
+        receipt = json.loads(self.receipt_path.read_text(encoding="utf-8"))
+        receipt["design_state_digest"] = digest
+        self.receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+
+    def test_the_retired_digest_of_the_same_record_is_recognized_exactly(self) -> None:
+        run = self.repository.load_run(REFERENCE_RUN)
+        options = _options()
+        record = load_authored_record(self.repository).record.bound_to(run)
+        legacy = legacy_state_digest(record, run=run, phase=DesignPhase.DESIGN_DEVELOPMENT, portfolio_id=options.portfolio_id,
+                                     branch_id=options.branch_id, selection_decision_ref=options.selection_decision_ref)
+        self.assertNotEqual(legacy, self.reference["design_state_digest"])
+        self._cite(legacy)
+
+        code, printed = _verify(self.root)
+
+        self.assertEqual(code, 0, printed)
+        records = Path(self.repository.layout.run(EQUIVALENCE_RUN).records)
+        equivalence = json.loads(_only(records, STATE_RECORD_EQUIVALENCE).read_text(encoding="utf-8"))
+        self.assertTrue(equivalence["state_digest_equal"], equivalence)                      # main said true; so does the branch
+        self.assertEqual(equivalence["reference_state_digest"], legacy)
+
+    def test_any_other_digest_is_still_unequal(self) -> None:
+        self._cite("0" * 64)
+        _verify(self.root)
+        records = Path(self.repository.layout.run(EQUIVALENCE_RUN).records)
+        equivalence = json.loads(_only(records, STATE_RECORD_EQUIVALENCE).read_text(encoding="utf-8"))
+        self.assertFalse(equivalence["state_digest_equal"], equivalence)
 
 
 class VerifyStateRecordCadBackendTests(unittest.TestCase):
