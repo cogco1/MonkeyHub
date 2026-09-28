@@ -1,45 +1,4 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": [
-    {
-      "id": "GH-367",
-      "lanes": [
-        {
-          "id": "projection-3b",
-          "status": "active",
-          "branch": "codex/367-projection-3b",
-          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-367-projection-3b",
-          "base_ref": "a1df9b2b",
-          "contributor": "Claude",
-          "reviewer": "Claude root task",
-          "handoff": "cloud session; master integrates",
-          "modules": [
-            "studio.artifacts",
-            "project.index",
-            "adapters.mesh_views",
-            "hub.shell"
-          ],
-          "write_scope": [
-            "archflow/project/index/",
-            "monkeydiagram/mesh_views.py",
-            "apps/archflow-studio/api/archflow_studio_api/application/projections.py",
-            "apps/archflow-studio/api/archflow_studio_api/routes/projections.py",
-            "apps/archflow-studio/api/archflow_studio_api/transport/projections.py",
-            "apps/archflow-studio/api/archflow_studio_api/application/index.py",
-            "apps/archflow-studio/api/archflow_studio_api/application/drawings.py",
-            "apps/archflow-studio/api/archflow_studio_api/main.py",
-            "apps/archflow-studio/api/archflow_studio_api/settings.py",
-            "apps/monkeyhub/web/workspaces/src/features/designTree/",
-            "apps/monkeyhub/web/workspaces/src/features/artifacts/",
-            "apps/monkeyhub/web/workspaces/src/api/",
-            "apps/monkeyhub/web/workspaces/src/app/App.tsx",
-            "apps/monkeyhub/web/workspaces/test/",
-            "docs/adr/ADR-008-one-tree-many-projections.md",
-            "apps/monkeyhub/web/test/projectWorkspaceFixture.mjs"
-          ],
-          "depends_on": []
-        }
-      ]
-    }
-  ]
+  "items": []
 }
