@@ -500,6 +500,28 @@ def _watch_managed_stdin(server: uvicorn.Server, jobs: JobRegistry, stream: Text
     server.should_exit = True
 
 
+class _ManagedServer(uvicorn.Server):
+    """A signalled stop also ends the event streams, as the owner's ``stop`` does.
+
+    An open ``/api/events`` stream ends once jobs stop accepting, and uvicorn
+    waits for open connections before it runs the shutdown that stops them: a
+    worker told to exit while its Hub followed its events never exited.
+    """
+
+    def __init__(self, config: uvicorn.Config, state) -> None:
+        super().__init__(config)
+        self._state = state
+
+    def handle_exit(self, sig, frame) -> None:
+        # Off the signal handler: stopping takes the registries' locks.
+        threading.Thread(target=self._stop_accepting, name="studio-signalled-stop", daemon=True).start()
+        super().handle_exit(sig, frame)
+
+    def _stop_accepting(self) -> None:
+        self._state.jobs.stop_accepting()
+        self._state.render_jobs.stop_accepting()
+
+
 def _prepare_first_reads(app: FastAPI) -> None:
     """What every first request would otherwise build for itself, built once while the process is idle (#449).
 
@@ -570,7 +592,7 @@ def main(argv: list[str] | None = None) -> None:
         from monkeydiagram.documentation.styles import initialize_drawing_runtime
 
         initialize_drawing_runtime()
-    server = uvicorn.Server(uvicorn.Config(app, host=settings.bind_host, port=args.port))
+    server = _ManagedServer(uvicorn.Config(app, host=settings.bind_host, port=args.port), app.state)
     threading.Thread(
         target=_watch_managed_stdin, args=(server, app.state.jobs, sys.stdin, app.state.render_jobs),
         name="studio-owner-input", daemon=True,
