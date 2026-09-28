@@ -6,6 +6,7 @@ import base64
 from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timezone
 import hashlib
+import inspect
 from io import BytesIO
 from collections import OrderedDict
 from itertools import product
@@ -119,13 +120,15 @@ def _readable_model_source(
 
 def _complete_source(
     binding: ProjectBinding, model: ModelSource | DrawingAssetSource, stage_ref: ProjectRecordRef | None,
-    *, read_only: bool = False,
+    *, read_only: bool = False, loaded: list | None = None,
 ) -> tuple[ElevationSource | NativeModelSource, dict[str, Any]]:
     """The exact complete model ``model`` names and its CAD receipt.
 
     ``read_only`` is for a picture of the run's own recorded state (the
     projection cache): the run may stand on an older canonical base. Anything
     that builds on the model keeps the default, which requires current HEAD.
+    A native model is read to find its receipt; ``loaded`` then receives what
+    was read, so a caller that draws it does not read it again.
     """
 
     if isinstance(model, DrawingAssetSource):
@@ -142,9 +145,12 @@ def _complete_source(
         registered = binding.repository.load_json(cad_ref)
         native = NativeModelSource(model.run_id, cad_ref, ProjectArtifactRef(**registered["artifact"]))
         try:
-            return native, dict(read_elevation_source(binding.repository, native).receipt)
+            verified = read_elevation_source(binding.repository, native)
         except DrawingElevationError as exc:
             raise StudioError(422, "DRAWING_NATIVE_GEOMETRY_UNSUPPORTED", str(exc)) from exc
+        if loaded is not None:
+            loaded.append(verified)
+        return native, dict(verified.receipt)
     if cad_ref.record_kind != SEAT_OCCT_EXECUTION:
         raise StudioError(409, "DRAWING_COMPLETE_SOURCE_UNAVAILABLE", "This complete model has no matching exact STEP. Its native components cannot stand in for a drawing of the complete building.")
     try:
@@ -190,21 +196,29 @@ def model_view_pipeline(view: str) -> dict[str, Any]:
     if view != "axon":
         raise ValueError(f"only the axonometric model view has a mesh pipeline, not {view!r}")
     right, up, look = _VIEW_FRAMES[view]
+    # The source of this module's framing and meshing of the view, like the mesh renderer's own version.
+    code = hashlib.sha256("".join(inspect.getsource(function) for function in (
+        _elevation_view, _axon_meshes, _draw_view, draw_loaded_view)).encode("utf-8")).hexdigest()[:12]
     return {"view": view, "right": list(right), "up": list(up), "look": list(look), "margin": VIEW_MARGIN,
-            "chordPx": AXON_CHORD_PX, "mesh": mesh_pipeline()}
+            "chordPx": AXON_CHORD_PX, "code": code, "mesh": mesh_pipeline()}
 
 
 def _elevation_view(
     receipt: dict[str, Any], direction: str, *, hidden_lines: bool, scale_denominator: int,
+    object_ids=None,
 ) -> ElevationView:
-    # The crop follows the retained cold-read bounds of every physical object.
+    # The crop follows the retained cold-read bounds of every physical object
+    # (of ``object_ids`` alone when given).
     right, up, look = _VIEW_FRAMES[direction]
     try:
         physical = receipt["physical_object_ids"]
         measured = receipt["readback"]
         if not physical or set(measured) != set(physical):
             raise ValueError("missing physical-object bounds")
-        corners = [point for object_id in physical for point in product(*zip(
+        framed = physical if object_ids is None else [object_id for object_id in physical if object_id in object_ids]
+        if not framed:
+            raise ValueError("no object to frame")
+        corners = [point for object_id in framed for point in product(*zip(
             measured[object_id]["bbox"]["min"], measured[object_id]["bbox"]["max"],
         ))]
         us = [sum(a * b for a, b in zip(point, right)) for point in corners]
@@ -243,11 +257,53 @@ class ModelViewDrawing:
 
 
 def check_model_view_source(binding: ProjectBinding, model_source: ModelSource, view: str) -> None:
-    """Refuse, as ``draw_model_view`` would, a source that cannot be drawn; nothing is read beyond its records."""
+    """Refuse a source that does not name exactly one retained model: its records alone, no geometry is read.
+
+    The run's exact retained state and the model bytes registered to it, as
+    ``draw_model_view`` resolves them; an older canonical base is allowed.
+    Whether the model's geometry can be drawn is the drawing's own question.
+    """
 
     if view not in _VIEW_FRAMES:
         raise StudioError(422, "MODEL_VIEW_INVALID", f"There is no {view!r} model view.")
-    _complete_source(binding, model_source, None, read_only=True)
+    _readable_model_source(binding, model_source, project_state(binding, model_source.run_id))
+
+
+@dataclass(frozen=True, slots=True)
+class LoadedModel:
+    """One exact retained model, verified and read once, to be drawn at any view and size."""
+
+    model_source: ModelSource
+    source: ElevationSource | NativeModelSource
+    receipt: dict[str, Any]
+    verified: VerifiedElevationSource
+    load_s: float
+
+
+def load_model_view(binding: ProjectBinding, model_source: ModelSource) -> LoadedModel:
+    """Verify one exact retained model and read its shapes, for ``draw_loaded_view``; nothing is written.
+
+    Reading dominates the time of a large model, so a caller drawing several
+    sizes of one model reads it once.
+    """
+
+    started = perf_counter()
+    kept: list = []
+    source, receipt = _complete_source(binding, model_source, None, read_only=True, loaded=kept)
+    try:
+        verified = kept[0] if kept else read_elevation_source(binding.repository, source)
+    except DrawingElevationError as exc:
+        raise StudioError(409, "DRAWING_SOURCE_INVALID", str(exc)) from exc
+    return LoadedModel(model_source, source, receipt, verified, perf_counter() - started)
+
+
+def draw_loaded_view(loaded: LoadedModel, *, view: str, size_px: int = MODEL_VIEW_MAX_EDGE,
+                     png_text: dict[str, str] | None = None) -> ModelViewDrawing:
+    """Draw one view of a model ``load_model_view`` read; its ``load_s`` is that read's."""
+
+    drawn = _draw_view(None, loaded.source, loaded.receipt, view, size_px=size_px, png_text=png_text,
+                       started=perf_counter(), verified=loaded.verified)
+    return replace(drawn, load_s=loaded.load_s)
 
 
 def draw_model_view(
@@ -263,23 +319,21 @@ def draw_model_view(
     canonical base is drawn too.
     """
 
-    started = perf_counter()
-    source, receipt = _complete_source(binding, model_source, None, read_only=True)
-    return _draw_view(binding, source, receipt, view, size_px=size_px, png_text=png_text, started=started)
+    return draw_loaded_view(load_model_view(binding, model_source), view=view, size_px=size_px, png_text=png_text)
 
 
-def _draw_view(binding, source, receipt, view, *, size_px, png_text, started) -> ModelViewDrawing:
+def _draw_view(binding, source, receipt, view, *, size_px, png_text, started, verified=None) -> ModelViewDrawing:
     from PIL import Image
 
     try:
-        verified = read_elevation_source(binding.repository, source)
+        if verified is None:
+            verified = read_elevation_source(binding.repository, source)
         recipe = _elevation_view(receipt, view, hidden_lines=False, scale_denominator=1)
         loaded = perf_counter()
         if view == "axon":
-            drawn = mesh_line_view(
-                _axon_meshes(verified, recipe.crop_uv, size_px), right=recipe.right, up=recipe.up,
-                crop_uv=recipe.crop_uv, size_px=size_px, text=png_text,
-            )
+            meshes, recipe = _axon_meshes(verified, receipt, recipe, size_px)
+            drawn = mesh_line_view(meshes, right=recipe.right, up=recipe.up,
+                                   crop_uv=recipe.crop_uv, size_px=size_px, text=png_text)
             return ModelViewDrawing(drawn.png, drawn.width, drawn.height, loaded - started, perf_counter() - loaded)
         u0, v0, u1, v1 = recipe.crop_uv
         mm_per_unit = {"meter": 1000, "millimeter": 1, "inch": 25.4, "foot": 304.8}[verified.length_unit]
@@ -297,13 +351,28 @@ def _draw_view(binding, source, receipt, view, *, size_px, png_text, started) ->
     return ModelViewDrawing(projected.png, width, height, loaded - started, perf_counter() - loaded)
 
 
-def _axon_meshes(verified: VerifiedElevationSource, crop_uv, size_px: int):
-    # A curve-only object has no surface to hide or be hidden by; it is left out.
-    meshes, _ = triangulate(verified.entries, verified.physical_object_ids,
-                            linear_deflection=pixel_size(crop_uv, size_px) * AXON_CHORD_PX)
+def _axon_meshes(verified: VerifiedElevationSource, receipt, recipe: ElevationView, size_px: int):
+    """The surfaces to draw and the view framing them.
+
+    A curve-only object has no surface to hide or be hidden by: it is left out
+    of the drawing, and out of the frame too, so a model's loose curves do not
+    leave an empty band around the building. The surfaces are then meshed
+    again at the narrower frame's pixel size.
+    """
+
+    meshes, skipped = triangulate(verified.entries, verified.physical_object_ids,
+                                  linear_deflection=pixel_size(recipe.crop_uv, size_px) * AXON_CHORD_PX)
     if not meshes:
         raise MeshViewError("the model has no surfaces to draw")
-    return meshes
+    if skipped:
+        surfaces = {mesh.object_id for mesh in meshes}
+        framed = _elevation_view(receipt, recipe.name.removeprefix("elevation-"), hidden_lines=False,
+                                 scale_denominator=1, object_ids=surfaces)
+        if framed.crop_uv != recipe.crop_uv:
+            recipe = framed
+            meshes, _ = triangulate(verified.entries, sorted(surfaces),
+                                    linear_deflection=pixel_size(recipe.crop_uv, size_px) * AXON_CHORD_PX)
+    return meshes, recipe
 
 
 def model_view(binding: ProjectBinding, *, model_source: ModelSource, view: str) -> tuple[bytes, int, int]:
