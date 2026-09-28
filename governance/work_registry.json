@@ -1,4 +1,52 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": []
+  "items": [
+    {
+      "id": "GH-419",
+      "lanes": [
+        {
+          "id": "construction-voids",
+          "status": "active",
+          "branch": "codex/419-construction-ir",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-419-construction-ir",
+          "base_ref": "0efe3765",
+          "contributor": "Claude",
+          "reviewer": null,
+          "handoff": "Spec first (docs/2026-09-28-construction-voids-lowering.md) for the owner's review, then implementation. Overlaps open PR #420 (GH-402) in compilers/geometry.py, geometry_proposal.py and state_record.py and open PR #436 (GH-405) in element_producers.py; the changed functions are disjoint, and whichever lands later merges origin/main.",
+          "modules": [
+            "state.geometry_program",
+            "state.record",
+            "compilers.geometry",
+            "capabilities.geometry_proposal",
+            "capabilities.element_producers",
+            "capabilities.wall_solver",
+            "capabilities.opening_solver",
+            "adapters.cad_program",
+            "adapters.cad_patch",
+            "adapters.cad_execution",
+            "runtime.drawing_elevation",
+            "studio.artifacts"
+          ],
+          "write_scope": [
+            "docs/2026-09-28-construction-voids-lowering.md",
+            "archflow/state/geometry_program.py",
+            "archflow/state/state_record.py",
+            "monkeyarch/compilers/geometry.py",
+            "monkeyarch/capabilities/geometry_proposal.py",
+            "monkeyarch/capabilities/element_producers.py",
+            "monkeyarch/capabilities/wall_solver.py",
+            "monkeyarch/capabilities/opening_solver.py",
+            "archflow/adapters/cad_program.py",
+            "archflow/adapters/cad_patch.py",
+            "archflow/adapters/cad_execution.py",
+            "archflow/adapters/occt_backend.py",
+            "monkeydiagram/drawing_elevation.py",
+            "apps/archflow-studio/api/archflow_studio_api/application/drawing_plans.py",
+            "apps/archflow-studio/api/archflow_studio_api/application/drawings.py"
+          ],
+          "depends_on": []
+        }
+      ]
+    }
+  ]
 }
